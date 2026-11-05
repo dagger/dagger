@@ -2519,6 +2519,12 @@ type StatFS interface {
 	Stat(ctx context.Context, path string) (string, *Stat, error)
 }
 
+// FindUpFS is a StatFS that can search a directory and its parents itself,
+// returning engineutil.ErrFindUpUnsupported when it can't.
+type FindUpFS interface {
+	FindUpAll(ctx context.Context, start string, names []string) (map[string]string, error)
+}
+
 type ExistsFS interface {
 	Exists(ctx context.Context, path string) (string, bool, error)
 }
@@ -2574,6 +2580,12 @@ func (csfs CallerStatFS) Stat(ctx context.Context, path string) (string, *Stat, 
 		Permissions: int(fileMode.Perm()),
 		FileType:    FileModeToFileType(fileMode),
 	}, nil
+}
+
+// FindUpAll asks the caller to search its own directories, in one call.
+func (csfs CallerStatFS) FindUpAll(ctx context.Context, start string, names []string) (map[string]string, error) {
+	_, found, err := csfs.bk.FindUpCallerHostPaths(ctx, start, names)
+	return found, err
 }
 
 func (csfs CallerStatFS) Exists(ctx context.Context, path string) (string, bool, error) {

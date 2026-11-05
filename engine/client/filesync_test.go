@@ -314,3 +314,32 @@ func TestFileStreamExportReplacesAtomically(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, `{"third":1}`, string(rewritten), "an ordinary export rewrites the file in place")
 }
+
+// FindUp answers in one call what the engine used to ask with a stat per name
+// and directory level: the nearest directory holding each name, from the start
+// directory up to the root, with names found nowhere left out.
+func TestFilesyncSourceFindUp(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	mod := filepath.Join(repo, "mod")
+	start := filepath.Join(mod, "a", "b")
+	require.NoError(t, os.MkdirAll(start, 0o755))
+	require.NoError(t, os.Mkdir(filepath.Join(repo, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "dagger.json"), []byte("{}"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(mod, "dagger.json"), []byte("{}"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".env"), []byte("A=1"), 0o644))
+
+	resp, err := FilesyncSource{}.FindUp(context.Background(), &filesync.FindUpRequest{
+		Start: start,
+		Names: []string{".git", "dagger.json", ".env", "missing-everywhere"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, filepath.ToSlash(start), resp.Start)
+	require.Equal(t, map[string]string{
+		".git":        filepath.ToSlash(repo),
+		"dagger.json": filepath.ToSlash(mod),
+		".env":        filepath.ToSlash(root),
+	}, resp.Found)
+}

@@ -665,11 +665,15 @@ func (s *hostSchema) findUp(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return i, fmt.Errorf("failed to get engine client: %w", err)
 	}
-	cwd, err := bk.AbsPath(ctx, ".")
-	if err != nil {
-		return i, fmt.Errorf("failed to get cwd: %w", err)
+	cwd, foundPaths, err := bk.FindUpCallerHostPaths(ctx, ".", []string{args.Name})
+	foundPath, found := foundPaths[args.Name]
+	if errors.Is(err, engineutil.ErrFindUpUnsupported) {
+		cwd, err = bk.AbsPath(ctx, ".")
+		if err != nil {
+			return i, fmt.Errorf("failed to get cwd: %w", err)
+		}
+		foundPath, found, err = host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
 	}
-	foundPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
 	if err != nil {
 		return i, fmt.Errorf("failed to find %s: %w", args.Name, err)
 	}
