@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -320,10 +319,26 @@ func TestSourceFilePathsMixedStoredAndFresh(t *testing.T) {
 	require.Zero(t, manager.openCount("saved"))
 }
 
-// TestFilesMountEvaluatesEachFileOnce mounts files under part acquisition, as
-// files the engine image or the Cloud offers are, where evaluating a finished
-// file is a task of its own with its own span.
-func TestFilesMountEvaluatesEachFileOnce(t *testing.T) {
+// cacheEvaluateCountingContext counts the calls to Cache.Evaluate made with it:
+// each asks once whether it may evaluate, whatever it then finds to do.
+type cacheEvaluateCountingContext struct {
+	context.Context
+	calls *atomic.Int64
+}
+
+func (ctx cacheEvaluateCountingContext) Value(key any) any {
+	if fmt.Sprintf("%T", key) == "engine.snapshotSharePreparationKey" {
+		ctx.calls.Add(1)
+	}
+	return ctx.Context.Value(key)
+}
+
+// TestFilesMountEvaluatesItsFilesOnce mounts files under part acquisition, as
+// files the engine image or the Cloud offers are. The mount evaluates them
+// together, once, then reads what that set: an evaluation of a finished file
+// starts no work anyone can see now, but it takes the cache's lock, once per file
+// per read. Each file resolves to its path and snapshot.
+func TestFilesMountEvaluatesItsFilesOnce(t *testing.T) {
 	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 	ref, _ := aStore.Build(t, nil, "offered.txt", "offered bytes")
 	chain, err := ref.ExportChain(t.Context(), config.RefConfig{Compression: compression.New(compression.Uncompressed)})
@@ -331,11 +346,6 @@ func TestFilesMountEvaluatesEachFileOnce(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, chain.Release(context.Background())) })
 	ctx, cache, srv := transferCache(t, bStore, filepath.Join(t.TempDir(), "b.db"), "b")
 	cache.SetPartContentSource(partTestContentSource{&testutil.Provider{InfoReaderProvider: chain.Provider}})
-	recorder := tracetest.NewSpanRecorder()
-	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
-	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
-	ctx, span := provider.Tracer("files").Start(ctx, "files")
-	defer span.End()
 	platform := Platform{OS: "linux", Architecture: "amd64"}
 	spec := platform.Spec()
 	offer := dagql.PersistedPartOffer{Address: dagql.PersistedPartAddress{Part: "snapshot"}, Value: dagql.SnapshotValue{Kind: "file", Path: "/offered.txt", Platform: &spec}, Chain: dagql.OfferedChain{Layers: chain.Layers}}
@@ -351,23 +361,17 @@ func TestFilesMountEvaluatesEachFileOnce(t *testing.T) {
 		src.Files = append(src.Files, MountedFile{Name: name, File: res})
 	}
 
-	before := len(recorder.Ended())
-	cfg, err := execMountedFiles(ctx, src)
+	var calls atomic.Int64
+	cfg, err := execMountedFiles(cacheEvaluateCountingContext{Context: ctx, calls: &calls}, src)
 	require.NoError(t, err)
 
+	require.EqualValues(t, 1, calls.Load(), "one evaluation of all the files, and none to read them")
 	require.Len(t, cfg.Files, len(names))
 	for i, name := range names {
 		require.Equal(t, name, cfg.Files[i].Name)
 		require.Equal(t, "/offered.txt", cfg.Files[i].Path)
 		require.NotNil(t, cfg.Files[i].Ref)
 	}
-	evaluations := 0
-	for _, ended := range recorder.Ended()[before:] {
-		if strings.Contains(ended.Name(), "(acquire:snapshot)") {
-			evaluations++
-		}
-	}
-	require.Equal(t, len(names), evaluations)
 }
 
 func TestSourceFilePathsReadsFinishedFilesWithoutEvaluating(t *testing.T) {
