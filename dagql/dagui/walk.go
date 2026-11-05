@@ -211,6 +211,9 @@ func (w *spanWalker) computeMode(span *Span) spanMode {
 	if !w.opts.ShouldShow(w.db, span) {
 		return modeDrop
 	}
+	if w.passesOnFailure(span) {
+		return modeThrough
+	}
 	if (span.Passthrough && !w.opts.Debug) ||
 		// We inserted a stub for this span, but never received data for it.
 		// This can happen if we're within a larger trace - we'll allocate our
@@ -228,6 +231,63 @@ func (w *spanWalker) computeMode(span *Span) spanMode {
 		}
 	}
 	return modeBuild
+}
+
+// passesOnFailure reports whether span is internal machinery of a failed
+// encapsulating span, which the view shows only because it failed (see
+// FrontendOpts.ShouldShow), and which only passes on the failure of a step
+// beneath it that the view shows. That step tells the failure, so the span
+// gives it its place instead of burying it under machinery the view
+// otherwise hides: the calls an SDK makes between a module's load and its
+// failed compile, say. Any other failed internal span stays: the engine's
+// own internal steps, such as loading a module's dependencies, tell where a
+// failure happened.
+func (w *spanWalker) passesOnFailure(span *Span) bool {
+	verbosity := w.opts.Verbosity
+	if v, ok := w.opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
+	if w.opts.Debug || !span.IsInternal() || verbosity >= ShowInternalVerbosity ||
+		!span.IsFailedOrCausedFailure() || !inFailedEncapsulation(span) {
+		return false
+	}
+	return w.showsFailureBeneath(span)
+}
+
+// inFailedEncapsulation reports whether span is the machinery of a failed
+// span that encapsulates what's beneath it (Span.Encapsulate): only internal
+// and passthrough spans lie between them. A step the view shows in between
+// is work of its own, which its own internal spans serve.
+func inFailedEncapsulation(span *Span) bool {
+	for p := span.ParentSpan; p != nil; p = p.ParentSpan {
+		if p.Encapsulate {
+			return p.IsFailedOrCausedFailure()
+		}
+		if !p.Internal && !p.Passthrough && p.Received {
+			return false
+		}
+	}
+	return false
+}
+
+// showsFailureBeneath reports whether the view shows a failed step beneath
+// span: a failed child it shows, or one beneath a child it passes through,
+// whatever that child's own status. The engine's "POST /query" span ends OK
+// even when a call under it failed.
+func (w *spanWalker) showsFailureBeneath(span *Span) bool {
+	for _, child := range span.ChildSpans.Spans() {
+		switch w.mode(child) {
+		case modeBuild:
+			if child.IsFailedOrCausedFailure() {
+				return true
+			}
+		case modeThrough:
+			if w.showsFailureBeneath(child) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (w *spanWalker) isRoot(span *Span) bool {
