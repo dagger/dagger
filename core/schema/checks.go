@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -17,9 +18,14 @@ func (s checksSchema) Install(srv *dagql.Server) {
 	run := dagql.NodeFuncWithDynamicInputs("__run", s.run, s.cachePolicy)
 	run.Spec.NoTelemetry = true
 	dagql.Fields[*core.Check]{
-		dagql.NodeFunc("__withAddress", func(_ context.Context, check dagql.ObjectResult[*core.Check], args struct{ Address string }) (*core.Check, error) {
+		dagql.NodeFunc("__withAddress", func(_ context.Context, check dagql.ObjectResult[*core.Check], args struct {
+			Address        string
+			CollectionItem bool `default:"false"`
+		}) (*core.Check, error) {
 			copy := check.Self().Clone()
 			copy.Address = args.Address
+			// Keep the artifact's identity separate from the cached check body.
+			copy.CollectionItem = args.CollectionItem
 			if copy.Unaddressed.Self() == nil {
 				copy.Unaddressed = check
 			}
@@ -71,6 +77,7 @@ func (s checksSchema) sync(ctx context.Context, check dagql.ObjectResult[*core.C
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 			attribute.String(telemetry.CheckNameAttr, name),
+			attribute.Bool(telemetryattrs.CheckCollectionItemAttr, check.Self().CollectionItem),
 		))
 		defer func() {
 			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, failure == nil))

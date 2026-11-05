@@ -111,6 +111,18 @@ type ArtifactURIOpts struct {
 	Full bool
 }
 
+// IsCollectionItem reports whether the artifact runs under a collection member.
+// Inspect the receiver path, not address keys: a legacy whole-collection check
+// can retain selected keys without executing as an individual item.
+func (a *Artifact) IsCollectionItem() bool {
+	for node := a.Node; node != nil; node = node.Parent {
+		if node.CollectionDimension != nil && node.CollectionKey != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // URI is the artifact's DAG address. See hack/designs/collections-issue.md,
 // section 4.
 func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
