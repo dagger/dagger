@@ -191,7 +191,7 @@ func gitWorkspaceModuleConfig(ctx context.Context, files *core.GitTreeFiles, dir
 			return nil, err
 		}
 		src := &core.ModuleSource{SourceRootSubpath: dir, ConfigFilename: filename}
-		if err := (&moduleSourceSchema{}).initFromModConfig(data, src); err != nil {
+		if _, err := (&moduleSourceSchema{}).initFromModConfig(data, src); err != nil {
 			return nil, err
 		}
 		return src, nil
