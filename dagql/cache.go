@@ -3504,7 +3504,59 @@ type ongoingCall struct {
 	// call_exec/native op was, keeping mint and wait consistent and dangle-proof.
 	profSkip bool
 
+	// waitsOn counts the waits this call's work has on other ongoing calls,
+	// by call. Guarded by callsMu.
+	waitsOn map[*ongoingCall]int
+
 	res *sharedResult
+}
+
+// waitsOnLocked reports whether oc's work waits on target, directly or
+// through other ongoing calls. callsMu must be held.
+func (oc *ongoingCall) waitsOnLocked(target *ongoingCall) bool {
+	seen := map[*ongoingCall]struct{}{}
+	pending := []*ongoingCall{oc}
+	for len(pending) > 0 {
+		cur := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if cur == target {
+			return true
+		}
+		if _, ok := seen[cur]; ok {
+			continue
+		}
+		seen[cur] = struct{}{}
+		for next := range cur.waitsOn {
+			pending = append(pending, next)
+		}
+	}
+	return false
+}
+
+// addWaitLocked records that the work of the ongoing call ctx runs under, if
+// any, waits on oc. callsMu must be held.
+func addWaitLocked(ctx context.Context, oc *ongoingCall) {
+	waiter, _ := ctx.Value(ongoingCallContextKey{}).(*ongoingCall)
+	if waiter == nil {
+		return
+	}
+	if waiter.waitsOn == nil {
+		waiter.waitsOn = map[*ongoingCall]int{}
+	}
+	waiter.waitsOn[oc]++
+}
+
+// removeWait undoes addWaitLocked once the wait on oc ends.
+func (c *Cache) removeWait(ctx context.Context, oc *ongoingCall) {
+	waiter, _ := ctx.Value(ongoingCallContextKey{}).(*ongoingCall)
+	if waiter == nil {
+		return
+	}
+	c.callsMu.Lock()
+	defer c.callsMu.Unlock()
+	if waiter.waitsOn[oc]--; waiter.waitsOn[oc] <= 0 {
+		delete(waiter.waitsOn, oc)
+	}
 }
 
 // retireOngoingCallLocked removes oc from ongoingCalls if it is still the
@@ -4718,6 +4770,9 @@ func (r ObjectResult[T]) cacheSharedResult() *sharedResult {
 type cacheContextKey struct {
 	key string
 }
+
+// ongoingCallContextKey holds the ongoing call whose work a context runs.
+type ongoingCallContextKey struct{}
 
 type lazyEvalStackCtxKey struct{}
 type lazyEvalStackNode struct {
@@ -6448,11 +6503,20 @@ func (c *Cache) getOrInitCallInner(
 
 	if req.ConcurrencyKey != "" {
 		if oc := c.ongoingCalls[callConcKeys]; oc != nil {
+			// The context's ancestry above catches a call that waits on
+			// itself through its own work. Calls started apart can reach each
+			// other too, each through the other's work: joining oc, whose work
+			// waits on this call's, would leave both waiting forever.
+			if waiter, _ := ctx.Value(ongoingCallContextKey{}).(*ongoingCall); waiter != nil && oc.waitsOnLocked(waiter) {
+				c.callsMu.Unlock()
+				return nil, ErrCacheRecursiveCall
+			}
 			if req.IsPersistable {
 				oc.isPersistable.Store(true)
 			}
 			// already an ongoing call
 			oc.waiters++
+			addWaitLocked(ctx, oc)
 			c.callsMu.Unlock()
 			if ev != nil {
 				// This invocation's own decision: it deduplicated into the
@@ -6540,6 +6604,8 @@ func (c *Cache) getOrInitCallInner(
 		// joiner must not emit a wait into it. Native is unaffected (full detail).
 		profSkip: req.ResultCall.ProfileSkip,
 	}
+	oc.sharedWorkCtx = context.WithValue(oc.sharedWorkCtx, ongoingCallContextKey{}, oc)
+	addWaitLocked(ctx, oc)
 	if req.IsPersistable {
 		oc.isPersistable.Store(true)
 	}
@@ -6727,6 +6793,7 @@ func (c *Cache) wait(
 	req *CallRequest,
 	joined bool,
 ) (AnyResult, error) {
+	defer c.removeWait(ctx, oc)
 	var (
 		completionErr error
 		canceledErr   error
