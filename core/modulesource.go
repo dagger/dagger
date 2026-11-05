@@ -676,7 +676,10 @@ type persistedModuleSourceLazyModuleTypes struct {
 	sdk *persistedModuleSourceLazySDK
 }
 
-var _ ModuleTypes = persistedModuleSourceLazyModuleTypes{}
+var (
+	_ ModuleTypes          = persistedModuleSourceLazyModuleTypes{}
+	_ ModuleTypesForSource = persistedModuleSourceLazyModuleTypes{}
+)
 
 // ErrStaleSDKCapability signals that a persisted module source recorded an SDK
 // capability the freshly loaded SDK no longer implements — e.g. sources
@@ -699,6 +702,21 @@ func (sdk persistedModuleSourceLazyModuleTypes) ModuleTypes(
 		return dagql.ObjectResult[*Module]{}, fmt.Errorf("persisted module source sdk does not implement module types: %w", ErrStaleSDKCapability)
 	}
 	return moduleTypesSDK.ModuleTypes(ctx, deps, src, mod)
+}
+
+func (sdk persistedModuleSourceLazyModuleTypes) ReportsModuleTypes(ctx context.Context, src dagql.ObjectResult[*ModuleSource]) (bool, error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return false, err
+	}
+	moduleTypesSDK, ok := loaded.AsModuleTypes()
+	if !ok {
+		return false, nil
+	}
+	if forSource, ok := moduleTypesSDK.(ModuleTypesForSource); ok {
+		return forSource.ReportsModuleTypes(ctx, src)
+	}
+	return true, nil
 }
 
 type persistedModuleSourceLazyCodeGenerator struct {

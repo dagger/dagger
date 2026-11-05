@@ -3698,7 +3698,13 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 
 	var initialized *core.Module
 
-	_, typeDefsEnabled := src.Self().SDKImpl.AsModuleTypes()
+	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsModuleTypes()
+	if forSource, ok := typeDefsImpl.(core.ModuleTypesForSource); typeDefsEnabled && ok {
+		typeDefsEnabled, err = forSource.ReportsModuleTypes(ctx, src)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if typeDefsEnabled {
 		resultInst, terr := s.moduleTypesDefinition(ctx, dag, mod)
 		switch {

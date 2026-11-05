@@ -418,6 +418,12 @@ type ModuleTypes interface {
 	) (dagql.ObjectResult[*Module], error)
 }
 
+// ModuleTypesForSource is a ModuleTypes that reports the types of some module
+// sources and not others, and can tell which before it's asked.
+type ModuleTypesForSource interface {
+	ReportsModuleTypes(context.Context, dagql.ObjectResult[*ModuleSource]) (bool, error)
+}
+
 // ErrModuleTypesNeedRuntime is what a ModuleTypes returns when it can't report
 // this module's types itself: the engine then asks the module's runtime for
 // them, as for an SDK without ModuleTypes.

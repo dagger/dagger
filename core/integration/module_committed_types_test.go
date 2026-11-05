@@ -347,3 +347,29 @@ func (m *Hello) Say() string {
 		Sync(ctx)
 	requireErrOut(t, err, "undefined: undefinedSymbol")
 }
+
+// The engine knows not to read a module whose bindings are generated at load,
+// so nothing fails on its way to the runtime. The progress a failed query
+// prints shows every step that failed.
+func (CommittedTypesSuite) TestRuntimeCodegenModulesShowNoFailedStep(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	stderr, err := goGitBase(t, c).
+		WithNewFile("main.go", `package main
+
+type Hello struct{}
+
+func (m *Hello) Say() string {
+	return "hello"
+}
+`).
+		With(fileContents("dagger.json", `{"name": "hello", "engineVersion": "latest", "sdk": {"source": "go"}}`)).
+		WithExec([]string{"dagger", "query", "-m", "."}, core.ContainerWithExecOpts{
+			UseEntrypoint: true,
+			Stdin:         `{noSuchField}`,
+			Expect:        core.ReturnTypeFailure,
+		}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "noSuchField")
+	require.NotContains(t, stderr, "module types need")
+}

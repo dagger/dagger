@@ -30,6 +30,14 @@ import (
 // succeed there as a build does.
 type goModuleTypes struct{}
 
+var _ core.ModuleTypesForSource = goModuleTypes{}
+
+// ReportsModuleTypes reports that a module whose bindings are generated at load
+// has no committed code to read: its types come from its runtime.
+func (goModuleTypes) ReportsModuleTypes(_ context.Context, src dagql.ObjectResult[*core.ModuleSource]) (bool, error) {
+	return !useRuntimeCodegen(src), nil
+}
+
 func (goModuleTypes) ModuleTypes(
 	ctx context.Context,
 	_ *core.SchemaBuilder,
