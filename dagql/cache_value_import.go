@@ -25,7 +25,8 @@ func validateValueBundleShape(bundle ValueBundle) ([]uint64, error) {
 
 // ResolveChainPrefixes gives each of the bundle's outputs that names a chain
 // prefix its chain, in place: the first layers of the chain of the output it
-// names, which the two share. It refuses a prefix that names no output of the
+// names, which the two share, with that chain's addresses, packs and renewal
+// key for them. It refuses a prefix that names no output of the
 // bundle carrying a chain, takes more layers than that chain has or none, or
 // sits on an output that carries a chain too. First, each output that names
 // its chain's layers in the bundle's list gets them (resolveSharedLayers).
@@ -65,8 +66,26 @@ func ResolveChainPrefixes(bundle *ValueBundle) error {
 			return fmt.Errorf("output %d's prefix takes %d of a chain of %d layers", output.Ordinal, prefix.Layers, len(chain.Layers))
 		}
 		// The full slice expression caps the prefix's layers at its own, so
-		// an append to them can't write over the chain's.
-		output.Chain = &OfferedChain{Layers: chain.Layers[:prefix.Layers:prefix.Layers]}
+		// an append to them can't write over the chain's. The layers are the
+		// chain's blobs, so the prefix reads them as the chain does: at the
+		// chain's addresses and packs, renewed by its key.
+		resolved := &OfferedChain{Layers: chain.Layers[:prefix.Layers:prefix.Layers], RenewalKey: chain.RenewalKey}
+		for _, layer := range resolved.Layers {
+			blob := layer.Descriptor.Digest
+			if address, ok := chain.Addresses[blob]; ok {
+				if resolved.Addresses == nil {
+					resolved.Addresses = map[digest.Digest]BlobAddress{}
+				}
+				resolved.Addresses[blob] = address
+			}
+			if pack, ok := chain.Packs[blob]; ok {
+				if resolved.Packs == nil {
+					resolved.Packs = map[digest.Digest]digest.Digest{}
+				}
+				resolved.Packs[blob] = pack
+			}
+		}
+		output.Chain = resolved
 		output.Prefix = nil
 	}
 	return nil

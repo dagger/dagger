@@ -546,6 +546,22 @@ func TestResolveChainPrefixes(t *testing.T) {
 	require.Equal(t, 2, cap(b.Outputs[1].Chain.Layers), "an append to the prefix's layers can't reach its chain's")
 	require.Same(t, &chain[0], &b.Outputs[1].Chain.Layers[0], "the layers are the chain's own")
 
+	// The prefix reads its blobs where the chain does: the chain's addresses,
+	// packs and renewal key for the prefix's layers, and none of the rest.
+	addressed := bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 2})
+	pack := digest.FromString("pack")
+	addressed.Outputs[0].Chain = &OfferedChain{
+		Layers:     chain,
+		Addresses:  map[digest.Digest]BlobAddress{chain[0].Descriptor.Digest: {URL: "dagger-image:" + string(chain[0].Descriptor.Digest)}, chain[2].Descriptor.Digest: {URL: "dagger-image:" + string(chain[2].Descriptor.Digest)}},
+		RenewalKey: "renew",
+		Packs:      map[digest.Digest]digest.Digest{chain[1].Descriptor.Digest: pack, chain[2].Descriptor.Digest: pack},
+	}
+	require.NoError(t, ResolveChainPrefixes(addressed))
+	got := addressed.Outputs[1].Chain
+	require.Equal(t, map[digest.Digest]BlobAddress{chain[0].Descriptor.Digest: {URL: "dagger-image:" + string(chain[0].Descriptor.Digest)}}, got.Addresses)
+	require.Equal(t, map[digest.Digest]digest.Digest{chain[1].Descriptor.Digest: pack}, got.Packs)
+	require.Equal(t, "renew", got.RenewalKey)
+
 	for _, tc := range []struct {
 		name   string
 		bundle *ValueBundle
