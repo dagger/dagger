@@ -8,8 +8,28 @@ import (
 
 type Pytest = core.Pytest
 
-// PytestTestOpts contains options for Pytest.Test
-type PytestTestOpts = core.PytestTestOpts
+// PytestInstallPytestOtelOpts contains options for Pytest.InstallPytestOtel
+type PytestInstallPytestOtelOpts = core.PytestInstallPytestOtelOpts
 
 // PytestOpts contains options for Query.Pytest
 type PytestOpts = core.PytestOpts
+
+type PytestEnvTarget = core.PytestEnvTarget
+
+const (
+	PytestEnvTargetAuto PytestEnvTarget = core.PytestEnvTargetAuto
+
+	PytestEnvTargetSystem PytestEnvTarget = core.PytestEnvTargetSystem
+
+	PytestEnvTargetVenv PytestEnvTarget = core.PytestEnvTargetVenv
+)
+
+type PytestRunner = core.PytestRunner
+
+const (
+	PytestRunnerAuto PytestRunner = core.PytestRunnerAuto
+
+	PytestRunnerPip PytestRunner = core.PytestRunnerPip
+
+	PytestRunnerUv PytestRunner = core.PytestRunnerUv
+)
