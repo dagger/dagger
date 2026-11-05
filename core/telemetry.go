@@ -313,6 +313,9 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 		if ev.MissIncompatibleCandidates {
 			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissIncompatibleCandidatesAttr, "true"))
 		}
+		if ev.MissUnavailableParts {
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissUnavailablePartsAttr, "true"))
+		}
 		if ev.MissSawExpired {
 			attrs = append(attrs, attribute.String(telemetryattrs.CacheMissSawExpiredAttr, "true"))
 		}

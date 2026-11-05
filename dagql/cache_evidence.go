@@ -67,6 +67,12 @@ type CacheDecision struct {
 	// resource requirements. Meaningful only for misses (Outcome executed).
 	MissIncompatibleCandidates bool
 
+	// MissUnavailableParts records that the lookup passed by a candidate
+	// because a part of its value that a demand found no source for is still
+	// incomplete: the call runs again to make it. Meaningful only for misses
+	// (Outcome executed).
+	MissUnavailableParts bool
+
 	// MissSawExpired records that TTL expiry eliminated at least one
 	// otherwise-matching result during candidate accumulation. Meaningful only
 	// for misses (Outcome executed).

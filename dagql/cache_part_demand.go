@@ -224,6 +224,12 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 	demand := &PartDemandState{target: clonePartAddress(address), started: time.Now()}
 	ctx = context.WithValue(ctx, partDemandContextKey{}, demand)
 	outer := partReselectWatch{loop: "demandPart"}
+	// ranCall is set once the demand has run the value's call for a part no
+	// source supplies, and callErr is why that run failed.
+	var (
+		ranCall bool
+		callErr error
+	)
 	for {
 		outer.again(ctx, res.cacheSharedResult(), address)
 		// opened is the row's state the body probed the part at, when it
@@ -372,7 +378,19 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					continue
 				}
 				if !route.HasLazyOperation {
-					return errors.Join(fmt.Errorf("%w: %s", ErrUnavailablePart, key), demand.causes())
+					// Nothing supplies the part and no operation of the value
+					// makes it: its call runs again, once, as a miss runs it,
+					// and the value it makes is then a ready source.
+					if !ranCall {
+						ranCall = true
+						callCtx, endCall := profDemandStep(ctx, "call")
+						callErr = c.runCallForPart(callCtx, res, key)
+						endCall(callErr)
+						if callErr == nil {
+							continue
+						}
+					}
+					return errors.Join(fmt.Errorf("%w: %s", ErrUnavailablePart, key), demand.causes(), callErr)
 				}
 				decideCtx, endDecide := profDemandStep(ctx, "decide")
 				err = c.runLazyOperationDecision(decideCtx, res, address, route, demand)
@@ -679,6 +697,47 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 		"reason", reason,
 		"candidates", len(check.candidates),
 		"offers", offers)
+}
+
+// runCallForPart runs again the call that made res, for res's part key that
+// no source supplies and no operation of res makes: another engine sent the
+// value without the part, and its offer of the part is gone or failed. From
+// now until the part is complete, a lookup passes res by (servableLocked), so
+// the call computes its value here, as on an engine that never had res, and
+// that value, evaluated, is a ready source of the part for res.
+func (c *Cache) runCallForPart(ctx context.Context, res AnyResult, key string) error {
+	row := res.cacheSharedResult()
+	frame := row.loadResultCall()
+	if frame == nil {
+		return fmt.Errorf("run call for part %s: no call recorded", key)
+	}
+	srv := CurrentDagqlServer(ctx)
+	if srv == nil {
+		return fmt.Errorf("run call for part %s: no dagql server", key)
+	}
+	id, err := frame.recipeID(ctx, c)
+	if err != nil {
+		return fmt.Errorf("run call for part %s: %w", key, err)
+	}
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	if row.unavailableParts == nil {
+		row.unavailableParts = map[string]struct{}{}
+	}
+	row.unavailableParts[key] = struct{}{}
+	c.egraphMu.Unlock()
+	slog.InfoContext(ctx, "remote cache part unavailable: running its call",
+		"cache", c.Identity().ID,
+		"entry", uint64(row.id),
+		"field", frame.Field,
+		"part", key)
+	ran, err := srv.LoadTypeReplayable(ctx, id)
+	if err != nil {
+		return fmt.Errorf("run call for part %s: %w", key, err)
+	}
+	if err := c.Evaluate(ctx, ran); err != nil {
+		return fmt.Errorf("run call for part %s: %w", key, err)
+	}
+	return nil
 }
 
 var errLazyEvaluationBusy = errors.New("part operation owns admission")

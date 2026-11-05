@@ -2918,6 +2918,11 @@ type sharedResult struct {
 	// completeParts caches the row's complete parts for the revision of its
 	// value they were read from (see completePartKeys).
 	completeParts atomic.Pointer[rowCompleteParts]
+	// unavailableParts are the parts of the value that a demand found no
+	// source for, by part address key. Until each is complete, a lookup
+	// passes the entry by (servableLocked), and its call runs again, as on an
+	// engine that never had the entry. Guarded by egraphMu.
+	unavailableParts map[string]struct{}
 
 	// Prune-accounting metadata. Sizes are unknown until explicitly measured.
 	createdAtUnixNano        int64
@@ -7360,7 +7365,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// indexed under the recipe of its stored frame, unless that recipe
 	// already has a current entry: then it adopts a live one (D1), waits for
 	// one still attaching, replaces an expired one that nothing uses in place,
-	// or retires an expired one that something uses (D9). An entry known only
+	// or retires an expired one that something uses (D9). An entry with a
+	// part that a demand found no source for (servableLocked) is taken as an
+	// expired one: the new value is what makes that part. An entry known only
 	// through holdings has no value to adopt: the new value is stored into
 	// it, as merge stores a record.
 	var (
@@ -7401,7 +7408,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if cur == nil {
 			break
 		}
-		if !cur.noValueLocked() && !c.resultExpiredAtLocked(cur, now.Unix()) {
+		if !cur.noValueLocked() && !c.resultExpiredAtLocked(cur, now.Unix()) && servableLocked(cur) {
 			if cur.attachmentState() == resultAttachmentOpen {
 				cur.attachDepsMu.Lock()
 				waitCh, holder := cur.attachDepsWaitCh, cur.attachHolder

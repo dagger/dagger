@@ -125,6 +125,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	// (cache_list_items.go).
 	cur.storedParts = nil
 	cur.storedTransfer.Store(nil)
+	cur.unavailableParts = nil
 	c.forgetListItemLocked(cur)
 	cur.storedRecordBytes = fresh.storedRecordBytes
 	for _, offer := range cur.partOffersLocked() {
