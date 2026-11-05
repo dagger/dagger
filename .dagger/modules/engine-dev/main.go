@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"dagger.io/dagger/core"
@@ -209,10 +210,26 @@ func (dev *EngineDev) Container(
 	return ctr.WithDirectory(distconsts.EngineContainerImageEntriesDir, entries), nil
 }
 
+// goSDKDaggerGo is the dagger/go the Go SDK module depends on: its manifest's
+// one dependency's source, go-sdk's pin.
+func goSDKDaggerGo(ctx context.Context, source *dagger.Directory) (string, error) {
+	manifest, err := source.File("sdk/go/runtime/dagger-module.toml").Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	m := regexp.MustCompile(`(?s)\[\[dependencies\]\].*?\bsource\s*=\s*"([^"]+)"`).FindStringSubmatch(manifest)
+	if m == nil {
+		return "", fmt.Errorf("sdk/go/runtime/dagger-module.toml names no dependency source")
+	}
+	return m[1], nil
+}
+
 // imageEntries are the cache entries the engine image ships for Go module
 // runtimes, which the engine merges at start: the builds of the standard library
-// and of what generated Go module code imports (GoImageEntriesSeed), and
-// gobuild's binary, which dagger/go builds every runtime with, made
+// and of what generated Go module code imports (GoImageEntriesSeed),
+// gobuild's binary, which dagger/go builds every runtime with, and what a
+// fresh engine would fetch to build with them (dagger/go's tree and the two
+// images the builds run in), made
 // by the engine of this image, engine, on a state of its own, and exported
 // by cmd/engine-image-entries. An entry's identity is its engine's, so an
 // image's entries come from an engine of its own build.
@@ -221,7 +238,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	if err != nil {
 		return nil, err
 	}
-	goSDKDigest, err := engine.EnvVariable(ctx, distconsts.GoSDKManifestDigestEnvName)
+	daggerGo, err := goSDKDaggerGo(ctx, dev.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +268,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 		WithMountedDirectory("/seed", seed).
 		WithExec(withoutOuterSession("engine-image-entries",
 			"-seed", "/seed",
-			"-go-sdk-digest", goSDKDigest,
+			"-dagger-go", daggerGo,
 			"-go-version", distconsts.GolangVersion,
 			"-out", out,
 		)).
