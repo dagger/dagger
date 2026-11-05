@@ -21,8 +21,10 @@ type ModuleManifestV2 struct {
 	// Include lists the files outside the module directory that the module
 	// builds from, relative to the module directory, as patterns; a pattern
 	// that starts with "!" excludes. The engine loads them with the module's
-	// own files, so they are part of its context and of its digest.
-	Include    []string               `toml:"include,omitempty"`
+	// own files, so they are part of its context and of its digest. Declared,
+	// even empty, it replaces an entrypoint's sources member. A pointer, so an
+	// empty list is written and read back as declared.
+	Include    *[]string              `toml:"include,omitempty"`
 	Entrypoint ModuleEntrypointConfig `toml:"entrypoint"`
 	// Dependencies are the modules the entrypoint calls, installed in its
 	// schema.

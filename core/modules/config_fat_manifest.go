@@ -94,3 +94,16 @@ func fatManifestExclusions(tree *toml.Tree) []string {
 	}
 	return include
 }
+
+// hasPreV2Fields reports whether a manifest carries pre-v2 fields beside its
+// entrypoint, which makes it a fat manifest. Its include then belongs to the
+// pre-v2 format as well, so it doesn't replace the entrypoint's sources
+// member, whose files that format's include never had to list.
+func hasPreV2Fields(tree *toml.Tree) bool {
+	for _, key := range legacyModuleManifestKeys {
+		if key != "$schema" && tree.Has(key) {
+			return true
+		}
+	}
+	return false
+}

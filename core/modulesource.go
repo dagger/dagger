@@ -223,6 +223,10 @@ type ModuleSource struct {
 
 	// IncludePaths are the includes as read from the module config.
 	IncludePaths []string
+	// IncludeDeclared reports that a version 2 manifest declares include,
+	// even empty. It replaces the entrypoint's sources member: the engine
+	// loads the included files and does not run sources.
+	IncludeDeclared bool
 	// RebasedIncludePaths are the include paths with the source root subpath prepended
 	RebasedIncludePaths []string
 
@@ -556,6 +560,7 @@ type persistedModuleSourcePayload struct {
 	DisableDefaultFunctionCaching       bool                                  `json:"disableDefaultFunctionCaching,omitempty"`
 	SDK                                 *SDKConfig                            `json:"sdk,omitempty"`
 	IncludePaths                        []string                              `json:"includePaths,omitempty"`
+	IncludeDeclared                     bool                                  `json:"includeDeclared,omitempty"`
 	RebasedIncludePaths                 []string                              `json:"rebasedIncludePaths,omitempty"`
 	ConfigDependencies                  []*modules.ModuleConfigDependency     `json:"configDependencies,omitempty"`
 	DependencyResultIDs                 []uint64                              `json:"dependencyResultIDs,omitempty"`
@@ -904,6 +909,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		DisableDefaultFunctionCaching:       src.DisableDefaultFunctionCaching,
 		SDK:                                 src.SDK,
 		IncludePaths:                        slices.Clone(src.IncludePaths),
+		IncludeDeclared:                     src.IncludeDeclared,
 		RebasedIncludePaths:                 slices.Clone(src.RebasedIncludePaths),
 		ConfigDependencies:                  slices.Clone(src.ConfigDependencies),
 		ConfigBlueprint:                     src.ConfigBlueprint,
@@ -1082,6 +1088,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		DisableDefaultFunctionCaching:       persisted.DisableDefaultFunctionCaching,
 		SDK:                                 persisted.SDK,
 		IncludePaths:                        slices.Clone(persisted.IncludePaths),
+		IncludeDeclared:                     persisted.IncludeDeclared,
 		RebasedIncludePaths:                 slices.Clone(persisted.RebasedIncludePaths),
 		ConfigDependencies:                  slices.Clone(persisted.ConfigDependencies),
 		Dependencies:                        dependencies,

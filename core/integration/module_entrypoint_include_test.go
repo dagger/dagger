@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"dagger.io/dagger/core"
@@ -72,6 +74,25 @@ func includeModuleFixture(c *dagger.Client) *core.Directory {
 		WithNewFile("m/entrypoint/main.dang", includeProbeEntrypoint)
 }
 
+// raisingSourcesMember fails any load that runs it, so a module that loads
+// with it shows that the engine did not run sources.
+const raisingSourcesMember = `  pub sources(workspace: Workspace!): Directory! {
+    raise "sources ran"
+  }`
+
+// includeAndSourcesFixture is a module whose manifest declares include and
+// whose entrypoint also has a sources member, as the Go SDK generates one to
+// load on engines with and without include.
+func includeAndSourcesFixture(c *dagger.Client, include string) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("shared/value.txt", "from the shared sibling\n").
+		WithNewFile("shared/skip.txt", "excluded\n").
+		WithNewFile("other/unlisted.txt", "unlisted\n").
+		WithNewFile("m/dagger-module.toml", "name = \"m\"\ninclude = "+include+"\n\n[entrypoint]\nkind = \"dang\"\nsource = \"./entrypoint\"\n").
+		WithNewFile("m/data/local.txt", "module data\n").
+		WithNewFile("m/entrypoint/main.dang", fmt.Sprintf(sourcesProbeEntrypoint, raisingSourcesMember))
+}
+
 // TestModuleEntrypointInclude covers a manifest version 2 include: the module
 // builds from the files it names outside the module directory, and its
 // results follow them.
@@ -117,6 +138,62 @@ func (ModuleSuite) TestModuleEntrypointInclude(ctx context.Context, t *testctx.T
 		require.NoError(t, err)
 		requireLoaded(t, files)
 		require.Equal(t, "from the shared sibling", call(ctx, t, ctr, repoURL+"#main:m", "shared"))
+	})
+
+	// A manifest that declares include replaces the entrypoint's sources: the
+	// engine loads the included files and never runs sources, which here
+	// would fail the load.
+	t.Run("include replaces sources", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := goGitBase(t, c).WithDirectory(".", includeAndSourcesFixture(c, `["../shared/*.txt", "!../shared/skip.txt"]`))
+
+		requireLoaded(t, strings.Fields(call(ctx, t, ctr, "./m", "context-files")))
+		require.Equal(t, "from the shared sibling", call(ctx, t, ctr, "./m", "shared"))
+	})
+
+	// A directory module keeps its own and included files of the directory it
+	// was given, as evaluating sources narrows it.
+	t.Run("directory module with include replacing sources", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := goGitBase(t, c).WithDirectory(".", includeAndSourcesFixture(c, `["../shared/*.txt", "!../shared/skip.txt"]`))
+
+		out, err := ctr.With(daggerQuery(`{host{directory(path:"."){asModuleSource(sourceRootPath:"m"){contextDirectory{glob(pattern:"**")}}}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		var res struct {
+			Host struct {
+				Directory struct {
+					AsModuleSource struct {
+						ContextDirectory struct {
+							Glob []string
+						}
+					}
+				}
+			}
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &res))
+		requireLoaded(t, res.Host.Directory.AsModuleSource.ContextDirectory.Glob)
+	})
+
+	// Without a sources member there is nothing to replace: a directory
+	// module keeps the whole directory it was given, as before.
+	t.Run("directory module without sources keeps its directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := goGitBase(t, c).WithDirectory(".", includeModuleFixture(c))
+
+		out, err := ctr.With(daggerQuery(`{host{directory(path:"."){asModuleSource(sourceRootPath:"m"){contextDirectory{glob(pattern:"**")}}}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "other/unlisted.txt")
+	})
+
+	// An empty include replaces sources too, for a module that reads nothing
+	// outside its directory.
+	t.Run("an empty include replaces sources", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := goGitBase(t, c).WithDirectory(".", includeAndSourcesFixture(c, "[]"))
+
+		files := strings.Fields(call(ctx, t, ctr, "./m", "context-files"))
+		require.Contains(t, files, "m/data/local.txt")
+		require.NotContains(t, files, "shared/value.txt")
 	})
 
 	// A cached result answers again only while the included files are the

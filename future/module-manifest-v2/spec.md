@@ -172,6 +172,16 @@ passed, which holds the included files already. A fixed list belongs here
 rather than in `sources`, which the engine has to run before it can know the
 list.
 
+A manifest that declares `include`, even as an empty list, replaces the
+entrypoint's `sources` member: the engine does not run `sources`, and a
+directory module keeps its own and included files of the directory, as
+`sources` would. An engine that predates `include` ignores the key and runs
+`sources`, so a module that carries both loads on either engine, with the same
+files when both list them. One difference remains: a Git or directory module's
+included files keep files that `.gitignore` ignores, which a `sources` read
+with `gitignore: true` drops. A fat manifest's `include` belongs to the pre-v2
+format too, so it does not replace `sources`.
+
 ## Module entrypoint
 
 Each entrypoint provides this interface to the engine:
@@ -246,7 +256,8 @@ interface ModuleEntrypoint {
 ```
 
 The engine calls `sources` while it loads the module source, before anything
-reads the module digest. The module context becomes the returned directory
+reads the module digest, unless the manifest declares `include` (see
+[Files outside the module directory](#files-outside-the-module-directory)). The module context becomes the returned directory
 plus the module's own files: its manifest, its source directory and its
 `include` paths, as the engine loads them without the member. When the
 returned directory and the module's own files hold the same path, the module's

@@ -541,3 +541,32 @@ func TestDangVersionConfigProvenance(t *testing.T) {
 		})
 	}
 }
+
+// A rewritten version 2 manifest keeps an include it declares, which replaces
+// sources, and drops a fat manifest's, like the fat manifest's other pre-v2
+// fields, so the rewrite never turns that include into a replacement.
+func TestBuildModuleConfigKeepsOnlyADeclaredInclude(t *testing.T) {
+	entrypoint := &modules.ModuleEntrypointConfig{Kind: modules.ModuleEntrypointKindDang, Source: "./entrypoint"}
+	s := &moduleSourceSchema{}
+
+	declared, err := s.buildModuleConfig(&core.ModuleSource{
+		ModuleOriginalName: "tiny",
+		Entrypoint:         entrypoint,
+		IncludePaths:       []string{},
+		IncludeDeclared:    true,
+	})
+	require.NoError(t, err)
+	out, err := modules.MarshalModuleConfigForFilename(declared, modules.Filename)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "include = []")
+
+	fat, err := s.buildModuleConfig(&core.ModuleSource{
+		ModuleOriginalName: "tiny",
+		Entrypoint:         entrypoint,
+		IncludePaths:       []string{"../shared/*.txt"},
+	})
+	require.NoError(t, err)
+	out, err = modules.MarshalModuleConfigForFilename(fat, modules.Filename)
+	require.NoError(t, err)
+	require.NotContains(t, string(out), "include")
+}

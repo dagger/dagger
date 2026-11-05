@@ -131,12 +131,17 @@ func parseModuleManifestV2TOML(tree *toml.Tree) (*ModuleConfigWithUserFields, er
 		return nil, fmt.Errorf("%s manifest version 2 requires entrypoint.source", Filename)
 	}
 
+	var include []string
+	if manifest.Include != nil {
+		include = append([]string{}, *manifest.Include...)
+	}
 	return &ModuleConfigWithUserFields{
 		ModuleConfig: ModuleConfig{
-			Name:         manifest.Name,
-			Entrypoint:   &manifest.Entrypoint,
-			Include:      append(manifest.Include, fatManifestExclusions(tree)...),
-			Dependencies: moduleConfigDependenciesFromCurrent(manifest.Dependencies),
+			Name:            manifest.Name,
+			Entrypoint:      &manifest.Entrypoint,
+			Include:         append(include, fatManifestExclusions(tree)...),
+			IncludeDeclared: manifest.Include != nil && !hasPreV2Fields(tree),
+			Dependencies:    moduleConfigDependenciesFromCurrent(manifest.Dependencies),
 		},
 	}, nil
 }
@@ -187,9 +192,14 @@ func MarshalModuleConfigForFormat(modCfg *ModuleConfigWithUserFields, format Con
 		var buf bytes.Buffer
 		encoder := toml.NewEncoder(&buf).Order(toml.OrderPreserve)
 		if modCfg.Entrypoint != nil {
+			var include *[]string
+			if modCfg.IncludeDeclared || len(modCfg.Include) > 0 {
+				declared := append([]string{}, modCfg.Include...)
+				include = &declared
+			}
 			err = encoder.Encode(&ModuleManifestV2{
 				Name:         modCfg.Name,
-				Include:      modCfg.Include,
+				Include:      include,
 				Entrypoint:   *modCfg.Entrypoint,
 				Dependencies: currentModuleConfigDependencies(modCfg.Dependencies),
 			})
@@ -244,6 +254,10 @@ type ModuleConfig struct {
 
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty"`
+
+	// IncludeDeclared reports that a version 2 manifest declares include, even
+	// empty, which replaces its entrypoint's sources member.
+	IncludeDeclared bool `json:"-"`
 
 	// The modules this module depends on.
 	Dependencies []*ModuleConfigDependency `json:"dependencies,omitempty"`

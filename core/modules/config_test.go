@@ -67,6 +67,58 @@ include = ["../../../go.mod", "../../../util/parallel/*.go", "!../../../util/par
 	require.Equal(t, src, string(out))
 }
 
+// A version 2 manifest that declares include replaces its entrypoint's
+// sources member, even with an empty list, so an empty include is read as
+// declared and written back; one without include stays without.
+func TestModuleManifestV2IncludeDeclared(t *testing.T) {
+	t.Parallel()
+
+	empty := `name = "tiny"
+include = []
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`
+	cfg, err := ParseModuleConfigForFilename([]byte(empty), Filename)
+	require.NoError(t, err)
+	require.True(t, cfg.IncludeDeclared)
+	require.Empty(t, cfg.Include)
+	out, err := MarshalModuleConfigForFilename(cfg, Filename)
+	require.NoError(t, err)
+	require.Equal(t, empty, string(out))
+
+	without := `name = "tiny"
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`
+	cfg, err = ParseModuleConfigForFilename([]byte(without), Filename)
+	require.NoError(t, err)
+	require.False(t, cfg.IncludeDeclared)
+
+	// A fat manifest's include also serves the pre-v2 format, whose include
+	// never had to list what sources returns, so it doesn't replace sources.
+	fat, err := ParseModuleConfigForFilename([]byte(`name = "tiny"
+include = ["../shared/*.txt"]
+
+[runtime]
+source = "go"
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`), Filename)
+	require.NoError(t, err)
+	require.NotNil(t, fat.Entrypoint)
+	require.Equal(t, []string{"../shared/*.txt"}, fat.Include)
+	require.False(t, fat.IncludeDeclared)
+	out, err = MarshalModuleConfigForFilename(cfg, Filename)
+	require.NoError(t, err)
+	require.Equal(t, without, string(out))
+}
+
 // A fat manifest's include applies to both formats, so a version 2 read takes
 // its pre-v2 exclude with it, as the pre-v2 format does.
 func TestFatModuleManifestIncludeKeepsExclude(t *testing.T) {

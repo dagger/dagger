@@ -1229,6 +1229,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	// module with dagger/go, which the module itself never calls.
 	src.EntrypointOnlyDependencies = modCfg.Entrypoint != nil && modCfg.SDK == nil
 	src.IncludePaths = modCfg.Include
+	src.IncludeDeclared = modCfg.IncludeDeclared
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
@@ -1547,8 +1548,16 @@ func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src 
 // loadEntrypointSources adds what the entrypoint's sources member returns to
 // the module context. It runs while the source loads, because dependents and
 // the declaredClients input hash the module digest without loading the module.
+// A manifest that declares include, even empty, replaces sources: the context
+// already holds the included files, and an engine that predates include runs
+// sources instead, so one module can carry both.
 func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *core.ModuleSource) (rerr error) {
 	if src.Entrypoint == nil {
+		return nil
+	}
+	isDirectory := src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil
+	if src.IncludeDeclared && !isDirectory {
+		// Other sources already load only the module's own and included files.
 		return nil
 	}
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -1569,6 +1578,11 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	}
 	if !declared {
 		return nil
+	}
+	if src.IncludeDeclared {
+		// The directory source's context is the whole directory. Narrow it as
+		// evaluating sources would, so the module builds from the same files.
+		return keepDirectoryModuleOwnFiles(ctx, dag, src)
 	}
 
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("entrypoint sources: %s", src.ModuleName), telemetry.Internal())
@@ -1629,6 +1643,20 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	src.ContextDirectory = contextDir
 	slog.Info("entrypoint sources evaluated", "module", src.ModuleName)
 	return nil
+}
+
+// keepDirectoryModuleOwnFiles narrows a directory source's context, the whole
+// directory, to the module's own files and the files its manifest includes,
+// without repository metadata, as evaluating sources and merging what it
+// returns narrows it, for a module whose include replaces sources.
+func keepDirectoryModuleOwnFiles(ctx context.Context, dag *dagql.Server, src *core.ModuleSource) error {
+	return dag.Select(ctx, src.DirSrc.OriginalContextDir, &src.ContextDirectory, dagql.Selector{
+		Field: "filter",
+		Args: []dagql.NamedInput{
+			{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(moduleSourceContextIncludes(src)...))},
+			{Name: "exclude", Value: dagql.ArrayInput[dagql.String]{".git", "**/.git"}},
+		},
+	})
 }
 
 // mergeEntrypointSources overlays the module's own files as the engine loads
@@ -3057,12 +3085,19 @@ func (s *moduleSourceSchema) buildModuleConfig(
 	src *core.ModuleSource,
 ) (*modules.ModuleConfigWithUserFields, error) {
 	if src.Entrypoint != nil {
-		return &modules.ModuleConfigWithUserFields{
+		cfg := &modules.ModuleConfigWithUserFields{
 			ModuleConfig: modules.ModuleConfig{
 				Name:       src.ModuleOriginalName,
 				Entrypoint: src.Entrypoint,
 			},
-		}, nil
+		}
+		// A version 2 manifest's own include, which replaces sources. A fat
+		// manifest's include, like its other pre-v2 fields, is not written.
+		if src.IncludeDeclared {
+			cfg.Include = src.IncludePaths
+			cfg.IncludeDeclared = true
+		}
+		return cfg, nil
 	}
 
 	// construct the module config based on any config read during load and any settings changed via with* APIs
