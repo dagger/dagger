@@ -384,10 +384,11 @@ var goSDKModuleImports = []string{
 // version they pin and sdk/go's requirements. GoImageEntriesSeed has the
 // standard library's.
 //
-// Measurement only, until a release carries sdk/go's raised requirements: then
-// goSDKModuleLibVersion names that release, whose go.mod requires them, and the
-// seed needs no requirements of its own. Until then a new go-sdk module on the
-// released target's lower requirements misses these builds.
+// The seed requires sdk/go's raised requirements itself until a release of
+// dagger.io/dagger carries them. Then goSDKModuleLibVersion names that release,
+// whose go.mod requires them, and the seed needs no requirements of its own.
+// Until then a new go-sdk module on the released target's lower requirements
+// misses these builds.
 func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context) (*dagger.Directory, error) {
 	sdkGoMod, err := build.source.File("sdk/go/go.mod").Contents(ctx)
 	if err != nil {
