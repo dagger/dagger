@@ -31,12 +31,21 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{/*
+Engine version for the chart version. Build metadata, such as the "+<digest>"
+that Flux appends to charts from OCI repositories, is not part of the engine's
+release tag and is not allowed in image tags.
+*/}}
+{{- define "dagger.engineVersion" -}}
+{{- regexReplaceAll "\\+.*$" .Chart.Version "" }}
+{{- end }}
+
+{{/*
 Common labels
 */}}
 {{- define "dagger.labels" -}}
 helm.sh/chart: {{ include "dagger.chart" . }}
 {{ include "dagger.selectorLabels" . }}
-app.kubernetes.io/version: v{{ .Chart.Version | replace "+" "_" | trunc 62 | trimSuffix "-" }}
+app.kubernetes.io/version: v{{ include "dagger.engineVersion" . | trunc 62 | trimSuffix "-" }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: {{ template "dagger.name" . }}
 {{- if .Values.engine.labels }}
