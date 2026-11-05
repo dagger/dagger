@@ -2349,14 +2349,7 @@ type File implements Exportable & Node & Syncer {
   id: ID!
 
   """Force evaluation in the engine."""
-  sync(
-    """
-    Also key the file by its content, so that what consumes it is cached across
-    any two recipes that produce the same file. This hashes the file unless it
-    already has a content key.
-    """
-    keyByContent: Boolean = false
-  ): ID! @expectedType(name: "File")
+  sync: ID! @expectedType(name: "File")
 
   """Retrieves the contents of the file."""
   contents(
