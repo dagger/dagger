@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
@@ -228,6 +229,56 @@ func (ClientSuite) TestQuerySchemaVersion(ctx context.Context, t *testctx.T) {
 	}](t, `{ __schemaVersion }`, nil, dagger.WithVersionOverride("v123.456.789"))
 	require.NoError(t, err)
 	require.Equal(t, "v123.456.789", v.SchemaVersion)
+}
+
+// TestCoreEnumResultViews checks wire result spelling for the receiving
+// client's view, independently of the module's fixed engine version. These
+// core enums only appear as inputs in the core schema, so an ordinary module
+// supplies result fields without adding an API to the engine.
+func (ClientSuite) TestCoreEnumResultViews(ctx context.Context, t *testctx.T) {
+	clients := []struct {
+		version, policy, compression, mediaTypes string
+		client                                   *dagger.Client
+	}{
+		{version: "v1.0.0-beta.25", policy: "Never", compression: "EStarGZ", mediaTypes: "OCIMediaTypes"},
+		{version: engine.IdentifierCasingVersion, policy: "NEVER", compression: "ESTARGZ", mediaTypes: "OCI"},
+	}
+	for i := range clients {
+		c := connect(ctx, t, dagger.WithVersionOverride(clients[i].version))
+		clients[i].client = c
+		mod := core.NewQuery(c).Directory().
+			WithNewFile("dagger-module.toml", fmt.Sprintf(`name = "enum-results"
+engineVersion = %q
+source = "."
+[runtime]
+source = "dang"
+`, engine.IdentifierCasingVersion)).
+			WithNewFile("main.dang", `type EnumResults {
+  pub policy: FunctionCachePolicy! { FunctionCachePolicy.NEVER }
+  pub compression: ImageLayerCompression! { ImageLayerCompression.ESTARGZ }
+  pub mediaTypes: ImageMediaTypes! { ImageMediaTypes.OCI }
+}
+`).AsModuleSource().AsModule()
+		require.NoError(t, mod.Serve(ctx))
+	}
+
+	// Keep both clients alive on the same engine and revisit each view after
+	// querying the other, so cached results must not retain a receiver's spelling.
+	for _, i := range []int{0, 1, 0, 1} {
+		tc := clients[i]
+		result, err := testutil.QueryWithClient[struct {
+			SchemaVersion string `json:"__schemaVersion"`
+			EnumResults   struct {
+				Policy, Compression, MediaTypes string
+			}
+		}](tc.client, t, `{ __schemaVersion enumResults { policy compression mediaTypes } }`, nil)
+		require.NoError(t, err, tc.version)
+		require.Equal(t, tc.version, result.SchemaVersion)
+		// Decode into strings, not SDK enum types that could normalize the wire value.
+		require.Equal(t, tc.policy, result.EnumResults.Policy, tc.version)
+		require.Equal(t, tc.compression, result.EnumResults.Compression, tc.version)
+		require.Equal(t, tc.mediaTypes, result.EnumResults.MediaTypes, tc.version)
+	}
 }
 
 // TestSessionRetiredByEngineReportsCause stops a `dagger session` process long
