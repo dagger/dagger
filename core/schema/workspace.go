@@ -4683,7 +4683,6 @@ func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.S
 }
 
 func matchWorkspaceIncludePath(
-	ctx context.Context,
 	namer core.Namer,
 	path core.ModTreePath,
 	include []string,
@@ -4695,12 +4694,12 @@ func matchWorkspaceIncludePath(
 		return false, nil
 	}
 	for _, pattern := range include {
-		if match, err := path.Glob(ctx, namer, pattern); err != nil {
+		if match, err := path.Glob(namer, pattern); err != nil {
 			return false, err
 		} else if match {
 			return true, nil
 		}
-		if match, err := path.Glob(ctx, namer, pattern+":**"); err != nil || match {
+		if match, err := path.Glob(namer, pattern+":**"); err != nil || match {
 			return match, err
 		}
 	}
@@ -4855,21 +4854,21 @@ func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string, main bool
 	root.WorkspaceMain = main
 }
 
-func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include []string) (bool, error) {
+func matchWorkspaceInclude(node *core.ModTreeNode, include []string) (bool, error) {
 	if len(include) == 0 {
 		return true, nil
 	}
 	if node == nil {
 		return false, nil
 	}
-	match, err := node.Match(ctx, include)
+	match, err := node.Match(include)
 	if err != nil || match {
 		return match, err
 	}
-	if match, err := matchWorkspaceIncludePath(ctx, core.LatestNamer, node.Path(), include); err != nil || match {
+	if match, err := matchWorkspaceIncludePath(core.LatestNamer, node.Path(), include); err != nil || match {
 		return match, err
 	}
-	return matchWorkspaceIncludePath(ctx, core.LatestNamer, node.CommandPath(), include)
+	return matchWorkspaceIncludePath(core.LatestNamer, node.CommandPath(), include)
 }
 
 // withWorkspaceClientContext stamps the workspace owner's immutable client

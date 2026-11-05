@@ -693,29 +693,28 @@ func TestInitialWorkspaceConfigOmitsCheckGenerated(t *testing.T) {
 }
 
 func TestMatchWorkspaceInclude(t *testing.T) {
-	ctx := context.Background()
 	node := modTreeNode("go", "lint")
 
 	t.Run("empty include matches everything", func(t *testing.T) {
-		match, err := matchWorkspaceInclude(ctx, node, nil)
+		match, err := matchWorkspaceInclude(node, nil)
 		require.NoError(t, err)
 		require.True(t, match)
 	})
 
 	t.Run("module-prefixed pattern matches", func(t *testing.T) {
-		match, err := matchWorkspaceInclude(ctx, node, []string{"go:lint"})
+		match, err := matchWorkspaceInclude(node, []string{"go:lint"})
 		require.NoError(t, err)
 		require.True(t, match)
 	})
 
 	t.Run("wildcard module pattern matches", func(t *testing.T) {
-		match, err := matchWorkspaceInclude(ctx, node, []string{"go:**"})
+		match, err := matchWorkspaceInclude(node, []string{"go:**"})
 		require.NoError(t, err)
 		require.True(t, match)
 	})
 
 	t.Run("other module does not match", func(t *testing.T) {
-		match, err := matchWorkspaceInclude(ctx, node, []string{"helm:**"})
+		match, err := matchWorkspaceInclude(node, []string{"helm:**"})
 		require.NoError(t, err)
 		require.False(t, match)
 	})
@@ -729,7 +728,6 @@ func TestCurrentArtifactOverlayNarrowing(t *testing.T) {
 }
 
 func TestMatchWorkspaceIncludeCurrentSpelling(t *testing.T) {
-	ctx := t.Context()
 	mod, err := dagql.NewResultForCall(&core.Module{SourceOverrides: &core.SourceOverrides{EngineVersion: "v1.0.0-beta.20"}}, &dagql.ResultCall{})
 	require.NoError(t, err)
 	node := modTreeNode("e2e-tests", "k8SCluster", "e2ETest")
@@ -744,12 +742,12 @@ func TestMatchWorkspaceIncludeCurrentSpelling(t *testing.T) {
 		{"{e2e-tests,other}:k8s-cluster", true},
 		{"e-2-e-tests:k-8-s-cluster:e-2-e-test", false},
 	} {
-		match, err := matchWorkspaceInclude(ctx, node, []string{tc.pattern})
+		match, err := matchWorkspaceInclude(node, []string{tc.pattern})
 		require.NoError(t, err)
 		require.Equal(t, tc.want, match, tc.pattern)
 	}
 	node.Parent.Parent.WorkspaceMain = true
-	match, err := matchWorkspaceInclude(ctx, node, []string{"k8s-cluster:e2e-test"})
+	match, err := matchWorkspaceInclude(node, []string{"k8s-cluster:e2e-test"})
 	require.NoError(t, err)
 	require.True(t, match)
 	require.Equal(t, "e2ETest", node.Name, "include matching does not rename GraphQL fields")
@@ -793,7 +791,6 @@ func TestWorkspaceConfigWithCompatFallback(t *testing.T) {
 }
 
 func TestArtifactNodesByInclude(t *testing.T) {
-	ctx := context.Background()
 	for _, test := range []struct {
 		name    string
 		main    bool
@@ -813,7 +810,7 @@ func TestArtifactNodesByInclude(t *testing.T) {
 			matched := 0
 			for _, node := range nodes {
 				node.Parent.WorkspaceMain = test.main
-				match, err := matchWorkspaceInclude(ctx, node, test.include)
+				match, err := matchWorkspaceInclude(node, test.include)
 				require.NoError(t, err)
 				if match {
 					matched++
@@ -826,7 +823,6 @@ func TestArtifactNodesByInclude(t *testing.T) {
 
 // A generator selector also includes its stale check.
 func TestGenerateCheckPatterns(t *testing.T) {
-	ctx := context.Background()
 	for _, test := range []struct {
 		name     string
 		main     bool
@@ -850,7 +846,7 @@ func TestGenerateCheckPatterns(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			node := modTreeNode("alpha-sdk", "generate", "stale")
 			node.Parent.Parent.WorkspaceMain = test.main
-			match, err := matchWorkspaceInclude(ctx, node, test.patterns)
+			match, err := matchWorkspaceInclude(node, test.patterns)
 			require.NoError(t, err)
 			require.Equal(t, test.included, match)
 		})

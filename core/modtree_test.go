@@ -180,7 +180,7 @@ func (s *ModTreePathTestSuite) TestIsParentOf(ctx context.Context, t *testctx.T)
 	for _, tc := range testCases {
 		for _, namer := range []Namer{LegacyNamer, LatestNamer} {
 			s.Run(tc.name, func() {
-				result := tc.parent.Contains(ctx, namer, tc.child)
+				result := tc.parent.Contains(namer, tc.child)
 				require.Equal(s.T(), tc.expected, result, "parent: %v, child: %v, legacy: %v", tc.parent, tc.child, namer.Legacy())
 			})
 		}
@@ -379,7 +379,7 @@ func (s *ModTreePathTestSuite) TestGlob(ctx context.Context, t *testctx.T) {
 	for _, tc := range testCases {
 		for _, namer := range []Namer{LegacyNamer, LatestNamer} {
 			s.Run(tc.name, func() {
-				result, err := tc.path.Glob(ctx, namer, tc.pattern)
+				result, err := tc.path.Glob(namer, tc.pattern)
 				require.NoError(s.T(), err)
 				require.Equal(s.T(), tc.expected, result, "path: %v, pattern: %s, legacy: %v", tc.path, tc.pattern, namer.Legacy())
 			})

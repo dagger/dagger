@@ -911,7 +911,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			Directives: node.Directives, TypeName: node.ObjectType().Name, Node: node, Workspace: parent,
 		}
 		loaded = append(loaded, entry)
-		match, err := matchWorkspaceInclude(ctx, node, include)
+		match, err := matchWorkspaceInclude(node, include)
 		if err != nil {
 			return nil, err
 		}
