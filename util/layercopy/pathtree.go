@@ -100,7 +100,7 @@ func (t *PathTree) SelectedFiles(root string, filter Filter) ([]string, error) {
 				}
 				continue
 			}
-			if !m.shouldDescend(childRel, state) {
+			if !m.shouldDescend(childRel, state) || !m.mayHoldIncluded(childRel, state) {
 				continue
 			}
 			if err := walk(childRel, state); err != nil {
