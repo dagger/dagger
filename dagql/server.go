@@ -375,7 +375,10 @@ func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
 
 		// HACK: this rule is disabled because PHP modules <=v0.15.2 query
 		// inputArgs incorrectly.
-		validationRules.RemoveRule(rules.ScalarLeafsRule.Name)
+		//
+		// It is replaced with a no-op rather than removed: gqlgen adds
+		// ScalarLeafs back after this function whenever no rule has its name.
+		validationRules.ReplaceRule(rules.ScalarLeafsRule.Name, func(*validatorcore.Events, validatorcore.AddErrFunc) {})
 
 		// Replace PossibleFragmentSpreads with a version that handles
 		// interface-implements-interface per the GraphQL spec.  The
