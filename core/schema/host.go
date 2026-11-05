@@ -46,6 +46,9 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			WithInput(engineDefaultPlatformInput).
 			IsPersistable().
 			Doc("Retrieves a container builtin to the engine."),
+
+		dagql.NodeFunc("_engineImageBundle", s.engineImageBundle).
+			Doc("The entries of results, exported for an engine image to ship: a directory's or file's snapshot, a container's image config and filesystem, and a Git module source's checkout. Returns the bundle an engine built from the image merges at start, and its blobs. Called by the engine image's build."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{

@@ -42,6 +42,24 @@ const cloudCacheID CacheID = "cloud"
 // CloudCacheID is the sending cache an engine's merges name: the Cloud.
 const CloudCacheID = cloudCacheID
 
+// imageCacheID is the identity an engine keys its image holdings by: the
+// entries the engine's image ships, which it merges at start. Like the Cloud
+// holding, an image holding owns nothing, and it carries the image's offers.
+// It is never reported to the Cloud nor renewed, and the engine never exports
+// an entry it holds: every engine built from the image has it.
+const imageCacheID CacheID = "image"
+
+// ImageCacheID is the sending cache of the merge of the engine image's
+// entries.
+const ImageCacheID = imageCacheID
+
+// senderCache reports whether cache names one of an engine's senders, the
+// Cloud or its image, whose holdings own nothing, rather than an engine
+// cache.
+func senderCache(cache CacheID) bool {
+	return cache == cloudCacheID || cache == imageCacheID
+}
+
 // HolderKey names one entry of one engine cache: the cache's identity and the
 // entry's result number there.
 type HolderKey struct {
@@ -324,7 +342,7 @@ type remoteCacheState struct {
 func (res *sharedResult) noValueLocked() bool {
 	engineHolding := false
 	for key := range res.holders {
-		if key.Cache != cloudCacheID {
+		if !senderCache(key.Cache) {
 			engineHolding = true
 			break
 		}
@@ -401,8 +419,9 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 	if key.Cache == "" || key.Number == 0 || desc.Recipe == "" {
 		return change, fmt.Errorf("attach remote holding: empty key or recipe")
 	}
-	if key.Cache == cloudCacheID {
-		// An engine's Cloud holding owns nothing; merges and offers keep it.
+	if senderCache(key.Cache) {
+		// An engine's Cloud and image holdings own nothing; merges and offers
+		// keep them.
 		return change, fmt.Errorf("attach remote holding: %q is not an engine cache", key.Cache)
 	}
 	parts, err := heldPartKeys(desc.Parts)
@@ -523,7 +542,7 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 // owner of, for the next CollectRemoteHoldings, and the recipes it affected.
 func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueBundle, reply MergeReply) (RemoteChange, error) {
 	var change RemoteChange
-	if cache == "" || cache == cloudCacheID {
+	if cache == "" || senderCache(cache) {
 		return change, fmt.Errorf("apply merged reply: %q is not an engine cache", cache)
 	}
 	cloudEntries := make(map[TransferOrdinal]sharedResultID, len(sent.Values))

@@ -325,6 +325,14 @@ func (c *Cache) offerPart(ctx context.Context, root *sharedResult, item CloudPar
 	// accepted is the offer this call attached, for prefetching.
 	var accepted *partOffer
 	if out.Outcome == OfferAccepted {
+		if _, image := row.imageHoldingLocked(); image != nil {
+			// The engine image ships the row and offers its parts from the
+			// engine's own disk: the Cloud's offer is left out, and the row
+			// takes no Cloud holding from it.
+			out.Outcome = OfferUnavailable
+		}
+	}
+	if out.Outcome == OfferAccepted {
 		current := row.partOfferLocked(key)
 		if current != old {
 			out.Outcome, out.Err = OfferUnavailable, ErrPersistStateNotReady

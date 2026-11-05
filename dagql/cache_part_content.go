@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -61,6 +62,9 @@ type PartContentSource struct {
 	bridge    atomic.Pointer[RemoteCacheBridge]
 	mu        sync.Mutex // M: attachment and this cache's exchange state
 	override  atomic.Pointer[partContentOverride]
+	// image is the engine image's directory, which supplies the image's
+	// offers (SetImageContent); nil until it is set.
+	image atomic.Pointer[os.Root]
 	// ranges is how large blobs are read in parallel. Fixed once the
 	// source is in use.
 	ranges partRangeConfig
@@ -122,9 +126,13 @@ func (s *PartContentSource) roundTripper() http.RoundTripper {
 }
 
 // Available reports whether an offer can supply bytes now. An empty chain is
-// scratch; otherwise every blob needs a usable address, or the offer needs a
-// renewal key with a bridge attached. It performs no I/O.
+// scratch; an image offer needs the image's directory; otherwise every blob
+// needs a usable address, or the offer needs a renewal key with a bridge
+// attached. It performs no I/O.
 func (s *PartContentSource) Available(offer PersistedPartOffer, now time.Time) bool {
+	if imageOfferLayers(&offer) {
+		return s.imageAvailable(&offer)
+	}
 	if override := s.loadOverride(); override != nil {
 		return override.Available(offer, now)
 	}
@@ -142,6 +150,12 @@ func (s *PartContentSource) Provider(ctx context.Context, offer PersistedPartOff
 	// override lookup: a gated engine installs a fixture override, and a
 	// marked context must not reach the delegate that counts reads.
 	if engine.IsSnapshotSharePreparation(ctx) {
+		return refusingContentProvider{}
+	}
+	if imageOfferLayers(&offer) {
+		if root := s.imageRoot(); root != nil {
+			return newImagePartProvider(root, offer)
+		}
 		return refusingContentProvider{}
 	}
 	if override := s.loadOverride(); override != nil {

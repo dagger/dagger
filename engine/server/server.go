@@ -586,6 +586,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 
+	// The image's entries join the cache before the server dispatches any
+	// request, so the first module build already finds them.
+	if err := srv.mergeImageEntries(ctx, distconsts.EngineContainerImageEntriesDir); err != nil {
+		return nil, err
+	}
+
 	// The integration attaches after local cache initialization and before
 	// the server dispatches any request.
 	if err := srv.startRemoteCacheIntegration(opts.RemoteCacheIntegration); err != nil {

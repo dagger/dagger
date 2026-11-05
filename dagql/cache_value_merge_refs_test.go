@@ -35,7 +35,7 @@ func TestMergePreparationRelocatesAsValidateThenVisit(t *testing.T) {
 	engine.egraphMu.Lock()
 	engine.nextSharedResultID = 10_000
 	engine.egraphMu.Unlock()
-	prep, err := engine.prepareValueMerge(ctx, got.Bundle, false)
+	prep, err := engine.prepareValueMerge(ctx, cloudCacheID, got.Bundle, false)
 	require.NoError(t, err)
 	require.Empty(t, prep.stale)
 	require.Equal(t, uint64(10_000), prep.firstID)

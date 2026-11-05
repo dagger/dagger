@@ -54,7 +54,7 @@ func (c *Cache) currentEntryForRecipeLocked(recipe digest.Digest) *sharedResult 
 
 // resultInUseLocked reports whether anything uses res: a session that still
 // records it, or any ownership unit besides its retention edge and other
-// caches' holdings. An engine's Cloud holding is no unit: it owns nothing.
+// caches' holdings. An engine's Cloud and image holdings are no units: they own nothing.
 // Those units are other entries' dependency edges and offer owners,
 // sessions, and the holds of tasks working on the entry: a publication's
 // handoff, a part task or demand, a capture, a sharing pass. A lazy attempt
@@ -64,7 +64,7 @@ func (c *Cache) currentEntryForRecipeLocked(recipe digest.Digest) *sharedResult 
 func (c *Cache) resultInUseLocked(res *sharedResult) bool {
 	idle := int64(0)
 	for key := range res.holders {
-		if key.Cache != cloudCacheID {
+		if !senderCache(key.Cache) {
 			idle++
 		}
 	}

@@ -39,6 +39,11 @@ const (
 	GoSDKManifestDigestEnvName         = "DAGGER_GO_SDK_MANIFEST_DIGEST"
 	PythonSDKManifestDigestEnvName     = "DAGGER_PYTHON_SDK_MANIFEST_DIGEST"
 	TypescriptSDKManifestDigestEnvName = "DAGGER_TYPESCRIPT_SDK_MANIFEST_DIGEST"
+
+	// EngineContainerImageEntriesDir holds the entries the engine image ships,
+	// which the engine merges into its cache at start: their bundle and its
+	// blobs.
+	EngineContainerImageEntriesDir = "/usr/local/share/dagger/entries"
 )
 
 const (

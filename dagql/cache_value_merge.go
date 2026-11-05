@@ -18,7 +18,7 @@ import (
 // replaces a fresh import: every record lands on its recipe's current entry
 // when the cache has one. The Cloud calls it to store an engine's export, from
 // that engine's cache; an engine calls it for the Cloud's merge, from
-// cloudCacheID.
+// cloudCacheID, and at start for its image's entries, from imageCacheID.
 //
 // It derives each record's recipe outside the graph lock, in a private cache
 // with provisional numbers, as an import did. An engine prepares a record its
@@ -114,14 +114,19 @@ func (c *Cache) PrepareValueMerge(ctx context.Context, from CacheID, input Value
 		return nil, fmt.Errorf("merge values: no sending cache")
 	case c.blobBacked && from == cloudCacheID:
 		return nil, fmt.Errorf("merge values: the Cloud merges from engine caches")
-	case !c.blobBacked && from != cloudCacheID:
-		return nil, fmt.Errorf("merge values: an engine merges only from the Cloud, not %q", from)
+	case !c.blobBacked && !senderCache(from):
+		return nil, fmt.Errorf("merge values: an engine merges only from the Cloud or its image, not %q", from)
+	}
+	if !c.blobBacked {
+		if err := checkSenderAddresses(from, input); err != nil {
+			return nil, err
+		}
 	}
 	op, err := c.beginCacheOperation()
 	if err != nil {
 		return nil, err
 	}
-	prep, err := c.prepareValueMerge(ctx, input, true)
+	prep, err := c.prepareValueMerge(ctx, from, input, true)
 	if err != nil {
 		op.finish(false)
 		return nil, err
@@ -189,7 +194,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		}
 		if errors.Is(err, errMergeNeedsFullPrep) {
 			c.egraphMu.Unlock()
-			if prep, err = c.prepareValueMerge(ctx, input, false); err != nil {
+			if prep, err = c.prepareValueMerge(ctx, from, input, false); err != nil {
 				return MergeReply{}, err
 			}
 			if len(prep.stale) > 0 {
@@ -301,6 +306,8 @@ func (r MergeReply) Imported() []ImportedValue {
 // in a private cache under provisional numbers. A record that becomes a new
 // entry keeps its provisional number, firstID + ordinal - 1.
 type valueMergePrep struct {
+	// from is the cache the bundle is from.
+	from    CacheID
 	bundle  ValueBundle
 	order   []uint64
 	index   map[uint64]*TransferredValue
@@ -384,7 +391,7 @@ var errMergeNeedsFullPrep = errors.New("merge values: a light record is installe
 //
 // It returns ctx's cause when ctx is cancelled: it checks before each payload
 // and once more at the end.
-func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKept bool) (*valueMergePrep, error) {
+func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input ValueBundle, skipKept bool) (*valueMergePrep, error) {
 	bundle, err := cloneValueBundle(input)
 	if err != nil {
 		return nil, err
@@ -417,7 +424,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 		}
 		recordBytes = map[uint64]int64{}
 	}
-	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, held: map[uint64]bool{}, heldParts: heldParts}
+	prep := &valueMergePrep{from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, held: map[uint64]bool{}, heldParts: heldParts}
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
 		prep.index[uint64(row.Ordinal)] = row
@@ -549,9 +556,9 @@ func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, hel
 		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle}
 		res.storeResultCall(rec.Call)
 		if !c.blobBacked {
-			// The private offers attach to a Cloud holding, as they will in
-			// the cache.
-			res.noteCloudCopyLocked(row.SenderNumber, true, row.ExpiresAtUnix)
+			// The private offers attach to the sender's holding, as they will
+			// in the cache.
+			res.noteSenderCopyLocked(prep.from, row.SenderNumber, true, row.ExpiresAtUnix)
 		}
 		private.putResultLocked(res)
 	}
@@ -1622,10 +1629,10 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 }
 
 // applyMergedIdentitiesLocked gives every row's entry the record's identity
-// and the sender's holding: on an engine its Cloud holding, on the Cloud the
-// sending engine's holding, adding to change. On the Cloud, the entries the
-// identity joins to another class are affected too. A held row teaches its
-// entry nothing but, on an engine, its Cloud holding. Requires egraphMu for
+// and the sender's holding: on an engine its Cloud or image holding, on the
+// Cloud the sending engine's holding, adding to change. On the Cloud, the
+// entries the identity joins to another class are affected too. A held row
+// teaches its entry nothing but, on an engine, the sender's holding. Requires egraphMu for
 // writing.
 func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMergeCommit, change *RemoteChange) {
 	var cloudState *remoteCacheState
@@ -1641,7 +1648,7 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 			// record made when it arrived in full, and a held row, with no
 			// dependencies, has nothing to add to it.
 			if !c.blobBacked {
-				row.res.noteCloudCopyLocked(row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+				row.res.noteSenderCopyLocked(commit.from, row.value.SenderNumber, true, row.value.ExpiresAtUnix)
 			}
 			continue
 		}
@@ -1651,9 +1658,9 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		}
 		c.applyPreparedResultIdentityLocked(ctx, row.res, frame, row.plan.recipe, row.plan.self, row.plan.inputs, row.plan.provenance, row.plan.recipe)
 		if !c.blobBacked {
-			// The Cloud entry that sent the record stores it, with the
-			// record's expiry.
-			row.res.noteCloudCopyLocked(row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+			// The sender's entry stores the record: the Cloud's, with the
+			// record's expiry, or the engine image's.
+			row.res.noteSenderCopyLocked(commit.from, row.value.SenderNumber, true, row.value.ExpiresAtUnix)
 			continue
 		}
 		c.mergeSenderHoldingLocked(ctx, cloudState, commit, row, change)
@@ -1840,6 +1847,13 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 	)
 	seen := map[*sharedResult]bool{}
 	for _, row := range commit.rows {
+		if commit.from == cloudCacheID {
+			if _, image := row.res.imageHoldingLocked(); image != nil {
+				// The image offers the entry's parts from the engine's own
+				// disk: the Cloud's offers of them are left out.
+				continue
+			}
+		}
 		if !seen[row.res] && len(commit.newOffers[row.res]) > 0 {
 			seen[row.res] = true
 			entries = append(entries, row.res)

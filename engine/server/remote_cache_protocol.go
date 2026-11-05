@@ -99,6 +99,8 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 			skipped = append(skipped, protocol.SkippedRoot{Number: number, Reason: protocol.SkipGone})
 		case err != nil:
 			return err
+		case a.cache.FromImage(res):
+			skipped = append(skipped, protocol.SkippedRoot{Number: number, Reason: protocol.SkipRefused, Message: dagql.ErrFromImage.Error()})
 		default:
 			roots = append(roots, heldRoot{number: number, result: res})
 		}
@@ -112,6 +114,8 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 		case errors.Is(err, dagql.ErrUnknownEntry):
 		case err != nil:
 			return err
+		case a.cache.FromImage(res):
+			// The image supplies the part to every engine built from it.
 		default:
 			outputs = append(outputs, dagql.SelectedValueOutput{Result: res, Address: output.Address})
 		}

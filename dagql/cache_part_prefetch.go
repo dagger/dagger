@@ -346,6 +346,11 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 	if p == nil || offer == nil {
 		return
 	}
+	if imageOfferLayers(&offer.record) {
+		// The image's blobs are on the engine's own disk: a demand reads
+		// them there, with nothing to fetch ahead.
+		return
+	}
 	var wanted [partPrefetchLanes]bool
 	var size int64
 	for _, layer := range offer.record.Chain.Layers {
