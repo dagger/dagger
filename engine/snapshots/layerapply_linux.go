@@ -16,11 +16,14 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/diff/apply"
+	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/archive"
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/continuity/sysx"
 	"github.com/containerd/log"
+	"github.com/containerd/typeurl/v2"
+	"github.com/dagger/dagger/util/compressutil"
 	"github.com/moby/sys/userns"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -90,6 +93,38 @@ func layerApplyTarget(mounts []mount.Mount) (layerTarget, bool) {
 	return layerTarget{}, false
 }
 
+// layerTarStream is the layer's tar, read from blob. A layer media type
+// containerd knows is read as its compressed-layer processor reads it, the
+// processor containerd picks for it when nothing else is registered, as in
+// the engine, except that a zstd decoder is reused across layers
+// (compressutil.DecompressStream). Any other media type goes through
+// containerd's processors, which are returned to be checked for errors once
+// the tar has been read.
+func layerTarStream(ctx context.Context, desc ocispecs.Descriptor, blob io.Reader, payloads map[string]typeurl.Any) (io.ReadCloser, []diff.StreamProcessor, error) {
+	if compressed, err := images.DiffCompression(ctx, desc.MediaType); err == nil {
+		if compressed == "" {
+			return io.NopCloser(blob), nil, nil
+		}
+		ds, err := compressutil.DecompressStream(blob)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decompress %s: %w", desc.MediaType, err)
+		}
+		return ds, nil, nil
+	}
+	processor := diff.NewProcessorChain(desc.MediaType, blob)
+	processors := []diff.StreamProcessor{processor}
+	for {
+		var err error
+		if processor, err = diff.GetProcessor(ctx, processor, payloads); err != nil {
+			return nil, nil, fmt.Errorf("failed to get stream processor for %s: %w", desc.MediaType, err)
+		}
+		processors = append(processors, processor)
+		if processor.MediaType() == ocispecs.MediaTypeImageLayer {
+			return processor, processors, nil
+		}
+	}
+}
+
 // Apply is containerd's fsApplier.Apply with the extraction replaced.
 func (a *layerApplier) Apply(ctx context.Context, desc ocispecs.Descriptor, mounts []mount.Mount, opts ...diff.ApplyOpt) (ocispecs.Descriptor, error) {
 	target, ok := layerApplyTarget(mounts)
@@ -111,20 +146,13 @@ func (a *layerApplier) Apply(ctx context.Context, desc ocispecs.Descriptor, moun
 	read := &applyCounter{r: content.NewReader(ra), progress: config.Progress}
 	defer read.report()
 
-	processor := diff.NewProcessorChain(desc.MediaType, read)
-	processors := []diff.StreamProcessor{processor}
-	for {
-		if processor, err = diff.GetProcessor(ctx, processor, config.ProcessorPayloads); err != nil {
-			return ocispecs.Descriptor{}, fmt.Errorf("failed to get stream processor for %s: %w", desc.MediaType, err)
-		}
-		processors = append(processors, processor)
-		if processor.MediaType() == ocispecs.MediaTypeImageLayer {
-			break
-		}
+	layer, processors, err := layerTarStream(ctx, desc, read, config.ProcessorPayloads)
+	if err != nil {
+		return ocispecs.Descriptor{}, err
 	}
-	defer processor.Close()
+	defer layer.Close()
 
-	rc := startLayerReadAhead(processor)
+	rc := startLayerReadAhead(layer)
 	defer rc.stop()
 	if err := applyLayerTar(ctx, target, rc); err != nil {
 		return ocispecs.Descriptor{}, err

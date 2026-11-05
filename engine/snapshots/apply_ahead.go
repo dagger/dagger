@@ -10,8 +10,8 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
-	"github.com/containerd/containerd/v2/pkg/archive/compression"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/util/compressutil"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -59,7 +59,7 @@ func (cm *snapshotManager) decompressAhead(ctx context.Context, desc ocispecs.De
 		return nil, err
 	}
 	d := &decompressedAhead{chunks: make(chan []byte, aheadChunks), stop: make(chan struct{}), done: make(chan struct{})}
-	ds, err := compression.DecompressStream(&countingSectionReader{r: io.NewSectionReader(ra, 0, ra.Size()), n: &d.read})
+	ds, err := compressutil.DecompressStream(&countingSectionReader{r: io.NewSectionReader(ra, 0, ra.Size()), n: &d.read})
 	if err != nil {
 		_ = ra.Close()
 		return nil, err
