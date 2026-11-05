@@ -76,6 +76,12 @@ func (build *Builder) WithPlatform(p dagger.Platform) *Builder {
 	return &b
 }
 
+// Platform is the platform the builder builds for, normalized, e.g.
+// "linux/arm64".
+func (build *Builder) Platform() string {
+	return platforms.Format(build.platformSpec)
+}
+
 func (build *Builder) WithGPUSupport() *Builder {
 	b := *build
 	b.gpuSupport = true

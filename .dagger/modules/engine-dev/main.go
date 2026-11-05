@@ -155,6 +155,41 @@ func (dev *EngineDev) Container(
 	// +optional
 	version string,
 ) (*dagger.Container, error) {
+	builder, err := build.NewBuilder(ctx, dev.Source, version, dev.VCSCommit, dev.VCSDirty, dev.Ws)
+	if err != nil {
+		return nil, err
+	}
+	builder = builder.WithRace(dev.Race)
+	// The image's entries are made by an engine of this build that runs
+	// here, for the image's platform: an engine runs its own platform's
+	// binaries, and every build the entries hold compiles for any platform.
+	native := builder
+	if platform != "" {
+		builder = builder.WithPlatform(platform)
+	}
+	if gpuSupport {
+		builder = builder.WithGPUSupport()
+	}
+	ctr, err := dev.engine(ctx, builder, platform, version)
+	if err != nil {
+		return nil, err
+	}
+	exporter := ctr
+	if builder.Platform() != native.Platform() || gpuSupport {
+		if exporter, err = dev.engine(ctx, native, "", version); err != nil {
+			return nil, err
+		}
+	}
+	entries, err := dev.imageEntries(ctx, native, exporter, builder.Platform())
+	if err != nil {
+		return nil, fmt.Errorf("engine image entries: %w", err)
+	}
+	return ctr.WithDirectory(distconsts.EngineContainerImageEntriesDir, entries), nil
+}
+
+// engine is the engine container builder builds, without the entries its
+// image ships.
+func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platform dagger.Platform, version string) (*dagger.Container, error) {
 	cfg, err := generateConfig(dev.LogLevel)
 	if err != nil {
 		return nil, err
@@ -166,19 +201,6 @@ func (dev *EngineDev) Container(
 	entrypoint, err := generateEntrypoint()
 	if err != nil {
 		return nil, err
-	}
-
-	builder, err := build.NewBuilder(ctx, dev.Source, version, dev.VCSCommit, dev.VCSDirty, dev.Ws)
-	if err != nil {
-		return nil, err
-	}
-	builder = builder.WithRace(dev.Race)
-	if platform != "" {
-		builder = builder.WithPlatform(platform)
-	}
-
-	if gpuSupport {
-		builder = builder.WithGPUSupport()
 	}
 
 	ctr, err := builder.Engine(ctx)
@@ -204,11 +226,7 @@ func (dev *EngineDev) Container(
 
 	// ctr = ctr.WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1")
 
-	entries, err := dev.imageEntries(ctx, builder, ctr)
-	if err != nil {
-		return nil, fmt.Errorf("engine image entries: %w", err)
-	}
-	return ctr.WithDirectory(distconsts.EngineContainerImageEntriesDir, entries), nil
+	return ctr, nil
 }
 
 // goSDKDaggerGo is the dagger/go the Go SDK module depends on: its manifest's
@@ -225,17 +243,21 @@ func goSDKDaggerGo(ctx context.Context, source *dagger.Directory) (string, error
 	return m[1], nil
 }
 
-// imageEntries are the cache entries the engine image ships for Go module
-// runtimes, which the engine merges at start: the builds of the standard library
-// and of what generated Go module code imports, the built-in Go SDK's
-// (GoImageEntriesSeed) and go-sdk's (GoSDKImageEntriesSeed),
-// gobuild's binary, which dagger/go builds every runtime with, and what a
-// fresh engine would fetch to build with them (dagger/go's tree and the two
-// images the builds run in), made
-// by the engine of this image, engine, on a state of its own, and exported
-// by cmd/engine-image-entries. An entry's identity is its engine's, so an
-// image's entries come from an engine of its own build.
-func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, engine *dagger.Container) (*dagger.Directory, error) {
+// imageEntries are the cache entries an engine image of platform ships for
+// Go module runtimes, which the engine merges at start: the builds of the
+// standard library and of what generated Go module code imports, the
+// built-in Go SDK's (GoImageEntriesSeed) and go-sdk's
+// (GoSDKImageEntriesSeed), gobuild's binary, which dagger/go builds every
+// runtime with, and what a fresh engine would fetch to build with them
+// (dagger/go's tree and the two images the builds run in), made by engine,
+// an engine of the image's build that runs here, on a state of its own, and
+// exported by cmd/engine-image-entries. An entry's identity is its engine
+// build's, so an image's entries come from an engine of its own build; and
+// dagger/go declares each build as made for the platform it compiles for
+// (Directory.withPlatform), so an engine of the image's platform finds the
+// builds an engine of another platform made for it. builder builds what
+// runs here.
+func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, engine *dagger.Container, platform string) (*dagger.Directory, error) {
 	seed, err := builder.GoImageEntriesSeed(ctx)
 	if err != nil {
 		return nil, err
@@ -248,9 +270,13 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	if err != nil {
 		return nil, err
 	}
-	// The state is the engine build's own, named by its binary's content:
-	// making the same build again reuses its state and its cached entries, so
-	// the image is the same each time, and another build never starts on it.
+	// The state is the engine build's own, for the image's platform, named by
+	// its binary's content and the platform: making the same image again
+	// reuses its state and its cached entries, so the image is the same each
+	// time, and another build never starts on it. Neither does another
+	// platform's image: a result two platforms' builds both make, such as a
+	// module download, is the same result, and the entries would ship the
+	// other platform's call of it, which this image's engine never makes.
 	engineDigest, err := engine.File(consts.EngineServerPath).Digest(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("the engine binary: %w", err)
@@ -258,7 +284,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	nested := dev.IncrementSubnet()
 	service := engine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume("dagger-image-entries-"+engineDigest), dagger.ContainerWithMountedCacheOpts{
+		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume("dagger-image-entries-"+engineDigest+"-"+strings.ReplaceAll(platform, "/", "-")), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModeLocked,
 		}).
 		AsService(dagger.ContainerAsServiceOpts{
@@ -285,6 +311,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 			"-entrypoint-seed", "/seed-go-sdk",
 			"-dagger-go", daggerGo,
 			"-go-version", distconsts.GolangVersion,
+			"-platform", platform,
 			"-out", out,
 		), dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny})
 	// A failure says why, such as dagger/go unreachable at the Go SDK
