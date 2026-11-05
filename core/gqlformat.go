@@ -260,84 +260,15 @@ func (n Namer) EnumMemberName(name string) string {
 
 // CLIName is the CLI spelling of a name: kebab-case. Characters that can't
 // be part of a name (glob metacharacters, ':' path separators) stay where
-// they are, as they do with strcase, so path patterns convert too. A word
-// separator next to one of them is kept, as a '-', so a pattern doesn't
-// broaden: test-* stays test-*, not test*.
+// they are, as they do with strcase, so path patterns convert too (see
+// naming.MapNamePattern).
 func (n Namer) CLIName(name string) string {
 	if n.Legacy() {
 		return strcase.ToKebab(name)
 	}
-	var b strings.Builder
-	start := -1
-	flush := func(end int) {
-		if start < 0 {
-			return
-		}
-		run := name[start:end]
-		trimmed := strings.TrimLeft(run, nameSeparators)
-		if start > 0 && len(trimmed) < len(run) {
-			b.WriteByte('-')
-		}
-		lead := len(trimmed)
-		trimmed = strings.TrimRight(trimmed, nameSeparators)
-		b.WriteString(n.format(trimmed, naming.Kebab, TypeAcronyms))
-		if end < len(name) && len(trimmed) < lead && trimmed != "" {
-			b.WriteByte('-')
-		}
-		start = -1
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if c == '\\' && i+1 < len(name) {
-			flush(i)
-			b.WriteString(name[i : i+2])
-			i++
-			continue
-		}
-		if c == '[' {
-			// A glob class is syntax, not an identifier. In particular, the
-			// hyphen in [0-9] must not be consumed as a word separator.
-			end := i + 1
-			for end < len(name) && name[end] != ']' {
-				if name[end] == '\\' && end+1 < len(name) {
-					end++
-				}
-				end++
-			}
-			if end < len(name) {
-				flush(i)
-				b.WriteString(name[i : end+1])
-				i = end
-				continue
-			}
-		}
-		if isNameByte(c) {
-			if start < 0 {
-				start = i
-			}
-			continue
-		}
-		flush(i)
-		b.WriteByte(c)
-	}
-	flush(len(name))
-	return b.String()
-}
-
-// nameSeparators are the word separators isNameByte accepts.
-const nameSeparators = "-_. "
-
-// isNameByte reports whether c can be part of a name in some casing: a
-// letter, a digit, or a word separator.
-func isNameByte(c byte) bool {
-	switch {
-	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
-		return true
-	case c == '-', c == '_', c == '.', c == ' ':
-		return true
-	default:
-		return false
-	}
+	return naming.MapNamePattern(name, func(run string) string {
+		return n.format(run, naming.Kebab, TypeAcronyms)
+	})
 }
 
 // NamespaceObject maps a module-local type name to its namespaced schema

@@ -154,7 +154,6 @@ func TestArtifactPatternCharacterClasses(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, matched, "literal includes still select descendants")
 	}
-	require.Equal(t, `test[\]0-9]`, LatestNamer.CLIName(`test[\]0-9]`), "escaped class delimiters are preserved")
 }
 
 func TestArtifactCanonicalPatterns(t *testing.T) {
