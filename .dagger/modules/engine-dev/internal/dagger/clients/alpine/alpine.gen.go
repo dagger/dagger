@@ -11,8 +11,12 @@ import (
 )
 
 // An Alpine Linux configuration
-type Alpine struct { // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L85)
+type Alpine struct { // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L86)
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	arch   *string
 	branch *string
@@ -23,11 +27,14 @@ type Alpine struct { // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28
 func (r *Alpine) WithGraphQLQuery(q *querybuilder.Selection) *Alpine {
 	return &Alpine{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
 // The hardware architecture to build for
-func (r *Alpine) Arch(ctx context.Context) (string, error) { // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L89)
+func (r *Alpine) Arch(ctx context.Context) (string, error) { // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L90)
 	if r.arch != nil {
 		return *r.arch, nil
 	}
@@ -40,7 +47,7 @@ func (r *Alpine) Arch(ctx context.Context) (string, error) { // alpine (https://
 }
 
 // The Alpine branch to download packages from
-func (r *Alpine) Branch(ctx context.Context) (string, error) { // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L91)
+func (r *Alpine) Branch(ctx context.Context) (string, error) { // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L92)
 	if r.branch != nil {
 		return *r.branch, nil
 	}
@@ -53,14 +60,14 @@ func (r *Alpine) Branch(ctx context.Context) (string, error) { // alpine (https:
 }
 
 // Build an Alpine Linux container
-func (r *Alpine) Container() *Container { // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L105)
+func (r *Alpine) Container() *Container { // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L106)
 	q := r.query.Select("container")
 
 	return new(Container).WithGraphQLQuery(q)
 }
 
 // The distro to use
-func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) { // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L87)
+func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) { // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L88)
 	if r.distro != nil {
 		return *r.distro, nil
 	}
@@ -73,7 +80,7 @@ func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) { // alpine (
 }
 
 // Where to download additional keys from
-func (r *Alpine) ExtraKeyUrls(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L97)
+func (r *Alpine) ExtraKeyUrls(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L98)
 	q := r.query.Select("extraKeyUrls")
 
 	var response []string
@@ -83,7 +90,7 @@ func (r *Alpine) ExtraKeyUrls(ctx context.Context) ([]string, error) { // alpine
 }
 
 // Extra repositories to add to the package resolver
-func (r *Alpine) ExtraRepositories(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L95)
+func (r *Alpine) ExtraRepositories(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L96)
 	q := r.query.Select("extraRepositories")
 
 	var response []string
@@ -102,7 +109,13 @@ func (r *Alpine) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -142,7 +155,7 @@ func (r *Alpine) UnmarshalJSON(bs []byte) error {
 }
 
 // The APK packages to install
-func (r *Alpine) Packages(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L93)
+func (r *Alpine) Packages(ctx context.Context) ([]string, error) { // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L94)
 	q := r.query.Select("packages")
 
 	var response []string
@@ -162,35 +175,35 @@ type AlpineOpts struct {
 	//
 	// Hardware architecture to build for
 	//
-	Arch string // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L32)
+	Arch string // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L33)
 	//
 	// Alpine branch to download packages from
 	//
 	//
 	// Default: "edge"
-	Branch string // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L36)
+	Branch string // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L37)
 	//
 	// APK packages to install
 	//
-	Packages []string // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L39)
+	Packages []string // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L40)
 	//
 	// Extra repositories to add to the package resolver
 	//
-	ExtraRepositories []string // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L42)
+	ExtraRepositories []string // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L43)
 	//
 	// Extra keys needed to authenticate the extra repositories
 	//
-	ExtraKeyUrls []string // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L45)
+	ExtraKeyUrls []string // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L46)
 	//
 	// Alpine distribution to use
 	//
 	//
 	// Default: ALPINE
-	Distro AlpineDistro // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L50)
+	Distro AlpineDistro // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L51)
 }
 
 // An Alpine Linux configuration
-func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L29)
+func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L30)
 	q := r.query.Select("alpine")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `arch` optional argument
@@ -220,7 +233,8 @@ func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (https://github.c
 	}
 
 	return &Alpine{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -232,7 +246,7 @@ func New(opts ...AlpineOpts) *Alpine {
 	return Connect().Alpine(opts...)
 }
 
-type AlpineDistro string // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L22)
+type AlpineDistro string // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L23)
 
 func (AlpineDistro) IsEnum() {}
 
@@ -281,8 +295,8 @@ func (v *AlpineDistro) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	AlpineDistroAlpine AlpineDistro = "ALPINE" // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L25)
+	AlpineDistroAlpine AlpineDistro = "ALPINE" // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L26)
 
-	AlpineDistroWolfi AlpineDistro = "WOLFI" // alpine (https://github.com/dagger/alpine/tree/ff6a5f4c28364912d92c00e682dd0bf19f524ef9/main.go#L26)
+	AlpineDistroWolfi AlpineDistro = "WOLFI" // alpine (https://github.com/dagger/alpine/tree/ec2076f26edb34274e533cd526484a2d0baa5aa8/main.go#L27)
 
 )

@@ -83,8 +83,17 @@ func main() {
 	}
 }
 
+// fatalf reports the error last on stderr, as one marker line: a failed exec
+// gives the entrypoint only its last 100 KiB of stderr. JSON can encode a
+// byte in six, so 16 KiB of text keeps the line within that.
 func fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	message := fmt.Sprintf(format, args...)
+	reported := message
+	if len(reported) > 16<<10 {
+		reported = strings.ToValidUTF8(reported[:16<<10], "") + "..."
+	}
+	encoded, _ := json.Marshal(reported)
+	fmt.Fprintf(os.Stderr, "%s\n%s%s\n", message, "::dagger-function-error::", encoded)
 	os.Exit(2)
 }
 
