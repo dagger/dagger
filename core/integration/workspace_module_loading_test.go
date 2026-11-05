@@ -1,7 +1,7 @@
 package core
 
-// These tests cover how a Git workspace's modules load: sharing the loads of
-// what they have in common. Each module here records its
+// These tests cover how a Git workspace's modules load: all at once, and
+// sharing the loads of what they have in common. Each module here records its
 // loads from its entrypoint's sources member, which runs each time its module
 // source loads, into a cache volume that a reader module reports.
 
@@ -125,6 +125,34 @@ source = "./entrypoint"
 		Stdout(ctx)
 	require.NoError(t, err)
 	return strings.TrimSpace(out)
+}
+
+// TestGitWorkspaceModulesLoadAtOnce asserts that a Git workspace's modules
+// load at the same time, however many it has. Each module's load waits for all
+// of them to have started, up to a minute, and records how many had.
+func (WorkspaceSuite) TestGitWorkspaceModulesLoadAtOnce(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Unique per run, so earlier runs' loads can't satisfy the test.
+	volume := "module-loads-started-" + rand.Text()
+	const modules = 10
+
+	config := ""
+	repo := core.NewQuery(c).Directory()
+	for i := range modules {
+		name := fmt.Sprintf("mod%d", i)
+		config += fmt.Sprintf("[modules.%s]\nsource = \".dagger/modules/%s\"\n\n", name, name)
+		script := fmt.Sprintf(`mkdir -p /record/started && touch /record/started/%s
+i=0
+while [ "$(ls /record/started | wc -l)" -lt %d ] && [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done
+ls /record/started | wc -l >> /record/seen`, name, modules)
+		repo = withModuleLoadRecorder(repo, name, volume, script)
+	}
+	listGitWorkspaceChecks(ctx, t, c, repo.WithNewFile("dagger.toml", config))
+
+	seen := readModuleLoadRecord(ctx, t, c, volume, "cat /record/seen")
+	require.Equal(t, strings.Repeat(fmt.Sprintf("%d\n", modules), modules), seen+"\n",
+		"each module's load must see all %d loads started", modules)
 }
 
 // TestGitWorkspaceSharedDependencyLoadsOnce asserts that modules of a Git

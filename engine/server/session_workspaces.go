@@ -458,8 +458,6 @@ const (
 	moduleLoadKindExtra   moduleLoadKind = "extra"
 )
 
-const maxParallelModuleResolves = 8
-
 // loadWorkspaceConfig parses the workspace config and returns the keys the file
 // spells out alongside it. Merging an included config needs that presence information,
 // and re-reading the file to compute it later would be a second host round trip.
@@ -1288,8 +1286,7 @@ func (srv *Server) resolveModuleLoadBatch(
 	}
 
 	jobs := parallel.New().
-		WithContextualTracer(true).
-		WithLimit(moduleLoadParallelism(len(loads)))
+		WithContextualTracer(true)
 	for i, load := range loads {
 		i := i
 		load := load
@@ -1867,16 +1864,6 @@ func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModu
 		})
 	}
 	return loads
-}
-
-func moduleLoadParallelism(moduleCount int) int {
-	if moduleCount <= 1 {
-		return 1
-	}
-	if moduleCount > maxParallelModuleResolves {
-		return maxParallelModuleResolves
-	}
-	return moduleCount
 }
 
 func moduleProgressName(mod pendingModule) string {
