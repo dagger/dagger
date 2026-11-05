@@ -613,7 +613,11 @@ func (c *Client) telemetryContext(ctx context.Context) (context.Context, context
 	return ctx, cancel
 }
 
-func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
+func (c *Client) subscribeTelemetry(ctx context.Context) error {
+	return c.subscribeTelemetryWith(ctx, c.newTelemetryHTTPClient())
+}
+
+func (c *Client) subscribeTelemetryWith(ctx context.Context, hc *httpClient) (rerr error) {
 	// Keep telemetry alive across the caller's cancellation and the server's
 	// shutdown drain, but tie it to the client-owned internal lifetime so a
 	// failed initialization or rejected /shutdown cannot strand telemetry streams.
@@ -633,21 +637,37 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
 
 	c.telemetry = new(errgroup.Group)
-	httpClient := c.newTelemetryHTTPClient()
+	// The three subscriptions don't depend on each other, so they're made at
+	// once: with a remote engine, each one waits a round trip for its answer.
+	// The first to fail cancels the others, so connecting reports its error
+	// instead of waiting on an answer that may never come.
+	var subscriptions errgroup.Group
+	subscribe := func(name string, export func(context.Context, *httpClient) error) {
+		subscriptions.Go(func() error {
+			if err := export(ctx, hc); err != nil {
+				err = fmt.Errorf("export %s: %w", name, err)
+				cancel(err)
+				return err
+			}
+			return nil
+		})
+	}
 	if c.EngineTrace != nil {
-		if err := c.exportTraces(ctx, httpClient); err != nil {
-			return fmt.Errorf("export traces: %w", err)
-		}
+		subscribe("traces", c.exportTraces)
 	}
 	if c.EngineLogs != nil {
-		if err := c.exportLogs(ctx, httpClient); err != nil {
-			return fmt.Errorf("export logs: %w", err)
-		}
+		subscribe("logs", c.exportLogs)
 	}
 	if c.EngineMetrics != nil {
-		if err := c.exportMetrics(ctx, httpClient); err != nil {
-			return fmt.Errorf("export metrics: %w", err)
+		subscribe("metrics", c.exportMetrics)
+	}
+	if err := subscriptions.Wait(); err != nil {
+		// A subscription cancelled by the first failure may return before
+		// it; report the failure that cancelled them.
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
 		}
+		return err
 	}
 	return nil
 }
