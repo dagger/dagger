@@ -308,6 +308,9 @@ type PartWriterGate struct {
 	writers  map[*writerTicket]*PartPermit
 	revision uint64
 	managed  bool
+	// reusable holds the parts and scopes a demand found complete and
+	// opened, and the row's state then (cache_part_reuse.go).
+	reusable map[string]partReuse
 }
 type partOutputState struct {
 	phase        PartOutputPhase

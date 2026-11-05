@@ -3219,14 +3219,43 @@ func (res *sharedResult) loadSnapshotOwnerLinks() []PersistedSnapshotRefLink {
 	return links
 }
 
+// storeSnapshotOwnerLinks replaces res's owner links. The payload revision
+// moves only when the set of links changes: an owner lease sync that finds
+// them as they were changes nothing a capture of the row reads.
 func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLink) {
 	if res == nil {
 		return
 	}
 	res.payloadMu.Lock()
+	defer res.payloadMu.Unlock()
+	if sameSnapshotRefLinkSet(res.snapshotOwnerLinks, links) {
+		return
+	}
 	res.snapshotOwnerLinks = cloneSnapshotRefLinks(links)
 	res.payloadRevision++
-	res.payloadMu.Unlock()
+}
+
+// sameSnapshotRefLinkSet reports whether a and b hold the same links, in any
+// order.
+func sameSnapshotRefLinkSet(a, b []PersistedSnapshotRefLink) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	key := func(link PersistedSnapshotRefLink) string {
+		return fmt.Sprintf("%q %q %q %t", link.RefKey, link.Role, link.OutputPath, link.Borrowed)
+	}
+	counts := make(map[string]int, len(a))
+	for _, link := range a {
+		counts[key(link)]++
+	}
+	for _, link := range b {
+		k := key(link)
+		if counts[k] == 0 {
+			return false
+		}
+		counts[k]--
+	}
+	return true
 }
 
 // resultIsObject classifies whether val should be treated as an object result
