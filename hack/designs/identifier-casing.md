@@ -563,12 +563,8 @@ the old strcase code byte for byte:
   engine's own version). Artifact paths and collection dimensions use the
   current CLI naming rules regardless of the backing module's version; the
   tree retains its original GraphQL names for dispatch.
-- **Mixed versions.** A dependency's types are installed with *its* rules, so
-  a module at a different version may spell a reference differently
-  (`HttpClient` vs `HTTPClient`). `namespaceTypeName` falls back to a
-  dependency type whose name matches under either rule set
-  (`depTypeReference`). Legacy modules skip core types in that fallback, so
-  their schema doesn't change.
+- **Mixed versions.** A dependency's types are installed with its own naming
+  rules.
 - **Matching user input.** Artifact addresses, include patterns and module
   address keys use current CLI spelling (`artifactPattern`, `SameCLIName`),
   with no implicit alternatives for earlier betas. Explicit glob unions are
