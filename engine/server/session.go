@@ -2665,6 +2665,12 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	if member := baggage.Member("repeat-telemetry"); member.Value() != "" {
 		ctx = dagql.WithRepeatedTelemetry(ctx)
 	}
+	// The module process of a call the engine made itself, such as an SDK
+	// building a module's runtime, does the engine's own work, as does a
+	// process such a module process starts.
+	if opts.FunctionCall.EngineCalled() || clientMetadata.EngineCalled {
+		ctx = dagql.WithInternalTelemetry(ctx)
+	}
 
 	spanCtx := trace.SpanContextFromContext(ctx)
 	traceID, spanID := spanCtx.TraceID().String(), spanCtx.SpanID().String()

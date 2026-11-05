@@ -1096,6 +1096,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if caller, ok := CallerAgent(ctx); ok {
 		fnCall.SetCallerAgent(caller)
 	}
+	// A call the engine selects itself, such as an SDK building a module's
+	// runtime, is the engine's own work, and so is everything its module
+	// does to answer it: its calls are internal in telemetry, as the engine's
+	// own selects are, down through any module it calls in turn.
+	fnCall.engineCalled = dagql.IsInternal(ctx)
 
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
