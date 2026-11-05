@@ -8,18 +8,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTranslateErrorSHAFetchUnsupported(t *testing.T) {
-	cases := []string{
-		"fatal: remote error: upload-pack: not our ref 0123456789",
-		"fatal: Server does not allow request for unadvertised object 0123456789",
-		"fatal: couldn't find remote ref 0123456789",
-	}
-
-	for _, stderr := range cases {
-		stderr := stderr
-		t.Run(stderr, func(t *testing.T) {
-			err := translateError(errors.New("exit status 128"), stderr)
-			require.ErrorIs(t, err, ErrSHAFetchUnsupported)
+func TestTranslateErrorSHAFetch(t *testing.T) {
+	for _, tc := range []struct {
+		stderr string
+		want   error
+	}{
+		// a protocol v0 server that serves no unadvertised object, refused by the client
+		{"error: Server does not allow request for unadvertised object 0123456789", ErrSHAFetchUnsupported},
+		{"fatal: couldn't find remote ref 0123456789", ErrSHAFetchUnsupported},
+		// the server's reply for a missing commit, as GitHub, GitLab and git itself send it
+		{"fatal: remote error: upload-pack: not our ref 0123456789", ErrCommitNotFound},
+		{"fatal: git upload-pack: not our ref 0123456789", ErrCommitNotFound},
+		{"fatal: expected 'packfile', received 'ERR upload-pack: not our ref 0123456789'", ErrCommitNotFound},
+	} {
+		t.Run(tc.stderr, func(t *testing.T) {
+			require.ErrorIs(t, translateError(errors.New("exit status 128"), tc.stderr), tc.want)
 		})
 	}
 }
