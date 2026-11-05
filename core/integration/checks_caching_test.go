@@ -245,6 +245,42 @@ func (*Batch) Verify() error { return nil }
 `)
 }
 
+// planningDirectoryCollectionModule is the main module of a Git workspace
+// whose constructor takes a directory from a module setting set to a remote
+// Git branch, and whose collection is cached by default.
+func planningDirectoryCollectionModule(c *dagger.Client, branch string) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\nsettings.src = \""+branch+"\"\n").
+		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("probe/main.go", `package main
+
+import "dagger/probe/internal/dagger"
+
+type Probe struct {
+	// +private
+	Src *dagger.Directory
+}
+
+func New(src *dagger.Directory) *Probe { return &Probe{Src: src} }
+
+func (*Probe) Batches() *Batches { return &Batches{Names: []string{"a", "b"}} }
+
+// +collection
+type Batches struct {
+	// +keys
+	Names []string
+}
+
+// +get
+func (*Batches) Batch(name string) *Batch { return &Batch{Name: name} }
+
+type Batch struct{ Name string }
+
+// +check
+func (*Batch) Verify() error { return nil }
+`)
+}
+
 // planningListingOutcomes lists the checks of the Git workspace at remoteRef
 // in two sessions of one engine, and returns the cache outcome of each
 // listing of their items, as the engine reports it to Cloud.
@@ -338,6 +374,17 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 			require.NotEmpty(t, outcomes)
 			require.NotContains(t, outcomes, "hit", "an unpinned tag may move, so the listing must not be reused")
 		})
+	})
+
+	// A module setting set to a remote Git branch resolves while listing. The
+	// branch may move, so the next session lists the items again.
+	t.Run("a listing over a remote branch is listed again", func(ctx context.Context, t *testctx.T) {
+		branchRepo := workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README", "branch"))
+		branch := strings.TrimSuffix(branchRepo, "@main") + "#main"
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningDirectoryCollectionModule(c, branch))
+		outcomes := planningListingOutcomes(ctx, t, c, remoteRef)
+		require.NotEmpty(t, outcomes)
+		require.NotContains(t, outcomes, "hit", "a branch may move, so the listing must not be reused")
 	})
 
 	// A collection's items come from its producer. When the producer isn't
