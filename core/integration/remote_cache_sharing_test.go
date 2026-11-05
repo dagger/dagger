@@ -38,7 +38,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 		require.NoError(t, stopNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
 	}
 	start := func(state string, volume *core.CacheVolume, workdir string) *running {
-		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *core.Container) *core.Container {
+		ctr := devEngineContainerWithStateKey(outer, state, withoutImageEntries, func(ctr *core.Container) *core.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
 		ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)

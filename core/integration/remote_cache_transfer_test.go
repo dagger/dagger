@@ -188,7 +188,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		require.NoError(t, err)
 	}
 	start := func(t *testctx.T, state string, volume *core.CacheVolume, checkout string) *running {
-		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *core.Container) *core.Container {
+		ctr := devEngineContainerWithStateKey(outer, state, withoutImageEntries, func(ctr *core.Container) *core.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
 		if !defaultGC {
