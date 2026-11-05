@@ -30,7 +30,7 @@ import (
 
 // goSDKBuildFlags are the build flags the Go SDK builds every module runtime
 // with (sdk/go/runtime/main.dang).
-var goSDKBuildFlags = []string{"-ldflags=-s -w", "-gcflags=all=-dwarf=false", "-gcflags=std="}
+var goSDKBuildFlags = []string{"-ldflags=-s -w", "-gcflags=all=-dwarf=false", "-gcflags=std=", "-gcflags=./internal/dagger/...=-dwarf=false -l"}
 
 // entrypointBuildFlags are the build flags go-sdk's generated entrypoints
 // build with: none.
