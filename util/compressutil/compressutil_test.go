@@ -375,3 +375,43 @@ func TestDecompressStreamAllocatesLessThanANewDecoderPerZstdStream(t *testing.T)
 	// purpose, and those streams make a new one.
 	require.Less(t, reused, fresh/2, "allocated %d bytes per stream, against %d with a new decoder each", reused, fresh)
 }
+
+// A stream's decoder holds what the stream needs: its history, from the
+// frame's window, and block buffers sized to its blocks, not the most a
+// block can hold.
+func TestDecompressStreamDecoderHoldsWhatItsStreamNeeds(t *testing.T) {
+	stream := zstdStream(t, payload(9, 1<<20))
+	var h zstd.Header
+	require.NoError(t, h.Decode(stream))
+	require.EqualValues(t, 8<<20, h.WindowSize)
+
+	// A decoder kept from an earlier test would already hold its buffers
+	// before the stream: empty the pool, and let the collector free what it
+	// held, so the stream gets a new decoder that allocates its own.
+	for {
+		dec, _ := zstdDecoders.Get().(*zstd.Decoder)
+		if dec == nil {
+			break
+		}
+		dec.Close()
+	}
+	runtime.GC()
+	runtime.GC()
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	rc, err := DecompressStream(bytes.NewReader(stream))
+	require.NoError(t, err)
+	_, err = io.Copy(io.Discard, rc)
+	require.NoError(t, err)
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	held := int64(after.HeapAlloc) - int64(before.HeapAlloc)
+	require.NoError(t, rc.Close())
+
+	// The history is the window plus a part of a block, and the block
+	// decoders' buffers are a few hundred KB each. containerd's options
+	// would hold twice the window and 2.3 MB more per block decoder: about
+	// 28 MB.
+	require.Less(t, held, int64(h.WindowSize)+4<<20)
+}

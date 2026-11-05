@@ -12,7 +12,7 @@ import (
 )
 
 // zstdDecoders holds zstd decoders between streams. A new decoder allocates
-// its history buffer from the stream's window, about 10 MB for the usual 8 MB
+// its history buffer from the stream's window, about 8 MB for the usual 8 MB
 // window however small the stream is; a decoder reset onto the next stream
 // keeps it. Each stream being decoded has a decoder of its own, so streams
 // decode at once as they would with new decoders.
@@ -21,8 +21,11 @@ var zstdDecoders sync.Pool
 // DecompressStream is containerd's compression.DecompressStream: it detects
 // whether r is uncompressed, gzip or zstd and returns its decompressed bytes,
 // and the same for every stream. A zstd stream is decoded by a decoder
-// reused from an earlier stream, with containerd's options, which Close
-// returns for the next one.
+// reused from an earlier stream, which Close returns for the next one.
+// Unlike containerd's, the decoder sizes its buffers to what the streams it
+// decodes need: containerd's options allocate each of its block decoders'
+// sequence buffer at the most a block can hold, 2.3 MB, for every stream, and
+// a kept decoder holds all of them.
 func DecompressStream(r io.Reader) (compression.DecompressReadCloser, error) {
 	buf := bufio.NewReaderSize(r, 32*1024)
 	bs, err := buf.Peek(10)
@@ -35,7 +38,7 @@ func DecompressStream(r io.Reader) (compression.DecompressReadCloser, error) {
 	}
 	dec, _ := zstdDecoders.Get().(*zstd.Decoder)
 	if dec == nil {
-		dec, err = zstd.NewReader(nil, zstd.WithDecoderLowmem(false))
+		dec, err = zstd.NewReader(nil)
 		if err != nil {
 			return nil, err
 		}
