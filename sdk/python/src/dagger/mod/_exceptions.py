@@ -158,18 +158,20 @@ async def record_exception(exc: Exception):
         # Cloud UI.
         attributes={"dagger.io/ui.internal": True},
     ) as span:
-        span.record_exception(exc)
+        event_attributes = None
+        # FunctionError only wraps the user's exception, so classify the event
+        # by the wrapped exception's type, as OTel's exception semconv allows.
+        if type(exc) is FunctionError and exc.__cause__ is not None:
+            event_attributes = {EXCEPTION_TYPE: _qualified_type(exc.__cause__)}
+        span.record_exception(exc, attributes=event_attributes)
 
 
 def _exception_attributes(exc: Exception) -> dict[str, str]:
     message = str(exc)
     stacktrace = "".join(traceback.format_exception(exc))
-    module = type(exc).__module__
-    qualname = type(exc).__qualname__
-    exc_type = f"{module}.{qualname}" if module and module != "builtins" else qualname
 
     # hide the full `dagger.mod._exception` module path
-    exc_type = exc_type.replace(__name__ + ".", "")
+    exc_type = _qualified_type(exc).replace(__name__ + ".", "")
 
     # Reusing OTel attribute names for consistency.
     return {
@@ -177,6 +179,12 @@ def _exception_attributes(exc: Exception) -> dict[str, str]:
         EXCEPTION_MESSAGE: message,
         EXCEPTION_STACKTRACE: stacktrace,
     }
+
+
+def _qualified_type(exc: BaseException) -> str:
+    module = type(exc).__module__
+    qualname = type(exc).__qualname__
+    return f"{module}.{qualname}" if module and module != "builtins" else qualname
 
 
 def _safe_json_dumps(value: Any) -> str:
