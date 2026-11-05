@@ -94,8 +94,11 @@ capped view).
 
 1. In `engine/version.go`, set `IdentifierCasingVersion` to the release the
    changes will ship in (no earlier than `internal/version/VERSION` on
-   `main`). The view tests in `engine`, `core` and `core/schema` derive the
-   cut, and the release just before it, from the constant.
+   `main`), and `identifierCasingVersion` in
+   `cmd/codegen/generator/go/templates/naming.go` with it
+   (`TestIdentifierCasingVersion` keeps them in sync). The view tests in
+   `engine`, `core` and `core/schema` derive the cut, and the release just
+   before it, from the constant.
 2. Audit gates set since the last bump:
    `git grep -nE '(After|Before)Version\("v1\.0\.0-|Supports\(ctx, "v1\.0\.0-'`,
    plus version constants passed to `core.Supports` (`git grep -n

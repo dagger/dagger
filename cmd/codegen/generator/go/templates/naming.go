@@ -12,7 +12,7 @@ import (
 // view whose names follow the GraphQL casing convention. (The engine package
 // is too heavy for codegen to import; TestIdentifierCasingVersion keeps them
 // in sync.)
-const identifierCasingVersion = "v1.0.0-beta.22"
+const identifierCasingVersion = "v1.0.0-beta.25"
 
 // goNamer formats GraphQL names (types, fields, arguments) as Go
 // identifiers. Wire names are never formatted: selections, argument keys,
@@ -38,9 +38,10 @@ func newGoNamer(schemaVersion string) goNamer {
 // usesIdentifierNaming reports whether a schema of schemaVersion is at or
 // past engine.IdentifierCasingVersion, whose names follow the GraphQL casing
 // convention. schemaVersion is a schema's __schemaVersion, its API view
-// (engine.APIViewVersion), so it orders by strict semver: every view of a
-// v1.0.0 prerelease before the cut is v1.0.0-beta.21, and dev builds have
-// their release's view.
+// (engine.APIViewVersion), so it orders by strict semver: the views of v1.0.0
+// prereleases before the cut (v1.0.0-beta.21, which every earlier one shares,
+// and the betas from engine.PrereleaseViewsVersion to v1.0.0-beta.24) order
+// before it, and dev builds have their release's view.
 func usesIdentifierNaming(schemaVersion string) bool {
 	if !semver.IsValid(schemaVersion) {
 		return false

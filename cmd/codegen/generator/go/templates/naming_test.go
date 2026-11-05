@@ -20,7 +20,7 @@ func TestIdentifierCasingVersion(t *testing.T) {
 // views, as __schemaVersion reports them.
 func TestGoNamer(t *testing.T) {
 	legacy := newGoNamer(engine.APIViewVersion("v1.0.0-beta.20"))
-	for _, version := range []string{"", "v0.21.0", engine.APIViewVersion("v1.0.0-beta.21"), engine.APIViewVersion("v1.0.0-0"), "not-a-version"} {
+	for _, version := range []string{"", "v0.21.0", engine.APIViewVersion("v1.0.0-beta.21"), engine.APIViewVersion("v1.0.0-beta.24"), engine.APIViewVersion("v1.0.0-0"), "not-a-version"} {
 		require.Equal(t, legacy, newGoNamer(version), version)
 	}
 	for _, tc := range []struct{ name, want string }{
@@ -35,7 +35,7 @@ func TestGoNamer(t *testing.T) {
 		require.Equal(t, tc.want, legacy.formatName(tc.name), tc.name)
 	}
 
-	for _, declared := range []string{engine.IdentifierCasingVersion, "v1.0.0-beta.23", "v1.0.0", "v1.0.0-dev-0123456789ab"} {
+	for _, declared := range []string{engine.IdentifierCasingVersion, "v1.0.0-beta.26", "v1.0.0", "v1.0.0-dev-0123456789ab"} {
 		version := engine.APIViewVersion(declared)
 		cased := newGoNamer(version)
 		for _, tc := range []struct{ name, want string }{

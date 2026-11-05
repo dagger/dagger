@@ -42,7 +42,7 @@ The same code path produces schema names for module types, fields, arguments
 and enum values, CLI flag names, and the Go generator's identifiers. That
 replaces strcase in the engine for modules from the cut on.
 
-From `v1.0.0-beta.22` (`engine.IdentifierCasingVersion`) on, the core schema
+From `v1.0.0-beta.25` (`engine.IdentifierCasingVersion`) on, the core schema
 follows the same convention: its few names that didn't are renamed at the
 cut, with no aliases.
 
@@ -322,7 +322,7 @@ Terms keep their entry's `capitalized` form in fields (`githubRepo`,
 `fromGitHubIpv6`, `myK8sCluster`). The core schema mixed both acronym styles
 in fields (`traceURL` but `pushUrl`, `commitSHA` but `shortSha`) and in enum
 values (`PerSession` but `GZIP`); v1.0 is the time to fix that. From
-`v1.0.0-beta.22` (`engine.IdentifierCasingVersion`) on, the convention applies
+`v1.0.0-beta.25` (`engine.IdentifierCasingVersion`) on, the convention applies
 both to module names (see [The gate](#the-gate)) and to the core schema, whose
 names that didn't follow it are renamed at the cut (see
 [Core schema](#core-schema)).
@@ -1104,8 +1104,9 @@ converters, so none of them carries a copy.
 1. The `engine/naming` package: parser, formatter, dictionary, and the
    test-vector file as table tests, with property tests for the guarantees.
 2. The core API (`identifier`, `formatIdentifiers`, `namingDictionary`).
-3. Prerelease-granular API views, so the cut can sit at `v1.0.0-beta.22`
-   (`engine.IdentifierCasingVersion`) (#14810).
+3. Prerelease-granular API views (#14810), shipped in `v1.0.0-beta.22`, so
+   the cut can sit at a prerelease: `v1.0.0-beta.25`
+   (`engine.IdentifierCasingVersion`).
 4. Module naming by the declared engine version: `core/gqlformat.go`, typedef
    constructors, `namespaceObject`, CLI commands and flags; the identifier API
    on every v1 view (#14891).
