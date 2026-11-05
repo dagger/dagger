@@ -168,29 +168,41 @@ func definitionRows(t *testctx.T, report transferFixtureReport) map[uint64]defin
 }
 
 // moduleTypesDefinitionRows closes client after reading the cache report
-// and returns the _moduleTypesDefinition rows in it.
-func moduleTypesDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client) []uint64 {
+// and returns the _moduleTypesDefinition rows in it for module.
+func moduleTypesDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client, module string) []uint64 {
 	t.Helper()
-	return fieldRows(ctx, t, client, "_moduleTypesDefinition")
+	return moduleFieldRows(ctx, t, client, "_moduleTypesDefinition", module)
 }
 
 // namespacedDefinitionRows closes client after reading the cache report
-// and returns the _moduleNamespacedDefinition rows in it.
-func namespacedDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client) []uint64 {
+// and returns the _moduleNamespacedDefinition rows in it for module.
+func namespacedDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client, module string) []uint64 {
 	t.Helper()
-	return fieldRows(ctx, t, client, "_moduleNamespacedDefinition")
+	return moduleFieldRows(ctx, t, client, "_moduleNamespacedDefinition", module)
 }
 
-// fieldRows closes client after reading the cache report and returns the
-// rows in it whose call selects field.
-func fieldRows(ctx context.Context, t *testctx.T, client *dagger.Client, field string) []uint64 {
+// moduleFieldRows closes client after reading the cache report and returns
+// the rows in it whose call selects field for the module named module. The
+// engine also loads the modules an SDK is built from, such as the Go SDK
+// module and its dependencies, and those have rows of their own.
+func moduleFieldRows(ctx context.Context, t *testctx.T, client *dagger.Client, field, module string) []uint64 {
 	t.Helper()
 	defer func() { require.NoError(t, client.Close()) }()
 	var report transferFixtureReport
 	require.NoError(t, transferFixture(ctx, client, "report", "", []string{}, &report))
 	var out []uint64
 	for _, row := range report.Rows {
-		if row.Call != nil && row.Call.Field == field {
+		if row.Call == nil || row.Call.Field != field {
+			continue
+		}
+		var name string
+		for _, arg := range row.Call.Args {
+			if arg.Name == "moduleName" && arg.Value != nil {
+				name = arg.Value.StringValue
+			}
+		}
+		t.Logf("%s row %d module=%s", field, row.ResultID, name)
+		if name == module {
 			out = append(out, row.ResultID)
 		}
 	}
@@ -246,7 +258,7 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 	}
 	functionNames := func(s served) []string { return functionNamesOf(s.Objects) }
 
-	namespacedRows := func() []uint64 { return namespacedDefinitionRows(ctx, t, a.connect(ctx, t, checkout)) }
+	namespacedRows := func() []uint64 { return namespacedDefinitionRows(ctx, t, a.connect(ctx, t, checkout), "probe") }
 
 	first, firstRows := load(t, a, checkout)
 	require.Len(t, firstRows, 1, "the first load computed one definition")
@@ -293,7 +305,7 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 
 	// Its definition is a _moduleTypesDefinition row instead: a second
 	// client hits it, and a source edit makes a new one.
-	typesRows := func() []uint64 { return moduleTypesDefinitionRows(ctx, t, a.connect(ctx, t, dangDir)) }
+	typesRows := func() []uint64 { return moduleTypesDefinitionRows(ctx, t, a.connect(ctx, t, dangDir), "native") }
 	require.Len(t, typesRows(), 1)
 	load(t, a, dangDir)
 	require.Len(t, typesRows(), 1, "the second client hit the same definition")
