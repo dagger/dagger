@@ -40,10 +40,10 @@ func (build *Builder) qemuBins() (*dagger.Directory, []string) {
 	// tonistiigi/binfmt's patches make execve in an emulated process re-run
 	// QEMU on the new program, so emulation works without binfmt_misc. Ours
 	// on top runs host binaries directly instead of emulating them.
-	binfmtPatches := dag.Git("https://github.com/tonistiigi/binfmt").
-		Commit(consts.BinfmtCommit).
-		Tree().
-		Directory("patches")
+	binfmtPatches := releaseSource(
+		"https://github.com/tonistiigi/binfmt/archive/"+consts.BinfmtCommit+".tar.gz",
+		consts.BinfmtChecksum,
+	).Directory("patches")
 	patches := dag.Directory().
 		WithDirectory("0-cpu-max-arm", binfmtPatches.Directory("cpu-max-arm")).
 		WithDirectory("1-meson", binfmtPatches.Directory("meson")).

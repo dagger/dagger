@@ -257,13 +257,13 @@ func (build *Builder) runtimeBin() *dagger.File {
 	// crun is C: cross-compile it with xx, as runc is, statically linked,
 	// from the checksummed release tarball, which carries its libocispec
 	// submodule.
-	src := dag.HTTP(
+	src := releaseFile(
 		"https://github.com/containers/crun/releases/download/"+consts.CrunVersion+"/crun-"+consts.CrunVersion+".tar.gz",
-		dagger.HTTPOpts{Checksum: consts.CrunChecksum},
+		consts.CrunChecksum,
 	)
-	jsonc := dag.HTTP(
+	jsonc := releaseFile(
 		"https://github.com/json-c/json-c/archive/refs/tags/json-c-"+consts.JSONCVersion+".tar.gz",
-		dagger.HTTPOpts{Checksum: consts.JSONCChecksum},
+		consts.JSONCChecksum,
 	)
 	return dag.Container().
 		From(consts.AlpineImage).
@@ -306,9 +306,9 @@ func (build *Builder) gitRemoteEntireBin() *dagger.File {
 	if !ok {
 		return nil
 	}
-	archive := dag.HTTP(
+	archive := releaseFile(
 		"https://github.com/entireio/cli/releases/download/v"+consts.EntireCLIVersion+"/entire_linux_"+arch+".tar.gz",
-		dagger.HTTPOpts{Checksum: checksum},
+		checksum,
 	)
 	return dag.Container().
 		From(consts.AlpineImage).
@@ -321,10 +321,10 @@ func (build *Builder) sshfsBin() *dagger.File {
 	// Wolfi's sshfs package currently lags upstream at 3.7.4, so build the
 	// known-good release from source. Prefer the Wolfi package again once it
 	// catches up.
-	src := dag.
-		Git("https://github.com/libfuse/sshfs.git").
-		Tag("sshfs-" + consts.SSHFSVersion).
-		Tree()
+	src := releaseSource(
+		"https://github.com/libfuse/sshfs/releases/download/sshfs-"+consts.SSHFSVersion+"/sshfs-"+consts.SSHFSVersion+".tar.xz",
+		consts.SSHFSChecksum,
+	)
 
 	return dag.
 		Wolfi().
@@ -347,7 +347,10 @@ func (build *Builder) sshfsBin() *dagger.File {
 }
 
 func (build *Builder) cniPlugins() (bins []*dagger.File) {
-	src := dag.Git("github.com/containernetworking/plugins").Tag(consts.CniVersion).Tree()
+	src := releaseSource(
+		"https://github.com/containernetworking/plugins/archive/refs/tags/"+consts.CniVersion+".tar.gz",
+		consts.CniChecksum,
+	)
 
 	for _, pluginPath := range []string{
 		"./plugins/main/bridge",
@@ -373,15 +376,35 @@ func (build *Builder) daggerInit() *dagger.File {
 }
 
 func (build *Builder) Init() *dagger.File {
-	var url string
+	arch := build.platformSpec.Architecture
+	return releaseFile(
+		"https://github.com/krallin/tini/releases/download/"+consts.TiniVersion+"/tini-"+arch,
+		consts.TiniChecksums[arch],
+	)
+}
 
-	switch build.platformSpec.Architecture {
-	case "amd64":
-		url = "https://github.com/krallin/tini/releases/download/v0.19.0/tini-amd64"
-	case "arm64":
-		url = "https://github.com/krallin/tini/releases/download/v0.19.0/tini-arm64"
-	}
-	return dag.HTTP(url)
+// releaseFile downloads a file a build needs from an upstream release, and checks
+// it against checksum. It downloads in an exec rather than with dag.HTTP or
+// dag.Git because those ask the server again in every session, and a run's many
+// checks each build the engine. An exec's result stays cached across sessions, so
+// an engine that has the file doesn't contact the server at all.
+func releaseFile(url, checksum string) *dagger.File {
+	return dag.Container().
+		From(consts.AlpineImage).
+		WithExec([]string{"sh", "-ec", `
+wget -q -O /download "$1"
+echo "${2#sha256:}  /download" | sha256sum -c -
+`, "sh", url, checksum}).
+		File("/download")
+}
+
+// releaseSource is the source tree in a release tarball from releaseFile.
+func releaseSource(url, checksum string) *dagger.Directory {
+	return dag.Container().
+		From(consts.AlpineImage).
+		WithMountedFile("/src.tar", releaseFile(url, checksum)).
+		WithExec([]string{"sh", "-ec", `mkdir /src; tar xf /src.tar --strip-components=1 -C /src`}).
+		Directory("/src")
 }
 
 func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
