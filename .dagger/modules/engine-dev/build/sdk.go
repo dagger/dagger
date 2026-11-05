@@ -381,8 +381,36 @@ var goSDKModuleImports = []string{
 // GoSDKImageEntriesSeed is the Go module whose dependencies' builds the
 // engine image ships for the modules go-sdk generates: one that imports
 // what their generated code imports, tidied with the dagger.io/dagger
-// version they pin. GoImageEntriesSeed has the standard library's.
-func (build *Builder) GoSDKImageEntriesSeed() *dagger.Directory {
+// version they pin and sdk/go's requirements. GoImageEntriesSeed has the
+// standard library's.
+//
+// Measurement only, until a release carries sdk/go's raised requirements: then
+// goSDKModuleLibVersion names that release, whose go.mod requires them, and the
+// seed needs no requirements of its own. Until then a new go-sdk module on the
+// released target's lower requirements misses these builds.
+func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context) (*dagger.Directory, error) {
+	sdkGoMod, err := build.source.File("sdk/go/go.mod").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sdkMod, err := modfile.Parse("go.mod", []byte(sdkGoMod), nil)
+	if err != nil {
+		return nil, fmt.Errorf("parse sdk/go/go.mod: %w", err)
+	}
+	seedMod := new(modfile.File)
+	if err := seedMod.AddModuleStmt("seed"); err != nil {
+		return nil, err
+	}
+	if err := seedMod.AddGoStmt(distconsts.GolangVersion); err != nil {
+		return nil, err
+	}
+	for _, req := range sdkMod.Require {
+		seedMod.AddNewRequire(req.Mod.Path, req.Mod.Version, req.Indirect)
+	}
+	goMod, err := seedMod.Format()
+	if err != nil {
+		return nil, err
+	}
 	var mainGo strings.Builder
 	mainGo.WriteString("package main\n\nimport (\n")
 	for _, imp := range goSDKModuleImports {
@@ -392,12 +420,12 @@ func (build *Builder) GoSDKImageEntriesSeed() *dagger.Directory {
 	return core.NewContainer().
 		From(consts.GolangImage).
 		WithEnvVariable("GOPROXY", seedGoProxy).
-		WithNewFile("/seed/go.mod", "module seed\n\ngo "+distconsts.GolangVersion+"\n").
+		WithNewFile("/seed/go.mod", string(goMod)).
 		WithNewFile("/seed/main.go", mainGo.String()).
 		WithWorkdir("/seed").
 		WithExec([]string{"go", "get", "dagger.io/dagger@" + goSDKModuleLibVersion}).
 		WithExec([]string{"go", "mod", "tidy"}).
-		Directory("/seed")
+		Directory("/seed"), nil
 }
 
 func unpackTar(tarball *dagger.File) *dagger.Directory {

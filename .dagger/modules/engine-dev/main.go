@@ -239,6 +239,10 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	if err != nil {
 		return nil, err
 	}
+	seedGoSDK, err := builder.GoSDKImageEntriesSeed(ctx)
+	if err != nil {
+		return nil, err
+	}
 	daggerGo, err := goSDKDaggerGo(ctx, dev.Source)
 	if err != nil {
 		return nil, err
@@ -267,7 +271,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	ran := client.
 		WithMountedFile("/usr/local/bin/engine-image-entries", builder.ImageEntriesBinary()).
 		WithMountedDirectory("/seed", seed).
-		WithMountedDirectory("/seed-go-sdk", builder.GoSDKImageEntriesSeed()).
+		WithMountedDirectory("/seed-go-sdk", seedGoSDK).
 		WithExec(withoutOuterSession("engine-image-entries",
 			"-seed", "/seed",
 			"-entrypoint-seed", "/seed-go-sdk",
