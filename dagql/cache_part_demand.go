@@ -122,6 +122,14 @@ func (c *Cache) evaluateAcquiredParts(ctx context.Context, res AnyResult, row *s
 	return c.evaluateAcquiredScope(ctx, res, row, nil, parts)
 }
 func (c *Cache) evaluateAcquiredScope(ctx context.Context, res AnyResult, row *sharedResult, path PersistedRefPath, parts []PartKey) (rerr error) {
+	if c.reuseAcquiredScope(ctx, row, path, parts) {
+		return nil
+	}
+	whole := len(parts) == 0
+	var seen partReuse
+	if whole {
+		seen = c.capturePartReuse(row)
+	}
 	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if c.resultsByID[row.id] != row {
 		c.egraphMu.Unlock()
@@ -165,11 +173,17 @@ func (c *Cache) evaluateAcquiredScope(ctx context.Context, res AnyResult, row *s
 			}
 		}
 	}
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 	for _, part := range parts {
-		eg.Go(func() error { return c.demandPart(ctx, res, PersistedPartAddress{OutputPath: path, Part: part}) })
+		eg.Go(func() error { return c.demandPart(egCtx, res, PersistedPartAddress{OutputPath: path, Part: part}) })
 	}
-	return eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	if whole {
+		c.recordAcquiredScope(ctx, row, path, parts, seen)
+	}
+	return nil
 }
 func partTaskKey(prefix string, address PersistedPartAddress) LazyGroupKey {
 	if len(address.OutputPath) == 0 {
@@ -212,7 +226,11 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 	outer := partReselectWatch{loop: "demandPart"}
 	for {
 		outer.again(ctx, res.cacheSharedResult(), address)
+		// opened is the row's state the body probed the part at, when it
+		// found it complete and opened it.
+		var opened *partReuse
 		err := c.RunLazyTask(ctx, res, partTaskKey("acquire", address), LazyTaskSpec{Body: func(ctx context.Context) error {
+			opened = nil
 			watch := partReselectWatch{loop: "demandPart acquire"}
 			// retry notes a refusal in the reselect class that is about to be
 			// retried. It returns an error when the progress rule forbids the
@@ -241,6 +259,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					}
 					continue
 				}
+				seen := c.capturePartReuse(row)
 				probeCtx, endProbe := profDemandStep(ctx, "probe")
 				record, _, probe, err := c.probePart(probeCtx, row, address)
 				endProbe(err)
@@ -267,6 +286,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					if !allowed {
 						return fmt.Errorf("part demand: session no longer satisfies installed requirements")
 					}
+					opened = &seen
 					return nil
 				}
 				route, err := routePartRecord(record, address)
@@ -371,6 +391,11 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 		if partCanReselect(err) {
 			outer.refused(err)
 			continue
+		}
+		if err == nil && opened != nil {
+			// Only once the task has finished: its finish syncs the row's
+			// owner leases, which keep the opened part from pruning.
+			c.recordAcquiredPart(ctx, res, address, *opened)
 		}
 		return err
 	}
