@@ -69,6 +69,39 @@ func (m *Caller) NestedMessage(ctx context.Context) (string, error) {
 }
 `, alpineImage)
 
+// serveTreeWorkspaceNestedScript is what a process a module starts runs: it
+// loads the caller through the workspace the module was given, as a test
+// binary's client does, then has the caller serve its sibling.
+const serveTreeWorkspaceNestedScript = `apk add -q curl
+q() { curl -s -u "$DAGGER_SESSION_TOKEN:" -H 'Content-Type: application/json' -d "$1" "http://127.0.0.1:$DAGGER_SESSION_PORT/query"; echo; }
+q "{\"query\":\"{node(id: \\\"$WS_ID\\\"){... on Workspace{moduleSource(path: \\\"/modules/caller\\\"){asModule{serve}}}}}\"}"
+q '{"query":"{caller{message(address: \"/modules/hello\")}}"}'
+`
+
+// serveTreeWorkspaceNestedSource is a runner module whose process loads the
+// caller from the runner's workspace.
+var serveTreeWorkspaceNestedSource = fmt.Sprintf(`package main
+
+import (
+	"context"
+
+	"dagger/runner/internal/dagger"
+)
+
+type Runner struct{}
+
+func (m *Runner) NestedWorkspaceMessage(ctx context.Context, ws *dagger.Workspace) (string, error) {
+	id, err := ws.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dag.Container().From(%q).
+		WithEnvVariable("WS_ID", string(id)).
+		WithExec([]string{"sh", "-c", %q}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		Stdout(ctx)
+}
+`, alpineImage, serveTreeWorkspaceNestedScript)
+
 // serveTreeCachedSource has the caller serve a sibling and call it, so the
 // sibling runs as a module served from the caller's tree.
 const serveTreeCachedSource = `package main
@@ -564,6 +597,25 @@ source = "modules/caller"
 			WithDirectory(".", serveTreeModules(c)).
 			WithNewFile("modules/caller/nested.go", serveTreeNestedSource).
 			With(daggerCallAt("caller", "nested-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"message":"hi from hello"`)
+	})
+
+	t.Run("module a nested client loads from its workspace serves from the workspace's host", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// The runner's process is a client nested in a container that does
+		// not hold the workspace, so the caller's tree has to be read from the
+		// host the workspace belongs to.
+		out, err := goGitBase(t, c).
+			WithNewFile("dagger.toml", `[modules.runner]
+source = "modules/runner"
+`).
+			WithDirectory(".", serveTreeModules(c)).
+			WithNewFile("modules/runner/dagger.json", strings.Replace(serveTreeCallerManifest, `"caller"`, `"runner"`, 1)).
+			WithNewFile("modules/runner/main.go", serveTreeWorkspaceNestedSource).
+			With(daggerCallAt("runner", "nested-workspace-message")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, `"message":"hi from hello"`)
