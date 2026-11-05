@@ -211,6 +211,9 @@ func (w *spanWalker) computeMode(span *Span) spanMode {
 	if !w.opts.ShouldShow(w.db, span) {
 		return modeDrop
 	}
+	if w.dropsFailedPlumbing(span) {
+		return modeDrop
+	}
 	if w.passesOnFailure(span) {
 		return modeThrough
 	}
@@ -252,6 +255,50 @@ func (w *spanWalker) passesOnFailure(span *Span) bool {
 		return false
 	}
 	return w.showsFailureBeneath(span)
+}
+
+// dropsFailedPlumbing reports whether span is the failed plumbing of a
+// module function call within a failed encapsulating span, such as a module
+// entrypoint's span under an SDK's step, whose function's own failure the
+// view shows beside it, under the function call. The plumbing fails because
+// the function did: a module entrypoint reports a function's error as its
+// process's failed exec. That exec, and its plumbing around it, would only
+// repeat the failure. Plumbing that fails on its own, with no failure of the
+// function beside it, still shows.
+func (w *spanWalker) dropsFailedPlumbing(span *Span) bool {
+	verbosity := w.opts.Verbosity
+	if v, ok := w.opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
+	if w.opts.Debug || !span.FunctionPlumbing || verbosity >= ShowInternalVerbosity ||
+		!span.IsFailedOrCausedFailure() || !inFailedEncapsulation(span) {
+		return false
+	}
+	// The function call holds the plumbing beneath passthrough spans, such
+	// as the module process's, and its body's work beside them.
+	branch, call := span, span.ParentSpan
+	for call != nil && call.Passthrough {
+		branch, call = call, call.ParentSpan
+	}
+	if call == nil {
+		return false
+	}
+	for _, sibling := range call.ChildSpans.Spans() {
+		if sibling == branch {
+			continue
+		}
+		switch w.mode(sibling) {
+		case modeBuild:
+			if sibling.IsFailedOrCausedFailure() {
+				return true
+			}
+		case modeThrough:
+			if w.showsFailureBeneath(sibling) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // inFailedEncapsulation reports whether span is the machinery of a failed

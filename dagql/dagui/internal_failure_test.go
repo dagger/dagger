@@ -15,7 +15,8 @@ import (
 // even when it's internal, so every internal call between the module's load
 // and the failed compile was shown, and with it everything beneath it. The
 // internal calls that only pass the compile's failure on give their place to
-// it. A failed internal span outside the SDK's encapsulation, such as the
+// it, and the module entrypoint's plumbing, which fails because the function
+// did, drops out beside it. A failed internal span outside the SDK's encapsulation, such as the
 // engine's own load of a dependency, still shows, even within the CLI's
 // encapsulation of module loading as a whole, as does one with no failure
 // beneath it, and all of it at -vvv.
@@ -33,6 +34,10 @@ func TestInternalFailureGivesPlaceToItsCause(t *testing.T) {
 	queryID := testID(10)
 	depsID := testID(11)
 	extraID := testID(12)
+	fnProcessID := testID(13)
+	plumbingID := testID(14)
+	dispatchID := testID(15)
+	fnQueryID := testID(16)
 
 	start := time.Now().Add(-time.Minute)
 	end := start.Add(time.Second)
@@ -64,7 +69,20 @@ func TestInternalFailureGivesPlaceToItsCause(t *testing.T) {
 			StartTime: start, EndTime: end, Status: ok, Internal: true},
 		{ID: binaryID, TraceID: traceID, ParentID: queryID, Name: "GoPackage.binary",
 			StartTime: start, EndTime: end, Status: failed, Internal: true},
-		{ID: compileID, TraceID: traceID, ParentID: binaryID, Name: "withExec sh /gobuild/build.sh dagger/broken",
+		// The function's body, whose compile fails, beneath the requests of
+		// its process...
+		{ID: fnQueryID, TraceID: traceID, ParentID: binaryID, Name: "POST /query",
+			StartTime: start, EndTime: end, Status: ok, Passthrough: true},
+		{ID: compileID, TraceID: traceID, ParentID: fnQueryID, Name: "withExec sh /gobuild/build.sh dagger/broken",
+			StartTime: start, EndTime: end, Status: failed, Internal: true},
+		// ...and beside it, beneath the module process's span, the module
+		// entrypoint's plumbing, which reports the function's error as its
+		// process's failed exec.
+		{ID: fnProcessID, TraceID: traceID, ParentID: binaryID, Name: "gobuild:Gobuild.binary",
+			StartTime: start, EndTime: end, Status: failed, Passthrough: true},
+		{ID: plumbingID, TraceID: traceID, ParentID: fnProcessID, Name: "call module entrypoint",
+			StartTime: start, EndTime: end, Status: failed, Internal: true, Encapsulate: true, FunctionPlumbing: true},
+		{ID: dispatchID, TraceID: traceID, ParentID: plumbingID, Name: "withExec /usr/local/bin/dispatch engine-call",
 			StartTime: start, EndTime: end, Status: failed, Internal: true},
 		{ID: execRunID, TraceID: traceID, ParentID: compileID, Name: "exec.run",
 			StartTime: start, EndTime: end, Status: failed, Passthrough: true},
@@ -84,7 +102,7 @@ func TestInternalFailureGivesPlaceToItsCause(t *testing.T) {
 	if compile.Parent == nil || compile.Parent.Span.ID != runtimeID {
 		t.Errorf("the failed compile is not shown in place of the internal calls above it, under %q", runtimeID)
 	}
-	for _, id := range []SpanID{sdkCallID, binaryID, siblingID} {
+	for _, id := range []SpanID{sdkCallID, binaryID, siblingID, plumbingID, dispatchID} {
 		if tree := home(view, id); tree != nil {
 			t.Errorf("internal span %q is shown", tree.Span.Name)
 		}
@@ -97,9 +115,55 @@ func TestInternalFailureGivesPlaceToItsCause(t *testing.T) {
 	}
 
 	internal := db.RowsView(FrontendOpts{ZoomedSpan: primaryID, Verbosity: ShowInternalVerbosity})
-	for _, id := range []SpanID{sdkCallID, binaryID, siblingID, compileID} {
+	for _, id := range []SpanID{sdkCallID, binaryID, siblingID, compileID, plumbingID, dispatchID} {
 		if home(internal, id) == nil {
 			t.Errorf("span %s is not shown at -vvv", id)
 		}
+	}
+}
+
+// TestFailedPlumbingAloneShows covers a module entrypoint whose plumbing fails
+// on its own, before the function runs: with no failure of the function
+// beside it, the plumbing's failure is the one to tell, and it shows.
+func TestFailedPlumbingAloneShows(t *testing.T) {
+	traceID := TraceID{TraceID: trace.TraceID{1}}
+	primaryID := testID(1)
+	runtimeID := testID(2)
+	callID := testID(3)
+	processID := testID(4)
+	plumbingID := testID(5)
+	dispatchID := testID(6)
+	queryID := testID(7)
+	okExecID := testID(8)
+
+	start := time.Now().Add(-time.Minute)
+	end := start.Add(time.Second)
+	ok := sdktrace.Status{Code: codes.Ok}
+	failed := sdktrace.Status{Code: codes.Error, Description: "dispatcher crashed"}
+
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: primaryID, TraceID: traceID, Name: "load module", StartTime: start, EndTime: end, Status: failed},
+		{ID: runtimeID, TraceID: traceID, ParentID: primaryID, Name: "module SDK: load runtime",
+			StartTime: start, EndTime: end, Status: failed, Encapsulate: true},
+		{ID: callID, TraceID: traceID, ParentID: runtimeID, Name: "Gobuild.binary",
+			StartTime: start, EndTime: end, Status: failed, Internal: true},
+		// The function's body ran nothing that failed.
+		{ID: queryID, TraceID: traceID, ParentID: callID, Name: "POST /query",
+			StartTime: start, EndTime: end, Status: ok, Passthrough: true},
+		{ID: processID, TraceID: traceID, ParentID: callID, Name: "gobuild:Gobuild.binary",
+			StartTime: start, EndTime: end, Status: failed, Passthrough: true},
+		{ID: okExecID, TraceID: traceID, ParentID: queryID, Name: "Directory.file",
+			StartTime: start, EndTime: end, Status: ok, Internal: true},
+		{ID: plumbingID, TraceID: traceID, ParentID: processID, Name: "call module entrypoint",
+			StartTime: start, EndTime: end, Status: failed, Internal: true, Encapsulate: true, FunctionPlumbing: true},
+		{ID: dispatchID, TraceID: traceID, ParentID: plumbingID, Name: "withExec /usr/local/bin/dispatch engine-call",
+			StartTime: start, EndTime: end, Status: failed, Internal: true},
+	})
+	db.SetPrimarySpan(primaryID)
+
+	view := db.RowsView(FrontendOpts{ZoomedSpan: primaryID, Verbosity: ShowCompletedVerbosity})
+	if view.HomeTree(db.Spans.Map[dispatchID]) == nil {
+		t.Error("the plumbing's own failure is not shown")
 	}
 }

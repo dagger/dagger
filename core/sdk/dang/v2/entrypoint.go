@@ -14,10 +14,13 @@ import (
 	"github.com/dagger/dagger/core/sdk/entrypoint"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/dang/v2/pkg/dang"
 	"github.com/vito/dang/v2/pkg/hm"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const moduleEntrypointTypeName = "ModuleEntrypoint"
@@ -133,7 +136,8 @@ func (r *entrypointRuntime) Call(
 	fnCall.SetModuleProcess()
 	fnCall.SetProcessSpanContext(dagql.UserFacingSpanContext(ctx))
 
-	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Internal(), telemetry.Encapsulate())
+	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Internal(), telemetry.Encapsulate(),
+		trace.WithAttributes(attribute.Bool(telemetryattrs.UIFunctionPlumbingAttr, true)))
 	defer telemetry.EndWithCause(span, &rerr)
 	fnCall.SetPlumbingSpanContext(span.SpanContext())
 

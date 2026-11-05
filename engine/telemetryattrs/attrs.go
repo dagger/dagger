@@ -77,6 +77,13 @@ const (
 
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
+	// UIFunctionPlumbingAttr marks the span of the work that runs a module
+	// function call without being its body: a module entrypoint's own span,
+	// where it starts the module's process. When the function fails, its
+	// plumbing fails with it, and a frontend shows the function's own failure
+	// instead of the plumbing's. (bool)
+	UIFunctionPlumbingAttr = "dagger.io/ui.function_plumbing"
+
 	// Dagger Cloud's /v1/traces stream stamps these on every span it emits
 	// when asked for view=dagui (api/otlp/stream.go in dagger.io). They are
 	// egress-only: nothing publishes them, and a live session never sees
