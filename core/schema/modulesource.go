@@ -66,6 +66,13 @@ type moduleSourceSchema struct{}
 
 var _ SchemaResolvers = &moduleSourceSchema{}
 
+// loadModuleSourceSDK loads the SDK a module source names. It is replaceable
+// so unit tests, whose servers have no engine image to load a built-in SDK
+// module from, can stand one in.
+var loadModuleSourceSDK = func(ctx context.Context, query *core.Query, cfg *core.SDKConfig, src *core.ModuleSource) (core.SDK, error) {
+	return sdk.NewLoader().SDKForModule(ctx, query, cfg, src)
+}
+
 func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("moduleSource", s.moduleSource).
@@ -1467,7 +1474,7 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 			return err
 		}
 		if src.SDK != nil {
-			loaded, err := sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
+			loaded, err := loadModuleSourceSDK(ctx, query, src.SDK, src)
 			if err != nil {
 				return fmt.Errorf("load module source SDK: %w", err)
 			}
@@ -1910,7 +1917,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		if err != nil {
 			return nil, err
 		}
-		src.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
+		src.SDKImpl, err = loadModuleSourceSDK(ctx, query, src.SDK, src)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 		}

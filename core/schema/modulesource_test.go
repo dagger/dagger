@@ -376,6 +376,17 @@ func TestDangSourceVersionMutations(t *testing.T) {
 
 func TestDangSDKVersionMutations(t *testing.T) {
 	ctx, s, original := versionMutationSource(t, nil)
+	// The Go SDK is a module the engine image carries, which this server
+	// can't load. The test needs only an SDK that isn't Dang's. Not parallel:
+	// it replaces the package's SDK loader.
+	loadSDK := loadModuleSourceSDK
+	loadModuleSourceSDK = func(ctx context.Context, query *core.Query, cfg *core.SDKConfig, src *core.ModuleSource) (core.SDK, error) {
+		if cfg.Source == "go" {
+			return &prebuildTestSDK{}, nil
+		}
+		return loadSDK(ctx, query, cfg, src)
+	}
+	t.Cleanup(func() { loadModuleSourceSDK = loadSDK })
 	for _, sdk := range []string{"go", ""} {
 		for _, override := range []string{"", engine.IdentifierCasingVersion} {
 			t.Run(sdk+"/"+override, func(t *testing.T) {
