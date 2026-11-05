@@ -168,3 +168,42 @@ func TestAcquiredPartReuseChecksSessionRequirements(t *testing.T) {
 	require.NoError(t, err)
 	require.Error(t, evaluate())
 }
+
+// A record is never dated later than the state it saw, and a part being
+// written or a running evaluation is never reused.
+func TestAcquiredPartReuseConditions(t *testing.T) {
+	t.Parallel()
+	_, c, _, receiver := newLazyRetryTestResult(t, nil)
+	row := receiver.cacheSharedResult()
+	key, err := partAddressKey(PersistedPartAddress{Part: "snapshot"})
+	require.NoError(t, err)
+	reusable := func() bool {
+		c.egraphMu.RLock()
+		defer c.egraphMu.RUnlock()
+		return partReusableLocked(row, []string{key})
+	}
+
+	stale := c.capturePartReuse(row)
+	testMovePayload(row)
+	c.recordPartReuse(row, key, stale)
+	require.False(t, reusable(), "a record of a state that has since moved isn't written")
+
+	c.recordPartReuse(row, key, c.capturePartReuse(row))
+	require.True(t, reusable())
+
+	gate := row.partGate.gate.Load()
+	gate.mu.Lock()
+	gate.outputs[key] = partOutputState{phase: PartOutputInstalled}
+	gate.mu.Unlock()
+	require.False(t, reusable(), "an installed part that hasn't settled is joined, not reused")
+	gate.mu.Lock()
+	delete(gate.outputs, key)
+	gate.groups["whole"] = &partLazyEvaluationState{phase: LazyEvaluationRunning}
+	gate.mu.Unlock()
+	require.False(t, reusable(), "nothing is reused while an evaluation of the row runs")
+	gate.mu.Lock()
+	delete(gate.groups, "whole")
+	gate.writers[&writerTicket{done: make(chan struct{})}] = &PartPermit{address: PersistedPartAddress{Part: "snapshot"}}
+	gate.mu.Unlock()
+	require.False(t, reusable(), "a part with a writer isn't reused")
+}
