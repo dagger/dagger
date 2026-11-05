@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/engine"
 )
@@ -122,6 +124,78 @@ func requireQueryNamingMatches(ctx context.Context, t *testctx.T, ctr *core.Cont
 	require.NoError(t, err)
 	require.Equal(t, version, gjson.Get(out, "naming.version").String(), out)
 	require.JSONEq(t, naming.Raw, gjson.Get(out, "naming.module").Raw)
+}
+
+// TestNamingBeforeEntrypoint uses a real source with no SDK or entrypoint,
+// not an in-memory ModuleSource. Naming must work without loading it, from
+// either caller view, and Query.naming must reproduce all its answers.
+func (ModuleNamingSuite) TestNamingBeforeEntrypoint(ctx context.Context, t *testctx.T) {
+	for _, callerVersion := range []string{"v1.0.0-beta.20", namingCut} {
+		t.Run(callerVersion, func(ctx context.Context, t *testctx.T) {
+			q := core.NewQuery(connect(ctx, t, dagger.WithVersionOverride(callerVersion)))
+			for _, declared := range []string{"v1.0.0-beta.20", namingCut, "", "v1.999.0"} {
+				t.Run(declared, func(ctx context.Context, t *testctx.T) {
+					src := q.Directory().WithNewFile("dagger.json", fmt.Sprintf(`{"name":"my-mod","engineVersion":%q}`, declared)).AsModuleSource()
+					n := src.Naming()
+					version, err := n.Version(ctx)
+					if declared == "v1.999.0" {
+						// Query.naming can answer for a future version, but a real
+						// source must first pass module version compatibility.
+						require.ErrorContains(t, err, "module requires dagger v1.999.0")
+						return
+					}
+					require.NoError(t, err)
+					declaredVersion, err := src.EngineVersion(ctx)
+					require.NoError(t, err)
+					require.Equal(t, engine.ModuleAPIViewVersion(declaredVersion), version)
+					name, err := n.Name(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "my-mod", name)
+					original, err := n.OriginalName(ctx)
+					require.NoError(t, err)
+					require.Equal(t, name, original)
+					primitive := q.Naming(core.NamingOpts{Version: version}).Module(name, core.NamingModuleOpts{OriginalName: original})
+					// Omission of originalName means name, not an empty prefix.
+					defaultOriginal, err := q.Naming(core.NamingOpts{Version: version}).Module(name).OriginalName(ctx)
+					require.NoError(t, err)
+					require.Equal(t, original, defaultOriginal)
+					for _, field := range []struct {
+						name  string
+						call  func(*core.ModuleNaming, []string) ([]string, error)
+						names []string
+					}{
+						{"types", func(n *core.ModuleNaming, names []string) ([]string, error) { return n.TypeNames(ctx, names) }, []string{"HttpClient", "MyMod", "MyModThing", "HttpClient"}},
+						{"fields", func(n *core.ModuleNaming, names []string) ([]string, error) { return n.FieldNames(ctx, names) }, []string{"getURL", "e2eTest", "loadFooFromID"}},
+						{"members", func(n *core.ModuleNaming, names []string) ([]string, error) { return n.EnumMemberNames(ctx, names) }, []string{"Arm64", "HTTP2", "P_256"}},
+					} {
+						got, err := field.call(n, field.names)
+						require.NoError(t, err, field.name)
+						want, err := field.call(primitive, field.names)
+						require.NoError(t, err, field.name)
+						require.Equal(t, want, got, field.name)
+						empty, err := field.call(n, []string{})
+						require.NoError(t, err, field.name)
+						require.Empty(t, empty, field.name)
+					}
+					for _, candidates := range [][]string{{"Helper", "MyMod"}, {"Helper"}, {}} {
+						got, err := n.MainObject(ctx, candidates)
+						require.NoError(t, err)
+						want, err := primitive.MainObject(ctx, candidates)
+						require.NoError(t, err)
+						require.Equal(t, want, got)
+					}
+					// Unlike primitive identifier formatting, ModuleNaming retains
+					// legacy strcase's permissiveness before the cut.
+					_, err = n.FieldNames(ctx, []string{"ok", "héllo"})
+					if semver.Compare(version, namingCut) >= 0 {
+						require.ErrorContains(t, err, `"héllo"`)
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		})
+	}
 }
 
 // TestModuleSourceNamingMatchesSchema checks ModuleSource.naming against the
@@ -364,11 +438,19 @@ type Shared {
 	require.Equal(t, []string{"AliasTwoThing"}, gjsonStrings(gjson.Get(out, "pb.names")), out)
 	// Types are namespaced under the alias, after the original name.
 	require.Equal(t, []string{"AliasOneThing", "AliasOne"}, gjsonStrings(gjson.Get(out, "pa.prefixed")), out)
+	require.Equal(t, []string{"AliasTwoThing", "AliasTwo"}, gjsonStrings(gjson.Get(out, "pb.prefixed")), out)
 
 	// Query.naming answers the same for each load's version, name and
 	// original name.
 	for mod, alias := range map[string]string{"pa": "alias-one", "pb": "alias-two"} {
 		identity := gjsonStrings(gjson.Get(out, mod+".identity"))
+		// Without the original name, already-prefixed declarations cannot
+		// have the intrinsic prefix removed. This must differ from the
+		// caller-bound naming, rather than just comparing two API paths.
+		withoutOriginal, err := core.NewQuery(c).Naming(core.NamingOpts{Version: namingCut}).Module(alias).
+			TypeNames(ctx, []string{"SharedThing", "Shared"})
+		require.NoError(t, err)
+		require.NotEqual(t, gjsonStrings(gjson.Get(out, mod+".prefixed")), withoutOriginal)
 		require.Len(t, identity, 3, out)
 		require.Equal(t, engine.ModuleAPIViewVersion(namingCut), identity[0], out)
 		require.Equal(t, alias, identity[1], out)
@@ -428,7 +510,7 @@ func (ModuleNamingSuite) TestMainTypeSchemaName(ctx context.Context, t *testctx.
 		want    map[string]string
 	}{
 		{"v1.0.0-beta.20", map[string]string{"k8s-tools": "K8STools", "e2e-test": "E2ETest", "http-server": "HttpServer"}},
-		{namingCut, map[string]string{"k8s-tools": "K8sTools", "http-server": "HTTPServer"}},
+		{namingCut, map[string]string{"k8s-tools": "K8sTools", "e2e-test": "E2ETest", "http-server": "HTTPServer"}},
 	} {
 		t.Run(tc.version, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)

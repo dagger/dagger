@@ -3058,12 +3058,14 @@ func (s *moduleSchema) currentModuleNamingCacheKey(
 	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil
+		return fmt.Errorf("current module naming: %w", err)
 	}
 	mod, err := query.CurrentModule(ctx)
-	if err != nil || mod.Self() == nil || !mod.Self().Source.Valid {
-		// Fall back to CurrentModule's own source.
-		return nil
+	if err != nil {
+		return fmt.Errorf("current module naming: %w", err)
+	}
+	if mod.Self() == nil || !mod.Self().Source.Valid {
+		return errors.New("invalid unset current module source")
 	}
 	srcID, err := mod.Self().Source.Value.ID()
 	if err != nil {
@@ -3075,25 +3077,18 @@ func (s *moduleSchema) currentModuleNamingCacheKey(
 // currentModuleNaming is ModuleSource.naming of the current module's source.
 func (s *moduleSchema) currentModuleNaming(
 	ctx context.Context,
-	curMod *core.CurrentModule,
+	_ *core.CurrentModule,
 	args currentModuleNamingArgs,
 ) (*core.ModuleNaming, error) {
-	if args.ModuleSource.Valid {
-		dag, err := core.CurrentDagqlServer(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get dag server: %w", err)
-		}
-		src, err := args.ModuleSource.Value.Load(ctx, dag)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load current module source: %w", err)
-		}
-		return src.Self().Naming(), nil
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	src := curMod.Module.Self().Source.Value.Self()
-	if src == nil {
-		return nil, errors.New("invalid unset current module source")
+	src, err := args.ModuleSource.Value.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load current module source: %w", err)
 	}
-	return src.Naming(), nil
+	return src.Self().Naming(), nil
 }
 
 func (s *moduleSchema) currentModuleGeneratedContextDirectory(

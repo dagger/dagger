@@ -171,10 +171,16 @@ func (IdentifierSuite) TestNamingVersion(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, version, again)
 
-	for _, v := range []string{"v1.0.0-beta.20", engine.IdentifierCasingVersion} {
-		version, err := q.Naming(core.NamingOpts{Version: v}).Version(ctx)
+	for _, v := range []string{"v0.21.0", "v1.0.0-beta.15", "v1.0.0-beta.20", engine.IdentifierCasingVersion, "v1.0.0", "v1.999.0"} {
+		n := q.Naming(core.NamingOpts{Version: v})
+		version, err := n.Version(ctx)
 		require.NoError(t, err)
 		require.Equal(t, engine.ModuleAPIViewVersion(v), version, v)
+		// Primitive formatting always uses the dictionary, not legacy
+		// strcase, even when module declarations use the legacy rules.
+		formatted, err := n.FormatIdentifiers(ctx, []string{"withGPU", "callID"}, core.CasingCamel, core.NamingFormatIdentifiersOpts{Acronyms: core.AcronymStyleCapitalized})
+		require.NoError(t, err)
+		require.Equal(t, []string{"withGpu", "callId"}, formatted, v)
 	}
 
 	// A version past the engine's is capped at the engine's own.
@@ -190,6 +196,53 @@ func (IdentifierSuite) TestNamingVersion(ctx context.Context, t *testctx.T) {
 		got, err := q.Naming(core.NamingOpts{Version: v}).Module("my-mod").TypeNames(ctx, []string{"HttpClient"})
 		require.NoError(t, err)
 		require.Equal(t, []string{want}, got, v)
+	}
+}
+
+// Explicitly empty originalName is not omission: it preserves an empty
+// intrinsic prefix. mainObject still falls back to the final module name.
+func (IdentifierSuite) TestModuleIdentity(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	type moduleNaming struct {
+		ID                          core.ID
+		Version, Name, OriginalName string
+		TypeNames                   []string
+		MainObject                  string
+	}
+	for _, version := range []string{"v1.0.0-beta.20", engine.IdentifierCasingVersion} {
+		var res struct {
+			Naming struct{ Omitted, Empty moduleNaming }
+		}
+		require.NoError(t, c.Do(ctx, &dagger.Request{
+			Query: `query($version: String!) {
+  naming(version: $version) {
+    omitted: module(name: "my-mod") {
+      id version name originalName typeNames(names: ["MyMod"]) mainObject(candidates: ["MyMod"])
+    }
+    empty: module(name: "my-mod", originalName: "") {
+      id version name originalName typeNames(names: ["MyMod"]) mainObject(candidates: ["MyMod"])
+    }
+  }
+}`,
+			Variables: map[string]any{"version": version},
+		}, &dagger.Response{Data: &res}))
+		require.Equal(t, "my-mod", res.Naming.Omitted.OriginalName)
+		require.Empty(t, res.Naming.Empty.OriginalName)
+		require.Equal(t, []string{"MyMod"}, res.Naming.Omitted.TypeNames)
+		require.Equal(t, []string{"MyModMyMod"}, res.Naming.Empty.TypeNames)
+		for _, original := range []moduleNaming{res.Naming.Omitted, res.Naming.Empty} {
+			require.Equal(t, engine.ModuleAPIViewVersion(version), original.Version)
+			require.Equal(t, "my-mod", original.Name)
+			require.Equal(t, "MyMod", original.MainObject)
+			var loaded struct{ Node moduleNaming }
+			require.NoError(t, c.Do(ctx, &dagger.Request{
+				Query: `query($id: ID!) { node(id: $id) { ... on ModuleNaming {
+  id version name originalName typeNames(names: ["MyMod"]) mainObject(candidates: ["MyMod"])
+} } }`,
+				Variables: map[string]any{"id": original.ID},
+			}, &dagger.Response{Data: &loaded}))
+			require.Equal(t, original, loaded.Node)
+		}
 	}
 }
 

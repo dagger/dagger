@@ -16,19 +16,8 @@ func moduleNamingFor(engineVersion, name, originalName string) *ModuleNaming {
 	return (&ModuleSource{EngineVersion: engineVersion, ModuleName: name, ModuleOriginalName: originalName}).Naming()
 }
 
-// The two sides of the identifier casing cut: the last pre-cut beta, which
-// SDK modules are pinned to, and the cut itself.
+// A pre-cut version used by SDK modules, and the cut itself.
 const legacyNamingVersion = "v1.0.0-beta.20"
-
-func TestModuleNamingRules(t *testing.T) {
-	t.Parallel()
-
-	require.True(t, moduleNamingFor(legacyNamingVersion, "m", "m").Namer().Legacy())
-	require.False(t, moduleNamingFor(cutVersion, "m", "m").Namer().Legacy())
-	// A source without an entrypoint or anything else loaded still answers:
-	// it needs only its names and engine version.
-	require.Equal(t, (&ModuleSource{EngineVersion: cutVersion}).NamingView(), moduleNamingFor(cutVersion, "m", "m").View)
-}
 
 // A module source's naming is the naming of its version, name and original
 // name: NamingFor normalizes a version idempotently, so asking again with the
@@ -85,7 +74,7 @@ func TestModuleNamingTypeNames(t *testing.T) {
 		{
 			// Words cut differently around digits and terms still match.
 			module: "k8s-tools", original: "k8s-tools",
-			names:  []string{"K8STools", "K8SToolsClient"},
+			names: []string{"K8STools", "K8SToolsClient"},
 			// strcase spells k8s-tools K8STools, and K8STools K8Stools: a
 			// main object spelled as the module's schema name keeps it, but
 			// a prefixed one isn't recognized as prefixed, as it never was.
