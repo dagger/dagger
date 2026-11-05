@@ -317,8 +317,8 @@ is-module = true
 clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest", "dagger.io/linux/wolfi"]
 
 [sdks.go.scopes.".dagger/modules/python-client-dev".settings]
-dangEntrypoint = false
-unifiedClients = false
+dangEntrypoint = true
+unifiedClients = true
 
 [sdks.go.scopes.".dagger/modules/python-client-dev/dockerd"]
 is-module = true
