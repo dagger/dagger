@@ -1,0 +1,30 @@
+{
+  "name": "@dagger.io/core",
+  "version": "1.0.0-beta.24",
+  "author": "hello@dagger.io",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@dagger.io/session": "1.0.0-beta.1"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}
