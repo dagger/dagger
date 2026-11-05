@@ -2377,6 +2377,16 @@ func (s *gitSchema) asWorkspace(ctx context.Context, parent dagql.ObjectResult[*
 	if err := srv.Select(ctx, ref, &ws, dagql.Selector{Field: "asWorkspace", Args: []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(args.Cwd)}}}); err != nil {
 		return ws, err
 	}
+	// A clean repository has no uncommitted changes to apply, so its workspace
+	// is its head's: an overlay that changes nothing would still read as an
+	// edit to whatever keys on the workspace's edits.
+	dirty, err := parent.Self().Backend.Dirty(ctx)
+	if err != nil {
+		return ws, err
+	}
+	if dirty.Self() == nil {
+		return ws, nil
+	}
 	var changes dagql.ObjectResult[*core.Changeset]
 	if err := srv.Select(ctx, parent, &changes, dagql.Selector{Field: "uncommitted"}); err != nil {
 		return ws, err
