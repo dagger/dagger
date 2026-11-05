@@ -246,7 +246,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	nested := dev.IncrementSubnet()
 	service := engine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-image-entries-"+rand.Text()), dagger.ContainerWithMountedCacheOpts{
+		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume("dagger-image-entries-"+rand.Text()), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModeLocked,
 		}).
 		AsService(dagger.ContainerAsServiceOpts{
@@ -259,7 +259,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})
-	client, err := dev.InstallClient(ctx, dag.Wolfi().Container(), service)
+	client, err := dev.InstallClient(ctx, wolfi.New().Container(), service)
 	if err != nil {
 		return nil, err
 	}

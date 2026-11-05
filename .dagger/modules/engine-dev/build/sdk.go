@@ -317,7 +317,7 @@ func (build *Builder) GoImageEntriesSeed(ctx context.Context) (*dagger.Directory
 	if err != nil {
 		return nil, err
 	}
-	stdList, err := dag.Container().
+	stdList, err := core.NewContainer().
 		From(consts.GolangImage).
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithExec([]string{"go", "list", "-e", "-f", "{{if and (not .Incomplete) (ne .Name \"main\") (not .Error)}}{{.ImportPath}}{{end}}", "std"}).
@@ -345,7 +345,7 @@ func (build *Builder) GoImageEntriesSeed(ctx context.Context) (*dagger.Directory
 		fmt.Fprintf(&mainGo, "\t_ %q\n", imp)
 	}
 	mainGo.WriteString(")\n\nfunc main() {}\n")
-	return dag.Container().
+	return core.NewContainer().
 		From(consts.GolangImage).
 		WithEnvVariable("GOPROXY", seedGoProxy).
 		WithDirectory("/seed", seedMod.WithNewFile("main.go", mainGo.String())).
@@ -389,7 +389,7 @@ func (build *Builder) GoSDKImageEntriesSeed() *dagger.Directory {
 		fmt.Fprintf(&mainGo, "\t_ %q\n", imp)
 	}
 	mainGo.WriteString(")\n\nfunc main() {}\n")
-	return dag.Container().
+	return core.NewContainer().
 		From(consts.GolangImage).
 		WithEnvVariable("GOPROXY", seedGoProxy).
 		WithNewFile("/seed/go.mod", "module seed\n\ngo "+distconsts.GolangVersion+"\n").
