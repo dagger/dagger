@@ -274,6 +274,7 @@ func profLookupFacts(ctx context.Context, op *wcprof.Op, ev *CacheDecision, res 
 			attr string
 		}{
 			{ev.MissIncompatibleCandidates, telemetryattrs.CacheMissIncompatibleCandidatesAttr},
+			{ev.MissUnavailableParts, telemetryattrs.CacheMissUnavailablePartsAttr},
 			{ev.MissSawExpired, telemetryattrs.CacheMissSawExpiredAttr},
 			{ev.MissUnknownInputIndex >= 0, telemetryattrs.CacheMissUnknownInputAttr},
 			{ev.MissProducerReleased, telemetryattrs.CacheMissProducerReleasedAttr},

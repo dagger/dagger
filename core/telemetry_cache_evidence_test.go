@@ -183,6 +183,7 @@ func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
 		Outcome:                    dagql.CacheOutcomeExecuted,
 		MissIncompatibleCandidates: true,
+		MissUnavailableParts:       true,
 		MissSawExpired:             true,
 		MissUnknownInputIndex:      2,
 		SelfDigest:                 selfDig,
@@ -196,6 +197,7 @@ func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 		telemetryattrs.CacheContractAttr:                   telemetryattrs.CacheContractV1,
 		telemetryattrs.CacheOutcomeAttr:                    "executed",
 		telemetryattrs.CacheMissIncompatibleCandidatesAttr: "true",
+		telemetryattrs.CacheMissUnavailablePartsAttr:       "true",
 		telemetryattrs.CacheMissSawExpiredAttr:             "true",
 		telemetryattrs.CacheMissUnknownInputAttr:           "2",
 		telemetryattrs.CacheSelfDigestAttr:                 selfDig.String(),
