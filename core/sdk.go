@@ -379,8 +379,10 @@ finds it built or joins its build.
 type ModulePrebuilder interface {
 	// PrebuildFile returns that file for the loaded module, not yet built, or
 	// false when the module has none. It is the same result the module's
-	// calls build on.
-	PrebuildFile(context.Context, dagql.ObjectResult[*Module]) (dagql.ObjectResult[*File], bool, error)
+	// calls build on, or, with a platform, the same result the calls of an
+	// engine of that platform build on, such as an engine image of another
+	// platform ships.
+	PrebuildFile(context.Context, dagql.ObjectResult[*Module], *Platform) (dagql.ObjectResult[*File], bool, error)
 }
 
 /*

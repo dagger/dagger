@@ -121,12 +121,13 @@ func (sdk *entrypointSDK) Runtime(
 }
 
 // PrebuildFile returns the file of the entrypoint's prebuild member, when it
-// declares one, as the module's calls see it.
+// declares one, as the module's calls see it, or for platform.
 func (sdk *entrypointSDK) PrebuildFile(
 	ctx context.Context,
 	mod dagql.ObjectResult[*core.Module],
+	platform *core.Platform,
 ) (dagql.ObjectResult[*core.File], bool, error) {
-	return dangv2.EntrypointPrebuildFile(ctx, mod)
+	return dangv2.EntrypointPrebuildFile(ctx, mod, platform)
 }
 
 func (sdk *entrypointSDK) ModuleTypes(

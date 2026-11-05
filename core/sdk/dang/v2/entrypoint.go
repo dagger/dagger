@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/dang/v2/pkg/dang"
+	"github.com/vito/dang/v2/pkg/hm"
 )
 
 const moduleEntrypointTypeName = "ModuleEntrypoint"
@@ -225,7 +226,11 @@ func (r *entrypointRuntime) Call(
 
 // EntrypointPrebuildMember is the optional entrypoint member that returns the
 // file every call of the module builds on, such as the module's compiled
-// binary. It takes no arguments. Since the file doesn't depend on a call, the
+// binary. The engine calls it without arguments for its own calls, and with
+// a platform, as a string such as "linux/arm64", for the calls of an engine
+// of another platform, as an engine image of that platform ships: a member
+// that takes no platform declares no file for another. Since the file
+// doesn't depend on a call, the
 // engine can build it ahead of the module's first call, and a call that
 // builds on the same file then finds it built or joins its build.
 const EntrypointPrebuildMember = "prebuild"
@@ -237,6 +242,7 @@ const EntrypointPrebuildMember = "prebuild"
 func EntrypointPrebuildFile(
 	ctx context.Context,
 	mod dagql.ObjectResult[*core.Module],
+	platform *core.Platform,
 ) (file dagql.ObjectResult[*core.File], declared bool, rerr error) {
 	defer func() {
 		if rerr != nil {
@@ -296,7 +302,27 @@ func EntrypointPrebuildFile(
 			if err != nil {
 				return nil, err
 			}
-			value, err := callEntrypointMethod(ctx, env, entrypointName, EntrypointPrebuildMember, mod, nil)
+			// Another platform's is the member's with that platform as its
+			// argument; this engine's, the member's without one, as every
+			// entrypoint that declares it takes it.
+			var args []*core.FunctionCallArgValue
+			if platform != nil {
+				// A member that takes no platform builds for this engine's,
+				// whatever it is given.
+				takes, err := entrypointMemberTakes(ctx, env, entrypointName, EntrypointPrebuildMember, "platform")
+				if err != nil {
+					return nil, err
+				}
+				if !takes {
+					return nil, fmt.Errorf("module entrypoint %s takes no platform: it builds for this engine's platform only, not %s", EntrypointPrebuildMember, platform.Format())
+				}
+				value, err := json.Marshal(platform.Format())
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, &core.FunctionCallArgValue{Name: "platform", Value: core.JSON(value)})
+			}
+			value, err := callEntrypointMethod(ctx, env, entrypointName, EntrypointPrebuildMember, mod, args)
 			if err != nil {
 				return nil, fmt.Errorf("call module entrypoint %s: %w", EntrypointPrebuildMember, err)
 			}
@@ -507,6 +533,38 @@ func findModuleEntrypoint(env dang.ValueScope) (string, error) {
 	default:
 		return "", fmt.Errorf("module entrypoint source defines multiple %s types: %s", moduleEntrypointTypeName, strings.Join(matches, ", "))
 	}
+}
+
+// entrypointMemberTakes reports whether the entrypoint's member takes the
+// argument arg.
+func entrypointMemberTakes(ctx context.Context, env dang.ValueScope, entrypointName, member, arg string) (bool, error) {
+	base, found, err := env.Lookup(ctx, entrypointName)
+	if err != nil {
+		return false, fmt.Errorf("lookup module entrypoint %s: %w", entrypointName, err)
+	}
+	constructor, ok := base.(*dang.ConstructorFunction)
+	if !found || !ok {
+		return false, fmt.Errorf("module entrypoint %s is not a type", entrypointName)
+	}
+	scheme, found := constructor.ObjectType.SchemeOf(member)
+	if !found {
+		return false, fmt.Errorf("module entrypoint %s has no member %s", entrypointName, member)
+	}
+	t, _ := scheme.Type()
+	fn, ok := t.(*hm.FunctionType)
+	if !ok {
+		return false, nil
+	}
+	args, ok := fn.Arg().(*dang.RecordType)
+	if !ok {
+		return false, nil
+	}
+	for _, field := range args.Fields {
+		if field.Key == arg {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func callEntrypointMethod(

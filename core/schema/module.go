@@ -430,7 +430,10 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module object scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
 
 		dagql.NodeFunc("_prebuild", s.modulePrebuild).
-			Doc(`The file every call of the module builds on, such as its compiled binary, when its SDK declares one: the same result its calls build.`),
+			Doc(`The file every call of the module builds on, such as its compiled binary, when its SDK declares one: the same result its calls build.`).
+			Args(
+				dagql.Arg("platform").Doc(`The platform of the engine whose calls build on it, when not this engine's, such as an engine image's of another platform.`),
+			),
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -3331,10 +3334,14 @@ func optString(v *string) dagql.Optional[dagql.String] {
 	return dagql.Opt(dagql.String(*v))
 }
 
+type modulePrebuildArgs struct {
+	Platform dagql.Optional[core.Platform]
+}
+
 func (s *moduleSchema) modulePrebuild(
 	ctx context.Context,
 	mod dagql.ObjectResult[*core.Module],
-	_ struct{},
+	args modulePrebuildArgs,
 ) (dagql.Nullable[dagql.ObjectResult[*core.File]], error) {
 	none := dagql.Null[dagql.ObjectResult[*core.File]]()
 	if !mod.Self().Source.Valid {
@@ -3344,7 +3351,11 @@ func (s *moduleSchema) modulePrebuild(
 	if !ok {
 		return none, nil
 	}
-	file, ok, err := prebuilder.PrebuildFile(ctx, mod)
+	var platform *core.Platform
+	if args.Platform.Valid {
+		platform = &args.Platform.Value
+	}
+	file, ok, err := prebuilder.PrebuildFile(ctx, mod, platform)
 	if err != nil || !ok {
 		return none, err
 	}
