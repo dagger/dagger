@@ -420,12 +420,12 @@ func (PytestRunner) IsEnum() {}
 
 func (v PytestRunner) Name() string {
 	switch v {
+	case PytestRunnerPip:
+		return "PIP"
 	case PytestRunnerAuto:
 		return "AUTO"
 	case PytestRunnerUv:
 		return "UV"
-	case PytestRunnerPip:
-		return "PIP"
 	default:
 		return ""
 	}
@@ -467,10 +467,10 @@ func (v *PytestRunner) UnmarshalJSON(dt []byte) error {
 }
 
 const (
+	PytestRunnerPip PytestRunner = "PIP" // pytest (../../../../../../:0:0)
+
 	PytestRunnerAuto PytestRunner = "AUTO" // pytest (../../../../../../:0:0)
 
 	PytestRunnerUv PytestRunner = "UV" // pytest (../../../../../../:0:0)
-
-	PytestRunnerPip PytestRunner = "PIP" // pytest (../../../../../../:0:0)
 
 )
