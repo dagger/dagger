@@ -185,6 +185,39 @@ func TestDeclaresEntrypointSourcesParsesOncePerContent(t *testing.T) {
 	require.Less(t, again, parse/4, "asking again parsed the entrypoint again: %d bytes allocated, against %d for a parse", again, parse)
 }
 
+// The entrypoint's copy has no dang.toml, so a Dang version on the context
+// decides how the run parses it. The check must parse it the same way, or it
+// can find no sources member where the run has one. Postfix rescue is syntax
+// from Dang 2.1; in 2.0 it does not parse.
+func TestDeclaresEntrypointSourcesAtTheContextVersion(t *testing.T) {
+	t.Parallel()
+	dir := writeDangFiles(t, map[string]string{
+		"main.dang": entrypointSource(sourcesMember, goSDKMethods) + "let caught: Int! = 1 rescue { e: Error => 2 }\n",
+	})
+	atVersion := func(v dang.Version) context.Context {
+		return dang.ContextWithVersion(dang.ContextWithImportConfigs(t.Context(), dang.ImportConfig{
+			Name:       "Dagger",
+			Client:     failingClient{},
+			Schema:     contractTestSchema(),
+			AutoImport: true,
+		}), v)
+	}
+
+	ctx := atVersion(dang.Version2_1)
+	declared, err := DeclaresEntrypointSources(ctx, dir)
+	require.NoError(t, err)
+	require.True(t, declared)
+	_, err = runEntrypointDir(ctx, dir, true)
+	require.NoError(t, err)
+
+	ctx = atVersion(dang.Version2_0)
+	declared, err = DeclaresEntrypointSources(ctx, dir)
+	require.NoError(t, err)
+	require.False(t, declared)
+	_, err = runEntrypointDir(ctx, dir, true)
+	require.ErrorContains(t, err, "failed to parse file", "the run parses the entrypoint as the check does")
+}
+
 type failingClient struct{}
 
 func (failingClient) MakeRequest(context.Context, *graphql.Request, *graphql.Response) error {
