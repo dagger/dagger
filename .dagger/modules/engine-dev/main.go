@@ -14,6 +14,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"dagger/engine-dev/build"
+	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
 	clidev "dagger/engine-dev/internal/dagger/clients/cli-dev"
 	"dagger/engine-dev/internal/dagger/clients/codegen"
@@ -247,10 +248,17 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	if err != nil {
 		return nil, err
 	}
+	// The state is the engine build's own, named by its binary's content:
+	// making the same build again reuses its state and its cached entries, so
+	// the image is the same each time, and another build never starts on it.
+	engineDigest, err := engine.File(consts.EngineServerPath).Digest(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("the engine binary: %w", err)
+	}
 	nested := dev.IncrementSubnet()
 	service := engine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume("dagger-image-entries-"+rand.Text()), dagger.ContainerWithMountedCacheOpts{
+		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume("dagger-image-entries-"+engineDigest), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModeLocked,
 		}).
 		AsService(dagger.ContainerAsServiceOpts{
