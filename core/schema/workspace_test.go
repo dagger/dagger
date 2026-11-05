@@ -516,7 +516,7 @@ func checkpointHostHistoryOutcome(t *testing.T, ctx context.Context, register fu
 	for _, ended := range recorder.Ended() {
 		for _, kv := range ended.Attributes() {
 			if strings.HasPrefix(string(kv.Key), "git.history.donor_") {
-				attrs[string(kv.Key)] = kv.Value.Emit()
+				attrs[string(kv.Key)] = kv.Value.String()
 			}
 		}
 	}

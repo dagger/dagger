@@ -181,7 +181,7 @@ func carrierAttrs(rec *tracetest.SpanRecorder) (map[string]string, bool) {
 		}
 		attrs := map[string]string{}
 		for _, kv := range span.Attributes() {
-			attrs[string(kv.Key)] = kv.Value.Emit()
+			attrs[string(kv.Key)] = kv.Value.String()
 		}
 		return attrs, true
 	}
