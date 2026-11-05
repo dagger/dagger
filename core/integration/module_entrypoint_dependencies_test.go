@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -91,4 +92,68 @@ source = "./entrypoint"
 			require.Equal(t, "hello from dep", strings.TrimSpace(out))
 		})
 	}
+}
+
+// An entrypoint's dependencies feed only the entrypoint: its calls reach
+// them, but the module's own schema, which its code and generated bindings
+// see, holds the core alone, and the module doesn't list them. So a Go
+// module whose entrypoint builds it with dagger/go doesn't take dagger/go's
+// names, such as go, into its own schema, or its callers'.
+func (ModuleSuite) TestDangModuleEntrypointDependenciesFeedOnlyTheEntrypoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := goGitBase(t, c).
+		WithNewFile("dagger.toml", `[modules.app]
+source = ".dagger/modules/app"
+`).
+		WithNewFile(".dagger/modules/dep/dagger-module.toml", `name = "dep"
+
+[runtime]
+source = "dang"
+`).
+		WithNewFile(".dagger/modules/dep/main.dang", `type Dep {
+  pub greeting: String! {
+    "hello from dep"
+  }
+}
+`).
+		WithNewFile(".dagger/modules/app/dagger-module.toml", `name = "app"
+
+[[dependencies]]
+name = "dep"
+source = "../dep"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+		WithNewFile(".dagger/modules/app/entrypoint/main.dang", fmt.Sprintf(dependencyEntrypoint, ""))
+
+	out, err := ctr.With(daggerCallAt("app", "greet")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from dep", strings.TrimSpace(out), "the entrypoint reaches its dependency")
+
+	out, err = ctr.With(daggerQuery(`{moduleSource(refString:".dagger/modules/app"){introspectionSchemaJson{contents} asModule{dependencies{name}}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	var resp struct {
+		ModuleSource struct {
+			IntrospectionSchemaJSON struct {
+				Contents string `json:"contents"`
+			} `json:"introspectionSchemaJson"`
+			AsModule struct {
+				Dependencies []struct {
+					Name string `json:"name"`
+				} `json:"dependencies"`
+			} `json:"asModule"`
+		} `json:"moduleSource"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &resp))
+	var deps []string
+	for _, dep := range resp.ModuleSource.AsModule.Dependencies {
+		deps = append(deps, dep.Name)
+	}
+	// A Dang module lists itself among its dependencies.
+	require.NotContains(t, deps, "dep", "the module doesn't list its entrypoint's dependency")
+	types := parseSchemaContents(t, resp.ModuleSource.IntrospectionSchemaJSON.Contents).typeNames()
+	require.Contains(t, types, "Container", "the module's schema holds the core")
+	require.NotContains(t, types, "Dep", "the module's schema doesn't hold its entrypoint's dependency")
 }

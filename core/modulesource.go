@@ -187,6 +187,11 @@ type ModuleSource struct {
 	ModuleConfigUserFields        modules.ModuleConfigUserFields
 	DisableDefaultFunctionCaching bool
 
+	// EntrypointOnlyDependencies reports that the manifest lists its
+	// dependencies as its entrypoint's own, as a version 2 manifest without a
+	// runtime does: they feed only the entrypoint, not the module's schema.
+	EntrypointOnlyDependencies bool
+
 	// DangVersion is the Dang language version a Dang module's source is
 	// written in, e.g. "1.0" or "2.1": as the dang.toml governing its source
 	// (or its entrypoint, for a manifest v2 module) declares it, or else the
@@ -505,6 +510,7 @@ type persistedModuleSourcePayload struct {
 	ConfigExists                        bool                                  `json:"configExists,omitempty"`
 	ConfigFilename                      string                                `json:"configFilename,omitempty"`
 	Entrypoint                          *modules.ModuleEntrypointConfig       `json:"entrypoint,omitempty"`
+	EntrypointOnlyDependencies          bool                                  `json:"entrypointOnlyDependencies,omitempty"`
 	ModuleName                          string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName                  string                                `json:"moduleOriginalName,omitempty"`
 	EngineVersion                       string                                `json:"engineVersion,omitempty"`
@@ -852,6 +858,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		ConfigExists:                        src.ConfigExists,
 		ConfigFilename:                      src.ConfigFilename,
 		Entrypoint:                          src.Entrypoint,
+		EntrypointOnlyDependencies:          src.EntrypointOnlyDependencies,
 		ModuleName:                          src.ModuleName,
 		ModuleOriginalName:                  src.ModuleOriginalName,
 		EngineVersion:                       src.EngineVersion,
@@ -1021,6 +1028,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		ConfigExists:                        persisted.ConfigExists,
 		ConfigFilename:                      persisted.ConfigFilename,
 		Entrypoint:                          persisted.Entrypoint,
+		EntrypointOnlyDependencies:          persisted.EntrypointOnlyDependencies,
 		ModuleName:                          persisted.ModuleName,
 		ModuleOriginalName:                  persisted.ModuleOriginalName,
 		EngineVersion:                       persisted.EngineVersion,

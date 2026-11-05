@@ -259,7 +259,7 @@ func EntrypointPrebuildFile(
 	if err != nil {
 		return file, false, err
 	}
-	schemaJSONFile, err := mod.Self().Deps.SchemaIntrospectionJSONFileForModule(ctx)
+	schemaJSONFile, err := mod.Self().SDKDeps().SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return file, false, fmt.Errorf("get entrypoint schema: %w", err)
 	}

@@ -43,6 +43,13 @@ type Module struct {
 	// held ClientScope carried by the calling context.
 	Deps *SchemaBuilder
 
+	// EntrypointDeps, when the module's manifest lists its dependencies as
+	// its entrypoint's own (ModuleSource.EntrypointOnlyDependencies), is the
+	// schema the entrypoint runs with: the core's and those dependencies.
+	// Deps then holds the core's alone, so the module's own code, its
+	// callers and its generated code don't see them. Nil otherwise.
+	EntrypointDeps *SchemaBuilder
+
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime dagql.Nullable[dagql.ObjectResult[*Container]]
 
@@ -1022,22 +1029,34 @@ func (mod *Module) AttachDependencyResults(
 		return typed, typed, nil
 	}
 
-	if mod.Deps != nil {
-		for i, dep := range mod.Deps.entries {
+	// attachDeps attaches deps' modules, as kind ("dependency" or "entrypoint
+	// dependency").
+	attachDeps := func(deps *SchemaBuilder, kind string) error {
+		if deps == nil {
+			return nil
+		}
+		for i, dep := range deps.entries {
 			depInst := dep.mod.ModuleResult()
 			if depInst.Self() == nil {
 				continue
 			}
 			attachedInst, attachedRes, err := attachModuleRef(depInst)
 			if err != nil {
-				return nil, fmt.Errorf("attach module dependency %q: %w", dep.mod.Name(), err)
+				return fmt.Errorf("attach module %s %q: %w", kind, dep.mod.Name(), err)
 			}
 			if attachedRes == nil {
 				continue
 			}
-			mod.Deps.entries[i].mod = NewUserMod(attachedInst)
+			deps.entries[i].mod = NewUserMod(attachedInst)
 			owned = append(owned, attachedRes)
 		}
+		return nil
+	}
+	if err := attachDeps(mod.Deps, "dependency"); err != nil {
+		return nil, err
+	}
+	if err := attachDeps(mod.EntrypointDeps, "entrypoint dependency"); err != nil {
+		return nil, err
 	}
 	if mod.IncludeSelfInDeps {
 		if mod.Deps == nil {
@@ -1051,25 +1070,33 @@ func (mod *Module) AttachDependencyResults(
 		if err != nil {
 			return nil, fmt.Errorf("attach module self dependency: self ID: %w", err)
 		}
-		seenSelf := false
-		for i, dep := range mod.Deps.entries {
-			depInst := dep.mod.ModuleResult()
-			if depInst.Self() == nil {
-				continue
+		// withSelf is deps with its self entry, if it has one, replaced by the
+		// attached self, or the attached self appended.
+		withSelf := func(deps *SchemaBuilder) (*SchemaBuilder, error) {
+			for i, dep := range deps.entries {
+				depInst := dep.mod.ModuleResult()
+				if depInst.Self() == nil {
+					continue
+				}
+				depID, err := depInst.ID()
+				if err != nil {
+					return nil, fmt.Errorf("attach module self dependency %q: dep ID: %w", dep.mod.Name(), err)
+				}
+				if depID == nil || depID.EngineResultID() != attachedSelfID.EngineResultID() {
+					continue
+				}
+				deps.entries[i].mod = NewUserMod(attachedSelf)
+				return deps, nil
 			}
-			depID, err := depInst.ID()
-			if err != nil {
-				return nil, fmt.Errorf("attach module self dependency %q: dep ID: %w", dep.mod.Name(), err)
-			}
-			if depID == nil || depID.EngineResultID() != attachedSelfID.EngineResultID() {
-				continue
-			}
-			mod.Deps.entries[i].mod = NewUserMod(attachedSelf)
-			seenSelf = true
-			break
+			return deps.Append(NewUserMod(attachedSelf)), nil
 		}
-		if !seenSelf {
-			mod.Deps = mod.Deps.Append(NewUserMod(attachedSelf))
+		if mod.Deps, err = withSelf(mod.Deps); err != nil {
+			return nil, err
+		}
+		if mod.EntrypointDeps != nil {
+			if mod.EntrypointDeps, err = withSelf(mod.EntrypointDeps); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return owned, nil
@@ -1081,6 +1108,8 @@ type persistedModulePayload struct {
 	RuntimeResultID               uint64                          `json:"runtimeResultID,omitempty"`
 	DefinitionResultID            uint64                          `json:"definitionResultID,omitempty"`
 	DepModuleResultIDs            []uint64                        `json:"depModuleResultIDs,omitempty"`
+	HasEntrypointDeps             bool                            `json:"hasEntrypointDeps,omitempty"`
+	EntrypointDepModuleResultIDs  []uint64                        `json:"entrypointDepModuleResultIDs,omitempty"`
 	IncludeSelfInDeps             bool                            `json:"includeSelfInDeps,omitempty"`
 	NameField                     string                          `json:"nameField,omitempty"`
 	OriginalName                  string                          `json:"originalName,omitempty"`
@@ -1129,22 +1158,39 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, enc *dagql.Persist
 	}
 
 	persisted.IncludeSelfInDeps = mod.IncludeSelfInDeps
-	if mod.Deps != nil {
-		persisted.DepModuleResultIDs = make([]uint64, 0, len(mod.Deps.Mods()))
-		for _, dep := range mod.Deps.Mods() {
+	// encodeDeps is deps' modules, as kind, without the module itself.
+	encodeDeps := func(deps *SchemaBuilder, kind string) ([]uint64, error) {
+		ids := make([]uint64, 0, len(deps.Mods()))
+		for _, dep := range deps.Mods() {
 			depInst := dep.ModuleResult()
 			if depInst.Self() == nil {
 				continue
 			}
-			depResultID, err := encodePersistedObjectRef(enc, depInst, fmt.Sprintf("module dependency %q", dep.Name()))
+			depResultID, err := encodePersistedObjectRef(enc, depInst, fmt.Sprintf("module %s %q", kind, dep.Name()))
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return nil, err
 			}
 			if mod.IncludeSelfInDeps && depInst.Self() == mod {
 				continue
 			}
-			persisted.DepModuleResultIDs = append(persisted.DepModuleResultIDs, depResultID)
+			ids = append(ids, depResultID)
 		}
+		return ids, nil
+	}
+	if mod.Deps != nil {
+		ids, err := encodeDeps(mod.Deps, "dependency")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		persisted.DepModuleResultIDs = ids
+	}
+	if mod.EntrypointDeps != nil {
+		ids, err := encodeDeps(mod.EntrypointDeps, "entrypoint dependency")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		persisted.HasEntrypointDeps = true
+		persisted.EntrypointDepModuleResultIDs = ids
 	}
 
 	persisted.NameField = mod.NameField
@@ -1231,6 +1277,20 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 		}
 		deps = deps.Append(NewUserMod(depRes))
 	}
+	var entrypointDeps *SchemaBuilder
+	if persisted.HasEntrypointDeps {
+		entrypointDeps, err = persistedDecodeDefaultDeps(ctx, dec, query)
+		if err != nil {
+			return nil, fmt.Errorf("decode persisted module default deps: %w", err)
+		}
+		for _, depID := range persisted.EntrypointDepModuleResultIDs {
+			depRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, depID, "module entrypoint dependency")
+			if err != nil {
+				return nil, err
+			}
+			entrypointDeps = entrypointDeps.Append(NewUserMod(depRes))
+		}
+	}
 
 	objectDefs := make(dagql.ObjectResultArray[*TypeDef], 0, len(persisted.ObjectDefResultIDs))
 	for _, defID := range persisted.ObjectDefResultIDs {
@@ -1262,6 +1322,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 		OriginalName:                  persisted.OriginalName,
 		SDKConfig:                     persisted.SDKConfig,
 		Deps:                          deps,
+		EntrypointDeps:                entrypointDeps,
 		Description:                   persisted.Description,
 		ObjectDefs:                    objectDefs,
 		InterfaceDefs:                 interfaceDefs,
@@ -2348,6 +2409,16 @@ func (mod *Module) Patch(ctx context.Context) error {
 	return nil
 }
 
+// SDKDeps is the schema the module's SDK runs it with: its entrypoint's
+// (EntrypointDeps) when the entrypoint has dependencies of its own, and the
+// module's (Deps) otherwise.
+func (mod *Module) SDKDeps() *SchemaBuilder {
+	if mod.EntrypointDeps != nil {
+		return mod.EntrypointDeps
+	}
+	return mod.Deps
+}
+
 func (mod *Module) LoadRuntime(ctx context.Context) (ModuleRuntime, error) {
 	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
 	if !ok {
@@ -2358,7 +2429,7 @@ func (mod *Module) LoadRuntime(ctx context.Context) (ModuleRuntime, error) {
 		return nil, fmt.Errorf("no source")
 	}
 
-	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.SDKDeps(), mod.Source.Value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
@@ -2781,6 +2852,7 @@ func (mod Module) Clone() *Module {
 	if mod.Deps != nil {
 		cp.Deps = mod.Deps.Clone()
 	}
+	cp.EntrypointDeps = mod.EntrypointDeps.Clone()
 
 	cp.ObjectDefs = append(dagql.ObjectResultArray[*TypeDef](nil), mod.ObjectDefs...)
 	cp.InterfaceDefs = append(dagql.ObjectResultArray[*TypeDef](nil), mod.InterfaceDefs...)

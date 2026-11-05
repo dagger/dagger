@@ -1015,7 +1015,7 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRunt
 		return nil, fmt.Errorf("no runtime implemented")
 	}
 
-	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.SDKDeps(), mod.Source.Value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
