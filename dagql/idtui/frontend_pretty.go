@@ -8567,6 +8567,12 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 		// pass; don't repeat the message, the ERROR status links to its origin
 		return
 	}
+	fe.renderSpanErrorMessage(out, r, row, prefix)
+}
+
+// renderSpanErrorMessage prints a failed span's error message, whether or not
+// its origins show it too.
+func (fe *frontendPretty) renderSpanErrorMessage(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
 	fe.claims.claimError(row.Span)
 	// This span's message embeds its origins' messages (error wrapping), so
 	// printing it here also represents them: claim the origins so the
