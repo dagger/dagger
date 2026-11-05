@@ -2503,6 +2503,17 @@
 ## page that still exists under /next/. Keep it in this trailing block: it is
 ## a wildcard, and it must come after every specific rule.
 
+# The old lockfile reference describes a different implementation.
+[[redirects]]
+  from = "/reference/cli/lockfiles"
+  to = "/reference/config-files/dagger-toml/#daggerlock"
+  status = 301
+
+[[redirects]]
+  from = "/reference/cli/lockfiles/"
+  to = "/reference/config-files/dagger-toml/#daggerlock"
+  status = 301
+
 [[redirects]]
   from = "/next/*"
   to = "/:splat"
