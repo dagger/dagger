@@ -224,13 +224,36 @@ func (ModuleSuite) TestDangModuleEntrypointSourcesAtDeclaredView(ctx context.Con
   }
 }
 `
-	out, err := entrypointVersionModule(t, c, source, map[string]string{
-		"entrypoint/dang.toml": "[imports.Dagger]\ndagger = \"v0.20.1\"\n",
-	}).
-		With(daggerCallAt("tiny", "hello")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello", strings.TrimSpace(out))
+	for _, tc := range []struct {
+		name   string
+		config string
+		extra  string
+	}{
+		{name: "default Dang version"},
+		{
+			name:   "declared Dang 2.0 syntax",
+			config: "dang = \"2.0\"\n",
+			extra:  "let legacyA = 1, let legacyB = 2\n",
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			ctr := entrypointVersionModule(t, c, source+tc.extra, map[string]string{
+				"entrypoint/dang.toml": tc.config + "[imports.Dagger]\ndagger = \"v0.20.1\"\n",
+			})
+
+			// Inspect the sources result, not only the function call: skipping
+			// the scan must not silently leave the generated file out.
+			out, err := ctr.
+				With(daggerExec("core", "module-source", "--ref-string", "tiny", "context-directory", "file", "--path", "tiny/workspace-path", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, strings.TrimSpace(out))
+
+			out, err = ctr.With(daggerCallAt("tiny", "hello")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello", strings.TrimSpace(out))
+		})
+	}
 }
 
 func (ModuleSuite) TestDangModuleEntrypointRequiresNewerEngine(ctx context.Context, t *testctx.T) {

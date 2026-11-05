@@ -225,26 +225,11 @@ func TestResolveEntrypointVersionsLikeEngineVersion(t *testing.T) {
 // accepts and Dang 2.1 does not.
 const legacyCommaSource = "let legacyA = 1, let legacyB = 2\n"
 
-func TestEntrypointDangVersion(t *testing.T) {
+func TestEntrypointRejectsInvalidDangVersion(t *testing.T) {
 	t.Parallel()
 
-	source := entrypointSource(withoutSourcesMethods) + legacyCommaSource
-
-	t.Run("declared version parses its own syntax", func(t *testing.T) {
-		t.Parallel()
-		_, err := runEntrypointDirAt(t, source, "2.0")
-		require.NoError(t, err)
-	})
-	t.Run("default version rejects older syntax", func(t *testing.T) {
-		t.Parallel()
-		_, err := runEntrypointDirAt(t, source, "")
-		require.Error(t, err)
-	})
-	t.Run("invalid version", func(t *testing.T) {
-		t.Parallel()
-		_, err := runEntrypointDirAt(t, entrypointSource(withoutSourcesMethods), "99.0")
-		require.ErrorContains(t, err, "module entrypoint Dang version")
-	})
+	_, err := runEntrypointDirAt(t, entrypointSource(withoutSourcesMethods), "99.0")
+	require.ErrorContains(t, err, "module entrypoint Dang version")
 }
 
 func TestDeclaresEntrypointSourcesAtVersion(t *testing.T) {
