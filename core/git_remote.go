@@ -887,13 +887,19 @@ func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.
 	if len(shaRefSpecs) > 0 {
 		err = runFetch(shaRefSpecs)
 		if err != nil {
-			if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
+			// A server that serves only advertised tips refuses other
+			// commits as not found, so a named ref may still fetch them.
+			if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) && !errors.Is(err, gitutil.ErrCommitNotFound) {
 				return false, fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
 			}
 
 			namedSpecs := namedFetchRefSpecs(refs)
 			if len(namedSpecs) == 0 {
-				return false, fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+				shas := make([]string, len(refs))
+				for i, ref := range refs {
+					shas[i] = ref.SHA
+				}
+				return false, fmt.Errorf("failed to fetch remote %s: %w: %s", repo.URL.Remote(), err, strings.Join(shas, ", "))
 			}
 			defer cleanupScratchFetchRefs(namedSpecs)
 
