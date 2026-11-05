@@ -43,8 +43,7 @@ These commands were removed or changed meaning in 1.0. Scripts and CI jobs that 
 
 | 0.x | 1.0 |
 | -- | -- |
-| `dagger` with no arguments starts Dagger Shell | `dagger` with no arguments prints usage. Run Dagger Shell scripts with `dagger -c '...'` or `dagger <file>`. |
-| `dagger shell` starts Dagger Shell | `dagger shell` opens a terminal for a container or directory in the project. |
+| `dagger` with no arguments starts an interactive prompt | `dagger` with no arguments prints usage. |
 | `dagger init` creates a module | `dagger init` creates a workspace. `dagger module init` creates a module. |
 | `dagger install` adds a dependency to a module | `dagger install` installs a module into the workspace. `dagger module client add <ref> --sdk=<SDK>` adds a dependency to a module. |
 | `dagger develop` | Removed. `dagger generate` regenerates SDK code. |

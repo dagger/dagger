@@ -72,10 +72,6 @@ The GraphQL API that the [engine](#engine) serves. The CLI, modules, Checks, Gen
 
 Dagger's hosted service. It offers managed remote engines, with scale-out, distributed cache, access control and observability. See [Set up Cloud Checks](../getting-started/cloud-checks.mdx).
 
-## Dagger Shell
-
-The bash-style language for pipelines, run with `dagger -c '...'` or from a script file. For example, `dagger -c 'go | packages | get store | tests | keys'` lists the tests in one Go package. See [Collections](../using/calling-functions.mdx#collections).
-
 ## `dagger-module.toml`
 
 The manifest of a [module](#module). It holds the module role of the Dagger 0.x [`dagger.json`](#daggerjson). See [Migrate from dagger.json](../config/migrate-dagger-json.mdx).
