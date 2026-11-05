@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/dagger/dagger/engine/snapshots/testutil"
+	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -314,6 +318,69 @@ func TestSourceFilePathsMixedStoredAndFresh(t *testing.T) {
 	require.Equal(t, []string{"/saved.txt", "fresh.txt"}, paths)
 	require.Equal(t, 1, runs)
 	require.Zero(t, manager.openCount("saved"))
+}
+
+// TestFilesMountEvaluatesEachFileOnce mounts files under part acquisition, as
+// files the engine image or the Cloud offers are, where evaluating a finished
+// file is a task of its own with its own span.
+func TestFilesMountEvaluatesEachFileOnce(t *testing.T) {
+	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
+	ref, _ := aStore.Build(t, nil, "offered.txt", "offered bytes")
+	chain, err := ref.ExportChain(t.Context(), config.RefConfig{Compression: compression.New(compression.Uncompressed)})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, chain.Release(context.Background())) })
+	ctx, cache, srv := transferCache(t, bStore, filepath.Join(t.TempDir(), "b.db"), "b")
+	cache.SetPartContentSource(partTestContentSource{&testutil.Provider{InfoReaderProvider: chain.Provider}})
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
+	ctx, span := provider.Tracer("files").Start(ctx, "files")
+	defer span.End()
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	spec := platform.Spec()
+	offer := dagql.PersistedPartOffer{Address: dagql.PersistedPartAddress{Part: "snapshot"}, Value: dagql.SnapshotValue{Kind: "file", Path: "/offered.txt", Platform: &spec}, Chain: dagql.OfferedChain{Layers: chain.Layers}}
+	names := []string{"a", "b", "c"}
+	src := &FilesMountSource{}
+	for _, name := range names {
+		file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: platform, Lazy: &FileBlobLazy{LazyState: NewLazyState(), Filename: name, Contents: []byte(name), Permissions: 0644}}
+		res := attachTransferObject(t, ctx, cache, srv, "b", name, file)
+		out, err := cache.OfferParts(ctx, res, []dagql.CloudPartOffer{{Offer: offer, CloudNumber: 1}})
+		require.NoError(t, err)
+		require.Equal(t, dagql.OfferAccepted, out[0].Outcome, "the offer puts the row under part acquisition")
+		require.NoError(t, cache.Evaluate(ctx, res))
+		src.Files = append(src.Files, MountedFile{Name: name, File: res})
+	}
+
+	before := len(recorder.Ended())
+	cfg, err := execMountedFiles(ctx, src)
+	require.NoError(t, err)
+
+	require.Len(t, cfg.Files, len(names))
+	for i, name := range names {
+		require.Equal(t, name, cfg.Files[i].Name)
+		require.Equal(t, "/offered.txt", cfg.Files[i].Path)
+		require.NotNil(t, cfg.Files[i].Ref)
+	}
+	evaluations := 0
+	for _, ended := range recorder.Ended()[before:] {
+		if strings.Contains(ended.Name(), "(acquire:snapshot)") {
+			evaluations++
+		}
+	}
+	require.Equal(t, len(names), evaluations)
+}
+
+func TestSourceFilePathsReadsFinishedFilesWithoutEvaluating(t *testing.T) {
+	ctx, cache, srv := containerPersistenceTestCache(t, "", newContainerPersistenceTestSnapshots(), "sources")
+	value := storedSnapshotTestValue("File", "unused", "seed", false).(*File)
+	value.Lazy = &storedSnapshotTestLazy[*File]{LazyState: NewLazyState(), run: func(file *File) error { file.File.setValue("final.txt"); return nil }}
+	res := attachStoredSnapshotTestValue(t, ctx, cache, srv, "sources", "finished", value, false).(dagql.ObjectResult[*File])
+	require.NoError(t, cache.Evaluate(ctx, res))
+
+	// This context has no cache, so evaluating fails.
+	paths, err := SourceFilePaths(t.Context(), []dagql.ObjectResult[*File]{res})
+	require.NoError(t, err)
+	require.Equal(t, []string{"final.txt"}, paths)
 }
 
 func TestRestoredSnapshotAttemptLifetime(t *testing.T) {

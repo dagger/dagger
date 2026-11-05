@@ -119,27 +119,45 @@ func (dir *Directory) PathOrEval(ctx context.Context, self dagql.ObjectResult[*D
 
 func (file *File) PathOrEval(ctx context.Context, self dagql.ObjectResult[*File]) (string, error) {
 	file.outputMu.RLock()
-	known := file.stored != nil || file.transferPending != nil && file.transferPending.ValueKnown
+	needsEval := file.pathNeedsEvalLocked()
 	path, ok := file.File.Peek()
 	file.outputMu.RUnlock()
-	if known {
-		if ok {
-			return path, nil
-		}
+	if needsEval {
+		return file.File.GetOrEval(ctx, self.Result)
+	}
+	if !ok {
 		return "", fmt.Errorf("restored file has no saved path")
 	}
-	return file.File.GetOrEval(ctx, self.Result)
+	return path, nil
 }
 
-// SourceFilePaths evaluates fresh sources together, then reads every path.
+// pathNeedsEvalLocked reports whether reading the file's path takes evaluating
+// it: the path was neither saved with the value nor set by a computation that
+// has finished. A path prefilled before then isn't final. Requires outputMu.
+func (file *File) pathNeedsEvalLocked() bool {
+	if file.stored != nil {
+		return false
+	}
+	if file.transferPending != nil {
+		return !file.transferPending.ValueKnown
+	}
+	if file.Lazy != nil && !file.Lazy.IsEvaluated() {
+		return true
+	}
+	_, ok := file.File.Peek()
+	return !ok
+}
+
+// SourceFilePaths evaluates together the sources whose paths need it, then reads
+// every path.
 func SourceFilePaths(ctx context.Context, files []dagql.ObjectResult[*File]) ([]string, error) {
 	var fresh []dagql.AnyResult
 	for _, file := range files {
 		value := file.Self()
 		value.outputMu.RLock()
-		freshPath := value.stored == nil && (value.transferPending == nil || !value.transferPending.ValueKnown)
+		needsEval := value.pathNeedsEvalLocked()
 		value.outputMu.RUnlock()
-		if freshPath {
+		if needsEval {
 			fresh = append(fresh, file)
 		}
 	}
