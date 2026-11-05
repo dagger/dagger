@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/containerd/containerd/v2/core/mount"
 
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/layercopy"
 )
 
@@ -77,6 +79,7 @@ func (mnt *execFilesMount) Mount(ctx context.Context, _ bool) (_ bkcache.Mountab
 		return nil, err
 	}
 	defer copier.Close()
+	defer recordFilesMountStep(ctx, "exec.filesMount.link", len(mnt.files))()
 	for _, f := range mnt.files {
 		if err := MountRef(ctx, f.Ref, func(srcRoot string, srcMnt *mount.Mount) error {
 			return copier.CopyFile(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt}, f.Path, f.Name, layercopy.CopyOptions{})
@@ -112,9 +115,13 @@ func execMountedFiles(ctx context.Context, src *FilesMountSource) (*execFilesMou
 		}
 		inputs = append(inputs, f.File)
 	}
-	if err := cache.Evaluate(ctx, inputs...); err != nil {
+	endEvaluate := recordFilesMountStep(ctx, "withExec.filesMount.evaluate", len(inputs))
+	err = cache.Evaluate(ctx, inputs...)
+	endEvaluate()
+	if err != nil {
 		return nil, err
 	}
+	defer recordFilesMountStep(ctx, "withExec.filesMount.read", len(inputs))()
 	cfg := &execFilesMountConfig{Files: make([]execMountedFile, len(src.Files))}
 	for i, f := range src.Files {
 		path, err := f.File.Self().File.GetOrEval(ctx, f.File.Result)
@@ -131,4 +138,16 @@ func execMountedFiles(ctx context.Context, src *FilesMountSource) (*execFilesMou
 		cfg.Files[i] = execMountedFile{Name: f.Name, Path: path, Ref: ref}
 	}
 	return cfg, nil
+}
+
+// recordFilesMountStep times one step of a files mount in the profile, with the
+// number of files it covers as its ident. The returned func ends it.
+func recordFilesMountStep(ctx context.Context, class string, files int) func() {
+	if !wcprof.Enabled(ctx) {
+		return func() {}
+	}
+	start := wcprof.NowNS()
+	return func() {
+		wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, class, wcprof.OpOpts{Ident: strconv.Itoa(files)}, start, wcprof.NowNS(), wcprof.OutcomeOK)
+	}
 }
