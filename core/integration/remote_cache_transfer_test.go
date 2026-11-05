@@ -707,8 +707,12 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 			}
 		}
 	}
-	require.GreaterOrEqual(t, fsFields["withMountedCache"], 2, "both SDK cache children delegate inherited fs")
-	require.GreaterOrEqual(t, fsFields["__withSystemEnvVariable"], 2, "both SDK environment children delegate inherited fs")
+	// The Go SDK's base container (core/sdk/go_sdk_module.go) mounts the
+	// module cache, sets GOPROXY as an ordinary variable and GODEBUG as a
+	// system one: children that change only metadata.
+	require.GreaterOrEqual(t, fsFields["withMountedCache"], 1, "the SDK's module cache child delegates inherited fs")
+	require.GreaterOrEqual(t, fsFields["withEnvVariable"], 1, "the SDK's GOPROXY child delegates inherited fs")
+	require.GreaterOrEqual(t, fsFields["__withSystemEnvVariable"], 1, "the SDK's GODEBUG child delegates inherited fs")
 	for k, count := range operations {
 		row := rows[k.row]
 		if row.Call == nil {
