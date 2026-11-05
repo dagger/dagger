@@ -1,0 +1,6 @@
+kind: Changed
+body: '`dagger cloud usage` now shows the bill of the current pricing, as the Billing & usage page of Dagger Cloud does: the plan minimum, the usage, the bill, and the monthly statement of each resource for new and repeat work. `--json` returns this billing usage instead of compute and telemetry usage.'
+time: 2026-10-30T20:00:00Z
+custom:
+  Author: marcosnils
+  PR: ""
