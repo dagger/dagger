@@ -152,11 +152,6 @@ returns one subdirectory per platform, such as `linux-amd64/` and
 platform. Cross-compiling sets `GOOS` and `GOARCH` in the native container, and
 cgo is off unless `base` brings a C cross-toolchain.
 
-```bash
-dagger -c 'go | packages | get cmd/app | binary | export ./app'
-dagger -c 'go | packages | get cmd/app | platforms | subset linux/amd64 darwin/arm64 | batch | binary | export ./dist'
-```
-
 A binary is named the way `go build` names it.
 
 ## Configure it
