@@ -13,8 +13,8 @@ import (
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/archive"
-	"github.com/containerd/containerd/v2/pkg/archive/compression"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/util/compressutil"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -62,7 +62,7 @@ func (s *winApplier) Apply(ctx context.Context, desc ocispecs.Descriptor, mounts
 
 		r := content.NewReader(ra)
 		if compressed != "" {
-			ds, err := compression.DecompressStream(r)
+			ds, err := compressutil.DecompressStream(r)
 			if err != nil {
 				return err
 			}
