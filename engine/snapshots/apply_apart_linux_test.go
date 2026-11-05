@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -420,4 +422,51 @@ func TestImportChainOverlayFromPackCountsPacked(t *testing.T) {
 	imported.Timing = &bkcache.ImportTiming{}
 	importChain(t, consumer, imported)
 	require.Equal(t, len(chain.Layers), imported.Timing.Packed)
+}
+
+// A real overlay view's topmost layer holds what the snapshot shows: a file it
+// changed, not its parent's; not a file only its parent holds; and, for a file it
+// deleted, not the parent's file: a whiteout, or a file in place of its directory.
+func TestSharedMountTopLayerOfAnOverlayView(t *testing.T) {
+	t.Parallel()
+	producer, consumer := testutil.NewStore(t), testutil.NewOverlayStore(t)
+	parent, _ := producer.BuildWith(t, nil, func(root string) {
+		for name, contents := range map[string]string{"changed.txt": "parent", "kept.txt": "parent", "deleted.txt": "parent"} {
+			require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(contents), 0o644))
+		}
+		require.NoError(t, os.Mkdir(filepath.Join(root, "replaced"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(root, "replaced/under.txt"), []byte("parent"), 0o644))
+	})
+	child, _ := producer.BuildWith(t, parent, func(root string) {
+		require.NoError(t, os.WriteFile(filepath.Join(root, "changed.txt"), []byte("child"), 0o644))
+		if consumer.CanMakeWhiteouts() == nil {
+			require.NoError(t, os.RemoveAll(filepath.Join(root, "replaced")))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "replaced"), []byte("child"), 0o644))
+			require.NoError(t, os.Remove(filepath.Join(root, "deleted.txt")))
+		}
+	})
+	ref := importChain(t, consumer, exportChain(t, child))
+
+	mounted, err := ref.Mount(context.Background(), true)
+	require.NoError(t, err)
+	mounts, release, err := mounted.Mount()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, release()) }()
+	require.Len(t, mounts, 1)
+	require.Equal(t, "overlay", mounts[0].Type)
+	dir, ok := bkcache.TopLayerDir(mounts[0])
+	require.True(t, ok)
+
+	changed, err := os.ReadFile(filepath.Join(dir, "changed.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "child", string(changed))
+	_, err = os.Lstat(filepath.Join(dir, "kept.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	if consumer.CanMakeWhiteouts() == nil {
+		info, err := os.Lstat(filepath.Join(dir, "deleted.txt"))
+		require.NoError(t, err)
+		require.False(t, info.Mode().IsRegular())
+		_, err = os.Lstat(filepath.Join(dir, "replaced/under.txt"))
+		require.Error(t, err)
+	}
 }

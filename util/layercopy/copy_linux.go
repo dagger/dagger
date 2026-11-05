@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/containerd/containerd/v2/core/snapshots"
+	"github.com/dagger/dagger/util/fsxutil"
 	"golang.org/x/sys/unix"
 )
 
@@ -175,6 +176,58 @@ func (c *Copier) copyFile(ctx context.Context, src *source, srcPath, destPath st
 	if src.baseInfo.IsDir() {
 		return fmt.Errorf("source path %q is a directory", srcPath)
 	}
+	ent := sourceEntry{
+		Rel:      "",
+		ViewPath: src.baseView,
+		RealPath: src.baseReal,
+		Info:     src.baseInfo,
+		minLayer: src.baseMinLayer,
+	}
+	return c.copyFileEntry(ent, srcPath, destPath, opts)
+}
+
+// CopyFileFromLayer copies srcPath as CopyFile does, read from layer, the
+// directory of a snapshot's topmost layer, with no mount of the snapshot. It
+// takes only a non-empty regular file reached through real directories in that
+// layer, which is the file the snapshot shows whatever the layers below hold. An
+// empty one may be an overlay whiteout, which a regular file can be. For anything
+// else it reports false, and the caller uses CopyFile: the path isn't in the
+// layer, or is a whiteout or symlink there, or a component of it is, or the layer
+// or file has gone. Only a file that goes from under the copy can have changed the
+// destination by then, by replacing what destPath held; before that, nothing has.
+func (c *Copier) CopyFileFromLayer(ctx context.Context, layer, srcPath, destPath string, opts CopyOptions) (bool, error) {
+	select {
+	case <-ctx.Done():
+		return false, context.Cause(ctx)
+	default:
+	}
+	realPath, ok := fsxutil.RootPathWithoutSymlinks(layer, cleanContainerPath(srcPath), false)
+	if !ok {
+		return false, nil
+	}
+	info, err := os.Lstat(realPath)
+	if err != nil {
+		return false, nil //nolint:nilerr // CopyFile says what's wrong, if anything is
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 {
+		return false, nil
+	}
+	if c.afterLayerResolve != nil {
+		c.afterLayerResolve(realPath)
+	}
+	ent := sourceEntry{ViewPath: realPath, RealPath: realPath, Info: info}
+	if err := c.copyFileEntry(ent, srcPath, destPath, opts); err != nil {
+		if _, statErr := os.Lstat(realPath); os.IsNotExist(statErr) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// copyFileEntry copies the non-directory ent to destPath, or into it if it is a
+// directory, under srcPath's base name.
+func (c *Copier) copyFileEntry(ent sourceEntry, srcPath, destPath string, opts CopyOptions) error {
 	destPath = cleanContainerPath(destPath)
 	if opts.DestPathHintIsDir {
 		if _, _, err := c.dest.ensureDir(destPath, nil, CopyOptions{Chown: opts.Chown}, false); err != nil {
@@ -185,14 +238,6 @@ func (c *Copier) copyFile(ctx context.Context, src *source, srcPath, destPath st
 		return err
 	} else if exists && destInfo.IsDir() {
 		destPath = filepath.Join(destPath, filepath.Base(cleanContainerPath(srcPath)))
-	}
-
-	ent := sourceEntry{
-		Rel:      "",
-		ViewPath: src.baseView,
-		RealPath: src.baseReal,
-		Info:     src.baseInfo,
-		minLayer: src.baseMinLayer,
 	}
 	return c.copyNode(ent, destPath, resolvedParent{}, opts)
 }
