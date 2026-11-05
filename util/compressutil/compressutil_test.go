@@ -177,15 +177,19 @@ func TestDecompressStreamReusesDecodersWithoutStateBetweenStreams(t *testing.T) 
 // idle decoder.
 func TestDecompressStreamLetsGoOfTheStreamOnClose(t *testing.T) {
 	released := make(chan struct{})
-	r := bytes.NewReader(zstdStream(t, payload(9, 2<<20)))
-	runtime.AddCleanup(r, func(ch chan struct{}) { close(ch) }, released)
-	rc, err := DecompressStream(r)
-	require.NoError(t, err)
-	_, err = io.ReadFull(rc, make([]byte, 100))
-	require.NoError(t, err)
-	dec := rc.(*zstdReader).dec
-	require.NoError(t, rc.Close())
-	r, rc = nil, nil //nolint:ineffassign,wastedassign // dropped so the collector can release them
+	// The stream is opened and closed in a function of its own, so nothing
+	// here refers to its reader afterwards.
+	dec := func() *zstd.Decoder {
+		r := bytes.NewReader(zstdStream(t, payload(9, 2<<20)))
+		runtime.AddCleanup(r, func(ch chan struct{}) { close(ch) }, released)
+		rc, err := DecompressStream(r)
+		require.NoError(t, err)
+		_, err = io.ReadFull(rc, make([]byte, 100))
+		require.NoError(t, err)
+		dec := rc.(*zstdReader).dec
+		require.NoError(t, rc.Close())
+		return dec
+	}()
 	deadline := time.After(10 * time.Second)
 	for done := false; !done; {
 		runtime.GC()
