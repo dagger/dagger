@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,14 +11,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/stretchr/testify/require"
 )
-
-// go.buildFlags is a non-null list: a nil slice goes out as null and the image
-// build fails.
-func TestEntrypointBuildFlagsSentAsList(t *testing.T) {
-	b, err := json.Marshal(map[string]any{"flags": entrypointBuildFlags})
-	require.NoError(t, err)
-	require.JSONEq(t, `{"flags": []}`, string(b))
-}
 
 // A runtime's compiles generate no debug information its link would drop, its
 // generated client compiles without inlining, and the standard library's compile lines stay those of a build without the

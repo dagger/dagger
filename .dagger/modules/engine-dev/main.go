@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"dagger.io/dagger/core"
@@ -229,20 +228,6 @@ func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platfo
 	return ctr, nil
 }
 
-// goSDKDaggerGo is the dagger/go the Go SDK module depends on: its manifest's
-// one dependency's source, go-sdk's pin.
-func goSDKDaggerGo(ctx context.Context, source *dagger.Directory) (string, error) {
-	manifest, err := source.File("sdk/go/runtime/dagger-module.toml").Contents(ctx)
-	if err != nil {
-		return "", err
-	}
-	m := regexp.MustCompile(`(?s)\[\[dependencies\]\].*?\bsource\s*=\s*"([^"]+)"`).FindStringSubmatch(manifest)
-	if m == nil {
-		return "", fmt.Errorf("sdk/go/runtime/dagger-module.toml names no dependency source")
-	}
-	return m[1], nil
-}
-
 // imageEntries are the cache entries an engine image of platform ships for
 // Go module runtimes, which the engine merges at start: the builds of the
 // standard library and of what generated Go module code imports, the
@@ -291,10 +276,6 @@ func (dev *EngineDev) entriesExporter(ctx context.Context, builder *build.Builde
 	if err != nil {
 		return nil, nil, err
 	}
-	daggerGo, err := goSDKDaggerGo(ctx, dev.Source)
-	if err != nil {
-		return nil, nil, err
-	}
 	engineDigest, err := engine.File(consts.EngineServerPath).Digest(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("the engine binary: %w", err)
@@ -326,11 +307,12 @@ func (dev *EngineDev) entriesExporter(ctx context.Context, builder *build.Builde
 	client = client.
 		WithMountedFile("/usr/local/bin/engine-image-entries", builder.ImageEntriesBinary()).
 		WithMountedDirectory("/seed", seed).
-		WithMountedDirectory("/seed-go-sdk", seedGoSDK)
+		WithMountedDirectory("/seed-go-sdk", seedGoSDK).
+		WithMountedDirectory("/builtin-go-sdk", dev.Source.Directory("sdk/go/runtime"))
 	return client, []string{"engine-image-entries",
 		"-seed", "/seed",
 		"-entrypoint-seed", "/seed-go-sdk",
-		"-dagger-go", daggerGo,
+		"-builtin-go-sdk", "/builtin-go-sdk",
 		"-go-version", distconsts.GolangVersion,
 		"-platform", platform,
 	}, nil
@@ -338,7 +320,7 @@ func (dev *EngineDev) entriesExporter(ctx context.Context, builder *build.Builde
 
 // entriesExported is nil when ran, an exec that makes an image's entries
 // with exporter, exited 0, and otherwise says why it didn't, such as dagger/go
-// unreachable at the Go SDK module's pin, rather than only its exit code.
+// unreachable at the Go SDK module's dependency, rather than only its exit code.
 func entriesExported(ctx context.Context, ran *dagger.Container, exporter []string) error {
 	exitCode, err := ran.ExitCode(ctx)
 	if err != nil {
