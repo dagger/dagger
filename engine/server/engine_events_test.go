@@ -204,10 +204,12 @@ func TestEngineEventsAcrossRestart(t *testing.T) {
 // the database file.
 func TestEngineStartNamesWipedCache(t *testing.T) {
 	t.Parallel()
-	ctx := boundedContext(t)
 
+	// Each subtest bounds its own context once it runs: a parallel subtest
+	// can wait for a slot longer than the bound.
 	t.Run("unclean", func(t *testing.T) {
 		t.Parallel()
+		ctx := boundedContext(t)
 		path := filepath.Join(t.TempDir(), "cache.db")
 		cache := openEngineEventTestCache(t, path)
 		wiped := cache.Identity().ID
@@ -228,6 +230,7 @@ func TestEngineStartNamesWipedCache(t *testing.T) {
 
 	t.Run("local cache reset", func(t *testing.T) {
 		t.Parallel()
+		ctx := boundedContext(t)
 		root := t.TempDir()
 		cache := openEngineEventTestCache(t, filepath.Join(root, "dagql-cache.db"))
 		wiped := cache.Identity().ID
