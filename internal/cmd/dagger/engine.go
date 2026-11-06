@@ -668,9 +668,10 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error) erro
 			logOpts = append(logOpts, sdklog.WithProcessor(processor))
 		}
 		// Diagnostics can be emitted by the frontend consumer, an error
-		// handler, or cleanup. Keep default slog best-effort and independent
-		// of frontend I/O; it must never wait on the command output queue.
-		diagnostics = sdklog.NewBatchProcessor(cliDiagnosticExporter{out: os.Stderr},
+		// handler, or cleanup. Keep default slog best-effort and on its own
+		// queue; it must never wait on the command output queue. While a TUI
+		// draws on the terminal, it goes to the frontend instead of stderr.
+		diagnostics = sdklog.NewBatchProcessor(newCLIDiagnosticExporter(os.Stderr, stderrIsTTY, Frontend),
 			sdklog.WithMaxQueueSize(enginetel.LogQueueSize),
 			sdklog.WithExportMaxBatchSize(enginetel.LogExportMaxBatchSize),
 			sdklog.WithExportInterval(telemetry.NearlyImmediate),
@@ -726,6 +727,13 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error) erro
 	return ctx, func(rerr error) error {
 		rootCmd.SetOut(oldOut)
 		rootCmd.SetErr(oldErr)
+		if diagnostics != nil {
+			// Hand a TUI what slog has queued before its stream ends, with
+			// the same short budget as the processor's shutdown below.
+			diagnosticCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			_ = diagnostics.ForceFlush(diagnosticCtx)
+			cancel()
+		}
 		// EOF emission can wait for queue space too. Give it the same bounded
 		// budget as the local drain, before starting remote shutdown.
 		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
