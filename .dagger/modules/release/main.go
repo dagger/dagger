@@ -295,13 +295,12 @@ func (r *Release) Publish( //nolint:gocyclo
 			dev:  true,
 			release: func(ctx context.Context) error {
 				return goclientdev.New(r.Workspace).Release(ctx, tag, goclientdev.GoClientDevReleaseOpts{
-					SourceRepo:  r.Workspace.Git().Head().AsRepository(),
 					GithubToken: githubToken,
 					DestRemote:  goSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return goclientdev.New(r.Workspace).ReleaseDryRun(ctx, goclientdev.GoClientDevReleaseDryRunOpts{SourceRepo: r.Workspace.Git().Head().AsRepository()})
+				return goclientdev.New(r.Workspace).ReleaseDryRun(ctx)
 			},
 		},
 		{
@@ -389,13 +388,12 @@ func (r *Release) Publish( //nolint:gocyclo
 			dev:  true,
 			release: func(ctx context.Context) error {
 				return phpclientdev.New(r.Workspace, phpclientdev.PhpClientDevOpts{WorkspaceDir: phpWorkspaceDir}).Release(ctx, tag, phpclientdev.PhpClientDevReleaseOpts{
-					SourceRepo:  r.Workspace.Git().Head().AsRepository(),
 					GithubToken: githubToken,
 					Dest:        phpSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return phpclientdev.New(r.Workspace, phpclientdev.PhpClientDevOpts{WorkspaceDir: phpWorkspaceDir}).ReleaseDryRun(ctx, phpclientdev.PhpClientDevReleaseDryRunOpts{SourceRepo: r.Workspace.Git().Head().AsRepository()})
+				return phpclientdev.New(r.Workspace, phpclientdev.PhpClientDevOpts{WorkspaceDir: phpWorkspaceDir}).ReleaseDryRun(ctx)
 			},
 		},
 		{
