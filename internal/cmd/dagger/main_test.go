@@ -1,8 +1,12 @@
 package daggercmd
 
 import (
+	"os"
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,4 +62,45 @@ func TestCanOpenShellOnError(t *testing.T) {
 	require.False(t, canOpenShellOnError("plain", true))
 	require.False(t, canOpenShellOnError("dots", true))
 	require.False(t, canOpenShellOnError("logs", true))
+}
+
+func TestWrapCmdDescriptionBoldsNameOnly(t *testing.T) {
+	oldProfile := helpProfile
+	helpProfile = func() termenv.Profile { return termenv.ANSI }
+	t.Cleanup(func() { helpProfile = oldProfile })
+
+	line := wrapCmdDescription("init", "Initialize a workspace", 11)
+	require.Equal(t, "  \x1b[1minit\x1b[0m          Initialize a workspace", line)
+}
+
+func TestWrapCmdDescriptionPlainWithNoColor(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	line := wrapCmdDescription("init", "Initialize a workspace", 11)
+	require.Equal(t, "  init          Initialize a workspace", line)
+}
+
+func TestWrapCmdDescriptionPlainInPipe(t *testing.T) {
+	t.Setenv("CLICOLOR_FORCE", "")
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() { r.Close(); w.Close() })
+	oldStdout := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = oldStdout })
+
+	line := wrapCmdDescription("init", "Initialize a workspace", 11)
+	require.Equal(t, "  init          Initialize a workspace", line)
+}
+
+func TestWrapCmdDescriptionAlignsWrappedDescription(t *testing.T) {
+	long := strings.TrimSpace(strings.Repeat("word ", getViewWidth()/5+5))
+	short := ansi.Strip(wrapCmdDescription("module, mod", "Install modules", 11))
+	lines := strings.Split(ansi.Strip(wrapCmdDescription("init", long, 11)), "\n")
+	require.Greater(t, len(lines), 1)
+
+	column := strings.Index(short, "Install")
+	require.Equal(t, column, strings.Index(lines[0], "word"))
+	for _, line := range lines[1:] {
+		require.Equal(t, column, len(line)-len(strings.TrimLeft(line, " ")))
+	}
 }
