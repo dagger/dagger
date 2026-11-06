@@ -23,7 +23,10 @@ type TestSplit {
   The dev engine tests run against. Making the cache entries the engine image
   ships starts a separate engine and takes minutes, before the first test; a
   shard's one dev engine builds the same results for its first Go module
-  instead. So it ships them only for tests that check them.
+  instead. So it ships them only for the shards that need them: tests that
+  check them, and shards whose Go modules the engine would otherwise build
+  from scratch many times over, in fresh nested engines or in many tests
+  loading Go modules at once.
   """
   let devEngine(imageEntries: Boolean! = false): EngineDev! {
     if (imageEntries) {
@@ -60,8 +63,9 @@ type TestSplit {
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
     race: Boolean,
+    imageEntries: Boolean! = false,
   ): Void {
-    devEngine
+    devEngine(imageEntries: imageEntries)
       .withEngineConfig("worker.oci", [
         "minFreeSpace = \"30%\"",
         "maxUsedSpace = \"50%\"",
@@ -316,8 +320,9 @@ type TestSplit {
   Test Call and Shell
   """
   pub testCallAndShell: Void @check {
-    testSpecific(["^TestCall$", "^TestShell$"])
-    testSpecific(["^TestDaggerCMD$"], pkg: "./internal/cmd/dagger")
+    # Many of their tests load Go modules at once.
+    testSpecific(["^TestCall$", "^TestShell$"], imageEntries: true)
+    testSpecific(["^TestDaggerCMD$"], pkg: "./internal/cmd/dagger", imageEntries: true)
 
     null
   }
@@ -333,7 +338,8 @@ type TestSplit {
   Test cache persistence
   """
   pub testCachePersistence: Void @check {
-    testCliEngineSpecific(["TestCachePersistence"])
+    # Its tests load Go modules in fresh nested engines made from this one.
+    testCliEngineSpecific(["TestCachePersistence"], imageEntries: true)
   }
 
   """
@@ -354,7 +360,8 @@ type TestSplit {
   Test Interface
   """
   pub testInterface: Void @check {
-    testSpecific(["TestInterface"])
+    # Its tests all load Go modules at once.
+    testSpecific(["TestInterface"], imageEntries: true)
   }
 
   """
@@ -368,7 +375,8 @@ type TestSplit {
   Test Module Runtimes
   """
   pub testModuleRuntimes: Void @check {
-    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
+    # Many of its tests load Go modules at once.
+    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"], imageEntries: true)
   }
 
   """
