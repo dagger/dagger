@@ -13,6 +13,10 @@ import (
 
 type checksSchema struct{}
 
+// First API version with collection reporting metadata. Keep this boundary
+// fixed once released so older callers retain their original schema.
+const checkCollectionMetadataVersion = "v1.0.0-beta.26"
+
 func (s checksSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.Check](srv).View(AfterVersion("v1.0.0-0")))
 	run := dagql.NodeFuncWithDynamicInputs("__run", s.run, s.cachePolicy)
@@ -30,7 +34,9 @@ func (s checksSchema) Install(srv *dagql.Server) {
 				copy.Unaddressed = check
 			}
 			return copy, nil
-		}),
+		}).View(AllVersion).Args(
+			dagql.Arg("collectionItem").View(AfterVersion(checkCollectionMetadataVersion)),
+		),
 		dagql.NodeFunc("sync", s.sync).DoNotCache("Report each check execution request.").Doc("Run the check and retain its result."),
 		run,
 		dagql.NodeFunc("pass", s.pass).DoNotCache("Read the current check result.").Doc("Run the check and return whether it passes."),
