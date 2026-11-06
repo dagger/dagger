@@ -85,7 +85,9 @@ type GoSdk {
         "codegen", "generate-client",
         "--output", rootPath,
         "--introspection-json-path", "/schema.json",
-        "--module-source-id=" + toString(modSource.id),
+        "--module-name", modSource.moduleOriginalName,
+        "--engine-version", modSource.engineVersion,
+        "--module-dependencies", JSON.encode(modSource.dependencies.{{kind, moduleOriginalName, pin, asString}}),
         "--client-dir=" + outputDir,
       ])
       .directory(contextPath)
