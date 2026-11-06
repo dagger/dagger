@@ -189,6 +189,10 @@ func (v containerSelectionTargets) Open(name string, parent *os.Root) (*os.File,
 	if mnt.load == nil {
 		return nil, fmt.Errorf("%w %s", errOpaqueSelectionParent, mnt.target)
 	}
+	// A source load failure must not be treated as a missing mountpoint.
+	if _, err := mnt.get(); err != nil {
+		return nil, err
+	}
 	f, err := v.source.open(name, parent, mnt)
 	if !errors.Is(err, os.ErrNotExist) {
 		return f, err
