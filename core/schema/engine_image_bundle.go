@@ -102,8 +102,13 @@ func (s *hostSchema) engineImageBundle(ctx context.Context, parent dagql.ObjectR
 		return inst, err
 	}
 	workers := runtime.NumCPU()
+	// The blobs are uncompressed: the image's own layer compresses them for
+	// download as well as compressed blobs would be, and an engine then
+	// unpacks each with no decompression the first time it uses it. Force
+	// converts a layer that already has a compressed blob, such as a pulled
+	// image's.
 	cfg := config.RefConfig{
-		Compression: compression.New(compression.Zstd),
+		Compression: compression.New(compression.Uncompressed).SetForce(true),
 		Builds:      config.LayerBuilds{Workers: workers, Gate: semaphore.NewWeighted(int64(workers))},
 	}
 	err = core.MountRef(ctx, ref, func(root string, _ *mount.Mount) error {
