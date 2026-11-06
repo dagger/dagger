@@ -38,6 +38,10 @@ const (
 
 	XxImage = "tonistiigi/xx:1.2.1"
 
+	// dagger/golangci-lint commit whose export driver the Go SDK's codegen
+	// loads a module's imports through, from dagger/go's archives.
+	GolangciLintCommit = "cec25a2af6e0d16d555da7e256424a76ee713599"
+
 	EntireCLIVersion = "0.12.2"
 )
 
