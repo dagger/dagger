@@ -189,6 +189,8 @@ func TestSearchModulesToolCloudError(t *testing.T) {
 		{"http error", http.StatusServiceUnavailable, "down for maintenance at internal-host:8080", "Dagger Cloud answered 503 Service Unavailable"},
 		{"graphql error", http.StatusOK, `{"errors":[{"message":"rate limited"}]}`, "Dagger Cloud returned an error: rate limited"},
 		{"rejected credentials", http.StatusUnauthorized, "token xyz invalid", "rejected the Cloud credentials"},
+		{"unreadable answer", http.StatusOK, `{"data":{"discoverModules":{"id":"evt","results":[{"name":1}]}}}`, "Dagger Cloud's answer could not be read"},
+		{"no result", http.StatusOK, `{"data":{"discoverModules":null}}`, "Dagger Cloud's answer could not be read"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cloudURL, _ := searchModulesCloud(t, tc.status, tc.response)

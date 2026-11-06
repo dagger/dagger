@@ -146,7 +146,7 @@ func (c *Client) DiscoverModules(ctx context.Context, req DiscoverModulesRequest
 		return nil, newDiscoverError(c.u, err)
 	}
 	if data.DiscoverModules == nil {
-		return nil, &DiscoverError{URL: c.u.Redacted(), Empty: true, Err: errors.New("no discoverModules in the response")}
+		return nil, &DiscoverError{URL: c.u.Redacted(), Unreadable: true, Err: errors.New("no discoverModules in the response")}
 	}
 	if data.DiscoverModules.Results == nil {
 		data.DiscoverModules.Results = []ModuleListing{}
@@ -166,21 +166,26 @@ type DiscoverError struct {
 	Status string
 	// Messages are the GraphQL errors Cloud returned.
 	Messages []string
-	// Empty means Cloud answered without a result.
-	Empty bool
-	Err   error
+	// Unreadable means Cloud answered, but not with a result this client
+	// can read.
+	Unreadable bool
+	Err        error
 }
 
 func newDiscoverError(u *url.URL, err error) *DiscoverError {
 	derr := &DiscoverError{URL: u.Redacted(), Err: err}
 	var httpErr *GraphQLHTTPError
 	var gqlErrs *GraphQLErrors
+	var urlErr *url.Error
 	switch {
 	case errors.As(err, &httpErr):
 		derr.Status = httpErr.Status
 		derr.Unauthorized = httpErr.StatusCode == http.StatusUnauthorized
 	case errors.As(err, &gqlErrs):
 		derr.Messages = gqlErrs.Messages
+	case !errors.As(err, &urlErr):
+		// Not a transport failure: Cloud answered something else.
+		derr.Unreadable = true
 	}
 	return derr
 }
@@ -224,8 +229,8 @@ func (e *DiscoverError) Summary() string {
 		detail = "Dagger Cloud answered " + e.Status
 	case len(e.Messages) > 0:
 		detail = "Dagger Cloud returned an error: " + strings.Join(e.Messages, "; ")
-	case e.Empty:
-		detail = "Dagger Cloud returned no result"
+	case e.Unreadable:
+		detail = "Dagger Cloud's answer could not be read"
 	default:
 		detail = "could not reach Dagger Cloud"
 	}
