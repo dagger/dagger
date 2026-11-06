@@ -3507,11 +3507,11 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinksLazyMounts(ctx context.C
 			require.ErrorContains(t, err, "exit code: 3")
 		})
 	}
-	t.Run("mounted selection needs no rootfs", func(ctx context.Context, t *testctx.T) {
-		content, err := failing.WithMountedDirectory("/app", dag.Directory().WithNewFile("value", "mounted")).
+	t.Run("mountpoint resolution needs an available rootfs", func(ctx context.Context, t *testctx.T) {
+		// The rootfs is needed to tell whether /app is a mountpoint alias.
+		_, err := failing.WithMountedDirectory("/app", dag.Directory().WithNewFile("value", "mounted")).
 			Directory("/app", opts).File("value").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "mounted", content)
+		require.ErrorContains(t, err, "exit code: 3")
 	})
 	t.Run("files mount hides rootfs contents", func(ctx context.Context, t *testctx.T) {
 		root := root.WithNewFile("files/hidden", "hidden").WithSymlink("/files", "app/files")
@@ -3604,6 +3604,21 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinksMounts(ctx context.Conte
 		require.Equal(t, "z mount", content)
 		_, err = out.File("link/hidden").Contents(ctx)
 		require.ErrorContains(t, err, "no such file or directory")
+	})
+	t.Run("direct mount aliases keep their canonical parent", func(ctx context.Context, t *testctx.T) {
+		root := dag.Directory().WithNewFile("value", "wrong").WithNewFile("deep/value", "right").
+			WithNewFile("deep/target/hidden", "hidden").WithSymlink("/deep/target", "alias")
+		mounted := dag.Directory().WithSymlink("../value", "link")
+		ctr := dag.Container().WithRootfs(root).WithMountedDirectory("/alias", mounted)
+		for _, out := range []*sdkcore.Directory{
+			ctr.Directory("/alias", opts), ctr.Directory("/", opts).Directory("alias"),
+		} {
+			content, err := out.File("link").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "right", content)
+			_, err = out.File("hidden").Contents(ctx)
+			require.ErrorContains(t, err, "no such file or directory")
+		}
 	})
 	t.Run("mount back to rootfs", func(ctx context.Context, t *testctx.T) {
 		content, err := dag.Container().WithRootfs(root).WithMountedDirectory("/src", mounted).

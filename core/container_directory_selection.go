@@ -127,7 +127,7 @@ func newContainerSelectionSource(ctx context.Context, parent dagql.ObjectResult[
 				return s.openFile(file)
 			}
 		case mnt.FilesSource != nil:
-			entry.load = func() (*containerSelectionBacking, error) { return s.stub(entry.target) }
+			entry.load = s.emptyFilesMount
 		}
 		if entry.target == "/" {
 			s.base = entry
@@ -209,12 +209,11 @@ func selectionPathUnder(name, parent string) bool {
 }
 
 func (s *containerSelectionSource) Open(name string, parent *os.Root) (*os.File, error) {
+	// Freeze mount locations before returning any source handles. An exact
+	// match can itself be an alias, so it cannot bypass target expansion.
+	s.prepare()
 	name = filepath.Join("/", name)
 	selected := s.mountFor(name)
-	if selected == s.base && !s.ready {
-		s.prepare()
-		selected = s.mountFor(name)
-	}
 	return s.open(name, parent, selected)
 }
 
@@ -380,6 +379,25 @@ func (s *containerSelectionSource) stub(name string) (*containerSelectionBacking
 	}
 	s.stubs[name] = backing
 	return backing, nil
+}
+
+// A files mount starts empty. Reusing a mountpoint stub here would expose
+// directories created while locating earlier, now-hidden mount targets.
+func (s *containerSelectionSource) emptyFilesMount() (*containerSelectionBacking, error) {
+	path, err := os.MkdirTemp("", "dagger-selection-files-")
+	if err != nil {
+		return nil, err
+	}
+	s.closers = append(s.closers, func() error { return os.RemoveAll(path) })
+	if err := os.Chmod(path, 0755); err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, err
+	}
+	s.closers = append(s.closers, root.Close)
+	return &containerSelectionBacking{root: root, path: "."}, nil
 }
 
 func (s *containerSelectionSource) Close() {

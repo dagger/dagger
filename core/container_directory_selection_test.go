@@ -1,11 +1,13 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/dagger/dagger/util/layercopy"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
@@ -96,4 +98,53 @@ func TestContainerSelectionReusesSyntheticParents(t *testing.T) {
 	source.Close()
 	_, err = first.root.OpenFile(".", unix.O_PATH, 0)
 	require.ErrorIs(t, err, os.ErrClosed)
+}
+
+func TestContainerSelectionDirectMountAlias(t *testing.T) {
+	for _, selection := range []string{"/alias", "/"} {
+		t.Run(selection, func(t *testing.T) {
+			base := selectionFixture(t, map[string]string{
+				"value": "wrong", "deep/value": "right", "deep/target/hidden": "hidden",
+			}, map[string]string{"alias": "/deep/target"})
+			mounted := selectionFixture(t, nil, map[string]string{
+				"link": "../value", "absolute": "/deep/value",
+			})
+			source := &containerSelectionSource{
+				base:   selectionFixtureMount(t, "/", base, "."),
+				mounts: []*containerSelectionMount{selectionFixtureMount(t, "/alias", mounted, ".")},
+			}
+			t.Cleanup(source.Close)
+			dst := t.TempDir()
+			copier, err := layercopy.NewCopier(layercopy.Mount{Root: dst})
+			require.NoError(t, err)
+			defer copier.Close()
+			require.NoError(t, copier.CopySelection(context.Background(), "", selection, layercopy.SelectionOptions{Source: source}))
+			if selection == "/" {
+				dst = filepath.Join(dst, "alias")
+			}
+			for _, name := range []string{"link", "absolute"} {
+				content, err := os.ReadFile(filepath.Join(dst, name))
+				require.NoError(t, err)
+				require.Equal(t, "right", string(content))
+			}
+			_, err = os.Stat(filepath.Join(dst, "hidden"))
+			require.ErrorIs(t, err, os.ErrNotExist)
+			require.Equal(t, "/deep/target", source.mounts[0].target)
+		})
+	}
+}
+
+func TestContainerSelectionFilesMountStartsEmpty(t *testing.T) {
+	source := &containerSelectionSource{}
+	t.Cleanup(source.Close)
+	_, err := source.stub("/files/old/child")
+	require.NoError(t, err)
+	backing, err := source.emptyFilesMount()
+	require.NoError(t, err)
+	f, err := backing.root.Open(".")
+	require.NoError(t, err)
+	defer f.Close()
+	names, err := f.Readdirnames(-1)
+	require.NoError(t, err)
+	require.Empty(t, names, "a files mount must not inherit earlier mountpoint stubs")
 }
