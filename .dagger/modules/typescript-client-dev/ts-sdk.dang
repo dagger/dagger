@@ -202,6 +202,112 @@ type TypescriptClientDev {
     null
   }
 
+  """
+  Where @dagger.io/core lives, relative to the workspace root.
+  """
+  pub corePath: String! = sourcePath + "/packages/core"
+
+  """
+  Rehearse a core release with no side effects.
+  """
+  pub releaseCoreDryRun: Void @check {
+    releaseCore(
+      dryRun: true,
+      sourceTag: "HEAD",
+      npmToken: null,
+      npmRegistryURL: "",
+    )
+  }
+
+  """
+  Publish @dagger.io/core.
+
+  Its version is the **engine** release, not the SDK's, which is why the tag is
+  taken as-is rather than through versionFromTag: core is the generated bindings
+  for one engine, so the two move together and nothing else here does.
+
+  @dagger.io/session is a published dependency, so `npm install` below fetches it
+  from the registry. That is deliberate — it is the only thing that proves the
+  package boundary holds before the tarball is built.
+  """
+  pub releaseCore(
+    """
+    Source git tag to release
+    """
+    sourceTag: String!,
+    """
+    NPM authentication token
+    """
+    npmToken: Secret,
+    """
+    Execute a dry-run release, with no side effects
+    """
+    dryRun: Boolean,
+    """
+    NPM registry URL to publish to.
+    """
+    npmRegistryURL: String! = "",
+  ): Void {
+    let versionFlag = if (isSemver(sourceTag)) {
+      sourceTag.trimPrefix("v")
+    } else {
+      "prepatch"
+    }
+    let prerelease = if (isSemver(sourceTag)) {
+      # "" for a stable tag, so the publish below moves `latest`; the channel
+      # otherwise, so a beta engine never does.
+      prereleaseFromVersion(sourceTag)
+    } else {
+      # Only a dry run gets here. `npm version prepatch` invents a prerelease,
+      # and npm refuses to publish a prerelease of a name it has never seen
+      # without a tag — which @dagger.io/core is.
+      "dev"
+    }
+
+    let build = nodejsBase(nodeVersionLts)
+      .withDirectory(".", workspaceDir)
+      .withWorkdir(corePath)
+      .withExec(["npm", "install", "--no-audit", "--no-fund"])
+      .withExec(["npm", "run", "build"])
+      # --allow-same-version so a re-run is not fatal: the committed manifest
+      # records the last release, so it already holds this version whenever a
+      # release is retried.
+      .withExec([
+        "npm",
+        "version",
+        versionFlag,
+        "--allow-same-version",
+        "--no-git-tag-version",
+      ])
+    # Check that dist/ exists in the build
+    build.directory("dist").entries
+
+    let publishArgs = ["npm", "publish", "--access", "public"]
+    if (prerelease != "") {
+      publishArgs += ["--tag", prerelease]
+    }
+    if (dryRun == true) {
+      publishArgs += ["--dry-run"]
+      null
+    } else if (npmToken != null) {
+      let registry = if (npmRegistryURL != "") {
+        npmRegistryURL.trimRight("/") + "/"
+      } else {
+        "https://registry.npmjs.org/"
+      }
+      let registryAuthHost = registry.trimPrefix("https://").trimPrefix("http://")
+      let npmrc = [
+        "//" + registryAuthHost + ":_authToken=" + npmToken.plaintext,
+        "registry=" + registry,
+        "always-auth=true",
+      ].join("\n")
+      build = build.withMountedSecret(".npmrc", setSecret("npmrc", npmrc))
+      null
+    }
+    build.withExec(publishArgs).sync
+    null
+  }
+
   pub isSemver(version: String!): Boolean! {
     let number = `(0|[1-9][0-9]*)`
     let prereleaseIdentifier =
