@@ -200,6 +200,23 @@ func (w *spanWalker) mode(span *Span) spanMode {
 }
 
 func (w *spanWalker) computeMode(span *Span) spanMode {
+	mode := w.ownMode(span)
+	if mode == modeDrop {
+		return modeDrop
+	}
+	if w.dropsFailedPlumbing(span) {
+		return modeDrop
+	}
+	if w.passesOnFailure(span) {
+		return modeThrough
+	}
+	return mode
+}
+
+// ownMode is how the walk treats span by what the span is alone, before
+// the rules that weigh the failures around it (dropsFailedPlumbing,
+// passesOnFailure).
+func (w *spanWalker) ownMode(span *Span) spanMode {
 	// Strictly-scoped walks never leave the root's own subtree: a span
 	// attached by a link (cause/effect) or inlined as a cause can live
 	// anywhere in the trace.
@@ -210,12 +227,6 @@ func (w *spanWalker) computeMode(span *Span) spanMode {
 	// between the rows that are (e.g. chained pipeline calls) stay accurate.
 	if !w.opts.ShouldShow(w.db, span) {
 		return modeDrop
-	}
-	if w.dropsFailedPlumbing(span) {
-		return modeDrop
-	}
-	if w.passesOnFailure(span) {
-		return modeThrough
 	}
 	if (span.Passthrough && !w.opts.Debug) ||
 		// We inserted a stub for this span, but never received data for it.
@@ -284,18 +295,34 @@ func (w *spanWalker) dropsFailedPlumbing(span *Span) bool {
 		return false
 	}
 	for _, sibling := range call.ChildSpans.Spans() {
-		if sibling == branch {
-			continue
+		if sibling != branch && w.showsFunctionFailure(sibling) {
+			return true
 		}
-		switch w.mode(sibling) {
-		case modeBuild:
-			if sibling.IsFailedOrCausedFailure() {
-				return true
-			}
-		case modeThrough:
-			if w.showsFailureBeneath(sibling) {
-				return true
-			}
+	}
+	return false
+}
+
+// showsFunctionFailure reports whether the view shows a failure at span or
+// beneath it that isn't a function call's plumbing: a failed span shown on
+// its own, reached through spans the view shows or passes through. It reads
+// only what each span is (ownMode), not how the walk places it, so one call's
+// plumbing never waits on another's: two retries of a call can put their
+// plumbing beneath the same caller, each beside the other.
+func (w *spanWalker) showsFunctionFailure(span *Span) bool {
+	if span.FunctionPlumbing {
+		return false
+	}
+	switch w.ownMode(span) {
+	case modeBuild:
+		if span.IsFailedOrCausedFailure() {
+			return true
+		}
+	case modeDrop:
+		return false
+	}
+	for _, child := range span.ChildSpans.Spans() {
+		if w.showsFunctionFailure(child) {
+			return true
 		}
 	}
 	return false

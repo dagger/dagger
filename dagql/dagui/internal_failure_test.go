@@ -1,6 +1,7 @@
 package dagui
 
 import (
+	"runtime/debug"
 	"testing"
 	"time"
 
@@ -165,5 +166,54 @@ func TestFailedPlumbingAloneShows(t *testing.T) {
 	view := db.RowsView(FrontendOpts{ZoomedSpan: primaryID, Verbosity: ShowCompletedVerbosity})
 	if view.HomeTree(db.Spans.Map[dispatchID]) == nil {
 		t.Error("the plumbing's own failure is not shown")
+	}
+}
+
+// TestRetriedPlumbingDoesNotWaitOnEachOther covers two retries of a module
+// call within a failed SDK step, after the call's own span was emitted
+// elsewhere in the session: the engine emits a call's span once, but runs the
+// call again. Both retries' plumbing then sits beneath the same caller, each
+// beside the other. Neither may decide whether it shows by asking whether the
+// other does, which recursed until the stack ran out. With no failure of the
+// function's own beside them, both show.
+func TestRetriedPlumbingDoesNotWaitOnEachOther(t *testing.T) {
+	// Keep a recursion from taking the whole test binary's stack.
+	defer debug.SetMaxStack(debug.SetMaxStack(256 << 10))
+
+	traceID := TraceID{TraceID: trace.TraceID{1}}
+	start := time.Now().Add(-time.Minute)
+	end := start.Add(time.Second)
+	failed := sdktrace.Status{Code: codes.Error, Description: "dispatcher failed"}
+
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: testID(1), TraceID: traceID, Name: "module SDK: load runtime",
+			StartTime: start, EndTime: end, Status: failed, Encapsulate: true},
+		{ID: testID(2), TraceID: traceID, ParentID: testID(1), Name: "GoSdk.moduleRuntime",
+			StartTime: start, EndTime: end, Status: failed, Internal: true},
+		{ID: testID(3), TraceID: traceID, ParentID: testID(2), Name: "POST /query",
+			StartTime: start, EndTime: end, Passthrough: true},
+		{ID: testID(4), TraceID: traceID, ParentID: testID(3), Name: "helper:Helper.build",
+			StartTime: start, EndTime: end, Status: failed, Passthrough: true},
+		{ID: testID(5), TraceID: traceID, ParentID: testID(4), Name: "call module entrypoint",
+			StartTime: start, EndTime: end, Status: failed, Internal: true, Encapsulate: true, FunctionPlumbing: true},
+		{ID: testID(6), TraceID: traceID, ParentID: testID(5), Name: "withExec /usr/local/bin/dispatch engine-call",
+			StartTime: start, EndTime: end, Status: failed, Internal: true},
+		{ID: testID(7), TraceID: traceID, ParentID: testID(2), Name: "POST /query",
+			StartTime: start, EndTime: end, Passthrough: true},
+		{ID: testID(8), TraceID: traceID, ParentID: testID(7), Name: "helper:Helper.build",
+			StartTime: start, EndTime: end, Status: failed, Passthrough: true},
+		{ID: testID(9), TraceID: traceID, ParentID: testID(8), Name: "call module entrypoint",
+			StartTime: start, EndTime: end, Status: failed, Internal: true, Encapsulate: true, FunctionPlumbing: true},
+		{ID: testID(10), TraceID: traceID, ParentID: testID(9), Name: "withExec /usr/local/bin/dispatch engine-call",
+			StartTime: start, EndTime: end, Status: failed, Internal: true},
+	})
+	db.SetPrimarySpan(testID(1))
+
+	view := db.RowsView(FrontendOpts{ZoomedSpan: testID(1), Verbosity: ShowCompletedVerbosity})
+	for _, id := range []SpanID{testID(6), testID(10)} {
+		if view.HomeTree(db.Spans.Map[id]) == nil {
+			t.Errorf("retry's failed dispatch %s is not shown", id)
+		}
 	}
 }
