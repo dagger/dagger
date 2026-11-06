@@ -1,7 +1,9 @@
 from collections.abc import Sequence
 
 import anyio
+import graphql
 import pytest
+from gql.dsl import DSLSchema
 
 import dagger
 from dagger.client._core import Arg, Context
@@ -131,6 +133,41 @@ def test_input_object():
     arg = dagger.BuildArg("NAME", "value")
 
     assert (arg.name, arg.value) == ("NAME", "value")
+
+
+_INPUT_SCHEMA = graphql.build_schema(
+    """
+    enum LLMMessageOriginKind { AGENT EVENT USER }
+
+    input LLMMessageOriginInput {
+      kind: LLMMessageOriginKind!
+      agentName: String = ""
+      ref: String = ""
+      replyTo: String = ""
+    }
+
+    type Query {
+      example(origin: LLMMessageOriginInput!): String
+    }
+    """
+)
+
+
+def test_input_object_field_names():
+    origin = dagger.LLMMessageOriginInput(
+        kind=dagger.LLMMessageOriginKind.AGENT,
+        agent_name="bot",
+        reply_to="msg-1",
+    )
+    ctx = Context().select("Query", "example", [Arg("origin", origin)])
+    field_ = ctx.selections[-1]
+
+    assert field_.args == {
+        "origin": {"kind": "AGENT", "agentName": "bot", "replyTo": "msg-1"}
+    }
+    assert graphql.print_ast(field_.to_dsl(DSLSchema(_INPUT_SCHEMA)).ast_field) == (
+        'example(origin: {kind: AGENT, agentName: "bot", replyTo: "msg-1"})'
+    )
 
 
 @pytest.mark.anyio

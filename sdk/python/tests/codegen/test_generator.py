@@ -275,6 +275,28 @@ def test_input_object_field_deprecated():
     assert ".. deprecated:: Use config_path instead." in rendered
 
 
+def test_input_object_graphql_field_names():
+    input_type = InputObject(
+        "ToolInput",
+        lambda: {
+            "callId": InputField(String),
+            "from": InputField(String),
+        },
+    )
+
+    rendered = InputHandler(Context()).render(input_type)
+
+    assert "call_id: str | None = None" in rendered
+    assert (
+        "    @classmethod\n"
+        "    def _graphql_field_names(cls) -> dict[str, str]:\n"
+        "        return {\n"
+        '            "call_id": "callId",\n'
+        '            "from_": "from",\n'
+        "        }\n"
+    ) in rendered
+
+
 def test_core_sync(ctx: Context):
     # Use the field from the parsed schema so it has the @expectedType AST node.
     foo_type = _EXPECTED_TYPE_SCHEMA.type_map["Foo"]
