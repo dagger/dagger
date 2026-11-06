@@ -18,7 +18,26 @@ func (e graphQLError) String() string {
 	return e.Message
 }
 
+// GraphQLHTTPError is a GraphQL request that Cloud answered with a non-2xx
+// HTTP status, so callers can tell, e.g., rejected credentials apart.
+type GraphQLHTTPError struct {
+	Op         string
+	Status     string
+	StatusCode int
+	Body       string
+}
+
+func (e *GraphQLHTTPError) Error() string {
+	return fmt.Sprintf("%s: %s: %s", e.Op, e.Status, e.Body)
+}
+
 func (c *Client) doGraphQL(ctx context.Context, opName string, query string, variables map[string]any, out any) error {
+	return c.doGraphQLWithHeader(ctx, opName, query, variables, nil, out)
+}
+
+// doGraphQLWithHeader is doGraphQL with extra request headers, which override
+// the defaults.
+func (c *Client) doGraphQLWithHeader(ctx context.Context, opName string, query string, variables map[string]any, header http.Header, out any) error {
 	body, err := json.Marshal(&graphqlRequest{
 		OpName:    opName,
 		Query:     query,
@@ -34,6 +53,9 @@ func (c *Client) doGraphQL(ctx context.Context, opName string, query string, var
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Accept", "application/json")
+	for key, values := range header {
+		req.Header[key] = values
+	}
 
 	resp, err := c.h.Do(req)
 	if err != nil {
@@ -46,7 +68,12 @@ func (c *Client) doGraphQL(ctx context.Context, opName string, query string, var
 		return fmt.Errorf("read %s response: %w", opName, err)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("%s: %s: %s", opName, resp.Status, strings.TrimSpace(string(respBody)))
+		return &GraphQLHTTPError{
+			Op:         opName,
+			Status:     resp.Status,
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(respBody)),
+		}
 	}
 
 	var envelope struct {
