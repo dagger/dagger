@@ -13,6 +13,7 @@ import (
 
 	"dagger.io/dagger/core"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	toml "github.com/pelletier/go-toml"
 	"golang.org/x/mod/modfile"
 
 	"github.com/dagger/dagger/engine/distconsts"
@@ -361,35 +362,43 @@ func (build *Builder) GoImageEntriesSeed(ctx context.Context) (*dagger.Directory
 // does (core/sdk's goSDKDefaultGoProxy). go.sum still verifies the result.
 const seedGoProxy = "https://proxy.golang.org|https://proxy.golang.org|direct"
 
-// goSDKModuleLibVersion is the dagger.io/dagger version go-sdk's generated
-// modules pin (go-sdk's defaultTarget), and goSDKModuleImports what their
-// generated code imports besides the standard library.
-const goSDKModuleLibVersion = "v1.0.0-beta.24"
-
-var goSDKModuleImports = []string{
-	"dagger.io/dagger",
-	"dagger.io/dagger/core",
-	"github.com/Khan/genqlient/graphql",
-	"github.com/dagger/otel-go",
-	"github.com/dagger/querybuilder",
-	"go.opentelemetry.io/otel",
-	"go.opentelemetry.io/otel/sdk/resource",
-	"go.opentelemetry.io/otel/semconv/v1.40.0",
-	"go.opentelemetry.io/otel/trace",
-}
-
 // GoSDKImageEntriesSeed is the Go module whose dependencies' builds the
 // engine image ships for the modules go-sdk generates: one that imports
 // what their generated code imports, tidied with the dagger.io/dagger
 // version they pin and sdk/go's requirements. GoImageEntriesSeed has the
 // standard library's.
 //
+// goSDK is go-sdk's tree, which names both: versions.toml's defaultTarget
+// is the release a new module pins, and generated-imports.txt lists what
+// its generated code imports besides the standard library, which go-sdk's
+// end-to-end checks hold to its generator's output.
+//
 // The seed requires sdk/go's raised requirements itself until a release of
-// dagger.io/dagger carries them. Then goSDKModuleLibVersion names that release,
-// whose go.mod requires them, and the seed needs no requirements of its own.
-// Until then a new go-sdk module on the released target's lower requirements
-// misses these builds.
-func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context) (*dagger.Directory, error) {
+// dagger.io/dagger carries them. Then go-sdk's defaultTarget names that
+// release, whose go.mod requires them, and the seed needs no requirements of
+// its own. Until then a new go-sdk module on the released target's lower
+// requirements misses these builds.
+func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context, goSDK *dagger.Directory) (*dagger.Directory, error) {
+	versionsTOML, err := goSDK.File("versions.toml").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var versions struct {
+		DefaultTarget string `toml:"defaultTarget"`
+	}
+	if err := toml.Unmarshal([]byte(versionsTOML), &versions); err != nil {
+		return nil, fmt.Errorf("parse go-sdk's versions.toml: %w", err)
+	}
+	importList, err := goSDK.File("generated-imports.txt").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var imports []string
+	for _, line := range strings.Split(importList, "\n") {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+			imports = append(imports, line)
+		}
+	}
 	sdkGoMod, err := build.source.File("sdk/go/go.mod").Contents(ctx)
 	if err != nil {
 		return nil, err
@@ -414,7 +423,7 @@ func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context) (*dagger.Direct
 	}
 	var mainGo strings.Builder
 	mainGo.WriteString("package main\n\nimport (\n")
-	for _, imp := range goSDKModuleImports {
+	for _, imp := range imports {
 		fmt.Fprintf(&mainGo, "\t_ %q\n", imp)
 	}
 	mainGo.WriteString(")\n\nfunc main() {}\n")
@@ -424,7 +433,7 @@ func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context) (*dagger.Direct
 		WithNewFile("/seed/go.mod", string(goMod)).
 		WithNewFile("/seed/main.go", mainGo.String()).
 		WithWorkdir("/seed").
-		WithExec([]string{"go", "get", "dagger.io/dagger@" + goSDKModuleLibVersion}).
+		WithExec([]string{"go", "get", "dagger.io/dagger@" + versions.DefaultTarget}).
 		WithExec([]string{"go", "mod", "tidy"}).
 		Directory("/seed"), nil
 }

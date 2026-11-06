@@ -228,6 +228,17 @@ func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platfo
 	return ctr, nil
 }
 
+// goSDK is go-sdk's tree at the commit this workspace's module go-sdk pins
+// (dagger.toml): the go-sdk this repository's own Go modules are generated
+// with.
+func (dev *EngineDev) goSDK(ctx context.Context) (*dagger.Directory, error) {
+	source, err := dev.Ws.Module("go-sdk").Source(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("the workspace's go-sdk: %w", err)
+	}
+	return core.NewModuleSource(source).ContextDirectory(), nil
+}
+
 // imageEntries are the cache entries an engine image of platform ships for
 // Go module runtimes, which the engine merges at start: the builds of the
 // standard library and of what generated Go module code imports, the
@@ -272,7 +283,11 @@ func (dev *EngineDev) entriesExporter(ctx context.Context, builder *build.Builde
 	if err != nil {
 		return nil, nil, err
 	}
-	seedGoSDK, err := builder.GoSDKImageEntriesSeed(ctx)
+	goSDK, err := dev.goSDK(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	seedGoSDK, err := builder.GoSDKImageEntriesSeed(ctx, goSDK)
 	if err != nil {
 		return nil, nil, err
 	}
