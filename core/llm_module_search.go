@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
 )
@@ -90,15 +91,33 @@ type searchModulesResult struct {
 	MatchedOn   []string `json:"matchedOn"`
 }
 
+// searchModulesAuth is the credential a search sends: the client's, minus its
+// OAuth refresh token. Refreshing here would spend the refresh token in the
+// user's credentials file without writing the new one back, since refresh
+// tokens rotate; only the session's own refresh handoff may do that. A login
+// whose access token already expired searches anonymously: search is public.
+func searchModulesAuth(cloudAuth *auth.Cloud) *auth.Cloud {
+	if cloudAuth == nil || cloudAuth.Token == nil {
+		return nil
+	}
+	token := *cloudAuth.Token
+	switch token.TokenType {
+	case "Basic", "OIDC":
+		// Static credentials, never refreshed.
+	default:
+		if !token.Valid() {
+			return nil
+		}
+		token.RefreshToken = ""
+	}
+	return &auth.Cloud{Token: &token, Org: cloudAuth.Org}
+}
+
 // searchModules sends the search with the connecting client's Cloud
 // credentials, if any (never the engine's own, a tool argument, or the
 // conversation's), to the Cloud URL that client is configured with.
 func searchModules(ctx context.Context, meta *engine.ClientMetadata, req cloud.DiscoverModulesRequest) (string, error) {
-	var cloudAuth *auth.Cloud
-	if meta.CloudAuth != nil && meta.CloudAuth.Token != nil {
-		cloudAuth = meta.CloudAuth
-	}
-	client, err := cloud.NewClient(ctx, cloudAuth)
+	client, err := cloud.NewClient(ctx, searchModulesAuth(meta.CloudAuth))
 	if err != nil {
 		return "", errors.New("cannot initialize the Dagger Cloud client; check the session's Cloud authentication")
 	}
@@ -117,6 +136,13 @@ func searchModules(ctx context.Context, meta *engine.ClientMetadata, req cloud.D
 		DoNotTrack: meta.DoNotTrack || analytics.DoNotTrack(),
 	})
 	if err != nil {
+		// Cloud response bodies, URLs and transport details stay out of what
+		// the model sees, as with LoadTrace.
+		var derr *cloud.DiscoverError
+		if errors.As(err, &derr) {
+			slog.DebugContext(ctx, "module search failed", "error", err)
+			return "", errors.New(derr.Summary())
+		}
 		return "", err
 	}
 	if len(discovery.Results) == 0 {
