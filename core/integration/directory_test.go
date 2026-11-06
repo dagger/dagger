@@ -3523,7 +3523,8 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinksMounts(ctx context.Conte
 					want += "222\n"
 				}
 				stamps, err := dag.Container().From(alpineImage).
-					WithMountedDirectory("/result", out).WithExec(args).Stdout(ctx)
+					WithMountedDirectory("/result", out, sdkcore.ContainerWithMountedDirectoryOpts{ReadOnly: true}).
+					WithExec(args).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, want, stamps)
 			})
