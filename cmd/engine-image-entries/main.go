@@ -8,8 +8,9 @@
 // merges them into its cache at start.
 //
 // It loads the built-in Go SDK module from -builtin-go-sdk, and dagger/go as
-// that module's dependency go, so that every result is the one the Go SDK's
-// builds look up.
+// that module's dependency go, and fails unless -entrypoint-dagger-go, the
+// dagger/go go-sdk's generated modules depend on, names the same, so that
+// every result is the one their builds look up.
 // It takes what codegen's archives of each Go module in -seed read from the
 // cache (archiveBuilds of its root package, its dependencies alone, without
 // tests), at -go-version with the Go SDK's build flags
@@ -48,6 +49,7 @@ func main() {
 	flag.Var(&seeds, "seed", "a Go module whose dependencies' builds to export, with the Go SDK's flags (repeatable)")
 	flag.Var(&entrypointSeeds, "entrypoint-seed", "a Go module whose dependencies' builds to export, with dagger/go's own flags, as go-sdk's entrypoints build (repeatable)")
 	builtinGoSDK := flag.String("builtin-go-sdk", "", "the built-in Go SDK module's directory, sdk/go/runtime")
+	entrypointDaggerGo := flag.String("entrypoint-dagger-go", "", "the dagger/go module ref go-sdk's entrypoints build with, which must be the built-in Go SDK's")
 	goVersion := flag.String("go-version", "", "the Go version the Go SDK builds with")
 	out := flag.String("out", "", "where to export the entries")
 	platform := flag.String("platform", "", "the platform of the engine image the entries are for (default: the engine's)")
@@ -56,7 +58,7 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(context.Background(), seeds, entrypointSeeds, *builtinGoSDK, *goVersion, *platform, *out); err != nil {
+	if err := run(context.Background(), seeds, entrypointSeeds, *builtinGoSDK, *entrypointDaggerGo, *goVersion, *platform, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "engine-image-entries:", err)
 		os.Exit(1)
 	}
@@ -66,7 +68,15 @@ func main() {
 // directory.
 const builtinGoSDKModule = `host { directory(path: $builtinGoSDK) { asModuleSource { %s } } }`
 
-func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, goVersion, platform, out string) error {
+// daggerGoSource is what names a dagger/go module source: its repository,
+// commit and module.
+type daggerGoSource struct {
+	CloneRef          string `json:"cloneRef"`
+	Commit            string `json:"commit"`
+	SourceRootSubpath string `json:"sourceRootSubpath"`
+}
+
+func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, entrypointDaggerGo, goVersion, platform, out string) error {
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -92,6 +102,7 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, goV
 			Directory struct {
 				AsModuleSource struct {
 					Dependencies []struct {
+						daggerGoSource
 						ModuleName       string `json:"moduleName"`
 						ID               string `json:"id"`
 						ContextDirectory withID `json:"contextDirectory"`
@@ -112,7 +123,7 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, goV
 		params, platformArg = params+", $platform: Platform", "(platform: $platform)"
 		vars["platform"] = platform
 	}
-	if err := do(`query(`+params+`) { `+fmt.Sprintf(builtinGoSDKModule, `dependencies { moduleName id contextDirectory { id } asModule { dependencies { name _prebuild`+platformArg+` { id } _runtimeImage`+platformArg+` { id } } } }`)+` }`, vars, &mod); err != nil {
+	if err := do(`query(`+params+`) { `+fmt.Sprintf(builtinGoSDKModule, `dependencies { moduleName id cloneRef commit sourceRootSubpath contextDirectory { id } asModule { dependencies { name _prebuild`+platformArg+` { id } _runtimeImage`+platformArg+` { id } } } }`)+` }`, vars, &mod); err != nil {
 		return fmt.Errorf("dagger/go: %w", err)
 	}
 	var daggerGo []string
@@ -120,6 +131,9 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, goV
 	for _, dep := range mod.Host.Directory.AsModuleSource.Dependencies {
 		if dep.ModuleName != "go" {
 			continue
+		}
+		if err := samePin(do, dep.daggerGoSource, entrypointDaggerGo); err != nil {
+			return err
 		}
 		daggerGo = append(daggerGo, dep.ID, dep.ContextDirectory.ID)
 		for _, dep := range dep.AsModule.Dependencies {
@@ -183,6 +197,24 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, goV
 	}
 	fmt.Fprintf(os.Stderr, "engine-image-entries: exported %d results dagger/go's archive builds read (package builds, module downloads and tools), gobuild's binary and image, dagger/go's checkout and context, and the image %s to %s\n",
 		len(ids), goImage.Go.Image, out)
+	return nil
+}
+
+// samePin fails unless go-sdk's entrypoints build with the dagger/go the
+// built-in Go SDK module depends on, builtin: the same repository, commit and
+// module. One engine session serves one dagger/go, and its builds are the
+// ones both seeds export, so a go-sdk module building with another would
+// find none of them.
+func samePin(do func(string, map[string]any, any) error, builtin daggerGoSource, entrypointDaggerGo string) error {
+	var res struct {
+		ModuleSource daggerGoSource `json:"moduleSource"`
+	}
+	if err := do(`query($pin: String!) { moduleSource(refString: $pin) { cloneRef commit sourceRootSubpath } }`, map[string]any{"pin": entrypointDaggerGo}, &res); err != nil {
+		return fmt.Errorf("go-sdk's dagger/go %s: %w", entrypointDaggerGo, err)
+	}
+	if res.ModuleSource != builtin {
+		return fmt.Errorf("go-sdk's entrypoints build with dagger/go %s (go-sdk's versions.toml daggerGo), and the built-in Go SDK module with %s@%s (sdk/go/runtime/dagger-module.toml): the image's builds serve both only when the two pins name the same dagger/go, so move them together", entrypointDaggerGo, builtin.CloneRef, builtin.Commit)
+	}
 	return nil
 }
 

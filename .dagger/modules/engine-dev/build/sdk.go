@@ -362,33 +362,44 @@ func (build *Builder) GoImageEntriesSeed(ctx context.Context) (*dagger.Directory
 // does (core/sdk's goSDKDefaultGoProxy). go.sum still verifies the result.
 const seedGoProxy = "https://proxy.golang.org|https://proxy.golang.org|direct"
 
+// GoSDKVersions is what go-sdk's versions.toml names that the engine
+// image's builds for go-sdk's modules depend on.
+type GoSDKVersions struct {
+	// DefaultTarget is the dagger.io/dagger release a new module pins.
+	DefaultTarget string `toml:"defaultTarget"`
+	// DaggerGo is the dagger/go its modules build with.
+	DaggerGo string `toml:"daggerGo"`
+}
+
+// ReadGoSDKVersions reads go-sdk's versions.toml from goSDK, go-sdk's tree.
+func ReadGoSDKVersions(ctx context.Context, goSDK *dagger.Directory) (GoSDKVersions, error) {
+	var versions GoSDKVersions
+	contents, err := goSDK.File("versions.toml").Contents(ctx)
+	if err != nil {
+		return versions, err
+	}
+	if err := toml.Unmarshal([]byte(contents), &versions); err != nil {
+		return versions, fmt.Errorf("parse go-sdk's versions.toml: %w", err)
+	}
+	return versions, nil
+}
+
 // GoSDKImageEntriesSeed is the Go module whose dependencies' builds the
 // engine image ships for the modules go-sdk generates: one that imports
 // what their generated code imports, tidied with the dagger.io/dagger
-// version they pin and sdk/go's requirements. GoImageEntriesSeed has the
-// standard library's.
+// version they pin, libVersion (go-sdk's defaultTarget), and sdk/go's
+// requirements. GoImageEntriesSeed has the standard library's.
 //
-// goSDK is go-sdk's tree, which names both: versions.toml's defaultTarget
-// is the release a new module pins, and generated-imports.txt lists what
-// its generated code imports besides the standard library, which go-sdk's
-// end-to-end checks hold to its generator's output.
+// goSDK is go-sdk's tree. Its generated-imports.txt lists what a new
+// module's generated code imports besides the standard library, which
+// go-sdk's end-to-end checks hold to its generator's output.
 //
 // The seed requires sdk/go's raised requirements itself until a release of
 // dagger.io/dagger carries them. Then go-sdk's defaultTarget names that
 // release, whose go.mod requires them, and the seed needs no requirements of
 // its own. Until then a new go-sdk module on the released target's lower
 // requirements misses these builds.
-func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context, goSDK *dagger.Directory) (*dagger.Directory, error) {
-	versionsTOML, err := goSDK.File("versions.toml").Contents(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var versions struct {
-		DefaultTarget string `toml:"defaultTarget"`
-	}
-	if err := toml.Unmarshal([]byte(versionsTOML), &versions); err != nil {
-		return nil, fmt.Errorf("parse go-sdk's versions.toml: %w", err)
-	}
+func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context, goSDK *dagger.Directory, libVersion string) (*dagger.Directory, error) {
 	importList, err := goSDK.File("generated-imports.txt").Contents(ctx)
 	if err != nil {
 		return nil, err
@@ -433,7 +444,7 @@ func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context, goSDK *dagger.D
 		WithNewFile("/seed/go.mod", string(goMod)).
 		WithNewFile("/seed/main.go", mainGo.String()).
 		WithWorkdir("/seed").
-		WithExec([]string{"go", "get", "dagger.io/dagger@" + versions.DefaultTarget}).
+		WithExec([]string{"go", "get", "dagger.io/dagger@" + libVersion}).
 		WithExec([]string{"go", "mod", "tidy"}).
 		Directory("/seed"), nil
 }

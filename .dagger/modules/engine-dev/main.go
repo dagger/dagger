@@ -287,7 +287,11 @@ func (dev *EngineDev) entriesExporter(ctx context.Context, builder *build.Builde
 	if err != nil {
 		return nil, nil, err
 	}
-	seedGoSDK, err := builder.GoSDKImageEntriesSeed(ctx, goSDK)
+	goSDKVersions, err := build.ReadGoSDKVersions(ctx, goSDK)
+	if err != nil {
+		return nil, nil, err
+	}
+	seedGoSDK, err := builder.GoSDKImageEntriesSeed(ctx, goSDK, goSDKVersions.DefaultTarget)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -328,6 +332,7 @@ func (dev *EngineDev) entriesExporter(ctx context.Context, builder *build.Builde
 		"-seed", "/seed",
 		"-entrypoint-seed", "/seed-go-sdk",
 		"-builtin-go-sdk", "/builtin-go-sdk",
+		"-entrypoint-dagger-go", goSDKVersions.DaggerGo,
 		"-go-version", distconsts.GolangVersion,
 		"-platform", platform,
 	}, nil
