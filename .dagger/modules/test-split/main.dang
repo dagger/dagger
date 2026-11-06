@@ -20,6 +20,20 @@ type TestSplit {
   let ws: Workspace!
 
   """
+  The dev engine tests run against. Making the cache entries the engine image
+  ships starts a separate engine and takes minutes, before the first test; a
+  shard's one dev engine builds the same results for its first Go module
+  instead. So it ships them only for tests that check them.
+  """
+  let devEngine(imageEntries: Boolean! = false): EngineDev! {
+    if (imageEntries) {
+      engineDev(ws: self.ws)
+    } else {
+      engineDev(ws: self.ws).withoutImageEntries
+    }
+  }
+
+  """
   Lower-level API for running specific tests
   """
   pub testSpecific(
@@ -33,8 +47,12 @@ type TestSplit {
     Run the privileged eBPF tests (Linux 6.15 or newer)
     """
     ebpf: Boolean,
+    """
+    Run against an engine with the cache entries its image ships
+    """
+    imageEntries: Boolean! = false,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    devEngine(imageEntries: imageEntries).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   let testCliEngineSpecific(
@@ -43,7 +61,7 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
   ): Void {
-    engineDev(ws: self.ws)
+    devEngine
       .withEngineConfig("worker.oci", [
         "minFreeSpace = \"30%\"",
         "maxUsedSpace = \"50%\"",
@@ -58,7 +76,7 @@ type TestSplit {
     race: Boolean,
     parallel: Int,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    devEngine.test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   """
@@ -162,6 +180,8 @@ type TestSplit {
       ],
       race: true,
       parallel: 16,
+      # The remote cache transfer suite checks the engine image's entries.
+      imageEntries: true,
     )
   }
 
@@ -284,7 +304,7 @@ type TestSplit {
   """
   pub testTelemetry: Void @check {
     # Rendering goldens require their warmup cache to survive session teardown.
-    engineDev(ws: self.ws)
+    devEngine
       .withEngineConfig("worker.oci", "gc = false")
       .test(run: "^TestTelemetry$", pkg: "./dagql/idtui", testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
     testSpecific(["^TestTelemetry$"])
