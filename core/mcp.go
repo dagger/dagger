@@ -3145,6 +3145,9 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		},
 		Call: m.listServicesTool(srv),
 	})
+	searchModules := searchModulesTool()
+	searchModules.Call = m.searchModulesTool(srv)
+	allTools.Add(searchModules)
 	allTools.Add(LLMTool{
 		Name:        timeoutToolName,
 		Description: "Run one currently exposed tool with a timeout.",
