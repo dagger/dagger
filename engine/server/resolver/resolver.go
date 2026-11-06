@@ -33,6 +33,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
+	"github.com/dagger/dagger/internal/buildkit/util/resolver/retryhandler"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
@@ -416,9 +417,14 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		return nil, err
 	}
 	childrenHandler := images.ChildrenHandler(r.contentStore)
+	// A registry can drop a connection partway through a blob, and containerd
+	// only reconnects on an unexpected EOF, so retry the blob's fetch.
+	fetchHandler := retryhandler.New(remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher), func(msg []byte) {
+		bklog.G(ctx).Warnf("pulling %s: %s", resolvedRef, bytes.TrimSpace(msg))
+	})
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher),
+		fetchHandler,
 		childrenHandler,
 		dslHandler,
 	)
@@ -533,11 +539,25 @@ func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, 
 	hosts := r.remoteHosts(network, registryTransport, recorder)
 	if parsed, err := reference.ParseNormalizedNamed(ref); err == nil {
 		if canonical, ok := parsed.(reference.Canonical); ok {
-			return fetchPinnedRoot(ctx, hosts, ref, canonical.Digest())
+			var resolvedRef string
+			var rootDesc ocispecs.Descriptor
+			var fetcher remotes.Fetcher
+			err := retryResolve(ctx, ref, func(ctx context.Context) error {
+				var err error
+				resolvedRef, rootDesc, fetcher, err = fetchPinnedRoot(ctx, hosts, ref, canonical.Digest())
+				return err
+			})
+			return resolvedRef, rootDesc, fetcher, err
 		}
 	}
 	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: hosts})
-	resolvedRef, rootDesc, err := resolver.Resolve(ctx, ref)
+	var resolvedRef string
+	var rootDesc ocispecs.Descriptor
+	err := retryResolve(ctx, ref, func(ctx context.Context) error {
+		var err error
+		resolvedRef, rootDesc, err = resolver.Resolve(ctx, ref)
+		return err
+	})
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
@@ -546,6 +566,19 @@ func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, 
 		return "", ocispecs.Descriptor{}, nil, err
 	}
 	return resolvedRef, rootDesc, fetcher, nil
+}
+
+// retryResolve runs resolve, and runs it again after a network error.
+// containerd retries a manifest request after some error statuses, but not
+// after a network error such as a TLS handshake timeout, so the root is
+// resolved again the way a blob fetch is retried.
+func retryResolve(ctx context.Context, ref string, resolve func(context.Context) error) error {
+	_, err := retryhandler.New(func(ctx context.Context, _ ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
+		return nil, resolve(ctx)
+	}, func(msg []byte) {
+		bklog.G(ctx).Warnf("resolving %s: %s", ref, bytes.TrimSpace(msg))
+	})(ctx, ocispecs.Descriptor{})
+	return err
 }
 
 func fetchPinnedRoot(ctx context.Context, hosts docker.RegistryHosts, ref string, dgst digest.Digest) (string, ocispecs.Descriptor, remotes.Fetcher, error) {

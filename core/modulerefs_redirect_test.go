@@ -93,6 +93,77 @@ func TestDaggerGetProbeRejectsNonHTTPSLocation(t *testing.T) {
 	require.Equal(t, ref, daggerGetProbe(t.Context(), ref))
 }
 
+type daggerGetProbeTransport func(*http.Request) (*http.Response, error)
+
+func (f daggerGetProbeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func TestDaggerGetProbeRetriesWithoutResponse(t *testing.T) {
+	const ref = "https://example.com/go"
+	redirect := func(r *http.Request) *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": {"https://github.com/dagger/go?" + daggerGetQueryParam + "=1"}},
+			Body:       http.NoBody,
+			Request:    r,
+		}
+	}
+	notFound := func(r *http.Request) *http.Response {
+		return &http.Response{StatusCode: http.StatusNotFound, Body: http.NoBody, Request: r}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		respond  func(attempt int32, r *http.Request) (*http.Response, error)
+		want     string
+		attempts int32
+	}{
+		{
+			name: "one timeout",
+			respond: func(attempt int32, r *http.Request) (*http.Response, error) {
+				if attempt == 1 {
+					return nil, context.DeadlineExceeded
+				}
+				return redirect(r), nil
+			},
+			want:     "https://github.com/dagger/go",
+			attempts: 2,
+		},
+		{
+			name: "repeated timeouts",
+			respond: func(int32, *http.Request) (*http.Response, error) {
+				return nil, context.DeadlineExceeded
+			},
+			want:     ref,
+			attempts: 2,
+		},
+		{
+			name: "a response without a redirect",
+			respond: func(_ int32, r *http.Request) (*http.Response, error) {
+				return notFound(r), nil
+			},
+			want:     ref,
+			attempts: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var attempts atomic.Int32
+			oldClient := daggerGetClient
+			daggerGetClient = &http.Client{
+				Transport: daggerGetProbeTransport(func(r *http.Request) (*http.Response, error) {
+					return tc.respond(attempts.Add(1), r)
+				}),
+				CheckRedirect: oldClient.CheckRedirect,
+			}
+			defer func() { daggerGetClient = oldClient }()
+
+			require.Equal(t, tc.want, daggerGetProbe(t.Context(), ref))
+			require.Equal(t, tc.attempts, attempts.Load())
+		})
+	}
+}
+
 func TestDaggerGetProbeIgnoresCanonicalizationRedirects(t *testing.T) {
 	// GitHub (and other hosts) 301 "repo.git" -> "repo", "www." -> apex, etc.
 	// for the same repository. These must not be treated as dagger-get
