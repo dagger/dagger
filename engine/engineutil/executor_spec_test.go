@@ -329,3 +329,22 @@ func TestRootfsCleanupAfterFailedUnmount(t *testing.T) {
 	require.FileExists(t, sentinel)
 	require.DirExists(t, rootfsPath)
 }
+
+func TestSetProxyEnvsSystemEnv(t *testing.T) {
+	t.Setenv("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", "https://goproxy.example.com")
+	t.Setenv("_DAGGER_ENGINE_SYSTEMENV_UV_DEFAULT_INDEX", "https://pypi.example.com/simple")
+	t.Setenv("_DAGGER_ENGINE_SYSTEMENV_", "ignored")
+
+	// passed to every exec, with or without exec metadata, unless the
+	// container sets the variable itself
+	state := &execState{
+		spec:       &specs.Spec{Process: &specs.Process{}},
+		origEnvMap: map[string]string{"UV_DEFAULT_INDEX": "https://own.example.com/simple"},
+	}
+	require.NoError(t, (&Client{}).setProxyEnvs(context.Background(), state))
+	require.Contains(t, state.spec.Process.Env, "GOPROXY=https://goproxy.example.com")
+	for _, kv := range state.spec.Process.Env {
+		require.NotContains(t, kv, "UV_DEFAULT_INDEX=")
+		require.NotContains(t, kv, "ignored")
+	}
+}

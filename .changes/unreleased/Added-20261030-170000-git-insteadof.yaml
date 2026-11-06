@@ -1,0 +1,8 @@
+kind: Added
+body: |-
+  Engines can resolve modules through a git proxy or mirror, without reaching dagger.io
+  Set `git.url.<base>.insteadOf` in `engine.json` to rewrite remote git URLs, like git's own `url.<base>.insteadOf`. Set `moduleRedirects` to pin module URLs such as `dagger.io/sdk/go` to the repositories they redirect to, so they resolve without a request to the redirecting host. A target can be pinned in turn, such as `github.com/dagger/python-sdk` to a mirror; pins take precedence over `dagger.lock` and are not written to it. `hack/update-module-redirects` fills it in from dagger.io.
+time: 2026-10-30T17:00:00.000000-04:00
+custom:
+  Author: suprjinx
+  PR: "0"

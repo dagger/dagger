@@ -70,6 +70,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/wcprof"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 type Server struct {
@@ -425,6 +426,17 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		}
 	}
 	srv.registryHosts = newRegistryHosts(registries)
+
+	if cfg.Git != nil {
+		rewrites := make(map[string][]string, len(cfg.Git.URL))
+		for base, urlCfg := range cfg.Git.URL {
+			rewrites[base] = urlCfg.InsteadOf
+		}
+		gitutil.SetURLRewrites(rewrites)
+	}
+	if err := core.SetModuleRedirects(cfg.ModuleRedirects); err != nil {
+		return nil, fmt.Errorf("invalid engine config: %w", err)
+	}
 
 	//
 	// setup worker+executor
