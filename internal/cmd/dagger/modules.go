@@ -18,10 +18,10 @@ type registryModule struct {
 func loadModuleRegistry() []registryModule {
 	return []registryModule{
 		{
-			Name:        "dagger-skills",
+			Name:        "dagger-skill",
 			Description: "Install and update the official Dagger agent skill",
-			Repo:        "dagger.io/skills/dagger",
-			Recommend:   recommendDaggerSkills,
+			Repo:        "dagger.io/skill",
+			Recommend:   recommendDaggerSkill,
 		},
 		{
 			Name:        "go",

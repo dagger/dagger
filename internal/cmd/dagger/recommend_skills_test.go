@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRecommendDaggerSkills(t *testing.T) {
+func TestRecommendDaggerSkill(t *testing.T) {
 	ctx := t.Context()
 	dag, err := dagger.Connect(ctx)
 	require.NoError(t, err)
@@ -17,7 +17,7 @@ func TestRecommendDaggerSkills(t *testing.T) {
 	for _, dir := range []string{".agents/skills", ".claude/skills", ".cursor/skills", ".gemini/skills", ".github/skills", ".opencode/skills"} {
 		t.Run(dir, func(t *testing.T) {
 			ws := root.WithNewDirectory(dir).AsWorkspace()
-			matches, err := recommendDaggerSkills(ctx, ws)
+			matches, err := recommendDaggerSkill(ctx, ws)
 			require.NoError(t, err)
 			require.Equal(t, []string{dir}, matches)
 		})
@@ -30,7 +30,7 @@ func TestRecommendDaggerSkills(t *testing.T) {
 		"linked skills": root.WithNewDirectory("other").WithSymlink("../other", ".agents/skills"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			matches, err := recommendDaggerSkills(ctx, dir.AsWorkspace())
+			matches, err := recommendDaggerSkill(ctx, dir.AsWorkspace())
 			require.NoError(t, err)
 			require.Empty(t, matches)
 		})

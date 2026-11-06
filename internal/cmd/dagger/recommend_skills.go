@@ -7,7 +7,7 @@ import (
 	"dagger.io/dagger/core"
 )
 
-func recommendDaggerSkills(ctx context.Context, ws *core.Workspace) ([]string, error) {
+func recommendDaggerSkill(ctx context.Context, ws *core.Workspace) ([]string, error) {
 	dir := recommendationDirectory(ws)
 	var matches []string
 	for _, skillDir := range []string{
