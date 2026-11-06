@@ -1,4 +1,5 @@
 name = "notify"
+include = []
 
 [entrypoint]
   kind = "dang"

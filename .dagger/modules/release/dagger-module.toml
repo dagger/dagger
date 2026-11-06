@@ -1,4 +1,5 @@
 name = "release"
+include = []
 
 [entrypoint]
   kind = "dang"

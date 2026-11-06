@@ -1,4 +1,5 @@
 name = "docs-dev"
+include = []
 
 [entrypoint]
   kind = "dang"

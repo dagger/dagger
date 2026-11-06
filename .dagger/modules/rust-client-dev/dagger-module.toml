@@ -1,4 +1,5 @@
 name = "rust-client-dev"
+include = []
 
 [entrypoint]
   kind = "dang"

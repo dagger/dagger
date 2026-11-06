@@ -1,4 +1,5 @@
 name = "python-client-dev"
+include = []
 
 [entrypoint]
   kind = "dang"

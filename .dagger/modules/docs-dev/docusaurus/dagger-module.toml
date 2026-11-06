@@ -1,4 +1,5 @@
 name = "docusaurus"
+include = []
 
 [entrypoint]
   kind = "dang"

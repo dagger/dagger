@@ -1,4 +1,5 @@
 name = "registry-config"
+include = []
 
 [entrypoint]
   kind = "dang"

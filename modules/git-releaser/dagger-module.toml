@@ -1,4 +1,5 @@
 name = "git-releaser"
+include = []
 
 [entrypoint]
   kind = "dang"

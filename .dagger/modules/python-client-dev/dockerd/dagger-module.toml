@@ -1,4 +1,5 @@
 name = "dockerd"
+include = []
 
 [entrypoint]
   kind = "dang"

@@ -1,4 +1,5 @@
 name = "php-client-dev"
+include = []
 
 [entrypoint]
   kind = "dang"

@@ -1,4 +1,5 @@
 name = "tla-check"
+include = []
 
 [entrypoint]
   kind = "dang"
