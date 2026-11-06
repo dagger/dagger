@@ -88,14 +88,14 @@ type definitionEngine struct {
 	endpoint string
 }
 
-func startDefinitionEngine(ctx context.Context, t *testctx.T, outer *dagger.Client, name string) *definitionEngine {
+func startDefinitionEngine(ctx context.Context, t *testctx.T, outer *dagger.Client, name string, withs ...func(*core.Container) *core.Container) *definitionEngine {
 	t.Helper()
 	e := &definitionEngine{name: name, volume: core.NewQuery(outer).CacheVolume("module-definition-" + name + "-" + rand.Text())}
-	ctr := devEngineContainerWithStateKey(outer, "module-definition-"+name+"-state-"+rand.Text(), func(ctr *core.Container) *core.Container {
+	ctr := devEngineContainerWithStateKey(outer, "module-definition-"+name+"-state-"+rand.Text(), append([]func(*core.Container) *core.Container{func(ctr *core.Container) *core.Container {
 		return ctr.WithMountedCache("/transfer-fixture", e.volume).
 			WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture").
 			WithEntrypoint([]string{"sh", "-c", `exec /usr/local/bin/dagger-entrypoint.sh "$@" 2>>/transfer-fixture/engine.log`, "dagger-engine"})
-	})
+	}}, withs...)...)
 	// Retained rows must outlive the sessions that made them for the row
 	// counts below to mean anything, independently of the host's disk
 	// pressure; the predecessor's two-engine test pins the same bounds.
