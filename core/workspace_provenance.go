@@ -153,19 +153,46 @@ func (a *Artifact) Provenance(ctx context.Context) (*WorkspaceProvenance, error)
 	if node.Name == "stale" && node.Parent != nil && node.Parent.ObjectType() != nil && node.Parent.ObjectType().Name == "Generator" {
 		node = node.Parent
 	}
+	if a.Workspace.Self() == nil {
+		return nil, fmt.Errorf("artifact provenance requires a workspace")
+	}
+	workspace := workspaceInputKey(a.Workspace.Self())
+	var ancestors []*ModTreeNode
+	for parent := node.Parent; parent != nil && parent.Module.Self() != nil; parent = parent.Parent {
+		ancestors = append(ancestors, parent)
+	}
+	for _, parent := range slices.Backward(ancestors) {
+		frame, err := parent.plannedCall(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("prepare artifact provenance: %w", err)
+		}
+		inputs, err := workspaceInputsForCall(ctx, frame)
+		if err != nil {
+			return nil, err
+		}
+		regions, inputIssues := inputs.forWorkspace(workspace)
+		// A known whole-Workspace input already covers every possible path.
+		// Further receiver construction cannot narrow that dependency.
+		if slices.ContainsFunc(regions, func(s provenance.Selector) bool {
+			return s.Kind == provenance.WorkspaceRead && s.Path == "/" && !s.Conservative && len(s.Include) == 0 && len(s.Exclude) == 0
+		}) {
+			for _, region := range regions {
+				region.Origin = "receiver: " + region.Origin
+				selectors = append(selectors, region)
+			}
+			return provenanceWithIssues(selectors, inputIssues), nil
+		}
+	}
 	frame, err := node.plannedCall(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("prepare artifact provenance: %w", err)
-	}
-	if a.Workspace.Self() == nil {
-		return nil, fmt.Errorf("artifact provenance requires a workspace")
 	}
 	add := func(input *dagql.ResultCall, origin string) error {
 		inputs, err := workspaceInputsForCall(ctx, input)
 		if err != nil {
 			return err
 		}
-		regions, inputIssues := inputs.forWorkspace(workspaceInputKey(a.Workspace.Self()))
+		regions, inputIssues := inputs.forWorkspace(workspace)
 		for _, region := range regions {
 			if region.Origin != "" && region.Origin != origin {
 				region.Origin = origin + ": " + region.Origin

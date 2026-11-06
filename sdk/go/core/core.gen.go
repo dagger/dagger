@@ -2078,7 +2078,7 @@ type ArtifactsFilterAffectedByDiffOpts struct {
 	Kinds []string
 }
 
-// Keep artifacts that may depend on paths changed in any listed changeset. Paths limit changed paths before matching dependencies. Unknown inputs stay selected for nonempty changes.
+// Keep artifacts that may depend on paths changed in any listed changeset. Paths limit changed paths before matching dependencies. Inputs with unresolved source origins stay selected for nonempty changes.
 func (r *Artifacts) FilterAffectedByDiff(changes []*Changeset, opts ...ArtifactsFilterAffectedByDiffOpts) *Artifacts {
 	q := r.query.Select("filterAffectedByDiff")
 	for i := len(opts) - 1; i >= 0; i-- {

@@ -40,8 +40,9 @@ carry provenance.
 ## Inspection and matching
 
 Prepare the artifact's current arguments and receiver with the normal DagQL
-planning path. This resolves defaults and engine inputs. Constructors and
-collection discovery can run. Input preparation errors still fail the request.
+planning path. This resolves defaults and engine inputs. Stop preparing a receiver
+when its planned inputs already include the whole Workspace. Constructors and
+collection discovery can otherwise run. Input preparation errors still fail the request.
 For example, a missing required File fails before path matching. The artifact
 body stays unrun.
 
@@ -108,8 +109,14 @@ narrow inputs. It cannot exclude checks whose inputs include the whole Workspace
 A broad constructor or discovery call also gives its returned objects broad
 dependencies. Filtering after discovery does not avoid discovery work.
 
-Measure selected checks, dependency origins, preparation time, and avoided
-commands on real modules. A smaller check list alone does not prove a speed gain.
-No official module workload has been timed yet.
+A Cloud sample inspected 21 checks from `docs`, `markdown-lint`, and `test-split`.
+A Python SDK path selected 20; only `docs/check` was excluded. A docs path and
+the docs module code each selected all 21. The 20 broad checks had known
+Workspace inputs. None reported unresolved origins.
+
+The first provenance query took 36 seconds; the second took 2 seconds on the
+same engine. These times include module loading and input preparation. No check
+body ran. This measures selection cost, not total speed gain. The avoided work
+is the `docs/check` website build, which was not timed.
 
 The original intent is described in [Modules v2](https://github.com/dagger/dagger/pull/12900).

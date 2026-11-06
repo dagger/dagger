@@ -17,7 +17,7 @@ import (
 func (ArtifactsSuite) TestInputProvenanceBeforeExecution(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	source := core.NewQuery(c).Directory().
-		WithNewFile("dagger.toml", "[modules.probe]\nsource = './probe'\nmain = true\n").
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = './probe'\nmain = true\n[modules.broad]\nsource = './broad'\n").
 		WithNewFile("probe/dagger-module.toml", "name = 'probe'\nengineVersion = 'v1.0.0-beta.20'\n[runtime]\nsource = 'dang'\n").
 		WithNewFile("probe/main.dang", "# "+rand.Text()+`
 type Probe {
@@ -47,6 +47,11 @@ type Holder {
 type Leaf {
  let input: File!
  new(input: File!) { self.input = input; self }
+ pub verify: Void @check { raise "check must not run" }
+}`).
+		WithNewFile("broad/dagger-module.toml", "name = 'broad'\nengineVersion = 'v1.0.0-beta.20'\n[runtime]\nsource = 'dang'\n").
+		WithNewFile("broad/main.dang", `type Broad {
+ new(ws: Workspace!) { raise "constructor must not run" }
  pub verify: Void @check { raise "check must not run" }
 }`).
 		WithNewFile("src/input.txt", "input").
@@ -93,7 +98,7 @@ type Leaf {
 		return got.Node.Artifacts.FilterTypes.FilterAffectedByPath.Items
 	}
 
-	wildcards := []string{"whole", "broad/nested/verify"}
+	wildcards := []string{"whole", "broad/nested/verify", "broad/verify"}
 	for _, tc := range []struct {
 		path string
 		want []string
@@ -114,6 +119,11 @@ type Leaf {
 				if strings.Join(item.Path, "/") == "whole" {
 					require.True(t, slices.ContainsFunc(item.Provenance.Selectors, func(s selector) bool {
 						return s.Path == "/" && s.Kind == "WORKSPACE_READ" && s.Origin == "argument ws" && !s.Conservative
+					}))
+				}
+				if strings.Join(item.Path, "/") == "broad/verify" {
+					require.True(t, slices.ContainsFunc(item.Provenance.Selectors, func(s selector) bool {
+						return s.Path == "/" && s.Kind == "WORKSPACE_READ" && strings.Contains(s.Origin, "argument ws") && !s.Conservative
 					}))
 				}
 			}
@@ -155,15 +165,15 @@ type Leaf {
 	config, err := hostWorkspace.ConfigFile(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "dagger.toml", config)
-	require.Len(t, selected(t, hostClient, hostWorkspaceID, "/"), 8)
+	require.Len(t, selected(t, hostClient, hostWorkspaceID, "/"), 9)
 	for _, path := range []string{"left/input.txt", "right/input.txt"} {
 		require.True(t, slices.ContainsFunc(selected(t, hostClient, hostWorkspaceID, path), func(i item) bool {
 			return strings.Join(i.Path, "/") == "same"
 		}), path)
 	}
-	require.False(t, slices.ContainsFunc(selected(t, hostClient, hostWorkspaceID, "unrelated.txt"), func(i item) bool {
-		return strings.Join(i.Path, "/") == "same"
-	}))
+	for _, item := range selected(t, hostClient, hostWorkspaceID, "unrelated.txt") {
+		require.NotEqual(t, "same", strings.Join(item.Path, "/"), "before raw Host access: issues=%v selectors=%+v", item.Provenance.Issues, item.Provenance.Selectors)
+	}
 	hostPath := filepath.Join(repo, "left", "input.txt")
 	hostFile := core.NewQuery(hostClient).Host().File(hostPath)
 	_, err = hostFile.ID(ctx)

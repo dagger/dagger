@@ -1930,9 +1930,13 @@ func (src *ModuleSource) LoadContextFile(
 	dag *dagql.Server,
 	path string,
 ) (inst dagql.ObjectResult[*File], err error) {
-	if src.Workspace.Self() != nil {
+	ws := src.Workspace
+	if bound, ok := WorkspaceFromContext(ctx); ok && src.contextIsWorkspace(bound.Self()) {
+		ws = bound
+	}
+	if ws.Self() != nil {
 		workspacePath := workspaceContextDirPath(src.SourceRootSubpath, path)
-		if err := dag.Select(ctx, src.Workspace, &inst, dagql.Selector{
+		if err := dag.Select(ctx, ws, &inst, dagql.Selector{
 			Field: "file",
 			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(workspacePath)}},
 		}); err != nil {
