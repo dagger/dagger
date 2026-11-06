@@ -141,7 +141,7 @@ func TestContainerSelectionFilesMountStartsEmpty(t *testing.T) {
 	t.Cleanup(source.Close)
 	_, err := source.stub("/files/old/child")
 	require.NoError(t, err)
-	backing, err := source.emptyFilesMount()
+	backing, err := source.emptyBacking()
 	require.NoError(t, err)
 	f, err := backing.root.Open(".")
 	require.NoError(t, err)
@@ -149,6 +149,40 @@ func TestContainerSelectionFilesMountStartsEmpty(t *testing.T) {
 	names, err := f.Readdirnames(-1)
 	require.NoError(t, err)
 	require.Empty(t, names, "a files mount must not inherit earlier mountpoint stubs")
+}
+
+func TestContainerSelectionReplacesOpaqueMountRoots(t *testing.T) {
+	for _, file := range []bool{false, true} {
+		t.Run(fmt.Sprintf("file=%t", file), func(t *testing.T) {
+			baseFiles := map[string]string{"z/hidden": "hidden"}
+			mountedPath, selectedPath := ".", "link/value"
+			if file {
+				baseFiles = map[string]string{"z": "hidden"}
+				mountedPath, selectedPath = "value", "link"
+			}
+			base := selectionFixture(t, baseFiles, map[string]string{
+				"a": "/z", "app/link": "/z",
+			})
+			mounted := selectionFixture(t, map[string]string{"value": "mounted"}, nil)
+			source := &containerSelectionSource{
+				base: selectionFixtureMount(t, "/", base, "."),
+				mounts: []*containerSelectionMount{
+					{target: "/a", file: file},
+					selectionFixtureMount(t, "/z", mounted, mountedPath),
+				},
+			}
+			t.Cleanup(source.Close)
+			dst := t.TempDir()
+			copier, err := layercopy.NewCopier(layercopy.Mount{Root: dst})
+			require.NoError(t, err)
+			defer copier.Close()
+			require.NoError(t, copier.CopySelection(context.Background(), "", "/app", layercopy.SelectionOptions{Source: source}))
+			content, err := os.ReadFile(filepath.Join(dst, selectedPath))
+			require.NoError(t, err)
+			require.Equal(t, "mounted", string(content))
+			require.Len(t, source.mounts, 1, "the snapshot must replace the opaque mount")
+		})
+	}
 }
 
 func TestContainerSelectionRejectsOpaqueMountTargetParents(t *testing.T) {

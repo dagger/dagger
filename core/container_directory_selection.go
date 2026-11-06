@@ -43,8 +43,9 @@ type containerSelectionBacking struct {
 
 type containerSelectionMount struct {
 	target  string
+	file    bool
 	load    func() (*containerSelectionBacking, error)
-	backing *containerSelectionBacking
+	backing *containerSelectionBacking // metadata only when load is nil
 }
 
 func (m *containerSelectionMount) get() (*containerSelectionBacking, error) {
@@ -115,6 +116,7 @@ func newContainerSelectionSource(ctx context.Context, parent dagql.ObjectResult[
 				return s.openDirectory(dir)
 			}
 		case mnt.FileSource != nil:
+			entry.file = true
 			entry.load = func() (*containerSelectionBacking, error) {
 				if err := cache.EvaluateParts(ctx, parent, ContainerPartMount(mnt.Target)); err != nil {
 					return nil, err
@@ -126,7 +128,12 @@ func newContainerSelectionSource(ctx context.Context, parent dagql.ObjectResult[
 				return s.openFile(file)
 			}
 		case mnt.FilesSource != nil:
-			entry.load = s.emptyFilesMount
+			entry.load = s.emptyBacking
+		case mnt.CacheSource != nil, mnt.VolumeSource != nil, mnt.TmpfsSource != nil:
+			// Opaque directory mounts have no snapshot loader.
+		default:
+			// Secret and socket markers are non-directory mount roots.
+			entry.file = true
 		}
 		if entry.target == "/" {
 			s.base = entry
@@ -137,6 +144,7 @@ func newContainerSelectionSource(ctx context.Context, parent dagql.ObjectResult[
 			for _, file := range mnt.FilesSource.Files {
 				s.mounts = append(s.mounts, &containerSelectionMount{
 					target: filepath.Join(entry.target, file.Name),
+					file:   true,
 					load: func() (*containerSelectionBacking, error) {
 						if err := cache.Evaluate(ctx, file.File); err != nil {
 							return nil, err
@@ -179,14 +187,17 @@ func (s *containerSelectionSource) prepare() error {
 }
 
 // A mountpoint is located in the namespace before that mount exists. Missing
-// parents are mount stubs. Opaque parents cannot be replaced by stubs: their
-// contents may redirect the target through a symlink.
+// parents are mount stubs. Opaque mount roots have a known type, but their
+// contents cannot be inspected: a child may redirect the target through a link.
 type containerSelectionTargets struct{ source *containerSelectionSource }
 
 func (v containerSelectionTargets) Open(name string, parent *os.Root) (*os.File, error) {
 	name = filepath.Join("/", name)
 	mnt := v.source.mountFor(name)
 	if mnt.load == nil {
+		if name == mnt.target {
+			return v.source.opaqueMountRoot(mnt)
+		}
 		return nil, fmt.Errorf("%w %s", errOpaqueSelectionParent, mnt.target)
 	}
 	// A source load failure must not be treated as a missing mountpoint.
@@ -206,6 +217,29 @@ func (v containerSelectionTargets) Open(name string, parent *os.Root) (*os.File,
 
 func (containerSelectionTargets) Children(_ string, names []string) ([]string, error) {
 	return names, nil
+}
+
+// Only target resolution can use this metadata. Reads of an opaque mount still
+// fail in open, even if its placeholder has been created.
+func (s *containerSelectionSource) opaqueMountRoot(mnt *containerSelectionMount) (*os.File, error) {
+	if mnt.backing == nil {
+		backing, err := s.emptyBacking()
+		if err != nil {
+			return nil, err
+		}
+		if mnt.file {
+			f, err := backing.root.OpenFile("file", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+			if err != nil {
+				return nil, err
+			}
+			if err := f.Close(); err != nil {
+				return nil, err
+			}
+			backing.path = "file"
+		}
+		mnt.backing = backing
+	}
+	return mnt.backing.root.OpenFile(mnt.backing.path, unix.O_PATH|unix.O_NOFOLLOW, 0)
 }
 
 func selectionPathUnder(name, parent string) bool {
@@ -380,9 +414,9 @@ func (s *containerSelectionSource) stub(name string) (*containerSelectionBacking
 	return backing, nil
 }
 
-// A files mount starts empty. Reusing a mountpoint stub here would expose
+// New mount backings start empty. Reusing a mountpoint stub here would expose
 // directories created while locating earlier, now-hidden mount targets.
-func (s *containerSelectionSource) emptyFilesMount() (*containerSelectionBacking, error) {
+func (s *containerSelectionSource) emptyBacking() (*containerSelectionBacking, error) {
 	path, err := os.MkdirTemp("", "dagger-selection-files-")
 	if err != nil {
 		return nil, err

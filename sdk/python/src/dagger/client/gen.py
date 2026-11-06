@@ -3506,8 +3506,8 @@ class Container(Type):
             targets across the root filesystem and directory or file mounts.
             Preserve working relative links and links that already have no
             target. Cache, volume, tmpfs, secret, and socket mounts cause an
-            error when reached by selection, a resolved link, or mount target
-            resolution.
+            error if selection, a resolved link, or mount target resolution
+            needs their contents.
         """
         _args = [
             Arg("path", path),

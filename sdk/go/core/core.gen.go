@@ -3677,7 +3677,7 @@ func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 type ContainerDirectoryOpts struct {
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
-	// Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error when reached by selection, a resolved link, or mount target resolution.
+	// Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error if selection, a resolved link, or mount target resolution needs their contents.
 	ResolveBrokenSymlinks bool
 }
 
