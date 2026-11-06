@@ -42,3 +42,15 @@ func TestFirstFree(t *testing.T) {
 	_, err = firstFree(want, []*net.IPNet{parse("255.255.1.1/16")})
 	require.Error(t, err)
 }
+
+func TestBridgeFromCIDR(t *testing.T) {
+	for cidr, bridge := range map[string]string{
+		"10.87.0.0/16":   "10.87.0.1",
+		"10.89.3.0/24":   "10.89.3.1",
+		"10.87.0.128/25": "10.87.0.129",
+	} {
+		got, err := BridgeFromCIDR(cidr)
+		require.NoError(t, err)
+		require.Equal(t, bridge, got.String(), cidr)
+	}
+}
