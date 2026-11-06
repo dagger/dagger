@@ -31,6 +31,17 @@ func (e *GraphQLHTTPError) Error() string {
 	return fmt.Sprintf("%s: %s: %s", e.Op, e.Status, e.Body)
 }
 
+// GraphQLErrors are the errors of a GraphQL response: messages Cloud's API
+// wrote for its clients.
+type GraphQLErrors struct {
+	Op       string
+	Messages []string
+}
+
+func (e *GraphQLErrors) Error() string {
+	return fmt.Sprintf("%s: %s", e.Op, strings.Join(e.Messages, "; "))
+}
+
 func (c *Client) doGraphQL(ctx context.Context, opName string, query string, variables map[string]any, out any) error {
 	return c.doGraphQLWithHeader(ctx, opName, query, variables, nil, out)
 }
@@ -88,7 +99,7 @@ func (c *Client) doGraphQLWithHeader(ctx context.Context, opName string, query s
 		for _, gqlErr := range envelope.Errors {
 			msgs = append(msgs, gqlErr.Message)
 		}
-		return fmt.Errorf("%s: %s", opName, strings.Join(msgs, "; "))
+		return &GraphQLErrors{Op: opName, Messages: msgs}
 	}
 	if out == nil {
 		return nil
