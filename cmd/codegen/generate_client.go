@@ -55,7 +55,9 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 	}
 
 	switch {
-	case moduleName != "":
+	// A module may have no name, such as one with only clients: the flag
+	// set, even to "", is what says the SDK passed what codegen reads.
+	case cmd.Flags().Changed("module-name"):
 		clientConfig.ModuleName = moduleName
 		clientConfig.EngineVersion = engineVersion
 		if moduleDependencies != "" {

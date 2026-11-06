@@ -21,7 +21,9 @@ const goClientGitHost = "git.go-client.test"
 // dependency's source and pin among them. Codegen's exec takes those as its
 // args, so the exec is keyed by them rather than by the module source's ID,
 // and a second client's generate of the unchanged module, in a session of
-// its own, runs no codegen of its own.
+// its own, runs no codegen of its own. A module with only clients and no
+// dependencies may have no name, and its client still gets its engine
+// version.
 func (GeneratorsSuite) TestGoClientFromModuleSource(ctx context.Context, t *testctx.T) {
 	outer := connect(ctx, t)
 	gitDaemon, repoURL := gitService(ctx, t, outer, core.NewQuery(outer).Directory().
@@ -44,18 +46,24 @@ source = "dang"
 		return ctr.WithServiceBinding(goClientGitHost, gitDaemon)
 	})
 
-	checkout := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(checkout, "dagger-module.toml"), []byte(`name = "App"
-engineVersion = "latest"
-
-[[dependencies]]
-name = "wolfi"
-source = "`+depRef+`"
+	// module is a checkout of a module with only a Go client, its config
+	// starting with head.
+	module := func(head string) string {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "dagger-module.toml"), []byte(head+`engineVersion = "latest"
 
 [[clients]]
 generator = "go"
 directory = "client"
 `), 0o644))
+		return dir
+	}
+	checkout := module(`name = "App"
+
+[[dependencies]]
+name = "wolfi"
+source = "` + depRef + `"
+`)
 
 	// generate connects a fresh client, generates the module's client and
 	// returns its go.mod and its bindings, the module source's engine
@@ -66,7 +74,7 @@ directory = "client"
 		// execArgs is the args of each generate-client exec in the cache.
 		execArgs []string
 	}
-	generate := func(t *testctx.T) generated {
+	generate := func(t *testctx.T, checkout string) generated {
 		t.Helper()
 		client := e.connect(ctx, t, checkout)
 		defer func() { require.NoError(t, client.Close()) }()
@@ -81,11 +89,13 @@ directory = "client"
 		require.NoError(t, err)
 		deps, err := src.Dependencies(ctx)
 		require.NoError(t, err)
-		require.Len(t, deps, 1)
-		out.depSource, err = deps[0].AsString(ctx)
-		require.NoError(t, err)
-		out.pin, err = deps[0].Pin(ctx)
-		require.NoError(t, err)
+		if len(deps) > 0 {
+			require.Len(t, deps, 1)
+			out.depSource, err = deps[0].AsString(ctx)
+			require.NoError(t, err)
+			out.pin, err = deps[0].Pin(ctx)
+			require.NoError(t, err)
+		}
 		var report transferFixtureReport
 		require.NoError(t, transferFixture(ctx, client, "report", "", []string{}, &report))
 		for _, row := range report.Rows {
@@ -102,7 +112,7 @@ directory = "client"
 		return out
 	}
 
-	first := generate(t)
+	first := generate(t, checkout)
 	require.Contains(t, first.goMod, "module app/client\n", "the client's module path is the module's name, lowercased")
 	require.NotEmpty(t, first.engineVersion)
 	require.Contains(t, first.goMod, "dagger.io/dagger "+first.engineVersion, "the client requires dagger.io/dagger at the module's engine version")
@@ -120,8 +130,15 @@ directory = "client"
 		require.Contains(t, execArgs, want, "the exec's args carry what codegen reads")
 	}
 
-	second := generate(t)
+	second := generate(t, checkout)
 	require.Equal(t, first.goMod, second.goMod)
 	require.Equal(t, first.bindings, second.bindings)
 	require.Equal(t, first.execArgs, second.execArgs, "the second client's generate hit the first's: no new generate-client exec")
+
+	// A module with only clients, and no dependencies, may have no name.
+	// Its client still gets its engine version.
+	unnamed := generate(t, module(""))
+	require.Contains(t, unnamed.goMod, "module client\n", "the client's module path is its directory alone")
+	require.NotEmpty(t, unnamed.engineVersion)
+	require.Contains(t, unnamed.goMod, "dagger.io/dagger "+unnamed.engineVersion, "the unnamed module's client requires dagger.io/dagger at its engine version")
 }
