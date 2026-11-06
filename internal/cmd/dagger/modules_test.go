@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -63,6 +65,15 @@ func serveModuleCatalog(t *testing.T, status int, body string) *httptest.Server 
 	return srv
 }
 
+// writeStaleModuleCatalogCache writes a cached catalog older than
+// moduleCatalogMaxAge, so the loader fetches before using it.
+func writeStaleModuleCatalogCache(t *testing.T, path, data string) {
+	t.Helper()
+	require.NoError(t, writeFileAtomic(path, []byte(data)))
+	old := time.Now().Add(-2 * moduleCatalogMaxAge)
+	require.NoError(t, os.Chtimes(path, old, old))
+}
+
 func registryNames(mods []registryModule) []string {
 	names := make([]string, len(mods))
 	for i, mod := range mods {
@@ -117,7 +128,7 @@ func TestLoadModuleRegistryFallsBackToCache(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := serveModuleCatalog(t, tc.status, tc.body)
 			cachePath := withModuleCatalogSource(t, srv.URL)
-			require.NoError(t, writeFileAtomic(cachePath, []byte(testModuleCatalog)))
+			writeStaleModuleCatalogCache(t, cachePath, testModuleCatalog)
 
 			mods, err := loadModuleRegistry(t.Context())
 			require.NoError(t, err)
@@ -181,13 +192,87 @@ func TestLoadModuleRegistryCanceled(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { close(block) })
 	cachePath := withModuleCatalogSource(t, srv.URL)
-	require.NoError(t, writeFileAtomic(cachePath, []byte(testModuleCatalog)))
+	writeStaleModuleCatalogCache(t, cachePath, testModuleCatalog)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	mods, err := loadModuleRegistry(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Nil(t, mods)
+}
+
+// countingModuleCatalog serves body and counts the requests it gets.
+func countingModuleCatalog(t *testing.T, body string) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &requests
+}
+
+const otherModuleCatalog = `{"version": 1, "modules": [{"name": "other", "kind": "module", "ref": "dagger.io/other", "description": "Other module"}]}`
+
+func TestLoadModuleRegistryFreshCacheSkipsNetwork(t *testing.T) {
+	srv, requests := countingModuleCatalog(t, otherModuleCatalog)
+	cachePath := withModuleCatalogSource(t, srv.URL)
+	require.NoError(t, writeFileAtomic(cachePath, []byte(testModuleCatalog)))
+
+	mods, err := loadModuleRegistry(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{"fresh", "fresh-sdk"}, registryNames(mods))
+	require.Zero(t, requests.Load(), "a cache under an hour old is used without fetching")
+
+	// Just under the limit is still fresh.
+	almost := time.Now().Add(-moduleCatalogMaxAge + time.Minute)
+	require.NoError(t, os.Chtimes(cachePath, almost, almost))
+	_, err = loadModuleRegistry(t.Context())
+	require.NoError(t, err)
+	require.Zero(t, requests.Load())
+}
+
+func TestLoadModuleRegistryStaleCacheFetches(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		mtime time.Time
+	}{
+		{"older than an hour", time.Now().Add(-moduleCatalogMaxAge - time.Minute)},
+		{"modified in the future", time.Now().Add(time.Hour)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, requests := countingModuleCatalog(t, otherModuleCatalog)
+			cachePath := withModuleCatalogSource(t, srv.URL)
+			require.NoError(t, writeFileAtomic(cachePath, []byte(testModuleCatalog)))
+			require.NoError(t, os.Chtimes(cachePath, tc.mtime, tc.mtime))
+
+			mods, err := loadModuleRegistry(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, []string{"other"}, registryNames(mods))
+			require.Equal(t, int32(1), requests.Load())
+
+			// The fetch refreshed the cache, so the next run stays offline.
+			cached, err := os.ReadFile(cachePath)
+			require.NoError(t, err)
+			require.Equal(t, otherModuleCatalog, string(cached))
+			mods, err = loadModuleRegistry(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, []string{"other"}, registryNames(mods))
+			require.Equal(t, int32(1), requests.Load())
+		})
+	}
+}
+
+func TestLoadModuleRegistryFreshCorruptCacheFetches(t *testing.T) {
+	srv, requests := countingModuleCatalog(t, otherModuleCatalog)
+	cachePath := withModuleCatalogSource(t, srv.URL)
+	require.NoError(t, writeFileAtomic(cachePath, []byte(`{"version": 1, "modules": [`)))
+
+	mods, err := loadModuleRegistry(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{"other"}, registryNames(mods))
+	require.Equal(t, int32(1), requests.Load())
 }
 
 func TestParseModuleCatalogMatchers(t *testing.T) {

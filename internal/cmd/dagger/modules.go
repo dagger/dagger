@@ -36,6 +36,10 @@ const (
 
 	moduleCatalogFetchTimeout = 3 * time.Second
 	moduleCatalogMaxBytes     = 4 << 20
+	// moduleCatalogMaxAge is how long a cached catalog is used without
+	// fetching: recommend and init stay offline most runs, and new modules
+	// still reach them within the hour.
+	moduleCatalogMaxAge = time.Hour
 )
 
 // embeddedModuleCatalog is the module catalog as of this CLI's build. It is
@@ -54,11 +58,18 @@ var (
 	}
 )
 
-// loadModuleRegistry loads the module catalog: a fresh copy from
-// moduleCatalogURL, else the last fetched copy from the user cache dir, else
-// the copy embedded at build time. A failed fetch never yields an empty
-// catalog. If ctx is done, it returns ctx's error instead of falling back.
+// loadModuleRegistry loads the module catalog. A cached copy under an hour
+// old is used as is, without touching the network. Otherwise it fetches a
+// fresh copy from moduleCatalogURL, falling back to the stale cached copy,
+// then to the copy embedded at build time. A failed fetch never yields an
+// empty catalog. If ctx is done, it returns ctx's error instead of falling
+// back.
 func loadModuleRegistry(ctx context.Context) ([]registryModule, error) {
+	cached, fresh, cacheErr := readCachedModuleCatalog()
+	if fresh {
+		return cached, nil
+	}
+
 	mods, err := fetchModuleCatalog(ctx)
 	if err == nil {
 		return mods, nil
@@ -68,20 +79,38 @@ func loadModuleRegistry(ctx context.Context) ([]registryModule, error) {
 	}
 	slog.Debug("fetch module catalog failed; using fallback", "url", moduleCatalogURL, "error", err)
 
-	if path := moduleCatalogCachePath(); path != "" {
-		data, err := os.ReadFile(filepath.Clean(path))
-		if err == nil {
-			mods, err = parseModuleCatalog(data)
-		}
-		if err == nil {
-			return mods, nil
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			slog.Debug("cached module catalog unusable; using embedded copy", "path", path, "error", err)
-		}
+	if cacheErr == nil {
+		return cached, nil
 	}
-
+	if !errors.Is(cacheErr, os.ErrNotExist) {
+		slog.Debug("cached module catalog unusable; using embedded copy", "error", cacheErr)
+	}
 	return parseModuleCatalog(embeddedModuleCatalog)
+}
+
+// readCachedModuleCatalog parses the cached catalog, and reports whether it
+// was written less than moduleCatalogMaxAge ago. A modification time in the
+// future counts as stale, so a skewed clock can't pin an old catalog.
+func readCachedModuleCatalog() (mods []registryModule, fresh bool, err error) {
+	path := moduleCatalogCachePath()
+	if path == "" {
+		return nil, false, os.ErrNotExist
+	}
+	path = filepath.Clean(path)
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, false, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false, err
+	}
+	mods, err = parseModuleCatalog(data)
+	if err != nil {
+		return nil, false, fmt.Errorf("%s: %w", path, err)
+	}
+	age := time.Since(info.ModTime())
+	return mods, age >= 0 && age < moduleCatalogMaxAge, nil
 }
 
 // fetchModuleCatalog downloads and parses the catalog, and caches it when it
