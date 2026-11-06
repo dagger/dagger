@@ -72,6 +72,11 @@ func (r *Release) PublishWithMockEndpoints(
 	// +defaultPath="/"
 	source *dagger.Directory,
 ) (rerr error) {
+	// A failure below reports the release report first; check that it does.
+	if err := checkReportFirst(); err != nil {
+		return err
+	}
+
 	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), r.Workspace)
 	if err != nil {
 		return err
@@ -2293,11 +2298,20 @@ const reportLimit = 8 << 10
 // first: its checklist ("- [x] …", "- [ ] …") and its error blocks ("> …"),
 // which say which artifact failed and why. The output before the report, a
 // publish's progress, is long, and a view of the error shows only its start.
+// An error block quotes its message in a fence, "> ```", of which
+// report.md.tmpl prefixes only the first line: every line inside the fence is
+// the message's.
 func withReportFirst(output string) string {
 	var report []string
+	inFence := false
 	for _, line := range strings.Split(output, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "- [") || strings.HasPrefix(trimmed, ">") {
+		if trimmed == "> ```" {
+			inFence = !inFence
+			report = append(report, trimmed)
+			continue
+		}
+		if inFence || strings.HasPrefix(trimmed, "- [") || strings.HasPrefix(trimmed, ">") {
 			report = append(report, trimmed)
 		}
 	}
@@ -2309,6 +2323,46 @@ func withReportFirst(output string) string {
 		lines = lines[:reportLimit] + "\n…"
 	}
 	return "release report:\n" + lines + "\nin:\n" + output
+}
+
+// checkReportFirst checks that withReportFirst puts a report's checklist and
+// a multi-line error's every line before the progress that comes ahead of
+// them, so a failing publish check names its cause where it's seen.
+func checkReportFirst() error {
+	output := strings.Join([]string{
+		"1   : connect",
+		"2   : progress of the publish",
+		"Published:",
+		"- [x] 🚙 Engine",
+		"- [ ] 🐍 Python SDK",
+		"> [!CAUTION]",
+		"> Error while publishing 🐍 Python SDK:",
+		">",
+		"> ```",
+		"> first line of the error",
+		"second line of the error",
+		"> ```",
+		"after the report",
+	}, "\n")
+	got := withReportFirst(output)
+	report, _, ok := strings.Cut(got, "\nin:\n")
+	if !ok {
+		return fmt.Errorf("withReportFirst: no full output after the report:\n%s", got)
+	}
+	for _, want := range []string{"- [ ] 🐍 Python SDK", "> Error while publishing 🐍 Python SDK:", "> first line of the error", "second line of the error"} {
+		if !strings.Contains(report, want) {
+			return fmt.Errorf("withReportFirst: the report lacks %q:\n%s", want, report)
+		}
+	}
+	for _, unwanted := range []string{"progress of the publish", "after the report"} {
+		if strings.Contains(report, unwanted) {
+			return fmt.Errorf("withReportFirst: the report holds %q:\n%s", unwanted, report)
+		}
+	}
+	if !strings.HasSuffix(got, output) {
+		return fmt.Errorf("withReportFirst: the full output doesn't follow the report:\n%s", got)
+	}
+	return nil
 }
 
 func randomID() string {
