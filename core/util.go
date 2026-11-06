@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -18,6 +19,7 @@ import (
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/sys/user"
 	"golang.org/x/mod/semver"
+	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -417,4 +419,15 @@ func TrimErrPathPrefix(err error, prefix string) error {
 		slog.Debug("TrimErrPathPrefix: unhandled type", "type", fmt.Sprintf("%T", err))
 	}
 	return err
+}
+
+// setTimestampsNoFollow sets the access and modification times of path. A
+// symlink gets its own times: its target may be missing, or outside the
+// snapshot that path belongs to.
+func setTimestampsNoFollow(path string, t time.Time) error {
+	ts := unix.NsecToTimespec(t.UnixNano())
+	if err := unix.UtimesNanoAt(unix.AT_FDCWD, path, []unix.Timespec{ts, ts}, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return &os.PathError{Op: "set timestamps", Path: path, Err: err}
+	}
+	return nil
 }

@@ -1005,6 +1005,27 @@ func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, content, "5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef")
 	})
+
+	t.Run("changes symlink timestamps without following them", func(ctx context.Context, t *testctx.T) {
+		links := sdkcore.NewQuery(c).Directory().
+			WithNewFile("some-file", "content").
+			WithSymlink("does-not-exist", "dangling").
+			WithSymlink("/etc/passwd", "absolute").
+			WithSymlink("some-file", "relative").
+			WithTimestamps(int(reallyImportantTime.Unix()))
+
+		ls, err := sdkcore.NewQuery(c).Container().
+			From(alpineImage).
+			WithMountedDirectory("/dir", links).
+			WithEnvVariable("RANDOM", rand.Text()).
+			WithExec([]string{"ls", "-al", "/dir"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		for _, link := range []string{"dangling -> does-not-exist", "absolute -> /etc/passwd", "relative -> some-file"} {
+			require.Regexp(t, regexp.MustCompile(`lrwxrwxrwx\s+\d+ root\s+root\s+\d+ Oct 26  1985 `+regexp.QuoteMeta(link)), ls)
+		}
+		require.Regexp(t, regexp.MustCompile(`-rw-r--r--\s+\d+ root\s+root\s+\d+ Oct 26  1985 some-file`), ls)
+	})
 }
 
 func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
