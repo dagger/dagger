@@ -101,6 +101,99 @@ func (m *Caller) Chain(ctx context.Context, address, next, token string) (string
 }
 `
 
+// serveTreeGitCallerSource has the caller serve a sibling and read the
+// repository the sibling's contextual GitRepository argument resolves to,
+// through the head function of the sibling's top-level field.
+const serveTreeGitCallerSource = `package main
+
+import "context"
+
+func (m *Caller) GitHead(
+	ctx context.Context,
+	address string,
+	// +default="gitctx"
+	field string,
+) (string, error) {
+	if err := dag.ServeModule(ctx, address); err != nil {
+		return "", err
+	}
+	var head string
+	q := dag.QueryBuilder().Select(field).Select("head").Bind(&head)
+	return head, q.Execute(ctx)
+}
+`
+
+// serveTreeGitctxSource reports the commit its contextual repository's HEAD
+// points at, or that it got no repository.
+const serveTreeGitctxSource = `package main
+
+import (
+	"context"
+
+	"dagger/gitctx/internal/dagger"
+)
+
+type Gitctx struct{}
+
+func (m *Gitctx) Head(
+	ctx context.Context,
+	// +defaultPath="/"
+	repo *dagger.GitRepository,
+) (string, error) {
+	if repo == nil {
+		return "no repository", nil
+	}
+	return repo.Head().Commit(ctx)
+}
+`
+
+// serveTreeGitModules adds a sibling with a contextual GitRepository argument
+// to the tree, and a caller function that serves it.
+func serveTreeGitModules(c *dagger.Client) *core.Directory {
+	return serveTreeModules(c).
+		WithNewFile("modules/caller/githead.go", serveTreeGitCallerSource).
+		WithNewFile("modules/gitctx/dagger.json", strings.Replace(serveTreeCallerManifest, `"caller"`, `"gitctx"`, 1)).
+		WithNewFile("modules/gitctx/main.go", serveTreeGitctxSource).
+		WithNewFile("modules/caller/chain.go", serveTreeGitChainSource).
+		WithNewFile("modules/mid/dagger.json", strings.Replace(serveTreeCallerManifest, `"caller"`, `"mid"`, 1)).
+		WithNewFile("modules/mid/main.go", strings.ReplaceAll(serveTreeCallerSource, "Caller", "Mid")).
+		WithNewFile("modules/mid/githead.go", strings.ReplaceAll(serveTreeGitCallerSource, "Caller", "Mid")).
+		WithNewFile("modules/usesgit/dagger.json", serveTreeUsesgitManifest).
+		WithNewFile("modules/usesgit/main.go", serveTreeUsesgitSource)
+}
+
+// serveTreeUsesgitManifest is a module depending on the git sibling.
+const serveTreeUsesgitManifest = `{"name":"usesgit","engineVersion":"latest","sdk":{"source":"go"},"source":".","dependencies":[{"name":"gitctx","source":"../gitctx"}]}`
+
+// serveTreeUsesgitSource exposes its dependency's contextual repository as
+// head, so a caller serving it reads what the dependency resolved.
+const serveTreeUsesgitSource = `package main
+
+import "context"
+
+type Usesgit struct{}
+
+func (m *Usesgit) Head(ctx context.Context) (string, error) {
+	return dag.Gitctx().Head(ctx)
+}
+`
+
+// serveTreeGitChainSource has the caller serve the mid module, which serves
+// the git sibling from its own tree in turn.
+const serveTreeGitChainSource = `package main
+
+import "context"
+
+func (m *Caller) GitChain(ctx context.Context, address, next string) (string, error) {
+	if err := dag.ServeModule(ctx, address); err != nil {
+		return "", err
+	}
+	var head string
+	q := dag.QueryBuilder().Select("mid").Select("gitHead").Arg("address", next).Bind(&head)
+	return head, q.Execute(ctx)
+}
+`
+
 // serveTreeAppSource has the caller serve the app module, which reaches the
 // sibling with the cache volume as its own declared dependency.
 const serveTreeAppSource = `package main
@@ -285,6 +378,133 @@ source = "modules/caller"
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "served\ndirect\n", out)
+	})
+
+	t.Run("sibling served from a host module resolves its contextual git to the host checkout", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := goGitBase(t, c).
+			WithNewFile("dagger.toml", `[modules.caller]
+source = "modules/caller"
+`).
+			WithDirectory(".", serveTreeGitModules(c)).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"})
+		commit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+		require.NoError(t, err)
+		commit = strings.TrimSpace(commit)
+
+		out, err := ctr.
+			With(daggerCallAt("./modules/gitctx", "head")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, commit, out, "loaded directly")
+
+		out, err = ctr.
+			With(daggerCallAt("caller", "git-head", "--address=/modules/gitctx")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, commit, out, "served from the caller's tree")
+
+		out, err = ctr.
+			With(daggerCallAt("caller", "git-chain", "--address=/modules/mid", "--next=../gitctx")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, commit, out, "served by a module served from the caller's tree")
+
+		out, err = ctr.
+			With(daggerCallAt("caller", "git-head", "--address=/modules/usesgit", "--field=usesgit")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, commit, out, "dependency of a module served from the caller's tree")
+	})
+
+	t.Run("sibling served from a git workspace's module resolves its contextual git to the workspace's commit", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		// Branch next is an empty commit on top of main: the same tree at
+		// another commit.
+		gitDir := core.NewQuery(c).Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithDirectory("/srv", makeGitDir(c, serveTreeGitModules(c).
+				WithNewFile("dagger.toml", `[modules.caller]
+source = "modules/caller"
+
+[modules.gitctx]
+source = "modules/gitctx"
+`), "main")).
+			WithExec([]string{"sh", "-c", "git config --global user.email root@localhost && git config --global user.name Test && " +
+				"git clone --no-local /srv/repo.git /work && cd /work && git checkout -b next && git commit --allow-empty -m next && git push origin next && " +
+				"cd /srv/repo.git && git update-server-info"}).
+			Directory("/srv")
+		repo := workspaceSelectionRemoteRepo(ctx, t, c, gitDir)
+		ref := repo + "@main"
+		ctr := nativeWorkspaceBase(t, c)
+
+		commit, err := ctr.
+			With(workspaceSelectionDaggerExec("-W", ref, "call", "gitctx", "head")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `^[0-9a-f]{40}$`, commit, "loaded directly")
+
+		out, err := ctr.
+			With(workspaceSelectionDaggerExec("-W", ref, "call", "caller", "git-head", "--address=/modules/gitctx")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, commit, out, "served from the caller's tree")
+
+		out, err = ctr.
+			With(workspaceSelectionDaggerExec("-W", ref, "call", "caller", "git-chain", "--address=/modules/mid", "--next=../gitctx")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, commit, out, "served by a module served from the caller's tree")
+
+		out, err = ctr.
+			With(workspaceSelectionDaggerExec("-W", ref, "call", "caller", "git-head", "--address=/modules/usesgit", "--field=usesgit")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, commit, out, "dependency of a module served from the caller's tree")
+
+		// The same tree at another commit resolves to that commit, through
+		// served modules whose own files are unchanged.
+		next := repo + "@next"
+		nextCommit, err := ctr.
+			With(workspaceSelectionDaggerExec("-W", next, "call", "gitctx", "head")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.NotEqual(t, commit, nextCommit)
+
+		out, err = ctr.
+			With(workspaceSelectionDaggerExec("-W", next, "call", "caller", "git-chain", "--address=/modules/mid", "--next=../gitctx")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, nextCommit, out, "served by a module served from the caller's tree, at another commit")
+
+		out, err = ctr.
+			With(workspaceSelectionDaggerExec("-W", next, "call", "caller", "git-head", "--address=/modules/usesgit", "--field=usesgit")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, nextCommit, out, "dependency of a module served from the caller's tree, at another commit")
+	})
+
+	t.Run("sibling served from a git module resolves its contextual git to the module's commit", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		gitDaemon, repoURL := gitService(ctx, t, c, serveTreeGitModules(c))
+		gitHost, err := gitDaemon.Hostname(ctx)
+		require.NoError(t, err)
+		ctr := goGitBase(t, c).
+			WithServiceBinding(gitHost, gitDaemon).
+			WithNewFile("dagger.toml", "\n")
+
+		commit, err := ctr.
+			With(daggerCallAt(repoURL+"#main:modules/gitctx", "head")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `^[0-9a-f]{40}$`, commit, "loaded directly")
+
+		out, err := ctr.
+			With(daggerCallAt(repoURL+"#main:modules/caller", "git-head", "--address=/modules/gitctx")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, commit, out, "served from the caller's tree")
 	})
 
 	t.Run("directory module serves a sibling from its own directory", func(ctx context.Context, t *testctx.T) {

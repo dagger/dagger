@@ -3444,6 +3444,13 @@ func (s *moduleSchema) moduleImplementationScoped(
 			}
 		}
 	}
+	// A module served from a git workspace module's tree resolves contextual
+	// git to that module's repository, at a commit its own files do not cover.
+	if src.Kind == core.ModuleSourceKindDir && src.DirSrc != nil {
+		if repo := src.DirSrc.OriginGit.Self(); repo != nil && repo.Remote != nil && repo.Remote.Head != nil {
+			scopedDigestInputs = append(scopedDigestInputs, "originGitCommit:"+repo.Remote.Head.SHA)
+		}
+	}
 	// The origin namespaces the module's cache volumes, so the same files
 	// served from two origins must not share the execs that create them.
 	if origin := src.OriginSymbolic(); origin != "" {

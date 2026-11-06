@@ -49,9 +49,19 @@ func callerTreeModuleSource(
 	}
 	switch src.Kind {
 	case core.ModuleSourceKindGit:
-		return directoryTreeModuleSource(ctx, dag, src.Git.UnfilteredContextDir, target, &src.Git.CloneRef)
+		var git treeGit
+		if src.Workspace.Self() != nil {
+			// The tree of a git workspace carries no .git: the module loaded
+			// from it resolves contextual git to the calling module's own.
+			repo, err := src.LoadContextGit(ctx, dag)
+			if err != nil {
+				return inst, err
+			}
+			git.repo = repo
+		}
+		return directoryTreeModuleSource(ctx, dag, src.Git.UnfilteredContextDir, target, &src.Git.CloneRef, git)
 	case core.ModuleSourceKindDir:
-		return directoryTreeModuleSource(ctx, dag, src.DirSrc.OriginalContextDir, target, src.DirSrc.OriginRoot)
+		return directoryTreeModuleSource(ctx, dag, src.DirSrc.OriginalContextDir, target, src.DirSrc.OriginRoot, treeGit{hostPath: src.DirSrc.OriginHostPath, repo: src.DirSrc.OriginGit})
 	case core.ModuleSourceKindLocal:
 		return hostTreeModuleSource(ctx, dag, src, target)
 	default:
@@ -62,13 +72,14 @@ func callerTreeModuleSource(
 // directoryTreeModuleSource loads the module at target in tree. The source
 // keeps originRoot, the identity of the caller's tree, so its cache volumes
 // are namespaced like the same module loaded directly. A nil originRoot is a
-// tree without one.
+// tree without one. git is where the source resolves contextual git from.
 func directoryTreeModuleSource(
 	ctx context.Context,
 	dag *dagql.Server,
 	tree dagql.ObjectResult[*core.Directory],
 	target string,
 	originRoot *string,
+	git treeGit,
 ) (inst dagql.ObjectResult[*core.ModuleSource], _ error) {
 	if tree.Self() == nil {
 		return inst, fmt.Errorf("the calling module's tree is not loaded")
@@ -76,6 +87,16 @@ func directoryTreeModuleSource(
 	args := []dagql.NamedInput{{Name: "sourceRootPath", Value: dagql.String(target)}}
 	if originRoot != nil {
 		args = append(args, dagql.NamedInput{Name: "originRoot", Value: dagql.Opt(dagql.String(*originRoot))})
+	}
+	if git.hostPath != "" {
+		args = append(args, dagql.NamedInput{Name: "originHostPath", Value: dagql.String(git.hostPath)})
+	}
+	if git.repo.Self() != nil {
+		repoID, err := git.repo.ID()
+		if err != nil {
+			return inst, err
+		}
+		args = append(args, dagql.NamedInput{Name: "originGit", Value: dagql.Opt(dagql.NewID[*core.GitRepository](repoID))})
 	}
 	err := dag.Select(ctx, tree, &inst, dagql.Selector{
 		Field: "asModuleSource",
@@ -138,5 +159,14 @@ func hostTreeModuleSource(
 	// A local context has no identity of its own: its modules are identified
 	// by their subpath, as a local module source is.
 	localRoot := ""
-	return directoryTreeModuleSource(ctx, dag, tree, target, &localRoot)
+	return directoryTreeModuleSource(ctx, dag, tree, target, &localRoot, treeGit{hostPath: root})
+}
+
+// treeGit is where a module loaded from a module's tree resolves contextual
+// git, when the tree carries no .git: the checkout at hostPath on the host,
+// for a tree read from the host, or repo, the contextual git of the git
+// module the tree is from.
+type treeGit struct {
+	hostPath string
+	repo     dagql.ObjectResult[*core.GitRepository]
 }

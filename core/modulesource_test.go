@@ -434,6 +434,12 @@ func TestDirDependencySourceArgs(t *testing.T) {
 	dir := func(subpath string, root *string) *ModuleSource {
 		return &ModuleSource{Kind: ModuleSourceKindDir, SourceRootSubpath: subpath, DirSrc: &DirModuleSource{OriginRoot: root}}
 	}
+	args := func(t *testing.T, parent *ModuleSource, depSrcRef string) []dagql.NamedInput {
+		t.Helper()
+		args, err := dirDependencySourceArgs(parent, depSrcRef)
+		require.NoError(t, err)
+		return args
+	}
 	// dep is the source asModuleSource builds from the selected arguments.
 	dep := func(t *testing.T, args []dagql.NamedInput) *ModuleSource {
 		t.Helper()
@@ -445,30 +451,38 @@ func TestDirDependencySourceArgs(t *testing.T) {
 			case "originRoot":
 				root := arg.Value.(dagql.Optional[dagql.String]).Value.String()
 				src.DirSrc.OriginRoot = &root
+			case "originHostPath":
+				src.DirSrc.OriginHostPath = string(arg.Value.(dagql.String))
 			}
 		}
 		return src
 	}
 	gitRoot, localRoot := "github.com/dagger/dagger", ""
 
-	goDep := dep(t, dirDependencySourceArgs(dir(".dagger/modules/engine-dev", &gitRoot), "../go"))
+	goDep := dep(t, args(t, dir(".dagger/modules/engine-dev", &gitRoot), "../go"))
 	require.Equal(t, "github.com/dagger/dagger/.dagger/modules/go", goDep.OriginSymbolic())
 
 	require.Equal(t, ".dagger/modules/go",
-		dep(t, dirDependencySourceArgs(dir(".dagger/modules/engine-dev", &localRoot), "../go")).OriginSymbolic())
+		dep(t, args(t, dir(".dagger/modules/engine-dev", &localRoot), "../go")).OriginSymbolic())
 
 	// A dependency of a dependency keeps the origin too.
-	codegen := dep(t, dirDependencySourceArgs(dir(".dagger/modules/engine-dev", &gitRoot), "../../../cmd/codegen"))
+	codegen := dep(t, args(t, dir(".dagger/modules/engine-dev", &gitRoot), "../../../cmd/codegen"))
 	require.Equal(t, "github.com/dagger/dagger/cmd/codegen", codegen.OriginSymbolic())
 	require.Equal(t, "github.com/dagger/dagger/.dagger/modules/go",
-		dep(t, dirDependencySourceArgs(codegen, "../../.dagger/modules/go")).OriginSymbolic())
+		dep(t, args(t, codegen, "../../.dagger/modules/go")).OriginSymbolic())
 
 	// Without an origin the selection is the one it always was.
 	require.Equal(t, []dagql.NamedInput{
 		{Name: "sourceRootPath", Value: dagql.String(".dagger/modules/go")},
 		{Name: "disableFindUp", Value: dagql.Boolean(true)},
-	}, dirDependencySourceArgs(dir(".dagger/modules/engine-dev", nil), "../go"))
+	}, args(t, dir(".dagger/modules/engine-dev", nil), "../go"))
 
 	// A path that leaves the tree is no module of the tree.
-	require.Empty(t, dep(t, dirDependencySourceArgs(dir("modules/app", &gitRoot), "../../../outside")).OriginSymbolic())
+	require.Empty(t, dep(t, args(t, dir("modules/app", &gitRoot), "../../../outside")).OriginSymbolic())
+
+	// In a tree read from the host, a dependency keeps the tree's host path.
+	hostDir := dir(".dagger/modules/engine-dev", &localRoot)
+	hostDir.DirSrc.OriginHostPath = "/home/user/dagger"
+	require.Equal(t, "/home/user/dagger", dep(t, args(t, hostDir, "../go")).DirSrc.OriginHostPath)
+	require.Empty(t, dep(t, args(t, hostDir, "../../../../outside")).DirSrc.OriginHostPath)
 }

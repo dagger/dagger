@@ -459,8 +459,25 @@ func (src *ModuleSource) AttachDependencyResults(
 		owned = append(owned, typed)
 	}
 
-	if src.DirSrc != nil && src.DirSrc.OriginalContextDir.Self() != nil {
-		attached, err := attach(src.DirSrc.OriginalContextDir)
+	if src.DirSrc != nil {
+		dirOwned, err := src.DirSrc.attachDependencyResults(attach)
+		if err != nil {
+			return nil, err
+		}
+		owned = append(owned, dirOwned...)
+	}
+
+	return owned, nil
+}
+
+// attachDependencyResults attaches the results a directory module source
+// holds, as ModuleSource.AttachDependencyResults does for its own.
+func (src *DirModuleSource) attachDependencyResults(
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	var owned []dagql.AnyResult
+	if src.OriginalContextDir.Self() != nil {
+		attached, err := attach(src.OriginalContextDir)
 		if err != nil {
 			return nil, fmt.Errorf("attach module source dir original context dir: %w", err)
 		}
@@ -468,7 +485,20 @@ func (src *ModuleSource) AttachDependencyResults(
 		if !ok {
 			return nil, fmt.Errorf("attach module source dir original context dir: unexpected result %T", attached)
 		}
-		src.DirSrc.OriginalContextDir = typed
+		src.OriginalContextDir = typed
+		owned = append(owned, typed)
+	}
+
+	if src.OriginGit.Self() != nil {
+		attached, err := attach(src.OriginGit)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source dir origin git: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*GitRepository])
+		if !ok {
+			return nil, fmt.Errorf("attach module source dir origin git: unexpected result %T", attached)
+		}
+		src.OriginGit = typed
 		owned = append(owned, typed)
 	}
 
@@ -492,7 +522,9 @@ type persistedGitModuleSourcePayload struct {
 type persistedDirModuleSourcePayload struct {
 	OriginalSourceRootSubpath  string  `json:"originalSourceRootSubpath,omitempty"`
 	OriginRoot                 *string `json:"originRoot,omitempty"`
+	OriginHostPath             string  `json:"originHostPath,omitempty"`
 	OriginalContextDirResultID uint64  `json:"originalContextDirResultID,omitempty"`
+	OriginGitResultID          uint64  `json:"originGitResultID,omitempty"`
 }
 
 type persistedModuleSourceSDKCapabilities struct {
@@ -979,6 +1011,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		payload.DirSrc = &persistedDirModuleSourcePayload{
 			OriginalSourceRootSubpath: src.DirSrc.OriginalSourceRootSubpath,
 			OriginRoot:                src.DirSrc.OriginRoot,
+			OriginHostPath:            src.DirSrc.OriginHostPath,
 		}
 		if src.DirSrc.OriginalContextDir.Self() != nil {
 			originalContextDirID, err := encodePersistedObjectRef(enc, src.DirSrc.OriginalContextDir, "module source dir original context dir")
@@ -986,6 +1019,13 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 				return dagql.PersistedObjectEncoding{}, err
 			}
 			payload.DirSrc.OriginalContextDirResultID = originalContextDirID
+		}
+		if src.DirSrc.OriginGit.Self() != nil {
+			originGitID, err := encodePersistedObjectRef(enc, src.DirSrc.OriginGit, "module source dir origin git")
+			if err != nil {
+				return dagql.PersistedObjectEncoding{}, err
+			}
+			payload.DirSrc.OriginGitResultID = originGitID
 		}
 	}
 	return encodePersistedObjectPayload(payload)
@@ -1085,6 +1125,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		src.DirSrc = &DirModuleSource{
 			OriginalSourceRootSubpath: persisted.DirSrc.OriginalSourceRootSubpath,
 			OriginRoot:                persisted.DirSrc.OriginRoot,
+			OriginHostPath:            persisted.DirSrc.OriginHostPath,
 		}
 		if persisted.DirSrc.OriginalContextDirResultID != 0 {
 			originalContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.DirSrc.OriginalContextDirResultID, "module source dir original context directory")
@@ -1092,6 +1133,13 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 				return nil, err
 			}
 			src.DirSrc.OriginalContextDir = originalContextDir
+		}
+		if persisted.DirSrc.OriginGitResultID != 0 {
+			originGit, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dec, persisted.DirSrc.OriginGitResultID, "module source dir origin git")
+			if err != nil {
+				return nil, err
+			}
+			src.DirSrc.OriginGit = originGit
 		}
 	}
 	if src.SDK != nil {
@@ -2115,6 +2163,10 @@ func (src *ModuleSource) LoadContextGit(
 		return inst, nil
 	}
 
+	if src.Kind == ModuleSourceKindDir && src.DirSrc != nil && src.DirSrc.OriginGit.Self() != nil {
+		return src.DirSrc.OriginGit, nil
+	}
+
 	if src.Kind == ModuleSourceKindGit {
 		// easy, we're running a git repo
 		err := dag.Select(ctx, dag.Root(), &inst,
@@ -2143,7 +2195,12 @@ func (src *ModuleSource) LoadContextGit(
 		return inst, fmt.Errorf("failed to load contextual git: %w", err)
 	}
 
-	if src.Kind == ModuleSourceKindLocal {
+	if src.Kind == ModuleSourceKindDir && src.DirSrc != nil && src.DirSrc.OriginHostPath != "" {
+		// A module loaded from a host module's tree, read without its .git:
+		// the checkout is on the host of the client that loaded that module.
+		localPath = src.DirSrc.OriginHostPath
+	}
+	if localPath != "" {
 		// The engine never interprets the host checkout's raw git layout
 		// (worktree/submodule pointer files, commondirs, separate git dirs):
 		// replace whatever .git the synced tree carries with a canonical
@@ -2153,7 +2210,12 @@ func (src *ModuleSource) LoadContextGit(
 		if err != nil {
 			return inst, err
 		}
-		md, err := query.NonModuleParentClientMetadata(ctx)
+		var md *engine.ClientMetadata
+		if src.Kind == ModuleSourceKindLocal {
+			md, err = query.NonModuleParentClientMetadata(ctx)
+		} else {
+			md, err = query.ModuleParentHostClientMetadata(ctx)
+		}
 		if err != nil {
 			return inst, fmt.Errorf("failed to get client metadata: %w", err)
 		}
@@ -2291,6 +2353,14 @@ type DirModuleSource struct {
 	// when a module loaded it from its own tree: a git clone ref, or "" for a
 	// local context. Nil for any other directory. See OriginSymbolic.
 	OriginRoot *string
+	// OriginHostPath is the host path of the tree, when a module loaded it
+	// from its own tree on the host: the tree carries no .git, and contextual
+	// git is the host checkout's repository at this path. See LoadContextGit.
+	OriginHostPath string
+	// OriginGit is the contextual git repository of the git module that
+	// loaded the directory from its own tree, which is the directory's own
+	// contextual git: the tree of a git workspace carries no .git.
+	OriginGit dagql.ObjectResult[*GitRepository]
 }
 
 // OriginSymbolic is the identity of a directory module source in the tree a
@@ -2316,8 +2386,10 @@ func (src *ModuleSource) OriginSymbolic() string {
 // source in the parent's context directory. The dependency lives in the same
 // tree as its parent, so it keeps the parent's origin: its cache volumes then
 // match the dependency loaded directly, as those of a module the parent serves
-// do.
-func dirDependencySourceArgs(parentSrc *ModuleSource, depSrcRef string) []dagql.NamedInput {
+// do. In a tree read from the host without its .git, it also keeps the tree's
+// host path, or the contextual git of the git module the tree is from, and
+// resolves contextual git from the same repository.
+func dirDependencySourceArgs(parentSrc *ModuleSource, depSrcRef string) ([]dagql.NamedInput, error) {
 	depPath := filepath.Join(parentSrc.SourceRootSubpath, depSrcRef)
 	args := []dagql.NamedInput{
 		{Name: "sourceRootPath", Value: dagql.String(depPath)},
@@ -2326,7 +2398,17 @@ func dirDependencySourceArgs(parentSrc *ModuleSource, depSrcRef string) []dagql.
 	if parentSrc.DirSrc != nil && parentSrc.DirSrc.OriginRoot != nil && filepath.IsLocal(depPath) {
 		args = append(args, dagql.NamedInput{Name: "originRoot", Value: dagql.Opt(dagql.String(*parentSrc.DirSrc.OriginRoot))})
 	}
-	return args
+	if parentSrc.DirSrc != nil && parentSrc.DirSrc.OriginHostPath != "" && filepath.IsLocal(depPath) {
+		args = append(args, dagql.NamedInput{Name: "originHostPath", Value: dagql.String(parentSrc.DirSrc.OriginHostPath)})
+	}
+	if parentSrc.DirSrc != nil && parentSrc.DirSrc.OriginGit.Self() != nil && filepath.IsLocal(depPath) {
+		originGitID, err := parentSrc.DirSrc.OriginGit.ID()
+		if err != nil {
+			return nil, fmt.Errorf("origin git ID: %w", err)
+		}
+		args = append(args, dagql.NamedInput{Name: "originGit", Value: dagql.Opt(dagql.NewID[*GitRepository](originGitID))})
+	}
+	return args, nil
 }
 
 type moduleDependencyResolutionKey struct{}
@@ -2494,9 +2576,13 @@ func ResolveDepToSource(
 
 		case ModuleSourceKindDir:
 			// parent=dir, dep=local
+			args, err := dirDependencySourceArgs(parentSrc, depSrcRef)
+			if err != nil {
+				return inst, err
+			}
 			selectors := []dagql.Selector{{
 				Field: "asModuleSource",
-				Args:  dirDependencySourceArgs(parentSrc, depSrcRef),
+				Args:  args,
 			}}
 			if depName != "" {
 				selectors = append(selectors, dagql.Selector{
@@ -2506,7 +2592,7 @@ func ResolveDepToSource(
 					},
 				})
 			}
-			err := dag.Select(ctx, parentSrc.ContextDirectory, &inst, selectors...)
+			err = dag.Select(ctx, parentSrc.ContextDirectory, &inst, selectors...)
 			if err != nil {
 				return inst, err
 			}

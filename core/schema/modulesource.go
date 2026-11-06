@@ -969,6 +969,14 @@ type directoryAsModuleSourceArgs struct {
 	// OriginRoot is set when a module loads this directory from its own tree;
 	// see core.DirModuleSource.OriginRoot.
 	OriginRoot dagql.Optional[dagql.String] `internal:"true"`
+
+	// OriginHostPath is set when a module loads this directory from its own
+	// tree on the host; see core.DirModuleSource.OriginHostPath.
+	OriginHostPath string `internal:"true" default:""`
+
+	// OriginGit is set when a git module loads this directory from its own
+	// tree; see core.DirModuleSource.OriginGit.
+	OriginGit dagql.Optional[dagql.ID[*core.GitRepository]] `internal:"true"`
 }
 
 func (s *moduleSourceSchema) directoryAsModule(
@@ -1019,6 +1027,17 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	if args.OriginRoot.Valid {
 		root := args.OriginRoot.Value.String()
 		dirSrc.DirSrc.OriginRoot = &root
+	}
+	dirSrc.DirSrc.OriginHostPath = args.OriginHostPath
+	if args.OriginGit.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		dirSrc.DirSrc.OriginGit, err = args.OriginGit.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("load module source origin git: %w", err)
+		}
 	}
 	if args.Workspace.Valid {
 		srv, err := core.CurrentDagqlServer(ctx)
