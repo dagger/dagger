@@ -548,7 +548,7 @@ func applyWorkspaceClientParams(params *client.Params) error {
 }
 
 // skipSharedTelemetryExporters, when set, makes engineTelemetryConfig leave out
-// the process-wide OTLP exporter singletons (Dagger Cloud + the OTEL_* "Detect"
+// the process-wide OTLP exporter singletons (Dagger Cloud + the OTEL_*
 // exporters). It is toggled by preparation sessions;
 // see engineTelemetryConfig for why.
 var skipSharedTelemetryExporters bool
@@ -557,17 +557,29 @@ var skipSharedTelemetryExporters bool
 //
 // Internal plumbing sessions (see skipSharedTelemetryExporters) opt out of the
 // process-wide OTLP exporter singletons — the Dagger Cloud exporters and the
-// OTEL_* "Detect" exporters. Those singletons are sync.Once-cached and get shut
+// OTEL_* exporters to the user's own collector. Those singletons are sync.Once-cached and get shut
 // down by telemetry.Close(); a pre-command session that wired them up and then
 // tore them down would leave them dead for the real command that runs next in
 // the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
 // telemetry warnings (e.g. the preflight session for a dynamic SDK command).
 // Preparation sessions use only their own frontend exporters.
 func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes) {
-	return engineTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
+	return engineTelemetryConfigWithExporters(ctx, enginetel.ConfiguredCloudExporters, configuredCollectorExporters)
 }
 
 type configuredCloudExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool)
+
+// configuredCollectorExportersFunc returns the exporters to the user's own
+// collector, each nil when its OTEL_EXPORTER_OTLP_* variables don't configure
+// it.
+type configuredCollectorExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter)
+
+func configuredCollectorExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+	spans, _ := telemetry.ConfiguredSpanExporter(ctx)
+	logs, _ := telemetry.ConfiguredLogExporter(ctx)
+	metrics, _ := telemetry.ConfiguredMetricExporter(ctx)
+	return spans, logs, metrics
+}
 
 // cloudTelemetryIndexes locates the CLI's Dagger Cloud exporters in the
 // pipeline telemetry.Init builds: the span processor's index in the
@@ -601,9 +613,8 @@ func withoutIndex[T any](all []T, i int) []T {
 	return out
 }
 
-func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc) (telemetry.Config, cloudTelemetryIndexes) {
+func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc, configuredCollectorExporters configuredCollectorExportersFunc) (telemetry.Config, cloudTelemetryIndexes) {
 	cfg := telemetry.Config{
-		Detect:   !skipSharedTelemetryExporters,
 		Resource: Resource(ctx),
 	}
 	cloud := noCloudTelemetry
@@ -636,6 +647,21 @@ func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 		// dropped is reported as never finishing. The frontend waits for queue
 		// space instead, like its logs below.
 		cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewBlockingLiveSpanProcessor(Frontend.SpanExporter()))
+	}
+	if !skipSharedTelemetryExporters {
+		// The user's own collector. telemetry.Init's Detect would give its
+		// spans the default 2048-slot BSP, which drops a burst of the engine
+		// spans the CLI forwards; give them a large queue, like Cloud's.
+		spans, logs, metrics := configuredCollectorExporters(ctx)
+		if spans != nil {
+			cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewCollectorSpanProcessor(spans, telemetry.LiveTracesEnabled))
+		}
+		if logs != nil {
+			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
+		}
+		if metrics != nil {
+			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
+		}
 	}
 	return cfg, cloud
 }
