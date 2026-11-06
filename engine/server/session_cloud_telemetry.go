@@ -817,12 +817,14 @@ func (sess *daggerSession) scaleOutTelemetryParams(parent *clientRuntime, params
 	params.EngineTrace = parent.spanExporter
 	params.EngineLogs = parent.logExporter
 	params.EngineMetrics = []sdkmetric.Exporter{parent.metricExporter}
+	// The remote engine's other Cloud calls (the agent's module search) go to
+	// the client's Cloud whether or not the session publishes.
+	params.CloudURL = parent.clientMetadata.CloudURL
 	if !sess.publishesToCloud() {
 		return
 	}
 	md := parent.clientMetadata
 	params.EngineCloudTelemetry = true
-	params.CloudURL = md.CloudURL
 	params.CloudCredentialsPath = md.CredentialsPath
 	params.EngineTraceWithoutCloud = cloudPublishedSpanExporter{next: parent.spanExporter}
 	params.EngineLogsWithoutCloud = cloudPublishedLogExporter{next: parent.logExporter}
