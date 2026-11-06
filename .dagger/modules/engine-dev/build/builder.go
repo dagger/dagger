@@ -57,7 +57,7 @@ func NewBuilder(
 		vcsCommit:    vcsCommit,
 		vcsDirty:     vcsDirty,
 		platform:     dagger.Platform(platforms.DefaultString()),
-		platformSpec: platforms.DefaultSpec(),
+		platformSpec: platforms.Normalize(platforms.DefaultSpec()),
 		version:      version,
 		ws:           ws,
 	}, nil
