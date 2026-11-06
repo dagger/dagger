@@ -2367,7 +2367,7 @@ func cleanDotsAndSlashes(path string) string {
 
 // materializeSubdirectory resolves links while the parent is still available.
 // Its new snapshot contains only the selection and the copied link targets.
-func (dir *Directory) materializeSubdirectory(ctx context.Context, source bkcache.ImmutableRef, parentPath, subdir string) error {
+func (dir *Directory) materializeSubdirectory(ctx context.Context, source bkcache.ImmutableRef, parentPath, subdir string, options ...layercopy.SelectionOptions) error {
 	if source == nil {
 		if cleanDotsAndSlashes(subdir) != "" {
 			return fmt.Errorf("directory %q does not exist", subdir)
@@ -2420,7 +2420,7 @@ func (dir *Directory) materializeSubdirectory(ctx context.Context, source bkcach
 			parentRoot = fmt.Sprintf("/proc/self/fd/%d", parentFile.Fd())
 			// CopySelection resolves and checks the pinned selection itself.
 			// A separate path check can clean .. before expanding symlinks.
-			err = copier.CopySelection(ctx, parentRoot, subdir)
+			err = copier.CopySelection(ctx, parentRoot, subdir, options...)
 			if errors.Is(err, syscall.ENOTDIR) {
 				return notADirectoryError{err}
 			}

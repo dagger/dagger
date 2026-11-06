@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -3422,6 +3423,51 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinks(ctx context.Context, t 
 		require.NoError(t, err)
 		require.Equal(t, []string{"out/absolute/nested/keep.txt"}, paths)
 	})
+}
+
+func (DirectorySuite) TestDirectoryResolveBrokenSymlinksResources(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dag := sdkcore.NewQuery(c)
+	opts := sdkcore.ContainerDirectoryOpts{ResolveBrokenSymlinks: true}
+	socketPath := filepath.Join(t.TempDir(), "selection.sock")
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+	for _, tc := range []struct {
+		name, target string
+		mount        func(*sdkcore.Container) *sdkcore.Container
+	}{
+		{"cache", "/resource", func(ctr *sdkcore.Container) *sdkcore.Container {
+			return ctr.WithMountedCache("/resource", dag.CacheVolume("selection-resource"))
+		}},
+		{"tmpfs", "/resource", func(ctr *sdkcore.Container) *sdkcore.Container {
+			return ctr.WithMountedTemp("/resource")
+		}},
+		{"secret", "/resource/hidden", func(ctr *sdkcore.Container) *sdkcore.Container {
+			return ctr.WithMountedSecret("/resource/hidden", dag.SetSecret("selection-resource", "secret"))
+		}},
+		{"socket", "/resource/hidden", func(ctr *sdkcore.Container) *sdkcore.Container {
+			return ctr.WithUnixSocket("/resource/hidden", dag.Host().UnixSocket(socketPath))
+		}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			root := dag.Directory().WithNewFile("shared/value", "shared").
+				WithNewFile("resource/hidden", "hidden").WithSymlink("../shared", "app/link")
+			ctr := tc.mount(dag.Container().WithRootfs(root))
+			content, err := ctr.Directory("/app", opts).File("link/value").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "shared", content)
+			for _, path := range []string{tc.target, "/"} {
+				_, err := ctr.Directory(path, opts).Sync(ctx)
+				require.ErrorContains(t, err, "cannot retrieve path from non-snapshot mount "+tc.target)
+			}
+			for _, target := range []string{tc.target, "/resource/hidden"} {
+				linked := tc.mount(dag.Container().WithRootfs(root.WithSymlink(target, "app/blocked")))
+				_, err := linked.Directory("/app", opts).Sync(ctx)
+				require.ErrorContains(t, err, "cannot retrieve path from non-snapshot mount "+tc.target)
+			}
+		})
+	}
 }
 
 func (DirectorySuite) TestDirectoryResolveBrokenSymlinksMounts(ctx context.Context, t *testctx.T) {

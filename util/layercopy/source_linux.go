@@ -16,6 +16,7 @@ import (
 )
 
 type source struct {
+	checkPath    func(string) error
 	rootHandle   *os.Root
 	root         string
 	realRoot     string

@@ -97,6 +97,11 @@ func (s *source) resolveRootedPath(name string, followFinal bool, links int, bou
 			continue
 		}
 		candidate := filepath.Join(strings.Join(resolved, "/"), component)
+		if s.checkPath != nil {
+			if err := s.checkPath(candidate); err != nil {
+				return "", false, err
+			}
+		}
 		info, err := s.rootHandle.Lstat(candidate)
 		if err != nil {
 			return "", false, err

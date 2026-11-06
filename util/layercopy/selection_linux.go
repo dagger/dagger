@@ -15,12 +15,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// SelectionOptions controls access to a directory selection's source.
+type SelectionOptions struct {
+	// CheckPath rejects paths hidden by resources outside the snapshot view.
+	CheckPath func(string) error
+}
+
 // CopySelection copies a directory to the destination root. It repairs links
 // that would break when the parent is removed, and preserves other links,
 // including links that already have no target. The source is a mounted view;
 // this operation does not accept filters or raw overlay layers.
-func (c *Copier) CopySelection(ctx context.Context, root, name string) error {
+func (c *Copier) CopySelection(ctx context.Context, root, name string, options ...SelectionOptions) error {
 	s := &source{root: root}
+	if len(options) != 0 {
+		s.checkPath = options[0].CheckPath
+	}
 	if err := s.confine(); err != nil {
 		return err
 	}
@@ -28,6 +37,11 @@ func (c *Copier) CopySelection(ctx context.Context, root, name string) error {
 	name, err := s.resolveRooted(name, true)
 	if err != nil {
 		return err
+	}
+	if s.checkPath != nil {
+		if err := s.checkPath(name); err != nil {
+			return err
+		}
 	}
 	f, err := s.openResolvedRooted(name, name, unix.O_PATH)
 	if err != nil {
@@ -97,6 +111,11 @@ func (s *selectionCopy) directory(ctx context.Context, ent sourceEntry, name, de
 }
 
 func (s *selectionCopy) child(ctx context.Context, parent *os.Root, base, name, dest, boundary string) error {
+	if s.source != nil && s.source.checkPath != nil {
+		if err := s.source.checkPath(name); err != nil {
+			return err
+		}
+	}
 	f, err := parent.OpenFile(base, unix.O_PATH|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return err

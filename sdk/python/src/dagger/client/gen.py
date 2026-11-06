@@ -3505,8 +3505,8 @@ class Container(Type):
             Repair symlinks that directory selection would break. Resolve
             targets across the root filesystem and directory or file mounts.
             Preserve working relative links and links that already have no
-            target. Cache, volume, tmpfs, secret, and socket mounts are not
-            supported.
+            target. Cache, volume, tmpfs, secret, and socket mounts cause an error
+            only when reached by the selection or a resolved link.
         """
         _args = [
             Arg("path", path),

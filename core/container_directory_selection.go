@@ -28,15 +28,9 @@ func (lazy *ContainerDirectoryLazy) materializeSelection(ctx context.Context, di
 	parent := lazy.Parent.Self()
 	parts := []dagql.PartKey{ContainerPartFS}
 	for _, mnt := range parent.Mounts {
-		if mnt.DirectorySource == nil && mnt.FileSource == nil && mnt.FilesSource == nil {
-			return fmt.Errorf("resolveBrokenSymlinks: cannot retrieve path from non-snapshot mount %s", mnt.Target)
+		if mnt.DirectorySource != nil || mnt.FileSource != nil || mnt.FilesSource != nil {
+			parts = append(parts, ContainerPartMount(mnt.Target))
 		}
-		parts = append(parts, ContainerPartMount(mnt.Target))
-	}
-	// Secrets and sockets are exec resources, not snapshot contents. Never fall
-	// through to a rootfs file hidden by one of these resources.
-	if slices.ContainsFunc(parent.Secrets, func(secret ContainerSecret) bool { return secret.MountPath != "" }) || len(parent.Sockets) != 0 {
-		return fmt.Errorf("resolveBrokenSymlinks: cannot retrieve paths with secret or socket mounts")
 	}
 	if err := cache.EvaluateParts(ctx, lazy.Parent, parts...); err != nil {
 		return err
@@ -48,6 +42,14 @@ func (lazy *ContainerDirectoryLazy) materializeSelection(ctx context.Context, di
 	// Match exec mount order without changing the parent's mount metadata.
 	// In particular, a root mount must not discard earlier child mounts.
 	mounts := slices.Clone(parent.Mounts)
+	for _, secret := range parent.Secrets {
+		if secret.MountPath != "" {
+			mounts = append(mounts, ContainerMount{Target: secret.MountPath})
+		}
+	}
+	for _, socket := range parent.Sockets {
+		mounts = append(mounts, ContainerMount{Target: socket.ContainerPath})
+	}
 	slices.SortFunc(mounts, func(a, b ContainerMount) int { return strings.Compare(a.Target, b.Target) })
 	// A directory mounted at / becomes the base view, including its metadata.
 	for i, mnt := range mounts {
@@ -82,8 +84,9 @@ func (lazy *ContainerDirectoryLazy) materializeSelection(ctx context.Context, di
 		return err
 	}
 	defer view.Release(context.WithoutCancel(ctx))
+	var blocked []string
 	err = MountRef(ctx, view, func(root string, _ *mount.Mount) error {
-		return copySelectionMounts(ctx, root, rootPath, mounts)
+		return copySelectionMounts(ctx, root, rootPath, mounts, &blocked)
 	})
 	if err != nil {
 		return err
@@ -93,10 +96,20 @@ func (lazy *ContainerDirectoryLazy) materializeSelection(ctx context.Context, di
 		return err
 	}
 	defer composed.Release(context.WithoutCancel(ctx))
-	return dir.materializeSubdirectory(ctx, composed, rootPath, selected)
+	return dir.materializeSubdirectory(ctx, composed, rootPath, selected, layercopy.SelectionOptions{
+		CheckPath: func(name string) error {
+			name = filepath.Join("/", name)
+			for _, target := range blocked {
+				if name == target || strings.HasPrefix(name, target+"/") {
+					return fmt.Errorf("resolveBrokenSymlinks: cannot retrieve path from non-snapshot mount %s", target)
+				}
+			}
+			return nil
+		},
+	})
 }
 
-func copySelectionMounts(ctx context.Context, root, rootPath string, mounts ContainerMounts) error {
+func copySelectionMounts(ctx context.Context, root, rootPath string, mounts ContainerMounts, blocked *[]string) error {
 	parentPath, err := containerdfs.RootPath(root, rootPath)
 	if err != nil {
 		return err
@@ -155,6 +168,10 @@ func copySelectionMounts(ctx context.Context, root, rootPath string, mounts Cont
 		if err := handle.RemoveAll(rel); err != nil {
 			return err
 		}
+		blockedTarget := filepath.Join("/", rel)
+		*blocked = slices.DeleteFunc(*blocked, func(path string) bool {
+			return path == blockedTarget || strings.HasPrefix(path, blockedTarget+"/")
+		})
 		// Keep writes in the mounted view, like RemoveAll and Chtimes. Mixing
 		// these operations with raw upper-layer writes leaves whiteouts in
 		// the way and bypasses overlayfs inode and copy-up state.
@@ -163,7 +180,14 @@ func copySelectionMounts(ctx context.Context, root, rootPath string, mounts Cont
 		if err != nil {
 			return err
 		}
-		err = copySelectionMount(ctx, copier, mnt, filepath.Join(parentRel, rel))
+		if mnt.DirectorySource == nil && mnt.FileSource == nil && mnt.FilesSource == nil {
+			*blocked = append(*blocked, blockedTarget)
+			// Keep a marker so walking the selected subtree also reaches the
+			// unsupported mount, while its hidden contents remain removed.
+			err = copier.Mkdir(ctx, filepath.Join(parentRel, rel), layercopy.CopyOptions{})
+		} else {
+			err = copySelectionMount(ctx, copier, mnt, filepath.Join(parentRel, rel))
+		}
 		closeErr := copier.Close()
 		if err != nil {
 			return err
