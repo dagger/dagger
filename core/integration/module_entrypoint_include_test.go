@@ -93,6 +93,35 @@ func includeAndSourcesFixture(c *dagger.Client, include string) *core.Directory 
 		WithNewFile("m/entrypoint/main.dang", fmt.Sprintf(sourcesProbeEntrypoint, raisingSourcesMember))
 }
 
+// aboveProbeEntrypoint has a sources member that fails any load that runs it,
+// as a generated entrypoint has one for engines without include. Nonce returns
+// the file above the module directory and a random string, so it repeats
+// exactly when the engine reuses the call result.
+const aboveProbeEntrypoint = `type Entrypoint implements ModuleEntrypoint {
+  pub sources(workspace: Workspace!): Directory! {
+    raise "sources ran"
+  }
+
+  pub types: [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Probe")
+        .withConstructor(function("", typeDef.withObject("Probe")))
+        .withFunction(function("Nonce", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else {
+      let above = currentModule.contextDirectory.file(currentModule.sourceSubpath + "/../above.txt").contents
+      (JSON.encode(above.trimSpace + "@" + Random.string) :: JSON!)
+    }
+  }
+}
+`
+
 // TestModuleEntrypointInclude covers a manifest version 2 include: the module
 // builds from the files it names outside the module directory, and its
 // results follow them.
@@ -194,6 +223,30 @@ func (ModuleSuite) TestModuleEntrypointInclude(ctx context.Context, t *testctx.T
 		files := strings.Fields(call(ctx, t, ctr, "./m", "context-files"))
 		require.Contains(t, files, "m/data/local.txt")
 		require.NotContains(t, files, "shared/value.txt")
+	})
+
+	// A module that carries both, as the Go SDK generates it, loads through
+	// include on this engine, and its results follow the file include names
+	// above its directory: an edit there makes the call run again, and an edit
+	// to a file beside it that include doesn't name doesn't.
+	t.Run("results follow a file include names above the module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := goGitBase(t, c).WithDirectory(".", core.NewQuery(c).Directory().
+			WithNewFile("above.txt", "one\n").
+			WithNewFile("unlisted.txt", "unlisted\n").
+			WithNewFile("m/dagger-module.toml", "name = \"m\"\ninclude = [\"../above.txt\"]\n\n[entrypoint]\nkind = \"dang\"\nsource = \"./entrypoint\"\n").
+			WithNewFile("m/entrypoint/main.dang", aboveProbeEntrypoint))
+
+		first := call(ctx, t, ctr, "./m", "nonce")
+		require.True(t, strings.HasPrefix(first, "one@"), first)
+		require.Equal(t, first, call(ctx, t, ctr, "./m", "nonce"))
+
+		unlisted := ctr.WithNewFile("unlisted.txt", "changed\n")
+		require.Equal(t, first, call(ctx, t, unlisted, "./m", "nonce"))
+
+		changed := ctr.WithNewFile("above.txt", "two\n")
+		after := call(ctx, t, changed, "./m", "nonce")
+		require.True(t, strings.HasPrefix(after, "two@"), after)
 	})
 
 	// A cached result answers again only while the included files are the
