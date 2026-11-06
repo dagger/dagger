@@ -199,7 +199,7 @@ func TestModuleSearchCloudError(t *testing.T) {
 	}{
 		{"http error", http.StatusBadGateway, "upstream unavailable", "502 Bad Gateway: upstream unavailable"},
 		{"graphql error", http.StatusOK, `{"errors":[{"message":"rate limited"}]}`, "rate limited"},
-		{"rejected credentials", http.StatusUnauthorized, "invalid token", "rejected your credentials"},
+		{"rejected credentials", http.StatusUnauthorized, "invalid token", "rejected the Cloud credentials"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			newFakeDiscoverCloud(t, tc.status, tc.response)

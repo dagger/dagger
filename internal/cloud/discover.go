@@ -140,10 +140,13 @@ func (c *Client) DiscoverModules(ctx context.Context, req DiscoverModulesRequest
 		DiscoverModules *ModuleDiscovery `json:"discoverModules"`
 	}
 	if err := c.doGraphQLWithHeader(ctx, "DiscoverModules", discoverModulesQuery, variables, header, &data); err != nil {
-		return nil, discoverError(ctx, c.u, err)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, newDiscoverError(c.u, err)
 	}
 	if data.DiscoverModules == nil {
-		return nil, fmt.Errorf("search the Dagger module index: Dagger Cloud returned no result; module search needs Dagger Cloud and has no offline fallback")
+		return nil, &DiscoverError{URL: c.u.Redacted(), Empty: true, Err: errors.New("no discoverModules in the response")}
 	}
 	if data.DiscoverModules.Results == nil {
 		data.DiscoverModules.Results = []ModuleListing{}
@@ -151,23 +154,85 @@ func (c *Client) DiscoverModules(ctx context.Context, req DiscoverModulesRequest
 	return data.DiscoverModules, nil
 }
 
-func discoverError(ctx context.Context, u *url.URL, err error) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
+// DiscoverError is a module search Dagger Cloud failed. Error is for a user
+// at a terminal. Summary leaves out response bodies, URLs and transport or
+// credential-refresh details, for readers that should not see them: the agent
+// tool hands it to the model.
+type DiscoverError struct {
+	URL string
+	// Unauthorized means Cloud rejected the credentials sent.
+	Unauthorized bool
+	// Status is the HTTP status Cloud answered with, when not 2xx.
+	Status string
+	// Messages are the GraphQL errors Cloud returned.
+	Messages []string
+	// Empty means Cloud answered without a result.
+	Empty bool
+	Err   error
+}
+
+func newDiscoverError(u *url.URL, err error) *DiscoverError {
+	derr := &DiscoverError{URL: u.Redacted(), Err: err}
 	var httpErr *GraphQLHTTPError
-	if errors.As(err, &httpErr) {
-		if httpErr.StatusCode == http.StatusUnauthorized {
-			return fmt.Errorf("search the Dagger module index: Dagger Cloud rejected your credentials (%s); run 'dagger login' again or fix DAGGER_CLOUD_TOKEN", httpErr.Status)
-		}
+	var gqlErrs *GraphQLErrors
+	switch {
+	case errors.As(err, &httpErr):
+		derr.Status = httpErr.Status
+		derr.Unauthorized = httpErr.StatusCode == http.StatusUnauthorized
+	case errors.As(err, &gqlErrs):
+		derr.Messages = gqlErrs.Messages
+	}
+	return derr
+}
+
+const (
+	discoverErrorPrefix = "search the Dagger module index"
+	discoverErrorSuffix = "; module search needs Dagger Cloud and has no offline fallback"
+)
+
+func (e *DiscoverError) unauthorized() string {
+	return fmt.Sprintf("%s: Dagger Cloud rejected the Cloud credentials (%s); run 'dagger login' again or fix DAGGER_CLOUD_TOKEN", discoverErrorPrefix, e.Status)
+}
+
+func (e *DiscoverError) Error() string {
+	if e.Unauthorized {
+		return e.unauthorized()
+	}
+	detail := e.Err.Error()
+	var httpErr *GraphQLHTTPError
+	if errors.As(e.Err, &httpErr) {
 		body := httpErr.Body
 		if len(body) > discoverErrorBodyLimit {
 			body = body[:discoverErrorBodyLimit] + "…"
 		}
-		err = fmt.Errorf("%s: %s", httpErr.Status, body)
+		detail = httpErr.Status
+		if body != "" {
+			detail += ": " + body
+		}
 	}
-	return fmt.Errorf("search the Dagger module index at %s: %w; module search needs Dagger Cloud and has no offline fallback", u.Redacted(), err)
+	return fmt.Sprintf("%s at %s: %s%s", discoverErrorPrefix, e.URL, detail, discoverErrorSuffix)
 }
+
+// Summary is Error without what Cloud's response body, the URL or the
+// transport said.
+func (e *DiscoverError) Summary() string {
+	var detail string
+	switch {
+	case e.Unauthorized:
+		return e.unauthorized()
+	case e.Status != "":
+		detail = "Dagger Cloud answered " + e.Status
+	case len(e.Messages) > 0:
+		detail = "Dagger Cloud returned an error: " + strings.Join(e.Messages, "; ")
+	case e.Empty:
+		detail = "Dagger Cloud returned no result"
+	default:
+		detail = "could not reach Dagger Cloud"
+	}
+	return discoverErrorPrefix + ": " + detail + discoverErrorSuffix
+}
+
+func (e *DiscoverError) Unwrap() error { return e.Err }
 
 // WithBaseURL returns a copy of the client that talks to the Cloud API at
 // base instead of the one DAGGER_CLOUD_URL resolved to: the engine uses it to
