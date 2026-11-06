@@ -8634,6 +8634,29 @@ type WorkspaceSDK implements Node {
   """Generate the modules and clients managed by this SDK."""
   generate: Changeset! @generate
 
+  """
+  The value a setting records in this SDK's scope settings, as a native JSON value.
+
+  Reads [sdks.<name>.scopes."<scope>".settings] from the workspace config, in
+  the scope whose key resolves to path. The setting key is matched without
+  regard to case.
+
+  Null when no scope resolves to path, or the scope records no such setting.
+  Fails when the config is invalid, path escapes the workspace root, key matches
+  several recorded settings, or the value cannot be represented as JSON.
+
+  Fails when this SDK is no longer installed in the workspace config, even if Workspace.sdk returned it earlier.
+  """
+  scopeSetting(
+    """
+    Scope path, relative to the workspace cwd or absolute from the workspace root.
+    """
+    path: String!
+
+    """Setting name, matched without regard to case."""
+    key: String!
+  ): JSONValue
+
   """The user-facing SDK name."""
   name: String!
 

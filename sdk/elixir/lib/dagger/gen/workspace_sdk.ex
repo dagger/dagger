@@ -107,6 +107,45 @@ defmodule Dagger.WorkspaceSDK do
 
     Client.execute(workspace_sdk.client, query_builder)
   end
+
+  @doc """
+  The value a setting records in this SDK's scope settings, as a native JSON value.
+
+  Reads [sdks.<name>.scopes."<scope>".settings] from the workspace config, in the scope whose key resolves to path. The setting key is matched without regard to case.
+
+  Null when no scope resolves to path, or the scope records no such setting. Fails when the config is invalid, path escapes the workspace root, key matches several recorded settings, or the value cannot be represented as JSON.
+
+  Fails when this SDK is no longer installed in the workspace config, even if Workspace.sdk returned it earlier.
+  """
+  @spec scope_setting(t(), String.t(), String.t()) ::
+          {:ok, Dagger.JSONValue.t() | nil} | {:error, term()}
+  def scope_setting(%__MODULE__{} = workspace_sdk, path, key) do
+    query_builder =
+      workspace_sdk.query_builder
+      |> QB.select("scopeSetting")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("key", key)
+      |> QB.select("id")
+
+    case Client.execute(workspace_sdk.client, query_builder) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, id} ->
+        {:ok,
+         %Dagger.JSONValue{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("JSONValue"),
+           client: workspace_sdk.client
+         }}
+
+      error ->
+        error
+    end
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.WorkspaceSDK do
