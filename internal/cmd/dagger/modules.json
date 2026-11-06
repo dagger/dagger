@@ -16,6 +16,441 @@
             "glob": "**/go.mod"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "e327bee9103fe60cb66c9d11bf2e1604686021df",
+        "settings": [
+          {
+            "name": "version",
+            "type": "String",
+            "description": "Go version for every module, overriding go.mod. Ignored when base is set."
+          },
+          {
+            "name": "base",
+            "type": "Container",
+            "description": "Base image for Go containers. Must include a Go toolchain."
+          },
+          {
+            "name": "includeExtraFiles",
+            "type": "[String!]",
+            "description": "Extra workspace files to mount for Go commands, as include patterns."
+          },
+          {
+            "name": "test",
+            "type": "[String!]",
+            "description": "Module roots to test, e.g. [\"**\", \"!docs\"]. \"!\" excludes."
+          },
+          {
+            "name": "generate",
+            "type": "[String!]",
+            "description": "Directories to run go generate in, as workspace-root globs. \"!\" excludes."
+          },
+          {
+            "name": "build",
+            "type": "[String!]",
+            "description": "Main packages to build, by module-relative or workspace path. \"!\" excludes."
+          },
+          {
+            "name": "buildFlags",
+            "type": "[String!]",
+            "description": "Extra flags for go build only, e.g. [\"-trimpath\", \"-ldflags=-s -w\"]."
+          },
+          {
+            "name": "goflags",
+            "type": "String",
+            "description": "GOFLAGS for every Go container, e.g. \"-tags=extended\"."
+          },
+          {
+            "name": "mountPath",
+            "type": "String",
+            "description": "Where to mount the workspace in Go containers. Defaults to \"/src/<workspace name>\"."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "go-module",
+            "keyName": "path",
+            "itemType": "GoModule"
+          },
+          {
+            "name": "go-package",
+            "keyName": "path",
+            "itemType": "GoPackage"
+          },
+          {
+            "name": "go-platform",
+            "keyName": "name",
+            "itemType": "GoPlatform"
+          },
+          {
+            "name": "go-test",
+            "keyName": "name",
+            "itemType": "GoTest"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=go/modules/packages/generate/stale",
+            "stale": true,
+            "description": "staleness check: run go generate in this package",
+            "dimensions": [
+              "go-module",
+              "go-package"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=go/modules/packages/tests/test",
+            "description": "Run go tests",
+            "descriptions": [
+              "Run the selected tests in this package."
+            ],
+            "dimensions": [
+              "go-module",
+              "go-package",
+              "go-test"
+            ]
+          },
+          {
+            "role": "generator",
+            "type": "Generator",
+            "uri": "dag+generator://?generator=go/modules/packages/generate",
+            "description": "Run go generate in this package.",
+            "descriptions": [
+              "Run go generate in the selected packages."
+            ],
+            "dimensions": [
+              "go-module",
+              "go-package"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Changeset",
+            "uri": "dag+changeset://?changeset=go/modules/generate",
+            "description": "Run go generate in this module.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Changeset",
+            "uri": "dag+changeset://?changeset=go/modules/packages/generate",
+            "description": "Run go generate in the selected packages.",
+            "descriptions": [
+              "Run go generate in this package."
+            ],
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=go/modules/base",
+            "description": "Go container for this module, before source is added.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=go/modules/archives",
+            "description": "The compiled packages a lint of this module reads, for golangci-lint's export driver: a directory of their archives, the full output of go tool compile -pack, under archives/, and manifest.json, which describes them: the Go version, target and build tags they were compiled for, and for each package, by import path, its archive and a digest of the files it was compiled from.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=go/modules/packages/binary",
+            "description": "Binaries of the selected main packages for the engine's platform, one file each.",
+            "descriptions": [
+              "This package's binary for the engine's platform. It must be a main package."
+            ],
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=go/modules/packages/platforms/binary",
+            "description": "This package's binary for the selected platforms, or the engine's when none is, one directory per platform, e.g. \"linux-arm64/\".",
+            "descriptions": [
+              "This package's binary for this platform."
+            ],
+            "dimensions": [
+              "go-module",
+              "go-package"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=go/modules/source",
+            "description": "Source mounted for this module's Go commands.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=go/modules/test-data",
+            "description": "Testdata directories mounted for this module's tests.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "File",
+            "uri": "dag+file://?file=go/modules/packages/binary",
+            "description": "This package's binary for the engine's platform. It must be a main package.",
+            "descriptions": [
+              "Binaries of the selected main packages for the engine's platform, one file each."
+            ],
+            "dimensions": [
+              "go-module",
+              "go-package"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "File",
+            "uri": "dag+file://?file=go/modules/packages/platforms/binary",
+            "description": "This package's binary for this platform.",
+            "descriptions": [
+              "This package's binary for the selected platforms, or the engine's when none is, one directory per platform, e.g. \"linux-arm64/\"."
+            ],
+            "dimensions": [
+              "go-module",
+              "go-package",
+              "go-platform"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "File",
+            "uri": "dag+file://?file=go/modules/packages/platforms/test-binary",
+            "description": "This package's test binary for this platform, as go test -c builds it, but without go vet, which is left to the lint checks.",
+            "dimensions": [
+              "go-module",
+              "go-package",
+              "go-platform"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "File",
+            "uri": "dag+file://?file=go/modules/packages/test-binary",
+            "description": "This package's test binary for the engine's platform, as go test -c builds it. The package must have test files.",
+            "dimensions": [
+              "go-module",
+              "go-package"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "GoModules",
+            "uri": "dag+go-modules://?artifact-go-modules=go/modules",
+            "description": "Go modules at or below the working directory, keyed by root directory. Use list to read the selected modules as an array."
+          },
+          {
+            "role": "collection",
+            "type": "GoPackages",
+            "uri": "dag+go-packages://?artifact-go-packages=go/modules/packages",
+            "description": "Packages owned by this module. Nested Go modules have their own collection.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "GoPlatforms",
+            "uri": "dag+go-platforms://?artifact-go-platforms=go/modules/packages/platforms",
+            "description": "Platforms this package can be built for, keyed by GOOS/GOARCH.",
+            "dimensions": [
+              "go-module",
+              "go-package"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "GoTests",
+            "uri": "dag+go-tests://?artifact-go-tests=go/modules/packages/tests",
+            "description": "Tests in this package, keyed by name.",
+            "dimensions": [
+              "go-module",
+              "go-package"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "Go",
+            "function": "module",
+            "returns": "GoModule!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The Go module containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "GoModule",
+            "function": "generateDirectories",
+            "returns": "[String!]!",
+            "description": "Directories go generate runs in, in lexical order.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoModule",
+            "function": "hasGenerateDirectives",
+            "returns": "Boolean!",
+            "description": "Whether this module has go:generate commands, regardless of selection.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoModule",
+            "function": "include",
+            "returns": "[String!]!",
+            "args": [
+              {
+                "name": "test",
+                "type": "Boolean"
+              },
+              {
+                "name": "generate",
+                "type": "Boolean"
+              }
+            ],
+            "description": "All include patterns for this module's source.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoModule",
+            "function": "includeBase",
+            "returns": "[String!]!",
+            "description": "Built-in include patterns for this module's Go files.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoModule",
+            "function": "includeDiscovered",
+            "returns": "[String!]!",
+            "args": [
+              {
+                "name": "test",
+                "type": "Boolean"
+              },
+              {
+                "name": "generate",
+                "type": "Boolean"
+              }
+            ],
+            "description": "Include patterns found by scanning Go directives and local replaces.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoModule",
+            "function": "scanFailure",
+            "returns": "String",
+            "description": "Why this module could not be scanned, or null.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoModule",
+            "function": "skipGenerate",
+            "returns": "Boolean!",
+            "description": "Whether go generate has nothing to run in this module.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoModule",
+            "function": "skipTest",
+            "returns": "Boolean!",
+            "description": "Whether tests are skipped for this module.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoModule",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run tests in this module.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoModule",
+            "function": "version",
+            "returns": "String",
+            "description": "Go version this module runs under. Null with a custom base.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoPackages",
+            "function": "narrowed",
+            "returns": "Boolean!",
+            "description": "Whether the active selection removed tests or packages from this collection.",
+            "dimensions": [
+              "go-module"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GoTests",
+            "function": "narrowed",
+            "returns": "Boolean!",
+            "description": "Whether the active selection removed tests or packages from this collection.",
+            "dimensions": [
+              "go-module",
+              "go-package"
+            ]
+          }
+        ]
       }
     },
     {
@@ -42,6 +477,158 @@
             "glob": "**/.golangci.json"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "e327bee9103fe60cb66c9d11bf2e1604686021df",
+        "settings": [
+          {
+            "name": "version",
+            "type": "String",
+            "description": "golangci-lint release, without the v prefix."
+          },
+          {
+            "name": "goVersion",
+            "type": "String",
+            "description": "Go version for every module, overriding go.mod. Ignored when base is set."
+          },
+          {
+            "name": "base",
+            "type": "Container",
+            "description": "Base image for Go containers. Must include a Go toolchain."
+          },
+          {
+            "name": "includeExtraFiles",
+            "type": "[String!]"
+          },
+          {
+            "name": "lint",
+            "type": "[String!]",
+            "description": "Project roots to lint, e.g. [\"**\", \"!docs\"]. \"!\" excludes."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "golangci-lint-project",
+            "keyName": "path",
+            "itemType": "GolangciLintProject"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=golangci-lint/projects/lint",
+            "description": "Run golangci-lint in this project.",
+            "descriptions": [
+              "Run golangci-lint in the selected projects explicitly. Artifact checks run on individual projects."
+            ],
+            "dimensions": [
+              "golangci-lint-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "GolangciLintProjects",
+            "uri": "dag+golangci-lint-projects://?artifact-golangci-lint-projects=golangci-lint/projects",
+            "description": "golangci-lint projects at or below the working directory, keyed by the directory holding their configuration. Projects the lint setting skips are left out unless includeSkipLint."
+          },
+          {
+            "role": "function",
+            "object": "GolangciLint",
+            "function": "module",
+            "returns": "GolangciLintGoModule!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The Go module containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "GolangciLint",
+            "function": "project",
+            "returns": "GolangciLintProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The golangci-lint project containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "GolangciLintGoModule",
+            "function": "base",
+            "returns": "Container!",
+            "description": "Go container for this module, with golangci-lint installed."
+          },
+          {
+            "role": "function",
+            "object": "GolangciLintGoModule",
+            "function": "goVersion",
+            "returns": "String",
+            "description": "Go version this module is linted with. Null with a custom base."
+          },
+          {
+            "role": "function",
+            "object": "GolangciLintGoModule",
+            "function": "include",
+            "returns": "[String!]!",
+            "description": "All include patterns for this module's source."
+          },
+          {
+            "role": "function",
+            "object": "GolangciLintGoModule",
+            "function": "includeConfig",
+            "returns": "[String!]!",
+            "description": "Include patterns for golangci-lint configuration files."
+          },
+          {
+            "role": "function",
+            "object": "GolangciLintGoModule",
+            "function": "includeDiscovered",
+            "returns": "[String!]!",
+            "description": "Include patterns found by scanning Go directives and local replaces."
+          },
+          {
+            "role": "function",
+            "object": "GolangciLintGoModule",
+            "function": "source",
+            "returns": "Directory!",
+            "description": "Source mounted for this module's lint command."
+          },
+          {
+            "role": "function",
+            "object": "GolangciLintProject",
+            "function": "modules",
+            "returns": "[String!]!",
+            "description": "Roots of the Go modules this project lints.",
+            "dimensions": [
+              "golangci-lint-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "GolangciLintProject",
+            "function": "skipLint",
+            "returns": "Boolean!",
+            "description": "Whether linting is skipped for this project.",
+            "dimensions": [
+              "golangci-lint-project"
+            ]
+          }
+        ]
       }
     },
     {
@@ -57,6 +644,165 @@
         "anyOf": [
           {
             "glob": "**/staticcheck.conf"
+          }
+        ]
+      },
+      "artifacts": {
+        "commit": "e327bee9103fe60cb66c9d11bf2e1604686021df",
+        "settings": [
+          {
+            "name": "version",
+            "type": "String",
+            "description": "Staticcheck release, e.g. \"v0.8.2\"."
+          },
+          {
+            "name": "goVersion",
+            "type": "String",
+            "description": "Go version for every module, overriding go.mod. Ignored when base is set."
+          },
+          {
+            "name": "base",
+            "type": "Container",
+            "description": "Base image for Go containers. Must include a Go toolchain."
+          },
+          {
+            "name": "includeExtraFiles",
+            "type": "[String!]",
+            "description": "Extra workspace files to mount for Go commands, as include patterns."
+          },
+          {
+            "name": "lint",
+            "type": "[String!]",
+            "description": "Project roots to lint, e.g. [\"**\", \"!docs\"]. \"!\" excludes."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "staticcheck-project",
+            "keyName": "path",
+            "itemType": "StaticcheckProject"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=staticcheck/projects/lint",
+            "description": "Run Staticcheck in this project.",
+            "descriptions": [
+              "Run Staticcheck in the selected projects explicitly. Artifact checks run on individual projects."
+            ],
+            "dimensions": [
+              "staticcheck-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "File",
+            "uri": "dag+file://?file=staticcheck/binary",
+            "description": "The Staticcheck binary at the configured release."
+          },
+          {
+            "role": "collection",
+            "type": "StaticcheckProjects",
+            "uri": "dag+staticcheck-projects://?artifact-staticcheck-projects=staticcheck/projects",
+            "description": "Staticcheck projects at or below the working directory, keyed by the directory holding their staticcheck.conf. Projects the lint setting skips are left out unless includeSkipped."
+          },
+          {
+            "role": "function",
+            "object": "Staticcheck",
+            "function": "module",
+            "returns": "StaticcheckGoModule!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The Go module containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "Staticcheck",
+            "function": "project",
+            "returns": "StaticcheckProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The Staticcheck project containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "StaticcheckGoModule",
+            "function": "base",
+            "returns": "Container!",
+            "description": "Go container for this module, with Staticcheck installed."
+          },
+          {
+            "role": "function",
+            "object": "StaticcheckGoModule",
+            "function": "goVersion",
+            "returns": "String",
+            "description": "Go version this module is linted with. Null with a custom base."
+          },
+          {
+            "role": "function",
+            "object": "StaticcheckGoModule",
+            "function": "include",
+            "returns": "[String!]!",
+            "description": "All include patterns for this module's source."
+          },
+          {
+            "role": "function",
+            "object": "StaticcheckGoModule",
+            "function": "includeConfig",
+            "returns": "[String!]!",
+            "description": "Include patterns for Staticcheck configuration files."
+          },
+          {
+            "role": "function",
+            "object": "StaticcheckGoModule",
+            "function": "includeDiscovered",
+            "returns": "[String!]!",
+            "description": "Include patterns found by scanning Go directives and local replaces."
+          },
+          {
+            "role": "function",
+            "object": "StaticcheckGoModule",
+            "function": "source",
+            "returns": "Directory!",
+            "description": "Source mounted for this module's lint command."
+          },
+          {
+            "role": "function",
+            "object": "StaticcheckProject",
+            "function": "modules",
+            "returns": "[String!]!",
+            "description": "Roots of the Go modules this project lints.",
+            "dimensions": [
+              "staticcheck-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "StaticcheckProject",
+            "function": "skipLint",
+            "returns": "Boolean!",
+            "description": "Whether linting is skipped for this project.",
+            "dimensions": [
+              "staticcheck-project"
+            ]
           }
         ]
       }
@@ -82,6 +828,333 @@
             "glob": "**/deno.lock"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "560dc85049d2b7d3eac0970a003342540ae965a3",
+        "settings": [
+          {
+            "name": "version",
+            "type": "String",
+            "description": "Deno version for the default base image (denoland/deno:alpine-<version>)."
+          },
+          {
+            "name": "base",
+            "type": "Container",
+            "description": "Base container for Deno commands. Must have `deno` on PATH."
+          },
+          {
+            "name": "permissions",
+            "type": "String",
+            "description": "Permissions `test` and `compile` run with: \"config\" uses the deno.json permission sets (-P), \"all\" grants everything (-A), \"none\" grants nothing."
+          },
+          {
+            "name": "testArgs",
+            "type": "[String!]",
+            "description": "Extra `deno test` flags, e.g. [\"--doc\", \"--parallel\", \"--ignore=_tools/\"]."
+          },
+          {
+            "name": "typeCheckArgs",
+            "type": "[String!]",
+            "description": "Extra `deno check` flags, e.g. [\"--allow-import\"]."
+          },
+          {
+            "name": "typeCheckTargets",
+            "type": "[String!]",
+            "description": "What `type-check` checks, relative to each project or workspace root, e.g. [\"mod.ts\"]. The config's `exclude` still applies."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "deno-project",
+            "keyName": "path",
+            "itemType": "DenoProject"
+          },
+          {
+            "name": "deno-workspace",
+            "keyName": "path",
+            "itemType": "DenoWorkspace"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=deno/projects/format-check",
+            "description": "Check formatting of the selected Deno projects.",
+            "descriptions": [
+              "Check this project's formatting with `deno fmt --check`."
+            ],
+            "dimensions": [
+              "deno-project"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=deno/projects/format/stale",
+            "stale": true,
+            "description": "staleness check: format this project with `deno fmt`",
+            "dimensions": [
+              "deno-project"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=deno/projects/lint",
+            "description": "Lint the selected Deno projects.",
+            "descriptions": [
+              "Lint this project with `deno lint`."
+            ],
+            "dimensions": [
+              "deno-project"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=deno/projects/test",
+            "description": "Run this project's tests with `deno test`.",
+            "descriptions": [
+              "Run tests in the selected Deno projects."
+            ],
+            "dimensions": [
+              "deno-project"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=deno/projects/type-check",
+            "description": "Type-check this project with `deno check`.",
+            "descriptions": [
+              "Type-check the selected Deno projects."
+            ],
+            "dimensions": [
+              "deno-project"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=deno/workspaces/format-check",
+            "description": "Check formatting of every member of this workspace with `deno fmt --check`.",
+            "descriptions": [
+              "Check formatting of the selected Deno workspaces."
+            ],
+            "dimensions": [
+              "deno-workspace"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=deno/workspaces/format/stale",
+            "stale": true,
+            "description": "staleness check: format the selected Deno workspaces",
+            "dimensions": [
+              "deno-workspace"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=deno/workspaces/lint",
+            "description": "Lint every member of this workspace with `deno lint`.",
+            "descriptions": [
+              "Lint the selected Deno workspaces."
+            ],
+            "dimensions": [
+              "deno-workspace"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=deno/workspaces/test",
+            "description": "Run tests in every member of this workspace with `deno test`.",
+            "descriptions": [
+              "Run tests in the selected Deno workspaces."
+            ],
+            "dimensions": [
+              "deno-workspace"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=deno/workspaces/type-check",
+            "description": "Type-check every member of this workspace with `deno check`.",
+            "descriptions": [
+              "Type-check the selected Deno workspaces."
+            ],
+            "dimensions": [
+              "deno-workspace"
+            ]
+          },
+          {
+            "role": "generator",
+            "type": "Generator",
+            "uri": "dag+generator://?generator=deno/projects/format",
+            "description": "Format the selected Deno projects.",
+            "descriptions": [
+              "Format this project with `deno fmt`."
+            ],
+            "dimensions": [
+              "deno-project"
+            ]
+          },
+          {
+            "role": "generator",
+            "type": "Generator",
+            "uri": "dag+generator://?generator=deno/workspaces/format",
+            "description": "Format the selected Deno workspaces.",
+            "descriptions": [
+              "Format every member of this workspace with `deno fmt`."
+            ],
+            "dimensions": [
+              "deno-workspace"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=deno/base",
+            "description": "Base container for Deno commands. Must have `deno` on PATH."
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=deno/projects/container",
+            "description": "Container with the Deno toolchain and this project at the workdir.",
+            "dimensions": [
+              "deno-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=deno/workspaces/container",
+            "description": "Container with the Deno toolchain and the whole workspace at the workdir.",
+            "dimensions": [
+              "deno-workspace"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=deno/projects/source",
+            "description": "This project's source directory.",
+            "dimensions": [
+              "deno-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=deno/workspaces/source",
+            "description": "The workspace's source directory, members included.",
+            "dimensions": [
+              "deno-workspace"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "File",
+            "uri": "dag+file://?file=deno/projects/compile",
+            "description": "Compile a standalone executable with `deno compile`.",
+            "dimensions": [
+              "deno-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "File",
+            "uri": "dag+file://?file=deno/projects/config",
+            "description": "This project's deno.json / deno.jsonc file.",
+            "dimensions": [
+              "deno-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "File",
+            "uri": "dag+file://?file=deno/workspaces/config",
+            "description": "The workspace's root deno.json / deno.jsonc file.",
+            "dimensions": [
+              "deno-workspace"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "DenoProjects",
+            "uri": "dag+deno-projects://?artifact-deno-projects=deno/projects",
+            "description": "Standalone Deno projects at or around the working directory, keyed by project root."
+          },
+          {
+            "role": "collection",
+            "type": "DenoWorkspaces",
+            "uri": "dag+deno-workspaces://?artifact-deno-workspaces=deno/workspaces",
+            "description": "Deno workspaces at or around the working directory, keyed by workspace root."
+          },
+          {
+            "role": "function",
+            "object": "Deno",
+            "function": "install",
+            "returns": "Container!",
+            "args": [
+              {
+                "name": "ctr",
+                "type": "Container!"
+              }
+            ],
+            "description": "Install the Deno CLI and cache into a glibc-based container."
+          },
+          {
+            "role": "function",
+            "object": "Deno",
+            "function": "project",
+            "returns": "DenoProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The Deno project containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "Deno",
+            "function": "workspace",
+            "returns": "DenoWorkspace!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The Deno workspace containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "DenoWorkspace",
+            "function": "members",
+            "returns": "[DenoProject!]!",
+            "description": "The member projects below this workspace root.",
+            "dimensions": [
+              "deno-workspace"
+            ]
+          }
+        ]
       }
     },
     {
@@ -100,6 +1173,67 @@
           },
           {
             "glob": "**/eslint.config.*"
+          }
+        ]
+      },
+      "artifacts": {
+        "commit": "8cb42f9ed25b78147c02d65d05529c7ef418b800",
+        "settings": [
+          {
+            "name": "baseImageAddress",
+            "type": "String",
+            "description": "Container image with Node.js."
+          },
+          {
+            "name": "packageManager",
+            "type": "String",
+            "description": "Package manager: npm, pnpm, yarn or bun. Empty detects it from the packageManager field of package.json, then from the lockfile."
+          },
+          {
+            "name": "installFlags",
+            "type": "[String!]",
+            "description": "Extra arguments for the dependency install command, e.g. [\"--ignore-scripts\"]."
+          },
+          {
+            "name": "environment",
+            "type": "[String!]",
+            "description": "Environment variables for ESLint, as KEY=VALUE."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "eslint-project",
+            "keyName": "path",
+            "itemType": "EslintProject"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=eslint/projects/lint",
+            "description": "Lint this project.",
+            "descriptions": [
+              "Lint the selected projects."
+            ],
+            "dimensions": [
+              "eslint-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Changeset",
+            "uri": "dag+changeset://?changeset=eslint/projects/fix",
+            "description": "Fix linting issues in this project. Problems ESLint cannot fix are left for lint to report.",
+            "dimensions": [
+              "eslint-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "EslintProjects",
+            "uri": "dag+eslint-projects://?artifact-eslint-projects=eslint/projects",
+            "description": "ESLint projects at or below the working directory, keyed by config root."
           }
         ]
       }
@@ -122,6 +1256,83 @@
             "glob": "**/prettier.config.*"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "c9b4c3622c3e161903f497c4a7bb5140437de4a7",
+        "settings": [
+          {
+            "name": "baseImageAddress",
+            "type": "String",
+            "description": "Base image for Prettier containers, e.g. \"node:22\"."
+          },
+          {
+            "name": "packageManager",
+            "type": "String",
+            "description": "Package manager that installs dependencies: npm, yarn, pnpm or bun. Empty detects it from package.json's packageManager field, else the lockfile, else npm."
+          },
+          {
+            "name": "installFlags",
+            "type": "[String!]",
+            "description": "Extra arguments for the install command, e.g. [\"--ignore-scripts\"]."
+          },
+          {
+            "name": "environment",
+            "type": "[String!]",
+            "description": "Environment variables for Prettier, as KEY=VALUE."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "prettier-project",
+            "keyName": "path",
+            "itemType": "PrettierProject"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=prettier/projects/format-check",
+            "description": "Check formatting of this project.",
+            "descriptions": [
+              "Check formatting of the selected projects."
+            ],
+            "dimensions": [
+              "prettier-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Changeset",
+            "uri": "dag+changeset://?changeset=prettier/projects/format",
+            "description": "Format this project.",
+            "descriptions": [
+              "Format the selected projects."
+            ],
+            "dimensions": [
+              "prettier-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "PrettierProjects",
+            "uri": "dag+prettier-projects://?artifact-prettier-projects=prettier/projects",
+            "description": "Prettier projects at or below the working directory, keyed by config root."
+          },
+          {
+            "role": "function",
+            "object": "Prettier",
+            "function": "project",
+            "returns": "PrettierProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              }
+            ],
+            "description": "The Prettier project containing a workspace path."
+          }
+        ]
       }
     },
     {
@@ -137,6 +1348,181 @@
         "anyOf": [
           {
             "glob": "**/jest.config.*"
+          }
+        ]
+      },
+      "artifacts": {
+        "commit": "362b0aa64a773fb78bac6910cbcea3b120d4c934",
+        "settings": [
+          {
+            "name": "baseImageAddress",
+            "type": "String",
+            "description": "The base image to use."
+          },
+          {
+            "name": "packageManager",
+            "type": "String",
+            "description": "Package manager to install with (npm, pnpm, yarn or bun). Empty detects it from package.json's \"packageManager\" field or the lockfile."
+          },
+          {
+            "name": "build",
+            "type": "Boolean",
+            "description": "Run the package's build script before testing."
+          },
+          {
+            "name": "useEnv",
+            "type": "Boolean",
+            "description": "Use the Jest environment configured by the project instead of injecting the Dagger register hook."
+          },
+          {
+            "name": "flags",
+            "type": "[String!]",
+            "description": "Extra flags passed to every jest run."
+          },
+          {
+            "name": "installFlags",
+            "type": "[String!]",
+            "description": "Extra flags appended to the install command, e.g. [\"--ignore-scripts\"]."
+          },
+          {
+            "name": "environment",
+            "type": "[String!]",
+            "description": "Environment variables for the build and test steps, as KEY=VALUE."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "jest-project",
+            "keyName": "path",
+            "itemType": "JestProject"
+          },
+          {
+            "name": "jest-test",
+            "keyName": "name",
+            "itemType": "JestTest"
+          },
+          {
+            "name": "jest-test-file",
+            "keyName": "path",
+            "itemType": "JestTestFile"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=jest/projects/test-files/tests/test",
+            "description": "Run this test.",
+            "descriptions": [
+              "Run the selected tests."
+            ],
+            "dimensions": [
+              "jest-project",
+              "jest-test-file",
+              "jest-test"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=jest/projects/source",
+            "description": "Source directory of this project.",
+            "dimensions": [
+              "jest-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "JestProjects",
+            "uri": "dag+jest-projects://?artifact-jest-projects=jest/projects",
+            "description": "Jest projects at or below the working directory, plus the enclosing one, keyed by project root."
+          },
+          {
+            "role": "collection",
+            "type": "JestTestFiles",
+            "uri": "dag+jest-test-files://?artifact-jest-test-files=jest/projects/test-files",
+            "description": "Test files in this project, keyed by project-relative path.",
+            "dimensions": [
+              "jest-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "JestTests",
+            "uri": "dag+jest-tests://?artifact-jest-tests=jest/projects/test-files/tests",
+            "description": "Tests this file declares, keyed by the name Jest calls them by.",
+            "dimensions": [
+              "jest-project",
+              "jest-test-file"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "JestProject",
+            "function": "installRoot",
+            "returns": "String",
+            "description": "Where dependencies are installed: the nearest workspace root at or above this project (pnpm-workspace.yaml, or a package.json with \"workspaces\"), else the nearest lockfile's directory, else the nearest package.json's. Null when there is no package.json at or above the project.",
+            "dimensions": [
+              "jest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "JestProject",
+            "function": "list",
+            "returns": "String",
+            "description": "List the tests Jest finds in this project.",
+            "dimensions": [
+              "jest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "JestProject",
+            "function": "packageManager",
+            "returns": "String!",
+            "description": "The package manager: the packageManager setting, else the one the install root's package.json names in \"packageManager\", else the one its lockfile belongs to, else npm.",
+            "dimensions": [
+              "jest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "JestProject",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run tests in this project.",
+            "dimensions": [
+              "jest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "JestProjects",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run tests in the selected Jest projects."
+          },
+          {
+            "role": "function",
+            "object": "JestTestFile",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run every test in this file.",
+            "dimensions": [
+              "jest-project",
+              "jest-test-file"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "JestTestFiles",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run the selected test files in this project.",
+            "dimensions": [
+              "jest-project"
+            ]
           }
         ]
       }
@@ -160,6 +1546,161 @@
             "jsonKey": "mocha"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "43be82bc4f56d085e9a066247f5747b8e4cef292",
+        "settings": [
+          {
+            "name": "baseImageAddress",
+            "type": "String",
+            "description": "Base image for Mocha containers, e.g. \"node:22\"."
+          },
+          {
+            "name": "packageManager",
+            "type": "String",
+            "description": "Package manager that installs dependencies: npm, yarn, pnpm or bun. Empty detects it from package.json's packageManager field, else the lockfile, else npm."
+          },
+          {
+            "name": "build",
+            "type": "Boolean",
+            "description": "Run the package's build script before testing."
+          },
+          {
+            "name": "flags",
+            "type": "[String!]",
+            "description": "Extra flags passed to mocha, e.g. [\"--exit\"]."
+          },
+          {
+            "name": "installFlags",
+            "type": "[String!]",
+            "description": "Extra arguments for the install command, e.g. [\"--ignore-scripts\"]."
+          },
+          {
+            "name": "environment",
+            "type": "[String!]",
+            "description": "Environment variables for Mocha, as KEY=VALUE."
+          },
+          {
+            "name": "timeout",
+            "type": "Int",
+            "description": "Seconds a Mocha run may take before it is stopped and fails; 0 for no limit."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "mochajs-project",
+            "keyName": "path",
+            "itemType": "MochajsProject"
+          },
+          {
+            "name": "mochajs-test",
+            "keyName": "title",
+            "itemType": "MochajsTest"
+          },
+          {
+            "name": "mochajs-test-file",
+            "keyName": "path",
+            "itemType": "MochajsTestFile"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=mochajs/projects/test-files/tests/test",
+            "description": "Run this test.",
+            "descriptions": [
+              "Run the selected tests of this file."
+            ],
+            "dimensions": [
+              "mochajs-project",
+              "mochajs-test-file",
+              "mochajs-test"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=mochajs/projects/source",
+            "description": "The source directory of this project.",
+            "dimensions": [
+              "mochajs-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "MochajsProjects",
+            "uri": "dag+mochajs-projects://?artifact-mochajs-projects=mochajs/projects",
+            "description": "Mocha projects visible from the working directory, keyed by project root."
+          },
+          {
+            "role": "collection",
+            "type": "MochajsTestFiles",
+            "uri": "dag+mochajs-test-files://?artifact-mochajs-test-files=mochajs/projects/test-files",
+            "description": "Test files in this project, keyed by project-relative path.",
+            "dimensions": [
+              "mochajs-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "MochajsTests",
+            "uri": "dag+mochajs-tests://?artifact-mochajs-tests=mochajs/projects/test-files/tests",
+            "description": "The tests in this file, keyed by the full title Mocha reports.",
+            "dimensions": [
+              "mochajs-project",
+              "mochajs-test-file"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "MochajsProject",
+            "function": "list",
+            "returns": "String!",
+            "description": "List the tests of this project.",
+            "dimensions": [
+              "mochajs-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "MochajsProject",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run this project's tests.",
+            "dimensions": [
+              "mochajs-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "MochajsProjects",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run tests in the selected Mocha projects."
+          },
+          {
+            "role": "function",
+            "object": "MochajsTestFile",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run the Mocha tests in a test file. A plain function, not a check: the tests collection below it holds the check.",
+            "dimensions": [
+              "mochajs-project",
+              "mochajs-test-file"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "MochajsTestFiles",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run the selected test files in this project. A plain function, not a check: the tests of each file are a collection of their own, and its check runs them, so dagger check does not run the same tests twice.",
+            "dimensions": [
+              "mochajs-project"
+            ]
+          }
+        ]
       }
     },
     {
@@ -175,6 +1716,174 @@
         "anyOf": [
           {
             "glob": "**/vitest.config.*"
+          }
+        ]
+      },
+      "artifacts": {
+        "commit": "a728bbaaa5b739f7f19404bccbd6b05362ffcbbd",
+        "settings": [
+          {
+            "name": "baseImageAddress",
+            "type": "String",
+            "description": "The base image to use."
+          },
+          {
+            "name": "packageManager",
+            "type": "String",
+            "description": "Package manager that installs dependencies: npm, yarn, pnpm or bun. Empty detects it from package.json's packageManager field, else the lockfile, else npm."
+          },
+          {
+            "name": "includeExtraFiles",
+            "type": "[String!]",
+            "description": "Extra workspace-root include patterns mounted alongside the project directory, at their workspace-relative paths, so relative imports that escape the project resolve as they do on disk. Use this for fixtures or schemas shared with code elsewhere in a monorepo, e.g. [\"testdata/**\", \"schema/*.json\"]."
+          },
+          {
+            "name": "build",
+            "type": "Boolean",
+            "description": "Run the package manager's build script before the tests."
+          },
+          {
+            "name": "flags",
+            "type": "[String!]",
+            "description": "Flags to pass to every vitest run."
+          },
+          {
+            "name": "installFlags",
+            "type": "[String!]",
+            "description": "Flags appended to the install command, e.g. [\"--ignore-scripts\"]."
+          },
+          {
+            "name": "environment",
+            "type": "[String!]",
+            "description": "Environment variables for the install and the tests, as KEY=VALUE."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "vitest-project",
+            "keyName": "path",
+            "itemType": "VitestProject"
+          },
+          {
+            "name": "vitest-test",
+            "keyName": "name",
+            "itemType": "VitestTest"
+          },
+          {
+            "name": "vitest-test-file",
+            "keyName": "path",
+            "itemType": "VitestTestFile"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=vitest/projects/test-files/tests/test",
+            "description": "Run this test.",
+            "descriptions": [
+              "Run the selected tests of this file."
+            ],
+            "dimensions": [
+              "vitest-project",
+              "vitest-test-file",
+              "vitest-test"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=vitest/projects/source",
+            "description": "This project's source directory.",
+            "dimensions": [
+              "vitest-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "VitestProjects",
+            "uri": "dag+vitest-projects://?artifact-vitest-projects=vitest/projects",
+            "description": "Vitest projects at or below the working directory, keyed by project root."
+          },
+          {
+            "role": "collection",
+            "type": "VitestTestFiles",
+            "uri": "dag+vitest-test-files://?artifact-vitest-test-files=vitest/projects/test-files",
+            "description": "Test files in this project, keyed by project-relative path.",
+            "dimensions": [
+              "vitest-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "VitestTests",
+            "uri": "dag+vitest-tests://?artifact-vitest-tests=vitest/projects/test-files/tests",
+            "description": "Tests in this file, keyed by full name.",
+            "dimensions": [
+              "vitest-project",
+              "vitest-test-file"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "Vitest",
+            "function": "project",
+            "returns": "VitestProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              }
+            ],
+            "description": "The Vitest project rooted at path, relative to the working directory."
+          },
+          {
+            "role": "function",
+            "object": "VitestProject",
+            "function": "list",
+            "returns": "String",
+            "description": "List this project's tests.",
+            "dimensions": [
+              "vitest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "VitestProject",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run this project's tests.",
+            "dimensions": [
+              "vitest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "VitestProjects",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run the tests of the selected Vitest projects."
+          },
+          {
+            "role": "function",
+            "object": "VitestTestFile",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run this test file.",
+            "dimensions": [
+              "vitest-project",
+              "vitest-test-file"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "VitestTestFiles",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run the selected test files in this project.",
+            "dimensions": [
+              "vitest-project"
+            ]
           }
         ]
       }
@@ -209,6 +1918,191 @@
             "iniSection": "tool:pytest"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "561bbcfc2552cbd544141803bce764209c22d078",
+        "settings": [
+          {
+            "name": "version",
+            "type": "String",
+            "description": "Python version used for the default base image. Mutually exclusive with base."
+          },
+          {
+            "name": "base",
+            "type": "Container",
+            "description": "Base image for every pytest container. Expected to provide a Python interpreter and uv on PATH. Mutually exclusive with version."
+          },
+          {
+            "name": "scope",
+            "type": "[String!]",
+            "description": "Project roots to test. A bare pattern selects, a \"!\"-prefixed pattern excludes, and an exclude always wins whatever the order, so [\"**\", \"!docs\"] tests everything but docs."
+          },
+          {
+            "name": "args",
+            "type": "[String!]",
+            "description": "Extra arguments forwarded to pytest."
+          },
+          {
+            "name": "defaultVersion",
+            "type": "String",
+            "description": "pytest version used for a project that pins none of its own."
+          },
+          {
+            "name": "tracing",
+            "type": "Boolean",
+            "description": "Whether to load the bundled OpenTelemetry plugin."
+          },
+          {
+            "name": "nesting",
+            "type": "Boolean",
+            "description": "Whether tests may talk to a nested Dagger engine. Turn it off to run test code you do not trust."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "pytest-project",
+            "keyName": "path",
+            "itemType": "PytestProject"
+          },
+          {
+            "name": "pytest-test-file",
+            "keyName": "path",
+            "itemType": "PytestTestFile"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=pytest/projects/tests/test",
+            "description": "Run this test file.",
+            "descriptions": [
+              "Run the selected test files in this project."
+            ],
+            "dimensions": [
+              "pytest-project",
+              "pytest-test-file"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=pytest/pytest-otel",
+            "description": "The bundled dagger-pytest-otel plugin, for a caller wiring up its own container."
+          },
+          {
+            "role": "collection",
+            "type": "PytestProjects",
+            "uri": "dag+pytest-projects://?artifact-pytest-projects=pytest/projects",
+            "description": "Python projects at or below the working directory, plus the one enclosing it, that hold test files of their own, keyed by project root."
+          },
+          {
+            "role": "collection",
+            "type": "PytestTestFiles",
+            "uri": "dag+pytest-test-files://?pytest-test-files=pytest/projects/tests",
+            "description": "Test files in this project, keyed by project-relative path. Empty when the project is outside the configured scope.",
+            "dimensions": [
+              "pytest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "Pytest",
+            "function": "hasTests",
+            "returns": "Boolean!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              }
+            ],
+            "description": "Whether a project holds test files of its own, rather than only in a project nested inside it."
+          },
+          {
+            "role": "function",
+            "object": "Pytest",
+            "function": "project",
+            "returns": "PytestProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The pytest project containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "Pytest",
+            "function": "version",
+            "returns": "String",
+            "description": "Python version used for the default base image. Null when a custom base is set."
+          },
+          {
+            "role": "function",
+            "object": "Pytest",
+            "function": "versionFor",
+            "returns": "String!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              }
+            ],
+            "description": "The pytest version used for a project: what it pins, else the default."
+          },
+          {
+            "role": "function",
+            "object": "PytestProject",
+            "function": "hasTests",
+            "returns": "Boolean!",
+            "description": "Whether this project holds test files of its own, rather than only in a project nested inside it.",
+            "dimensions": [
+              "pytest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "PytestProject",
+            "function": "skip",
+            "returns": "Boolean!",
+            "description": "Whether this project is outside the configured scope.",
+            "dimensions": [
+              "pytest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "PytestProject",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run this project's tests.",
+            "dimensions": [
+              "pytest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "PytestProject",
+            "function": "version",
+            "returns": "String!",
+            "description": "The pytest version this project is tested with: what it pins, else the module default.",
+            "dimensions": [
+              "pytest-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "PytestProjects",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run the tests of the selected projects."
+          }
+        ]
       }
     },
     {
@@ -237,6 +2131,140 @@
             "iniSection": "mypy"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "561bbcfc2552cbd544141803bce764209c22d078",
+        "settings": [
+          {
+            "name": "version",
+            "type": "String",
+            "description": "Python version used for the default base image. Mutually exclusive with base."
+          },
+          {
+            "name": "base",
+            "type": "Container",
+            "description": "Base image for every mypy container. Expected to provide a Python interpreter and uv on PATH. Mutually exclusive with version."
+          },
+          {
+            "name": "scope",
+            "type": "[String!]",
+            "description": "Project roots to check. A bare pattern selects, a \"!\"-prefixed pattern excludes, and an exclude always wins whatever the order, so [\"**\", \"!docs\"] checks everything but docs."
+          },
+          {
+            "name": "defaultVersion",
+            "type": "String",
+            "description": "mypy version used for a project that pins none of its own."
+          },
+          {
+            "name": "args",
+            "type": "[String!]",
+            "description": "Extra arguments forwarded to every mypy invocation."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "mypy-project",
+            "keyName": "path",
+            "itemType": "MypyProject"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=mypy/projects/type-check",
+            "description": "Type check this project with mypy.",
+            "descriptions": [
+              "Type check the selected projects with mypy."
+            ],
+            "dimensions": [
+              "mypy-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "MypyProjects",
+            "uri": "dag+mypy-projects://?artifact-mypy-projects=mypy/projects",
+            "description": "Python projects at or below the working directory, plus the one enclosing it, that hold Python source of their own, keyed by project root."
+          },
+          {
+            "role": "function",
+            "object": "Mypy",
+            "function": "project",
+            "returns": "MypyProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The mypy project containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "Mypy",
+            "function": "version",
+            "returns": "String",
+            "description": "Python version used for the default base image. Null when a custom base is set."
+          },
+          {
+            "role": "function",
+            "object": "Mypy",
+            "function": "versionFor",
+            "returns": "String!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              }
+            ],
+            "description": "The mypy version used for a project: what it pins, else the default."
+          },
+          {
+            "role": "function",
+            "object": "MypyProject",
+            "function": "configuresFiles",
+            "returns": "Boolean!",
+            "description": "Whether this project's mypy config names the files to check with `files`. mypy reads the first of mypy.ini, .mypy.ini, pyproject.toml ([tool.mypy]) and setup.cfg ([mypy]) that configures it, and so does this.",
+            "dimensions": [
+              "mypy-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "MypyProject",
+            "function": "hasSources",
+            "returns": "Boolean!",
+            "description": "Whether this project holds Python source of its own, rather than only in a project nested inside it.",
+            "dimensions": [
+              "mypy-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "MypyProject",
+            "function": "skip",
+            "returns": "Boolean!",
+            "description": "Whether this project is outside the configured scope.",
+            "dimensions": [
+              "mypy-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "MypyProject",
+            "function": "version",
+            "returns": "String!",
+            "description": "The mypy version this project is checked with: what it pins, else the module default.",
+            "dimensions": [
+              "mypy-project"
+            ]
+          }
+        ]
       }
     },
     {
@@ -261,6 +2289,147 @@
             "tomlTable": "tool.ruff"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "561bbcfc2552cbd544141803bce764209c22d078",
+        "settings": [
+          {
+            "name": "scope",
+            "type": "[String!]",
+            "description": "Project roots to check. A bare pattern selects, a \"!\"-prefixed pattern excludes, and an exclude always wins whatever the order, so [\"**\", \"!docs\"] checks everything but docs."
+          },
+          {
+            "name": "args",
+            "type": "[String!]",
+            "description": "Extra arguments forwarded to every ruff invocation."
+          },
+          {
+            "name": "container",
+            "type": "Container",
+            "description": "Base image for every ruff container. Expected to have ruff on PATH. No Python interpreter is needed or used."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "ruff-project",
+            "keyName": "path",
+            "itemType": "RuffProject"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=ruff/projects/format/stale",
+            "stale": true,
+            "description": "staleness check: format this project with ruff",
+            "dimensions": [
+              "ruff-project"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=ruff/projects/lint",
+            "description": "Lint this project with ruff.",
+            "descriptions": [
+              "Lint the selected projects with ruff."
+            ],
+            "dimensions": [
+              "ruff-project"
+            ]
+          },
+          {
+            "role": "generator",
+            "type": "Generator",
+            "uri": "dag+generator://?generator=ruff/projects/format",
+            "description": "Format this project with ruff.",
+            "descriptions": [
+              "Format the selected projects with ruff."
+            ],
+            "dimensions": [
+              "ruff-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Changeset",
+            "uri": "dag+changeset://?changeset=ruff/projects/fix",
+            "description": "Apply ruff's automatic lint fixes to this project.",
+            "descriptions": [
+              "Apply ruff's automatic lint fixes to the selected projects."
+            ],
+            "dimensions": [
+              "ruff-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=ruff/base",
+            "description": "The base a project that pins no ruff runs on: the custom container, or Alpine with the bundled binary, and a cache either way."
+          },
+          {
+            "role": "collection",
+            "type": "RuffProjects",
+            "uri": "dag+ruff-projects://?artifact-ruff-projects=ruff/projects",
+            "description": "Python projects at or below the working directory, plus the one enclosing it, keyed by project root."
+          },
+          {
+            "role": "function",
+            "object": "Ruff",
+            "function": "project",
+            "returns": "RuffProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The ruff project containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "Ruff",
+            "function": "version",
+            "returns": "String!",
+            "description": "The version of the ruff a project that pins none runs: the bundled binary, or the custom container's. See a project's own `version` for what it runs."
+          },
+          {
+            "role": "function",
+            "object": "RuffProject",
+            "function": "pinnedVersion",
+            "returns": "String",
+            "description": "The ruff release this project pins in uv.lock or with an exact required-version, or null when it pins none. With none, the bundled release runs, provided it satisfies any required-version range.",
+            "dimensions": [
+              "ruff-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "RuffProject",
+            "function": "skip",
+            "returns": "Boolean!",
+            "description": "Whether this project is outside the configured scope.",
+            "dimensions": [
+              "ruff-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "RuffProject",
+            "function": "version",
+            "returns": "String!",
+            "description": "The version of the ruff that runs on this project.",
+            "dimensions": [
+              "ruff-project"
+            ]
+          }
+        ]
       }
     },
     {
@@ -280,6 +2449,130 @@
           {
             "glob": "**/pyproject.toml",
             "tomlTable": "tool.ty"
+          }
+        ]
+      },
+      "artifacts": {
+        "commit": "561bbcfc2552cbd544141803bce764209c22d078",
+        "settings": [
+          {
+            "name": "version",
+            "type": "String",
+            "description": "Python version used for the default base image. Mutually exclusive with base."
+          },
+          {
+            "name": "base",
+            "type": "Container",
+            "description": "Base image for every ty container. Expected to provide a Python interpreter and uv on PATH. Mutually exclusive with version."
+          },
+          {
+            "name": "scope",
+            "type": "[String!]",
+            "description": "Project roots to check. A bare pattern selects, a \"!\"-prefixed pattern excludes, and an exclude always wins whatever the order, so [\"**\", \"!docs\"] checks everything but docs."
+          },
+          {
+            "name": "defaultVersion",
+            "type": "String",
+            "description": "ty version used for a project that pins none of its own."
+          },
+          {
+            "name": "args",
+            "type": "[String!]",
+            "description": "Extra arguments forwarded to every ty invocation."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "ty-project",
+            "keyName": "path",
+            "itemType": "TyProject"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=ty/projects/type-check",
+            "description": "Type check this project with ty.",
+            "descriptions": [
+              "Type check the selected projects with ty."
+            ],
+            "dimensions": [
+              "ty-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "TyProjects",
+            "uri": "dag+ty-projects://?artifact-ty-projects=ty/projects",
+            "description": "Python projects at or below the working directory, plus the one enclosing it, that hold Python source of their own, keyed by project root."
+          },
+          {
+            "role": "function",
+            "object": "Ty",
+            "function": "project",
+            "returns": "TyProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The ty project containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "Ty",
+            "function": "version",
+            "returns": "String",
+            "description": "Python version used for the default base image. Null when a custom base is set."
+          },
+          {
+            "role": "function",
+            "object": "Ty",
+            "function": "versionFor",
+            "returns": "String!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              }
+            ],
+            "description": "The ty version used for a project: what it pins, else the default."
+          },
+          {
+            "role": "function",
+            "object": "TyProject",
+            "function": "hasSources",
+            "returns": "Boolean!",
+            "description": "Whether this project holds Python source of its own, rather than only in a project nested inside it.",
+            "dimensions": [
+              "ty-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "TyProject",
+            "function": "skip",
+            "returns": "Boolean!",
+            "description": "Whether this project is outside the configured scope.",
+            "dimensions": [
+              "ty-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "TyProject",
+            "function": "version",
+            "returns": "String!",
+            "description": "The ty version this project is checked with: what it pins, else the module default.",
+            "dimensions": [
+              "ty-project"
+            ]
           }
         ]
       }
@@ -306,6 +2599,151 @@
             "tomlTable": "tool.uv"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "561bbcfc2552cbd544141803bce764209c22d078",
+        "settings": [
+          {
+            "name": "version",
+            "type": "String",
+            "description": "Python version used for the default base image. Mutually exclusive with base."
+          },
+          {
+            "name": "base",
+            "type": "Container",
+            "description": "Base image for every uv container. Expected to provide a Python interpreter and uv on PATH. Mutually exclusive with version."
+          },
+          {
+            "name": "lock",
+            "type": "[String!]",
+            "description": "Project roots to lock. A bare pattern selects, a \"!\"-prefixed pattern excludes, and an exclude always wins whatever the order, so [\"**\", \"!docs\"] locks everything but docs."
+          },
+          {
+            "name": "audit",
+            "type": "[String!]",
+            "description": "Project roots to audit. Same selection rules as `lock`."
+          },
+          {
+            "name": "auditArgs",
+            "type": "[String!]",
+            "description": "Extra arguments for `uv audit`, e.g. [\"--no-dev\"] to leave development dependency groups out, or [\"--no-group\", \"typing\"] for one group."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "uv-project",
+            "keyName": "path",
+            "itemType": "UvProject"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=uv/projects/audit",
+            "description": "Audit this project's dependencies for known vulnerabilities.",
+            "descriptions": [
+              "Audit the selected projects' dependencies for known vulnerabilities."
+            ],
+            "dimensions": [
+              "uv-project"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=uv/projects/lock/stale",
+            "stale": true,
+            "description": "staleness check: refresh this project's uv.lock",
+            "dimensions": [
+              "uv-project"
+            ]
+          },
+          {
+            "role": "generator",
+            "type": "Generator",
+            "uri": "dag+generator://?generator=uv/projects/lock",
+            "description": "Refresh this project's uv.lock.",
+            "descriptions": [
+              "Refresh the selected projects' uv.lock."
+            ],
+            "dimensions": [
+              "uv-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=uv/projects/build",
+            "description": "Build this project's wheel and sdist, and return the dist directory.",
+            "descriptions": [
+              "Build the selected projects' wheels and sdists, each under its project root."
+            ],
+            "dimensions": [
+              "uv-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "UvProjects",
+            "uri": "dag+uv-projects://?artifact-uv-projects=uv/projects",
+            "description": "Python projects at or below the working directory, plus the one enclosing it, that have a uv.lock, keyed by project root."
+          },
+          {
+            "role": "function",
+            "object": "Uv",
+            "function": "project",
+            "returns": "UvProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              },
+              {
+                "name": "findUp",
+                "type": "Boolean"
+              }
+            ],
+            "description": "The uv project containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "Uv",
+            "function": "version",
+            "returns": "String",
+            "description": "Python version used for the default base image. Null when a custom base is set."
+          },
+          {
+            "role": "function",
+            "object": "UvProject",
+            "function": "hasLockfile",
+            "returns": "Boolean!",
+            "description": "Whether this project has a uv.lock.",
+            "dimensions": [
+              "uv-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "UvProject",
+            "function": "skipAudit",
+            "returns": "Boolean!",
+            "description": "Whether this project is outside the configured audit selection.",
+            "dimensions": [
+              "uv-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "UvProject",
+            "function": "skipLock",
+            "returns": "Boolean!",
+            "description": "Whether this project is outside the configured lock selection.",
+            "dimensions": [
+              "uv-project"
+            ]
+          }
+        ]
       }
     },
     {
@@ -321,6 +2759,69 @@
         "anyOf": [
           {
             "glob": "**/biome.json*"
+          }
+        ]
+      },
+      "artifacts": {
+        "commit": "03db7bbf81087918657205c1eace20dfff7e29b3",
+        "settings": [
+          {
+            "name": "baseImageAddress",
+            "type": "String!",
+            "description": "Base image for Biome containers. It must provide Node.js and npm.",
+            "default": "\"node:25-alpine@sha256:f4769ca6eeb6ebbd15eb9c8233afed856e437b75f486f7fccaa81d7c8ad56007\""
+          },
+          {
+            "name": "packageManager",
+            "type": "String!",
+            "description": "Package manager that installs dependencies: npm, yarn, pnpm or bun. Empty detects it from package.json's packageManager field, else the lockfile, else npm.",
+            "default": "\"\""
+          },
+          {
+            "name": "installFlags",
+            "type": "[String!]",
+            "description": "Extra arguments for the install command, e.g. [\"--ignore-scripts\"]."
+          },
+          {
+            "name": "environment",
+            "type": "[String!]",
+            "description": "Environment variables for Biome, as KEY=VALUE."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "biomejs-biome-project",
+            "keyName": "path",
+            "itemType": "BiomejsBiomeProject"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=biomejs/projects/lint",
+            "description": "Lint this project.",
+            "descriptions": [
+              "Lint the selected Biome projects."
+            ],
+            "dimensions": [
+              "biomejs-biome-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Changeset",
+            "uri": "dag+changeset://?changeset=biomejs/projects/fix",
+            "description": "Apply Biome's safe fixes to this project and return the changes.",
+            "dimensions": [
+              "biomejs-biome-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "BiomejsBiomeProjects",
+            "uri": "dag+biomejs-biome-projects://?biomejs-biome-projects=biomejs/projects",
+            "description": "Biome projects at or below the working directory, keyed by project root."
           }
         ]
       }
@@ -340,6 +2841,219 @@
             "glob": "**/playwright.config.*"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "94bb0794cf08d5321c77d3714fb7b480cacf7d6b",
+        "settings": [
+          {
+            "name": "baseCtr",
+            "type": "Container",
+            "description": "Base container to use instead of the derived Playwright image (wireable: settings.baseCtr = \"<module>:<function>\" for any Container-returning function). `npx playwright` must work inside it after dependency install."
+          },
+          {
+            "name": "service",
+            "type": "Service",
+            "description": "Service to run tests against (wireable: settings.service = \"<module>:<function>\" for any Service-returning function). Bound as `serviceHostname`; PLAYWRIGHT_BASE_URL is set to its first exposed port. Omit it when your playwright.config uses its own webServer."
+          },
+          {
+            "name": "serviceHostname",
+            "type": "String",
+            "description": "Hostname the service is bound as inside the test container."
+          },
+          {
+            "name": "baseImageAddress",
+            "type": "String",
+            "description": "Playwright image to run tests in. Empty (default) derives mcr.microsoft.com/playwright:v<version>-noble from each project's @playwright/test dependency. The image's browsers must match that version."
+          },
+          {
+            "name": "packageManager",
+            "type": "String",
+            "description": "Package manager used to install dependencies (npm, yarn, pnpm, bun). Empty (default) detects it from the install root's package.json \"packageManager\" field, else its lockfile, else npm."
+          },
+          {
+            "name": "installFlags",
+            "type": "[String!]",
+            "description": "Extra arguments appended to the install command (e.g. [\"--ignore-scripts\"])."
+          },
+          {
+            "name": "environment",
+            "type": "[String!]",
+            "description": "Environment variables set in the test containers, as KEY=VALUE (e.g. [\"DEBUG=pw:api\"])."
+          },
+          {
+            "name": "localhostProxy",
+            "type": "Boolean",
+            "description": "Proxy localhost:<port> to the bound service via socat, and set PLAYWRIGHT_LOCALHOST_BASE_URL. For tests that need a secure context (service workers, WebCrypto) — those require a localhost or HTTPS origin. Requires an apt-based base image (the default images qualify)."
+          },
+          {
+            "name": "args",
+            "type": "[String!]",
+            "description": "Extra arguments passed to every `playwright test` invocation (e.g. [\"--project\", \"chromium\"])."
+          },
+          {
+            "name": "reporters",
+            "type": "[String!]",
+            "description": "Playwright reporters every run uses, in place of the config's: built-in names, paths relative to the project, or installed packages (e.g. [\"list\", \"junit\"]). The telemetry reporter is always added. The flag can't carry reporter options; built-in reporters read theirs from environment variables such as PLAYWRIGHT_JUNIT_OUTPUT_FILE (see `environment`). When none of them prints to the terminal, Playwright adds the dot reporter."
+          },
+          {
+            "name": "shards",
+            "type": "Int",
+            "description": "Number of parallel test shards each project's tests run in."
+          },
+          {
+            "name": "setup",
+            "type": "[String!]",
+            "description": "Shell commands run in the project directory after dependencies are installed and the full source is in place, before the tests (e.g. [\"pnpm --filter @my/lib build\"] to build workspace packages the tests import)."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "playwright-project",
+            "keyName": "path",
+            "itemType": "PlaywrightProject"
+          },
+          {
+            "name": "playwright-test-file",
+            "keyName": "path",
+            "itemType": "PlaywrightTestFile"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=playwright/projects/tests/test",
+            "description": "Run this test file.",
+            "descriptions": [
+              "Run the selected test files in this project."
+            ],
+            "dimensions": [
+              "playwright-project",
+              "playwright-test-file"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=playwright/projects/base",
+            "description": "The test container: workspace mounted, dependencies installed, service bound.",
+            "dimensions": [
+              "playwright-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=playwright/projects/report",
+            "description": "HTML report from running this project's tests, tolerating failures.",
+            "dimensions": [
+              "playwright-project"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "PlaywrightProjects",
+            "uri": "dag+playwright-projects://?artifact-playwright-projects=playwright/projects",
+            "description": "Playwright projects at or below the working directory, keyed by config directory."
+          },
+          {
+            "role": "collection",
+            "type": "PlaywrightTestFiles",
+            "uri": "dag+playwright-test-files://?playwright-test-files=playwright/projects/tests",
+            "description": "Test files in this project, keyed by project-relative path.",
+            "dimensions": [
+              "playwright-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "Playwright",
+            "function": "project",
+            "returns": "PlaywrightProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!",
+                "description": "A directory at or below the project's playwright.config, relative to the working directory (absolute paths resolve from the workspace root)."
+              }
+            ],
+            "description": "The Playwright project containing a workspace path."
+          },
+          {
+            "role": "function",
+            "object": "PlaywrightProject",
+            "function": "imageAddress",
+            "returns": "String!",
+            "description": "The Playwright image this project's tests run in: baseImageAddress when set, else the image for playwrightVersion, else the module's pinned default.",
+            "dimensions": [
+              "playwright-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "PlaywrightProject",
+            "function": "installDir",
+            "returns": "String",
+            "description": "Where dependencies are installed, relative to the workspace root: the nearest workspace root at or above the project (pnpm-workspace.yaml, or a package.json with \"workspaces\"), else the nearest lockfile, else the nearest package.json. Null when there is none: the install is skipped and npx fetches Playwright on demand.",
+            "dimensions": [
+              "playwright-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "PlaywrightProject",
+            "function": "packageManager",
+            "returns": "String!",
+            "description": "The package manager dependencies are installed with: the packageManager setting, else the install root's package.json \"packageManager\" field, else its lockfile (npm when there is none).",
+            "dimensions": [
+              "playwright-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "PlaywrightProject",
+            "function": "playwrightVersion",
+            "returns": "String",
+            "description": "The @playwright/test version the project resolves: from the install root's lockfile (pnpm-lock.yaml, yarn.lock, bun.lock or package-lock.json), else the nearest package.json that declares it (resolving pnpm catalog: specifiers from pnpm-workspace.yaml). Null when none of these gives an exact version.",
+            "dimensions": [
+              "playwright-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "PlaywrightProject",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run this project's tests, sharded across `shards` containers.",
+            "dimensions": [
+              "playwright-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "PlaywrightProjects",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run Playwright tests in the selected projects."
+          },
+          {
+            "role": "function",
+            "object": "PlaywrightRun",
+            "function": "label",
+            "returns": "String!",
+            "description": "What this run covers, for messages."
+          },
+          {
+            "role": "function",
+            "object": "PlaywrightTestFiles",
+            "function": "runs",
+            "returns": "[PlaywrightRun!]!",
+            "description": "The containers a test of the selected files runs: one per shard when nothing is filtered out, else the selected files split into up to `shards` groups.",
+            "dimensions": [
+              "playwright-project"
+            ]
+          }
+        ]
       }
     },
     {
@@ -355,6 +3069,193 @@
         "anyOf": [
           {
             "glob": "**/AndroidManifest.xml"
+          }
+        ]
+      },
+      "artifacts": {
+        "commit": "80c55ceeebc2faf4de3154ae294970ef23eeb471",
+        "settings": [
+          {
+            "name": "source",
+            "type": "Directory"
+          },
+          {
+            "name": "sourceCtr",
+            "type": "Container"
+          },
+          {
+            "name": "sourcePath",
+            "type": "String"
+          },
+          {
+            "name": "projectPath",
+            "type": "String"
+          },
+          {
+            "name": "compileSdk",
+            "type": "Int"
+          },
+          {
+            "name": "baseImageAddress",
+            "type": "String"
+          },
+          {
+            "name": "baseCtr",
+            "type": "Container"
+          },
+          {
+            "name": "platform",
+            "type": "String"
+          },
+          {
+            "name": "gradleModule",
+            "type": "String"
+          },
+          {
+            "name": "modulePath",
+            "type": "String"
+          },
+          {
+            "name": "buildDirectory",
+            "type": "String"
+          },
+          {
+            "name": "sourceExcludes",
+            "type": "[String!]"
+          },
+          {
+            "name": "checkVariant",
+            "type": "String"
+          },
+          {
+            "name": "gradleCommand",
+            "type": "[String!]"
+          },
+          {
+            "name": "gradleArguments",
+            "type": "[String!]"
+          },
+          {
+            "name": "cacheKey",
+            "type": "String"
+          },
+          {
+            "name": "requiredApkPaths",
+            "type": "[String!]"
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "android-test-class",
+            "keyName": "name",
+            "itemType": "AndroidTestClass"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=android/build",
+            "description": "Assemble checkVariant and, if configured, verify exact entries in every APK."
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=android/lint",
+            "description": "Run Android Lint for checkVariant. Reports remain available through run."
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=android/tests/test",
+            "description": "Run this class using Gradle's test filter, reusing compiled tests.",
+            "descriptions": [
+              "Run selected test classes in one Gradle invocation, reusing compiled tests. An unchanged selection runs the whole suite with Gradle's own configuration."
+            ],
+            "dimensions": [
+              "android-test-class"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=android/base",
+            "description": "SDK container with source and locked Gradle dependency caches. Host build outputs, Gradle state, and local SDK paths are excluded from the context. When baseCtr is supplied, its platform and toolchain take precedence."
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=android/assemble",
+            "description": "Assemble a variant and return its APK output tree (including split APKs and metadata). For a library, set outputPath to its AAR output directory. outputPath is relative to the Gradle project root."
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=android/bundle",
+            "description": "Build an Android App Bundle variant and return its output tree. Signing, if any, follows the project's Gradle configuration. outputPath is relative to the Gradle project root and supports custom build directories."
+          },
+          {
+            "role": "collection",
+            "type": "AndroidTestClasses",
+            "uri": "dag+android-test-classes://?android-test-classes=android/tests",
+            "description": "Discover JVM test classes for checkVariant using Gradle's test dry-run mode. Requires Gradle 8.3 or later. Discovery compiles test sources and loads the test framework, but does not execute test bodies. Device tests are excluded."
+          },
+          {
+            "role": "function",
+            "object": "Android",
+            "function": "run",
+            "returns": "Container!",
+            "args": [
+              {
+                "name": "tasks",
+                "type": "[String!]!"
+              },
+              {
+                "name": "arguments",
+                "type": "[String!]"
+              }
+            ],
+            "description": "Run arbitrary Gradle tasks and return the resulting container for further customization or artifact/report extraction. Task names are passed verbatim."
+          },
+          {
+            "role": "function",
+            "object": "Android",
+            "function": "signedBundle",
+            "returns": "Directory!",
+            "args": [
+              {
+                "name": "keystore",
+                "type": "Secret!"
+              },
+              {
+                "name": "keystorePassword",
+                "type": "Secret!"
+              },
+              {
+                "name": "keyAlias",
+                "type": "String!"
+              },
+              {
+                "name": "keyPassword",
+                "type": "Secret!"
+              },
+              {
+                "name": "variant",
+                "type": "String"
+              },
+              {
+                "name": "outputPath",
+                "type": "String"
+              }
+            ],
+            "description": "Build and verify signed AABs. Gradle must read ANDROID_KEYSTORE_FILE, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD. Keystore bytes and passwords use Dagger secrets. Tasks always rerun with the Gradle build cache disabled so previous signed outputs cannot be reused. This function builds artifacts only; it does not upload or publish them."
+          },
+          {
+            "role": "function",
+            "object": "Android",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run all JVM unit tests directly, without collection discovery. The test check is exposed through tests so selecting collection items does not also run the entire suite."
           }
         ]
       }
@@ -374,6 +3275,153 @@
             "glob": "**/Package.swift"
           }
         ]
+      },
+      "artifacts": {
+        "commit": "556800a288706390fdf63917b5042ecae3b9176f",
+        "settings": [
+          {
+            "name": "baseImageAddress",
+            "type": "String",
+            "description": "The Swift toolchain image."
+          },
+          {
+            "name": "base",
+            "type": "Container",
+            "description": "Optional container with Swift and additional system dependencies installed."
+          },
+          {
+            "name": "buildFlags",
+            "type": "[String!]",
+            "description": "Arguments appended to swift build, for example [\"--configuration\", \"release\"]."
+          },
+          {
+            "name": "testFlags",
+            "type": "[String!]",
+            "description": "Arguments appended to swift test, for example [\"--filter\", \"SignalsTests\"]."
+          },
+          {
+            "name": "environment",
+            "type": "[String!]",
+            "description": "Environment variables for builds and tests, as KEY=VALUE."
+          },
+          {
+            "name": "includeExtraFiles",
+            "type": "[String!]",
+            "description": "Workspace-root include patterns mounted alongside each package at their original relative paths. Use for local package dependencies and shared test fixtures."
+          },
+          {
+            "name": "packageInclude",
+            "type": "[String!]",
+            "description": "Workspace-relative package directory paths or globs to discover. Empty includes all packages."
+          },
+          {
+            "name": "packageExclude",
+            "type": "[String!]",
+            "description": "Workspace-relative package directory paths or globs to exclude from discovery. Exclusions win."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "swift-package",
+            "keyName": "path",
+            "itemType": "SwiftPackage"
+          },
+          {
+            "name": "swift-test",
+            "keyName": "name",
+            "itemType": "SwiftTest"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=swift/packages/build",
+            "description": "Compile this package for Linux with swift build.",
+            "descriptions": [
+              "Build the selected packages."
+            ],
+            "dimensions": [
+              "swift-package"
+            ]
+          },
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=swift/packages/tests/test",
+            "description": "Run this test, or all cases of this parameterized test function.",
+            "descriptions": [
+              "Run selected tests together. A narrowed selection overrides testFlags' filter or specifier; skip flags still apply. An empty selection runs nothing."
+            ],
+            "dimensions": [
+              "swift-package",
+              "swift-test"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=swift/packages/container",
+            "description": "A Swift container with the package mounted and its working directory set.",
+            "dimensions": [
+              "swift-package"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=swift/packages/source",
+            "description": "Package source, excluding host build products and gitignored files.",
+            "dimensions": [
+              "swift-package"
+            ]
+          },
+          {
+            "role": "collection",
+            "type": "SwiftPackages",
+            "uri": "dag+swift-packages://?artifact-swift-packages=swift/packages",
+            "description": "Swift packages visible from the working directory, keyed by workspace-relative root."
+          },
+          {
+            "role": "collection",
+            "type": "SwiftTests",
+            "uri": "dag+swift-tests://?artifact-swift-tests=swift/packages/tests",
+            "description": "Discover test identifiers with swift test list. This compiles the test targets. Parameterized Swift Testing functions are one item, running all their cases.",
+            "dimensions": [
+              "swift-package"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "Swift",
+            "function": "package",
+            "returns": "SwiftPackage!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              }
+            ],
+            "description": "Select a package by a path relative to the working directory."
+          },
+          {
+            "role": "function",
+            "object": "SwiftPackage",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run this package's XCTest and Swift Testing tests with swift test.",
+            "dimensions": [
+              "swift-package"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "SwiftPackages",
+            "function": "test",
+            "returns": "Void",
+            "description": "Run the selected packages' tests."
+          }
+        ]
       }
     },
     {
@@ -389,6 +3437,260 @@
         "anyOf": [
           {
             "glob": "**/pom.xml"
+          }
+        ]
+      },
+      "artifacts": {
+        "commit": "476d7d26aaceca20bf309038de3badaa9cabf442",
+        "settings": [
+          {
+            "name": "mavenVersion",
+            "type": "String",
+            "description": "Maven release used when there is no wrapper. Ignored with base."
+          },
+          {
+            "name": "javaVersion",
+            "type": "String",
+            "description": "Eclipse Temurin JDK version for the default image. Ignored with base."
+          },
+          {
+            "name": "base",
+            "type": "Container",
+            "description": "Custom container with a JDK, sh, and Maven (or wrapper prerequisites)."
+          },
+          {
+            "name": "useWrapper",
+            "type": "Boolean",
+            "description": "Use mvnw when present at the project root; otherwise use mvn."
+          },
+          {
+            "name": "args",
+            "type": "[String!]",
+            "description": "Arguments for every invocation, e.g. profiles, properties, or -pl/-am."
+          },
+          {
+            "name": "roots",
+            "type": "[String!]",
+            "description": "Explicit workspace-relative reactor roots. Empty discovers outermost POMs. Set this for independently built projects nested beneath another POM."
+          },
+          {
+            "name": "settings",
+            "type": "Secret",
+            "description": "Secret settings.xml, for private repositories, mirrors, and deployment."
+          },
+          {
+            "name": "toolchains",
+            "type": "File",
+            "description": "Optional toolchains.xml. JDK paths must exist in the base container."
+          },
+          {
+            "name": "cacheKey",
+            "type": "String",
+            "description": "Cache namespace override. Empty isolates caches by workspace and project. This holds the local repository and wrapper distributions, never settings."
+          },
+          {
+            "name": "testSourceDirectory",
+            "type": "String",
+            "description": "Java test source directory relative to each POM, used only for class discovery. Maven's own source and plugin configuration still controls compilation."
+          },
+          {
+            "name": "testIncludes",
+            "type": "[String!]",
+            "description": "Class discovery patterns relative to testSourceDirectory. These are Surefire's conventional Java filenames; discovery does not evaluate the effective POM."
+          },
+          {
+            "name": "testExcludes",
+            "type": "[String!]",
+            "description": "Patterns excluded from test-class discovery, relative to testSourceDirectory."
+          }
+        ],
+        "dimensions": [
+          {
+            "name": "maven-project",
+            "keyName": "path",
+            "itemType": "MavenProject"
+          },
+          {
+            "name": "maven-test-class",
+            "keyName": "key",
+            "itemType": "MavenTestClass"
+          }
+        ],
+        "entries": [
+          {
+            "role": "check",
+            "type": "Check",
+            "uri": "dag+check://?check=maven/projects/verify",
+            "description": "Run through verify: unit tests, packaging, integration tests, and quality gates.",
+            "descriptions": [
+              "Verify every selected reactor and report every failing project."
+            ],
+            "dimensions": [
+              "maven-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=maven/projects/compile",
+            "description": "Compile production sources and return the resulting container.",
+            "dimensions": [
+              "maven-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=maven/projects/container",
+            "description": "Prepared container for customization, services, and debugging. Caches are locked because separate Maven processes must not write one repository at once.",
+            "dimensions": [
+              "maven-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=maven/projects/install",
+            "description": "Verify and install into this project's cached local repository. Return the container to continue work in the same repository. Always execute the install so a cached result cannot hide an evicted cache volume's missing artifacts.",
+            "dimensions": [
+              "maven-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=maven/projects/test",
+            "description": "Run unit tests. Full verification, including integration tests, uses verify.",
+            "dimensions": [
+              "maven-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Container",
+            "uri": "dag+container://?container=maven/projects/tests/test",
+            "description": "Run this class, building reactor dependencies as needed.",
+            "descriptions": [
+              "Run all selected classes in one Maven reactor invocation. Dependencies still build in reactor order; unselected classes do not run. An empty subset is a no-op."
+            ],
+            "dimensions": [
+              "maven-project",
+              "maven-test-class"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=maven/projects/build",
+            "description": "Package the reactor, running unit tests by default, and return its target trees, preserving module paths. Use run for custom build directories.",
+            "dimensions": [
+              "maven-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=maven/projects/reports",
+            "description": "Return Surefire/Failsafe reports with reactor-relative paths, including failed tests. Test failures are ignored only here so reports can be exported; use the verify check for the pass/fail verdict. Compilation and plugin errors still fail.",
+            "dimensions": [
+              "maven-project"
+            ]
+          },
+          {
+            "role": "artifact",
+            "type": "Directory",
+            "uri": "dag+directory://?directory=maven/source",
+            "description": "Workspace source, preserving sibling modules, relative parents, .mvn config, resources, and build scripts. Host targets and dependency caches are excluded."
+          },
+          {
+            "role": "collection",
+            "type": "MavenProjects",
+            "uri": "dag+maven-projects://?artifact-maven-projects=maven/projects",
+            "description": "Reactor roots in view, keyed by workspace-relative directory. Discovery uses outermost pom.xml directories so reactor members are not built twice. From inside a reactor, that whole reactor remains selected."
+          },
+          {
+            "role": "collection",
+            "type": "MavenTestClasses",
+            "uri": "dag+maven-test-classes://?maven-test-classes=maven/projects/tests",
+            "description": "Java unit-test class candidates, keyed by reactor-relative module directory and fully qualified class name, e.g. app/example.AppTest. Listing runs no Maven command. Names are inferred from paths beneath testSourceDirectory. Class operations are explicit, leaving verify as the only automatic check.",
+            "dimensions": [
+              "maven-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "Maven",
+            "function": "project",
+            "returns": "MavenProject!",
+            "args": [
+              {
+                "name": "path",
+                "type": "String!"
+              }
+            ],
+            "description": "A specific reactor root, relative to the workspace root."
+          },
+          {
+            "role": "function",
+            "object": "MavenProject",
+            "function": "deploy",
+            "returns": "String!",
+            "args": [
+              {
+                "name": "args",
+                "type": "[String!]"
+              }
+            ],
+            "description": "Verify and deploy using the POM's distributionManagement and secret settings. Explicit only: never a check. Always executes, even for unchanged source.",
+            "dimensions": [
+              "maven-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "MavenProject",
+            "function": "run",
+            "returns": "Container!",
+            "args": [
+              {
+                "name": "goals",
+                "type": "[String!]!"
+              },
+              {
+                "name": "args",
+                "type": "[String!]"
+              },
+              {
+                "name": "fresh",
+                "type": "Boolean"
+              }
+            ],
+            "description": "Run goals or lifecycle phases. Return the container for chaining or extracting custom outputs. Set fresh for snapshot refreshes or commands with side effects.",
+            "dimensions": [
+              "maven-project"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "MavenTestClass",
+            "function": "className",
+            "returns": "String!",
+            "description": "Fully qualified Java class name.",
+            "dimensions": [
+              "maven-project",
+              "maven-test-class"
+            ]
+          },
+          {
+            "role": "function",
+            "object": "MavenTestClass",
+            "function": "module",
+            "returns": "String!",
+            "description": "Module directory relative to the reactor root.",
+            "dimensions": [
+              "maven-project",
+              "maven-test-class"
+            ]
           }
         ]
       }
