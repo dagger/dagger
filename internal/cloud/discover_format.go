@@ -11,7 +11,7 @@ import (
 // means, and where settings go. It names no commands.
 const DiscoverFooter = "Install a module by its ref. " +
 	"A link's first path segment is the module's install name; substitute yours if you install it under another name. " +
-	"[dim=<key>] after a link names a collection dimension: add &dim=<key> to the link to narrow it to one item, or omit it for all items. " +
+	"[dim=<key>] names a collection dimension: after a link, add &dim=<key> to the link to narrow it to one item, or omit it for all items; after Object.function, the function is on that collection's items. " +
 	"Settings go in dagger.toml, under the table shown."
 
 // FormatCoverage renders a listing's coverage, one line per requested
@@ -75,7 +75,8 @@ func coverageTarget(listing ModuleListing, cov CapabilityCoverage) string {
 	return target
 }
 
-// firstSentence is the text up to the first sentence end or line break.
+// firstSentence is the text up to the first sentence end or line break. A
+// period ending a common abbreviation (e.g., i.e., etc.) doesn't end it.
 func firstSentence(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
@@ -83,10 +84,22 @@ func firstSentence(s string) string {
 	}
 	for i := 0; i+1 < len(s); i++ {
 		if (s[i] == '.' || s[i] == '!' || s[i] == '?') && s[i+1] == ' ' {
+			if s[i] == '.' && endsWithAbbreviation(s[:i+1]) {
+				continue
+			}
 			return s[:i+1]
 		}
 	}
 	return strings.TrimSpace(s)
+}
+
+func endsWithAbbreviation(s string) bool {
+	word := s[strings.LastIndexByte(s, ' ')+1:]
+	switch strings.ToLower(strings.TrimLeft(word, "(")) {
+	case "e.g.", "i.e.", "etc.", "vs.", "cf.":
+		return true
+	}
+	return false
 }
 
 func pad(s string, width int) string {

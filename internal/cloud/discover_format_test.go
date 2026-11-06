@@ -52,6 +52,9 @@ func TestFirstSentence(t *testing.T) {
 		"  Padded!  Rest":               "Padded!",
 		"Ask? Answer.":                  "Ask?",
 		"Ends with a period.":           "Ends with a period.",
+		"Lint with a linter, e.g. ruff. Then more.": "Lint with a linter, e.g. ruff.",
+		"The configured one (i.e. yours). Rest.":    "The configured one (i.e. yours).",
+		"Go, Rust, etc. Done.":                      "Go, Rust, etc. Done.",
 	} {
 		require.Equal(t, want, firstSentence(in), "%q", in)
 	}

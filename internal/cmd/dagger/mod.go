@@ -154,11 +154,18 @@ func printModuleSearchResults(out io.Writer, listings []cloud.ModuleListing) err
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%-*s  %s\n", width, sourceHeader, "DESCRIPTION")
+	var coverage bool
 	for _, listing := range listings {
 		fmt.Fprintf(&b, "%-*s  %s\n", width, listing.Ref, listing.Description)
 		for _, line := range cloud.FormatCoverage(listing) {
 			b.WriteString(line + "\n")
+			coverage = true
 		}
+	}
+	if coverage {
+		// The legend for links, dimension hints and settings, as the agent
+		// tool gets it.
+		b.WriteString("\n" + cloud.DiscoverFooter + "\n")
 	}
 	_, err := io.WriteString(out, b.String())
 	return err

@@ -152,7 +152,8 @@ func TestModuleSearchRendersCoverage(t *testing.T) {
 		"dagger.io/python/ruff  Lint and format Python projects with Ruff\n"+
 		`  covered  "lint"         check      dag+check://?check=ruff/projects/lint [ruff-project=<path>]`+"\n"+
 		`  partial  "format code"  generator  dag+generator://?generator=ruff/projects/format [ruff-project=<path>] — Format this project with ruff.`+"\n"+
-		`  missing  "sign an apk"`+"\n", out)
+		`  missing  "sign an apk"`+"\n"+
+		"\n"+cloud.DiscoverFooter+"\n", out)
 	require.NotContains(t, out, "dagger install", "no command suggestions")
 
 	require.Equal(t, map[string]any{
