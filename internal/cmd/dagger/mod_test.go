@@ -179,6 +179,15 @@ func TestModuleSearchSDKOnly(t *testing.T) {
 	require.Equal(t, cloud.ModuleKindSDK, got.Results[0].Kind)
 }
 
+func TestModuleSearchSDKOnlyWithoutSDKMatches(t *testing.T) {
+	newFakeDiscoverCloud(t, http.StatusOK, `{"data":{"discoverModules":{"id":"evt_3","results":[
+	  {"name":"ruff","kind":"MODULE","ref":"dagger.io/python/ruff","aliases":[],"description":"Lint Python","publisher":"Dagger","official":true,"matchedOn":["name"]}
+	]}}}`)
+	out, err := runModuleSearchForTest(t, t.Context(), moduleSearchOpts{Query: "ruff", SDKOnly: true})
+	require.NoError(t, err)
+	require.Equal(t, "No published SDK matches; run without --sdk to see the modules that do.\n", out)
+}
+
 func TestModuleSearchNoResults(t *testing.T) {
 	newFakeDiscoverCloud(t, http.StatusOK, discoverNoResults)
 	out, err := runModuleSearchForTest(t, t.Context(), moduleSearchOpts{Query: "cobol"})
