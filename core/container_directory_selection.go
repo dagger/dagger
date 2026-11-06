@@ -67,6 +67,7 @@ type containerSelectionSource struct {
 	mounts  []*containerSelectionMount
 	closers []func() error
 	stubDir string
+	stubs   map[string]*containerSelectionBacking
 	ready   bool
 }
 
@@ -331,6 +332,10 @@ func (s *containerSelectionSource) openSnapshot(ref bkcache.ImmutableRef, path s
 }
 
 func (s *containerSelectionSource) stub(name string) (*containerSelectionBacking, error) {
+	name = filepath.Join("/", name)
+	if backing := s.stubs[name]; backing != nil {
+		return backing, nil
+	}
 	if s.stubDir == "" {
 		var err error
 		s.stubDir, err = os.MkdirTemp("", "dagger-selection-mounts-")
@@ -350,7 +355,12 @@ func (s *containerSelectionSource) stub(name string) (*containerSelectionBacking
 		return nil, err
 	}
 	s.closers = append(s.closers, root.Close)
-	return &containerSelectionBacking{root: root, path: "."}, nil
+	backing := &containerSelectionBacking{root: root, path: "."}
+	if s.stubs == nil {
+		s.stubs = map[string]*containerSelectionBacking{}
+	}
+	s.stubs[name] = backing
+	return backing, nil
 }
 
 func (s *containerSelectionSource) Close() {
