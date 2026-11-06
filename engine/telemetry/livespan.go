@@ -79,6 +79,32 @@ func NewBlockingLiveSpanProcessor(exp sdktrace.SpanExporter) *telemetry.LiveSpan
 	}
 }
 
+// NewCollectorSpanProcessor is the processor for the CLI's export to the
+// user's own collector (OTEL_EXPORTER_OTLP_*), in place of the default
+// 2048-slot one telemetry.Init would give it, which drops a burst of the
+// engine spans the CLI forwards. Its queue is as large, and as bounded, as
+// NewLargeQueueLiveSpanProcessor's, and drops rather than stall the build.
+// Batches keep the SDK's default size: a collector may limit how large a
+// request it accepts. Live, it also sends spans as they start
+// (OTEL_EXPORTER_OTLP_TRACES_LIVE); otherwise only finished ones.
+func NewCollectorSpanProcessor(exp sdktrace.SpanExporter, live bool) sdktrace.SpanProcessor {
+	if live {
+		return &telemetry.LiveSpanProcessor{
+			SpanProcessor: sdktrace.NewBatchSpanProcessor(
+				telemetry.CoalescingSpanExporter{SpanExporter: exp},
+				sdktrace.WithMaxQueueSize(LargeSpanQueueSize),
+				sdktrace.WithBatchTimeout(telemetry.NearlyImmediate),
+			),
+		}
+	}
+	return sdktrace.NewBatchSpanProcessor(
+		// Unfinished engine spans forwarded to the CLI never reach a batch
+		// processor's queue, but filter them like telemetry.Init does.
+		telemetry.FilterLiveSpansExporter{SpanExporter: exp},
+		sdktrace.WithMaxQueueSize(LargeSpanQueueSize),
+	)
+}
+
 // SpanQueueCounts counts the spans a bounded span queue takes in and those it
 // hands on to its exporter. Once the queue has drained, those it never handed
 // on were dropped on overflow.

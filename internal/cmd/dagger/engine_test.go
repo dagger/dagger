@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"slices"
 	"sync"
@@ -81,23 +82,29 @@ func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	cloudSpans := tracetest.NewInMemoryExporter()
 	cloudLogs := new(countingLogExporter)
 	cloudMetrics := new(countingMetricExporter)
-	cfg, cloud := engineTelemetryConfigWithCloud(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	collectorSpans := tracetest.NewInMemoryExporter()
+	collectorLogs := new(countingLogExporter)
+	collectorMetrics := new(countingMetricExporter)
+	cfg, cloud := engineTelemetryConfigWithExporters(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
+	}, func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+		return collectorSpans, collectorLogs, collectorMetrics
 	})
 
-	require.True(t, cfg.Detect)
+	require.False(t, cfg.Detect, "the user's collector is configured here, not by telemetry.Init")
 	require.Equal(t, cloudTelemetryIndexes{spans: 0, logs: 0, metrics: 1}, cloud,
 		"the indexes locate the Cloud exporters, so engine telemetry can be forwarded without them")
-	require.Empty(t, withoutIndex(cfg.LiveLogExporters, cloud.logs), "frontend logs are installed separately with a blocking processor")
-	require.Equal(t, []sdkmetric.Exporter{localMetrics}, withoutIndex(cfg.LiveMetricExporters, cloud.metrics))
-	require.Len(t, withoutIndex(cfg.SpanProcessors, cloud.spans), 1, "frontend spans use a processor that waits for queue space")
+	require.Equal(t, []sdklog.Exporter{collectorLogs}, withoutIndex(cfg.LiveLogExporters, cloud.logs), "frontend logs are installed separately with a blocking processor")
+	require.Equal(t, []sdkmetric.Exporter{localMetrics, collectorMetrics}, withoutIndex(cfg.LiveMetricExporters, cloud.metrics))
+	require.Len(t, withoutIndex(cfg.SpanProcessors, cloud.spans), 2, "frontend and collector spans each use their own processor")
 	require.Len(t, frontend.SpanExporterCalls(), 1)
 	require.Empty(t, frontend.LogExporterCalls())
 	require.Len(t, frontend.MetricExporterCalls(), 1)
 	require.Empty(t, cfg.LiveTraceExporters)
-	require.Equal(t, []sdklog.Exporter{cloudLogs}, cfg.LiveLogExporters)
-	require.Equal(t, []sdkmetric.Exporter{localMetrics, cloudMetrics}, cfg.LiveMetricExporters)
-	require.Len(t, cfg.SpanProcessors, 2, "Cloud and frontend spans each use their own processor")
+	require.Empty(t, cfg.BatchedTraceExporters)
+	require.Equal(t, []sdklog.Exporter{cloudLogs, collectorLogs}, cfg.LiveLogExporters)
+	require.Equal(t, []sdkmetric.Exporter{localMetrics, cloudMetrics, collectorMetrics}, cfg.LiveMetricExporters)
+	require.Len(t, cfg.SpanProcessors, 3, "Cloud, frontend and collector spans each use their own processor")
 	t.Cleanup(func() {
 		for _, processor := range cfg.SpanProcessors {
 			require.NoError(t, processor.Shutdown(context.Background()))
@@ -190,6 +197,66 @@ func TestEngineSpanBurstReachesFrontend(t *testing.T) {
 	require.Equal(t, burst, frontendSpans.endedCount())
 }
 
+func noCollectorExporters(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+	return nil, nil, nil
+}
+
+// TestEngineSpanBurstReachesCollector forwards a burst of finished engine
+// spans to the user's own collector (OTEL_EXPORTER_OTLP_*), the way the CLI
+// forwards what the engine streams to it, while the collector takes a while
+// with each batch. A burst that fits the CLI's span queues must arrive whole,
+// whether spans are exported as they end or also as they start.
+func TestEngineSpanBurstReachesCollector(t *testing.T) {
+	oldFrontend := Frontend
+	oldSkip := skipSharedTelemetryExporters
+	oldLive := telemetry.LiveTracesEnabled
+	t.Cleanup(func() {
+		Frontend = oldFrontend
+		skipSharedTelemetryExporters = oldSkip
+		telemetry.LiveTracesEnabled = oldLive
+	})
+	skipSharedTelemetryExporters = false
+
+	for _, live := range []bool{false, true} {
+		t.Run(fmt.Sprintf("live=%t", live), func(t *testing.T) {
+			telemetry.LiveTracesEnabled = live
+			collectorSpans := &slowSpanExporter{
+				delay: 10 * time.Millisecond,
+				ended: map[trace.SpanID]struct{}{},
+			}
+			// Only the user's collector: no Cloud or frontend.
+			cfg, _ := engineTelemetryConfigWithExporters(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+				return nil, nil, nil, false
+			}, func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+				return collectorSpans, nil, nil
+			})
+			forwarder := telemetry.SpanForwarder{Processors: cfg.SpanProcessors}
+
+			const burst = enginetel.LargeSpanQueueSize
+			now := time.Now()
+			spans := make([]sdktrace.ReadOnlySpan, 0, burst)
+			for i := range burst {
+				var spanID trace.SpanID
+				binary.BigEndian.PutUint64(spanID[:], uint64(i+1))
+				spans = append(spans, tracetest.SpanStub{
+					Name: "check",
+					SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+						TraceID:    trace.TraceID{1},
+						SpanID:     spanID,
+						TraceFlags: trace.FlagsSampled,
+					}),
+					StartTime: now,
+					EndTime:   now,
+				}.Snapshot())
+			}
+			require.NoError(t, forwarder.ExportSpans(context.Background(), spans))
+			require.NoError(t, forwarder.Shutdown(context.Background()))
+
+			require.Equal(t, burst, collectorSpans.endedCount())
+		})
+	}
+}
+
 func TestEngineTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
 	oldFrontend := Frontend
 	oldSkip := skipSharedTelemetryExporters
@@ -212,11 +279,10 @@ func TestEngineTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
 	cloudSpans := tracetest.NewInMemoryExporter()
 	cloudLogs := new(countingLogExporter)
 	cloudMetrics := new(countingMetricExporter)
-	cfg, _ := engineTelemetryConfigWithCloud(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	cfg, _ := engineTelemetryConfigWithExporters(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
-	})
+	}, noCollectorExporters)
 
-	require.True(t, cfg.Detect)
 	require.Empty(t, frontend.SpanExporterCalls())
 	require.Empty(t, frontend.LogExporterCalls())
 	require.Empty(t, frontend.MetricExporterCalls())
@@ -275,15 +341,34 @@ func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	})
 
 	ctx := context.Background()
+	var cloudCalls, collectorCalls int
+	cloudExporters := func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+		cloudCalls++
+		return tracetest.NewInMemoryExporter(), new(countingLogExporter), new(countingMetricExporter), true
+	}
+	collectorExporters := func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+		collectorCalls++
+		return nil, new(countingLogExporter), nil
+	}
 
 	skipSharedTelemetryExporters = false
-	if cfg, _ := engineTelemetryConfig(ctx); !cfg.Detect {
-		t.Fatal("expected Detect to be enabled for a normal session")
+	cfg, cloud := engineTelemetryConfigWithExporters(ctx, cloudExporters, collectorExporters)
+	require.True(t, cloud.configured(), "a normal session exports to Cloud")
+	require.Equal(t, 1, collectorCalls, "a normal session exports to the user's collector")
+	require.Len(t, cfg.LiveLogExporters, 2)
+	for _, processor := range cfg.SpanProcessors {
+		require.NoError(t, processor.Shutdown(ctx))
 	}
 
 	skipSharedTelemetryExporters = true
-	if cfg, cloud := engineTelemetryConfig(ctx); cfg.Detect || cloud.configured() {
-		t.Fatal("expected Detect and Cloud to be disabled for an internal silent session")
+	cfg, cloud = engineTelemetryConfigWithExporters(ctx, cloudExporters, collectorExporters)
+	require.False(t, cloud.configured(), "an internal silent session doesn't export to Cloud")
+	require.Equal(t, 1, cloudCalls, "an internal silent session doesn't set up the Cloud exporters")
+	require.Equal(t, 1, collectorCalls, "an internal silent session doesn't set up the user's collector")
+	require.False(t, cfg.Detect)
+	require.Empty(t, cfg.LiveLogExporters)
+	for _, processor := range cfg.SpanProcessors {
+		require.NoError(t, processor.Shutdown(ctx))
 	}
 }
 
