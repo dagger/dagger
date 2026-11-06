@@ -318,6 +318,9 @@ main = true
 		{Module: "./viztest/broken-dep/broken", Function: "broken", Fail: true},
 		// test that a module with a broken dependency surfaces the error
 		{Module: "./viztest/broken-dep", Function: "use-broken", Fail: true},
+		// the same, as a user sees them by default
+		{Name: "broken-default", Module: "./viztest/broken-dep/broken", Function: "broken", Fail: true, NoExpand: true, Quiet: true},
+		{Name: "broken-dep-use-broken-default", Module: "./viztest/broken-dep", Function: "use-broken", Fail: true, NoExpand: true, Quiet: true},
 		// test that a module with an unloadable dependency surfaces the error
 		{Module: "./viztest/broken-dep-sdk", Function: "use-invalid", Fail: true},
 
@@ -534,6 +537,8 @@ type Example struct {
 	RevealNoisySpans bool
 	// by default, tests show the full expanded tree, unless this is set
 	NoExpand bool
+	// run without -v, as a user does by default
+	Quiet bool
 	// if a reason is given for Flaky, ignore failures, but log the failure and the provided explanation.
 	// ineffectual if FuzzyTest is in use.
 	Flaky  string
@@ -574,6 +579,9 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		}
 	default:
 		daggerArgs = []string{"--progress=report", "-v", "call", "-m", ex.Module, ex.Function}
+		if ex.Quiet {
+			daggerArgs = []string{"--progress=report", "call", "-m", ex.Module, ex.Function}
+		}
 	}
 	daggerArgs = append(daggerArgs, ex.Args...)
 
