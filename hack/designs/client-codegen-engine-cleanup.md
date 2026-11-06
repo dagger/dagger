@@ -18,7 +18,7 @@ driving generation through the SDK runtime:
   **deliberately excluded**: a client is generated for one module, not its whole
   dependency graph. Registered in `core/schema/modulesource.go`; the core-only
   base build + namespaced module install is the shared helper
-  `clientSchemaIntrospectionJSONFile` (it starts from `loadDefaultSchemaBuilder`, a
+  `clientSchemaIntrospectionJSONFile` (it starts from `defaultSchemaBuilderForEngineVersion`, a
   core-only `SchemaBuilder`, then installs just the bound module), reused by
   `runClientGenerator` — so both the new primitive and the old engine-driven path
   produce deps-free clients.

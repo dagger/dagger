@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core/artifact"
@@ -263,9 +262,11 @@ func WithArtifactReference(ctx context.Context, ref string) (context.Context, er
 
 // ArtifactTypeName is the CLI-case form of a GraphQL type name, as used in a
 // DAG address scheme: Container gives "container", ProviderDocs gives
-// "provider-docs".
+// "provider-docs". Artifacts and DAG addresses only exist for clients at
+// engine version v1.0.0 and up, so it always uses the latest naming rules;
+// a type name doesn't say which module, and so which rules, it came from.
 func ArtifactTypeName(typeName string) string {
-	return strcase.ToKebab(typeName)
+	return LatestNamer.CLIName(typeName)
 }
 
 // GitAddress is the workspace's Git address as a Go import path, and the commit
@@ -525,7 +526,7 @@ func (a *Artifact) unqualifiedPath() []string {
 	if root == nil || root.Parent == nil || root.Parent.Name == "" {
 		return nil
 	}
-	path := a.Node.Path().CliCase()
+	path := a.Node.CLIPath()
 	qualifier := len(root.Path()) - 1
 	if qualifier < 0 || qualifier >= len(path) {
 		return nil
@@ -599,8 +600,9 @@ func (a *Artifacts) Types() []string {
 
 func (a *Artifacts) withPathFilter(matches func(*Artifact) bool, patterns []string) *Artifacts {
 	selected := a.filter(matches)
-	// A question mark is a path glob here, but starts the query in a DAG link.
-	if a.Selector.Paths == nil && !slices.ContainsFunc(patterns, func(pattern string) bool { return strings.Contains(pattern, "?") }) {
+	// A question mark starts a URI query, and an empty URI path means all
+	// paths. Materialize either filter so replay cannot broaden the selection.
+	if a.Selector.Paths == nil && !slices.ContainsFunc(patterns, func(pattern string) bool { return pattern == "" || strings.Contains(pattern, "?") }) {
 		selected.Selector.Paths = patterns
 	} else {
 		selected.Selector.Paths = selected.exactPaths()
@@ -644,21 +646,22 @@ func (a *Artifacts) FilterPattern(pattern string) (*Artifacts, error) {
 	return selected, nil
 }
 
-// artifactPattern normalizes a path pattern to CLI case, as artifact paths are.
+// artifactPattern spells a path pattern using the current CLI naming rules,
+// independently of the backing modules' GraphQL views. Explicit user glob
+// alternatives are preserved; no legacy alternatives are added.
 func artifactPattern(pattern string) string {
 	segments := strings.Split(pattern, "/")
 	for i, segment := range segments {
-		segments[i] = strcase.ToKebab(segment)
+		segments[i] = LatestNamer.CLIName(segment)
 	}
 	return strings.Join(segments, "/")
 }
 
-// IncludePattern is the DAG address pattern with the same meaning as a
-// Workspace.artifacts include pattern: a literal path also selects its
-// children.
-func IncludePattern(include string) string {
-	pattern := artifactPattern(strings.ReplaceAll(include, ":", "/"))
-	return pattern + "/**"
+// IncludePatterns returns the canonical DAG address pattern with the same
+// meaning as a Workspace.artifacts include: a literal path also selects its
+// children. The slice shape is shared with callers combining several includes.
+func IncludePatterns(include string) []string {
+	return []string{artifactPattern(strings.ReplaceAll(include, ":", "/")) + "/**"}
 }
 
 func (a *Artifact) matchesPattern(pattern string) (bool, error) {
@@ -668,7 +671,7 @@ func (a *Artifact) matchesPattern(pattern string) (bool, error) {
 	if a.Node == nil {
 		return false, nil
 	}
-	if match, err := doublestar.PathMatch(pattern, strings.Join(a.Node.Path().CliCase(), "/")); err != nil || match {
+	if match, err := doublestar.PathMatch(pattern, strings.Join(a.Node.CLIPath(), "/")); err != nil || match {
 		return match, err
 	}
 	// A bound tree qualified by its type still answers to the plain path,
@@ -950,7 +953,7 @@ func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root d
 			continue
 		}
 		artifacts.Entries = append(artifacts.Entries, &Artifact{
-			ModuleName: tree.Name, Path: node.Path().CliCase(), DimensionKeys: []*ArtifactDimensionKey{},
+			ModuleName: tree.Name, Path: node.CLIPath(), DimensionKeys: []*ArtifactDimensionKey{},
 			Directives: node.Directives, TypeName: node.ObjectType().Name, Node: node,
 		})
 	}

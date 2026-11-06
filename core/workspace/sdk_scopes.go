@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -35,6 +36,42 @@ func SDKScopeKey(entry SDKEntry, configDir, workspacePath string) (string, bool,
 	}
 	key, err := SDKManagedPathFor(configDir, workspacePath)
 	return key, false, err
+}
+
+// SDKScopeSetting returns the JSON encoding of the setting that the scope of
+// sdkName at workspacePath records under key, matched without regard to case.
+// It returns nil when no scope resolves to workspacePath or the scope records
+// no such setting, and fails when the scope records two settings whose names
+// differ only in case. Callers must reconcile the config first.
+func SDKScopeSetting(cfg *Config, configDir, sdkName, workspacePath, key string) ([]byte, error) {
+	entry := cfg.SDKs[sdkName]
+	scopeKey, found, err := SDKScopeKey(entry, configDir, workspacePath)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil
+	}
+	settings := entry.Scopes[scopeKey].Settings
+	names := slices.Sorted(maps.Keys(settings))
+	for i, name := range names {
+		for _, other := range names[i+1:] {
+			if strings.EqualFold(name, other) {
+				return nil, fmt.Errorf("SDK %q scope %q records settings %q, which all match %q; keep one in dagger.toml", sdkName, scopeKey, []string{name, other}, name)
+			}
+		}
+	}
+	for _, name := range names {
+		if !strings.EqualFold(name, key) {
+			continue
+		}
+		data, err := json.Marshal(settings[name])
+		if err != nil {
+			return nil, fmt.Errorf("SDK %q scope %q setting %q: %w", sdkName, scopeKey, name, err)
+		}
+		return data, nil
+	}
+	return nil, nil
 }
 
 // ModuleScopeLocalClients maps each module scope to the local client targets

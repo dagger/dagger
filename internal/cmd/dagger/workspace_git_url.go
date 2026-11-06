@@ -66,7 +66,7 @@ func workspaceGitURL(ctx context.Context, dag *dagger.Client) (string, error) {
 		Query: `query WorkspaceGitURL {
 			currentWorkspace {
 				address cwd
-				git { repository: __repository { url } head { name commitSHA } }
+				git { repository: __repository { url } head { name commitSha } }
 			}
 		}`,
 	}, &dagger.Response{Data: &result}); err != nil {

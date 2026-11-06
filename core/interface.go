@@ -269,10 +269,11 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 
 	ifaceTypeDef := iface.typeDef
 	// Name is already a final GraphQL type name (normalized at creation,
-	// module-namespaced at assembly). Don't re-run gqlObjectName/strcase.ToCamel
-	// on it: ToCamel isn't idempotent and would corrupt already-cased multi-word
-	// names (e.g. "ModuleAOverlay" -> "ModuleAoverlay"). This mirrors how objects
-	// are installed (see ModuleObject.TypeDefinition, which uses TypeDef.Name as-is).
+	// module-namespaced at assembly). Don't normalize it again: the legacy
+	// strcase rules aren't idempotent and would corrupt already-cased
+	// multi-word names (e.g. "ModuleAOverlay" -> "ModuleAoverlay"). This
+	// mirrors how objects are installed (see ModuleObject.TypeDefinition, which
+	// uses TypeDef.Name as-is).
 	ifaceName := ifaceTypeDef.Name
 	// Interface field specs only describe their module: calls dispatch through
 	// the concrete object's class, whose fields carry the module provider.
@@ -305,7 +306,12 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	// We keep the validation that return/arg types aren't from external deps.
 	for _, fnTypeDefRes := range iface.typeDef.Functions {
 		fnTypeDef := fnTypeDefRes.Self()
-		fnName := gqlFieldName(fnTypeDef.Name)
+		// The typedef's name is already normalized (Namer.NewFunction), as an
+		// object's is, and installed as it is. Normalizing it again would
+		// rename it under the legacy rules, which aren't idempotent (e2eTest
+		// is e2ETest once, e2Etest twice), so the interface's members wouldn't
+		// match the objects implementing it.
+		fnName := fnTypeDef.Name
 
 		// check whether this is a pre-existing object from a dependency module
 		returnModType, ok, err := iface.mod.Self().Deps.ModTypeFor(ctx, fnTypeDef.ReturnType.Self())
@@ -378,7 +384,8 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			}
 
 			inputSpec := dagql.InputSpec{
-				Name:             gqlArgName(argMetadata.Name),
+				// Already normalized (Namer.NewFunctionArg), like fnName.
+				Name:             argMetadata.Name,
 				Description:      formatGqlDescription(argMetadata.Description),
 				Type:             argMetadata.TypeDef.Self().ToInput(),
 				DeprecatedReason: argMetadata.Deprecated,

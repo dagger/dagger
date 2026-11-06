@@ -1383,12 +1383,7 @@ func (file *File) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[
 		if err != nil {
 			return err
 		}
-		t := time.Unix(int64(unix), 0)
-		err = os.Chtimes(fullPath, t, t)
-		if err != nil {
-			return err
-		}
-		return nil
+		return setTimestampsNoFollow(fullPath, time.Unix(int64(unix), 0))
 	})
 	if err != nil {
 		return err

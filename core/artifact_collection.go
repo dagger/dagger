@@ -295,9 +295,9 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 			itemNode.Directives = nil
 			item := *selected
 			item.Node = &itemNode
-			item.Path = itemNode.CommandPath().CliCase()
+			item.Path = itemNode.CommandCLIPath()
 			if len(item.Path) == 0 {
-				item.Path = itemNode.Path().CliCase()
+				item.Path = itemNode.CLIPath()
 			}
 			item.TypeName = itemNode.ObjectType().Name
 			item.Directives = nil
@@ -767,30 +767,41 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		return err
 	}
 	if members != nil {
+		// Artifact dimensions use current CLI spelling, even when their
+		// backing collection's GraphQL names belong to an older view.
+		namer := LatestNamer
 		path := []string{}
 		parent := node
 		for parent.Parent != nil && parent.CollectionDimension == nil {
-			path = append(path, ArtifactTypeName(parent.Name))
+			path = append(path, namer.CLIName(parent.Name))
 			parent = parent.Parent
 		}
 		slices.Reverse(path)
-		prefix := "/" + ArtifactTypeName(node.Module.Self().Name())
+		prefix := "/" + namer.CLIName(node.Module.Self().Name())
 		if parent.CollectionDimension != nil {
 			prefix = parent.CollectionDimension.Identifier
 		}
 		identifier := strings.Join(append([]string{prefix}, path...), "/")
-		// The namespaced name keeps short names unique across modules.
+		// The namespaced current spelling keeps short names unique across modules.
 		itemType := members.Get.ReturnType.Self().AsObject.Value.Self().Name
 		dim := &ArtifactDimension{
 			Kind: "COLLECTION", CollectionType: obj.Name,
 			Identifier:     identifier,
-			Name:           ArtifactTypeName(itemType),
+			Name:           namer.CLIName(itemType),
 			ItemType:       itemType,
 			KeyName:        members.Get.Args[0].Self().Name,
 			KeyDescription: members.Get.Args[0].Self().Description,
 		}
 		qualified := strings.Split(strings.TrimPrefix(identifier, "/"), "/")
-		itemName := strings.TrimPrefix(dim.Name, qualified[0]+"-")
+		// Trim the module prefix (the identifier's first segment, spelled by
+		// the same rules) from the item name.
+		itemName := dim.Name
+		for _, prefix := range []string{qualified[0], namer.CLIName(node.Module.Self().Name())} {
+			if rest, ok := strings.CutPrefix(itemName, prefix+"-"); ok {
+				itemName = rest
+				break
+			}
+		}
 		qualified = append(qualified, itemName)
 		dim.QualifiedName = strings.Join(qualified, "-")
 		item := &ModTreeNode{Parent: node, Name: "get", Type: members.Get.ReturnType, Description: members.Get.Description,
