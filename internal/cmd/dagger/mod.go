@@ -27,6 +27,9 @@ var (
 // a demand signal, so say that it was recorded.
 const moduleSearchNoMatch = "No published module matches. This search was logged so Dagger can see what's missing."
 
+// moduleSearchNoSDKMatch is printed when --sdk filters out every match.
+const moduleSearchNoSDKMatch = "No published SDK matches; run without --sdk to see the modules that do."
+
 var searchCmd = &cobra.Command{
 	Use:   "search [query]",
 	Short: "Search for modules you can install",
@@ -116,6 +119,11 @@ func moduleSearch(ctx context.Context, client *cloud.Client, out io.Writer, opts
 			if listing.Kind == cloud.ModuleKindSDK {
 				sdks = append(sdks, listing)
 			}
+		}
+		if len(sdks) == 0 && len(discovery.Results) > 0 && !opts.JSON {
+			// Modules matched, just no SDK: don't claim nothing did.
+			_, err := fmt.Fprintln(out, moduleSearchNoSDKMatch)
+			return err
 		}
 		discovery.Results = sdks
 	}
