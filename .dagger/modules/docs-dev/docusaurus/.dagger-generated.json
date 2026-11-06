@@ -5,6 +5,6 @@
     "dagger.gen.go": "de98f920c7eb4636923d2b3d6dbf25a91f363f84f69e2f91158a332c2992efc7",
     "internal/dagger/dagger.gen.go": "2679bc64886d9d280a6cd7b6ad275781b8a085c173c1442c3e220c67209c375f",
     "internal/dagger/docusaurus.gen.go": "8878db265e85f710e327fa98f720eb37d69e0522e441032ee0776d094bf7e105",
-    "internal/dagger/entrypoint/main.dang": "b326a462f21acb08cb9ae80ef71be130f07f9b9bb626be78e3bd7f21e3069d47"
+    "internal/dagger/entrypoint/main.dang": "145bc7e963116b76ce70bd6f68151c08de46318b6464cff0c042df0fc6979fcc"
   }
 }
