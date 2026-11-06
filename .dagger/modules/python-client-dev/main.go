@@ -18,14 +18,15 @@ import (
 
 // A toolchain to develop the Dagger Python SDK
 type PythonClientDev struct {
-	// Python container to develop Python SDK
-	DevContainer *dagger.Container
-	Workspace    *dagger.Directory
-	SourcePath   string
+	// Python container to develop Python SDK, without a Dagger engine
+	BaseContainer *dagger.Container // +private
+	Workspace     *dagger.Directory
+	SourcePath    string
 	// Supported Python versions
 	SupportedVersions []string
 
-	Ws *dagger.Workspace // +private
+	ClientDockerConfig *dagger.Secret    // +private
+	Ws                 *dagger.Workspace // +private
 }
 
 func New(
@@ -61,28 +62,34 @@ func New(
 	ws *dagger.Workspace,
 ) *PythonClientDev {
 	return &PythonClientDev{
-		DevContainer: enginedev.New(ws, enginedev.EngineDevOpts{
-			ClientDockerConfig: clientDockerConfig,
-		}).InstallClient(
-			enginedev.EngineDevInstallClientOpts{
-				Client: wolfi.New().
-					Container(wolfi.WolfiContainerOpts{Packages: []string{"libgcc"}}).
-					WithEnvVariable("PYTHONUNBUFFERED", "1").
-					WithEnvVariable(
-						"PATH",
-						"/root/.local/bin:/usr/local/bin:$PATH",
-						dagger.ContainerWithEnvVariableOpts{Expand: true}).
-					With(toolsCache("uv", "ruff", "mypy")).
-					With(uvTool(workspaceDir)).
-					WithDirectory("/src/sdk/python", workspaceDir.Directory(sourcePath)).
-					WithWorkdir("/src/sdk/python").
-					WithExec(uv("sync")),
-			}),
-		Workspace:         workspaceDir,
-		SourcePath:        sourcePath,
-		SupportedVersions: supportedVersions,
-		Ws:                ws,
+		BaseContainer: wolfi.New().
+			Container(wolfi.WolfiContainerOpts{Packages: []string{"libgcc"}}).
+			WithEnvVariable("PYTHONUNBUFFERED", "1").
+			WithEnvVariable(
+				"PATH",
+				"/root/.local/bin:/usr/local/bin:$PATH",
+				dagger.ContainerWithEnvVariableOpts{Expand: true}).
+			With(toolsCache("uv", "ruff", "mypy")).
+			With(uvTool(workspaceDir)).
+			WithDirectory("/src/sdk/python", workspaceDir.Directory(sourcePath)).
+			WithWorkdir("/src/sdk/python").
+			WithExec(uv("sync")),
+		Workspace:          workspaceDir,
+		SourcePath:         sourcePath,
+		SupportedVersions:  supportedVersions,
+		ClientDockerConfig: clientDockerConfig,
+		Ws:                 ws,
 	}
+}
+
+// Python container to develop Python SDK, with a client of a dev engine
+// built from the workspace
+func (t PythonClientDev) DevContainer() *dagger.Container {
+	return enginedev.New(t.Ws, enginedev.EngineDevOpts{
+		ClientDockerConfig: t.ClientDockerConfig,
+	}).InstallClient(enginedev.EngineDevInstallClientOpts{
+		Client: t.BaseContainer,
+	})
 }
 
 var supportedVersions = []string{"3.14", "3.13", "3.12", "3.11", "3.10"}
@@ -118,7 +125,7 @@ func (t PythonClientDev) Lint(
 }
 
 func (t PythonClientDev) lint(paths []string) *dagger.Container {
-	return t.DevContainer.
+	return t.DevContainer().
 		WithExec(append(uvRun("ruff", "check"), paths...)).
 		WithExec(append(uvRun("ruff", "format", "--check", "--diff"), paths...))
 }
@@ -131,8 +138,8 @@ func (t PythonClientDev) Format(
 	// +default=[]
 	paths []string,
 ) error {
-	before := t.DevContainer.Directory("/src")
-	_, err := t.DevContainer.
+	before := t.DevContainer().Directory("/src")
+	_, err := t.DevContainer().
 		WithExec(append(uvRun("ruff", "check", "--fix-only"), paths...)).
 		WithExec(append(uvRun("ruff", "format"), paths...)).
 		Directory("/src").
@@ -144,7 +151,7 @@ func (t PythonClientDev) Format(
 // Run the type checker (mypy)
 // FIXME: this is not included as an automated check. Should it?
 func (t PythonClientDev) Typecheck(ctx context.Context) error {
-	_, err := t.DevContainer.
+	_, err := t.DevContainer().
 		WithExec(uvRun("mypy", ".")).
 		Sync(ctx)
 	return err
@@ -156,14 +163,14 @@ func (t PythonClientDev) WithDirectory(
 	// The directory to add
 	source *dagger.Directory,
 ) PythonClientDev {
-	t.DevContainer = t.DevContainer.WithDirectory("/src", source)
+	t.BaseContainer = t.BaseContainer.WithDirectory("/src", source)
 	return t
 }
 
 // Test suite for python 3.10
 func (t PythonClientDev) Python310() *TestForPythonVersion {
 	return &TestForPythonVersion{
-		Container: t.DevContainer,
+		Container: t.DevContainer(),
 		Version:   "3.10",
 	}
 }
@@ -171,7 +178,7 @@ func (t PythonClientDev) Python310() *TestForPythonVersion {
 // Test suite for python 3.11
 func (t PythonClientDev) Python311() *TestForPythonVersion {
 	return &TestForPythonVersion{
-		Container: t.DevContainer,
+		Container: t.DevContainer(),
 		Version:   "3.11",
 	}
 }
@@ -179,7 +186,7 @@ func (t PythonClientDev) Python311() *TestForPythonVersion {
 // Test suite for python 3.12
 func (t PythonClientDev) Python312() *TestForPythonVersion {
 	return &TestForPythonVersion{
-		Container: t.DevContainer,
+		Container: t.DevContainer(),
 		Version:   "3.12",
 	}
 }
@@ -187,7 +194,7 @@ func (t PythonClientDev) Python312() *TestForPythonVersion {
 // Test suite for python 3.13
 func (t PythonClientDev) Python313() *TestForPythonVersion {
 	return &TestForPythonVersion{
-		Container: t.DevContainer,
+		Container: t.DevContainer(),
 		Version:   "3.13",
 	}
 }
@@ -195,7 +202,7 @@ func (t PythonClientDev) Python313() *TestForPythonVersion {
 // Test suite for python 3.14
 func (t PythonClientDev) Python314() *TestForPythonVersion {
 	return &TestForPythonVersion{
-		Container: t.DevContainer,
+		Container: t.DevContainer(),
 		Version:   "3.14",
 	}
 }
@@ -203,7 +210,7 @@ func (t PythonClientDev) Python314() *TestForPythonVersion {
 // Regenerate the core Python client library
 // +generate
 func (t PythonClientDev) ClientLibrary(_ context.Context) (*dagger.Changeset, error) {
-	devContainer := t.DevContainer
+	devContainer := t.DevContainer()
 
 	// We don't control the input source, it's defined in wrapped native module
 	srcMountPath := "/src"
@@ -304,7 +311,7 @@ func (t PythonClientDev) Build(
 	// +default="0.0.0"
 	version string,
 ) *dagger.Container {
-	return t.DevContainer.
+	return t.BaseContainer.
 		WithoutDirectory("dist").
 		WithExec(uv("version", version)).
 		WithExec(uv("build"))
@@ -342,7 +349,7 @@ func (t PythonClientDev) TestPublish(
 // Preview the reference documentation
 func (t PythonClientDev) Docs() *Docs {
 	return &Docs{
-		Container: t.DevContainer,
+		Container: t.DevContainer(),
 	}
 }
 
@@ -357,7 +364,7 @@ func (t PythonClientDev) Provision(
 	archiveName := fmt.Sprintf("dagger_v0.x.y_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
 	checksumsName := "checksums.txt"
 
-	httpServer := t.DevContainer.
+	httpServer := t.DevContainer().
 		WithMountedFile("/src/dagger", cliBin).
 		WithWorkdir("/work").
 		WithExec([]string{"tar", "cvzf", archiveName, "-C", "/src", "dagger"}).
@@ -378,7 +385,7 @@ func (t PythonClientDev) Provision(
 	dockerVersion := "24.0.7"
 
 	ctr := dockerd.New().Attach(
-		t.DevContainer.WithMountedFile(
+		t.DevContainer().WithMountedFile(
 			"/opt/docker.tgz",
 			core.HTTP(fmt.Sprintf("https://download.docker.com/linux/static/stable/%s/docker-%s.tgz", runtime.GOARCH, dockerVersion)),
 			dagger.ContainerWithMountedFileOpts{Owner: "root"}).

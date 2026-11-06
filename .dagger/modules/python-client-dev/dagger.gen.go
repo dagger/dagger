@@ -46,36 +46,40 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 
 func (r PythonClientDev) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		DevContainer      *dagger.Container
-		Workspace         *dagger.Directory
-		SourcePath        string
-		SupportedVersions []string
-		Ws                *dagger.Workspace
+		BaseContainer      *dagger.Container
+		Workspace          *dagger.Directory
+		SourcePath         string
+		SupportedVersions  []string
+		ClientDockerConfig *dagger.Secret
+		Ws                 *dagger.Workspace
 	}
-	concrete.DevContainer = r.DevContainer
+	concrete.BaseContainer = r.BaseContainer
 	concrete.Workspace = r.Workspace
 	concrete.SourcePath = r.SourcePath
 	concrete.SupportedVersions = r.SupportedVersions
+	concrete.ClientDockerConfig = r.ClientDockerConfig
 	concrete.Ws = r.Ws
 	return json.Marshal(&concrete)
 }
 
 func (r *PythonClientDev) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		DevContainer      *dagger.Container
-		Workspace         *dagger.Directory
-		SourcePath        string
-		SupportedVersions []string
-		Ws                *dagger.Workspace
+		BaseContainer      *dagger.Container
+		Workspace          *dagger.Directory
+		SourcePath         string
+		SupportedVersions  []string
+		ClientDockerConfig *dagger.Secret
+		Ws                 *dagger.Workspace
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
-	r.DevContainer = concrete.DevContainer
+	r.BaseContainer = concrete.BaseContainer
 	r.Workspace = concrete.Workspace
 	r.SourcePath = concrete.SourcePath
 	r.SupportedVersions = concrete.SupportedVersions
+	r.ClientDockerConfig = concrete.ClientDockerConfig
 	r.Ws = concrete.Ws
 	return nil
 }
@@ -198,6 +202,13 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*PythonClientDev).ClientLibrary(&parent, ctx)
+		case "DevContainer":
+			var parent PythonClientDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PythonClientDev).DevContainer(&parent), nil
 		case "Docs":
 			var parent PythonClientDev
 			err = json.Unmarshal(parentJSON, &parent)

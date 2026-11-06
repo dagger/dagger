@@ -47,11 +47,11 @@ type PythonClientDevBuildOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-client-dev (../../main.go:305:2)
+	Version string // python-client-dev (../../main.go:312:2)
 }
 
 // Build the Python SDK client library package for distribution
-func (r *PythonClientDev) Build(opts ...PythonClientDevBuildOpts) *Container { // python-client-dev (../../main.go:302:1)
+func (r *PythonClientDev) Build(opts ...PythonClientDevBuildOpts) *Container { // python-client-dev (../../main.go:309:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -64,21 +64,22 @@ func (r *PythonClientDev) Build(opts ...PythonClientDevBuildOpts) *Container { /
 }
 
 // Regenerate the core Python client library
-func (r *PythonClientDev) ClientLibrary() *Changeset { // python-client-dev (../../main.go:205:1)
+func (r *PythonClientDev) ClientLibrary() *Changeset { // python-client-dev (../../main.go:212:1)
 	q := r.query.Select("clientLibrary")
 
 	return new(Changeset).WithGraphQLQuery(q)
 }
 
-// Python container to develop Python SDK
-func (r *PythonClientDev) DevContainer() *Container { // python-client-dev (../../main.go:22:2)
+// Python container to develop Python SDK, with a client of a dev engine
+// built from the workspace
+func (r *PythonClientDev) DevContainer() *Container { // python-client-dev (../../main.go:87:1)
 	q := r.query.Select("devContainer")
 
 	return new(Container).WithGraphQLQuery(q)
 }
 
 // Preview the reference documentation
-func (r *PythonClientDev) Docs() *PythonClientDevDocs { // python-client-dev (../../main.go:343:1)
+func (r *PythonClientDev) Docs() *PythonClientDevDocs { // python-client-dev (../../main.go:350:1)
 	q := r.query.Select("docs")
 
 	return &PythonClientDevDocs{
@@ -92,11 +93,11 @@ type PythonClientDevFormatOpts struct {
 	//
 	// List of files or directories to check
 	//
-	Paths []string // python-client-dev (../../main.go:132:2)
+	Paths []string // python-client-dev (../../main.go:139:2)
 }
 
 // Format source files
-func (r *PythonClientDev) Format(opts ...PythonClientDevFormatOpts) *Check { // python-client-dev (../../main.go:128:1)
+func (r *PythonClientDev) Format(opts ...PythonClientDevFormatOpts) *Check { // python-client-dev (../../main.go:135:1)
 	q := r.query.Select("format")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -168,11 +169,11 @@ type PythonClientDevLintOpts struct {
 	//
 	// List of files or directories to check
 	//
-	Paths []string // python-client-dev (../../main.go:114:2)
+	Paths []string // python-client-dev (../../main.go:121:2)
 }
 
 // Check for linting errors
-func (r *PythonClientDev) Lint(opts ...PythonClientDevLintOpts) *Check { // python-client-dev (../../main.go:110:1)
+func (r *PythonClientDev) Lint(opts ...PythonClientDevLintOpts) *Check { // python-client-dev (../../main.go:117:1)
 	q := r.query.Select("lint")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -186,11 +187,11 @@ func (r *PythonClientDev) Lint(opts ...PythonClientDevLintOpts) *Check { // pyth
 
 // PythonClientDevLintDocsSnippetsOpts contains options for PythonClientDev.LintDocsSnippets
 type PythonClientDevLintDocsSnippetsOpts struct {
-	Workspace *Directory // python-client-dev (../../main.go:101:2)
+	Workspace *Directory // python-client-dev (../../main.go:108:2)
 }
 
 // Lint the Python snippets in the documentation
-func (r *PythonClientDev) LintDocsSnippets(opts ...PythonClientDevLintDocsSnippetsOpts) *Check { // python-client-dev (../../main.go:92:1)
+func (r *PythonClientDev) LintDocsSnippets(opts ...PythonClientDevLintDocsSnippetsOpts) *Check { // python-client-dev (../../main.go:99:1)
 	q := r.query.Select("lintDocsSnippets")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspace` optional argument
@@ -207,10 +208,10 @@ type PythonClientDevProvisionOpts struct {
 	//
 	// _EXPERIMENTAL_DAGGER_RUNNER_HOST value
 	//
-	RunnerHost string // python-client-dev (../../main.go:355:2)
+	RunnerHost string // python-client-dev (../../main.go:362:2)
 }
 
-func (r *PythonClientDev) Provision(cliBin *File, opts ...PythonClientDevProvisionOpts) *Container { // python-client-dev (../../main.go:349:1)
+func (r *PythonClientDev) Provision(cliBin *File, opts ...PythonClientDevProvisionOpts) *Container { // python-client-dev (../../main.go:356:1)
 	assertNotNil("cliBin", cliBin)
 	q := r.query.Select("provision")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -231,15 +232,15 @@ type PythonClientDevPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-client-dev (../../main.go:319:2)
+	Version string // python-client-dev (../../main.go:326:2)
 	//
 	// The URL of the upload endpoint (empty means PyPI)
 	//
-	URL string // python-client-dev (../../main.go:322:2)
+	URL string // python-client-dev (../../main.go:329:2)
 }
 
 // Publish Python SDK client library to PyPI
-func (r *PythonClientDev) Publish(token *Secret, opts ...PythonClientDevPublishOpts) *Container { // python-client-dev (../../main.go:314:1)
+func (r *PythonClientDev) Publish(token *Secret, opts ...PythonClientDevPublishOpts) *Container { // python-client-dev (../../main.go:321:1)
 	assertNotNil("token", token)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -258,7 +259,7 @@ func (r *PythonClientDev) Publish(token *Secret, opts ...PythonClientDevPublishO
 }
 
 // Test suite for python 3.10
-func (r *PythonClientDev) Python310() *PythonClientDevTestForPythonVersion { // python-client-dev (../../main.go:164:1)
+func (r *PythonClientDev) Python310() *PythonClientDevTestForPythonVersion { // python-client-dev (../../main.go:171:1)
 	q := r.query.Select("python310")
 
 	return &PythonClientDevTestForPythonVersion{
@@ -268,7 +269,7 @@ func (r *PythonClientDev) Python310() *PythonClientDevTestForPythonVersion { // 
 }
 
 // Test suite for python 3.11
-func (r *PythonClientDev) Python311() *PythonClientDevTestForPythonVersion { // python-client-dev (../../main.go:172:1)
+func (r *PythonClientDev) Python311() *PythonClientDevTestForPythonVersion { // python-client-dev (../../main.go:179:1)
 	q := r.query.Select("python311")
 
 	return &PythonClientDevTestForPythonVersion{
@@ -278,7 +279,7 @@ func (r *PythonClientDev) Python311() *PythonClientDevTestForPythonVersion { // 
 }
 
 // Test suite for python 3.12
-func (r *PythonClientDev) Python312() *PythonClientDevTestForPythonVersion { // python-client-dev (../../main.go:180:1)
+func (r *PythonClientDev) Python312() *PythonClientDevTestForPythonVersion { // python-client-dev (../../main.go:187:1)
 	q := r.query.Select("python312")
 
 	return &PythonClientDevTestForPythonVersion{
@@ -288,7 +289,7 @@ func (r *PythonClientDev) Python312() *PythonClientDevTestForPythonVersion { // 
 }
 
 // Test suite for python 3.13
-func (r *PythonClientDev) Python313() *PythonClientDevTestForPythonVersion { // python-client-dev (../../main.go:188:1)
+func (r *PythonClientDev) Python313() *PythonClientDevTestForPythonVersion { // python-client-dev (../../main.go:195:1)
 	q := r.query.Select("python313")
 
 	return &PythonClientDevTestForPythonVersion{
@@ -298,7 +299,7 @@ func (r *PythonClientDev) Python313() *PythonClientDevTestForPythonVersion { // 
 }
 
 // Test suite for python 3.14
-func (r *PythonClientDev) Python314() *PythonClientDevTestForPythonVersion { // python-client-dev (../../main.go:196:1)
+func (r *PythonClientDev) Python314() *PythonClientDevTestForPythonVersion { // python-client-dev (../../main.go:203:1)
 	q := r.query.Select("python314")
 
 	return &PythonClientDevTestForPythonVersion{
@@ -309,17 +310,17 @@ func (r *PythonClientDev) Python314() *PythonClientDevTestForPythonVersion { // 
 
 // PythonClientDevReleaseOpts contains options for PythonClientDev.Release
 type PythonClientDevReleaseOpts struct {
-	DryRun bool // python-client-dev (../../main.go:270:2)
+	DryRun bool // python-client-dev (../../main.go:277:2)
 
-	PypiRepo string // python-client-dev (../../main.go:273:2)
+	PypiRepo string // python-client-dev (../../main.go:280:2)
 
-	PypiURL string // python-client-dev (../../main.go:276:2)
+	PypiURL string // python-client-dev (../../main.go:283:2)
 
-	PypiToken *Secret // python-client-dev (../../main.go:279:2)
+	PypiToken *Secret // python-client-dev (../../main.go:286:2)
 }
 
 // Release the Python SDK
-func (r *PythonClientDev) Release(ctx context.Context, sourceTag string, opts ...PythonClientDevReleaseOpts) error { // python-client-dev (../../main.go:263:1)
+func (r *PythonClientDev) Release(ctx context.Context, sourceTag string, opts ...PythonClientDevReleaseOpts) error { // python-client-dev (../../main.go:270:1)
 	if r.release != nil {
 		return nil
 	}
@@ -348,7 +349,7 @@ func (r *PythonClientDev) Release(ctx context.Context, sourceTag string, opts ..
 }
 
 // Test the publishing process
-func (r *PythonClientDev) ReleaseDryRun() *Check { // python-client-dev (../../main.go:251:1)
+func (r *PythonClientDev) ReleaseDryRun() *Check { // python-client-dev (../../main.go:258:1)
 	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)
@@ -383,11 +384,11 @@ type PythonClientDevTestPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-client-dev (../../main.go:337:2)
+	Version string // python-client-dev (../../main.go:344:2)
 }
 
 // Test the publishing of the Python SDK client library to TestPyPI
-func (r *PythonClientDev) TestPublish(token *Secret, opts ...PythonClientDevTestPublishOpts) *Container { // python-client-dev (../../main.go:332:1)
+func (r *PythonClientDev) TestPublish(token *Secret, opts ...PythonClientDevTestPublishOpts) *Container { // python-client-dev (../../main.go:339:1)
 	assertNotNil("token", token)
 	q := r.query.Select("testPublish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -403,7 +404,7 @@ func (r *PythonClientDev) TestPublish(token *Secret, opts ...PythonClientDevTest
 
 // Run the type checker (mypy)
 // FIXME: this is not included as an automated check. Should it?
-func (r *PythonClientDev) Typecheck(ctx context.Context) error { // python-client-dev (../../main.go:146:1)
+func (r *PythonClientDev) Typecheck(ctx context.Context) error { // python-client-dev (../../main.go:153:1)
 	if r.typecheck != nil {
 		return nil
 	}
@@ -413,7 +414,7 @@ func (r *PythonClientDev) Typecheck(ctx context.Context) error { // python-clien
 }
 
 // Mount a directory on the base container
-func (r *PythonClientDev) WithDirectory(source *Directory) *PythonClientDev { // python-client-dev (../../main.go:155:1)
+func (r *PythonClientDev) WithDirectory(source *Directory) *PythonClientDev { // python-client-dev (../../main.go:162:1)
 	assertNotNil("source", source)
 	q := r.query.Select("withDirectory")
 	q = q.Arg("source", source)
@@ -663,18 +664,18 @@ type PythonClientDevOpts struct {
 	//
 	// A workspace containing the SDK source code and other relevant files
 	//
-	WorkspaceDir *Directory // python-client-dev (../../main.go:52:2)
+	WorkspaceDir *Directory // python-client-dev (../../main.go:53:2)
 
 	// Default: "sdk/python"
-	SourcePath string // python-client-dev (../../main.go:55:2)
+	SourcePath string // python-client-dev (../../main.go:56:2)
 	//
 	// A docker config file with credentials to install on clients.
 	//
-	ClientDockerConfig *Secret // python-client-dev (../../main.go:58:2)
+	ClientDockerConfig *Secret // python-client-dev (../../main.go:59:2)
 }
 
 // A toolchain to develop the Dagger Python SDK
-func (r *Query) PythonClientDev(ws *Workspace, opts ...PythonClientDevOpts) *PythonClientDev { // python-client-dev (../../main.go:31:1)
+func (r *Query) PythonClientDev(ws *Workspace, opts ...PythonClientDevOpts) *PythonClientDev { // python-client-dev (../../main.go:32:1)
 	assertNotNil("ws", ws)
 	q := r.query.Select("pythonClientDev")
 	for i := len(opts) - 1; i >= 0; i-- {

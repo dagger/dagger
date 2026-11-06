@@ -42,6 +42,7 @@ var functions = []functionSpec{
 	{Name: "pythonClientDev", Receiver: "PythonClientDev", FnName: "", Args: map[string]argumentSpec{"workspaceDir": {Required: false, Default: "", Encoding: "string"}, "sourcePath": {Required: false, Default: "\"sdk/python\"", Encoding: "string"}, "clientDockerConfig": {Required: false, Default: "", Encoding: "string"}, "ws": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "build", Receiver: "PythonClientDev", FnName: "Build", Args: map[string]argumentSpec{"version": {Required: false, Default: "\"0.0.0\"", Encoding: "string"}}},
 	{Name: "clientLibrary", Receiver: "PythonClientDev", FnName: "ClientLibrary", Args: map[string]argumentSpec{}},
+	{Name: "devContainer", Receiver: "PythonClientDev", FnName: "DevContainer", Args: map[string]argumentSpec{}},
 	{Name: "docs", Receiver: "PythonClientDev", FnName: "Docs", Args: map[string]argumentSpec{}},
 	{Name: "format", Receiver: "PythonClientDev", FnName: "Format", Args: map[string]argumentSpec{"paths": {Required: false, Default: "[]", Encoding: "json"}}},
 	{Name: "lint", Receiver: "PythonClientDev", FnName: "Lint", Args: map[string]argumentSpec{"paths": {Required: false, Default: "[]", Encoding: "json"}}},

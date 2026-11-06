@@ -76,6 +76,7 @@ func (r *RustClientDev) Apiclient() *Changeset {
 	return new(Changeset).WithGraphQLQuery(q)
 }
 
+// Rust container to develop the Rust SDK, without a Dagger engine
 func (r *RustClientDev) BaseContainer() *Container {
 	q := r.query.Select("baseContainer")
 
@@ -112,7 +113,8 @@ type RustClientDevDevContainerOpts struct {
 }
 
 // Return the Rust SDK workspace mounted in a dev container,
-// and working directory set to the SDK source.
+// and working directory set to the SDK source, with a client of a dev
+// engine built from the workspace.
 func (r *RustClientDev) DevContainer(opts ...RustClientDevDevContainerOpts) *Container {
 	q := r.query.Select("devContainer")
 	for i := len(opts) - 1; i >= 0; i-- {

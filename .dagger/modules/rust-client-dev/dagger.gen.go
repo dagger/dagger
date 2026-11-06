@@ -46,27 +46,30 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 
 func (r RustClientDev) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		OriginalWorkspace *dagger.Directory
-		Workspace         *dagger.Directory
-		SourcePath        string
-		BaseContainer     *dagger.Container
-		Ws                *dagger.Workspace
+		OriginalWorkspace  *dagger.Directory
+		Workspace          *dagger.Directory
+		SourcePath         string
+		BaseContainer      *dagger.Container
+		ClientDockerConfig *dagger.Secret
+		Ws                 *dagger.Workspace
 	}
 	concrete.OriginalWorkspace = r.OriginalWorkspace
 	concrete.Workspace = r.Workspace
 	concrete.SourcePath = r.SourcePath
 	concrete.BaseContainer = r.BaseContainer
+	concrete.ClientDockerConfig = r.ClientDockerConfig
 	concrete.Ws = r.Ws
 	return json.Marshal(&concrete)
 }
 
 func (r *RustClientDev) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		OriginalWorkspace *dagger.Directory
-		Workspace         *dagger.Directory
-		SourcePath        string
-		BaseContainer     *dagger.Container
-		Ws                *dagger.Workspace
+		OriginalWorkspace  *dagger.Directory
+		Workspace          *dagger.Directory
+		SourcePath         string
+		BaseContainer      *dagger.Container
+		ClientDockerConfig *dagger.Secret
+		Ws                 *dagger.Workspace
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
@@ -76,6 +79,7 @@ func (r *RustClientDev) UnmarshalJSON(bs []byte) error {
 	r.Workspace = concrete.Workspace
 	r.SourcePath = concrete.SourcePath
 	r.BaseContainer = concrete.BaseContainer
+	r.ClientDockerConfig = concrete.ClientDockerConfig
 	r.Ws = concrete.Ws
 	return nil
 }

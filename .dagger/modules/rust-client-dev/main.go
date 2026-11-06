@@ -32,8 +32,10 @@ type RustClientDev struct {
 	OriginalWorkspace *dagger.Directory // +private
 	Workspace         *dagger.Directory // +private
 	SourcePath        string            // +private
-	BaseContainer     *dagger.Container
-	Ws                *dagger.Workspace // +private
+	// Rust container to develop the Rust SDK, without a Dagger engine
+	BaseContainer      *dagger.Container
+	ClientDockerConfig *dagger.Secret    // +private
+	Ws                 *dagger.Workspace // +private
 }
 
 func New(
@@ -54,31 +56,38 @@ func New(
 		From(rustSdkImage+"@"+rustSdkImageDigest).
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
 		WithMountedCache("/root/.cargo", core.NewCacheVolume("rust-cargo-"+rustSdkImage)).
-		WithWorkdir("/src").
-		// FIXME: not all functions need a full engine build. Do this lazily as needed
-		With(func(c *dagger.Container) *dagger.Container {
-			return enginedev.New(workspace, enginedev.EngineDevOpts{
-				ClientDockerConfig: clientDockerConfig,
-			}).InstallClient(enginedev.EngineDevInstallClientOpts{Client: c})
-		})
+		WithWorkdir("/src")
 
 	return &RustClientDev{
-		OriginalWorkspace: rustSrc,
-		Workspace:         rustSrc,
-		SourcePath:        sourcePath,
-		BaseContainer:     baseContainer,
-		Ws:                workspace,
+		OriginalWorkspace:  rustSrc,
+		Workspace:          rustSrc,
+		SourcePath:         sourcePath,
+		BaseContainer:      baseContainer,
+		ClientDockerConfig: clientDockerConfig,
+		Ws:                 workspace,
 	}
 }
 
 // Return the Rust SDK workspace mounted in a dev container,
-// and working directory set to the SDK source.
+// and working directory set to the SDK source, with a client of a dev
+// engine built from the workspace.
 func (t *RustClientDev) DevContainer(
 	// Install workspace dependencies and any tools required
 	// to develop the Rust SDK.
 	// +default="false"
 	runInstall bool,
 ) *dagger.Container {
+	return enginedev.New(t.Ws, enginedev.EngineDevOpts{
+		ClientDockerConfig: t.ClientDockerConfig,
+	}).InstallClient(enginedev.EngineDevInstallClientOpts{
+		Client: t.container(runInstall),
+	})
+}
+
+// container is the Rust SDK workspace mounted in a container without a
+// Dagger engine, with working directory set to the SDK source, for what
+// doesn't run a Dagger client.
+func (t *RustClientDev) container(runInstall bool) *dagger.Container {
 	if !runInstall {
 		return t.BaseContainer.
 			WithMountedDirectory(".", t.Workspace).
@@ -124,7 +133,7 @@ func (t *RustClientDev) Source() *dagger.Directory {
 // Run cargo fmt on the Rust SDK
 // +check
 func (t *RustClientDev) CargoFmt(ctx context.Context) error {
-	_, err := t.DevContainer(true).
+	_, err := t.container(true).
 		WithExec([]string{"cargo", "fmt", "--check"}).
 		Sync(ctx)
 
@@ -134,7 +143,7 @@ func (t *RustClientDev) CargoFmt(ctx context.Context) error {
 // Run cargo check on the Rust SDK
 // +check
 func (t *RustClientDev) CargoCheck(ctx context.Context) error {
-	_, err := t.DevContainer(true).
+	_, err := t.container(true).
 		WithExec([]string{"cargo", "check", "--all", "--release"}).
 		Sync(ctx)
 
@@ -163,7 +172,7 @@ func (t *RustClientDev) Changes() *dagger.Changeset {
 }
 
 func (t *RustClientDev) WithGeneratedClient() *RustClientDev {
-	relLayer := t.DevContainer(true).
+	relLayer := t.container(true).
 		WithMountedFile("/introspection.json", enginedev.New(t.Ws).IntrospectionJSON()).
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", rustGeneratedClientFilePath}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
@@ -291,7 +300,7 @@ func (t *RustClientDev) Release(
 func (t *RustClientDev) releaseContainer(
 	versionFlag string,
 ) *dagger.Container {
-	return t.DevContainer(false).
+	return t.container(false).
 		WithExec([]string{"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked"}).
 		WithExec([]string{"cargo", "set-version", "-p", rustSdkCrate, versionFlag})
 }

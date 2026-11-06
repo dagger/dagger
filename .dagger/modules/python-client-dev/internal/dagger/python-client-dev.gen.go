@@ -68,7 +68,8 @@ func (r *PythonClientDev) ClientLibrary() *Changeset {
 	return new(Changeset).WithGraphQLQuery(q)
 }
 
-// Python container to develop Python SDK
+// Python container to develop Python SDK, with a client of a dev engine
+// built from the workspace
 func (r *PythonClientDev) DevContainer() *Container {
 	q := r.query.Select("devContainer")
 
