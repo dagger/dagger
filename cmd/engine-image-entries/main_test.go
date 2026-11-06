@@ -6,28 +6,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/stretchr/testify/require"
 )
-
-// The engine image's builds are the module runtimes' only if both are made
-// with one set of flags.
-func TestGoSDKBuildFlagsMatchRuntime(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("..", "..", "sdk", "go", "runtime", "main.dang"))
-	require.NoError(t, err)
-	m := regexp.MustCompile(`buildFlags: \[(.*)\]`).FindSubmatch(src)
-	require.NotNil(t, m, "the Go SDK's buildFlags")
-	var flags []string
-	for _, f := range strings.Split(string(m[1]), ", ") {
-		flag, err := strconv.Unquote(f)
-		require.NoError(t, err)
-		flags = append(flags, flag)
-	}
-	require.Equal(t, goSDKBuildFlags, flags)
-}
 
 // go.buildFlags is a non-null list: a nil slice goes out as null and the image
 // build fails.
@@ -41,7 +25,7 @@ func TestEntrypointBuildFlagsSentAsList(t *testing.T) {
 // generated client compiles without inlining, and the standard library's compile lines stay those of a build without the
 // flags, so that its archives in the engine image serve every other build.
 func TestGoSDKBuildFlagsOnCompileLines(t *testing.T) {
-	require.Contains(t, goSDKBuildFlags, "-ldflags=-s -w", "debug information is only left out of a binary that drops it")
+	require.Contains(t, distconsts.GoSDKBuildFlags(), "-ldflags=-s -w", "debug information is only left out of a binary that drops it")
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/seed\n\ngo 1.26\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nimport (\n\t_ \"fmt\"\n\n\t_ \"example.com/seed/internal/dagger\"\n)\n\nfunc main() {}\n"), 0o644))
@@ -63,7 +47,7 @@ func TestGoSDKBuildFlagsOnCompileLines(t *testing.T) {
 		return lines
 	}
 	plain := compiles()
-	flagged := compiles(goSDKBuildFlags...)
+	flagged := compiles(distconsts.GoSDKBuildFlags()...)
 	require.Contains(t, flagged, "fmt")
 	require.Equal(t, plain["fmt"], flagged["fmt"])
 	require.NotContains(t, plain["main"], "-dwarf=false")

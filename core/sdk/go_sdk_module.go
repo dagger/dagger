@@ -78,7 +78,8 @@ func (l *Loader) loadBuiltinGoSDK(
 // goSDKConstructorArgs are what the Go SDK module gets of the engine and the
 // session, which a module can't reach itself: the Go SDK image with the
 // engine's GOPROXY and GODEBUG and the module cache codegen starts from, the
-// engine's Go version and the dagger.io/dagger version codegen pins, and,
+// engine's Go version and the build flags its image's entries are built
+// with, the dagger.io/dagger version codegen pins, and,
 // for a module with private dependencies, what the calling client fetches
 // them with.
 func goSDKConstructorArgs(ctx context.Context, root *core.Query, config map[string]any) ([]dagql.NamedInput, error) {
@@ -147,9 +148,14 @@ func goSDKConstructorArgs(ctx context.Context, root *core.Query, config map[stri
 	if err != nil {
 		return nil, err
 	}
+	var buildFlags dagql.ArrayInput[dagql.String]
+	for _, flag := range distconsts.GoSDKBuildFlags() {
+		buildFlags = append(buildFlags, dagql.String(flag))
+	}
 	args := []dagql.NamedInput{
 		{Name: "base", Value: dagql.NewID[*core.Container](baseID)},
 		{Name: "goVersion", Value: dagql.String(distconsts.GolangVersion)},
+		{Name: "buildFlags", Value: buildFlags},
 		{Name: "libVersion", Value: dagql.String(goSDKLibVersion)},
 	}
 

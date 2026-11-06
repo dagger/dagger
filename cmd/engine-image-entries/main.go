@@ -11,7 +11,8 @@
 // generated modules depend on, so that every result is the one their builds
 // look up. It takes what codegen's archives of each Go module in -seed read
 // from the cache (archiveBuilds of its root package, its dependencies alone,
-// without tests), at -go-version with the Go SDK's build flags, or for an
+// without tests), at -go-version with the Go SDK's build flags
+// (distconsts.GoSDKBuildFlags), or for an
 // -entrypoint-seed with go-sdk's entrypoints', gobuild's binary
 // (Module._prebuild), and exports them with their blobs into -out.
 package main
@@ -26,11 +27,8 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/distconsts"
 )
-
-// goSDKBuildFlags are the build flags the Go SDK builds every module runtime
-// with (sdk/go/runtime/main.dang).
-var goSDKBuildFlags = []string{"-ldflags=-s -w", "-gcflags=all=-dwarf=false", "-gcflags=std=", "-gcflags=./internal/dagger/...=-dwarf=false -l"}
 
 // entrypointBuildFlags are the build flags go-sdk's generated entrypoints
 // build with: none, as an empty list, which the query's non-null argument needs.
@@ -169,7 +167,7 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, daggerGo, goVersi
 		}
 		return nil
 	}
-	if err := exportSeeds(seeds, goSDKBuildFlags); err != nil {
+	if err := exportSeeds(seeds, distconsts.GoSDKBuildFlags()); err != nil {
 		return err
 	}
 	if err := exportSeeds(entrypointSeeds, entrypointBuildFlags); err != nil {
