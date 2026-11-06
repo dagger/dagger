@@ -259,6 +259,44 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	require.Equal(t, engineName, strings.TrimSpace(stdout))
 }
 
+// An engine nested in another engine on the address range its parent's
+// containers are on still reaches the network: it moves its own container
+// network off that range, rather than taking over its parent's addresses,
+// the parent's DNS server among them.
+func (EngineSuite) TestNestedOnParentNetwork(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// The range this engine's containers are on, the nested engine's among them.
+	addr, err := core.NewQuery(c).Container().From(alpineImage).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
+		WithExec([]string{"sh", "-c", "ip -o -4 addr show scope global | awk '{print $4; exit}'"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	_, parent, err := net.ParseCIDR(strings.TrimSpace(addr))
+	require.NoError(t, err)
+
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
+		// A later --network-cidr overrides the nested engine's default one.
+		return ctr.
+			WithNewFile("/usr/local/bin/dagger-test-entrypoint.sh",
+				"#!/bin/sh\nexec /usr/local/bin/dagger-entrypoint.sh \"$@\" --network-cidr "+parent.String()+"\n",
+				core.ContainerWithNewFileOpts{Permissions: 0o755}).
+			WithEntrypoint([]string{"/usr/local/bin/dagger-test-entrypoint.sh"})
+	}))
+
+	marker := rand.Text()
+	out, err := engineClientContainer(ctx, t, c, devEngine).
+		WithExec([]string{
+			"dagger", "core", "container",
+			"from", "--address=" + alpineImage,
+			"with-exec", "--args", "echo," + marker,
+			"stdout",
+		}, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, marker)
+}
+
 // An engine run as a Dagger service starts under Dagger's /.init, so its
 // entrypoint isn't PID 1. The entrypoint must still move every process out
 // of the root cgroup, or it can't enable controllers for the execs' cgroups.
