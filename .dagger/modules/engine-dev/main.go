@@ -281,7 +281,11 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	if err != nil {
 		return nil, fmt.Errorf("the engine binary: %w", err)
 	}
-	nested := dev.IncrementSubnet()
+	// Its network is the one after this engine-dev's, without changing
+	// dev's: every image's entries are made at once, and an engine that took
+	// another increment could land on a network an engine above it uses.
+	nested := *dev
+	nested.IncrementSubnet()
 	service := engine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume("dagger-image-entries-"+engineDigest+"-"+strings.ReplaceAll(platform, "/", "-")), dagger.ContainerWithMountedCacheOpts{
