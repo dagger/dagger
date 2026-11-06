@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -82,11 +83,18 @@ func registryNames(mods []registryModule) []string {
 	return names
 }
 
-func embeddedRegistryNames(t *testing.T) []string {
+// loadTestdataModuleCatalog loads testdata/modules.json, a copy of the
+// release-pinned catalog dagger.io serves, through the loader: served by a
+// test server, with an empty cache.
+func loadTestdataModuleCatalog(t *testing.T) []registryModule {
 	t.Helper()
-	mods, err := parseModuleCatalog(embeddedModuleCatalog)
+	data, err := os.ReadFile(filepath.Join("testdata", "modules.json"))
 	require.NoError(t, err)
-	return registryNames(mods)
+	srv := serveModuleCatalog(t, http.StatusOK, string(data))
+	withModuleCatalogSource(t, srv.URL)
+	mods, err := loadModuleRegistry(t.Context())
+	require.NoError(t, err)
+	return mods
 }
 
 func TestLoadModuleRegistryFetchesAndCaches(t *testing.T) {
@@ -142,42 +150,76 @@ func TestLoadModuleRegistryFallsBackToCache(t *testing.T) {
 	}
 }
 
-func TestLoadModuleRegistryFallsBackToEmbedded(t *testing.T) {
-	want := embeddedRegistryNames(t)
-
-	t.Run("no cache", func(t *testing.T) {
-		srv := serveModuleCatalog(t, http.StatusOK, `{"version": 1, "modules": []}`)
-		withModuleCatalogSource(t, srv.URL)
-		mods, err := loadModuleRegistry(t.Context())
-		require.NoError(t, err)
-		require.Equal(t, want, registryNames(mods))
-	})
-
-	t.Run("corrupt cache", func(t *testing.T) {
-		srv := serveModuleCatalog(t, http.StatusBadGateway, "")
-		cachePath := withModuleCatalogSource(t, srv.URL)
-		require.NoError(t, writeFileAtomic(cachePath, []byte(`{"version": 1, "modules": [`)))
-		mods, err := loadModuleRegistry(t.Context())
-		require.NoError(t, err)
-		require.Equal(t, want, registryNames(mods))
-	})
-
-	t.Run("unreachable", func(t *testing.T) {
-		srv := serveModuleCatalog(t, http.StatusOK, testModuleCatalog)
-		srv.Close()
-		withModuleCatalogSource(t, srv.URL)
-		mods, err := loadModuleRegistry(t.Context())
-		require.NoError(t, err)
-		require.Equal(t, want, registryNames(mods))
-	})
+func TestLoadModuleRegistryUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T) (url string)
+		cache string
+		want  []string
+	}{
+		{
+			name: "no cache, server error",
+			setup: func(t *testing.T) string {
+				return serveModuleCatalog(t, http.StatusBadGateway, "").URL
+			},
+			want: []string{"couldn't fetch ", "unexpected status 502 Bad Gateway"},
+		},
+		{
+			name: "no cache, unusable response",
+			setup: func(t *testing.T) string {
+				return serveModuleCatalog(t, http.StatusOK, `{"version": 1, "modules": []}`).URL
+			},
+			want: []string{"module catalog has no modules"},
+		},
+		{
+			name: "no cache, unreachable",
+			setup: func(t *testing.T) string {
+				srv := serveModuleCatalog(t, http.StatusOK, testModuleCatalog)
+				srv.Close()
+				return srv.URL
+			},
+			want: []string{"connection refused"},
+		},
+		{
+			name: "corrupt cache",
+			setup: func(t *testing.T) string {
+				return serveModuleCatalog(t, http.StatusBadGateway, "").URL
+			},
+			cache: `{"version": 1, "modules": [`,
+			want:  []string{"unexpected status 502 Bad Gateway", "(cached copy unusable: "},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url := tc.setup(t)
+			cachePath := withModuleCatalogSource(t, url)
+			if tc.cache != "" {
+				writeStaleModuleCatalogCache(t, cachePath, tc.cache)
+			}
+			mods, err := loadModuleRegistry(t.Context())
+			require.Nil(t, mods, "never an empty or partial catalog")
+			var unavailable *moduleCatalogUnavailableError
+			require.ErrorAs(t, err, &unavailable)
+			require.Contains(t, err.Error(), "module catalog unavailable: couldn't fetch "+url+": ")
+			for _, want := range tc.want {
+				require.Contains(t, err.Error(), want)
+			}
+			require.NotContains(t, unavailable.Reason(), `Get "`, "the cause doesn't repeat the URL")
+		})
+	}
 
 	t.Run("no cache dir", func(t *testing.T) {
 		srv := serveModuleCatalog(t, http.StatusInternalServerError, "")
 		withModuleCatalogSource(t, srv.URL)
 		moduleCatalogCachePath = func() string { return "" }
-		mods, err := loadModuleRegistry(t.Context())
-		require.NoError(t, err)
-		require.Equal(t, want, registryNames(mods))
+		_, err := loadModuleRegistry(t.Context())
+		var unavailable *moduleCatalogUnavailableError
+		require.ErrorAs(t, err, &unavailable)
+		require.NotContains(t, err.Error(), "cached copy")
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		err := &moduleCatalogUnavailableError{URL: "https://example.com/modules.json", Err: fmt.Errorf("get: %w", context.DeadlineExceeded), CacheErr: os.ErrNotExist}
+		require.Equal(t, "couldn't fetch https://example.com/modules.json: no answer within 3s", err.Reason())
 	})
 }
 
@@ -358,9 +400,8 @@ func TestParseModuleCatalogMatcherFields(t *testing.T) {
 	}, rule.AnyOf)
 }
 
-func TestEmbeddedCatalogSDKsMatchSDKRegistry(t *testing.T) {
-	mods, err := parseModuleCatalog(embeddedModuleCatalog)
-	require.NoError(t, err)
+func TestCatalogSDKsMatchSDKRegistry(t *testing.T) {
+	mods := loadTestdataModuleCatalog(t)
 	sdks, err := loadSDKRegistry()
 	require.NoError(t, err)
 

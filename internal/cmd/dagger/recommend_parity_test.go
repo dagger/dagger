@@ -384,12 +384,10 @@ func recommendParityWorkspace(dag *dagger.Client, positive bool) *core.Workspace
 	return dir.AsWorkspace(core.DirectoryAsWorkspaceOpts{Cwd: "/py"})
 }
 
-func embeddedRecommendRegistry(t *testing.T) map[string]registryModule {
+func catalogRecommendRegistry(t *testing.T) map[string]registryModule {
 	t.Helper()
-	mods, err := parseModuleCatalog(embeddedModuleCatalog)
-	require.NoError(t, err)
 	byName := map[string]registryModule{}
-	for _, mod := range mods {
+	for _, mod := range loadTestdataModuleCatalog(t) {
 		if mod.Recommend != nil {
 			byName[mod.Name] = mod
 		}
@@ -397,8 +395,8 @@ func embeddedRecommendRegistry(t *testing.T) map[string]registryModule {
 	return byName
 }
 
-func TestEmbeddedCatalogMatchesLegacyRegistry(t *testing.T) {
-	catalog := embeddedRecommendRegistry(t)
+func TestCatalogMatchesLegacyRegistry(t *testing.T) {
+	catalog := catalogRecommendRegistry(t)
 	legacy := legacyModuleRegistry()
 	require.Len(t, catalog, len(legacy))
 	require.Len(t, recommendParityWant, len(legacy))
@@ -418,7 +416,7 @@ func TestRecommendParity(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, dag.Close()) })
 
-	catalog := embeddedRecommendRegistry(t)
+	catalog := catalogRecommendRegistry(t)
 	for _, tc := range []struct {
 		name     string
 		positive bool
@@ -448,8 +446,7 @@ func TestRecommendParity(t *testing.T) {
 
 	t.Run("recommendModules", func(t *testing.T) {
 		ws := recommendParityWorkspace(dag, true)
-		mods, err := parseModuleCatalog(embeddedModuleCatalog)
-		require.NoError(t, err)
+		mods := loadTestdataModuleCatalog(t)
 		installed := map[string]bool{"ruff": true, "go": true}
 
 		summarize := func(recs []recommendation) [][3]string {

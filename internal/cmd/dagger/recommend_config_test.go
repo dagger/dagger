@@ -97,8 +97,7 @@ func TestModuleRecommendationsInspectContents(t *testing.T) {
 		"ty":      {"ty/ty.toml", "python/pyproject.toml"},
 		"uv":      {"uv/uv.lock", "uv/uv.toml", "python/pyproject.toml"},
 	}
-	mods, err := parseModuleCatalog(embeddedModuleCatalog)
-	require.NoError(t, err)
+	mods := loadTestdataModuleCatalog(t)
 	for _, mod := range mods {
 		expected, ok := want[mod.Name]
 		if !ok {

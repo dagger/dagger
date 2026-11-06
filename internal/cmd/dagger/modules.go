@@ -3,12 +3,12 @@ package daggercmd
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -42,13 +42,6 @@ const (
 	moduleCatalogMaxAge = time.Hour
 )
 
-// embeddedModuleCatalog is the module catalog as of this CLI's build. It is
-// the last fallback when https://dagger.io/modules.json and the cached copy
-// are both unavailable.
-//
-//go:embed modules.json
-var embeddedModuleCatalog []byte
-
 // Test hooks.
 var (
 	moduleCatalogURL        = "https://dagger.io/modules.json"
@@ -58,13 +51,51 @@ var (
 	}
 )
 
+// moduleCatalogUnavailableError is a catalog that could be neither fetched
+// nor read from the cache: a first run offline, or dagger.io unreachable
+// with no cached copy. `dagger init` continues without recommendations;
+// `dagger module recommend` fails with it.
+type moduleCatalogUnavailableError struct {
+	URL string
+	// Err is why the fetch failed.
+	Err error
+	// CacheErr is why the cached copy couldn't be used: os.ErrNotExist when
+	// there is none.
+	CacheErr error
+}
+
+func (e *moduleCatalogUnavailableError) Error() string {
+	return "module catalog unavailable: " + e.Reason()
+}
+
+// Reason says what failed, in a line: the URL and why its fetch failed, and
+// why the cached copy couldn't stand in when there is one.
+func (e *moduleCatalogUnavailableError) Reason() string {
+	cause := e.Err.Error()
+	var urlErr *url.Error
+	switch {
+	case errors.Is(e.Err, context.DeadlineExceeded):
+		cause = fmt.Sprintf("no answer within %s", moduleCatalogFetchTimeout)
+	case errors.As(e.Err, &urlErr):
+		// Its message repeats the method and URL.
+		cause = urlErr.Err.Error()
+	}
+	reason := fmt.Sprintf("couldn't fetch %s: %s", e.URL, cause)
+	if e.CacheErr != nil && !errors.Is(e.CacheErr, os.ErrNotExist) {
+		reason += fmt.Sprintf(" (cached copy unusable: %s)", e.CacheErr)
+	}
+	return reason
+}
+
+func (e *moduleCatalogUnavailableError) Unwrap() error { return e.Err }
+
 // loadModuleRegistry loads the module catalog. A cached copy under an hour
 // old is used as is, without touching the network. Otherwise it fetches a
 // fresh copy from moduleCatalogURL, falling back to the stale cached copy
 // (which then counts as fresh for another hour, so a failing fetch is retried
-// at most hourly), then to the copy embedded at build time. A failed fetch
-// never yields an empty catalog. If ctx is done, it returns ctx's error
-// instead of falling back.
+// at most hourly). With neither, it returns a *moduleCatalogUnavailableError.
+// A failed fetch never yields an empty catalog. If ctx is done, it returns
+// ctx's error instead of falling back.
 func loadModuleRegistry(ctx context.Context) ([]registryModule, error) {
 	cached, fresh, cacheErr := readCachedModuleCatalog()
 	if fresh {
@@ -91,10 +122,7 @@ func loadModuleRegistry(ctx context.Context) ([]registryModule, error) {
 		}
 		return cached, nil
 	}
-	if !errors.Is(cacheErr, os.ErrNotExist) {
-		slog.Debug("cached module catalog unusable; using embedded copy", "error", cacheErr)
-	}
-	return parseModuleCatalog(embeddedModuleCatalog)
+	return nil, &moduleCatalogUnavailableError{URL: moduleCatalogURL, Err: err, CacheErr: cacheErr}
 }
 
 // readCachedModuleCatalog parses the cached catalog, and reports whether it
