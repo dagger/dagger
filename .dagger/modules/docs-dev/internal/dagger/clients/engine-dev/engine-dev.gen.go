@@ -79,11 +79,11 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../main.go:435:2)
+	Version string // engine-dev (../../main.go:517:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:432:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:514:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -150,6 +150,16 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+// The entries an engine image ships can be made again on the state an
+// earlier making left after a prune cut part of it, as a later release's
+// making does: an engine of this build makes them, prunes its cache to half
+// its size, least recently used first, and makes them again.
+func (r *EngineDev) ImageEntriesAfterPrune() *Check { // engine-dev (../../main.go:362:1)
+	q := r.query.Select("imageEntriesAfterPrune")
+
+	return new(Check).WithGraphQLQuery(q)
+}
+
 func (r *EngineDev) IncrementSubnet() *EngineDev { // engine-dev (../../main.go:122:1)
 	q := r.query.Select("incrementSubnet")
 
@@ -164,15 +174,15 @@ type EngineDevInstallClientOpts struct {
 	//
 	// The client container to configure
 	//
-	Client *Container // engine-dev (../../main.go:362:2)
+	Client *Container // engine-dev (../../main.go:444:2)
 	//
 	// The engine service to bind
 	//
-	Service *Service // engine-dev (../../main.go:365:2)
+	Service *Service // engine-dev (../../main.go:447:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../main.go:358:1)
+func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../main.go:440:1)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `client` optional argument
@@ -190,14 +200,14 @@ func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../main.go:419:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../main.go:501:1)
 	q := r.query.Select("introspectionJson")
 
 	return new(File).WithGraphQLQuery(q)
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../main.go:453:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../main.go:535:1)
 	q := r.query.Select("introspectionTool")
 
 	return new(File).WithGraphQLQuery(q)
@@ -261,17 +271,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../main.go:502:2)
+	Image string // engine-dev (../../main.go:584:2)
 
-	DryRun bool // engine-dev (../../main.go:507:2)
+	DryRun bool // engine-dev (../../main.go:589:2)
 
-	RegistryUsername string // engine-dev (../../main.go:510:2)
+	RegistryUsername string // engine-dev (../../main.go:592:2)
 
-	RegistryPassword *Secret // engine-dev (../../main.go:512:2)
+	RegistryPassword *Secret // engine-dev (../../main.go:594:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:497:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:579:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -299,7 +309,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:483:1)
+func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:565:1)
 	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)
@@ -307,15 +317,15 @@ func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:483:1)
 
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
-	GpuSupport bool // engine-dev (../../main.go:311:2)
+	GpuSupport bool // engine-dev (../../main.go:393:2)
 
-	SharedCache bool // engine-dev (../../main.go:313:2)
+	SharedCache bool // engine-dev (../../main.go:395:2)
 
-	Metrics bool // engine-dev (../../main.go:315:2)
+	Metrics bool // engine-dev (../../main.go:397:2)
 }
 
 // Create a test engine service
-func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../main.go:307:1)
+func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../main.go:389:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument

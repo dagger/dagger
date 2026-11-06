@@ -220,6 +220,13 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				}
 			}
 			return (*EngineDev).GraphqlSchema(&parent, ctx, version)
+		case "ImageEntriesAfterPrune":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*EngineDev).ImageEntriesAfterPrune(&parent, ctx)
 		case "IncrementSubnet":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

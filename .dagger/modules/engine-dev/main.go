@@ -258,18 +258,6 @@ func goSDKDaggerGo(ctx context.Context, source *dagger.Directory) (string, error
 // builds an engine of another platform made for it. builder builds what
 // runs here.
 func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, engine *dagger.Container, platform string) (*dagger.Directory, error) {
-	seed, err := builder.GoImageEntriesSeed(ctx)
-	if err != nil {
-		return nil, err
-	}
-	seedGoSDK, err := builder.GoSDKImageEntriesSeed(ctx)
-	if err != nil {
-		return nil, err
-	}
-	daggerGo, err := goSDKDaggerGo(ctx, dev.Source)
-	if err != nil {
-		return nil, err
-	}
 	// The state is the engine build's own, for the image's platform, named by
 	// its binary's content and the platform: making the same image again
 	// reuses its state and its cached entries, so the image is the same each
@@ -277,9 +265,39 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	// platform's image: a result two platforms' builds both make, such as a
 	// module download, is the same result, and the entries would ship the
 	// other platform's call of it, which this image's engine never makes.
+	client, exporter, err := dev.entriesExporter(ctx, builder, engine, platform, "dagger-image-entries")
+	if err != nil {
+		return nil, err
+	}
+	const out = "/entries"
+	ran := client.WithExec(withoutOuterSession(append(exporter, "-out", out)...), dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny})
+	if err := entriesExported(ctx, ran, exporter); err != nil {
+		return nil, err
+	}
+	return ran.Directory(out), nil
+}
+
+// entriesExporter is a client of a new engine service of engine's build, on
+// a state named state, the engine binary's content and platform, with what
+// cmd/engine-image-entries needs to make an image of platform's entries, and
+// the command that makes them, but for its -out. builder builds what runs
+// here.
+func (dev *EngineDev) entriesExporter(ctx context.Context, builder *build.Builder, engine *dagger.Container, platform, state string) (*dagger.Container, []string, error) {
+	seed, err := builder.GoImageEntriesSeed(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	seedGoSDK, err := builder.GoSDKImageEntriesSeed(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	daggerGo, err := goSDKDaggerGo(ctx, dev.Source)
+	if err != nil {
+		return nil, nil, err
+	}
 	engineDigest, err := engine.File(consts.EngineServerPath).Digest(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("the engine binary: %w", err)
+		return nil, nil, fmt.Errorf("the engine binary: %w", err)
 	}
 	// Its network is the one after this engine-dev's, without changing
 	// dev's: every image's entries are made at once, and an engine that took
@@ -288,7 +306,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	nested.IncrementSubnet()
 	service := engine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume("dagger-image-entries-"+engineDigest+"-"+strings.ReplaceAll(platform, "/", "-")), dagger.ContainerWithMountedCacheOpts{
+		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume(state+"-"+engineDigest+"-"+strings.ReplaceAll(platform, "/", "-")), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModeLocked,
 		}).
 		AsService(dagger.ContainerAsServiceOpts{
@@ -303,35 +321,68 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 		})
 	client, err := dev.InstallClient(ctx, wolfi.New().Container(), service)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	const out = "/entries"
-	ran := client.
+	client = client.
 		WithMountedFile("/usr/local/bin/engine-image-entries", builder.ImageEntriesBinary()).
 		WithMountedDirectory("/seed", seed).
-		WithMountedDirectory("/seed-go-sdk", seedGoSDK).
-		WithExec(withoutOuterSession("engine-image-entries",
-			"-seed", "/seed",
-			"-entrypoint-seed", "/seed-go-sdk",
-			"-dagger-go", daggerGo,
-			"-go-version", distconsts.GolangVersion,
-			"-platform", platform,
-			"-out", out,
-		), dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny})
-	// A failure says why, such as dagger/go unreachable at the Go SDK
-	// module's pin, rather than only its exit code.
+		WithMountedDirectory("/seed-go-sdk", seedGoSDK)
+	return client, []string{"engine-image-entries",
+		"-seed", "/seed",
+		"-entrypoint-seed", "/seed-go-sdk",
+		"-dagger-go", daggerGo,
+		"-go-version", distconsts.GolangVersion,
+		"-platform", platform,
+	}, nil
+}
+
+// entriesExported is nil when ran, an exec that makes an image's entries
+// with exporter, exited 0, and otherwise says why it didn't, such as dagger/go
+// unreachable at the Go SDK module's pin, rather than only its exit code.
+func entriesExported(ctx context.Context, ran *dagger.Container, exporter []string) error {
 	exitCode, err := ran.ExitCode(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if exitCode != 0 {
 		output, err := ran.CombinedOutput(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return nil, fmt.Errorf("make the engine image's entries, with dagger/go at %s (exit code %d):\n%s", daggerGo, exitCode, tailLines(output, 40))
+		return fmt.Errorf("make the engine image's entries, with %s (exit code %d):\n%s", strings.Join(exporter, " "), exitCode, tailLines(output, 40))
 	}
-	return ran.Directory(out), nil
+	return nil
+}
+
+// The entries an engine image ships can be made again on the state an
+// earlier making left after a prune cut part of it, as a later release's
+// making does: an engine of this build makes them, prunes its cache to half
+// its size, least recently used first, and makes them again.
+// +check
+func (dev *EngineDev) ImageEntriesAfterPrune(ctx context.Context) error {
+	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty, dev.Ws)
+	if err != nil {
+		return err
+	}
+	builder = builder.WithRace(dev.Race)
+	engine, err := dev.engine(ctx, builder, "", "")
+	if err != nil {
+		return err
+	}
+	// A state of its own, which no image's entries are made on.
+	client, exporter, err := dev.entriesExporter(ctx, builder, engine, builder.Platform(), "dagger-image-entries-after-prune")
+	if err != nil {
+		return err
+	}
+	ran := client.WithExec(withoutOuterSession(append([]string{"sh", "-c", `set -e
+"$@" -out /entries-before
+size=$(echo '{ engine { localCache { entrySet { diskSpaceBytes } } } }' | dagger query | grep -o '"diskSpaceBytes": *[0-9]*' | grep -o '[0-9]*$')
+half=$((size / 2 / 1048576))MB
+echo "pruning the cache of $size bytes to $half"
+echo "{ engine { localCache { prune(maxUsedSpace: \"$half\", targetSpace: \"$half\") } } }" | dagger query
+"$@" -out /entries
+`, "sh"}, exporter...)...), dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny})
+	return entriesExported(ctx, ran, exporter)
 }
 
 // Create a test engine service

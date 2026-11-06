@@ -150,6 +150,16 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+// The entries an engine image ships can be made again on the state an
+// earlier making left after a prune cut part of it, as a later release's
+// making does: an engine of this build makes them, prunes its cache to half
+// its size, least recently used first, and makes them again.
+func (r *EngineDev) ImageEntriesAfterPrune() *Check {
+	q := r.query.Select("imageEntriesAfterPrune")
+
+	return new(Check).WithGraphQLQuery(q)
+}
+
 func (r *EngineDev) IncrementSubnet() *EngineDev {
 	q := r.query.Select("incrementSubnet")
 
