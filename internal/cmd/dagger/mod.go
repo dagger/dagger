@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"text/tabwriter"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	searchSDKOnly   bool
-	searchPurpose   string
-	searchFunctions []string
-	searchJSON      bool
+	searchSDKOnly      bool
+	searchPurpose      string
+	searchCapabilities []string
+	searchJSON         bool
 )
 
 // moduleSearchNoMatch is printed when the index has no match. Every search is
@@ -28,18 +28,21 @@ var (
 const moduleSearchNoMatch = "No published module matches. This search was logged so Dagger can see what's missing."
 
 // moduleSearchNoSDKMatch is printed when --sdk filters out every match.
-const moduleSearchNoSDKMatch = "No published SDK matches; run without --sdk to see the modules that do."
+const moduleSearchNoSDKMatch = "No published SDK matches, though other modules do."
 
 var searchCmd = &cobra.Command{
 	Use:   "search [query]",
 	Short: "Search for modules you can install",
-	Long: `Search the Dagger module index on Dagger Cloud by name, alias or description.
+	Long: `Search the Dagger module index on Dagger Cloud by name, alias, description
+or artifacts.
 
-Say what you are trying to do with --for, and which functions you hope to call
-with --function: it tells Dagger which modules people need.
+Say what you are trying to do with --for, and what you need the module to do
+with --capability: each result shows whether it covers each capability, and
+with which check, generator, function or setting. It also tells Dagger which
+modules people need.
 
 Searches are logged to help Dagger see which modules people need: the query,
---for and --function values are recorded by Dagger Cloud. When you are logged
+--for and --capability values are recorded by Dagger Cloud. When you are logged
 in to Dagger Cloud, the search is attributed to your account; otherwise it is
 anonymous. With DO_NOT_TRACK=1, no account, org or trace is recorded.
 
@@ -47,14 +50,14 @@ Search needs Dagger Cloud: there is no offline fallback.
 
 With no query and no --for, lists all published modules.`,
 	Example: `dagger module search wolfi
-dagger module search terraform --for "plan infrastructure changes in CI" --function plan --function apply`,
+dagger module search --for "lint Python code in CI" --capability lint --capability format`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opts := moduleSearchOpts{
-			Purpose:   searchPurpose,
-			Functions: searchFunctions,
-			SDKOnly:   searchSDKOnly,
-			JSON:      searchJSON,
+			Purpose:      searchPurpose,
+			Capabilities: searchCapabilities,
+			SDKOnly:      searchSDKOnly,
+			JSON:         searchJSON,
 		}
 		if len(args) == 1 {
 			opts.Query = args[0]
@@ -69,17 +72,17 @@ dagger module search terraform --for "plan infrastructure changes in CI" --funct
 
 func init() {
 	searchCmd.Flags().StringVar(&searchPurpose, "for", "", "What you are trying to do, e.g. \"lint Python code in CI\"")
-	searchCmd.Flags().StringArrayVar(&searchFunctions, "function", nil, "A function you hope to call (repeatable)")
+	searchCmd.Flags().StringArrayVar(&searchCapabilities, "capability", nil, "Something you need the module to do, e.g. \"lint\" (repeatable)")
 	searchCmd.Flags().BoolVar(&searchSDKOnly, "sdk", false, "Only show modules that provide SDK capabilities")
 	searchCmd.Flags().BoolVar(&searchJSON, "json", false, "Print results as JSON")
 }
 
 type moduleSearchOpts struct {
-	Query     string
-	Purpose   string
-	Functions []string
-	SDKOnly   bool
-	JSON      bool
+	Query        string
+	Purpose      string
+	Capabilities []string
+	SDKOnly      bool
+	JSON         bool
 }
 
 // moduleSearchClient is a Cloud client carrying the user's Cloud credentials
@@ -102,9 +105,9 @@ func moduleSearchClient(ctx context.Context) (*cloud.Client, error) {
 
 func moduleSearch(ctx context.Context, client *cloud.Client, out io.Writer, opts moduleSearchOpts) error {
 	discovery, err := client.DiscoverModules(ctx, cloud.DiscoverModulesRequest{
-		Query:     opts.Query,
-		Purpose:   opts.Purpose,
-		Functions: opts.Functions,
+		Query:        opts.Query,
+		Purpose:      opts.Purpose,
+		Capabilities: opts.Capabilities,
 	}, cloud.DiscoverOptions{
 		Kind:       cloud.DiscoverClientCLI,
 		Version:    engine.Version,
@@ -141,19 +144,22 @@ func printModuleSearchResults(out io.Writer, listings []cloud.ModuleListing) err
 		return err
 	}
 
-	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "SOURCE\tDESCRIPTION"); err != nil {
-		return err
-	}
+	// A table of sources, each followed by its coverage of the requested
+	// capabilities, if any. Sources are padded by hand: the coverage lines
+	// between them would split a tabwriter's columns.
+	const sourceHeader = "SOURCE"
+	width := len(sourceHeader)
 	for _, listing := range listings {
-		if _, err := fmt.Fprintf(w, "%s\t%s\n", listing.Ref, listing.Description); err != nil {
-			return err
+		width = max(width, len(listing.Ref))
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-*s  %s\n", width, sourceHeader, "DESCRIPTION")
+	for _, listing := range listings {
+		fmt.Fprintf(&b, "%-*s  %s\n", width, listing.Ref, listing.Description)
+		for _, line := range cloud.FormatCoverage(listing) {
+			b.WriteString(line + "\n")
 		}
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
-
-	_, err := fmt.Fprintln(out, "\nRun 'dagger install <SOURCE>' to install a module.")
+	_, err := io.WriteString(out, b.String())
 	return err
 }

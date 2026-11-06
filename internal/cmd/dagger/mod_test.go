@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 
@@ -77,8 +76,21 @@ func (f *fakeDiscoverCloud) only() fakeDiscoverRequest {
 }
 
 const discoverTwoResults = `{"data":{"discoverModules":{"id":"evt_1","results":[
-  {"name":"ruff","kind":"MODULE","ref":"dagger.io/python/ruff","aliases":[],"description":"Lint and format Python projects with Ruff","docsUrl":"https://docs.dagger.io/reference/modules/python/ruff","publisher":"Dagger","official":true,"matchedOn":["name"]},
-  {"name":"python","kind":"SDK","ref":"dagger.io/sdk/python","aliases":["py"],"description":"Official Dagger SDK for Python","docsUrl":null,"publisher":"Dagger","official":true,"matchedOn":["description"]}
+  {"name":"ruff","kind":"MODULE","ref":"dagger.io/python/ruff","aliases":[],"description":"Lint and format Python projects with Ruff","docsUrl":"https://docs.dagger.io/reference/modules/python/ruff","publisher":"Dagger","official":true,"matchedOn":["name"],"coverage":[]},
+  {"name":"python","kind":"SDK","ref":"dagger.io/sdk/python","aliases":["py"],"description":"Official Dagger SDK for Python","docsUrl":null,"publisher":"Dagger","official":true,"matchedOn":["description"],"coverage":[]}
+]}}}`
+
+// discoverWithCoverage answers a search for the capabilities "lint",
+// "format code" and "sign an apk", the way the API does: one coverage entry
+// per capability, in request order.
+const discoverWithCoverage = `{"data":{"discoverModules":{"id":"evt_4","results":[
+  {"name":"ruff","kind":"MODULE","ref":"dagger.io/python/ruff","aliases":[],"description":"Lint and format Python projects with Ruff","docsUrl":null,"publisher":"Dagger","official":true,"matchedOn":["artifacts"],"coverage":[
+    {"capability":"lint","status":"COVERED","score":0.93,"role":"CHECK","uri":"dag+check://?check=ruff/projects/lint","type":"Check","object":null,"function":null,"setting":null,
+     "dimensions":[{"name":"ruff-project","keyName":"path","keyDescription":"Path of the project, relative to the workspace."}],"description":"Lint this project with ruff.","matchedOn":["name"]},
+    {"capability":"format code","status":"PARTIAL","score":0.41,"role":"GENERATOR","uri":"dag+generator://?generator=ruff/projects/format","type":"Generator","object":null,"function":null,"setting":null,
+     "dimensions":[{"name":"ruff-project","keyName":"path","keyDescription":"Path of the project, relative to the workspace."}],"description":"Format this project with ruff. Rewrites files in place.","matchedOn":["description"]},
+    {"capability":"sign an apk","status":"MISSING","score":0.0,"role":null,"uri":null,"type":null,"object":null,"function":null,"setting":null,"dimensions":[],"description":null,"matchedOn":[]}
+  ]}
 ]}}}`
 
 const discoverNoResults = `{"data":{"discoverModules":{"id":"evt_2","results":[]}}}`
@@ -107,30 +119,46 @@ func TestModuleSearchRendersResults(t *testing.T) {
 	ctx, traceID := tracedContext(t)
 
 	out, err := runModuleSearchForTest(t, ctx, moduleSearchOpts{
-		Query:     "python",
-		Purpose:   "lint my Python code in CI",
-		Functions: []string{"lint", "format"},
+		Query:   "python",
+		Purpose: "lint my Python code in CI",
 	})
 	require.NoError(t, err)
-
-	lines := strings.Split(out, "\n")
-	require.Equal(t, []string{"SOURCE", "DESCRIPTION"}, strings.Fields(lines[0]))
-	require.Contains(t, lines[1], "dagger.io/python/ruff")
-	require.Contains(t, lines[1], "Lint and format Python projects with Ruff")
-	require.Contains(t, lines[2], "dagger.io/sdk/python")
-	require.Contains(t, out, "\nRun 'dagger install <SOURCE>' to install a module.\n")
+	require.Equal(t, ""+
+		"SOURCE                 DESCRIPTION\n"+
+		"dagger.io/python/ruff  Lint and format Python projects with Ruff\n"+
+		"dagger.io/sdk/python   Official Dagger SDK for Python\n", out)
 
 	req := fake.only()
-	require.Contains(t, req.Query, "discoverModules(query: $query, purpose: $purpose, functions: $functions)")
+	require.Contains(t, req.Query, "discoverModules(query: $query, purpose: $purpose, capabilities: $capabilities)")
 	require.Equal(t, map[string]any{
-		"query":     "python",
-		"purpose":   "lint my Python code in CI",
-		"functions": []any{"lint", "format"},
+		"query":   "python",
+		"purpose": "lint my Python code in CI",
 	}, req.Variables)
 	require.Regexp(t, `^dagger/\S+$`, req.Header.Get("User-Agent"))
 	require.Contains(t, req.Header.Get("Traceparent"), traceID.String())
 	require.Empty(t, req.Header.Get("DNT"))
 	require.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("dag_test_search_token:")), req.Header.Get("Authorization"))
+}
+
+func TestModuleSearchRendersCoverage(t *testing.T) {
+	fake := newFakeDiscoverCloud(t, http.StatusOK, discoverWithCoverage)
+	out, err := runModuleSearchForTest(t, t.Context(), moduleSearchOpts{
+		Purpose:      "keep my Python code tidy",
+		Capabilities: []string{"lint", " format code ", "", "sign an apk"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, ""+
+		"SOURCE                 DESCRIPTION\n"+
+		"dagger.io/python/ruff  Lint and format Python projects with Ruff\n"+
+		`  covered  "lint"         check      dag+check://?check=ruff/projects/lint [ruff-project=<path>]`+"\n"+
+		`  partial  "format code"  generator  dag+generator://?generator=ruff/projects/format [ruff-project=<path>] — Format this project with ruff.`+"\n"+
+		`  missing  "sign an apk"`+"\n", out)
+	require.NotContains(t, out, "dagger install", "no command suggestions")
+
+	require.Equal(t, map[string]any{
+		"purpose":      "keep my Python code tidy",
+		"capabilities": []any{"lint", "format code", "sign an apk"},
+	}, fake.only().Variables)
 }
 
 func TestModuleSearchNoArgsSendsNoFilters(t *testing.T) {
@@ -159,9 +187,45 @@ func TestModuleSearchJSON(t *testing.T) {
 		Publisher:   "Dagger",
 		Official:    true,
 		MatchedOn:   []string{"name"},
+		Coverage:    []cloud.CapabilityCoverage{},
 	}, got.Results[0])
 	require.Contains(t, out, `"docsUrl": "https://docs.dagger.io/reference/modules/python/ruff"`)
 	require.Contains(t, out, `"matchedOn": [`)
+	require.Contains(t, out, `"coverage": []`)
+}
+
+func TestModuleSearchJSONCoverage(t *testing.T) {
+	newFakeDiscoverCloud(t, http.StatusOK, discoverWithCoverage)
+	out, err := runModuleSearchForTest(t, t.Context(), moduleSearchOpts{
+		Capabilities: []string{"lint", "format code", "sign an apk"},
+		JSON:         true,
+	})
+	require.NoError(t, err)
+
+	var got cloud.ModuleDiscovery
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Len(t, got.Results, 1)
+	coverage := got.Results[0].Coverage
+	require.Len(t, coverage, 3)
+	require.Equal(t, cloud.CapabilityCoverage{
+		Capability: "lint",
+		Status:     cloud.CoverageCovered,
+		Score:      0.93,
+		Role:       cloud.ArtifactRoleCheck,
+		URI:        "dag+check://?check=ruff/projects/lint",
+		Type:       "Check",
+		Dimensions: []cloud.ModuleDimension{{
+			Name: "ruff-project", KeyName: "path", KeyDescription: "Path of the project, relative to the workspace.",
+		}},
+		Description: "Lint this project with ruff.",
+		MatchedOn:   []string{"name"},
+	}, coverage[0])
+	require.Equal(t, cloud.CapabilityCoverage{
+		Capability: "sign an apk",
+		Status:     cloud.CoverageMissing,
+		Dimensions: []cloud.ModuleDimension{},
+		MatchedOn:  []string{},
+	}, coverage[2])
 }
 
 func TestModuleSearchSDKOnly(t *testing.T) {
@@ -185,7 +249,7 @@ func TestModuleSearchSDKOnlyWithoutSDKMatches(t *testing.T) {
 	]}}}`)
 	out, err := runModuleSearchForTest(t, t.Context(), moduleSearchOpts{Query: "ruff", SDKOnly: true})
 	require.NoError(t, err)
-	require.Equal(t, "No published SDK matches; run without --sdk to see the modules that do.\n", out)
+	require.Equal(t, "No published SDK matches, though other modules do.\n", out)
 }
 
 func TestModuleSearchNoResults(t *testing.T) {
@@ -253,7 +317,8 @@ func TestModuleSearchHelpDisclosesLogging(t *testing.T) {
 	require.Contains(t, searchCmd.Long, "Searches are logged to help Dagger see which modules people need")
 	require.Contains(t, searchCmd.Long, "DO_NOT_TRACK=1")
 	require.Contains(t, searchCmd.Long, "no offline fallback")
-	for _, flag := range []string{"for", "function", "json", "sdk"} {
+	for _, flag := range []string{"for", "capability", "json", "sdk"} {
 		require.NotNil(t, searchCmd.Flags().Lookup(flag), flag)
 	}
+	require.Nil(t, searchCmd.Flags().Lookup("function"), "--capability replaces --function")
 }

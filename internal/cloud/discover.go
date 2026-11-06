@@ -40,6 +40,62 @@ type ModuleListing struct {
 	Publisher   string     `json:"publisher"`
 	Official    bool       `json:"official"`
 	MatchedOn   []string   `json:"matchedOn"`
+	// One entry per requested capability, in request order. Empty when none
+	// were requested.
+	Coverage []CapabilityCoverage `json:"coverage"`
+}
+
+// CoverageStatus is how well a module covers a requested capability.
+type CoverageStatus string
+
+const (
+	CoverageCovered CoverageStatus = "COVERED"
+	CoveragePartial CoverageStatus = "PARTIAL"
+	CoverageMissing CoverageStatus = "MISSING"
+)
+
+// ArtifactRole is the kind of entrypoint a capability matched.
+type ArtifactRole string
+
+const (
+	ArtifactRoleCheck      ArtifactRole = "CHECK"
+	ArtifactRoleGenerator  ArtifactRole = "GENERATOR"
+	ArtifactRoleService    ArtifactRole = "SERVICE"
+	ArtifactRoleAgent      ArtifactRole = "AGENT"
+	ArtifactRoleArtifact   ArtifactRole = "ARTIFACT"
+	ArtifactRoleCollection ArtifactRole = "COLLECTION"
+	ArtifactRoleFunction   ArtifactRole = "FUNCTION"
+	ArtifactRoleSetting    ArtifactRole = "SETTING"
+)
+
+// CapabilityCoverage is how one module covers one requested capability.
+type CapabilityCoverage struct {
+	Capability string         `json:"capability"`
+	Status     CoverageStatus `json:"status"`
+	Score      float64        `json:"score"`
+	// Null when MISSING.
+	Role ArtifactRole `json:"role,omitempty"`
+	// Keyless typed DAG link, assuming the module's default install name.
+	// Empty for FUNCTION, SETTING and MISSING.
+	URI string `json:"uri,omitempty"`
+	// Artifact type, e.g. Check, Generator, Container.
+	Type string `json:"type,omitempty"`
+	// Object type and function name, for FUNCTION.
+	Object   string `json:"object,omitempty"`
+	Function string `json:"function,omitempty"`
+	// Setting name, for SETTING.
+	Setting string `json:"setting,omitempty"`
+	// Collection dimensions that narrow the target.
+	Dimensions  []ModuleDimension `json:"dimensions"`
+	Description string            `json:"description,omitempty"`
+	MatchedOn   []string          `json:"matchedOn"`
+}
+
+// ModuleDimension is a collection dimension, keyed by keyName.
+type ModuleDimension struct {
+	Name           string `json:"name"`
+	KeyName        string `json:"keyName"`
+	KeyDescription string `json:"keyDescription"`
 }
 
 // ModuleDiscovery is the result of one logged search of the module index.
@@ -52,12 +108,14 @@ type ModuleDiscovery struct {
 
 // DiscoverModulesRequest is what a caller searches for. Cloud logs all of it.
 type DiscoverModulesRequest struct {
-	// Free text matched against name, aliases and description.
+	// Free text matched against each module's name, aliases, description and
+	// artifacts.
 	Query string
 	// What the caller is trying to do.
 	Purpose string
-	// Functions the caller hopes to call.
-	Functions []string
+	// Short free-text capabilities wanted, e.g. "lint" or "apply a saved
+	// plan". Each result reports its coverage of each, in this order.
+	Capabilities []string
 }
 
 // DiscoverOptions describe the client making a search, sent as headers rather
@@ -85,8 +143,8 @@ func DiscoverUserAgent(kind DiscoverClientKind, version string) string {
 	return product + "/" + version
 }
 
-const discoverModulesQuery = `query DiscoverModules($query: String, $purpose: String, $functions: [String!]) {
-  discoverModules(query: $query, purpose: $purpose, functions: $functions) {
+const discoverModulesQuery = `query DiscoverModules($query: String, $purpose: String, $capabilities: [String!]) {
+  discoverModules(query: $query, purpose: $purpose, capabilities: $capabilities) {
     id
     results {
       name
@@ -98,6 +156,20 @@ const discoverModulesQuery = `query DiscoverModules($query: String, $purpose: St
       publisher
       official
       matchedOn
+      coverage {
+        capability
+        status
+        score
+        role
+        uri
+        type
+        object
+        function
+        setting
+        dimensions { name keyName keyDescription }
+        description
+        matchedOn
+      }
     }
   }
 }`
@@ -118,14 +190,14 @@ func (c *Client) DiscoverModules(ctx context.Context, req DiscoverModulesRequest
 	if purpose := strings.TrimSpace(req.Purpose); purpose != "" {
 		variables["purpose"] = purpose
 	}
-	var functions []string
-	for _, fn := range req.Functions {
-		if fn = strings.TrimSpace(fn); fn != "" {
-			functions = append(functions, fn)
+	var capabilities []string
+	for _, capability := range req.Capabilities {
+		if capability = strings.TrimSpace(capability); capability != "" {
+			capabilities = append(capabilities, capability)
 		}
 	}
-	if len(functions) > 0 {
-		variables["functions"] = functions
+	if len(capabilities) > 0 {
+		variables["capabilities"] = capabilities
 	}
 
 	header := http.Header{}
@@ -150,6 +222,21 @@ func (c *Client) DiscoverModules(ctx context.Context, req DiscoverModulesRequest
 	}
 	if data.DiscoverModules.Results == nil {
 		data.DiscoverModules.Results = []ModuleListing{}
+	}
+	// JSON consumers see [] rather than null for the empty lists.
+	for i := range data.DiscoverModules.Results {
+		listing := &data.DiscoverModules.Results[i]
+		if listing.Coverage == nil {
+			listing.Coverage = []CapabilityCoverage{}
+		}
+		for j := range listing.Coverage {
+			if listing.Coverage[j].Dimensions == nil {
+				listing.Coverage[j].Dimensions = []ModuleDimension{}
+			}
+			if listing.Coverage[j].MatchedOn == nil {
+				listing.Coverage[j].MatchedOn = []string{}
+			}
+		}
 	}
 	return data.DiscoverModules, nil
 }

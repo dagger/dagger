@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
@@ -63,8 +65,21 @@ func TestSearchModulesTool(t *testing.T) {
 	t.Setenv("DO_NOT_TRACK", "")
 	const secret = "agent-search-credential-never-in-output"
 	const results = `{"data":{"discoverModules":{"id":"evt_1","results":[
-	  {"name":"terraform","kind":"MODULE","ref":"dagger.io/terraform","aliases":["tf"],"description":"Plan and apply Terraform","docsUrl":"https://docs.dagger.io/reference/modules/terraform","publisher":"Dagger","official":true,"matchedOn":["name","alias"]},
-	  {"name":"opentofu","kind":"MODULE","ref":"dagger.io/opentofu","aliases":[],"description":"Plan and apply OpenTofu","docsUrl":null,"publisher":"Dagger","official":true,"matchedOn":["description"]}
+	  {"name":"terraform","kind":"MODULE","ref":"dagger.io/terraform","aliases":["tf"],"description":"Plan and apply Terraform","docsUrl":null,"publisher":"Dagger","official":true,"matchedOn":["name","alias"],"coverage":[
+	    {"capability":"plan","status":"COVERED","score":0.9,"role":"CHECK","uri":"dag+check://?check=terraform/projects/plan","type":"Check","object":null,"function":null,"setting":null,
+	     "dimensions":[{"name":"terraform-project","keyName":"path","keyDescription":"Path of the project."}],"description":"Plan this project.","matchedOn":["name"]},
+	    {"capability":"apply a saved plan","status":"PARTIAL","score":0.4,"role":"FUNCTION","uri":null,"type":null,"object":"TerraformProject","function":"apply","setting":null,
+	     "dimensions":[{"name":"terraform-project","keyName":"path","keyDescription":"Path of the project."}],"description":"Apply a saved plan to the workspace's infrastructure. Needs credentials.","matchedOn":["description"]},
+	    {"capability":"pin the terraform version","status":"PARTIAL","score":0.3,"role":"SETTING","uri":null,"type":"String","object":null,"function":null,"setting":"version",
+	     "dimensions":[],"description":"Terraform version to install. Defaults to the latest release.","matchedOn":["name"]},
+	    {"capability":"lint hcl","status":"MISSING","score":0.05,"role":null,"uri":null,"type":null,"object":null,"function":null,"setting":null,"dimensions":[],"description":null,"matchedOn":[]}
+	  ]},
+	  {"name":"opentofu","kind":"MODULE","ref":"dagger.io/opentofu","aliases":[],"description":"Plan and apply OpenTofu","docsUrl":null,"publisher":"Dagger","official":true,"matchedOn":["description"],"coverage":[
+	    {"capability":"plan","status":"PARTIAL","score":0.3,"role":"CHECK","uri":"dag+check://?check=opentofu/plan","type":"Check","object":null,"function":null,"setting":null,"dimensions":[],"description":"Plan changes with OpenTofu.","matchedOn":["description"]},
+	    {"capability":"apply a saved plan","status":"MISSING","score":0.1,"role":null,"uri":null,"type":null,"object":null,"function":null,"setting":null,"dimensions":[],"description":null,"matchedOn":[]},
+	    {"capability":"pin the terraform version","status":"MISSING","score":0.0,"role":null,"uri":null,"type":null,"object":null,"function":null,"setting":null,"dimensions":[],"description":null,"matchedOn":[]},
+	    {"capability":"lint hcl","status":"MISSING","score":0.0,"role":null,"uri":null,"type":null,"object":null,"function":null,"setting":null,"dimensions":[],"description":null,"matchedOn":[]}
+	  ]}
 	]}}}`
 	cloudURL, requests := searchModulesCloud(t, http.StatusOK, results)
 
@@ -91,51 +106,64 @@ func TestSearchModulesTool(t *testing.T) {
 	require.True(t, tool.ReadOnly)
 	require.Contains(t, tool.Description, "Every search is logged by Dagger Cloud")
 	require.Contains(t, tool.Description, "installs nothing")
+	require.Contains(t, tool.Schema["properties"], "capabilities")
+	require.NotContains(t, tool.Schema["properties"], "functions")
 	mcpTool, err := genMcpTool(*tool)
 	require.NoError(t, err)
 	require.Equal(t, searchModulesToolName, mcpTool.Name)
 
 	t.Run("results", func(t *testing.T) {
 		out, err := tool.Call(ctx, map[string]any{
-			"query":     "terraform",
-			"purpose":   "plan infrastructure changes in CI",
-			"functions": []any{"plan", "apply"},
+			"query":        "terraform",
+			"purpose":      "plan infrastructure changes in CI",
+			"capabilities": []any{"plan", "apply a saved plan", "pin the terraform version", "lint hcl"},
 		})
 		require.NoError(t, err)
 		text := out.(string)
 		require.NotContains(t, text, secret)
 
-		var got []map[string]any
-		require.NoError(t, json.Unmarshal([]byte(text), &got))
-		require.Equal(t, []map[string]any{
-			{
-				"name":        "terraform",
-				"ref":         "dagger.io/terraform",
-				"description": "Plan and apply Terraform",
-				"docsUrl":     "https://docs.dagger.io/reference/modules/terraform",
-				"official":    true,
-				"matchedOn":   []any{"name", "alias"},
-			},
-			{
-				"name":        "opentofu",
-				"ref":         "dagger.io/opentofu",
-				"description": "Plan and apply OpenTofu",
-				"official":    true,
-				"matchedOn":   []any{"description"},
-			},
-		}, got)
+		sp := func(n int) string { return strings.Repeat(" ", n) }
+		require.Equal(t, strings.Join([]string{
+			"terraform  dagger.io/terraform  Plan and apply Terraform",
+			`  covered  "plan"` + sp(23) + "check" + sp(5) + "dag+check://?check=terraform/projects/plan [terraform-project=<path>]",
+			`  partial  "apply a saved plan"` + sp(9) + "function" + sp(2) + "TerraformProject.apply [terraform-project=<path>] — Apply a saved plan to the workspace's infrastructure.",
+			`  partial  "pin the terraform version"` + sp(2) + "setting" + sp(3) + "[modules.terraform] settings.version — Terraform version to install.",
+			`  missing  "lint hcl"`,
+			"opentofu  dagger.io/opentofu  Plan and apply OpenTofu",
+			`  partial  "plan"` + sp(23) + "check" + sp(2) + "dag+check://?check=opentofu/plan — Plan changes with OpenTofu.",
+			`  missing  "apply a saved plan"`,
+			`  missing  "pin the terraform version"`,
+			`  missing  "lint hcl"`,
+			"",
+			cloud.DiscoverFooter,
+		}, "\n"), text)
+		require.Equal(t, 1, strings.Count(text, cloud.DiscoverFooter), "the footer is printed once")
+		require.NotContains(t, text, "dagger install", "no commands")
 
 		reqs := requests()
 		req := reqs[len(reqs)-1]
 		require.Equal(t, map[string]any{
-			"query":     "terraform",
-			"purpose":   "plan infrastructure changes in CI",
-			"functions": []any{"plan", "apply"},
+			"query":        "terraform",
+			"purpose":      "plan infrastructure changes in CI",
+			"capabilities": []any{"plan", "apply a saved plan", "pin the terraform version", "lint hcl"},
 		}, req.Variables)
 		require.Equal(t, "dagger-agent/v0.99.0", req.header.Get("User-Agent"))
 		require.Equal(t, "Bearer "+secret, req.header.Get("Authorization"), "the connecting client's credentials are sent")
 		require.Contains(t, req.header.Get("Traceparent"), traceID.String())
 		require.Empty(t, req.header.Get("DNT"))
+	})
+
+	t.Run("no capabilities", func(t *testing.T) {
+		noCoverage := `{"data":{"discoverModules":{"id":"evt_5","results":[
+		  {"name":"terraform","kind":"MODULE","ref":"dagger.io/terraform","aliases":[],"description":"Plan and apply Terraform","docsUrl":null,"publisher":"Dagger","official":true,"matchedOn":["purpose"],"coverage":[]}
+		]}}}`
+		url, _ := searchModulesCloud(t, http.StatusOK, noCoverage)
+		plainMeta := *meta
+		plainMeta.CloudURL = url
+		plainCtx := ContextWithQuery(baseCtx, &Query{Server: &mockServer{clientMetadata: &plainMeta}})
+		out, err := tool.Call(plainCtx, map[string]any{"purpose": "deploy with terraform"})
+		require.NoError(t, err)
+		require.Equal(t, "terraform  dagger.io/terraform  Plan and apply Terraform\n\n"+cloud.DiscoverFooter, out)
 	})
 
 	t.Run("purpose is required", func(t *testing.T) {

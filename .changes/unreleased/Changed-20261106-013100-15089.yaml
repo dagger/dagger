@@ -1,6 +1,6 @@
 kind: Changed
 body: |
-  `dagger module search` now searches Dagger's published module index on Dagger Cloud instead of a list built into the CLI, and takes `--for` (what you are trying to do), `--function` (functions you hope to call) and `--json`. Searches are logged to help Dagger see which modules people need; with `DO_NOT_TRACK=1` no account, org or trace is recorded. Search needs Dagger Cloud and has no offline fallback. `dagger agent` gains a `SearchModules` tool that searches the same index.
+  `dagger module search` now searches Dagger's published module index on Dagger Cloud instead of a list built into the CLI, and takes `--for` (what you are trying to do), `--capability` (something you need the module to do, repeatable) and `--json`. Each result shows how it covers each capability: covered, partial or missing, and the check, generator, function or setting that provides it. Searches are logged to help Dagger see which modules people need; with `DO_NOT_TRACK=1` no account, org or trace is recorded. Search needs Dagger Cloud and has no offline fallback. `dagger agent` gains a `SearchModules` tool that searches the same index.
 time: 2026-11-06T01:31:00Z
 custom:
   Author: vito

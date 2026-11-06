@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -19,9 +18,10 @@ import (
 const searchModulesToolName = "SearchModules"
 
 const searchModulesDescription = "Search Dagger's published module index for a module that already does what you need, e.g. lint Python or deploy with Terraform. " +
-	"Every search is logged by Dagger Cloud, query, purpose and functions included, so Dagger can see which modules people need; " +
+	"Every search is logged by Dagger Cloud, query, purpose and capabilities included, so Dagger can see which modules people need; " +
 	"it is attributed to the user's Dagger Cloud account when they are logged in, and anonymous otherwise.\n" +
-	"Returns the matches, best first, as JSON: name, ref, description, docsUrl, official, and matchedOn (why it matched). " +
+	"Returns the matches, best first, one line each: name, ref, description. " +
+	"Under each, one line per requested capability: covered, partial or missing, then the role and the DAG link, Object.function or dagger.toml setting that provides it. " +
 	"This tool installs nothing: installing a result is a separate step, using its ref."
 
 // searchModulesNoMatch is the whole result of a search with no match. It tells
@@ -38,16 +38,16 @@ func searchModulesTool() LLMTool {
 			"properties": map[string]any{
 				"query": map[string]any{
 					"type":        "string",
-					"description": "Free text matched against module names, aliases and descriptions, e.g. \"terraform\". Optional: without it, modules are matched on purpose.",
+					"description": "Free text matched against module names, aliases, descriptions and artifacts, e.g. \"terraform\". Optional: without it, modules are matched on purpose.",
 				},
 				"purpose": map[string]any{
 					"type":        "string",
 					"description": "What you are trying to do, in a sentence, e.g. \"plan infrastructure changes in CI\".",
 				},
-				"functions": map[string]any{
+				"capabilities": map[string]any{
 					"type":        "array",
 					"items":       map[string]any{"type": "string"},
-					"description": "Functions you hope to call on the module, e.g. [\"plan\", \"apply\"]. Optional.",
+					"description": "Short capabilities you need from the module, in your own words, e.g. [\"lint\", \"apply a saved plan\"]. Each result reports how it covers each one. Optional.",
 				},
 			},
 			"required":             []string{"purpose"},
@@ -58,9 +58,9 @@ func searchModulesTool() LLMTool {
 
 func (m *MCP) searchModulesTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
-		Query     string   `default:""`
-		Purpose   string   `default:""`
-		Functions []string `default:"[]"`
+		Query        string   `default:""`
+		Purpose      string   `default:""`
+		Capabilities []string `default:"[]"`
 	}) (any, error) {
 		if strings.TrimSpace(args.Purpose) == "" {
 			return nil, errors.New("purpose is required: say in a sentence what you are trying to do")
@@ -74,21 +74,28 @@ func (m *MCP) searchModulesTool(srv *dagql.Server) LLMToolFunc {
 			return nil, err
 		}
 		return searchModules(ctx, meta, cloud.DiscoverModulesRequest{
-			Query:     args.Query,
-			Purpose:   args.Purpose,
-			Functions: args.Functions,
+			Query:        args.Query,
+			Purpose:      args.Purpose,
+			Capabilities: args.Capabilities,
 		})
 	})
 }
 
-// searchModulesResult is the compact view of a listing the model gets.
-type searchModulesResult struct {
-	Name        string   `json:"name"`
-	Ref         string   `json:"ref"`
-	Description string   `json:"description"`
-	DocsURL     string   `json:"docsUrl,omitempty"`
-	Official    bool     `json:"official"`
-	MatchedOn   []string `json:"matchedOn"`
+// formatSearchModules is the compact text the model gets: a line per module,
+// its coverage lines beneath it, and the footer once.
+func formatSearchModules(results []cloud.ModuleListing) string {
+	if len(results) == 0 {
+		return searchModulesNoMatch
+	}
+	var b strings.Builder
+	for _, listing := range results {
+		b.WriteString(listing.Name + "  " + listing.Ref + "  " + listing.Description + "\n")
+		for _, line := range cloud.FormatCoverage(listing) {
+			b.WriteString(line + "\n")
+		}
+	}
+	b.WriteString("\n" + cloud.DiscoverFooter)
+	return b.String()
 }
 
 // searchModulesAuth is the credential a search sends: the client's, minus its
@@ -145,27 +152,5 @@ func searchModules(ctx context.Context, meta *engine.ClientMetadata, req cloud.D
 		}
 		return "", err
 	}
-	if len(discovery.Results) == 0 {
-		return searchModulesNoMatch, nil
-	}
-	results := make([]searchModulesResult, 0, len(discovery.Results))
-	for _, listing := range discovery.Results {
-		matchedOn := listing.MatchedOn
-		if matchedOn == nil {
-			matchedOn = []string{}
-		}
-		results = append(results, searchModulesResult{
-			Name:        listing.Name,
-			Ref:         listing.Ref,
-			Description: listing.Description,
-			DocsURL:     listing.DocsURL,
-			Official:    listing.Official,
-			MatchedOn:   matchedOn,
-		})
-	}
-	out, err := json.Marshal(results)
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
+	return formatSearchModules(discovery.Results), nil
 }

@@ -1973,13 +1973,16 @@ Search for modules you can install
 
 ### Synopsis
 
-Search the Dagger module index on Dagger Cloud by name, alias or description.
+Search the Dagger module index on Dagger Cloud by name, alias, description
+or artifacts.
 
-Say what you are trying to do with --for, and which functions you hope to call
-with --function: it tells Dagger which modules people need.
+Say what you are trying to do with --for, and what you need the module to do
+with --capability: each result shows whether it covers each capability, and
+with which check, generator, function or setting. It also tells Dagger which
+modules people need.
 
 Searches are logged to help Dagger see which modules people need: the query,
---for and --function values are recorded by Dagger Cloud. When you are logged
+--for and --capability values are recorded by Dagger Cloud. When you are logged
 in to Dagger Cloud, the search is attributed to your account; otherwise it is
 anonymous. With DO_NOT_TRACK=1, no account, org or trace is recorded.
 
@@ -1995,16 +1998,16 @@ dagger module search [query] [flags]
 
 ```
 dagger module search wolfi
-dagger module search terraform --for "plan infrastructure changes in CI" --function plan --function apply
+dagger module search --for "lint Python code in CI" --capability lint --capability format
 ```
 
 ### Options
 
 ```
-      --for string             What you are trying to do, e.g. "lint Python code in CI"
-      --function stringArray   A function you hope to call (repeatable)
-      --json                   Print results as JSON
-      --sdk                    Only show modules that provide SDK capabilities
+      --capability stringArray   Something you need the module to do, e.g. "lint" (repeatable)
+      --for string               What you are trying to do, e.g. "lint Python code in CI"
+      --json                     Print results as JSON
+      --sdk                      Only show modules that provide SDK capabilities
 ```
 
 ### Options inherited from parent commands
