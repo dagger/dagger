@@ -1,101 +1,135 @@
 package daggercmd
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"slices"
-	"sort"
-	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/cloud"
 )
 
-var searchSDKOnly bool
+var (
+	searchSDKOnly   bool
+	searchPurpose   string
+	searchFunctions []string
+	searchJSON      bool
+)
+
+// moduleSearchNoMatch is printed when the index has no match. Every search is
+// a demand signal, so say that it was recorded.
+const moduleSearchNoMatch = "No published module matches. This search was logged so Dagger can see what's missing."
 
 var searchCmd = &cobra.Command{
 	Use:   "search [query]",
 	Short: "Search for modules you can install",
-	Long: `Search the module registry by name or description.
+	Long: `Search the Dagger module index on Dagger Cloud by name, alias or description.
 
-With no query, lists all known modules and SDK modules.`,
-	Example: "dagger module search wolfi",
-	Args:    cobra.MaximumNArgs(1),
+Say what you are trying to do with --for, and which functions you hope to call
+with --function: it tells Dagger which modules people need.
+
+Searches are logged to help Dagger see which modules people need: the query,
+--for and --function values are recorded by Dagger Cloud. When you are logged
+in to Dagger Cloud, the search is attributed to your account; otherwise it is
+anonymous. With DO_NOT_TRACK=1, no account, org or trace is recorded.
+
+Search needs Dagger Cloud: there is no offline fallback.
+
+With no query and no --for, lists all published modules.`,
+	Example: `dagger module search wolfi
+dagger module search terraform --for "plan infrastructure changes in CI" --function plan --function apply`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		query := ""
-		if len(args) == 1 {
-			query = args[0]
+		opts := moduleSearchOpts{
+			Purpose:   searchPurpose,
+			Functions: searchFunctions,
+			SDKOnly:   searchSDKOnly,
+			JSON:      searchJSON,
 		}
-		mods, err := loadSearchRegistry(searchSDKOnly)
+		if len(args) == 1 {
+			opts.Query = args[0]
+		}
+		client, err := moduleSearchClient(cmd.Context())
 		if err != nil {
 			return err
 		}
-		return printModuleSearchResults(cmd.OutOrStdout(), searchModuleRegistry(mods, query))
+		return moduleSearch(cmd.Context(), client, cmd.OutOrStdout(), opts)
 	},
 }
 
 func init() {
+	searchCmd.Flags().StringVar(&searchPurpose, "for", "", "What you are trying to do, e.g. \"lint Python code in CI\"")
+	searchCmd.Flags().StringArrayVar(&searchFunctions, "function", nil, "A function you hope to call (repeatable)")
 	searchCmd.Flags().BoolVar(&searchSDKOnly, "sdk", false, "Only show modules that provide SDK capabilities")
+	searchCmd.Flags().BoolVar(&searchJSON, "json", false, "Print results as JSON")
 }
 
-func loadSearchRegistry(sdkOnly bool) ([]registryModule, error) {
-	sdks, err := loadSDKSearchRegistry()
+type moduleSearchOpts struct {
+	Query     string
+	Purpose   string
+	Functions []string
+	SDKOnly   bool
+	JSON      bool
+}
+
+// moduleSearchClient is a Cloud client carrying the user's Cloud credentials
+// when there are any. Search is public, so a missing or unreadable credential
+// searches anonymously rather than failing or prompting for a login.
+func moduleSearchClient(ctx context.Context) (*cloud.Client, error) {
+	cloudAuth, err := cloudCLI.cloudAuthWithLogin(ctx, false)
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, errCloudNotAuthenticated) {
+			slog.Warn("could not read Dagger Cloud credentials; searching anonymously", "error", err)
+		}
+		cloudAuth = nil
 	}
-	if sdkOnly {
-		return sdks, nil
-	}
-	mods := loadModuleRegistry()
-	return append(mods, sdks...), nil
-}
-
-func loadSDKSearchRegistry() ([]registryModule, error) {
-	entries, err := loadSDKRegistry()
+	client, err := cloud.NewClient(ctx, cloudAuth)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cloud client: %w", err)
 	}
-	mods := make([]registryModule, 0, len(entries))
-	for _, entry := range entries {
-		mods = append(mods, registryModule{
-			Name:        entry.Name,
-			Description: entry.Description,
-			Repo:        "dagger.io/sdk/" + entry.Name,
-			Aliases:     entry.Aliases,
-		})
-	}
-	return mods, nil
+	return client, nil
 }
 
-// searchModuleRegistry returns modules whose name or description match query
-// (case-insensitive substring), sorted by the displayed source. An empty query
-// returns all.
-func searchModuleRegistry(mods []registryModule, query string) []registryModule {
-	out := make([]registryModule, 0, len(mods))
-	q := strings.ToLower(query)
-	for _, m := range mods {
-		if q == "" ||
-			strings.Contains(strings.ToLower(m.Name), q) ||
-			strings.Contains(strings.ToLower(m.Description), q) ||
-			strings.Contains(strings.ToLower(m.Repo), q) ||
-			slices.ContainsFunc(m.Aliases, func(alias string) bool {
-				return strings.Contains(strings.ToLower(alias), q)
-			}) {
-			out = append(out, m)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Repo != out[j].Repo {
-			return out[i].Repo < out[j].Repo
-		}
-		return out[i].Name < out[j].Name
+func moduleSearch(ctx context.Context, client *cloud.Client, out io.Writer, opts moduleSearchOpts) error {
+	discovery, err := client.DiscoverModules(ctx, cloud.DiscoverModulesRequest{
+		Query:     opts.Query,
+		Purpose:   opts.Purpose,
+		Functions: opts.Functions,
+	}, cloud.DiscoverOptions{
+		Kind:       cloud.DiscoverClientCLI,
+		Version:    engine.Version,
+		DoNotTrack: analytics.DoNotTrack(),
 	})
-	return out
+	if err != nil {
+		return err
+	}
+	if opts.SDKOnly {
+		sdks := []cloud.ModuleListing{}
+		for _, listing := range discovery.Results {
+			if listing.Kind == cloud.ModuleKindSDK {
+				sdks = append(sdks, listing)
+			}
+		}
+		discovery.Results = sdks
+	}
+	if opts.JSON {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(discovery)
+	}
+	return printModuleSearchResults(out, discovery.Results)
 }
 
-func printModuleSearchResults(out io.Writer, mods []registryModule) error {
-	if len(mods) == 0 {
-		_, err := fmt.Fprintln(out, "No matching modules found.")
+func printModuleSearchResults(out io.Writer, listings []cloud.ModuleListing) error {
+	if len(listings) == 0 {
+		_, err := fmt.Fprintln(out, moduleSearchNoMatch)
 		return err
 	}
 
@@ -103,8 +137,8 @@ func printModuleSearchResults(out io.Writer, mods []registryModule) error {
 	if _, err := fmt.Fprintln(w, "SOURCE\tDESCRIPTION"); err != nil {
 		return err
 	}
-	for _, m := range mods {
-		if _, err := fmt.Fprintf(w, "%s\t%s\n", m.Repo, m.Description); err != nil {
+	for _, listing := range listings {
+		if _, err := fmt.Fprintf(w, "%s\t%s\n", listing.Ref, listing.Description); err != nil {
 			return err
 		}
 	}
