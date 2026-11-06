@@ -664,7 +664,20 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.WorkspaceModuleSetting]{}.Install(srv)
 	sdkGenerate := dagql.Func("generate", s.sdkGenerate).Doc("Generate the modules and clients managed by this SDK.")
 	sdkGenerate.Spec.Directives = append(sdkGenerate.Spec.Directives, &ast.Directive{Name: "generate"})
-	dagql.Fields[*core.WorkspaceSDK]{sdkGenerate}.Install(srv)
+	dagql.Fields[*core.WorkspaceSDK]{
+		sdkGenerate,
+		dagql.Func("scopeSetting", s.sdkScopeSetting).
+			View(AfterVersion("v1.0.0-beta.26")).
+			DoNotCache("Reads live config from host").
+			Doc("The value a setting records in this SDK's scope settings, as a native JSON value.",
+				`Reads [sdks.<name>.scopes."<scope>".settings] from the workspace config, in the scope whose key resolves to path. The setting key is matched without regard to case.`,
+				"Null when no scope resolves to path, or the scope records no such setting. Fails when the config is invalid, path escapes the workspace root, key matches several recorded settings, or the value cannot be represented as JSON.",
+				"Fails when this SDK is no longer installed in the workspace config, even if Workspace.sdk returned it earlier.").
+			Args(
+				dagql.Arg("path").Doc("Scope path, relative to the workspace cwd or absolute from the workspace root."),
+				dagql.Arg("key").Doc("Setting name, matched without regard to case."),
+			),
+	}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
 }
