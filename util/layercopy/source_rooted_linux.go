@@ -10,6 +10,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// ResolveSelectionPath expands a path through the same confined entry source
+// and symlink budget used by CopySelection. Missing mountpoint parents can be
+// supplied as synthetic directories by the source.
+func ResolveSelectionPath(entries SelectionSource, name string) (string, error) {
+	return (&source{selection: entries}).resolveRooted(name, true)
+}
+
 // confine pins the mounted snapshot, including overlay visibility rules. All
 // untrusted source paths in follow mode are accessed through the same os.Root.
 func (s *source) confine() error {

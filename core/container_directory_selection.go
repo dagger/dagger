@@ -42,12 +42,16 @@ type containerSelectionBacking struct {
 }
 
 type containerSelectionMount struct {
-	target  string
-	load    func() (*containerSelectionBacking, error)
-	backing *containerSelectionBacking
+	target    string
+	targetErr error
+	load      func() (*containerSelectionBacking, error)
+	backing   *containerSelectionBacking
 }
 
 func (m *containerSelectionMount) get() (*containerSelectionBacking, error) {
+	if m.targetErr != nil {
+		return nil, m.targetErr
+	}
 	if m.load == nil {
 		return nil, fmt.Errorf("resolveBrokenSymlinks: cannot retrieve path from non-snapshot mount %s", m.target)
 	}
@@ -147,43 +151,57 @@ func newContainerSelectionSource(ctx context.Context, parent dagql.ObjectResult[
 	return s, nil
 }
 
-// Resolve rootfs aliases without opening mount sources. Later mounts hide an
-// earlier mount at the same resolved target or below it, as they do in exec.
-func (s *containerSelectionSource) prepare() error {
+// Resolve each target through the mounts installed before it. Only sources
+// traversed while locating a mountpoint are opened; no contents are copied.
+// Later mounts hide earlier mounts at or below their resolved targets.
+func (s *containerSelectionSource) prepare() {
 	if s.ready {
-		return nil
+		return
 	}
-	base, err := s.base.get()
-	if err != nil {
-		return err
-	}
-	pinned, err := base.root.OpenFile(".", unix.O_PATH, 0)
-	if err != nil {
-		return err
-	}
-	defer pinned.Close()
-	boundary := fmt.Sprintf("/proc/self/fd/%d", pinned.Fd())
-	var visible []*containerSelectionMount
-	for _, mnt := range s.mounts {
-		target, err := containerdfs.RootPath(boundary, mnt.target)
+	pending := s.mounts
+	s.mounts = nil
+	for _, mnt := range pending {
+		target, err := layercopy.ResolveSelectionPath(containerSelectionTargets{s}, mnt.target)
 		if err != nil {
 			// A bad target must not reject an unrelated selection.
-			mnt.load = func() (*containerSelectionBacking, error) { return nil, err }
+			mnt.targetErr = fmt.Errorf("resolve mount target %s: %w", mnt.target, err)
 		} else {
-			rel, err := filepath.Rel(boundary, target)
-			if err != nil {
-				return err
-			}
-			mnt.target = filepath.Join("/", rel)
+			mnt.target = filepath.Join("/", target)
 		}
-		visible = slices.DeleteFunc(visible, func(previous *containerSelectionMount) bool {
+		s.mounts = slices.DeleteFunc(s.mounts, func(previous *containerSelectionMount) bool {
 			return selectionPathUnder(previous.target, mnt.target)
 		})
-		visible = append(visible, mnt)
+		s.mounts = append(s.mounts, mnt)
 	}
-	s.mounts = visible
 	s.ready = true
-	return nil
+}
+
+// A mountpoint is located in the namespace before that mount exists. Missing
+// parents are mount stubs. Opaque resources permit a literal path to a nested
+// snapshot mount, but never expose the files hidden below the resource.
+type containerSelectionTargets struct{ source *containerSelectionSource }
+
+func (v containerSelectionTargets) Open(name string, parent *os.Root) (*os.File, error) {
+	name = filepath.Join("/", name)
+	mnt := v.source.mountFor(name)
+	if mnt.targetErr != nil {
+		return nil, mnt.targetErr
+	}
+	if mnt.load != nil {
+		f, err := v.source.open(name, parent, mnt)
+		if !errors.Is(err, os.ErrNotExist) {
+			return f, err
+		}
+	}
+	stub, err := v.source.stub(name)
+	if err != nil {
+		return nil, err
+	}
+	return stub.root.OpenFile(".", unix.O_PATH|unix.O_NOFOLLOW, 0)
+}
+
+func (containerSelectionTargets) Children(_ string, names []string) ([]string, error) {
+	return names, nil
 }
 
 func selectionPathUnder(name, parent string) bool {
@@ -194,9 +212,7 @@ func (s *containerSelectionSource) Open(name string, parent *os.Root) (*os.File,
 	name = filepath.Join("/", name)
 	selected := s.mountFor(name)
 	if selected == s.base && !s.ready {
-		if err := s.prepare(); err != nil {
-			return nil, err
-		}
+		s.prepare()
 		selected = s.mountFor(name)
 	}
 	return s.open(name, parent, selected)
@@ -213,6 +229,9 @@ func (s *containerSelectionSource) mountFor(name string) *containerSelectionMoun
 }
 
 func (s *containerSelectionSource) open(name string, parent *os.Root, selected *containerSelectionMount) (*os.File, error) {
+	if selected.targetErr != nil {
+		return nil, selected.targetErr
+	}
 	if selected.load == nil {
 		if s.hasChildren(name) {
 			stub, err := s.stub(name)
