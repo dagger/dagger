@@ -180,7 +180,9 @@ func offerWorkspaceNextSteps(ctx context.Context, cmd *cobra.Command, connect fu
 				return err
 			}
 			defer closeSession()
-			recs, install, err := planRecommend(ctx, session.Dagger(), ui)
+			// Recommendations are optional here: without the module catalog,
+			// init says so and goes on.
+			recs, install, err := planRecommend(ctx, session.Dagger(), ui, true)
 			if err != nil || !install {
 				return err
 			}

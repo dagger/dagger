@@ -182,16 +182,11 @@ func recommendationDirectory(ws *core.Workspace) *core.Directory {
 	})
 }
 
-// runRecommend scans the workspace with each registry entry's recommendation
+// runRecommend scans the workspace with each catalog entry's recommendation
 // function. Skips already-installed modules. Returns the matches
-// sorted by module name. Used by `dagger setup` and `dagger mod recommend`.
-func runRecommend(ctx context.Context, dag *dagger.Client) ([]recommendation, error) {
+// sorted by module name. Used by `dagger init` and `dagger module recommend`.
+func runRecommend(ctx context.Context, dag *dagger.Client, mods []registryModule) ([]recommendation, error) {
 	installed, err := installedModuleNames(ctx, dag)
-	if err != nil {
-		return nil, err
-	}
-
-	mods, err := loadModuleRegistry(ctx)
 	if err != nil {
 		return nil, err
 	}
