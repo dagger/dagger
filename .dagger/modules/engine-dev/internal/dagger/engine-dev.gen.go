@@ -670,6 +670,19 @@ func (r *EngineDev) WithRace() *EngineDev {
 	}
 }
 
+// Build the engine without the cache entries its image ships. Making them
+// starts a separate engine of the build and costs minutes, while an engine
+// that serves many clients, such as a test run's, builds the same results
+// once for its first client.
+func (r *EngineDev) WithoutImageEntries() *EngineDev {
+	q := r.query.Select("withoutImageEntries")
+
+	return &EngineDev{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 type EngineDevLoadedEngine struct { // engine-dev (../../:0:0)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked

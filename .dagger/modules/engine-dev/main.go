@@ -109,6 +109,7 @@ type EngineDev struct {
 	EBPFProgs    []string // +private
 
 	Race               bool // +private
+	NoImageEntries     bool // +private
 	ClientDockerConfig *dagger.Secret
 
 	Ws *dagger.Workspace // +private
@@ -143,6 +144,15 @@ func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
 	return dev
 }
 
+// Build the engine without the cache entries its image ships. Making them
+// starts a separate engine of the build and costs minutes, while an engine
+// that serves many clients, such as a test run's, builds the same results
+// once for its first client.
+func (dev *EngineDev) WithoutImageEntries() *EngineDev {
+	dev.NoImageEntries = true
+	return dev
+}
+
 // Build the engine container
 func (dev *EngineDev) Container(
 	ctx context.Context,
@@ -172,6 +182,9 @@ func (dev *EngineDev) Container(
 	ctr, err := dev.engine(ctx, builder, platform, version)
 	if err != nil {
 		return nil, err
+	}
+	if dev.NoImageEntries {
+		return ctr, nil
 	}
 	exporter := ctr
 	if builder.Platform() != native.Platform() || gpuSupport {

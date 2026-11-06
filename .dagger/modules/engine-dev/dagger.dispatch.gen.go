@@ -60,6 +60,7 @@ var functions = []functionSpec{
 	{Name: "withEngineConfig", Receiver: "EngineDev", FnName: "WithEngineConfig", Args: map[string]argumentSpec{"key": {Required: true, Default: "", Encoding: "string"}, "value": {Required: true, Default: "", Encoding: "string"}}},
 	{Name: "withLogLevel", Receiver: "EngineDev", FnName: "WithLogLevel", Args: map[string]argumentSpec{"level": {Required: true, Default: "", Encoding: "string"}}},
 	{Name: "withRace", Receiver: "EngineDev", FnName: "WithRace", Args: map[string]argumentSpec{}},
+	{Name: "withoutImageEntries", Receiver: "EngineDev", FnName: "WithoutImageEntries", Args: map[string]argumentSpec{}},
 	{Name: "loadedEngine", Receiver: "LoadedEngine", FnName: "", Args: map[string]argumentSpec{}},
 	{Name: "start", Receiver: "LoadedEngine", FnName: "Start", Args: map[string]argumentSpec{"name": {Required: false, Default: "\"dagger-engine.dev\"", Encoding: "string"}, "cloudToken": {Required: false, Default: "", Encoding: "string"}, "cloudURL": {Required: false, Default: "", Encoding: "string"}, "debug": {Required: false, Default: "", Encoding: "json"}, "extraHosts": {Required: false, Default: "", Encoding: "json"}}},
 	{Name: "testProfileResult", Receiver: "TestProfileResult", FnName: "", Args: map[string]argumentSpec{}},
