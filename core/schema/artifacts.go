@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -107,6 +108,12 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		}),
 		dagql.NodeFunc("__remoteCheck", s.remoteCheck),
 		dagql.Func("__failedCheck", s.failedCheck),
+		dagql.Func("__checkGroup", func(_ context.Context, a *core.Artifact, _ struct{}) (string, error) {
+			if a.TypeName != "Check" || !a.IsCollectionItem() {
+				return "", nil
+			}
+			return strings.Join(a.Path, "/"), nil
+		}).View(AfterVersion(checkCollectionMetadataVersion)),
 		dagql.Func("loadError", s.loadError).Doc("A module load failure, or an empty string if discovery succeeded."),
 		dagql.Func("arguments", s.arguments).Doc("The arguments accepted by the artifact field."),
 		dagql.Func("description", s.description).Doc("The description of the field that supplies this artifact."),
@@ -443,8 +450,15 @@ func (s *artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, arg
 		return nil, err
 	}
 	var check dagql.ObjectResult[*core.Check]
+	// This engine-owned call uses the new signature even for older clients.
+	// Record its version so saved calls can keep using that signature later.
 	err = srv.Select(ctx, result.(dagql.AnyObjectResult), &check, dagql.Selector{
-		Field: "__withAddress", Args: []dagql.NamedInput{{Name: "address", Value: dagql.String(address)}},
+		Field: "__withAddress",
+		View:  call.View(checkCollectionMetadataVersion),
+		Args: []dagql.NamedInput{
+			{Name: "address", Value: dagql.String(address)},
+			{Name: "collectionItem", Value: dagql.Boolean(artifact.IsCollectionItem())},
+		},
 	})
 	return check, err
 }

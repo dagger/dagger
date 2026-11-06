@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -118,6 +119,7 @@ func (c *Check) runRemote(ctx context.Context) error {
 		// fails, it may never run, so report the failed check here.
 		_, span := Tracer(ctx).Start(ctx, c.Address, trace.WithAttributes(
 			attribute.String(telemetry.CheckNameAttr, c.Address),
+			attribute.Bool(telemetryattrs.CheckCollectionItemAttr, c.RemoteArtifact.Self().IsCollectionItem()),
 			attribute.Bool(telemetry.CheckPassedAttr, false),
 		))
 		telemetry.EndWithCause(span, &err)
