@@ -58,9 +58,10 @@ func TestContainerSelectionNestedMountAliases(t *testing.T) {
 				parent := selectionFixture(t, nil, map[string]string{"alias": alias})
 				child := selectionFixture(t, map[string]string{"value": "mounted"}, nil)
 				mount := selectionFixtureMount(t, "/data/alias", child, ".")
-				if kind == "file" {
+				switch kind {
+				case "file":
 					mount = selectionFixtureMount(t, "/data/alias/value", child, "value")
-				} else if kind == "resource" {
+				case "resource":
 					mount = &containerSelectionMount{target: "/data/alias"}
 				}
 				source := &containerSelectionSource{
