@@ -7,22 +7,24 @@ import (
 
 const MaxBody = 64 * 1024
 
-var Kinds = []string{"setup", "feedback", "question", "bug", "billing", "suggestion"}
-
 // Principal comes from verified Cloud authentication, never from request JSON.
 type Principal struct {
 	OrgID   string
 	ActorID string
 	Team    bool
-	Billing bool
 }
 
 type Thread struct {
-	ID        int64     `json:"id"`
-	Kind      string    `json:"kind"`
-	Outcome   string    `json:"outcome,omitempty"`
-	Workspace string    `json:"workspace,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID            int64     `json:"id"`
+	Workspace     string    `json:"workspace,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	LastMessageID int64     `json:"last_message_id"`
+	LastAuthorID  string    `json:"last_author_id"`
+	LastTeam      bool      `json:"last_team"`
+	Preview       string    `json:"preview"`
+	UnreadCount   int       `json:"unread_count"`
+	LastUnreadID  int64     `json:"last_unread_id"`
 }
 
 type Message struct {
@@ -35,18 +37,41 @@ type Message struct {
 	CreatedAt   time.Time    `json:"created_at"`
 }
 
-// Input is shared by all six conversation types.
 type Input struct {
 	Attachments []File `json:"attachments,omitempty"`
-	Kind        string `json:"kind,omitempty"`
-	Outcome     string `json:"outcome,omitempty"`
 	Workspace   string `json:"workspace,omitempty"`
 	Body        string `json:"body"`
 }
 
+type PageOptions struct {
+	After  int64
+	Limit  int
+	Unread bool
+}
+
+func (o PageOptions) Validate() error {
+	if o.After < 0 || o.Limit < 1 || o.Limit > 100 {
+		return problem(400, "invalid_input", "Use --after 0 or a positive cursor, and --limit 1–100.")
+	}
+	return nil
+}
+
+type ThreadPage struct {
+	Threads    []Thread `json:"threads"`
+	NextCursor int64    `json:"next_cursor,omitempty"`
+}
+
 type Conversation struct {
-	Thread   Thread    `json:"thread"`
-	Messages []Message `json:"messages"`
+	Thread     Thread    `json:"thread"`
+	Messages   []Message `json:"messages"`
+	After      int64     `json:"after"`
+	NextCursor int64     `json:"next_cursor,omitempty"`
+}
+
+// ReadRange prevents a page that skips unread messages from clearing them.
+type ReadRange struct {
+	After   int64 `json:"after"`
+	Through int64 `json:"through"`
 }
 
 type Sent struct {
@@ -65,14 +90,6 @@ func (e *Error) Error() string { return e.Message }
 func problem(status int, code, message string) *Error {
 	return &Error{Status: status, Code: code, Message: message}
 }
-func HasKind(kind string) bool {
-	for _, k := range Kinds {
-		if k == kind {
-			return true
-		}
-	}
-	return false
-}
 func (in Input) Validate(create bool) error {
 	if err := ValidateFiles(in.Attachments); err != nil {
 		return err
@@ -80,24 +97,11 @@ func (in Input) Validate(create bool) error {
 	if strings.TrimSpace(in.Body) == "" || len(in.Body) > MaxBody || strings.ContainsRune(in.Body, 0) {
 		return problem(400, "invalid_input", "Supply a message of 1–65536 bytes without null characters.")
 	}
-	if !create {
-		if in.Kind != "" || in.Outcome != "" || in.Workspace != "" {
-			return problem(400, "invalid_input", "A reply accepts only a body.")
-		}
-		return nil
-	}
-	if !HasKind(in.Kind) {
-		return problem(400, "invalid_input", "Choose setup, feedback, question, bug, billing, or suggestion.")
+	if !create && in.Workspace != "" {
+		return problem(400, "invalid_input", "Set the workspace only when you create a thread.")
 	}
 	if len(in.Workspace) > 512 || strings.ContainsRune(in.Workspace, 0) {
 		return problem(400, "invalid_input", "Use a workspace name of at most 512 bytes without null characters.")
-	}
-	if in.Kind == "setup" {
-		if in.Outcome != "success" && in.Outcome != "blocked" && in.Outcome != "stopped" {
-			return problem(400, "invalid_input", "Setup requires --outcome success, blocked, or stopped.")
-		}
-	} else if in.Outcome != "" {
-		return problem(400, "invalid_input", "Only setup accepts an outcome.")
 	}
 	return nil
 }

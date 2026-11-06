@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/internal/hotline"
+	"github.com/google/shlex"
 	"github.com/spf13/cobra"
 )
 
@@ -28,6 +30,7 @@ type hotlineCLI struct {
 	mockFile    string
 	org         string
 	requestID   string
+	draft       string
 	out, errOut io.Writer
 	in          io.Reader
 }
@@ -73,9 +76,12 @@ func (a *hotlineCLI) failure(err error) error {
 		}
 	}
 	if a.json {
-		_ = json.NewEncoder(a.errOut).Encode(map[string]any{"error": map[string]any{"code": code, "message": err.Error(), "request_id": a.requestID}})
+		_ = json.NewEncoder(a.errOut).Encode(map[string]any{"error": map[string]any{"code": code, "message": err.Error(), "request_id": a.requestID, "draft": a.draft}})
 	} else {
 		fmt.Fprintln(a.errOut, "Error:", clean(err.Error()))
+		if a.draft != "" {
+			fmt.Fprintln(a.errOut, "Draft saved:", clean(a.draft))
+		}
 		if a.requestID != "" {
 			fmt.Fprintln(a.errOut, "Retry with --request-id", clean(a.requestID))
 		}
@@ -85,130 +91,49 @@ func (a *hotlineCLI) failure(err error) error {
 
 func (a *hotlineCLI) command() *cobra.Command {
 	h := &cobra.Command{
-		Use: "hotline", Short: "Send a message to the Dagger team",
-		Long: `Send a message to the Dagger team. A Dagger Cloud account is required. Use dagger login to sign in.
+		Use: "hotline", Short: "Exchange messages with the Dagger team",
+		Long: `Exchange messages with the Dagger team. A Dagger Cloud account is required.
+Use dagger login to sign in. Ask early when you need help.
 
-Ask early when you are blocked. You do not need a complete bug report.
-Use setup to report the result of your first setup attempt.
-Replies are asynchronous. Use list and read to check for replies.
-
-Commands never open a browser, editor, or prompt. Use --json for agents.
-Messages and the workspace name are shared with your organization and the team.
-Billing threads are limited to organization admins and the team.`,
+Messages and attachments are shared with your organization and the Dagger team.
+Use inbox to find unread messages. Use --json for machine output.
+Commands do not prompt. An editor opens only with --editor.`,
+		Args: cobra.NoArgs,
 	}
+	h.RunE = func(cmd *cobra.Command, _ []string) error { return cmd.Help() }
 	h.PersistentFlags().StringVar(&a.mockFile, "mock", os.Getenv("DAGGER_HOTLINE_MOCK"), "Store demo data in this JSON file; use no service")
 	h.PersistentFlags().BoolVar(&a.json, "json", false, "Write JSON output")
 	h.PersistentFlags().StringVar(&a.demo, "mock-user", "", "Mock account: member, admin, team, or other (requires --mock)")
 	h.PersistentFlags().StringVar(&a.org, "org", "", "Cloud organization name (defaults to the current organization)")
-	h.Args = cobra.NoArgs
-	h.RunE = func(cmd *cobra.Command, args []string) error { return cmd.Help() }
-	descriptions := map[string]string{
-		"setup":      "Report your first setup result: success, blocked, or stopped",
-		"feedback":   "Report your experience with Dagger",
-		"question":   "Ask a question about Dagger in this workspace",
-		"bug":        "Report a defect; incomplete reports are welcome",
-		"billing":    "Ask about billing (organization admins only)",
-		"suggestion": "Suggest an improvement",
-	}
-	for _, kind := range hotline.Kinds {
-		var body, file, key string
-		var paths []string
-		input := hotline.Input{Kind: kind}
-		cmd := &cobra.Command{Use: kind, Short: descriptions[kind], Args: cobra.NoArgs}
-		messageFlags(cmd, &body, &file, &key)
-		cmd.Flags().StringArrayVar(&paths, "attach", nil, "Attach this workspace file; repeat for each file")
-		cwd, _ := os.Getwd()
-		cmd.Flags().StringVar(&input.Workspace, "workspace", filepath.Base(cwd), "Workspace name; no files are collected")
-		if kind == "setup" {
-			cmd.Flags().StringVar(&input.Outcome, "outcome", "", "Required: success, blocked, or stopped")
-		}
-		cmd.RunE = func(cmd *cobra.Command, args []string) error {
-			var err error
-			input.Body, err = a.body(cmd, body, file)
-			if err != nil {
-				return err
-			}
-			input.Attachments, err = collectFiles(paths)
-			if err != nil {
-				return err
-			}
-			if err = input.Validate(true); err != nil {
-				return err
-			}
-			return a.send(cmd, "/v1/hotline/threads", key, input)
-		}
-		h.AddCommand(cmd)
-	}
-	list := &cobra.Command{Use: "list", Short: "List the latest 50 threads", Args: cobra.NoArgs}
-	list.RunE = func(cmd *cobra.Command, args []string) error {
-		var threads []hotline.Thread
-		if err := a.request(cmd, http.MethodGet, "/v1/hotline/threads", nil, "", &threads); err != nil {
-			return err
-		}
-		if a.json {
-			return json.NewEncoder(a.out).Encode(threads)
-		}
-		if len(threads) == 0 {
-			fmt.Fprintln(a.out, "No threads.")
-		}
-		for _, t := range threads {
-			fmt.Fprintf(a.out, "%d\t%s\t%s\t%s\n", t.ID, t.Kind, clean(t.Workspace), t.CreatedAt.Format(time.RFC3339))
-		}
-		return nil
-	}
-	h.AddCommand(list)
-	var after int64
-	read := &cobra.Command{Use: "read THREAD", Short: "Read up to 100 messages; use --after with the last message ID for more", Args: cobra.ExactArgs(1)}
-	read.Flags().Int64Var(&after, "after", 0, "Return messages after this message ID")
-	read.RunE = func(cmd *cobra.Command, args []string) error {
-		id, err := parseID(args[0])
-		if err != nil {
-			return err
-		}
-		if after < 0 {
-			return fmt.Errorf("Use a nonnegative message ID for --after.")
-		}
-		var c hotline.Conversation
-		if err = a.request(cmd, http.MethodGet, fmt.Sprintf("/v1/hotline/threads/%d?after=%d", id, after), nil, "", &c); err != nil {
-			return err
-		}
-		if a.json {
-			return json.NewEncoder(a.out).Encode(c)
-		}
-		fmt.Fprintf(a.out, "Thread %d · %s · %s\n", c.Thread.ID, c.Thread.Kind, clean(c.Thread.Workspace))
-		if c.Thread.Outcome != "" {
-			fmt.Fprintln(a.out, "Setup result:", c.Thread.Outcome)
-		}
-		for _, m := range c.Messages {
-			who := clean(m.AuthorID)
-			if m.Team {
-				who += " (Dagger team)"
-			}
-			fmt.Fprintf(a.out, "\n[%d] %s · %s\n%s\n", m.ID, who, m.CreatedAt.Format(time.RFC3339), clean(m.Body))
-			for _, f := range m.Attachments {
-				fmt.Fprintf(a.out, "  Attached: %s (%d bytes)\n", clean(f.Path), f.Size)
-			}
-			if len(m.Attachments) > 0 {
-				fmt.Fprintf(a.out, "  Download: dagger hotline attachments %d --output workspace.zip\n", m.ID)
-			}
-		}
-		if len(c.Messages) == 100 {
-			fmt.Fprintf(a.out, "\nContinue: dagger hotline read %d --after %d\n", id, c.Messages[99].ID)
-		}
-		return nil
-	}
-	h.AddCommand(read)
-	var body, file, key string
+	h.AddCommand(a.messageCommand(false), a.messageCommand(true), a.listCommand(false), a.listCommand(true), a.readCommand(), a.watchCommand(), a.attachmentsCommand())
+	return h
+}
+
+func (a *hotlineCLI) messageCommand(reply bool) *cobra.Command {
+	var body, file, key, workspace string
 	var paths []string
-	reply := &cobra.Command{Use: "reply THREAD", Short: "Add a message to a thread", Args: cobra.ExactArgs(1)}
-	messageFlags(reply, &body, &file, &key)
-	reply.Flags().StringArrayVar(&paths, "attach", nil, "Attach this workspace file; repeat for each file")
-	reply.RunE = func(cmd *cobra.Command, args []string) error {
-		id, err := parseID(args[0])
-		if err != nil {
-			return err
+	cmd := &cobra.Command{Use: "new", Short: "Start a thread with the Dagger team", Args: cobra.NoArgs}
+	if reply {
+		cmd.Use = "reply THREAD"
+		cmd.Short = "Add a message to a thread"
+		cmd.Args = cobra.ExactArgs(1)
+	} else {
+		cwd, _ := os.Getwd()
+		cmd.Flags().StringVar(&workspace, "workspace", filepath.Base(cwd), "Workspace name; only --attach selects files")
+	}
+	messageFlags(cmd, &body, &file, &key)
+	cmd.Flags().Bool("editor", false, "Write the message in VISUAL or EDITOR (default: vi)")
+	cmd.Flags().StringArrayVar(&paths, "attach", nil, "Attach this workspace file; repeat for each file")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		path := "/v1/hotline/threads"
+		if reply {
+			id, err := parseID(args[0])
+			if err != nil {
+				return err
+			}
+			path = fmt.Sprintf("%s/%d/messages", path, id)
 		}
-		body, err := a.body(cmd, body, file)
+		text, err := a.body(cmd, body, file)
 		if err != nil {
 			return err
 		}
@@ -216,15 +141,20 @@ Billing threads are limited to organization admins and the team.`,
 		if err != nil {
 			return err
 		}
-		input := hotline.Input{Body: body, Attachments: files}
-		if err = input.Validate(false); err != nil {
+		input := hotline.Input{Body: text, Workspace: workspace, Attachments: files}
+		if err = input.Validate(!reply); err != nil {
 			return err
 		}
-		return a.send(cmd, fmt.Sprintf("/v1/hotline/threads/%d/messages", id), key, input)
+		if err = a.send(cmd, path, key, input); err != nil {
+			return err
+		}
+		if a.draft != "" {
+			os.Remove(a.draft)
+			a.draft = ""
+		}
+		return nil
 	}
-	h.AddCommand(reply)
-	h.AddCommand(a.attachmentsCommand())
-	return h
+	return cmd
 }
 
 func messageFlags(cmd *cobra.Command, body, file, key *string) {
@@ -234,8 +164,42 @@ func messageFlags(cmd *cobra.Command, body, file, key *string) {
 }
 
 func (a *hotlineCLI) body(cmd *cobra.Command, body, file string) (string, error) {
-	if cmd.Flags().Changed("body") == cmd.Flags().Changed("body-file") {
-		return "", fmt.Errorf("Supply exactly one of --body or --body-file.")
+	editor, _ := cmd.Flags().GetBool("editor")
+	sources := 0
+	for _, set := range []bool{cmd.Flags().Changed("body"), cmd.Flags().Changed("body-file"), editor} {
+		if set {
+			sources++
+		}
+	}
+	if sources != 1 {
+		return "", fmt.Errorf("Supply exactly one of --body, --body-file, or --editor.")
+	}
+	if editor {
+		f, err := os.CreateTemp("", "dagger-hotline-*.md")
+		if err != nil {
+			return "", err
+		}
+		a.draft = f.Name()
+		if err = f.Close(); err != nil {
+			return "", err
+		}
+		editor := os.Getenv("VISUAL")
+		if editor == "" {
+			editor = os.Getenv("EDITOR")
+		}
+		if editor == "" {
+			editor = "vi"
+		}
+		argv, err := shlex.Split(editor)
+		if err != nil || len(argv) == 0 {
+			return "", fmt.Errorf("Set VISUAL or EDITOR to an editor command.")
+		}
+		edit := exec.CommandContext(cmd.Context(), argv[0], append(argv[1:], a.draft)...)
+		edit.Stdin, edit.Stdout, edit.Stderr = a.in, a.errOut, a.errOut
+		if err = edit.Run(); err != nil {
+			return "", fmt.Errorf("Editor failed: %w", err)
+		}
+		file = a.draft
 	}
 	if file == "" && cmd.Flags().Changed("body-file") {
 		return "", fmt.Errorf("Supply a file path, or - for standard input.")
@@ -275,8 +239,8 @@ func (a *hotlineCLI) send(cmd *cobra.Command, path, key string, input hotline.In
 	if a.json {
 		return json.NewEncoder(a.out).Encode(sent)
 	}
-	fmt.Fprintf(a.out, "Message %d saved in thread %d.\nRead replies: dagger hotline read %d\nRequest ID: %s\n", sent.MessageID, sent.ThreadID, sent.ThreadID, clean(sent.RequestID))
-	return nil
+	_, err := fmt.Fprintf(a.out, "Message %d saved in thread %d.\nRequest ID: %s\n", sent.MessageID, sent.ThreadID, clean(sent.RequestID))
+	return err
 }
 
 func (a *hotlineCLI) request(cmd *cobra.Command, method, path string, input any, key string, result any) error {

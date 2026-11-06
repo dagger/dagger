@@ -36,13 +36,14 @@ func MockRequest(req *http.Request, filename, account string) (*http.Response, e
 	if err != nil || !locked {
 		return nil, fmt.Errorf("Cannot lock the mock file. Try again.")
 	}
-	var state mockState
+	state := mockState{Version: 1}
 	data, err := os.ReadFile(filename)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("Cannot read the mock file: %w", err)
 	}
 	if err == nil {
-		if err := json.Unmarshal(data, &state); err != nil {
+		state.Version = 0
+		if err := json.Unmarshal(data, &state); err != nil || state.Version != 1 {
 			return nil, fmt.Errorf("Invalid mock file. Use a new file path; the current file was not changed.")
 		}
 	}
@@ -62,7 +63,7 @@ func DemoAccount(account string) (Principal, error) {
 	case "", "member":
 		return Principal{OrgID: "demo", ActorID: "demo-member"}, nil
 	case "admin":
-		return Principal{OrgID: "demo", ActorID: "demo-admin", Billing: true}, nil
+		return Principal{OrgID: "demo", ActorID: "demo-admin"}, nil
 	case "team":
 		return Principal{OrgID: "demo", ActorID: "demo-team", Team: true}, nil
 	case "other":
@@ -84,8 +85,10 @@ type mockMessage struct {
 }
 
 type mockState struct {
-	Threads  []mockThread  `json:"threads"`
-	Messages []mockMessage `json:"messages"`
+	Version  int                        `json:"version"`
+	Reads    map[string]map[int64]int64 `json:"reads,omitempty"`
+	Threads  []mockThread               `json:"threads"`
+	Messages []mockMessage              `json:"messages"`
 }
 
 func (s *mockState) save(filename string) error {
@@ -109,8 +112,25 @@ func (s *mockState) save(filename string) error {
 
 func (s *mockState) thread(p Principal, id int64) (Thread, error) {
 	for _, t := range s.Threads {
-		if t.ID == id && t.OrgID == p.OrgID && (t.Kind != "billing" || canReadBilling(p)) {
-			return t.Thread, nil
+		if t.ID == id && t.OrgID == p.OrgID {
+			summary := t.Thread
+			read := s.Reads[p.ActorID][id]
+			for _, m := range s.Messages {
+				if m.ThreadID != id {
+					continue
+				}
+				summary.LastMessageID = m.ID
+				summary.LastAuthorID = m.AuthorID
+				summary.LastTeam = m.Team
+				summary.UpdatedAt = m.CreatedAt
+				preview := []rune(m.Body)
+				summary.Preview = string(preview[:min(160, len(preview))])
+				if m.ID > read && m.AuthorID != p.ActorID {
+					summary.UnreadCount++
+					summary.LastUnreadID = m.ID
+				}
+			}
+			return summary, nil
 		}
 	}
 	return Thread{}, problem(404, "not_found", "Thread not found.")
@@ -122,9 +142,6 @@ func (s *mockState) Send(_ context.Context, p Principal, threadID int64, key str
 	}
 	if strings.TrimSpace(key) == "" || len(key) > 200 || strings.ContainsRune(key, 0) {
 		return Sent{}, problem(400, "invalid_input", "Supply a request ID of 1–200 bytes without null characters.")
-	}
-	if threadID == 0 && in.Kind == "billing" && !canReadBilling(p) {
-		return Sent{}, problem(403, "forbidden", "Billing requires an organization admin account.")
 	}
 	if threadID != 0 {
 		if _, err := s.thread(p, threadID); err != nil {
@@ -140,7 +157,7 @@ func (s *mockState) Send(_ context.Context, p Principal, threadID int64, key str
 		if m.AuthorID != p.ActorID || m.RequestID != key {
 			continue
 		}
-		// Resolve the organization separately so keys on hidden billing threads still conflict.
+		// Request IDs are scoped to the author and organization.
 		var t mockThread
 		for _, candidate := range s.Threads {
 			if candidate.ID == m.ThreadID {
@@ -153,12 +170,9 @@ func (s *mockState) Send(_ context.Context, p Principal, threadID int64, key str
 		}
 		same := m.Body == in.Body && slices.EqualFunc(m.Files, in.Attachments, func(a, b File) bool { return a.Path == b.Path && bytes.Equal(a.Data, b.Data) })
 		if threadID == 0 {
-			same = same && initial && t.Kind == in.Kind && t.Outcome == in.Outcome && t.Workspace == in.Workspace
+			same = same && initial && t.Workspace == in.Workspace
 		} else {
 			same = same && !initial && threadID == m.ThreadID
-		}
-		if t.Kind == "billing" && !canReadBilling(p) {
-			same = false
 		}
 		if !same {
 			return Sent{}, problem(409, "request_conflict", "This request ID was used with different input. Use a new request ID.")
@@ -168,35 +182,53 @@ func (s *mockState) Send(_ context.Context, p Principal, threadID int64, key str
 	now := time.Now().UTC()
 	if threadID == 0 {
 		threadID = int64(len(s.Threads) + 1)
-		s.Threads = append(s.Threads, mockThread{Thread: Thread{ID: threadID, Kind: in.Kind, Outcome: in.Outcome, Workspace: in.Workspace, CreatedAt: now}, OrgID: p.OrgID})
+		s.Threads = append(s.Threads, mockThread{Thread: Thread{ID: threadID, Workspace: in.Workspace, CreatedAt: now}, OrgID: p.OrgID})
 	}
 	m := Message{ID: int64(len(s.Messages) + 1), ThreadID: threadID, AuthorID: p.ActorID, Team: p.Team, Body: in.Body, CreatedAt: now}
 	s.Messages = append(s.Messages, mockMessage{Message: m, RequestID: key, Files: in.Attachments})
 	return Sent{ThreadID: threadID, MessageID: m.ID, RequestID: key}, nil
 }
 
-func (s *mockState) List(_ context.Context, p Principal) ([]Thread, error) {
-	threads := []Thread{}
-	for i := len(s.Threads) - 1; i >= 0 && len(threads) < 50; i-- {
-		if t, err := s.thread(p, s.Threads[i].ID); err == nil {
-			threads = append(threads, t)
-		}
+func (s *mockState) List(_ context.Context, p Principal, o PageOptions) (ThreadPage, error) {
+	page := ThreadPage{Threads: []Thread{}}
+	if err := o.Validate(); err != nil {
+		return page, err
 	}
-	return threads, nil
+	for _, stored := range s.Threads {
+		t, err := s.thread(p, stored.ID)
+		if err != nil || (o.After != 0 && t.LastMessageID >= o.After) || (o.Unread && t.UnreadCount == 0) {
+			continue
+		}
+		page.Threads = append(page.Threads, t)
+	}
+	slices.SortFunc(page.Threads, func(a, b Thread) int {
+		if a.LastMessageID > b.LastMessageID {
+			return -1
+		}
+		return 1
+	})
+	if len(page.Threads) > o.Limit {
+		page.Threads = page.Threads[:o.Limit]
+		page.NextCursor = page.Threads[o.Limit-1].LastMessageID
+	}
+	return page, nil
 }
 
-func (s *mockState) Read(_ context.Context, p Principal, id, after int64) (Conversation, error) {
-	c := Conversation{Messages: []Message{}}
-	if after < 0 {
-		return c, problem(400, "invalid_input", "Use a nonnegative message ID for --after.")
+func (s *mockState) Read(_ context.Context, p Principal, id int64, o PageOptions) (Conversation, error) {
+	c := Conversation{Messages: []Message{}, After: o.After}
+	if err := o.Validate(); err != nil {
+		return c, err
 	}
 	var err error
 	c.Thread, err = s.thread(p, id)
 	if err != nil {
 		return c, err
 	}
+	if o.Unread {
+		c.After = max(c.After, s.Reads[p.ActorID][id])
+	}
 	for _, stored := range s.Messages {
-		if stored.ThreadID != id || stored.ID <= after {
+		if stored.ThreadID != id || stored.ID <= c.After || (o.Unread && stored.AuthorID == p.ActorID) {
 			continue
 		}
 		m := stored.Message
@@ -204,11 +236,45 @@ func (s *mockState) Read(_ context.Context, p Principal, id, after int64) (Conve
 			m.Attachments = append(m.Attachments, Attachment{Path: f.Path, Size: len(f.Data)})
 		}
 		c.Messages = append(c.Messages, m)
-		if len(c.Messages) == 100 {
+		if len(c.Messages) > o.Limit {
+			c.Messages = c.Messages[:o.Limit]
+			c.NextCursor = c.Messages[o.Limit-1].ID
 			break
 		}
 	}
 	return c, nil
+}
+
+func (s *mockState) MarkRead(_ context.Context, p Principal, id int64, r ReadRange) error {
+	if r.After < 0 || r.Through <= r.After {
+		return problem(400, "invalid_input", "Use a read range with through greater than after.")
+	}
+	if _, err := s.thread(p, id); err != nil {
+		return err
+	}
+	valid := false
+	for _, m := range s.Messages {
+		if m.ThreadID != id {
+			continue
+		}
+		if m.ID == r.Through {
+			valid = true
+		}
+		if m.AuthorID != p.ActorID && m.ID > s.Reads[p.ActorID][id] && m.ID <= r.After {
+			return problem(409, "unread_gap", "Earlier messages are unread. Use read --unread, or --peek to leave them unread.")
+		}
+	}
+	if !valid {
+		return problem(400, "invalid_input", "The read position must be a message in this thread.")
+	}
+	if s.Reads == nil {
+		s.Reads = map[string]map[int64]int64{}
+	}
+	if s.Reads[p.ActorID] == nil {
+		s.Reads[p.ActorID] = map[int64]int64{}
+	}
+	s.Reads[p.ActorID][id] = max(s.Reads[p.ActorID][id], r.Through)
+	return nil
 }
 
 func (s *mockState) Bundle(_ context.Context, p Principal, id int64) ([]byte, error) {
@@ -222,5 +288,3 @@ func (s *mockState) Bundle(_ context.Context, p Principal, id int64) ([]byte, er
 	}
 	return nil, problem(404, "not_found", "Attachment bundle not found.")
 }
-
-func canReadBilling(p Principal) bool { return p.Billing || p.Team }

@@ -11,7 +11,12 @@ import (
 func mockHandler(store *mockState, p Principal) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/hotline/threads", func(w http.ResponseWriter, r *http.Request) {
-		threads, err := store.List(r.Context(), p)
+		o, err := pageOptions(r)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		threads, err := store.List(r.Context(), p, o)
 		respond(w, threads, err)
 	})
 	mux.HandleFunc("POST /v1/hotline/threads", func(w http.ResponseWriter, r *http.Request) {
@@ -29,16 +34,26 @@ func mockHandler(store *mockState, p Principal) http.Handler {
 			writeError(w, err)
 			return
 		}
-		var after int64
-		if value := r.URL.Query().Get("after"); value != "" {
-			after, err = strconv.ParseInt(value, 10, 64)
-			if err != nil {
-				writeError(w, problem(400, "invalid_input", "Use a numeric message ID for after."))
-				return
-			}
+		o, err := pageOptions(r)
+		if err != nil {
+			writeError(w, err)
+			return
 		}
-		conversation, err := store.Read(r.Context(), p, id, after)
+		conversation, err := store.Read(r.Context(), p, id, o)
 		respond(w, conversation, err)
+	})
+	mux.HandleFunc("POST /v1/hotline/threads/{id}/read", func(w http.ResponseWriter, r *http.Request) {
+		id, err := resourceID(r)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		var ack ReadRange
+		if err = decode(w, r, &ack); err != nil {
+			writeError(w, err)
+			return
+		}
+		respond(w, struct{}{}, store.MarkRead(r.Context(), p, id, ack))
 	})
 	mux.HandleFunc("POST /v1/hotline/threads/{id}/messages", func(w http.ResponseWriter, r *http.Request) {
 		id, err := resourceID(r)
@@ -113,4 +128,29 @@ func writeError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(e.Status)
 	json.NewEncoder(w).Encode(map[string]any{"error": e})
+}
+
+func pageOptions(r *http.Request) (PageOptions, error) {
+	o := PageOptions{Limit: 20}
+	q := r.URL.Query()
+	var err error
+	if q.Has("after") {
+		o.After, err = strconv.ParseInt(q.Get("after"), 10, 64)
+		if err != nil {
+			return o, problem(400, "invalid_input", "Use a numeric cursor for after.")
+		}
+	}
+	if q.Has("limit") {
+		o.Limit, err = strconv.Atoi(q.Get("limit"))
+		if err != nil {
+			return o, problem(400, "invalid_input", "Use a number for limit.")
+		}
+	}
+	if q.Has("unread") {
+		o.Unread, err = strconv.ParseBool(q.Get("unread"))
+		if err != nil {
+			return o, problem(400, "invalid_input", "Use true or false for unread.")
+		}
+	}
+	return o, o.Validate()
 }

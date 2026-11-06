@@ -3,16 +3,19 @@ package daggercmd
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/internal/hotline"
 )
@@ -50,7 +53,7 @@ func TestMockDemoWithoutNetwork(t *testing.T) {
 	if err := os.WriteFile("engine.log", []byte("Engine cannot start.\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	create := []string{"setup", "--outcome", "blocked", "--body-file", "-", "--attach", "engine.log", "--request-id", "setup-1"}
+	create := []string{"new", "--body-file", "-", "--attach", "engine.log", "--request-id", "setup-1"}
 	first := runMock(t, 0, create...)
 	if again := runMock(t, 0, create...); !bytes.Equal(first, again) {
 		t.Fatalf("retry changed IDs: %s / %s", first, again)
@@ -60,9 +63,6 @@ func TestMockDemoWithoutNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := strconv.FormatInt(sent.ThreadID, 10)
-	for _, kind := range []string{"feedback", "question", "bug", "suggestion"} {
-		runMock(t, 0, kind, "--body", "Demo message")
-	}
 	runMock(t, 0, "reply", id, "--mock-user", "team", "--body", "Is the runtime running?", "--request-id", "team-1")
 	runMock(t, 0, "reply", id, "--mock-user", "team", "--body", "Is the runtime running?", "--request-id", "team-1")
 	var conversation hotline.Conversation
@@ -100,16 +100,6 @@ func TestMockDemoWithoutNetwork(t *testing.T) {
 	runMock(t, 1, "read", id, "--mock-user", "other")
 	runMock(t, 1, "reply", id, "--mock-user", "other", "--body", "No access")
 	runMock(t, 1, "attachments", strconv.FormatInt(sent.MessageID, 10), "--mock-user", "other", "--output", "denied.zip")
-	runMock(t, 3, "billing", "--body", "Invoice")
-	var bill hotline.Sent
-	json.Unmarshal(runMock(t, 0, "billing", "--mock-user", "admin", "--body", "Invoice"), &bill)
-	runMock(t, 1, "read", strconv.FormatInt(bill.ThreadID, 10))
-	runMock(t, 0, "read", strconv.FormatInt(bill.ThreadID, 10), "--mock-user", "team")
-	var threads []hotline.Thread
-	json.Unmarshal(runMock(t, 0, "list"), &threads)
-	if len(threads) != 5 {
-		t.Fatalf("expected five visible threads, got %d", len(threads))
-	}
 	data, err = os.ReadFile(state)
 	if err != nil || !json.Valid(data) || bytes.Contains(data, []byte("do-not-use-this-token")) {
 		t.Fatalf("bad saved state: %v", err)
@@ -124,13 +114,13 @@ func TestMockConcurrentCommands(t *testing.T) {
 	t.Setenv("DAGGER_HOTLINE_MOCK", filepath.Join(t.TempDir(), "messages.json"))
 	var wg sync.WaitGroup
 	for range 12 {
-		wg.Go(func() { runMock(t, 0, "question", "--body", "One question", "--request-id", "same") })
+		wg.Go(func() { runMock(t, 0, "new", "--body", "One question", "--request-id", "same") })
 	}
 	wg.Wait()
-	var threads []hotline.Thread
-	json.Unmarshal(runMock(t, 0, "list"), &threads)
-	if len(threads) != 1 {
-		t.Fatalf("expected one thread, got %d", len(threads))
+	var page hotline.ThreadPage
+	json.Unmarshal(runMock(t, 0, "list"), &page)
+	if len(page.Threads) != 1 {
+		t.Fatalf("expected one thread, got %d", len(page.Threads))
 	}
 	for i := range 12 {
 		wg.Go(func() { runMock(t, 0, "reply", "1", "--body", fmt.Sprint(i), "--request-id", fmt.Sprint(i)) })
@@ -147,9 +137,154 @@ func TestMockRejectsDamagedState(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "messages.json")
 	t.Setenv("DAGGER_HOTLINE_MOCK", state)
 	os.WriteFile(state, []byte("broken"), 0600)
-	runMock(t, 2, "question", "--body", "Do not overwrite")
+	runMock(t, 2, "new", "--body", "Do not overwrite")
 	data, _ := os.ReadFile(state)
 	if string(data) != "broken" {
 		t.Fatal("damaged data was overwritten")
+	}
+}
+
+func TestHotlineUnreadLifecycle(t *testing.T) {
+	t.Setenv("DAGGER_HOTLINE_MOCK", filepath.Join(t.TempDir(), "messages.json"))
+	runMock(t, 0, "new", "--body", "Help")
+	runMock(t, 0, "reply", "1", "--mock-user", "team", "--body", "First reply")
+	runMock(t, 0, "reply", "1", "--mock-user", "team", "--body", "Second reply")
+	inbox := func(account string) hotline.ThreadPage {
+		t.Helper()
+		var page hotline.ThreadPage
+		if err := json.Unmarshal(runMock(t, 0, "inbox", "--mock-user", account), &page); err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+	if p := inbox("member"); len(p.Threads) != 1 || p.Threads[0].UnreadCount != 2 {
+		t.Fatalf("inbox: %+v", p)
+	}
+	runMock(t, 0, "read", "1", "--unread", "--peek")
+	if p := inbox("member"); p.Threads[0].UnreadCount != 2 {
+		t.Fatal("peek marked messages read")
+	}
+	var c hotline.Conversation
+	json.Unmarshal(runMock(t, 0, "read", "1", "--unread", "--limit", "1"), &c)
+	if len(c.Messages) != 1 || c.NextCursor != 2 {
+		t.Fatalf("page: %+v", c)
+	}
+	if p := inbox("member"); p.Threads[0].UnreadCount != 1 {
+		t.Fatalf("read cleared wrong messages: %+v", p)
+	}
+	var errOut bytes.Buffer
+	if code := runHotlineTest([]string{"hotline", "read", "1"}, strings.NewReader(""), brokenOutput{}, &errOut); code == 0 {
+		t.Fatal("output error was ignored")
+	}
+	if p := inbox("member"); p.Threads[0].UnreadCount != 1 {
+		t.Fatal("failed output marked messages read")
+	}
+	runMock(t, 0, "read", "1", "--unread")
+	if p := inbox("member"); len(p.Threads) != 0 {
+		t.Fatalf("read did not clear inbox: %+v", p)
+	}
+	if p := inbox("admin"); len(p.Threads) != 1 || p.Threads[0].UnreadCount != 3 {
+		t.Fatalf("accounts share cursor: %+v", p)
+	}
+}
+
+type brokenOutput struct{}
+
+func (brokenOutput) Write([]byte) (int, error) { return 0, fmt.Errorf("output closed") }
+
+func TestHotlineWatch(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "messages.json")
+	t.Setenv("DAGGER_HOTLINE_MOCK", file)
+	runMock(t, 0, "new", "--body", "Help")
+	runMock(t, 0, "reply", "1", "--mock-user", "team", "--body", "Reply")
+	var out bytes.Buffer
+	a := &hotlineCLI{mockFile: file, json: true, out: &out}
+	cmd := newHotlineCmd()
+	cmd.SetContext(t.Context())
+	seen := map[int64]int64{}
+	if err := a.watchPoll(cmd, seen); err != nil {
+		t.Fatal(err)
+	}
+	var thread hotline.Thread
+	if err := json.Unmarshal(out.Bytes(), &thread); err != nil || thread.ID != 1 || thread.UnreadCount != 1 {
+		t.Fatalf("notification: %s %v", &out, err)
+	}
+	out.Reset()
+	runMock(t, 0, "reply", "1", "--body", "My reply")
+	if err := a.watchPoll(cmd, seen); err != nil {
+		t.Fatal(err)
+	}
+	if out.Len() != 0 {
+		t.Fatal("own reply caused a duplicate notification")
+	}
+	runMock(t, 0, "reply", "1", "--mock-user", "team", "--body", "Another reply")
+	if err := a.watchPoll(cmd, seen); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(out.Bytes(), &thread); err != nil || thread.UnreadCount != 2 {
+		t.Fatalf("watch marked messages read: %s %v", &out, err)
+	}
+}
+
+func TestHotlineEditorDraftRecovery(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Editor fixture requires a Unix shell.")
+	}
+	root := t.TempDir()
+	t.Setenv("DAGGER_HOTLINE_MOCK", filepath.Join(root, "messages.json"))
+	editor := filepath.Join(root, "test editor")
+	if err := os.WriteFile(editor, []byte("#!/bin/sh\nprintf 'Draft from editor' > \"$1\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VISUAL", "'"+editor+"'")
+	runMock(t, 0, "new", "--body", "Help")
+	result := runMock(t, 1, "reply", "1", "--mock-user", "other", "--editor")
+	var failed struct {
+		Error struct {
+			Draft     string `json:"draft"`
+			RequestID string `json:"request_id"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(result, &failed); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(failed.Error.Draft)
+	draft, err := os.ReadFile(failed.Error.Draft)
+	if err != nil || string(draft) != "Draft from editor" || failed.Error.RequestID == "" {
+		t.Fatalf("missing recovery data: %s %v", result, err)
+	}
+	info, err := os.Stat(failed.Error.Draft)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("draft is not private")
+	}
+	runMock(t, 0, "reply", "1", "--body-file", failed.Error.Draft, "--request-id", failed.Error.RequestID)
+	var out, errOut bytes.Buffer
+	cmd := newHotlineCmd()
+	cmd.GroupID = ""
+	cmd.SetArgs([]string{"reply", "1", "--editor"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("editor send: %v %s", err, &errOut)
+	}
+}
+
+func TestHotlineWatchStops(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	a := &hotlineCLI{mockFile: filepath.Join(t.TempDir(), "messages.json"), out: io.Discard, errOut: io.Discard}
+	cmd := a.watchCommand()
+	cmd.SetContext(ctx)
+	done := make(chan error, 1)
+	go func() { done <- cmd.RunE(cmd, nil) }()
+	timer := time.AfterFunc(50*time.Millisecond, cancel)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("watch did not stop on cancellation")
 	}
 }
