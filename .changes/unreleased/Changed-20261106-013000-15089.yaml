@@ -1,6 +1,6 @@
 kind: Changed
 body: |
-  `dagger module recommend` and `dagger init` read the official module catalog from https://dagger.io/modules.json, so new modules can be recommended without a CLI release. The catalog is cached locally and refetched at most once an hour; when a fetch fails, the CLI falls back to the cached copy, then to a copy built into the CLI.
+  `dagger module recommend` and `dagger init` read the official module catalog from https://dagger.io/modules.json, so new modules can be recommended without a CLI release. The catalog is cached locally and refetched at most once an hour; when a fetch fails, the CLI uses the cached copy. With no cached copy and a failed fetch, such as a first run offline, `dagger init` notes that recommendations are unavailable and finishes setup without them, and `dagger module recommend` fails with the reason.
 time: 2026-11-06T01:30:00Z
 custom:
   Author: vito
