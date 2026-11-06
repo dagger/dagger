@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type agentContextKey struct{}
@@ -44,6 +45,58 @@ func composingAgentHandle(ctx context.Context) string {
 		return ""
 	}
 	return fnCall.composingAgentHandle
+}
+
+// inheritedAgentHandle is the agent on whose behalf the exec that started the
+// current client ran: a nested client of a withExec run from an agent's tool
+// (a test binary or a CLI connecting back to the engine) has no FunctionCall
+// record of its own, so neither CallerAgent nor composingAgentHandle can name
+// the agent it runs for. The exec stamps the agent into the nested client's
+// engine-internal metadata (engine.ClientMetadata.LineageAgent), and a module
+// function called from such a client carries it on its FunctionCall record.
+//
+// Like composingAgentHandle, this is lineage only: agents the client spawns
+// record it as their parent, while CallerAgent — message provenance and the
+// waits-for guard — stays unset. A nested exec runs arbitrary code that is not
+// the agent's turn: a test that spawns agents, messages them and awaits them
+// must not speak as the agent that ran it, have its replies addressed to that
+// agent, or record its waits as that agent's. And like composingAgentHandle
+// it is execution context, never a recorded call input: a cache hit on the
+// exec executes nothing and so spawns nothing.
+//
+// It is also captured when the process STARTS, not when it is described:
+// withExec is lazy, so its clients inherit the agent of whichever context
+// first forces the exec, not the one that built the container, and a
+// concurrent forcer that joins that run inherits nothing of its own. A
+// service (asService, withServiceBinding, up) runs nested clients the same
+// way: the agent of the context that starts it, while installers that join
+// the shared running service inherit nothing. This is the cache-hit rule
+// again: the one execution that happens is attributed to the context that
+// made it happen.
+func inheritedAgentHandle(ctx context.Context) string {
+	if query, err := CurrentQuery(ctx); err == nil {
+		if fnCall, err := query.CurrentFunctionCall(ctx); err == nil && fnCall != nil && fnCall.inheritedAgentHandle != "" {
+			return fnCall.inheritedAgentHandle
+		}
+	}
+	if md, err := engine.ClientMetadataFromContext(ctx); err == nil && md != nil {
+		return md.LineageAgent
+	}
+	return ""
+}
+
+// lineageAgentHandle resolves the agent that agents spawned in this execution
+// belong to: the agent being composed, else the caller agent, else the agent
+// inherited by a nested exec client. It is what a nested exec started here
+// passes on to its clients.
+func lineageAgentHandle(ctx context.Context) string {
+	if composing := composingAgentHandle(ctx); composing != "" {
+		return composing
+	}
+	if caller, ok := CallerAgent(ctx); ok {
+		return caller.Self().Handle
+	}
+	return inheritedAgentHandle(ctx)
 }
 
 // AgentToContext binds a running agent's handle into the context, so code

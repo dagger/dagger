@@ -679,16 +679,13 @@ func consoleAgentsFromDB(db *dagui.DB) []consoleAgent {
 	for _, node := range db.Agents() {
 		agent := consoleAgent{
 			ID: node.ID, Name: node.Name, State: node.State,
+			// The roster strip nests by the same field, so the two views
+			// agree on who belongs under whom.
+			ParentID:       node.ParentID,
 			SnapshotDigest: node.SnapshotDigest, SpanIDs: []string{},
 		}
 		for _, span := range node.Spans {
 			agent.SpanIDs = append(agent.SpanIDs, span.ID.String())
-			for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
-				if parent.Agent && parent.AgentID != "" && parent.AgentID != node.ID {
-					agent.ParentID = parent.AgentID
-					break
-				}
-			}
 		}
 		agents = append(agents, agent)
 	}

@@ -168,7 +168,7 @@ func (sink *agentTraceSink) captureLLMRecipe(ctx context.Context, t *testctx.T, 
 		return "", err
 	}
 	name := "recipe-capture-" + rand.Text()
-	_, err = rehydrateAgent(ctx, c, string(seed), name, name, "IDLE", "")
+	_, err = rehydrateAgent(ctx, t, c, string(seed), name, name, "IDLE", "")
 	if err != nil {
 		return "", err
 	}

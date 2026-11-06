@@ -636,7 +636,7 @@ func (r *Agent) Notify(ctx context.Context, subscriber *Agent, opts ...AgentNoti
 	}, nil
 }
 
-// The agent that spawned this agent, or null for a root agent.
+// The agent this agent was spawned under (by it, during its composition, or by code it ran), or null for a root agent.
 //
 // Experimental: Agent APIs are likely to change.
 func (r *Agent) Parent(ctx context.Context) (*Agent, error) {
