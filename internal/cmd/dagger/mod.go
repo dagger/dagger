@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -26,7 +27,7 @@ With no query, lists all known modules and SDK modules.`,
 		if len(args) == 1 {
 			query = args[0]
 		}
-		mods, err := loadSearchRegistry(searchSDKOnly)
+		mods, err := loadSearchRegistry(cmd.Context(), searchSDKOnly)
 		if err != nil {
 			return err
 		}
@@ -38,33 +39,23 @@ func init() {
 	searchCmd.Flags().BoolVar(&searchSDKOnly, "sdk", false, "Only show modules that provide SDK capabilities")
 }
 
-func loadSearchRegistry(sdkOnly bool) ([]registryModule, error) {
-	sdks, err := loadSDKSearchRegistry()
+// loadSearchRegistry returns the catalog entries to search: every entry, or
+// only SDKs with sdkOnly.
+func loadSearchRegistry(ctx context.Context, sdkOnly bool) ([]registryModule, error) {
+	mods, err := loadModuleRegistry(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if sdkOnly {
-		return sdks, nil
-	}
-	mods := loadModuleRegistry()
-	return append(mods, sdks...), nil
+	return filterSearchRegistry(mods, sdkOnly), nil
 }
 
-func loadSDKSearchRegistry() ([]registryModule, error) {
-	entries, err := loadSDKRegistry()
-	if err != nil {
-		return nil, err
+func filterSearchRegistry(mods []registryModule, sdkOnly bool) []registryModule {
+	if !sdkOnly {
+		return mods
 	}
-	mods := make([]registryModule, 0, len(entries))
-	for _, entry := range entries {
-		mods = append(mods, registryModule{
-			Name:        entry.Name,
-			Description: entry.Description,
-			Repo:        "dagger.io/sdk/" + entry.Name,
-			Aliases:     entry.Aliases,
-		})
-	}
-	return mods, nil
+	return slices.DeleteFunc(slices.Clone(mods), func(m registryModule) bool {
+		return m.Kind != moduleKindSDK
+	})
 }
 
 // searchModuleRegistry returns modules whose name or description match query

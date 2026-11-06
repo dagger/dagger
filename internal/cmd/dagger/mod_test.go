@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"bytes"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -54,9 +55,13 @@ func TestModuleSearchOutputSortedBySource(t *testing.T) {
 }
 
 func TestLoadSearchRegistryIncludesSDKsUnlessFiltered(t *testing.T) {
-	all, err := loadSearchRegistry(false)
+	// Search reads the same catalog as recommend: here, the embedded copy.
+	srv := serveModuleCatalog(t, http.StatusServiceUnavailable, "")
+	withModuleCatalogSource(t, srv.URL)
+
+	all, err := loadSearchRegistry(t.Context(), false)
 	require.NoError(t, err)
-	sdkOnly, err := loadSearchRegistry(true)
+	sdkOnly, err := loadSearchRegistry(t.Context(), true)
 	require.NoError(t, err)
 
 	repos := func(entries []registryModule) []string {

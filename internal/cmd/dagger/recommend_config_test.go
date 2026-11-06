@@ -15,11 +15,14 @@ func TestRecommendationConfigContents(t *testing.T) {
 		contents string
 		want     bool
 	}{
-		{"JSON property", hasMochaProperty, `{"mocha": {"timeout": 1000}}`, true},
-		{"JSON empty property", hasMochaProperty, `{"mocha": {}}`, true},
-		{"JSON nested property", hasMochaProperty, `{"scripts": {"mocha": "test"}}`, false},
-		{"JSON string", hasMochaProperty, `{"description": "mocha"}`, false},
-		{"JSON invalid", hasMochaProperty, `{"mocha":`, false},
+		{"JSON property", hasJSONKey("mocha"), `{"mocha": {"timeout": 1000}}`, true},
+		{"JSON empty property", hasJSONKey("mocha"), `{"mocha": {}}`, true},
+		{"JSON null property", hasJSONKey("mocha"), `{"mocha": null}`, true},
+		{"JSON nested property", hasJSONKey("mocha"), `{"scripts": {"mocha": "test"}}`, false},
+		{"JSON string", hasJSONKey("mocha"), `{"description": "mocha"}`, false},
+		{"JSON invalid", hasJSONKey("mocha"), `{"mocha":`, false},
+		{"JSON array", hasJSONKey("mocha"), `[{"mocha": {}}]`, false},
+		{"JSON null", hasJSONKey("mocha"), `null`, false},
 		{"TOML table", hasTOMLTable("tool.ruff"), "[tool.ruff]\nline-length = 88", true},
 		{"TOML nested table", hasTOMLTable("tool.ruff"), "[tool.ruff.lint]\nselect = ['ALL']", true},
 		{"TOML dotted key", hasTOMLTable("tool.ruff"), "tool.ruff.line-length = 88", true},
@@ -94,7 +97,9 @@ func TestModuleRecommendationsInspectContents(t *testing.T) {
 		"ty":      {"ty/ty.toml", "python/pyproject.toml"},
 		"uv":      {"uv/uv.lock", "uv/uv.toml", "python/pyproject.toml"},
 	}
-	for _, mod := range loadModuleRegistry() {
+	mods, err := parseModuleCatalog(embeddedModuleCatalog)
+	require.NoError(t, err)
+	for _, mod := range mods {
 		expected, ok := want[mod.Name]
 		if !ok {
 			continue

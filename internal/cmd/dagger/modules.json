@@ -1,0 +1,463 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "name": "go",
+      "kind": "module",
+      "ref": "dagger.io/go",
+      "aliases": [],
+      "description": "Test and generate code for Go projects with the Go toolchain",
+      "docsUrl": "https://docs.dagger.io/reference/modules/go",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/go.mod"
+          }
+        ]
+      }
+    },
+    {
+      "name": "golangci-lint",
+      "kind": "module",
+      "ref": "dagger.io/go/golangci-lint",
+      "aliases": [],
+      "description": "Lint Go projects with golangci-lint",
+      "docsUrl": "https://docs.dagger.io/reference/modules/go",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/.golangci.yml"
+          },
+          {
+            "glob": "**/.golangci.yaml"
+          },
+          {
+            "glob": "**/.golangci.toml"
+          },
+          {
+            "glob": "**/.golangci.json"
+          }
+        ]
+      }
+    },
+    {
+      "name": "staticcheck",
+      "kind": "module",
+      "ref": "dagger.io/go/staticcheck",
+      "aliases": [],
+      "description": "Lint Go projects with Staticcheck",
+      "docsUrl": "https://docs.dagger.io/reference/modules/go",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/staticcheck.conf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "deno",
+      "kind": "module",
+      "ref": "dagger.io/js/deno",
+      "aliases": [],
+      "description": "Test, lint, format, and type-check Deno projects with Dagger",
+      "docsUrl": "https://docs.dagger.io/reference/modules/js/deno",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/deno.json"
+          },
+          {
+            "glob": "**/deno.jsonc"
+          },
+          {
+            "glob": "**/deno.lock"
+          }
+        ]
+      }
+    },
+    {
+      "name": "eslint",
+      "kind": "module",
+      "ref": "dagger.io/js/eslint",
+      "aliases": [],
+      "description": "Lint JavaScript and TypeScript with ESLint",
+      "docsUrl": "https://docs.dagger.io/reference/modules/js/eslint",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/.eslintrc*"
+          },
+          {
+            "glob": "**/eslint.config.*"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prettier",
+      "kind": "module",
+      "ref": "dagger.io/js/prettier",
+      "aliases": [],
+      "description": "Format code with Prettier",
+      "docsUrl": "https://docs.dagger.io/reference/modules/js/prettier",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/.prettierrc*"
+          },
+          {
+            "glob": "**/prettier.config.*"
+          }
+        ]
+      }
+    },
+    {
+      "name": "jest",
+      "kind": "module",
+      "ref": "dagger.io/js/jest",
+      "aliases": [],
+      "description": "Run JavaScript and TypeScript tests with Jest",
+      "docsUrl": "https://docs.dagger.io/reference/modules/js/jest",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/jest.config.*"
+          }
+        ]
+      }
+    },
+    {
+      "name": "mochajs",
+      "kind": "module",
+      "ref": "dagger.io/js/mocha",
+      "aliases": [],
+      "description": "Run JavaScript and TypeScript tests with Mocha",
+      "docsUrl": "https://docs.dagger.io/reference/modules",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/.mocharc.*"
+          },
+          {
+            "glob": "**/package.json",
+            "jsonKey": "mocha"
+          }
+        ]
+      }
+    },
+    {
+      "name": "vitest",
+      "kind": "module",
+      "ref": "dagger.io/js/vitest",
+      "aliases": [],
+      "description": "Run JavaScript and TypeScript tests with Vitest",
+      "docsUrl": "https://docs.dagger.io/reference/modules/js/vitest",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/vitest.config.*"
+          }
+        ]
+      }
+    },
+    {
+      "name": "pytest",
+      "kind": "module",
+      "ref": "dagger.io/python/pytest",
+      "aliases": [],
+      "description": "Run Python tests with pytest",
+      "docsUrl": "https://docs.dagger.io/reference/modules/python/pytest",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/pytest.ini"
+          },
+          {
+            "glob": "**/.pytest.ini"
+          },
+          {
+            "glob": "**/pyproject.toml",
+            "tomlTable": "tool.pytest"
+          },
+          {
+            "glob": "**/tox.ini",
+            "iniSection": "pytest"
+          },
+          {
+            "glob": "**/setup.cfg",
+            "iniSection": "tool:pytest"
+          }
+        ]
+      }
+    },
+    {
+      "name": "mypy",
+      "kind": "module",
+      "ref": "dagger.io/python/mypy",
+      "aliases": [],
+      "description": "Type-check Python projects with mypy",
+      "docsUrl": "https://docs.dagger.io/reference/modules",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/mypy.ini"
+          },
+          {
+            "glob": "**/.mypy.ini"
+          },
+          {
+            "glob": "**/pyproject.toml",
+            "tomlTable": "tool.mypy"
+          },
+          {
+            "glob": "**/setup.cfg",
+            "iniSection": "mypy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ruff",
+      "kind": "module",
+      "ref": "dagger.io/python/ruff",
+      "aliases": [],
+      "description": "Lint and format Python projects with Ruff",
+      "docsUrl": "https://docs.dagger.io/reference/modules",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/ruff.toml"
+          },
+          {
+            "glob": "**/.ruff.toml"
+          },
+          {
+            "glob": "**/pyproject.toml",
+            "tomlTable": "tool.ruff"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ty",
+      "kind": "module",
+      "ref": "dagger.io/python/ty",
+      "aliases": [],
+      "description": "Type-check Python projects with ty",
+      "docsUrl": "https://docs.dagger.io/reference/modules",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/ty.toml"
+          },
+          {
+            "glob": "**/pyproject.toml",
+            "tomlTable": "tool.ty"
+          }
+        ]
+      }
+    },
+    {
+      "name": "uv",
+      "kind": "module",
+      "ref": "dagger.io/python/uv",
+      "aliases": [],
+      "description": "Lock, build, and audit Python projects with uv",
+      "docsUrl": "https://docs.dagger.io/reference/modules",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/uv.lock"
+          },
+          {
+            "glob": "**/uv.toml"
+          },
+          {
+            "glob": "**/pyproject.toml",
+            "tomlTable": "tool.uv"
+          }
+        ]
+      }
+    },
+    {
+      "name": "biomejs",
+      "kind": "module",
+      "ref": "dagger.io/js/biome",
+      "aliases": [],
+      "description": "Format and lint JavaScript and TypeScript with Biome",
+      "docsUrl": "https://docs.dagger.io/reference/modules/js/biome",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/biome.json*"
+          }
+        ]
+      }
+    },
+    {
+      "name": "playwright",
+      "kind": "module",
+      "ref": "dagger.io/js/playwright",
+      "aliases": [],
+      "description": "Run end-to-end browser tests with Playwright",
+      "docsUrl": "https://docs.dagger.io/reference/modules/js/playwright",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/playwright.config.*"
+          }
+        ]
+      }
+    },
+    {
+      "name": "android",
+      "kind": "module",
+      "ref": "dagger.io/android",
+      "aliases": [],
+      "description": "Run test, lint, and build on Android projects",
+      "docsUrl": "https://docs.dagger.io/reference/modules/android",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/AndroidManifest.xml"
+          }
+        ]
+      }
+    },
+    {
+      "name": "swift",
+      "kind": "module",
+      "ref": "dagger.io/apple/swift",
+      "aliases": [],
+      "description": "Test and build Swift packages",
+      "docsUrl": "https://docs.dagger.io/reference/modules/apple",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/Package.swift"
+          }
+        ]
+      }
+    },
+    {
+      "name": "maven",
+      "kind": "module",
+      "ref": "dagger.io/java/maven",
+      "aliases": [],
+      "description": "Run tests and builds with Maven",
+      "docsUrl": "https://docs.dagger.io/reference/modules/java",
+      "publisher": "Dagger",
+      "official": true,
+      "recommend": {
+        "anyOf": [
+          {
+            "glob": "**/pom.xml"
+          }
+        ]
+      }
+    },
+    {
+      "name": "go",
+      "kind": "sdk",
+      "ref": "dagger.io/sdk/go",
+      "aliases": [
+        "golang"
+      ],
+      "description": "Official Dagger SDK for Go",
+      "docsUrl": "https://docs.dagger.io/reference/modules/sdk/go",
+      "publisher": "Dagger",
+      "official": true
+    },
+    {
+      "name": "python",
+      "kind": "sdk",
+      "ref": "dagger.io/sdk/python",
+      "aliases": [
+        "py"
+      ],
+      "description": "Official Dagger SDK for Python",
+      "docsUrl": "https://docs.dagger.io/reference/modules/sdk/python",
+      "publisher": "Dagger",
+      "official": true
+    },
+    {
+      "name": "typescript",
+      "kind": "sdk",
+      "ref": "dagger.io/sdk/typescript",
+      "aliases": [
+        "ts"
+      ],
+      "description": "Official Dagger SDK for TypeScript",
+      "docsUrl": "https://docs.dagger.io/reference/modules/sdk/typescript",
+      "publisher": "Dagger",
+      "official": true
+    },
+    {
+      "name": "php",
+      "kind": "sdk",
+      "ref": "dagger.io/sdk/php",
+      "aliases": [],
+      "description": "Official Dagger SDK for PHP",
+      "docsUrl": "https://docs.dagger.io/reference/modules/sdk/php",
+      "publisher": "Dagger",
+      "official": true
+    },
+    {
+      "name": "dang",
+      "kind": "sdk",
+      "ref": "dagger.io/sdk/dang",
+      "aliases": [],
+      "description": "Official Dagger SDK for Dang",
+      "docsUrl": "https://docs.dagger.io/reference/modules/sdk/dang",
+      "publisher": "Dagger",
+      "official": true
+    },
+    {
+      "name": "java",
+      "kind": "sdk",
+      "ref": "dagger.io/sdk/java",
+      "aliases": [],
+      "description": "Official Dagger SDK for Java",
+      "docsUrl": "https://docs.dagger.io/reference/modules/sdk/java",
+      "publisher": "Dagger",
+      "official": true
+    }
+  ]
+}
