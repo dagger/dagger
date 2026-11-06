@@ -202,7 +202,7 @@ func TestHotlineWatch(t *testing.T) {
 	cmd := newHotlineCmd()
 	cmd.SetContext(t.Context())
 	seen := map[int64]int64{}
-	if err := a.watchPoll(cmd, seen); err != nil {
+	if err := a.watchPoll(cmd, seen, false); err != nil {
 		t.Fatal(err)
 	}
 	var thread hotline.Thread
@@ -211,14 +211,14 @@ func TestHotlineWatch(t *testing.T) {
 	}
 	out.Reset()
 	runMock(t, 0, "reply", "1", "--body", "My reply")
-	if err := a.watchPoll(cmd, seen); err != nil {
+	if err := a.watchPoll(cmd, seen, false); err != nil {
 		t.Fatal(err)
 	}
 	if out.Len() != 0 {
 		t.Fatal("own reply caused a duplicate notification")
 	}
 	runMock(t, 0, "reply", "1", "--mock-user", "team", "--body", "Another reply")
-	if err := a.watchPoll(cmd, seen); err != nil {
+	if err := a.watchPoll(cmd, seen, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := json.Unmarshal(out.Bytes(), &thread); err != nil || thread.UnreadCount != 2 {
@@ -287,4 +287,62 @@ func TestHotlineWatchStops(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("watch did not stop on cancellation")
 	}
+}
+
+func TestHotlineTeamQueue(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "messages.json")
+	t.Setenv("DAGGER_HOTLINE_MOCK", file)
+	runMock(t, 0, "new", "--body", "First customer")
+	runMock(t, 0, "new", "--mock-user", "other", "--body", "Second customer")
+	runMock(t, 3, "queue")
+	runMock(t, 2, "queue", "--mock-user", "team", "--org", "demo")
+	var page hotline.ThreadPage
+	if err := json.Unmarshal(runMock(t, 0, "queue", "--mock-user", "team", "--limit", "1"), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Threads) != 1 || page.Threads[0].ID != 2 || page.Threads[0].OrgName != "other" || page.NextCursor == 0 {
+		t.Fatalf("queue: %+v", page)
+	}
+	if err := json.Unmarshal(runMock(t, 0, "queue", "--mock-user", "team", "--after", fmt.Sprint(page.NextCursor)), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Threads) != 1 || page.Threads[0].ID != 1 {
+		t.Fatalf("queue page: %+v", page)
+	}
+	runMock(t, 0, "read", "2", "--mock-user", "team")
+	var out bytes.Buffer
+	a := &hotlineCLI{mockFile: file, demo: "team", json: true, out: &out}
+	cmd := newHotlineCmd()
+	cmd.SetContext(t.Context())
+	seen := map[int64]int64{}
+	if err := a.watchPoll(cmd, seen, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 || seen[2] != 2 {
+		t.Fatal("queue watch omitted a read thread")
+	}
+	out.Reset()
+	runMock(t, 0, "reply", "2", "--mock-user", "team", "--body", "Team reply", "--request-id", "team-reply")
+	runMock(t, 0, "reply", "2", "--mock-user", "team", "--body", "Team reply", "--request-id", "team-reply")
+	if err := a.watchPoll(cmd, seen, true); err != nil {
+		t.Fatal(err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("team reply caused a notification: %s", &out)
+	}
+	if err := json.Unmarshal(runMock(t, 0, "queue", "--mock-user", "team"), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Threads) != 1 || page.Threads[0].ID != 1 {
+		t.Fatalf("answered thread remains: %+v", page)
+	}
+	runMock(t, 0, "reply", "2", "--mock-user", "other", "--body", "Follow-up")
+	if err := a.watchPoll(cmd, seen, true); err != nil {
+		t.Fatal(err)
+	}
+	var thread hotline.Thread
+	if err := json.Unmarshal(out.Bytes(), &thread); err != nil || thread.ID != 2 {
+		t.Fatalf("missing follow-up: %s %v", &out, err)
+	}
+	runMock(t, 1, "read", "2")
 }

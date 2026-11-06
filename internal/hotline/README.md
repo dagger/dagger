@@ -60,6 +60,42 @@ a timeout. Cloud returns the first result without another message. Changed
 input with the same ID returns `request_conflict`. Without this flag, the CLI
 creates an ID and returns it on success or request failure.
 
+## Dagger team
+
+`queue` lists threads waiting for a team reply across all organizations,
+ordered by latest message. It requires the Cloud `support:admin` permission.
+Reading a thread leaves it in the queue. A team reply removes it. A customer
+follow-up adds it again. `watch --queue` reports waiting threads and then new
+customer messages. It does not mark messages as read. The queue does not accept
+`--org`; list and inbox still use the selected organization.
+
+```sh
+dagger hotline queue
+dagger hotline read 123
+dagger hotline reply 123 --body 'Here is what to try.'
+dagger hotline watch --queue --json
+```
+
+Support accounts can read, reply, and download attachments by ID across
+organizations. Each result identifies the customer organization. Replies are
+stored in that organization, regardless of the selected organization.
+
+Team agents use separate Cloud accounts granted `support:admin`. Use the
+existing login flow once in an isolated configuration directory, then run the
+agent with that same directory. Existing token refresh applies. Hotline does
+not prompt for login. Organization API tokens and CI identities do not grant
+team access.
+
+```sh
+export DAGGER_ENGINE=cloud
+export XDG_CONFIG_HOME="$HOME/.config/hotline-agent"
+unset DAGGER_CLOUD_TOKEN
+dagger login
+dagger hotline queue --json
+```
+
+An administrator grants support permission through the existing identity provider.
+
 ## Local mock
 
 `--mock FILE` or `DAGGER_HOTLINE_MOCK` uses a local JSON file. No engine,

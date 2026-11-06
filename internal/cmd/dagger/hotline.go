@@ -105,7 +105,7 @@ Commands do not prompt. An editor opens only with --editor.`,
 	h.PersistentFlags().BoolVar(&a.json, "json", false, "Write JSON output")
 	h.PersistentFlags().StringVar(&a.demo, "mock-user", "", "Mock account: member, admin, team, or other (requires --mock)")
 	h.PersistentFlags().StringVar(&a.org, "org", "", "Cloud organization name (defaults to the current organization)")
-	h.AddCommand(a.messageCommand(false), a.messageCommand(true), a.listCommand(false), a.listCommand(true), a.readCommand(), a.watchCommand(), a.attachmentsCommand())
+	h.AddCommand(a.messageCommand(false), a.messageCommand(true), a.listCommand("list"), a.listCommand("inbox"), a.listCommand("queue"), a.readCommand(), a.watchCommand(), a.attachmentsCommand())
 	return h
 }
 
@@ -275,7 +275,8 @@ func (a *hotlineCLI) request(cmd *cobra.Command, method, path string, input any,
 		if credentials.Org != nil {
 			orgID = credentials.Org.ID
 		}
-		if a.org != "" || (orgID == "" && credentials.Token.Type() != "Basic" && credentials.Token.Type() != "OIDC") {
+		needsOrg := strings.SplitN(path, "?", 2)[0] == "/v1/hotline/threads"
+		if a.org != "" || (needsOrg && orgID == "" && credentials.Token.Type() != "Basic" && credentials.Token.Type() != "OIDC") {
 			org, orgErr := cloudCLI.resolveCloudOrgName(ctx, client, credentials, a.org)
 			if orgErr != nil {
 				return &hotline.Error{Status: 403, Code: "forbidden", Message: "Cannot select the requested organization."}

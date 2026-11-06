@@ -10,15 +10,18 @@ import (
 
 func mockHandler(store *mockState, p Principal) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/hotline/threads", func(w http.ResponseWriter, r *http.Request) {
+	list := func(w http.ResponseWriter, r *http.Request) {
 		o, err := pageOptions(r)
 		if err != nil {
 			writeError(w, err)
 			return
 		}
+		o.Queue = r.URL.Path == "/v1/hotline/queue"
 		threads, err := store.List(r.Context(), p, o)
 		respond(w, threads, err)
-	})
+	}
+	mux.HandleFunc("GET /v1/hotline/threads", list)
+	mux.HandleFunc("GET /v1/hotline/queue", list)
 	mux.HandleFunc("POST /v1/hotline/threads", func(w http.ResponseWriter, r *http.Request) {
 		var in Input
 		if err := decode(w, r, &in); err != nil {

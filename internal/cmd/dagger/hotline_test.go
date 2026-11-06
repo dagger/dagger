@@ -36,7 +36,7 @@ func TestHotlineInputAndDiscovery(t *testing.T) {
 	if code := runHotlineTest([]string{"hotline", "--help"}, strings.NewReader(""), &out, &errOut); code != 0 {
 		t.Fatal(code)
 	}
-	for _, name := range []string{"new", "list", "inbox", "watch", "read", "reply", "attachments"} {
+	for _, name := range []string{"new", "list", "inbox", "queue", "watch", "read", "reply", "attachments"} {
 		if !strings.Contains(out.String(), name) {
 			t.Fatalf("missing %s", name)
 		}

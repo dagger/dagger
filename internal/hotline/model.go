@@ -15,6 +15,8 @@ type Principal struct {
 }
 
 type Thread struct {
+	OrgID         string    `json:"org_id"`
+	OrgName       string    `json:"org_name"`
 	ID            int64     `json:"id"`
 	Workspace     string    `json:"workspace,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -44,12 +46,16 @@ type Input struct {
 }
 
 type PageOptions struct {
+	Queue  bool
 	After  int64
 	Limit  int
 	Unread bool
 }
 
 func (o PageOptions) Validate() error {
+	if o.Queue && o.Unread {
+		return problem(400, "invalid_input", "The team queue is independent of unread state; omit unread=true.")
+	}
 	if o.After < 0 || o.Limit < 1 || o.Limit > 100 {
 		return problem(400, "invalid_input", "Use --after 0 or a positive cursor, and --limit 1–100.")
 	}

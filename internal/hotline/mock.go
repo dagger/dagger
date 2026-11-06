@@ -73,11 +73,6 @@ func DemoAccount(account string) (Principal, error) {
 	}
 }
 
-type mockThread struct {
-	Thread
-	OrgID string `json:"org_id"`
-}
-
 type mockMessage struct {
 	Message
 	RequestID string `json:"request_id"`
@@ -87,7 +82,7 @@ type mockMessage struct {
 type mockState struct {
 	Version  int                        `json:"version"`
 	Reads    map[string]map[int64]int64 `json:"reads,omitempty"`
-	Threads  []mockThread               `json:"threads"`
+	Threads  []Thread                   `json:"threads"`
 	Messages []mockMessage              `json:"messages"`
 }
 
@@ -112,8 +107,9 @@ func (s *mockState) save(filename string) error {
 
 func (s *mockState) thread(p Principal, id int64) (Thread, error) {
 	for _, t := range s.Threads {
-		if t.ID == id && t.OrgID == p.OrgID {
-			summary := t.Thread
+		if t.ID == id && (t.OrgID == p.OrgID || p.Team) {
+			summary := t
+			summary.OrgName = t.OrgID
 			read := s.Reads[p.ActorID][id]
 			for _, m := range s.Messages {
 				if m.ThreadID != id {
@@ -144,9 +140,11 @@ func (s *mockState) Send(_ context.Context, p Principal, threadID int64, key str
 		return Sent{}, problem(400, "invalid_input", "Supply a request ID of 1–200 bytes without null characters.")
 	}
 	if threadID != 0 {
-		if _, err := s.thread(p, threadID); err != nil {
+		thread, err := s.thread(p, threadID)
+		if err != nil {
 			return Sent{}, err
 		}
+		p.OrgID = thread.OrgID
 	}
 	in.Attachments = slices.Clone(in.Attachments)
 	slices.SortFunc(in.Attachments, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
@@ -158,7 +156,7 @@ func (s *mockState) Send(_ context.Context, p Principal, threadID int64, key str
 			continue
 		}
 		// Request IDs are scoped to the author and organization.
-		var t mockThread
+		var t Thread
 		for _, candidate := range s.Threads {
 			if candidate.ID == m.ThreadID {
 				t = candidate
@@ -182,7 +180,7 @@ func (s *mockState) Send(_ context.Context, p Principal, threadID int64, key str
 	now := time.Now().UTC()
 	if threadID == 0 {
 		threadID = int64(len(s.Threads) + 1)
-		s.Threads = append(s.Threads, mockThread{Thread: Thread{ID: threadID, Workspace: in.Workspace, CreatedAt: now}, OrgID: p.OrgID})
+		s.Threads = append(s.Threads, Thread{ID: threadID, Workspace: in.Workspace, CreatedAt: now, OrgID: p.OrgID})
 	}
 	m := Message{ID: int64(len(s.Messages) + 1), ThreadID: threadID, AuthorID: p.ActorID, Team: p.Team, Body: in.Body, CreatedAt: now}
 	s.Messages = append(s.Messages, mockMessage{Message: m, RequestID: key, Files: in.Attachments})
@@ -191,12 +189,18 @@ func (s *mockState) Send(_ context.Context, p Principal, threadID int64, key str
 
 func (s *mockState) List(_ context.Context, p Principal, o PageOptions) (ThreadPage, error) {
 	page := ThreadPage{Threads: []Thread{}}
+	if o.Queue && !p.Team {
+		return page, problem(403, "forbidden", "The team queue requires support:admin permission.")
+	}
 	if err := o.Validate(); err != nil {
 		return page, err
 	}
 	for _, stored := range s.Threads {
+		if !o.Queue && stored.OrgID != p.OrgID {
+			continue
+		}
 		t, err := s.thread(p, stored.ID)
-		if err != nil || (o.After != 0 && t.LastMessageID >= o.After) || (o.Unread && t.UnreadCount == 0) {
+		if err != nil || (o.Queue && t.LastTeam) || (o.After != 0 && t.LastMessageID >= o.After) || (o.Unread && t.UnreadCount == 0) {
 			continue
 		}
 		page.Threads = append(page.Threads, t)

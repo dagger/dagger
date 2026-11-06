@@ -20,13 +20,16 @@ func pageFlags(cmd *cobra.Command, o *hotline.PageOptions) {
 	cmd.Flags().IntVar(&o.Limit, "limit", 20, "Maximum results (1–100)")
 }
 
-func (a *hotlineCLI) listCommand(inbox bool) *cobra.Command {
-	cmd := &cobra.Command{Use: "list", Short: "List threads by latest message", Args: cobra.NoArgs}
-	if inbox {
-		cmd.Use = "inbox"
+func (a *hotlineCLI) listCommand(name string) *cobra.Command {
+	cmd := &cobra.Command{Use: name, Short: "List threads by latest message", Args: cobra.NoArgs}
+	if name == "inbox" {
 		cmd.Short = "List threads with unread messages"
 	}
-	o := hotline.PageOptions{Unread: inbox}
+	if name == "queue" {
+		cmd.Short = "List threads waiting for the Dagger team across all organizations"
+		cmd.Long = "List threads whose last message came from a customer, across all organizations.\nReading leaves them in the queue. A team reply removes them.\nRequires support:admin permission. Results are ordered by latest message."
+	}
+	o := hotline.PageOptions{Unread: name == "inbox", Queue: name == "queue"}
 	pageFlags(cmd, &o)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		if err := o.Validate(); err != nil {
@@ -41,16 +44,18 @@ func (a *hotlineCLI) listCommand(inbox bool) *cobra.Command {
 		}
 		var b bytes.Buffer
 		if len(page.Threads) == 0 {
-			if inbox {
+			if o.Unread {
 				fmt.Fprintln(&b, "No unread messages.")
+			} else if o.Queue {
+				fmt.Fprintln(&b, "No threads waiting for a reply.")
 			} else {
 				fmt.Fprintln(&b, "No threads.")
 			}
 		} else {
 			w := tabwriter.NewWriter(&b, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "THREAD\tUNREAD\tLAST MESSAGE\tFROM\tPREVIEW")
+			fmt.Fprintln(w, "THREAD\tORGANIZATION\tUNREAD\tLAST MESSAGE\tFROM\tPREVIEW")
 			for _, t := range page.Threads {
-				fmt.Fprintf(w, "%d\t%d\t%s\t%s\t%s\n", t.ID, t.UnreadCount, t.UpdatedAt.Format(time.RFC3339), sender(t.LastAuthorID, t.LastTeam), strings.Join(strings.Fields(clean(t.Preview)), " "))
+				fmt.Fprintf(w, "%d\t%s\t%d\t%s\t%s\t%s\n", t.ID, clean(t.OrgName), t.UnreadCount, t.UpdatedAt.Format(time.RFC3339), sender(t.LastAuthorID, t.LastTeam), strings.Join(strings.Fields(clean(t.Preview)), " "))
 			}
 			w.Flush()
 		}
@@ -65,7 +70,18 @@ func (a *hotlineCLI) listCommand(inbox bool) *cobra.Command {
 
 func (a *hotlineCLI) list(cmd *cobra.Command, o hotline.PageOptions) (hotline.ThreadPage, error) {
 	var page hotline.ThreadPage
-	err := a.request(cmd, http.MethodGet, fmt.Sprintf("/v1/hotline/threads?after=%d&limit=%d&unread=%t", o.After, o.Limit, o.Unread), nil, "", &page)
+	path := "/v1/hotline/threads"
+	if o.Queue {
+		if a.org != "" {
+			return page, fmt.Errorf("The team queue covers all organizations; omit --org.")
+		}
+		path = "/v1/hotline/queue"
+	}
+	path += fmt.Sprintf("?after=%d&limit=%d", o.After, o.Limit)
+	if o.Unread {
+		path += "&unread=true"
+	}
+	err := a.request(cmd, http.MethodGet, path, nil, "", &page)
 	return page, err
 }
 
@@ -102,7 +118,7 @@ func (a *hotlineCLI) readCommand() *cobra.Command {
 				return err
 			}
 		} else {
-			fmt.Fprintf(&b, "Thread %d · %s\n", id, clean(c.Thread.Workspace))
+			fmt.Fprintf(&b, "Thread %d · %s · %s\n", id, clean(c.Thread.OrgName), clean(c.Thread.Workspace))
 			if len(c.Messages) == 0 {
 				if o.Unread {
 					fmt.Fprintln(&b, "No unread messages.")
@@ -137,13 +153,15 @@ func (a *hotlineCLI) readCommand() *cobra.Command {
 }
 
 func (a *hotlineCLI) watchCommand() *cobra.Command {
+	var queue bool
 	cmd := &cobra.Command{Use: "watch", Short: "Report unread threads, then wait for new messages", Args: cobra.NoArgs,
-		Long: "Report unread threads, then check every 5 seconds. Messages stay unread.\nUse --json for one thread per line. Stop with Ctrl-C."}
+		Long: "Report unread threads, then check every 5 seconds. Read positions do not change.\nWith --queue, watch threads waiting for a team reply, including already-read threads.\nUse --json for one thread per line. Stop with Ctrl-C."}
+	cmd.Flags().BoolVar(&queue, "queue", false, "Watch the shared team queue across all organizations")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		seen := map[int64]int64{}
 		delay := 5 * time.Second
 		for {
-			err := a.watchPoll(cmd, seen)
+			err := a.watchPoll(cmd, seen, queue)
 			if cmd.Context().Err() != nil {
 				return nil
 			}
@@ -175,26 +193,32 @@ func (a *hotlineCLI) watchCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *hotlineCLI) watchPoll(cmd *cobra.Command, seen map[int64]int64) error {
-	o := hotline.PageOptions{Limit: 100, Unread: true}
+func (a *hotlineCLI) watchPoll(cmd *cobra.Command, seen map[int64]int64, queue bool) error {
+	o := hotline.PageOptions{Limit: 100, Unread: !queue, Queue: queue}
 	for {
 		page, err := a.list(cmd, o)
 		if err != nil {
 			return err
 		}
 		for _, t := range page.Threads {
-			if t.LastUnreadID <= seen[t.ID] {
+			messageID := t.LastUnreadID
+			if queue {
+				messageID = t.LastMessageID
+			}
+			if messageID <= seen[t.ID] {
 				continue
 			}
 			if a.json {
 				err = json.NewEncoder(a.out).Encode(t)
+			} else if queue {
+				_, err = fmt.Fprintf(a.out, "Thread %d (%s): waiting for a team reply.\n", t.ID, clean(t.OrgName))
 			} else {
 				_, err = fmt.Fprintf(a.out, "Thread %d: %d unread.\n", t.ID, t.UnreadCount)
 			}
 			if err != nil {
 				return err
 			}
-			seen[t.ID] = t.LastUnreadID
+			seen[t.ID] = messageID
 		}
 		if page.NextCursor == 0 {
 			return nil
