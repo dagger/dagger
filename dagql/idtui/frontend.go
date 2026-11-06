@@ -134,6 +134,16 @@ type CommandFrontend interface {
 	Live() bool
 }
 
+// TerminalOwner is implemented by frontends that draw on the terminal itself
+// while they run, as the pretty TUI does.
+type TerminalOwner interface {
+	// OwnsTerminal reports whether the frontend is drawing on the terminal
+	// right now. Until it stops, anything else written to the terminal, such
+	// as a log line on stderr, scrambles what it draws: send it to the
+	// frontend instead. Safe to call from any goroutine.
+	OwnsTerminal() bool
+}
+
 // ViewFactory constructs a command screen using services owned by the pretty
 // frontend. It is invoked on the Tuist event loop.
 type ViewFactory func(ViewContext) CommandView

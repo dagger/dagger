@@ -112,6 +112,10 @@ type frontendPretty struct {
 	err         error
 	cleanup     func()
 
+	// ownsTerminal is set while the TUI draws on a real terminal, for
+	// OwnsTerminal, which other goroutines call.
+	ownsTerminal atomic.Bool
+
 	// lifecycle channels
 	quit          chan struct{}
 	backgroundReq chan backgroundRequest
@@ -466,6 +470,14 @@ var (
 )
 
 var _ CommandFrontend = (*frontendPretty)(nil)
+
+var _ TerminalOwner = (*frontendPretty)(nil)
+
+// OwnsTerminal reports whether the TUI is drawing on a real terminal. Report
+// mode and the headless console never do.
+func (fe *frontendPretty) OwnsTerminal() bool {
+	return fe.ownsTerminal.Load()
+}
 
 // Live reports whether command components are being rendered interactively.
 // Report mode still uses their final rendering, but cannot surface forms or
@@ -2763,6 +2775,7 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 	browser.Stderr = fe.browserBuf
 
 	// Create and start the TUI
+	fe.ownsTerminal.Store(true)
 	fe.startTUI()
 
 	// Main loop: wait for quit or background requests
@@ -2771,6 +2784,7 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 		case <-fe.quit:
 			fe.tui.Stop()
 			fe.termStopped = true
+			fe.ownsTerminal.Store(false)
 
 			if isOutputDrainError(fe.err) {
 				return fe.err

@@ -107,3 +107,56 @@ func (m *Progress) Fail(ctx context.Context) (string, error) {
 		require.Error(t, err, "dagger call fail should exit non-zero")
 	})
 }
+
+// TestInteractiveTUIOwnsTerminal guards the TUI against writes to its
+// terminal from anything but itself, which scramble its frames: a CLI
+// diagnostic sent to stderr, a stray fmt.Fprintln(os.Stderr), a library's
+// own logging. The writers keep changing, so this checks what reaches the
+// terminal rather than any one of them.
+//
+// The TUI puts the terminal in raw mode, which turns off the line
+// discipline's "\n" to "\r\n" translation, and ends every line it draws with
+// "\r\n" itself. So while it runs, a bare "\n" on the terminal came from
+// some other writer: on a real terminal, whatever follows it starts in the
+// middle of the line, and the TUI's frames come apart.
+//
+// The command logs a warning through slog while the TUI runs, which must
+// show up in the TUI instead.
+func (ModuleSuite) TestInteractiveTUIOwnsTerminal(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "query.graphql"), []byte(`{ version }`), 0o644))
+
+	console, err := newTUIConsole(t, 60*time.Second)
+	require.NoError(t, err)
+	defer console.Close()
+
+	tty := console.Tty()
+	require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 30, Cols: 200}))
+
+	cmd := hostDaggerCommand(ctx, t, workdir, "api", "query", "--doc", "query.graphql")
+	// Closing the session reads this, and warns when it isn't a duration.
+	cmd.Env = append(cmd.Env, "_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT=not-a-duration")
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+
+	require.NoError(t, cmd.Start())
+
+	// Everything up to the TUI restoring the cursor, the last thing it
+	// writes as it tears down, was written while it owned the terminal.
+	live, err := console.ExpectString(restoreCursor)
+	require.NoError(t, err, "TUI never tore down (cursor never restored)")
+
+	go console.ExpectEOF()
+
+	require.NoError(t, cmd.Wait())
+
+	for i := range len(live) {
+		if live[i] == '\n' && (i == 0 || live[i-1] != '\r') {
+			t.Fatalf("something wrote to the terminal behind the TUI's back, ending at a bare newline:\n%q",
+				live[max(0, i-300):i+1])
+		}
+	}
+	require.Contains(t, live, "invalid _EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT value",
+		"the TUI never showed the warning")
+}
