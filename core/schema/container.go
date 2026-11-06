@@ -1450,15 +1450,17 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 
-		// Detach identity from the :tag and make the result purely
-		// content-addressed when From is operating on an otherwise untouched
-		// scratch container. Derived containers may carry state that From
+		// Make the result content-addressed by the resolved reference when From
+		// is operating on an otherwise untouched scratch container, so it no
+		// longer depends on the session or lock that resolved a tag. The full
+		// reference, not only its digest, names the content: the result reports
+		// it as its imageRef. Derived containers may carry state that From
 		// preserves, so they must retain their call identity.
 		if parent.Self().CanUseFromContentDigest() {
 			var err error
 			inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(
 				"container.from",
-				refName.Digest().String(),
+				refStr,
 				ctr.Platform.Format(),
 			))
 			if err != nil {

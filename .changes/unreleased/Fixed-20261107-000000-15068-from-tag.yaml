@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Container.from of two tags or repositories of one image no longer shares one
+  result: imageRef on the second now reports its own reference instead of the
+  one resolved first, in the same session or a later one.
+time: 2026-11-07T00:00:00Z
+custom:
+  Author: sipsma
+  PR: "15068"

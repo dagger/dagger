@@ -4712,6 +4712,43 @@ func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ContainerSuite) TestImageRefSharedDigest(ctx context.Context, t *testctx.T) {
+	// Two tags of one image share their content, but each From reports the
+	// tag it was given.
+	c := connect(ctx, t)
+
+	repo := registryHost + "/container-image-ref-shared-digest"
+	tagA := repo + ":" + rand.Text()
+	tagB := repo + ":" + rand.Text()
+	img := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithNewFile("/marker", rand.Text())
+	pushedA, err := img.Publish(ctx, tagA)
+	require.NoError(t, err)
+	pushedB, err := img.Publish(ctx, tagB)
+	require.NoError(t, err)
+	_, digestA, _ := strings.Cut(pushedA, "@")
+	_, digestB, _ := strings.Cut(pushedB, "@")
+	require.Equal(t, digestA, digestB)
+
+	requireImageRef := func(ctx context.Context, t *testctx.T, c *dagger.Client, address, tag string) {
+		t.Helper()
+		ref, err := sdkcore.NewQuery(c).Container().From(address).ImageRef(ctx)
+		require.NoError(t, err)
+		require.Equal(t, tag+"@"+digestA, ref)
+	}
+
+	t.Run("same session", func(ctx context.Context, t *testctx.T) {
+		requireImageRef(ctx, t, c, tagA, tagA)
+		requireImageRef(ctx, t, c, tagB, tagB)
+		requireImageRef(ctx, t, c, tagB+"@"+digestA, tagB)
+	})
+
+	t.Run("separate sessions", func(ctx context.Context, t *testctx.T) {
+		requireImageRef(ctx, t, connect(ctx, t), tagA, tagA)
+		requireImageRef(ctx, t, connect(ctx, t), tagB, tagB)
+	})
+}
+
 func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
