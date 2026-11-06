@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  A method for a nullable object field, such as `Container.docker_healthcheck/1`, returns `{:ok, nil}` when the field is null instead of raising `BadMapError`.
+  A response with several errors returns `{:error, response}` with all of them instead of being read as data.
+time: 2026-11-05T14:50:38Z
+custom:
+  Author: eunomie
+  PR: "15084"
