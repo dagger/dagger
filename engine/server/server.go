@@ -57,6 +57,7 @@ import (
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
@@ -519,6 +520,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create clean mount namespace: %w", err)
 	}
 
+	var parallelismSem *semaphore.Weighted
+	if ociCfg.MaxParallelism > 0 {
+		parallelismSem = semaphore.NewWeighted(int64(ociCfg.MaxParallelism))
+	}
+
 	srv.engineUtilOpts, err = engineutil.NewOpts(engineutil.Opts{
 		ID:               rand.Text(),
 		Labels:           baseLabels,
@@ -542,6 +548,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		SELinux:             srv.selinux,
 		Entitlements:        srv.entitlements,
 		OOMScoreAdj:         srv.execOOMScoreAdj,
+		ParallelismSem:      parallelismSem,
 
 		HostMntNS:  hostMntNS,
 		CleanMntNS: srv.cleanMntNS,

@@ -872,6 +872,7 @@ func (svc *Service) startContainer(
 				Resize: resize,
 				Signal: signal,
 			},
+			nil,
 			started,
 			logTargetCtx,
 			execMD,
