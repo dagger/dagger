@@ -86,7 +86,7 @@ func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	collectorSpans := tracetest.NewInMemoryExporter()
 	collectorLogs := new(countingLogExporter)
 	collectorMetrics := new(countingMetricExporter)
-	cfg, cloud, collectorCounts := engineTelemetryConfigWithExporters(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	cfg, cloud, collector, collectorCounts := engineTelemetryConfigWithExporters(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
 	}, func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
 		return collectorSpans, collectorLogs, collectorMetrics
@@ -96,6 +96,11 @@ func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	require.NotNil(t, collectorCounts, "the collector's spans are counted, to report drops")
 	require.Equal(t, cloudTelemetryIndexes{spans: 0, logs: 0, metrics: 1}, cloud,
 		"the indexes locate the Cloud exporters, so engine telemetry can be forwarded without them")
+	require.Equal(t, collectorTelemetryRanges{
+		spans:   indexRange{2, 3},
+		logs:    indexRange{1, 2},
+		metrics: indexRange{2, 3},
+	}, collector, "the ranges locate the collector exporters, so a nested client can forward engine telemetry without them")
 	require.Equal(t, []sdklog.Exporter{collectorLogs}, withoutIndex(cfg.LiveLogExporters, cloud.logs), "frontend logs are installed separately with a blocking processor")
 	require.Equal(t, []sdkmetric.Exporter{localMetrics, collectorMetrics}, withoutIndex(cfg.LiveMetricExporters, cloud.metrics))
 	require.Len(t, withoutIndex(cfg.SpanProcessors, cloud.spans), 2, "frontend and collector spans each use their own processor")
@@ -167,7 +172,7 @@ func TestEngineSpanBurstReachesFrontend(t *testing.T) {
 		LogExporterFunc:    func() sdklog.Exporter { return new(countingLogExporter) },
 		MetricExporterFunc: func() sdkmetric.Exporter { return new(countingMetricExporter) },
 	}
-	cfg, _, _ := engineTelemetryConfig(context.Background())
+	cfg, _, _, _ := engineTelemetryConfig(context.Background())
 	// The span processors telemetry.Init builds from cfg, without installing
 	// them globally.
 	processors := slices.Clone(cfg.SpanProcessors)
@@ -248,7 +253,7 @@ func TestEngineSpanBurstReachesCollector(t *testing.T) {
 					ended: map[trace.SpanID]struct{}{},
 				}
 				// Only the user's collector: no Cloud or frontend.
-				cfg, _, counts := engineTelemetryConfigWithExporters(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+				cfg, _, _, counts := engineTelemetryConfigWithExporters(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 					return nil, nil, nil, false
 				}, func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
 					return collectorSpans, nil, nil
@@ -295,7 +300,7 @@ func TestEngineTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
 	cloudSpans := tracetest.NewInMemoryExporter()
 	cloudLogs := new(countingLogExporter)
 	cloudMetrics := new(countingMetricExporter)
-	cfg, _, collectorCounts := engineTelemetryConfigWithExporters(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	cfg, _, _, collectorCounts := engineTelemetryConfigWithExporters(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
 	}, noCollectorExporters)
 
@@ -369,7 +374,7 @@ func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	}
 
 	skipSharedTelemetryExporters = false
-	cfg, cloud, _ := engineTelemetryConfigWithExporters(ctx, cloudExporters, collectorExporters)
+	cfg, cloud, _, _ := engineTelemetryConfigWithExporters(ctx, cloudExporters, collectorExporters)
 	require.True(t, cloud.configured(), "a normal session exports to Cloud")
 	require.Equal(t, 1, collectorCalls, "a normal session exports to the user's collector")
 	require.Len(t, cfg.LiveLogExporters, 2)
@@ -378,7 +383,7 @@ func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	}
 
 	skipSharedTelemetryExporters = true
-	cfg, cloud, _ = engineTelemetryConfigWithExporters(ctx, cloudExporters, collectorExporters)
+	cfg, cloud, _, _ = engineTelemetryConfigWithExporters(ctx, cloudExporters, collectorExporters)
 	require.False(t, cloud.configured(), "an internal silent session doesn't export to Cloud")
 	require.Equal(t, 1, cloudCalls, "an internal silent session doesn't set up the Cloud exporters")
 	require.Equal(t, 1, collectorCalls, "an internal silent session doesn't set up the user's collector")
