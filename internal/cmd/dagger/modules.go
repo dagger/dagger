@@ -60,10 +60,11 @@ var (
 
 // loadModuleRegistry loads the module catalog. A cached copy under an hour
 // old is used as is, without touching the network. Otherwise it fetches a
-// fresh copy from moduleCatalogURL, falling back to the stale cached copy,
-// then to the copy embedded at build time. A failed fetch never yields an
-// empty catalog. If ctx is done, it returns ctx's error instead of falling
-// back.
+// fresh copy from moduleCatalogURL, falling back to the stale cached copy
+// (which then counts as fresh for another hour, so a failing fetch is retried
+// at most hourly), then to the copy embedded at build time. A failed fetch
+// never yields an empty catalog. If ctx is done, it returns ctx's error
+// instead of falling back.
 func loadModuleRegistry(ctx context.Context) ([]registryModule, error) {
 	cached, fresh, cacheErr := readCachedModuleCatalog()
 	if fresh {
@@ -80,6 +81,14 @@ func loadModuleRegistry(ctx context.Context) ([]registryModule, error) {
 	slog.Debug("fetch module catalog failed; using fallback", "url", moduleCatalogURL, "error", err)
 
 	if cacheErr == nil {
+		// Don't try again for another hour: offline or firewalled, every run
+		// would otherwise wait out the fetch timeout.
+		if path := moduleCatalogCachePath(); path != "" {
+			now := time.Now()
+			if err := os.Chtimes(filepath.Clean(path), now, now); err != nil {
+				slog.Debug("touch cached module catalog failed", "path", path, "error", err)
+			}
+		}
 		return cached, nil
 	}
 	if !errors.Is(cacheErr, os.ErrNotExist) {

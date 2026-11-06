@@ -264,6 +264,29 @@ func TestLoadModuleRegistryStaleCacheFetches(t *testing.T) {
 	}
 }
 
+// A failing fetch is retried at most hourly: the stale cache it falls back
+// to counts as fresh for another hour.
+func TestLoadModuleRegistryFailedFetchBacksOff(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(srv.Close)
+	cachePath := withModuleCatalogSource(t, srv.URL)
+	writeStaleModuleCatalogCache(t, cachePath, testModuleCatalog)
+
+	for range 3 {
+		mods, err := loadModuleRegistry(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, []string{"fresh", "fresh-sdk"}, registryNames(mods))
+	}
+	require.Equal(t, int32(1), requests.Load())
+	cached, err := os.ReadFile(cachePath)
+	require.NoError(t, err)
+	require.Equal(t, testModuleCatalog, string(cached), "the cache's contents are kept")
+}
+
 func TestLoadModuleRegistryFreshCorruptCacheFetches(t *testing.T) {
 	srv, requests := countingModuleCatalog(t, otherModuleCatalog)
 	cachePath := withModuleCatalogSource(t, srv.URL)
