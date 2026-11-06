@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -56,7 +57,7 @@ func (l *Loader) loadBuiltinGoSDK(
 	}
 	return newModuleSDKWith(ctx, root, sdkMod, dagql.ObjectResult[*core.Directory]{}, sdk.Config, moduleSDKOpts{
 		builtinArgs: func(ctx context.Context) ([]dagql.NamedInput, error) {
-			return goSDKConstructorArgs(ctx, root)
+			return goSDKConstructorArgs(ctx, root, sdk.Config)
 		},
 		// Generated bindings unconditionally include the module's own types,
 		// so engine-side checks gated on SelfCallsEnabled (tolerating module
@@ -77,9 +78,10 @@ func (l *Loader) loadBuiltinGoSDK(
 // goSDKConstructorArgs are what the Go SDK module gets of the engine and the
 // session, which a module can't reach itself: the Go SDK image with the
 // engine's GOPROXY and GODEBUG and the module cache codegen starts from, the
-// engine's Go version and the dagger.io/dagger version codegen pins, and
-// for private modules the calling client's git configuration and SSH agent.
-func goSDKConstructorArgs(ctx context.Context, root *core.Query) ([]dagql.NamedInput, error) {
+// engine's Go version and the dagger.io/dagger version codegen pins, and,
+// for a module with private dependencies, what the calling client fetches
+// them with.
+func goSDKConstructorArgs(ctx context.Context, root *core.Query, config map[string]any) ([]dagql.NamedInput, error) {
 	dag, err := root.Server.Server(ctx)
 	if err != nil {
 		return nil, err
@@ -151,6 +153,15 @@ func goSDKConstructorArgs(ctx context.Context, root *core.Query) ([]dagql.NamedI
 		{Name: "libVersion", Value: dagql.String(goSDKLibVersion)},
 	}
 
+	// Only a module that names its private dependencies, with goprivate in
+	// its sdk config as documented, gets what the client fetches them with.
+	// These settings are part of the cache key of everything the SDK builds,
+	// so leaving them out lets every client share any other module's
+	// runtime, whatever its git identity or SSH agent.
+	if goprivate, _ := config["goprivate"].(string); goprivate == "" {
+		return args, nil
+	}
+
 	bk, err := root.Engine(ctx)
 	if err != nil {
 		return nil, err
@@ -165,11 +176,16 @@ func goSDKConstructorArgs(ctx context.Context, root *core.Query) ([]dagql.NamedI
 		// caller's ambient Git configuration.
 		gitconfig = nil
 	}
-	if len(gitconfig) > 0 {
-		entries := make(dagql.ArrayInput[dagql.String], 0, len(gitconfig))
-		for _, entry := range gitconfig {
+	// Of the client's git configuration, a download uses only its URL
+	// rewrites: its identity and push rewrites would only split the key.
+	var entries dagql.ArrayInput[dagql.String]
+	for _, entry := range gitconfig {
+		key := strings.ToLower(entry.Key)
+		if strings.HasPrefix(key, "url.") && strings.HasSuffix(key, ".insteadof") {
 			entries = append(entries, dagql.String(entry.Key+"="+entry.Value))
 		}
+	}
+	if len(entries) > 0 {
 		args = append(args, dagql.NamedInput{Name: "gitConfig", Value: entries})
 	}
 
