@@ -159,6 +159,19 @@ func (s *selectionCopy) link(ctx context.Context, ent sourceEntry, name, dest, b
 		return err
 	}
 	if pinned.Info.IsDir() {
+		inside, err := filepath.Rel(boundary, resolved)
+		if err != nil {
+			return err
+		}
+		if inside != ".." && !strings.HasPrefix(inside, "../") {
+			// The ordinary walk will copy this directory in its original
+			// position. Point there even if it has not been visited yet.
+			relative, err := filepath.Rel(filepath.Dir(name), resolved)
+			if err != nil {
+				return err
+			}
+			return s.writeLink(ent, dest, relative)
+		}
 		if previous, ok := s.directories[statInode(pinned.Info.Sys().(*syscall.Stat_t))]; ok {
 			relative, err := filepath.Rel(filepath.Dir(dest), previous)
 			if err != nil {

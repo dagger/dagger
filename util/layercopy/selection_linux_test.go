@@ -283,6 +283,33 @@ func TestSelectionPreservesLocalDotDotLinks(t *testing.T) {
 	}
 }
 
+func TestSelectionKeepsInternalDirectoryTargetsInPlace(t *testing.T) {
+	for _, alias := range []string{"alias", "zzalias"} {
+		for _, parent := range []string{"src", "src/deep"} {
+			t.Run(alias+"/"+parent, func(t *testing.T) {
+				root := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, parent, "zdir"), 0755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, parent, "value"), []byte("original"), 0644))
+				require.NoError(t, os.Symlink("../value", filepath.Join(root, parent, "zdir/link")))
+				require.NoError(t, os.Symlink("../"+parent+"/zdir", filepath.Join(root, "src", alias)))
+				dst := copySelection(t, root, "src")
+				rel, err := filepath.Rel("src", parent)
+				require.NoError(t, err)
+				require.NoError(t, os.Remove(filepath.Join(dst, rel, "value")))
+				require.NoError(t, os.WriteFile(filepath.Join(dst, rel, "value"), []byte("updated"), 0644))
+				for _, name := range []string{alias + "/link", filepath.Join(rel, "zdir/link")} {
+					actual, err := os.Readlink(filepath.Join(dst, name))
+					require.NoError(t, err)
+					require.Equal(t, "../value", actual)
+					content, err := os.ReadFile(filepath.Join(dst, name))
+					require.NoError(t, err)
+					require.Equal(t, "updated", string(content))
+				}
+			})
+		}
+	}
+}
+
 func TestSelectionPreservesLongLocalPrefixes(t *testing.T) {
 	for _, links := range []int{8, 9, 39} {
 		for _, selection := range []string{".", "src"} {
