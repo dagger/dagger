@@ -6,6 +6,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -645,7 +646,32 @@ func logResult(ctx context.Context, res dagql.AnyResult, frame *dagql.ResultCall
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
-	fmt.Fprint(stdio.Stdout, output)
+	fmt.Fprint(stdio.Stdout, loggedResult(output))
+}
+
+// maxLoggedResult is how much of a call's result its span logs. The log is for
+// a person reading the call, in the TUI or in Cloud: the caller always gets the
+// whole value, and a result of megabytes, such as a file's contents a module
+// reads to plan its work, would otherwise be telemetry every consumer has to
+// carry and hold.
+const maxLoggedResult = 64 << 10
+
+// loggedResult is the part of a call's result its span logs: all of it, or the
+// first maxLoggedResult bytes, cut where a character begins, and a line saying
+// how many bytes are left out.
+func loggedResult(output string) string {
+	if len(output) <= maxLoggedResult {
+		return output
+	}
+	cut := maxLoggedResult
+	for cut > 0 && !utf8.RuneStart(output[cut]) {
+		cut--
+	}
+	head := output[:cut]
+	if !strings.HasSuffix(head, "\n") {
+		head += "\n"
+	}
+	return head + fmt.Sprintf("[%d more bytes of the result are not logged]\n", len(output)-cut)
 }
 
 func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.FieldSpec, bool) {
