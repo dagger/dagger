@@ -328,11 +328,12 @@ type SpanSnapshot struct {
 	Ignore       bool `json:",omitempty"`
 	Boundary     bool `json:",omitempty"`
 	Reveal       bool `json:",omitempty"`
+	RollUpLogs   bool `json:",omitempty"`
+	RollUpSpans  bool `json:",omitempty"`
+
 	// FunctionPlumbing marks the work that runs a module function call
 	// without being its body (telemetryattrs.UIFunctionPlumbingAttr).
 	FunctionPlumbing bool `json:",omitempty"`
-	RollUpLogs   bool `json:",omitempty"`
-	RollUpSpans  bool `json:",omitempty"`
 
 	// Check status (see CheckName)
 	CheckPassed bool `json:",omitempty"`

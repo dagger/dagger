@@ -1399,12 +1399,12 @@ func (container *Container) WithExec(
 	functionCall *FunctionCall,
 ) error {
 	state := &ContainerExecState{
-		LazyState:      NewLazyState(),
-		Parent:         parent,
-		Opts:           opts,
-		ExecMD:         execMD,
-		ModuleContext:  moduleContext,
-		FunctionCall:   functionCall,
+		LazyState:     NewLazyState(),
+		Parent:        parent,
+		Opts:          opts,
+		ExecMD:        execMD,
+		ModuleContext: moduleContext,
+		FunctionCall:  functionCall,
 		// A function runtime's exec for a call made as engine work, or an
 		// exec that a process doing engine work asks for, as a module
 		// entrypoint starts its module's process.
