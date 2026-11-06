@@ -66,14 +66,17 @@ func (m *containerSelectionMount) get() (*containerSelectionBacking, error) {
 }
 
 type containerSelectionSource struct {
-	ctx     context.Context
-	base    *containerSelectionMount
-	mounts  []*containerSelectionMount
-	closers []func() error
-	stubDir string
-	stubs   map[string]*containerSelectionBacking
-	ready   bool
+	ctx        context.Context
+	base       *containerSelectionMount
+	mounts     []*containerSelectionMount
+	closers    []func() error
+	stubDir    string
+	stubs      map[string]*containerSelectionBacking
+	ready      bool
+	prepareErr error
 }
+
+var errOpaqueSelectionParent = errors.New("resolveBrokenSymlinks: cannot resolve mount target through non-snapshot mount")
 
 func newContainerSelectionSource(ctx context.Context, parent dagql.ObjectResult[*Container]) (*containerSelectionSource, error) {
 	cache, err := dagql.EngineCache(ctx)
@@ -154,17 +157,24 @@ func newContainerSelectionSource(ctx context.Context, parent dagql.ObjectResult[
 // Resolve each target through the mounts installed before it. Only sources
 // traversed while locating a mountpoint are opened; no contents are copied.
 // Later mounts hide earlier mounts at or below their resolved targets.
-func (s *containerSelectionSource) prepare() {
+func (s *containerSelectionSource) prepare() error {
 	if s.ready {
-		return
+		return s.prepareErr
 	}
 	pending := s.mounts
 	s.mounts = nil
 	for _, mnt := range pending {
 		target, err := layercopy.ResolveSelectionPath(containerSelectionTargets{s}, mnt.target)
 		if err != nil {
-			// A bad target must not reject an unrelated selection.
 			mnt.targetErr = fmt.Errorf("resolve mount target %s: %w", mnt.target, err)
+			if errors.Is(err, errOpaqueSelectionParent) {
+				// Its location is unknown: an opaque parent could redirect
+				// this mount anywhere, including over the selected path.
+				s.prepareErr = mnt.targetErr
+				s.ready = true
+				return s.prepareErr
+			}
+			// Other target errors stay on the affected mount.
 		} else {
 			mnt.target = filepath.Join("/", target)
 		}
@@ -174,11 +184,12 @@ func (s *containerSelectionSource) prepare() {
 		s.mounts = append(s.mounts, mnt)
 	}
 	s.ready = true
+	return nil
 }
 
 // A mountpoint is located in the namespace before that mount exists. Missing
-// parents are mount stubs. Opaque resources permit a literal path to a nested
-// snapshot mount, but never expose the files hidden below the resource.
+// parents are mount stubs. Opaque parents cannot be replaced by stubs: their
+// contents may redirect the target through a symlink.
 type containerSelectionTargets struct{ source *containerSelectionSource }
 
 func (v containerSelectionTargets) Open(name string, parent *os.Root) (*os.File, error) {
@@ -187,11 +198,12 @@ func (v containerSelectionTargets) Open(name string, parent *os.Root) (*os.File,
 	if mnt.targetErr != nil {
 		return nil, mnt.targetErr
 	}
-	if mnt.load != nil {
-		f, err := v.source.open(name, parent, mnt)
-		if !errors.Is(err, os.ErrNotExist) {
-			return f, err
-		}
+	if mnt.load == nil {
+		return nil, fmt.Errorf("%w %s", errOpaqueSelectionParent, mnt.target)
+	}
+	f, err := v.source.open(name, parent, mnt)
+	if !errors.Is(err, os.ErrNotExist) {
+		return f, err
 	}
 	stub, err := v.source.stub(name)
 	if err != nil {
@@ -211,7 +223,9 @@ func selectionPathUnder(name, parent string) bool {
 func (s *containerSelectionSource) Open(name string, parent *os.Root) (*os.File, error) {
 	// Freeze mount locations before returning any source handles. An exact
 	// match can itself be an alias, so it cannot bypass target expansion.
-	s.prepare()
+	if err := s.prepare(); err != nil {
+		return nil, err
+	}
 	name = filepath.Join("/", name)
 	selected := s.mountFor(name)
 	return s.open(name, parent, selected)
@@ -232,13 +246,6 @@ func (s *containerSelectionSource) open(name string, parent *os.Root, selected *
 		return nil, selected.targetErr
 	}
 	if selected.load == nil {
-		if s.hasChildren(name) {
-			stub, err := s.stub(name)
-			if err != nil {
-				return nil, err
-			}
-			return stub.root.OpenFile(".", unix.O_PATH|unix.O_NOFOLLOW, 0)
-		}
 		return nil, fmt.Errorf("resolveBrokenSymlinks: cannot retrieve path from non-snapshot mount %s", selected.target)
 	}
 	var f *os.File
@@ -273,6 +280,9 @@ func (s *containerSelectionSource) hasChildren(name string) bool {
 }
 
 func (s *containerSelectionSource) Children(name string, names []string) ([]string, error) {
+	if err := s.prepare(); err != nil {
+		return nil, err
+	}
 	name = filepath.Join("/", name)
 	if mnt := s.mountFor(name); mnt.load == nil {
 		return nil, fmt.Errorf("resolveBrokenSymlinks: cannot retrieve path from non-snapshot mount %s", mnt.target)

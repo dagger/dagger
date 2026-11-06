@@ -3459,11 +3459,10 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinksResources(ctx context.Co
 			require.Equal(t, "shared", content)
 			if tc.target == "/resource" {
 				known := ctr.WithMountedDirectory("/resource/known", dag.Directory().WithNewFile("value", "known"))
-				content, err := known.Directory("/resource/known", opts).File("value").Contents(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "known", content)
-				_, err = known.Directory("/resource", opts).Sync(ctx)
-				require.ErrorContains(t, err, "cannot retrieve path from non-snapshot mount /resource")
+				for _, path := range []string{"/resource/known", "/resource", "/app"} {
+					_, err := known.Directory(path, opts).Sync(ctx)
+					require.ErrorContains(t, err, "cannot resolve mount target through non-snapshot mount /resource")
+				}
 			}
 			for _, path := range []string{tc.target, "/"} {
 				_, err := ctr.Directory(path, opts).Sync(ctx)
@@ -3476,6 +3475,14 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinksResources(ctx context.Co
 			}
 		})
 	}
+	t.Run("cache alias cannot expose a covered rootfs path", func(ctx context.Context, t *testctx.T) {
+		ctr := dag.Container().From(alpineImage).WithNewFile("/app/value", "hidden").
+			WithMountedCache("/cache", dag.CacheVolume("opaque-parent-"+rand.Text())).
+			WithExec([]string{"sh", "-c", "ln -s /app /cache/redirect"}).
+			WithMountedDirectory("/cache/redirect", dag.Directory().WithNewFile("value", "mounted"))
+		_, err := ctr.Directory("/app", opts).File("value").Contents(ctx)
+		require.ErrorContains(t, err, "cannot resolve mount target through non-snapshot mount /cache")
+	})
 }
 
 func (DirectorySuite) TestDirectoryResolveBrokenSymlinksLazyMounts(ctx context.Context, t *testctx.T) {

@@ -149,3 +149,33 @@ func TestContainerSelectionFilesMountStartsEmpty(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, names, "a files mount must not inherit earlier mountpoint stubs")
 }
+
+func TestContainerSelectionRejectsOpaqueMountTargetParents(t *testing.T) {
+	base := selectionFixture(t, map[string]string{"app/value": "hidden"}, nil)
+	child := selectionFixture(t, map[string]string{"value": "mounted"}, nil)
+	mount := selectionFixtureMount(t, "/cache/redirect", child, ".")
+	load := mount.load
+	loads := 0
+	mount.load = func() (*containerSelectionBacking, error) {
+		loads++
+		return load()
+	}
+	// The cache could contain redirect -> /app. Its contents are opaque,
+	// so a raw /cache/redirect target cannot establish what hides /app.
+	source := &containerSelectionSource{
+		base: selectionFixtureMount(t, "/", base, "."),
+		mounts: []*containerSelectionMount{
+			{target: "/cache"}, mount,
+		},
+	}
+	t.Cleanup(source.Close)
+	for _, name := range []string{"/app/value", "/cache/redirect/value", "/app/value"} {
+		f, err := source.Open(name, nil)
+		require.Nil(t, f, "an uncertain mount location must not expose underlying files")
+		require.ErrorIs(t, err, errOpaqueSelectionParent)
+		require.ErrorContains(t, err, "non-snapshot mount /cache")
+	}
+	_, err := source.Children("/", nil)
+	require.ErrorIs(t, err, errOpaqueSelectionParent)
+	require.Zero(t, loads, "reject the unknown target before loading its snapshot")
+}

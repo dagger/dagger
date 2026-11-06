@@ -778,7 +778,7 @@ export type ContainerDirectoryOpts = {
   expand?: boolean
 
   /**
-   * Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error only when reached by the selection or a resolved link.
+   * Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error when reached by selection, a resolved link, or mount target resolution.
    */
   resolveBrokenSymlinks?: boolean
 }
@@ -7092,7 +7092,7 @@ export class Container extends BaseClient {
    * Mounts are included.
    * @param path The path of the directory to retrieve (e.g., "./src").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   * @param opts.resolveBrokenSymlinks Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error only when reached by the selection or a resolved link.
+   * @param opts.resolveBrokenSymlinks Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error when reached by selection, a resolved link, or mount target resolution.
    */
   directory = (path: string, opts?: ContainerDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
