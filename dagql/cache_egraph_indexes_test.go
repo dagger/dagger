@@ -156,7 +156,7 @@ func cacheOutputEqClassCandidatesErrorLocked(c *Cache, nowUnix int64) error {
 			c.appendDigestResultsLocked(fromPostings, digest.Digest(dig), nowUnix, nil)
 		}
 		fromClass := newSharedResultSet()
-		c.appendOutputEqClassResultsLocked(fromClass, root, nowUnix)
+		c.appendOutputEqClassResultsLocked(fromClass, root, nowUnix, nil)
 		if !slices.Equal(sharedResultSetIDs(fromPostings), sharedResultSetIDs(fromClass)) {
 			return fmt.Errorf("output eq-class root %d candidates %v differ from its digest postings' %v",
 				root, sharedResultSetIDs(fromClass), sharedResultSetIDs(fromPostings))
