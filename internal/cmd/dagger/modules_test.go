@@ -261,7 +261,10 @@ func TestEmbeddedCatalogSDKsMatchSDKRegistry(t *testing.T) {
 		Aliases                 []string
 	}
 	var got, want []sdk
-	for _, mod := range filterSearchRegistry(mods, true) {
+	for _, mod := range mods {
+		if mod.Kind != moduleKindSDK {
+			continue
+		}
 		require.Nil(t, mod.Recommend)
 		got = append(got, sdk{mod.Name, mod.Description, mod.Repo, mod.Aliases})
 	}

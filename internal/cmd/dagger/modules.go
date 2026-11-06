@@ -17,7 +17,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-// registryModule is one entry in the searchable module registry.
+// registryModule is one entry in the module catalog.
 type registryModule struct {
 	Name        string
 	Kind        string
