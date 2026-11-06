@@ -172,6 +172,7 @@ func TestCNIConfig(t *testing.T) {
 			}
 			require.Equal(t, tc.want, types)
 			require.Equal(t, false, conf.Plugins[0]["ipMasq"])
+			require.Equal(t, true, conf.Plugins[0]["forceAddress"])
 			require.NotContains(t, conf.Plugins[0], "ipMasqBackend")
 		})
 	}
