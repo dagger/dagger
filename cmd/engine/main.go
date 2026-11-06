@@ -1145,6 +1145,15 @@ type networkConfig struct {
 }
 
 func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig, error) {
+	freeCIDR, err := network.FreeCIDR(netCIDR, netName+"0")
+	if err != nil {
+		return nil, fmt.Errorf("free network cidr: %w", err)
+	}
+	if freeCIDR != netCIDR {
+		bklog.G(ctx).Warnf("network cidr %s overlaps a network this engine is attached to; using %s", netCIDR, freeCIDR)
+		netCIDR = freeCIDR
+	}
+
 	bridge, err := network.BridgeFromCIDR(netCIDR)
 	if err != nil {
 		return nil, fmt.Errorf("bridge from cidr: %w", err)
