@@ -21491,6 +21491,35 @@ impl WorkspaceSdk {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The value a setting records in this SDK's scope settings, as a native JSON value.
+    /// Reads [sdks.<name>.scopes."<scope>".settings] from the workspace config, in the scope whose key resolves to path. The setting key is matched without regard to case.
+    /// Null when no scope resolves to path, or the scope records no such setting. Fails when the config is invalid, path escapes the workspace root, key matches several recorded settings, or the value cannot be represented as JSON.
+    /// Fails when this SDK is no longer installed in the workspace config, even if Workspace.sdk returned it earlier.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Scope path, relative to the workspace cwd or absolute from the workspace root.
+    /// * `key` - Setting name, matched without regard to case.
+    pub async fn scope_setting(
+        &self,
+        path: impl Into<String>,
+        key: impl Into<String>,
+    ) -> Result<Option<JsonValue>, DaggerError> {
+        let mut query = self.selection.select("scopeSetting");
+        query = query.arg("path", path.into());
+        query = query.arg("key", key.into());
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| JsonValue {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("JSONValue"),
+            graphql_client: self.graphql_client.clone(),
+        }))
+    }
     /// The user-facing SDK name.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");

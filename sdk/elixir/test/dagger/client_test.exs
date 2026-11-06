@@ -206,6 +206,53 @@ defmodule Dagger.ClientTest do
              |> Container.env_variable("NOTHING")
   end
 
+  test "nullable object and several errors", %{dag: dag} do
+    assert {:ok, nil} =
+             dag
+             |> Client.container()
+             |> Container.from("alpine:3.20.2")
+             |> Container.docker_healthcheck()
+
+    {:ok, listen} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}])
+    {:ok, port} = :inet.port(listen)
+    body = ~s({"errors":[{"message":"first"},{"message":"second"}]})
+    response = "HTTP/1.1 200 OK\r\ncontent-length: #{byte_size(body)}\r\n\r\n" <> body
+
+    Task.start(fn ->
+      {:ok, socket} = :gen_tcp.accept(listen)
+      :ok = :inet.setopts(socket, packet: :http_bin)
+      {:ok, {:http_request, :POST, _, _}} = :gen_tcp.recv(socket, 0, 5_000)
+
+      content_length =
+        fn -> :gen_tcp.recv(socket, 0, 5_000) end
+        |> Stream.repeatedly()
+        |> Enum.reduce_while(0, fn
+          {:ok, {:http_header, _, :"Content-Length", _, value}}, _ ->
+            {:cont, String.to_integer(value)}
+
+          {:ok, {:http_header, _, _, _, _}}, content_length ->
+            {:cont, content_length}
+
+          {:ok, :http_eoh}, content_length ->
+            {:halt, content_length}
+        end)
+
+      :ok = :inet.setopts(socket, packet: :raw)
+      {:ok, _body} = :gen_tcp.recv(socket, content_length, 5_000)
+      :ok = :gen_tcp.send(socket, response)
+      :gen_tcp.close(socket)
+    end)
+
+    client = %{dag.client | url: "http://127.0.0.1:#{port}/query"}
+    query_builder = QB.query() |> QB.select("container") |> QB.select("id")
+    result = Dagger.Core.Client.execute(client, query_builder)
+    :ok = :gen_tcp.close(listen)
+
+    assert {:error, %Dagger.Core.GraphQL.Response{errors: [first, second]}} = result
+    assert first.message == "first"
+    assert second.message == "second"
+  end
+
   test "load file", %{dag: dag} do
     {:ok, id} =
       dag
