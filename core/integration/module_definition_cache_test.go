@@ -43,6 +43,9 @@ type served struct {
 	ID      string
 	Objects []servedObject
 	Runtime struct{ ID string }
+	Source  struct {
+		ContextDirectory struct{ ID string }
+	}
 }
 
 func functionNamesOf(objects []servedObject) []string {
@@ -217,7 +220,7 @@ func rowNumbers(rows map[uint64]definitionRow) []uint64 {
 	return out
 }
 
-const servedQuery = `{moduleSource(refString:"."){asModule{id objects{asObject{name description functions{name description sourceMap{filename line}}}} runtime{id}}}}`
+const servedQuery = `{moduleSource(refString:"."){asModule{id objects{asObject{name description functions{name description sourceMap{filename line}}}} runtime{id} source{contextDirectory{id}}}}}`
 
 // A Go module's type definitions are a cached, content-keyed result. On one
 // engine: the first client's load computes them through the runtime, a
@@ -337,13 +340,20 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 
 	// Export the edited module with its runtime's filesystem from A, as a
 	// session report's bundle carries them, and import it into cold engine B.
+	// The bundle carries no calls, so B runs the runtime's call again. That run
+	// can reach a read of the module's directory by one of A's clients: the
+	// edited source's, or the first source's, which the edited runtime's build
+	// reused where the edit changed nothing, such as its Go module downloads.
+	// B cannot repeat another client's read, so the bundle carries both reads'
+	// contents, as the reports of the sessions that made them do.
 	exporter := a.connect(ctx, t, checkout)
 	var exported struct {
 		ModuleSource struct{ AsModule served }
 	}
 	require.NoError(t, exporter.Do(ctx, &dagger.Request{Query: servedQuery}, &dagger.Response{Data: &exported}))
+	module := exported.ModuleSource.AsModule
 	var mapping []transferFixtureMapping
-	require.NoError(t, transferFixtureSelected(ctx, exporter, "definition.json", []string{exported.ModuleSource.AsModule.ID}, []string{exported.ModuleSource.AsModule.Runtime.ID}, &mapping))
+	require.NoError(t, transferFixtureSelected(ctx, exporter, "definition.json", []string{module.ID}, []string{module.Runtime.ID, module.Source.ContextDirectory.ID, first.Source.ContextDirectory.ID}, &mapping))
 	require.NotEmpty(t, mapping)
 	require.NoError(t, exporter.Close())
 
