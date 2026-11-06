@@ -1,12 +1,14 @@
 package core
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
@@ -178,10 +180,65 @@ func TestSearchModulesToolNoResults(t *testing.T) {
 }
 
 func TestSearchModulesToolCloudError(t *testing.T) {
-	cloudURL, _ := searchModulesCloud(t, http.StatusServiceUnavailable, "down for maintenance")
-	meta := &engine.ClientMetadata{CloudURL: cloudURL}
-	ctx := ContextWithQuery(t.Context(), &Query{Server: &mockServer{clientMetadata: meta}})
-	_, err := (&MCP{}).searchModulesTool(&dagql.Server{})(ctx, map[string]any{"purpose": "build COBOL"})
-	require.ErrorContains(t, err, "503 Service Unavailable")
-	require.ErrorContains(t, err, "no offline fallback")
+	for _, tc := range []struct {
+		name     string
+		status   int
+		response string
+		want     string
+	}{
+		{"http error", http.StatusServiceUnavailable, "down for maintenance at internal-host:8080", "Dagger Cloud answered 503 Service Unavailable"},
+		{"graphql error", http.StatusOK, `{"errors":[{"message":"rate limited"}]}`, "Dagger Cloud returned an error: rate limited"},
+		{"rejected credentials", http.StatusUnauthorized, "token xyz invalid", "rejected the Cloud credentials"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cloudURL, _ := searchModulesCloud(t, tc.status, tc.response)
+			meta := &engine.ClientMetadata{CloudURL: cloudURL}
+			ctx := ContextWithQuery(t.Context(), &Query{Server: &mockServer{clientMetadata: meta}})
+			_, err := (&MCP{}).searchModulesTool(&dagql.Server{})(ctx, map[string]any{"purpose": "build COBOL"})
+			require.ErrorContains(t, err, tc.want)
+			require.NotContains(t, err.Error(), cloudURL, "the Cloud URL stays out of the model's view")
+			if tc.status != http.StatusOK {
+				require.NotContains(t, err.Error(), tc.response, "response bodies stay out of the model's view")
+			}
+			if tc.status != http.StatusUnauthorized {
+				require.ErrorContains(t, err, "no offline fallback")
+			}
+		})
+	}
+
+	t.Run("unreachable", func(t *testing.T) {
+		srv := httptest.NewServer(http.NotFoundHandler())
+		srv.Close()
+		meta := &engine.ClientMetadata{CloudURL: srv.URL}
+		ctx := ContextWithQuery(t.Context(), &Query{Server: &mockServer{clientMetadata: meta}})
+		_, err := (&MCP{}).searchModulesTool(&dagql.Server{})(ctx, map[string]any{"purpose": "build COBOL"})
+		require.EqualError(t, err, "search the Dagger module index: could not reach Dagger Cloud; module search needs Dagger Cloud and has no offline fallback")
+	})
+}
+
+// An OAuth login is sent without its refresh token, so a search can never
+// rotate the refresh token in the user's credentials file; one already expired
+// searches anonymously instead of refreshing.
+func TestSearchModulesToolNeverRefreshesOAuth(t *testing.T) {
+	cloudURL, requests := searchModulesCloud(t, http.StatusOK, `{"data":{"discoverModules":{"id":"evt_3","results":[]}}}`)
+	search := func(token *oauth2.Token) searchModulesRequest {
+		t.Helper()
+		meta := &engine.ClientMetadata{CloudURL: cloudURL, CloudAuth: &auth.Cloud{Token: token}}
+		ctx := ContextWithQuery(t.Context(), &Query{Server: &mockServer{clientMetadata: meta}})
+		_, err := (&MCP{}).searchModulesTool(&dagql.Server{})(ctx, map[string]any{"purpose": "lint Python"})
+		require.NoError(t, err)
+		reqs := requests()
+		return reqs[len(reqs)-1]
+	}
+
+	expired := &oauth2.Token{TokenType: "Bearer", AccessToken: "stale", RefreshToken: "refresh-me", Expiry: time.Now().Add(-time.Hour)}
+	require.Empty(t, search(expired).header.Get("Authorization"))
+	require.Equal(t, "refresh-me", expired.RefreshToken, "the client's credential is left as it was")
+
+	valid := &oauth2.Token{TokenType: "Bearer", AccessToken: "fresh", RefreshToken: "refresh-me", Expiry: time.Now().Add(time.Hour)}
+	require.Equal(t, "Bearer fresh", search(valid).header.Get("Authorization"))
+	require.Equal(t, "refresh-me", valid.RefreshToken)
+
+	require.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("dag_token:")),
+		search(&oauth2.Token{TokenType: "Basic", AccessToken: "dag_token"}).header.Get("Authorization"))
 }
