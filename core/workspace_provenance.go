@@ -3,13 +3,13 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path"
 	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core/provenance"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -20,6 +20,7 @@ type WorkspaceSelector struct {
 	Exclude      []string      `field:"true" doc:"Exclude patterns relative to path."`
 	Conservative bool          `field:"true" doc:"Whether this region is an upper bound on possible inputs."`
 	Kind         string        `field:"true" doc:"WORKSPACE_READ or MODULE_SOURCE."`
+	Origin       string        `field:"true" doc:"The input that contributes this dependency."`
 }
 
 func (*WorkspaceSelector) Type() *ast.Type {
@@ -27,7 +28,8 @@ func (*WorkspaceSelector) Type() *ast.Type {
 }
 
 type WorkspaceProvenance struct {
-	Selectors []*WorkspaceSelector `field:"true" doc:"The normalized input regions. Unknown inputs have a conservative root selector."`
+	Selectors []*WorkspaceSelector `field:"true" doc:"The source regions on which the artifact depends."`
+	Issues    []string             `field:"true" doc:"Inputs whose source origin could not be determined. These retain a conservative root dependency."`
 }
 
 func (*WorkspaceProvenance) Type() *ast.Type {
@@ -56,24 +58,19 @@ func (*WorkspaceSelector) DecodePersistedObject(_ context.Context, _ *dagql.Pers
 func (p *WorkspaceProvenance) regions() []provenance.Selector {
 	out := make([]provenance.Selector, 0, len(p.Selectors))
 	for _, s := range p.Selectors {
-		out = append(out, provenance.Selector{Path: string(s.Path), Include: s.Include, Exclude: s.Exclude, Conservative: s.Conservative, Kind: s.Kind})
+		out = append(out, provenance.Selector{Path: string(s.Path), Include: s.Include, Exclude: s.Exclude, Conservative: s.Conservative, Kind: s.Kind, Origin: s.Origin})
 	}
 	return out
 }
 func newWorkspaceProvenance(regions []provenance.Selector) *WorkspaceProvenance {
-	p := &WorkspaceProvenance{Selectors: []*WorkspaceSelector{}}
+	p := &WorkspaceProvenance{Selectors: []*WorkspaceSelector{}, Issues: []string{}}
 	for _, s := range provenance.Normalize(regions) {
-		p.Selectors = append(p.Selectors, &WorkspaceSelector{Path: WorkspacePath(s.Path), Include: s.Include, Exclude: s.Exclude, Conservative: s.Conservative, Kind: s.Kind})
+		p.Selectors = append(p.Selectors, &WorkspaceSelector{Path: WorkspacePath(s.Path), Include: s.Include, Exclude: s.Exclude, Conservative: s.Conservative, Kind: s.Kind, Origin: s.Origin})
 	}
 	return p
 }
 func (p *WorkspaceProvenance) AffectedByPath(path string, kinds []string) (bool, error) {
 	return provenance.AffectedByPath(p.regions(), path, kinds)
-}
-func (p *WorkspaceProvenance) unknownInputs(kinds []string) bool {
-	return slices.ContainsFunc(p.Selectors, func(selector *WorkspaceSelector) bool {
-		return selector.Conservative && (len(kinds) == 0 || slices.Contains(kinds, selector.Kind))
-	})
 }
 
 func (p *WorkspaceProvenance) AffectedByDiff(ctx context.Context, changes *Changeset, kinds []string) (bool, error) {
@@ -102,7 +99,6 @@ func (p *WorkspaceProvenance) AffectedByChangedPaths(changes *ChangesetPaths, sc
 		}
 		roots = append(roots, root)
 	}
-	unknown := p.unknownInputs(kinds)
 	regions := p.regions()
 	for _, changed := range slices.Concat(changes.Modified, changes.Added, changes.AllRemoved) {
 		file, err := provenance.Path(changed)
@@ -113,9 +109,6 @@ func (p *WorkspaceProvenance) AffectedByChangedPaths(changes *ChangesetPaths, sc
 			return root == "/" || file == root || strings.HasPrefix(file, root+"/")
 		}) {
 			continue
-		}
-		if unknown {
-			return true, nil
 		}
 		var match bool
 		if strings.HasSuffix(changed, "/") {
@@ -134,90 +127,105 @@ func conservativeProvenance(kind string) provenance.Selector {
 	return provenance.Selector{Path: "/", Conservative: true, Kind: kind}
 }
 
-// Provenance plans a check without running its body. A saved read set is used
-// only after validation against the current immutable workspace.
+// Provenance prepares the artifact's inputs without running its body.
 func (a *Artifact) Provenance(ctx context.Context) (*WorkspaceProvenance, error) {
 	selectors := a.moduleSourceSelectors()
-	unknown := func() (*WorkspaceProvenance, error) {
-		return newWorkspaceProvenance(append(selectors, conservativeProvenance(provenance.WorkspaceRead))), nil
+	for i := range selectors {
+		selectors[i].Origin = "module source"
 	}
-	if a.LoadFailure != nil || a.Node == nil || a.Workspace.Self() == nil || a.TypeName != "Check" {
-		return unknown()
+	var issues []string
+	if a.LoadFailure != nil {
+		issues = append(issues, "module failed to load: "+a.LoadFailure.Message)
+		return provenanceWithIssues(selectors, issues), nil
 	}
 	ctx, err := a.WorkspaceContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var value dagql.AnyObjectResult
-	if err := a.Evaluate(ctx, &value); err != nil {
-		return unknown()
-	}
-	ctx = suppressWorkspaceReads(ctx)
-	check, ok := dagql.UnwrapAs[*Check](value)
-	if !ok || check.Receiver.Self() == nil || check.CachePolicy != FunctionCachePolicyDefault {
-		return unknown()
-	}
-	srv, err := dagqlServerForModule(ctx, check.Receiver.Self().Module)
+	artifact, err := a.withEvaluationServers(ctx)
 	if err != nil {
 		return nil, err
 	}
-	args := make([]dagql.NamedInput, 0, len(check.Inputs))
-	for _, input := range check.Inputs {
-		if v, ok := input.Value.(dagql.Input); ok {
-			args = append(args, dagql.NamedInput{Name: input.Name, Value: v})
-		}
+	if a.View != nil {
+		ctx = dagql.WithResultScope(ctx, a.View)
 	}
-	req, err := check.Receiver.Plan(ctx, srv, dagql.Selector{Field: checkRunFieldName(check.Function), Args: args})
+	node := artifact.Node
+	if node.Name == "stale" && node.Parent != nil && node.Parent.ObjectType() != nil && node.Parent.ObjectType().Name == "Generator" {
+		node = node.Parent
+	}
+	frame, err := node.plannedCall(ctx)
 	if err != nil {
-		return unknown()
+		return nil, fmt.Errorf("prepare artifact provenance: %w", err)
 	}
-	key, err := workspaceCallKey(ctx, req)
-	if err != nil || key == "" {
-		return unknown()
+	if a.Workspace.Self() == nil {
+		return nil, fmt.Errorf("artifact provenance requires a workspace")
 	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	md, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// A stripped Workspace argument must be the workspace being filtered. Other
-	// workspaces need separate baselines; keep those checks selected for now.
-	currentScope, err := workspaceScopeForValue(ctx, a.Workspace)
-	if err != nil || currentScope == nil {
-		return unknown()
-	}
-	refs, err := workspaceRefs(ctx, req.ResultCall)
-	if err != nil {
-		return unknown()
-	}
-	for _, ref := range refs {
-		value, err := workspaceValueForRef(ctx, srv, cache, ref)
+	add := func(input *dagql.ResultCall, origin string) error {
+		inputs, err := workspaceInputsForCall(ctx, input)
 		if err != nil {
-			return unknown()
+			return err
 		}
-		scope, err := workspaceScopeForValue(ctx, value)
-		if err != nil || scope == nil || scope.Identity != currentScope.Identity {
-			return unknown()
+		regions, inputIssues := inputs.forWorkspace(workspaceInputKey(a.Workspace.Self()))
+		for _, region := range regions {
+			if region.Origin != "" && region.Origin != origin {
+				region.Origin = origin + ": " + region.Origin
+			} else {
+				region.Origin = origin
+			}
+			selectors = append(selectors, region)
+		}
+		for _, issue := range inputIssues {
+			issues = append(issues, origin+": "+issue)
+		}
+		return nil
+	}
+	if frame.Receiver != nil {
+		if err := add(&dagql.ResultCall{Receiver: frame.Receiver}, "receiver"); err != nil {
+			return nil, err
 		}
 	}
-	candidates, err := cache.CallMetadataCandidates(ctx, md.SessionID, workspaceReadsNamespace, key)
+	for _, arg := range frame.Args {
+		if err := add(&dagql.ResultCall{Args: []*dagql.ResultCallArg{arg}}, "argument "+arg.Name); err != nil {
+			return nil, err
+		}
+	}
+	for _, arg := range frame.ImplicitInputs {
+		if err := add(&dagql.ResultCall{ImplicitInputs: []*dagql.ResultCallArg{arg}}, "engine input "+arg.Name); err != nil {
+			return nil, err
+		}
+	}
+	return provenanceWithIssues(selectors, issues), nil
+}
+
+func provenanceWithIssues(selectors []provenance.Selector, issues []string) *WorkspaceProvenance {
+	slices.Sort(issues)
+	issues = slices.Compact(issues)
+	for _, issue := range issues {
+		region := conservativeProvenance(provenance.WorkspaceRead)
+		region.Origin = issue
+		selectors = append(selectors, region)
+	}
+	p := newWorkspaceProvenance(selectors)
+	p.Issues = append(p.Issues, issues...)
+	return p
+}
+
+func (a *Artifacts) Provenance(ctx context.Context) (*WorkspaceProvenance, error) {
+	expanded, err := a.Expand(ctx)
 	if err != nil {
-		return unknown()
+		return nil, err
 	}
-	for _, candidate := range candidates {
-		var summary workspaceReadSummary
-		if json.Unmarshal(candidate.Payload, &summary) != nil {
-			continue
+	var selectors []provenance.Selector
+	var issues []string
+	for _, artifact := range expanded.Entries {
+		p, err := artifact.Provenance(ctx)
+		if err != nil {
+			return nil, err
 		}
-		summary.Selectors = append(slices.Clone(summary.Selectors), selectors...)
-		if validateWorkspaceReads(ctx, srv, a.Workspace, summary) {
-			return newWorkspaceProvenance(summary.Selectors), nil
-		}
+		selectors = append(selectors, p.regions()...)
+		issues = append(issues, p.Issues...)
 	}
-	return unknown()
+	return provenanceWithIssues(selectors, issues), nil
 }
 
 func (a *Artifact) moduleSourceSelectors() []provenance.Selector {

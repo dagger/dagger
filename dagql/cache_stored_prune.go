@@ -85,7 +85,6 @@ func (c *Cache) dropPrunedValuesLocked(ctx context.Context, queue []*sharedResul
 // its holdings, whose executed marks it clears. It returns the released
 // dependencies. Requires egraphMu for writing.
 func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*sharedResult, error) {
-	c.unindexCallMetadataLocked(res.id)
 	var (
 		deps []*sharedResult
 		rerr error
@@ -127,6 +126,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.createdAtUnixNano = 0
 	res.payloadRevision++
 	res.payloadMu.Unlock()
+	c.setResultFactsLocked(res, nil, false)
 	c.setResultPayloadBytesLocked(res, 0)
 	return deps, rerr
 }

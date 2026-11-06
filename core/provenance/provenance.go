@@ -22,6 +22,7 @@ type Selector struct {
 	Exclude      []string
 	Conservative bool
 	Kind         string
+	Origin       string
 }
 
 // Path uses coordinates relative to the workspace boundary, never the host.
@@ -60,6 +61,9 @@ func Normalize(selectors []Selector) []Selector {
 		out[i].Exclude = normalizePatterns(out[i].Exclude)
 	}
 	slices.SortFunc(out, func(a, b Selector) int {
+		if c := cmp.Compare(a.Origin, b.Origin); c != 0 {
+			return c
+		}
 		if c := cmp.Compare(a.Kind, b.Kind); c != 0 {
 			return c
 		}
@@ -81,7 +85,7 @@ func Normalize(selectors []Selector) []Selector {
 		return -1
 	})
 	return slices.CompactFunc(out, func(a, b Selector) bool {
-		return a.Path == b.Path && a.Kind == b.Kind && a.Conservative == b.Conservative && slices.Equal(a.Include, b.Include) && slices.Equal(a.Exclude, b.Exclude)
+		return a.Path == b.Path && a.Kind == b.Kind && a.Origin == b.Origin && a.Conservative == b.Conservative && slices.Equal(a.Include, b.Include) && slices.Equal(a.Exclude, b.Exclude)
 	})
 }
 

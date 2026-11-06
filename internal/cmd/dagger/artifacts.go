@@ -303,7 +303,7 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 	flags := artifactKeyFlags(cmd)
 	return withArtifactEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
 		ws := core.NewQuery(ec.Dagger()).CurrentWorkspace()
-		selected, err := commandArtifacts(ctx, ec.Dagger(), ws, cmd, addresses, false, flags...)
+		selected, ws, err := commandArtifacts(ctx, ec.Dagger(), ws, cmd, addresses, false, flags...)
 		if err != nil {
 			return err
 		}
@@ -313,6 +313,10 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 		}
 		selected = listArtifactTargets(selected, cmd, defs)
 		selected = applyArtifactFilters(cmd, &dagaddress.Address{}, selected)
+		selected, err = filterArtifactsBySource(ctx, ec.Dagger(), ws, selected, cmd)
+		if err != nil {
+			return err
+		}
 		return listArtifactSelection(ctx, ec.Dagger(), selected, cmd)
 	})
 }

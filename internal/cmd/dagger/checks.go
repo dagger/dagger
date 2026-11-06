@@ -72,11 +72,15 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			ws := core.NewQuery(dag).CurrentWorkspace()
-			artifacts, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, false)
+			artifacts, ws, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, false)
 			if err != nil {
 				return err
 			}
-			checks, err := commandArtifactTargets(ctx, dag, cmd, artifacts)
+			checks, err := commandArtifactTargets(ctx, dag, ws, cmd, artifacts)
+			if err != nil {
+				return err
+			}
+			checks, err = filterArtifactsBySource(ctx, dag, ws, checks, cmd)
 			if err != nil {
 				return err
 			}

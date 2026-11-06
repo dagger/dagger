@@ -2,189 +2,114 @@
 
 ## Problem
 
-Dagger can select checks by artifact address and collection key. It cannot yet
-select them reliably by the source paths they depend on. Users must maintain
-custom rules or request unrelated checks. Even cached execution can still cost
-preparation work and cloud launches.
+Users need to select artifacts by the source paths they depend on. Today, they
+must run unrelated checks or maintain separate path rules. They also need to see
+why a path selects an artifact.
 
 ## Solution
 
-Add source path filters to **Artifacts**, starting with checks. Derive provenance
-from normal Workspace operations and carry it through function results. Modules
-keep their dynamic file access. No new input declarations are required.
+Derive provenance from current inputs. Expose it through `Artifact.provenance`
+and `Artifacts.provenance`. Use that same data for path filtering and explanations.
+Inspecting provenance must not run artifact bodies or require an earlier run.
 
-Use the same selection for listing and execution. Keep a check selected when
-its full set of possible inputs is unknown. Do not run its body just to answer
-a filter query.
+## Dependencies
 
-## Provenance
+A source path is a path in the source repository that an artifact depends on.
+A selector describes a path and its include/exclude patterns. Patterns cover
+possible files, so additions and deletions count too.
 
-A **source path** is a path in the source repository that an artifact depends on.
-Provenance records those dependencies as workspace identity, root path, and
-include/exclude patterns. Record selectors, not just existing files, so additions
-and deletions count too.
+| Input | Source dependency |
+|---|---|
+| File | Its source file. |
+| Filtered Directory | The region covered by its filters. |
+| Whole Workspace | Every path in that Workspace. |
 
-Combine provenance from arguments, receiver, module code, and inputs supplied
-by the engine, including nested values. Discarding a value does not remove its
-dependency.
+Combine dependencies from arguments, the receiver, engine inputs, and module
+code. Follow inputs through nested values and through the calls that produced
+them. A returned object retains the dependencies of its producing call, even if
+its saved fields contain fewer inputs.
 
-Workspace gives code access to files it has not yet requested. An unrun function
-has unknown reads. A completed call can have a narrower summary if the engine
-has recorded all its access. Interrupted calls or missing nested metadata leave
-coverage unknown. Stored fields are insufficient: configuration reads may have
-become plain scalar values.
+For example, `makeTool(ws)` can return an object that stores one File. The object
+still depends on the whole Workspace passed to `makeTool`.
 
-`WorkspacePath` remains a separate core scalar for path values and client display.
-It does not carry provenance or cause file reads.
+A raw Workspace is a known wildcard. It is not an unknown dependency. A missing
+source origin is an engine limit and must have an explicit explanation.
+`WorkspacePath` is a scalar for path coordinates and client display. It does not
+carry provenance.
 
-## Where laziness limits filtering
+## Inspection and matching
 
-The current engine has three stages:
+Prepare the artifact's current arguments and receiver with the normal DagQL
+planning path. This resolves defaults and engine inputs. Constructors and
+collection discovery can run. Input preparation errors still fail the request.
+For example, a missing required File fails before path matching. The artifact
+body stays unrun.
 
-1. **Construct the receiver.** Constructors and collection discovery run as
-   needed. They can already read files or execute commands.
-2. **Construct the Check.** The check projection stores the receiver, arguments,
-   and workspace context. It does not call the author's check body.
-3. **Request the result.** `Check.sync` invokes the hidden check function. The
-   body can read Workspace, force lazy values, and run commands.
+`Artifact.provenance` returns selectors, their input origins, and any unresolved
+origin issues. `Artifacts.provenance` combines the dependencies of the selected
+artifacts. `items { provenance }` gives the detail for each artifact.
 
-Markdownlint is a concrete example. Its receiver stores tool settings.
-`lint(ws)` calls `sandbox(ws)`, which calls `inputs(ws)`. Only inside that body
-is `ws.directory("/", include: ["**/*.md", "**/.markdownlint*"])` requested.
-The engine cannot see those patterns in the receiver before running the body.
+Match requested paths against those selectors. One match selects the artifact.
+An empty path set selects nothing. Include module source and configuration paths.
+An explanation must show the input path, the matching selector, and the input
+that introduced that dependency. Unresolved origins retain a root selector with
+a stated issue.
 
-The pinned pytest module instead captures a Directory in its constructor. Its
-paths are known before the test body runs. But its default source is `/`, and
-the captured source does not prove that there are no other body inputs.
+## DagQL caching
 
-Two current details prevent shortcuts:
+Keep one execution cache. Selected checks still use normal DagQL caching.
+Selection does not itself invalidate a cached result or report a passing check.
 
-- `workspace.directory` can copy and hash files when called. Executing helpers
-  early is not necessarily cheap or lazy.
-- A body can obtain `currentWorkspace` through its nested client. Having no
-  Workspace argument does not prove that it has no future workspace reads.
+DagQL can reuse equal File or Directory contents from different source paths.
+The engine must preserve those origins when it reuses values. Origins must stay
+with the value through collection, persistence, and transfer. Losing an origin
+must never cause a false exclusion.
 
-Stopping at the first read gives an incomplete set: its result can determine
-later reads. Supplying dummy results would change the code's behavior.
+Store source-origin facts with cached values. These facts describe constructed
+inputs; they are not a history of files read by check bodies. They do not change
+execution cache keys. Combine origins when the engine shares a value across
+producers. This can give a wider dependency set than one producer alone.
 
-## Implementation
-
-1. **Record normal calls.** At Workspace reads, record resolved paths and
-   patterns. Carry the record through arguments, receivers, nested calls, and
-   cache hits. Include module source. Keep discarded scalar reads and failed
-   requests.
-2. **Store completed summaries in dagql.** Use ordinary cache entries with the
-   call's lifetime and access rules. Keep source origins separate when outputs
-   have equal content. Missing coverage stays unknown.
-3. **Validate before filtering.** Match code and other inputs. Then compare the
-   recorded regions with the current snapshot. Use the same content hashes and
-   metadata rules as File and Directory caching. A configuration change can
-   cause new reads on the next execution.
-4. **Filter through Artifacts.** Keep unknown inputs selected. Keep collection
-   views, legacy batching, module load errors, and cloud dispatch in the existing
-   selection system. `--path PATH` uses one workspace snapshot for
-   filtering and execution.
-
-First-run skipping is not supported. A cache hit without a recorded summary
-stays unknown. Filtering can construct receivers and discover collection keys;
-it does not run the check body.
-
-The prototype narrows File reads and filtered Directory copies from stable
-workspaces. Unfiltered Directory values retain the full source tree, so they
-retain a root dependency. Git ignore reads also retain a root dependency.
-Symlink paths, live workspace access, and changing non-file inputs stay unknown.
-Other Workspace operations currently stay unknown.
+Older values without complete origin data remain conservative and report the
+missing coverage. A new fact cannot prove that all older origins are known.
 
 ## CLI
 
-`--commit COMMIT` selects paths changed by that commit. `--uncommitted` selects
-current workspace changes from HEAD, including non-ignored untracked files.
-Repeat commits to combine their changed paths. Merge commits use their first
-parent; root commits use an empty tree.
+`--path PATH` selects a source file or subtree. Repeat it to combine paths.
+Relative paths start at cwd; `/` starts at the workspace root.
 
-`--path PATH` limits these changed paths before matching dependencies. Without
-Git flags, it selects a source file or subtree directly. Repeat paths to include
-any listed path. Relative paths start at the current directory; `/` starts at
-the workspace root. Run selected artifacts in the current workspace snapshot.
-No changed paths means no selected artifacts, including checks with unknown
-inputs. An empty filtered selection succeeds.
+`--commit COMMIT` supplies paths changed by that commit against its first parent.
+A root commit uses an empty tree. `--uncommitted` supplies current changes from
+HEAD, including non-ignored untracked files. Repeated commits and uncommitted
+changes combine their path sets.
 
-## Relationship to caching
+When Git flags and `--path` are combined, limit the changed paths before matching
+artifact dependencies. Listing and execution use one workspace snapshot. An empty
+selection succeeds.
 
-Keep one execution cache. Dagql tracks call inputs and caches the hidden check
-function. Its retained dependency graph does not record every nested
-workspace read or scalar origin.
-
-Object IDs remain opaque references, as in current content caching.
-
-Read summaries belong with those calls. An old path list is not enough to skip:
-a changed manifest can cause new reads. Validate configuration and discovery
-inputs too, including queries for files that were absent. Do not add a separate
-lockfile of check names and old path lists.
-
-A requested path or diff does not prove an old summary is current. Validate
-its recorded inputs too. Other arguments, code, workspace metadata, and cache
-policy also matter.
-
-For late-reading checks, this cache dependency work may be necessary for useful
-early filtering. It is not just an optional performance improvement. A filter
-still reports selection, not a new passing outcome for a skipped check.
+The API has two selection fields: `filterAffectedByPath(paths)` and
+`filterAffectedByDiff(changes, paths)`. The diff field's optional paths limit the
+changes before matching. Git supplies paths; it adds no provenance rule.
 
 ## Guidelines for module developers
 
-1. **Read narrowly.** Use Workspace.file for one file. Use Workspace.directory
-   with filters for a set of files. An unfiltered Directory retains the full
-   source tree. Include configuration, shared code, and test data.
-2. **Keep work lazy.** Do only the work needed to construct values and discover
-   keys. Run tools in check bodies. Do not move reads earlier just to help the
-   filter; the engine must account for dynamic access.
-3. **Respect selection.** Expose projects as collection items. Shared commands
-   must use the selected keys rather than process every discovered project.
+1. **Limit inputs.** Use File or filtered Directory inputs for a bounded source
+   region. Use Workspace for dynamic access. A Workspace input matches every
+   path, even if the body later reads only Markdown files.
+2. **Delay execution.** Keep tools in check bodies. Constructors can form inputs
+   and discover keys. Do not run tools early to help filtering.
+3. **Respect selection.** Expose independent work as collection items. Shared
+   commands must process the selected keys.
 
 ## Expected gains
 
-No official workloads were timed. Validation still copies and hashes selected
-inputs. These are the limits visible in current code:
+Filtering can avoid preparation, commands, and cloud launches for checks with
+narrow inputs. It cannot exclude checks whose inputs include the whole Workspace.
+A broad constructor or discovery call also gives its returned objects broad
+dependencies. Filtering after discovery does not avoid discovery work.
 
-| Module | What is known before the body | Limit on early filtering |
-|---|---|---|
-| Markdownlint | Settings; its Markdown read is inside `lint(ws)`. | Keep selected until a valid recorded read summary can establish its inputs. |
-| Go / golangci-lint | Discovery already scans Go source across the workspace. Checks read Workspace later. | Broad discovery remains paid. Simple provenance rollup can retain the whole Go workload. |
-| pytest / Ruff | Constructors capture source, default `/`; aggregate checks can also read Workspace later. | Captured inputs are broad. They do not prove complete body inputs. |
-| ESLint | Project keys; source reads happen later and can cover a shared install root. | Project keys alone do not establish project-sized dependencies. |
-| Helm / Shellcheck | Discovery can build chart or script values with source inputs. | Ordinary lists do not expose them as selectable artifact items. Aggregate checks cover the whole set. |
+Measure selected checks, dependency origins, preparation time, and avoided
+commands on real modules. A smaller check list alone does not prove a speed gain.
+No official module workload has been timed yet.
 
-Pinned Go shares one test command across selected tests in a module. Latest Go
-uses smaller units. Skipped checks therefore do not measure saved processes.
-A warm cache may already save execution; fewer cloud launches can still help.
-Filtering after discovery does not save discovery work.
-
-The Artifacts API alone will not speed up current modules. Measure whether all
-reads are recorded, discovery cost, commands avoided, and cloud launches. The
-first useful result must come from automatic tracking and validation.
-
-## Evidence
-
-Reviewed on 2026-10-30: dagger/dagger at `ddee9399a`, with main fetched through
-`f0a3d728c`.
-The intervening changes do not alter these core mechanisms. The intent comes from [Modules v2](https://github.com/dagger/dagger/pull/12900).
-
-- Engine: [Check construction](../../core/object.go),
-  [body invocation](../../core/check_projection.go),
-  [artifact evaluation and cloud dispatch](../../core/schema/artifacts.go),
-  [nested workspace inheritance](../../engine/server/session_workspaces.go),
-  [collection execution rules](../../core/artifact_legacy_batch.go),
-  [filtered workspace identities](../../core/schema/workspace.go),
-  [returned object content identities](../../core/modfunc.go),
-  [cache dependency meaning](../../dagql/cache.go).
-- [Markdownlint inputs and check](../../modules/markdownlint/markdownlint.dang),
-  [pinned pytest source and test](https://github.com/dagger/pytest/blob/cdf6dc0bce0fe8fdf87c6b26ecd991e6f96200b0/main.dang#L19).
-- Go: [pinned scanner](https://github.com/dagger/go/blob/3159d1fa20a86963dbf9b48f856daeec72be3893/gomod/main.dang#L249),
-  [pinned shared test command](https://github.com/dagger/go/blob/3159d1fa20a86963dbf9b48f856daeec72be3893/go.dang#L1199),
-  [latest test checks](https://github.com/dagger/go/blob/217ac6cff4b3b51e8b7339bc3f71c5ec25bc5ade/go.dang#L1377).
-- Other official modules: [golangci-lint](https://github.com/dagger/golangci-lint/blob/043504934a2b7db24a55aa63d327910a907c20d1/golangci-lint.dang#L240),
-  [pytest](https://github.com/dagger/pytest/blob/6cbe945cfcc133f7cb786c45e4b6011f3eb4e3c6/main.dang#L78),
-  [Ruff](https://github.com/dagger/ruff/blob/241637949f14bb373a87a09d74d90613d72b0394/main.dang#L38),
-  [ESLint](https://github.com/dagger/eslint/blob/8cb42f9ed25b78147c02d65d05529c7ef418b800/eslint.dang#L788),
-  [Helm](https://github.com/dagger/helm/blob/8a886dd273e8fdaf855a2807313b9e5bd89cb16f/helm.dang#L21),
-  [Shellcheck](https://github.com/dagger/shellcheck/blob/c549c12b6c7d962eacb9eb2dcda22aa940ac2ca2/shellcheck.dang#L26).
+The original intent is described in [Modules v2](https://github.com/dagger/dagger/pull/12900).

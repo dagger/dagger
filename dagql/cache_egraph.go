@@ -373,6 +373,10 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 	if joinsEntries {
 		c.noteJoinedEntriesLocked(ra)
 	}
+	for id := range c.outputEqClassResults[ra] {
+		c.syncResultFactsLocked(c.resultsByID[id])
+		break
+	}
 	return ra, absorbedInputTerms
 }
 
@@ -1599,6 +1603,7 @@ func (c *Cache) addResultOutputEqClassLocked(resID sharedResultID, outputEqID eq
 		// New membership in an existing class, with no union of its own.
 		// Recorded only once both memberships exist.
 		c.recordShareMembershipLocked(outputEqID)
+		c.syncResultFactsLocked(c.resultsByID[resID])
 	}
 }
 
@@ -1960,7 +1965,6 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	c.putResultLocked(res)
 	if res.loadResultCall() == nil && requestFrame != nil {
 		res.storeResultCall(requestFrame.clone())
-		c.indexCallMetadataLocked(res)
 		c.traceResultCallFrameUpdated(ctx, res, "index_wait_result_request_frame", nil, res.loadResultCall())
 	}
 	c.traceResultCreated(ctx, res)
@@ -2180,7 +2184,6 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.broadlyIndexedResults = nil
 	c.restoredDigestGroups = nil
 	c.resultsByID = nil
-	c.callMetadata = callMetadataIndex{}
 	c.resultPayloadBytes = 0
 	c.holderEntries = nil
 	c.entriesByRecipe = nil

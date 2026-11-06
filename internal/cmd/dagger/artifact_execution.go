@@ -282,11 +282,12 @@ func artifactWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspac
 	return workspace.ParseConfig([]byte(config))
 }
 
-// commandArtifacts applies shared filters to one selection of paths.
-func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspace, cmd *cobra.Command, addresses []string, strict bool, keys ...dagaddress.Pair) (*core.Artifacts, error) {
+// commandArtifacts binds one workspace and applies address filters. Callers
+// narrow command or list targets before applying source filters to that workspace.
+func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspace, cmd *cobra.Command, addresses []string, strict bool, keys ...dagaddress.Pair) (*core.Artifacts, *core.Workspace, error) {
 	parsed, err := parseArtifactAddresses(addresses)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	filterSource := artifactSourceFilterEnabled(cmd)
 	var workspaceID core.ID
@@ -296,7 +297,7 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspac
 		workspaceID, err = ws.ID(ctx)
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ws = core.Ref[*core.Workspace](core.NewQuery(dag), workspaceID)
 	// Bind flags in the combined path scope, using the same workspace as
@@ -304,13 +305,13 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspac
 	if len(keys) > 0 {
 		defs, err := artifactDimensions(ctx, dag, ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths(parsed, keys...)}))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := validateArtifactDimensionFlags(cmd, defs); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := bindArtifactDimensions(keys, defs); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	for _, address := range parsed {
@@ -319,21 +320,21 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspac
 		}
 		defs, err := artifactDimensions(ctx, dag, ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{address}, keys...)}))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := bindArtifactDimensions(address.Query, defs); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	shared, err := sharedArtifactFilters(parsed)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	shared.Query = append(shared.Query, keys...)
 	selection := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths(parsed, keys...)})
 	if strict {
 		if err := requireArtifactModules(ctx, dag, selection, shared.DimensionFilters()); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if slices.ContainsFunc(shared.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
@@ -341,29 +342,26 @@ func commandArtifacts(ctx context.Context, dag *dagger.Client, ws *core.Workspac
 		if cmd.Name() == "list" || cmd.Annotations[artifactListType] != "" || cmd.Annotations[artifactListCollection] != "" {
 			defs, err := artifactDimensions(ctx, dag, selection)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			targets = listArtifactTargets(selection, cmd, defs)
 		} else {
-			targets, err = commandArtifactTargets(ctx, dag, cmd, selection)
+			targets, err = commandArtifactTargets(ctx, dag, ws, cmd, selection)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 		paths, err := readArtifactListPaths(ctx, dag, targets)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		selection, err = filterArtifactTypeKeys(selection, paths, shared)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	selection = filterArtifactAddress(selection, shared)
-	if !filterSource {
-		return selection, nil
-	}
-	return filterArtifactsBySource(ctx, dag, ws, selection, cmd)
+	return selection, ws, nil
 }
 
 func sharedArtifactFilters(addresses []*dagaddress.Address) (*dagaddress.Address, error) {
@@ -452,7 +450,7 @@ func isArtifactCommand(cmd *cobra.Command) bool {
 	return len(commandArtifactTypes(cmd)) > 0
 }
 
-func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *core.Workspace, cmd *cobra.Command, addresses []string, strict bool) (*core.Artifacts, error) {
+func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *core.Workspace, cmd *cobra.Command, addresses []string, strict bool) (*core.Artifacts, *core.Workspace, error) {
 	keys := artifactKeyFlags(cmd)
 	return commandArtifacts(ctx, dag, ws, cmd, addresses, strict, keys...)
 }

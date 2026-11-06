@@ -21,6 +21,9 @@ func artifactSourceFilterEnabled(cmd *cobra.Command) bool {
 // and execution. With Git selectors, paths restrict the changes before matching
 // dependencies. Without Git selectors, paths select literal source subtrees.
 func filterArtifactsBySource(ctx context.Context, dag *dagger.Client, ws *core.Workspace, selection *core.Artifacts, cmd *cobra.Command) (*core.Artifacts, error) {
+	if !artifactSourceFilterEnabled(cmd) {
+		return selection, nil
+	}
 	paths := []core.WorkspacePath{}
 	if cmd.Flags().Changed("path") {
 		values, _ := cmd.Flags().GetStringArray("path")

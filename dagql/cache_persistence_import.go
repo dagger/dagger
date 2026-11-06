@@ -144,6 +144,9 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if env.Version != persistedResultEnvelopeVersion {
 				return fmt.Errorf("import result %d: unsupported self payload version %d", resultID, env.Version)
 			}
+			if err := validateResultFacts(*env, true); err != nil {
+				return fmt.Errorf("import result %d facts: %w", resultID, err)
+			}
 
 			frame := decoded.frame
 			if frame == nil {
@@ -158,6 +161,9 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			persistDeclined := env.PersistDeclined
 			env.PersistDeclined = false
 			res := &sharedResult{
+				resultFacts:           cloneResultFacts(env.ResultFacts),
+				resultFactsIncomplete: env.FactsCoverageVersion != resultFactsCoverageVersion,
+				resultFactBytes:       resultFactPayloadBytes(env.ResultFacts),
 				id:                    resultID,
 				imported:              env.Imported,
 				persistDeclined:       persistDeclined,
@@ -170,9 +176,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				description:           row.Description,
 				recordType:            row.RecordType,
 				persistedEnvelope:     env,
-				payloadBytes:          persistedEnvelopePayloadBytes(env),
+				payloadBytes:          persistedEnvelopePayloadBytes(env) + resultFactPayloadBytes(env.ResultFacts),
 			}
 			res.storeResultCall(frame)
+			env.ResultFacts = res.resultFacts
 			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, frame)
 			if row.CloudHoldingNumber != 0 {
 				// The Cloud holding comes back before the saved offers attach

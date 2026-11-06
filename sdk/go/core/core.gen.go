@@ -1262,7 +1262,7 @@ func (r *Artifact) Path(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Inspect source paths without running the artifact body. Unknown inputs retain a conservative root region.
+// Inspect source dependencies from current inputs without running the artifact body.
 func (r *Artifact) Provenance() *WorkspaceProvenance {
 	q := r.query.Select("provenance")
 
@@ -2450,6 +2450,16 @@ func (r *Artifacts) PathDefinitions(ctx context.Context, opts ...ArtifactsPathDe
 	}
 
 	return convert(response), nil
+}
+
+// Combine the source dependencies of the selected artifacts without running their bodies.
+func (r *Artifacts) Provenance() *WorkspaceProvenance {
+	q := r.query.Select("provenance")
+
+	return &WorkspaceProvenance{
+		query:     q,
+		refetchID: true,
+	}
 }
 
 // List concrete type definitions represented in this selection, sorted by name with no duplicates.
@@ -23991,7 +24001,17 @@ func (r *WorkspaceProvenance) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The normalized input regions. Unknown inputs have a conservative root selector.
+// Inputs whose source origin could not be determined. These retain a conservative root dependency.
+func (r *WorkspaceProvenance) Issues(ctx context.Context) ([]string, error) {
+	q := r.query.Select("issues")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The source regions on which the artifact depends.
 func (r *WorkspaceProvenance) Selectors(ctx context.Context) ([]WorkspaceSelector, error) {
 	q := r.query.Select("selectors")
 
@@ -24222,6 +24242,7 @@ type WorkspaceSelector struct {
 	conservative *bool
 	id           *ID
 	kind         *string
+	origin       *string
 	path         *WorkspacePath
 }
 
@@ -24319,6 +24340,19 @@ func (r *WorkspaceSelector) Kind(ctx context.Context) (string, error) {
 		return *r.kind, nil
 	}
 	q := r.query.Select("kind")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The input that contributes this dependency.
+func (r *WorkspaceSelector) Origin(ctx context.Context) (string, error) {
+	if r.origin != nil {
+		return *r.origin, nil
+	}
+	q := r.query.Select("origin")
 
 	var response string
 

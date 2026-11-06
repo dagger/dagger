@@ -29,6 +29,8 @@ func (prov cachePersistInputProvenance) validate() error {
 }
 
 type persistResultSnapshot struct {
+	resultFacts           []ResultFact
+	resultFactsIncomplete bool
 	imported              bool
 	persistDeclined       bool
 	pendingOffers         []PersistedPartOffer

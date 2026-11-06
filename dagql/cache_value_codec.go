@@ -280,6 +280,9 @@ func directTransferReferences(direct map[uint64]bool) PersistedRefVisitor {
 }
 
 func validateTransferEnvelope(env PersistedResultEnvelope, typ *ResultCallType, root bool) error {
+	if err := validateResultFacts(env, root); err != nil {
+		return err
+	}
 	if typ == nil {
 		return fmt.Errorf("missing envelope type")
 	}
@@ -333,6 +336,9 @@ func validateTransferEnvelopeKind(env PersistedResultEnvelope, typ *ResultCallTy
 // validateTransferEnvelopeStructure checks what visitPersistedEnvelope checks
 // of an envelope's structure, without decoding object payloads.
 func validateTransferEnvelopeStructure(env PersistedResultEnvelope, root bool) error {
+	if err := validateResultFacts(env, root); err != nil {
+		return err
+	}
 	if env.Version != persistedResultEnvelopeVersion {
 		return fmt.Errorf("unsupported envelope version %d", env.Version)
 	}

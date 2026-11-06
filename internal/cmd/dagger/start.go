@@ -53,11 +53,15 @@ var startCmd = &cobra.Command{
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
 				ws := core.NewQuery(dag).CurrentWorkspace()
-				all, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, true)
+				all, ws, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, true)
 				if err != nil {
 					return err
 				}
-				services, err := commandArtifactTargets(ctx, dag, cmd, all)
+				services, err := commandArtifactTargets(ctx, dag, ws, cmd, all)
+				if err != nil {
+					return err
+				}
+				services, err = filterArtifactsBySource(ctx, dag, ws, services, cmd)
 				if err != nil {
 					return err
 				}

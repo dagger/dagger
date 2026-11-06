@@ -385,7 +385,8 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 			deps[sharedResultID(prep.firstID+dep-1)] = struct{}{}
 		}
 		prep.records[id] = rec
-		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle}
+		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle,
+			resultFacts: cloneResultFacts(rec.Envelope.ResultFacts), resultFactsIncomplete: rec.Envelope.FactsCoverageVersion != resultFactsCoverageVersion, resultFactBytes: resultFactPayloadBytes(rec.Envelope.ResultFacts)}
 		res.storeResultCall(rec.Call)
 		if !c.blobBacked {
 			// The private offers attach to a Cloud holding, as they will in
@@ -1104,6 +1105,11 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 	for _, row := range commit.rows {
 		switch row.action {
 		case mergeKeep:
+			// A kept row has no relocated row.rec: only installed payloads
+			// need relocation. Its fact JSON comes from the validated input.
+			incoming := row.value.Record.Envelope
+			c.setResultFactsLocked(row.res, unionResultFacts(row.res.resultFacts, incoming.ResultFacts), row.res.resultFactsIncomplete || incoming.FactsCoverageVersion != resultFactsCoverageVersion)
+			c.syncResultFactsLocked(row.res)
 			continue
 		case mergeRetire:
 			c.retireResultLocked(row.target)
@@ -1285,9 +1291,9 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 		res.createdAtUnixNano = time.Now().UnixNano()
 	}
 	res.payloadMu.Unlock()
-	if c.resultsByID[res.id] == res {
-		c.indexCallMetadataLocked(res)
-	}
+	// Installing a record starts a value generation on a new or value-less
+	// entry. A holding's old coverage does not describe the incoming value.
+	c.setResultFactsLocked(res, rec.Envelope.ResultFacts, rec.Envelope.FactsCoverageVersion != resultFactsCoverageVersion)
 	if c.blobBacked {
 		// On the Cloud, an export that stores a value uses it.
 		touchSharedResultLastUsed(res, time.Now().UnixNano())
@@ -1507,10 +1513,12 @@ func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, qu
 		res.storedRecordBytes = 0
 		res.storedTransfer.Store(nil)
 		res.payloadMu.Lock()
+		res.self = nil
 		res.persistedEnvelope = nil
 		res.hasValue = false
 		res.payloadRevision++
 		res.payloadMu.Unlock()
+		c.setResultFactsLocked(res, nil, false)
 		c.setResultPayloadBytesLocked(res, 0)
 		return queue
 	}

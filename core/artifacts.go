@@ -970,8 +970,19 @@ func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root d
 // server for the module binds the provenance to results this session owns, so
 // evaluation does not depend on the discovering session being alive.
 func (a *Artifact) Evaluate(ctx context.Context, dest any, inputs ...dagql.NamedInput) error {
+	artifact, err := a.withEvaluationServers(ctx)
+	if err != nil {
+		return err
+	}
+	if a.View != nil {
+		ctx = dagql.WithResultScope(ctx, a.View)
+	}
+	return artifact.Node.dagqlValue(ctx, dest, inputs)
+}
+
+func (a *Artifact) withEvaluationServers(ctx context.Context) (*Artifact, error) {
 	if a.Node == nil {
-		return fmt.Errorf("artifact %s has no module tree", strings.Join(a.Path, "/"))
+		return nil, fmt.Errorf("artifact %s has no module tree", strings.Join(a.Path, "/"))
 	}
 	artifact := a.Clone()
 	// Within an expansion, start from the nearest receiver it has already
@@ -989,30 +1000,27 @@ func (a *Artifact) Evaluate(ctx context.Context, dest any, inputs ...dagql.Named
 		if node.Module.Self() == nil {
 			srv, err := CurrentDagqlServer(ctx)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			node.DagqlServer = srv
 			continue
 		}
 		moduleID, err := node.Module.ID()
 		if err != nil {
-			return fmt.Errorf("artifact module ID: %w", err)
+			return nil, fmt.Errorf("artifact module ID: %w", err)
 		}
 		key := moduleID.EngineResultID()
 		srv, ok := servers[key]
 		if !ok {
 			srv, err = dagqlServerForModule(ctx, node.Module)
 			if err != nil {
-				return fmt.Errorf("artifact %s: %w", strings.Join(artifact.Path, "/"), err)
+				return nil, fmt.Errorf("artifact %s: %w", strings.Join(artifact.Path, "/"), err)
 			}
 			servers[key] = srv
 		}
 		node.DagqlServer = srv
 	}
-	if a.View != nil {
-		ctx = dagql.WithResultScope(ctx, a.View)
-	}
-	return artifact.Node.dagqlValue(ctx, dest, inputs)
+	return artifact, nil
 }
 
 // ModuleArtifactNodes discovers object fields without evaluating their values.

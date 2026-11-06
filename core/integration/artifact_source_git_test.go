@@ -52,11 +52,17 @@ func (ArtifactsSuite) TestSourceGitSelectors(ctx context.Context, t *testctx.T) 
 	write("probe/dagger-module.toml", "name = 'probe'\nengineVersion = 'v1.0.0-beta.20'\n[runtime]\nsource = 'dang'\n")
 	write("probe/main.dang", "# "+rand.Text()+`
 type Probe {
- pub staged(ws: Workspace!): Void @check { ws.file("/src/staged.txt").contents; null }
- pub other(ws: Workspace!): Void @check { ws.file("/other.txt").contents; null }
- pub cross(ws: Workspace!): Void @check {
-   ws.file("/src/shared.txt").contents
-   ws.file("/README.md").contents
+ pub unrelated(input: File! @defaultPath(path: "/missing.txt")): Container! {
+   raise "unrelated artifact must not run"
+ }
+ pub staged(input: File! @defaultPath(path: "/src/staged.txt")): Void @check { input.contents; null }
+ pub other(input: File! @defaultPath(path: "/other.txt")): Void @check { input.contents; null }
+ pub cross(
+   source: File! @defaultPath(path: "/src/shared.txt"),
+   readme: File! @defaultPath(path: "/README.md"),
+ ): Void @check {
+   source.contents
+   readme.contents
    null
  }
 }`)
@@ -69,17 +75,14 @@ type Probe {
 	git("add", "src/staged.txt")
 	git("commit", "-m", "change staged input")
 
+	require.Equal(t, "dag+check://?check=staged", run(repo, "check", "-l", "-f=link", "--generated=false", "--path", "/src/staged.txt"), "select check targets before planning source inputs")
 	require.Empty(t, run(repo, "check", "-l", "--uncommitted"), "a clean checkout has no affected checks before any check has run")
 	all := []string{"dag+check://?check=staged", "dag+check://?check=other", "dag+check://?check=cross"}
-	require.ElementsMatch(t, all, list(repo, "--commit", "HEAD"), "cold checks remain selected")
-	run(repo, "check", "--generated=false", "--path", "/")
 	require.ElementsMatch(t, []string{"dag+check://?check=staged"}, list(repo, "--commit", "HEAD"))
 	require.ElementsMatch(t, []string{"dag+check://?check=staged", "dag+check://?check=other"}, list(repo, "--path", "src/staged.txt", "--path", "other.txt"))
 	require.Empty(t, list(repo, "--uncommitted"))
 
 	write("README.md", "documentation change\n")
-	// Record current reads so the assertions test path matching, not unknown inputs.
-	run(repo, "check", "--generated=false", "--uncommitted")
 	require.ElementsMatch(t, []string{"dag+check://?check=cross"}, list(repo, "--uncommitted"))
 	require.ElementsMatch(t, []string{"dag+check://?check=staged", "dag+check://?check=cross"}, list(repo, "--commit", "HEAD", "--uncommitted"))
 	require.Empty(t, list(repo, "--uncommitted", "--path", "src"), "scope changes before matching cross dependencies")
@@ -87,10 +90,8 @@ type Probe {
 	write("src/staged.txt", "staged change\n")
 	git("add", "src/staged.txt")
 	write("other.txt", "unstaged change\n")
-	run(repo, "check", "--generated=false", "--uncommitted")
 	require.ElementsMatch(t, all, list(repo, "--uncommitted"))
 	src := filepath.Join(repo, "src")
-	run(src, "check", "--generated=false", "--uncommitted")
 	require.ElementsMatch(t, []string{"dag+check://?check=staged"}, list(src, "--uncommitted", "--path", "."))
 	require.ElementsMatch(t, []string{"dag+check://?check=other"}, list(src, "--uncommitted", "--path", "/other.txt"))
 	run(repo, "check", "--uncommitted", "--path", "missing")

@@ -1074,20 +1074,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Parent:    parentJSON,
 		InputArgs: callInputs,
 	})
-	fnCall.workspaceReads = currentWorkspaceReads(ctx)
-	if fnCall.workspaceReads != nil {
-		fnCall.workspaceReads.mu.Lock()
-		fnCall.workspaceReads.moduleRun = true
-		fnCall.workspaceReads.summary.Unknown = fnCall.workspaceReads.summary.Unknown || fn.explicitCacheTTLSeconds() > 0
-		fnCall.workspaceReads.mu.Unlock()
-		if ws, ok := WorkspaceFromContext(ctx); ok {
-			scope, err := workspaceScopeForValue(suppressWorkspaceReads(ctx), ws)
-			fnCall.workspaceReads.merge(workspaceReadSummary{
-				Scope: scope, Unknown: err != nil || scope == nil,
-				Selectors: moduleSourceSelectors(ws.Self(), mod),
-			}, false)
-		}
-	}
 	fnCall.ResultScope = dagql.CurrentResultScope(ctx)
 	fnCall.composingAgentHandle = composingAgentHandle(ctx)
 	if fn.objDef != nil {
@@ -1507,14 +1493,14 @@ func (fn *ModuleFunction) loadContextualGitArg(
 	}
 }
 
-// callerInModuleFunction reports whether ctx is executing inside a module
+// CallerInModuleFunction reports whether ctx is executing inside a module
 // function body. It keys off an active function call, not merely a module in
 // context: a direct client (CLI/SDK) and schema-walking flows like `dagger
 // generate` load a module but run no function, and must still be allowed to
 // auto-inject a Workspace. ErrNoCurrentModule and ErrNoCurrentFunctionCall are
 // the direct-client signals and are swallowed; any other error is a real lookup
 // failure.
-func callerInModuleFunction(ctx context.Context) (bool, error) {
+func CallerInModuleFunction(ctx context.Context) (bool, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return false, fmt.Errorf("get current query: %w", err)
@@ -1547,9 +1533,9 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 	// group resolves the same workspace under the same ID.
 	//
 	// This bound-workspace preference MUST be checked before the
-	// callerInModuleFunction guard below: a generator/check leaf's
+	// CallerInModuleFunction guard below: a generator/check leaf's
 	// auto-injected Workspace! is resolved while running inside the module
-	// runtime, so checking callerInModuleFunction first would reject the
+	// runtime, so checking CallerInModuleFunction first would reject the
 	// seeded workspace and leave the leaf reading stale source. The workspace
 	// is still explicit here — the group threaded it via WorkspaceToContext —
 	// so this does not silently inherit a caller's workspace across modules.
@@ -1566,7 +1552,7 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 	// `dagger generate`). A running module function must pass a Workspace to its
 	// dependencies explicitly, so a dependency does not silently inherit its
 	// caller's workspace.
-	if inModuleFunction, err := callerInModuleFunction(ctx); err != nil {
+	if inModuleFunction, err := CallerInModuleFunction(ctx); err != nil {
 		return nil, err
 	} else if inModuleFunction {
 		return nil, fmt.Errorf("%w: workspace arguments are not inherited by module runtime calls; pass a Workspace explicitly", ErrNoCurrentWorkspace)

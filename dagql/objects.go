@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"weak"
 
 	"github.com/iancoleman/strcase"
@@ -850,13 +849,8 @@ func (r ObjectResult[T]) call(
 	if field.Spec.Trivial {
 		ctx = ContextWithTrivialField(ctx)
 	}
-	var executed atomic.Bool
 	if s.callObserver != nil {
-		var done func(AnyResult, bool, error)
-		ctx, done = s.callObserver(ctx, req)
-		if done != nil {
-			defer func() { done(res, executed.Load(), err) }()
-		}
+		ctx = s.callObserver(ctx, req)
 	}
 	if s.telemetry != nil && !field.Spec.NoTelemetry {
 		recording := wcprof.Enabled(ctx)
@@ -897,7 +891,6 @@ func (r ObjectResult[T]) call(
 	}
 
 	res, err = cache.GetOrInitCall(ctx, clientMetadata.SessionID, s, req, func(ctx context.Context) (AnyResult, error) {
-		executed.Store(true)
 		val, err := field.Func(ctx, r, inputArgs, view)
 		if err != nil {
 			return nil, err

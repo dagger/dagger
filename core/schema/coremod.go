@@ -56,7 +56,7 @@ func NewCoreSchemaBase(ctx context.Context, rootSrv core.Server) (*CoreSchemaBas
 		return nil, err
 	}
 	base.Around(core.AroundFunc)
-	base.ObserveCalls(core.ObserveWorkspaceReads)
+	base.ObserveCalls(core.ObserveWorkspaceInputs)
 	base.AddInstallHook(&legacyIDHook{server: base})
 	coreMod := &CoreMod{}
 	if err := coreMod.Install(ctx, base); err != nil {

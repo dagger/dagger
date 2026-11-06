@@ -56,7 +56,7 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 	dagql.Fields[*core.Artifact]{
 		dagql.Func("provenance", func(ctx context.Context, a *core.Artifact, _ struct{}) (*core.WorkspaceProvenance, error) {
 			return a.Provenance(ctx)
-		}).Doc("Inspect source paths without running the artifact body. Unknown inputs retain a conservative root region.").WithInput(dagql.PerCallInput),
+		}).Doc("Inspect source dependencies from current inputs without running the artifact body.").WithInput(dagql.PerCallInput),
 		dagql.Func("affectedByPath", func(ctx context.Context, a *core.Artifact, args provenancePathArgs) (bool, error) {
 			if _, err := provenance.Path(string(args.Path)); err != nil {
 				return false, err
@@ -82,6 +82,9 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 		}).Doc("Whether this artifact may depend on changed workspace paths.").WithInput(dagql.PerCallInput),
 	}.Install(srv)
 	dagql.Fields[*core.Artifacts]{
+		dagql.Func("provenance", func(ctx context.Context, a *core.Artifacts, _ struct{}) (*core.WorkspaceProvenance, error) {
+			return a.Provenance(ctx)
+		}).Doc("Combine the source dependencies of the selected artifacts without running their bodies.").WithInput(dagql.PerCallInput),
 		dagql.Func("filterAffectedByDiff", func(ctx context.Context, a *core.Artifacts, args provenanceDiffFilterArgs) (*core.Artifacts, error) {
 			if err := provenance.ValidateKinds(args.Kinds); err != nil {
 				return nil, err
@@ -115,7 +118,7 @@ func installWorkspaceProvenance(srv *dagql.Server) {
 			return filterAffected(ctx, a, func(p *core.WorkspaceProvenance) (bool, error) {
 				return p.AffectedByChangedPaths(changed, args.Paths, args.Kinds)
 			})
-		}).Doc("Keep artifacts that may depend on paths changed in any listed changeset. Paths limit changed paths before matching dependencies. Unknown inputs stay selected for nonempty changes.").WithInput(dagql.PerCallInput),
+		}).Doc("Keep artifacts that may depend on paths changed in any listed changeset. Paths limit changed paths before matching dependencies. Inputs with unresolved source origins stay selected for nonempty changes.").WithInput(dagql.PerCallInput),
 		dagql.Func("filterAffectedByPath", func(ctx context.Context, a *core.Artifacts, args provenancePathsArgs) (*core.Artifacts, error) {
 			if err := provenance.ValidateKinds(args.Kinds); err != nil {
 				return nil, err
