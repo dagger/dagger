@@ -11,6 +11,9 @@ import (
 
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -736,6 +739,38 @@ func TestCacheVolumeConcurrentFirstMountsReportNewOnce(t *testing.T) {
 		telemetryattrs.CacheVolumeStateNew:    1,
 		telemetryattrs.CacheVolumeStateReused: mounts - 1,
 	}, counts)
+}
+
+// A mount is reported as an event on the span that mounts the volume, not as
+// a span or log line of its own, which the CLI and Dagger Cloud would show.
+func TestCacheVolumeMountReportsAnEventOnTheMountingSpan(t *testing.T) {
+	t.Parallel()
+	ctx, cache, _ := newCacheVolumeMountTest(t)
+	require.NoError(t, cache.InitializeSnapshot(ctx))
+
+	spans := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(spans),
+	)
+	ctx, exec := tp.Tracer("test").Start(ctx, "exec")
+	mount := cache.noteMount()
+	reportCacheVolumeMount(ctx, cache, "/cache", mount.state, telemetryattrs.CacheVolumeSnapshotAttr, mount.snapshot)
+	exec.End()
+
+	ended := spans.Ended()
+	require.Len(t, ended, 1, "the report must not start a span of its own")
+	events := ended[0].Events()
+	require.Len(t, events, 1)
+	require.Equal(t, telemetryattrs.CacheVolumeMountEvent, events[0].Name)
+	require.ElementsMatch(t, []attribute.KeyValue{
+		attribute.String(telemetryattrs.CacheVolumeKeyAttr, "cache-key"),
+		attribute.String(telemetryattrs.CacheVolumeNamespaceAttr, "ns"),
+		attribute.String(telemetryattrs.CacheVolumeSharingAttr, "SHARED"),
+		attribute.String(telemetryattrs.CacheVolumeTargetAttr, "/cache"),
+		attribute.String(telemetryattrs.CacheVolumeSnapshotAttr, "snapshot-123"),
+		attribute.String(telemetryattrs.CacheVolumeStateAttr, telemetryattrs.CacheVolumeStateNew),
+	}, events[0].Attributes)
 }
 
 // A snapshot discarded after a failed lease sync takes its bookkeeping with

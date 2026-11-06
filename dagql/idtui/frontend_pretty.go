@@ -2125,12 +2125,10 @@ func (fe *frontendPretty) completePromptForm(active *activePromptForm, invokeRes
 		// wrapper that just quit.
 		req.result(active.model)
 	}
-	if active.model.State == huh.StateAborted {
-		// A form owns input focus, so Ctrl+C reaches Huh instead of the
-		// frontend's navigation handler. Preserve the frontend-wide interrupt
-		// contract rather than treating the form's default value as a choice.
-		fe.quitAction(ErrInterrupted)
-	}
+	// Aborting a focused form belongs to its caller, not to the entire
+	// frontend session. HandleForm returns the abort error so commands can
+	// treat it as cancellation or propagate it (for example during startup).
+	// Ctrl+C outside a form still follows the normal interrupt handlers.
 	fe.activateNextPromptForm()
 	fe.refreshKeymap()
 	fe.Update()
@@ -6397,7 +6395,14 @@ func (fe *frontendPretty) recallQueuedPrompt() bool {
 	// is already going to read.
 	if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" && !fe.queuedMsgLabel.Sent() {
 		shown := PromptInput{Text: fe.queuedMsgLabel.Message()}
-		if input := fe.clearQueuedPrompt(); !input.Empty() {
+		var input PromptInput
+		if queue, ok := fe.shell.(PromptQueueControl); ok {
+			input = queue.RecallQueuedPrompt()
+			fe.refreshQueuedPromptLabel()
+		} else {
+			input = fe.clearQueuedPrompt()
+		}
+		if !input.Empty() {
 			shown = input
 		} else if _, typed := fe.shell.(PromptInputHandler); typed {
 			// The typed queue already drained. Its payload-free label cannot
@@ -6761,18 +6766,28 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 // ---------- editline input completion ---------------------------------------
 
 // handleInputComplete is called when the editline signals that input is
-// complete (user pressed Enter on a complete line).
-func (fe *frontendPretty) handleInputComplete() {
+// complete (user pressed Enter on a complete line). Its return value tells the
+// input widget whether submission was accepted and the draft may be cleared.
+func (fe *frontendPretty) handleInputComplete() bool {
 	// TextInput.OnSubmit is only reached through Tuist's focused input routing.
 	// reset prompt error state
 	if err := fe.validatePromptInput(); err != nil {
 		fe.setPromptError(err)
-		return
+		return false
 	}
 	fe.clearPromptError()
 
 	value := fe.textInput.Value()
 	input := PromptInput{Text: value, Images: fe.promptImages}.Clone()
+	if validator, ok := fe.shell.(interface{ ValidatePrompt(PromptInput) error }); ok {
+		if err := validator.ValidatePrompt(input); err != nil {
+			fe.setPromptError(err)
+			return false
+		}
+	}
+	if preparer, ok := fe.shell.(PromptPreparer); ok {
+		input = preparer.PreparePrompt(input)
+	}
 	fe.promptImages = nil
 	fe.historyImages = nil
 	// Add to history (encoded with mode prefix for round-trip fidelity)
@@ -6801,7 +6816,7 @@ func (fe *frontendPretty) handleInputComplete() {
 		// boundary, so show it queued above the prompt until that boundary
 		// lands -- without the hint, the submit looks like the input ate it.
 		fe.setInterjectHint(input.Summary())
-		return
+		return true
 	}
 	// Otherwise it opens a new turn -- unless the handler's one interpreter is
 	// busy with a shell command or a /command, which can't absorb input, so
@@ -6812,11 +6827,12 @@ func (fe *frontendPretty) handleInputComplete() {
 		_, promptQueue := fe.shell.(PromptInputHandler)
 		if textQueue || promptQueue {
 			fe.setQueuedPrompt(input)
-			return
+			return true
 		}
 	}
 
 	fe.startPromptHandle(input)
+	return true
 }
 
 // submitPromptToTarget offers the message to the focused conversation's in-flight
@@ -6868,13 +6884,24 @@ func (fe *frontendPretty) setQueuedPrompt(input PromptInput) {
 		qh.QueueMessage(input.Text)
 	}
 	if fe.queuedMsgLabel != nil {
-		fe.queuedMsgLabel.SetMessage(input.Summary())
+		if queue, ok := fe.shell.(PromptQueueControl); ok {
+			fe.queuedMsgLabel.SetMessage(queue.QueuedPromptSummary())
+		} else {
+			fe.queuedMsgLabel.SetMessage(input.Summary())
+		}
 	}
 }
 
 // clearQueuedMessage removes the queued message from the shell handler and
 // the indicator. Used by callers that discard the queue.
 func (fe *frontendPretty) clearQueuedMessage() {
+	if queue, ok := fe.shell.(PromptQueueControl); ok {
+		queue.ClearQueuedPrompts()
+		if fe.queuedMsgLabel != nil {
+			fe.queuedMsgLabel.SetMessage("")
+		}
+		return
+	}
 	fe.clearQueuedPrompt()
 }
 
@@ -6885,10 +6912,19 @@ func (fe *frontendPretty) clearQueuedPrompt() PromptInput {
 	} else if qh, ok := fe.shell.(interface{ DequeueMessage() string }); ok {
 		input.Text = qh.DequeueMessage()
 	}
-	if fe.queuedMsgLabel != nil {
+	fe.refreshQueuedPromptLabel()
+	return input
+}
+
+func (fe *frontendPretty) refreshQueuedPromptLabel() {
+	if fe.queuedMsgLabel == nil {
+		return
+	}
+	if queue, ok := fe.shell.(PromptQueueControl); ok {
+		fe.queuedMsgLabel.SetMessage(queue.QueuedPromptSummary())
+	} else {
 		fe.queuedMsgLabel.SetMessage("")
 	}
-	return input
 }
 
 // startPromptHandle runs a shell turn for input in the background. It is used
@@ -6905,7 +6941,9 @@ func (fe *frontendPretty) startPromptHandle(input PromptInput) {
 		return
 	}
 	serial := true
-	if sh, ok := fe.shell.(interface{ Serial(string) bool }); ok {
+	if sh, ok := fe.shell.(interface{ SerialPrompt(PromptInput) bool }); ok {
+		serial = sh.SerialPrompt(input)
+	} else if sh, ok := fe.shell.(interface{ Serial(string) bool }); ok {
 		serial = sh.Serial(input.Text)
 	}
 	ctx, cancel := context.WithCancelCause(fe.shellCtx)
@@ -7568,8 +7606,7 @@ func (fe *frontendPretty) initTextInput() {
 			fe.textInput.InsertRune('\n')
 			return false // don't clear
 		}
-		fe.handleInputComplete()
-		return true // clear input
+		return fe.handleInputComplete()
 	}
 }
 

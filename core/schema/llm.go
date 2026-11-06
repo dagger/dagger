@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -20,7 +21,7 @@ var _ SchemaResolvers = &llmSchema{}
 func (s llmSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("llm", s.llm).
-			WithInput(dagql.PerSessionInput).
+			WithInput(llmSessionInput).
 			Experimental("LLM support is not yet stabilized").
 			Doc(`Initialize a new LLM conversation.`).
 			Args(
@@ -61,6 +62,14 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("mimeType").Doc(`The media MIME type, e.g. "image/png".`),
 			),
 	}.Install(srv)
+	// withMcpServer is withMCPServer in views before
+	// engine.IdentifierCasingVersion.
+	withMCPServerField := dagql.Func("withMcpServer", s.withMCPServer).
+		Doc("Add an external MCP server to the LLM").
+		Args(
+			dagql.Arg("name").Doc("The name of the MCP server"),
+			dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
+		)
 	dagql.Fields[*core.LLM]{
 		dagql.Func("__withOwnerAgent", func(_ context.Context, llm *core.LLM, args struct{ Handle string }) (*core.LLM, error) {
 			return llm.WithOwnerAgent(args.Handle), nil
@@ -108,10 +117,13 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			return llm.WithContributionOwner(args.Owner, args.Messages, args.Skills)
 		}).View(AfterVersion("v1.0.0-0")),
 		dagql.Func("model", s.model).
+			WithInput(llmSessionInput).
 			Doc("The model the conversation is running against, after resolving any configured default."),
 		dagql.Func("provider", s.provider).
+			WithInput(llmSessionInput).
 			Doc(`The provider serving the model, e.g. "anthropic", "openai", "google", or "local".`),
 		dagql.Func("contextWindow", s.contextWindow).
+			WithInput(llmSessionInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model)."),
 		dagql.Func("messages", s.messages).
@@ -155,9 +167,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.NodeFunc("withSmallModel", s.withSmallModel).
+			WithInput(llmSessionInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Switch to the configured small model for the current provider, or that provider's recommended default. The message history is preserved; unknown providers without a small-model configuration keep their current model."),
 		dagql.Func("reasoningEffort", s.reasoningEffort).
+			WithInput(llmSessionInput).
 			View(AfterVersion("v1.0.0-0")).
 			Doc(`The reasoning effort in use, e.g. "low", "medium", or "high". Empty or "none" when reasoning is disabled.`),
 		dagql.Func("withReasoningEffort", s.withReasoningEffort).
@@ -249,12 +263,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
-		dagql.Func("withMCPServer", s.withMCPServer).
-			Doc("Add an external MCP server to the LLM").
-			Args(
-				dagql.Arg("name").Doc("The name of the MCP server"),
-				dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
-			),
+		casedField(withMCPServerField),
+		legacyField(withMCPServerField, "withMCPServer"),
 		withLLMCallerOwner(dagql.Func("withSkills", s.withSkills)).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Install skills from a directory, adding them to the skills the model discovers with ListSkills and reads with ReadSkill. " +
@@ -413,7 +423,7 @@ func (s *llmSchema) artifacts(ctx context.Context, llm *core.LLM, args struct {
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
-	ep, err := llm.Endpoint(ctx)
+	ep, err := llm.Route(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -422,7 +432,7 @@ func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (st
 
 func (s *llmSchema) contextWindow(ctx context.Context, llm *core.LLM, args struct{}) (dagql.Nullable[dagql.Int], error) {
 	none := dagql.Null[dagql.Int]()
-	ep, err := llm.Endpoint(ctx)
+	ep, err := llm.Route(ctx)
 	if err != nil {
 		return none, err
 	}
@@ -433,7 +443,7 @@ func (s *llmSchema) contextWindow(ctx context.Context, llm *core.LLM, args struc
 }
 
 func (s *llmSchema) provider(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
-	ep, err := llm.Endpoint(ctx)
+	ep, err := llm.Route(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -471,7 +481,7 @@ func (s *llmSchema) withSmallModel(ctx context.Context, parent dagql.ObjectResul
 }
 
 func (s *llmSchema) reasoningEffort(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
-	ep, err := llm.Endpoint(ctx)
+	ep, err := llm.Route(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -951,6 +961,50 @@ func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
 	Number int
 }) (*core.LLM, error) {
 	return llm.Clone(), nil
+}
+
+// Scope route-dependent selections by the session's live configuration revision.
+// The llm(model: ...) constructor is the exception: an explicit model retains
+// its session-scoped identity. Metadata fields have no model argument, so their
+// cache entries refresh even when the receiver's route is inferred from a name.
+var llmSessionInput = dagql.ImplicitInput{
+	Name: dagql.PerSessionInput.Name,
+	Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
+		session, err := dagql.PerSessionInput.Resolver(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		var model string
+		switch input := args["model"].(type) {
+		case dagql.String:
+			model = input.String()
+		case dagql.Optional[dagql.String]:
+			model = input.GetOr("").String()
+		case dagql.DynamicOptional:
+			if input.Valid {
+				if value, ok := input.Value.(dagql.String); ok {
+					model = value.String()
+				}
+			}
+		}
+		if model != "" {
+			return session, nil
+		}
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if live, ok := query.Server.(interface {
+			LLMConfigMetadata(context.Context) (*engine.ClientMetadata, *engine.ClientMetadata, string, error)
+		}); ok {
+			_, _, revision, err := live.LLMConfigMetadata(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return dagql.NewString(session.(dagql.String).String() + ":" + revision), nil
+		}
+		return session, nil
+	},
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent dagql.ObjectResult[*core.Query], args struct {

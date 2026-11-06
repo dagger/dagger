@@ -71,4 +71,5 @@ type CopyOptions struct {
 type Copier struct {
 	dest         *destination
 	sourceCaches map[sourceCacheKey]*sourceCache
+	lowerHides   map[string]bool
 }

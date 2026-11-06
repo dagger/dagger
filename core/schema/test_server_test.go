@@ -23,6 +23,7 @@ import (
 
 type currentTypeDefsTestServer struct {
 	deps             *core.SchemaBuilder
+	defaultDeps      *core.SchemaBuilder
 	dag              *dagql.Server
 	mainClient       *engine.ClientMetadata
 	platform         core.Platform
@@ -99,7 +100,7 @@ func (s *currentTypeDefsTestServer) SpecificClientAttachableConn(context.Context
 }
 
 func (s *currentTypeDefsTestServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
-	return nil, nil
+	return s.defaultDeps, nil
 }
 
 func (s *currentTypeDefsTestServer) SchemaBuilderMemo(context.Context) (*core.SchemaBuilderMemo, error) {

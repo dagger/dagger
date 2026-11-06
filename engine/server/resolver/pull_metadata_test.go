@@ -47,7 +47,7 @@ func TestPullReusesPinnedMetadataOnlyWhenEligible(t *testing.T) {
 			t.Run(fmt.Sprintf("index=%t/%s", indexed, tc.name), func(t *testing.T) {
 				ctx := t.Context()
 				s := seedPinnedMetadata(t, indexed)
-				before := s.registry.manifestHEADs.Load()
+				before := s.registry.manifestRequests()
 				if tc.mutate != nil {
 					tc.mutate(t, s)
 				}
@@ -57,17 +57,101 @@ func TestPullReusesPinnedMetadataOnlyWhenEligible(t *testing.T) {
 				t.Cleanup(func() { require.NoError(t, pulled.Release(context.WithoutCancel(ctx))) })
 
 				if tc.reuse {
-					require.Equal(t, before, s.registry.manifestHEADs.Load(), "metadata reuse must avoid the second HEAD")
+					require.Equal(t, before, s.registry.manifestRequests(), "metadata reuse must not ask the registry for manifests again")
 					encoding := s.registry.layerAcceptEncoding.Load()
 					require.NotNil(t, encoding)
 					require.NotEqual(t, "identity", *encoding)
 				} else {
-					require.Greater(t, s.registry.manifestHEADs.Load(), before, "ineligible metadata must use remote resolution")
+					require.Greater(t, s.registry.manifestRequests(), before, "ineligible metadata must use remote resolution")
 				}
 				s.requireLayerDownloaded(t, pulled)
 			})
 		}
 	}
+}
+
+// A pinned image's digest already names its root, so resolving it asks the
+// registry for each manifest once, with a GET and no HEAD first. A tag still
+// starts with a HEAD to learn its digest.
+func TestResolveImageConfigRequestsEachManifestOnce(t *testing.T) {
+	for _, indexed := range []bool{false, true} {
+		for _, pinned := range []bool{false, true} {
+			t.Run(fmt.Sprintf("index=%t/pinned=%t", indexed, pinned), func(t *testing.T) {
+				platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
+				image := newTestPullImage(t, indexed, platform)
+				registry, rslvr := newTestPullResolver(t, image)
+				ref := registry.host + "/test/image:latest"
+				if pinned {
+					ref += "@" + image.root.Digest.String()
+				}
+
+				_, resolvedDigest, configBytes, err := rslvr.ResolveImageConfig(t.Context(), ref, ResolveImageConfigOpts{Platform: &platform})
+				require.NoError(t, err)
+				require.Equal(t, image.root.Digest, resolvedDigest)
+				require.JSONEq(t, string(image.configBytes), string(configBytes))
+
+				wantHEADs, wantGETs := int32(1), int32(1)
+				if pinned {
+					wantHEADs = 0
+				}
+				if indexed {
+					wantGETs = 2
+				}
+				require.Equal(t, wantHEADs, registry.manifestHEADs.Load())
+				require.Equal(t, wantGETs, registry.manifestGETs.Load())
+			})
+		}
+	}
+}
+
+// An OCI index may leave out its own media type. A pinned image with such a
+// root, fetched without the HEAD that would have named its type, still
+// resolves and pulls.
+func TestPinnedImageWhoseRootOmitsItsType(t *testing.T) {
+	ctx := t.Context()
+	platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
+	image := newTestPullImage(t, true, platform)
+	var index ocispecs.Index
+	require.NoError(t, json.Unmarshal(image.rootBytes, &index))
+	index.MediaType = ""
+	var err error
+	image.rootBytes, err = json.Marshal(index)
+	require.NoError(t, err)
+	require.NotContains(t, string(image.rootBytes), ocispecs.MediaTypeImageIndex)
+	image.root = testDescriptor(ocispecs.MediaTypeImageIndex, image.rootBytes)
+	registry, rslvr := newTestPullResolver(t, image)
+	ref := registry.host + "/test/image:latest@" + image.root.Digest.String()
+
+	_, _, configBytes, err := rslvr.ResolveImageConfig(ctx, ref, ResolveImageConfigOpts{Platform: &platform})
+	require.NoError(t, err)
+	require.JSONEq(t, string(image.configBytes), string(configBytes))
+
+	pulled, err := rslvr.Pull(ctx, ref, PullOpts{Platform: platform})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pulled.Release(context.WithoutCancel(ctx))) })
+	require.Equal(t, image.manifest.Digest, pulled.ManifestDesc.Digest)
+	require.Len(t, pulled.Layers, 1)
+}
+
+// A registry that answers a pinned ref with other content fails the resolve.
+func TestResolvePinnedImageRejectsOtherContent(t *testing.T) {
+	platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
+	image := newTestPullImage(t, true, platform)
+	image.rootBytes = append(image.rootBytes, ' ')
+	registry, rslvr := newTestPullResolver(t, image)
+	ref := registry.host + "/test/image:latest@" + image.root.Digest.String()
+
+	_, _, configBytes, err := rslvr.ResolveImageConfig(t.Context(), ref, ResolveImageConfigOpts{Platform: &platform})
+	require.ErrorContains(t, err, "has digest")
+	require.Nil(t, configBytes)
+}
+
+func newTestPullResolver(t *testing.T, image *testPullImage) (*testPullRegistry, *Resolver) {
+	t.Helper()
+	registry := newTestPullRegistry(t, image)
+	store, err := localcontentstore.NewLabeledStore(t.TempDir(), newTestContentLabelStore())
+	require.NoError(t, err)
+	return registry, newTestResolver(t, registry.host, store)
 }
 
 // pullScenario is a registry, a content store and a resolver where
@@ -108,11 +192,11 @@ func seedPinnedMetadata(t *testing.T, indexed bool) *pullScenario {
 	require.Equal(t, image.root.Digest, resolvedDigest)
 	require.JSONEq(t, string(image.configBytes), string(configBytes))
 
-	// Metadata is local, the layer is not, and resolving cost at least one HEAD.
+	// Metadata is local, the layer is not, and resolving asked the registry.
 	_, err = store.Info(ctx, image.layer.Digest)
 	require.True(t, cerrdefs.IsNotFound(err))
 	require.Zero(t, registry.layerGETs.Load())
-	require.Positive(t, registry.manifestHEADs.Load())
+	require.Positive(t, registry.manifestRequests())
 	return s
 }
 
@@ -191,12 +275,18 @@ func newTestPullImage(t *testing.T, indexed bool, platform ocispecs.Platform) *t
 }
 
 // testPullRegistry serves one image at test/image and counts the requests
-// the assertions care about.
+// the assertions care about. Like Distribution, it serves a manifest or
+// index only to a request that asks for its type: a wildcard isn't enough.
 type testPullRegistry struct {
 	host                string
 	manifestHEADs       atomic.Int32
+	manifestGETs        atomic.Int32
 	layerGETs           atomic.Int32
 	layerAcceptEncoding atomic.Pointer[string]
+}
+
+func (r *testPullRegistry) manifestRequests() int32 {
+	return r.manifestHEADs.Load() + r.manifestGETs.Load()
 }
 
 func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
@@ -207,14 +297,17 @@ func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
 		case r.URL.Path == "/v2/":
 			w.WriteHeader(http.StatusOK)
 		case strings.HasPrefix(r.URL.Path, "/v2/test/image/manifests/"):
-			if r.Method == http.MethodHead {
+			switch r.Method {
+			case http.MethodHead:
 				registry.manifestHEADs.Add(1)
+			case http.MethodGet:
+				registry.manifestGETs.Add(1)
 			}
 			switch strings.TrimPrefix(r.URL.Path, "/v2/test/image/manifests/") {
 			case "latest", image.root.Digest.String():
-				serveTestRegistryDescriptor(w, r, image.root, image.rootBytes)
+				serveTestRegistryManifest(w, r, image.root, image.rootBytes)
 			case image.manifest.Digest.String():
-				serveTestRegistryDescriptor(w, r, image.manifest, image.manifestBytes)
+				serveTestRegistryManifest(w, r, image.manifest, image.manifestBytes)
 			default:
 				http.NotFound(w, r)
 			}
@@ -241,6 +334,18 @@ func newTestPullRegistry(t *testing.T, image *testPullImage) *testPullRegistry {
 	t.Cleanup(server.Close)
 	registry.host = strings.TrimPrefix(server.URL, "http://")
 	return registry
+}
+
+func serveTestRegistryManifest(w http.ResponseWriter, r *http.Request, desc ocispecs.Descriptor, payload []byte) {
+	for _, accept := range r.Header.Values("Accept") {
+		for _, mediaType := range strings.Split(accept, ",") {
+			if strings.TrimSpace(mediaType) == desc.MediaType {
+				serveTestRegistryDescriptor(w, r, desc, payload)
+				return
+			}
+		}
+	}
+	http.Error(w, "manifest type not accepted: "+desc.MediaType, http.StatusNotFound)
 }
 
 func newTestResolver(t *testing.T, host string, store content.Store) *Resolver {
@@ -283,11 +388,11 @@ func TestPullLocalImageLosesALayerBeforeItsLease(t *testing.T) {
 	s.requireLayerDownloaded(t, first)
 	require.NoError(t, first.Release(context.WithoutCancel(ctx)))
 	// With every blob local, a pull asks the registry nothing.
-	heads := s.registry.manifestHEADs.Load()
+	requests := s.registry.manifestRequests()
 	local, err := s.resolver.Pull(ctx, s.ref, s.opts)
 	require.NoError(t, err)
 	require.NoError(t, local.Release(context.WithoutCancel(ctx)))
-	require.Equal(t, heads, s.registry.manifestHEADs.Load(), "the pull was served from the content store")
+	require.Equal(t, requests, s.registry.manifestRequests(), "the pull was served from the content store")
 	require.Equal(t, int32(1), s.registry.layerGETs.Load())
 	closure, found, release, err := s.resolver.tryLocalCanonicalClosure(ctx, s.ref, s.image.root, platforms.Only(platforms.Normalize(s.opts.Platform)), nil)
 	require.NoError(t, err)

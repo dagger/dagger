@@ -9,11 +9,15 @@ import (
 	"runtime/debug"
 	"slices"
 	"sync"
+	"time"
 	"weak"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/handler/extension"
+	"github.com/99designs/gqlgen/graphql/handler/lru"
+	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/dagger/dagger/engine"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
@@ -24,11 +28,9 @@ import (
 	"github.com/vektah/gqlparser/v2/validator"
 	validatorcore "github.com/vektah/gqlparser/v2/validator/core"
 	"github.com/vektah/gqlparser/v2/validator/rules"
-	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/sortutil"
 )
 
@@ -52,6 +54,11 @@ type Server struct {
 
 	schemaASTCache *SchemaASTCache
 	schemaLock     *sync.Mutex
+
+	// handler serves this server's schema over HTTP. It's built on the first
+	// request and shared by every request after it.
+	handler     *handler.Server
+	handlerOnce *sync.Once
 
 	installLock  *sync.RWMutex
 	installHooks []InstallHook
@@ -233,6 +240,7 @@ func newBlankServer() *Server {
 		installLock:    &sync.RWMutex{},
 		schemaASTCache: &SchemaASTCache{},
 		schemaLock:     &sync.Mutex{},
+		handlerOnce:    &sync.Once{},
 	}
 	srv.self = weak.Make(srv)
 	return srv
@@ -326,9 +334,32 @@ func (s *Server) invalidateSchemaCache() {
 	s.schemaLock.Unlock()
 }
 
+// Handler returns the handler that serves this server's schema over HTTP,
+// built on first use: building one for every request would set up gqlgen's
+// transports, extensions and caches again each time.
+func (s *Server) Handler() *handler.Server {
+	s.handlerOnce.Do(func() {
+		s.handler = NewDefaultHandler(s)
+	})
+	return s.handler
+}
+
+// NewDefaultHandler returns a handler that serves es over HTTP. It's
+// gqlgen's default server without its cache of parsed queries: query texts
+// rarely repeat, since clients write their arguments, IDs included, into them.
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
-	// TODO: avoid this deprecated method, and customize the options
-	srv := handler.NewDefaultServer(es)
+	srv := handler.New(es)
+	srv.AddTransport(transport.Websocket{
+		KeepAlivePingInterval: 10 * time.Second,
+	})
+	srv.AddTransport(transport.Options{})
+	srv.AddTransport(transport.GET{})
+	srv.AddTransport(transport.POST{})
+	srv.AddTransport(transport.MultipartForm{})
+	srv.Use(extension.Introspection{})
+	srv.Use(extension.AutomaticPersistedQuery{
+		Cache: lru.New[string](100),
+	})
 
 	srv.SetValidationRulesFn(func() *rules.Rules {
 		validationRules := rules.NewDefaultRules()
@@ -1038,9 +1069,7 @@ func (s *Server) buildSchemaAST(view call.View) (*ast.Schema, digest.Digest) {
 			}
 		}
 	}
-	h := xxh3.New()
-	json.NewEncoder(h).Encode(schema)
-	return schema, digest.NewDigest(hashutil.XXH3, h)
+	return schema, schemaDigest(schema)
 }
 
 // withoutDirectives returns dirs without the directives named in hidden.
@@ -1088,6 +1117,10 @@ type ExtendedError interface {
 func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 	return func(ctx context.Context) (res *graphql.Response) {
 		gqlOp := graphql.GetOperationContext(ctx)
+		// gqlgen read, parsed and validated the request before this handler
+		RecordStep(ctx, "graphql.read", gqlOp.Stats.Read.Start, gqlOp.Stats.Read.End)
+		RecordStep(ctx, "graphql.parse", gqlOp.Stats.Parsing.Start, gqlOp.Stats.Parsing.End)
+		RecordStep(ctx, "graphql.validate", gqlOp.Stats.Validation.Start, gqlOp.Stats.Validation.End)
 
 		if err := gqlOp.Validate(ctx); err != nil {
 			return graphql.ErrorResponse(ctx, "validate: %s", err)
@@ -1100,7 +1133,9 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 			}
 		}
 
+		_, marshalStep := BeginStep(ctx, "graphql.marshal")
 		data, err := json.Marshal(results)
+		marshalStep.End(err)
 		if err != nil {
 			return graphql.ErrorResponse(ctx, "marshal: %s", err)
 		}
@@ -1154,11 +1189,15 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (r
 				continue
 			}
 			var sels []Selection
-			sels, rerr = s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
+			selCtx, selStep := BeginStep(ctx, "graphql.selections")
+			sels, rerr = s.parseASTSelections(selCtx, gqlOp, s.root.Type(), op.SelectionSet)
+			selStep.End(rerr)
 			if rerr != nil {
 				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, rerr)
 			}
-			results, rerr = s.Resolve(ctx, s.root, sels...)
+			resolveCtx, resolveStep := BeginStep(ctx, "graphql.resolve")
+			results, rerr = s.Resolve(resolveCtx, s.root, sels...)
+			resolveStep.End(rerr)
 			if rerr != nil {
 				return nil, rerr
 			}
@@ -1434,7 +1473,17 @@ func (s *Server) loadNthValue(
 func (s *Server) resolveLeafList(ctx context.Context, val AnyResult, enum Enumerable) ([]any, error) {
 	if values, ok := enum.(valueEnumerable); ok {
 		// read plain values straight from the list (see valueEnumerable)
-		return leafValues(values)
+		results, err := leafValues(values)
+		if err != nil {
+			return nil, err
+		}
+		for i, result := range results {
+			results[i], err = viewLeaf(result, s.View)
+			if err != nil {
+				return nil, fmt.Errorf("nth %d: %w", i+1, err)
+			}
+		}
+		return results, nil
 	}
 	// resolve serially (fast path, no goroutine overhead)
 	results := make([]any, enum.Len()) // TODO subtle: favor [] over null result
@@ -1446,9 +1495,45 @@ func (s *Server) resolveLeafList(ctx context.Context, val AnyResult, enum Enumer
 		if elemVal == nil || elemVal.Unwrap() == nil {
 			continue
 		}
-		results[nth-1] = elemVal.Unwrap()
+		results[nth-1], err = viewLeaf(elemVal.Unwrap(), s.View)
+		if err != nil {
+			return nil, fmt.Errorf("nth %d: %w", nth, err)
+		}
 	}
 	return results, nil
+}
+
+// viewLeaf renders a query leaf in the caller's view, including enum values
+// nested in typed lists and nullable wrappers. Other scalar values are unchanged.
+func viewLeaf(val any, view call.View) (any, error) {
+	if result, ok := val.(AnyResult); ok {
+		return viewLeaf(result.Unwrap(), view)
+	}
+	if nullable, ok := val.(Derefable); ok {
+		inner, valid := nullable.Deref()
+		if !valid || inner == nil {
+			return nil, nil
+		}
+		return viewLeaf(inner, view)
+	}
+	if values, ok := val.(Enumerable); ok {
+		results := make([]any, values.Len())
+		for nth := 1; nth <= len(results); nth++ {
+			elem, err := values.Nth(nth)
+			if err != nil {
+				return nil, fmt.Errorf("nth %d: %w", nth, err)
+			}
+			results[nth-1], err = viewLeaf(elem, view)
+			if err != nil {
+				return nil, fmt.Errorf("nth %d: %w", nth, err)
+			}
+		}
+		return results, nil
+	}
+	if viewed, ok := val.(ViewLiteraler); ok {
+		return viewed.ViewLiteral(view).ToInput(), nil
+	}
+	return val, nil
 }
 
 func beginLoadTypeCacheOperation(ctx context.Context, id *call.ID) (*Cache, cacheOperation, string, error) {
@@ -2511,7 +2596,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		if _, ok := s.ObjectType(val.Type().Name()); ok {
 			return nil, fmt.Errorf("field %q of type %q must have a selection of subfields", sel.Selector.Field, val.Type().Name())
 		}
-		return val.Unwrap(), nil
+		return viewLeaf(val.Unwrap(), s.View)
 	}
 
 	// instantiate the return value so we can sub-select
@@ -2608,6 +2693,38 @@ func (s *Server) typeConditionMatches(condition string, objectTypeName string) b
 	return false
 }
 
+// SelectorViewFunc picks the view a GraphQL selection of typeName.field
+// records and resolves at, instead of the server's: ok is false to keep the
+// server's view.
+type SelectorViewFunc func(typeName, field string) (view call.View, ok bool)
+
+type selectorViewsCtx struct{}
+
+// ContextWithSelectorViews makes the GraphQL queries executed with ctx select
+// the view-scoped fields fn picks at the view it picks rather than the
+// server's, so their calls (IDs and cache keys) record that view. A field
+// that doesn't exist at the picked view keeps the server's.
+func ContextWithSelectorViews(ctx context.Context, fn SelectorViewFunc) context.Context {
+	return context.WithValue(ctx, selectorViewsCtx{}, fn)
+}
+
+// selectorView is the view a view-scoped selection sel of class records: the
+// one ContextWithSelectorViews picks, or sel's own.
+func selectorView(ctx context.Context, class ObjectType, sel Selector) call.View {
+	fn, _ := ctx.Value(selectorViewsCtx{}).(SelectorViewFunc)
+	if fn == nil {
+		return sel.View
+	}
+	view, ok := fn(class.TypeName(), sel.Field)
+	if !ok || view == sel.View {
+		return sel.View
+	}
+	if spec, ok := class.FieldSpec(sel.Field, view); !ok || spec.ViewFilter == nil {
+		return sel.View
+	}
+	return view
+}
+
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
@@ -2645,6 +2762,9 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			sel, resType, err := parser.ParseField(ctx, s.View, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
+			}
+			if sel.View != "" && class != nil {
+				sel.View = selectorView(ctx, class, sel)
 			}
 			var subsels []Selection
 			if len(x.SelectionSet) > 0 {

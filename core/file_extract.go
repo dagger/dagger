@@ -2,6 +2,7 @@ package core
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/klauspost/compress/flate"
 	"github.com/klauspost/compress/zip"
 	"github.com/moby/go-archive"
 	"github.com/moby/go-archive/chrootarchive"
@@ -28,6 +30,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/util/patternmatcher"
 )
 
 const persistedDirectoryLazyKindExtract = "file.extract"
@@ -37,11 +40,15 @@ type DirectoryExtractLazy struct {
 	LazyState
 	Source          dagql.ObjectResult[*File]
 	StripComponents int
+	Include         []string
+	Exclude         []string
 }
 
 type persistedDirectoryExtractLazy struct {
-	SourceResultID  uint64 `json:"sourceResultID"`
-	StripComponents int    `json:"stripComponents,omitempty"`
+	SourceResultID  uint64   `json:"sourceResultID"`
+	StripComponents int      `json:"stripComponents,omitempty"`
+	Include         []string `json:"include,omitempty"`
+	Exclude         []string `json:"exclude,omitempty"`
 }
 
 func (p *persistedDirectoryExtractLazy) validate() error {
@@ -53,7 +60,7 @@ func (p *persistedDirectoryExtractLazy) validate() error {
 
 func (lazy *DirectoryExtractLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return dir.evaluateLazy(ctx, &lazy.LazyState, "File.extract", func(ctx context.Context) error {
-		return dir.Extract(ctx, lazy.Source, lazy.StripComponents)
+		return dir.Extract(ctx, lazy.Source, lazy.StripComponents, lazy.Include, lazy.Exclude)
 	})
 }
 
@@ -71,7 +78,12 @@ func (lazy *DirectoryExtractLazy) EncodePersisted(ctx context.Context, enc *dagq
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(persistedDirectoryExtractLazy{SourceResultID: sourceID, StripComponents: lazy.StripComponents})
+	return json.Marshal(persistedDirectoryExtractLazy{
+		SourceResultID:  sourceID,
+		StripComponents: lazy.StripComponents,
+		Include:         lazy.Include,
+		Exclude:         lazy.Exclude,
+	})
 }
 
 func decodeDirectoryExtractLazy(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (Lazy[*Directory], error) {
@@ -86,13 +98,24 @@ func decodeDirectoryExtractLazy(ctx context.Context, dec *dagql.PersistDecodeCon
 	if err != nil {
 		return nil, err
 	}
-	return &DirectoryExtractLazy{LazyState: NewLazyState(), Source: source, StripComponents: persisted.StripComponents}, nil
+	return &DirectoryExtractLazy{
+		LazyState:       NewLazyState(),
+		Source:          source,
+		StripComponents: persisted.StripComponents,
+		Include:         persisted.Include,
+		Exclude:         persisted.Exclude,
+	}, nil
 }
 
 // Extract sets the directory to the contents of the archive src, a zip or a
 // tar (uncompressed, or compressed with gzip, bzip2, xz or zstd), with the
-// first stripComponents elements of each entry's path removed.
-func (dir *Directory) Extract(ctx context.Context, src dagql.ObjectResult[*File], stripComponents int) error {
+// first stripComponents elements of each entry's path removed. Only the
+// entries include and exclude select are extracted; see newExtractFilter.
+func (dir *Directory) Extract(ctx context.Context, src dagql.ObjectResult[*File], stripComponents int, include, exclude []string) error {
+	filter, err := newExtractFilter(include, exclude)
+	if err != nil {
+		return err
+	}
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return err
@@ -111,7 +134,7 @@ func (dir *Directory) Extract(ctx context.Context, src dagql.ObjectResult[*File]
 	name := path.Base(srcPath)
 	var snapshot bkcache.ImmutableRef
 	err = src.Self().Mount(ctx, src, func(archivePath string) error {
-		snapshot, err = extractToSnapshot(ctx, query.SnapshotManager(), archivePath, name, stripComponents)
+		snapshot, err = extractToSnapshot(ctx, query.SnapshotManager(), archivePath, name, stripComponents, filter)
 		return err
 	})
 	if err != nil {
@@ -127,7 +150,7 @@ func (dir *Directory) Extract(ctx context.Context, src dagql.ObjectResult[*File]
 
 // extractToSnapshot extracts the archive at archivePath, named name, into a
 // new snapshot from sm.
-func extractToSnapshot(ctx context.Context, sm bkcache.Accessor, archivePath, name string, stripComponents int) (_ bkcache.ImmutableRef, rerr error) {
+func extractToSnapshot(ctx context.Context, sm bkcache.Accessor, archivePath, name string, stripComponents int, filter *extractFilter) (_ bkcache.ImmutableRef, rerr error) {
 	newRef, err := sm.New(ctx, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(fmt.Sprintf("extract %s", name)))
@@ -140,7 +163,7 @@ func extractToSnapshot(ctx context.Context, sm bkcache.Accessor, archivePath, na
 		}
 	}()
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
-		return TrimErrPathPrefix(extractArchive(ctx, archivePath, root, stripComponents), root)
+		return TrimErrPathPrefix(extractArchive(ctx, archivePath, root, stripComponents, filter), root)
 	})
 	if err != nil {
 		return nil, err
@@ -155,7 +178,7 @@ func extractToSnapshot(ctx context.Context, sm bkcache.Accessor, archivePath, na
 
 // extractArchive extracts the archive at archivePath into dest, an empty
 // directory, choosing the format from the archive's first bytes.
-func extractArchive(ctx context.Context, archivePath, dest string, stripComponents int) error {
+func extractArchive(ctx context.Context, archivePath, dest string, stripComponents int, filter *extractFilter) error {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return err
@@ -171,9 +194,9 @@ func extractArchive(ctx context.Context, archivePath, dest string, stripComponen
 		return err
 	}
 	if isZipMagic(magic[:n]) {
-		return extractZip(ctx, f, st.Size(), dest, stripComponents)
+		return extractZip(ctx, f, st.Size(), dest, stripComponents, filter)
 	}
-	return extractTar(ctxReader{ctx, f}, dest, stripComponents)
+	return extractTar(ctxReader{ctx, f}, dest, stripComponents, filter)
 }
 
 // ctxReader stops reading once ctx is done, so a canceled extraction stops
@@ -221,6 +244,101 @@ func archiveEntryPath(name string, strip int) (string, error) {
 	return rel, nil
 }
 
+// extractFilter selects the entries of an archive that are extracted, by
+// their paths after stripping, as Directory.filter selects paths: each path
+// is matched with its parent directory's results, as if the archive's
+// directories were walked from the top. A nil filter extracts every entry.
+// Entries left out are never decompressed, where the format allows: a zip's
+// are skipped, a tar's are read past. As with Directory.filter, a directory
+// left out that holds entries that aren't is made anyway, with the
+// archive's metadata for it.
+type extractFilter struct {
+	include *patternmatcher.PatternMatcher
+	exclude *patternmatcher.PatternMatcher
+	// dirs holds the match results of each directory matched so far.
+	dirs map[string]extractMatch
+}
+
+// extractMatch is a path's match results, for its children's matching.
+type extractMatch struct {
+	include, exclude patternmatcher.MatchInfo
+}
+
+// newExtractFilter is the filter of include and exclude, or nil if both are
+// empty.
+func newExtractFilter(include, exclude []string) (*extractFilter, error) {
+	if len(include) == 0 && len(exclude) == 0 {
+		return nil, nil
+	}
+	f := &extractFilter{dirs: map[string]extractMatch{}}
+	if len(include) > 0 {
+		pm, err := patternmatcher.New(include)
+		if err != nil {
+			return nil, fmt.Errorf("include patterns: %w", err)
+		}
+		f.include = pm
+	}
+	if len(exclude) > 0 {
+		pm, err := patternmatcher.New(exclude)
+		if err != nil {
+			return nil, fmt.Errorf("exclude patterns: %w", err)
+		}
+		f.exclude = pm
+	}
+	return f, nil
+}
+
+// ValidateExtractPatterns reports an error in File.extract's include or
+// exclude patterns.
+func ValidateExtractPatterns(include, exclude []string) error {
+	_, err := newExtractFilter(include, exclude)
+	return err
+}
+
+// keep reports whether the entry at rel, as archiveEntryPath returns it, is
+// extracted. It is not safe to call concurrently.
+func (f *extractFilter) keep(rel string) (bool, error) {
+	if f == nil {
+		return true, nil
+	}
+	keep, _, err := f.match(rel)
+	return keep, err
+}
+
+// match is keep's answer for rel, and rel's match results.
+func (f *extractFilter) match(rel string) (bool, extractMatch, error) {
+	var parent extractMatch
+	if dir := path.Dir(rel); dir != "." {
+		var ok bool
+		if parent, ok = f.dirs[dir]; !ok {
+			var err error
+			if _, parent, err = f.match(dir); err != nil {
+				return false, parent, err
+			}
+			f.dirs[dir] = parent
+		}
+	}
+	keep := true
+	var m extractMatch
+	if f.include != nil {
+		matched, info, err := f.include.MatchesUsingParentResults(rel, parent.include)
+		if err != nil {
+			return false, m, err
+		}
+		m.include = info
+		keep = matched
+	}
+	if f.exclude != nil {
+		matched, info, err := f.exclude.MatchesUsingParentResults(rel, parent.exclude)
+		if err != nil {
+			return false, m, err
+		}
+		m.exclude = info
+		keep = keep && !matched
+	}
+	return keep, m, nil
+}
+
 // extractZipWorkers bounds the entries of one zip written at once.
 const extractZipWorkers = 8
 
@@ -240,34 +358,23 @@ type zipEntry struct {
 // are made first, then regular files are written several at once, then
 // symlinks are made, so no entry is written through a symlink the archive
 // itself makes. Permissions and modification times are kept where the zip
-// records them; files with none recorded get 0644, directories 0755.
-func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, strip int) error {
+// records them; files with none recorded get 0644, directories 0755. Only
+// the entries filter keeps are read, and only their directories are made.
+func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, strip int, filter *extractFilter) error {
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
 		return err
 	}
-	// A later entry of the same path replaces an earlier one.
-	byPath := map[string]*zipEntry{}
-	var order []string
-	for _, f := range zr.File {
-		rel, err := archiveEntryPath(f.Name, strip)
-		if err != nil {
-			return err
-		}
-		if rel == "" {
-			continue
-		}
-		mode := f.Mode()
-		if _, ok := byPath[rel]; !ok {
-			order = append(order, rel)
-		}
-		byPath[rel] = &zipEntry{file: f, path: rel, mode: mode}
+	zr.RegisterDecompressor(zip.Deflate, newZipFlateReader)
+	kept, leftOut, err := selectZipEntries(zr.File, strip, filter)
+	if err != nil {
+		return err
 	}
 
 	var dirs, files, symlinks []*zipEntry
 	mkdirs := map[string]bool{}
-	for _, rel := range order {
-		e := byPath[rel]
+	for _, e := range kept {
+		rel := e.path
 		switch {
 		case e.mode.IsDir():
 			dirs = append(dirs, e)
@@ -281,6 +388,11 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 		}
 		for p := path.Dir(rel); p != "."; p = path.Dir(p) {
 			mkdirs[p] = true
+		}
+	}
+	for _, e := range leftOut {
+		if mkdirs[e.path] {
+			dirs = append(dirs, e)
 		}
 	}
 
@@ -344,6 +456,49 @@ func extractZip(ctx context.Context, r io.ReaderAt, size int64, dest string, str
 	return nil
 }
 
+// selectZipEntries is the entries of files, a zip's, that filter keeps, and
+// the directories it leaves out, each in the order of its path's first
+// entry; a later entry of the same path replaces an earlier one. Paths are
+// stripped of their first strip elements, and entries left with none are
+// dropped.
+func selectZipEntries(files []*zip.File, strip int, filter *extractFilter) (kept, leftOut []*zipEntry, _ error) {
+	keptAt := map[string]int{}
+	leftOutAt := map[string]int{}
+	for _, f := range files {
+		rel, err := archiveEntryPath(f.Name, strip)
+		if err != nil {
+			return nil, nil, err
+		}
+		if rel == "" {
+			continue
+		}
+		keep, err := filter.keep(rel)
+		if err != nil {
+			return nil, nil, err
+		}
+		e := &zipEntry{file: f, path: rel, mode: f.Mode()}
+		switch {
+		case keep:
+			kept = putZipEntry(kept, keptAt, e)
+		case e.mode.IsDir():
+			// For its metadata, if entries in it are kept.
+			leftOut = putZipEntry(leftOut, leftOutAt, e)
+		}
+	}
+	return kept, leftOut, nil
+}
+
+// putZipEntry adds e to entries, or replaces the entry of the same path,
+// whose index at holds.
+func putZipEntry(entries []*zipEntry, at map[string]int, e *zipEntry) []*zipEntry {
+	if i, ok := at[e.path]; ok {
+		entries[i] = e
+		return entries
+	}
+	at[e.path] = len(entries)
+	return append(entries, e)
+}
+
 // zipEntryPerm is the permission bits f records, or def if it records
 // none: only Unix and macOS creators record a Unix mode, in the high bits
 // of the external attributes.
@@ -361,6 +516,56 @@ var zipCopyBufPool = sync.Pool{New: func() any {
 	buf := make([]byte, 128<<10)
 	return &buf
 }}
+
+// flate wraps a reader that isn't an io.ByteReader, such as a zip entry's
+// section of the archive, in a new 4 KiB bufio.Reader; extractZip's entries
+// read through these pooled ones instead.
+var zipBufReaderPool = sync.Pool{New: func() any { return bufio.NewReader(nil) }}
+
+var zipFlateReaderPool sync.Pool
+
+// newZipFlateReader is extractZip's deflate decompressor: the zip package's
+// own pooled one, with the bufio.Reader it reads through pooled too.
+func newZipFlateReader(r io.Reader) io.ReadCloser {
+	br := zipBufReaderPool.Get().(*bufio.Reader)
+	br.Reset(r)
+	fr, ok := zipFlateReaderPool.Get().(io.ReadCloser)
+	if ok {
+		fr.(flate.Resetter).Reset(br, nil)
+	} else {
+		fr = flate.NewReader(br)
+	}
+	return &pooledZipFlateReader{fr: fr, br: br}
+}
+
+type pooledZipFlateReader struct {
+	mu sync.Mutex // guards Close and Read
+	fr io.ReadCloser
+	br *bufio.Reader
+}
+
+func (r *pooledZipFlateReader) Read(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.fr == nil {
+		return 0, errors.New("read after close")
+	}
+	return r.fr.Read(p)
+}
+
+func (r *pooledZipFlateReader) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.fr == nil {
+		return nil
+	}
+	err := r.fr.Close()
+	zipFlateReaderPool.Put(r.fr)
+	r.br.Reset(nil)
+	zipBufReaderPool.Put(r.br)
+	r.fr, r.br = nil, nil
+	return err
+}
 
 func writeZipFile(ctx context.Context, e *zipEntry, dst string) (rerr error) {
 	r, err := e.file.Open()
@@ -420,8 +625,9 @@ func setSymlinkTime(p string, t time.Time) error {
 
 // extractTar extracts the tar r, uncompressed or compressed, into dest with
 // the unpacker Directory.withDirectory's Dockerfile ADD compatibility uses,
-// after checking and stripping its entries' paths as extractZip does.
-func extractTar(r io.Reader, dest string, strip int) error {
+// after checking, stripping and filtering its entries' paths as extractZip
+// does.
+func extractTar(r io.Reader, dest string, strip int, filter *extractFilter) error {
 	rdr, err := compression.DecompressStream(r)
 	if err != nil {
 		return err
@@ -429,7 +635,7 @@ func extractTar(r io.Reader, dest string, strip int) error {
 	defer rdr.Close()
 	pr, pw := io.Pipe()
 	go func() {
-		pw.CloseWithError(stripTarComponents(rdr, pw, strip))
+		pw.CloseWithError(stripTarComponents(rdr, pw, strip, filter))
 	}()
 	err = chrootarchive.Untar(pr, dest, &archive.TarOptions{BestEffortXattrs: true})
 	pr.CloseWithError(errors.New("unpack stopped"))
@@ -438,10 +644,36 @@ func extractTar(r io.Reader, dest string, strip int) error {
 
 // stripTarComponents copies the tar r to w with the first strip elements
 // of each entry's path, and of each hard link's target, removed, dropping
-// entries left with none, as tar --strip-components does.
-func stripTarComponents(r io.Reader, w io.Writer, strip int) error {
+// entries left with none, as tar --strip-components does, and entries
+// filter leaves out. A directory left out is written anyway if an entry in
+// it isn't left out: just before the first such entry, or where it is if
+// one came before it. As with tar --exclude, a hard link to an entry left
+// out fails to extract.
+func stripTarComponents(r io.Reader, w io.Writer, strip int, filter *extractFilter) error {
 	tr := tar.NewReader(r)
 	tw := tar.NewWriter(w)
+	// Directories filter left out, not yet written, by path.
+	leftOut := map[string]*tar.Header{}
+	// The directories entries written so far are in.
+	holding := map[string]bool{}
+	// writeLeftOut writes the directories left out that name is in, top
+	// first.
+	writeLeftOut := func(name string) error {
+		var parents []*tar.Header
+		for p := path.Dir(name); p != "."; p = path.Dir(p) {
+			holding[p] = true
+			if hdr, ok := leftOut[p]; ok {
+				parents = append(parents, hdr)
+				delete(leftOut, p)
+			}
+		}
+		for i := len(parents) - 1; i >= 0; i-- {
+			if err := tw.WriteHeader(parents[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for first := true; ; first = false {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -460,6 +692,25 @@ func stripTarComponents(r io.Reader, w io.Writer, strip int) error {
 		if name == "" {
 			continue
 		}
+		keep, err := filter.keep(name)
+		if err != nil {
+			return err
+		}
+		if !keep {
+			if hdr.Typeflag != tar.TypeDir {
+				continue
+			}
+			hdr.Name = name + "/"
+			if !holding[name] {
+				leftOut[name] = hdr
+				continue
+			}
+			// The archive's metadata for a directory already made.
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+			continue
+		}
 		if hdr.Typeflag == tar.TypeLink {
 			target, err := archiveEntryPath(hdr.Linkname, strip)
 			if err != nil {
@@ -474,6 +725,9 @@ func stripTarComponents(r io.Reader, w io.Writer, strip int) error {
 			name += "/"
 		}
 		hdr.Name = name
+		if err := writeLeftOut(strings.TrimSuffix(name, "/")); err != nil {
+			return err
+		}
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}

@@ -5,7 +5,7 @@ type GoCli {
   let sandbox: Container!
 
   new(
-    base: Container! = container.from("golang:1.26"),
+    base: Container! = container.from("golang:1.27"),
   ) {
     self.sandbox = base
     self

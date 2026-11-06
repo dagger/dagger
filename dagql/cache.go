@@ -1170,6 +1170,82 @@ type sessionResultInstallSpan struct {
 	ownsClosure bool
 }
 
+// spanKey identifies a span: its trace and span IDs.
+type spanKey struct {
+	traceID trace.TraceID
+	spanID  trace.SpanID
+}
+
+func spanKeyOf(spanCtx trace.SpanContext) spanKey {
+	return spanKey{traceID: spanCtx.TraceID(), spanID: spanCtx.SpanID()}
+}
+
+// sessionResultInstalls is a result's install sites in a session, one per
+// span. Most results have one, so the first is kept inline. The next few go
+// in a slice, searched in order; a result installed by more spans than that,
+// such as a shared base every call returns, keeps them in a map.
+type sessionResultInstalls struct {
+	first sessionResultInstallSpan
+	few   []sessionResultInstallSpan
+	many  map[spanKey]sessionResultInstallSpan
+}
+
+// maxFewInstallSpans is how many further install spans a result keeps in a
+// slice before it moves them to a map.
+const maxFewInstallSpans = 8
+
+func (installs *sessionResultInstalls) record(spanCtx trace.SpanContext, ownsClosure bool) {
+	key := spanKeyOf(spanCtx)
+	merge := func(install *sessionResultInstallSpan) {
+		install.spanCtx = spanCtx
+		install.ownsClosure = install.ownsClosure || ownsClosure
+	}
+	if !installs.first.spanCtx.IsValid() || spanKeyOf(installs.first.spanCtx) == key {
+		merge(&installs.first)
+		return
+	}
+	if installs.many != nil {
+		install := installs.many[key]
+		merge(&install)
+		installs.many[key] = install
+		return
+	}
+	for i := range installs.few {
+		if spanKeyOf(installs.few[i].spanCtx) == key {
+			merge(&installs.few[i])
+			return
+		}
+	}
+	var install sessionResultInstallSpan
+	merge(&install)
+	if len(installs.few) < maxFewInstallSpans {
+		installs.few = append(installs.few, install)
+		return
+	}
+	installs.many = make(map[spanKey]sessionResultInstallSpan, len(installs.few)+1)
+	for _, few := range installs.few {
+		installs.many[spanKeyOf(few.spanCtx)] = few
+	}
+	installs.many[key] = install
+	installs.few = nil
+}
+
+func (installs *sessionResultInstalls) all(yield func(sessionResultInstallSpan) bool) {
+	if !installs.first.spanCtx.IsValid() || !yield(installs.first) {
+		return
+	}
+	for _, install := range installs.few {
+		if !yield(install) {
+			return
+		}
+	}
+	for _, install := range installs.many {
+		if !yield(install) {
+			return
+		}
+	}
+}
+
 func (c *Cache) recordSessionResultInstallSpanLocked(ctx context.Context, sessionID string, resultID sharedResultID, spanCtx trace.SpanContext, ownsClosure bool) {
 	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	defer c.sessionMu.Unlock()
@@ -1179,23 +1255,19 @@ func (c *Cache) recordSessionResultInstallSpanLocked(ctx context.Context, sessio
 		return
 	}
 	if c.sessionResultInstallSpans == nil {
-		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[string]sessionResultInstallSpan)
+		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]*sessionResultInstalls)
 	}
 	bySession := c.sessionResultInstallSpans[sessionID]
 	if bySession == nil {
-		bySession = make(map[sharedResultID]map[string]sessionResultInstallSpan)
+		bySession = make(map[sharedResultID]*sessionResultInstalls)
 		c.sessionResultInstallSpans[sessionID] = bySession
 	}
-	byResult := bySession[resultID]
-	if byResult == nil {
-		byResult = make(map[string]sessionResultInstallSpan)
-		bySession[resultID] = byResult
+	installs := bySession[resultID]
+	if installs == nil {
+		installs = &sessionResultInstalls{}
+		bySession[resultID] = installs
 	}
-	key := spanContextKey(spanCtx)
-	install := byResult[key]
-	install.spanCtx = spanCtx
-	install.ownsClosure = install.ownsClosure || ownsClosure
-	byResult[key] = install
+	installs.record(spanCtx, ownsClosure)
 }
 
 // installAncestorIDsLocked returns the IDs of results that transitively
@@ -1266,16 +1338,21 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 	if byResult == nil {
 		return nil
 	}
-	seen := make(map[string]struct{})
+	seen := make(map[spanKey]struct{})
 	var out []trace.SpanContext
 	appendInstalls := func(id sharedResultID, closureOwnersOnly bool) {
-		for key, install := range byResult[id] {
+		installs := byResult[id]
+		if installs == nil {
+			return
+		}
+		for install := range installs.all {
 			if closureOwnersOnly && !install.ownsClosure {
 				continue
 			}
 			if !install.spanCtx.IsValid() {
 				continue
 			}
+			key := spanKeyOf(install.spanCtx)
 			if _, dup := seen[key]; dup {
 				continue
 			}
@@ -1296,12 +1373,12 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 
 func lazyResumeLinks(originalSpanCtx trace.SpanContext, installSpanContexts []trace.SpanContext) []trace.Link {
 	links := []trace.Link{{SpanContext: originalSpanCtx}}
-	seen := map[string]struct{}{spanContextKey(originalSpanCtx): {}}
+	seen := map[spanKey]struct{}{spanKeyOf(originalSpanCtx): {}}
 	for _, installCtx := range installSpanContexts {
 		if !installCtx.IsValid() {
 			continue
 		}
-		key := spanContextKey(installCtx)
+		key := spanKeyOf(installCtx)
 		if _, dup := seen[key]; dup {
 			continue
 		}
@@ -1631,6 +1708,24 @@ func (c *Cache) snapshotSessionResultIDsCancelable(checker *pruneCancellationChe
 }
 
 // upsertPersistedEdgeLocked requires egraphMu for writing.
+// persistedEdgeUpsertUnchangedLocked reports whether a pruneable
+// upsertPersistedEdgeLocked of res with expiresAtUnix would change nothing:
+// res is no longer registered, or its edge exists and the expiry merge keeps
+// it as it is. The caller holds egraphMu, for reading or writing.
+func (c *Cache) persistedEdgeUpsertUnchangedLocked(res *sharedResult, expiresAtUnix int64) bool {
+	if c == nil || res == nil || res.id == 0 {
+		return true
+	}
+	if _, found := c.resultsByID[res.id]; !found {
+		return true
+	}
+	edge, found := c.persistedEdgesByResult[res.id]
+	if !found {
+		return false
+	}
+	return edge.unpruneable || mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix) == edge.expiresAtUnix
+}
+
 func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64, unpruneable bool) {
 	if c == nil || res == nil || res.id == 0 {
 		return
@@ -2461,7 +2556,7 @@ type Cache struct {
 	// module API call returns are recorded once on the returned result with
 	// ownsClosure set, and lookups resolve closure ownership on demand by
 	// walking dep edges upward via depParents.
-	sessionResultInstallSpans    map[string]map[sharedResultID]map[string]sessionResultInstallSpan
+	sessionResultInstallSpans    map[string]map[sharedResultID]*sessionResultInstalls
 	sessionResourcesBySession    map[string]map[SessionResourceHandle]*sessionResourceBindings
 	sessionHandlesBySession      map[string]*set.TreeSet[SessionResourceHandle]
 	sessionVolatileVarsBySession map[string]map[string]string
@@ -2626,10 +2721,6 @@ func compareSpanContexts(a, b trace.SpanContext) int {
 	aSpanID := a.SpanID()
 	bSpanID := b.SpanID()
 	return bytes.Compare(aSpanID[:], bSpanID[:])
-}
-
-func spanContextKey(ctx trace.SpanContext) string {
-	return ctx.TraceID().String() + "/" + ctx.SpanID().String()
 }
 
 // CacheUsageSizeProvider resolves concrete snapshot sizes for cache usage accounting.
@@ -2952,6 +3043,19 @@ func (res *sharedResult) storeResultCall(frame *ResultCall) {
 	res.resultCallMu.Unlock()
 }
 
+// dropResultCall clears the frame of a result being removed from the cache.
+// Unlike storeResultCall, it starts no new frame generation: a removed
+// result's ID is never registered again, so no lookup can reach another frame
+// under it, and the answers memoized while it was registered still hold.
+func (res *sharedResult) dropResultCall() {
+	if res == nil {
+		return
+	}
+	res.resultCallMu.Lock()
+	res.resultCall = nil
+	res.resultCallMu.Unlock()
+}
+
 // frameProfileSkip reports the frame's wcprof profile-skip decision (nil-safe).
 // The bit is set once by core.AroundFunc and travels with the frame, so reading
 // it is the lock-free truth wherever a frame is in hand.
@@ -2965,6 +3069,18 @@ func frameProfileSkip(frame *ResultCall) bool {
 // keep it so, or a cross-recipe wait can dangle.
 func (res *sharedResult) profileSkip() bool {
 	return frameProfileSkip(res.loadResultCall())
+}
+
+// loadSelf is loadPayloadState's self alone, for the accessors that read
+// nothing else: it doesn't copy the snapshot links.
+func (res *sharedResult) loadSelf() Typed {
+	if res == nil {
+		return nil
+	}
+	res.payloadMu.RLock()
+	self := res.self
+	res.payloadMu.RUnlock()
+	return self
 }
 
 func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
@@ -3473,7 +3589,7 @@ func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *
 	if err := c.normalizePendingResultCallRefsWithSeen(ctx, ref.Call, seen); err != nil {
 		return err
 	}
-	resultID, err := c.resultIDForCall(ref.Call)
+	resultID, err := c.resultIDForCall(ctx, ref.Call)
 	if err != nil {
 		return err
 	}
@@ -3656,20 +3772,37 @@ func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep
 }
 
 func (c *Cache) addExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
+	return c.addExplicitDependencies(ctx, parent, []AnyResult{dep}, reason)
+}
+
+// addExplicitDependencies records a retention edge from parent to each dep in
+// one egraphMu critical section, recomputing the required sets once for all
+// of them rather than once per edge.
+func (c *Cache) addExplicitDependencies(ctx context.Context, parent AnyResult, deps []AnyResult, reason string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if parent == nil || dep == nil {
+	if parent == nil {
+		return nil
+	}
+	depShareds := make([]*sharedResult, 0, len(deps))
+	for _, dep := range deps {
+		if dep == nil {
+			continue
+		}
+		depShared := dep.cacheSharedResult()
+		if depShared == nil || depShared.id == 0 {
+			return fmt.Errorf("add explicit dependency: dep %T is not an attached result in this cache", dep)
+		}
+		depShareds = append(depShareds, depShared)
+	}
+	if len(depShareds) == 0 {
 		return nil
 	}
 
 	parentShared := parent.cacheSharedResult()
 	if parentShared == nil || parentShared.id == 0 {
 		return fmt.Errorf("add explicit dependency: parent %T is not an attached result in this cache", parent)
-	}
-	depShared := dep.cacheSharedResult()
-	if depShared == nil || depShared.id == 0 {
-		return fmt.Errorf("add explicit dependency: dep %T is not an attached result in this cache", dep)
 	}
 	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
@@ -3679,10 +3812,12 @@ func (c *Cache) addExplicitDependency(ctx context.Context, parent AnyResult, dep
 	if _, found := c.resultsByID[parentShared.id]; !found {
 		return fmt.Errorf("add explicit dependency: parent result %d was already collected", parentShared.id)
 	}
-	if _, found := c.resultsByID[depShared.id]; !found {
-		return fmt.Errorf("add explicit dependency: dep result %d was already collected", depShared.id)
+	for _, depShared := range depShareds {
+		if _, found := c.resultsByID[depShared.id]; !found {
+			return fmt.Errorf("add explicit dependency: dep result %d was already collected", depShared.id)
+		}
 	}
-	return c.addExplicitDependencyLocked(ctx, parentShared, depShared, reason)
+	return c.addExplicitDependenciesLocked(ctx, parentShared, depShareds, reason)
 }
 
 func (c *Cache) addExplicitDependencyLocked(
@@ -3691,35 +3826,53 @@ func (c *Cache) addExplicitDependencyLocked(
 	depRes *sharedResult,
 	reason string,
 ) error {
-	if parentRes == nil || depRes == nil {
+	return c.addExplicitDependenciesLocked(ctx, parentRes, []*sharedResult{depRes}, reason)
+}
+
+func (c *Cache) addExplicitDependenciesLocked(
+	ctx context.Context,
+	parentRes *sharedResult,
+	deps []*sharedResult,
+	reason string,
+) error {
+	if parentRes == nil {
 		return nil
 	}
-	if parentRes.id == depRes.id {
-		return nil
+	added := false
+	for _, depRes := range deps {
+		if depRes == nil || depRes.id == parentRes.id {
+			continue
+		}
+		if parentRes.deps == nil {
+			parentRes.deps = make(map[sharedResultID]struct{})
+		}
+		if _, ok := parentRes.deps[depRes.id]; ok {
+			continue
+		}
+
+		parentRes.deps[depRes.id] = struct{}{}
+		parentRes.dependencyOwnershipRevision++
+		c.rememberDependencyEdgeLocked(parentRes, depRes)
+		c.incrementIncomingOwnershipLocked(ctx, depRes)
+		c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
+		added = true
 	}
-	if parentRes.deps == nil {
-		parentRes.deps = make(map[sharedResultID]struct{})
-	}
-	if _, ok := parentRes.deps[depRes.id]; ok {
+	if !added {
 		return nil
 	}
 
-	parentRes.deps[depRes.id] = struct{}{}
-	parentRes.dependencyOwnershipRevision++
-	c.rememberDependencyEdgeLocked(parentRes, depRes)
-	c.incrementIncomingOwnershipLocked(ctx, depRes)
-	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
-
-	// The new dep can extend the parent's stored required set, and every
+	// The new deps can extend the parent's stored required set, and every
 	// result already depending on the parent derives its own stored set from
 	// it, so a change must cascade upward through depParents until the sets
 	// stop changing. At publication time the parent is fresh and has no
 	// depParents; the cascade matters for a retention edge added to an
 	// already-published result. The cascade runs inside the same egraphMu
 	// critical section as the edge insertion and terminates because a
-	// re-enqueue requires a strict change and the sets are bounded. Each
-	// change bumps that result's requirement generation, which is what
-	// serve-time re-validation compares against its selection-time capture.
+	// re-enqueue requires a strict change and the sets are bounded. Running
+	// it once after all the edges keeps a result with many deps linear in
+	// them. Each change bumps that result's requirement generation, which is
+	// what serve-time re-validation compares against its selection-time
+	// capture.
 	queue := []*sharedResult{parentRes}
 	for len(queue) > 0 {
 		res := queue[0]
@@ -3781,19 +3934,19 @@ type Result[T Typed] struct {
 var _ AnyResult = Result[Typed]{}
 
 func (r Result[T]) Type() *ast.Type {
-	state := r.shared.loadPayloadState()
-	if r.shared == nil || state.self == nil {
+	self := r.shared.loadSelf()
+	if r.shared == nil || self == nil {
 		var zero T
 		return zero.Type()
 	}
 	if r.nullableWrapped {
 		var innerType *ast.Type
 		if r.derefView {
-			if inner, ok := derefTyped(state.self); ok && inner != nil {
+			if inner, ok := derefTyped(self); ok && inner != nil {
 				innerType = inner.Type()
 			}
 		} else {
-			innerType = state.self.Type()
+			innerType = self.Type()
 		}
 		if innerType != nil {
 			cp := *innerType
@@ -3802,13 +3955,13 @@ func (r Result[T]) Type() *ast.Type {
 		}
 	}
 	if r.derefView {
-		if inner, ok := derefTyped(state.self); ok && inner != nil && inner.Type() != nil {
+		if inner, ok := derefTyped(self); ok && inner != nil && inner.Type() != nil {
 			cp := *inner.Type()
 			cp.NonNull = true
 			return &cp
 		}
 	}
-	return state.self.Type()
+	return self.Type()
 }
 
 // ID returns the runtime handle ID of the instance.
@@ -3885,19 +4038,19 @@ func (r Result[T]) SetField(field reflect.Value) error {
 
 // Unwrap returns the inner value of the instance.
 func (r Result[T]) Unwrap() Typed {
-	state := r.shared.loadPayloadState()
+	self := r.shared.loadSelf()
 	if r.shared == nil {
 		var zero T
 		return zero
 	}
-	if state.self == nil {
+	if self == nil {
 		var zero T
 		return zero
 	}
 	if r.nullableWrapped {
-		wrapped := state.self
+		wrapped := self
 		if r.derefView {
-			if inner, ok := derefTyped(state.self); ok && inner != nil {
+			if inner, ok := derefTyped(self); ok && inner != nil {
 				wrapped = inner
 			}
 		}
@@ -3908,15 +4061,15 @@ func (r Result[T]) Unwrap() Typed {
 		}
 	}
 	if r.derefView {
-		if inner, ok := derefTyped(state.self); ok && inner != nil {
+		if inner, ok := derefTyped(self); ok && inner != nil {
 			return inner
 		}
 	}
-	return state.self
+	return self
 }
 
 func (r Result[T]) DerefValue() (AnyResult, bool) {
-	state := r.shared.loadPayloadState()
+	self := r.shared.loadSelf()
 	if r.derefView {
 		return r, true
 	}
@@ -3924,12 +4077,12 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 		r.nullableWrapped = false
 		return r, true
 	}
-	if r.shared == nil || state.self == nil {
+	if r.shared == nil || self == nil {
 		return r, true
 	}
-	inner, valid := derefTyped(state.self)
+	inner, valid := derefTyped(self)
 	if !valid {
-		if _, ok := any(state.self).(Derefable); ok {
+		if _, ok := any(self).(Derefable); ok {
 			return nil, false
 		}
 		return r, true
@@ -4342,16 +4495,16 @@ func (r ObjectResult[T]) MarshalJSON() ([]byte, error) {
 }
 
 func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
-	state := r.shared.loadPayloadState()
+	self := r.shared.loadSelf()
 	if r.derefView {
 		return r, true
 	}
-	if r.shared == nil || state.self == nil {
+	if r.shared == nil || self == nil {
 		return r, true
 	}
-	inner, valid := derefTyped(state.self)
+	inner, valid := derefTyped(self)
 	if !valid {
-		if _, ok := any(state.self).(Derefable); ok {
+		if _, ok := any(self).(Derefable); ok {
 			return nil, false
 		}
 		return r, true
@@ -5234,14 +5387,13 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				// Lazy evaluation may have learned content since the API span
 				// ended. Read the latest frame outside the cache locks.
 				frame := shared.loadResultCall()
+				var attrs []attribute.KeyValue
 				var cacheState lazySpanCacheState
 				if lazySpan.IsRecording() {
-					if frame != nil {
-						RecordContentPreferredDigest(lazyCallbackCtx, lazySpan, frame, res)
-					}
+					attrs = AppendContentPreferredDigestAttr(lazyCallbackCtx, attrs, frame, res)
 					cacheState = c.lazySpanCacheState(context.WithoutCancel(lazyCallbackCtx), shared, frame)
 				}
-				endOTelLazyOp(lazySpan, lazyIsResume, shared.id, partial, abandoned, storedPart, cacheState, &err)
+				endOTelLazyOp(lazySpan, attrs, lazyIsResume, shared.id, partial, abandoned, storedPart, cacheState, &err)
 			}
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
@@ -6098,7 +6250,7 @@ func (c *Cache) getOrInitCallInner(
 		if ev != nil {
 			// The lookup fact only: a hit on a still-pending lazy shell stays
 			// outcome=hit while dag.pending/dag.cached keep the evaluation
-			// facts (recordStatus is unchanged).
+			// facts (appendStatusAttrs is unchanged).
 			ev.Outcome = CacheOutcomeHit
 		}
 		c.captureSessionLazySpanContext(ctx, sessionID, hitRes)
@@ -7373,6 +7525,8 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 	}
 
 	seen := make(map[sharedResultID]bool, len(deps))
+	edges := make([]AnyResult, 0, len(deps))
+	var owned []AnyResult
 	for _, dep := range deps {
 		if dep.Result == nil {
 			continue
@@ -7386,24 +7540,28 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 		}
 		if alreadyOwned, ok := seen[attachedDepRes.id]; ok {
 			// Already linked. If the previous edge was non-owned and this one is
-			// owned, propagate the install span now; otherwise nothing to do.
+			// owned, propagate the install span too; otherwise nothing to do.
 			if !alreadyOwned && dep.Owned {
-				c.captureSessionResultInstallSpan(ctx, sessionID, dep.Result)
+				owned = append(owned, dep.Result)
 				seen[attachedDepRes.id] = true
 			}
 			continue
 		}
 		seen[attachedDepRes.id] = dep.Owned
-		if err := c.addExplicitDependency(ctx, attachedSelf, dep.Result, "attached_dependency_result"); err != nil {
-			return err
-		}
-		// Owned deps inherit the parent's install span — failures in their
-		// lazy work will mark the parent's API span caused-failed via the
-		// resume span's cause links. Liveness-only deps (e.g. lazy parents
-		// in receiver chains) keep their original install spans only.
+		edges = append(edges, dep.Result)
 		if dep.Owned {
-			c.captureSessionResultInstallSpan(ctx, sessionID, dep.Result)
+			owned = append(owned, dep.Result)
 		}
+	}
+	if err := c.addExplicitDependencies(ctx, attachedSelf, edges, "attached_dependency_result"); err != nil {
+		return err
+	}
+	// Owned deps inherit the parent's install span — failures in their
+	// lazy work will mark the parent's API span caused-failed via the
+	// resume span's cause links. Liveness-only deps (e.g. lazy parents
+	// in receiver chains) keep their original install spans only.
+	for _, dep := range owned {
+		c.captureSessionResultInstallSpan(ctx, sessionID, dep)
 	}
 
 	return nil

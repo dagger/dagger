@@ -29,11 +29,14 @@ type LLMRouter struct {
 	// session. Nil when the router was built for a single client.
 	localClient *engine.ClientMetadata
 
-	// credentialCtx bounds live credential resolution (subscription OAuth
-	// tokens re-read at request time) by the session's lifetime. Nil leaves
-	// resolution bound to the request that asks, which suits tests that build
-	// a router without a session.
-	credentialCtx context.Context
+	// credentialContext lazily creates the session lifetime needed by a
+	// subscription token source. Route inspection and endpoint memo hits must
+	// not allocate cancellation watchers that live until the session closes.
+	// Nil leaves credentials bound to the request (routers without a session).
+	credentialContext func(context.Context) (context.Context, error)
+
+	// configRevision identifies the live configuration snapshot behind a route.
+	configRevision string
 }
 
 // llmProviderRoute is one provider's routing configuration plus the client
@@ -153,6 +156,20 @@ func (r *LLMRouter) isAnthropicModel(model string) bool {
 
 func (r *LLMRouter) isOpenAIModel(model string) bool {
 	return strings.HasPrefix(model, "gpt-") || strings.HasPrefix(model, "openai/")
+}
+
+// preferCodexForGPT resolves the shared GPT naming convention against the
+// configured backends. A subscription can serve plain GPT names too; sending
+// those to an unconfigured OpenAI API endpoint loses the subscription auth.
+// When both backends are available, retain OpenAI's priority unless the user
+// chose Codex as their default. Callers with an explicit provider or prefix
+// bypass this inference.
+func (r *LLMRouter) preferCodexForGPT() bool {
+	if r.provider(OpenAICodex).AuthToken == "" {
+		return false
+	}
+	openai := r.provider(OpenAI)
+	return r.defaultProvider == OpenAICodex || (!openai.HasCredential() && openai.BaseURL == "")
 }
 
 func (r *LLMRouter) isCodexModel(model string) bool {
@@ -461,13 +478,20 @@ func (r *LLMRouter) Route(model, provider string) (*LLMEndpoint, error) {
 		}
 	case r.isAnthropicModel(model):
 		endpoint = r.routeAnthropicModel()
+	case strings.HasPrefix(model, "openai/"):
+		// An explicit OpenAI prefix wins even for a codex-named model.
+		endpoint = r.routeOpenAIModel()
 	// NB: must precede isOpenAIModel — a "codex"-named model (e.g. gpt-5.3-codex)
 	// also matches the gpt- prefix; the codexModelPrefix form does not, but is
 	// caught here too.
 	case r.isCodexModel(model):
 		endpoint = r.routeCodexModel()
 	case r.isOpenAIModel(model):
-		endpoint = r.routeOpenAIModel()
+		if r.preferCodexForGPT() {
+			endpoint = r.routeCodexModel()
+		} else {
+			endpoint = r.routeOpenAIModel()
+		}
 	case r.isGoogleModel(model):
 		endpoint = r.routeGoogleModel()
 	case r.isMistralModel(model):
@@ -526,8 +550,12 @@ func (r *LLMRouter) Endpoint(ctx context.Context, model, provider string) (*LLME
 			return nil, fmt.Errorf("resolve %s auth token: %w", endpoint.Provider, err)
 		}
 		endpoint.AuthToken = cred.Token
-		if r.credentialCtx != nil {
-			reload = reload.detach(r.credentialCtx)
+		if r.credentialContext != nil {
+			credentialCtx, err := r.credentialContext(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("LLM credentials: session context: %w", err)
+			}
+			reload = reload.detach(credentialCtx)
 		}
 		endpoint.AuthTokenSource = newCredentialSource(reload)
 	}
@@ -583,15 +611,23 @@ func loadLLMRouter(ctx context.Context, query *Query) (_ *LLMRouter, rerr error)
 	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	parentClient, err := query.NonModuleParentClientMetadata(ctx)
+	var mainClient, parentClient *engine.ClientMetadata
+	var revision string
+	var err error
+	if live, ok := query.Server.(interface {
+		LLMConfigMetadata(context.Context) (*engine.ClientMetadata, *engine.ClientMetadata, string, error)
+	}); ok {
+		mainClient, parentClient, revision, err = live.LLMConfigMetadata(ctx)
+	} else {
+		parentClient, err = query.NonModuleParentClientMetadata(ctx)
+		if err == nil {
+			mainClient, err = query.MainClientCallerMetadata(ctx)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	mainClient, err := query.MainClientCallerMetadata(ctx)
-	if err != nil {
-		return nil, err
-	}
-	router := &LLMRouter{Providers: map[LLMProvider]*llmProviderRoute{}}
+	router := &LLMRouter{Providers: map[LLMProvider]*llmProviderRoute{}, configRevision: revision}
 	if mainClient.ClientID != parentClient.ClientID {
 		if err := router.Apply(mainClient.LLMConfig, mainClient); err != nil {
 			return nil, err
@@ -610,10 +646,11 @@ func loadLLMRouter(ctx context.Context, query *Query) (_ *LLMRouter, rerr error)
 	// borrows execution authority from each active request, since this call's
 	// client lease will already be released. The parent client identifies the
 	// session rather than the possibly-module ambient client.
-	router.credentialCtx, err = query.Server.SessionScopedContext(
-		engine.ContextWithClientMetadata(ctx, parentClient))
-	if err != nil {
-		return nil, fmt.Errorf("LLM credentials: session context: %w", err)
+	// Create this lifetime only if Endpoint installs an OAuth token source.
+	// Reading a default route or checking an existing endpoint's revision does
+	// not need a session cancellation watcher.
+	router.credentialContext = func(ctx context.Context) (context.Context, error) {
+		return query.Server.SessionScopedContext(engine.ContextWithClientMetadata(ctx, parentClient))
 	}
 	return router, nil
 }

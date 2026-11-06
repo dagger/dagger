@@ -272,6 +272,9 @@ type ClientMetadata struct {
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.
 	Profile bool `json:"profile,omitempty"`
+	// ProfileEBPF names the eBPF programs a profiled session asks for (see
+	// engine/ebpf/wcbpf), loaded while it lasts.
+	ProfileEBPF []string `json:"profile_ebpf,omitempty"`
 }
 
 type suppressTelemetryCtxKey struct{}
@@ -404,9 +407,10 @@ func (o LocalImportOpts) ToGRPCMD() metadata.MD {
 	md := encodeMeta(localImportOptsMetaKey, o)
 	md[localDirImportDirNameMetaKey] = []string{o.Path}
 	md[localDirImportGitIgnoreMetaKey] = []string{strconv.FormatBool(o.UseGitIgnore)}
-	md[localDirImportIncludePatternsMetaKey] = o.IncludePatterns
-	md[localDirImportExcludePatternsMetaKey] = o.ExcludePatterns
-	md[localDirImportFollowPathsMetaKey] = o.FollowPaths
+	// The patterns travel only inside localImportOptsMetaKey, which
+	// FromGRPCMD reads first. As one header value each, a long list goes
+	// over the HTTP/2 server's limit on header values (500 by default
+	// since Go 1.27), which closes the whole session connection.
 	return encodeOpts(md)
 }
 

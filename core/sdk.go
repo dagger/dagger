@@ -356,6 +356,19 @@ type Runtime interface {
 }
 
 /*
+RuntimePrebuilder is an interface that a Runtime may implement when, for some
+module sources, the runtime it returns doesn't depend on the module's
+dependencies. Loading a module loads its dependencies first, and only running
+the runtime needs them, so such a runtime can be built while they load.
+*/
+type RuntimePrebuilder interface {
+	// PrebuildRuntime builds the runtime that Runtime returns for the given
+	// source, when that runtime doesn't depend on the module's dependencies,
+	// and does nothing otherwise. Runtime then returns the built runtime.
+	PrebuildRuntime(context.Context, dagql.ObjectResult[*ModuleSource]) error
+}
+
+/*
 ModuleTypes is an interface that a SDK may implement to expose type definitions of the module.
 
 This interface MUST be implemented to support self calls.

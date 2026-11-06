@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core/artifact"
@@ -28,6 +29,7 @@ func TestArtifactPathsUseModuleSelectors(t *testing.T) {
 		{name: "unscoped alternative", addresses: []string{"dag://?module=go", "dag://"}},
 		{name: "collection is not a module", addresses: []string{"dag://?go-module=api"}},
 		{name: "collection binding keeps its scope", addresses: []string{"dag://?module=go&python-package=api"}},
+		{name: "type key in the selected modules", addresses: []string{"dag://"}, keys: []dagaddress.Pair{{Dimension: "module", Key: "go", HasKey: true}, {Dimension: "type:Check", Key: "test", HasKey: true}}, want: []string{"go"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			parsed, err := parseArtifactAddresses(tc.addresses)
@@ -127,7 +129,9 @@ func TestArtifactPreparationDoesNotConnect(t *testing.T) {
 			root.AddCommand(listCmd)
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel() // Any engine call during preparation must fail.
-			require.NoError(t, prepareArtifactCommands(ctx, root, parseGlobalFlags(root, args), args))
+			discovery, err := prepareArtifactCommands(ctx, root, parseGlobalFlags(root, args), args)
+			require.NoError(t, err)
+			require.Nil(t, discovery)
 		})
 	}
 }
@@ -214,4 +218,58 @@ func TestArtifactSelectorFlags(t *testing.T) {
 	require.NotNil(t, list.Flag("container"))
 	require.NotNil(t, list.Flag("generator"))
 	require.NotNil(t, list.Flag("docs"))
+}
+
+func TestArtifactFlagModules(t *testing.T) {
+	modules := []string{"go", "go-sdk", "python", "list", "Docs"}
+	for _, tc := range []struct {
+		args []string
+		want []string
+	}{
+		{nil, nil},
+		{[]string{"--check", "test", "-l"}, nil},
+		{[]string{"--go", "--check", "test", "-l", "--all"}, []string{"go"}},
+		{[]string{"--by-go"}, []string{"go"}},
+		{[]string{"--go=false"}, nil},
+		{[]string{"--module=python", "--check=lint"}, []string{"python"}},
+		{[]string{"--module=missing", "--go"}, nil},
+		{[]string{"--python", "--go-sdk", "--by-python"}, []string{"go-sdk", "python"}},
+		{[]string{"--docs"}, []string{"Docs"}},
+		// --list is the check command's own flag, not module list's alias.
+		{[]string{"--list"}, nil},
+		{[]string{"--by-list"}, []string{"list"}},
+		{[]string{"--", "--go"}, nil},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			cmd := &cobra.Command{Use: "check"}
+			cmd.Flags().BoolP("list", "l", false, "")
+			registerCommandArtifactFlags(cmd)
+			require.Equal(t, tc.want, artifactFlagModules(cmd, tc.args, modules))
+		})
+	}
+}
+
+func TestArtifactNamingModules(t *testing.T) {
+	all := []string{"go", "go-sdk", "go-sdk-extra", "golang", "python"}
+	require.Equal(t, []string{"golang"}, artifactNamingModules([]string{"golang"}, all))
+	require.Equal(t, []string{"go", "go-sdk", "go-sdk-extra"}, artifactNamingModules([]string{"go-sdk"}, all))
+	require.Equal(t, []string{"go", "go-sdk", "go-sdk-extra"}, artifactNamingModules([]string{"go-sdk-extra"}, all))
+	require.Nil(t, artifactNamingModules([]string{"go", "golang", "python"}, all))
+}
+
+func TestAcceptsArtifactArgs(t *testing.T) {
+	cmd := &cobra.Command{Use: "check"}
+	cmd.Flags().BoolP("list", "l", false, "")
+	registerCommandArtifactFlags(cmd)
+	cmd.Flags().Bool("go", false, "")
+	cmd.Flags().IntP("parallel", "j", 0, "")
+	require.True(t, acceptsArtifactArgs(cmd, []string{"--go", "-l", "--all"}))
+	require.True(t, acceptsArtifactArgs(cmd, []string{"--go", "--list=1", "-j", "4", "--module", "go"}))
+	require.False(t, acceptsArtifactArgs(cmd, []string{"--go", "--help=1"}), "help lists every module's flags")
+	require.False(t, acceptsArtifactArgs(cmd, []string{"--go", "--list=invalid"}))
+	require.False(t, acceptsArtifactArgs(cmd, []string{"--go", "-j", "many"}))
+	require.False(t, acceptsArtifactArgs(cmd, []string{"--go", "--other"}))
+	require.False(t, acceptsArtifactArgs(cmd, []string{"--go", "--all"}), "--all requires --list")
+	require.False(t, acceptsArtifactArgs(cmd, []string{"--go", "-l", "-f=yaml"}))
+	require.False(t, cmd.Flags().Changed("all"), "checking a command line must not parse it into the command")
 }

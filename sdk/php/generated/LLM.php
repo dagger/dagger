@@ -328,9 +328,9 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Add an external MCP server to the LLM
      */
-    public function withMCPServer(string $name, Service $service): LLM
+    public function withMcpServer(string $name, Service $service): LLM
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMCPServer');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMcpServer');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('service', $service);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));

@@ -2,7 +2,9 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/binary"
 	"io"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -88,17 +90,104 @@ func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 		"the indexes locate the Cloud exporters, so engine telemetry can be forwarded without them")
 	require.Empty(t, withoutIndex(cfg.LiveLogExporters, cloud.logs), "frontend logs are installed separately with a blocking processor")
 	require.Equal(t, []sdkmetric.Exporter{localMetrics}, withoutIndex(cfg.LiveMetricExporters, cloud.metrics))
-	require.Empty(t, withoutIndex(cfg.SpanProcessors, cloud.spans))
+	require.Len(t, withoutIndex(cfg.SpanProcessors, cloud.spans), 1, "frontend spans use a processor that waits for queue space")
 	require.Len(t, frontend.SpanExporterCalls(), 1)
 	require.Empty(t, frontend.LogExporterCalls())
 	require.Len(t, frontend.MetricExporterCalls(), 1)
-	require.Equal(t, []sdktrace.SpanExporter{localSpans}, cfg.LiveTraceExporters)
+	require.Empty(t, cfg.LiveTraceExporters)
 	require.Equal(t, []sdklog.Exporter{cloudLogs}, cfg.LiveLogExporters)
 	require.Equal(t, []sdkmetric.Exporter{localMetrics, cloudMetrics}, cfg.LiveMetricExporters)
-	require.Len(t, cfg.SpanProcessors, 1, "Cloud spans use their independent large-queue processor")
+	require.Len(t, cfg.SpanProcessors, 2, "Cloud and frontend spans each use their own processor")
 	t.Cleanup(func() {
-		require.NoError(t, cfg.SpanProcessors[0].Shutdown(context.Background()))
+		for _, processor := range cfg.SpanProcessors {
+			require.NoError(t, processor.Shutdown(context.Background()))
+		}
 	})
+}
+
+// slowSpanExporter is a frontend that takes a while with each batch, and
+// records the spans it has seen end.
+type slowSpanExporter struct {
+	delay time.Duration
+
+	mu    sync.Mutex
+	ended map[trace.SpanID]struct{}
+}
+
+func (e *slowSpanExporter) ExportSpans(_ context.Context, spans []sdktrace.ReadOnlySpan) error {
+	time.Sleep(e.delay)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, span := range spans {
+		if !span.EndTime().Before(span.StartTime()) {
+			e.ended[span.SpanContext().SpanID()] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (e *slowSpanExporter) endedCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.ended)
+}
+
+func (e *slowSpanExporter) Shutdown(context.Context) error   { return nil }
+func (e *slowSpanExporter) ForceFlush(context.Context) error { return nil }
+
+// TestEngineSpanBurstReachesFrontend forwards a burst of finished engine
+// spans, more than any span queue holds, the way the CLI forwards what the
+// engine streams to it. Every one must reach the frontend finished: a span
+// lost on the way leaves its check or test looking like it never finished.
+func TestEngineSpanBurstReachesFrontend(t *testing.T) {
+	oldFrontend := Frontend
+	oldSkip := skipSharedTelemetryExporters
+	t.Cleanup(func() {
+		Frontend = oldFrontend
+		skipSharedTelemetryExporters = oldSkip
+	})
+	// Only the frontend: no Cloud or OTEL_* exporters.
+	skipSharedTelemetryExporters = true
+
+	frontendSpans := &slowSpanExporter{
+		delay: 10 * time.Millisecond,
+		ended: map[trace.SpanID]struct{}{},
+	}
+	Frontend = &idtui.FrontendMock{
+		SpanExporterFunc:   func() sdktrace.SpanExporter { return frontendSpans },
+		LogExporterFunc:    func() sdklog.Exporter { return new(countingLogExporter) },
+		MetricExporterFunc: func() sdkmetric.Exporter { return new(countingMetricExporter) },
+	}
+	cfg, _ := engineTelemetryConfig(context.Background())
+	// The span processors telemetry.Init builds from cfg, without installing
+	// them globally.
+	processors := slices.Clone(cfg.SpanProcessors)
+	for _, exporter := range cfg.LiveTraceExporters {
+		processors = append(processors, telemetry.NewLiveSpanProcessor(exporter))
+	}
+	forwarder := telemetry.SpanForwarder{Processors: processors}
+
+	const burst = 2*enginetel.LargeSpanQueueSize + 1
+	now := time.Now()
+	spans := make([]sdktrace.ReadOnlySpan, 0, burst)
+	for i := range burst {
+		var spanID trace.SpanID
+		binary.BigEndian.PutUint64(spanID[:], uint64(i+1))
+		spans = append(spans, tracetest.SpanStub{
+			Name: "check",
+			SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID:    trace.TraceID{1},
+				SpanID:     spanID,
+				TraceFlags: trace.FlagsSampled,
+			}),
+			StartTime: now,
+			EndTime:   now,
+		}.Snapshot())
+	}
+	require.NoError(t, forwarder.ExportSpans(context.Background(), spans))
+	require.NoError(t, forwarder.Shutdown(context.Background()))
+
+	require.Equal(t, burst, frontendSpans.endedCount())
 }
 
 func TestEngineTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {

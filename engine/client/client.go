@@ -187,6 +187,8 @@ type Params struct {
 
 	// Profile enables engine wall-clock profiling (wcprof) for this session.
 	Profile bool
+	// ProfileEBPF names the eBPF programs to profile the session with.
+	ProfileEBPF []string
 }
 
 type Client struct {
@@ -968,6 +970,7 @@ func (srv *SessionAttachablesServer) Run(ctx context.Context) {
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
+		//nolint:staticcheck // SA1019: x/net's HTTP/2 client and server are deprecated in favor of net/http's; moving off them is its own change
 		(&http2.Server{}).ServeConn(srv.Conn, &http2.ServeConnOpts{
 			Context: ctx,
 			Handler: srv.Server,
@@ -2042,6 +2045,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
 		Profile:                        c.Profile,
+		ProfileEBPF:                    c.ProfileEBPF,
 	}
 	if c.primarySpan.IsValid() {
 		md.PrimaryTraceID = c.primarySpan.TraceID().String()
@@ -2088,6 +2092,7 @@ func (c *Client) AppendHTTPRequestHeaders(headers http.Header) http.Header {
 func (c *Client) newHTTPClient() *httpClient {
 	return &httpClient{
 		inner: &http.Client{
+			//nolint:staticcheck // SA1019: x/net's HTTP/2 client and server are deprecated in favor of net/http's; moving off them is its own change
 			Transport: &http2.Transport{
 				AllowHTTP: true,
 				DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
@@ -2103,6 +2108,7 @@ func (c *Client) newHTTPClient() *httpClient {
 func (c *Client) newTelemetryHTTPClient() *httpClient {
 	return &httpClient{
 		inner: &http.Client{
+			//nolint:staticcheck // SA1019: x/net's HTTP/2 client and server are deprecated in favor of net/http's; moving off them is its own change
 			Transport: &http2.Transport{
 				AllowHTTP: true,
 				DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {

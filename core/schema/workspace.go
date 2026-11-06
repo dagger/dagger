@@ -55,6 +55,27 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		currentWorkspaceField,
 	}.Install(srv)
 
+	// withSdk and withoutSdk are withSDK and withoutSDK in views before
+	// engine.IdentifierCasingVersion.
+	withSDKField := dagql.NodeFunc("withSdk", s.withSDK).
+		View(AfterVersion("v1.0.0-0")).
+		WithInput(dagql.PerClientInput).
+		Doc("Return this workspace with an SDK installed in its config.").
+		Args(
+			dagql.Arg("ref").Doc("SDK module reference to install."),
+			dagql.Arg("name").Doc("Override name for the installed SDK entry."),
+			dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+			dagql.Arg("asSdkName").Doc("Optional override for the SDK name conventionally derived from the installed module name."),
+		)
+	withoutSDKField := dagql.NodeFunc("withoutSdk", s.withoutSDK).
+		View(AfterVersion("v1.0.0-0")).
+		WithInput(dagql.PerClientInput).
+		Doc("Return this workspace with an SDK removed from its config.").
+		Args(
+			dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
+			dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+		)
+
 	dagql.Fields[*core.Workspace]{
 		dagql.NodeFunc("resolve", s.resolve).
 			View(AfterVersion("v1.0.0-0")).
@@ -353,24 +374,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Installed module name or source to remove. Version selectors are not accepted."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
-		dagql.NodeFunc("withSDK", s.withSDK).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerClientInput).
-			Doc("Return this workspace with an SDK installed in its config.").
-			Args(
-				dagql.Arg("ref").Doc("SDK module reference to install."),
-				dagql.Arg("name").Doc("Override name for the installed SDK entry."),
-				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-				dagql.Arg("asSdkName").Doc("Optional override for the SDK name conventionally derived from the installed module name."),
-			),
-		dagql.NodeFunc("withoutSDK", s.withoutSDK).
-			View(AfterVersion("v1.0.0-0")).
-			WithInput(dagql.PerClientInput).
-			Doc("Return this workspace with an SDK removed from its config.").
-			Args(
-				dagql.Arg("name").Doc("Name of the installed SDK entry to remove."),
-				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
-			),
+		casedField(withSDKField),
+		legacyField(withSDKField, "withSDK"),
+		casedField(withoutSDKField),
+		legacyField(withoutSDKField, "withoutSDK"),
 		dagql.NodeFunc("withMain", s.withMain).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
@@ -1077,6 +1084,12 @@ func (s *workspaceSchema) resolveRootfsInner(
 	}
 
 	if root, ok := ws.SourceDirectory(); ok && root.Self() != nil {
+		if sparse, ok := ws.GitSparseTree(); ok {
+			root, err = gitSparseReadRoot(ctx, srv, sparse, root, resolvedPath, filter, gitignore)
+			if err != nil {
+				return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
+			}
+		}
 		return s.resolveRootfsFromDirectory(ctx, srv, ws, root, resolvedPath, filter, gitignore)
 	}
 	if _, ok := ws.BaseSource().(*core.WorkspaceSourceRootlessLocal); ok {
@@ -1236,6 +1249,58 @@ func filteredReadContentHash(ctx context.Context, dir dagql.ObjectResult[*core.D
 		return "", false
 	}
 	return dgst, true
+}
+
+// gitSparseReadRoot picks the tree a Git workspace's read comes from: its sparse
+// tree if that holds what the read selects, and otherwise its full tree, checked
+// out first.
+//
+// Either way, a read of a path the tree doesn't have fails when it's made, as
+// hashing a subdirectory of a checked-out tree does. And a view of a directory
+// in the full tree is hashed before any copy of it is, because a copy that gets
+// there first can stand in for the view, which can follow symlinks the copy can't.
+func gitSparseReadRoot(
+	ctx context.Context,
+	srv *dagql.Server,
+	sparse *core.GitSparseTree,
+	full dagql.ObjectResult[*core.Directory],
+	resolvedPath string,
+	filter core.CopyFilter,
+	gitignore bool,
+) (dagql.ObjectResult[*core.Directory], error) {
+	isRoot := resolvedPath == "." || resolvedPath == ""
+	if isRoot && filter.IsEmpty() && !gitignore {
+		// The tree itself, which something may never read.
+		return full, nil
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return full, err
+	}
+	covered := false
+	if !filter.IsEmpty() && !gitignore {
+		covered, err = sparse.CoversRead(ctx, resolvedPath, filter)
+		if err != nil {
+			slog.Warn("reading the sparse tree's paths failed; reading the full tree", "error", err)
+			covered = false
+		}
+	}
+	if !covered {
+		return full, cache.Evaluate(ctx, full)
+	}
+	if !isRoot {
+		var sub dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, sparse.Root, &sub, dagql.Selector{
+			Field: "directory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(resolvedPath)}},
+		}); err != nil {
+			return full, err
+		}
+		if err := cache.Evaluate(ctx, sub); err != nil {
+			return full, err
+		}
+	}
+	return sparse.Root, nil
 }
 
 // resolveHostOverlayRootfs resolves a read against a host-backed overlay
@@ -4634,6 +4699,7 @@ func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.S
 
 func matchWorkspaceIncludePath(
 	ctx context.Context,
+	namer core.Namer,
 	path core.ModTreePath,
 	include []string,
 ) (bool, error) {
@@ -4644,12 +4710,12 @@ func matchWorkspaceIncludePath(
 		return false, nil
 	}
 	for _, pattern := range include {
-		if match, err := path.Glob(ctx, pattern); err != nil {
+		if match, err := path.Glob(ctx, namer, pattern); err != nil {
 			return false, err
 		} else if match {
 			return true, nil
 		}
-		if match, err := path.Glob(ctx, pattern+":**"); err != nil || match {
+		if match, err := path.Glob(ctx, namer, pattern+":**"); err != nil || match {
 			return match, err
 		}
 	}
@@ -4815,10 +4881,10 @@ func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include 
 	if err != nil || match {
 		return match, err
 	}
-	if match, err := matchWorkspaceIncludePath(ctx, node.Path(), include); err != nil || match {
+	if match, err := matchWorkspaceIncludePath(ctx, core.LatestNamer, node.Path(), include); err != nil || match {
 		return match, err
 	}
-	return matchWorkspaceIncludePath(ctx, node.CommandPath(), include)
+	return matchWorkspaceIncludePath(ctx, core.LatestNamer, node.CommandPath(), include)
 }
 
 // withWorkspaceClientContext stamps the workspace owner's immutable client

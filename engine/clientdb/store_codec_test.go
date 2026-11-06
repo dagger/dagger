@@ -33,7 +33,7 @@ func TestStoreCodecRoundTrip(t *testing.T) {
 			Resource:               []byte("resource"),
 			ResourceSchemaURL:      "resource-schema",
 		}
-		got, err := spanCodec.decode(spanCodec.encode(want))
+		got, err := spanCodec.decode(spanCodec.encode(nil, want))
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		require.Nil(t, got.Attributes)
@@ -45,7 +45,7 @@ func TestStoreCodecRoundTrip(t *testing.T) {
 			ParentSpanID: sql.NullString{String: "preserved while invalid"},
 			EndTime:      sql.NullInt64{Int64: -99},
 		}
-		got, err := spanCodec.decode(spanCodec.encode(want))
+		got, err := spanCodec.decode(spanCodec.encode(nil, want))
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	})
@@ -64,7 +64,7 @@ func TestStoreCodecRoundTrip(t *testing.T) {
 			Resource:             []byte("resource"),
 			ResourceSchemaURL:    "schema",
 		}
-		got, err := logCodec.decode(logCodec.encode(want))
+		got, err := logCodec.decode(logCodec.encode(nil, want))
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		require.Nil(t, got.Body)
@@ -77,7 +77,7 @@ func TestStoreCodecRoundTrip(t *testing.T) {
 			{ID: 2, Data: []byte{}},
 			{ID: 3, Data: []byte("metric")},
 		} {
-			got, err := metricCodec.decode(metricCodec.encode(want))
+			got, err := metricCodec.decode(metricCodec.encode(nil, want))
 			require.NoError(t, err)
 			require.Equal(t, want, got)
 		}
@@ -86,7 +86,7 @@ func TestStoreCodecRoundTrip(t *testing.T) {
 
 func TestStoreCodecHugeRow(t *testing.T) {
 	want := Metric{ID: 7, Data: bytes.Repeat([]byte("0123456789abcdef"), 1<<20)}
-	encoded := metricCodec.encode(want)
+	encoded := metricCodec.encode(nil, want)
 	require.Greater(t, len(encoded), 16<<20)
 
 	got, err := metricCodec.decode(encoded)
@@ -98,7 +98,7 @@ func TestStoreCodecRejectsMalformedRows(t *testing.T) {
 	_, err := metricCodec.decode([]byte{0x80})
 	require.ErrorContains(t, err, "truncated varint")
 
-	valid := metricCodec.encode(Metric{ID: 1, Data: []byte("ok")})
+	valid := metricCodec.encode(nil, Metric{ID: 1, Data: []byte("ok")})
 	_, err = metricCodec.decode(append(valid, 0))
 	require.ErrorContains(t, err, "trailing bytes")
 }

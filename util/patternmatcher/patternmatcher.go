@@ -84,15 +84,12 @@ func (pm *PatternMatcher) Matches(file string) (bool, error) {
 			continue
 		}
 
-		match, err := pattern.match(file)
-		if err != nil {
-			return false, err
-		}
+		match := pattern.match(file)
 
 		if !match && parentPath != "." {
 			// Check to see if the pattern matches one of our parent dirs.
 			if len(pattern.dirs) <= len(parentPathDirs) {
-				match, _ = pattern.match(strings.Join(parentPathDirs[:len(pattern.dirs)], string(os.PathSeparator)))
+				match = pattern.match(strings.Join(parentPathDirs[:len(pattern.dirs)], string(os.PathSeparator)))
 			}
 		}
 
@@ -124,15 +121,12 @@ func (pm *PatternMatcher) MatchesOrParentMatches(file string) (bool, error) {
 			continue
 		}
 
-		match, err := pattern.match(file)
-		if err != nil {
-			return false, err
-		}
+		match := pattern.match(file)
 
 		if !match && parentPath != "." {
 			// Check to see if the pattern matches one of our parent dirs.
 			for i := range parentPathDirs {
-				match, _ = pattern.match(strings.Join(parentPathDirs[:i+1], string(os.PathSeparator)))
+				match = pattern.match(strings.Join(parentPathDirs[:i+1], string(os.PathSeparator)))
 				if match {
 					break
 				}
@@ -172,10 +166,7 @@ func (pm *PatternMatcher) MatchesUsingParentResult(file string, parentMatched bo
 			continue
 		}
 
-		match, err := pattern.match(file)
-		if err != nil {
-			return false, err
-		}
+		match := pattern.match(file)
 
 		if match {
 			matched = !pattern.exclusion
@@ -225,11 +216,7 @@ func (pm *PatternMatcher) MatchesUsingParentResults(file string, parentMatchInfo
 				continue
 			}
 
-			var err error
-			match, err = pattern.match(file)
-			if err != nil {
-				return false, matchInfo, err
-			}
+			match = pattern.match(file)
 
 			// If the zero value of MatchInfo was passed in, we don't have
 			// any information about the parent dir's match results, and we
@@ -239,7 +226,7 @@ func (pm *PatternMatcher) MatchesUsingParentResults(file string, parentMatchInfo
 					parentPathDirs := strings.Split(parentPath, string(os.PathSeparator))
 					// Check to see if the pattern matches one of our parent dirs.
 					for i := range parentPathDirs {
-						match, _ = pattern.match(strings.Join(parentPathDirs[:i+1], string(os.PathSeparator)))
+						match = pattern.match(strings.Join(parentPathDirs[:i+1], string(os.PathSeparator)))
 						if match {
 							break
 						}
@@ -273,6 +260,12 @@ type Pattern struct {
 	dirs           []string
 	regexp         *regexp.Regexp
 	exclusion      bool
+
+	// For globSuffixMatch: the literal text before and after the last "*",
+	// and whether "**/" comes before that "*".
+	globPrefix    string
+	globSuffix    string
+	globRecursive bool
 }
 
 var ErrEmptyPattern = errors.New("empty pattern")
@@ -303,6 +296,11 @@ func NewPattern(p string) (*Pattern, error) {
 	}
 	newp.cleanedPattern = p
 	newp.dirs = strings.Split(p, string(os.PathSeparator))
+	// Compile now, so matching never writes to the pattern: walks match
+	// against one pattern from several goroutines at once.
+	if err := newp.compile(string(os.PathSeparator)); err != nil {
+		return nil, filepath.ErrBadPattern
+	}
 
 	return newp, nil
 }
@@ -314,6 +312,12 @@ const (
 	exactMatch
 	prefixMatch
 	suffixMatch
+	// globSuffixMatch is a pattern that would otherwise be a regexp, made of
+	// literal text, one "*" or "**/*", then literal text within one path
+	// element, such as "*.go", "dir/*.go" or "dir/**/*.go". Walks match every
+	// path against every pattern, and comparing strings costs far less than
+	// running a regexp.
+	globSuffixMatch
 	regexpMatch
 )
 
@@ -327,42 +331,47 @@ func (p *Pattern) Exclusion() bool {
 }
 
 func (p *Pattern) Match(path string) (bool, error) {
-	match, err := p.match(path)
-	if err != nil {
-		return false, err
-	}
-	if match {
+	if p.match(path) {
 		return !p.exclusion, nil
 	}
-	return match, nil
+	return false, nil
 }
 
-func (p *Pattern) match(path string) (bool, error) {
-	if p.matchType == unknownMatch {
-		if err := p.compile(string(os.PathSeparator)); err != nil {
-			return false, filepath.ErrBadPattern
-		}
-	}
-
+func (p *Pattern) match(path string) bool {
 	switch p.matchType {
 	case exactMatch:
-		return path == p.cleanedPattern, nil
+		return path == p.cleanedPattern
 	case prefixMatch:
 		// strip trailing **
-		return strings.HasPrefix(path, p.cleanedPattern[:len(p.cleanedPattern)-2]), nil
+		return strings.HasPrefix(path, p.cleanedPattern[:len(p.cleanedPattern)-2])
 	case suffixMatch:
 		// strip leading **
 		suffix := p.cleanedPattern[2:]
 		if strings.HasSuffix(path, suffix) {
-			return true, nil
+			return true
 		}
 		// **/foo matches "foo"
-		return suffix[0] == os.PathSeparator && path == suffix[1:], nil
+		return suffix[0] == os.PathSeparator && path == suffix[1:]
+	case globSuffixMatch:
+		if len(path) < len(p.globPrefix)+len(p.globSuffix) ||
+			!strings.HasPrefix(path, p.globPrefix) ||
+			!strings.HasSuffix(path, p.globSuffix) {
+			return false
+		}
+		middle := path[len(p.globPrefix) : len(path)-len(p.globSuffix)]
+		lastSep := strings.LastIndexByte(middle, os.PathSeparator)
+		if !p.globRecursive {
+			// "*" stays within one path element
+			return lastSep < 0
+		}
+		// "**/" matches whole path elements, as its regexp "(.*/)?" does,
+		// whose "." matches anything but a newline
+		return strings.IndexByte(middle[:lastSep+1], '\n') < 0
 	case regexpMatch:
-		return p.regexp.MatchString(path), nil
+		return p.regexp.MatchString(path)
 	}
 
-	return false, nil
+	return false
 }
 
 func (p *Pattern) compile(sl string) error {
@@ -451,6 +460,13 @@ func (p *Pattern) compile(sl string) error {
 	if p.matchType != regexpMatch {
 		return nil
 	}
+	if prefix, suffix, recursive, ok := globSuffixParts(pattern, sl); ok {
+		p.matchType = globSuffixMatch
+		p.globPrefix = prefix
+		p.globSuffix = suffix
+		p.globRecursive = recursive
+		return nil
+	}
 
 	regStr += "$"
 
@@ -462,6 +478,36 @@ func (p *Pattern) compile(sl string) error {
 	p.regexp = re
 	p.matchType = regexpMatch
 	return nil
+}
+
+// globSuffixParts splits a pattern of the globSuffixMatch shape into the
+// literal text before and after its last "*", reporting whether "**" and a
+// separator come right before that "*". ok is false for any other pattern.
+func globSuffixParts(pattern, sl string) (prefix, suffix string, recursive, ok bool) {
+	star := strings.LastIndexByte(pattern, '*')
+	if star < 0 {
+		return "", "", false, false
+	}
+	prefix, suffix = pattern[:star], pattern[star+1:]
+	if strings.Contains(suffix, sl) {
+		return "", "", false, false
+	}
+	prefix, recursive = strings.CutSuffix(prefix, "**"+sl)
+	if !globLiteral(prefix, sl) || !globLiteral(suffix, sl) {
+		return "", "", false, false
+	}
+	return prefix, suffix, recursive, true
+}
+
+// globLiteral reports whether compile matches s character for character.
+// It passes "^" into the regexp unescaped, as an anchor.
+func globLiteral(s, sl string) bool {
+	special := "*?[]^"
+	if sl != `\` {
+		// an escape, except on Windows, where it's the separator
+		special += `\`
+	}
+	return !strings.ContainsAny(s, special)
 }
 
 // Matches returns true if file matches any of the patterns

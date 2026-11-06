@@ -6,22 +6,22 @@ defmodule Dagger.FunctionCachePolicy do
 
   use Dagger.Core.Base, kind: :enum, name: "FunctionCachePolicy"
 
-  @type t() :: :Default | :PerSession | :Never
+  @type t() :: :DEFAULT | :PER_SESSION | :NEVER
 
-  @spec default() :: :Default
-  def default(), do: :Default
+  @spec default() :: :DEFAULT
+  def default(), do: :DEFAULT
 
-  @spec per_session() :: :PerSession
-  def per_session(), do: :PerSession
+  @spec per_session() :: :PER_SESSION
+  def per_session(), do: :PER_SESSION
 
-  @spec never() :: :Never
-  def never(), do: :Never
+  @spec never() :: :NEVER
+  def never(), do: :NEVER
 
   @doc false
   @spec from_string(String.t()) :: t()
   def from_string(string)
 
-  def from_string("Default"), do: :Default
-  def from_string("PerSession"), do: :PerSession
-  def from_string("Never"), do: :Never
+  def from_string("DEFAULT"), do: :DEFAULT
+  def from_string("PER_SESSION"), do: :PER_SESSION
+  def from_string("NEVER"), do: :NEVER
 end

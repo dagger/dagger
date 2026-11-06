@@ -3,6 +3,7 @@ package idtui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,175 @@ func imagePromptFrontend(t *testing.T) (*frontendPretty, *imagePromptHandler) {
 	fe := newHistoryTestFrontend(t, handler)
 	fe.inputHistory = nil
 	return fe, handler
+}
+
+// commandPromptHandler exercises the optional routing/queue hooks without an
+// engine. The command policy itself is covered by daggercmd's handler tests.
+type commandPromptHandler struct {
+	imagePromptHandler
+	target   string
+	prepared int
+	commands []PromptInput
+}
+
+func (h *commandPromptHandler) ValidatePrompt(input PromptInput) error {
+	if input.Text == "/unknown" {
+		return errors.New("unknown agent command")
+	}
+	return nil
+}
+
+func (h *commandPromptHandler) PreparePrompt(input PromptInput) PromptInput {
+	h.prepared++
+	if strings.HasPrefix(input.Text, "/") {
+		input.CommandTarget = h.target
+	}
+	return input
+}
+
+func (h *commandPromptHandler) SerialPrompt(input PromptInput) bool {
+	return input.CommandTarget != nil
+}
+
+func (h *commandPromptHandler) SubmitPromptToTarget(input PromptInput) bool {
+	return !h.SerialPrompt(input) && h.imagePromptHandler.SubmitPromptToTarget(input)
+}
+
+func (h *commandPromptHandler) QueuePrompt(input PromptInput) {
+	if h.SerialPrompt(input) {
+		h.commands = append(h.commands, input.Clone())
+	} else {
+		h.queued = input.Clone()
+	}
+}
+
+func (h *commandPromptHandler) DequeuePrompt() PromptInput {
+	if len(h.commands) > 0 {
+		input := h.commands[0]
+		h.commands = h.commands[1:]
+		return input
+	}
+	return h.imagePromptHandler.DequeuePrompt()
+}
+
+func (h *commandPromptHandler) RecallQueuedPrompt() PromptInput {
+	return h.imagePromptHandler.DequeuePrompt()
+}
+
+func (h *commandPromptHandler) ClearQueuedPrompts() {
+	h.commands = nil
+	h.queued = PromptInput{}
+}
+
+func (h *commandPromptHandler) QueuedPromptSummary() string {
+	if len(h.commands) == 0 {
+		return h.queued.Summary()
+	}
+	return fmt.Sprintf("%d commands queued; %s", len(h.commands), h.queued.Summary())
+}
+
+func commandPromptFrontend(t *testing.T) (*frontendPretty, *commandPromptHandler) {
+	t.Helper()
+	h := &commandPromptHandler{
+		imagePromptHandler: imagePromptHandler{mode: true, handled: make(chan PromptInput, 8)},
+		target:             "chief",
+	}
+	fe := newHistoryTestFrontend(t, h)
+	fe.inputHistory = nil
+	return fe, h
+}
+
+func TestPromptCommandValidationRetainsDraft(t *testing.T) {
+	for _, busy := range []bool{false, true} {
+		fe, handler := commandPromptFrontend(t)
+		handler.absorb = busy
+		fe.textInput.SetValue("/unknown")
+		fe.tui.Inject(tuist.ParseKey("enter"))
+		fe.tui.Step()
+		// The widget clears accepted input after OnSubmit returns. Assert only
+		// after the real key path completes, not inside the submit callback.
+		require.ErrorContains(t, fe.promptErr, "unknown agent command")
+		require.Equal(t, "/unknown", fe.textInput.Value())
+		require.Empty(t, fe.inputHistory)
+		require.Empty(t, handler.sent)
+		require.Empty(t, handler.handled)
+		require.Zero(t, handler.prepared, "invalid input is not a submitted command")
+	}
+}
+
+func TestPromptCommandRunsAlongsideAgent(t *testing.T) {
+	fe, handler := commandPromptFrontend(t)
+	handler.absorb = true
+	fe.turnsRunning = 1 // an agent turn, not the serial interpreter
+	interrupted := false
+	fe.shellInterrupt = func(error) { interrupted = true }
+	fe.textInput.SetValue("/help")
+	fe.handleInputComplete()
+	select {
+	case input := <-handler.handled:
+		require.Equal(t, "/help", input.Text)
+		require.Equal(t, "chief", input.CommandTarget)
+	case <-time.After(time.Second):
+		t.Fatal("read-only command waited for the agent turn")
+	}
+	require.Empty(t, handler.sent, "a command is not an interjection")
+	require.False(t, interrupted)
+	require.Eventually(t, func() bool {
+		fe.tui.Step()
+		return fe.turnsRunning == 1 && !fe.serialRunning
+	}, time.Second, time.Millisecond)
+}
+
+func TestPromptCommandQueueFIFOAndSubmissionTarget(t *testing.T) {
+	fe, handler := commandPromptFrontend(t)
+	fe.serialRunning = true
+	fe.turnsRunning = 1
+	for _, text := range []string{"/model first", "old draft", "/effort high", "latest draft"} {
+		fe.textInput.SetValue(text)
+		fe.handleInputComplete()
+	}
+	require.Len(t, handler.commands, 2)
+	require.Equal(t, "latest draft", handler.queued.Text)
+	require.Contains(t, fe.queuedMsgLabel.Message(), "2 commands")
+	handler.target = "scout"
+	fe.handleShellDone(nil, true)
+	for _, text := range []string{"/model first", "/effort high", "latest draft"} {
+		var got PromptInput
+		require.Eventually(t, func() bool {
+			fe.tui.Step()
+			select {
+			case got = <-handler.handled:
+				return true
+			default:
+				return false
+			}
+		}, time.Second, time.Millisecond)
+		require.Equal(t, text, got.Text)
+		if strings.HasPrefix(text, "/") {
+			require.Equal(t, "chief", got.CommandTarget)
+		} else {
+			require.Nil(t, got.CommandTarget, "normal messages do not pin a command target")
+		}
+	}
+	require.Equal(t, 4, handler.prepared, "queued execution must not prepare or retarget again")
+}
+
+func TestPromptCommandQueueRecallAndCancellation(t *testing.T) {
+	fe, handler := commandPromptFrontend(t)
+	fe.serialRunning = true
+	for _, text := range []string{"/model first", "draft", "/compact"} {
+		fe.textInput.SetValue(text)
+		fe.handleInputComplete()
+	}
+	require.True(t, fe.recallQueuedPrompt())
+	require.Equal(t, "draft", fe.textInput.Value())
+	require.Len(t, handler.commands, 2, "recall must not withdraw a submitted command")
+	require.True(t, handler.queued.Empty())
+	require.Contains(t, fe.queuedMsgLabel.Message(), "2 commands")
+	fe.interruptCurrent()
+	require.Empty(t, handler.commands)
+	require.True(t, handler.queued.Empty())
+	require.Empty(t, fe.queuedMsgLabel.Message())
 }
 
 func TestPromptImagePasteAndSubmit(t *testing.T) {

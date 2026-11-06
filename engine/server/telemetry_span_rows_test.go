@@ -169,7 +169,7 @@ func encodeTestSpans(spans []sdktrace.ReadOnlySpan) []encodedSpanRow {
 	enc := newSpanRowEncoder()
 	rows := make([]encodedSpanRow, len(spans))
 	for i, span := range spans {
-		rows[i] = enc.encode(span)
+		rows[i] = enc.encode(span, span.Attributes())
 	}
 	return rows
 }

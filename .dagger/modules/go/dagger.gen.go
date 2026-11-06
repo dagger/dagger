@@ -201,37 +201,12 @@ func dispatch(ctx context.Context) (rerr error) {
 		}
 	}()
 
-	parentName, err := fnCall.ParentName(ctx)
+	parentName, fnName, parentJson, inputArgs, err := fnCall.DispatchInputs(ctx)
 	if err != nil {
-		return fmt.Errorf("get parent name: %w", err)
-	}
-	fnName, err := fnCall.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn name: %w", err)
-	}
-	parentJson, err := fnCall.Parent(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn parent: %w", err)
-	}
-	fnArgs, err := fnCall.InputArgs(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn args: %w", err)
+		return fmt.Errorf("get fn call: %w", err)
 	}
 
-	inputArgs := map[string][]byte{}
-	for _, fnArg := range fnArgs {
-		argName, err := fnArg.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg name: %w", err)
-		}
-		argValue, err := fnArg.Value(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg value: %w", err)
-		}
-		inputArgs[argName] = []byte(argValue)
-	}
-
-	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
+	result, err := invoke(ctx, parentJson, parentName, fnName, inputArgs)
 	if err != nil {
 		return err
 	}
@@ -777,7 +752,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithObject("Go")).
 							WithSourceMap(dag.SourceMap("main.go", 32, 1)).
 							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Project source directory", SourceMap: dag.SourceMap("main.go", 37, 2), DefaultPath: "/"}).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Go version", SourceMap: dag.SourceMap("main.go", 41, 2), DefaultValue: dagger.JSON("\"1.26\"")}).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Go version", SourceMap: dag.SourceMap("main.go", 41, 2), DefaultValue: dagger.JSON("\"1.27\"")}).
 							WithArg("moduleCache", dag.TypeDef().WithObject("CacheVolume").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Use a custom module cache", SourceMap: dag.SourceMap("main.go", 44, 2)}).
 							WithArg("buildCache", dag.TypeDef().WithObject("CacheVolume").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Use a custom build cache", SourceMap: dag.SourceMap("main.go", 48, 2)}).
 							WithArg("base", dag.TypeDef().WithObject("Container").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Use a custom base container.\nThe container must have Go installed.", SourceMap: dag.SourceMap("main.go", 53, 2)}).

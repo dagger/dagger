@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -294,9 +295,9 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 			itemNode.Directives = nil
 			item := *selected
 			item.Node = &itemNode
-			item.Path = itemNode.CommandPath().CliCase()
+			item.Path = itemNode.CommandCLIPath()
 			if len(item.Path) == 0 {
-				item.Path = itemNode.Path().CliCase()
+				item.Path = itemNode.CLIPath()
 			}
 			item.TypeName = itemNode.ObjectType().Name
 			item.Directives = nil
@@ -397,13 +398,14 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 	for _, rule := range discovery.view.state.Rules {
 		filters = append(filters, ArtifactDimensionFilter{Dimension: rule.Dimension, Keys: rule.Keys})
 	}
+	rootsCtx := withArtifactReceivers(discoveryCtx)
 	for _, root := range roots {
 		if !slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
 			return filter.Dimension == root.Node.CollectionDimension.Identifier
 		}) {
 			continue
 		}
-		if _, err := expandArtifactNode(discoveryCtx, root.Node, root, filters, artifactCollectionKeys); err != nil {
+		if _, err := expandArtifactNode(rootsCtx, root.Node, root, filters, artifactCollectionKeys); err != nil {
 			return nil, err
 		}
 	}
@@ -477,8 +479,61 @@ func artifactCollection(ctx context.Context, artifact *Artifact) (dagql.AnyObjec
 	if !ok {
 		return nil, nil, fmt.Errorf("returned %T instead of a collection", value.Unwrap())
 	}
+	artifactReceiversFrom(ctx).store(artifact, value)
 	keys, err := obj.collectionKeys(ctx)
 	return value, keys, err
+}
+
+// artifactReceivers holds the collection receivers one expansion has already
+// evaluated, so a deeper receiver or item evaluates from its nearest one
+// instead of selecting every ancestor again from the root. One expansion
+// evaluates all its receivers in the same context, and a receiver's value
+// also depends on the workspace and view it evaluates in, so values are kept
+// per node and per those.
+type artifactReceivers struct {
+	mu     sync.Mutex
+	values map[artifactReceiverKey]dagql.AnyObjectResult
+}
+
+type artifactReceiverKey struct {
+	node             *ModTreeNode
+	workspace        *Workspace
+	contextWorkspace *Workspace
+	view             *ArtifactView
+}
+
+type artifactReceiversKey struct{}
+
+func withArtifactReceivers(ctx context.Context) context.Context {
+	return context.WithValue(ctx, artifactReceiversKey{}, &artifactReceivers{values: map[artifactReceiverKey]dagql.AnyObjectResult{}})
+}
+
+func artifactReceiversFrom(ctx context.Context) *artifactReceivers {
+	receivers, _ := ctx.Value(artifactReceiversKey{}).(*artifactReceivers)
+	return receivers
+}
+
+func (r *artifactReceivers) key(a *Artifact, node *ModTreeNode) artifactReceiverKey {
+	return artifactReceiverKey{node: node, workspace: a.Workspace.Self(), contextWorkspace: a.ContextWorkspace.Self(), view: a.View}
+}
+
+func (r *artifactReceivers) store(a *Artifact, value dagql.AnyObjectResult) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.values[r.key(a, a.Node)] = value
+}
+
+func (r *artifactReceivers) load(a *Artifact, node *ModTreeNode) (dagql.AnyObjectResult, bool) {
+	if r == nil {
+		return nil, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	value, ok := r.values[r.key(a, node)]
+	return value, ok
 }
 
 func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectionKeyFunc) (*Artifacts, error) {
@@ -539,6 +594,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 	}
 	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, AllDimensions: bound.AllDimensions, AllPaths: bound.AllPaths, CollectionRoots: bound.CollectionRoots}
 	names := bound.displayNames()
+	ctx = withArtifactReceivers(ctx)
 	// Each worker owns one slot; flatten only after all workers finish so
 	// discovery order is independent of evaluation completion order.
 	entries := make([][]*Artifact, len(bound.Entries))
@@ -711,30 +767,41 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		return err
 	}
 	if members != nil {
+		// Artifact dimensions use current CLI spelling, even when their
+		// backing collection's GraphQL names belong to an older view.
+		namer := LatestNamer
 		path := []string{}
 		parent := node
 		for parent.Parent != nil && parent.CollectionDimension == nil {
-			path = append(path, ArtifactTypeName(parent.Name))
+			path = append(path, namer.CLIName(parent.Name))
 			parent = parent.Parent
 		}
 		slices.Reverse(path)
-		prefix := "/" + ArtifactTypeName(node.Module.Self().Name())
+		prefix := "/" + namer.CLIName(node.Module.Self().Name())
 		if parent.CollectionDimension != nil {
 			prefix = parent.CollectionDimension.Identifier
 		}
 		identifier := strings.Join(append([]string{prefix}, path...), "/")
-		// The namespaced name keeps short names unique across modules.
+		// The namespaced current spelling keeps short names unique across modules.
 		itemType := members.Get.ReturnType.Self().AsObject.Value.Self().Name
 		dim := &ArtifactDimension{
 			Kind: "COLLECTION", CollectionType: obj.Name,
 			Identifier:     identifier,
-			Name:           ArtifactTypeName(itemType),
+			Name:           namer.CLIName(itemType),
 			ItemType:       itemType,
 			KeyName:        members.Get.Args[0].Self().Name,
 			KeyDescription: members.Get.Args[0].Self().Description,
 		}
 		qualified := strings.Split(strings.TrimPrefix(identifier, "/"), "/")
-		itemName := strings.TrimPrefix(dim.Name, qualified[0]+"-")
+		// Trim the module prefix (the identifier's first segment, spelled by
+		// the same rules) from the item name.
+		itemName := dim.Name
+		for _, prefix := range []string{qualified[0], namer.CLIName(node.Module.Self().Name())} {
+			if rest, ok := strings.CutPrefix(itemName, prefix+"-"); ok {
+				itemName = rest
+				break
+			}
+		}
 		qualified = append(qualified, itemName)
 		dim.QualifiedName = strings.Join(qualified, "-")
 		item := &ModTreeNode{Parent: node, Name: "get", Type: members.Get.ReturnType, Description: members.Get.Description,

@@ -747,17 +747,13 @@ func (c *Cache) retainDecodedDependencyResults(ctx context.Context, res *sharedR
 	if len(deps) == 0 {
 		return nil
 	}
-	parent := Result[Typed]{shared: res}
 	for _, dep := range deps {
 		depShared := dep.cacheSharedResult()
 		if depShared == nil || depShared.id == 0 {
 			return fmt.Errorf("decoded payload of result %d declares a detached %T dependency", res.id, dep)
 		}
-		if err := c.addExplicitDependency(ctx, parent, dep, "decoded_dependency_result"); err != nil {
-			return err
-		}
 	}
-	return nil
+	return c.addExplicitDependencies(ctx, Result[Typed]{shared: res}, deps, "decoded_dependency_result")
 }
 
 func collectDecodedDependencyResults(decoded AnyResult, deps *[]AnyResult) {

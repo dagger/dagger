@@ -24,8 +24,10 @@ func (GitPushDisposition) Decoder() dagql.InputDecoder { return GitPushDispositi
 func (d GitPushDisposition) ToLiteral() call.Literal   { return GitPushDispositions.Literal(d) }
 
 type GitPushResult struct {
-	Ref         string             `field:"true" doc:"The fully qualified remote ref."`
-	PreviousSHA string             `field:"true" name:"previousSHA" doc:"The previous remote object ID; empty when the ref was created."`
+	Ref string `field:"true" doc:"The fully qualified remote ref."`
+	// PreviousSHA is installed by hand (core/schema/git.go), as previousSha
+	// or, in views before engine.IdentifierCasingVersion, previousSHA.
+	PreviousSHA string
 	SHA         string             `field:"true" doc:"The object ID pushed to the remote."`
 	Disposition GitPushDisposition `field:"true" doc:"How the remote ref was updated."`
 }

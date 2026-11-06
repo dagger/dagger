@@ -304,6 +304,9 @@ type partPayload struct {
 	directory persistedDirectoryPayload
 	file      persistedFilePayload
 	container persistedContainerPayload
+	// containerRoute is the Container's live recipe's route, when the recipe
+	// isn't encoded into the payload.
+	containerRoute *containerRecipeRoute
 }
 
 // decodePartPayload strictly decodes v's payload for its family. A family

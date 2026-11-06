@@ -148,6 +148,23 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
 		}
 		return t.objectToSDKInput(ctx, parentCall, x.Self())
+	case dagql.AnyResult:
+		// Nullable wrapping can erase the ObjectResult wrapper while keeping
+		// its shared result and call frame. Restore the selectable view before
+		// attaching or scoping it; an inline result does not have an ID yet.
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		selectable, err := srv.ToSelectable(ctx, x)
+		if err != nil {
+			return nil, fmt.Errorf("module object SDK input: %w", err)
+		}
+		obj, ok := selectable.(dagql.ObjectResult[*ModuleObject])
+		if !ok {
+			return nil, fmt.Errorf("unexpected module object result type %T", selectable)
+		}
+		return t.ConvertToSDKInput(ctx, obj)
 	case *ModuleObject:
 		return t.objectToSDKInput(ctx, dagql.CurrentCall(ctx), x)
 	case dagql.IDable:
@@ -237,11 +254,7 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, pare
 }
 
 func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any) (any, error) {
-	typeDef, err := modType.TypeDef(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve mod type typedef: %w", err)
-	}
-	switch typeDef.Self().Kind {
+	switch modType.Kind() {
 	case TypeDefKindObject, TypeDefKindInterface:
 		switch value := value.(type) {
 		case nil:
@@ -562,6 +575,10 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 	return nil
 }
 
+func (t *ModuleObjectType) Kind() TypeDefKind {
+	return TypeDefKindObject
+}
+
 func (t *ModuleObjectType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
 	var sourceMap dagql.Optional[dagql.ID[*SourceMap]]
 	var err error
@@ -796,14 +813,7 @@ func attachTypedModuleObjectValue(
 		return updatedItems, owned, nil
 	}
 
-	typeDef, err := modType.TypeDef(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("resolve mod type typedef: %w", err)
-	}
-	if typeDef.Self() == nil {
-		return val, nil, nil
-	}
-	switch typeDef.Self().Kind {
+	switch modType.Kind() {
 	case TypeDefKindObject, TypeDefKindInterface:
 		typed, err := modType.ConvertFromSDKResult(ctx, val)
 		if err != nil {
@@ -825,10 +835,15 @@ func attachTypedModuleObjectValue(
 				// Decoding moves the collection base out of Fields. Keep its
 				// attached reference in the inline representation so decoding
 				// it again preserves the original keys and collection identity.
-				if obj.CollectionBase != nil {
+				// A base that is the object itself is set again on decoding.
+				if obj.CollectionBase != nil && obj.CollectionBase.Unwrap() != obj {
 					fields[collectionBaseField] = obj.CollectionBase
 				}
-				return fields, []dagql.AnyResult{attached}, nil
+				// The owner's state is these fields, not the object: the
+				// object is a field call on the owner, so it depends on the
+				// owner and owning it would make each depend on the other.
+				// The owner owns the results the fields refer to instead.
+				return fields, inlineModuleObjectResults(fields), nil
 			}
 		}
 		// Handles retain the attached result so persistence can relocate them.
@@ -840,6 +855,30 @@ func attachTypedModuleObjectValue(
 		}
 	default:
 		return val, nil, nil
+	}
+}
+
+// inlineModuleObjectResults returns the attached results an inline object's
+// fields hold, at any depth of nested inline objects and lists: each becomes
+// a reference in the persisted state of the object that inlines it.
+func inlineModuleObjectResults(val any) []dagql.AnyResult {
+	switch x := val.(type) {
+	case dagql.AnyResult:
+		return []dagql.AnyResult{x}
+	case []any:
+		var results []dagql.AnyResult
+		for _, item := range x {
+			results = append(results, inlineModuleObjectResults(item)...)
+		}
+		return results
+	case map[string]any:
+		var results []dagql.AnyResult
+		for _, name := range slices.Sorted(maps.Keys(x)) {
+			results = append(results, inlineModuleObjectResults(x[name])...)
+		}
+		return results
+	default:
+		return nil
 	}
 }
 
@@ -1395,7 +1434,11 @@ func (obj *ModuleObject) isMainObject() bool {
 	if src := obj.Module.Self().GetSource(); src != nil && src.Entrypoint != nil {
 		return obj.TypeDef.Constructor.Valid
 	}
-	return gqlObjectName(obj.TypeDef.OriginalName) == gqlObjectName(obj.Module.Self().OriginalName)
+	// The main object is the one the module's name designates, by the
+	// module's rules (see Module.MainObject): an SDK may spell it otherwise
+	// around digits and acronyms (K8STools for module k8s-tools).
+	main, ok := obj.Module.Self().MainObject()
+	return ok && main.OriginalName == obj.TypeDef.OriginalName
 }
 
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
@@ -1416,7 +1459,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			desc = formatGqlDescription(mod.Description)
 		}
 		spec := dagql.FieldSpec{
-			Name:             gqlFieldName(mod.Name()),
+			Name:             mod.ConstructorName(),
 			Description:      desc,
 			Type:             obj,
 			Module:           moduleID,
@@ -1465,7 +1508,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	if err != nil {
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
-	spec.Name = gqlFieldName(mod.Name())
+	spec.Name = mod.ConstructorName()
 	if spec.Description == "" {
 		spec.Description = formatGqlDescription(objDef.Description)
 	}
@@ -1505,7 +1548,7 @@ func (obj *ModuleObject) installMainMethods(ctx context.Context, dag *dagql.Serv
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for workspace main object %q: %w", obj.TypeDef.Name, err)
 	}
-	constructorName := gqlFieldName(obj.Module.Self().Name())
+	constructorName := obj.Module.Self().ConstructorName()
 
 	// Build constructor arg specs from the module's type definition
 	// rather than looking them up from the server — the constructor
@@ -1729,9 +1772,10 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		projectionSpec.Type = fun.ReturnType.Self().ToTyped()
 		projectionSpec.ViewFilter = AfterVersion("v1.0.0-0")
 		projectionSpec.IsPersistable = false
+		// The projection keeps the function's cache inputs: a check that
+		// must run fresh gets a new Check object, and every read of one
+		// object shares its run.
 		projectionSpec.TTL = 0
-		projectionSpec.ImplicitInputs = nil
-		projectionSpec.Reevaluate = false
 		fields = append(fields, dagql.Field[*ModuleObject]{
 			Spec: &projectionSpec,
 			Func: func(ctx context.Context, receiver dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
@@ -1745,8 +1789,7 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 				// wrap it.
 				return dagql.NewObjectResultForCurrentCall(ctx, installed.orCurrent(ctx), &Check{
 					Assertion: dagql.NonNull(dagql.String(fun.Description)),
-					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace,
-					CachePolicy: fun.derivedCachePolicy(obj.Module.Self()), CacheTTL: field.Spec.TTL,
+					Receiver:  receiver, Function: fun.Name, Inputs: inputs, Workspace: workspace, CacheTTL: field.Spec.TTL,
 				})
 			},
 		})

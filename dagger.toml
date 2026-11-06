@@ -34,7 +34,7 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "dagger.io/go@3159d1fa20a86963dbf9b48f856daeec72be3893"
+source = "dagger.io/go"
 legacy-default-path = true
 
 [modules.golang.settings]
@@ -46,7 +46,7 @@ generate = [
   "docs/current_docs/reference/cli",
   "sdk/go/engineconn",
 ]
-test = ["e2e/**", "hack/sdl-diff"]
+test = ["e2e/**", "hack/sdl-diff", "internal/fastbolt"]
 
 [modules.golangci-lint]
 source = "github.com/dagger/golangci-lint@main"
@@ -55,6 +55,7 @@ source = "github.com/dagger/golangci-lint@main"
 lint = [
   ".",
   "hack/sdl-diff",
+  "internal/fastbolt",
   "engine/distconsts",
   "modules/daggerverse",
   "sdk/go",
@@ -290,7 +291,11 @@ clients = ["./.dagger/modules/engine-dev", "./modules/git-releaser"]
 
 [sdks.go.scopes.".dagger/modules/python-client-dev"]
 is-module = true
-clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest@cdf6dc0bce0fe8fdf87c6b26ecd991e6f96200b0", "dagger.io/linux/wolfi"]
+clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/python-client-dev/dockerd", "github.com/dagger/pytest", "dagger.io/linux/wolfi"]
+
+[sdks.go.scopes.".dagger/modules/python-client-dev".settings]
+dangEntrypoint = false
+unifiedClients = false
 
 [sdks.go.scopes.".dagger/modules/python-client-dev/dockerd"]
 is-module = true

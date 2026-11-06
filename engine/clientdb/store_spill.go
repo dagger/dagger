@@ -221,8 +221,10 @@ func (s *spillFile[Row]) append(rows []Row) error {
 	offset := start
 	rowCount := s.rowCount
 	var pendingIndex []spillIndexEntry
+	// One buffer serves every row: the writer copies each frame out of it.
+	var payload []byte
 	for _, row := range rows {
-		payload := s.codec.encode(row)
+		payload = s.codec.encode(payload[:0], row)
 		var prefix [binary.MaxVarintLen64]byte
 		prefixLen := binary.PutUvarint(prefix[:], uint64(len(payload)))
 		if rowCount%sparseIndexStride == 0 {
@@ -274,9 +276,14 @@ func (s *spillFile[Row]) readSince(ctx context.Context, id int64, limit int) ([]
 	}
 
 	scanner := newFrameScanner(s.file, offset, committed)
+	defer scanner.release()
 	rows := make([]Row, 0, limit)
+	// One buffer serves every frame: the row codecs' decoders copy every
+	// field out of it.
+	var payload []byte
 	for len(rows) < limit {
-		payload, err := scanner.next()
+		var err error
+		payload, err = scanner.nextInto(payload[:0])
 		if errors.Is(err, io.EOF) {
 			break
 		}

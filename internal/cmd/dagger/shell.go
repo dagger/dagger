@@ -215,8 +215,11 @@ type shellCallHandler struct {
 	// as a new turn once the current one finishes. Messages submitted while a
 	// PROMPT turn runs bypass this entirely: they are sent straight to the
 	// agent runtime (see Interject).
-	queuedMsg   idtui.PromptInput
-	queuedMsgMu sync.Mutex
+	// queuedCommands is FIFO and independent of the one recallable text draft.
+	// Submitted commands must never overwrite each other or become LLM input.
+	queuedCommands []idtui.PromptInput
+	queuedMsg      idtui.PromptInput
+	queuedMsgMu    sync.Mutex
 
 	// cancel interrupts the entire shell session
 	cancel func()
@@ -237,6 +240,11 @@ func (h *shellCallHandler) SubmitToTarget(msg string) bool {
 }
 
 func (h *shellCallHandler) SubmitPromptToTarget(input idtui.PromptInput) bool {
+	// Commands (known or unknown), exit, and shell input are never messages.
+	// This gate must precede the fast path to an agent's running mailbox.
+	if h.SerialPrompt(input) {
+		return false
+	}
 	// Rejected inputs must go through HandlePrompt to surface the error, never
 	// bypass command/attachment validation by joining an in-flight turn.
 	if h.validatePromptInput(input) != nil {
@@ -266,11 +274,72 @@ func (h *shellCallHandler) InterruptTarget() bool {
 // runtime -- so two agents can hold turns at once, which is the whole point of
 // a roster.
 func (h *shellCallHandler) Serial(input string) bool {
-	if h.mode != modePrompt {
-		return true
+	return h.SerialPrompt(idtui.PromptInput{Text: input})
+}
+
+func (h *shellCallHandler) SerialPrompt(input idtui.PromptInput) bool {
+	line := strings.TrimSpace(input.Text)
+	return h.promptInputMode(input) != modePrompt || line == "exit" || strings.HasPrefix(line, "/")
+}
+
+// commandSubmission freezes the mode and focused conversation before a command
+// waits for the interpreter or a picker. Only commands carry this metadata.
+type commandSubmission struct {
+	mode   interpreterMode
+	target *sessionAgent
+}
+
+type commandSubmissionKey struct{}
+
+// commandMode is the mode a queued command was submitted in. Presentation
+// commands such as help must not adopt a mode selected after submission.
+func (h *shellCallHandler) commandMode(ctx context.Context) interpreterMode {
+	if submission, ok := ctx.Value(commandSubmissionKey{}).(*commandSubmission); ok {
+		return submission.mode
 	}
-	_, isCommand := h.slashCommand(strings.TrimSpace(input))
-	return isCommand
+	return h.mode
+}
+
+func (h *shellCallHandler) promptInputMode(input idtui.PromptInput) interpreterMode {
+	if mode, ok := input.SubmissionMode.(interpreterMode); ok {
+		return mode
+	}
+	return h.mode
+}
+
+func (h *shellCallHandler) PreparePrompt(input idtui.PromptInput) idtui.PromptInput {
+	if input.SubmissionMode != nil {
+		return input
+	}
+	input.SubmissionMode = h.mode
+	if h.SerialPrompt(input) {
+		// A setup command ahead of this one may repair failed initialization.
+		// Capture an existing conversation, not a transient startup error.
+		target, _ := h.focusedConversation()
+		input.CommandTarget = &commandSubmission{mode: h.mode, target: target}
+	}
+	return input
+}
+
+// commandTarget resolves a command's submission-time target, not the agent that
+// happens to be focused when an asynchronous picker or queued command resumes.
+func (h *shellCallHandler) commandTarget(ctx context.Context) (*sessionAgent, error) {
+	submission, captured := ctx.Value(commandSubmissionKey{}).(*commandSubmission)
+	if captured && submission.target != nil {
+		return submission.target, nil
+	}
+	s, err := h.llm(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if captured {
+		// Submitted before session initialization: the original conversation,
+		// not an agent focused after initialization, owns this command.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.agents[0], nil
+	}
+	return s.Target(), nil
 }
 
 // TargetAgentID is the runtime handle of the runtime the prompt addresses, which
@@ -350,9 +419,14 @@ func (h *shellCallHandler) QueueMessage(msg string) {
 }
 
 func (h *shellCallHandler) QueuePrompt(input idtui.PromptInput) {
+	input = h.PreparePrompt(input)
 	h.queuedMsgMu.Lock()
 	defer h.queuedMsgMu.Unlock()
-	h.queuedMsg = input.Clone()
+	if h.SerialPrompt(input) {
+		h.queuedCommands = append(h.queuedCommands, input.Clone())
+	} else {
+		h.queuedMsg = input.Clone()
+	}
 }
 
 // DequeueMessage returns and clears any queued text-only message. Multimodal
@@ -364,9 +438,43 @@ func (h *shellCallHandler) DequeueMessage() string {
 func (h *shellCallHandler) DequeuePrompt() idtui.PromptInput {
 	h.queuedMsgMu.Lock()
 	defer h.queuedMsgMu.Unlock()
+	if len(h.queuedCommands) > 0 {
+		input := h.queuedCommands[0]
+		h.queuedCommands[0] = idtui.PromptInput{}
+		h.queuedCommands = h.queuedCommands[1:]
+		return input
+	}
 	msg := h.queuedMsg
 	h.queuedMsg = idtui.PromptInput{}
 	return msg
+}
+
+func (h *shellCallHandler) RecallQueuedPrompt() idtui.PromptInput {
+	h.queuedMsgMu.Lock()
+	defer h.queuedMsgMu.Unlock()
+	msg := h.queuedMsg
+	h.queuedMsg = idtui.PromptInput{}
+	return msg
+}
+
+func (h *shellCallHandler) ClearQueuedPrompts() {
+	h.queuedMsgMu.Lock()
+	defer h.queuedMsgMu.Unlock()
+	h.queuedCommands = nil
+	h.queuedMsg = idtui.PromptInput{}
+}
+
+func (h *shellCallHandler) QueuedPromptSummary() string {
+	h.queuedMsgMu.Lock()
+	defer h.queuedMsgMu.Unlock()
+	if len(h.queuedCommands) == 0 {
+		return h.queuedMsg.Summary()
+	}
+	label := fmt.Sprintf("%d command(s) queued", len(h.queuedCommands))
+	if !h.queuedMsg.Empty() {
+		label += "; " + h.queuedMsg.Summary()
+	}
+	return label
 }
 
 // BranchFromID branches the focused conversation to the state identified by the
@@ -673,14 +781,25 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) error {
 	return h.HandlePrompt(ctx, idtui.PromptInput{Text: line})
 }
 
+// ValidatePrompt is called before the frontend clears the submitted draft.
+func (h *shellCallHandler) ValidatePrompt(input idtui.PromptInput) error {
+	return h.validatePromptInput(input)
+}
+
 func (h *shellCallHandler) validatePromptInput(input idtui.PromptInput) error {
+	line := strings.TrimSpace(input.Text)
+	mode := h.promptInputMode(input)
+	if mode == modePrompt && strings.HasPrefix(line, "/") && line != "/exit" {
+		if _, known := h.slashCommand(line); !known {
+			return fmt.Errorf("unknown agent command %q; use /help for available commands", strings.Fields(line)[0])
+		}
+	}
 	if len(input.Images) == 0 {
 		return nil
 	}
-	if h.mode != modePrompt {
+	if mode != modePrompt {
 		return fmt.Errorf("image attachments are only supported in prompt mode")
 	}
-	line := strings.TrimSpace(input.Text)
 	if line == "exit" || strings.HasPrefix(line, "/") {
 		return fmt.Errorf("image attachments cannot be used with commands")
 	}
@@ -696,6 +815,10 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 	input = input.Clone()
 	input.Text = strings.TrimSpace(input.Text)
 	line := input.Text
+	mode := h.promptInputMode(input)
+	if submission, ok := input.CommandTarget.(*commandSubmission); ok {
+		ctx = context.WithValue(ctx, commandSubmissionKey{}, submission)
+	}
 
 	// If in exit command
 	if line == "exit" || line == "/exit" {
@@ -714,10 +837,10 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 	// span's content type follows suit so a command renders as a command rather
 	// than as markdown.
 	shellLine := line
-	contentType := h.mode.ContentType()
+	contentType := mode.ContentType()
 
-	// Handle based on mode
-	if h.mode == modePrompt {
+	// Handle based on the mode captured when the command was submitted.
+	if mode == modePrompt {
 		if cmd, ok := h.slashCommand(line); ok {
 			// A prompt-mode "/command" invokes the matching builtin without
 			// leaving prompt mode, so session commands (e.g. /clear, /compact)
@@ -742,7 +865,8 @@ func (h *shellCallHandler) HandlePrompt(ctx context.Context, input idtui.PromptI
 				}
 				return err
 			}
-			h.noteModel(target.model)
+			_, selected := target.llmSnapshot()
+			h.noteModel(selected.Model)
 			return nil
 		}
 	}
@@ -804,12 +928,9 @@ func (h *shellCallHandler) PromptMode() bool {
 	return h.mode == modePrompt
 }
 
-// slashCommand maps a prompt-mode "/command" line to its equivalent ".command"
-// builtin invocation, returning the rewritten line and true when the leading
-// token names a real builtin. This lets agent-prompt users run session
-// commands (e.g. "/clear", "/compact") without switching to shell mode. Lines
-// that don't name a builtin -- including a bare "/" or ordinary prose that just
-// happens to start with a slash -- are left alone for the LLM.
+// slashCommand maps the curated agent commands to their shell implementations.
+// Shell-only builtins remain available after /shell, not as accidental agent
+// commands. Unknown input is handled by the caller.
 func (h *shellCallHandler) slashCommand(line string) (string, bool) {
 	name, ok := strings.CutPrefix(line, "/")
 	if !ok {
@@ -818,7 +939,7 @@ func (h *shellCallHandler) slashCommand(line string) (string, bool) {
 	if i := strings.IndexAny(name, " \t"); i >= 0 {
 		name = name[:i]
 	}
-	if name == "" {
+	if _, ok := agentCommandDescription(name); !ok {
 		return "", false
 	}
 	if cmd, _ := h.BuiltinCommand("." + name); cmd == nil {
@@ -880,12 +1001,11 @@ func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.Compl
 		if wordStart == 0 && strings.HasPrefix(word, "/") {
 			prefix := word[1:]
 			var items []tuist.Completion
-			for _, c := range h.Builtins() {
-				name := strings.TrimPrefix(c.Name(), ".")
-				if strings.HasPrefix(name, prefix) {
+			for _, command := range agentCommandHelp {
+				if strings.HasPrefix(command.name, prefix) {
 					items = append(items, tuist.Completion{
-						Label:  "/" + name,
-						Detail: c.Short(),
+						Label:  "/" + command.name,
+						Detail: command.description,
 					})
 				}
 			}
@@ -981,7 +1101,8 @@ func (h *shellCallHandler) initLLMSession(ctx context.Context, initial *core.LLM
 		return nil, err
 	}
 	h.llmSession = s
-	h.llmModel = s.Target().model
+	_, selected := s.Target().llmSnapshot()
+	h.llmModel = selected.Model
 	// Title generation is presentation only; persistence belongs to the trace.
 	if h.generateSessionTitle {
 		s.onStep = func(a *sessionAgent) {

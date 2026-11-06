@@ -7,7 +7,8 @@ import (
 )
 
 // resultCallFrameGeneration counts replacements of a result's call frame
-// (storeResultCall swapping one frame for another). A frame's own fields don't
+// (storeResultCall swapping one frame for another, or for none). Removing a
+// result from the cache isn't one (dropResultCall). A frame's own fields don't
 // change once it is stored, but the frames of the results it references can
 // be replaced, and an equivalent replacement can reference different Module
 // results: canonicalization goes by e-graph class, not result identity. So a

@@ -650,6 +650,58 @@ func TestImportImageSharesChainReuse(t *testing.T) {
 	require.Equal(t, client.UsageRecordTypeRegular, record.RecordType)
 }
 
+// A layer is imported only when its content matches the uncompressed digest
+// (diffID) its image's config names, as containerd's unpacker requires.
+func TestImportImageRejectsLayerNotMatchingItsDiffID(t *testing.T) {
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	base, _ := producer.Build(t, nil, "base.txt", "shared base")
+	withReal, _ := producer.Build(t, base, "a.txt", "real layer")
+	other, _ := producer.Build(t, base, "a.txt", "other content")
+	realChain, otherChain := exportChain(t, withReal), exportChain(t, other)
+	require.Len(t, realChain.Layers, 2)
+	require.Len(t, otherChain.Layers, 2)
+	require.Equal(t, realChain.Layers[0].Descriptor.Digest, otherChain.Layers[0].Descriptor.Digest)
+
+	owner, err := consumer.Leases.Create(ctx, leases.WithRandomID())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, consumer.Leases.Delete(context.Background(), owner)) })
+	fetchCtx := leases.WithLease(ctx, owner.ID)
+	fetched := func(chain *bkcache.ExportChain) []ocispecs.Descriptor {
+		layers := make([]ocispecs.Descriptor, 0, len(chain.Layers))
+		for _, layer := range chain.Layers {
+			data, err := content.ReadBlob(ctx, chain.Provider, layer.Descriptor)
+			require.NoError(t, err)
+			err = content.WriteBlob(fetchCtx, consumer.Content, layer.Descriptor.Digest.String(), bytes.NewReader(data), layer.Descriptor)
+			if !cerrdefs.IsAlreadyExists(err) {
+				require.NoError(t, err)
+			}
+			layers = append(layers, layer.Descriptor)
+		}
+		return layers
+	}
+	import_ := func(ref string, layers []ocispecs.Descriptor) (bkcache.ImmutableRef, error) {
+		return consumer.Manager.ImportImage(ctx, &bkcache.ImportedImage{Ref: ref, Layers: layers}, bkcache.ImportImageOpts{ImageRef: ref, RecordType: client.UsageRecordTypeRegular})
+	}
+
+	realLayers := fetched(realChain)
+	realDiffID := realLayers[1].Annotations["containerd.io/uncompressed"]
+	require.NotEmpty(t, realDiffID)
+	claiming := fetched(otherChain)
+	claiming[1].Annotations = map[string]string{"containerd.io/uncompressed": realDiffID}
+	require.NotEqual(t, realLayers[1].Digest, claiming[1].Digest)
+
+	claimed, claimErr := import_("local/claiming", claiming)
+	if claimErr == nil {
+		defer claimed.Release(ctx)
+	}
+	image, err := import_("local/real", realLayers)
+	require.NoError(t, err)
+	defer image.Release(ctx)
+	testutil.CheckFile(t, image, "a.txt", "real layer")
+	require.ErrorContains(t, claimErr, "diff id")
+}
+
 func TestExportChainCanceledWaiter(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewStore(t)

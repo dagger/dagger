@@ -121,6 +121,7 @@ func TestContainerEvaluatedLazyOperationPersistsWithoutLoadingParents(t *testing
 	reencoded, err := restored.EncodePersistedObject(ctx, enc)
 	require.NoError(t, err)
 	require.JSONEq(t, string(rec.Envelope.ObjectJSON), string(reencoded.JSON))
+	require.True(t, requireDescribedAsEncoded(t, ctx, enc, restored))
 	assertParentsUnloaded()
 
 	t.Run("completed operation references relocate without loading", func(t *testing.T) {
@@ -152,6 +153,7 @@ func TestContainerEvaluatedLazyOperationPersistsWithoutLoadingParents(t *testing
 		again, err := old.EncodePersistedObject(ctx, enc)
 		require.NoError(t, err)
 		require.JSONEq(t, string(oldJSON), string(again.JSON))
+		require.True(t, requireDescribedAsEncoded(t, ctx, enc, old))
 		assertParentsUnloaded()
 	})
 }

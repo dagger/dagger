@@ -11,6 +11,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -769,6 +770,10 @@ func (ArtifactsSuite) TestHelpProgress(ctx context.Context, t *testctx.T) {
 		progress, err := result.Stderr(ctx)
 		require.NoError(t, err)
 		require.Contains(t, progress, "Load available types")
+		plain := ansi.Strip(progress)
+		require.Equal(t, 1, strings.Count(plain, "✔ connect "), plain)
+		// The listing's session connects, then discovers its types.
+		require.Less(t, strings.Index(plain, "✔ connect "), strings.Index(plain, "✔ Load available types "), plain)
 		require.NotContains(t, progress, "exporter is shutdown")
 	})
 }
@@ -1545,6 +1550,32 @@ func (*Probe) Every() error { return fmt.Errorf("every %s", rand.Text()) }
 		require.Len(t, repeated.CurrentWorkspace.Artifacts.B, 1)
 		require.Equal(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Again.Error.Message)
 		require.NotEqual(t, repeated.CurrentWorkspace.Artifacts.A[0].Sync.Error.Message, repeated.CurrentWorkspace.Artifacts.B[0].Sync.Error.Message)
+	})
+	t.Run("uncached checks run once for every read of one check", func(ctx context.Context, t *testctx.T) {
+		// pass and error each run the check when it has no retained result,
+		// as an SDK's Pass and Error calls do.
+		out, err := base.With(daggerQuery(`{
+	 currentWorkspace { artifacts(include: ["every"]) {
+	  asChecks { pass a: error { message } b: error { message } }
+	 } }
+	}`)).Stdout(ctx)
+		require.NoError(t, err)
+		var reads struct {
+			CurrentWorkspace struct {
+				Artifacts struct {
+					AsChecks []struct {
+						Pass bool
+						A, B struct{ Message string }
+					}
+				}
+			}
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &reads))
+		require.Len(t, reads.CurrentWorkspace.Artifacts.AsChecks, 1)
+		check := reads.CurrentWorkspace.Artifacts.AsChecks[0]
+		require.False(t, check.Pass)
+		require.NotEmpty(t, check.A.Message)
+		require.Equal(t, check.A.Message, check.B.Message)
 	})
 }
 

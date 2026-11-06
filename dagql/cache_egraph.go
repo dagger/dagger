@@ -1003,7 +1003,19 @@ func (c *Cache) lookupCacheForRequestLocked(
 		return retRes, true, 0, false, nil
 	}
 	if readOnly {
-		return nil, false, 0, true, nil
+		// A repeat hit usually finds its identity already taught: then the
+		// write path below would change nothing, and the hit is answered
+		// under the read lock too.
+		if !c.hitTeachesNothingLocked(hitRes, req, requestDigest, requestSelf, requestInputs, requestInputRefs, persistedEdgeExpiresAtUnix) {
+			return nil, false, 0, true, nil
+		}
+		touchSharedResultLastUsed(hitRes, now.UnixNano())
+		retRes := Result[Typed]{
+			shared:   hitRes,
+			hitCache: true,
+		}
+		c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.termDigest)
+		return retRes, true, persistedEdgeExpiresAtUnix, false, nil
 	}
 
 	// We have a cache hit. Teach this request identity onto the existing shared
@@ -1025,6 +1037,122 @@ func (c *Cache) lookupCacheForRequestLocked(
 	}
 	c.traceLookupHit(ctx, requestDigest.String(), res, match.termDigest)
 	return retRes, true, persistedEdgeExpiresAtUnix, false, nil
+}
+
+// hitTeachesNothingLocked reports whether the write path of a hit (the
+// expiry merge and teachResultIdentityLocked) would leave every structure
+// as it is: the request's digests already in the result's single output
+// class, the result already associated with the request's term, every term
+// with that digest already pointing at that class, and the result already
+// posted under its recipe and extra digests. It only reads, finding roots
+// without path compression, and answers false whenever any step would
+// write. The caller holds egraphMu, for reading or writing; the request's
+// recipe digest is derived before the lookup, so deriving it here reads the
+// memoized value without taking the lock again.
+//
+//nolint:gocyclo // One read-only check per write the hit's write path could make; splitting them would hide that they mirror it.
+func (c *Cache) hitTeachesNothingLocked(
+	res *sharedResult,
+	req *CallRequest,
+	requestDigest digest.Digest,
+	requestSelf digest.Digest,
+	requestInputs []digest.Digest,
+	requestInputRefs []ResultCallStructuralInputRef,
+	expiresAtUnix int64,
+) bool {
+	frame := req.ResultCall
+	if res == nil || res.id == 0 || frame == nil {
+		return false
+	}
+	if mergeSharedResultExpiryUnix(res.expiresAtUnix, expiresAtUnix) != res.expiresAtUnix {
+		return false
+	}
+	// An error here fails the write path too; leave it to report it.
+	if _, err := c.inputProvenanceForRefs(requestInputRefs); err != nil {
+		return false
+	}
+	indexDigest, err := frame.deriveRecipeDigest(c)
+	if err != nil {
+		return false
+	}
+	roots := c.outputEqClassRootsLocked(res.id)
+	if len(roots) != 1 {
+		return false
+	}
+	var outputRoot eqClassID
+	for root := range roots {
+		outputRoot = root
+	}
+	inOutputClass := func(dig string) bool {
+		id, ok := c.egraphDigestToClass[dig]
+		return ok && c.eqClassRootLocked(id) == outputRoot
+	}
+	if requestDigest != "" && !inOutputClass(requestDigest.String()) {
+		return false
+	}
+	for _, extra := range frame.ExtraDigests {
+		if extra.Digest != "" && !inOutputClass(extra.Digest.String()) {
+			return false
+		}
+	}
+	inputEqIDs := make([]eqClassID, len(requestInputs))
+	for i, inDig := range requestInputs {
+		if inDig == "" {
+			continue
+		}
+		id, ok := c.egraphDigestToClass[inDig.String()]
+		if !ok {
+			return false
+		}
+		inputEqIDs[i] = c.eqClassRootLocked(id)
+	}
+	termDigest := calcEgraphTermDigest(requestSelf, inputEqIDs)
+	if c.termForResultByDigestLocked(res.id, termDigest) == nil {
+		return false
+	}
+	// mergeOutputsForTermDigestLocked stores the root on every term of the
+	// digest, so a term still holding a non-root class would be written.
+	if digestTerms := c.egraphTermsByTermDigest[termDigest]; digestTerms != nil {
+		for termID := range digestTerms.Items() {
+			if term := c.egraphTerms[termID]; term != nil && term.outputEqID != outputRoot {
+				return false
+			}
+		}
+	}
+	postedUnder := func(dig string) bool {
+		if dig == "" {
+			return true
+		}
+		posting := c.egraphResultsByDigest[dig]
+		return posting != nil && posting.Contains(res.id)
+	}
+	if !postedUnder(indexDigest.String()) {
+		return false
+	}
+	for _, extra := range frame.ExtraDigests {
+		if !postedUnder(extra.Digest.String()) {
+			return false
+		}
+	}
+	for _, extra := range frame.ExtraDigests {
+		if extra.Digest == "" {
+			continue
+		}
+		for termID := range c.resultTerms[res.id] {
+			term := c.egraphTerms[termID]
+			if term == nil {
+				continue
+			}
+			root := c.eqClassRootLocked(term.outputEqID)
+			if root == 0 {
+				continue
+			}
+			if _, ok := c.eqClassExtraDigests[root][extra]; !ok {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // claimLookupHitLocked records the session's ownership of a selected hit and
@@ -1140,15 +1268,21 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, nil
 	}
 	if req.IsPersistable {
-		// Only persistable hits pay this second graph-lock acquisition. Keep
-		// the expiry captured at hit selection even if the barrier wait took
-		// long enough to cross a wall-clock second. A value its call declined
-		// to persist stays unpersisted.
-		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
-		if !hitShared.persistDeclined {
-			c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
+		// Only persistable hits pay this second graph-lock acquisition, and
+		// only for writing when the upsert would change the edge. Keep the
+		// expiry captured at hit selection even if the barrier wait took long
+		// enough to cross a wall-clock second. A value its call declined to
+		// persist stays unpersisted.
+		wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+		unchanged := hitShared.persistDeclined || c.persistedEdgeUpsertUnchangedLocked(hitShared, persistedEdgeExpiresAtUnix)
+		c.egraphMu.RUnlock()
+		if !unchanged {
+			wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+			if !hitShared.persistDeclined {
+				c.upsertPersistedEdgeLocked(ctx, hitShared, persistedEdgeExpiresAtUnix, false)
+			}
+			c.egraphMu.Unlock()
 		}
-		c.egraphMu.Unlock()
 	}
 
 	if c.traceEnabled() {
@@ -1334,7 +1468,9 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 	}
 }
 
-func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
+// resultIDForCall finds the attached result for frame. The lookup only reads
+// the e-graph, so it holds egraphMu for reading, as a cache-hit lookup does.
+func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedResultID, error) {
 	if frame == nil {
 		return 0, fmt.Errorf("resolve result ID for call: nil call")
 	}
@@ -1356,8 +1492,8 @@ func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
 		requestInputs = append(requestInputs, dig)
 	}
 
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	defer c.egraphMu.RUnlock()
 	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
 	if match.candidates == nil || match.candidates.Empty() {
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
@@ -1370,17 +1506,51 @@ func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
 	return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
 }
 
+// termForResultByDigestLocked returns a live term with termDigest that the
+// result is associated with. It walks the terms with that digest, not the
+// result's terms: a long-lived result gathers a term for every recipe that
+// reached it, such as one per session for a session-scoped call.
 func (c *Cache) termForResultByDigestLocked(resID sharedResultID, termDigest string) *egraphTerm {
-	for termID := range c.resultTerms[resID] {
-		term := c.egraphTerms[termID]
-		if term == nil {
+	resultTerms := c.resultTerms[resID]
+	if len(resultTerms) == 0 {
+		return nil
+	}
+	termSet := c.egraphTermsByTermDigest[termDigest]
+	if termSet == nil {
+		return nil
+	}
+	for termID := range termSet.Items() {
+		if _, ok := resultTerms[termID]; !ok {
 			continue
 		}
-		if term.termDigest == termDigest {
+		if term := c.egraphTerms[termID]; term != nil {
 			return term
 		}
 	}
 	return nil
+}
+
+// addResultExtraDigestsLocked records extra digests as facts of each of the
+// result's output eq-classes, which hold the outputs of all its terms.
+func (c *Cache) addResultExtraDigestsLocked(resID sharedResultID, frames ...*ResultCall) {
+	for outputEqID := range c.outputEqClassesForResultLocked(resID) {
+		extras := c.eqClassExtraDigests[outputEqID]
+		if extras == nil {
+			extras = make(map[call.ExtraDigest]struct{})
+			c.eqClassExtraDigests[outputEqID] = extras
+		}
+		for _, frame := range frames {
+			if frame == nil {
+				continue
+			}
+			for _, extra := range frame.ExtraDigests {
+				if extra.Digest == "" {
+					continue
+				}
+				extras[extra] = struct{}{}
+			}
+		}
+	}
 }
 
 func (c *Cache) outputEqClassesForResultLocked(resID sharedResultID) map[eqClassID]struct{} {
@@ -1689,27 +1859,7 @@ func (c *Cache) applyPreparedResultIdentityLocked(ctx context.Context, res *shar
 	}
 
 	c.addFramePostingsLocked(res.id, indexDigest, requestFrame.ExtraDigests)
-	for termID := range c.resultTerms[res.id] {
-		term := c.egraphTerms[termID]
-		if term == nil {
-			continue
-		}
-		outputEqID := c.findEqClassLocked(term.outputEqID)
-		if outputEqID == 0 {
-			continue
-		}
-		extras := c.eqClassExtraDigests[outputEqID]
-		if extras == nil {
-			extras = make(map[call.ExtraDigest]struct{})
-			c.eqClassExtraDigests[outputEqID] = extras
-		}
-		for _, extra := range requestFrame.ExtraDigests {
-			if extra.Digest == "" {
-				continue
-			}
-			extras[extra] = struct{}{}
-		}
-	}
+	c.addResultExtraDigestsLocked(res.id, requestFrame)
 }
 
 // addFramePostingsLocked posts a frame's recipe digest and extra digests for
@@ -1919,37 +2069,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	if err := c.indexResultDigestsLocked(res, requestFrame, responseFrame); err != nil {
 		return err
 	}
-	for termID := range c.resultTerms[res.id] {
-		term := c.egraphTerms[termID]
-		if term == nil {
-			continue
-		}
-		outputEqID := c.findEqClassLocked(term.outputEqID)
-		if outputEqID == 0 {
-			continue
-		}
-		extras := c.eqClassExtraDigests[outputEqID]
-		if extras == nil {
-			extras = make(map[call.ExtraDigest]struct{})
-			c.eqClassExtraDigests[outputEqID] = extras
-		}
-		if requestFrame != nil {
-			for _, extra := range requestFrame.ExtraDigests {
-				if extra.Digest == "" {
-					continue
-				}
-				extras[extra] = struct{}{}
-			}
-		}
-		if responseFrame != nil {
-			for _, extra := range responseFrame.ExtraDigests {
-				if extra.Digest == "" {
-					continue
-				}
-				extras[extra] = struct{}{}
-			}
-		}
-	}
+	c.addResultExtraDigestsLocked(res.id, requestFrame, responseFrame)
 
 	return nil
 }
@@ -1982,7 +2102,7 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	c.removeResultOutputEqClassesLocked(res.id)
 	oldFrame := res.loadResultCall()
 	depCount := len(res.deps)
-	res.storeResultCall(nil)
+	res.dropResultCall()
 	c.deleteResultLocked(res)
 	c.traceResultRemoved(ctx, res, oldFrame, depCount)
 

@@ -13,14 +13,15 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
-	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/util/fsxutil"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/sys/user"
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -328,6 +329,48 @@ var (
 	enumView = AfterVersion("v0.18.11")
 )
 
+// From engine.IdentifierCasingVersion on, core field, argument and input
+// field names follow the GraphQL casing convention: camelCase, with acronyms
+// capitalized like words (asJson, withGpu, commitSha). Views before it keep
+// the old spellings (asJSON, withGPU, commitSHA), and later ones don't have
+// them: no view has both.
+var (
+	// CasedNamesView holds the views with the conventional core names,
+	// including the internal view "" (the latest API).
+	CasedNamesView = AfterVersion(engine.IdentifierCasingVersion)
+	// LegacyNamesView holds the views with the old core names.
+	LegacyNamesView = BeforeVersion(engine.IdentifierCasingVersion)
+	// UnfilteredFieldView is the internal view "", where dagql selects every
+	// call to a field without a view filter, whatever its caller's view. An
+	// argument renamed on such a field keeps its old spelling there, as an
+	// internal argument, so a caller before the cut still passes it.
+	UnfilteredFieldView = dagql.ExactView("")
+)
+
+// ViewIntersection contains the views every one of its filters contains. A
+// nil filter (the global view) contains every view.
+type ViewIntersection []dagql.ViewFilter
+
+var _ dagql.ViewFilter = ViewIntersection{}
+
+func (filters ViewIntersection) Contains(view call.View) bool {
+	for _, filter := range filters {
+		if filter != nil && !filter.Contains(view) {
+			return false
+		}
+	}
+	return true
+}
+
+// WithinView is filter restricted to the views of within: within itself
+// when filter is the global view (nil).
+func WithinView(filter, within dagql.ViewFilter) dagql.ViewFilter {
+	if filter == nil {
+		return within
+	}
+	return ViewIntersection{filter, within}
+}
+
 // RootPathWithoutFinalSymlink joins a path with a root, evaluating and bounding all
 // symlinks except the final component of the path (i.e. the basename component).
 // This is useful for the case where one needs to reference a symlink rather than
@@ -336,7 +379,7 @@ var (
 // path separator reference a location outside of the root path.
 func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
 	linkDir, linkBasename := filepath.Split(containerPath)
-	resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
+	resolvedLinkDir, err := fsxutil.RootPath(root, linkDir)
 	if err != nil {
 		return "", err
 	}

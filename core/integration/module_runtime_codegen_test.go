@@ -144,6 +144,48 @@ func (RuntimeCodegenSuite) TestTrustedFilesUsed(ctx context.Context, t *testctx.
 	requireErrOut(t, err, "run `dagger generate`")
 }
 
+// TestCommittedFilesWithDependency covers a dagger-module.toml module whose
+// dependency is one too: each builds from its committed files, the module's
+// build runs while its dependency loads, and its call reaches the dependency.
+func (RuntimeCodegenSuite) TestCommittedFilesWithDependency(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// The generated context is the repository root's, so it exports there.
+	const generate = `{moduleSource(refString:%q){generatedContextDirectory{export(path:".")}}}`
+	out, err := goGitBase(t, c).
+		With(withModuleFixture(t, c, "dep", "go/minimal")).
+		WithoutFile("dep/dagger.json").
+		With(configFile("dep", &modules.ModuleConfig{
+			Name:          "minimal",
+			EngineVersion: modules.EngineVersionLatest,
+			SDK:           &modules.SDK{Source: "go"},
+		})).
+		With(fileContents("parent/main.go", `package main
+
+			import "context"
+
+			type Parent struct{}
+
+			func (m *Parent) Greet(ctx context.Context) (string, error) {
+				return dag.Minimal().Echo(ctx, "hi from the dependency")
+			}
+			`)).
+		With(configFile("parent", &modules.ModuleConfig{
+			Name:          "parent",
+			EngineVersion: modules.EngineVersionLatest,
+			SDK:           &modules.SDK{Source: "go"},
+			Dependencies:  []*modules.ModuleConfigDependency{{Name: "minimal", Source: "../dep"}},
+		})).
+		With(daggerQuery(generate, "dep")).
+		With(daggerQuery(generate, "parent")).
+		// A standalone TOML module has no workspace main; select it
+		// explicitly.
+		With(daggerCallAt("parent", "greet")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hi from the dependency")
+}
+
 // TestPythonMissingGeneratedFiles is the Python analog of
 // TestMissingGeneratedFiles: with nothing committed the call must fail
 // pointing the user at `dagger generate` instead of silently regenerating.

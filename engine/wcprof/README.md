@@ -93,6 +93,37 @@ Two scopes:
 The recorder keeps up to ~4M events (about 300 MB); events past that are
 dropped and counted in the dump header's `dropped_events`.
 
+### eBPF programs
+
+A recording can also ask for eBPF programs compiled into the engine
+(`engine/ebpf/wcbpf`), by name. Each is loaded into the kernel and attached
+only while some recording asks for it, and nothing is loaded otherwise. It
+measures each profiled exec that starts while it's attached, and records what
+it measured on the exec's `exec.run` op as the exec ends. An exec that started
+before the program was attached isn't measured by it.
+
+- Per-session: `dagger --profile --profile-ebpf exec_sched ...` (hidden
+  flags); the programs stay attached until the session ends.
+- Engine-global: the engine's `--wcprof-ebpf exec_sched` with `--wcprof`, or
+  `curl -X POST -d on 'http://<engine-debug-addr>/debug/wcprof/enabled?ebpf=exec_sched'`.
+  Each POST replaces the set; `off` releases it. A GET reports it as `ebpf`.
+
+An unknown name is an error. A program that can't be loaded (a kernel without
+BTF, say) is skipped, and the dump header's `ebpf` list names every program
+asked for, with the error for any that couldn't be attached.
+
+The programs:
+
+- `exec_sched` (`engine/ebpf/execsched`): the parts of each exec's container
+  life as the kernel saw them, as `exec_phase` ops under its `exec.run` op:
+  `exec_sched.containerSetup` (crun's child in the container's cgroup, up to
+  its exec of `/.init`), `exec_sched.initStart` (up to the workload's exec),
+  `exec_sched.workload` (up to the workload process's exit) and
+  `exec_sched.initExit` (up to `/.init`'s exit). And an `exec_sched` reading:
+  the time the exec's threads, workload and mount helpers, waited runnable
+  for a CPU (`rqw`, µs), how many such waits ended (`rqn`), and the time they
+  ran (`oncpu`, µs).
+
 - Dump: `GET http://<engine-debug-addr>/debug/wcprof/dump` streams a JSON
   header line (string tables, open ops) followed by one JSON event per line,
   and flushes the buffer (pass `?flush=0` to keep it).
@@ -129,6 +160,28 @@ curl -s http://localhost:6060/debug/wcprof/dump > /tmp/wcprof.dump
 Dumps are NDJSON: a `DumpHeader` line (with the interned `strings` table that
 `class`/`ident`/`client` indexes point into), then one `DumpEvent` per line.
 Read them with `wcprof.ReadDump`.
+
+## Capturing a run that goes far too long
+
+A session watch captures what the engine was doing when a session runs far
+longer than it should, whether or not anything is profiled, so a timed run
+with recording off still leaves evidence of a stall:
+
+```bash
+curl -X POST -d 60s http://<engine-debug-addr>/debug/wcprof/watch   # on, with a threshold
+curl -X POST -d off http://<engine-debug-addr>/debug/wcprof/watch   # off
+curl http://<engine-debug-addr>/debug/wcprof/captures               # the last 4 captures, JSON
+```
+
+While it's on, every session that starts gets a timer. A session that runs
+past the threshold gets one capture: every goroutine's stack, a 15 s CPU
+profile, and every goroutine's stack again, with the sessions running at the
+time and how long each had run. One capture runs at a time; when Go's CPU
+profiler is already in use (an armed phase profile or a `/debug/pprof/profile`
+pull), the capture keeps the stacks and records why it has no profile. A
+session keeps the threshold it started under when the threshold changes;
+switching the watch off stops every capture that hasn't started. With the
+watch off, a session's start costs one atomic load.
 
 ## Analysis
 

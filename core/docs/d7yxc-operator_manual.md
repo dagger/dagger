@@ -98,7 +98,7 @@ Not at this time. "Rootless mode" means running the Dagger Engine as a container
 
 #### Filesystem constraints
 
-The Dagger Engine relies on the `overlayfs` snapshotter for efficient construction of container filesystems. However, only relatively recent Linux kernel versions fully support `overlayfs` inside of rootless user namespaces. On older kernels, there are fallback options such as [`fuse-overlayfs`](https://github.com/containers/fuse-overlayfs), but they come with their own complications in terms of degraded performance and host-specific setup.
+The Dagger Engine relies on the `overlayfs` snapshotter for efficient construction of container filesystems. However, only relatively recent Linux kernel versions fully support `overlayfs` inside of rootless user namespaces. On older kernels, the engine falls back to the `native` snapshotter, which copies each layer whole and is much slower.
 
 We've not yet invested in the significant work it would take to support+document running optimally on each kernel version, hence the limitation at this time.
 

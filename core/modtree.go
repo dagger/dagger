@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 
 	"github.com/dagger/dagger/util/parallel"
-	"github.com/iancoleman/strcase"
 )
 
 type ModTreeNode struct {
@@ -97,7 +97,10 @@ func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeN
 // ServiceNameAttr identifies the service displayed by the frontend.
 const ServiceNameAttr = telemetryattrs.ServiceNameAttr
 
-// Initialize a standalone dagql server for querying the given module
+// Initialize a standalone dagql server for querying the given module. A
+// client builds one per module and reuses it: the server is an immutable type
+// registry, and what a call depends on, such as its view or workspace, is on
+// the call's context.
 func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) (*dagql.Server, error) {
 	main := mod.Self()
 	q, err := CurrentQuery(ctx)
@@ -109,21 +112,64 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	if err != nil {
 		return nil, fmt.Errorf("%q: load core schema: %w", main.Name(), err)
 	}
-	coreSchema, err := defaultDeps.Schema(ctx)
+	build := func() (*dagql.Server, error) {
+		coreSchema, err := defaultDeps.Schema(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
+		}
+		srv, err := coreSchema.Fork(ctx, q)
+		if err != nil {
+			return nil, fmt.Errorf("%q: fork core schema: %w", main.Name(), err)
+		}
+		// Artifact discovery needs the unversioned API, including newer core fields.
+		srv.View = ""
+		InstallCoreSchemaLoaders(srv)
+		if err := NewUserMod(mod).Install(ctx, srv); err != nil {
+			return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
+		}
+		return srv, nil
+	}
+	memo, err := q.SchemaBuilderMemo(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
+		return nil, fmt.Errorf("%q: schema builder memo: %w", main.Name(), err)
 	}
-	srv, err := coreSchema.Fork(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("%q: fork core schema: %w", main.Name(), err)
+	// The core schema and the module identify the server, as they would
+	// the schema of a builder for the same module set.
+	key, ok := defaultDeps.Append(NewUserMod(mod)).memoKey()
+	if memo == nil || !ok {
+		return build()
 	}
-	// Artifact discovery needs the unversioned API, including newer core fields.
-	srv.View = ""
-	InstallCoreSchemaLoaders(srv)
-	if err := NewUserMod(mod).Install(ctx, srv); err != nil {
-		return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
+	return memo.moduleServer(key, build)
+}
+
+type moduleServerEntry struct {
+	mu  sync.Mutex
+	srv *dagql.Server
+}
+
+// moduleServer returns the module server built for key, building it at most
+// once while builds succeed. A failed build is retried by the next call.
+func (m *SchemaBuilderMemo) moduleServer(key string, build func() (*dagql.Server, error)) (*dagql.Server, error) {
+	m.mu.Lock()
+	if m.moduleServers == nil {
+		m.moduleServers = make(map[string]*moduleServerEntry)
 	}
-	return srv, nil
+	entry := m.moduleServers[key]
+	if entry == nil {
+		entry = &moduleServerEntry{}
+		m.moduleServers[key] = entry
+	}
+	m.mu.Unlock()
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.srv != nil {
+		return entry.srv, nil
+	}
+	srv, err := build()
+	if err == nil {
+		entry.srv = srv
+	}
+	return srv, err
 }
 
 func (node *ModTreeNode) Clone() *ModTreeNode {
@@ -165,7 +211,7 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
 		}
 		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{
-			Field: gqlFieldName(mod.Name()),
+			Field: mod.ConstructorName(),
 			Args:  append(args, leafArgs...),
 		})
 	}
@@ -290,23 +336,27 @@ func NewModTreePath(s string) ModTreePath {
 	return ModTreePath(strings.Split(s, ":"))
 }
 
-func (p ModTreePath) CliCase() []string {
+// CliCase spells each segment the CLI way (kebab-case) with the supplied
+// rules. Artifact address callers always use LatestNamer.
+func (p ModTreePath) CliCase(namer Namer) []string {
 	cliCase := make([]string, len(p))
 	for i := range p {
-		cliCase[i] = strcase.ToKebab(p[i])
+		cliCase[i] = namer.CLIName(p[i])
 	}
 	return cliCase
 }
 
-func (p ModTreePath) APICase() []string {
+// APICase spells each segment the API way (camelCase), by the naming rules
+// of the module the path belongs to.
+func (p ModTreePath) APICase(namer Namer) []string {
 	apiCase := make([]string, len(p))
 	for i := range p {
-		apiCase[i] = gqlFieldName(p[i])
+		apiCase[i] = namer.FieldName(p[i])
 	}
 	return apiCase
 }
 
-func (p ModTreePath) Contains(ctx context.Context, target ModTreePath) (result bool) {
+func (p ModTreePath) Contains(ctx context.Context, namer Namer, target ModTreePath) (result bool) {
 	defer func() {
 		debugTrace(ctx, "%v.Contains(%v) -> %v", p, target, result)
 	}()
@@ -315,10 +365,10 @@ func (p ModTreePath) Contains(ctx context.Context, target ModTreePath) (result b
 		return false
 	}
 	targetParent := target[:len(p)]
-	return p.Equals(ctx, targetParent)
+	return p.Equals(ctx, namer, targetParent)
 }
 
-func (p ModTreePath) Equals(ctx context.Context, other ModTreePath) (result bool) {
+func (p ModTreePath) Equals(ctx context.Context, namer Namer, other ModTreePath) (result bool) {
 	defer func() {
 		debugTrace(ctx, "%v.Equals(%v) -> %v", p, other, result)
 	}()
@@ -326,18 +376,18 @@ func (p ModTreePath) Equals(ctx context.Context, other ModTreePath) (result bool
 		return false
 	}
 	for i := range p {
-		if gqlFieldName(p[i]) != gqlFieldName(other[i]) {
-			debugTrace(ctx, "%v.Equals(%v): %q != %q -> NOT EQUAL", p, other, gqlFieldName(p[i]), gqlFieldName(other[i]))
+		if namer.FieldName(p[i]) != namer.FieldName(other[i]) {
+			debugTrace(ctx, "%v.Equals(%v): %q != %q -> NOT EQUAL", p, other, namer.FieldName(p[i]), namer.FieldName(other[i]))
 			return false
 		}
 	}
 	return true
 }
 
-func (p ModTreePath) Glob(ctx context.Context, pattern string) (bool, error) {
+func (p ModTreePath) Glob(ctx context.Context, namer Namer, pattern string) (bool, error) {
 	// Normalize both pattern and path to CLI case (kebab-case) for consistent matching
-	slashPattern := strings.Join(NewModTreePath(pattern).CliCase(), "/")
-	slashPath := strings.Join(p.CliCase(), "/")
+	slashPattern := strings.Join(NewModTreePath(pattern).CliCase(namer), "/")
+	slashPath := strings.Join(p.CliCase(namer), "/")
 	if match, err := doublestar.PathMatch(slashPattern, slashPath); err != nil {
 		return false, err
 	} else if match {
@@ -356,22 +406,38 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 	if len(patterns) == 0 {
 		return true, nil
 	}
+	namer := LatestNamer
 	for _, pattern := range patterns {
-		if match, err := node.Path().Glob(ctx, pattern); err != nil {
+		if match, err := node.Path().Glob(ctx, namer, pattern); err != nil {
 			return false, err
 		} else if match {
 			return true, nil
 		}
-		patternAsPath := NewModTreePath(pattern)
-		if patternAsPath.Contains(ctx, node.Path()) {
+		// Includes also select descendants. Keep this a glob match: turning
+		// a pattern into API field names would strip classes such as [0-9]
+		// and make discovery disagree with the recorded include selector.
+		if match, err := node.Path().Glob(ctx, namer, pattern+":**"); err != nil {
+			return false, err
+		} else if match {
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
+// CLIPath is the node's address path in current CLI spelling. Node.Name and
+// Path retain the backing GraphQL names for execution in the module's view.
+func (node *ModTreeNode) CLIPath() []string {
+	return node.Path().CliCase(LatestNamer)
+}
+
+// CommandCLIPath is the node's command path in current CLI spelling.
+func (node *ModTreeNode) CommandCLIPath() []string {
+	return node.CommandPath().CliCase(LatestNamer)
+}
+
 func (node *ModTreeNode) PathString() string {
-	return strings.Join(node.Path().CliCase(), ":")
+	return strings.Join(node.CLIPath(), ":")
 }
 
 // CommandPath is the path users type to select this target.
@@ -395,7 +461,7 @@ func (node *ModTreeNode) inWorkspaceMain() bool {
 }
 
 func (node *ModTreeNode) CommandName() string {
-	return strings.Join(node.CommandPath().CliCase(), ":")
+	return strings.Join(node.CommandCLIPath(), ":")
 }
 
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)

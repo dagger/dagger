@@ -582,7 +582,7 @@ func loadKernelCompatEngine(ctx context.Context, dag *dagger.Client, ctr *core.C
 		WithEntrypoint([]string{"/usr/local/bin/dagger-engine-kernel-compat-entrypoint.sh"}).
 		AsTarball(core.ContainerAsTarballOpts{
 			ForcedCompression: core.ImageLayerCompressionGzip,
-			MediaTypes:        core.ImageMediaTypesDockerMediaTypes,
+			MediaTypes:        core.ImageMediaTypesDocker,
 		})
 
 	ctr, err := loadEngineTar(ctx, ctr, cli, compatTag, engineTar)

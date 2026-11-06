@@ -60,6 +60,24 @@ func NewCountedLargeQueueLiveSpanProcessor(exp sdktrace.SpanExporter, counts *Sp
 	}
 }
 
+// NewBlockingLiveSpanProcessor is NewLargeQueueLiveSpanProcessor for the
+// CLI's local frontend, which must see every span: a span that reaches it is
+// how the CLI learns a check or test finished, and how it failed. Its queue is
+// as large, and as bounded, but when it is full OnStart and OnEnd wait for
+// space instead of dropping the span. The engine spans the CLI forwards then
+// wait in the engine's store, read at the CLI's own pace.
+func NewBlockingLiveSpanProcessor(exp sdktrace.SpanExporter) *telemetry.LiveSpanProcessor {
+	return &telemetry.LiveSpanProcessor{
+		SpanProcessor: sdktrace.NewBatchSpanProcessor(
+			telemetry.CoalescingSpanExporter{SpanExporter: exp},
+			sdktrace.WithMaxQueueSize(LargeSpanQueueSize),
+			sdktrace.WithMaxExportBatchSize(LargeSpanExportBatchSize),
+			sdktrace.WithBatchTimeout(telemetry.NearlyImmediate),
+			sdktrace.WithBlocking(),
+		),
+	}
+}
+
 // SpanQueueCounts counts the spans a bounded span queue takes in and those it
 // hands on to its exporter. Once the queue has drained, those it never handed
 // on were dropped on overflow.

@@ -35,7 +35,7 @@ func pushGitRef(ctx context.Context, c *dagger.Client, source *core.GitRef, dest
 		}
 	}
 	err = c.Do(ctx, &dagger.Request{
-		Query:     `query($id: ID!, $to: ID, $branch: String!, $expected: String) { node(id:$id) { ... on GitRef { push(to:$to, branch:$branch, expectedRemoteSHA:$expected) { id ref previousSHA sha disposition } } } }`,
+		Query:     `query($id: ID!, $to: ID, $branch: String!, $expected: String) { node(id:$id) { ... on GitRef { push(to:$to, branch:$branch, expectedRemoteSha:$expected) { id ref previousSha sha disposition } } } }`,
 		Variables: map[string]any{"id": id, "to": dest, "branch": branch, "expected": expected},
 	}, &dagger.Response{Data: &response})
 	return response.Node.Push, err
@@ -94,7 +94,7 @@ func (GitSuite) TestPushWorkspaces(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "FORCED", forced.Disposition)
 	var loaded struct{ Node gitPushReceipt }
-	require.NoError(t, c.Do(ctx, &dagger.Request{Query: `query($id:ID!) { node(id:$id) { ... on GitPushResult { ref previousSHA sha disposition } } }`, Variables: map[string]any{"id": result.ID}}, &dagger.Response{Data: &loaded}))
+	require.NoError(t, c.Do(ctx, &dagger.Request{Query: `query($id:ID!) { node(id:$id) { ... on GitPushResult { ref previousSha sha disposition } } }`, Variables: map[string]any{"id": result.ID}}, &dagger.Response{Data: &loaded}))
 	require.Equal(t, sha, loaded.Node.SHA)
 	require.Equal(t, baseSHA, pushRemoteSHA(ctx, t, c, service, url, "refs/heads/main"), "loading receipt must not repeat the push")
 	// Empty and null both use ordinary push rules: create, no-op, or fast-forward.
@@ -354,7 +354,7 @@ func (GitSuite) TestPushCapturedDestination(ctx context.Context, t *testctx.T) {
 		id, err := source.ID(ctx)
 		require.NoError(t, err)
 		err = c.Do(ctx, &dagger.Request{
-			Query:     `query($id: ID!, $remote: String!, $branch: String!) { node(id:$id) { ... on GitRef { push(remote:$remote, branch:$branch) { id ref previousSHA sha disposition } } } }`,
+			Query:     `query($id: ID!, $remote: String!, $branch: String!) { node(id:$id) { ... on GitRef { push(remote:$remote, branch:$branch) { id ref previousSha sha disposition } } } }`,
 			Variables: map[string]any{"id": id, "remote": remote, "branch": branch},
 		}, &dagger.Response{Data: &response})
 		return response.Node.Push, err

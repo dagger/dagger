@@ -321,7 +321,63 @@ func (sdk *goSDK) Runtime(
 		return nil, fmt.Errorf("failed to scope module source for go module sdk runtime: %w", err)
 	}
 
-	var ctr dagql.ObjectResult[*core.Container]
+	ctr, err := sdk.runtimeContainer(ctx, dag, deps, source)
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg := source.Self().SDK; cfg != nil && cfg.Debug {
+		if err := dag.Select(ctx, ctr, &ctr, dagql.Selector{Field: "terminal"}); err != nil {
+			return nil, fmt.Errorf("failed to enable go sdk runtime terminal: %w", err)
+		}
+	}
+
+	return &core.ContainerRuntime{Container: ctr}, nil
+}
+
+// PrebuildRuntime builds the runtime of a module that skips runtime codegen
+// (see useRuntimeCodegen): its build reads only the module's own files, not
+// its dependencies' schema.
+func (sdk *goSDK) PrebuildRuntime(
+	ctx context.Context,
+	source dagql.ObjectResult[*core.ModuleSource],
+) (rerr error) {
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
+	}
+	source, err = scopeSourceForSDKOperation(ctx, source, "runtime", dag)
+	if err != nil {
+		return fmt.Errorf("failed to scope module source for go module sdk runtime: %w", err)
+	}
+	if useRuntimeCodegen(source) {
+		return nil
+	}
+
+	// Not internal: the build's own spans are recorded under this one.
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: build runtime")
+	defer telemetry.EndWithCause(span, &rerr)
+
+	ctr, err := sdk.runtimeContainer(ctx, dag, nil, source)
+	if err != nil {
+		return err
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	// Container execs are lazy: evaluate the runtime so the build runs now.
+	return cache.Evaluate(ctx, ctr)
+}
+
+// runtimeContainer returns the runtime container of an implementation-scoped
+// module source, with its binary built. deps is read only by runtime codegen.
+func (sdk *goSDK) runtimeContainer(
+	ctx context.Context,
+	dag *dagql.Server,
+	deps *core.SchemaBuilder,
+	source dagql.ObjectResult[*core.ModuleSource],
+) (ctr dagql.ObjectResult[*core.Container], err error) {
 	var postBuildSelectors []dagql.Selector
 	if useRuntimeCodegen(source) {
 		ctr, err = sdk.baseWithCodegen(ctx, deps, source)
@@ -329,7 +385,7 @@ func (sdk *goSDK) Runtime(
 		ctr, postBuildSelectors, err = sdk.baseWithoutCodegen(ctx, source)
 	}
 	if err != nil {
-		return nil, err
+		return ctr, err
 	}
 
 	runtimeSelectors := []dagql.Selector{
@@ -399,16 +455,9 @@ func (sdk *goSDK) Runtime(
 		},
 	)
 	if err := dag.Select(ctx, ctr, &ctr, runtimeSelectors...); err != nil {
-		return nil, fmt.Errorf("failed to build go runtime binary: %w", err)
+		return ctr, fmt.Errorf("failed to build go runtime binary: %w", err)
 	}
-
-	if cfg := source.Self().SDK; cfg != nil && cfg.Debug {
-		if err := dag.Select(ctx, ctr, &ctr, dagql.Selector{Field: "terminal"}); err != nil {
-			return nil, fmt.Errorf("failed to enable go sdk runtime terminal: %w", err)
-		}
-	}
-
-	return &core.ContainerRuntime{Container: ctr}, nil
+	return ctr, nil
 }
 
 // requireGeneratedFiles verifies the module's committed generated files

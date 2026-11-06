@@ -44,6 +44,7 @@ const (
 	IconFailure         = "✘"
 	IconPause           = "⏸"
 	IconStop            = "⏹"
+	IconUnreported      = "?"
 	IconCached          = "$" // cache money
 	Diamond             = "◆"
 	LLMPrompt           = "❯"

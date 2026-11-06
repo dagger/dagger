@@ -1,0 +1,6 @@
+kind: Changed
+body: Speed up expanded artifact listings by returning their metadata in bulk.
+time: 2026-10-29T00:53:51.207661+00:00
+custom:
+    Author: grouville
+    PR: "14934"

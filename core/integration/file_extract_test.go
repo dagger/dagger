@@ -198,6 +198,53 @@ func (FileSuite) TestExtractStripComponents(ctx context.Context, t *testctx.T) {
 	require.ErrorContains(t, err, "stripComponents must not be negative")
 }
 
+func (FileSuite) TestExtractFilter(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dir := hostArchive(t, "a.zip", extractTestZip(t,
+		extractTestEntry{name: "mod@v1/go.mod", body: []byte("module mod\n")},
+		extractTestEntry{name: "mod@v1/x.go", body: []byte("package mod\n")},
+		extractTestEntry{name: "mod@v1/x_test.go", body: []byte("package mod\n")},
+		extractTestEntry{name: "mod@v1/testdata/big", body: []byte("data")},
+		extractTestEntry{name: "mod@v1/sub/y.go", body: []byte("package sub\n")},
+	))
+	entries, err := extractHostArchive(c, dir, "a.zip", core.FileExtractOpts{
+		Exclude: []string{"**/testdata", "**/*_test.go"},
+	}).Glob(ctx, "**")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"mod@v1/", "mod@v1/go.mod", "mod@v1/x.go", "mod@v1/sub/", "mod@v1/sub/y.go"}, entries)
+
+	entries, err = extractHostArchive(c, dir, "a.zip", core.FileExtractOpts{
+		StripComponents: 1,
+		Include:         []string{"sub", "go.mod"},
+	}).Glob(ctx, "**")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"go.mod", "sub/", "sub/y.go"}, entries)
+
+	_, err = extractHostArchive(c, dir, "a.zip", core.FileExtractOpts{Include: []string{"["}}).Sync(ctx)
+	require.ErrorContains(t, err, "include patterns")
+
+	// The same patterns select the same paths as Directory.filter does on
+	// the whole archive, negations of directories included.
+	for _, patterns := range []struct{ include, exclude []string }{
+		{exclude: []string{"**/*_test.go", "!mod@v1/sub"}},
+		{include: []string{"**/*.go", "!mod@v1/sub"}},
+		{include: []string{"mod@v1"}, exclude: []string{"mod@v1/testdata", "!mod@v1/testdata/big"}},
+		{exclude: []string{"mod@v1/*", "!mod@v1/x.go"}},
+	} {
+		filtered, err := extractHostArchive(c, dir, "a.zip").Filter(core.DirectoryFilterOpts{
+			Include: patterns.include,
+			Exclude: patterns.exclude,
+		}).Glob(ctx, "**")
+		require.NoError(t, err)
+		extracted, err := extractHostArchive(c, dir, "a.zip", core.FileExtractOpts{
+			Include: patterns.include,
+			Exclude: patterns.exclude,
+		}).Glob(ctx, "**")
+		require.NoError(t, err)
+		require.ElementsMatch(t, filtered, extracted, "include %q, exclude %q", patterns.include, patterns.exclude)
+	}
+}
+
 func (FileSuite) TestExtractRejectsEscapes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {

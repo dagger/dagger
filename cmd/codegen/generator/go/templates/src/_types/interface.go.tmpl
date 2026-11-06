@@ -166,7 +166,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	var results {{ $field.TypeRef | InterfaceListResultType }}
 	for _, idResult := range idResults {
 		results = append(results, &{{ $typeName | FormatArrayToSingleType | InterfaceClientName }}{
-			query: selectNode(q.Root(), idResult.Id, "{{ $typeName | FormatArrayToSingleType }}"),
+			query: selectNode(q.Root(), idResult.Id, "{{ $field.TypeRef | InnerType | ObjectName }}"),
 		})
 	}
 	return results, nil

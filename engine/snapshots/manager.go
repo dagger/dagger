@@ -20,6 +20,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -144,9 +145,12 @@ type snapshotManager struct {
 	importedLayerByBlob    map[ImportedLayerBlobKey]string
 	importedLayerByDiff    map[ImportedLayerDiffKey]string
 	snapshotOwnerLeases    map[string]map[string]struct{}
-	importLayerLocker      keyedLocker
-	exportLayerLocker      keyedLocker
-	ownerLeaseLocker       *locker.Locker
+	// leaseOwnedSnapshots is snapshotOwnerLeases by lease: the snapshots
+	// each lease owns, so that removing a lease visits only those.
+	leaseOwnedSnapshots map[string]map[string]struct{}
+	importLayerLocker   keyedLocker
+	exportLayerLocker   keyedLocker
+	ownerLeaseLocker    *locker.Locker
 	// backgroundReleases releases read-only mounts off their callers' paths.
 	backgroundReleases *backgroundReleases
 	// sharedMounts keeps one read-only mount per snapshot for its readers.
@@ -175,6 +179,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		importedLayerByBlob:    make(map[ImportedLayerBlobKey]string),
 		importedLayerByDiff:    make(map[ImportedLayerDiffKey]string),
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
+		leaseOwnedSnapshots:    make(map[string]map[string]struct{}),
 		ownerLeaseLocker:       locker.New(),
 		backgroundReleases:     newBackgroundReleases(maxPendingReleases),
 		localMounter:           opt.LocalMounter,
@@ -335,7 +340,9 @@ func (cm *snapshotManager) get(ctx context.Context, id string, opts ...RefOption
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: triggerUpdate,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -473,7 +480,9 @@ func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefO
 		triggerLastUsed: true,
 		onScratch:       isScratchSnapshotID(parentSnapshotID),
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -499,7 +508,9 @@ func (cm *snapshotManager) GetMutable(ctx context.Context, id string, opts ...Re
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: true,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -526,7 +537,9 @@ func (cm *snapshotManager) GetMutableBySnapshotID(ctx context.Context, snapshotI
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: true,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -627,7 +640,9 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: true,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 
@@ -691,7 +706,9 @@ func (cm *snapshotManager) Merge(ctx context.Context, parents []ImmutableRef, op
 		refMetadata:     refMetadata{snapshotID: rec.md.getSnapshotID(), md: rec.md},
 		triggerLastUsed: true,
 	}
-	bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	if logrus.IsLevelEnabled(logrus.TraceLevel) {
+		bklog.G(context.TODO()).WithFields(ref.traceLogFields()).Trace("acquired cache ref")
+	}
 	return ref, nil
 }
 

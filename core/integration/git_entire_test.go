@@ -57,6 +57,8 @@ type entireE2EArtifact struct {
 	HelperModuleCommit   string   `json:"helperModuleCommit"`
 	HelperHTMLRepoURL    string   `json:"helperHTMLRepoURL"`
 	HelperReadme         string   `json:"helperReadme"`
+	EnvTokenReadme       string   `json:"envTokenReadme"`
+	CLITokenReadme       string   `json:"cliTokenReadme"`
 	NoCredentialError    string   `json:"noCredentialError"`
 	SubmoduleError       string   `json:"submoduleError"`
 	ClusterAccessLog     []string `json:"clusterAccessLog"`
@@ -140,11 +142,12 @@ func (GitEntireSuite) TestEntireRemote(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, artifact.PushedSHA, artifact.RefetchedPushedSHA)
 
-	// Without an explicit token, the client's git credential helper supplies
-	// it, for both module sources and plain repositories.
+	// Without an explicit token, the client supplies it, for both module
+	// sources and plain repositories: from its git credential helper, from
+	// ENTIRE_TOKEN, or from the Entire CLI's login.
 	workDir := t.TempDir()
 	helperQuery := fmt.Sprintf(`{
-  moduleSource(refString: %q) { commit htmlRepoURL }
+  moduleSource(refString: %q) { commit htmlRepoUrl }
   git(url: %q) { branch(name: "main") { tree { file(path: "README") { contents } } } }
 }`, repoURL+"/mod@main", repoURL)
 	require.NoError(t, os.WriteFile(filepath.Join(workDir, "query.graphql"), []byte(helperQuery), 0o600))
@@ -152,18 +155,42 @@ func (GitEntireSuite) TestEntireRemote(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.WriteFile(helperConfig, []byte(makeGitCredentials("entire://*.entire.test", "x-access-token", token)), 0o600))
 	emptyConfig := filepath.Join(workDir, "empty.gitconfig")
 	require.NoError(t, os.WriteFile(emptyConfig, nil, 0o600))
-	runHostQuery := func(gitConfig string) ([]byte, error) {
+	// Stand-ins for the Entire CLI: one logged in, one not.
+	entireCLI := func(name, script string) string {
+		dir := filepath.Join(workDir, name)
+		require.NoError(t, os.MkdirAll(dir, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "entire"), []byte(script), 0o700))
+		return dir
+	}
+	loggedIn := entireCLI("logged-in", fmt.Sprintf(`#!/bin/sh
+[ "$*" = "auth token" ] || exit 2
+echo %s
+`, token))
+	loggedOut := entireCLI("logged-out", `#!/bin/sh
+echo "Not logged in. Run 'entire login' to authenticate." >&2
+exit 1
+`)
+	runHostQuery := func(gitConfig, entireCLIDir string, env ...string) ([]byte, error) {
 		cmd := hostDaggerCommandRaw(ctx, t, workDir, "query", "--no-load-module", "--doc", "query.graphql")
+		var path string
 		cmd.Env = slices.DeleteFunc(cmd.Env, func(e string) bool {
-			return strings.Contains(strings.ToLower(strings.SplitN(e, "=", 2)[0]), "git")
+			key, value, _ := strings.Cut(e, "=")
+			if key == "PATH" {
+				path = value
+				return true
+			}
+			key = strings.ToLower(key)
+			return strings.Contains(key, "git") || strings.HasPrefix(key, "entire_")
 		})
 		cmd.Env = append(cmd.Env,
+			"PATH="+entireCLIDir+string(os.PathListSeparator)+path,
 			"_EXPERIMENTAL_DAGGER_RUNNER_HOST="+endpoint,
 			"GIT_CONFIG_GLOBAL="+gitConfig,
 			"GIT_CONFIG_SYSTEM=/dev/null",
 			"GIT_CONFIG_NOSYSTEM=1",
 			"GIT_TERMINAL_PROMPT=0",
 		)
+		cmd.Env = append(cmd.Env, env...)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()
@@ -172,12 +199,10 @@ func (GitEntireSuite) TestEntireRemote(ctx context.Context, t *testctx.T) {
 		}
 		return out, err
 	}
-	out, err := runHostQuery(helperConfig)
-	require.NoError(t, err)
-	var helperResult struct {
+	type hostQueryResult struct {
 		ModuleSource struct {
 			Commit      string
-			HTMLRepoURL string `json:"htmlRepoURL"`
+			HTMLRepoURL string `json:"htmlRepoUrl"`
 		}
 		Git struct {
 			Branch struct {
@@ -187,17 +212,27 @@ func (GitEntireSuite) TestEntireRemote(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}
-	require.NoError(t, json.Unmarshal(out, &helperResult), string(out))
+	readHostQuery := func(gitConfig, entireCLIDir string, env ...string) hostQueryResult {
+		t.Helper()
+		out, err := runHostQuery(gitConfig, entireCLIDir, env...)
+		require.NoError(t, err)
+		var result hostQueryResult
+		require.NoError(t, json.Unmarshal(out, &result), string(out))
+		require.Equal(t, artifact.MainSHA, result.ModuleSource.Commit)
+		require.Equal(t, fakeEntireReadme, result.Git.Branch.Tree.File.Contents)
+		return result
+	}
+	helperResult := readHostQuery(helperConfig, loggedOut)
 	artifact.HelperModuleCommit = helperResult.ModuleSource.Commit
 	artifact.HelperHTMLRepoURL = helperResult.ModuleSource.HTMLRepoURL
 	artifact.HelperReadme = helperResult.Git.Branch.Tree.File.Contents
-	require.Equal(t, artifact.MainSHA, artifact.HelperModuleCommit)
 	require.Equal(t, "https://entire.io/"+fakeEntireRepo, artifact.HelperHTMLRepoURL)
-	require.Equal(t, fakeEntireReadme, artifact.HelperReadme)
+	artifact.EnvTokenReadme = readHostQuery(emptyConfig, loggedOut, "ENTIRE_TOKEN="+token).Git.Branch.Tree.File.Contents
+	artifact.CLITokenReadme = readHostQuery(emptyConfig, loggedIn).Git.Branch.Tree.File.Contents
 
-	// Without a helper there is no credential: the engine holds no Entire
+	// With none of them there is no credential: the engine holds no Entire
 	// login of its own to fall back on.
-	_, err = runHostQuery(emptyConfig)
+	_, err = runHostQuery(emptyConfig, loggedOut)
 	require.ErrorContains(t, err, "git authentication failed")
 	artifact.NoCredentialError = ansiEscapes.ReplaceAllString(err.Error(), "")
 

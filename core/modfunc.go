@@ -183,10 +183,11 @@ func cachePolicyNever(spec dagql.FieldSpec) bool {
 func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]*FunctionCallArgValue, error) {
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
+	// Core enum values are spelled as the module's own schema spells them.
+	ctx = fn.mod.Self().contextWithSDKView(ctx)
 
 	for i, input := range opts.Inputs {
-		normalizedName := gqlArgName(input.Name)
-		arg, ok := fn.args[normalizedName]
+		arg, ok := fn.lookupArg(input.Name)
 		if !ok {
 			return nil, fmt.Errorf("find arg %q", input.Name)
 		}
@@ -510,7 +511,11 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		var result dagql.AnyObjectResult
 		if err := srv.Select(mainCtx, addr, &result,
 			dagql.Selector{
-				Field: gqlFieldName(typename),
+				// The field of the address object that yields a core type
+				// (Secret gives secret, GitRef gives gitRef): core names are
+				// hand-written, not module names, so this keeps the rules it
+				// always had.
+				Field: LegacyNamer.FieldName(typename),
 			},
 		); err != nil {
 			return nil, ud.errorf(err, "resolve object (%q)", typename)
@@ -1059,13 +1064,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}()
 
-	parentFields, err := moduleFunctionReceiverFields(ctx, opts)
+	parentJSON, err := moduleFunctionReceiverJSON(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("convert receiver: %w", err)
-	}
-	parentJSON, err := json.Marshal(parentFields)
-	if err != nil {
-		return nil, fmt.Errorf("marshal parent value: %w", err)
+		return nil, err
 	}
 
 	fnCall := newFunctionCall(FunctionCall{
@@ -1166,6 +1167,62 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	return returnValue, nil
 }
 
+// A receiver's SDK form depends on the receiver result and the active result
+// scope, not on the function called. Each call on a collection item receives
+// the whole collection, so convert an attached receiver once per session and
+// scope; concurrent calls wait for the first conversion.
+func moduleFunctionReceiverJSON(ctx context.Context, opts *CallOpts) ([]byte, error) {
+	convert := func(ctx context.Context) ([]byte, error) {
+		parentFields, err := moduleFunctionReceiverFields(ctx, opts)
+		if err != nil {
+			return nil, fmt.Errorf("convert receiver: %w", err)
+		}
+		parentJSON, err := json.Marshal(parentFields)
+		if err != nil {
+			return nil, fmt.Errorf("marshal parent value: %w", err)
+		}
+		return parentJSON, nil
+	}
+	if _, ok := dagql.UnwrapAs[*ModuleObject](opts.ParentTyped); !ok {
+		return convert(ctx)
+	}
+	// Scopes other than artifact views have no identity to key the result by.
+	var scopeKey string
+	switch scope := dagql.CurrentResultScope(ctx).(type) {
+	case nil:
+	case *ArtifactView:
+		scopeKey = scope.key
+	default:
+		return convert(ctx)
+	}
+	id, err := opts.ParentTyped.ID()
+	if err != nil || id == nil || id.EngineResultID() == 0 {
+		return convert(ctx)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	metadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// The conversion attaches the receiver's inline objects to this session,
+	// so its handles are valid only here.
+	key := fmt.Sprintf("module-receiver-sdk-input:%q:%d:%q", metadata.SessionID, id.EngineResultID(), scopeKey)
+	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, key, func(ctx context.Context) (any, error) {
+		return convert(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	parentJSON, ok := res.Value().([]byte)
+	if !ok {
+		return nil, fmt.Errorf("invalid converted receiver %T", res.Value())
+	}
+	return parentJSON, nil
+}
+
 // Serialize receivers through the same scoped conversion as object arguments.
 // Serializing Fields directly would leave nested inline collections unfiltered.
 func moduleFunctionReceiverFields(ctx context.Context, opts *CallOpts) (map[string]any, error) {
@@ -1200,11 +1257,21 @@ func (fn *ModuleFunction) ReturnType() (ModType, error) {
 }
 
 func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
-	arg, ok := fn.args[gqlArgName(argName)]
+	arg, ok := fn.lookupArg(argName)
 	if !ok {
 		return nil, fmt.Errorf("find arg %q", argName)
 	}
 	return arg.modType, nil
+}
+
+// lookupArg finds an argument by its schema name, or by a name that
+// normalizes to it with the module's naming rules.
+func (fn *ModuleFunction) lookupArg(name string) (*UserModFunctionArg, bool) {
+	if arg, ok := fn.args[name]; ok {
+		return arg, true
+	}
+	arg, ok := fn.args[fn.mod.Self().Namer().ArgName(name)]
+	return arg, ok
 }
 
 func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {

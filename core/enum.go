@@ -25,6 +25,10 @@ func (m *ModuleEnumType) SourceMod() Mod {
 	return NewUserMod(m.mod)
 }
 
+func (m *ModuleEnumType) Kind() TypeDefKind {
+	return TypeDefKindEnum
+}
+
 func (m *ModuleEnumType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
 	var sourceMap dagql.Optional[dagql.ID[*SourceMap]]
 	if m.typeDef.SourceMap.Valid {

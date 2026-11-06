@@ -8,7 +8,7 @@ import (
 )
 
 // profileSkip is the static, debug-independent, receiver-type profiling-skip
-// predicate (separate from the introspectionInfo UI decision). It is a pure
+// predicate (separate from the callChainInfo UI decision). It is a pure
 // function of (immediate receiver type name, field) — both in the call digest — so
 // a call and any caller that singleflights it agree by construction.
 func TestProfileSkipClassifier(t *testing.T) {
@@ -41,7 +41,7 @@ func TestProfileSkipClassifier(t *testing.T) {
 		// name and the Go type name diverge here).
 		{"EnumValueTypeDef", "__withSourceMap"}, {"EnumValueTypeDef", "__withName"},
 		// Query-level introspection root fields (the root set, shared with
-		// introspectionInfo).
+		// callChainInfo).
 		{"Query", "__schema"}, {"Query", "sourceMap"}, {"Query", "currentTypeDefs"},
 		{"Query", "function"}, {"Query", "typeDef"}, {"Query", "__objectTypeDef"},
 		{"Query", "currentFunctionCall"}, {"Query", "currentModule"},
@@ -78,7 +78,7 @@ func TestProfileSkipClassifier(t *testing.T) {
 }
 
 // profileSkip takes no context, so it is structurally debug-independent: debug
-// baggage cannot change the decision (unlike introspectionInfo's debug-gated
+// baggage cannot change the decision (unlike callChainInfo's debug-gated
 // receiver-type cases). This is what keeps the volume amplifier from returning in
 // the very mode used to capture a trace for debugging.
 func TestProfileSkipIsDebugIndependentPureFunction(t *testing.T) {
@@ -89,7 +89,7 @@ func TestProfileSkipIsDebugIndependentPureFunction(t *testing.T) {
 }
 
 // The root set extracted for profileSkip must exactly match the names
-// introspectionInfo classifies as roots, so the UI and profiler never diverge.
+// callChainInfo classifies as roots, so the UI and profiler never diverge.
 func TestIntrospectionRootFieldsMatchProfileSkip(t *testing.T) {
 	t.Parallel()
 	for field := range introspectionRootFields {

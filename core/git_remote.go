@@ -55,7 +55,10 @@ type RemoteGitRepository struct {
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
 
-const remoteGitLockPrefix = "git-remote::"
+const (
+	remoteGitLockPrefix         = "git-remote::"
+	remoteGitBloblessLockSuffix = "::blobless"
+)
 
 type RemoteGitRef struct {
 	*gitutil.Ref
@@ -89,7 +92,7 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("loaded git remote metadata", "cache_hit", hit, "cache_key", cacheKey)
+	slog.Debug("loaded git remote metadata", "cache_hit", hit, "cache_key", cacheKey)
 	return remote, nil
 }
 
@@ -390,6 +393,12 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 		"gc.autoDetach":          "false",
 		"maintenance.autoDetach": "false",
 	})}
+	if repo.Mirror.Self() != nil && repo.Mirror.Self().Blobless {
+		// Every fetch into a blobless mirror is an explicit one. Git would
+		// otherwise answer the check for a commit it doesn't have yet by
+		// fetching it with its whole history.
+		opts = append(opts, gitutil.WithEnv("GIT_NO_LAZY_FETCH=1"))
+	}
 	if sshAuthSock != "" {
 		opts = append(opts, gitutil.WithSSHAuthSock(sshAuthSock))
 	}
@@ -691,6 +700,52 @@ func gitRefsToFetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []
 	return fetchRefs, nil
 }
 
+// withBloblessMirror returns this repository reading from its blobless mirror,
+// with the same remote and credentials.
+func (repo *RemoteGitRepository) withBloblessMirror(ctx context.Context, dag *dagql.Server) (*RemoteGitRepository, error) {
+	blobless := *repo
+	if err := dag.Select(ctx, dag.Root(), &blobless.Mirror, dagql.Selector{
+		Field: "_remoteGitMirror",
+		Args: []dagql.NamedInput{
+			{Name: "remoteURL", Value: dagql.String(repo.URL.Remote())},
+			{Name: "blobless", Value: dagql.Boolean(true)},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("failed to select blobless git mirror: %w", err)
+	}
+	return &blobless, nil
+}
+
+// fetchBlobs fetches file contents by object ID into a blobless mirror, in one
+// request, the way Git asks a promisor remote for a batch of them.
+func (repo *RemoteGitRepository) fetchBlobs(ctx context.Context, git *gitutil.GitCLI, oids io.Reader) (rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindIO, "git.mirror.fetch.blobs", wcprof.OpOpts{Ident: remoteGitLockPrefix + repo.URL.RedactedRemote(), WorkType: wcprof.WorkTypeEngine})
+	defer func() { op.EndErr(rerr) }()
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, repo.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+	_, err = git.RunWithStdin(ctx, oids,
+		"-c", "fetch.negotiationAlgorithm=noop",
+		"fetch", "origin",
+		"--no-tags",
+		"--no-write-fetch-head",
+		"--recurse-submodules=no",
+		"--filter=blob:none",
+		"--stdin",
+	)
+	return err
+}
+
 // fetch fetches refs into the mirror; retried says the remote refused a
 // commit and its named ref was fetched instead (see fetchObjects).
 func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) (retried bool, rerr error) {
@@ -940,7 +995,13 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx con
 		return err
 	}
 	locker := query.Locker()
+	if repo.Mirror.Self() == nil {
+		return fmt.Errorf("remote git mirror is nil for %s", repo.URL.Remote())
+	}
 	lockKey := remoteGitLockPrefix + repo.URL.Remote()
+	if repo.Mirror.Self().Blobless {
+		lockKey += remoteGitBloblessLockSuffix
+	}
 	// Traces and profiles are shared: identify the lock without the URL's
 	// userinfo, which may carry credentials.
 	lockIdent := remoteGitLockPrefix + repo.URL.RedactedRemote()
@@ -968,9 +1029,6 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx con
 	ctx, holdOp := wcprof.BeginOp(ctx, wcprof.OpKindIO, "git.mirror.locked", wcprof.OpOpts{Ident: lockIdent, WorkType: wcprof.WorkTypeEngine})
 	defer func() { holdOp.EndErr(retErr) }()
 
-	if repo.Mirror.Self() == nil {
-		return fmt.Errorf("remote git mirror is nil for %s", repo.URL.Remote())
-	}
 	if err := EnsureBackingSnapshot(ctx, repo.Mirror); err != nil {
 		return err
 	}
@@ -1017,6 +1075,20 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx con
 
 		if _, err := git.Run(ctx, "remote", "add", "origin", repo.URL.Remote()); err != nil {
 			return fmt.Errorf("failed add origin repo at %s: %w", dir, err)
+		}
+
+		if repo.Mirror.Self().Blobless {
+			// A remote that doesn't support filters ignores this and sends
+			// everything, so such a mirror simply holds it all.
+			for _, config := range [][2]string{
+				{"extensions.partialClone", "origin"},
+				{"remote.origin.promisor", "true"},
+				{"remote.origin.partialCloneFilter", "blob:none"},
+			} {
+				if _, err := git.Run(ctx, "config", config[0], config[1]); err != nil {
+					return fmt.Errorf("failed to configure blobless mirror at %s: %w", dir, err)
+				}
+			}
 		}
 	}
 

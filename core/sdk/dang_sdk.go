@@ -5,10 +5,8 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/core"
-	dangv1 "github.com/dagger/dagger/core/sdk/dang/v1"
 	dangv2 "github.com/dagger/dagger/core/sdk/dang/v2"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 )
 
 type dangSDK struct {
@@ -30,38 +28,14 @@ func (sdk *dangSDK) CloneForModuleSource(*core.ModuleSource) core.SDK {
 	return &cp
 }
 
-// dangImpl is implemented by each supported Dang major version
-// (core/sdk/dang/v1, v2, ...). Unlike core.ModuleTypes, ModuleTypes takes
-// already-scoped values: the scoping helpers are unexported in this package
-// and the version packages can't import it (cycle), so the dispatcher scopes
-// before delegating.
-type dangImpl interface {
-	ModuleTypes(
-		ctx context.Context,
-		deps *core.SchemaBuilder,
-		scopedSrc dagql.ObjectResult[*core.ModuleSource],
-		scopedMod dagql.ObjectResult[*core.Module],
-	) (dagql.ObjectResult[*core.Module], error)
-
-	Runtime(
-		ctx context.Context,
-		deps *core.SchemaBuilder,
-		source dagql.ObjectResult[*core.ModuleSource],
-	) (core.ModuleRuntime, error)
-}
-
-// dangImplFor picks the Dang major version matching the module's engine
-// version: modules pinned before a major's gate keep the semantics they were
-// written against. Newest-first ladder; adding a future major is one case.
-func dangImplFor(src *core.ModuleSource) dangImpl {
-	if engine.CheckVersionCompatibility(
-		engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion)),
-		engine.MinimumDangV2ModuleVersion,
-	) {
-		return dangv2.Impl{}
-	}
-	return dangv1.Impl{}
-}
+// dangImpl is the Dang SDK implementation. It evaluates every Dang module with
+// the one Dang library the engine links (github.com/vito/dang/v2), parsing
+// each module's source as the Dang language version it is written in
+// (ModuleSource.DangVersion: Dang 1.0 for modules from before Dang 2). Unlike
+// core.ModuleTypes, its ModuleTypes takes already-scoped values: the scoping
+// helpers are unexported in this package and dangv2 can't import it (cycle),
+// so the SDK scopes before delegating.
+var dangImpl = dangv2.Impl{}
 
 func (sdk *dangSDK) AsRuntime() (core.Runtime, bool) {
 	return sdk, true
@@ -142,7 +116,7 @@ func (sdk *dangSDK) Runtime(
 	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (core.ModuleRuntime, error) {
-	return dangImplFor(source.Self()).Runtime(ctx, deps, source)
+	return dangImpl.Runtime(ctx, deps, source)
 }
 
 func (sdk *dangSDK) ModuleTypes(
@@ -166,5 +140,5 @@ func (sdk *dangSDK) ModuleTypes(
 		return inst, fmt.Errorf("failed to scope module for dang module sdk module types: %w", err)
 	}
 
-	return dangImplFor(src.Self()).ModuleTypes(ctx, deps, src, scopedMod)
+	return dangImpl.ModuleTypes(ctx, deps, src, scopedMod)
 }

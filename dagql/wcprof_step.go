@@ -2,6 +2,11 @@ package dagql
 
 import (
 	"context"
+	"net/http"
+	"time"
+
+	"github.com/99designs/gqlgen/graphql"
+	"github.com/99designs/gqlgen/graphql/handler"
 
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -26,6 +31,37 @@ func BeginStep(ctx context.Context, name string) (context.Context, Step) {
 	}
 	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, name, wcprof.OpOpts{})
 	return ctx, Step{op: op}
+}
+
+// RecordStep records a step that already ran from start to end, timed by
+// someone else (such as gqlgen's own timings of a request), in the native
+// profile only, as BeginStep does. Nothing can run under it.
+func RecordStep(ctx context.Context, name string, start, end time.Time) {
+	if !wcprof.Enabled(ctx) || start.IsZero() || end.IsZero() {
+		return
+	}
+	wcprof.RecordOp(ctx, wcprof.OpKindInternal, name, wcprof.OpOpts{}, wcprof.TimeNS(start), wcprof.TimeNS(end), wcprof.OutcomeOK)
+}
+
+// ServeHTTPWithWriteStep serves r with h, a handler built for r alone, and,
+// when r is profiled, records writing its response as the graphql.write step:
+// from the handler returning the response to its being written. A WebSocket
+// connection (gqlgen's own test for one), which writes many responses, each
+// as it's ready, records none.
+func ServeHTTPWithWriteStep(h *handler.Server, w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if !wcprof.Enabled(ctx) || r.Header.Get("Upgrade") != "" {
+		h.ServeHTTP(w, r)
+		return
+	}
+	var returned time.Time
+	h.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
+		res := next(ctx)
+		returned = time.Now()
+		return res
+	})
+	h.ServeHTTP(w, r)
+	RecordStep(ctx, "graphql.write", returned, time.Now())
 }
 
 // End ends the step, failed when err isn't nil.

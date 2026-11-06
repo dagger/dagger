@@ -157,11 +157,11 @@ type {{ $field | FieldOptionsStructName }} struct {
 	}
 	{{- if IsInterfaceRef $field.TypeRef }}
 	return &{{ $typeName | InterfaceClientName }}{
-		query: selectNode(q.Root(), *objectID, "{{ $typeName }}"),
+		query: selectNode(q.Root(), *objectID, "{{ $field.TypeRef | ObjectName }}"),
 	}, nil
 	{{- else }}
 	return &{{ $typeName }}{
-		query: selectNode(q.Root(), *objectID, "{{ $typeName }}"),
+		query: selectNode(q.Root(), *objectID, "{{ $field.TypeRef | ObjectName }}"),
 	}, nil
 	{{- end }}
 

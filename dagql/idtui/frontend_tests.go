@@ -643,6 +643,7 @@ func renderTestCountParts(out TermOutput, counts dagui.TestCounts) []string {
 		parts = append(parts, out.String(fmt.Sprintf("%s %d %s", icon, count, label)).Foreground(color).String())
 	}
 	add(counts.Failing, IconFailure, termenv.ANSIRed, "failed")
+	add(counts.Unreported, IconUnreported, termenv.ANSIBrightBlack, "not reported")
 	add(counts.Skipped, IconSkipped, termenv.ANSIBrightBlack, "skipped")
 	add(counts.Passing, IconSuccess, termenv.ANSIGreen, "passed")
 	add(counts.Running, DotHalf, termenv.ANSIYellow, "running")
