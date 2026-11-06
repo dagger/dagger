@@ -327,30 +327,43 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		}
 	}
 
+	spans, logs, metrics := telemetry.SpanProcessors, telemetry.LogProcessors, telemetry.MetricExporters
+	if client.NestedSession() {
+		// The engine already delivers a nested client's telemetry to the
+		// client's parent, and the collector exporters configured from
+		// OTEL_EXPORTER_OTLP_* lead to that same parent (the exec's or the
+		// parent CLI's telemetry proxy). Forwarding the engine's telemetry to
+		// them too would deliver every log record twice.
+		spans = withoutRange(spans, cliCollectorTelemetry.spans)
+		logs = withoutRange(logs, cliCollectorTelemetry.logs)
+		metrics = withoutRange(metrics, cliCollectorTelemetry.metrics)
+	}
 	params.EngineTrace = telemetry.SpanForwarder{
-		Processors: telemetry.SpanProcessors,
+		Processors: spans,
 	}
 	// The engine names the session (Query.setSessionTitle) with a span-name
 	// record on our primary span; apply it to the live span too, so the span
 	// we export carries the title like the frontend shows it.
 	namer := primarySpanNamer{span: trace.SpanFromContext(ctx)}
 	params.EngineLogs = telemetry.LogForwarder{
-		Processors: append(slices.Clone(telemetry.LogProcessors), namer),
+		Processors: append(slices.Clone(logs), namer),
 	}
-	params.EngineMetrics = telemetry.MetricExporters
+	params.EngineMetrics = metrics
 	if cloud := cliCloudTelemetry; cloud.configured() {
 		// Ask the engine to publish the session's telemetry to Cloud itself,
-		// and have what it would send us forwarded everywhere else.
+		// and have what it would send us forwarded everywhere else. The Cloud
+		// exporters come before the collector's, so their indexes hold with
+		// or without them.
 		params.EngineCloudTelemetry = true
 		params.CloudURL = os.Getenv("DAGGER_CLOUD_URL")
 		params.CloudCredentialsPath = auth.CredentialsFile()
 		params.EngineTraceWithoutCloud = telemetry.SpanForwarder{
-			Processors: withoutIndex(telemetry.SpanProcessors, cloud.spans),
+			Processors: withoutIndex(spans, cloud.spans),
 		}
 		params.EngineLogsWithoutCloud = telemetry.LogForwarder{
-			Processors: append(withoutIndex(telemetry.LogProcessors, cloud.logs), namer),
+			Processors: append(withoutIndex(logs, cloud.logs), namer),
 		}
-		params.EngineMetricsWithoutCloud = withoutIndex(telemetry.MetricExporters, cloud.metrics)
+		params.EngineMetricsWithoutCloud = withoutIndex(metrics, cloud.metrics)
 	}
 
 	params.WithTerminal = withTerminal
@@ -571,7 +584,7 @@ var skipSharedTelemetryExporters bool
 // the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
 // telemetry warnings (e.g. the preflight session for a dynamic SDK command).
 // Preparation sessions use only their own frontend exporters.
-func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes, *enginetel.SpanQueueCounts) {
+func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes, collectorTelemetryRanges, *enginetel.SpanQueueCounts) {
 	return engineTelemetryConfigWithExporters(ctx, enginetel.ConfiguredCloudExporters, configuredCollectorExporters)
 }
 
@@ -610,6 +623,41 @@ var noCloudTelemetry = cloudTelemetryIndexes{spans: -1, logs: -1, metrics: -1}
 // forwarded without them when the engine publishes it to Cloud itself.
 var cliCloudTelemetry = noCloudTelemetry
 
+// indexRange is the half-open range [from, to) of a slice's indexes.
+type indexRange struct {
+	from, to int
+}
+
+// shift returns r moved n indexes later.
+func (r indexRange) shift(n int) indexRange {
+	return indexRange{r.from + n, r.to + n}
+}
+
+// collectorTelemetryRanges locates the CLI's exporters to the user's own
+// collector in the pipeline telemetry.Init builds: their range of the
+// telemetry.SpanProcessors Init sets, and of the entries Init appends, in
+// Config order, to telemetry.LogProcessors and telemetry.MetricExporters.
+// A range is empty when the collector has no exporter of that kind.
+type collectorTelemetryRanges struct {
+	spans, logs, metrics indexRange
+}
+
+// cliCollectorTelemetry is where initEngineTelemetry found the collector
+// exporters in the global telemetry slices, so that a nested client can
+// forward the engine's telemetry without them.
+var cliCollectorTelemetry collectorTelemetryRanges
+
+// withoutRange returns a copy of all without its elements in r.
+func withoutRange[T any](all []T, r indexRange) []T {
+	out := make([]T, 0, len(all))
+	for j, v := range all {
+		if j < r.from || j >= r.to {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // withoutIndex returns a copy of all without its i-th element.
 func withoutIndex[T any](all []T, i int) []T {
 	out := make([]T, 0, len(all))
@@ -621,13 +669,15 @@ func withoutIndex[T any](all []T, i int) []T {
 	return out
 }
 
-// engineTelemetryConfigWithExporters also returns the counts of the spans
-// queued for the user's own collector, or nil when there is none.
-func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc, configuredCollectorExporters configuredCollectorExportersFunc) (telemetry.Config, cloudTelemetryIndexes, *enginetel.SpanQueueCounts) {
+// engineTelemetryConfigWithExporters also returns where the exporters to the
+// user's own collector sit in the Config, and the counts of the spans queued
+// for that collector, or nil when there is none.
+func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc, configuredCollectorExporters configuredCollectorExportersFunc) (telemetry.Config, cloudTelemetryIndexes, collectorTelemetryRanges, *enginetel.SpanQueueCounts) {
 	cfg := telemetry.Config{
 		Resource: Resource(ctx),
 	}
 	cloud := noCloudTelemetry
+	var collector collectorTelemetryRanges
 	var collectorSpans *enginetel.SpanQueueCounts
 	if !frontendTelemetryDisabled(ctx) {
 		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
@@ -664,6 +714,9 @@ func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExpo
 		// spans the default 2048-slot BSP, which drops a burst of the engine
 		// spans the CLI forwards; give them a large queue, like Cloud's.
 		spans, logs, metrics := configuredCollectorExporters(ctx)
+		collector.spans.from = len(cfg.SpanProcessors)
+		collector.logs.from = len(cfg.LiveLogExporters)
+		collector.metrics.from = len(cfg.LiveMetricExporters)
 		if spans != nil {
 			collectorSpans = new(enginetel.SpanQueueCounts)
 			cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewCollectorSpanProcessor(spans, telemetry.LiveTracesEnabled, collectorSpans))
@@ -674,24 +727,30 @@ func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExpo
 		if metrics != nil {
 			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
 		}
+		collector.spans.to = len(cfg.SpanProcessors)
+		collector.logs.to = len(cfg.LiveLogExporters)
+		collector.metrics.to = len(cfg.LiveMetricExporters)
 	}
-	return cfg, cloud, collectorSpans
+	return cfg, cloud, collector, collectorSpans
 }
 
 // initEngineTelemetry also returns the counts of the spans queued for the
 // user's own collector, or nil when there is none; they are final once the
 // returned cleanup has run.
 func initEngineTelemetry(ctx context.Context) (context.Context, func(error) error, *enginetel.SpanQueueCounts) {
-	cfg, cloud, collectorSpans := engineTelemetryConfig(ctx)
+	cfg, cloud, collector, collectorSpans := engineTelemetryConfig(ctx)
 	// Init replaces telemetry.SpanProcessors but appends to LogProcessors and
 	// MetricExporters, which may hold an earlier Init's entries.
 	if cloud.configured() {
 		cloud.logs += len(telemetry.LogProcessors)
 		cloud.metrics += len(telemetry.MetricExporters)
 	}
+	collector.logs = collector.logs.shift(len(telemetry.LogProcessors))
+	collector.metrics = collector.metrics.shift(len(telemetry.MetricExporters))
 	firstLogProcessor := len(telemetry.LogProcessors)
 	ctx = telemetry.Init(ctx, cfg)
 	cliCloudTelemetry = cloud
+	cliCollectorTelemetry = collector
 
 	// Install the frontend separately: telemetry.Init wraps LiveLogExporters
 	// in dropping batch processors. Command stdio and forwarded engine logs
