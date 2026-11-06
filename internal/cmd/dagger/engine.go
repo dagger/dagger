@@ -334,11 +334,13 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		Processors: append(slices.Clone(telemetry.LogProcessors), namer),
 	}
 	params.EngineMetrics = telemetry.MetricExporters
+	// The engine's own Cloud calls, like the agent's module search, use the
+	// Cloud this CLI is configured with.
+	params.CloudURL = os.Getenv("DAGGER_CLOUD_URL")
 	if cloud := cliCloudTelemetry; cloud.configured() {
 		// Ask the engine to publish the session's telemetry to Cloud itself,
 		// and have what it would send us forwarded everywhere else.
 		params.EngineCloudTelemetry = true
-		params.CloudURL = os.Getenv("DAGGER_CLOUD_URL")
 		params.CloudCredentialsPath = auth.CredentialsFile()
 		params.EngineTraceWithoutCloud = telemetry.SpanForwarder{
 			Processors: withoutIndex(telemetry.SpanProcessors, cloud.spans),
