@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/util/layercopy"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
@@ -178,4 +179,48 @@ func TestContainerSelectionRejectsOpaqueMountTargetParents(t *testing.T) {
 	_, err := source.Children("/", nil)
 	require.ErrorIs(t, err, errOpaqueSelectionParent)
 	require.Zero(t, loads, "reject the unknown target before loading its snapshot")
+}
+
+func TestContainerSelectionRejectsUnresolvedMountTargets(t *testing.T) {
+	links := map[string]string{}
+	target := "/app"
+	for i := 40; i >= 0; i-- {
+		name := fmt.Sprintf("alias-%02d", i)
+		links[name] = target
+		target = "/" + name
+	}
+	base := selectionFixture(t, map[string]string{"app/value": "hidden"}, links)
+	mounted := selectionFixture(t, map[string]string{"value": "mounted"}, nil)
+	// The executor can resolve this mount target, but selection's 40-link
+	// budget cannot. The unresolved mount still hides the rootfs at /app.
+	resolved, err := containerdfs.RootPath(base, target)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(base, "app"), resolved)
+	source := &containerSelectionSource{
+		base: selectionFixtureMount(t, "/", base, "."),
+		mounts: []*containerSelectionMount{
+			selectionFixtureMount(t, target, mounted, "."),
+		},
+	}
+	t.Cleanup(source.Close)
+	dst := t.TempDir()
+	copier, err := layercopy.NewCopier(layercopy.Mount{Root: dst})
+	require.NoError(t, err)
+	defer copier.Close()
+	err = copier.CopySelection(context.Background(), "", "/app", layercopy.SelectionOptions{Source: source})
+	require.ErrorIs(t, err, unix.ELOOP)
+	require.ErrorContains(t, err, "resolve mount target /alias-00")
+	entries, err := os.ReadDir(dst)
+	require.NoError(t, err)
+	require.Empty(t, entries, "mount resolution must fail before copying hidden files")
+	for range 2 {
+		f, err := source.Open("/app/value", nil)
+		if f != nil {
+			_ = f.Close()
+		}
+		require.Nil(t, f)
+		require.ErrorIs(t, err, unix.ELOOP)
+	}
+	_, err = source.Children("/", nil)
+	require.ErrorIs(t, err, unix.ELOOP)
 }

@@ -42,16 +42,12 @@ type containerSelectionBacking struct {
 }
 
 type containerSelectionMount struct {
-	target    string
-	targetErr error
-	load      func() (*containerSelectionBacking, error)
-	backing   *containerSelectionBacking
+	target  string
+	load    func() (*containerSelectionBacking, error)
+	backing *containerSelectionBacking
 }
 
 func (m *containerSelectionMount) get() (*containerSelectionBacking, error) {
-	if m.targetErr != nil {
-		return nil, m.targetErr
-	}
 	if m.load == nil {
 		return nil, fmt.Errorf("resolveBrokenSymlinks: cannot retrieve path from non-snapshot mount %s", m.target)
 	}
@@ -166,18 +162,13 @@ func (s *containerSelectionSource) prepare() error {
 	for _, mnt := range pending {
 		target, err := layercopy.ResolveSelectionPath(containerSelectionTargets{s}, mnt.target)
 		if err != nil {
-			mnt.targetErr = fmt.Errorf("resolve mount target %s: %w", mnt.target, err)
-			if errors.Is(err, errOpaqueSelectionParent) {
-				// Its location is unknown: an opaque parent could redirect
-				// this mount anywhere, including over the selected path.
-				s.prepareErr = mnt.targetErr
-				s.ready = true
-				return s.prepareErr
-			}
-			// Other target errors stay on the affected mount.
-		} else {
-			mnt.target = filepath.Join("/", target)
+			// An unresolved target could cover any selected path. Do not
+			// copy from a mount table whose locations are only partly known.
+			s.prepareErr = fmt.Errorf("resolve mount target %s: %w", mnt.target, err)
+			s.ready = true
+			return s.prepareErr
 		}
+		mnt.target = filepath.Join("/", target)
 		s.mounts = slices.DeleteFunc(s.mounts, func(previous *containerSelectionMount) bool {
 			return selectionPathUnder(previous.target, mnt.target)
 		})
@@ -195,9 +186,6 @@ type containerSelectionTargets struct{ source *containerSelectionSource }
 func (v containerSelectionTargets) Open(name string, parent *os.Root) (*os.File, error) {
 	name = filepath.Join("/", name)
 	mnt := v.source.mountFor(name)
-	if mnt.targetErr != nil {
-		return nil, mnt.targetErr
-	}
 	if mnt.load == nil {
 		return nil, fmt.Errorf("%w %s", errOpaqueSelectionParent, mnt.target)
 	}
@@ -242,9 +230,6 @@ func (s *containerSelectionSource) mountFor(name string) *containerSelectionMoun
 }
 
 func (s *containerSelectionSource) open(name string, parent *os.Root, selected *containerSelectionMount) (*os.File, error) {
-	if selected.targetErr != nil {
-		return nil, selected.targetErr
-	}
 	if selected.load == nil {
 		return nil, fmt.Errorf("resolveBrokenSymlinks: cannot retrieve path from non-snapshot mount %s", selected.target)
 	}
