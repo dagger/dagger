@@ -109,14 +109,25 @@ narrow inputs. It cannot exclude checks whose inputs include the whole Workspace
 A broad constructor or discovery call also gives its returned objects broad
 dependencies. Filtering after discovery does not avoid discovery work.
 
-A Cloud sample inspected 21 checks from `docs`, `markdown-lint`, and `test-split`.
-A Python SDK path selected 20; only `docs/check` was excluded. A docs path and
-the docs module code each selected all 21. The 20 broad checks had known
-Workspace inputs. None reported unresolved origins.
+A [Cloud run](https://dagger.cloud/dagger/traces/d8a4016fb68e8ccfbbb9070f8649ada2)
+used all 845 expanded checks in `dagger/dagger` at `7e9eaacc37`.
 
-The first provenance query took 36 seconds; the second took 2 seconds on the
-same engine. These times include module loading and input preparation. No check
-body ran. This measures selection cost, not total speed gain. The avoided work
-is the `docs/check` website build, which was not timed.
+| Edit | Selected | Omitted |
+|---|---:|---|
+| `README.md` | 844 / 845 | `docs/check` |
+| Docs introduction page | 845 / 845 | None |
+| Python SDK `_utils.py` | 844 / 845 | `docs/check` |
+
+`--path` and `--uncommitted` returned identical sets for each edit. A clean
+checkout selected zero checks. A Python edit limited to `/docs` also selected
+zero checks.
+
+All 844 broad checks had known whole-Workspace inputs. None reported unresolved
+origins or module load failures. Go collections accounted for 757 of those
+checks. Useful filtering in this repository needs narrower module inputs.
+
+The first unfiltered list took 77.7 seconds. Subsequent `--uncommitted` selection
+for the three edits took 6.7–7.7 seconds in this sequential run. These times
+include loading and input preparation. Check bodies were not run.
 
 The original intent is described in [Modules v2](https://github.com/dagger/dagger/pull/12900).

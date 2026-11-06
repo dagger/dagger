@@ -69,7 +69,7 @@ type Platform string
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
-// A path within a workspace. A leading slash starts at the workspace boundary. Other input paths start at the operation's working directory. Output source paths start at the workspace boundary.
+// A path within a workspace. A leading slash starts at the workspace boundary. Each operation defines how it resolves relative input paths. Output source paths start at the workspace boundary.
 type WorkspacePath string
 
 // Key value object that represents a build argument.

@@ -12,7 +12,7 @@ import (
 )
 
 // WorkspacePath uses workspace coordinates, never host filesystem coordinates.
-// Input paths remain relative until an operation resolves them against its cwd.
+// Each operation defines how it resolves relative input paths.
 // Source selectors return absolute paths within the workspace boundary.
 type WorkspacePath string
 
@@ -20,7 +20,7 @@ var _ dagql.ScalarType = WorkspacePath("")
 
 func (WorkspacePath) TypeName() string { return "WorkspacePath" }
 func (WorkspacePath) TypeDescription() string {
-	return "A path within a workspace. A leading slash starts at the workspace boundary. Other input paths start at the operation's working directory. Output source paths start at the workspace boundary."
+	return "A path within a workspace. A leading slash starts at the workspace boundary. Each operation defines how it resolves relative input paths. Output source paths start at the workspace boundary."
 }
 func (p WorkspacePath) Type() *ast.Type {
 	return &ast.Type{NamedType: p.TypeName(), NonNull: true}

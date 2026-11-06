@@ -604,12 +604,30 @@ func (r *ModuleConfigClient) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (r *ModuleNaming) UnmarshalJSON(data []byte) error {
+	var id string
+	if err := json.Unmarshal(data, &id); err != nil {
+		return err
+	}
+	*r = ModuleNaming{query: selectNode(initRoot().QueryBuilder(), id, "ModuleNaming")}
+	return nil
+}
+
 func (r *ModuleSource) UnmarshalJSON(data []byte) error {
 	var id string
 	if err := json.Unmarshal(data, &id); err != nil {
 		return err
 	}
 	*r = ModuleSource{query: selectNode(initRoot().QueryBuilder(), id, "ModuleSource")}
+	return nil
+}
+
+func (r *Naming) UnmarshalJSON(data []byte) error {
+	var id string
+	if err := json.Unmarshal(data, &id); err != nil {
+		return err
+	}
+	*r = Naming{query: selectNode(initRoot().QueryBuilder(), id, "Naming")}
 	return nil
 }
 

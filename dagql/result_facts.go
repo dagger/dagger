@@ -192,11 +192,30 @@ func (c *Cache) inheritResultFacts(parent, child *sharedResult) {
 // applyRequestFactsLocked runs in publication's graph critical section, or
 // before returning an existing value. Facts were prepared before execution.
 func (c *Cache) applyRequestFactsLocked(req *CallRequest, row *sharedResult) {
-	if req == nil || row == nil || (len(req.ResultFacts) == 0 && !req.ResultFactsIncomplete) {
+	if requestFactsSatisfiedLocked(req, row) {
 		return
 	}
 	c.setResultFactsLocked(row, unionResultFacts(row.resultFacts, req.ResultFacts), row.resultFactsIncomplete || req.ResultFactsIncomplete)
 	c.syncResultFactsLocked(row)
+}
+
+// requestFactsSatisfiedLocked needs only the graph read lock. Repeat facts
+// do not change the row or its already-synchronized equivalent values.
+func requestFactsSatisfiedLocked(req *CallRequest, row *sharedResult) bool {
+	if req == nil || row == nil {
+		return true
+	}
+	if req.ResultFactsIncomplete && !row.resultFactsIncomplete {
+		return false
+	}
+	for _, fact := range req.ResultFacts {
+		if !slices.ContainsFunc(row.resultFacts, func(existing ResultFact) bool {
+			return existing.Namespace == fact.Namespace && bytes.Equal(existing.Payload, fact.Payload)
+		}) {
+			return false
+		}
+	}
+	return true
 }
 
 // ResultFacts reads facts without evaluating a value. complete reports coverage
@@ -218,7 +237,7 @@ func (c *Cache) ResultFacts(ctx context.Context, sessionID string, ref *ResultCa
 	}
 	id := sharedResultID(ref.ResultID)
 	if ref.Call != nil {
-		id, err = c.resultIDForCall(ref.Call)
+		id, err = c.resultIDForCall(ctx, ref.Call)
 		if err != nil {
 			return nil, false, nil
 		}

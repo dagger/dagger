@@ -6063,9 +6063,16 @@ func (c *Cache) GetOrInitCall(
 	}
 	res, callErr := c.getOrInitCall(ctx, sessionID, resolver, req, fn)
 	if callErr == nil && res != nil && req != nil && (len(req.ResultFacts) != 0 || req.ResultFactsIncomplete) {
-		c.egraphMu.Lock()
-		c.applyRequestFactsLocked(req, res.cacheSharedResult())
-		c.egraphMu.Unlock()
+		row := res.cacheSharedResult()
+		c.egraphMu.RLock()
+		satisfied := requestFactsSatisfiedLocked(req, row)
+		c.egraphMu.RUnlock()
+		if !satisfied {
+			c.egraphMu.Lock()
+			// Another request may have added these facts since the read.
+			c.applyRequestFactsLocked(req, row)
+			c.egraphMu.Unlock()
+		}
 	}
 	if op.finish(callErr == nil && res != nil) {
 		return nil, fmt.Errorf("get or init call: %w: %q", ErrCacheSessionReleased, sessionID)
