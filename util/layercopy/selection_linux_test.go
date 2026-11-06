@@ -148,7 +148,7 @@ func TestSelectionPinnedDirectoryReplacement(t *testing.T) {
 	copier, err := NewCopier(Mount{Root: dst})
 	require.NoError(t, err)
 	defer copier.Close()
-	copy := selectionCopy{copier: copier, directories: map[inode]string{}}
+	copy := selectionCopy{copier: copier, directories: map[string]string{}}
 	require.NoError(t, copy.directory(context.Background(), ent, "src", "/", "src"))
 	data, err := os.ReadFile(filepath.Join(dst, "file"))
 	require.NoError(t, err)
@@ -426,25 +426,9 @@ func TestSelectionPinsSymlinkText(t *testing.T) {
 	copier, err := NewCopier(Mount{Root: dst})
 	require.NoError(t, err)
 	defer copier.Close()
-	copy := selectionCopy{copier: copier, source: src, directories: map[inode]string{}}
+	copy := selectionCopy{copier: copier, source: src, directories: map[string]string{}}
 	require.NoError(t, copy.link(context.Background(), ent, "src/link", "/link", "src"))
 	data, err := os.ReadFile(filepath.Join(dst, "link"))
 	require.NoError(t, err)
 	require.Equal(t, "inside", string(data))
-}
-
-func TestCopyPreserveRootMetadata(t *testing.T) {
-	root, dst := t.TempDir(), t.TempDir()
-	require.NoError(t, os.Chmod(root, 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "file"), []byte("x"), 0644))
-	stamp := time.Unix(123456789, 0)
-	require.NoError(t, os.Chtimes(root, stamp, stamp))
-	copier, err := NewCopier(Mount{Root: dst})
-	require.NoError(t, err)
-	defer copier.Close()
-	require.NoError(t, copier.Copy(context.Background(), Mount{Root: root}, "/", "/", CopyOptions{CopyDirContents: true, PreserveRootMetadata: true}))
-	info, err := os.Stat(dst)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0700), info.Mode().Perm())
-	require.Equal(t, stamp, info.ModTime())
 }

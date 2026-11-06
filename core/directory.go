@@ -2367,7 +2367,7 @@ func cleanDotsAndSlashes(path string) string {
 
 // materializeSubdirectory resolves links while the parent is still available.
 // Its new snapshot contains only the selection and the copied link targets.
-func (dir *Directory) materializeSubdirectory(ctx context.Context, source bkcache.ImmutableRef, parentPath, subdir string, options ...layercopy.SelectionOptions) error {
+func (dir *Directory) materializeSubdirectory(ctx context.Context, source bkcache.ImmutableRef, parentPath, subdir string) error {
 	if source == nil {
 		if cleanDotsAndSlashes(subdir) != "" {
 			return fmt.Errorf("directory %q does not exist", subdir)
@@ -2380,26 +2380,8 @@ func (dir *Directory) materializeSubdirectory(ctx context.Context, source bkcach
 		dir.SetSnapshot(ref)
 		return nil
 	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-	ref, err := query.SnapshotManager().New(ctx, nil,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("Directory.directory resolveBrokenSymlinks"))
-	if err != nil {
-		return err
-	}
-	defer ref.Release(context.WithoutCancel(ctx))
-
-	var usage snapshots.Usage
-	err = MountRef(ctx, ref, func(destRoot string, destMount *mount.Mount) error {
-		copier, err := layercopy.NewCopier(layercopy.Mount{Root: destRoot, Mount: destMount})
-		if err != nil {
-			return err
-		}
-		defer copier.Close()
-		if err := MountRef(ctx, source, func(root string, _ *mount.Mount) error {
+	return dir.materializeSelection(ctx, func(copier *layercopy.Copier) error {
+		return MountRef(ctx, source, func(root string, _ *mount.Mount) error {
 			// The parent's logical root is the boundary, even when its backing
 			// snapshot still contains siblings from an earlier selection.
 			parentRoot, err := containerdfs.RootPath(root, parentPath)
@@ -2420,12 +2402,36 @@ func (dir *Directory) materializeSubdirectory(ctx context.Context, source bkcach
 			parentRoot = fmt.Sprintf("/proc/self/fd/%d", parentFile.Fd())
 			// CopySelection resolves and checks the pinned selection itself.
 			// A separate path check can clean .. before expanding symlinks.
-			err = copier.CopySelection(ctx, parentRoot, subdir, options...)
+			err = copier.CopySelection(ctx, parentRoot, subdir)
 			if errors.Is(err, syscall.ENOTDIR) {
 				return notADirectoryError{err}
 			}
 			return TrimErrPathPrefix(err, parentRoot)
-		}, mountRefAsReadOnly); err != nil {
+		}, mountRefAsReadOnly)
+	})
+}
+
+func (dir *Directory) materializeSelection(ctx context.Context, copySelection func(*layercopy.Copier) error) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	ref, err := query.SnapshotManager().New(ctx, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("Directory.directory resolveBrokenSymlinks"))
+	if err != nil {
+		return err
+	}
+	defer ref.Release(context.WithoutCancel(ctx))
+
+	var usage snapshots.Usage
+	err = MountRef(ctx, ref, func(destRoot string, destMount *mount.Mount) error {
+		copier, err := layercopy.NewCopier(layercopy.Mount{Root: destRoot, Mount: destMount})
+		if err != nil {
+			return err
+		}
+		defer copier.Close()
+		if err := copySelection(copier); err != nil {
 			return err
 		}
 		usage, err = copier.Usage()

@@ -3457,6 +3457,14 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinksResources(ctx context.Co
 			content, err := ctr.Directory("/app", opts).File("link/value").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "shared", content)
+			if tc.target == "/resource" {
+				known := ctr.WithMountedDirectory("/resource/known", dag.Directory().WithNewFile("value", "known"))
+				content, err := known.Directory("/resource/known", opts).File("value").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "known", content)
+				_, err = known.Directory("/resource", opts).Sync(ctx)
+				require.ErrorContains(t, err, "cannot retrieve path from non-snapshot mount /resource")
+			}
 			for _, path := range []string{tc.target, "/"} {
 				_, err := ctr.Directory(path, opts).Sync(ctx)
 				require.ErrorContains(t, err, "cannot retrieve path from non-snapshot mount "+tc.target)
@@ -3468,6 +3476,65 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinksResources(ctx context.Co
 			}
 		})
 	}
+}
+
+func (DirectorySuite) TestDirectoryResolveBrokenSymlinksLazyMounts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dag := sdkcore.NewQuery(c)
+	opts := sdkcore.ContainerDirectoryOpts{ResolveBrokenSymlinks: true}
+	root := dag.Directory().WithNewFile("shared/value", "shared").WithSymlink("../shared", "app/link")
+	failing := dag.Container().From(alpineImage).WithExec([]string{"sh", "-c", "exit 3"})
+	for _, tc := range []struct {
+		name  string
+		mount func(*sdkcore.Container, string) *sdkcore.Container
+	}{
+		{"directory", func(ctr *sdkcore.Container, target string) *sdkcore.Container {
+			return ctr.WithMountedDirectory(target, failing.Directory("/"))
+		}},
+		{"file", func(ctr *sdkcore.Container, target string) *sdkcore.Container {
+			return ctr.WithMountedFile(target, failing.File("/value"))
+		}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			ctr := tc.mount(dag.Container().WithRootfs(root), "/other")
+			content, err := ctr.Directory("/app", opts).File("link/value").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "shared", content)
+			linked := tc.mount(dag.Container().WithRootfs(root.WithSymlink("/other", "app/reached")), "/other")
+			_, err = linked.Directory("/app", opts).Sync(ctx)
+			require.ErrorContains(t, err, "exit code: 3")
+			_, err = tc.mount(dag.Container().WithRootfs(root), "/app/nested").Directory("/app", opts).Sync(ctx)
+			require.ErrorContains(t, err, "exit code: 3")
+		})
+	}
+	t.Run("mounted selection needs no rootfs", func(ctx context.Context, t *testctx.T) {
+		content, err := failing.WithMountedDirectory("/app", dag.Directory().WithNewFile("value", "mounted")).
+			Directory("/app", opts).File("value").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "mounted", content)
+	})
+	t.Run("files mount hides rootfs contents", func(ctx context.Context, t *testctx.T) {
+		root := root.WithNewFile("files/hidden", "hidden").WithSymlink("/files", "app/files")
+		file := dag.Directory().WithNewFile("value", "mounted").File("value")
+		out := dag.Container().WithRootfs(root).WithMountedFiles("/files", []*sdkcore.File{file}).Directory("/app", opts)
+		content, err := out.File("files/value").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "mounted", content)
+		_, err = out.File("files/hidden").Contents(ctx)
+		require.ErrorContains(t, err, "no such file or directory")
+	})
+	t.Run("shared source keeps each mount context", func(ctx context.Context, t *testctx.T) {
+		root := dag.Directory().WithNewFile("left/value", "left").WithNewFile("right/value", "right").
+			WithSymlink("/left/data", "app/a").WithSymlink("/right/data", "app/b")
+		mounted := dag.Directory().WithSymlink("../value", "link")
+		out := dag.Container().WithRootfs(root).WithMountedDirectory("/left/data", mounted).
+			WithMountedDirectory("/right/data", mounted).Directory("/app", opts)
+		for _, tc := range []struct{ name, want string }{{"a/link", "left"}, {"b/link", "right"}} {
+			content, err := out.File(tc.name).Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, content)
+		}
+	})
 }
 
 func (DirectorySuite) TestDirectoryResolveBrokenSymlinksMounts(ctx context.Context, t *testctx.T) {

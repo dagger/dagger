@@ -10,38 +10,42 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 )
 
 // SelectionOptions controls access to a directory selection's source.
 type SelectionOptions struct {
-	// CheckPath rejects paths hidden by resources outside the snapshot view.
-	CheckPath func(string) error
+	Source SelectionSource
+}
+
+// SelectionSource supplies pinned entries from a logical filesystem. Open
+// must confine access and return an O_PATH descriptor without following the
+// final link. A held parent permits a one-component child open. Children
+// adds mountpoints to names read from the pinned directory.
+type SelectionSource interface {
+	Open(name string, parent *os.Root) (*os.File, error)
+	Children(name string, names []string) ([]string, error)
 }
 
 // CopySelection copies a directory to the destination root. It repairs links
 // that would break when the parent is removed, and preserves other links,
-// including links that already have no target. The source is a mounted view;
-// this operation does not accept filters or raw overlay layers.
+// including links that already have no target. The source is a mounted view
+// or a logical mount table; filters and raw overlay layers are not accepted.
 func (c *Copier) CopySelection(ctx context.Context, root, name string, options ...SelectionOptions) error {
 	s := &source{root: root}
 	if len(options) != 0 {
-		s.checkPath = options[0].CheckPath
+		s.selection = options[0].Source
 	}
-	if err := s.confine(); err != nil {
-		return err
+	if s.selection == nil {
+		if err := s.confine(); err != nil {
+			return err
+		}
+		defer s.rootHandle.Close()
 	}
-	defer s.rootHandle.Close()
 	name, err := s.resolveRooted(name, true)
 	if err != nil {
 		return err
-	}
-	if s.checkPath != nil {
-		if err := s.checkPath(name); err != nil {
-			return err
-		}
 	}
 	f, err := s.openResolvedRooted(name, name, unix.O_PATH)
 	if err != nil {
@@ -55,14 +59,14 @@ func (c *Copier) CopySelection(ctx context.Context, root, name string, options .
 	if !ent.Info.IsDir() {
 		return fmt.Errorf("path %s is a file: %w", name, unix.ENOTDIR)
 	}
-	copy := selectionCopy{copier: c, source: s, directories: map[inode]string{}}
+	copy := selectionCopy{copier: c, source: s, directories: map[string]string{}}
 	return copy.directory(ctx, ent, name, "/", name)
 }
 
 type selectionCopy struct {
 	copier      *Copier
 	source      *source
-	directories map[inode]string
+	directories map[string]string
 }
 
 func pinnedSelectionEntry(f *os.File) (sourceEntry, error) {
@@ -74,7 +78,9 @@ func pinnedSelectionEntry(f *os.File) (sourceEntry, error) {
 }
 
 func (s *selectionCopy) directory(ctx context.Context, ent sourceEntry, name, dest, boundary string) error {
-	s.directories[statInode(ent.Info.Sys().(*syscall.Stat_t))] = dest
+	// A canonical path identifies a directory in the logical source. The
+	// same inode mounted at two paths can have different relative targets.
+	s.directories[name] = dest
 	opts := CopyOptions{DisableSourceHardlinks: true}
 	rel, _, err := s.copier.dest.ensureDir(dest, &ent, opts, true)
 	if err != nil {
@@ -92,17 +98,27 @@ func (s *selectionCopy) directory(ctx context.Context, ent sourceEntry, name, de
 		return err
 	}
 	defer f.Close()
-	children, err := f.ReadDir(-1)
+	entries, err := f.ReadDir(-1)
 	if err != nil {
 		return err
 	}
+	children := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		children = append(children, entry.Name())
+	}
+	if s.source != nil && s.source.selection != nil {
+		children, err = s.source.selection.Children(name, children)
+		if err != nil {
+			return err
+		}
+	}
 	// Stable order determines which copy of a shared directory is kept.
-	slices.SortFunc(children, func(a, b os.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
+	slices.Sort(children)
 	for _, child := range children {
 		if err := ctx.Err(); err != nil {
 			return context.Cause(ctx)
 		}
-		if err := s.child(ctx, dir, child.Name(), filepath.Join(name, child.Name()), filepath.Join(dest, child.Name()), boundary); err != nil {
+		if err := s.child(ctx, dir, child, filepath.Join(name, child), filepath.Join(dest, child), boundary); err != nil {
 			return err
 		}
 	}
@@ -111,12 +127,13 @@ func (s *selectionCopy) directory(ctx context.Context, ent sourceEntry, name, de
 }
 
 func (s *selectionCopy) child(ctx context.Context, parent *os.Root, base, name, dest, boundary string) error {
-	if s.source != nil && s.source.checkPath != nil {
-		if err := s.source.checkPath(name); err != nil {
-			return err
-		}
+	var f *os.File
+	var err error
+	if s.source != nil && s.source.selection != nil {
+		f, err = s.source.selection.Open(name, parent)
+	} else {
+		f, err = parent.OpenFile(base, unix.O_PATH|unix.O_NOFOLLOW, 0)
 	}
-	f, err := parent.OpenFile(base, unix.O_PATH|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return err
 	}
@@ -191,7 +208,7 @@ func (s *selectionCopy) link(ctx context.Context, ent sourceEntry, name, dest, b
 			}
 			return s.writeLink(ent, dest, relative)
 		}
-		if previous, ok := s.directories[statInode(pinned.Info.Sys().(*syscall.Stat_t))]; ok {
+		if previous, ok := s.directories[resolved]; ok {
 			relative, err := filepath.Rel(filepath.Dir(dest), previous)
 			if err != nil {
 				return err

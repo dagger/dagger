@@ -16,7 +16,7 @@ import (
 )
 
 type source struct {
-	checkPath    func(string) error
+	selection    SelectionSource
 	rootHandle   *os.Root
 	root         string
 	realRoot     string

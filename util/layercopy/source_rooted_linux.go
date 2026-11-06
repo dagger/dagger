@@ -37,7 +37,13 @@ func (s *source) openRooted(name string, flags int) (*os.File, error) {
 // changes after expansion. The pathname is not a capability; os.Root remains the
 // security boundary until a descriptor has been opened and checked.
 func (s *source) openResolvedRooted(name, resolved string, flags int) (*os.File, error) {
-	f, err := s.rootHandle.OpenFile(resolved, flags, 0)
+	var f *os.File
+	var err error
+	if s.selection != nil {
+		f, err = s.selection.Open(resolved, nil)
+	} else {
+		f, err = s.rootHandle.OpenFile(resolved, flags, 0)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -97,12 +103,7 @@ func (s *source) resolveRootedPath(name string, followFinal bool, links int, bou
 			continue
 		}
 		candidate := filepath.Join(strings.Join(resolved, "/"), component)
-		if s.checkPath != nil {
-			if err := s.checkPath(candidate); err != nil {
-				return "", false, err
-			}
-		}
-		info, err := s.rootHandle.Lstat(candidate)
+		info, target, err := s.rootedEntry(candidate)
 		if err != nil {
 			return "", false, err
 		}
@@ -110,10 +111,6 @@ func (s *source) resolveRootedPath(name string, followFinal bool, links int, bou
 			links++
 			if links > 40 {
 				return "", false, &os.PathError{Op: "resolve in source root", Path: name, Err: unix.ELOOP}
-			}
-			target, err := s.rootHandle.Readlink(candidate)
-			if err != nil {
-				return "", false, err
 			}
 			if filepath.IsAbs(target) {
 				local = false
@@ -132,4 +129,33 @@ func (s *source) resolveRootedPath(name string, followFinal bool, links int, bou
 		result = "."
 	}
 	return result, local, nil
+}
+
+func (s *source) rootedEntry(name string) (os.FileInfo, string, error) {
+	if s.selection == nil {
+		info, err := s.rootHandle.Lstat(name)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			return info, "", err
+		}
+		target, err := s.rootHandle.Readlink(name)
+		return info, target, err
+	}
+	f, err := s.selection.Open(name, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return info, "", err
+	}
+	buf := make([]byte, 4096)
+	n, err := unix.Readlinkat(int(f.Fd()), "", buf)
+	if err != nil {
+		return nil, "", err
+	}
+	if n == len(buf) {
+		return nil, "", &os.PathError{Op: "readlink", Path: name, Err: unix.ENAMETOOLONG}
+	}
+	return info, string(buf[:n]), nil
 }

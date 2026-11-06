@@ -55,11 +55,9 @@ type CopyOptions struct {
 	Mode              *os.FileMode
 	XAttrErrorHandler XAttrErrorHandler
 	DisableXAttrs     bool
-	// PreserveRootMetadata applies source directory metadata after its contents.
-	PreserveRootMetadata bool
-	CopyDirContents      bool
-	ReplaceExisting      bool
-	DestPathHintIsDir    bool
+	CopyDirContents   bool
+	ReplaceExisting   bool
+	DestPathHintIsDir bool
 
 	// DisableHardlinks disables all hardlink creation, including hardlink
 	// preservation between entries created by this copy.
