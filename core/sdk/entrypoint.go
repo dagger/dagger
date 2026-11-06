@@ -130,6 +130,16 @@ func (sdk *entrypointSDK) PrebuildFile(
 	return dangv2.EntrypointPrebuildFile(ctx, mod, platform)
 }
 
+// RuntimeImage returns the container of the entrypoint's runtimeImage member,
+// when it declares one, as the module's calls see it, or for platform.
+func (sdk *entrypointSDK) RuntimeImage(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+	platform *core.Platform,
+) (dagql.ObjectResult[*core.Container], bool, error) {
+	return dangv2.EntrypointRuntimeImage(ctx, mod, platform)
+}
+
 func (sdk *entrypointSDK) ModuleTypes(
 	ctx context.Context,
 	deps *core.SchemaBuilder,

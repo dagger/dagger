@@ -374,7 +374,8 @@ ModulePrebuilder is an interface that a Runtime may implement when every call
 of its module builds on one file, such as the module's compiled binary, that
 can be built as soon as the module is loaded. Loading the module doesn't need
 the file, so it can be built ahead of the module's first call, and a call then
-finds it built or joins its build.
+finds it built or joins its build. The image the calls run their process in
+is the other result every call starts from, which RuntimeImage returns.
 */
 type ModulePrebuilder interface {
 	// PrebuildFile returns that file for the loaded module, not yet built, or
@@ -383,6 +384,12 @@ type ModulePrebuilder interface {
 	// engine of that platform build on, such as an engine image of another
 	// platform ships.
 	PrebuildFile(context.Context, dagql.ObjectResult[*Module], *Platform) (dagql.ObjectResult[*File], bool, error)
+
+	// RuntimeImage returns the image every call of the loaded module runs
+	// its process in, not yet pulled, or false when the module declares
+	// none. It is the same result the module's calls start from, or, with a
+	// platform, the one the calls of an engine of that platform start from.
+	RuntimeImage(context.Context, dagql.ObjectResult[*Module], *Platform) (dagql.ObjectResult[*Container], bool, error)
 }
 
 /*

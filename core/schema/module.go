@@ -434,6 +434,12 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("platform").Doc(`The platform of the engine whose calls build on it, when not this engine's, such as an engine image's of another platform.`),
 			),
+
+		dagql.NodeFunc("_runtimeImage", s.moduleRuntimeImage).
+			Doc(`The image every call of the module runs its process in, when its SDK declares one: the same result its calls start from.`).
+			Args(
+				dagql.Arg("platform").Doc(`The platform of the engine whose calls start from it, when not this engine's, such as an engine image's of another platform.`),
+			),
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -3360,6 +3366,30 @@ func (s *moduleSchema) modulePrebuild(
 		return none, err
 	}
 	return dagql.NonNull(file), nil
+}
+
+func (s *moduleSchema) moduleRuntimeImage(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+	args modulePrebuildArgs,
+) (dagql.Nullable[dagql.ObjectResult[*core.Container]], error) {
+	none := dagql.Null[dagql.ObjectResult[*core.Container]]()
+	if !mod.Self().Source.Valid {
+		return none, nil
+	}
+	prebuilder, ok := modulePrebuilder(mod.Self().Source.Value.Self())
+	if !ok {
+		return none, nil
+	}
+	var platform *core.Platform
+	if args.Platform.Valid {
+		platform = &args.Platform.Value
+	}
+	image, ok, err := prebuilder.RuntimeImage(ctx, mod, platform)
+	if err != nil || !ok {
+		return none, err
+	}
+	return dagql.NonNull(image), nil
 }
 
 // modulePrebuilder is src's SDK runtime, when it declares a file that every

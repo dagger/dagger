@@ -146,3 +146,84 @@ func (ModuleSuite) TestModuleEntrypointPrebuildWithoutPlatform(ctx context.Conte
 	_, err := ctr.With(daggerQuery(`{moduleSource(refString: "m") {asModule {_prebuild(platform: "linux/arm64") {contents}}}}`)).Sync(ctx)
 	requireErrOut(t, err, "takes no platform")
 }
+
+// runtimeImageEntrypoint is a module entrypoint whose runtimeImage member
+// is the image its calls run in, for a platform it is given, or the
+// engine's. Its call reads the image's Alpine release.
+const runtimeImageEntrypoint = `type Entrypoint implements ModuleEntrypoint {
+  pub sources(workspace: Workspace!): Directory! {
+    directory.withDirectory(workspace.cwd, workspace.directory(".", gitignore: true))
+  }
+
+  pub runtimeImage(platform: Platform): Container! {
+    container(platform: platform ?? defaultPlatform).from(%q)
+  }
+
+  pub types: [TypeDef!]! {
+    [
+      typeDef
+        .withObject("M")
+        .withConstructor(function("", typeDef.withObject("M")))
+        .withFunction(function("Release", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else {
+      (JSON.encode(runtimeImage(null).withExec(["cat", "/etc/alpine-release"]).stdout.trimSpace) :: JSON!)
+    }
+  }
+}
+`
+
+// A module's _runtimeImage field returns the image its entrypoint's
+// runtimeImage member declares, the one its calls run in: for a platform it
+// is given, as an engine of that platform's calls run in it, and without
+// one, the engine's own.
+func (ModuleSuite) TestModuleEntrypointRuntimeImageField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := goGitBase(t, c).
+		WithNewFile("m/dagger-module.toml", sourcesModuleManifest).
+		WithNewFile("m/entrypoint/main.dang", fmt.Sprintf(runtimeImageEntrypoint, alpineImage))
+
+	out, err := ctr.With(daggerQuery(`{defaultPlatform moduleSource(refString: "m") {asModule {
+		arm: _runtimeImage(platform: "linux/arm64") {platform}
+		own: _runtimeImage {platform file(path: "/etc/alpine-release") {contents}}
+	}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	var res struct {
+		DefaultPlatform string
+		ModuleSource    struct {
+			AsModule struct {
+				Arm struct{ Platform string }
+				Own struct {
+					Platform string
+					File     struct{ Contents string }
+				}
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &res), out)
+	require.Equal(t, "linux/arm64", res.ModuleSource.AsModule.Arm.Platform)
+	require.Equal(t, res.DefaultPlatform, res.ModuleSource.AsModule.Own.Platform)
+
+	called, err := ctr.With(daggerCallAt("m", "release")).Stdout(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, strings.TrimSpace(called))
+	require.Equal(t, strings.TrimSpace(res.ModuleSource.AsModule.Own.File.Contents), strings.TrimSpace(called), "the call ran in the image _runtimeImage returned")
+}
+
+// A module whose entrypoint declares no runtimeImage member has no
+// _runtimeImage.
+func (ModuleSuite) TestModuleEntrypointWithoutRuntimeImage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := goGitBase(t, c).
+		WithNewFile("m/dagger-module.toml", sourcesModuleManifest).
+		WithNewFile("m/entrypoint/main.dang", fmt.Sprintf(prebuildEntrypoint, alpineImage, rand.Text()))
+
+	out, err := ctr.With(daggerQuery(`{moduleSource(refString: "m") {asModule {_runtimeImage {platform}}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"moduleSource": {"asModule": {"_runtimeImage": null}}}`, out)
+}
