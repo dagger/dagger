@@ -18,6 +18,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/go@v0.4.0",
         "commit": "e327bee9103fe60cb66c9d11bf2e1604686021df",
         "settings": [
           {
@@ -479,6 +480,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/go/golangci-lint@v0.4.0",
         "commit": "e327bee9103fe60cb66c9d11bf2e1604686021df",
         "settings": [
           {
@@ -648,6 +650,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/go/staticcheck@v0.4.0",
         "commit": "e327bee9103fe60cb66c9d11bf2e1604686021df",
         "settings": [
           {
@@ -830,6 +833,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/deno@v0.3.0",
         "commit": "560dc85049d2b7d3eac0970a003342540ae965a3",
         "settings": [
           {
@@ -1177,6 +1181,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/eslint@v0.3.0",
         "commit": "8cb42f9ed25b78147c02d65d05529c7ef418b800",
         "settings": [
           {
@@ -1258,6 +1263,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/prettier@v0.2.0",
         "commit": "c9b4c3622c3e161903f497c4a7bb5140437de4a7",
         "settings": [
           {
@@ -1352,7 +1358,8 @@
         ]
       },
       "artifacts": {
-        "commit": "362b0aa64a773fb78bac6910cbcea3b120d4c934",
+        "source": "github.com/dagger/jest@v0.3.0",
+        "commit": "4953cb9135570401b7ce235226d52d1cd1f9827a",
         "settings": [
           {
             "name": "baseImageAddress",
@@ -1397,11 +1404,6 @@
             "itemType": "JestProject"
           },
           {
-            "name": "jest-test",
-            "keyName": "name",
-            "itemType": "JestTest"
-          },
-          {
             "name": "jest-test-file",
             "keyName": "path",
             "itemType": "JestTestFile"
@@ -1411,15 +1413,14 @@
           {
             "role": "check",
             "type": "Check",
-            "uri": "dag+check://?check=jest/projects/test-files/tests/test",
-            "description": "Run this test.",
+            "uri": "dag+check://?check=jest/projects/tests/test",
+            "description": "Run Jest tests.",
             "descriptions": [
-              "Run the selected tests."
+              "Run the selected test files in this project."
             ],
             "dimensions": [
               "jest-project",
-              "jest-test-file",
-              "jest-test"
+              "jest-test-file"
             ]
           },
           {
@@ -1440,20 +1441,10 @@
           {
             "role": "collection",
             "type": "JestTestFiles",
-            "uri": "dag+jest-test-files://?artifact-jest-test-files=jest/projects/test-files",
+            "uri": "dag+jest-test-files://?jest-test-files=jest/projects/tests",
             "description": "Test files in this project, keyed by project-relative path.",
             "dimensions": [
               "jest-project"
-            ]
-          },
-          {
-            "role": "collection",
-            "type": "JestTests",
-            "uri": "dag+jest-tests://?artifact-jest-tests=jest/projects/test-files/tests",
-            "description": "Tests this file declares, keyed by the name Jest calls them by.",
-            "dimensions": [
-              "jest-project",
-              "jest-test-file"
             ]
           },
           {
@@ -1502,27 +1493,6 @@
             "function": "test",
             "returns": "Void",
             "description": "Run tests in the selected Jest projects."
-          },
-          {
-            "role": "function",
-            "object": "JestTestFile",
-            "function": "test",
-            "returns": "Void",
-            "description": "Run every test in this file.",
-            "dimensions": [
-              "jest-project",
-              "jest-test-file"
-            ]
-          },
-          {
-            "role": "function",
-            "object": "JestTestFiles",
-            "function": "test",
-            "returns": "Void",
-            "description": "Run the selected test files in this project.",
-            "dimensions": [
-              "jest-project"
-            ]
           }
         ]
       }
@@ -1548,7 +1518,8 @@
         ]
       },
       "artifacts": {
-        "commit": "43be82bc4f56d085e9a066247f5747b8e4cef292",
+        "source": "github.com/dagger/mochajs@v0.3.0",
+        "commit": "ec5bcfb1f95bdfde643ea69b944c4da7a5c1ad05",
         "settings": [
           {
             "name": "baseImageAddress",
@@ -1593,11 +1564,6 @@
             "itemType": "MochajsProject"
           },
           {
-            "name": "mochajs-test",
-            "keyName": "title",
-            "itemType": "MochajsTest"
-          },
-          {
             "name": "mochajs-test-file",
             "keyName": "path",
             "itemType": "MochajsTestFile"
@@ -1607,15 +1573,14 @@
           {
             "role": "check",
             "type": "Check",
-            "uri": "dag+check://?check=mochajs/projects/test-files/tests/test",
-            "description": "Run this test.",
+            "uri": "dag+check://?check=mochajs/projects/tests/test",
+            "description": "Run the Mocha tests in a test file.",
             "descriptions": [
-              "Run the selected tests of this file."
+              "Run the selected test files in this project."
             ],
             "dimensions": [
               "mochajs-project",
-              "mochajs-test-file",
-              "mochajs-test"
+              "mochajs-test-file"
             ]
           },
           {
@@ -1636,20 +1601,10 @@
           {
             "role": "collection",
             "type": "MochajsTestFiles",
-            "uri": "dag+mochajs-test-files://?artifact-mochajs-test-files=mochajs/projects/test-files",
+            "uri": "dag+mochajs-test-files://?mochajs-test-files=mochajs/projects/tests",
             "description": "Test files in this project, keyed by project-relative path.",
             "dimensions": [
               "mochajs-project"
-            ]
-          },
-          {
-            "role": "collection",
-            "type": "MochajsTests",
-            "uri": "dag+mochajs-tests://?artifact-mochajs-tests=mochajs/projects/test-files/tests",
-            "description": "The tests in this file, keyed by the full title Mocha reports.",
-            "dimensions": [
-              "mochajs-project",
-              "mochajs-test-file"
             ]
           },
           {
@@ -1678,27 +1633,6 @@
             "function": "test",
             "returns": "Void",
             "description": "Run tests in the selected Mocha projects."
-          },
-          {
-            "role": "function",
-            "object": "MochajsTestFile",
-            "function": "test",
-            "returns": "Void",
-            "description": "Run the Mocha tests in a test file. A plain function, not a check: the tests collection below it holds the check.",
-            "dimensions": [
-              "mochajs-project",
-              "mochajs-test-file"
-            ]
-          },
-          {
-            "role": "function",
-            "object": "MochajsTestFiles",
-            "function": "test",
-            "returns": "Void",
-            "description": "Run the selected test files in this project. A plain function, not a check: the tests of each file are a collection of their own, and its check runs them, so dagger check does not run the same tests twice.",
-            "dimensions": [
-              "mochajs-project"
-            ]
           }
         ]
       }
@@ -1720,7 +1654,8 @@
         ]
       },
       "artifacts": {
-        "commit": "a728bbaaa5b739f7f19404bccbd6b05362ffcbbd",
+        "source": "github.com/dagger/vitest@v0.3.0",
+        "commit": "15e56dbb71b6bbb8b3c07b5f0a8d1720470daacd",
         "settings": [
           {
             "name": "baseImageAddress",
@@ -1765,11 +1700,6 @@
             "itemType": "VitestProject"
           },
           {
-            "name": "vitest-test",
-            "keyName": "name",
-            "itemType": "VitestTest"
-          },
-          {
             "name": "vitest-test-file",
             "keyName": "path",
             "itemType": "VitestTestFile"
@@ -1779,15 +1709,14 @@
           {
             "role": "check",
             "type": "Check",
-            "uri": "dag+check://?check=vitest/projects/test-files/tests/test",
-            "description": "Run this test.",
+            "uri": "dag+check://?check=vitest/projects/tests/test",
+            "description": "Run this test file.",
             "descriptions": [
-              "Run the selected tests of this file."
+              "Run the selected test files in this project."
             ],
             "dimensions": [
               "vitest-project",
-              "vitest-test-file",
-              "vitest-test"
+              "vitest-test-file"
             ]
           },
           {
@@ -1808,20 +1737,10 @@
           {
             "role": "collection",
             "type": "VitestTestFiles",
-            "uri": "dag+vitest-test-files://?artifact-vitest-test-files=vitest/projects/test-files",
+            "uri": "dag+vitest-test-files://?vitest-test-files=vitest/projects/tests",
             "description": "Test files in this project, keyed by project-relative path.",
             "dimensions": [
               "vitest-project"
-            ]
-          },
-          {
-            "role": "collection",
-            "type": "VitestTests",
-            "uri": "dag+vitest-tests://?artifact-vitest-tests=vitest/projects/test-files/tests",
-            "description": "Tests in this file, keyed by full name.",
-            "dimensions": [
-              "vitest-project",
-              "vitest-test-file"
             ]
           },
           {
@@ -1863,27 +1782,6 @@
             "function": "test",
             "returns": "Void",
             "description": "Run the tests of the selected Vitest projects."
-          },
-          {
-            "role": "function",
-            "object": "VitestTestFile",
-            "function": "test",
-            "returns": "Void",
-            "description": "Run this test file.",
-            "dimensions": [
-              "vitest-project",
-              "vitest-test-file"
-            ]
-          },
-          {
-            "role": "function",
-            "object": "VitestTestFiles",
-            "function": "test",
-            "returns": "Void",
-            "description": "Run the selected test files in this project.",
-            "dimensions": [
-              "vitest-project"
-            ]
           }
         ]
       }
@@ -1920,7 +1818,8 @@
         ]
       },
       "artifacts": {
-        "commit": "561bbcfc2552cbd544141803bce764209c22d078",
+        "source": "github.com/dagger/python/pytest@v0.2.0",
+        "commit": "648b64124ac5330ec3e86c03d0a2dff6b4b92f0e",
         "settings": [
           {
             "name": "version",
@@ -1988,7 +1887,7 @@
             "role": "artifact",
             "type": "Directory",
             "uri": "dag+directory://?directory=pytest/pytest-otel",
-            "description": "The bundled dagger-pytest-otel plugin, for a caller wiring up its own container."
+            "description": "The bundled pytest_otel plugin, for a caller wiring up its own container."
           },
           {
             "role": "collection",
@@ -2133,7 +2032,8 @@
         ]
       },
       "artifacts": {
-        "commit": "561bbcfc2552cbd544141803bce764209c22d078",
+        "source": "github.com/dagger/python/mypy@v0.2.0",
+        "commit": "648b64124ac5330ec3e86c03d0a2dff6b4b92f0e",
         "settings": [
           {
             "name": "version",
@@ -2291,7 +2191,8 @@
         ]
       },
       "artifacts": {
-        "commit": "561bbcfc2552cbd544141803bce764209c22d078",
+        "source": "github.com/dagger/python/ruff@v0.2.0",
+        "commit": "648b64124ac5330ec3e86c03d0a2dff6b4b92f0e",
         "settings": [
           {
             "name": "scope",
@@ -2453,7 +2354,8 @@
         ]
       },
       "artifacts": {
-        "commit": "561bbcfc2552cbd544141803bce764209c22d078",
+        "source": "github.com/dagger/python/ty@v0.2.0",
+        "commit": "648b64124ac5330ec3e86c03d0a2dff6b4b92f0e",
         "settings": [
           {
             "name": "version",
@@ -2601,7 +2503,8 @@
         ]
       },
       "artifacts": {
-        "commit": "561bbcfc2552cbd544141803bce764209c22d078",
+        "source": "github.com/dagger/python/uv@v0.2.0",
+        "commit": "648b64124ac5330ec3e86c03d0a2dff6b4b92f0e",
         "settings": [
           {
             "name": "version",
@@ -2763,6 +2666,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/biomejs@v0.1.0",
         "commit": "03db7bbf81087918657205c1eace20dfff7e29b3",
         "settings": [
           {
@@ -2843,6 +2747,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/playwright@v0.2.0",
         "commit": "94bb0794cf08d5321c77d3714fb7b480cacf7d6b",
         "settings": [
           {
@@ -3073,6 +2978,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/android@v0.1.0",
         "commit": "80c55ceeebc2faf4de3154ae294970ef23eeb471",
         "settings": [
           {
@@ -3277,6 +3183,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/apple/swift@v0.1.1",
         "commit": "556800a288706390fdf63917b5042ecae3b9176f",
         "settings": [
           {
@@ -3441,6 +3348,7 @@
         ]
       },
       "artifacts": {
+        "source": "github.com/dagger/java/maven@v0.1.0",
         "commit": "476d7d26aaceca20bf309038de3badaa9cabf442",
         "settings": [
           {
