@@ -51,6 +51,10 @@ func cniConfig(name, subnet string, firewallPlugin bool) ([]byte, error) {
 		"type":             "bridge",
 		"bridge":           name + "0",
 		"isDefaultGateway": true,
+		// The bridge outlives the engine on a host install, and the engine
+		// moves its network off a range it is attached to, so the range can
+		// change between starts: replace the bridge's address from before.
+		"forceAddress": true,
 		// Masquerading is set up once for the whole subnet; see InstallSubnetRules.
 		"ipMasq":      false,
 		"hairpinMode": true,
