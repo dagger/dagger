@@ -177,27 +177,17 @@ func (s *selectionCopy) link(ctx context.Context, ent sourceEntry, name, dest, b
 // be copied or redirected elsewhere, changing the meaning of its parent.
 func (s *selectionCopy) linkStaysWithin(boundary, parent, target string) (bool, error) {
 	prefix := parent
-	localPrefix, err := filepath.Rel(boundary, parent)
-	if err != nil {
-		return false, err
-	}
 	for _, part := range strings.Split(target, "/") {
 		if part == ".." {
-			resolved, err := s.source.resolveRooted(prefix, true)
+			resolved, local, err := s.source.resolveRootedPath(prefix, true, 0, boundary)
 			if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ENOTDIR) || errors.Is(err, unix.ELOOP) {
 				return true, nil // Already broken in the parent.
 			}
 			if err != nil {
 				return false, err
 			}
-			if resolved != filepath.Clean(prefix) {
-				local, err := s.prefixStaysLocal(boundary, localPrefix)
-				if err != nil {
-					return false, err
-				}
-				if !local {
-					return false, nil
-				}
+			if !local {
+				return false, nil
 			}
 			relative, err := filepath.Rel(boundary, resolved)
 			if err != nil {
@@ -208,22 +198,8 @@ func (s *selectionCopy) linkStaysWithin(boundary, parent, target string) (bool, 
 			}
 		}
 		prefix += "/" + part
-		localPrefix += "/" + part
 	}
 	return true, nil
-}
-
-// os.Root follows relative links but rejects absolute links and escapes.
-// A successful lookup therefore traverses only links we leave unchanged.
-// Keep the raw prefix: cleaning .. first can change what it refers to.
-func (s *selectionCopy) prefixStaysLocal(boundary, prefix string) (bool, error) {
-	root, err := s.source.rootHandle.OpenRoot(boundary)
-	if err != nil {
-		return false, err
-	}
-	defer root.Close()
-	_, err = root.Stat(prefix)
-	return err == nil, nil
 }
 
 func (s *selectionCopy) writeLink(ent sourceEntry, dest, target string) error {

@@ -65,6 +65,20 @@ func (s *source) resolveRooted(name string, followFinal bool) (string, error) {
 
 // links includes any pinned symlinks whose text the caller already expanded.
 func (s *source) resolveRootedAfterLinks(name string, followFinal bool, links int) (string, error) {
+	resolved, _, err := s.resolveRootedPath(name, followFinal, links, "")
+	return resolved, err
+}
+
+// local reports whether expansion used only relative links and stayed within
+// boundary, a canonical prefix of name (empty means the snapshot root).
+// Classification shares the walk and traversal budget of target resolution;
+// os.Root confines every filesystem access.
+func (s *source) resolveRootedPath(name string, followFinal bool, links int, boundary string) (string, bool, error) {
+	boundaryDepth := 0
+	if boundary = cleanRel(boundary); boundary != "" {
+		boundaryDepth = strings.Count(boundary, "/") + 1
+	}
+	local := true
 	pending := strings.Split(name, "/")
 	var resolved []string
 	for len(pending) != 0 {
@@ -74,6 +88,9 @@ func (s *source) resolveRootedAfterLinks(name string, followFinal bool, links in
 		case "", ".":
 			continue
 		case "..":
+			if len(resolved) <= boundaryDepth {
+				local = false
+			}
 			if len(resolved) != 0 {
 				resolved = resolved[:len(resolved)-1]
 			}
@@ -82,25 +99,26 @@ func (s *source) resolveRootedAfterLinks(name string, followFinal bool, links in
 		candidate := filepath.Join(strings.Join(resolved, "/"), component)
 		info, err := s.rootHandle.Lstat(candidate)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		if info.Mode()&os.ModeSymlink != 0 && (followFinal || len(pending) != 0) {
 			links++
 			if links > 40 {
-				return "", &os.PathError{Op: "resolve in source root", Path: name, Err: unix.ELOOP}
+				return "", false, &os.PathError{Op: "resolve in source root", Path: name, Err: unix.ELOOP}
 			}
 			target, err := s.rootHandle.Readlink(candidate)
 			if err != nil {
-				return "", err
+				return "", false, err
 			}
 			if filepath.IsAbs(target) {
+				local = false
 				resolved = nil
 			}
 			pending = append(strings.Split(target, "/"), pending...)
 			continue
 		}
 		if len(pending) != 0 && !info.IsDir() {
-			return "", &os.PathError{Op: "resolve in source root", Path: name, Err: unix.ENOTDIR}
+			return "", false, &os.PathError{Op: "resolve in source root", Path: name, Err: unix.ENOTDIR}
 		}
 		resolved = append(resolved, component)
 	}
@@ -108,5 +126,5 @@ func (s *source) resolveRootedAfterLinks(name string, followFinal bool, links in
 	if result == "" {
 		result = "."
 	}
-	return result, nil
+	return result, local, nil
 }

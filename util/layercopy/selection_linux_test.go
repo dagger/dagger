@@ -283,6 +283,41 @@ func TestSelectionPreservesLocalDotDotLinks(t *testing.T) {
 	}
 }
 
+func TestSelectionPreservesLongLocalPrefixes(t *testing.T) {
+	for _, links := range []int{8, 9, 39} {
+		for _, selection := range []string{".", "src"} {
+			t.Run(fmt.Sprintf("links=%d/selection=%s", links, selection), func(t *testing.T) {
+				root := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "src/dir"), 0755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "src/file"), []byte("original"), 0644))
+				target := "dir"
+				for i := range links {
+					name := fmt.Sprintf("chain-%d", i)
+					require.NoError(t, os.Symlink(target, filepath.Join(root, "src", name)))
+					target = name
+				}
+				target += "/../file"
+				require.NoError(t, os.Symlink(target, filepath.Join(root, "src/link")))
+				content, err := os.ReadFile(filepath.Join(root, "src/link"))
+				require.NoError(t, err)
+				require.Equal(t, "original", string(content))
+				dst := copySelection(t, root, selection)
+				if selection == "." {
+					dst = filepath.Join(dst, "src")
+				}
+				actual, err := os.Readlink(filepath.Join(dst, "link"))
+				require.NoError(t, err)
+				require.Equal(t, target, actual)
+				require.NoError(t, os.Remove(filepath.Join(dst, "file")))
+				require.NoError(t, os.WriteFile(filepath.Join(dst, "file"), []byte("replacement"), 0644))
+				content, err = os.ReadFile(filepath.Join(dst, "link"))
+				require.NoError(t, err)
+				require.Equal(t, "replacement", string(content))
+			})
+		}
+	}
+}
+
 func TestSelectionPreservesSymlinkLimit(t *testing.T) {
 	for _, relative := range []bool{false, true} {
 		for _, links := range []int{40, 41} {
