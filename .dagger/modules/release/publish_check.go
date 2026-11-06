@@ -2274,16 +2274,41 @@ func serviceHost(rawURL string) (string, error) {
 
 func requireContains(haystack, needle, msg string) error {
 	if !strings.Contains(haystack, needle) {
-		return fmt.Errorf("%s: missing %q in:\n%s", msg, needle, haystack)
+		return fmt.Errorf("%s: missing %q\n%s", msg, needle, withReportFirst(haystack))
 	}
 	return nil
 }
 
 func requireNotContains(haystack, needle, msg string) error {
 	if strings.Contains(haystack, needle) {
-		return fmt.Errorf("%s: found %q in:\n%s", msg, needle, haystack)
+		return fmt.Errorf("%s: found %q\n%s", msg, needle, withReportFirst(haystack))
 	}
 	return nil
+}
+
+// reportLimit caps the report lines withReportFirst puts first.
+const reportLimit = 8 << 10
+
+// withReportFirst is a publish's output with the release report's own lines
+// first: its checklist ("- [x] …", "- [ ] …") and its error blocks ("> …"),
+// which say which artifact failed and why. The output before the report, a
+// publish's progress, is long, and a view of the error shows only its start.
+func withReportFirst(output string) string {
+	var report []string
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "- [") || strings.HasPrefix(trimmed, ">") {
+			report = append(report, trimmed)
+		}
+	}
+	lines := strings.Join(report, "\n")
+	if lines == "" {
+		lines = "(none)"
+	}
+	if len(lines) > reportLimit {
+		lines = lines[:reportLimit] + "\n…"
+	}
+	return "release report:\n" + lines + "\nin:\n" + output
 }
 
 func randomID() string {
