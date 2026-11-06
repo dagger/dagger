@@ -74,9 +74,11 @@ func installRemoteCacheFixture(srv *dagql.Server) error {
 	if !info.IsDir() {
 		return fmt.Errorf("%s is not a directory", remoteCacheFixtureGate)
 	}
+	// Sensitive keeps the fixture's result, which can run to megabytes, out of
+	// the call's telemetry log.
 	dagql.Fields[*core.Query]{dagql.Func("_remoteCacheFixture", func(ctx context.Context, q *core.Query, args remoteCacheFixtureArgs) (core.JSON, error) {
 		return runRemoteCacheFixture(ctx, q, path, args)
-	}).Args(dagql.Arg("path").Default(dagql.String("")), dagql.Arg("ids").Default(dagql.ArrayInput[dagql.AnyID]{}), dagql.Arg("outputIDs").Default(dagql.ArrayInput[dagql.AnyID]{})).View(AllVersion).DoNotCache("Test fixture reads and mutates external state")}.Install(srv)
+	}).Args(dagql.Arg("path").Default(dagql.String("")), dagql.Arg("ids").Default(dagql.ArrayInput[dagql.AnyID]{}), dagql.Arg("outputIDs").Default(dagql.ArrayInput[dagql.AnyID]{})).View(AllVersion).DoNotCache("Test fixture reads and mutates external state").Sensitive()}.Install(srv)
 	return nil
 }
 
