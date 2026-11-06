@@ -186,8 +186,8 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, daggerGo, goVersi
 }
 
 // archiveBuilds is what codegen's archives of the Go module in seed read
-// from the cache, as IDs: archiveBuilds of its root package, its
-// dependencies alone, without tests, at goVersion with flags.
+// from the cache, as this session's IDs of them: archiveBuilds of its root
+// package, its dependencies alone, without tests, at goVersion with flags.
 func archiveBuilds(do func(string, map[string]any, any) error, seed, goVersion, platform string, flags []string) ([]string, error) {
 	var ws struct {
 		Host struct {
@@ -202,10 +202,21 @@ func archiveBuilds(do func(string, map[string]any, any) error, seed, goVersion, 
 		map[string]any{"path": seed}, &ws); err != nil {
 		return nil, fmt.Errorf("workspace: %w", err)
 	}
+	type withID struct {
+		ID string `json:"id"`
+	}
 	var builds struct {
 		Go struct {
 			Module struct {
-				ArchiveBuilds []string `json:"archiveBuilds"`
+				ArchiveBuilds struct {
+					Builds         []withID `json:"builds"`
+					Downloads      []withID `json:"downloads"`
+					Tool           withID   `json:"tool"`
+					ManifestTool   withID   `json:"manifestTool"`
+					ManifestSource withID   `json:"manifestSource"`
+					Tools          withID   `json:"tools"`
+					HelperBinary   withID   `json:"helperBinary"`
+				} `json:"archiveBuilds"`
 			} `json:"module"`
 		} `json:"go"`
 	}
@@ -218,16 +229,33 @@ func archiveBuilds(do func(string, map[string]any, any) error, seed, goVersion, 
 	if err := do(`query($ws: ID!, $version: String!, $flags: [String!]!`+platformVar+`) {
 		go(version: $version, buildFlags: $flags) {
 			module(ws: $ws, path: ".", findUp: false) {
-				archiveBuilds(ws: $ws, dependencies: true, packages: ["."], noTests: true`+platformArg+`)
+				archiveBuilds(ws: $ws, dependencies: true, packages: ["."], noTests: true`+platformArg+`) {
+					builds { id }
+					downloads { id }
+					tool { id }
+					manifestTool { id }
+					manifestSource { id }
+					tools { id }
+					helperBinary { id }
+				}
 			}
 		}
 	}`, vars, &builds); err != nil {
 		return nil, fmt.Errorf("archive builds: %w", err)
 	}
-	if len(builds.Go.Module.ArchiveBuilds) == 0 {
+	// Each result's ID is taken here, in this session: the archive builds
+	// are results, and their IDs this session's handles to them.
+	got := builds.Go.Module.ArchiveBuilds
+	if len(got.Builds) == 0 {
 		return nil, errors.New("archive builds: none")
 	}
-	return builds.Go.Module.ArchiveBuilds, nil
+	var ids []string
+	for _, list := range [][]withID{got.Builds, got.Downloads, {got.Tool, got.ManifestTool, got.ManifestSource, got.Tools, got.HelperBinary}} {
+		for _, r := range list {
+			ids = append(ids, r.ID)
+		}
+	}
+	return ids, nil
 }
 
 // optional is v as a nullable argument: null when empty.
