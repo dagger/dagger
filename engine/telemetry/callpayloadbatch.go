@@ -131,8 +131,13 @@ type protectedBatcher[T any] struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu       sync.Mutex
-	queue    []T
+	mu    sync.Mutex
+	queue []T
+	// spare is the backing array of the last queue an export pass took,
+	// emptied, for the queue to start from once the next pass takes it:
+	// a burst then refills capacity it already has, instead of growing a
+	// new slice from nothing.
+	spare    []T
 	failures int // consecutive failed exports of the batch at the queue head
 	stopped  bool
 	// enqueued counts the items taken in; held those taken in and not yet
@@ -420,8 +425,9 @@ func (batcher *protectedBatcher[T]) drain(ctx context.Context) error {
 // now queued.
 func (batcher *protectedBatcher[T]) exportPass(ctx context.Context) (retryIn time.Duration, more bool, dropped, failed error) {
 	batcher.mu.Lock()
-	queued := batcher.queue
-	batcher.queue = nil
+	taken := batcher.queue
+	queued := taken
+	batcher.queue, batcher.spare = batcher.spare, nil
 	failures := batcher.failures
 	batcher.mu.Unlock()
 
@@ -446,7 +452,11 @@ func (batcher *protectedBatcher[T]) exportPass(ctx context.Context) (retryIn tim
 		failures++
 		if failures < CallPayloadMaxExportAttempts {
 			batcher.mu.Lock()
-			batcher.queue = append(queued, batcher.queue...)
+			arrived := batcher.queue
+			queued = append(queued, arrived...)
+			batcher.queue = queued
+			clear(arrived)
+			batcher.spare = arrived[:0]
 			batcher.failures = failures
 			batcher.mu.Unlock()
 			return callPayloadRetryDelay(failures), false, dropped, exportErr
@@ -472,6 +482,7 @@ func (batcher *protectedBatcher[T]) exportPass(ctx context.Context) (retryIn tim
 	}
 	batcher.mu.Lock()
 	batcher.failures = 0
+	batcher.spare = taken[:0]
 	more = len(batcher.queue) > 0
 	batcher.mu.Unlock()
 	return 0, more, dropped, nil
