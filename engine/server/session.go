@@ -75,6 +75,9 @@ type daggerSession struct {
 	// archivePendingTitle is a title published before the archive existed.
 	archivePendingTitle pendingArchiveTitle
 	mainClientCallerID  string
+	// cloudClaimID is the Dagger Cloud claim the main client connected under,
+	// set when the session is initialized.
+	cloudClaimID string
 
 	// schemaBuilderMemo holds the schemas built for module dependency sets
 	// (e.g. a Module's Deps) by any of the session's clients. A function
@@ -170,7 +173,10 @@ type daggerSession struct {
 	tracerProvider *sdktrace.TracerProvider
 	// spanQueue counts the spans of the bounded live span lane, to report
 	// those it dropped when the session's telemetry shuts down.
-	spanQueue      enginetel.SpanQueueCounts
+	spanQueue enginetel.SpanQueueCounts
+	// protectedSpans is the session's lossless lane for call and cache
+	// spans; its unbounded queue's peak is reported at shutdown.
+	protectedSpans *enginetel.ProtectedSpanProcessor
 	loggerProvider *sdklog.LoggerProvider
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
@@ -906,6 +912,12 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 		// The bounded lane drops spans rather than stall the session; report
 		// how many.
 		sess.spanQueue.LogShutdown(slog.With("sessionID", sess.sessionID), shutdownErr)
+		// The protected lane never drops and its queue is unbounded; report
+		// the most it held.
+		if sess.protectedSpans != nil {
+			queued, peak := sess.protectedSpans.QueueStats()
+			slog.Info("session telemetry protected spans", "sessionID", sess.sessionID, "queued", queued, "peak", peak)
+		}
 	}
 	if sess.workloadTracerProvider != nil {
 		traceDur += timedProviderOp(ctx, &errs, sess.workloadTracerProvider.Shutdown)
@@ -919,7 +931,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 		sess.cloudForwarder.finish()
 	}
 	if sess.cloudMetrics != nil {
-		metricDur += timedProviderOp(ctx, &errs, sess.cloudMetrics.Shutdown)
+		// Likewise the session's last metrics: the queue publishes them in
+		// the background, never holding the teardown.
+		sess.cloudMetrics.finish()
 	}
 	for _, client := range clients {
 		errs = errors.Join(errs, client.closeTelemetryDB())
@@ -1064,7 +1078,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	sess.logExporter = logExporter
 
 	// Keep the raised link limit used by wcprof wait edges. One bounded trace
-	// queue plus a call-span-only protected queue, and an ordinary log queue
+	// queue plus a protected queue for call and cache spans, and an ordinary log queue
 	// plus payload-only and control-only protected queues, serve the entire
 	// session. Metric readers are owned by each client.
 	spanLimits := sdktrace.NewSpanLimits()
@@ -1073,7 +1087,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	tracerOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithRawSpanLimits(spanLimits),
 		sdktrace.WithSpanProcessor(dagql.NewWcprofLazyParentProcessor()),
-		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
+		sdktrace.WithSpanProcessor(wcprofSpanMarker{counter: srv.wcprofSpanCount, sess: sess}),
 		sdktrace.WithSpanProcessor(sess.cacheSpans),
 		// Stamp origin before the live processors freeze their start snapshots.
 		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: sess.sessionID}),
@@ -1089,13 +1103,15 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		tracerOpts = append(tracerOpts, sdktrace.WithResource(tracerResource))
 	}
 	// A call span is the only carrier of its call's frame (see
-	// core/telemetry.go), so it takes a lossless, retrying lane of its own,
-	// like call payload logs; the bounded live processor carries every other
-	// span and may drop them on overflow.
-	callSpans := enginetel.NewCallSpanProcessor(spanExporter)
+	// core/telemetry.go), and a cache span is how the remote cache learns the
+	// cache and is counted for the session's end, so they take a lossless,
+	// retrying lane of their own, like call payload logs; the bounded live
+	// processor carries every other span and may drop them on overflow.
+	protectedSpans := enginetel.NewProtectedSpanProcessor(spanExporter)
+	sess.protectedSpans = protectedSpans
 	tracerOpts = append(tracerOpts,
-		sdktrace.WithSpanProcessor(callSpans),
-		sdktrace.WithSpanProcessor(enginetel.WithoutCallSpans(enginetel.NewCountedLargeQueueLiveSpanProcessor(spanExporter, &sess.spanQueue))),
+		sdktrace.WithSpanProcessor(protectedSpans),
+		sdktrace.WithSpanProcessor(enginetel.WithoutProtectedSpans(enginetel.NewCountedLargeQueueLiveSpanProcessor(spanExporter, &sess.spanQueue))),
 	)
 	loggerResource, err := withSessionResource(telemetry.Resource, resourceAttrs)
 	if err != nil {
@@ -1115,7 +1131,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		sdklog.WithProcessor(callPayloads),
 		sdklog.WithProcessor(enginetel.NewControlBatchProcessor(controlAfterCallsExporter{
 			next:  logExporter,
-			calls: []func(context.Context) error{callSpans.ForceFlush, callPayloads.ForceFlush},
+			calls: []func(context.Context) error{protectedSpans.ForceFlush, callPayloads.ForceFlush},
 		})),
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
@@ -1291,6 +1307,12 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.beginClientScopeTeardown()
 	sess.beginClosing()
 	sess.endMainClientAttachables()
+	// The session counts as live until its teardown ends, and then says
+	// whether it sent its completion marker.
+	var marker bool
+	defer func() {
+		srv.sessionLedger.sessionEnded(sess.sessionID, sess.mainClientCallerID, sess.cloudClaimID, marker)
+	}()
 
 	// check if the local cache needs pruning after session is removed, prune if so
 	defer func() {
@@ -1422,7 +1444,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	telemetryCtx, cancelTelemetry := context.WithTimeout(teardownCtx, 60*time.Second)
 	defer cancelTelemetry()
 	step = teardown.beginStep("session.shutdownTelemetry")
-	srv.stampSessionComplete(telemetryCtx, sess)
+	marker = srv.stampSessionComplete(telemetryCtx, sess)
 	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
 	telemetryErr := sess.shutdownTelemetry(telemetryCtx)
 	errs = errors.Join(errs, telemetryErr)
@@ -1526,9 +1548,10 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 // the session-root span recorded in serveQuery so it lands in this trace, named
 // wcprofSessionCompleteSpanName so the counter excludes it from the total and the
 // loader drops it from the compiled ops. The session's final trace/log barrier
-// flushes the carrier after all cleanup producers have stopped. A trace that
-// never ran a traced main query gets no carrier and so fails the loader's
-// completeness check by default (unverifiable → refused).
+// flushes the carrier after all cleanup producers have stopped. A recorded trace
+// that never ran a traced main query gets no carrier and so fails the loader's
+// completeness check by default (unverifiable → refused). Nothing is counted while
+// wcprof isn't recording, so such a session declares no count.
 //
 // The carrier also marks the session's end for its cache spans: it declares
 // how many spans of this session named a cache entry
@@ -1536,21 +1559,22 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 // first session to end in a shared trace reaps it, so a later session can
 // have cache spans and a zero wcprof count. The carrier is sent when either
 // count is above zero, and carries the wcprof count only when it is; the
-// loader ignores a carrier with no count.
-func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) {
+// loader ignores a carrier with no count. It reports whether it sent the
+// carrier: the remote cache service reads it as the session's end.
+func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) bool {
 	if !sess.wcprofTraceID.IsValid() || !sess.wcprofRootSpanID.IsValid() {
-		return
+		return false
 	}
 	n := srv.wcprofSpanCount.Final(sess.wcprofTraceID)
 	cacheSpans := sess.cacheSpans.Count()
 	if n == 0 && cacheSpans == 0 {
-		return
+		return false
 	}
 	sess.clientMu.RLock()
 	mainRecord := sess.clientRecords[sess.mainClientCallerID]
 	sess.clientMu.RUnlock()
 	if mainRecord == nil || sess.tracerProvider == nil {
-		return
+		return false
 	}
 	// Parent the carrier at the recorded session-root span so it inherits this
 	// trace (a teardown ctx carries no span); the loader excludes it from ops, but a
@@ -1577,6 +1601,7 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 		trace.WithAttributes(attrs...),
 	)
 	span.End()
+	return true
 }
 
 type ClientInitOpts struct {
@@ -2345,6 +2370,7 @@ func (srv *Server) getOrInitClient(
 	// LAST step, after the main client record has been published — so observers
 	// never see initialized session resources without the root identity.
 	if sess.state.Load() == sessionStateUninitialized {
+		sess.cloudClaimID = opts.CloudClaimID
 		sess.state.Store(sessionStateInitialized)
 		// From here, removal ends the session's phase.
 		phaseCtx := context.Background()
@@ -2353,6 +2379,7 @@ func (srv *Server) getOrInitClient(
 			phaseCtx = wcprof.ContextWithProfiling(phaseCtx)
 		}
 		sess.phase = srv.beginSessionPhase(phaseCtx, sess.sessionID)
+		srv.sessionLedger.sessionStarted(sess.sessionID, sess.mainClientCallerID, sess.cloudClaimID)
 	}
 	if opts.requestLeaseOut != nil {
 		*opts.requestLeaseOut = requestLease
@@ -2946,6 +2973,28 @@ func beginServeQueryOp(ctx context.Context, clientID string) (context.Context, *
 	return ctx, op
 }
 
+// queryRequestSpanAttrs are the attributes of a query's request span, whose
+// parent is the one in ctx. A nested client's request made directly under the
+// traceparent its exec's container got names the exec as its causal parent
+// (wcprof.parent): that traceparent is the call that made the exec, beside the
+// exec, so a profile would otherwise count the client's work as running
+// alongside the exec rather than in it. A request under a span of the
+// client's own keeps that parent: the engine names the exec on that span as
+// the container exports it (telemetry.StampWcprofHost).
+func queryRequestSpanAttrs(ctx context.Context, md *engine.ClientMetadata) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		attribute.Bool(telemetry.UIPassthroughAttr, true),
+	}
+	if engineID := md.CloudScaleOutEngineID; engineID != "" {
+		attrs = append(attrs, attribute.String(telemetry.EngineIDAttr, engineID))
+	}
+	if host := dagql.OTelHostExecFromContext(ctx); host.ExecRun.IsValid() && host.Propagated.IsValid() &&
+		trace.SpanContextFromContext(ctx).SpanID() == host.Propagated.SpanID() {
+		attrs = append(attrs, attribute.String(telemetryattrs.WcprofParentAttr, host.ExecRun.SpanID().String()))
+	}
+	return attrs
+}
+
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *clientRuntime) (rerr error) {
 	sess := client.daggerSession
 
@@ -2999,15 +3048,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
 		clientTracer := sess.tracerProvider.Tracer(InstrumentationLibrary)
 		var span trace.Span
-		attrs := []attribute.KeyValue{
-			attribute.Bool(telemetry.UIPassthroughAttr, true),
-		}
-		if engineID := client.clientMetadata.CloudScaleOutEngineID; engineID != "" {
-			attrs = append(attrs, attribute.String(telemetry.EngineIDAttr, engineID))
-		}
 		ctx, span = clientTracer.Start(ctx,
 			fmt.Sprintf("%s %s", r.Method, r.URL.Path),
-			trace.WithAttributes(attrs...),
+			trace.WithAttributes(queryRequestSpanAttrs(ctx, client.clientMetadata)...),
 		)
 		defer telemetry.EndWithCause(span, &rerr)
 

@@ -215,6 +215,7 @@ func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, a
 	}
 	_, cloud := res.cloudHoldingLocked()
 	cloud.parts[key] = heldPart{state: heldPartComplete, offer: offer}
+	c.partOfferReplaced(old, offer)
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
 	old.owner.slots--
@@ -233,6 +234,7 @@ func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, ad
 	}
 	_, cloud := res.cloudHoldingLocked()
 	delete(cloud.parts, key)
+	c.partOfferGone(old)
 	old.owner.slots--
 	res.transferRevision++
 	res.dependencyOwnershipRevision++
@@ -314,6 +316,7 @@ func clonePartOffer(offer PersistedPartOffer) (PersistedPartOffer, error) {
 		}
 	}
 	offer.Chain.Addresses = maps.Clone(offer.Chain.Addresses)
+	offer.Chain.Packs = maps.Clone(offer.Chain.Packs)
 	offer.Owner.DependencyIDs = slices.Clone(offer.Owner.DependencyIDs)
 	return offer, nil
 }

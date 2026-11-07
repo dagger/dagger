@@ -359,16 +359,27 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 				// The module's cached definition travels in the bundle, so a cold
 				// engine loads the module without running its runtime. The later
 				// uncached function calls demand the SDK runtime, and with it its
-				// builtin FS.
-				builtinRoute := 0
-				for _, event := range acquisition.Parts {
-					if event.Field == "_builtinContainer" && (event.Kind == "installed-ready" || event.Kind == "installed-lazy") {
-						builtinRoute++
+				// builtin FS. Its record holds no download address, so the cold
+				// engine runs the saved builtin itself, as it would restore one
+				// from local disk: the merged row then owns the snapshot it
+				// made, and none of it was downloaded.
+				builtinRan := 0
+				for _, row := range acquisition.Rows {
+					if row.Call == nil || row.Call.Field != "_builtinContainer" || !row.Imported {
+						continue
+					}
+					if len(row.SnapshotLinks) > 0 {
+						builtinRan++
 					}
 				}
-				require.Positive(t, builtinRoute, "cold SDK builtin FS must acquire a local equivalent or invoke its saved builtin")
+				require.Positive(t, builtinRan, "cold SDK builtin runs its saved builtin and owns what it made")
+				for _, event := range acquisition.Parts {
+					if event.Field == "_builtinContainer" {
+						require.NotContains(t, []string{"installed-chain", "provider-read"}, event.Kind, "cold SDK builtin FS isn't downloaded: %+v", event)
+					}
+				}
 				assertColdPartDelegation(t, acquisition)
-				t.Logf("acquisition cold builtin route=%d", builtinRoute)
+				t.Logf("acquisition cold builtin rows that ran=%d", builtinRan)
 			}
 			scratchHandle := assertScratchAcquisition(t, acquisition, imported, cold, warmScratchRow)
 			entries, err := core.Ref[*core.Directory](core.NewQuery(b.client), core.ID(scratchHandle)).Entries(ctx)
@@ -630,11 +641,11 @@ func assertScratchAcquisition(t *testctx.T, report transferFixtureReport, import
 			entries++
 		}
 	}
-	want := 0
-	if cold {
-		want = 1
-	}
-	require.Equal(t, want, entries, "scratch saved-operation entries")
+	// A cold engine's merged scratch record holds no download address, so it
+	// is computed as a directory restored from local disk is, not through
+	// part acquisition: no part-acquisition entry, and no download. Its
+	// caller reads it back empty.
+	require.Zero(t, entries, "scratch part-acquisition entries")
 	t.Logf("acquisition scratch cold=%t ordinal=%d row=%d address={\"part\":\"snapshot\"} group=%s platform=%s lazy-enter=%d provider-reads=0", cold, mapping[scratch.ResultID].Ordinal, scratch.ResultID, dagql.LazyGroupWhole, platform, entries)
 	return mapping[scratch.ResultID].Handle
 }
@@ -715,8 +726,41 @@ func assertColdPartDelegation(t *testctx.T, report transferFixtureReport) {
 			t.Logf("operation mount-write row=%d address=%s field=%s entries=%d", k.row, k.address, row.Call.Field, count)
 		}
 	}
-	require.Positive(t, mountWriters["withMountedFile"])
-	require.Positive(t, mountWriters["withMountedDirectory"])
+	// The mount rows' records hold no download address, so a cold engine
+	// computes each of them here, as a container restored from local disk is,
+	// rather than through part acquisition: each merged mount row owns the
+	// snapshot of its mount, settles that mount part at most once, and
+	// installs and downloads nothing.
+	mountRole := map[string]string{"withMountedFile": "mount_file", "withMountedDirectory": "mount_dir"}
+	ownedMounts := map[string]int{}
+	for _, row := range report.Rows {
+		if row.Call == nil || !row.Imported {
+			continue
+		}
+		role, ok := mountRole[row.Call.Field]
+		if !ok {
+			continue
+		}
+		for _, link := range row.SnapshotLinks {
+			if strings.HasPrefix(link.Role, role) {
+				ownedMounts[row.Call.Field]++
+				break
+			}
+		}
+		settles := map[dagql.PartKey]int{}
+		for _, event := range report.Parts {
+			if event.ResultID != row.ResultID {
+				continue
+			}
+			require.NotContains(t, []string{"installed-ready", "installed-chain", "installed-lazy", "selected-ready", "selected-chain", "provider-read"}, event.Kind, "a mount row installs and downloads nothing: %+v", event)
+			if event.Kind == "settled" {
+				settles[event.Address.Part]++
+				require.LessOrEqual(t, settles[event.Address.Part], 1, "a mount part settles at most once: %+v", event)
+			}
+		}
+	}
+	require.Positive(t, ownedMounts["withMountedFile"], "the file mount row owns its mount")
+	require.Positive(t, ownedMounts["withMountedDirectory"], "the directory mount row owns its mount")
 	assertImportedHostInputsMatched(t, report, rows)
 	t.Logf("acquisition SDK inherited-fs hops=%v; operation mount-writer rows=%v", fsFields, mountWriters)
 }

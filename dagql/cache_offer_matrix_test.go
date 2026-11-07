@@ -395,6 +395,10 @@ func TestOfferResourcesDoNotGateLookup(t *testing.T) {
 	chain := newChainFixture(t, "resources")
 	f := newExhaustionFixture(t, chain)
 	c := f.cache
+	// No prefetch worker: accepting the offer queues its background
+	// prefetch, whose requests the zero-transfer check below would count,
+	// though a demand never makes them.
+	c.partPrefetchConfig = &partPrefetchConfig{budget: 1 << 30, ttl: time.Hour, queue: 8}
 	row := f.receiver.cacheSharedResult()
 	socket := persistedListTestResult(t, f.ctx, c, f.srv, "socket", String("socket"))
 	c.egraphMu.Lock()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/wcprof"
 	set "github.com/hashicorp/go-set/v3"
 )
 
@@ -220,7 +221,7 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 	if source.readiness != PartReady && source.descriptor.SnapshotID == "" {
 		return nil, fmt.Errorf("prepare part: source is not materialized")
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	row, err := c.validatePartTaskLocked(receiver, permit.task)
 	if err == nil && source.delegation != nil && !source.delegation.currentLocked(c, source, row) {
 		err = partRefused("prepare: delegation proof not current")
@@ -233,7 +234,9 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 	if err != nil {
 		return nil, err
 	}
-	current, version, probe, err := c.probePart(ctx, row, permit.address)
+	probeCtx, endProbe := profInstallStep(ctx, "probe")
+	current, version, probe, err := c.probePart(probeCtx, row, permit.address)
+	endProbe(err)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +264,7 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 		return nil, fmt.Errorf("prepare part: incompatible output family")
 	}
 
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	for _, id := range c.partSourceDependenciesLocked(source) {
 		dep := c.resultsByID[sharedResultID(id)]
 		if dep == nil {
@@ -278,7 +281,10 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 	if err != nil {
 		return nil, err
 	}
-	if err := p.pinReadySource(ctx, version.payload.hasValue); err != nil {
+	pinCtx, endPin := profInstallStep(ctx, "pin")
+	err = p.pinReadySource(pinCtx, version.payload.hasValue)
+	endPin(err)
+	if err != nil {
 		return nil, err
 	}
 	p.next, err = prepareScopedPartRecord(current, source.record, source.Descriptor(), permit.address)
@@ -286,7 +292,10 @@ func (c *Cache) prepareReadyPartFromBase(ctx context.Context, receiver AnyResult
 		return nil, err
 	}
 	if version.payload.hasValue {
-		if err := p.prepareValueStore(ctx, row, current); err != nil {
+		storeCtx, endStore := profInstallStep(ctx, "store")
+		err := p.prepareValueStore(storeCtx, row, current)
+		endStore(err)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -350,6 +359,22 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 			return nil, err
 		}
 	}
+	// The dependencies' session resources reach the receiver and every
+	// result above it that lacks them. A result's required set includes its
+	// dependencies' (recomputeRequiredSessionResourcesLocked), so the results
+	// above one that already requires them do too: the walk stops there, as
+	// the cascade of a new dependency edge stops where sets stop changing.
+	// Dependencies that require none change nothing above.
+	var added *set.TreeSet[SessionResourceHandle]
+	for _, dep := range deps {
+		if dep.requiredSessionResources == nil || dep.requiredSessionResources.Empty() {
+			continue
+		}
+		if added == nil {
+			added = set.NewTreeSet(compareSessionResourceHandles)
+		}
+		added = added.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
+	}
 	requirements := map[*sharedResult]*set.TreeSet[SessionResourceHandle]{}
 	queue := []*sharedResult{receiver}
 	seen = map[sharedResultID]bool{}
@@ -365,14 +390,12 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 				return nil, fmt.Errorf("part graph: missing ancestor dependency %d", id)
 			}
 		}
-		req := set.NewTreeSet(compareSessionResourceHandles)
+		if added == nil || (row.requiredSessionResources != nil && row.requiredSessionResources.Subset(added)) {
+			continue
+		}
+		req := added.Copy()
 		if row.requiredSessionResources != nil {
 			req = req.Union(row.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
-		}
-		for _, dep := range deps {
-			if dep.requiredSessionResources != nil {
-				req = req.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
-			}
 		}
 		requirements[row] = req
 		if row.depParents != nil {
@@ -524,7 +547,7 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 			return nil, PartInstallRefused, source.version.changed("commit: donor version", source.source)
 		}
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	row := p.receiver
 	if c.resultsByID[row.id] != row || !p.permit.task.active.Load() {
@@ -734,6 +757,11 @@ func (c *Cache) InstallReadyPart(ctx context.Context, receiver AnyResult, source
 		return err
 	}
 	receipt, outcome, err := c.CommitReadyPart(ctx, p)
+	if outcome == PartInstalled && source.delegation != nil {
+		// A delegated child's part installed from its parent's reads the
+		// parent's part.
+		c.partReads.record(source.delegation.parent.id, []PartKey{source.delegation.source.Part})
+	}
 	if outcome == PartInstalled {
 		if PartTaskFromContext(ctx) == receipt.task {
 			return errors.Join(err, c.finishReadyPartInline(ctx, receipt))

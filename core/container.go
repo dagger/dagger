@@ -1807,10 +1807,65 @@ func decodePersistedContainerResources(ctx context.Context, dec *dagql.PersistDe
 	return mounts, secrets, sockets, nil
 }
 
+// containerHoldsAcquiredPart reports whether a transferred container's
+// record holds a part this engine acquired: transfer leaves every part it
+// carries pending or absent.
+func containerHoldsAcquiredPart(parts map[dagql.PartKey]persistedContainerPart) bool {
+	for _, part := range parts {
+		if part.Kind != containerPartPending && part.Kind != containerPartAbsent {
+			return true
+		}
+	}
+	return false
+}
+
+// armTransferredContainer reports whether a container record from another
+// engine decodes with its recipe armed, and if so validates its operation and
+// clears its transfer state. A record that holds no download address for any
+// part decodes as local persistence decodes a pending container: its recipe
+// armed, its parts pending. One that already acquired a part stays a shell: a
+// group's parts complete together locally, so a recipe can't keep one of them
+// and compute the rest.
+func armTransferredContainer(dec *dagql.PersistDecodeContext, envelope *persistedContainerPayload) (bool, error) {
+	if envelope.OperationState == "" || len(envelope.LazyJSON) == 0 || !dec.ArmRecipe() || containerHoldsAcquiredPart(envelope.Parts) {
+		return false, nil
+	}
+	kind := ""
+	if dec.Call() != nil {
+		kind = dec.Call().Field
+	}
+	if err := validateTransferOperation(envelope.OperationState, kind, envelope.LazyJSON); err != nil {
+		return false, err
+	}
+	envelope.OperationState = ""
+	return true, nil
+}
+
+// armedContainerParts gives the metadata state and parts a container decodes
+// with. An armed whole operation computes every part in one run: local
+// persistence saves it, before that run, with none of them.
+func armedContainerParts(armed bool, recipe Lazy[*Container], envelope persistedContainerPayload) (bool, map[dagql.PartKey]persistedContainerPart) {
+	if _, refined := recipe.(LazyContainerParts); armed && recipe != nil && !refined {
+		return false, nil
+	}
+	return envelope.Metadata.Consumed, envelope.Parts
+}
+
+// PartTransferShell reports whether the container decoded from another
+// engine's record without its recipe, so that its parts come only through
+// part acquisition.
+func (container *Container) PartTransferShell() bool {
+	return container.acquiredOutput.Load() != nil
+}
+
 func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var envelope persistedContainerPayload
 	if err := json.Unmarshal(payload, &envelope); err != nil {
 		return nil, fmt.Errorf("decode persisted container payload: %w", err)
+	}
+	armed, err := armTransferredContainer(dec, &envelope)
+	if err != nil {
+		return nil, err
 	}
 	persisted := envelope.Metadata.Value
 	fs := new(LazyAccessor[*Directory, *Container])
@@ -1899,7 +1954,8 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 			return nil, err
 		}
 	}
-	if err := container.installContainerParts(ctx, dec, envelope.Metadata.Consumed, envelope.Parts, links, recipe); err != nil {
+	metadataConsumed, parts := armedContainerParts(armed, recipe, envelope)
+	if err := container.installContainerParts(ctx, dec, metadataConsumed, parts, links, recipe); err != nil {
 		return nil, fmt.Errorf("decode persisted container: %w", err)
 	}
 	return container, nil

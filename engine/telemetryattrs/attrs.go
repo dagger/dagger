@@ -471,7 +471,7 @@ const (
 	WcprofWaitEndUnixNanoAttr   = "wcprof.wait.end_unix_ns"
 	// WcprofWaitReasonAttr (string) names why the waiter blocked: one of
 	// "singleflight", "call_exec", "lazy", "service", "lock", "exec", "io",
-	// or, for a reported task, "dependency".
+	// "attach", or, for a reported task, "dependency".
 	WcprofWaitReasonAttr = "wcprof.wait.reason"
 	// WcprofWaitIdentAttr (string) names the awaited resource for waits that
 	// have no target span (reason "lock"), in place of the link's target span id.
@@ -547,9 +547,11 @@ const (
 	// and the loader refuses a trace that received fewer (faithful data or refuse,
 	// never a wrong answer). A dropped leaf is otherwise undetectable from the trace.
 
-	// WcprofEngineSpanAttr (bool true) marks a span the ENGINE emitted for a trace —
-	// the counted, ranking-critical population. Stamped at span creation by the
-	// engine's per-client span-count processor (engine/server). The loader counts
+	// WcprofEngineSpanAttr (bool true) marks a span the ENGINE emitted for a trace
+	// while wcprof records — the counted, ranking-critical population. Stamped at span
+	// creation by the engine's per-session span-count processor (engine/server). A
+	// trace with no marks and no declared total wasn't recorded, and the loader reports
+	// its completeness as unknown. The loader counts
 	// these to reconcile against the declared total; CLI-shell and HTTP/buildkit
 	// spans (which the engine does not count) are unmarked and excluded, so they
 	// cannot cause a false pass/fail.
@@ -562,7 +564,7 @@ const (
 	// final total, not a running floor. The loader compares the count of received
 	// WcprofEngineSpanAttr spans to this declared total: because the declaration is
 	// the exact final (received <= total always), received < total ⇒ spans dropped ⇒
-	// hard-fail; absent ⇒ unverifiable ⇒ hard-fail (fail-by-default).
+	// hard-fail; absent on a trace with marked spans ⇒ unverifiable ⇒ hard-fail.
 	WcprofSessionSpanCountAttr = "wcprof.session_span_count"
 
 	// WcprofSessionCompleteAttr (bool true) marks the dedicated session-teardown
@@ -669,6 +671,13 @@ const (
 	// set means every surviving candidate failed the session-resource filter.
 	CacheMissIncompatibleCandidatesAttr = "dagger.io/cache.miss.incompatible_candidates"
 
+	// CacheMissUnavailablePartsAttr ("true", executed misses only, absent
+	// otherwise) records that a candidate result existed but was passed by
+	// because a part of its value that a demand found no source for is still
+	// incomplete: a value another engine sent without that part, whose offer
+	// of it is gone or failed. The call runs again to make the part.
+	CacheMissUnavailablePartsAttr = "dagger.io/cache.miss.unavailable_parts"
+
 	// CacheMissSawExpiredAttr ("true", executed misses only, absent otherwise)
 	// records that TTL expiry eliminated at least one otherwise-matching result
 	// during candidate accumulation.
@@ -695,6 +704,64 @@ const (
 	// CacheMissRequirementsGrewAttr: the hit's session-resource requirements
 	// grew after it was chosen, beyond what this session has loaded.
 	CacheMissRequirementsGrewAttr = "dagger.io/cache.miss.requirements_grew"
+
+	// Remote candidates a miss lost, each "true", executed misses only,
+	// absent otherwise. A remote candidate is a value a Cloud merge installed
+	// (as for CacheHitRemoteAttr).
+	//
+	// CacheMissExpiredRemoteAttr (with CacheMissSawExpiredAttr): a candidate
+	// expiry eliminated was a remote one.
+	CacheMissExpiredRemoteAttr = "dagger.io/cache.miss.expired_remote"
+	// CacheMissIncompatibleRemoteAttr (with
+	// CacheMissIncompatibleCandidatesAttr): a candidate this session's
+	// resources did not satisfy was a remote one.
+	CacheMissIncompatibleRemoteAttr = "dagger.io/cache.miss.incompatible_remote"
+	// CacheMissChosenRemoteAttr (with a serve-time miss,
+	// CacheMissProducerReleasedAttr or CacheMissRequirementsGrewAttr): the hit
+	// the lookup chose, and then failed to serve, was a remote one.
+	CacheMissChosenRemoteAttr = "dagger.io/cache.miss.chosen_remote"
+
+	// CacheMissFreshInputsAttr (executed misses only) lists, as decimal-string
+	// indices into CacheStructuralInputsAttr (native string array), the
+	// inputs whose equivalence class was the input of no term at lookup time,
+	// so the structural lookup could match nothing: the inputs new to the
+	// cache. Like CacheMissUnknownInputAttr, it reads current cache state, not
+	// history. It is recorded only when every input was known (no
+	// CacheMissUnknownInputAttr), and absent when there are none. A
+	// receiver's structural input is its recipe digest, the dagger.io/dag.digest
+	// of the call span that produced it.
+	CacheMissFreshInputsAttr = "dagger.io/cache.miss.fresh_inputs"
+
+	// CacheMissRemoteLookupAttr (executed misses only) is what the miss did
+	// about asking the remote cache service for the call's value: "queued"
+	// when it queued a lookup, "asked" when the call's recipe was already
+	// asked for on the engine's connection, "dropped" when the lookup queue
+	// was full. Absent when no connection serves lookups.
+	CacheMissRemoteLookupAttr = "dagger.io/cache.miss.remote_lookup"
+
+	// CacheAdoptedAttr ("true", executed and joined calls, absent otherwise)
+	// records that the publication of the call's value adopted its recipe's
+	// live current entry instead: the call ran, its new value was released,
+	// and CacheResultIDAttr names the adopted entry. CacheAdoptedRemoteAttr
+	// ("true") adds that the entry's value came from a Cloud merge, and
+	// CacheAdoptedMergedAtAttr is when that merge committed, in decimal-string
+	// absolute Unix nanoseconds (in memory only, as for CacheHitMergedAtAttr).
+	// Publication adopts by the recipe of the returned value's frame, which
+	// can differ from the recipe the lookup used, so the merge can have
+	// committed before or after the lookup: compare CacheAdoptedMergedAtAttr
+	// with CacheLookupAtAttr, which is on the same clock.
+	CacheAdoptedAttr         = "dagger.io/cache.adopted"
+	CacheAdoptedRemoteAttr   = "dagger.io/cache.adopted.remote"
+	CacheAdoptedMergedAtAttr = "dagger.io/cache.adopted.merged_at_unix_ns"
+
+	// CacheValueRemoteAttr ("true", on a lazy-evaluation span, absent
+	// otherwise) records that the value of the entry the attempt evaluated
+	// came from a Cloud merge, as the attempt left it. With CacheOfferPartAttr
+	// on the same span, it tells an evaluation an offer install satisfied
+	// from one that ran. CacheValueMergedAtAttr is when that merge committed,
+	// in decimal-string absolute Unix nanoseconds (in memory only).
+	CacheValueRemoteAttr   = "dagger.io/cache.value.remote"
+	CacheValueMergedAtAttr = "dagger.io/cache.value.merged_at_unix_ns"
 
 	// CacheSelfDigestAttr is the engine-derived structural self digest of the
 	// call: the operation, its literal arguments (sensitive values redacted),
@@ -769,6 +836,15 @@ const (
 	// lazy-evaluation span, it lists them as the attempt left them. The
 	// attribute is omitted when there are none.
 	CachePartsAttr = "dagger.io/cache.parts"
+	// CachePartSizesAttr lists the raw, uncompressed size of each part in
+	// CachePartsAttr, index-aligned, as decimal byte counts (native string
+	// array). A File that travels as its own content is its file's size;
+	// another part is the sum of the usage each layer of its snapshot chain
+	// recorded when it was committed, which overcounts files a later layer
+	// replaced or deleted. A part with no filesystem bytes is 0. It is stamped
+	// only by an engine with the remote cache, beside CachePartsAttr, and
+	// omitted when a size could not be read.
+	CachePartSizesAttr = "dagger.io/cache.parts.sizes"
 	// CacheTypeAttr is the name of the entry's type, such as "Container".
 	CacheTypeAttr = "dagger.io/cache.type"
 	// CacheReplacementsAttr is the decimal-string count of the times the
@@ -791,9 +867,79 @@ const (
 	// the part: layers the engine already had are not downloaded.
 	CacheOfferBytesAttr = "dagger.io/cache.offer.bytes"
 	// CacheOfferDurationAttr is the decimal-string count of nanoseconds from
-	// the start of the part's import to its install, over which the download
-	// and the layers' application interleave.
+	// the start of the part's import to its install, over which the layers'
+	// downloads run at once while the layers apply in order.
 	CacheOfferDurationAttr = "dagger.io/cache.offer.duration_ns"
+	// CacheOfferWaitedAttr is the decimal-string count of nanoseconds from the
+	// start of the part's demand to the start of its import: selecting a
+	// source, the demand's other work, and waits for other writers.
+	CacheOfferWaitedAttr = "dagger.io/cache.offer.waited_ns"
+	// CacheOfferLayersAttr is the decimal-string count of layers in the
+	// offered chain, downloaded or not.
+	CacheOfferLayersAttr = "dagger.io/cache.offer.layers"
+	// CacheOfferRequestsAttr is the decimal-string count of HTTP requests
+	// made for the part's content, reopened and renewed ones included.
+	CacheOfferRequestsAttr = "dagger.io/cache.offer.requests"
+	// CacheOfferTTFBAttr is the decimal-string count of nanoseconds, summed
+	// over those requests, from sending each to its response headers.
+	CacheOfferTTFBAttr = "dagger.io/cache.offer.ttfb_ns"
+	// CacheOfferConnsNewAttr is the decimal-string count of those requests
+	// that opened a new connection rather than reusing an idle one.
+	CacheOfferConnsNewAttr = "dagger.io/cache.offer.conns_new"
+	// CacheOfferRenewAttr is the decimal-string count of nanoseconds spent
+	// getting fresh content addresses from the service, waits on another
+	// source's renewal included.
+	CacheOfferRenewAttr = "dagger.io/cache.offer.renew_ns"
+	// CacheOfferReadWaitAttr is the decimal-string count of nanoseconds spent
+	// blocked reading the part's content, CacheOfferTTFBAttr included, summed
+	// over the layers' reads, which run at once.
+	CacheOfferReadWaitAttr = "dagger.io/cache.offer.read_wait_ns"
+	// CacheOfferLayerWaitAttr is the decimal-string count of nanoseconds spent
+	// waiting for another import of the same layer onto the same parent.
+	CacheOfferLayerWaitAttr = "dagger.io/cache.offer.layer_wait_ns"
+	// CacheOfferFetchAttr is the decimal-string count of nanoseconds the
+	// import spent, layer by layer, getting each layer's blob into the local
+	// content store: waiting for its download, or downloading it, and
+	// writing, verifying and committing it. A blob downloaded ahead while
+	// earlier layers applied counts in CacheOfferReadWaitAttr, not here.
+	CacheOfferFetchAttr = "dagger.io/cache.offer.fetch_ns"
+	// CacheOfferApplyAttr is the decimal-string count of nanoseconds spent
+	// applying the fetched blobs to their snapshots.
+	CacheOfferApplyAttr = "dagger.io/cache.offer.apply_ns"
+	// CacheOfferImportAttr is the decimal-string count of nanoseconds the
+	// chain's import took: CacheOfferLayerWaitAttr, CacheOfferFetchAttr,
+	// CacheOfferApplyAttr and the snapshots' bookkeeping.
+	CacheOfferImportAttr = "dagger.io/cache.offer.import_ns"
+	// CacheOfferCommitAttr is the decimal-string count of nanoseconds from
+	// the end of the import to the install: preparing and committing the
+	// part, and retrying a refused commit.
+	CacheOfferCommitAttr = "dagger.io/cache.offer.commit_ns"
+	// CacheOfferStreamsAttr is the decimal-string count of the most
+	// requests one of the part's blobs had open at once: 1 for a blob read on
+	// one stream, more for a large blob read in ranged chunks.
+	CacheOfferStreamsAttr = "dagger.io/cache.offer.streams"
+	// CacheOfferRangeAttr is whether the blob store answered the part's
+	// ranged requests: "206" when every answer was partial content, "200"
+	// when any was the whole object instead, "off" when no request was made.
+	CacheOfferRangeAttr = "dagger.io/cache.offer.range"
+	// CacheOfferStatusesAttr counts each HTTP status of the part's
+	// requests, as "206=5,403=1", in status order.
+	CacheOfferStatusesAttr = "dagger.io/cache.offer.statuses"
+	// CacheOfferAheadAttr is the decimal-string count of the part's layers
+	// whose blob started downloading early, while the layer before it
+	// applied.
+	CacheOfferAheadAttr = "dagger.io/cache.offer.ahead"
+	// CacheOfferJoinedAttr is the decimal-string count of the part's layers
+	// whose blob came from a download another import had in progress.
+	CacheOfferJoinedAttr = "dagger.io/cache.offer.joined"
+	// CacheOfferPrefetchedAttr is the decimal-string count of the part's
+	// layers whose blob background prefetching held, or was downloading,
+	// when the import started.
+	CacheOfferPrefetchedAttr = "dagger.io/cache.offer.prefetched"
+	// CacheOfferPackedAttr is the decimal-string count of the part's layers
+	// whose blob came with its pack's: read, joined, or held from an earlier
+	// read.
+	CacheOfferPackedAttr = "dagger.io/cache.offer.packed"
 
 	// CacheSessionSpansAttr is the decimal-string count of the spans of one
 	// session that carry CacheResultIDAttr, stamped on the session's
@@ -889,6 +1035,9 @@ const (
 	// EngineEventShare: a snapshot-sharing pass completed parts
 	// (EngineShareEvent).
 	EngineEventShare = "engine.share"
+	// EngineEventRead: work read a part of an entry for the first time
+	// (EngineReadEvent).
+	EngineEventRead = "engine.read"
 	// EngineEventStop: the engine closed its cache (EngineStopEvent).
 	EngineEventStop = "engine.stop"
 )
@@ -939,6 +1088,24 @@ type EngineSharedPart struct {
 	// Replacements is the entry's replacement count (CacheReplacementsAttr),
 	// when not 0: the part and the dependencies are its current value's.
 	Replacements uint64 `json:"replacements,omitempty"`
+}
+
+// EngineReadEvent is the body of an engine.read event: the parts of entries
+// that work evaluated or installed for its use. An entry is named when work
+// reads a part of it for the first time, with every part read of it so far,
+// or once, with no part, when work read it whole: each report about an
+// entry is complete.
+type EngineReadEvent struct {
+	Reads []EngineRead `json:"reads"`
+}
+
+// EngineRead is one part of an entry that work read.
+type EngineRead struct {
+	// ResultID is the entry's result number.
+	ResultID uint64 `json:"resultId"`
+	// Part is the part read, as the part of an address in
+	// dagger.io/cache.parts names it; empty for the whole entry.
+	Part string `json:"part,omitempty"`
 }
 
 // EngineStopEvent is the body of an engine.stop event.

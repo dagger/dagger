@@ -9,6 +9,9 @@ import (
 	"slices"
 	"sync/atomic"
 	"time"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // MergeValues merges a bundle of transferred values into the cache, and
@@ -44,6 +47,18 @@ import (
 // the bundle's parts as offers by what the target kept; the Cloud admits none
 // until it has the bytes (SetStoredPart). An expired root is answered expired,
 // and only what the live roots need is merged.
+//
+// A held row names by recipe a value the recipient holds: the Cloud's, in a
+// bundle the Cloud sends an engine, or the engine's own, in an export an
+// engine sends the Cloud. It lands on the recipe's current entry, which keeps
+// its value, and the rows that depend on it relocate onto that entry. It
+// holds when merge would keep the entry's value for a record of the recipe
+// with the row's expiry, judged against the cache before the merge, and, on
+// the Cloud, the Cloud holds the sending engine's holding of the row, and the
+// entry has every part the bundle puts on the row (staleHeldPartsLocked).
+// If any held row doesn't hold, the merge commits nothing and its reply names
+// every stale held row. A bundle that carries a held row and a record of the
+// same recipe is malformed.
 //
 // The reply reports every target as the commit left it, read under the same
 // lock, with the cache's generation and clock. Merge runs in no session and
@@ -138,6 +153,9 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 	defer p.op.finish(false)
 	from, input, prep := p.from, p.input, p.prep
 	p.input, p.prep = ValueBundle{}, nil
+	if len(prep.stale) > 0 {
+		return c.staleMergeReply(prep.stale), nil
+	}
 	// Reading an entry's complete parts captures its record, which needs the
 	// graph lock free. The reply reads them back only while that capture
 	// still describes the entry's value.
@@ -146,8 +164,11 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		c.testBeforeTransferCommit()
 	}
 	for {
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		locked := time.Now()
+		if c.testMergeCommitLocked != nil {
+			c.testMergeCommitLocked()
+		}
 		if target, wait := c.mergeAttachmentWaitLocked(prep); wait != nil {
 			c.egraphMu.Unlock()
 			if c.testMergeWaitsOnAttachment != nil {
@@ -161,10 +182,18 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 			continue
 		}
 		commit, err := c.planValueMergeLocked(ctx, from, prep)
+		var stale *mergeStaleError
+		if errors.As(err, &stale) {
+			c.egraphMu.Unlock()
+			return c.staleMergeReply(stale.ordinals), nil
+		}
 		if errors.Is(err, errMergeNeedsFullPrep) {
 			c.egraphMu.Unlock()
 			if prep, err = c.prepareValueMerge(ctx, input, false); err != nil {
 				return MergeReply{}, err
+			}
+			if len(prep.stale) > 0 {
+				return c.staleMergeReply(prep.stale), nil
 			}
 			continue
 		}
@@ -175,6 +204,9 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		reply, finish := c.commitValueMergeLocked(ctx, commit)
 		reply.Committed, reply.CommitHold = true, time.Since(locked)
 		c.egraphMu.Unlock()
+		// A recording engine records the commit's hold of the graph lock as
+		// an op of the merge's.
+		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.merge.commit", wcprof.OpOpts{}, locked, locked.Add(reply.CommitHold), wcprof.OutcomeOK)
 		err = finish(ctx)
 		if c.testAfterTransferCommit != nil {
 			c.testAfterTransferCommit()
@@ -214,6 +246,10 @@ type MergeReply struct {
 	// can still return an error, from releasing a replaced value after the
 	// lock; the reply then describes what the cache holds all the same.
 	Committed bool
+	// Stale are the held rows the cache didn't hold when the merge decided.
+	// A merge with stale rows commits nothing: the reply has only them, and
+	// the generation and clock.
+	Stale []TransferOrdinal
 	// CommitHold is how long the commit held egraphMu, from taking it to
 	// releasing it.
 	CommitHold time.Duration
@@ -224,6 +260,9 @@ type MergedValue struct {
 	Ordinal      TransferOrdinal
 	Number       uint64
 	Replacements uint64
+	// Revision is the target's revisions as the commit left them, for
+	// KnownRows on an engine.
+	Revision RowRevision
 	// ExpiresAtUnix is the target's own expiry (0: none).
 	ExpiresAtUnix int64
 	// Deps are the target's actual direct dependencies by number: a kept
@@ -287,6 +326,44 @@ type valueMergePrep struct {
 	// light are the records prepared from their call and offers only: the
 	// cache held a value for their recipe that merge keeps.
 	light map[uint64]bool
+	// held are the held rows, by ordinal. Each is prepared from its
+	// recipe's current entry's call frame, with no record or payload, and
+	// its plan has only its recipe. stale are the held rows the cache didn't
+	// hold at preparation: a merge with any commits nothing, and its
+	// preparation stops once they are known.
+	held  map[uint64]bool
+	stale []TransferOrdinal
+	// heldParts are, on the Cloud, the outputs an engine's bundle puts on
+	// its held rows, by ordinal, which the commit checks against the
+	// Cloud's own copies of the rows (staleHeldPartsLocked).
+	heldParts map[uint64][]TransferredOutput
+	// calls are the bundle's calls, each with its identity derived from
+	// its encoding, for the rows of the entries they returned.
+	calls []mergedCall
+}
+
+// mergedCall is a bundle's call to teach onto the entry of a row.
+type mergedCall struct {
+	value uint64
+	id    callIdentity
+}
+
+// mergeStaleError is planValueMergeLocked's answer when a held row doesn't
+// hold: the merge commits nothing, and answers with the stale rows.
+type mergeStaleError struct {
+	ordinals []TransferOrdinal
+}
+
+func (e *mergeStaleError) Error() string {
+	return fmt.Sprintf("merge values: %d held rows are stale", len(e.ordinals))
+}
+
+// staleMergeReply is the reply of a merge refused for stale held rows.
+func (c *Cache) staleMergeReply(stale []TransferOrdinal) MergeReply {
+	c.egraphMu.RLock()
+	generation := c.identity.Generation
+	c.egraphMu.RUnlock()
+	return MergeReply{Generation: generation, EngineTimeUnixNano: time.Now().UnixNano(), Stale: stale}
 }
 
 // errMergeNeedsFullPrep is planValueMergeLocked's answer when it installs a
@@ -312,6 +389,10 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 	if err != nil {
 		return nil, err
 	}
+	// A prefix output becomes the offer of the chain layers it names.
+	if err := ResolveChainPrefixes(&bundle); err != nil {
+		return nil, err
+	}
 	// The bundle is validated once, before its outputs become offers: each
 	// output with a chain is checked as the offer it becomes, against the
 	// same slots, and the ownership walk takes its owner's dependencies in
@@ -319,6 +400,12 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 	order, err := validateValueBundleShape(bundle)
 	if err != nil {
 		return nil, err
+	}
+	// The Cloud drops the parts below, but checks those on held rows against
+	// its own copies of the rows when it commits (staleHeldPartsLocked).
+	var heldParts map[uint64][]TransferredOutput
+	if c.blobBacked {
+		heldParts = heldRowOutputs(bundle)
 	}
 	c.embedMergedParts(&bundle)
 	var recordBytes map[uint64]int64
@@ -330,13 +417,20 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 		}
 		recordBytes = map[uint64]int64{}
 	}
-	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}}
+	prep := &valueMergePrep{bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, held: map[uint64]bool{}, heldParts: heldParts}
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
 		prep.index[uint64(row.Ordinal)] = row
 	}
+	if prep.calls, err = c.prepareMergedCalls(prep.bundle.Calls); err != nil {
+		return nil, err
+	}
+	heldFrames := c.resolveHeldRows(prep)
+	if len(prep.stale) > 0 {
+		return prep, nil
+	}
 
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if c.nextSharedResultID == 0 {
 		c.nextSharedResultID = 1
 	}
@@ -359,9 +453,76 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 	// ordinals one to one onto nonzero numbers, so what the validation
 	// checked at ordinals holds at provisional numbers: neither the records
 	// nor the private cache's ownership are checked again.
+	private, err := c.privateMergeCache(ctx, prep, heldFrames, relocate)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.planMergeIdentities(prep, private); err != nil {
+		return nil, err
+	}
+	if err := prep.checkHeldRecipes(); err != nil {
+		return nil, err
+	}
+
+	if skipKept && !c.blobBacked {
+		prep.light = c.keptMergeRecords(prep)
+	}
+	// Every other record is prepared with its payload.
+	if err := prep.prepareRecordPayloads(ctx, relocate); err != nil {
+		return nil, err
+	}
+	// A preparation cancelled after its last payload, or with every record
+	// light, returns its cause all the same.
+	if err := context.Cause(ctx); err != nil {
+		return nil, err
+	}
+	return prep, nil
+}
+
+// prepareMergedCalls derives the identity of each of a bundle's calls from its
+// encoding. Only an engine merges calls: the Cloud learns calls from spans.
+func (c *Cache) prepareMergedCalls(calls []TransferredCall) ([]mergedCall, error) {
+	if len(calls) == 0 {
+		return nil, nil
+	}
+	if c.blobBacked {
+		return nil, fmt.Errorf("merge values: the bundle carries calls, which only an engine merges")
+	}
+	merged := make([]mergedCall, 0, len(calls))
+	for i, transferred := range calls {
+		var pb callpbv1.Call
+		if err := pb.Decode(transferred.Call); err != nil {
+			return nil, fmt.Errorf("merge values: call %d: %w", i, err)
+		}
+		id, err := callIdentityFromPB(&pb)
+		if err != nil {
+			return nil, fmt.Errorf("merge values: call %d: %w", i, err)
+		}
+		merged = append(merged, mergedCall{value: uint64(transferred.Value), id: id})
+	}
+	return merged, nil
+}
+
+// privateMergeCache builds the private cache a preparation derives the
+// records' identities in: each record at its provisional number, relocated
+// in its call and offers, a held row standing in with its entry's own call
+// frame (heldFrames), and the bundle's ownership graph, with its offers'
+// owners. It holds no lock: the private cache is the preparation's own.
+func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, heldFrames map[uint64]*ResultCall, relocate PersistedRefVisitor) (*Cache, error) {
 	private := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
-	for _, id := range order {
+	for _, id := range prep.order {
 		row := prep.index[id]
+		if prep.held[id] {
+			// The held row stands in with its entry's own call frame, whose
+			// recipe the rows that depend on it derive theirs from. The
+			// frame is the cache's: nothing below relocates or rewires it.
+			rec := PersistedRecord{ResultID: prep.firstID + id - 1}
+			prep.records[id] = rec
+			res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, expiresAtUnix: row.ExpiresAtUnix}
+			res.storeResultCall(heldFrames[id])
+			private.putResultLocked(res)
+			continue
+		}
 		rec := row.Record
 		rec.ResultID = prep.firstID + id - 1
 		rec.Envelope.ResultID = rec.ResultID
@@ -395,6 +556,9 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 		private.putResultLocked(res)
 	}
 	for _, res := range private.resultsByID {
+		if prep.held[uint64(res.id)-prep.firstID+1] {
+			continue
+		}
 		if err := walkTransferCalls(res.loadResultCall(), func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
 			ref.shared = private.resultsByID[sharedResultID(ref.ResultID)]
 			return nil
@@ -412,32 +576,29 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 	if err := private.restoreOfferOwnersLocked(ctx); err != nil {
 		return nil, err
 	}
-	for i, id := range order {
-		plan, err := private.transferIdentityPlanOf(private.resultsByID[sharedResultID(prep.firstID+id-1)])
-		if err != nil {
-			return nil, err
+	return private, nil
+}
+
+// planMergeIdentities derives each record's identity in the private cache,
+// in dependency order; a held row's is its recipe alone.
+func (c *Cache) planMergeIdentities(prep *valueMergePrep, private *Cache) error {
+	for i, id := range prep.order {
+		res := private.resultsByID[sharedResultID(prep.firstID+id-1)]
+		plan := transferIdentityPlan{row: res, recipe: prep.index[id].Held}
+		if !prep.held[id] {
+			var err error
+			if plan, err = private.transferIdentityPlanOf(res); err != nil {
+				return err
+			}
 		}
 		prep.plans[id] = plan
 		if c.testTransferPlanPrepared != nil {
 			if err := c.testTransferPlanPrepared(i + 1); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
-
-	if skipKept && !c.blobBacked {
-		prep.light = c.keptMergeRecords(prep)
-	}
-	// Every other record is prepared with its payload.
-	if err := prep.prepareRecordPayloads(ctx, relocate); err != nil {
-		return nil, err
-	}
-	// A preparation cancelled after its last payload, or with every record
-	// light, returns its cause all the same.
-	if err := context.Cause(ctx); err != nil {
-		return nil, err
-	}
-	return prep, nil
+	return nil
 }
 
 // prepareRecordPayloads prepares every record but a light one with its
@@ -445,7 +606,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, input ValueBundle, skipKe
 // when ctx is cancelled before a payload.
 func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocate PersistedRefVisitor) error {
 	for _, id := range prep.order {
-		if prep.light[id] {
+		if prep.light[id] || prep.held[id] {
 			continue
 		}
 		if err := context.Cause(ctx); err != nil {
@@ -458,18 +619,94 @@ func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocate 
 	return nil
 }
 
+// checkHeldRecipes refuses a bundle that carries a held row and a record of
+// the same recipe, as malformed: the held row is checked against the
+// recipe's current entry, which the record could replace. It runs once every
+// row's recipe is derived; a preparation that finds a held row stale has
+// answered before then, committing nothing either way.
+func (prep *valueMergePrep) checkHeldRecipes() error {
+	if len(prep.held) == 0 {
+		return nil
+	}
+	held := map[string]uint64{}
+	for _, id := range prep.order {
+		if prep.held[id] {
+			held[prep.plans[id].recipe.String()] = id
+		}
+	}
+	for _, id := range prep.order {
+		if prep.held[id] {
+			continue
+		}
+		if other, ok := held[prep.plans[id].recipe.String()]; ok {
+			return fmt.Errorf("merge values: held row %d and row %d have the same recipe", other, id)
+		}
+	}
+	return nil
+}
+
+// resolveHeldRows marks the bundle's held rows and returns, by ordinal, the
+// call frame of each one's recipe's current entry, whose recipe it checks is
+// the row's. A held row is stale (prep.stale, sorted) when the commit would
+// find it so as the cache stands (planValueMergeLocked), or its entry's frame
+// derives another recipe, so the list is complete for this moment. It
+// derives the recipes after egraphMu is released, since deriving can read the
+// cache.
+func (c *Cache) resolveHeldRows(prep *valueMergePrep) map[uint64]*ResultCall {
+	frames := map[uint64]*ResultCall{}
+	c.egraphMu.RLock()
+	now := time.Now().Unix()
+	for _, row := range prep.bundle.Values {
+		if row.Held == "" {
+			continue
+		}
+		id := uint64(row.Ordinal)
+		prep.held[id] = true
+		cur := c.currentEntryForRecipeLocked(row.Held)
+		var frame *ResultCall
+		if !c.heldRowStaleLocked(cur, row.ExpiresAtUnix, now) {
+			frame = cur.loadResultCall()
+		}
+		if frame == nil {
+			prep.stale = append(prep.stale, row.Ordinal)
+			continue
+		}
+		frames[id] = frame
+	}
+	c.egraphMu.RUnlock()
+	for id, frame := range frames {
+		if recipe, err := frame.deriveRecipeDigest(c); err != nil || recipe != prep.index[id].Held {
+			prep.stale = append(prep.stale, TransferOrdinal(id))
+		}
+	}
+	slices.Sort(prep.stale)
+	return frames
+}
+
+// heldRowStaleLocked reports whether a held row with the expiry doesn't hold
+// on cur, its recipe's current entry: merge would keep cur's value for a
+// record of the recipe with that expiry (decideMergeRowLocked) only when cur
+// has a value, and the value hasn't expired or the row has. Requires egraphMu.
+func (c *Cache) heldRowStaleLocked(cur *sharedResult, expiresAtUnix, now int64) bool {
+	return cur == nil || cur.noValueLocked() || c.resultExpiredAtLocked(cur, now) && (expiresAtUnix == 0 || expiresAtUnix > now)
+}
+
 // prepareRecordPayload validates the record of ordinal id with its payload,
-// and relocates it in full to its provisional numbers with relocate.
+// as validateTransferRecord does, and relocates it in full to its provisional
+// numbers with relocate. One visit of the record's references both checks
+// and relocates them, since visiting decodes its payload; its offers, whose
+// references validateTransferRecordContent checks, are relocated apart.
 func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocate PersistedRefVisitor) error {
 	row := prep.index[id]
-	if err := validateTransferRecord(row.Record, row.DependencyIDs); err != nil {
+	direct, err := validateTransferRecordContent(row.Record, row.DependencyIDs)
+	if err != nil {
 		return fmt.Errorf("row %d: %w", id, err)
 	}
 	if _, err := mapTransferredOutputs(row.Record); err != nil {
 		return err
 	}
 	var refs []uint64
-	rec, err := VisitEncodedReferences(row.Record, func(ref *PersistedRef) error {
+	collect := func(ref *PersistedRef) error {
 		if err := relocate(ref); err != nil {
 			return err
 		}
@@ -477,9 +714,26 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocate PersistedRe
 			refs = append(refs, ref.ResultID)
 		}
 		return nil
+	}
+	checkDirect := directTransferReferences(direct)
+	bare := row.Record
+	bare.Envelope.PendingOffers = nil
+	rec, err := VisitEncodedReferences(bare, func(ref *PersistedRef) error {
+		if err := checkDirect(ref); err != nil {
+			return fmt.Errorf("row %d: %w", id, err)
+		}
+		return collect(ref)
 	})
 	if err != nil {
 		return err
+	}
+	if rec.Envelope.PendingOffers, err = clonePartOffers(row.Record.Envelope.PendingOffers); err != nil {
+		return err
+	}
+	for i := range rec.Envelope.PendingOffers {
+		if err := visitPersistedPartOffer(&rec.Envelope.PendingOffers[i], nil, collect); err != nil {
+			return err
+		}
 	}
 	slices.Sort(refs)
 	prep.refs[id] = slices.Compact(refs)
@@ -507,6 +761,9 @@ func (c *Cache) keptMergeRecords(prep *valueMergePrep) map[uint64]bool {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	for _, id := range prep.order {
+		if prep.held[id] {
+			continue
+		}
 		cur := c.currentEntryForRecipeLocked(prep.plans[id].recipe)
 		if cur == nil || cur.noValueLocked() {
 			continue
@@ -547,7 +804,7 @@ func (c *Cache) embedMergedParts(bundle *ValueBundle) {
 // untouched, without encoding its payloads: each record field by field, and
 // the outputs, which carry no payload, by a JSON round trip.
 func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
-	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots)}
+	out := ValueBundle{Version: in.Version, Roots: slices.Clone(in.Roots), Calls: slices.Clone(in.Calls), Layers: slices.Clone(in.Layers), Addresses: maps.Clone(in.Addresses)}
 	if in.Values != nil {
 		out.Values = make([]TransferredValue, len(in.Values))
 	}
@@ -702,8 +959,19 @@ type valueMergeCommit struct {
 	// final offer is an admitted one (selectMergedOffersLocked).
 	finalOffers map[*sharedResult]map[string]PersistedPartOffer
 	newOffers   map[*sharedResult]map[string]bool
-	roots       []MergedRoot
-	now         int64
+	// attached are the offers applyMergedOffersLocked attached, which the
+	// commit's finish queues for prefetch once egraphMu is released.
+	attached []mergeAttachedOffer
+	roots    []MergedRoot
+	now      int64
+}
+
+// mergeAttachedOffer is an offer a merge attached: the entry, its part key
+// and the offer.
+type mergeAttachedOffer struct {
+	res   *sharedResult
+	key   string
+	offer *partOffer
 }
 
 // planValueMergeLocked decides every record and runs every check that can
@@ -716,32 +984,19 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 	now := time.Now().Unix()
 	commit := &valueMergeCommit{prep: prep, from: from, byOrdinal: map[uint64]*mergeRow{}, now: now}
 
+	// A held row holds when merge would keep its recipe's current entry's
+	// value for a record with the row's expiry, as the cache stands before
+	// the merge, and, on the Cloud, the sender's holding of it is known.
+	if stale := c.staleHeldRowsLocked(prep, from, now); len(stale) > 0 {
+		return nil, &mergeStaleError{ordinals: stale}
+	}
+	if stale := c.staleHeldPartsLocked(prep); len(stale) > 0 {
+		return nil, &mergeStaleError{ordinals: stale}
+	}
+
 	// An expired root is skipped, with whatever only it needs.
-	merged := map[uint64]bool{}
-	var need func(uint64)
-	need = func(id uint64) {
-		if merged[id] {
-			return
-		}
-		merged[id] = true
-		row := prep.index[id]
-		for _, dep := range row.DependencyIDs {
-			need(dep)
-		}
-		for _, offer := range row.Record.Envelope.PendingOffers {
-			for _, dep := range offer.Owner.DependencyIDs {
-				need(dep)
-			}
-		}
-	}
-	for _, root := range prep.bundle.Roots {
-		expiry := prep.index[uint64(root.Ordinal)].ExpiresAtUnix
-		expired := root.ExpiresAtUnix != 0 && root.ExpiresAtUnix <= now || expiry != 0 && expiry <= now
-		commit.roots = append(commit.roots, MergedRoot{Ordinal: root.Ordinal, Expired: expired})
-		if !expired {
-			need(uint64(root.Ordinal))
-		}
-	}
+	var merged map[uint64]bool
+	merged, commit.roots = prep.liveClosure(now)
 
 	// A recipe is decided once, by its best record: the first unexpired one
 	// in dependency order, or the first if all have expired. The recipe's
@@ -801,6 +1056,136 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 		return nil, err
 	}
 	return commit, nil
+}
+
+// liveClosure returns the rows the bundle's unexpired roots need, judged at
+// now, and each root, in order, marked expired or not: an expired root is
+// skipped, with whatever only it needs. It reads the prepared bundle alone.
+func (prep *valueMergePrep) liveClosure(now int64) (map[uint64]bool, []MergedRoot) {
+	merged := map[uint64]bool{}
+	var roots []MergedRoot
+	var need func(uint64)
+	need = func(id uint64) {
+		if merged[id] {
+			return
+		}
+		merged[id] = true
+		row := prep.index[id]
+		for _, dep := range row.DependencyIDs {
+			need(dep)
+		}
+		for _, offer := range row.Record.Envelope.PendingOffers {
+			for _, dep := range offer.Owner.DependencyIDs {
+				need(dep)
+			}
+		}
+	}
+	for _, root := range prep.bundle.Roots {
+		expiry := prep.index[uint64(root.Ordinal)].ExpiresAtUnix
+		expired := root.ExpiresAtUnix != 0 && root.ExpiresAtUnix <= now || expiry != 0 && expiry <= now
+		roots = append(roots, MergedRoot{Ordinal: root.Ordinal, Expired: expired})
+		if !expired {
+			need(uint64(root.Ordinal))
+		}
+	}
+	return merged, roots
+}
+
+// staleHeldRowsLocked returns, sorted, the held rows that don't hold as the
+// cache stands (heldRowStaleLocked), with expiries judged at now. On the
+// Cloud, an engine's held row also needs the Cloud to hold that engine's
+// holding of the row: a held row teaches no holding, so the rows that depend
+// on it would name one the Cloud doesn't hold. The engine's retry carries
+// the row in full, which does. Requires egraphMu.
+func (c *Cache) staleHeldRowsLocked(prep *valueMergePrep, from CacheID, now int64) []TransferOrdinal {
+	var stale []TransferOrdinal
+	for _, id := range prep.order {
+		if !prep.held[id] {
+			continue
+		}
+		row := prep.index[id]
+		unheld := false
+		if c.blobBacked {
+			_, h := c.holdingLocked(HolderKey{Cache: from, Number: row.SenderNumber})
+			unheld = h == nil
+		}
+		if unheld || c.heldRowStaleLocked(c.currentEntryForRecipeLocked(prep.plans[id].recipe), row.ExpiresAtUnix, now) {
+			stale = append(stale, TransferOrdinal(id))
+		}
+	}
+	slices.Sort(stale)
+	return stale
+}
+
+// heldRowOutputs returns the bundle's outputs on its held rows, by ordinal.
+func heldRowOutputs(bundle ValueBundle) map[uint64][]TransferredOutput {
+	held := map[uint64]bool{}
+	for _, row := range bundle.Values {
+		if row.Held != "" {
+			held[uint64(row.Ordinal)] = true
+		}
+	}
+	var outputs map[uint64][]TransferredOutput
+	for _, output := range bundle.Outputs {
+		if id := uint64(output.Ordinal); held[id] {
+			if outputs == nil {
+				outputs = map[uint64][]TransferredOutput{}
+			}
+			outputs[id] = append(outputs[id], output)
+		}
+	}
+	return outputs
+}
+
+// staleHeldPartsLocked returns, sorted, the held rows whose parts the Cloud's
+// own copy of the row doesn't have: the current entry of the row's recipe,
+// which the row lands on, must have each part at its address, as
+// checkOutputPart checks a part against a record the bundle carries. A held
+// row whose recipe has no current entry is stale already
+// (staleHeldRowsLocked). Requires egraphMu.
+func (c *Cache) staleHeldPartsLocked(prep *valueMergePrep) []TransferOrdinal {
+	var stale []TransferOrdinal
+	for id, outputs := range prep.heldParts {
+		cur := c.currentEntryForRecipeLocked(prep.plans[id].recipe)
+		if cur == nil || !c.entryHasPartsLocked(cur, outputs) {
+			stale = append(stale, TransferOrdinal(id))
+		}
+	}
+	slices.Sort(stale)
+	return stale
+}
+
+// entryHasPartsLocked reports whether res's stored record has each of
+// outputs' parts, as checkOutputPart checks them. Requires egraphMu.
+func (c *Cache) entryHasPartsLocked(res *sharedResult, outputs []TransferredOutput) bool {
+	if res.noValueLocked() {
+		return false
+	}
+	rec, err := c.storedTransferRecordLocked(res)
+	if err != nil {
+		return false
+	}
+	mapped, err := mapTransferredOutputs(rec)
+	if err != nil {
+		return false
+	}
+	parts := make(map[string]CapturedCodecOutput, len(mapped))
+	for _, part := range mapped {
+		if key, err := partAddressKey(part.Address); err == nil {
+			parts[key] = part
+		}
+	}
+	for _, output := range outputs {
+		key, err := partAddressKey(output.Address)
+		if err != nil {
+			return false
+		}
+		part, ok := parts[key]
+		if !ok || checkOutputPart(output, part) != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // installsLight reports whether the commit installs a light record.
@@ -1131,6 +1516,8 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			row.res.attachDepsMu.Lock()
 			row.res.attachDepsWaitCh = make(chan struct{})
 			row.res.attachDepsErr = nil
+			// A merge has no span of its own to target.
+			row.res.attachHolder = newAttachHolder(wcprof.CurrentOpID(ctx), nil)
 			row.res.attachDepsMu.Unlock()
 			replaced = append(replaced, mergeReplacement{res: row.res, old: old})
 		}
@@ -1170,31 +1557,8 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 		}
 	}
 
-	// Identity, and the sender's holding. On the Cloud, the entries the
-	// identity joins to another class are affected too.
-	var cloudState *remoteCacheState
-	var joined func(*RemoteChange)
-	if c.blobBacked {
-		cloudState = c.remoteCacheLocked(commit.from)
-		joined = c.trackJoinsLocked()
-	}
-	for _, row := range commit.rows {
-		frame := row.plan.row.loadResultCall()
-		if row.action.installs() {
-			frame = row.res.loadResultCall()
-		}
-		c.applyPreparedResultIdentityLocked(ctx, row.res, frame, row.plan.recipe, row.plan.self, row.plan.inputs, row.plan.provenance, row.plan.recipe)
-		if !c.blobBacked {
-			// The Cloud entry that sent the record stores it, with the
-			// record's expiry.
-			row.res.noteCloudCopyLocked(row.value.SenderNumber, true, row.value.ExpiresAtUnix)
-			continue
-		}
-		c.mergeSenderHoldingLocked(ctx, cloudState, commit, row, &change)
-	}
-	if joined != nil {
-		joined(&change)
-	}
+	// Identity, and the sender's holding.
+	c.applyMergedIdentitiesLocked(ctx, commit, &change)
 
 	// Retention: an engine's retention edge, or the Cloud's stored root.
 	for i, root := range commit.prep.bundle.Roots {
@@ -1239,8 +1603,14 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 
 	reply := c.mergeReplyLocked(commit)
 	reply.Change = change
+	attached := commit.attached
 	finish := func(ctx context.Context) error {
 		cleanupCtx := context.WithoutCancel(ctx)
+		// Merged offers are prefetched as offered ones are. An offer the
+		// commit's failure path retired since is skipped when its job runs.
+		for _, a := range attached {
+			c.partOfferAccepted(cleanupCtx, a.res, a.key, a.offer)
+		}
 		c.releaseShareDuplicateHolds(cleanupCtx, duplicates)
 		err := errors.Join(errs, runOnReleaseFuncs(cleanupCtx, releases))
 		for _, r := range replaced {
@@ -1249,6 +1619,80 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 		return err
 	}
 	return reply, finish
+}
+
+// applyMergedIdentitiesLocked gives every row's entry the record's identity
+// and the sender's holding: on an engine its Cloud holding, on the Cloud the
+// sending engine's holding, adding to change. On the Cloud, the entries the
+// identity joins to another class are affected too. A held row teaches its
+// entry nothing but, on an engine, its Cloud holding. Requires egraphMu for
+// writing.
+func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMergeCommit, change *RemoteChange) {
+	var cloudState *remoteCacheState
+	var joined func(*RemoteChange)
+	if c.blobBacked {
+		cloudState = c.remoteCacheLocked(commit.from)
+		joined = c.trackJoinsLocked()
+	}
+	for _, row := range commit.rows {
+		if commit.prep.held[row.ordinal] {
+			// A held row teaches its entry nothing: it is the entry's own
+			// value. On the Cloud, the sender's holding of it is the one its
+			// record made when it arrived in full, and a held row, with no
+			// dependencies, has nothing to add to it.
+			if !c.blobBacked {
+				row.res.noteCloudCopyLocked(row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+			}
+			continue
+		}
+		frame := row.plan.row.loadResultCall()
+		if row.action.installs() {
+			frame = row.res.loadResultCall()
+		}
+		c.applyPreparedResultIdentityLocked(ctx, row.res, frame, row.plan.recipe, row.plan.self, row.plan.inputs, row.plan.provenance, row.plan.recipe)
+		if !c.blobBacked {
+			// The Cloud entry that sent the record stores it, with the
+			// record's expiry.
+			row.res.noteCloudCopyLocked(row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+			continue
+		}
+		c.mergeSenderHoldingLocked(ctx, cloudState, commit, row, change)
+	}
+	for _, merged := range commit.prep.calls {
+		row := commit.byOrdinal[merged.value]
+		if row == nil || row.res == nil {
+			continue
+		}
+		// The row's expiry is the earliest of its calls', the Cloud's
+		// value's own included. Once it has passed, the call has expired:
+		// as a local engine runs such a call again rather than hit, the
+		// engine isn't taught it, whatever value it holds.
+		if expires := row.value.ExpiresAtUnix; expires != 0 && expires <= commit.now {
+			continue
+		}
+		// As a local cache does when a call returns an existing entry, the
+		// entry takes the earliest expiry of its calls, though the entry
+		// was here before.
+		row.res.expiresAtUnix = mergeSharedResultExpiryUnix(row.res.expiresAtUnix, row.value.ExpiresAtUnix)
+		c.teachCallIdentityLocked(ctx, row.res, merged.id)
+	}
+	if joined != nil {
+		joined(change)
+	}
+}
+
+// teachCallIdentityLocked teaches res a call that returned it, as
+// indexWaitResultInEgraphLocked does when the call completes: the call's
+// recipe digest joins res's class, and the call's term, over its inputs'
+// classes, outputs that class. The call's inputs are known by digest only.
+// Requires egraphMu for writing.
+func (c *Cache) teachCallIdentityLocked(ctx context.Context, res *sharedResult, id callIdentity) {
+	provenance := make([]egraphInputProvenanceKind, len(id.inputs))
+	for i := range provenance {
+		provenance[i] = egraphInputProvenanceKindDigest
+	}
+	frame := &ResultCall{Kind: ResultCallKindField, Field: id.field, ExtraDigests: id.extras}
+	c.applyPreparedResultIdentityLocked(ctx, res, frame, id.recipe, id.self, id.inputs, provenance, id.recipe)
 }
 
 // mergeReplacement is a replacement in place that a merge made, for the work
@@ -1265,6 +1709,8 @@ type mergeReplacement struct {
 func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, committedAt int64) {
 	rec := row.rec
 	res.imported = true
+	// The record's own parts and offers decide its value's sources now.
+	res.unavailableParts = nil
 	if !c.blobBacked {
 		res.mergedAtUnixNano = committedAt
 	}
@@ -1386,8 +1832,8 @@ func (c *Cache) selectMergedOffersLocked(commit *valueMergeCommit) error {
 // while it attaches, every graph is part of the final one checkMergeGraphLocked
 // accepted, so no attachment's own check can refuse it. What the retired
 // offers' owners release is collected with the rest of the commit, at its
-// end, after the final offers hold their owners. Requires egraphMu for
-// writing.
+// end, after the final offers hold their owners. The offers it attaches go
+// to commit.attached, for prefetch. Requires egraphMu for writing.
 func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeCommit) (collectionQueue, error) {
 	var (
 		entries []*sharedResult
@@ -1426,11 +1872,14 @@ func (c *Cache) applyMergedOffersLocked(ctx context.Context, commit *valueMergeC
 				continue
 			}
 			offer.Owner = owner.record
-			if err := c.attachPartOfferLocked(res, offer.Address, &partOffer{record: offer, owner: owner}); err != nil {
+			attached := &partOffer{record: offer, owner: owner}
+			if err := c.attachPartOfferLocked(res, offer.Address, attached); err != nil {
 				more, releaseErr := c.releaseOfferOwnerLocked(ctx, owner)
 				queue = append(queue, more...)
 				errs = errors.Join(errs, err, releaseErr)
+				continue
 			}
+			commit.attached = append(commit.attached, mergeAttachedOffer{res: res, key: key, offer: attached})
 		}
 	}
 	return queue, errs
@@ -1526,7 +1975,7 @@ func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, qu
 func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement) error {
 	err := c.finishValueReplacement(ctx, r.res, r.old.release)
 	if err != nil {
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		queue := c.failMergedEntryLocked(ctx, r.res, nil)
 		releases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 		c.egraphMu.Unlock()
@@ -1536,6 +1985,7 @@ func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement)
 	if r.res.attachDepsWaitCh != nil {
 		r.res.attachDepsErr = err
 		close(r.res.attachDepsWaitCh)
+		r.res.attachHolder = nil
 	}
 	r.res.attachDepsMu.Unlock()
 	return err
@@ -1552,7 +2002,7 @@ func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) MergeReply {
 			// that nothing owns: there is no target to report.
 			continue
 		}
-		value := MergedValue{Ordinal: row.value.Ordinal, Number: uint64(res.id), Replacements: res.replacements, ExpiresAtUnix: res.expiresAtUnix}
+		value := MergedValue{Ordinal: row.value.Ordinal, Number: uint64(res.id), Replacements: res.replacements, Revision: RowRevision{Replacements: res.replacements, Transfer: res.transferRevision, Dependencies: res.dependencyOwnershipRevision}, ExpiresAtUnix: res.expiresAtUnix}
 		for dep := range res.deps {
 			value.Deps = append(value.Deps, uint64(dep))
 		}

@@ -246,6 +246,10 @@ func (*cacheVolumeTestImmutableRef) ExportChain(context.Context, bkconfig.RefCon
 	panic("unexpected ExportChain call")
 }
 
+func (*cacheVolumeTestImmutableRef) ExportFileChain(context.Context, bkconfig.RefConfig, string) (*bkcache.ExportChain, error) {
+	panic("unexpected ExportFileChain call")
+}
+
 func (*cacheVolumeTestImmutableRef) Finalize(context.Context) error {
 	panic("unexpected Finalize call")
 }
