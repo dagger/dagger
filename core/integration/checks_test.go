@@ -73,10 +73,9 @@ type TestCase {
 			var items, ordinary, groups int
 			for _, span := range checks {
 				require.True(t, span.CheckPassed)
-				group, _ := span.ExtraAttributes.Get(telemetryattrs.CheckCollectionGroupAttr)
 				item, _ := span.ExtraAttributes.Get(telemetryattrs.CheckCollectionItemAttr)
 				switch {
-				case string(group) == "true":
+				case span.CheckCollectionGroup:
 					groups++
 					require.Equal(t, "cases/check", span.CheckName)
 				case string(item) == "true":

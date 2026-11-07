@@ -248,6 +248,18 @@ type Client struct {
 	isCloudScaleOutClient bool
 }
 
+// nestedSessionPortEnv names the port of the session that an exec, or a
+// parent CLI (`dagger run`), serves to the processes it starts.
+const nestedSessionPortEnv = "DAGGER_SESSION_PORT"
+
+// NestedSession reports whether Connect joins the session of the exec or CLI
+// that started this process, as a nested client of it. The engine delivers a
+// nested client's telemetry to its ancestors as well as to the client itself.
+func NestedSession() bool {
+	_, ok := os.LookupEnv(nestedSessionPortEnv)
+	return ok
+}
+
 func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
 		params.LoadWorkspaceModules,
@@ -321,7 +333,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	defer telemetry.EndWithCause(span, &rerr)
 	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
 
-	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
+	nestedSessionPortVal, isNestedSession := os.LookupEnv(nestedSessionPortEnv)
 	if isNestedSession {
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
 		if err != nil {
