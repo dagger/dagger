@@ -1024,6 +1024,7 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRunt
 }
 
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) {
+	ctx = withWorkspaceInputSetup(ctx)
 	mod := fn.mod.Self()
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -1106,6 +1107,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
+	ctx = withWorkspaceInputFunction(ctx, fnCall)
 	err = runtime.Call(ctx, &execMD, fnCall, fn.mod)
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {

@@ -849,8 +849,13 @@ func (r ObjectResult[T]) call(
 	if field.Spec.Trivial {
 		ctx = ContextWithTrivialField(ctx)
 	}
+	var resolved func()
 	if s.callObserver != nil {
-		ctx = s.callObserver(ctx, req)
+		var done func(AnyResult, error)
+		ctx, resolved, done = s.callObserver(ctx, req)
+		if done != nil {
+			defer func() { done(res, err) }()
+		}
 	}
 	if s.telemetry != nil && !field.Spec.NoTelemetry {
 		recording := wcprof.Enabled(ctx)
@@ -891,6 +896,9 @@ func (r ObjectResult[T]) call(
 	}
 
 	res, err = cache.GetOrInitCall(ctx, clientMetadata.SessionID, s, req, func(ctx context.Context) (AnyResult, error) {
+		if resolved != nil {
+			defer resolved()
+		}
 		val, err := field.Func(ctx, r, inputArgs, view)
 		if err != nil {
 			return nil, err

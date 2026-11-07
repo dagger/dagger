@@ -456,7 +456,7 @@ func (*artifactsSchema) evaluateValue(ctx context.Context, parent dagql.AnyResul
 		return nil, fmt.Errorf("expected Artifact, got %T", parent.Unwrap())
 	}
 	arguments := args["arguments"].(core.JSON)
-	inputs, err := artifactInputs(ctx, artifact, arguments)
+	inputs, err := artifact.CallInputs(arguments)
 	if err != nil {
 		return nil, err
 	}
@@ -562,7 +562,7 @@ func newArtifactGenerator(ctx context.Context, a *core.Artifact, arguments core.
 	if err != nil {
 		return nil, err
 	}
-	inputs, err := artifactInputs(ctx, g.Artifact, arguments)
+	inputs, err := g.Artifact.CallInputs(arguments)
 	if err != nil {
 		return nil, err
 	}
@@ -669,42 +669,7 @@ func evaluateArtifact(ctx context.Context, artifact *core.Artifact, dest any, in
 }
 
 func (*artifactsSchema) arguments(_ context.Context, artifact *core.Artifact, _ struct{}) (dagql.ObjectResultArray[*core.FunctionArg], error) {
-	if artifact.Node != nil && artifact.Node.Parent != nil {
-		if obj := artifact.Node.Parent.ObjectType(); obj != nil {
-			if fn, ok := obj.FunctionByName(artifact.Node.Name); ok {
-				return fn.Args, nil
-			}
-		}
-	}
-	return dagql.ObjectResultArray[*core.FunctionArg]{}, nil
-}
-
-func artifactInputs(ctx context.Context, artifact *core.Artifact, raw core.JSON) ([]dagql.NamedInput, error) {
-	var values map[string]any
-	if err := json.Unmarshal(raw, &values); err != nil {
-		return nil, fmt.Errorf("artifact arguments: %w", err)
-	}
-	if len(values) == 0 {
-		return nil, nil
-	}
-	args, _ := (&artifactsSchema{}).arguments(ctx, artifact, struct{}{})
-	inputs := make([]dagql.NamedInput, 0, len(values))
-	for _, arg := range args {
-		value, ok := values[arg.Self().Name]
-		if !ok {
-			continue
-		}
-		input, err := arg.Self().TypeDef.Self().ToInput().Decoder().DecodeInput(value)
-		if err != nil {
-			return nil, fmt.Errorf("argument %s: %w", arg.Self().Name, err)
-		}
-		inputs = append(inputs, dagql.NamedInput{Name: arg.Self().Name, Value: input})
-		delete(values, arg.Self().Name)
-	}
-	if len(values) != 0 {
-		return nil, fmt.Errorf("unknown artifact arguments: %v", values)
-	}
-	return inputs, nil
+	return artifact.Arguments(), nil
 }
 
 func (*artifactsSchema) withoutURI(_ context.Context, parent *core.Artifacts, args struct{ URI string }) (*core.Artifacts, error) {

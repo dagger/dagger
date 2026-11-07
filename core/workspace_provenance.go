@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core/provenance"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -134,59 +136,25 @@ func (a *Artifact) Provenance(ctx context.Context) (*WorkspaceProvenance, error)
 		selectors[i].Origin = "module source"
 	}
 	var issues []string
+	if ws := a.Workspace.Self(); ws != nil {
+		env, err := workspaceHostEnvSelectors(ctx, ws)
+		if err != nil {
+			issues = append(issues, "cannot inspect module defaults search paths: "+err.Error())
+		}
+		selectors = append(selectors, env...)
+	}
 	if a.LoadFailure != nil {
 		issues = append(issues, "module failed to load: "+a.LoadFailure.Message)
 		return provenanceWithIssues(selectors, issues), nil
 	}
-	ctx, err := a.WorkspaceContext(ctx)
+	ctx, frame, err := a.plannedProvenanceCall(ctx)
 	if err != nil {
 		return nil, err
-	}
-	artifact, err := a.withEvaluationServers(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if a.View != nil {
-		ctx = dagql.WithResultScope(ctx, a.View)
-	}
-	node := artifact.Node
-	if node.Name == "stale" && node.Parent != nil && node.Parent.ObjectType() != nil && node.Parent.ObjectType().Name == "Generator" {
-		node = node.Parent
 	}
 	if a.Workspace.Self() == nil {
 		return nil, fmt.Errorf("artifact provenance requires a workspace")
 	}
 	workspace := workspaceInputKey(a.Workspace.Self())
-	var ancestors []*ModTreeNode
-	for parent := node.Parent; parent != nil && parent.Module.Self() != nil; parent = parent.Parent {
-		ancestors = append(ancestors, parent)
-	}
-	for _, parent := range slices.Backward(ancestors) {
-		frame, err := parent.plannedCall(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("prepare artifact provenance: %w", err)
-		}
-		inputs, err := workspaceInputsForCall(ctx, frame)
-		if err != nil {
-			return nil, err
-		}
-		regions, inputIssues := inputs.forWorkspace(workspace)
-		// A known whole-Workspace input already covers every possible path.
-		// Further receiver construction cannot narrow that dependency.
-		if slices.ContainsFunc(regions, func(s provenance.Selector) bool {
-			return s.Kind == provenance.WorkspaceRead && s.Path == "/" && !s.Conservative && len(s.Include) == 0 && len(s.Exclude) == 0
-		}) {
-			for _, region := range regions {
-				region.Origin = "receiver: " + region.Origin
-				selectors = append(selectors, region)
-			}
-			return provenanceWithIssues(selectors, inputIssues), nil
-		}
-	}
-	frame, err := node.plannedCall(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("prepare artifact provenance: %w", err)
-	}
 	add := func(input *dagql.ResultCall, origin string) error {
 		inputs, err := workspaceInputsForCall(ctx, input)
 		if err != nil {
@@ -222,6 +190,29 @@ func (a *Artifact) Provenance(ctx context.Context) (*WorkspaceProvenance, error)
 		}
 	}
 	return provenanceWithIssues(selectors, issues), nil
+}
+
+func (a *Artifact) plannedProvenanceCall(ctx context.Context, inputs ...dagql.NamedInput) (context.Context, *dagql.ResultCall, error) {
+	ctx, err := a.WorkspaceContext(ctx)
+	if err != nil {
+		return ctx, nil, err
+	}
+	artifact, err := a.withEvaluationServers(ctx)
+	if err != nil {
+		return ctx, nil, err
+	}
+	if a.View != nil {
+		ctx = dagql.WithResultScope(ctx, a.View)
+	}
+	node := artifact.Node
+	if node.Name == "stale" && node.Parent != nil && node.Parent.ObjectType() != nil && node.Parent.ObjectType().Name == "Generator" {
+		node = node.Parent
+	}
+	frame, err := node.plannedCall(ctx, inputs...)
+	if err != nil {
+		return ctx, nil, fmt.Errorf("prepare artifact provenance: %w", err)
+	}
+	return ctx, frame, nil
 }
 
 func provenanceWithIssues(selectors []provenance.Selector, issues []string) *WorkspaceProvenance {
@@ -267,7 +258,7 @@ func (a *Artifact) moduleSourceSelectors() []provenance.Selector {
 }
 
 func moduleSourceSelectors(ws *Workspace, mod *Module) []provenance.Selector {
-	var selectors []provenance.Selector
+	selectors := workspaceEnvSelectors(ws.Cwd)
 	for _, file := range []string{ws.ConfigFile, ws.LockFile} {
 		if file != "" {
 			selectors = append(selectors, provenance.Selector{Path: path.Clean("/" + file), Kind: provenance.ModuleSource})
@@ -280,10 +271,10 @@ func moduleSourceSelectors(ws *Workspace, mod *Module) []provenance.Selector {
 			return
 		}
 		seen[src] = true
-		if src.contextIsWorkspace(ws) {
-			selectors = append(selectors, provenance.Selector{Path: path.Clean("/" + src.SourceRootSubpath), Kind: provenance.ModuleSource})
+		if root, ok := moduleSourceWorkspaceRoot(ws, src); ok {
+			selectors = append(selectors, provenance.Selector{Path: path.Join(root, src.SourceRootSubpath), Kind: provenance.ModuleSource})
 			if len(src.RebasedIncludePaths) > 0 {
-				selectors = append(selectors, provenance.Selector{Path: "/", Include: slices.Clone(src.RebasedIncludePaths), Kind: provenance.ModuleSource})
+				selectors = append(selectors, provenance.Selector{Path: root, Include: slices.Clone(src.RebasedIncludePaths), Kind: provenance.ModuleSource})
 			}
 		}
 		for _, dep := range src.Dependencies {
@@ -299,4 +290,78 @@ func moduleSourceSelectors(ws *Workspace, mod *Module) []provenance.Selector {
 		source(mod.GetSource())
 	}
 	return selectors
+}
+
+func workspaceEnvSelectors(cwd string) []provenance.Selector {
+	var selectors []provenance.Selector
+	for dir := path.Clean("/" + cwd); ; dir = path.Dir(dir) {
+		selectors = append(selectors, provenance.Selector{Path: path.Join(dir, ".env"), Kind: provenance.ModuleSource})
+		if dir == "/" {
+			return selectors
+		}
+	}
+}
+
+func workspaceHostEnvSelectors(ctx context.Context, ws *Workspace) ([]provenance.Selector, error) {
+	root, ok := ws.LocalSourceHostPath()
+	if !ok {
+		return nil, nil
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	md, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, md)
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cwd, err := bk.AbsPath(ctx, ".")
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(root, cwd)
+	if err != nil {
+		return nil, err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, nil
+	}
+	selectors := workspaceEnvSelectors(filepath.ToSlash(rel))
+	for i := range selectors {
+		selectors[i].Origin = "module defaults search"
+	}
+	return selectors, nil
+}
+
+func moduleSourceWorkspaceRoot(ws *Workspace, src *ModuleSource) (string, bool) {
+	if origin := src.Workspace.Self(); origin != nil {
+		return "/", workspaceInputKey(origin) == workspaceInputKey(ws)
+	}
+	if src.Kind == ModuleSourceKindLocal && src.Local != nil {
+		if root, ok := ws.LocalSourceHostPath(); ok {
+			rel, err := filepath.Rel(root, src.Local.ContextDirectoryPath)
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return path.Clean("/" + filepath.ToSlash(rel)), true
+			}
+		}
+	}
+	if src.Kind == ModuleSourceKindDir {
+		if root, ok := ws.SourceDirectory(); ok {
+			rootID, rootErr := root.ID()
+			dir := src.ContextDirectory
+			if src.DirSrc != nil && src.DirSrc.OriginalContextDir.Self() != nil {
+				dir = src.DirSrc.OriginalContextDir
+			}
+			dirID, dirErr := dir.ID()
+			if rootErr == nil && dirErr == nil && rootID != nil && dirID != nil && rootID.EngineResultID() != 0 && rootID.EngineResultID() == dirID.EngineResultID() {
+				return "/", true
+			}
+		}
+	}
+	return "", false
 }

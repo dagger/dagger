@@ -196,11 +196,11 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 	return node.DagqlServer.Select(dagql.WithNonInternalTelemetry(ctx), receiver, dest, selector)
 }
 
-func (node *ModTreeNode) plannedCall(ctx context.Context) (*dagql.ResultCall, error) {
+func (node *ModTreeNode) plannedCall(ctx context.Context, inputs ...dagql.NamedInput) (*dagql.ResultCall, error) {
 	if node.RootValue != nil {
 		return node.RootValue.ResultCall()
 	}
-	receiver, selector, err := node.selection(ctx, nil)
+	receiver, selector, err := node.selection(ctx, inputs)
 	if err != nil {
 		return nil, err
 	}

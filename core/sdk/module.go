@@ -100,6 +100,7 @@ func (sdk *module) instantiate(ctx context.Context) (*moduleInstance, error) {
 		return nil, fmt.Errorf("create sdk module server: %w", err)
 	}
 	dag.Around(core.AroundFunc)
+	dag.ObserveCalls(core.ObserveWorkspaceInputs)
 	core.InstallCoreSchemaLoaders(dag)
 
 	if err := core.NewUserMod(sdk.mod).Install(ctx, dag); err != nil {

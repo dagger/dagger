@@ -56,9 +56,9 @@ func TestPlanResolvesInputsAndModuleWithoutRunningBody(t *testing.T) {
 	require.Len(t, plan.ImplicitInputs, 1)
 	require.Equal(t, "resolved", plan.ImplicitInputs[0].Value.StringValue)
 	var actual *CallRequest
-	srv.ObserveCalls(func(ctx context.Context, req *CallRequest) context.Context {
+	srv.ObserveCalls(func(ctx context.Context, req *CallRequest) (context.Context, func(), func(AnyResult, error)) {
 		actual = req.Clone()
-		return ctx
+		return ctx, nil, nil
 	})
 	var result String
 	require.NoError(t, srv.Select(ctx, srv.Root(), &result, Selector{Field: "planned"}))

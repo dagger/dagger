@@ -107,6 +107,7 @@ func buildSchema(
 		}
 		dag.View = view
 		dag.Around(AroundFunc)
+		dag.ObserveCalls(ObserveWorkspaceInputs)
 		dagintro.Install[*Query](dag)
 	}
 
