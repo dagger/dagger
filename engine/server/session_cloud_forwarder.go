@@ -521,11 +521,13 @@ func cloudExportStatus(err error) (int, bool) {
 	return status, err == nil
 }
 
-// cloudForwarders tracks the server's active forwarders: their stores are
-// kept from collection, and the engine's stop ends them.
+// cloudForwarders tracks the server's active forwarders, and the sessions'
+// Cloud metric queues: the forwarders' stores are kept from collection, and
+// the engine's stop ends both.
 type cloudForwarders struct {
-	mu     sync.Mutex
-	active map[*cloudForwarder]struct{}
+	mu      sync.Mutex
+	active  map[*cloudForwarder]struct{}
+	metrics map[*cloudMetricQueue]struct{}
 }
 
 func (r *cloudForwarders) add(f *cloudForwarder) {
@@ -543,6 +545,22 @@ func (r *cloudForwarders) remove(f *cloudForwarder) {
 	delete(r.active, f)
 }
 
+// addMetrics tracks q until it is released.
+func (r *cloudForwarders) addMetrics(q *cloudMetricQueue) {
+	r.mu.Lock()
+	if r.metrics == nil {
+		r.metrics = map[*cloudMetricQueue]struct{}{}
+	}
+	r.metrics[q] = struct{}{}
+	r.mu.Unlock()
+	go func() {
+		<-q.released
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		delete(r.metrics, q)
+	}()
+}
+
 // KeepSet returns the client IDs whose stores active forwarders read.
 func (r *cloudForwarders) KeepSet() map[string]bool {
 	r.mu.Lock()
@@ -554,15 +572,23 @@ func (r *cloudForwarders) KeepSet() map[string]bool {
 	return keep
 }
 
-// stopAll gives every forwarder until grace passes to finish on its own,
-// then stops the rest and waits, until ctx ends, for them to release.
+// stopAll gives every forwarder and metric queue until grace passes to finish
+// on its own, then stops the rest and waits, until ctx ends, for them to
+// release.
 func (r *cloudForwarders) stopAll(ctx context.Context, grace time.Duration) error {
 	r.mu.Lock()
 	active := make([]*cloudForwarder, 0, len(r.active))
 	for f := range r.active {
 		active = append(active, f)
 	}
+	metrics := make([]*cloudMetricQueue, 0, len(r.metrics))
+	for q := range r.metrics {
+		metrics = append(metrics, q)
+	}
 	r.mu.Unlock()
+	for _, q := range metrics {
+		q.finish()
+	}
 	graceCtx, cancel := context.WithTimeout(ctx, grace)
 	defer cancel()
 	for _, f := range active {
@@ -570,12 +596,23 @@ func (r *cloudForwarders) stopAll(ctx context.Context, grace time.Duration) erro
 			break
 		}
 	}
+	for _, q := range metrics {
+		if q.waitReleased(graceCtx) != nil {
+			break
+		}
+	}
 	var errs error
 	for _, f := range active {
 		f.stop(errCloudForwardEngineStop)
 	}
+	for _, q := range metrics {
+		q.stop()
+	}
 	for _, f := range active {
 		errs = errors.Join(errs, f.waitReleased(ctx))
+	}
+	for _, q := range metrics {
+		errs = errors.Join(errs, q.waitReleased(ctx))
 	}
 	return errs
 }
