@@ -108,6 +108,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	pkgs := []string{
 		"ca-certificates",
 		"mount", "umount", "posix-libc-utils", "coreutils",
+		// for the entrypoint to give the engine its own cgroup namespace
+		"util-linux-misc",
 		// for git
 		"git", "openssh-client",
 		// for SSHFS-backed volumes
