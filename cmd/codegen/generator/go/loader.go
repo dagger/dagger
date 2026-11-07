@@ -10,6 +10,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -30,7 +31,7 @@ func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.
 	defer telemetry.EndWithCause(span, &rerr)
 
 	fset := token.NewFileSet()
-	pkgs, err := packages.Load(&packages.Config{
+	cfg := &packages.Config{
 		Context: ctx,
 		Dir:     dir,
 		Tests:   false,
@@ -61,9 +62,22 @@ func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.
 		Logf: func(format string, args ...any) {
 			fmt.Printf(format+"\n", args...)
 		},
-	}, ".")
+	}
+	driverLog, err := exportDriverLog(cfg)
 	if err != nil {
 		return nil, nil, err
+	}
+	if driverLog != "" {
+		defer os.Remove(driverLog)
+	}
+	pkgs, err := packages.Load(cfg, ".")
+	if err != nil {
+		return nil, nil, err
+	}
+	if driverLog != "" {
+		if err := checkExportDriver(driverLog); err != nil {
+			return nil, nil, err
+		}
 	}
 	switch len(pkgs) {
 	case 0:
@@ -126,4 +140,74 @@ func listModule(ctx context.Context, dir string) (*packages.Module, error) {
 		return nil, fmt.Errorf("go list -m lists no module holding %s", abs)
 	}
 	return best, nil
+}
+
+// Environment variables of golangci-lint's export driver, which the Go SDK's
+// runtime sets for codegen to load packages through it.
+const (
+	// envExportArchives is the directory of the prebuilt archives the
+	// driver serves the export data of the module's imports from.
+	envExportArchives = "GOLANGCI_EXPORT_ARCHIVES"
+	// envExportDriverLog is a file the driver appends a JSON line to for
+	// each request: whether it declined, and why.
+	envExportDriverLog = "GOLANGCI_EXPORT_DRIVER_LOG"
+)
+
+// exportDriverLog sets cfg up for the export driver to report to a new file,
+// whose path it returns, when codegen loads packages through the driver: ""
+// otherwise.
+func exportDriverLog(cfg *packages.Config) (string, error) {
+	if os.Getenv(envExportArchives) == "" {
+		return "", nil
+	}
+	f, err := os.CreateTemp("", "export-driver-*.log")
+	if err != nil {
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	cfg.Env = append(os.Environ(), envExportDriverLog+"="+f.Name())
+	return f.Name(), nil
+}
+
+// checkExportDriver fails if the export driver declined a request or didn't
+// report on it. A driver that declines leaves go/packages to compile every
+// package the module imports, from source, and says nothing: codegen still
+// works, many times slower, on every load. The archives are built for this
+// load right before it, so a decline means they and the driver disagree:
+// the driver and the archives' manifest writer are at different manifest
+// formats, or the archives were built with another Go toolchain, platform or
+// build tags.
+func checkExportDriver(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read the export driver's report: %w", err)
+	}
+	served := false
+	dec := json.NewDecoder(bytes.NewReader(data))
+	for {
+		var rep struct {
+			Declined string `json:"declined"`
+		}
+		if err := dec.Decode(&rep); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			return fmt.Errorf("read the export driver's report: %w", err)
+		}
+		if rep.Declined != "" {
+			return fmt.Errorf("the Go SDK's export driver declined to serve codegen from the prebuilt archives: %s. "+
+				"Codegen stops rather than compile every package the module imports from source, which is many times slower. "+
+				"This is a bug in the Go SDK, please report it: the driver and the archives must agree on the manifest format "+
+				"(the engine's GolangciLintCommit and dagger/go's pin of golangci-lint), the Go version, the platform and the build tags",
+				rep.Declined)
+		}
+		served = true
+	}
+	if !served {
+		return fmt.Errorf("the Go SDK's export driver didn't serve codegen from the prebuilt archives (GOPACKAGESDRIVER=%q): "+
+			"codegen stops rather than compile every package the module imports from source. This is a bug in the Go SDK, please report it",
+			os.Getenv("GOPACKAGESDRIVER"))
+	}
+	return nil
 }
