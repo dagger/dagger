@@ -298,7 +298,7 @@ func addFlags(app *cli.App) {
 		},
 		cli.StringFlag{
 			Name:  "oci-max-parallelism",
-			Usage: "maximum number of parallel build steps that can be run at the same time (or \"num-cpu\" to automatically set to the number of CPUs). 0 means unlimited parallelism.",
+			Usage: "maximum number of container execs that can run at the same time (or \"num-cpu\" to automatically set to the number of CPUs). 0 means unlimited parallelism. An exec stops counting toward the limit once its command calls the Dagger API, as module function calls do.",
 		},
 		cli.StringFlag{
 			Name:  "oci-worker-gc-keepstorage",

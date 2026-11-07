@@ -105,6 +105,8 @@ type execState struct {
 	procInfo  *executor.ProcessInfo
 	rootMount executor.Mount
 	mounts    []executor.Mount
+	// slot is released when the command first queries the Dagger API.
+	slot *ExecSlot
 
 	cleanups             *cleanups.Cleanups
 	mountResources       enginetel.ExecMountResources
@@ -1396,6 +1398,9 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		// connections, which would kill every module function call that runs
 		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+			if req.URL.Path == engine.QueryEndpoint {
+				state.slot.Release()
+			}
 			if wcprof.Active() != nil {
 				// whether the request's session records is only known later
 				req = req.WithContext(wcprof.ContextWithRequestArrival(req.Context(), time.Now()))
@@ -1453,7 +1458,12 @@ func (c *Client) setupNewSessionEndpoint(ctx context.Context, state *execState) 
 	httpSrv := &http.Server{
 		// NOTE: no ReadHeaderTimeout (gosec G112), for the same reason as the
 		// nested client listener above.
-		Handler:   http.HandlerFunc(c.SessionHandler.ServeHTTPToNewSession),
+		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+			if req.URL.Path == engine.QueryEndpoint {
+				state.slot.Release()
+			}
+			c.SessionHandler.ServeHTTPToNewSession(resp, req)
+		}),
 		Protocols: protocols,
 	}
 	srvPool := pool.New().WithErrors()
