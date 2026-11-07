@@ -124,7 +124,10 @@ func TestDecompressStreamDecompressesAsContainerdDoes(t *testing.T) {
 
 // A decoder reused after a stream that was read in part, closed unread,
 // truncated or corrupt decodes the next stream exactly. Not parallel: the
-// next stream should get the decoder the last one returned.
+// next stream should get the decoder the last one returned. Every stream is
+// made before the first is opened: making one between a close and the next
+// open allocates enough for the garbage collector to empty the pool, which
+// left the count of reuses inside the race detector's noise.
 func TestDecompressStreamReusesDecodersWithoutStateBetweenStreams(t *testing.T) {
 	var last *zstd.Decoder
 	reused := 0
@@ -139,9 +142,17 @@ func TestDecompressStreamReusesDecodersWithoutStateBetweenStreams(t *testing.T) 
 		return rc
 	}
 	const rounds = 40
-	for i := range rounds {
-		data := payload(int64(100+i), 1<<20+i*997)
-		stream := zstdStream(t, data)
+	type round struct{ stream, next, nextStream, corrupt []byte }
+	streams := make([]round, rounds)
+	for i := range streams {
+		r := &streams[i]
+		r.stream = zstdStream(t, payload(int64(100+i), 1<<20+i*997))
+		r.next = payload(int64(1000+i), 300_000+i)
+		r.nextStream = zstdStream(t, r.next)
+		r.corrupt = corrupt(r.stream)
+	}
+	for i, r := range streams {
+		stream := r.stream
 		rc := open(stream)
 		switch i % 4 {
 		case 0: // read in part
@@ -155,20 +166,20 @@ func TestDecompressStreamReusesDecodersWithoutStateBetweenStreams(t *testing.T) 
 			require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 		case 3: // corrupt
 			require.NoError(t, rc.Close())
-			rc = open(corrupt(stream))
+			rc = open(r.corrupt)
 			_, err := io.ReadAll(rc)
 			require.Error(t, err)
 		}
 		require.NoError(t, rc.Close())
 
-		next := payload(int64(1000+i), 300_000+i)
-		rc = open(zstdStream(t, next))
+		rc = open(r.nextStream)
 		got, err := io.ReadAll(rc)
 		require.NoError(t, err)
 		require.NoError(t, rc.Close())
-		require.True(t, bytes.Equal(next, got), "round %d: the stream after a reused decoder's last one decoded wrong", i)
+		require.True(t, bytes.Equal(r.next, got), "round %d: the stream after a reused decoder's last one decoded wrong", i)
 	}
-	// The race detector drops a share of returned decoders on purpose.
+	// 99 opens follow another. The race detector drops a quarter of returned
+	// decoders on purpose, so about three quarters are reused under it.
 	require.Greater(t, reused, rounds/2, "streams got a decoder the last stream returned %d times", reused)
 }
 
