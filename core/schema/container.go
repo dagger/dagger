@@ -954,7 +954,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).`),
 			),
 
-		dagql.Func("imageRef", s.imageRef).
+		dagql.NodeFunc("imageRef", s.imageRef).
 			Doc(`The unique image reference which can only be retrieved immediately after the 'Container.From' call.`),
 
 		dagql.NodeFunc("manifest", s.manifest).
@@ -1450,15 +1450,17 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 
-		// Detach identity from the :tag and make the result purely
-		// content-addressed when From is operating on an otherwise untouched
-		// scratch container. Derived containers may carry state that From
+		// Make the result content-addressed by the resolved reference when From
+		// is operating on an otherwise untouched scratch container, so it no
+		// longer depends on the session or lock that resolved a tag. The full
+		// reference, not only its digest, names the content: the result reports
+		// it as its imageRef. Derived containers may carry state that From
 		// preserves, so they must retain their call identity.
 		if parent.Self().CanUseFromContentDigest() {
 			var err error
 			inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(
 				"container.from",
-				refName.Digest().String(),
+				refStr,
 				ctr.Platform.Format(),
 			))
 			if err != nil {
@@ -4855,8 +4857,15 @@ func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent dagql.
 	return parent, nil
 }
 
-func (s *containerSchema) imageRef(ctx context.Context, parent *core.Container, args struct{}) (string, error) {
-	return parent.ImageRefOrErr(ctx)
+func (s *containerSchema) imageRef(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (string, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := cache.EvaluateParts(ctx, parent, core.ContainerPartMetadata); err != nil {
+		return "", err
+	}
+	return parent.Self().ImageRefOrErr(ctx)
 }
 
 type containerManifestArgs struct {

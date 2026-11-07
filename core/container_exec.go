@@ -211,13 +211,13 @@ func (lazy *ContainerExecLazy) EvaluateContainerGroup(ctx context.Context, ctr *
 	switch group {
 	case ContainerLazyGroupMetadata:
 		return lazy.State.LazyState.EvaluateGroup(ctx, "Container.withExec", group, func(ctx context.Context) error {
-			// The exec changes no metadata: the child's plain fields are
-			// the parent's, settled without running anything. (This
-			// preserves the previously evaluated-state behavior for
-			// ImageRef too: WithExec clears it on the shell but the
-			// parent copy restores it, exactly as the old whole-body
-			// parent-state copy did.)
-			return materializeContainerMetadataFromParent(ctx, ctr, lazy.State.Parent)
+			// The exec changes no metadata other than ImageRef: the child's
+			// plain fields are the parent's, settled without running anything.
+			if err := materializeContainerMetadataFromParent(ctx, ctr, lazy.State.Parent); err != nil {
+				return err
+			}
+			ctr.ImageRef = ""
+			return nil
 		})
 	case ContainerLazyGroupExecOutputs:
 		return lazy.State.evaluateOutputs(ctx, ctr)

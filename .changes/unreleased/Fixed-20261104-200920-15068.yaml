@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Container.imageRef could fail right after Container.from while another
+  session was evaluating the same container; it now waits for that evaluation.
+  After withExec, imageRef now always returns its documented error instead of
+  sometimes returning the base image's reference.
+time: 2026-11-04T20:09:20Z
+custom:
+  Author: sipsma
+  PR: "15068"
