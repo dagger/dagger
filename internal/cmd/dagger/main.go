@@ -1086,6 +1086,9 @@ func Main() {
 
 	// Some global flags affect how the client connects, so read them before
 	// Cobra executes the command tree. Cobra still does the normal parse later.
+	if err := prepareModuleSDKInstall(rootCmd, os.Args[1:]); err != nil {
+		os.Exit(commandErrorStatus(err))
+	}
 	commandArgs := parseGlobalFlags(rootCmd, os.Args[1:])
 	invocationDir, err := pathutil.Getwd()
 	if err != nil {

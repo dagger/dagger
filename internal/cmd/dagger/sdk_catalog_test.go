@@ -39,6 +39,8 @@ func preserveSDKCommandHelp(t *testing.T) {
 }
 
 func TestWorkspaceSDKClassification(t *testing.T) {
+	previousInstallSDK := moduleInitInstallSDK
+	t.Cleanup(func() { moduleInitInstallSDK = previousInstallSDK })
 	for _, tc := range []struct {
 		name, registered, source, selected, installed, availableName string
 	}{
@@ -62,6 +64,10 @@ func TestWorkspaceSDKClassification(t *testing.T) {
 			catalog, err := classifyWorkspaceSDKs(cfg)
 			require.NoError(t, err)
 			got := catalog.Resolve(tc.selected)
+			moduleInitInstallSDK = true
+			withInstall, err := resolveSDKInit(catalog, tc.selected)
+			require.NoError(t, err)
+			require.Equal(t, got, withInstall, "opt-in must use exactly the catalog's classification")
 			require.Equal(t, tc.installed, got.InstalledName)
 			if tc.availableName != "" {
 				require.NotNil(t, got.Official)

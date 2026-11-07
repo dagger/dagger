@@ -964,27 +964,26 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 
 	clientCtr := engineClientContainer(ctx, t, c, devEngine)
 
-	// Seed the disk cache explicitly before checking its gauges.
-	out, err := clientCtr.WithExec([]string{
-		"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN",
-		"dagger", "-m", "core", "api", "query",
-	}, core.ContainerWithExecOpts{
-		Stdin: `{directory{withNewFile(path: "metrics-fixture", contents: "cached"){sync}}}`,
-	}).Stdout(ctx)
-	require.NoError(t, err, out)
-
 	var eg errgroup.Group
 	clientCtx, clientCancel := context.WithCancel(ctx)
 	t.Cleanup(clientCancel)
 	eg.Go(func() error {
+		// Keep the seeding session alive while checking the gauges: usage
+		// counts cache-owned results, which session cleanup can release.
+		// with-session lets the query share this one connected session.
 		_, err := clientCtr.
-			With(daggerNonNestedExec("listen")).
+			With(daggerNonNestedExec("-m", "core", "api", "with-session", "sh", "-ec", `
+dagger -m core api query <<'EOF'
+{directory{withNewFile(path: "metrics-fixture", contents: "cached"){sync}}}
+EOF
+exec sleep infinity
+`)).
 			Sync(clientCtx)
-		if strings.Contains(err.Error(), "context canceled") {
+		if err != nil && strings.Contains(err.Error(), "context canceled") {
 			return nil // expected, we cancel it later
 		}
 		if err != nil {
-			t.Logf("error running dagger listen: %v", err)
+			t.Logf("error running metrics seeding session: %v", err)
 		}
 		return err
 	})
@@ -1063,7 +1062,7 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 				}
 			case "dagger_local_cache_entries":
 				if num <= 0 {
-					t.Logf("expected dagger_local_cache_entries >= 0, got %v", num)
+					t.Logf("expected dagger_local_cache_entries > 0, got %v", num)
 					validatedAll = false
 				}
 			default:

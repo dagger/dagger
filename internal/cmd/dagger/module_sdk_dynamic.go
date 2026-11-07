@@ -14,10 +14,60 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
+
+// Read only the explicit install choice before config discovery. In particular,
+// neither local SDK constructor inspection nor remote -W config loading may
+// connect to an engine before a coding agent has chosen how to apply changes.
+// Other SDK invocations keep their existing flag discovery and setting rules.
+func prepareModuleSDKInstall(root *cobra.Command, args []string) error {
+	cmd, commandArgs := resolveCommand(root, args)
+	if cmd == nil || !strings.HasPrefix(commandName(cmd), "module init") {
+		return nil
+	}
+	flags := copyCommandFlags(cmd, "SDK install choice")
+	flags.SetInterspersed(true)
+	flags.VisitAll(func(flag *pflag.Flag) { flag.Value = ignoredFlagValue{Value: flag.Value} })
+	var installSDK, apply, noApply bool
+	private := pflag.NewFlagSet("choice", pflag.ContinueOnError)
+	private.BoolVar(&installSDK, "install-sdk", false, "")
+	if flag := flags.Lookup("install-sdk"); flag != nil {
+		flag.Value = private.Lookup("install-sdk").Value
+	}
+	if err := flags.Parse(commandArgs); err != nil {
+		return err
+	}
+	moduleInitInstallSDK = installSDK
+	if !installSDK {
+		return nil
+	}
+	for name, value := range map[string]*bool{
+		"auto-apply": &apply, "no-apply": &noApply,
+	} {
+		if flag := flags.Lookup(name); flag != nil {
+			// Use a private flag value, leaving Cobra's real values untouched.
+			private.BoolVar(value, name, false, "")
+			flag.Value = private.Lookup(name).Value
+		}
+	}
+	if err := flags.Parse(commandArgs); err != nil {
+		return err
+	}
+	_, err := sdkModuleDisposition(moduleInitCmd, apply, noApply, true, idtui.RunningInAgent())
+	return err
+}
+
+func resolveSDKInit(catalog *workspaceSDKCatalog, name string) (sdkResolution, error) {
+	resolved := catalog.Resolve(name)
+	if moduleInitInstallSDK && !strings.ContainsAny(name, "/@") && (resolved.InstalledName != "" || resolved.Official != nil) {
+		return resolved, nil
+	}
+	return resolved, catalog.InitError(name)
+}
 
 func moduleSDKCommandSelection(args []string) (string, bool) {
 	if len(args) == 0 {
@@ -170,11 +220,15 @@ func registerModuleSDKCommands(ctx context.Context, selectedSDK string) error {
 		return err
 	}
 	if selectedSDK != "" {
-		if err := catalog.InitError(selectedSDK); err != nil {
+		selected, err := resolveSDKInit(catalog, selectedSDK)
+		if err != nil {
 			return err
 		}
+		if selected.InstalledName == "" {
+			return registerModuleSDKCommandsFromConfig(ctx, cfg, cfgPath, nil, selectedSDK)
+		}
 	}
-	if cfg == nil || selectedSDK == "" {
+	if selectedSDK == "" {
 		return registerModuleSDKCommandsFromConfig(ctx, cfg, cfgPath, nil, selectedSDK)
 	}
 	return withEngineMetadata(ctx, "Load SDK options", client.Params{
@@ -196,8 +250,10 @@ func registerModuleSDKCommandsFromConfig(
 	if err != nil {
 		return err
 	}
+	var selected sdkResolution
 	if selectedSDK != "" {
-		if err := catalog.InitError(selectedSDK); err != nil {
+		selected, err = resolveSDKInit(catalog, selectedSDK)
+		if err != nil {
 			return err
 		}
 	}
@@ -214,7 +270,7 @@ func registerModuleSDKCommandsFromConfig(
 	cfgDir := filepath.Dir(cfgPath)
 	for _, sdk := range sdks {
 		var args []*modFunctionArg
-		if sdk.commandName == selectedSDK {
+		if sdk.commandName == selected.InstalledName {
 			sdkRef, err := sdkInitModuleEntrySource(sdk.entry, cfgDir)
 			if err != nil {
 				return err
@@ -242,7 +298,30 @@ func registerModuleSDKCommandsFromConfig(
 		if err != nil {
 			return err
 		}
+		if sdk.commandName == selected.InstalledName && selectedSDK != sdk.commandName {
+			initCmd.Use = selectedSDK
+		}
 		moduleInitCmd.AddCommand(initCmd)
+	}
+	if selectedSDK != "" && selected.InstalledName == "" && selected.Official != nil {
+		official := selected.Official
+		// Inspecting an uninstalled provider here resolves its dependencies into
+		// the session's live lock, outside the init changeset. Discover settings
+		// only for installed SDKs; the install builder owns all new resolutions.
+		cmd, err := newSDKModuleInitCommand(configuredSDK{commandName: selectedSDK}, nil)
+		if err != nil {
+			return err
+		}
+		cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+			if strings.HasPrefix(err.Error(), "unknown flag:") || strings.HasPrefix(err.Error(), "unknown shorthand flag:") {
+				return fmt.Errorf("%w\nSDK setting flags require installing the SDK first:\n  %s\n  dagger module init %s [flags]", err, official.InstallCommand(), official.RegisteredName)
+			}
+			return err
+		})
+		cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+			return runSDKModuleInitWithInstall(cmd, official.RegisteredName, official)
+		}
+		moduleInitCmd.AddCommand(cmd)
 	}
 	return nil
 }

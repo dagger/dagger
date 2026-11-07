@@ -306,11 +306,17 @@ func (s *workspaceSchema) resolveSDKModuleScopeClients(
 			return ctx, nil, err
 		}
 	}
-	_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, current.Self(), staged.ConfigDir)
-	if err != nil {
-		return operationCtx, nil, err
+	// A chained init supplies a lock shared with provider loading. Preserve it
+	// so client resolution and generation contribute to the same staged pins.
+	if lock, ok := operationCtx.Value(sdkModuleInitLockKey{}).(*workspace.Lock); ok && lock != nil {
+		operationCtx = withWorkspaceLookupLockOverride(operationCtx, lock)
+	} else {
+		_, overlayLock, err := s.prepareWorkspaceOverlayLock(operationCtx, current.Self(), staged.ConfigDir)
+		if err != nil {
+			return operationCtx, nil, err
+		}
+		operationCtx = withWorkspaceLookupLockOverride(operationCtx, overlayLock.Lock)
 	}
-	operationCtx = withWorkspaceLookupLockOverride(operationCtx, overlayLock.Lock)
 
 	clients := make([]dagql.ObjectResult[*core.ModuleSource], 0, len(targets))
 	for _, recordedTarget := range targets {

@@ -28,6 +28,10 @@ type sdkModuleInitArgs struct {
 	Entrypoint dagql.Optional[dagql.Boolean]
 }
 
+// sdkModuleInitLockKey shares a chained init's staged lock with generation,
+// without changing lock handling for ordinary init or client operations.
+type sdkModuleInitLockKey struct{}
+
 type sdkModuleDetectScopeArgs struct {
 	SDK string
 }
@@ -76,6 +80,10 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	}
 	ws := parent.Self()
 	staged, err := s.loadWorkspaceConfigForOverlay(ctx, ws, workspaceConfigMustExist, false)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	ctx, overlayLock, err := s.prepareSDKModuleInitLock(ctx, ws, staged.ConfigDir)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -145,11 +153,56 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	updated, err := s.stageSDKModuleConfig(ctx, parent, staged, nil)
+	updated, err := s.stageSDKModuleConfig(ctx, parent, staged, overlayLock)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.generateSDKModuleScope(ctx, updated, staged, selected, configScopePath, scopePath, scope)
+	generated, err := s.generateSDKModuleScope(ctx, updated, staged, selected, configScopePath, scopePath, scope)
+	if err != nil {
+		return generated, err
+	}
+	return s.stageSDKModuleInitLock(ctx, generated, staged, overlayLock)
+}
+
+func (s *workspaceSchema) prepareSDKModuleInitLock(
+	ctx context.Context,
+	ws *core.Workspace,
+	configDir string,
+) (context.Context, *workspaceOverlayLock, error) {
+	if !ws.OverlayPathTouched(ws.ConfigFile) {
+		return ctx, nil, nil
+	}
+	// A chained SDK install has not been applied. Keep provider loading
+	// (including defaultModulePath) and generation on its staged lock so
+	// session shutdown cannot write new pins before the user applies it.
+	_, overlayLock, err := s.prepareWorkspaceOverlayLock(ctx, ws, configDir)
+	if err != nil {
+		return ctx, nil, err
+	}
+	ctx = withWorkspaceLookupLockOverride(ctx, overlayLock.Lock)
+	ctx = context.WithValue(ctx, sdkModuleInitLockKey{}, overlayLock.Lock)
+	return ctx, overlayLock, nil
+}
+
+func (s *workspaceSchema) stageSDKModuleInitLock(
+	ctx context.Context,
+	generated dagql.ObjectResult[*core.Workspace],
+	staged *stagedWorkspaceConfig,
+	overlayLock *workspaceOverlayLock,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	if overlayLock == nil {
+		return generated, nil
+	}
+	// Providers can return their own staged lock edits. Retain those alongside
+	// lookups collected while loading the provider and generating this scope.
+	generatedLock, err := s.readWorkspaceLockForOverlay(ctx, generated.Self())
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := overlayLock.Lock.Merge(generatedLock); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("merge generated module lock entries: %w", err)
+	}
+	return s.stageSDKModuleConfig(ctx, generated, staged, overlayLock)
 }
 
 func optionalInitControl(value dagql.Optional[dagql.Boolean]) *bool {

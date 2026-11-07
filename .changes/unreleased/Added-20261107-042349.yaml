@@ -1,0 +1,6 @@
+kind: Added
+body: Discover official SDKs in module init help and sdk list, with actionable install guidance. Use dagger module init <sdk> --install-sdk to install an official SDK and initialize a module in one changeset; preview with --no-apply or apply with -y.
+time: 2026-11-07T04:23:49.720369013Z
+custom:
+    Author: kpenfound
+    PR: "0"

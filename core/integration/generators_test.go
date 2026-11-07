@@ -845,7 +845,7 @@ name = "project"
 			With(daggerNonNestedExecFail("module", "init", "missing", "-y")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `unknown command "missing" for "dagger module init"`)
+		require.Contains(t, out, `SDK "missing" is neither installed nor a known official SDK`)
 	})
 
 	t.Run("infers name and path", func(ctx context.Context, t *testctx.T) {

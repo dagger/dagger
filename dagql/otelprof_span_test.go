@@ -315,9 +315,10 @@ func TestCallOpStartsWithItsSpan(t *testing.T) {
 	require.NoError(t, err)
 	for _, ev := range events {
 		if ev.Type == "op" && ev.OpID > testOp.ID() && ev.OpKind == wcprof.OpKindCall.String() && header.Strings[ev.ClassID] == "Query.started" {
-			// the op's start is the span's on the recorder's monotonic clock,
-			// so read back on the wall clock it can be nanoseconds apart
-			require.InDelta(t, span.StartTime().UnixNano(), header.EpochUnixNano+ev.StartNS, float64(time.Microsecond), "the call op starts apart from its span")
+			// Compare on the recorder's monotonic clock. Reconstructing wall
+			// time from its process-start epoch includes any clock slew since
+			// that epoch, while the span carries the current wall time.
+			require.Equal(t, wcprof.TimeNS(span.StartTime()), ev.StartNS, "the call op starts apart from its span")
 			return
 		}
 	}
