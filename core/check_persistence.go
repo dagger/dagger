@@ -21,6 +21,7 @@ type persistedCheck struct {
 	Workspace       uint64                `json:"workspace,omitempty"`
 	Function        string                `json:"function,omitempty"`
 	Address         string                `json:"address,omitempty"`
+	CollectionItem  bool                  `json:"collectionItem,omitempty"`
 	Inputs          []persistedCheckInput `json:"inputs,omitempty"`
 	CacheTTL        int64                 `json:"cacheTTL,omitempty"`
 	Failure         string                `json:"failure,omitempty"`
@@ -69,6 +70,7 @@ func (c *Check) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncod
 	payload := persistedCheck{
 		Function:        c.Function,
 		Address:         c.Address,
+		CollectionItem:  c.CollectionItem,
 		RemoteArguments: json.RawMessage(c.RemoteArguments),
 		CacheTTL:        c.CacheTTL,
 		Failure:         c.Failure,
@@ -263,6 +265,7 @@ func (*Check) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecod
 	c := &Check{
 		Function:        payload.Function,
 		Address:         payload.Address,
+		CollectionItem:  payload.CollectionItem,
 		RemoteArguments: JSON(payload.RemoteArguments),
 		CacheTTL:        payload.CacheTTL,
 		Failure:         payload.Failure,

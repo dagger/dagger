@@ -226,6 +226,7 @@ func TestPersistedCheckKeepsInputsThroughRestart(t *testing.T) {
 	}).(dagql.ObjectResult[*Check])
 	addressed := planned.Self().Clone()
 	addressed.Address, addressed.Unaddressed = "dag://cold/lint", planned
+	addressed.CollectionItem = true
 	addressedRes := env.attach(t, ctx, cache, srv, "addressed-check", addressed)
 	ids := map[string]uint64{}
 	encodings := map[string]dagql.PersistedResultEnvelope{}
@@ -275,6 +276,7 @@ func TestPersistedCheckKeepsInputsThroughRestart(t *testing.T) {
 		require.Equal(t, wsID, persistedRowID(t, cache, restored.Workspace))
 		restoredAddressed := load("addressed")
 		require.Equal(t, "dag://cold/lint", restoredAddressed.Address)
+		require.True(t, restoredAddressed.CollectionItem, "round %d: a collection item stays one", round)
 		require.Equal(t, ids["planned"], persistedRowID(t, cache, restoredAddressed.Unaddressed))
 		require.Equal(t, want, literals(ctx, cache, srv, restoredAddressed.Inputs), "round %d", round)
 	}
