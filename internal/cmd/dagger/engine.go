@@ -156,12 +156,16 @@ func withEngineAction(
 	if err != nil {
 		return err
 	}
+	var collectorSpans *enginetel.SpanQueueCounts
+	// After the frontend has given the terminal back.
+	defer func() { reportCollectorSpanDrops(os.Stderr, collectorSpans) }()
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
 
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
-		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
+		ctx, cleanupTelemetry, spans := initEngineTelemetry(ctx)
+		collectorSpans = spans
 		if action != "" {
 			var span trace.Span
 			ctx, span = Tracer().Start(ctx, action, telemetry.Encapsulate())
@@ -470,6 +474,9 @@ func withLazySessions(
 	if sessionWorkspace != "" && params.Workspace == nil {
 		params.Workspace = &sessionWorkspace
 	}
+	var collectorSpans *enginetel.SpanQueueCounts
+	// After the frontend has given the terminal back.
+	defer func() { reportCollectorSpanDrops(os.Stderr, collectorSpans) }()
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
 		if before != nil {
@@ -478,7 +485,8 @@ func withLazySessions(
 
 		// Telemetry deliberately starts after the untraced setup phase (Cloud
 		// login), so credentials established there apply to the whole trace.
-		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
+		ctx, cleanupTelemetry, spans := initEngineTelemetry(ctx)
+		collectorSpans = spans
 		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 			if opts.Debug {
 				slog.Error("failed to emit telemetry", "error", err)
@@ -670,7 +678,10 @@ func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExpo
 	return cfg, cloud, collectorSpans
 }
 
-func initEngineTelemetry(ctx context.Context) (context.Context, func(error) error) {
+// initEngineTelemetry also returns the counts of the spans queued for the
+// user's own collector, or nil when there is none; they are final once the
+// returned cleanup has run.
+func initEngineTelemetry(ctx context.Context) (context.Context, func(error) error, *enginetel.SpanQueueCounts) {
 	cfg, cloud, collectorSpans := engineTelemetryConfig(ctx)
 	// Init replaces telemetry.SpanProcessors but appends to LogProcessors and
 	// MetricExporters, which may hold an earlier Init's entries.
@@ -778,7 +789,6 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error) erro
 		telemetry.EndWithCause(span, &rerr)
 		// telemetry.Close owns the remote providers created by Init.
 		telemetry.Close()
-		reportCollectorSpanDrops(os.Stderr, collectorSpans)
 		if diagnostics != nil {
 			// Remote processors above remain owned by telemetry.Close. Only
 			// close the local diagnostic processor here, with a short budget.
@@ -787,14 +797,15 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error) erro
 			cancel()
 		}
 		return drainErr
-	}
+	}, collectorSpans
 }
 
 // reportCollectorSpanDrops tells the user how many spans never reached their
 // own collector's exporter, once telemetry.Close has shut its processor down:
 // those dropped when its queue was full, and any still queued when the
-// shutdown ran out of time. It writes to stderr directly, like the local
-// diagnostics, which a session without a frontend doesn't have.
+// shutdown ran out of time. Callers write it to stderr after the frontend has
+// exited, so the TUI can't clear it, and a session without a frontend still
+// shows it.
 func reportCollectorSpanDrops(w io.Writer, counts *enginetel.SpanQueueCounts) {
 	if counts == nil {
 		return
