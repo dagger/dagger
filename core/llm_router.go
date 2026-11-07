@@ -311,9 +311,9 @@ func (endpoint *LLMEndpoint) credentialProvider() LLMProvider {
 }
 
 // DefaultModel returns the default model, if one is configured: the client's
-// explicit choice, else the first provider in llmProviderPriority with a
-// model set, else the first with a credential, using that provider's
-// built-in default model.
+// explicit choice, else the first provider in llmProviderPriority (except
+// Copilot) with a model set, else the first with a credential, using that
+// provider's default model.
 func (r *LLMRouter) DefaultModel() string {
 	model, _ := r.DefaultRoute()
 	return model
@@ -333,6 +333,11 @@ func (r *LLMRouter) DefaultRoute() (model string, provider LLMProvider) {
 		return r.providerDefaultModel(GitHubCopilot), GitHubCopilot
 	}
 	for _, provider := range llmProviderPriority {
+		// Setup saves Copilot's model even when the user declines to make
+		// it the default. That preference must not displace an API key.
+		if provider == GitHubCopilot {
+			continue
+		}
 		cfg := r.provider(provider)
 		if cfg.Model == "" {
 			continue
@@ -342,7 +347,7 @@ func (r *LLMRouter) DefaultRoute() (model string, provider LLMProvider) {
 			// configured model (e.g. gpt-5.5) shares OpenAI's naming.
 			return normalizeCodexModel(cfg.Model), provider
 		}
-		if provider == Local || provider == OpenRouter || provider == GitHubCopilot {
+		if provider == Local || provider == OpenRouter {
 			// These providers cannot be inferred from model names.
 			return cfg.Model, provider
 		}
@@ -364,7 +369,7 @@ func (r *LLMRouter) DefaultRoute() (model string, provider LLMProvider) {
 	case r.provider(Google).APIKey != "":
 		return modelDefaultGoogle, ""
 	case r.provider(GitHubCopilot).AuthToken != "":
-		return modelDefaultCopilot, GitHubCopilot
+		return r.providerDefaultModel(GitHubCopilot), GitHubCopilot
 	}
 	return "", ""
 }

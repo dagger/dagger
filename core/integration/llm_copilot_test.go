@@ -87,6 +87,36 @@ func (LLMSuite) TestCopilot(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = devEngine.Stop(ctx) })
 
+	for _, provider := range []string{"openai", "anthropic", "google"} {
+		t.Run("saved-model-with-"+provider+"-key", func(ctx context.Context, t *testctx.T) {
+			// Setup saves a per-provider model even if Copilot is not made
+			// the default. Cross the CLI assembly boundary with that config.
+			tc := copilotScenario{scenario: "priority-" + provider, model: "claude-sonnet-4.5", stored: true}
+			config := tc.config() + fmt.Sprintf("\n[llm.providers.%s]\nenabled = true\napi_key = 'fake-key'\n", provider)
+			cli := engineClientContainer(ctx, t, c, devEngine).
+				WithEnvVariable("DAGGER_CONFIG", "/config.toml").
+				WithNewFile("/config.toml", config).
+				WithWorkdir("/work")
+			// Route inspection is pure: no prompt or credential resolution,
+			// and the engine's denying proxy also prevents live API calls.
+			query := fmt.Sprintf(`{
+llm { provider model }
+explicit: llm(provider: %q) { provider model }
+copilot: llm(provider: "github-copilot") { provider model }
+}`, provider)
+			out, err := cli.WithExec([]string{"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "query"},
+				core.ContainerWithExecOpts{Stdin: query}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, provider, gjson.Get(out, "llm.provider").String())
+			require.Equal(t, provider, gjson.Get(out, "explicit.provider").String())
+			model := gjson.Get(out, "explicit.model").String()
+			require.NotEmpty(t, model)
+			require.Equal(t, model, gjson.Get(out, "llm.model").String(), "use the API-key provider's own default model")
+			require.Equal(t, "github-copilot", gjson.Get(out, "copilot.provider").String())
+			require.Equal(t, tc.model, gjson.Get(out, "copilot.model").String())
+		})
+	}
+
 	for _, tc := range []copilotScenario{
 		{scenario: "stored-valid", model: "gpt-4.1", stored: true},
 		{scenario: "stored-expired", model: "gpt-4.1", stored: true},
@@ -99,6 +129,8 @@ func (LLMSuite) TestCopilot(ctx context.Context, t *testctx.T) {
 		{scenario: "default-gpt", model: "gpt-4.1", stored: true, def: true},
 		{scenario: "default-gemini", model: "gemini-2.5-pro", stored: true, def: true},
 		{scenario: "env-default", model: "claude-sonnet-4.5", env: true, def: true},
+		{scenario: "env-default-gpt", model: "gpt-4.1", env: true, def: true},
+		{scenario: "env-default-gemini", model: "gemini-2.5-pro", env: true, def: true},
 	} {
 		t.Run(tc.scenario, func(ctx context.Context, t *testctx.T) {
 			config := tc.config()

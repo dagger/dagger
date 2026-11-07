@@ -180,10 +180,12 @@ is built, and hands OAuth tokens to a `CredentialSource` as before.
 `DefaultRoute()` honours the config's explicit `default_provider` /
 `default_model` first — fixing a latent bug where the file's Anthropic
 default lost to an exported `OPENAI_MODEL` because the engine chose by
-provider priority — and falls back to provider priority (openai,
-openai-codex, openrouter, anthropic, google, github-copilot, local; then by
-configured credential) when no default is set. Model environment variables
-can set the default during CLI assembly, in that same priority order;
+provider priority — and falls back to configured models in provider priority
+(openai, openai-codex, openrouter, anthropic, google, local), then by
+configured credential when no default is set. Copilot's saved per-provider
+model does not select the default route; it is used when Copilot is selected
+explicitly or is the credential fallback. Model environment variables
+can set an explicit default during CLI assembly;
 `COPILOT_MODEL` comes after Google's model variables. Copilot default routes
 stay pinned to `github-copilot` even for `claude-*`, `gpt-*` and `gemini-*`
 models, whose names overlap the other vendors. A sole Copilot credential

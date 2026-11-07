@@ -55,12 +55,12 @@ func TestCopilotRoute(t *testing.T) {
 func TestCopilotDefaultRoutePinned(t *testing.T) {
 	for _, model := range []string{"claude-sonnet-5", "gpt-4.1", "gemini-3.5-flash"} {
 		for _, explicit := range []bool{true, false} {
-			name := model + "/configured model"
+			name := model + "/default provider only"
 			if explicit {
 				name = model + "/explicit default"
 			}
 			t.Run(name, func(t *testing.T) {
-				cfg := &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
+				cfg := &engine.LLMConfig{DefaultProvider: "github-copilot", Providers: map[string]*engine.LLMProviderConfig{
 					"github-copilot": {Model: model, AuthToken: "env://TEST_COPILOT_BEARER"},
 					// An API key must not displace the user's Copilot choice.
 					"openai": {APIKey: "env://OPENAI_API_KEY"},
@@ -80,6 +80,7 @@ func TestCopilotDefaultRoutePinned(t *testing.T) {
 				assert.Equal(t, model, ep.Model)
 				ep, err = r.Route("", "github-copilot")
 				require.NoError(t, err)
+				assert.Equal(t, GitHubCopilot, ep.Provider)
 				assert.Equal(t, model, ep.Model)
 			})
 		}
@@ -91,11 +92,21 @@ func TestCopilotDefaultRoutePinned(t *testing.T) {
 		assert.Equal(t, modelDefaultCopilot, model)
 		assert.Equal(t, GitHubCopilot, provider)
 	})
+	t.Run("explicit provider uses saved model without a default", func(t *testing.T) {
+		r := routerWith(t, map[string]*engine.LLMProviderConfig{
+			"github-copilot": {AuthToken: "env://TEST_COPILOT_BEARER", Model: "claude-sonnet-5"},
+			"openai":         {APIKey: "env://OPENAI_API_KEY"},
+		})
+		ep, err := r.Route("", "github-copilot")
+		require.NoError(t, err)
+		assert.Equal(t, GitHubCopilot, ep.Provider)
+		assert.Equal(t, "claude-sonnet-5", ep.Model)
+	})
 }
 
 func TestCopilotNeverInferred(t *testing.T) {
 	r := routerWith(t, map[string]*engine.LLMProviderConfig{
-		"github-copilot": {AuthToken: "env://TEST_COPILOT_BEARER"},
+		"github-copilot": {AuthToken: "env://TEST_COPILOT_BEARER", Model: "gpt-4.1"},
 	})
 	for model, provider := range map[string]LLMProvider{
 		"claude-sonnet-5": Anthropic, "gpt-4.1": OpenAI, "gemini-3.5-flash": Google,
@@ -108,33 +119,87 @@ func TestCopilotNeverInferred(t *testing.T) {
 }
 
 func TestCopilotDefaultPriority(t *testing.T) {
-	for _, provider := range []LLMProvider{OpenAI, Anthropic, Google, OpenRouter} {
-		t.Run(string(provider), func(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		provider LLMProvider
+		config   *engine.LLMProviderConfig
+		model    string
+	}{
+		{"openai", OpenAI, &engine.LLMProviderConfig{APIKey: "env://API_KEY"}, modelDefaultOpenAI},
+		{"anthropic", Anthropic, &engine.LLMProviderConfig{APIKey: "env://API_KEY"}, modelDefaultAnthropic},
+		{"google", Google, &engine.LLMProviderConfig{APIKey: "env://API_KEY"}, modelDefaultGoogle},
+		{"openrouter", OpenRouter, &engine.LLMProviderConfig{APIKey: "env://API_KEY"}, modelDefaultOpenRouter},
+		{"codex subscription", OpenAICodex, &engine.LLMProviderConfig{AuthToken: "env://AUTH_TOKEN"}, modelDefaultCodex},
+		{"anthropic subscription", Anthropic, &engine.LLMProviderConfig{AuthToken: "env://AUTH_TOKEN"}, modelDefaultAnthropic},
+		{"openai compatible", Other, &engine.LLMProviderConfig{BaseURL: "https://model.example"}, modelDefaultMeta},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			slot := tc.provider
+			if slot == Other {
+				slot = OpenAI
+			}
 			r := routerWith(t, map[string]*engine.LLMProviderConfig{
-				"github-copilot": {AuthToken: "env://TEST_COPILOT_BEARER"},
-				string(provider): {APIKey: "env://API_KEY"},
+				"github-copilot": {AuthToken: "env://TEST_COPILOT_BEARER", Model: "gemini-3.5-flash"},
+				string(slot):     tc.config,
 			})
 			ep, err := r.Route("", "")
 			require.NoError(t, err)
-			assert.Equal(t, provider, ep.Provider)
-			// The configured-model priority also puts Copilot after API vendors.
-			r.Providers[provider].Model = r.providerDefaultModel(provider)
-			r.Providers[GitHubCopilot].Model = "gpt-4.1"
-			ep, err = r.Route("", "")
-			require.NoError(t, err)
-			assert.Equal(t, provider, ep.Provider)
+			assert.Equal(t, tc.provider, ep.Provider)
+			assert.Equal(t, tc.model, ep.Model)
 		})
 	}
+	for _, tc := range []struct {
+		provider LLMProvider
+		model    string
+	}{
+		{OpenAI, "gpt-custom"}, {OpenAICodex, "gpt-custom"},
+		{OpenRouter, "anthropic/claude-custom"}, {Anthropic, "claude-custom"},
+		{Google, "gemini-custom"}, {Local, "gpt-local"},
+	} {
+		t.Run(string(tc.provider)+" configured model", func(t *testing.T) {
+			r := routerWith(t, map[string]*engine.LLMProviderConfig{
+				"github-copilot":    {AuthToken: "env://TEST_COPILOT_BEARER", Model: "gpt-4.1"},
+				string(tc.provider): {Model: tc.model, BaseURL: "http://model.example", APICompat: "openai"},
+			})
+			ep, err := r.Route("", "")
+			require.NoError(t, err)
+			assert.Equal(t, tc.provider, ep.Provider)
+			assert.Equal(t, tc.model, ep.Model)
+		})
+	}
+	for _, savedModel := range []string{"", "claude-sonnet-5", "gpt-4.1", "gemini-3.5-flash"} {
+		t.Run("copilot only/"+savedModel, func(t *testing.T) {
+			r := routerWith(t, map[string]*engine.LLMProviderConfig{
+				"github-copilot": {AuthToken: "env://TEST_COPILOT_BEARER", Model: savedModel},
+			})
+			want := savedModel
+			if want == "" {
+				want = modelDefaultCopilot
+			}
+			model, provider := r.DefaultRoute()
+			assert.Equal(t, want, model)
+			assert.Equal(t, GitHubCopilot, provider)
+			assert.Equal(t, want, r.DefaultModel())
+			ep, err := r.Route("", "")
+			require.NoError(t, err)
+			assert.Equal(t, GitHubCopilot, ep.Provider)
+			assert.Equal(t, want, ep.Model)
+		})
+	}
+	t.Run("copilot model without a credential is not a default", func(t *testing.T) {
+		r := routerWith(t, map[string]*engine.LLMProviderConfig{
+			"github-copilot": {Model: "gpt-4.1"},
+		})
+		model, provider := r.DefaultRoute()
+		assert.Empty(t, model)
+		assert.Empty(t, provider)
+	})
+}
+
+func TestCopilotSmallModel(t *testing.T) {
 	r := routerWith(t, map[string]*engine.LLMProviderConfig{
 		"github-copilot": {AuthToken: "env://TEST_COPILOT_BEARER"},
 	})
-	model, provider := r.DefaultRoute()
-	assert.Equal(t, modelDefaultCopilot, model)
-	assert.Equal(t, GitHubCopilot, provider)
-	ep, err := r.Route("", "")
-	require.NoError(t, err)
-	assert.Equal(t, GitHubCopilot, ep.Provider)
-
 	small, ok := r.SmallModel(GitHubCopilot)
 	require.True(t, ok)
 	wantSmall, ok := modelcatalog.DefaultSmallModel("github-copilot")
@@ -144,7 +209,7 @@ func TestCopilotDefaultPriority(t *testing.T) {
 	small, ok = r.SmallModel(GitHubCopilot)
 	require.True(t, ok)
 	assert.Equal(t, "gpt-5-mini", small)
-	ep, err = r.Route(small, "github-copilot")
+	ep, err := r.Route(small, "github-copilot")
 	require.NoError(t, err)
 	assert.Equal(t, GitHubCopilot, ep.Provider)
 }
