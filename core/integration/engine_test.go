@@ -960,41 +960,42 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 				Protocol: core.NetworkProtocolTcp,
 			})
 	})
-	devEngine := devEngineContainerAsService(devEngineCtr)
+	// Hold this engine across setup and scraping, including gaps between execs.
+	devEngine, err := devEngineContainerAsService(devEngineCtr).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = devEngine.Stop(ctx, core.ServiceStopOpts{Kill: true}) })
 
-	clientCtr := engineClientContainer(ctx, t, c, devEngine)
+	// Seed through the same session whose connection we measure, and keep it
+	// alive throughout scraping. A separate seed session can be pruned after
+	// it closes, leaving the disk-size gauge at zero indefinitely.
+	token := rand.Text()
+	clientSvc, err := engineClientContainer(ctx, t, c, devEngine).
+		WithEnvVariable("DAGGER_SESSION_TOKEN", token).
+		WithDefaultArgs([]string{"dagger", "-m", "core", "api", "listen", "--listen", "0.0.0.0:8080"}).
+		WithExposedPort(8080).
+		AsService(core.ContainerAsServiceOpts{DisableDaggerInDagger: true}).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = clientSvc.Stop(ctx, core.ServiceStopOpts{Kill: true}) })
 
-	// Seed the disk cache explicitly before checking its gauges.
-	out, err := clientCtr.WithExec([]string{
-		"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN",
-		"dagger", "-m", "core", "api", "query",
-	}, core.ContainerWithExecOpts{
-		Stdin: `{directory{withNewFile(path: "metrics-fixture", contents: "cached"){sync}}}`,
+	metricsCtr := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "curl"}).
+		WithServiceBinding("dev-engine", devEngine).
+		WithServiceBinding("client", clientSvc)
+	out, err := metricsCtr.WithExec([]string{
+		"curl", "--fail", "--silent", "--show-error", "-u", token + ":",
+		"-H", "content-type: application/json", "-d",
+		`{"query":"{directory{withNewFile(path: \"metrics-fixture\", contents: \"cached\"){file(path: \"metrics-fixture\"){contents}}}}"}`,
+		"http://client:8080/query",
 	}).Stdout(ctx)
-	require.NoError(t, err, out)
-
-	var eg errgroup.Group
-	clientCtx, clientCancel := context.WithCancel(ctx)
-	t.Cleanup(clientCancel)
-	eg.Go(func() error {
-		_, err := clientCtr.
-			With(daggerNonNestedExec("listen")).
-			Sync(clientCtx)
-		if strings.Contains(err.Error(), "context canceled") {
-			return nil // expected, we cancel it later
-		}
-		if err != nil {
-			t.Logf("error running dagger listen: %v", err)
-		}
-		return err
-	})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"data":{"directory":{"withNewFile":{"file":{"contents":"cached"}}}}}`, out)
 
 	var foundAll bool
+	var lastMetrics map[string]float64
 	for range 30 {
-		out, err := clientCtr.
-			WithExec([]string{"apk", "add", "curl"}).
+		out, err := metricsCtr.
 			WithEnvVariable("CACHEBUST", rand.Text()).
-			WithExec([]string{"sh", "-c", "curl -s http://dev-engine:9090/metrics"}).
+			WithExec([]string{"curl", "--fail", "--silent", "--show-error", "http://dev-engine:9090/metrics"}).
 			Stdout(ctx)
 		if err != nil {
 			t.Logf("error fetching metrics: %v", err)
@@ -1011,6 +1012,7 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 			"dagger_local_cache_entries":                  {},
 		}
 		foundMetrics := map[string]float64{}
+		lastMetrics = foundMetrics
 		for _, line := range strings.Split(out, "\n") {
 			line = strings.TrimSpace(line)
 
@@ -1063,7 +1065,7 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 				}
 			case "dagger_local_cache_entries":
 				if num <= 0 {
-					t.Logf("expected dagger_local_cache_entries >= 0, got %v", num)
+					t.Logf("expected dagger_local_cache_entries > 0, got %v", num)
 					validatedAll = false
 				}
 			default:
@@ -1079,10 +1081,7 @@ func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 		// retry again in a second
 		time.Sleep(1 * time.Second)
 	}
-	require.True(t, foundAll, "did not find all expected metrics in output after 30 attempts")
-
-	clientCancel()
-	require.NoError(t, eg.Wait(), "error from client exec")
+	require.True(t, foundAll, "did not find all expected metrics in output after 30 attempts; last=%v", lastMetrics)
 }
 
 // TestSessionTeardownSurvivesNestedClientStartup kills the CLI while module

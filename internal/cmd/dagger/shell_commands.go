@@ -485,7 +485,7 @@ func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
 	}
 
 	_, model := target.llmSnapshot()
-	options := reasoningEffortOptions(model.Model)
+	options := reasoningEffortOptions(model)
 
 	var selected string
 	form := idtui.NewForm(
@@ -513,27 +513,32 @@ func (h *shellCallHandler) selectEffortInteractive(ctx context.Context) error {
 }
 
 // reasoningEffortOptions builds the option list for the interactive ".effort"
-// picker from the current model's catwalk metadata: the levels the model
+// picker from the current provider's catwalk model metadata: the levels the model
 // actually supports, plus "none" to disable reasoning. When the model isn't in
 // the catalog (e.g. a local or custom endpoint), or is a reasoning-capable
 // model without explicit levels, it falls back to the conventional
 // low/medium/high levels. Known models that can't reason at all get only
-// "none".
-func reasoningEffortOptions(model string) []huh.Option[string] {
+// "none". Only look across providers when the current provider is unknown.
+func reasoningEffortOptions(model modelSelection) []huh.Option[string] {
+	var metadata llmconfig.ModelInfo
+	var found bool
+	if model.Provider != "" {
+		metadata, found = llmconfig.ModelByID(model.Provider, model.Model)
+	} else {
+		for _, e := range llmconfig.ProviderEntries() {
+			metadata, found = llmconfig.ModelByID(e.ConfigKey, model.Model)
+			if found {
+				break
+			}
+		}
+	}
+
 	var levels []string
 	var defaultLevel string
-	canReason := true // unknown models get the conventional fallback below
-	for _, e := range llmconfig.ProviderEntries() {
-		m, ok := llmconfig.ModelByID(e.ConfigKey, model)
-		if !ok {
-			continue
-		}
-		canReason = m.CanReason
-		if m.CanReason {
-			levels = m.ReasoningLevels
-			defaultLevel = m.DefaultReasoningEffort
-			break
-		}
+	canReason := !found || metadata.CanReason // unknown models get the conventional fallback below
+	if found && metadata.CanReason {
+		levels = metadata.ReasoningLevels
+		defaultLevel = metadata.DefaultReasoningEffort
 	}
 	if canReason && len(levels) == 0 {
 		levels = []string{"low", "medium", "high"}

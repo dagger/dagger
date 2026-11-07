@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	toml "github.com/pelletier/go-toml"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfigSaveAndLoad(t *testing.T) {
@@ -638,4 +639,33 @@ func TestRefreshOAuthProviderConcurrent(t *testing.T) {
 	if provider.TokenExpiry <= time.Now().UnixMilli() {
 		t.Errorf("persisted TokenExpiry %d not in the future", provider.TokenExpiry)
 	}
+}
+
+func TestCopilotOAuthConfig(t *testing.T) {
+	useTempConfig(t, nil)
+	// Read the public TOML key directly, then check that writing a refreshed
+	// credential retains both its endpoint and absolute expiry.
+	require.NoError(t, os.MkdirAll(ConfigRoot, 0755))
+	require.NoError(t, os.WriteFile(ConfigFile, []byte(`
+[llm]
+default_provider = "github-copilot"
+[llm.providers.github-copilot]
+auth_type = "oauth"
+auth_token = "copilot"
+refresh_token = "github"
+token_expires_at = 1900000000000
+base_url = "https://enterprise.example"
+enabled = true
+`), 0600))
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "github-copilot", cfg.LLM.DefaultProvider)
+	p := cfg.LLM.Providers["github-copilot"]
+	require.True(t, p.IsOAuth())
+	require.Equal(t, int64(1900000000000), p.TokenExpiresAt)
+	require.Equal(t, "https://enterprise.example", p.BaseURL)
+	require.NoError(t, cfg.Save())
+	loaded, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, cfg, loaded)
 }

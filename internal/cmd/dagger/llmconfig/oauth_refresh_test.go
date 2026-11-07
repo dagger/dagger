@@ -15,6 +15,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dagger/dagger/engine/client/secretprovider"
+	"github.com/stretchr/testify/require"
 )
 
 // fakeOAuthServer stands in for a provider's token endpoint. It rotates the
@@ -816,4 +819,138 @@ func TestRefreshOAuthProviderChild(t *testing.T) {
 	if token == nil || token.AuthToken == "" {
 		t.Fatal("RefreshOAuthProviderIfNeeded() returned no token")
 	}
+}
+
+func TestCopilotStoredRefresh(t *testing.T) {
+	for _, due := range []bool{true, false} {
+		t.Run(fmt.Sprintf("due=%t", due), func(t *testing.T) {
+			t.Setenv(copilotTokenEnv, "")
+			s := newFakeCopilotServer(t)
+			s.api = "https://new-enterprise.example"
+			p := expiredOAuthProvider("stored-github")
+			p.BaseURL = "https://old-enterprise.example"
+			p.Model = "claude-model"
+			if !due {
+				p.TokenExpiresAt = time.Now().Add(time.Hour).UnixMilli()
+			}
+			useTempConfig(t, fileConfig("github-copilot", "claude-model", map[string]Provider{"github-copilot": p}))
+			ctx := t.Context()
+			if !due {
+				ctx = secretprovider.ContextWithRejectedSecretValue(ctx, copilotFingerprint(p.AuthToken))
+			}
+			for range 2 {
+				token, err := ResolveSecret(ctx, "github-copilot/auth_token")
+				require.NoError(t, err)
+				require.Equal(t, "copilot-1", string(token))
+			}
+			require.Equal(t, []string{"token stored-github"}, s.tokens())
+			cfg, err := Load()
+			require.NoError(t, err)
+			updated := cfg.LLM.Providers["github-copilot"]
+			require.Equal(t, "stored-github", updated.RefreshToken)
+			require.Equal(t, "copilot-1", updated.AuthToken)
+			require.Equal(t, s.expiresAt*1000, updated.TokenExpiresAt)
+			require.Equal(t, s.api, updated.BaseURL)
+			require.Equal(t, p.Model, updated.Model)
+			expiry, err := ResolveSecret(ctx, "github-copilot/auth_token_expires_at")
+			require.NoError(t, err)
+			require.Equal(t, time.Unix(s.expiresAt, 0).UTC().Format(time.RFC3339), string(expiry))
+			s.mu.Lock()
+			s.api = "https://another-enterprise.example"
+			s.mu.Unlock()
+			ctx = secretprovider.ContextWithRejectedSecretValue(t.Context(), copilotFingerprint("copilot-1"))
+			token, err := ResolveSecret(ctx, "github-copilot/auth_token")
+			require.NoError(t, err)
+			require.Equal(t, "copilot-2", string(token))
+			cfg, err = Load()
+			require.NoError(t, err)
+			require.Equal(t, "https://another-enterprise.example", cfg.LLM.Providers["github-copilot"].BaseURL)
+		})
+	}
+}
+
+func TestCopilotRevokedGitHubToken(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			t.Setenv(copilotTokenEnv, "")
+			s := newFakeCopilotServer(t)
+			s.status = status
+			useTempConfig(t, fileConfig("", "", map[string]Provider{"github-copilot": expiredOAuthProvider("revoked-github")}))
+			original, err := os.ReadFile(ConfigFile)
+			require.NoError(t, err)
+			for range 2 {
+				token, err := ResolveSecret(t.Context(), "github-copilot/auth_token")
+				require.Empty(t, token)
+				require.ErrorIs(t, err, ErrOAuthReauthenticationRequired)
+				require.ErrorContains(t, err, "run /setup in dagger agent to reauthenticate")
+				require.NotContains(t, err.Error(), "credential-leak-marker")
+			}
+			require.Len(t, s.tokens(), 1)
+			current, err := os.ReadFile(ConfigFile)
+			require.NoError(t, err)
+			require.Equal(t, original, current)
+		})
+	}
+}
+
+func TestCopilotStoredRejectsUnchangedExchangeToken(t *testing.T) {
+	isolateCopilotEnv(t)
+	s := newFakeCopilotServer(t)
+	s.sameToken = true
+	p := Provider{AuthType: "oauth", AuthToken: "rejected-token", RefreshToken: "github", TokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(), Enabled: true}
+	useTempConfig(t, fileConfig("", "", map[string]Provider{"github-copilot": p}))
+	ctx := secretprovider.ContextWithRejectedSecretValue(t.Context(), copilotFingerprint(p.AuthToken))
+	for _, ctx := range []context.Context{ctx, t.Context()} {
+		token, err := ResolveSecret(ctx, "github-copilot/auth_token")
+		require.ErrorContains(t, err, "rejected token")
+		require.Empty(t, token)
+	}
+	require.Len(t, s.tokens(), 1)
+}
+
+func TestCopilotStoredFailedProactiveExchangeRetries(t *testing.T) {
+	isolateCopilotEnv(t)
+	s := newFakeCopilotServer(t)
+	s.status = http.StatusServiceUnavailable
+	s.sameToken = true
+	p := expiredOAuthProvider("github")
+	p.AuthToken = "rejected-token" // Same token may be returned on a proactive exchange.
+	useTempConfig(t, fileConfig("", "", map[string]Provider{"github-copilot": p}))
+	for range 2 {
+		token, err := ResolveSecret(t.Context(), "github-copilot/auth_token")
+		require.Error(t, err)
+		require.Empty(t, token)
+	}
+	require.Len(t, s.tokens(), 1)
+	oauthRefreshMu.Lock()
+	key := ConfigFile + "\x00github-copilot"
+	last := lastRejectedOAuthRefresh[key]
+	last.at = time.Now().Add(-time.Minute)
+	lastRejectedOAuthRefresh[key] = last
+	lastOAuthRefresh[key] = last.at
+	oauthRefreshMu.Unlock()
+	s.mu.Lock()
+	s.status = 0
+	s.mu.Unlock()
+	token, err := ResolveSecret(t.Context(), "github-copilot/auth_token")
+	require.NoError(t, err)
+	require.Equal(t, "rejected-token", string(token), "a proactive exchange failure must not mark a token as API-rejected")
+	require.Len(t, s.tokens(), 2)
+}
+
+func TestCopilotDisabledLoginIgnoresPreviousExchangeError(t *testing.T) {
+	isolateCopilotEnv(t)
+	s := newFakeCopilotServer(t)
+	s.status = http.StatusUnauthorized
+	useTempConfig(t, fileConfig("", "", map[string]Provider{"github-copilot": expiredOAuthProvider("github")}))
+	_, err := ResolveSecret(t.Context(), "github-copilot/auth_token")
+	require.ErrorIs(t, err, ErrOAuthReauthenticationRequired)
+	cfg, err := Load()
+	require.NoError(t, err)
+	p := cfg.LLM.Providers["github-copilot"]
+	p.Enabled = false
+	cfg.LLM.Providers["github-copilot"] = p
+	require.NoError(t, cfg.Save())
+	require.NoError(t, RefreshOAuthTokensIfNeeded(t.Context()))
+	require.Len(t, s.tokens(), 1)
 }

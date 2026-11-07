@@ -43,6 +43,7 @@ type ProviderEntry struct {
 var providerEntries = []ProviderEntry{
 	{"Anthropic (API key)", "anthropic", "anthropic", false},
 	{"Anthropic (Claude Code OAuth)", "anthropic-oauth", "anthropic", true},
+	{"GitHub Copilot (subscription)", "github-copilot", "github-copilot", true},
 	{"Google (Gemini)", "google", "google", false},
 	{"Local / custom endpoint", "local", "local", false},
 	{"OpenAI (API key)", "openai", "openai", false},
@@ -57,11 +58,12 @@ func ProviderEntries() []ProviderEntry {
 
 // catwalkProviderID maps our provider keys to catwalk provider IDs.
 var catwalkProviderID = map[string]catwalk.InferenceProvider{
-	"anthropic":    catwalk.InferenceProviderAnthropic,
-	"openai":       catwalk.InferenceProviderOpenAI,
-	"openai-codex": catwalk.InferenceProviderOpenAI,
-	"google":       catwalk.InferenceProviderGemini,
-	"openrouter":   catwalk.InferenceProviderOpenRouter,
+	"anthropic":      catwalk.InferenceProviderAnthropic,
+	"openai":         catwalk.InferenceProviderOpenAI,
+	"openai-codex":   catwalk.InferenceProviderOpenAI,
+	"google":         catwalk.InferenceProviderGemini,
+	"github-copilot": catwalk.InferenceProviderCopilot,
+	"openrouter":     catwalk.InferenceProviderOpenRouter,
 }
 
 var (
