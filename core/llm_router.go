@@ -551,6 +551,9 @@ func (r *LLMRouter) Endpoint(ctx context.Context, model, provider string) (*LLME
 	}
 	if route.AuthToken != "" {
 		reload := credentialReloader(route.resolveCredential, route.AuthToken, route.AuthTokenExpiresAt)
+		if endpoint.Provider == GitHubCopilot && route.AuthToken == "llmconfig://github-copilot/auth_token" {
+			reload = copilotCredentialReloader(route.resolveCredential)
+		}
 		// Resolve once now, so a misconfigured credential fails at routing
 		// rather than on the first request, and the SDK client is built with
 		// the current token.
@@ -559,6 +562,9 @@ func (r *LLMRouter) Endpoint(ctx context.Context, model, provider string) (*LLME
 			return nil, fmt.Errorf("resolve %s auth token: %w", endpoint.Provider, err)
 		}
 		endpoint.AuthToken = cred.Token
+		if cred.BaseURL != "" {
+			endpoint.BaseURL = cred.BaseURL
+		}
 		if r.credentialContext != nil {
 			credentialCtx, err := r.credentialContext(ctx)
 			if err != nil {

@@ -20,9 +20,9 @@ func TestCopilotRoute(t *testing.T) {
 		t.Run(baseURL, func(t *testing.T) {
 			md := &engine.ClientMetadata{ClientID: "copilot-test", SessionID: "copilot-session"}
 			ctx, env := newLLMEndpointTestClientCtx(t, md)
-			env.set("llmconfig://github-copilot/auth_token", "copilot-token")
+			env.set("env://TEST_COPILOT_BEARER", "copilot-token")
 			r, err := NewLLMRouter(&engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
-				"github-copilot": {BaseURL: baseURL, AuthToken: "llmconfig://github-copilot/auth_token", ReasoningEffort: "high"},
+				"github-copilot": {BaseURL: baseURL, AuthToken: "env://TEST_COPILOT_BEARER", ReasoningEffort: "high"},
 			}}, md)
 			require.NoError(t, err)
 			wantURL := baseURL
@@ -61,7 +61,7 @@ func TestCopilotDefaultRoutePinned(t *testing.T) {
 			}
 			t.Run(name, func(t *testing.T) {
 				cfg := &engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
-					"github-copilot": {Model: model, AuthToken: "llmconfig://github-copilot/auth_token"},
+					"github-copilot": {Model: model, AuthToken: "env://TEST_COPILOT_BEARER"},
 					// An API key must not displace the user's Copilot choice.
 					"openai": {APIKey: "env://OPENAI_API_KEY"},
 				}}
@@ -95,7 +95,7 @@ func TestCopilotDefaultRoutePinned(t *testing.T) {
 
 func TestCopilotNeverInferred(t *testing.T) {
 	r := routerWith(t, map[string]*engine.LLMProviderConfig{
-		"github-copilot": {AuthToken: "llmconfig://github-copilot/auth_token"},
+		"github-copilot": {AuthToken: "env://TEST_COPILOT_BEARER"},
 	})
 	for model, provider := range map[string]LLMProvider{
 		"claude-sonnet-5": Anthropic, "gpt-4.1": OpenAI, "gemini-3.5-flash": Google,
@@ -111,7 +111,7 @@ func TestCopilotDefaultPriority(t *testing.T) {
 	for _, provider := range []LLMProvider{OpenAI, Anthropic, Google, OpenRouter} {
 		t.Run(string(provider), func(t *testing.T) {
 			r := routerWith(t, map[string]*engine.LLMProviderConfig{
-				"github-copilot": {AuthToken: "llmconfig://github-copilot/auth_token"},
+				"github-copilot": {AuthToken: "env://TEST_COPILOT_BEARER"},
 				string(provider): {APIKey: "env://API_KEY"},
 			})
 			ep, err := r.Route("", "")
@@ -126,7 +126,7 @@ func TestCopilotDefaultPriority(t *testing.T) {
 		})
 	}
 	r := routerWith(t, map[string]*engine.LLMProviderConfig{
-		"github-copilot": {AuthToken: "llmconfig://github-copilot/auth_token"},
+		"github-copilot": {AuthToken: "env://TEST_COPILOT_BEARER"},
 	})
 	model, provider := r.DefaultRoute()
 	assert.Equal(t, modelDefaultCopilot, model)
@@ -215,9 +215,9 @@ func TestCopilotRequests(t *testing.T) {
 
 			md := &engine.ClientMetadata{ClientID: "copilot-test", SessionID: "copilot-session"}
 			ctx, env := newLLMEndpointTestClientCtx(t, md)
-			env.set("llmconfig://github-copilot/auth_token", "copilot-token-1")
+			env.set("env://TEST_COPILOT_BEARER", "copilot-token-1")
 			r, err := NewLLMRouter(&engine.LLMConfig{Providers: map[string]*engine.LLMProviderConfig{
-				"github-copilot": {BaseURL: server.URL + "/api", AuthToken: "llmconfig://github-copilot/auth_token"},
+				"github-copilot": {BaseURL: server.URL + "/api", AuthToken: "env://TEST_COPILOT_BEARER"},
 			}}, md)
 			require.NoError(t, err)
 			ep, err := r.Endpoint(ctx, model, "github-copilot")
@@ -243,7 +243,7 @@ func TestCopilotRequests(t *testing.T) {
 				require.NotEmpty(t, resp.Content)
 				assert.Equal(t, "done", resp.Content[0].Text)
 				// Simulate CLI rotation without rebuilding the routed endpoint/client.
-				env.set("llmconfig://github-copilot/auth_token", "copilot-token-2")
+				env.set("env://TEST_COPILOT_BEARER", "copilot-token-2")
 				clock.Advance(credentialRefreshTTL + time.Second)
 			}
 			// A caller with a bearer snapshot but no live source still uses the

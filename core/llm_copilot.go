@@ -1,6 +1,10 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -9,6 +13,35 @@ import (
 )
 
 const copilotBaseURL = "https://api.githubcopilot.com"
+
+func copilotCredentialReloader(resolve func(context.Context, string) (string, error)) credentialResolver {
+	return func(ctx context.Context) (Credential, error) {
+		value, err := resolve(ctx, engine.CopilotCredentialURI)
+		if err != nil {
+			return Credential{}, err
+		}
+		var snapshot engine.CopilotCredential
+		if err := json.Unmarshal([]byte(value), &snapshot); err != nil {
+			// Never include the credential payload in diagnostics.
+			return Credential{}, fmt.Errorf("decode Copilot credential snapshot")
+		}
+		if snapshot.Token == "" || snapshot.BaseURL == "" || snapshot.ExpiresAt.IsZero() {
+			return Credential{}, fmt.Errorf("incomplete Copilot credential snapshot")
+		}
+		if _, err := copilotAPIOrigin(snapshot.BaseURL); err != nil {
+			return Credential{}, err
+		}
+		return Credential{Token: snapshot.Token, ExpiresAt: snapshot.ExpiresAt, BaseURL: snapshot.BaseURL}, nil
+	}
+}
+
+func copilotAPIOrigin(baseURL string) (*url.URL, error) {
+	origin, err := url.Parse(baseURL)
+	if err != nil || (origin.Scheme != "https" && origin.Scheme != "http") || origin.Host == "" || origin.User != nil || (origin.Path != "" && origin.Path != "/") || origin.RawQuery != "" || origin.Fragment != "" {
+		return nil, fmt.Errorf("invalid Copilot API origin")
+	}
+	return origin, nil
+}
 
 func (r *LLMRouter) routeCopilotModel() *LLMEndpoint {
 	cfg := r.provider(GitHubCopilot)

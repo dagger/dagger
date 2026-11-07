@@ -2,6 +2,7 @@ package llmconfig
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -401,6 +402,9 @@ var (
 //   - auth_token_expires_at: the token's true expiry, RFC 3339 UTC, or empty
 //     when unknown. The engine reads it right after auth_token, so it sees
 //     the expiry of a token that read just rotated.
+//   - github-copilot/credential: the Copilot engine's atomic companion to
+//     auth_token, encoding one refresh's token, true expiry and API origin.
+//     Keeping them in a single secret read also avoids races with other CLIs.
 //
 // A provider that is absent or disabled is a not-found error.
 func ResolveSecret(ctx context.Context, path string) ([]byte, error) {
@@ -410,6 +414,26 @@ func ResolveSecret(ctx context.Context, path string) ([]byte, error) {
 	}
 	if !IsProvider(name) {
 		return nil, fmt.Errorf("llmconfig: unknown provider %q", name)
+	}
+	if "llmconfig://"+path == engine.CopilotCredentialURI {
+		// Read all three values from the same refreshed snapshot, rather than
+		// racing another CLI's refresh between individual secret reads.
+		p, err := RefreshOAuthProviderAfterRejection(ctx, name, secretprovider.RejectedSecretValue(ctx))
+		if err != nil {
+			return nil, err
+		}
+		if p == nil || p.AuthToken == "" {
+			return nil, fmt.Errorf("llmconfig: provider %q has no OAuth login: %w", name, secrets.ErrNotFound)
+		}
+		token, err := resolveStored(ctx, p.AuthToken)
+		if err != nil {
+			return nil, err
+		}
+		baseURL := p.BaseURL
+		if baseURL == "" {
+			baseURL = copilotAPIBaseURL
+		}
+		return json.Marshal(engine.CopilotCredential{Token: string(token), ExpiresAt: p.TokenExpiresAtTime(), BaseURL: baseURL})
 	}
 	switch field {
 	case FieldAPIKey, FieldAuthToken, FieldAuthTokenExpiresAt:

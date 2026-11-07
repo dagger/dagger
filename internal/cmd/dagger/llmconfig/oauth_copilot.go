@@ -14,8 +14,8 @@ import (
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
-	"github.com/dagger/dagger/internal/version"
 )
 
 // Copilot's public OAuth client, also used by GitHub's Copilot language server.
@@ -35,9 +35,9 @@ var (
 
 func copilotHeaders(req *http.Request) {
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Copilot-Integration-Id", "vscode-chat")
-	req.Header.Set("User-Agent", "dagger/"+version.Version())
-	req.Header.Set("Editor-Version", "dagger/"+version.Version())
+	for name, value := range engine.CopilotHeaders() {
+		req.Header.Set(name, value)
+	}
 }
 
 // RefreshCopilotOAuthToken exchanges a GitHub token for a Copilot API bearer.
@@ -50,7 +50,12 @@ func RefreshCopilotOAuthToken(ctx context.Context, provider *Provider) (*Provide
 	if provider.RefreshToken == "" {
 		return nil, errNoRefreshToken
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, copilotTokenURL, nil)
+	endpoint := copilotTokenURL
+	// Internal integration-test seam for a launched CLI, never a user setting.
+	if override := os.Getenv("_DAGGER_TEST_COPILOT_TOKEN_URL"); override != "" {
+		endpoint = override
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +97,7 @@ func copilotJSON(req *http.Request, out any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		if req.URL.String() == copilotTokenURL && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+		if req.Method == http.MethodGet && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
 			return fmt.Errorf("%w: GitHub rejected the Copilot GitHub token (HTTP %d); run /setup in dagger agent to reauthenticate", ErrOAuthReauthenticationRequired, resp.StatusCode)
 		}
 		return fmt.Errorf("copilot authentication endpoint returned HTTP %d", resp.StatusCode)

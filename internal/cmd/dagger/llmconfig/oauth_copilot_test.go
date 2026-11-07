@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/dagger/dagger/internal/version"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +35,7 @@ func newFakeCopilotServer(t *testing.T) *fakeCopilotServer {
 		w.Header().Set("Content-Type", "application/json")
 		for name, value := range map[string]string{
 			"Accept": "application/json", "Copilot-Integration-Id": "vscode-chat",
-			"User-Agent": "dagger/" + version.Version(), "Editor-Version": "dagger/" + version.Version(),
+			"User-Agent": engine.CopilotHeaders()["User-Agent"], "Editor-Version": engine.CopilotHeaders()["Editor-Version"],
 		} {
 			if got := r.Header.Get(name); got != value {
 				t.Errorf("%s = %q, want %q", name, got, value)
