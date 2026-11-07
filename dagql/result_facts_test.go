@@ -5,10 +5,68 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCompletedResultFactsSurviveProducerCancellation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cache, srv := persistedListTestCache(t, "")
+		frame := cacheTestIntCall("completed-source-facts")
+		prepared := ResultFact{Namespace: "source-test", Payload: json.RawMessage(`{"path":"/producer"}`)}
+		queried := ResultFact{Namespace: "source-test", Payload: json.RawMessage(`{"path":"/queried"}`)}
+		waiterFact := ResultFact{Namespace: "source-test", Payload: json.RawMessage(`{"path":"/waiter"}`)}
+		producer := &CallRequest{ResultCall: frame, ConcurrencyKey: "completed-source-facts", ResultFacts: []ResultFact{prepared}}
+		started, release := make(chan struct{}), make(chan struct{})
+		producerCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		producerDone := make(chan error, 1)
+		go func() {
+			_, err := cache.GetOrInitCall(producerCtx, "test-session", srv, producer, func(context.Context) (AnyResult, error) {
+				close(started)
+				<-release
+				producer.ResultFacts = append(producer.ResultFacts, queried)
+				return cacheTestIntResult(frame, 42), nil
+			})
+			producerDone <- err
+		}()
+		<-started
+
+		type outcome struct {
+			result AnyResult
+			err    error
+		}
+		waiter := producer.Clone()
+		waiter.ResultFacts = []ResultFact{waiterFact}
+		waiterDone := make(chan outcome, 1)
+		go func() {
+			result, err := cache.GetOrInitCall(ctx, "test-session", srv, waiter, func(context.Context) (AnyResult, error) {
+				t.Error("waiter must reuse the producer's execution")
+				return nil, nil
+			})
+			waiterDone <- outcome{result, err}
+		}()
+		synctest.Wait()
+		cache.callsMu.Lock()
+		var waiters int
+		for _, call := range cache.ongoingCalls {
+			waiters += call.waiters
+		}
+		cache.callsMu.Unlock()
+		require.Equal(t, 2, waiters)
+		cancel()
+		require.ErrorIs(t, <-producerDone, context.Canceled)
+		close(release)
+		got := <-waiterDone
+		require.NoError(t, got.err)
+		facts, complete, err := cache.ResultFacts(ctx, "test-session", &ResultCallRef{ResultID: uint64(got.result.cacheSharedResult().id)}, "source-test")
+		require.NoError(t, err)
+		require.True(t, complete)
+		require.ElementsMatch(t, []ResultFact{prepared, queried, waiterFact}, facts)
+	})
+}
 
 func TestResultFactsFollowEquivalentValuesAcrossCollectionRestartAndImport(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "facts.db")

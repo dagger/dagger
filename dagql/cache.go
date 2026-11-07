@@ -3398,6 +3398,8 @@ type ongoingCall struct {
 	waiters                     int
 	err                         error
 	val                         AnyResult
+	resultFacts                 []ResultFact
+	resultFactsIncomplete       bool
 	sharedWorkCtx               context.Context
 	clientScopeLease            *engine.ClientLifecycleLease
 	releaseOperationLeaseFn     func(context.Context) error
@@ -6415,6 +6417,8 @@ func (c *Cache) getOrInitCallInner(
 		val, err := fn(oc.sharedWorkCtx)
 		oc.err = err
 		oc.val = val
+		oc.resultFacts = cloneResultFacts(req.ResultFacts)
+		oc.resultFactsIncomplete = req.ResultFactsIncomplete
 		execOp.EndWithResult(profErrOutcome(err), profResultID(val))
 		EndProfSpan(execSpan, &err)
 
@@ -7398,7 +7402,10 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	// Facts must be on the value before the first publication unlock. That
 	// unlock can let a share worker capture its envelope before waiters return.
-	c.applyRequestFactsLocked(req, oc.res)
+	publication := *req
+	publication.ResultFacts = unionResultFacts(req.ResultFacts, oc.resultFacts)
+	publication.ResultFactsIncomplete = req.ResultFactsIncomplete || oc.resultFactsIncomplete
+	c.applyRequestFactsLocked(&publication, oc.res)
 	// The first E unlock of this publication, after direct-edge validation,
 	// handoff ownership and attachment-barrier setup are all decided. A queue
 	// hold taken here can retain a registered row for one pass if the
