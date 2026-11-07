@@ -6922,9 +6922,11 @@ func locatePath(
 
 	// NB(vito): iterate in reverse order so we'll find deeper mounts first
 	for i := len(container.Mounts) - 1; i >= 0; i-- {
-		mnt := container.Mounts[i]
+		// Look at each mount in place: only the match is copied, so a
+		// container with many mounts costs no allocation per mount passed.
+		mnt := &container.Mounts[i]
 
-		if containerPath == mnt.Target || strings.HasPrefix(containerPath, mnt.Target+"/") {
+		if rest, ok := strings.CutPrefix(containerPath, mnt.Target); ok && (rest == "" || rest[0] == '/') {
 			if mnt.TmpfsSource != nil {
 				return nil, "", fmt.Errorf("%s: cannot retrieve path from tmpfs", containerPath)
 			}
@@ -6941,7 +6943,8 @@ func locatePath(
 			if err != nil {
 				return nil, "", err
 			}
-			return &mnt, relPath, nil
+			found := *mnt
+			return &found, relPath, nil
 		}
 	}
 
