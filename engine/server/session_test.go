@@ -5918,6 +5918,30 @@ func TestReadWorkspaceLockStateDoesNotWriteInvalidLock(t *testing.T) {
 	require.Equal(t, lockContents, reader.files[lockPath])
 }
 
+func TestReadWorkspaceLockStateRejectsMalformedLock(t *testing.T) {
+	t.Parallel()
+
+	ws := &core.Workspace{
+		ConfigFile: "dagger.toml",
+		LockFile:   "dagger.lock",
+	}
+	ws.SetHostPath("/repo")
+	lockPath := filepath.Join("/repo", "dagger.lock")
+	lockContents := []byte(strings.Join([]string{
+		`[["version","2"]]`,
+		`["","oci-sha",["alpine:latest"],"sha256:deadbeef"]`,
+		`["","oci-sha"]`,
+	}, "\n"))
+	reader := &fakeWorkspaceLockStateReader{
+		files: map[string][]byte{
+			lockPath: lockContents,
+		},
+	}
+
+	_, err := readWorkspaceLockState(t.Context(), reader, ws)
+	require.ErrorContains(t, err, "invalid workspace lockfile /repo/dagger.lock: lockfile line 3: invalid tuple length 2: expected 4")
+}
+
 type fakeWorkspaceLockStateReader struct {
 	files map[string][]byte
 }
