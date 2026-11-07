@@ -69,6 +69,9 @@ type Platform string
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
+// A path within a workspace. A leading slash starts at the workspace boundary. Each operation defines how it resolves relative input paths. Output source paths start at the workspace boundary.
+type WorkspacePath string
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -1019,11 +1022,13 @@ type Artifact struct {
 	// field again.
 	refetchID bool
 
-	description *string
-	id          *ID
-	loadError   *string
-	moduleName  *string
-	uri         *string
+	affectedByDiff *bool
+	affectedByPath *bool
+	description    *string
+	id             *ID
+	loadError      *string
+	moduleName     *string
+	uri            *string
 }
 
 func (r *Artifact) WithGraphQLQuery(q *querybuilder.Selection) *Artifact {
@@ -1033,6 +1038,57 @@ func (r *Artifact) WithGraphQLQuery(q *querybuilder.Selection) *Artifact {
 		// must be reevaluated.
 		refetchID: true,
 	}
+}
+
+// ArtifactAffectedByDiffOpts contains options for Artifact.AffectedByDiff
+type ArtifactAffectedByDiffOpts struct {
+	Kinds []string
+}
+
+// Whether this artifact may depend on changed workspace paths.
+func (r *Artifact) AffectedByDiff(ctx context.Context, changes *Changeset, opts ...ArtifactAffectedByDiffOpts) (bool, error) {
+	assertNotNil("changes", changes)
+	if r.affectedByDiff != nil {
+		return *r.affectedByDiff, nil
+	}
+	q := r.query.Select("affectedByDiff")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `kinds` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kinds) {
+			q = q.Arg("kinds", opts[i].Kinds)
+		}
+	}
+	q = q.Arg("changes", changes)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// ArtifactAffectedByPathOpts contains options for Artifact.AffectedByPath
+type ArtifactAffectedByPathOpts struct {
+	Kinds []string
+}
+
+// Whether this artifact may depend on a workspace-root path.
+func (r *Artifact) AffectedByPath(ctx context.Context, path WorkspacePath, opts ...ArtifactAffectedByPathOpts) (bool, error) {
+	if r.affectedByPath != nil {
+		return *r.affectedByPath, nil
+	}
+	q := r.query.Select("affectedByPath")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `kinds` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kinds) {
+			q = q.Arg("kinds", opts[i].Kinds)
+		}
+	}
+	q = q.Arg("path", path)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The arguments accepted by the artifact field.
@@ -1204,6 +1260,16 @@ func (r *Artifact) Path(ctx context.Context) ([]string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Inspect source dependencies from current inputs without running the artifact body.
+func (r *Artifact) Provenance() *WorkspaceProvenance {
+	q := r.query.Select("provenance")
+
+	return &WorkspaceProvenance{
+		query:     q,
+		refetchID: true,
+	}
 }
 
 // ArtifactURIOpts contains options for Artifact.URI
@@ -2005,6 +2071,56 @@ func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ArtifactsFilterAffectedByDiffOpts contains options for Artifacts.FilterAffectedByDiff
+type ArtifactsFilterAffectedByDiffOpts struct {
+	Paths []WorkspacePath
+
+	Kinds []string
+}
+
+// Keep artifacts that may depend on paths changed in any listed changeset. Paths limit changed paths before matching dependencies. Inputs with unresolved source origins stay selected for nonempty changes.
+func (r *Artifacts) FilterAffectedByDiff(changes []*Changeset, opts ...ArtifactsFilterAffectedByDiffOpts) *Artifacts {
+	q := r.query.Select("filterAffectedByDiff")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `kinds` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kinds) {
+			q = q.Arg("kinds", opts[i].Kinds)
+		}
+	}
+	q = q.Arg("changes", changes)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// ArtifactsFilterAffectedByPathOpts contains options for Artifacts.FilterAffectedByPath
+type ArtifactsFilterAffectedByPathOpts struct {
+	Kinds []string
+}
+
+// Keep artifacts that may depend on any listed workspace-root path. Enumerates collections but does not run artifact leaves.
+func (r *Artifacts) FilterAffectedByPath(paths []WorkspacePath, opts ...ArtifactsFilterAffectedByPathOpts) *Artifacts {
+	q := r.query.Select("filterAffectedByPath")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `kinds` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kinds) {
+			q = q.Arg("kinds", opts[i].Kinds)
+		}
+	}
+	q = q.Arg("paths", paths)
+
+	return &Artifacts{
+		query:     q,
+		refetchID: true,
+	}
+}
+
 // Keep artifacts with any listed key in this dimension. Replace collection references with matching subsets. Skip absent keys and leave the source view unchanged.
 func (r *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
 	q := r.query.Select("filterDimensionKeys")
@@ -2334,6 +2450,16 @@ func (r *Artifacts) PathDefinitions(ctx context.Context, opts ...ArtifactsPathDe
 	}
 
 	return convert(response), nil
+}
+
+// Combine the source dependencies of the selected artifacts without running their bodies.
+func (r *Artifacts) Provenance() *WorkspaceProvenance {
+	q := r.query.Select("provenance")
+
+	return &WorkspaceProvenance{
+		query:     q,
+		refetchID: true,
+	}
 }
 
 // List concrete type definitions represented in this selection, sorted by name with no duplicates.
@@ -23757,6 +23883,176 @@ func (r *WorkspaceModuleSetting) AsNode() Node {
 	}
 }
 
+type WorkspaceProvenance struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	affectedByDiff *bool
+	affectedByPath *bool
+	id             *ID
+}
+
+func (r *WorkspaceProvenance) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceProvenance {
+	return &WorkspaceProvenance{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// WorkspaceProvenanceAffectedByDiffOpts contains options for WorkspaceProvenance.AffectedByDiff
+type WorkspaceProvenanceAffectedByDiffOpts struct {
+	Kinds []string
+}
+
+// Whether an input region overlaps paths in this changeset. Paths must use this workspace's boundary.
+func (r *WorkspaceProvenance) AffectedByDiff(ctx context.Context, changes *Changeset, opts ...WorkspaceProvenanceAffectedByDiffOpts) (bool, error) {
+	assertNotNil("changes", changes)
+	if r.affectedByDiff != nil {
+		return *r.affectedByDiff, nil
+	}
+	q := r.query.Select("affectedByDiff")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `kinds` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kinds) {
+			q = q.Arg("kinds", opts[i].Kinds)
+		}
+	}
+	q = q.Arg("changes", changes)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceProvenanceAffectedByPathOpts contains options for WorkspaceProvenance.AffectedByPath
+type WorkspaceProvenanceAffectedByPathOpts struct {
+	Kinds []string
+}
+
+// Whether an input region overlaps this workspace-root path. Directory queries can match conservatively.
+func (r *WorkspaceProvenance) AffectedByPath(ctx context.Context, path WorkspacePath, opts ...WorkspaceProvenanceAffectedByPathOpts) (bool, error) {
+	if r.affectedByPath != nil {
+		return *r.affectedByPath, nil
+	}
+	q := r.query.Select("affectedByPath")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `kinds` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kinds) {
+			q = q.Arg("kinds", opts[i].Kinds)
+		}
+	}
+	q = q.Arg("path", path)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceProvenance.
+func (r *WorkspaceProvenance) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceProvenance) XXX_GraphQLType() string {
+	return "WorkspaceProvenance"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceProvenance) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceProvenance) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceProvenance) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Inputs whose source origin could not be determined. These retain a conservative root dependency.
+func (r *WorkspaceProvenance) Issues(ctx context.Context) ([]string, error) {
+	q := r.query.Select("issues")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The source regions on which the artifact depends.
+func (r *WorkspaceProvenance) Selectors(ctx context.Context) ([]WorkspaceSelector, error) {
+	q := r.query.Select("selectors")
+
+	q = q.Select("id")
+
+	type selectors struct {
+		Id ID
+	}
+
+	convert := func(fields []selectors) []WorkspaceSelector {
+		out := []WorkspaceSelector{}
+
+		for i := range fields {
+			val := WorkspaceSelector{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceSelector")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []selectors
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// AsNode returns this WorkspaceProvenance as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceProvenance) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
 // An installed SDK: a module marked for scaffolding other modules and clients.
 type WorkspaceSDK struct {
 	query *querybuilder.Selection
@@ -23955,6 +24251,156 @@ func (r *WorkspaceSDK) ScopeSetting(ctx context.Context, path string, key string
 // AsNode returns this WorkspaceSDK as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *WorkspaceSDK) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
+type WorkspaceSelector struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	conservative *bool
+	id           *ID
+	kind         *string
+	origin       *string
+	path         *WorkspacePath
+}
+
+func (r *WorkspaceSelector) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceSelector {
+	return &WorkspaceSelector{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Whether this region is an upper bound on possible inputs.
+func (r *WorkspaceSelector) Conservative(ctx context.Context) (bool, error) {
+	if r.conservative != nil {
+		return *r.conservative, nil
+	}
+	q := r.query.Select("conservative")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Exclude patterns relative to path.
+func (r *WorkspaceSelector) Exclude(ctx context.Context) ([]string, error) {
+	q := r.query.Select("exclude")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceSelector.
+func (r *WorkspaceSelector) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceSelector) XXX_GraphQLType() string {
+	return "WorkspaceSelector"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceSelector) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceSelector) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceSelector) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Include patterns relative to path.
+func (r *WorkspaceSelector) Include(ctx context.Context) ([]string, error) {
+	q := r.query.Select("include")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WORKSPACE_READ or MODULE_SOURCE.
+func (r *WorkspaceSelector) Kind(ctx context.Context) (string, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The input that contributes this dependency.
+func (r *WorkspaceSelector) Origin(ctx context.Context) (string, error) {
+	if r.origin != nil {
+		return *r.origin, nil
+	}
+	q := r.query.Select("origin")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The path relative to the workspace boundary.
+func (r *WorkspaceSelector) Path(ctx context.Context) (WorkspacePath, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response WorkspacePath
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceSelector as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceSelector) AsNode() Node {
 	return &NodeClient{
 		query:     r.query,
 		refetchID: r.refetchID,

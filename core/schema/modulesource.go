@@ -1517,6 +1517,7 @@ func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src 
 // the module context. It runs while the source loads, because dependents and
 // the declaredClients input hash the module digest without loading the module.
 func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *core.ModuleSource) (rerr error) {
+	src.EntrypointSources = false
 	if src.Entrypoint == nil {
 		return nil
 	}
@@ -1536,6 +1537,7 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	if err != nil {
 		return fmt.Errorf("scan module entrypoint source: %w", err)
 	}
+	src.EntrypointSources = declared
 	if !declared {
 		return nil
 	}

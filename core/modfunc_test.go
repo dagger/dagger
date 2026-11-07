@@ -145,7 +145,7 @@ func TestCallerInModuleFunction(t *testing.T) {
 			Local: &LocalModuleSource{ContextDirectoryPath: "."},
 		},
 	}})
-	got, err := callerInModuleFunction(moduleOnly)
+	got, err := CallerInModuleFunction(moduleOnly)
 	require.NoError(t, err)
 	require.False(t, got)
 
@@ -153,7 +153,7 @@ func TestCallerInModuleFunction(t *testing.T) {
 	inFn := ContextWithQuery(t.Context(), &Query{Server: &mockServer{
 		functionCall: &FunctionCall{Name: "caller"},
 	}})
-	got, err = callerInModuleFunction(inFn)
+	got, err = CallerInModuleFunction(inFn)
 	require.NoError(t, err)
 	require.True(t, got)
 }

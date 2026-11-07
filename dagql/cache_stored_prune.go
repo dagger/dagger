@@ -126,6 +126,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.createdAtUnixNano = 0
 	res.payloadRevision++
 	res.payloadMu.Unlock()
+	c.setResultFactsLocked(res, nil, false)
 	c.setResultPayloadBytesLocked(res, 0)
 	return deps, rerr
 }

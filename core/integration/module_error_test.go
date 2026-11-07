@@ -67,6 +67,37 @@ func (ModuleSuite) TestCurrentWorkspaceError(ctx context.Context, t *testctx.T) 
 	})
 }
 
+func (ModuleSuite) TestAmbientSourcesRawQueryError(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	mod := moduleFixture(t, c, "go/host-error").
+		WithNewFile("marker.txt", "declared workspace").
+		WithNewFile("main.go", `package main
+import (
+ "context"
+ "dagger/test/internal/dagger"
+ "github.com/Khan/genqlient/graphql"
+)
+type Test struct{}
+func (m *Test) Raw(ctx context.Context, query string) (string, error) {
+ return "", dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{Query: query}, &graphql.Response{})
+}
+func (m *Test) Read(ctx context.Context, workspace *dagger.Workspace) (string, error) {
+ file, err := workspace.File("marker.txt").Contents(ctx)
+ if err != nil { return "", err }
+ directory, err := workspace.Directory(".").File("marker.txt").Contents(ctx)
+ return file + ":" + directory, err
+}`)
+	for _, field := range []string{"host", "currentWorkspace"} {
+		t.Run(field, func(ctx context.Context, t *testctx.T) {
+			_, err := mod.With(daggerCallAt(".", "raw", "--query", "{"+field+"{__typename}}")).Sync(ctx)
+			requireErrOut(t, err, field+" is not available to module functions")
+		})
+	}
+	out, err := mod.With(daggerCallAt(".", "read")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "declared workspace:declared workspace", out)
+}
+
 func (ModuleSuite) TestLargeErrors(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 	copyTestdataFixture(ctx, t, modDir, "modules", "go", "large-errors")

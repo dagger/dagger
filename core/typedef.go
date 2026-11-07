@@ -2545,6 +2545,8 @@ type FunctionCall struct {
 	// received the call. Nil for top-level / constructor calls.
 	parentTyped dagql.AnyResult
 
+	workspaceInputs *workspaceInputReads
+
 	// callerAgent is the agent whose turn dispatched this function call,
 	// carried engine-side only (not persisted, not sent to the module), like
 	// parentTyped. It backs core.CallerAgent for the nested API calls the
