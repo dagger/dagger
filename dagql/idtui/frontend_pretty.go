@@ -4531,13 +4531,21 @@ func checksHeaderLine(out TermOutput, agent bool, nodes []*dagui.CheckNode) stri
 // "✔ N passed" parts (via the test summary's renderer, so the two headers stay
 // in visual lockstep) for the given checks, counted directly rather than
 // recursively: each CHECKS header tallies the checks listed directly beneath
-// it. Boundaries are already honored by SurfacedChecks, so checks a test
-// intentionally runs aren't among the nodes. NB: with incremental --full
-// loading the passed tally only covers checks already fetched.
+// it. A collection group counts as its items, the checks that ran, so the
+// tally reads as it did before items were grouped. Boundaries are already
+// honored by SurfacedChecks, so checks a test intentionally runs aren't among
+// the nodes. NB: with incremental --full loading the passed tally only covers
+// checks already fetched.
 func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
-	spans := make([]*dagui.Span, len(nodes))
-	for i, n := range nodes {
-		spans[i] = n.Span
+	spans := make([]*dagui.Span, 0, len(nodes))
+	for _, n := range nodes {
+		if n.Span.CheckCollectionGroup && len(n.Children) > 0 {
+			for _, item := range n.Children {
+				spans = append(spans, item.Span)
+			}
+			continue
+		}
+		spans = append(spans, n.Span)
 	}
 	return renderTestCountParts(out, surfacedSpanCounts(spans))
 }
