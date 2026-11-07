@@ -107,7 +107,8 @@ func (c *Cache) storedPartDependenciesLocked(res *sharedResult, part PersistedPa
 		}
 		named = append(named, dep)
 	}
-	if _, err := c.preparePartDependenciesLocked(res, named); err != nil {
+	// The blob-backed cache discards session requirements; keep graph validation only.
+	if _, err := c.partDependenciesLocked(res, named, false); err != nil {
 		return nil, false
 	}
 	return named, true

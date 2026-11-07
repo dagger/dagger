@@ -1,0 +1,6 @@
+kind: Changed
+body: Reduce allocations when recording snapshot parts in blob-backed caches, particularly for results with many dependent callers.
+time: 2026-11-03T16:18:54.045745Z
+custom:
+    Author: fire-ant
+    PR: "15051"

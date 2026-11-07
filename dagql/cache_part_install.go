@@ -319,6 +319,10 @@ func (base *readyPartPreparationBase) recordFor(row *sharedResult, version captu
 // operation before publication. Offer edges participate in cycle detection but
 // never in the propagated own-resource requirements.
 func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sharedResult) (map[*sharedResult]*set.TreeSet[SessionResourceHandle], error) {
+	return c.partDependenciesLocked(receiver, deps, true)
+}
+
+func (c *Cache) partDependenciesLocked(receiver *sharedResult, deps []*sharedResult, requirementsNeeded bool) (map[*sharedResult]*set.TreeSet[SessionResourceHandle], error) {
 	seen := map[sharedResultID]bool{}
 	var walk func(*sharedResult) error
 	walk = func(row *sharedResult) error {
@@ -350,7 +354,10 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 			return nil, err
 		}
 	}
-	requirements := map[*sharedResult]*set.TreeSet[SessionResourceHandle]{}
+	var requirements map[*sharedResult]*set.TreeSet[SessionResourceHandle]
+	if requirementsNeeded {
+		requirements = map[*sharedResult]*set.TreeSet[SessionResourceHandle]{}
+	}
 	queue := []*sharedResult{receiver}
 	seen = map[sharedResultID]bool{}
 	for len(queue) > 0 {
@@ -365,16 +372,18 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 				return nil, fmt.Errorf("part graph: missing ancestor dependency %d", id)
 			}
 		}
-		req := set.NewTreeSet(compareSessionResourceHandles)
-		if row.requiredSessionResources != nil {
-			req = req.Union(row.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
-		}
-		for _, dep := range deps {
-			if dep.requiredSessionResources != nil {
-				req = req.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
+		if requirementsNeeded {
+			req := set.NewTreeSet(compareSessionResourceHandles)
+			if row.requiredSessionResources != nil {
+				req = req.Union(row.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
 			}
+			for _, dep := range deps {
+				if dep.requiredSessionResources != nil {
+					req = req.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
+				}
+			}
+			requirements[row] = req
 		}
-		requirements[row] = req
 		if row.depParents != nil {
 			for id := range row.depParents.Items() {
 				parent := c.resultsByID[id]

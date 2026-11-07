@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func storedPartTestCache(t *testing.T, opts ...CacheOption) (context.Context, *Cache) {
+func storedPartTestCache(t testing.TB, opts ...CacheOption) (context.Context, *Cache) {
 	t.Helper()
 	ctx := cacheTestContext(t.Context())
 	c, err := NewCache(ctx, "", nil, nil, opts...)
@@ -19,7 +19,7 @@ func storedPartTestCache(t *testing.T, opts ...CacheOption) (context.Context, *C
 	return ctx, c
 }
 
-func storedPartTestPublish(t *testing.T, ctx context.Context, c *Cache, session, field string, value *captureTestValue) AnyResult {
+func storedPartTestPublish(t testing.TB, ctx context.Context, c *Cache, session, field string, value *captureTestValue) AnyResult {
 	t.Helper()
 	frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType((&captureTestValue{}).Type())}
 	res, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
