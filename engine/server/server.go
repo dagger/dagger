@@ -411,6 +411,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	srv.defaultPlatform = platforms.Normalize(platforms.DefaultSpec())
+	if platform, ok, err := remoteCacheFixtureDefaultPlatform(); err != nil {
+		return nil, fmt.Errorf("invalid remote cache fixture default platform: %w", err)
+	} else if ok {
+		srv.defaultPlatform = platform
+	}
 	if platformsStr := ociCfg.Platforms; len(platformsStr) != 0 {
 		var err error
 		srv.enabledPlatforms, err = parsePlatforms(platformsStr)
