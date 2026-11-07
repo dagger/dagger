@@ -369,6 +369,7 @@ replace (
 	go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.16.0
 )
 
+// moq generates dagql/idtui's Frontend mock.
 tool github.com/matryer/moq
 
 // containerd and the engine run their metadata on an in-memory store with
