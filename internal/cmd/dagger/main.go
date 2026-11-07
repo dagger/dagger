@@ -240,6 +240,7 @@ func init() {
 	cobra.AddTemplateFunc("cmdShortWrappedListByGroups", cmdShortWrappedListByGroups)
 	cobra.AddTemplateFunc("availableSubcommandsTitle", availableSubcommandsTitle)
 	cobra.AddTemplateFunc("noAvailableSubcommands", noAvailableSubcommands)
+	cobra.AddTemplateFunc("availableSDKs", availableSDKs)
 	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
 	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
 	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
@@ -1285,6 +1286,21 @@ const visibleAliasesAnnotation = "help:visibleAliases"
 const hiddenAliasesAnnotation = "help:hiddenAliases"
 const availableSubcommandsTitleAnnotation = "help:availableSubcommandsTitle"
 const noAvailableSubcommandsAnnotation = "help:noAvailableSubcommands"
+const availableSDKsAnnotation = "help:availableSDKs"
+
+func availableSDKs(cmd *cobra.Command) string {
+	if section, ok := cmd.Annotations[availableSDKsAnnotation]; ok {
+		if section != "" {
+			return section
+		}
+		// Documentation and help can render the static command tree before
+		// workspace discovery. The registry requires no engine connection.
+		if catalog, err := classifyWorkspaceSDKs(nil); err == nil {
+			return catalog.AvailableHelp()
+		}
+	}
+	return ""
+}
 
 func availableSubcommandsTitle(cmd *cobra.Command) string {
 	title := "AVAILABLE COMMANDS"
@@ -1648,6 +1664,11 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 {{- if noAvailableSubcommands .}}
 
 {{ noAvailableSubcommands . }}
+{{- end}}
+
+{{- if availableSDKs .}}
+
+{{ availableSDKs . }}
 {{- end}}
 
 {{- $localFlags := availableFlags . .LocalFlags}}

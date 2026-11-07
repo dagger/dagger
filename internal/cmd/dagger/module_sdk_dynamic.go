@@ -165,8 +165,17 @@ func registerModuleSDKCommands(ctx context.Context, selectedSDK string) error {
 			return registerModuleSDKCommandsFromConfig(ctx, cfg, cfgPath, ec.Dagger(), selectedSDK)
 		})
 	}
+	catalog, err := classifyWorkspaceSDKs(cfg)
+	if err != nil {
+		return err
+	}
+	if selectedSDK != "" {
+		if err := catalog.InitError(selectedSDK); err != nil {
+			return err
+		}
+	}
 	if cfg == nil || selectedSDK == "" {
-		return registerModuleSDKCommandsFromConfig(ctx, cfg, cfgPath, nil, "")
+		return registerModuleSDKCommandsFromConfig(ctx, cfg, cfgPath, nil, selectedSDK)
 	}
 	return withEngineMetadata(ctx, "Load SDK options", client.Params{
 		SkipWorkspaceModules:           true,
@@ -183,9 +192,20 @@ func registerModuleSDKCommandsFromConfig(
 	dag *dagger.Client,
 	selectedSDK string,
 ) error {
-	sdks, err := configuredSDKs(cfg)
+	catalog, err := classifyWorkspaceSDKs(cfg)
 	if err != nil {
 		return err
+	}
+	if selectedSDK != "" {
+		if err := catalog.InitError(selectedSDK); err != nil {
+			return err
+		}
+	}
+	sdks := catalog.Installed
+	moduleInitCmd.Annotations[availableSDKsAnnotation] = catalog.AvailableHelp()
+	if len(sdks) > 0 && catalog.AvailableHelp() == "" {
+		// Empty means the static, undiscovered command tree to the template.
+		delete(moduleInitCmd.Annotations, availableSDKsAnnotation)
 	}
 	for _, cmd := range moduleInitCmd.Commands() {
 		moduleInitCmd.RemoveCommand(cmd)

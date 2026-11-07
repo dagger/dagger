@@ -26,7 +26,7 @@ var sdkCmd = &cobra.Command{
 
 var sdkListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List known SDKs",
+	Short: "List installed SDKs and official SDKs available to install",
 	Args:  cobra.NoArgs,
 	RunE:  runSDKList,
 }
@@ -161,31 +161,43 @@ func withSDKWorkspaceConfig(
 }
 
 func runSDKList(cmd *cobra.Command, _ []string) error {
+	if workspaceEnv != "" {
+		return fmt.Errorf("sdk commands do not support --env; SDKs and scopes live in the base workspace config")
+	}
+	if !isObviouslyRemoteWorkspaceRef(workspaceRef) {
+		cfg, _, err := readWorkspaceConfigForSDKInitRegistration()
+		if err != nil {
+			return err
+		}
+		return printSDKList(cmd.OutOrStdout(), cfg)
+	}
 	return withSDKWorkspaceConfig(cmd, false, func(_ context.Context, _ *core.Workspace, state *sdkWorkspaceConfig) error {
 		if state == nil {
-			return nil
+			return printSDKList(cmd.OutOrStdout(), nil)
 		}
 		return printSDKList(cmd.OutOrStdout(), state.config)
 	})
 }
 
 func printSDKList(out io.Writer, cfg *workspace.Config) error {
-	if cfg == nil || len(cfg.SDKs) == 0 {
-		return nil
-	}
-	names := make([]string, 0, len(cfg.SDKs))
-	for name := range cfg.SDKs {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "SDK\tSOURCE"); err != nil {
+	catalog, err := classifyWorkspaceSDKs(cfg)
+	if err != nil {
 		return err
 	}
-	for _, name := range names {
-		provider := cfg.Modules[cfg.SDKs[name].Module]
-		if _, err := fmt.Fprintf(w, "%s\t%s\n", name, sdkModuleEntrySource(provider)); err != nil {
+	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(w, "SDK\tSOURCE\tSTATUS"); err != nil {
+		return err
+	}
+	for _, sdk := range catalog.Installed {
+		if _, err := fmt.Fprintf(w, "%s\t%s\tinstalled\n", sdk.commandName, sdkModuleEntrySource(sdk.entry)); err != nil {
+			return err
+		}
+	}
+	for _, sdk := range catalog.Official {
+		if sdk.InstalledName != "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "%s\t%s\tavailable to install (registers %s)\n", sdk.Name, sdk.Repo, sdk.RegisteredName); err != nil {
 			return err
 		}
 	}

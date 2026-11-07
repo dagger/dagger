@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -104,6 +105,48 @@ func ResolveInstall(input string) (ref string, installName string, sdkName strin
 		sort.Strings(names)
 		return "", "", "", fmt.Errorf("SDK %q is ambiguous: matches %s; pick one", input, strings.Join(names, ", "))
 	}
+}
+
+// Lookup recognises official names, aliases and repository addresses without
+// fetching them. Repository identity ignores transport and version, but keeps
+// subdirectories: another module in the same repository is not the SDK.
+func Lookup(input string) (SDKEntry, bool, error) {
+	entries, err := LoadRegistry()
+	if err != nil {
+		return SDKEntry{}, false, err
+	}
+	if !strings.ContainsAny(input, "/@") {
+		ref, _, _, err := ResolveInstall(input)
+		if err == nil {
+			input = ref
+		}
+		// An unrecognised short name stays unchanged and cannot match a
+		// repository below. Lookup treats it as a miss, not an install error.
+	}
+	for _, entry := range entries {
+		if canonicalRepo(input) == canonicalRepo(entry.Repo) {
+			return entry, true, nil
+		}
+	}
+	return SDKEntry{}, false, nil
+}
+
+func canonicalRepo(ref string) string {
+	ref, fragment, _ := strings.Cut(ref, "#")
+	_, subdir, _ := strings.Cut(fragment, ":")
+	if strings.Contains(ref, "://") {
+		if u, err := url.Parse(ref); err == nil {
+			ref = u.Host + u.Path
+		}
+	} else if strings.HasPrefix(ref, "git@") {
+		ref = strings.Replace(strings.TrimPrefix(ref, "git@"), ":", "/", 1)
+	}
+	ref, _, _ = strings.Cut(ref, "@")
+	ref = strings.TrimSuffix(strings.TrimSuffix(ref, "/"), ".git")
+	if subdir != "" {
+		ref += "/" + subdir
+	}
+	return ref
 }
 
 func sdkRegistryRepoBase(repo string) string {

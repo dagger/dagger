@@ -43,7 +43,8 @@ func TestModuleMaxCommandTree(t *testing.T) {
 	}
 	require.Empty(t, moduleInitCmd.Example)
 	require.Equal(t, "init SDK [flags]", moduleInitCmd.Use)
-	require.Equal(t, "Initialize a new module for development with an SDK", moduleInitCmd.Long)
+	require.Contains(t, moduleInitCmd.Long, "Initialize a new module for development with an SDK")
+	require.Contains(t, moduleInitCmd.Long, "SDK addresses")
 
 	nameFlag := moduleInitCmd.PersistentFlags().Lookup("name")
 	require.NotNil(t, nameFlag)
@@ -446,10 +447,14 @@ func TestModuleInitHelpListsInstalledSDKs(t *testing.T) {
 	help := out.String()
 	require.Contains(t, help, "Initialize a new module for development with an SDK")
 	require.Contains(t, help, "dagger module init SDK [flags]")
-	require.Contains(t, help, "AVAILABLE SDKs")
+	require.Contains(t, help, "INSTALLED SDKs")
 	require.NotContains(t, help, "AVAILABLE COMMANDS")
 	require.Contains(t, strings.Fields(help), "go")
 	require.Contains(t, strings.Fields(help), "python")
+	require.Contains(t, help, "OFFICIAL SDKs AVAILABLE TO INSTALL")
+	require.Contains(t, help, "github.com/dagger/typescript-sdk")
+	require.NotContains(t, availableSDKs(moduleInitCmd), "github.com/dagger/go-sdk")
+	require.NotContains(t, availableSDKs(moduleInitCmd), "github.com/dagger/python-sdk")
 	require.NotContains(t, help, "Examples")
 
 	for _, cmd := range []*cobra.Command{moduleClientAddCmd, moduleClientRemoveCmd} {
@@ -486,6 +491,7 @@ func TestModuleClientHelpWithoutInstalledSDKs(t *testing.T) {
 }
 
 func TestModuleInitHelpWithoutInstalledSDKs(t *testing.T) {
+	require.NoError(t, registerModuleSDKCommandsFromConfig(context.Background(), nil, "", nil, ""))
 	root := &cobra.Command{Use: "dagger"}
 	root.SetUsageTemplate(usageTemplate)
 	module := &cobra.Command{Use: "module"}
@@ -504,7 +510,16 @@ func TestModuleInitHelpWithoutInstalledSDKs(t *testing.T) {
 	require.NoError(t, cmd.Help())
 	help := out.String()
 	require.Contains(t, help, "dagger module init SDK [flags]")
-	require.Contains(t, help, "NO AVAILABLE SDKs. In doubt, try 'dagger mod install github.com/dagger/dang-sdk'")
+	require.Contains(t, help, "No SDK is installed in this workspace.")
+	require.Contains(t, help, "OFFICIAL SDKs AVAILABLE TO INSTALL")
+	require.NotContains(t, help, "NO AVAILABLE SDKs")
+	registry, err := loadSDKRegistry()
+	require.NoError(t, err)
+	for _, sdk := range registry {
+		require.Contains(t, help, sdk.Repo)
+		require.Contains(t, help, "dagger module install "+sdk.Repo)
+	}
+	require.Contains(t, help, "SDK addresses")
 	require.NotContains(t, help, "AVAILABLE COMMANDS")
 }
 

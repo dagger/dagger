@@ -40,11 +40,18 @@ var (
 var moduleInitCmd = &cobra.Command{
 	Use:   "init SDK [flags]",
 	Short: "Initialize a new module for development with an SDK",
-	Long:  "Initialize a new module for development with an SDK",
-	Args:  cobra.NoArgs,
+	Long: `Initialize a new module for development with an SDK.
+
+Select an installed SDK by its registered name. SDK addresses (values containing
+/ or @) are not accepted; install the SDK first with dagger module install.
+
+The built-in Dang runtime can run existing Dang modules. Creating a new Dang
+module requires installing the Dang SDK.`,
+	Args: cobra.NoArgs,
 	Annotations: map[string]string{
-		availableSubcommandsTitleAnnotation: "AVAILABLE SDKs",
-		noAvailableSubcommandsAnnotation:    "NO AVAILABLE SDKs. In doubt, try 'dagger mod install github.com/dagger/dang-sdk'",
+		availableSubcommandsTitleAnnotation: "INSTALLED SDKs",
+		noAvailableSubcommandsAnnotation:    "No SDK is installed in this workspace.",
+		availableSDKsAnnotation:             "",
 	},
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()

@@ -47,11 +47,12 @@ func (WorkspaceSuite) TestSDKListCLI(ctx context.Context, t *testctx.T) {
 
 	out, err := hostDaggerOutput(ctx, t, workdir, "sdk", "list")
 	require.NoError(t, err)
-	require.Equal(t, []string{
-		"SDK", "SOURCE",
-		"go", "github.com/dagger/go-sdk",
-		"python", "github.com/dagger/python-sdk",
-	}, strings.Fields(string(out)))
+	rows := strings.Split(strings.TrimSpace(string(out)), "\n")
+	require.Equal(t, []string{"SDK", "SOURCE", "STATUS"}, strings.Fields(rows[0]))
+	require.Equal(t, []string{"go", "github.com/dagger/go-sdk", "installed"}, strings.Fields(rows[1]))
+	require.Equal(t, []string{"python", "github.com/dagger/python-sdk", "installed"}, strings.Fields(rows[2]))
+	require.Contains(t, string(out), "available to install")
+	require.Contains(t, string(out), "github.com/dagger/typescript-sdk")
 }
 
 func (WorkspaceSuite) TestSDKScopeListCLI(ctx context.Context, t *testctx.T) {

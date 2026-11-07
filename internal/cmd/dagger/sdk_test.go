@@ -22,11 +22,13 @@ func TestPrintSDKList(t *testing.T) {
 	}
 	var out bytes.Buffer
 	require.NoError(t, printSDKList(&out, cfg))
-	require.Equal(t, []string{
-		"SDK", "SOURCE",
-		"go", "./tools/go-sdk",
-		"python", "github.com/dagger/python-sdk@v1.2.3",
-	}, strings.Fields(out.String()))
+	rows := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Equal(t, []string{"SDK", "SOURCE", "STATUS"}, strings.Fields(rows[0]))
+	require.Equal(t, []string{"go", "./tools/go-sdk", "installed"}, strings.Fields(rows[1]))
+	require.Equal(t, []string{"python", "github.com/dagger/python-sdk@v1.2.3", "installed"}, strings.Fields(rows[2]))
+	require.Contains(t, out.String(), "available to install")
+	require.Contains(t, out.String(), "github.com/dagger/go-sdk")
+	require.Contains(t, out.String(), "registers go-2")
 }
 
 func TestSDKScopeRecordsAndFilters(t *testing.T) {
