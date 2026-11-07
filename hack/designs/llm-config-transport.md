@@ -48,7 +48,8 @@ Two kinds of configuration, two channels.
 it **once per process** from, lowest to highest precedence:
 
 1. `~/.config/dagger/config.toml` `[llm]` (or `$DAGGER_CONFIG`), written by
-   `dagger llm setup`;
+   `/setup` in `dagger agent` (also `.setup` in the shell and automatic
+   setup when `dagger agent` has no provider configured);
 2. the process environment (`ANTHROPIC_API_KEY`, `OPENAI_MODEL`, ...);
 3. `./.env` in the command's working directory.
 
@@ -64,12 +65,21 @@ time.
 Provider names are one vocabulary end to end: the config file's
 `[llm.providers.<name>]` keys, the wire, `llm(provider:)` and `LLM.provider`
 all use `anthropic`, `openai`, `openai-codex`, `openrouter`, `google`,
-`local`. OpenRouter is a first-class engine provider (OpenAI-compatible
+`github-copilot`, `local`. OpenRouter is a first-class engine provider (OpenAI-compatible
 client, its own credential, default base URL `https://openrouter.ai/api/v1`),
 so an `openai` key and an `openrouter` key coexist; its model names carry
 the upstream vendor as a prefix (`anthropic/claude-…`), so it is only ever
 selected explicitly — by provider or as the configured default — never
 inferred from a name. The old `gemini` alias for `google` is gone.
+
+`github-copilot` uses the user's own Copilot subscription with a borrowed
+public Copilot OAuth client and the allow-listed `vscode-chat` integration
+identity; `User-Agent` and `Editor-Version` identify Dagger. It is selected
+by `llm(provider: "github-copilot")` or a default route, never inferred from
+a model name and with no model-name prefix. Setup's default, `/model`'s
+saved default, `default_provider` in the file and `COPILOT_MODEL` can pin
+that route. A Copilot login alone never overrides another provider's API
+key during automatic selection. Usage reports token counts without cost.
 
 Layering is unchanged: the session's main client seeds the router, the
 calling (non-module) client overlays it field by field, and whichever client
@@ -89,11 +99,12 @@ fingerprinting).
 The CLI emits:
 
 | source | URI |
-|---|---|
+| --- | --- |
 | process env `ANTHROPIC_API_KEY=sk-...` | `env://ANTHROPIC_API_KEY` |
 | any source whose value is itself a URI (`op://…`, `vault://…`) | the value, verbatim |
 | literal stored in config.toml, or a literal in `.env` | `llmconfig://<provider>/api_key` |
 | OAuth login stored in config.toml | `llmconfig://<provider>/auth_token` + `llmconfig://<provider>/auth_token_expires_at` |
+| `COPILOT_GITHUB_TOKEN` (process env or `.env`) | `llmconfig://github-copilot/auth_token` + `llmconfig://github-copilot/auth_token_expires_at`; exchanged by the resolver |
 | explicit `ANTHROPIC_AUTH_TOKEN` env | `env://ANTHROPIC_AUTH_TOKEN` (+ `env://…_EXPIRES_AT` only if set) |
 
 `llmconfig://` is a new `secretprovider` scheme. The engine binary knows the
@@ -103,17 +114,60 @@ config file under the cross-process lock at every resolution, refreshes an
 OAuth token that is due (or that the engine reports as rejected, via the
 `RejectedSecretValue` fingerprint metadata), and persists the rotated token —
 exactly what the env refresher hook did, minus the `os.Setenv` round trip.
-Because an explicitly exported token is sent as `env://…`, the `llmconfig://`
+Because an explicitly exported API bearer is sent as `env://…`, the `llmconfig://`
 resolver is never consulted for it, so a rejected user-supplied bearer can't
 rotate an unrelated subscription login.
 
-The engine reads the token URI first and the expiry URI second within one
-resolution, as before: the token read is what may rotate both.
+For the other subscription providers, the engine reads the token URI first
+and the expiry URI second within one resolution, as before: the token read
+is what may rotate both. Copilot requires an atomic snapshot, described below.
 
 Resolution bypasses dagql: `core.resolveClientSecret` builds a
 `core.Secret{URIVal, SourceClientID}` and calls `Plaintext`, i.e. one
 `GetSecret` RPC on the supplying client's session attachables. No argon2
 handle, no `PerCallInput` node.
+
+### Copilot refresh carries the API origin with the bearer
+
+`/setup` stores the device flow's GitHub token as `refresh_token`, with
+`auth_type = "oauth"`, under `[llm.providers.github-copilot]`. This GitHub
+token is not the Copilot API bearer. The resolver's refresh exchanges it
+for a short-lived Copilot token (about 30 minutes), storing that token as
+`auth_token`, its true expiry, and the exchange's `endpoints.api` as
+`base_url`. Login and every stored-login refresh persist all three. An
+exchange without `endpoints.api` uses `https://api.githubcopilot.com`.
+
+For CI, `COPILOT_GITHUB_TOKEN` supplies the GitHub token to exchange instead.
+It wins over a stored login: the resolver caches its exchanged token,
+expiry and API origin together in memory and does not exchange the stored
+GitHub token. `COPILOT_MODEL`, `COPILOT_SMALL_MODEL` and
+`COPILOT_REASONING_EFFORT` set the provider's corresponding routing fields.
+`GH_TOKEN`, `GITHUB_TOKEN` and credentials from other tools are not read.
+
+Client metadata still carries `AuthToken` as
+`llmconfig://github-copilot/auth_token`, not a plaintext bearer. When building
+the Copilot endpoint, the engine's Copilot credential reloader resolves its
+companion `llmconfig://github-copilot/credential` through the same secret RPC.
+The CLI serves one JSON `engine.CopilotCredential` snapshot with `token`,
+`expires_at` (true expiry) and `base_url` (the exchange's `endpoints.api`).
+Separate token and base-URL reads could race a refresh by another CLI and
+pair a bearer with the wrong endpoint; this single read keeps them together.
+The GitHub token stays on the CLI side.
+
+`CredentialSource` caches and invalidates the complete tuple. Initial
+endpoint construction uses the snapshot's origin, covering both an expired
+stored login with a stale `base_url` and an env-only first exchange with no
+URL yet. On every HTTP attempt, `credentialTransport` applies the bearer
+and swaps the request URL's scheme and host and the HTTP `Host` to the
+snapshot's origin, preserving the OpenAI client's path and query. This also
+covers SDK retries and later requests on a memoized endpoint after a
+mid-session refresh changes `endpoints.api`.
+
+The resolver re-exchanges the GitHub token when the Copilot token is due or
+when the engine sends its rejected-value fingerprint, even before expiry.
+A 401/403 from the exchange surfaces `ErrOAuthReauthenticationRequired`
+and tells the user to run `/setup` in `dagger agent`. The CLI's device flow,
+token exchange and engine API requests share `engine.CopilotHeaders()`.
 
 ### What the engine does with it
 
@@ -123,12 +177,17 @@ stays pure (it is called from `DefaultLLMRoute` just to name the provider);
 `Endpoint()` resolves the routed provider's API key once, when the endpoint
 is built, and hands OAuth tokens to a `CredentialSource` as before.
 
-`DefaultModel()` honours the config's explicit `default_provider` /
+`DefaultRoute()` honours the config's explicit `default_provider` /
 `default_model` first — fixing a latent bug where the file's Anthropic
 default lost to an exported `OPENAI_MODEL` because the engine chose by
-provider priority — and falls back to the legacy priority order (openai,
-openai-codex, anthropic, google, local; then by configured credential) when
-no default is set, which is what env-only CI setups rely on.
+provider priority — and falls back to provider priority (openai,
+openai-codex, openrouter, anthropic, google, github-copilot, local; then by
+configured credential) when no default is set. Model environment variables
+can set the default during CLI assembly, in that same priority order;
+`COPILOT_MODEL` comes after Google's model variables. Copilot default routes
+stay pinned to `github-copilot` even for `claude-*`, `gpt-*` and `gemini-*`
+models, whose names overlap the other vendors. A sole Copilot credential
+can supply the fallback default, but API-key providers precede it.
 
 ## Contracts that change
 
@@ -168,8 +227,9 @@ no default is set, which is what env-only CI setups rely on.
   `OPENROUTER_REASONING_EFFORT` configure it from the environment. A CI
   setup that pointed `OPENAI_BASE_URL` at OpenRouter keeps working as the
   `openai` provider.
-- **`[llm.providers.gemini]` is no longer recognized.** `dagger llm setup`
-  always wrote `google`; a hand-edited `gemini` section must be renamed.
+- **`[llm.providers.gemini]` is no longer recognized.** The former
+  `dagger llm setup` command always wrote `google`; a hand-edited `gemini`
+  section must be renamed. Setup is now `/setup` in `dagger agent`.
 - **Non-credential values that are secret URIs** (`OPENAI_BASE_URL=op://…`)
   were resolved by the engine's old loader as a side effect of every value
   going through `loadSecret`. They now travel as plain strings. Resolving

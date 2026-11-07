@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  Add the `github-copilot` LLM provider to use an existing GitHub Copilot
+  subscription. Connect with `/setup` in `dagger agent`, choose and save a
+  default with `/model`, or use `COPILOT_GITHUB_TOKEN` in CI. Copilot tokens
+  and account-specific API endpoints refresh together; usage shows token
+  counts without a dollar cost.
+time: 2026-11-07T16:43:43.4934563Z
+custom:
+  Author: ""
+  PR: ""
