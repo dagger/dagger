@@ -371,6 +371,10 @@ type SpanSnapshot struct {
 	// covers: running it fixes the check. Empty when the generator failed.
 	CheckGenerator string `json:",omitempty"`
 
+	// CheckCollectionGroup marks the check that groups a collection's item
+	// checks. It isn't a re-runnable unit itself: its items are.
+	CheckCollectionGroup bool `json:",omitempty"`
+
 	// Generator name
 	GeneratorName string `json:",omitempty"`
 
@@ -598,6 +602,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.CheckGeneratorAttr:
 		snapshot.CheckGenerator = val.(string)
+
+	case telemetryattrs.CheckCollectionGroupAttr:
+		snapshot.CheckCollectionGroup = val.(bool)
 
 	case telemetry.GeneratorNameAttr:
 		snapshot.GeneratorName = val.(string)

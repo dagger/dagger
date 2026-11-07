@@ -4313,7 +4313,8 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // check'); otherwise it emits just "RUN LOCALLY". The "RUN LOCALLY" section can
 // be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
 // a CLI to run. Only outermost
-// checks are re-runnable, so sub-checks roll up to their root. A failed
+// checks are re-runnable, so sub-checks roll up to their root; a collection
+// group is the exception, since each of its items is re-runnable locally. A failed
 // staleness check also gets a "REGENERATE" section ('dagger generate' for its
 // generator), since running the generator is what fixes it. Returns nil when
 // no failed check applies. Controlled by showSuggestions at the call site.
@@ -4342,22 +4343,63 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 			addGenerators(child)
 		}
 	}
-	add := func(n *dagui.CheckNode) {
-		if n.Name == "" || seen[n.Name] {
+	addLocal := func(n *dagui.CheckNode) {
+		if seen[n.Name] {
 			return
 		}
 		seen[n.Name] = true
 		names = append(names, n.Name)
 		addGenerators(n)
 	}
+	// Native CI reports a collection as its group check, so a CI re-run
+	// targets the group. Locally, each failed item is its own re-runnable
+	// check, named by the address that selects it; the group itself is only
+	// suggested when no item failed (e.g. it was cancelled before any ran).
+	var ciNames []string
+	seenCI := map[string]bool{}
+	addCI := func(n *dagui.CheckNode) {
+		if !seenCI[n.Name] {
+			seenCI[n.Name] = true
+			ciNames = append(ciNames, n.Name)
+		}
+	}
+	add := func(n *dagui.CheckNode) {
+		if n.Name == "" {
+			return
+		}
+		addCI(n)
+		if n.Span.CheckCollectionGroup {
+			var failedItem bool
+			for _, item := range n.Children {
+				if item.Name != "" && item.Failed() {
+					failedItem = true
+					addLocal(item)
+				}
+			}
+			if failedItem {
+				return
+			}
+		}
+		addLocal(n)
+	}
 
 	switch {
 	case zoomed != nil && zoomed.CheckName != "":
 		// Zoomed to a check: re-run its outermost surfaced check (the re-runnable
-		// unit), if that check failed.
-		if root := outermostSurfacedCheck(roots, zoomed.CheckName); root != nil && root.Failed() {
-			add(root)
+		// unit), if that check failed. Within a collection, the unit is the
+		// zoomed item.
+		root := outermostSurfacedCheck(roots, zoomed.CheckName)
+		if root == nil || !root.Failed() {
+			break
 		}
+		if root.Span.CheckCollectionGroup {
+			if item := outermostSurfacedCheck(root.Children, zoomed.CheckName); item != nil && item.Failed() {
+				addCI(root)
+				addLocal(item)
+				break
+			}
+		}
+		add(root)
 	case zoomed == nil:
 		// Whole trace: re-run every failed outermost check.
 		for _, n := range roots {
@@ -4378,8 +4420,8 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	// commit). A distinct section from the local reproduce: it kicks off a fresh
 	// Cloud run, it doesn't run anything here.
 	if fe.ciMeta != nil && fe.ciMeta.isNativeCI && fe.ciMeta.commit != "" {
-		body := make([]string, 0, len(names))
-		for _, name := range names {
+		body := make([]string, 0, len(ciNames))
+		for _, name := range ciNames {
 			body = append(body, fmt.Sprintf("dagger cloud checks rerun --commit %s --check %q", fe.ciMeta.commit, name))
 		}
 		lines = append(lines, reportSectionLines(out, fe.agentStyle(), "RE-RUN IN CI", body)...)
