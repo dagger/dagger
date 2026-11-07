@@ -3272,12 +3272,12 @@ func (dir *Directory) WithTimestamps(ctx context.Context, parent dagql.ObjectRes
 		if err != nil {
 			return err
 		}
+		modTime := time.Unix(int64(unix), 0)
 		return filepath.WalkDir(resolvedDir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			modTime := time.Unix(int64(unix), 0)
-			return os.Chtimes(path, modTime, modTime)
+			return setTimestampsNoFollow(path, modTime)
 		})
 	})
 	if err != nil {

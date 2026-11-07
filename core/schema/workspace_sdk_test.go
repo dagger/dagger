@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -691,4 +692,40 @@ func TestSDKModuleInitRejectsContradictoryControlsBeforeWorkspaceLoad(t *testing
 		Main:    dagql.Opt(dagql.Boolean(true)),
 	})
 	require.EqualError(t, err, "--install=false cannot be combined with --main")
+}
+
+func TestSDKScopeSettingMatchesGenerate(t *testing.T) {
+	t.Parallel()
+
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"go-sdk": {Source: "github.com/dagger/go-sdk", Settings: map[string]any{"targetVersion": "provider"}},
+		},
+		SDKs: map[string]workspace.SDKEntry{
+			"go": {Module: "go-sdk", Scopes: map[string]workspace.SDKScope{
+				"app":      {Settings: map[string]any{"TARGETVERSION": "scope", "empty": ""}},
+				"variants": {Settings: map[string]any{"targetVersion": "lower", "TargetVersion": "upper"}},
+			}},
+		},
+	}
+
+	settings, err := effectiveSDKModuleSettings(context.Background(), &core.Workspace{}, cfg, "go", "app")
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"TARGETVERSION": "scope", "empty": ""}, settings)
+
+	lookup := func(key string) []byte {
+		data, err := workspace.SDKScopeSetting(cfg, ".", "go", "app", key)
+		require.NoError(t, err)
+		return data
+	}
+	require.Equal(t, `"scope"`, string(lookup("targetVersion")))
+	require.Equal(t, `""`, string(lookup("empty")))
+	require.Nil(t, lookup("missing"))
+
+	_, err = effectiveSDKModuleSettings(context.Background(), &core.Workspace{}, cfg, "go", "variants")
+	require.EqualError(t, err, `SDK "go" scope "variants" records settings ["TargetVersion" "targetVersion"], which all match "TargetVersion"; keep one in dagger.toml`)
+	for _, key := range []string{"TargetVersion", "targetversion", "other"} {
+		_, lookupErr := workspace.SDKScopeSetting(cfg, ".", "go", "variants", key)
+		require.EqualError(t, lookupErr, err.Error(), key)
+	}
 }

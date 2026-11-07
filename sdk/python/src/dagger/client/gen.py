@@ -21390,6 +21390,37 @@ class WorkspaceSDK(Type):
         _ctx = self._select("ref", _args)
         return await _ctx.execute(str)
 
+    async def scope_setting(self, path: str, key: str) -> JSONValue | None:
+        """The value a setting records in this SDK's scope settings, as a native
+        JSON value.
+
+        Reads [sdks.<name>.scopes."<scope>".settings] from the workspace
+        config, in the scope whose key resolves to path. The setting key is
+        matched without regard to case.
+
+        Null when no scope resolves to path, or the scope records no such
+        setting. Fails when the config is invalid, path escapes the workspace
+        root, key matches several recorded settings, or the value cannot be
+        represented as JSON.
+
+        Fails when this SDK is no longer installed in the workspace config,
+        even if Workspace.sdk returned it earlier.
+
+        Parameters
+        ----------
+        path:
+            Scope path, relative to the workspace cwd or absolute from the
+            workspace root.
+        key:
+            Setting name, matched without regard to case.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("key", key),
+        ]
+        _ctx = self._select("scopeSetting", _args)
+        return await _ctx.execute_object(JSONValue)
+
 
 class Client(Query):
     """The Dagger client.

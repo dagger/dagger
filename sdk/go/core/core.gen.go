@@ -24518,6 +24518,31 @@ func (r *WorkspaceSDK) Ref(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The value a setting records in this SDK's scope settings, as a native JSON value.
+//
+// Reads [sdks.<name>.scopes."<scope>".settings] from the workspace config, in the scope whose key resolves to path. The setting key is matched without regard to case.
+//
+// Null when no scope resolves to path, or the scope records no such setting. Fails when the config is invalid, path escapes the workspace root, key matches several recorded settings, or the value cannot be represented as JSON.
+//
+// Fails when this SDK is no longer installed in the workspace config, even if Workspace.sdk returned it earlier.
+func (r *WorkspaceSDK) ScopeSetting(ctx context.Context, path string, key string) (*JSONValue, error) {
+	q := r.query.Select("scopeSetting")
+	q = q.Arg("path", path)
+	q = q.Arg("key", key)
+
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
+	}
+	if objectID == nil {
+		return nil, nil
+	}
+	return &JSONValue{
+		query: selectNode(q.Root(), *objectID, "JSONValue"),
+	}, nil
+}
+
 // AsNode returns this WorkspaceSDK as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *WorkspaceSDK) AsNode() Node {

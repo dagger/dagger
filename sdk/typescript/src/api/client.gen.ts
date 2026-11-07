@@ -20723,6 +20723,31 @@ export class WorkspaceSDK extends BaseClient {
 
     return response
   }
+
+  /**
+   * The value a setting records in this SDK's scope settings, as a native JSON value.
+   *
+   * Reads [sdks.<name>.scopes."<scope>".settings] from the workspace config, in the scope whose key resolves to path. The setting key is matched without regard to case.
+   *
+   * Null when no scope resolves to path, or the scope records no such setting. Fails when the config is invalid, path escapes the workspace root, key matches several recorded settings, or the value cannot be represented as JSON.
+   *
+   * Fails when this SDK is no longer installed in the workspace config, even if Workspace.sdk returned it earlier.
+   * @param path Scope path, relative to the workspace cwd or absolute from the workspace root.
+   * @param key Setting name, matched without regard to case.
+   */
+  scopeSetting = async (
+    path: string,
+    key: string,
+  ): Promise<JSONValue | null> => {
+    const ctx = this._ctx.select("scopeSetting", { path, key }).select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new JSONValue(ctx.copy().selectNode(response, "JSONValue"))
+  }
 }
 
 export const dag = new Client()

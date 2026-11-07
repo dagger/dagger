@@ -170,6 +170,14 @@ const (
 	// running it would only repeat the failure. (string)
 	CheckGeneratorAttr = "dagger.io/check.generator"
 
+	// CheckCollectionItemAttr marks checks selected through a collection item.
+	// Status publishers can keep these under the parent run while retaining
+	// each result in the trace. Ordinary checks explicitly report false. (bool)
+	CheckCollectionItemAttr = "dagger.io/check.collection_item"
+
+	// CheckCollectionGroupAttr marks the summary of a collection check. (bool)
+	CheckCollectionGroupAttr = "dagger.io/check.collection_group"
+
 	// DagBlockedAttr marks a lazy-evaluation resume span that aborted because a
 	// prerequisite result's evaluation failed, rather than because the result's
 	// own deferred work failed. The UI treats a blocked resumption as if the

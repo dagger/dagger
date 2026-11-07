@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  `WorkspaceSDK.scopeSetting(path, key)` returns the value a setting records
+  in an SDK's scope settings in `dagger.toml`, as a `JSONValue`, or null when
+  no scope resolves to `path` or the scope records no such setting. The key is
+  matched without regard to case. An SDK called directly, as in
+  `dagger call python-sdk mod --path app generate`, is built before it knows
+  the scope, so it can now read the settings `dagger generate` gives it. The
+  field fails when the SDK is no longer installed in the workspace config.
+time: 2026-11-03T17:29:10Z
+custom:
+  Author: eunomie
+  PR: "15084"
