@@ -10,7 +10,6 @@ import (
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-
 )
 
 type ModTreeNode struct {
