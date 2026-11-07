@@ -102,26 +102,24 @@ func TestSchemaBuildsCountRepeats(t *testing.T) {
 	require.Equal(t, asts+1, dagql.SchemaASTBuilds(), "a server describes its schema once per view")
 }
 
-// A description built for a module set and view another session described
-// counts as a repeat; servers of one session share theirs.
+// A module set's description is built once for each view, and shared by
+// every server that installs the set, in any session.
 func TestSchemaDescriptionsCountRepeats(t *testing.T) {
 	f := newModuleOwnershipTest(t)
 	ctx := f.session("schema-description-counts")
 	mods := []modInstall{{mod: NewUserMod(f.module(ctx, "fixture", moduleOwnershipModuleOpts{}))}}
-	describe := func(memo *SchemaBuilderMemo, view call.View) {
+	describe := func(view call.View) {
 		srv, err := dagql.NewServer(t.Context(), &Query{})
 		require.NoError(t, err)
-		srv.UseSchemaASTCache(memo.schemaASTCache(mods))
+		srv.UseSchemaASTCache(schemaASTCache(mods))
 		srv.SchemaForView(view)
 	}
 
 	before := SchemaBuilds()
-	session := NewSchemaBuilderMemo()
-	describe(session, "")
-	describe(session, "") // the session's other server shares it
-	describe(NewSchemaBuilderMemo(), "")
-	describe(NewSchemaBuilderMemo(), "v-other")
+	describe("")
+	describe("") // another server, in this session or another, shares it
+	describe("v-other")
 	after := SchemaBuilds()
-	require.Equal(t, int64(3), after.Descriptions-before.Descriptions)
-	require.Equal(t, int64(1), after.DescriptionsRepeated-before.DescriptionsRepeated)
+	require.Equal(t, int64(2), after.Descriptions-before.Descriptions)
+	require.Equal(t, int64(0), after.DescriptionsRepeated-before.DescriptionsRepeated)
 }
