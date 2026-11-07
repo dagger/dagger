@@ -172,7 +172,7 @@ func TestEngineSpanBurstReachesFrontend(t *testing.T) {
 		LogExporterFunc:    func() sdklog.Exporter { return new(countingLogExporter) },
 		MetricExporterFunc: func() sdkmetric.Exporter { return new(countingMetricExporter) },
 	}
-	cfg, _, _, _ := engineTelemetryConfig(context.Background())
+	cfg, _, _, _ := engineTelemetryConfig(context.Background()) //nolint:dogsled // Only the config is needed here.
 	// The span processors telemetry.Init builds from cfg, without installing
 	// them globally.
 	processors := slices.Clone(cfg.SpanProcessors)
