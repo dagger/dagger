@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"slices"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -460,3 +462,54 @@ func (e *cliDrainBlockedExporter) Shutdown(context.Context) error {
 	return nil
 }
 func (*cliDrainBlockedExporter) ForceFlush(context.Context) error { return nil }
+
+// inFlightMetricExporter holds its first export until the export is canceled,
+// as an upload in flight when the reader shuts down would be.
+type inFlightMetricExporter struct {
+	countingMetricExporter
+	exporting chan struct{}
+	first     sync.Once
+}
+
+func (e *inFlightMetricExporter) Export(ctx context.Context, _ *metricdata.ResourceMetrics) error {
+	var err error
+	e.first.Do(func() {
+		close(e.exporting)
+		<-ctx.Done()
+		err = ctx.Err()
+	})
+	return err
+}
+
+func TestTelemetryErrorHandlerIgnoresCancelFromShutdown(t *testing.T) {
+	oldFrontend := Frontend
+	oldHandler := otel.GetErrorHandler()
+	t.Cleanup(func() {
+		Frontend = oldFrontend
+		otel.SetErrorHandler(oldHandler)
+	})
+	var reported []error
+	Frontend = &idtui.FrontendMock{
+		SetTelemetryErrorFunc: func(err error) { reported = append(reported, err) },
+	}
+	setTelemetryErrorHandler(false)
+
+	exporter := &inFlightMetricExporter{exporting: make(chan struct{})}
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(
+		sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(time.Millisecond)),
+	))
+	<-exporter.exporting
+	closeTelemetry(func() {
+		require.NoError(t, provider.Shutdown(t.Context()))
+	})
+	require.Empty(t, reported)
+
+	// A real failure during shutdown still counts.
+	uploadErr := errors.New("upload failed")
+	closeTelemetry(func() { otel.Handle(uploadErr) })
+	require.Equal(t, []error{uploadErr}, reported)
+
+	// So does a cancel at any other time.
+	otel.Handle(context.Canceled)
+	require.Equal(t, []error{uploadErr, context.Canceled}, reported)
+}

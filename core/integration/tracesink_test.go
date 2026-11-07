@@ -381,3 +381,32 @@ func (sink *agentTraceSink) awaitRestorableCapture(ctx context.Context, t testin
 	require.NoError(t, err)
 	return captured
 }
+
+// awaitAgentRecord blocks, for up to a minute, until name's latest received
+// control record shows state with activity at or after after: the record of a
+// turn that committed its conversation since then, not an earlier one in the
+// same state.
+func (sink *agentTraceSink) awaitAgentRecord(ctx context.Context, t testing.TB, name, state string, after time.Time) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	for {
+		sink.mu.Lock()
+		found := false
+		for _, agent := range sink.db.Agents() {
+			if agent.Name == name && agent.Control != nil && agent.State == state && !agent.Control.Activity.Before(after) {
+				found = true
+			}
+		}
+		changed := sink.changed
+		sink.mu.Unlock()
+		if found {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("agent %q has no %s record with activity since %s: %v", name, state, after, ctx.Err())
+		case <-changed:
+		}
+	}
+}
