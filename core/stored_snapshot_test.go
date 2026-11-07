@@ -13,9 +13,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/snapshots/config"
-	"github.com/dagger/dagger/engine/snapshots/testutil"
-	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -317,74 +314,6 @@ func TestSourceFilePathsMixedStoredAndFresh(t *testing.T) {
 	require.Equal(t, []string{"/saved.txt", "fresh.txt"}, paths)
 	require.Equal(t, 1, runs)
 	require.Zero(t, manager.openCount("saved"))
-}
-
-// cacheEvaluateCountingContext counts the calls to Cache.Evaluate made with it:
-// each asks once whether it may evaluate, whatever it then finds to do.
-type cacheEvaluateCountingContext struct {
-	context.Context
-	calls *atomic.Int64
-}
-
-func (ctx cacheEvaluateCountingContext) Value(key any) any {
-	if fmt.Sprintf("%T", key) == "engine.snapshotSharePreparationKey" {
-		ctx.calls.Add(1)
-	}
-	return ctx.Context.Value(key)
-}
-
-// TestFilesMountEvaluatesItsFilesOnce mounts files under part acquisition, as
-// files the engine image or the Cloud offers are. The mount evaluates them
-// together, once, then reads what that set: an evaluation of a finished file
-// starts no work anyone can see now, but it takes the cache's lock, once per file
-// per read. Each file resolves to its path and snapshot.
-func TestFilesMountEvaluatesItsFilesOnce(t *testing.T) {
-	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
-	ref, _ := aStore.Build(t, nil, "offered.txt", "offered bytes")
-	chain, err := ref.ExportChain(t.Context(), config.RefConfig{Compression: compression.New(compression.Uncompressed)})
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, chain.Release(context.Background())) })
-	ctx, cache, srv := transferCache(t, bStore, filepath.Join(t.TempDir(), "b.db"), "b")
-	cache.SetPartContentSource(partTestContentSource{&testutil.Provider{InfoReaderProvider: chain.Provider}})
-	platform := Platform{OS: "linux", Architecture: "amd64"}
-	spec := platform.Spec()
-	offer := dagql.PersistedPartOffer{Address: dagql.PersistedPartAddress{Part: "snapshot"}, Value: dagql.SnapshotValue{Kind: "file", Path: "/offered.txt", Platform: &spec}, Chain: dagql.OfferedChain{Layers: chain.Layers}}
-	names := []string{"a", "b", "c"}
-	src := &FilesMountSource{}
-	for _, name := range names {
-		file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: platform, Lazy: &FileBlobLazy{LazyState: NewLazyState(), Filename: name, Contents: []byte(name), Permissions: 0644}}
-		res := attachTransferObject(t, ctx, cache, srv, "b", name, file)
-		out, err := cache.OfferParts(ctx, res, []dagql.CloudPartOffer{{Offer: offer, CloudNumber: 1}})
-		require.NoError(t, err)
-		require.Equal(t, dagql.OfferAccepted, out[0].Outcome, "the offer puts the row under part acquisition")
-		require.NoError(t, cache.Evaluate(ctx, res))
-		src.Files = append(src.Files, MountedFile{Name: name, File: res})
-	}
-
-	var calls atomic.Int64
-	cfg, err := execMountedFiles(cacheEvaluateCountingContext{Context: ctx, calls: &calls}, src)
-	require.NoError(t, err)
-
-	require.EqualValues(t, 1, calls.Load(), "one evaluation of all the files, and none to read them")
-	require.Len(t, cfg.Files, len(names))
-	for i, name := range names {
-		require.Equal(t, name, cfg.Files[i].Name)
-		require.Equal(t, "/offered.txt", cfg.Files[i].Path)
-		require.NotNil(t, cfg.Files[i].Ref)
-	}
-}
-
-func TestSourceFilePathsReadsFinishedFilesWithoutEvaluating(t *testing.T) {
-	ctx, cache, srv := containerPersistenceTestCache(t, "", newContainerPersistenceTestSnapshots(), "sources")
-	value := storedSnapshotTestValue("File", "unused", "seed", false).(*File)
-	value.Lazy = &storedSnapshotTestLazy[*File]{LazyState: NewLazyState(), run: func(file *File) error { file.File.setValue("final.txt"); return nil }}
-	res := attachStoredSnapshotTestValue(t, ctx, cache, srv, "sources", "finished", value, false).(dagql.ObjectResult[*File])
-	require.NoError(t, cache.Evaluate(ctx, res))
-
-	// This context has no cache, so evaluating fails.
-	paths, err := SourceFilePaths(t.Context(), []dagql.ObjectResult[*File]{res})
-	require.NoError(t, err)
-	require.Equal(t, []string{"final.txt"}, paths)
 }
 
 func TestRestoredSnapshotAttemptLifetime(t *testing.T) {

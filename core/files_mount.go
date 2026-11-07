@@ -150,8 +150,8 @@ func linkMountedFile(ctx context.Context, copier *layercopy.Copier, f execMounte
 	}, mountRefAsReadOnly)
 }
 
-// execMountedFiles evaluates a files mount's files together and resolves each
-// to its snapshot and path, as Directory.withFiles does for its sources.
+// execMountedFiles evaluates a files mount's files and resolves each to its
+// snapshot and path, as Directory.withFiles does for its sources.
 func execMountedFiles(ctx context.Context, src *FilesMountSource) (*execFilesMountConfig, error) {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
@@ -170,14 +170,18 @@ func execMountedFiles(ctx context.Context, src *FilesMountSource) (*execFilesMou
 	if err != nil {
 		return nil, err
 	}
+	defer recordFilesMountStep(ctx, "withExec.filesMount.read", len(inputs))()
 	cfg := &execFilesMountConfig{Files: make([]execMountedFile, len(src.Files))}
 	for i, f := range src.Files {
-		path, ok := f.File.Self().File.Peek()
-		if !ok {
-			return nil, fmt.Errorf("files mount %q: path not set after evaluation", f.Name)
+		path, err := f.File.Self().File.GetOrEval(ctx, f.File.Result)
+		if err != nil {
+			return nil, err
 		}
-		ref, ok := f.File.Self().Snapshot.Peek()
-		if !ok || ref == nil {
+		ref, err := f.File.Self().Snapshot.GetOrEval(ctx, f.File.Result)
+		if err != nil {
+			return nil, err
+		}
+		if ref == nil {
 			return nil, fmt.Errorf("files mount %q: nil source snapshot", f.Name)
 		}
 		cfg.Files[i] = execMountedFile{Name: f.Name, Path: path, Ref: ref}
