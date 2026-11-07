@@ -1,0 +1,8 @@
+kind: Changed
+body: |-
+    Cache volumes of a module from a git repository are now namespaced by the repository whichever way its ref is spelled: `github.com/org/repo`, `https://github.com/org/repo.git`, `git@github.com:org/repo` and `ssh://git@github.com/org/repo` share one namespace, as do modules loaded through a git workspace and modules a module serves from its tree. Paths on github.com and gitlab.com are compared without case.
+    The usual spelling, `github.com/org/repo`, keeps its cache volumes. Modules referenced another way, for example with a scheme, a user, a port, a `.git` suffix or a mixed-case GitHub or GitLab path, may start once from empty cache volumes.
+time: 2026-10-23T17:00:00+02:00
+custom:
+    Author: eunomie
+    PR: "14845"
