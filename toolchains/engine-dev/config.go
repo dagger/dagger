@@ -36,6 +36,13 @@ cat $0
 if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 	own_cgroup=$(sed -n 's/^0:://p' /proc/self/cgroup)
 	if [ "$own_cgroup" != "/" ]; then
+		# Kubernetes also sets memory.oom.group on the container's cgroup, so
+		# an exec going over the container's memory limit would get every
+		# process in the container killed, the engine included. Clear it so
+		# the OOM killer takes only what it picks, as under Docker.
+		if [ -f "/sys/fs/cgroup$own_cgroup/memory.oom.group" ]; then
+			echo 0 > "/sys/fs/cgroup$own_cgroup/memory.oom.group"
+		fi
 		mount --bind "/sys/fs/cgroup$own_cgroup" /sys/fs/cgroup
 		exec unshare --cgroup "$0" "$@"
 	fi
