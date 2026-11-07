@@ -998,43 +998,93 @@ func gaugeMetrics(value int64) *metricdata.ResourceMetrics {
 	}
 }
 
-// Against a Cloud that never answers, shutting the queue down takes one
-// bound in all, draining, the exports in flight and the release: the first
-// export waits on Cloud until its own bound, before the drain deadline, and
-// the second then starts and is cancelled at that deadline.
+// shutdownMetricExporter lets the test release the first export, then holds
+// subsequent exports and exporter shutdown until their contexts end.
+type shutdownMetricExporter struct {
+	started      chan context.Context
+	releaseFirst chan struct{}
+	shutdownCtx  chan context.Context
+	exports      int
+}
+
+func (e *shutdownMetricExporter) Export(ctx context.Context, _ *metricdata.ResourceMetrics) error {
+	e.exports++
+	e.started <- ctx
+	if e.exports == 1 {
+		select {
+		case <-e.releaseFirst:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (*shutdownMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	return metricdata.DeltaTemporality
+}
+
+func (*shutdownMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.AggregationDefault{}
+}
+
+func (*shutdownMetricExporter) ForceFlush(context.Context) error { return nil }
+
+func (e *shutdownMetricExporter) Shutdown(ctx context.Context) error {
+	e.shutdownCtx <- ctx
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// Shutdown has one bound for draining, the export in flight and exporter
+// release. Synchronize each export explicitly; fake time advances only after
+// the second export is waiting, independently of HTTP and goroutine scheduling.
 func TestCloudMetricQueueShutdownIsBounded(t *testing.T) {
 	t.Parallel()
-	receiver := newCloudReceiver(t, true)
-	_, _, metrics, err := enginetel.NewCloudExporters(t.Context(), basicCloudAuth("dag_test_token"), nil, receiver.URL)
-	require.NoError(t, err)
-	const bound = 300 * time.Millisecond
-	q := newCloudMetricQueue(metrics, cloudFlushBound{sessionID: "session", timeout: bound})
-	require.NoError(t, q.Export(t.Context(), gaugeMetrics(1)))
-	require.NoError(t, q.Export(t.Context(), gaugeMetrics(2)))
-	select {
-	case <-receiver.entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the first export never reached Cloud")
-	}
-	// Shut down a little after the first export started, so that it reaches
-	// its own bound, and the second export starts, before the drain
-	// deadline.
-	time.Sleep(bound / 3)
+	synctest.Test(t, func(t *testing.T) {
+		metrics := &shutdownMetricExporter{
+			started:      make(chan context.Context),
+			releaseFirst: make(chan struct{}),
+			shutdownCtx:  make(chan context.Context, 1),
+		}
+		const bound = 300 * time.Millisecond
+		q := newCloudMetricQueue(metrics, cloudFlushBound{sessionID: "session", timeout: bound})
+		require.NoError(t, q.Export(t.Context(), gaugeMetrics(1)))
+		require.NoError(t, q.Export(t.Context(), gaugeMetrics(2)))
+		<-metrics.started
 
-	start := time.Now()
-	require.NoError(t, q.Shutdown(t.Context()))
-	require.Less(t, time.Since(start), bound+150*time.Millisecond, "one bound for draining, the exports in flight and the release")
-	select {
-	case <-receiver.entered:
-	default:
-		t.Fatal("the second export never started before the drain deadline")
-	}
-	select {
-	case <-q.drained:
-	default:
-		t.Fatal("the export in flight was not cancelled: the worker still waits on Cloud")
-	}
-	require.GreaterOrEqual(t, q.dropped, 1, "a cancelled in-flight export must be counted as dropped")
+		start := time.Now()
+		finished := make(chan error, 1)
+		go func() { finished <- q.Shutdown(t.Context()) }()
+		// Shutdown is waiting on the drain, with its deadline installed.
+		synctest.Wait()
+		// Release the first export at a known fake time during the drain.
+		// The second export's own timeout must outlive the drain deadline,
+		// so only shutdown cancellation can stop it within the shared bound.
+		time.AfterFunc(bound/3, func() { close(metrics.releaseFirst) })
+		second := <-metrics.started
+		synctest.Wait()
+		require.NoError(t, second.Err(), "the second export starts during the drain")
+		secondDeadline, ok := second.Deadline()
+		require.True(t, ok)
+		require.Equal(t, start.Add(bound+bound/3), secondDeadline)
+
+		require.NoError(t, <-finished)
+		require.Equal(t, bound, time.Since(start), "one bound for draining, the exports in flight and the release")
+		require.Error(t, second.Err(), "the export in flight must be cancelled")
+		select {
+		case <-q.drained:
+		default:
+			t.Fatal("the export in flight was not cancelled: the worker still waits on Cloud")
+		}
+		require.Equal(t, 1, q.dropped, "the cancelled in-flight export must be counted as dropped")
+		release := <-metrics.shutdownCtx
+		deadline, ok := release.Deadline()
+		require.True(t, ok)
+		require.Equal(t, start.Add(bound), deadline, "exporter release shares the drain deadline")
+	})
 }
 
 // Stopping refreshes waits for a file operation in flight even when the

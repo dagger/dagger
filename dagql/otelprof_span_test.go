@@ -292,7 +292,9 @@ func TestCallOpStartsWithItsSpan(t *testing.T) {
 		Func("started", func(context.Context, *persistCodecRoot, struct{}) (Int, error) { return NewInt(1), nil }),
 	}.Install(srv)
 	srv.Around(func(ctx context.Context, req *CallRequest) (context.Context, func(AnyResult, bool, *error)) {
-		ctx, span := tr.Start(ctx, "Query.started")
+		// Use wall time on both sides of the comparison below. A monotonic
+		// reading can drift from the recorder's wall epoch under clock slews.
+		ctx, span := tr.Start(ctx, "Query.started", trace.WithTimestamp(time.Now().Round(0)))
 		time.Sleep(hold)
 		return ctx, func(AnyResult, bool, *error) { span.End() }
 	})
@@ -315,8 +317,7 @@ func TestCallOpStartsWithItsSpan(t *testing.T) {
 	require.NoError(t, err)
 	for _, ev := range events {
 		if ev.Type == "op" && ev.OpID > testOp.ID() && ev.OpKind == wcprof.OpKindCall.String() && header.Strings[ev.ClassID] == "Query.started" {
-			// the op's start is the span's on the recorder's monotonic clock,
-			// so read back on the wall clock it can be nanoseconds apart
+			// The op must include the telemetry preparation before BeginOp.
 			require.InDelta(t, span.StartTime().UnixNano(), header.EpochUnixNano+ev.StartNS, float64(time.Microsecond), "the call op starts apart from its span")
 			return
 		}

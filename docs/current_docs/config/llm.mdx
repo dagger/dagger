@@ -1,0 +1,68 @@
+---
+title: "Configure LLM Providers"
+slug: /config/llm
+description: "Connect an AI subscription and configure the provider and model used by Dagger LLMs."
+---
+
+# Configure LLM Providers
+
+Dagger's `LLM` API and `dagger agent` use the AI accounts configured on the client. Connect a subscription or API key with `/setup` in `dagger agent`. Setup also runs automatically when no provider is configured. In `dagger shell`, the same setup is available as `.setup`.
+
+Connections and defaults are saved under `[llm]` in the [user configuration file](./user.mdx), independently of workspace settings. Environment variables override the file, and values in `./.env` override the process environment.
+
+## GitHub Copilot subscription
+
+The `github-copilot` provider uses the signed-in user's own GitHub Copilot subscription to access models served by Copilot, including Claude, GPT and Gemini models. Like the ChatGPT subscription provider (`openai-codex`), it uses a subscription login rather than an API key.
+
+Dagger borrows Copilot's public OAuth client identity and allow-listed `vscode-chat` integration identity. Requests identify Dagger in the `User-Agent` and `Editor-Version` headers. No Dagger-registered GitHub OAuth app is required.
+
+### Connect an account
+
+1. Start `dagger agent` and enter `/setup` (or follow the automatic setup if no provider is configured)
+2. Choose **GitHub Copilot (subscription)**
+3. Open the displayed verification URL, enter the device code, and approve access with the GitHub account that has the Copilot subscription
+4. Choose a model and optionally make `github-copilot` the default provider
+
+Setup saves the GitHub token in the user configuration file and exchanges it for a short-lived Copilot API token. Dagger refreshes that API token automatically and uses the API endpoint returned by GitHub for the account, including Business and Enterprise endpoints. If GitHub revokes or expires the login, run `/setup` again in `dagger agent` to reconnect.
+
+Use `/model` in `dagger agent` to choose another model and optionally save the provider and model as the default for future sessions. Use `/logout` and choose the saved GitHub Copilot connection to disconnect it from this device.
+
+### Select the provider
+
+Select Copilot explicitly with `llm(provider: "github-copilot")`, or choose a default that routes to `github-copilot`. Setup and `/model` can save that default. It can also be set in the user configuration file after connecting:
+
+```toml
+[llm]
+default_provider = "github-copilot"
+default_model = "gpt-4.1"
+```
+
+`COPILOT_MODEL` also selects a Copilot default, subject to the priority of other providers' model environment variables. With no model specified, an explicit Copilot request uses the configured model or Copilot's built-in default.
+
+Dagger never infers Copilot from a model name, and there is no Copilot model-name prefix. A default pinned to `github-copilot` keeps using Copilot even when its model starts with `claude-`, `gpt-` or `gemini-`.
+
+Simply connecting a Copilot account never replaces a configured OpenAI, OpenRouter, Anthropic or Google API key in automatic provider selection. Without an explicit default, Copilot comes after those API-key providers. A Copilot login used as the only credential supplies the fallback default route. Explicitly selecting Copilot keeps that route on Copilot even when another provider has an API key.
+
+### Configure CI
+
+Store a GitHub token authorized for Copilot in the CI secret store and expose it as `COPILOT_GITHUB_TOKEN`. For example, when the CI makes that secret available as `CI_COPILOT_GITHUB_TOKEN`:
+
+```shell
+export COPILOT_GITHUB_TOKEN="$CI_COPILOT_GITHUB_TOKEN"
+export COPILOT_MODEL="gpt-4.1"
+```
+
+No interactive login is needed in CI. Dagger exchanges the GitHub token for a short-lived Copilot API token and caches the API token, expiry and endpoint in memory. `COPILOT_GITHUB_TOKEN` takes precedence over a stored Copilot login: the token and endpoint come from the environment token's exchange, and the stored GitHub token is not exchanged.
+
+| Variable | Purpose |
+| --- | --- |
+| `COPILOT_GITHUB_TOKEN` | GitHub token to exchange for Copilot API access; overrides a stored login |
+| `COPILOT_MODEL` | Default Copilot model; also selects the Copilot default route when this model variable wins provider priority |
+| `COPILOT_SMALL_MODEL` | Model used for smaller background tasks on the Copilot route |
+| `COPILOT_REASONING_EFFORT` | Reasoning effort for models that support it, such as `low`, `medium` or `high` |
+
+`GH_TOKEN`, `GITHUB_TOKEN`, and tokens saved by `gh`, editors or the Copilot CLI are not used for this provider.
+
+### Usage
+
+Copilot usage shows token counts without a dollar cost. Requests use the account's Copilot subscription and remain subject to GitHub's subscription limits and premium-request accounting.

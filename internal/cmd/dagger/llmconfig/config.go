@@ -14,6 +14,7 @@ import (
 	"github.com/gofrs/flock"
 	toml "github.com/pelletier/go-toml"
 
+	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/internal/userconfig"
 )
 
@@ -43,6 +44,7 @@ var lastOAuthRefresh = map[string]time.Time{}
 var lastRejectedOAuthRefresh = map[string]rejectedOAuthRefresh{}
 
 type rejectedOAuthRefresh struct {
+	rejected    bool // false for a failed proactive Copilot exchange
 	fingerprint string
 	at          time.Time
 	err         error
@@ -80,8 +82,8 @@ type Provider struct {
 	DisableStreaming bool   `toml:"disable_streaming,omitempty"`
 	Enabled          bool   `toml:"enabled"`
 
-	// OAuth fields for Claude Code subscription auth
-	AuthType     string `toml:"auth_type,omitempty"`     // "oauth" for Claude Code OAuth
+	// OAuth fields for subscription authentication
+	AuthType     string `toml:"auth_type,omitempty"`     // "oauth" for subscription OAuth
 	AuthToken    string `toml:"auth_token,omitempty"`    // OAuth access token
 	RefreshToken string `toml:"refresh_token,omitempty"` // OAuth refresh token
 	// TokenExpiresAt is when the access token truly expires, in unix
@@ -385,35 +387,64 @@ func refreshProviderToken(ctx context.Context, name string, provider Provider) (
 }
 
 func refreshProviderTokenAfterRejection(ctx context.Context, name string, provider Provider, rejected string) (_ Provider, _ bool, rerr error) {
-	force := rejected != "" && rejected == fmt.Sprintf("%x", sha256.Sum256([]byte(provider.AuthToken)))
 	// A disabled provider's credentials are never sent to the engine (Assemble
 	// skips it), so refreshing it would spend its single-use grant for nothing
 	// — and rotate a refresh token the user still expects to work when they
 	// re-enable the provider.
-	if !provider.Enabled || !provider.IsOAuth() || (!force && !IsTokenExpired(&provider)) {
+	if !provider.Enabled || !provider.IsOAuth() {
+		return provider, false, nil
+	}
+	floorKey := ConfigFile + "\x00" + name
+	if name == "github-copilot" {
+		// Keep a failed exchange failed during the refresh floor, including
+		// calls without a rejection context. Never serve a revoked or rejected
+		// credential just because the previous attempt was recent.
+		last := lastRejectedOAuthRefresh[floorKey]
+		if last.err != nil && last.fingerprint == copilotFingerprint(provider.AuthToken) {
+			if last.rejected {
+				rejected = last.fingerprint
+			} else if rejected == "" && time.Since(last.at) < oauthRefreshFloor {
+				return provider, false, last.err
+			}
+		}
+	}
+	force := rejected != "" && rejected == fmt.Sprintf("%x", sha256.Sum256([]byte(provider.AuthToken)))
+	if !force && !IsTokenExpired(&provider) {
 		return provider, false, nil
 	}
 	// Rate-limit per provider, so a pathologically short-lived token can't turn
 	// every resolution into another rotation. The caller holds oauthRefreshMu.
-	floorKey := ConfigFile + "\x00" + name
+	if name == "github-copilot" && !force {
+		defer func() {
+			if rerr != nil {
+				lastRejectedOAuthRefresh[floorKey] = rejectedOAuthRefresh{
+					fingerprint: copilotFingerprint(provider.AuthToken), at: time.Now(), err: rerr,
+				}
+			}
+		}()
+	}
 	if force {
 		last := lastRejectedOAuthRefresh[floorKey]
-		if last.fingerprint == rejected && time.Since(last.at) < oauthRefreshFloor {
+		if last.fingerprint == rejected && (name != "github-copilot" || last.rejected) && time.Since(last.at) < oauthRefreshFloor {
 			return provider, false, last.err
 		}
 		defer func() {
 			lastRejectedOAuthRefresh[floorKey] = rejectedOAuthRefresh{
-				fingerprint: rejected, at: time.Now(), err: rerr,
+				fingerprint: rejected, at: time.Now(), err: rerr, rejected: true,
 			}
 		}()
 	} else if time.Since(lastOAuthRefresh[floorKey]) < oauthRefreshFloor {
-		return provider, false, nil
+		if name != "github-copilot" || time.Now().Before(provider.TokenExpiresAtTime()) {
+			return provider, false, nil
+		}
 	}
 	lastOAuthRefresh[floorKey] = time.Now()
 
 	var refreshed *Provider
 	var err error
 	switch name {
+	case "github-copilot":
+		refreshed, err = RefreshCopilotOAuthToken(ctx, &provider)
 	case "openai-codex":
 		refreshed, err = RefreshOpenAIOAuthToken(ctx, &provider)
 	default:
@@ -426,6 +457,9 @@ func refreshProviderTokenAfterRejection(ctx context.Context, name string, provid
 			return provider, false, fmt.Errorf("%w: %w; run /setup in dagger agent to reauthenticate", ErrOAuthReauthenticationRequired, refreshErr)
 		}
 		return provider, false, refreshErr
+	}
+	if name == "github-copilot" && force && copilotFingerprint(refreshed.AuthToken) == rejected {
+		return provider, false, fmt.Errorf("copilot token exchange returned the rejected token")
 	}
 	return *refreshed, true, nil
 }
@@ -447,6 +481,9 @@ func RefreshOAuthTokensIfNeeded(ctx context.Context) error {
 		var changed bool
 		var errs []error
 		for name, provider := range cfg.LLM.Providers {
+			if name == "github-copilot" && copilotGitHubToken() != "" {
+				continue // the environment credential never refreshes the stored login
+			}
 			refreshed, didChange, err := refreshProviderToken(ctx, name, provider)
 			if err != nil {
 				// Keep going: a refresh grant is single-use, so a provider
@@ -479,6 +516,12 @@ func RefreshOAuthProviderIfNeeded(ctx context.Context, name string) (*Provider, 
 // token. A different token on disk wins without forcing another rotation: a
 // concurrent process may already have recovered the credential for us.
 func RefreshOAuthProviderAfterRejection(ctx context.Context, name, rejected string) (*Provider, error) {
+	if name == "github-copilot" {
+		ctx = secretprovider.ContextWithRejectedSecretValue(ctx, rejected)
+		if p, ok, err := resolveCopilotEnvProvider(ctx); ok {
+			return p, err
+		}
+	}
 	oauthRefreshMu.Lock()
 	defer oauthRefreshMu.Unlock()
 

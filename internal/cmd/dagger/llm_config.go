@@ -14,7 +14,7 @@ import (
 
 // oauthProviders are the subscription OAuth providers the CLI keeps fresh, by
 // config-file name (which is also their wire name).
-var oauthProviders = []string{"anthropic", "openai-codex"}
+var oauthProviders = []string{"anthropic", "openai-codex", "github-copilot"}
 
 // assembleLLMConfig builds the LLM configuration this client sends to the
 // engine, from the config file, the environment, and ./.env in the working

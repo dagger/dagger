@@ -72,6 +72,10 @@ type Credential struct {
 	// a client that predates the expiry contract — in which case the cache
 	// falls back to credentialRefreshTTL instead of assuming a lifetime.
 	ExpiresAt time.Time
+
+	// BaseURL is the API origin from the Copilot exchange that issued Token.
+	// It is cached and invalidated with Token, never independently.
+	BaseURL string
 }
 
 // credentialResolver fetches the current credential from its origin. For a
@@ -343,6 +347,16 @@ func (t *credentialTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	// the SDK's routing-time token when a live source cannot supply one: it
 	// may be the very credential that Invalidate just discarded after a 401.
 	req = req.Clone(req.Context())
+	if cred.BaseURL != "" {
+		origin, err := copilotAPIOrigin(cred.BaseURL)
+		if err != nil {
+			return nil, err
+		}
+		// The SDK keeps its endpoint path and query. Only Copilot supplies
+		// BaseURL in a credential; other providers retain their routing URL.
+		req.URL.Scheme, req.URL.Host = origin.Scheme, origin.Host
+		req.Host = origin.Host
+	}
 	t.apply(req, cred.Token)
 	resp, err := t.base.RoundTrip(req)
 	if resp != nil && resp.StatusCode == http.StatusUnauthorized {
