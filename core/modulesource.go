@@ -180,6 +180,7 @@ type ModuleSource struct {
 	ConfigExists                  bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
 	ConfigFilename                string
 	Entrypoint                    *modules.ModuleEntrypointConfig
+	EntrypointSources             bool
 	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
 	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
 	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
@@ -491,20 +492,22 @@ type persistedDirModuleSourcePayload struct {
 }
 
 type persistedModuleSourceSDKCapabilities struct {
-	Runtime           bool `json:"runtime,omitempty"`
-	ModuleTypes       bool `json:"moduleTypes,omitempty"`
-	CodeGenerator     bool `json:"codeGenerator,omitempty"`
-	ClientGenerator   bool `json:"clientGenerator,omitempty"`
-	SelfCallsAlways   bool `json:"selfCallsAlways,omitempty"`
-	ModuleInitializer bool `json:"moduleInitializer,omitempty"`
-	ClientInitializer bool `json:"clientInitializer,omitempty"`
-	RuntimeTarget     bool `json:"runtimeTarget,omitempty"`
+	ModuleBacked      *bool `json:"moduleBacked,omitempty"`
+	Runtime           bool  `json:"runtime,omitempty"`
+	ModuleTypes       bool  `json:"moduleTypes,omitempty"`
+	CodeGenerator     bool  `json:"codeGenerator,omitempty"`
+	ClientGenerator   bool  `json:"clientGenerator,omitempty"`
+	SelfCallsAlways   bool  `json:"selfCallsAlways,omitempty"`
+	ModuleInitializer bool  `json:"moduleInitializer,omitempty"`
+	ClientInitializer bool  `json:"clientInitializer,omitempty"`
+	RuntimeTarget     bool  `json:"runtimeTarget,omitempty"`
 }
 
 type persistedModuleSourcePayload struct {
 	ConfigExists                        bool                                  `json:"configExists,omitempty"`
 	ConfigFilename                      string                                `json:"configFilename,omitempty"`
 	Entrypoint                          *modules.ModuleEntrypointConfig       `json:"entrypoint,omitempty"`
+	EntrypointSources                   bool                                  `json:"entrypointSources,omitempty"`
 	ModuleName                          string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName                  string                                `json:"moduleOriginalName,omitempty"`
 	EngineVersion                       string                                `json:"engineVersion,omitempty"`
@@ -834,6 +837,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		ConfigExists:                        src.ConfigExists,
 		ConfigFilename:                      src.ConfigFilename,
 		Entrypoint:                          src.Entrypoint,
+		EntrypointSources:                   src.EntrypointSources,
 		ModuleName:                          src.ModuleName,
 		ModuleOriginalName:                  src.ModuleOriginalName,
 		EngineVersion:                       src.EngineVersion,
@@ -864,6 +868,11 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: sdk config is set but sdk impl is not initialized")
 		}
 		_, hasRuntime := src.SDKImpl.AsRuntime()
+		_, hasModule := src.SDKImpl.AsModule()
+		moduleBacked := &hasModule
+		if sdk, ok := src.SDKImpl.(*persistedModuleSourceLazySDK); ok {
+			moduleBacked = sdk.capabilities.ModuleBacked
+		}
 		_, hasModuleTypes := src.SDKImpl.AsModuleTypes()
 		_, hasCodeGenerator := src.SDKImpl.AsCodeGenerator()
 		_, hasClientGenerator := src.SDKImpl.AsClientGenerator()
@@ -875,6 +884,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		_, hasClientInitializer := src.SDKImpl.AsClientInitializer()
 		_, hasRuntimeTarget := src.SDKImpl.AsRuntimeTarget()
 		payload.SDKCapabilities = &persistedModuleSourceSDKCapabilities{
+			ModuleBacked:      moduleBacked,
 			Runtime:           hasRuntime,
 			ModuleTypes:       hasModuleTypes,
 			CodeGenerator:     hasCodeGenerator,
@@ -1003,6 +1013,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		ConfigExists:                        persisted.ConfigExists,
 		ConfigFilename:                      persisted.ConfigFilename,
 		Entrypoint:                          persisted.Entrypoint,
+		EntrypointSources:                   persisted.EntrypointSources,
 		ModuleName:                          persisted.ModuleName,
 		ModuleOriginalName:                  persisted.ModuleOriginalName,
 		EngineVersion:                       persisted.EngineVersion,

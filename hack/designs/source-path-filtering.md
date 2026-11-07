@@ -36,6 +36,8 @@ object retains no Workspace, that input is bounded to the queried file.
 without Workspace access. A Workspace argument or a stored Workspace anywhere
 in the evaluation receiver is a wildcard: the unrun function can query any path.
 Engine context used to route an Artifact or Check is not an author input.
+Runtime inputs count too. An entrypoint without `sources()` gets Workspace
+implicitly. An entrypoint with `sources()` depends on its prepared Directory.
 
 Source regions cover queries, not just the files they returned. A glob must
 cover new matches. Git dirty-state queries have a repository-wide scope. Their
@@ -85,6 +87,8 @@ producers. This can give a wider dependency set than one producer alone.
 
 Older values without complete origin data remain conservative and report the
 missing coverage. A new fact cannot prove that all older origins are known.
+A custom SDK can load types before it prepares its runtime. Until that runtime
+has inspectable inputs, keep the artifact selected and report this limit.
 
 ## CLI
 

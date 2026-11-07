@@ -171,6 +171,9 @@ func (c *workspaceInputCollector) inputs(frame *dagql.ResultCall) {
 	if frame == nil {
 		return
 	}
+	if c.evaluating && frame.Module != nil {
+		c.moduleInputs(frame.Module.ResultRef)
+	}
 	previous := c.origin
 	c.origin = "receiver"
 	if frame.Field != "" {
@@ -193,6 +196,85 @@ func (c *workspaceInputCollector) inputs(frame *dagql.ResultCall) {
 		}
 	}
 	c.origin = previous
+}
+
+func (c *workspaceInputCollector) moduleInputs(ref *dagql.ResultCallRef) {
+	if ref == nil {
+		c.issue("called module has no attached source")
+		return
+	}
+	value, err := c.cache.LoadResultByResultID(c.ctx, c.session, c.server, ref.ResultID)
+	if err != nil {
+		c.issue("cannot inspect module runtime inputs: %v", err)
+		return
+	}
+	mod, ok := dagql.UnwrapAs[*Module](value)
+	if !ok {
+		c.issue("called module source has type %T", value.Unwrap())
+		return
+	}
+	evaluating := c.evaluating
+	c.evaluating = false
+	c.ref(ref)
+	if mod.Runtime.Valid {
+		c.retainedField(mod.Runtime.Value, "module runtime")
+	}
+	if mod.Definition.Valid {
+		c.retainedField(mod.Definition.Value, "module definition")
+		if definition := mod.Definition.Value.Self(); definition != nil && definition.Runtime.Valid {
+			c.retainedField(definition.Runtime.Value, "module definition runtime")
+		}
+	}
+	c.evaluating = evaluating
+	if src := mod.GetSource(); !mod.Runtime.Valid && src != nil && src.SDKImpl != nil {
+		_, moduleBacked := src.SDKImpl.AsModule()
+		if sdk, ok := src.SDKImpl.(*persistedModuleSourceLazySDK); ok {
+			moduleBacked = sdk.capabilities.ModuleBacked == nil || *sdk.capabilities.ModuleBacked
+		}
+		if _, runtime := src.SDKImpl.AsRuntime(); moduleBacked && runtime {
+			c.issue("SDK runtime inputs have not been prepared")
+		}
+	}
+	c.entrypointModuleInputs(mod)
+}
+
+func (c *workspaceInputCollector) entrypointModuleInputs(mod *Module) {
+	if mod == nil {
+		return
+	}
+	src := mod.GetSource()
+	if src == nil || src.Entrypoint == nil {
+		return
+	}
+	if src.EntrypointSources {
+		id, err := src.ContextDirectory.ID()
+		if err != nil || id == nil {
+			c.issue("entrypoint source directory has no attached value")
+			return
+		}
+		c.ref(&dagql.ResultCallRef{ResultID: id.EngineResultID()})
+		return
+	}
+	var ws *Workspace
+	if bound, ok := WorkspaceFromContext(c.ctx); ok {
+		ws = bound.Self()
+	} else {
+		query, err := CurrentQuery(c.ctx)
+		if err != nil {
+			c.issue("cannot inspect entrypoint workspace: %v", err)
+			return
+		}
+		ws, err = query.Server.CurrentWorkspace(c.ctx)
+		if err != nil {
+			c.issue("cannot inspect entrypoint workspace: %v", err)
+			return
+		}
+	}
+	if ws == nil {
+		c.issue("entrypoint has no workspace")
+		return
+	}
+	c.source(ws, provenance.Selector{Path: "/", Kind: provenance.WorkspaceRead, Origin: "entrypoint workspace"})
 }
 
 func (c *workspaceInputCollector) literal(value *dagql.ResultCallLiteral) {
@@ -386,12 +468,28 @@ func (c *workspaceInputCollector) retainedValue(value dagql.AnyResult) {
 		return
 	}
 	if obj, ok := dagql.UnwrapAs[*ModuleObject](value); ok && obj != nil {
+		if obj.Module.Self() != nil {
+			id, err := obj.Module.ID()
+			if err != nil || id == nil {
+				c.issue("retained object module has no attached source")
+			} else {
+				c.moduleInputs(&dagql.ResultCallRef{ResultID: id.EngineResultID()})
+			}
+		}
 		for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
 			c.retainedField(obj.Fields[name], "field "+name)
 		}
 		return
 	}
 	if check, ok := dagql.UnwrapAs[*Check](value); ok && check != nil {
+		previous := c.ctx
+		if check.Workspace.Self() != nil {
+			c.ctx = WorkspaceToContext(c.ctx, check.Workspace)
+		}
+		defer func() { c.ctx = previous }()
+		if receiver := check.Receiver.Self(); receiver != nil {
+			c.entrypointModuleInputs(receiver.Module.Self())
+		}
 		c.retainedValue(check.Receiver)
 		c.retainedValue(check.Unaddressed)
 		c.retainedArtifactCall(check.RemoteArtifact.Self(), check.RemoteArguments)

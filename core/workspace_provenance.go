@@ -174,6 +174,11 @@ func (a *Artifact) Provenance(ctx context.Context) (*WorkspaceProvenance, error)
 		}
 		return nil
 	}
+	if frame.Module != nil {
+		if err := add(&dagql.ResultCall{Module: frame.Module}, "module runtime inputs"); err != nil {
+			return nil, err
+		}
+	}
 	if frame.Receiver != nil {
 		if err := add(&dagql.ResultCall{Receiver: frame.Receiver}, "receiver"); err != nil {
 			return nil, err
