@@ -4357,17 +4357,18 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	// suggested when no item failed (e.g. it was cancelled before any ran).
 	var ciNames []string
 	seenCI := map[string]bool{}
-	addCI := func(n *dagui.CheckNode) {
-		if !seenCI[n.Name] {
-			seenCI[n.Name] = true
-			ciNames = append(ciNames, n.Name)
-		}
-	}
 	add := func(n *dagui.CheckNode) {
 		if n.Name == "" {
 			return
 		}
-		addCI(n)
+		ciName := n.Name
+		if group := collectionGroupOf(n.Span); group != nil {
+			ciName = group.CheckName
+		}
+		if !seenCI[ciName] {
+			seenCI[ciName] = true
+			ciNames = append(ciNames, ciName)
+		}
 		if n.Span.CheckCollectionGroup {
 			var failedItem bool
 			for _, item := range n.Children {
@@ -4389,17 +4390,12 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 		// unit), if that check failed. Within a collection, the unit is the
 		// zoomed item.
 		root := outermostSurfacedCheck(roots, zoomed.CheckName)
-		if root == nil || !root.Failed() {
-			break
+		if root != nil && root.Span.CheckCollectionGroup && root.Name != zoomed.CheckName {
+			root = outermostSurfacedCheck(root.Children, zoomed.CheckName)
 		}
-		if root.Span.CheckCollectionGroup {
-			if item := outermostSurfacedCheck(root.Children, zoomed.CheckName); item != nil && item.Failed() {
-				addCI(root)
-				addLocal(item)
-				break
-			}
+		if root != nil && root.Failed() {
+			add(root)
 		}
-		add(root)
 	case zoomed == nil:
 		// Whole trace: re-run every failed outermost check.
 		for _, n := range roots {
@@ -4470,6 +4466,18 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	}
 
 	return lines
+}
+
+// collectionGroupOf returns the collection group check span is, or sits
+// beneath, or nil. It walks the span's ancestors rather than the surfaced
+// tree, which a zoom into one item scopes to that item.
+func collectionGroupOf(span *dagui.Span) *dagui.Span {
+	for ; span != nil; span = span.ParentSpan {
+		if span.CheckCollectionGroup {
+			return span
+		}
+	}
+	return nil
 }
 
 // outermostSurfacedCheck returns the top-level surfaced check whose subtree
