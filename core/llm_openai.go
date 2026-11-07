@@ -54,6 +54,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
 
+	opts = append(opts, endpoint.copilotClientOptions()...)
 	opts = append(opts, option.WithHTTPClient(endpoint.otelHTTPClient("openai")))
 	return &OpenAIClient{chat: openai.NewChatCompletionService(opts...), endpoint: endpoint, disableStreaming: disableStreaming}
 }
@@ -382,10 +383,11 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 	var chatCompletion *openai.ChatCompletion
 	var signatures map[int64]string
 
+	reqOpts := c.endpoint.copilotRequestOptions(history)
 	if len(tools) > 0 && c.disableStreaming {
-		chatCompletion, signatures, err = c.queryWithoutStreaming(ctx, params, outputTokens, inputTokens, inputTokensCacheReads, attrs, dp)
+		chatCompletion, signatures, err = c.queryWithoutStreaming(ctx, params, outputTokens, inputTokens, inputTokensCacheReads, attrs, dp, reqOpts...)
 	} else {
-		chatCompletion, signatures, err = c.queryWithStreaming(ctx, params, outputTokens, inputTokens, inputTokensCacheReads, attrs, dp)
+		chatCompletion, signatures, err = c.queryWithStreaming(ctx, params, outputTokens, inputTokens, inputTokensCacheReads, attrs, dp, reqOpts...)
 	}
 	// Close the streamed text response phase (if any) before the tool-call
 	// phases, so spans close in the order the model produced them.
@@ -507,12 +509,13 @@ func (c *OpenAIClient) queryWithStreaming(
 	inputTokensCacheReads metric.Int64Gauge,
 	attrs []attribute.KeyValue,
 	dp *displayPhases,
+	reqOpts ...option.RequestOption,
 ) (*openai.ChatCompletion, map[int64]string, error) {
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
 		IncludeUsage: openai.Opt(true),
 	}
 
-	stream := c.chat.NewStreaming(ctx, params)
+	stream := c.chat.NewStreaming(ctx, params, reqOpts...)
 	if stream.Err() != nil {
 		// errored establishing connection; bail so stream.Close doesn't panic
 		return nil, nil, stream.Err()
@@ -570,8 +573,9 @@ func (c *OpenAIClient) queryWithoutStreaming(
 	inputTokensCacheReads metric.Int64Gauge,
 	attrs []attribute.KeyValue,
 	dp *displayPhases,
+	reqOpts ...option.RequestOption,
 ) (*openai.ChatCompletion, map[int64]string, error) {
-	compl, err := c.chat.New(ctx, params)
+	compl, err := c.chat.New(ctx, params, reqOpts...)
 	if err != nil {
 		return nil, nil, err
 	}

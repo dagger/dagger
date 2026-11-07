@@ -129,8 +129,7 @@ func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAIResponsesClient {
 	return &OpenAIResponsesClient{svc: svc, endpoint: endpoint, codex: true}
 }
 
-// newOpenAIResponsesClient builds a Responses API client for OpenAI's own API,
-// authenticated with an API key. Like newOpenAIClient, it ignores the engine
+// newOpenAIResponsesClient builds a Responses API client for OpenAI or Copilot. Like newOpenAIClient, it ignores the engine
 // process's OPENAI_* environment.
 func newOpenAIResponsesClient(endpoint *LLMEndpoint) *OpenAIResponsesClient {
 	opts := []option.RequestOption{option.WithEnvironmentProduction()}
@@ -140,6 +139,7 @@ func newOpenAIResponsesClient(endpoint *LLMEndpoint) *OpenAIResponsesClient {
 	if endpoint.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
+	opts = append(opts, endpoint.copilotClientOptions()...)
 	opts = append(opts, option.WithHTTPClient(endpoint.otelHTTPClient("openai")))
 	return &OpenAIResponsesClient{svc: responses.NewResponseService(opts...), endpoint: endpoint}
 }
@@ -259,7 +259,7 @@ func (c *OpenAIResponsesClient) SendQuery(ctx context.Context, history []*LLMMes
 	// Use streaming
 	turn := codexTurnIndex(history)
 	var httpResp *http.Response
-	reqOpts := []option.RequestOption{option.WithResponseInto(&httpResp)}
+	reqOpts := append(c.endpoint.copilotRequestOptions(history), option.WithResponseInto(&httpResp))
 	if c.codex {
 		reqOpts = append(reqOpts, c.turnRequestOptions(cacheKey, turn)...)
 	}
