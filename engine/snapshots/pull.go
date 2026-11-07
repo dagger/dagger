@@ -5,11 +5,14 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/leases"
+	"github.com/containerd/containerd/v2/core/mount"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
@@ -61,7 +64,7 @@ func (cm *snapshotManager) ImportImage(
 	}()
 
 	for _, layer := range img.Layers {
-		next, err := cm.importLayer(ctx, layer, current, nil, opts, false)
+		next, err := cm.importLayer(ctx, layer, current, nil, opts, false, nil, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +129,7 @@ func (cm *snapshotManager) ImportImage(
 		if err := cm.linkContentToContextLease(ctx, desc); err != nil {
 			return nil, err
 		}
-		if err := cm.recordSnapshotContent(current.SnapshotID(), desc); err != nil {
+		if err := cm.recordSnapshotContent(ctx, current.SnapshotID(), desc); err != nil {
 			return nil, err
 		}
 	}
@@ -138,7 +141,6 @@ func (cm *snapshotManager) ImportImage(
 	return current, nil
 }
 
-//nolint:gocyclo // Keep snapshot reuse, content ownership, and apply cleanup in one import flow.
 func (cm *snapshotManager) importLayer(
 	ctx context.Context,
 	desc ocispecs.Descriptor,
@@ -146,6 +148,8 @@ func (cm *snapshotManager) importLayer(
 	provider content.Provider,
 	opts ImportImageOpts,
 	chainMode bool,
+	timing *ImportTiming,
+	chain *chainLayer,
 ) (ImmutableRef, error) {
 	diffID, err := diffIDFromDescriptor(desc)
 	if err != nil {
@@ -157,12 +161,12 @@ func (cm *snapshotManager) importLayer(
 		parentSnapshotID = parent.SnapshotID()
 	}
 
-	lockKey := importedLayerDiffLockKey(parentSnapshotID, diffID)
-	unlock, err := cm.importLayerLocker.acquire(ctx, lockKey)
+	// The stamps feed the import's timing sums and the profile alike.
+	clock := importClock{timing: timing, prof: wcprof.Enabled(ctx)}
+	unlock, err := cm.acquireImportLock(ctx, importedLayerDiffLockKey(parentSnapshotID, diffID), clock)
 	if err != nil {
 		return nil, err
 	}
-
 	defer unlock()
 
 	blobKey := ImportedLayerBlobKey{
@@ -173,8 +177,75 @@ func (cm *snapshotManager) importLayer(
 		ParentSnapshotID: parentSnapshotID,
 		DiffID:           diffID,
 	}
+	if ref, err := cm.reuseImportedLayer(ctx, blobKey, diffKey, opts); err != nil || ref != nil {
+		return ref, err
+	}
 
-	cm.mu.Lock()
+	if err := cm.fetchLayerContent(ctx, desc, provider, chainMode, chain, clock); err != nil {
+		return nil, err
+	}
+	if chain != nil && chain.fetched != nil {
+		chain.fetched()
+	}
+	leaseID, _ := leases.FromContext(ctx)
+	if parent != nil {
+		if err := cm.AttachLease(ctx, leaseID, parent.SnapshotID()); err != nil {
+			return nil, err
+		}
+	}
+
+	mut, err := cm.New(
+		ctx,
+		parent,
+		nil,
+		WithRecordType(opts.RecordType),
+		WithDescription(fmt.Sprintf("import snapshot layer %s", desc.Digest)),
+		WithImageRef(opts.ImageRef),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if mut != nil {
+			_ = mut.Release(context.WithoutCancel(ctx))
+		}
+	}()
+	if err := cm.applyLayer(ctx, mut, desc, chainMode, clock, false); err != nil {
+		return nil, err
+	}
+
+	ref, err := mut.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mut = nil
+	ref, err = cm.recordImportedLayer(ctx, ref, desc, diffID, opts, blobKey, diffKey)
+	if err == nil && chain != nil && chain.owner != nil && chain.owner.Applied != nil {
+		chain.owner.Applied(ctx, desc, ref.SnapshotID())
+	}
+	return ref, err
+}
+
+// acquireImportLock takes the import lock key names, adding the wait to the
+// clock's timing and profile.
+func (cm *snapshotManager) acquireImportLock(ctx context.Context, key string, clock importClock) (func(), error) {
+	waitStart := clock.now()
+	unlock, err := cm.importLayerLocker.acquire(ctx, key)
+	waited := clock.now()
+	if clock.timing != nil {
+		clock.timing.LayerWait += waited.Sub(waitStart)
+	}
+	if clock.prof {
+		wcprof.RecordWaitAt(ctx, "snapshots.importLayer", wcprof.WaitReasonLock, waitStart, waited)
+	}
+	return unlock, err
+}
+
+// reuseImportedLayer returns the snapshot the engine already imported for a
+// layer on the same parent, by its blob or its diff, or nil when it has none.
+// Requires the layer's import lock.
+func (cm *snapshotManager) reuseImportedLayer(ctx context.Context, blobKey ImportedLayerBlobKey, diffKey ImportedLayerDiffKey, opts ImportImageOpts) (ImmutableRef, error) {
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	byBlob := cm.importedLayerByBlob[blobKey]
 	byDiff := cm.importedLayerByDiff[diffKey]
 	cm.mu.Unlock()
@@ -199,7 +270,7 @@ func (cm *snapshotManager) importLayer(
 		if !IsNotFound(err) {
 			return nil, err
 		}
-		cm.mu.Lock()
+		wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 		if cm.importedLayerByBlob[blobKey] == snapshotID {
 			delete(cm.importedLayerByBlob, blobKey)
 		}
@@ -208,59 +279,100 @@ func (cm *snapshotManager) importLayer(
 		}
 		cm.mu.Unlock()
 	}
+	return nil, nil
+}
 
-	if err := cm.importLayerContent(ctx, desc, provider, chainMode); err != nil {
-		return nil, err
-	}
-	if parent != nil {
-		if err := cm.AttachLease(ctx, leaseID, parent.SnapshotID()); err != nil {
-			return nil, err
+// fetchLayerContent gets desc's blob into the content store, linked to ctx's
+// lease, adding the time to the clock's timing and profile.
+func (cm *snapshotManager) fetchLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool, chain *chainLayer, clock importClock) error {
+	fetchStart := clock.now()
+	source, joined, err := cm.importLayerContent(ctx, desc, provider, chainMode, chain)
+	fetched := clock.now()
+	if clock.timing != nil {
+		clock.timing.Fetch += fetched.Sub(fetchStart)
+		if joined {
+			clock.timing.Joined++
+		}
+		if packs, ok := provider.(PackProvider); ok && err == nil {
+			if _, packed := packs.PackOf(desc.Digest); packed {
+				clock.timing.Packed++
+			}
 		}
 	}
-
-	mut, err := cm.New(
-		ctx,
-		parent,
-		nil,
-		WithRecordType(opts.RecordType),
-		WithDescription(fmt.Sprintf("import snapshot layer %s", desc.Digest)),
-		WithImageRef(opts.ImageRef),
-	)
-	if err != nil {
-		return nil, err
+	if clock.prof {
+		recordImportPhase(ctx, "snapshot.import.fetch["+source+"]", desc, source, fetchStart, fetched, err)
 	}
-	defer func() {
-		if mut != nil {
-			_ = mut.Release(context.WithoutCancel(ctx))
-		}
-	}()
+	return err
+}
 
+// applyLayer applies desc's blob to mut. apart says mut was prepared with no
+// parent for a rebase on commit (cm.applyLayersApart): its directory is then
+// written in place, with the layer's whiteouts as overlay whiteouts, as it is
+// for a snapshot with parents.
+func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc ocispecs.Descriptor, chainMode bool, clock importClock, apart bool) error {
 	mountable, err := mut.Mount(ctx, false)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	mounts, unmount, err := mountable.Mount()
 	if err != nil {
-		return nil, err
+		return err
+	}
+	if apart {
+		mounts = upperOverlay(mounts)
+	}
+	applyStart := clock.now()
+	// A chain layer applied apart is decompressed ahead of its apply, which
+	// then reads the layer's tar: the decompression and the file creation
+	// overlap.
+	applier, applyDesc := cm.Applier, desc
+	var ahead *decompressedAhead
+	if apart && cm.applyFrom != nil && canDecompressAhead(ctx, desc) {
+		ahead, err = cm.decompressAhead(ctx, desc)
+		if err != nil {
+			_ = unmount()
+			return chainError(ctx, chainMode, desc, "apply", err)
+		}
+		applier = cm.applyFrom(aheadProvider{digest: desc.Digest, ahead: ahead})
+		applyDesc = ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayer, Digest: desc.Digest, Size: desc.Size}
 	}
 	var applyOpts []diff.ApplyOpt
 	var unpack *ProgressTracker
 	if desc.Size > 0 {
 		unpack = NewProgressTracker(ctx, desc.Digest.String(), desc.Size, "bytes")
 		applyOpts = append(applyOpts, diff.WithProgress(func(_ ocispecs.Descriptor, read int64) {
+			// Decompressed ahead, the applier reads the tar: progress is
+			// the blob's bytes decompressed.
+			if ahead != nil {
+				read = min(ahead.read.Load(), desc.Size)
+			}
 			unpack.Update(read)
 		}))
 	}
-	applied, err := cm.Applier.Apply(ctx, desc, mounts, applyOpts...)
+	appliedDesc, err := applier.Apply(ctx, applyDesc, mounts, applyOpts...)
+	if ahead != nil {
+		ahead.Close()
+	}
+	applied := clock.now()
+	if clock.timing != nil {
+		clock.timing.Apply += applied.Sub(applyStart)
+	}
+	if clock.prof {
+		recordImportPhase(ctx, "snapshot.import.apply", desc, "", applyStart, applied, err)
+	}
 	if err != nil {
 		_ = unmount()
-		return nil, chainError(ctx, chainMode, desc, "apply", err)
+		return chainError(ctx, chainMode, desc, "apply", err)
 	}
 	// The snapshot is found again by diffID, so its content must be the
 	// diffID's, as containerd's unpacker also requires.
-	if applied.Digest != diffID {
+	diffID, err := diffIDFromDescriptor(desc)
+	if err == nil && appliedDesc.Digest != diffID {
+		err = errors.Errorf("wrong diff id %s calculated on extraction, expected %s", appliedDesc.Digest, diffID)
+	}
+	if err != nil {
 		_ = unmount()
-		return nil, chainError(ctx, chainMode, desc, "apply", errors.Errorf("wrong diff id %s calculated on extraction, expected %s", applied.Digest, diffID))
+		return chainError(ctx, chainMode, desc, "apply", err)
 	}
 	if unpack != nil {
 		// a successful apply consumed the whole blob even if the
@@ -268,16 +380,32 @@ func (cm *snapshotManager) importLayer(
 		unpack.Update(desc.Size)
 		unpack.Finish()
 	}
-	if err := unmount(); err != nil {
-		return nil, err
-	}
+	return unmount()
+}
 
-	ref, err := mut.Commit(ctx)
-	if err != nil {
-		return nil, err
+// upperOverlay turns the bind mount of a snapshot prepared with no parent
+// into an overlay mount of its directory alone, as containerd's own parallel
+// unpack does: containerd's applier then writes an overlay mount's upper
+// directory in place, converting whiteouts, and never mounts it.
+func upperOverlay(mounts []mount.Mount) []mount.Mount {
+	if len(mounts) != 1 || mounts[0].Type != "bind" {
+		return mounts
 	}
-	mut = nil
+	m := mount.Mount{Type: "overlay", Source: "overlay"}
+	for _, o := range mounts[0].Options {
+		if o != "rbind" {
+			m.Options = append(m.Options, o)
+		}
+	}
+	m.Options = append(m.Options, "upperdir="+mounts[0].Source)
+	return []mount.Mount{m}
+}
 
+// recordImportedLayer records ref, just committed from desc's blob, as the
+// layer's import on its parent: its blob metadata, its content and the
+// engine's import indexes. It takes ownership of ref, which it releases on
+// failure. Requires the layer's import lock.
+func (cm *snapshotManager) recordImportedLayer(ctx context.Context, ref ImmutableRef, desc ocispecs.Descriptor, diffID digest.Digest, opts ImportImageOpts, blobKey ImportedLayerBlobKey, diffKey ImportedLayerDiffKey) (ImmutableRef, error) {
 	imported, ok := ref.(*immutableRef)
 	if !ok {
 		_ = ref.Release(context.WithoutCancel(ctx))
@@ -342,18 +470,20 @@ func (cm *snapshotManager) importLayer(
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}
-	if err := cm.recordSnapshotContent(ref.SnapshotID(), desc); err != nil {
+	if err := cm.recordSnapshotContent(ctx, ref.SnapshotID(), desc); err != nil {
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}
 
+	leaseID, _ := leases.FromContext(ctx)
 	if err := cm.AttachLease(ctx, leaseID, ref.SnapshotID()); err != nil {
 		_ = ref.Release(context.WithoutCancel(ctx))
 		return nil, err
 	}
-	cm.mu.Lock()
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	cm.importedLayerByBlob[blobKey] = ref.SnapshotID()
 	cm.importedLayerByDiff[diffKey] = ref.SnapshotID()
+	cm.layerImportedLocked()
 	cm.mu.Unlock()
 
 	return ref, nil
@@ -380,15 +510,23 @@ func (cm *snapshotManager) linkContentToContextLease(ctx context.Context, desc o
 	return nil
 }
 
-func (cm *snapshotManager) recordSnapshotContent(snapshotID string, desc ocispecs.Descriptor) error {
+// recordSnapshotContent records desc's blob as the snapshot's, and attaches
+// it to every lease that owns the snapshot, unless it already is attached to
+// every one (snapshotContentOwned): a layer walked again writes nothing for
+// its owners.
+func (cm *snapshotManager) recordSnapshotContent(ctx context.Context, snapshotID string, desc ocispecs.Descriptor) error {
 	if snapshotID == "" || desc.Digest == "" {
 		return nil
 	}
-	cm.mu.Lock()
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	if cm.snapshotContentDigests[snapshotID] == nil {
 		cm.snapshotContentDigests[snapshotID] = make(map[digest.Digest]struct{})
 	}
 	cm.snapshotContentDigests[snapshotID][desc.Digest] = struct{}{}
+	if _, owned := cm.snapshotContentOwned[snapshotID][desc.Digest]; owned {
+		cm.mu.Unlock()
+		return nil
+	}
 	leaseIDs := make([]string, 0, len(cm.snapshotOwnerLeases[snapshotID]))
 	for leaseID := range cm.snapshotOwnerLeases[snapshotID] {
 		leaseIDs = append(leaseIDs, leaseID)
@@ -404,6 +542,14 @@ func (cm *snapshotManager) recordSnapshotContent(snapshotID string, desc ocispec
 			return errors.Wrapf(err, "attach content %s to owner lease %s", desc.Digest, leaseID)
 		}
 	}
+	// Every owner read above has the blob, and an owner added since had it
+	// attached before it became one.
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
+	if cm.snapshotContentOwned[snapshotID] == nil {
+		cm.snapshotContentOwned[snapshotID] = make(map[digest.Digest]struct{})
+	}
+	cm.snapshotContentOwned[snapshotID][desc.Digest] = struct{}{}
+	cm.mu.Unlock()
 	return nil
 }
 
@@ -424,16 +570,29 @@ func setImportedImageMetadata(ref *immutableRef, opts ImportImageOpts) error {
 // lifetime like the rest of the builtin images' content.
 const BuiltinLayersLeaseID = "dagger/builtin-image/layers"
 
+// chainLayer is what a chain import passes each of its layer imports: the
+// chain whose import it is, its download of the layer's blob started ahead,
+// if any, and what to run once the layer's blob is in the content store.
+type chainLayer struct {
+	owner   *ExportChain
+	ahead   *contentFetch
+	fetched func()
+}
+
 // importLayerContent pins local bytes before asking the supplied provider.
-// Writer acquisition checks again, before ReaderAt, if another key supplied
-// the same blob since our first lookup. A chain import consults the builtin
-// image store between the two: a layer of a builtin image is then copied
-// from the engine's own files, with no network, and held for the engine's
-// lifetime under BuiltinLayersLeaseID.
-func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool) (rerr error) {
+// A chain import consults the builtin image store between the two: a layer
+// of a builtin image is then copied from the engine's own files, with no
+// network, and held for the engine's lifetime under BuiltinLayersLeaseID.
+// The provider's download goes through the fetch coordinator, which joins a
+// download of the same blob already in progress. It returns where the blob
+// came from: present (already there, including a blob downloaded ahead that
+// is in by then), builtin (the builtin image store), download (this import's
+// own download), or joined (another import's download), and whether it
+// joined another import's download.
+func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, chainMode bool, chain *chainLayer) (string, bool, error) {
 	present, err := cm.pinContent(ctx, desc)
 	if err != nil || present {
-		return err
+		return layerSourcePresent, false, err
 	}
 	if chainMode {
 		copied, err := cm.copyBuiltinLayer(ctx, desc)
@@ -442,35 +601,86 @@ func (cm *snapshotManager) importLayerContent(ctx context.Context, desc ocispecs
 			// blocks an import: log and download as today.
 			bklog.G(ctx).WithError(err).Warnf("builtin image store could not supply layer %s; downloading it", desc.Digest)
 		} else if copied {
-			return nil
+			return layerSourceBuiltin, false, nil
 		}
 	}
 	if provider == nil {
-		return chainError(ctx, chainMode, desc, "provider", errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest))
+		return layerSourceDownload, false, chainError(ctx, chainMode, desc, "provider", errors.Wrapf(cerrdefs.ErrNotFound, "missing local layer %s", desc.Digest))
 	}
-	ref := "snapshot-import-" + rand.Text()
-	writer, err := content.OpenWriter(ctx, cm.ContentStore, content.WithRef(ref), content.WithDescriptor(desc))
-	if cerrdefs.IsAlreadyExists(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = writer.Close()
-		if rerr != nil {
-			_ = cm.ContentStore.Abort(context.WithoutCancel(ctx), ref)
+	var owner *ExportChain
+	var ahead *contentFetch
+	if chain != nil {
+		owner = chain.owner
+		if chain.ahead != nil && chain.ahead.desc.Digest == desc.Digest {
+			ahead = chain.ahead
 		}
-	}()
-	reader, err := provider.ReaderAt(ctx, desc)
+	}
+	joined, read, err := cm.fetchChainContent(ctx, desc, provider, owner, ahead)
+	return downloadSource(joined, read, err), joined, err
+}
+
+// downloadSource is where a layer's blob came from when the provider was
+// asked for it: its import's own download, another import's it joined, or
+// the content store, when another writer stored the blob first and nothing
+// was read.
+func downloadSource(joined, read bool, err error) string {
+	switch {
+	case err != nil:
+		return layerSourceDownload
+	case !read:
+		return layerSourcePresent
+	case joined:
+		return layerSourceJoined
+	default:
+		return layerSourceDownload
+	}
+}
+
+// Where importLayerContent found a layer's blob.
+const (
+	layerSourcePresent  = "present"
+	layerSourceBuiltin  = "builtin"
+	layerSourceDownload = "download"
+	layerSourceJoined   = "joined"
+)
+
+// importClock stamps an import's phases when the import's timing or the
+// profile wants them, and reads no clock otherwise.
+type importClock struct {
+	timing *ImportTiming
+	prof   bool
+}
+
+func (c importClock) now() time.Time {
+	if c.timing == nil && !c.prof {
+		return time.Time{}
+	}
+	return time.Now()
+}
+
+// recordImportPhase records one phase of a layer's import, from start to
+// end, as a profile op: the layer's digest, and its size when the phase
+// moved its bytes (an import's own download or an apply, not a blob already
+// present or another import's download it joined). A fetch phase is the
+// time the import still waited for the blob: a download started ahead may
+// have ended before it, and the blob is then present. A download, own or
+// joined, waits on the network; the rest is the engine's.
+func recordImportPhase(ctx context.Context, class string, desc ocispecs.Descriptor, source string, start, end time.Time, err error) {
+	opts := wcprof.OpOpts{Ident: desc.Digest.String(), Bytes: desc.Size}
+	switch source {
+	case layerSourceDownload:
+		opts.WorkType = wcprof.WorkTypeExternal
+	case layerSourceJoined:
+		opts.WorkType = wcprof.WorkTypeExternal
+		opts.Bytes = 0
+	case layerSourcePresent:
+		opts.Bytes = 0
+	}
+	outcome := wcprof.OutcomeOK
 	if err != nil {
-		return chainError(ctx, chainMode, desc, "provider", err)
+		outcome = wcprof.OutcomeError
 	}
-	defer reader.Close()
-	if chainMode {
-		return copyChainContent(ctx, writer, reader, desc)
-	}
-	return content.Copy(ctx, writer, io.NewSectionReader(reader, 0, reader.Size()), desc.Size, desc.Digest)
+	wcprof.RecordOpAt(ctx, wcprof.OpKindIO, class, opts, start, end, outcome)
 }
 
 // copyBuiltinLayer copies the blob desc names from the builtin image store

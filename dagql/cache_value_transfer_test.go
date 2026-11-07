@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -158,6 +160,22 @@ func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, chil
 	require.NoError(t, err)
 }
 
+// A capture reports where its time went: the wait for the graph lock, the
+// walk under it, and the records' copy.
+func TestValueTransferCapturePhases(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "phases"})
+	var phases ExportPhases
+	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		phases = values.Phases
+		return nil
+	}))
+	require.GreaterOrEqual(t, phases.WalkWait, time.Duration(0))
+	require.Positive(t, phases.Walk)
+	require.Positive(t, phases.Copy)
+	require.Zero(t, phases.RetriedStale)
+}
+
 // An offer can be left on a part its value already has: a part can complete
 // without its gate settling it, and only a settlement retires the offer on
 // it. Such an offer is obsolete. A capture that finds one retires it, as boot
@@ -177,7 +195,13 @@ func TestValueTransferCaptureRetiresAnOfferOnACompletedOutput(t *testing.T) {
 	value.rev.Add(1)
 	owners := res.incomingOwnershipCount.Load()
 
-	bundle := exportTestBundle(t, ctx, c, root)
+	var bundle ValueBundle
+	var phases ExportPhases
+	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle, phases = values.Bundle, values.Phases
+		return nil
+	}))
+	require.Equal(t, 1, phases.RetriedStale, "the capture ran again")
 	require.Len(t, bundle.Values, 1)
 	require.Empty(t, bundle.Values[0].Record.Envelope.PendingOffers)
 	c.egraphMu.RLock()
@@ -496,6 +520,63 @@ func TestValueTransferPersistenceDecodePublication(t *testing.T) {
 
 func (v *transferTestValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink {
 	return cloneSnapshotRefLinks(v.links)
+}
+
+// ResolveChainPrefixes gives a prefix output the first layers of the chain it
+// names, which it shares, and refuses a prefix that names no output carrying a
+// chain, more layers than that chain has, or none.
+func TestResolveChainPrefixes(t *testing.T) {
+	t.Parallel()
+	fs := PersistedPartAddress{Part: "fs"}
+	layer := func(s string) snapshots.ExportLayer {
+		return snapshots.ExportLayer{Descriptor: ocispecs.Descriptor{Digest: digest.FromString(s), Size: 1}}
+	}
+	chain := []snapshots.ExportLayer{layer("a"), layer("b"), layer("c")}
+	bundle := func(prefix ChainPrefix, extra ...TransferredOutput) *ValueBundle {
+		return &ValueBundle{Outputs: append([]TransferredOutput{
+			{Ordinal: 3, Address: fs, State: "completed", Chain: &OfferedChain{Layers: chain}},
+			{Ordinal: 2, Address: fs, State: "completed", Prefix: &prefix},
+		}, extra...)}
+	}
+
+	b := bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 2})
+	require.NoError(t, ResolveChainPrefixes(b))
+	require.Nil(t, b.Outputs[1].Prefix)
+	require.Equal(t, chain[:2], b.Outputs[1].Chain.Layers)
+	require.Equal(t, 2, cap(b.Outputs[1].Chain.Layers), "an append to the prefix's layers can't reach its chain's")
+	require.Same(t, &chain[0], &b.Outputs[1].Chain.Layers[0], "the layers are the chain's own")
+
+	// The prefix reads its blobs where the chain does: the chain's addresses,
+	// packs and renewal key for the prefix's layers, and none of the rest.
+	addressed := bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 2})
+	pack := digest.FromString("pack")
+	addressed.Outputs[0].Chain = &OfferedChain{
+		Layers:     chain,
+		Addresses:  map[digest.Digest]BlobAddress{chain[0].Descriptor.Digest: {URL: "dagger-image:" + string(chain[0].Descriptor.Digest)}, chain[2].Descriptor.Digest: {URL: "dagger-image:" + string(chain[2].Descriptor.Digest)}},
+		RenewalKey: "renew",
+		Packs:      map[digest.Digest]digest.Digest{chain[1].Descriptor.Digest: pack, chain[2].Descriptor.Digest: pack},
+	}
+	require.NoError(t, ResolveChainPrefixes(addressed))
+	got := addressed.Outputs[1].Chain
+	require.Equal(t, map[digest.Digest]BlobAddress{chain[0].Descriptor.Digest: {URL: "dagger-image:" + string(chain[0].Descriptor.Digest)}}, got.Addresses)
+	require.Equal(t, map[digest.Digest]digest.Digest{chain[1].Descriptor.Digest: pack}, got.Packs)
+	require.Equal(t, "renew", got.RenewalKey)
+
+	for _, tc := range []struct {
+		name   string
+		bundle *ValueBundle
+	}{
+		{"no layers", bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 0})},
+		{"more layers than the chain", bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 4})},
+		{"no such output", bundle(ChainPrefix{Ordinal: 9, Address: fs, Layers: 1})},
+		{"another part of the output", bundle(ChainPrefix{Ordinal: 3, Address: PersistedPartAddress{Part: "other"}, Layers: 1})},
+		{"an output that is itself a prefix", bundle(ChainPrefix{Ordinal: 2, Address: fs, Layers: 1})},
+		{"a chain and a prefix both", bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 1}, TransferredOutput{Ordinal: 4, Address: fs, State: "completed", Chain: &OfferedChain{Layers: chain}, Prefix: &ChainPrefix{Ordinal: 3, Address: fs, Layers: 1}})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Error(t, ResolveChainPrefixes(tc.bundle))
+		})
+	}
 }
 
 // A prefix candidate that delegates to a parent part the bundle offers gets

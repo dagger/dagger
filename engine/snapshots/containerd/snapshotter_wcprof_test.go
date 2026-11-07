@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/mount"
@@ -13,12 +14,16 @@ import (
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
-// fakeSnapshotter answers the calls the engine times, failing Commit.
+// fakeSnapshotter answers the calls the engine times, failing Commit and the
+// Usage of a key ending in -bad.
 type fakeSnapshotter struct {
 	snapshots.Snapshotter
 }
 
-func (fakeSnapshotter) Usage(context.Context, string) (snapshots.Usage, error) {
+func (fakeSnapshotter) Usage(_ context.Context, key string) (snapshots.Usage, error) {
+	if strings.HasSuffix(key, "-bad") {
+		return snapshots.Usage{}, errors.New("usage failed")
+	}
 	return snapshots.Usage{}, nil
 }
 
@@ -39,16 +44,19 @@ func (fakeSnapshotter) Commit(context.Context, string, string, ...snapshots.Opt)
 }
 
 // Each snapshot call made under a profiled op is an op under it, named for the
-// call, with its snapshot key as its ident and a failed call failed. An
-// unprofiled call records nothing.
+// call, with its snapshot key as its ident, a view's being the snapshot it
+// views, and a failed call failed, but for Usage: its calls, too many to
+// record one by one, are tallied on the op, their count, summed time and
+// failures. An unprofiled call records nothing.
 func TestSnapshotCallsAreOps(t *testing.T) {
 	wcprof.EnsureRecorder()
 	sn := &nsSnapshotter{ns: "test", Snapshotter: fakeSnapshotter{}}
 	calls := func(ctx context.Context, prefix string) {
 		_, _ = sn.Usage(ctx, prefix+"-usage")
+		_, _ = sn.Usage(ctx, prefix+"-usage-bad")
 		_, _ = sn.Mounts(ctx, prefix+"-mounts")
 		_, _ = sn.Prepare(ctx, prefix+"-prepare", "")
-		_, _ = sn.View(ctx, prefix+"-view", "")
+		_, _ = sn.View(ctx, prefix+"-view", prefix+"-viewed")
 		_ = sn.Commit(ctx, prefix+"-commit", prefix+"-active")
 	}
 
@@ -62,7 +70,11 @@ func TestSnapshotCallsAreOps(t *testing.T) {
 	header, events, err := wcprof.ReadDump(&buf)
 	require.NoError(t, err)
 	got := map[string]wcprof.DumpEvent{}
+	var tallies []wcprof.DumpEvent
 	for _, ev := range events {
+		if ev.Type == wcprof.DumpTypeTally {
+			tallies = append(tallies, ev)
+		}
 		if ev.Type != "op" {
 			continue
 		}
@@ -71,10 +83,21 @@ func TestSnapshotCallsAreOps(t *testing.T) {
 			got[header.Strings[ev.ClassID]] = ev
 		}
 	}
-	for _, call := range []string{"usage", "mounts", "prepare", "view", "commit"} {
+	require.NotContains(t, got, "snapshot.usage", "Usage calls are tallied, not ops")
+	require.Len(t, tallies, 1)
+	require.Equal(t, parent.ID(), tallies[0].ParentID)
+	require.Equal(t, "snapshot.usage", header.Strings[tallies[0].ClassID])
+	require.EqualValues(t, 2, tallies[0].Count)
+	require.EqualValues(t, 1, tallies[0].Errors)
+	require.Positive(t, tallies[0].TotalNS)
+	for _, call := range []string{"mounts", "prepare", "view", "commit"} {
 		ev, ok := got["snapshot."+call]
 		require.True(t, ok, "no snapshot.%s op under the parent", call)
-		require.Equal(t, "profiled-"+call, header.Strings[ev.IdentID])
+		ident := "profiled-" + call
+		if call == "view" {
+			ident = "profiled-viewed"
+		}
+		require.Equal(t, ident, header.Strings[ev.IdentID])
 		require.Equal(t, wcprof.OpKindInternal.String(), ev.OpKind)
 		want := wcprof.OutcomeOK.String()
 		if call == "commit" {

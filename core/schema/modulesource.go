@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -64,6 +65,13 @@ func (err ErrSDKClientGeneratorNotImplemented) Error() string {
 type moduleSourceSchema struct{}
 
 var _ SchemaResolvers = &moduleSourceSchema{}
+
+// loadModuleSourceSDK loads the SDK a module source names. It is replaceable
+// so unit tests, whose servers have no engine image to load a built-in SDK
+// module from, can stand one in.
+var loadModuleSourceSDK = func(ctx context.Context, query *core.Query, cfg *core.SDKConfig, src *core.ModuleSource) (core.SDK, error) {
+	return sdk.NewLoader().SDKForModule(ctx, query, cfg, src)
+}
 
 func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
@@ -961,6 +969,14 @@ type directoryAsModuleSourceArgs struct {
 	// OriginRoot is set when a module loads this directory from its own tree;
 	// see core.DirModuleSource.OriginRoot.
 	OriginRoot dagql.Optional[dagql.String] `internal:"true"`
+
+	// OriginHostPath is set when a module loads this directory from its own
+	// tree on the host; see core.DirModuleSource.OriginHostPath.
+	OriginHostPath string `internal:"true" default:""`
+
+	// OriginGit is set when a git module loads this directory from its own
+	// tree; see core.DirModuleSource.OriginGit.
+	OriginGit dagql.Optional[dagql.ID[*core.GitRepository]] `internal:"true"`
 }
 
 func (s *moduleSourceSchema) directoryAsModule(
@@ -1011,6 +1027,17 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	if args.OriginRoot.Valid {
 		root := args.OriginRoot.Value.String()
 		dirSrc.DirSrc.OriginRoot = &root
+	}
+	dirSrc.DirSrc.OriginHostPath = args.OriginHostPath
+	if args.OriginGit.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		dirSrc.DirSrc.OriginGit, err = args.OriginGit.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("load module source origin git: %w", err)
+		}
 	}
 	if args.Workspace.Valid {
 		srv, err := core.CurrentDagqlServer(ctx)
@@ -1197,7 +1224,12 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.Entrypoint = modCfg.Entrypoint
+	// Without a runtime, a manifest's dependencies are its entrypoint's own
+	// (manifest version 2): a Go module's generated entrypoint builds the
+	// module with dagger/go, which the module itself never calls.
+	src.EntrypointOnlyDependencies = modCfg.Entrypoint != nil && modCfg.SDK == nil
 	src.IncludePaths = modCfg.Include
+	src.IncludeDeclared = modCfg.IncludeDeclared
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
@@ -1466,7 +1498,7 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 			return err
 		}
 		if src.SDK != nil {
-			loaded, err := sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
+			loaded, err := loadModuleSourceSDK(ctx, query, src.SDK, src)
 			if err != nil {
 				return fmt.Errorf("load module source SDK: %w", err)
 			}
@@ -1516,8 +1548,16 @@ func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src 
 // loadEntrypointSources adds what the entrypoint's sources member returns to
 // the module context. It runs while the source loads, because dependents and
 // the declaredClients input hash the module digest without loading the module.
+// A manifest that declares include, even empty, replaces sources: the context
+// already holds the included files, and an engine that predates include runs
+// sources instead, so one module can carry both.
 func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *core.ModuleSource) (rerr error) {
 	if src.Entrypoint == nil {
+		return nil
+	}
+	isDirectory := src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil
+	if src.IncludeDeclared && !isDirectory {
+		// Other sources already load only the module's own and included files.
 		return nil
 	}
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -1530,7 +1570,7 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	}
 	declared := false
 	err = entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
-		declared, err = dangv2.DeclaresEntrypointSources(dir, src.DangVersion)
+		declared, err = dangv2.DeclaresEntrypointSources(ctx, dir, src.DangVersion)
 		return err
 	})
 	if err != nil {
@@ -1538,6 +1578,11 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	}
 	if !declared {
 		return nil
+	}
+	if src.IncludeDeclared {
+		// The directory source's context is the whole directory. Narrow it as
+		// evaluating sources would, so the module builds from the same files.
+		return keepDirectoryModuleOwnFiles(ctx, dag, src)
 	}
 
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("entrypoint sources: %s", src.ModuleName), telemetry.Internal())
@@ -1553,6 +1598,16 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, src.EngineVersion)
 	if err != nil {
 		return fail(err)
+	}
+	// Evaluating sources type-checks the whole entrypoint, so the schema holds
+	// the dependencies the rest of it calls, such as dagger/go for a Go
+	// module's dispatch.
+	for _, depSrc := range src.Dependencies {
+		var depMod dagql.ObjectResult[*core.Module]
+		if err := dag.Select(ctx, depSrc, &depMod, dagql.Selector{Field: "asModule"}); err != nil {
+			return fail(fmt.Errorf("load entrypoint dependency: %w", err))
+		}
+		deps = deps.Append(core.NewUserMod(depMod))
 	}
 	schemaFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
@@ -1588,6 +1643,20 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	src.ContextDirectory = contextDir
 	slog.Info("entrypoint sources evaluated", "module", src.ModuleName)
 	return nil
+}
+
+// keepDirectoryModuleOwnFiles narrows a directory source's context, the whole
+// directory, to the module's own files and the files its manifest includes,
+// without repository metadata, as evaluating sources and merging what it
+// returns narrows it, for a module whose include replaces sources.
+func keepDirectoryModuleOwnFiles(ctx context.Context, dag *dagql.Server, src *core.ModuleSource) error {
+	return dag.Select(ctx, src.DirSrc.OriginalContextDir, &src.ContextDirectory, dagql.Selector{
+		Field: "filter",
+		Args: []dagql.NamedInput{
+			{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(moduleSourceContextIncludes(src)...))},
+			{Name: "exclude", Value: dagql.ArrayInput[dagql.String]{".git", "**/.git"}},
+		},
+	})
 }
 
 // mergeEntrypointSources overlays the module's own files as the engine loads
@@ -1899,7 +1968,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		if err != nil {
 			return nil, err
 		}
-		src.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
+		src.SDKImpl, err = loadModuleSourceSDK(ctx, query, src.SDK, src)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 		}
@@ -3016,12 +3085,19 @@ func (s *moduleSourceSchema) buildModuleConfig(
 	src *core.ModuleSource,
 ) (*modules.ModuleConfigWithUserFields, error) {
 	if src.Entrypoint != nil {
-		return &modules.ModuleConfigWithUserFields{
+		cfg := &modules.ModuleConfigWithUserFields{
 			ModuleConfig: modules.ModuleConfig{
 				Name:       src.ModuleOriginalName,
 				Entrypoint: src.Entrypoint,
 			},
-		}, nil
+		}
+		// A version 2 manifest's own include, which replaces sources. A fat
+		// manifest's include, like its other pre-v2 fields, is not written.
+		if src.IncludeDeclared {
+			cfg.Include = src.IncludePaths
+			cfg.IncludeDeclared = true
+		}
+		return cfg, nil
 	}
 
 	// construct the module config based on any config read during load and any settings changed via with* APIs
@@ -3123,7 +3199,9 @@ func (s *moduleSourceSchema) runSDKCodegen(
 	deps := preloadedDeps
 	if deps == nil {
 		var err error
-		deps, err = s.loadDependencyModules(ctx, srcInst, srcInst)
+		// The module's own code is generated against the module's schema,
+		// which an entrypoint's own dependencies don't feed.
+		deps, _, err = s.loadDependencyModules(ctx, srcInst, srcInst)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load dependencies as modules: %w", err)
 		}
@@ -3680,7 +3758,13 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 
 	var initialized *core.Module
 
-	_, typeDefsEnabled := src.Self().SDKImpl.AsModuleTypes()
+	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsModuleTypes()
+	if forSource, ok := typeDefsImpl.(core.ModuleTypesForSource); typeDefsEnabled && ok {
+		typeDefsEnabled, err = forSource.ReportsModuleTypes(ctx, src)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if typeDefsEnabled {
 		resultInst, terr := s.moduleTypesDefinition(ctx, dag, mod)
 		switch {
@@ -3688,6 +3772,8 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			// The source was persisted before its SDK dropped moduleTypes (the
 			// Go SDK now discovers types via its runtime); take the runtime
 			// path the capability-less SDK would have taken.
+			typeDefsEnabled = false
+		case errors.Is(terr, core.ErrModuleTypesNeedRuntime):
 			typeDefsEnabled = false
 		case terr != nil:
 			return nil, terr
@@ -3722,7 +3808,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		}
 	}
 
-	if typeDefsEnabled && isSelfCallsEnabled(src) {
+	if typeDefsEnabled && isSelfCallsEnabled(src) && !sdk.GeneratorMergesOwnTypes(src.Self().SDK.Source) {
 		mod.IncludeSelfInDeps = true
 	}
 
@@ -3734,7 +3820,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 
 	if clientMetadata.EagerRuntime {
 		if !mod.Runtime.Valid {
-			runtimeDeps := mod.Deps
+			runtimeDeps := mod.SDKDeps()
 			if mod.IncludeSelfInDeps {
 				// This eager runtime path happens before the final asModule result exists,
 				// so we localize the self-call special case to just this runtime load by
@@ -3898,7 +3984,7 @@ func (s *moduleSourceSchema) moduleSourceNamespacedDefinition(
 	}
 	// The receiver's engine version may be another client's; the core view
 	// namespacing and validation see is the one this load requires.
-	deps, err := s.loadDependencyModulesForEngineVersion(ctx, src, src, args.EngineVersion)
+	deps, entrypointDeps, err := s.loadDependencyModulesForEngineVersion(ctx, src, src, args.EngineVersion)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies for namespaced definition: %w", err)
 	}
@@ -3915,6 +4001,7 @@ func (s *moduleSourceSchema) moduleSourceNamespacedDefinition(
 		OriginalName:    src.Self().ModuleOriginalName,
 		SDKConfig:       src.Self().SDK,
 		Deps:            deps,
+		EntrypointDeps:  entrypointDeps,
 		SourceOverrides: overrides,
 	}
 	if mod.SDKConfig == nil {
@@ -4024,7 +4111,7 @@ func (s *moduleSourceSchema) moduleDefViaRuntime(
 ) (*core.Module, error) {
 	src := mod.Source.Value
 
-	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, src)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.SDKDeps(), src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module runtime: %w", err)
 	}
@@ -4038,7 +4125,9 @@ func (s *moduleSourceSchema) moduleDefViaRuntime(
 	if err != nil {
 		return nil, fmt.Errorf("failed to scope module source for module definition: %w", err)
 	}
-	schemaJSONFile, err := mod.Deps.SchemaIntrospectionJSONFileForModule(ctx)
+	// The schema the runtime runs with: the entrypoint's, when it has
+	// dependencies of its own.
+	schemaJSONFile, err := mod.SDKDeps().SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json for module definition: %w", err)
 	}
@@ -4122,7 +4211,7 @@ func (s *moduleSourceSchema) moduleDefinitionDiscoveryModule(
 	moduleName string,
 	identity digest.Digest,
 ) (*core.Module, error) {
-	deps, err := s.loadDependencyModules(ctx, src, src)
+	deps, entrypointDeps, err := s.loadDependencyModules(ctx, src, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load dependencies for module definition: %w", err)
 	}
@@ -4133,6 +4222,7 @@ func (s *moduleSourceSchema) moduleDefinitionDiscoveryModule(
 		OriginalName:          src.Self().ModuleOriginalName,
 		SDKConfig:             src.Self().SDK,
 		Deps:                  deps,
+		EntrypointDeps:        entrypointDeps,
 		AsModuleVariantDigest: identity.String(),
 	}
 	if mod.SDKConfig == nil {
@@ -4241,7 +4331,9 @@ func (s *moduleSourceSchema) moduleTypesDefinition(
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module source for module types definition: %w", err)
 	}
-	schemaJSONFile, err := mod.Deps.SchemaIntrospectionJSONFileForModule(ctx)
+	// The schema the SDK reads the types with: the entrypoint's, when it has
+	// dependencies of its own.
+	schemaJSONFile, err := mod.SDKDeps().SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json for module types definition: %w", err)
 	}
@@ -4292,7 +4384,7 @@ func (s *moduleSourceSchema) moduleSourceModuleTypesDefinition(
 	if err != nil {
 		return inst, err
 	}
-	initialized, err := typeDefsImpl.ModuleTypes(ctx, mod.Deps, src, mod)
+	initialized, err := typeDefsImpl.ModuleTypes(ctx, mod.SDKDeps(), src, mod)
 	if err != nil {
 		return inst, err
 	}
@@ -4309,7 +4401,8 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	src dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Result[*core.File], rerr error) {
-	deps, err := s.loadDependencyModules(ctx, src, src)
+	// The module's own schema: an entrypoint's own dependencies don't feed it.
+	deps, _, err := s.loadDependencyModules(ctx, src, src)
 	if err != nil {
 		return inst, err
 	}
@@ -4645,7 +4738,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		cancelPrebuild()
 		<-prebuildDone
 	}()
-	mod.Deps, err = s.loadDependencyModules(ctx, execSrc, defaultPathContextSrc)
+	mod.Deps, mod.EntrypointDeps, err = s.loadDependencyModules(ctx, execSrc, defaultPathContextSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
@@ -4731,13 +4824,17 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	return inst, nil
 }
 
-// runtimePrebuilds bounds the engine's runtime prebuilds in flight. Builds
-// that run together on a cold build cache each compile the packages they
-// share, so starting every module's build at once costs more CPU and memory
-// and finishes later than a few at a time.
-var runtimePrebuilds = semaphore.NewWeighted(maxRuntimePrebuilds)
+// runtimePrebuilds bounds the engine's runtime prebuilds in flight to one per
+// CPU the engine runs on, and at least 4. Builds that run together share
+// what they compile in common, so more at once finish sooner where there are
+// CPUs to run them; past that, each one only adds CPU and memory.
+var runtimePrebuilds = semaphore.NewWeighted(int64(maxRuntimePrebuilds))
 
-const maxRuntimePrebuilds = 4
+// maxRuntimePrebuilds is the engine's GOMAXPROCS, at least 4: the CPUs the
+// engine may run on, or GOMAXPROCS when it's set. A CPU quota on the engine's
+// container doesn't count, since the engine runs in a child cgroup of it,
+// which Go doesn't read the quota of.
+var maxRuntimePrebuilds = max(4, runtime.GOMAXPROCS(0))
 
 // prebuildModuleRuntime builds src's runtime when its SDK can build it
 // without the module's dependencies (core.RuntimePrebuilder).
@@ -4819,11 +4916,16 @@ func BuildLegacyAsModuleArgs(
 	return args, nil
 }
 
+// loadDependencyModules loads src's dependencies as modules, into the
+// schema they feed: the module's own (moduleDeps), or, when src lists them
+// as its entrypoint's own (ModuleSource.EntrypointOnlyDependencies), the
+// entrypoint's (entrypointDeps), leaving the module's own schema the core's
+// alone. entrypointDeps is nil when the entrypoint has none of its own.
 func (s *moduleSourceSchema) loadDependencyModules(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
 	defaultPathContextSrc dagql.ObjectResult[*core.ModuleSource],
-) (*core.SchemaBuilder, error) {
+) (moduleDeps, entrypointDeps *core.SchemaBuilder, _ error) {
 	return s.loadDependencyModulesForEngineVersion(ctx, src, defaultPathContextSrc, src.Self().EngineVersion)
 }
 
@@ -4834,17 +4936,17 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 	src dagql.ObjectResult[*core.ModuleSource],
 	defaultPathContextSrc dagql.ObjectResult[*core.ModuleSource],
 	engineVersion string,
-) (_ *core.SchemaBuilder, rerr error) {
+) (moduleDeps, entrypointDeps *core.SchemaBuilder, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	dag, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dag server: %w", err)
+		return nil, nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
 	var eg errgroup.Group
@@ -4903,18 +5005,22 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 	}
 
 	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
+		return nil, nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
-	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, engineVersion)
+	base, err := s.defaultSchemaBuilderForEngineVersion(ctx, engineVersion)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	for _, depMod := range depMods {
-		deps = deps.Append(core.NewUserMod(depMod))
+	mods := make([]core.Mod, len(depMods))
+	for i, depMod := range depMods {
+		mods[i] = core.NewUserMod(depMod)
 	}
-
-	return deps, nil
+	deps := base.Append(mods...)
+	if src.Self().EntrypointOnlyDependencies && len(mods) > 0 {
+		return base, deps, nil
+	}
+	return deps, nil, nil
 }
 
 // defaultSchemaBuilderForEngineVersion returns a SchemaBuilder seeded with

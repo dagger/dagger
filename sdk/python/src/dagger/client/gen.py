@@ -7111,6 +7111,30 @@ class Directory(Type):
         _ctx = self._select("withPatchFile", _args)
         return Directory(_ctx)
 
+    def with_platform(self, platform: Platform) -> Self:
+        """Retrieves this directory, declared as made for the given platform.
+
+        Declare a result whose contents are the same whichever platform made
+        them, such as a Go package compiled for a platform by any platform's
+        Go toolchain. An engine of another platform that makes the same
+        directory for the same platform then finds this one, and the other way
+        around.
+
+        The contents are not checked: a declared result that depends on the
+        platform it was made on can be found where it doesn't belong.
+
+        Parameters
+        ----------
+        platform:
+            The platform the directory's contents are for (e.g.,
+            "linux/arm64").
+        """
+        _args = [
+            Arg("platform", platform),
+        ]
+        _ctx = self._select("withPlatform", _args)
+        return Directory(_ctx)
+
     def with_symlink(self, target: str, link_name: str) -> Self:
         """Return a snapshot with a symlink
 
@@ -8953,8 +8977,19 @@ class File(Type):
         _ctx = self._select("stat", _args)
         return await _ctx.execute_object(Stat)
 
-    async def sync(self) -> Self:
+    async def sync(
+        self,
+        *,
+        key_by_content: bool | None = False,
+    ) -> Self:
         """Force evaluation in the engine.
+
+        Parameters
+        ----------
+        key_by_content:
+            Also key the file by its content, so that what consumes it is
+            cached across any two recipes that produce the same file. This
+            hashes the file unless it already has a content key.
 
         Raises
         ------
@@ -8963,7 +8998,9 @@ class File(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("keyByContent", key_by_content, False),
+        ]
         return await self._ctx.execute_sync(self, "sync", _args)
 
     def __await__(self):

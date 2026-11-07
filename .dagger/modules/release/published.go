@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"dagger/release/internal/dagger"
+	"dagger/release/internal/dagger/clients/wolfi"
 )
 
 // When a package registry already has everything a release is about to
@@ -181,8 +181,8 @@ func crateHasVersion(ctx context.Context, cargoRegistryIndex, version string) (b
 
 // registryGet fetches url and returns the HTTP status and body.
 func registryGet(ctx context.Context, rawURL string) (status, body string, rerr error) {
-	out, err := dag.Wolfi().
-		Container(dagger.WolfiContainerOpts{Packages: []string{"curl", "ca-certificates"}}).
+	out, err := wolfi.New().
+		Container(wolfi.WolfiContainerOpts{Packages: []string{"curl", "ca-certificates"}}).
 		WithEnvVariable("REGISTRY_URL", rawURL).
 		// Ask the registry every time; never reuse an earlier answer.
 		WithEnvVariable("CACHE_BUSTER", time.Now().Format(time.RFC3339Nano)).

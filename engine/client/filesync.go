@@ -104,6 +104,44 @@ func (s FilesyncSource) TarStream(stream filesync.FileSync_TarStreamServer) erro
 	return fmt.Errorf("tarstream not supported")
 }
 
+// FindUp looks for each requested name in the start directory and then in each
+// parent up to the root, answering in one call what would otherwise take one
+// stat per name and level. A name found is reported with the absolute path of
+// its directory, the same path a stat of it returns.
+func (s FilesyncSource) FindUp(ctx context.Context, req *filesync.FindUpRequest) (*filesync.FindUpResponse, error) {
+	start, err := Filesyncer(s).fullRootPathAndBaseName(req.Start, false)
+	if err != nil {
+		return nil, fmt.Errorf("get full root path: %w", err)
+	}
+	remaining := make(map[string]struct{}, len(req.Names))
+	for _, name := range req.Names {
+		remaining[name] = struct{}{}
+	}
+	found := make(map[string]string, len(remaining))
+	for dir := start; len(remaining) > 0; {
+		for name := range remaining {
+			p := filepath.Join(dir, name)
+			if _, err := fsutil.Stat(p); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					continue
+				}
+				return nil, fmt.Errorf("stat %s: %w", p, err)
+			}
+			found[name] = filepath.ToSlash(filepath.Dir(p))
+			delete(remaining, name)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return &filesync.FindUpResponse{
+		Start: filepath.ToSlash(start),
+		Found: found,
+	}, nil
+}
+
 func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 	ctx := extractTraceContext(stream.Context())
 
@@ -439,6 +477,10 @@ func (s FilesyncSourceProxy) Register(server *grpc.Server) {
 
 func (s FilesyncSourceProxy) TarStream(stream filesync.FileSync_TarStreamServer) error {
 	return fmt.Errorf("tarstream not supported")
+}
+
+func (s FilesyncSourceProxy) FindUp(ctx context.Context, req *filesync.FindUpRequest) (*filesync.FindUpResponse, error) {
+	return s.Client.FindUp(grpcutil.IncomingToOutgoingContext(ctx), req)
 }
 
 func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {

@@ -20,6 +20,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,7 @@ import (
 
 	"dagger.io/dagger"
 	gitsession "github.com/dagger/dagger/engine/session/git"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/testctx"
 )
@@ -3379,4 +3381,159 @@ func (GitSuite) TestCaching(ctx context.Context, t *testctx.T) {
 
 		require.NotEqual(t, s1, s2)
 	})
+}
+
+// A remote commit's tree without .git is made from its tree with .git, on one
+// checkout: a workspace and a module loaded from one commit used to check it
+// out twice. It must come out identical to a tree checked out without .git on
+// its own, which is the same checkout, normalized the same way, with .git
+// removed: every file, mode, symlink and time of the tree with .git but its
+// .git. (A container shows a mounted or copied tree's root with a time of its
+// own, so the root's time isn't compared here; the tree's is restored after
+// .git goes, as a checkout's is.)
+func (GitSuite) TestRemoteTreeWithoutGitDirSharesCheckout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := core.NewQuery(c).Directory().
+		WithNewFile("README.md", "hello\n").
+		WithNewFile("bin/run.sh", "#!/bin/sh\necho run\n", core.DirectoryWithNewFileOpts{Permissions: 0o755}).
+		WithNewFile("nonce.txt", rand.Text()).
+		WithSymlink("README.md", "link-to-readme")
+	served := makeGitDir(c, content, "main")
+
+	const gitHost = "gittree.test"
+	repoURL := "http://" + gitHost + "/repo.git"
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", served, "", nil)
+	devEngine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
+		return ctr.WithServiceBinding(gitHost, gitSrv)
+	})
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+	client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	q := core.NewQuery(client)
+
+	sha, err := q.Git(repoURL).Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+	ref := q.Git(repoURL).Ref(sha)
+	withGitDir := ref.Tree()
+	withoutGitDir := ref.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
+	_, err = withoutGitDir.Sync(ctx)
+	require.NoError(t, err)
+	_, err = withGitDir.Sync(ctx)
+	require.NoError(t, err)
+
+	ents, err := q.Engine().LocalCache().EntrySet().Entries(ctx)
+	require.NoError(t, err)
+	var checkouts []string
+	for _, ent := range ents {
+		recordType, err := ent.RecordType(ctx)
+		require.NoError(t, err)
+		if recordType != "source.git.checkout" {
+			continue
+		}
+		desc, err := ent.Description(ctx)
+		require.NoError(t, err)
+		// The repository's mirror, which every checkout fetches from, is a
+		// checkout entry of its own.
+		if desc == "_remoteGitMirror" {
+			continue
+		}
+		checkouts = append(checkouts, desc)
+	}
+	require.Len(t, checkouts, 1, "one checkout serves both trees: %v", checkouts)
+
+	// Each path's type, mode, modification time, size and symlink target,
+	// and each file's contents, below the tree's root. The root itself is
+	// left out: copied into a container, it takes the copy's own time.
+	listing := func(dir *core.Directory) string {
+		t.Helper()
+		out, err := q.Container().From(alpineImage).
+			WithDirectory("/tree", dir).
+			WithWorkdir("/tree").
+			WithExec([]string{"sh", "-c", `set -eo pipefail
+find . -mindepth 1 -path ./.git -prune -o -print | sort | while read -r p; do stat -c '%n %F %a %Y %s %N' "$p"; done
+find . -path ./.git -prune -o -type f -print | sort | xargs sha256sum`}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	require.Equal(t, listing(withGitDir), listing(withoutGitDir),
+		"the tree without .git is the tree with .git but its .git")
+	entries, err := withoutGitDir.Entries(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, entries, ".git")
+}
+
+// A workspace selected by a commit of a remote repository and the module in
+// it at the same commit share one checkout. Modules named by commit pin their
+// git calls to it; the workspace's are pinned the same way, so the two trees,
+// with and without .git, are one ref's: before, the workspace's unpinned
+// calls made another ref, and the commit was checked out twice.
+func (GitSuite) TestRemoteWorkspaceAndItsModuleShareCheckout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// The function reads a file outside the module, from the workspace's
+	// root, so the call needs the commit's whole tree and not only the files
+	// loading the module reads.
+	nonce := rand.Text()
+	content := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.greeter]\nsource = '.dagger/modules/greeter'\nmain = true\n").
+		WithNewFile(".dagger/modules/greeter/dagger-module.toml", "name = \"greeter\"\n\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile(".dagger/modules/greeter/main.dang", "type Greeter {\n  pub nonce(root: Directory! @defaultPath(path: \"/\")): String! {\n    root.file(\"nonce.txt\").contents\n  }\n}\n").
+		WithNewFile("nonce.txt", nonce)
+	served := makeGitDir(c, content, "main")
+
+	const gitHost = "gitworkspace.test"
+	repoURL := "http://" + gitHost + "/repo.git"
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", served, "", nil)
+	devEngine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
+		return ctr.WithServiceBinding(gitHost, gitSrv)
+	})
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	plain, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { plain.Close() })
+	sha, err := core.NewQuery(plain).Git(repoURL).Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+
+	// As native CI runs a check: the CLI, with the workspace selected by its
+	// commit.
+	cmd := hostDaggerCommand(ctx, t, t.TempDir(), "-W", repoURL+"@"+sha, "call", "nonce")
+	cmd.Env = append(cmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+endpoint)
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	require.Equal(t, nonce, strings.TrimSpace(string(out)))
+
+	ents, err := core.NewQuery(plain).Engine().LocalCache().EntrySet().Entries(ctx)
+	require.NoError(t, err)
+	var checkouts []string
+	for _, ent := range ents {
+		recordTypes, err := ent.RecordTypes(ctx)
+		require.NoError(t, err)
+		if !slices.Contains(recordTypes, "source.git.checkout") {
+			continue
+		}
+		// Each full checkout of a ref is a GitRef.tree entry. The
+		// repository's mirrors, which checkouts fetch from, are checkout
+		// entries of their own, and so is any tree holding only some files.
+		call, err := ent.DagqlCall(ctx)
+		require.NoError(t, err)
+		if call != "GitRef.tree" {
+			continue
+		}
+		desc, err := ent.Description(ctx)
+		require.NoError(t, err)
+		checkouts = append(checkouts, desc)
+	}
+	require.Len(t, checkouts, 1, "the workspace and its module share one checkout: %v", checkouts)
 }

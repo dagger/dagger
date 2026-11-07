@@ -1294,6 +1294,11 @@ var fromSessionScopeInput = dagql.ImplicitInput{
 	},
 }
 
+// A tag lookup keyed to its session is made again in a later session.
+func init() {
+	dagql.SessionScopedInput(fromSessionScopeInput.Name)
+}
+
 // fromLockScope names the workspace lock that can pin a container.from tag
 // lookup, as seen by the calling client. It is empty when no lock applies.
 func fromLockScope(ctx context.Context, args map[string]dagql.Input) (string, error) {

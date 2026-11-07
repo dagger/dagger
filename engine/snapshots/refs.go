@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
 	rootlessmountopts "github.com/dagger/dagger/engine/snapshots/rootlessmountopts"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
@@ -47,6 +48,9 @@ type Ref interface {
 type ImmutableRef interface {
 	Ref
 	ExportChain(ctx context.Context, cfg config.RefConfig) (*ExportChain, error)
+	// ExportFileChain exports the file at filePath in the ref's filesystem
+	// as a chain of its own content.
+	ExportFileChain(ctx context.Context, cfg config.RefConfig, filePath string) (*ExportChain, error)
 }
 
 type MutableRef interface {
@@ -453,7 +457,7 @@ func (sr *immutableRef) linkBlob(ctx context.Context, desc ocispecs.Descriptor) 
 		return err
 	}
 	sr.mu.Unlock()
-	if err := sr.cm.recordSnapshotContent(sr.SnapshotID(), desc); err != nil {
+	if err := sr.cm.recordSnapshotContent(ctx, sr.SnapshotID(), desc); err != nil {
 		return err
 	}
 	if desc.Digest == blobDigest {
@@ -664,7 +668,7 @@ func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ MountableRe
 }
 
 func (sr *immutableRef) Release(ctx context.Context) error {
-	sr.cm.mu.Lock()
+	wcprof.Lock(ctx, &sr.cm.mu, managerMuProfIdent)
 	sr.mu.Lock()
 	err := sr.release(ctx)
 	pin := sr.pin
@@ -704,7 +708,9 @@ func (sr *immutableRef) release(ctx context.Context) (rerr error) {
 	return nil
 }
 
-func (sr *mutableRef) commit(ctx context.Context, usage *snapshots.Usage) (_ *immutableRef, rerr error) {
+// commit commits sr. opts go to the snapshotter's commit, after the merge
+// usage, when one is given.
+func (sr *mutableRef) commit(ctx context.Context, usage *snapshots.Usage, opts ...snapshots.Opt) (_ *immutableRef, rerr error) {
 	if sr.released {
 		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
@@ -720,6 +726,7 @@ func (sr *mutableRef) commit(ctx context.Context, usage *snapshots.Usage) (_ *im
 	if usage != nil {
 		commitOpts = append(commitOpts, withMergeUsage(*usage))
 	}
+	commitOpts = append(commitOpts, opts...)
 	if err := sr.cm.Snapshotter.Commit(ctx, id, sr.SnapshotID(), commitOpts...); err != nil {
 		return nil, errors.Wrapf(err, "failed to commit %s to immutable %s", sr.SnapshotID(), id)
 	}
@@ -821,13 +828,31 @@ func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
 		return nil, errors.Wrap(err, "ensure lease for snapshot commit")
 	}
 
-	sr.cm.mu.Lock()
+	wcprof.Lock(ctx, &sr.cm.mu, managerMuProfIdent)
 	defer sr.cm.mu.Unlock()
 
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
 	return sr.commit(ctx, nil)
+}
+
+// commitOnto commits sr, prepared with no parent, as parent's child: the
+// snapshotter rebases it. Only a snapshotter that layers each snapshot's own
+// directory over its parents' can, which cm.applyLayersApart says.
+func (sr *mutableRef) commitOnto(ctx context.Context, parent ImmutableRef) (*immutableRef, error) {
+	ctx, err := EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot commit")
+	}
+
+	wcprof.Lock(ctx, &sr.cm.mu, managerMuProfIdent)
+	defer sr.cm.mu.Unlock()
+
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+
+	return sr.commit(ctx, nil, snapshots.WithParent(parent.SnapshotID()))
 }
 
 func (sr *mutableRef) CommitWithUsage(ctx context.Context, usage snapshots.Usage) (ImmutableRef, error) {
@@ -846,7 +871,7 @@ func (sr *mutableRef) CommitWithUsage(ctx context.Context, usage snapshots.Usage
 }
 
 func (sr *mutableRef) Release(ctx context.Context) error {
-	sr.cm.mu.Lock()
+	wcprof.Lock(ctx, &sr.cm.mu, managerMuProfIdent)
 	defer sr.cm.mu.Unlock()
 
 	sr.mu.Lock()

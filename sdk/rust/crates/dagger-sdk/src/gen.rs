@@ -7451,6 +7451,22 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieves this directory, declared as made for the given platform.
+    /// Declare a result whose contents are the same whichever platform made them, such as a Go package compiled for a platform by any platform's Go toolchain. An engine of another platform that makes the same directory for the same platform then finds this one, and the other way around.
+    /// The contents are not checked: a declared result that depends on the platform it was made on can be found where it doesn't belong.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - The platform the directory's contents are for (e.g., "linux/arm64").
+    pub fn with_platform(&self, platform: Platform) -> Directory {
+        let mut query = self.selection.select("withPlatform");
+        query = query.arg("platform", platform);
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this directory with all file/dir timestamps set to the given time.
     ///
     /// # Arguments
@@ -8905,6 +8921,12 @@ pub struct File {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct FileSyncOpts {
+    /// Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.
+    #[builder(setter(into, strip_option), default)]
+    pub key_by_content: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct FileContentsOpts {
     /// Maximum number of lines to read
     #[builder(setter(into, strip_option), default)]
@@ -9016,8 +9038,33 @@ impl File {
         query.execute(self.graphql_client.clone()).await
     }
     /// Force evaluation in the engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn sync(&self) -> Result<File, DaggerError> {
         let query = self.selection.select("sync");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(File {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("File"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
+    /// Force evaluation in the engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn sync_opts(&self, opts: FileSyncOpts) -> Result<File, DaggerError> {
+        let mut query = self.selection.select("sync");
+        if let Some(key_by_content) = opts.key_by_content {
+            query = query.arg("keyByContent", key_by_content);
+        }
         let id: Id = query.execute(self.graphql_client.clone()).await?;
         Ok(File {
             proc: self.proc.clone(),

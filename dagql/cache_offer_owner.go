@@ -173,17 +173,18 @@ func (c *Cache) validateOfferAttachmentLocked(res *sharedResult, address Persist
 	return key, nil
 }
 
-// Slot publication transfers the preparation hold. The offer goes into res's
-// Cloud holding, which the caller has noted. Callers release a refused
+// Slot publication transfers the preparation hold. The offer goes into the
+// holding of the cache it came from, res's image or Cloud holding
+// (offerHoldingLocked), which the caller has noted. Callers release a refused
 // preparation and run any collection callbacks after leaving egraphMu.
 func (c *Cache) attachPartOfferLocked(res *sharedResult, address PersistedPartAddress, offer *partOffer) error {
 	key, err := c.validateOfferAttachmentLocked(res, address, offer)
 	if err != nil {
 		return err
 	}
-	_, cloud := res.cloudHoldingLocked()
+	_, cloud := res.offerHoldingLocked()
 	if cloud == nil {
-		return fmt.Errorf("offer attachment: result %d has no Cloud holding", res.id)
+		return fmt.Errorf("offer attachment: result %d has no Cloud or image holding", res.id)
 	}
 	if cloud.parts[key].offer != nil {
 		return fmt.Errorf("offer attachment: occupied address %s", key)
@@ -213,8 +214,9 @@ func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, a
 	if offer.owner != old.owner && offer.owner.slots != 0 {
 		return nil, fmt.Errorf("offer replacement: owner already attached")
 	}
-	_, cloud := res.cloudHoldingLocked()
+	_, cloud := res.offerHoldingLocked()
 	cloud.parts[key] = heldPart{state: heldPartComplete, offer: offer}
+	c.partOfferReplaced(old, offer)
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
 	old.owner.slots--
@@ -231,8 +233,9 @@ func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, ad
 	if old == nil {
 		return nil, nil
 	}
-	_, cloud := res.cloudHoldingLocked()
+	_, cloud := res.offerHoldingLocked()
 	delete(cloud.parts, key)
+	c.partOfferGone(old)
 	old.owner.slots--
 	res.transferRevision++
 	res.dependencyOwnershipRevision++
@@ -314,6 +317,7 @@ func clonePartOffer(offer PersistedPartOffer) (PersistedPartOffer, error) {
 		}
 	}
 	offer.Chain.Addresses = maps.Clone(offer.Chain.Addresses)
+	offer.Chain.Packs = maps.Clone(offer.Chain.Packs)
 	offer.Owner.DependencyIDs = slices.Clone(offer.Owner.DependencyIDs)
 	return offer, nil
 }
@@ -327,6 +331,18 @@ func clonePlatform(platform *ocispecs.Platform) *ocispecs.Platform {
 	return &cloned
 }
 func (res *sharedResult) pendingOffersLocked() ([]PersistedPartOffer, error) {
+	if _, image := res.imageHoldingLocked(); image != nil {
+		// The image's offers aren't saved: the merge of the image's bundle at
+		// the next start attaches them again, and an image that no longer
+		// ships the entry leaves it to run its recipe.
+		return nil, nil
+	}
+	return res.attachedOffersLocked()
+}
+
+// attachedOffersLocked is every offer attached to res, by part key, the
+// image's included.
+func (res *sharedResult) attachedOffersLocked() ([]PersistedPartOffer, error) {
 	var keys []string
 	for key := range res.partOffersLocked() {
 		keys = append(keys, key)

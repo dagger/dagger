@@ -112,6 +112,11 @@ type ContainerExecState struct {
 	ModuleContext dagql.ObjectResult[*Module]
 	FunctionCall  *FunctionCall
 
+	// EngineWork marks an exec run as the engine's own work (WithEngineWork):
+	// the process it starts with nesting does the engine's own work too, and
+	// its calls are internal in telemetry.
+	EngineWork bool
+
 	// ExecMD changes during execution and retries. Persist the supplied input.
 	originalExecMD *engineutil.ExecutionMetadata
 }
@@ -1394,12 +1399,16 @@ func (container *Container) WithExec(
 	functionCall *FunctionCall,
 ) error {
 	state := &ContainerExecState{
-		LazyState:      NewLazyState(),
-		Parent:         parent,
-		Opts:           opts,
-		ExecMD:         execMD,
-		ModuleContext:  moduleContext,
-		FunctionCall:   functionCall,
+		LazyState:     NewLazyState(),
+		Parent:        parent,
+		Opts:          opts,
+		ExecMD:        execMD,
+		ModuleContext: moduleContext,
+		FunctionCall:  functionCall,
+		// A function runtime's exec for a call made as engine work, or an
+		// exec that a process doing engine work asks for, as a module
+		// entrypoint starts its module's process.
+		EngineWork:     functionCall.EngineWork() || IsEngineWork(ctx),
 		originalExecMD: copyExecInputMetadata(execMD),
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
@@ -2379,6 +2388,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				SessionID:             clientMetadata.SessionID,
 				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),
 				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
+				EngineWork:            state.EngineWork,
 			}
 		}
 

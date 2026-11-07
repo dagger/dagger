@@ -1,5 +1,6 @@
 name = "tla-check"
-engineVersion = "v1.0.0-beta.9"
+include = []
 
-[runtime]
-  source = "go"
+[entrypoint]
+  kind = "dang"
+  source = "./internal/dagger/entrypoint"

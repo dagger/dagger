@@ -433,6 +433,244 @@ func TestCopyFileFromOverlayLinksTheVisibleLayer(t *testing.T) {
 	require.Empty(t, copier.sourceCaches[sourceCacheKey{root: src.Root, mount: src.Mount}].ancestorMinLayers)
 }
 
+// CopyFileFromLayer links only what the topmost layer itself holds as a regular
+// file, and gives the same file as a copy through a view of the layers. Each
+// other case changes nothing, and a copy through the view gives the old result.
+func TestCopyFileFromLayer(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		// lower and upper make the layers, and view what the overlay shows.
+		lower, upper, view func(t *testing.T, root string)
+		fromLayer          bool
+		// want is the file's contents through the view; empty when the view
+		// doesn't show it.
+		want string
+	}{
+		{
+			name:      "in the topmost layer",
+			upper:     func(t *testing.T, root string) { writeLayerFile(t, root, "d/f", "upper") },
+			view:      func(t *testing.T, root string) { writeLayerFile(t, root, "d/f", "upper") },
+			fromLayer: true,
+			want:      "upper",
+		},
+		{
+			name:      "shadowing a lower layer's file",
+			lower:     func(t *testing.T, root string) { writeLayerFile(t, root, "d/f", "lower") },
+			upper:     func(t *testing.T, root string) { writeLayerFile(t, root, "d/f", "upper") },
+			view:      func(t *testing.T, root string) { writeLayerFile(t, root, "d/f", "upper") },
+			fromLayer: true,
+			want:      "upper",
+		},
+		{
+			name:  "only in a lower layer",
+			lower: func(t *testing.T, root string) { writeLayerFile(t, root, "d/f", "lower") },
+			upper: func(t *testing.T, root string) { writeLayerFile(t, root, "d/other", "upper") },
+			view:  func(t *testing.T, root string) { writeLayerFile(t, root, "d/f", "lower") },
+			want:  "lower",
+		},
+		{
+			name:  "deleted in the topmost layer",
+			lower: func(t *testing.T, root string) { writeLayerFile(t, root, "d/f", "lower") },
+			upper: func(t *testing.T, root string) { makeLayerWhiteout(t, root, "d/f") },
+		},
+		{
+			name:  "parent deleted in the topmost layer",
+			lower: func(t *testing.T, root string) { writeLayerFile(t, root, "d/f", "lower") },
+			upper: func(t *testing.T, root string) { makeLayerWhiteout(t, root, "d") },
+		},
+		{
+			name: "a symlink in the topmost layer",
+			upper: func(t *testing.T, root string) {
+				writeLayerFile(t, root, "d/g", "target")
+				require.NoError(t, os.Symlink("g", filepath.Join(root, "d/f")))
+			},
+			view: func(t *testing.T, root string) {
+				writeLayerFile(t, root, "d/g", "target")
+				require.NoError(t, os.Symlink("g", filepath.Join(root, "d/f")))
+			},
+			want: "target",
+		},
+		{
+			name: "under a symlink in the topmost layer",
+			upper: func(t *testing.T, root string) {
+				writeLayerFile(t, root, "e/f", "target")
+				require.NoError(t, os.Symlink("e", filepath.Join(root, "d")))
+			},
+			view: func(t *testing.T, root string) {
+				writeLayerFile(t, root, "e/f", "target")
+				require.NoError(t, os.Symlink("e", filepath.Join(root, "d")))
+			},
+			want: "target",
+		},
+		{
+			// Deleted with no whiteout: a file in the layer in place of the parent
+			// directory hides everything the lower layers held under it.
+			name:  "parent replaced by a file in the topmost layer",
+			lower: func(t *testing.T, root string) { writeLayerFile(t, root, "d/f", "lower") },
+			upper: func(t *testing.T, root string) { writeLayerFile(t, root, "d", "upper") },
+		},
+		{
+			// A whiteout is a character device, which many test environments can't
+			// make: the check they share is for a regular file.
+			name: "another kind of file in the topmost layer",
+			upper: func(t *testing.T, root string) {
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "d"), 0o755))
+				require.NoError(t, unix.Mkfifo(filepath.Join(root, "d/f"), 0o644))
+			},
+		},
+		{
+			name:  "a directory in the topmost layer",
+			upper: func(t *testing.T, root string) { writeLayerFile(t, root, "d/f/g", "below") },
+		},
+		{
+			name: "no layer",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			lower, upper, view, dst := filepath.Join(root, "lower"), filepath.Join(root, "upper"), filepath.Join(root, "view"), filepath.Join(root, "dst")
+			for _, dir := range []string{lower, upper, view, dst} {
+				require.NoError(t, os.MkdirAll(dir, 0o755))
+			}
+			for dir, make := range map[string]func(*testing.T, string){lower: test.lower, upper: test.upper, view: test.view} {
+				if make != nil {
+					make(t, dir)
+				}
+			}
+			layer := upper
+			if test.name == "no layer" {
+				layer = filepath.Join(root, "gone")
+			}
+			copier, err := NewCopier(Mount{Root: dst})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, copier.Close()) })
+
+			linked, err := copier.CopyFileFromLayer(context.Background(), layer, "/d/f", "/f", CopyOptions{})
+			require.NoError(t, err)
+			require.Equal(t, test.fromLayer, linked)
+			if linked {
+				want, err := os.Stat(filepath.Join(upper, "d/f"))
+				require.NoError(t, err)
+				got, err := os.Stat(filepath.Join(dst, "f"))
+				require.NoError(t, err)
+				require.Equal(t, statInode(want.Sys().(*syscall.Stat_t)), statInode(got.Sys().(*syscall.Stat_t)))
+			} else {
+				_, err := os.Lstat(filepath.Join(dst, "f"))
+				require.ErrorIs(t, err, os.ErrNotExist, "nothing is left behind")
+			}
+
+			// Either way, the file a copy through the view gives is the file
+			// the layer link gave.
+			viewDst := filepath.Join(root, "viewdst")
+			require.NoError(t, os.MkdirAll(viewDst, 0o755))
+			viewCopier, err := NewCopier(Mount{Root: viewDst})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, viewCopier.Close()) })
+			err = viewCopier.CopyFile(context.Background(), Mount{Root: view, Mount: &mount.Mount{
+				Type:    "overlay",
+				Options: []string{"lowerdir=" + upper + ":" + lower},
+			}}, "/d/f", "/f", CopyOptions{})
+			if test.want == "" {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			viaView, err := os.ReadFile(filepath.Join(viewDst, "f"))
+			require.NoError(t, err)
+			require.Equal(t, test.want, string(viaView))
+			if linked {
+				viaLayer, err := os.ReadFile(filepath.Join(dst, "f"))
+				require.NoError(t, err)
+				require.Equal(t, string(viaView), string(viaLayer))
+				layerInfo, err := os.Stat(filepath.Join(dst, "f"))
+				require.NoError(t, err)
+				viewInfo, err := os.Stat(filepath.Join(viewDst, "f"))
+				require.NoError(t, err)
+				require.Equal(t, viewInfo.Mode(), layerInfo.Mode())
+			}
+		})
+	}
+}
+
+func writeLayerFile(t *testing.T, root, rel, contents string) {
+	t.Helper()
+	path := filepath.Join(root, rel)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o640))
+}
+
+func makeLayerWhiteout(t *testing.T, root, rel string) {
+	t.Helper()
+	path := filepath.Join(root, rel)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	if err := unix.Mknod(path, unix.S_IFCHR, 0); err != nil {
+		t.Skipf("can't make a whiteout here: %v", err)
+	}
+}
+
+// An empty file may be an overlay whiteout, whatever its kind says, so it's left
+// to a copy through the view to say what it is.
+func TestCopyFileFromLayerLeavesEmptyFiles(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	layer, dst := filepath.Join(root, "layer"), filepath.Join(root, "dst")
+	require.NoError(t, os.MkdirAll(dst, 0o755))
+	writeLayerFile(t, layer, "d/f", "")
+	copier, err := NewCopier(Mount{Root: dst})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, copier.Close()) })
+	linked, err := copier.CopyFileFromLayer(context.Background(), layer, "/d/f", "/f", CopyOptions{})
+	require.NoError(t, err)
+	require.False(t, linked)
+	_, err = os.Lstat(filepath.Join(dst, "f"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// A file gone between resolving it and linking it falls back, rather than
+// failing differently from the mount a fallback uses.
+func TestCopyFileFromLayerFileGoneBeforeTheLink(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	layer, dst := filepath.Join(root, "layer"), filepath.Join(root, "dst")
+	require.NoError(t, os.MkdirAll(dst, 0o755))
+	writeLayerFile(t, layer, "d/f", "layer")
+	copier, err := NewCopier(Mount{Root: dst})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, copier.Close()) })
+	resolved := false
+	copier.afterLayerResolve = func(path string) {
+		resolved = true
+		require.NoError(t, os.Remove(path))
+	}
+	linked, err := copier.CopyFileFromLayer(context.Background(), layer, "/d/f", "/f", CopyOptions{})
+	require.NoError(t, err)
+	require.True(t, resolved)
+	require.False(t, linked)
+	_, err = os.Lstat(filepath.Join(dst, "f"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// Once linked, a file's bytes don't need the layer it came from.
+func TestCopyFileFromLayerSurvivesTheLayer(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	layer, dst := filepath.Join(root, "layer"), filepath.Join(root, "dst")
+	require.NoError(t, os.MkdirAll(dst, 0o755))
+	writeLayerFile(t, layer, "d/f", "layer")
+	copier, err := NewCopier(Mount{Root: dst})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, copier.Close()) })
+	linked, err := copier.CopyFileFromLayer(context.Background(), layer, "/d/f", "/f", CopyOptions{})
+	require.NoError(t, err)
+	require.True(t, linked)
+	require.NoError(t, os.RemoveAll(layer))
+	got, err := os.ReadFile(filepath.Join(dst, "f"))
+	require.NoError(t, err)
+	require.Equal(t, "layer", string(got))
+}
+
 func TestCopyFileDestPathHintIsDir(t *testing.T) {
 	t.Parallel()
 

@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/containerd/platforms"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
@@ -15,9 +16,9 @@ import (
 
 	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
+	gomod "dagger/engine-dev/internal/dagger/clients/go"
+	"dagger/engine-dev/internal/dagger/clients/wolfi"
 )
-
-var dag = dagger.Connect()
 
 var versionAnnotation = distconsts.OCIVersionAnnotation
 
@@ -56,7 +57,7 @@ func NewBuilder(
 		vcsCommit:    vcsCommit,
 		vcsDirty:     vcsDirty,
 		platform:     dagger.Platform(platforms.DefaultString()),
-		platformSpec: platforms.DefaultSpec(),
+		platformSpec: platforms.Normalize(platforms.DefaultSpec()),
 		version:      version,
 		ws:           ws,
 	}, nil
@@ -73,6 +74,12 @@ func (build *Builder) WithPlatform(p dagger.Platform) *Builder {
 	b.platform = p
 	b.platformSpec = platforms.Normalize(platforms.MustParse(string(p)))
 	return &b
+}
+
+// Platform is the platform the builder builds for, normalized, e.g.
+// "linux/arm64".
+func (build *Builder) Platform() string {
+	return platforms.Format(build.platformSpec)
 }
 
 func (build *Builder) WithGPUSupport() *Builder {
@@ -131,9 +138,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			"nvidia-container-toolkit-nvidia-container-runtime-hook",
 		)
 	}
-	base := dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	base := wolfi.New().
+		Container(wolfi.WolfiContainerOpts{
 			Packages: pkgs,
 			Arch:     build.platformSpec.Architecture,
 		})
@@ -191,7 +197,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	ctr = ctr.
 		WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl").
-		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
+		WithDirectory(distconsts.EngineDefaultStateDir, core.NewDirectory())
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
@@ -205,6 +211,12 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 func (build *Builder) CodegenBinary() *dagger.File {
 	return build.binary("./cmd/codegen", false)
+}
+
+// ImageEntriesBinary exports the cache entries the engine image ships
+// (cmd/engine-image-entries).
+func (build *Builder) ImageEntriesBinary() *dagger.File {
+	return build.binary("./cmd/engine-image-entries", false)
 }
 
 func (build *Builder) engineBinary(race bool) *dagger.File {
@@ -226,19 +238,19 @@ func (build *Builder) binary(pkg string, race bool) *dagger.File {
 
 func (build *Builder) binaryWithSource(pkg string, race bool, source *dagger.Directory) *dagger.File {
 	return build.goWithSource(source, race).
-		Binary(pkg, dagger.GoBinaryOpts{
+		Binary(pkg, gomod.GoBinaryOpts{
 			Platform:  build.platform,
 			NoSymbols: true,
 			NoDwarf:   true,
 		})
 }
 
-func (build *Builder) Go(race bool) *dagger.Go {
+func (build *Builder) Go(race bool) *gomod.Go {
 	return build.goWithSource(build.source, race)
 }
 
-func (build *Builder) goWithSource(source *dagger.Directory, race bool) *dagger.Go {
-	return dag.Go(dagger.GoOpts{
+func (build *Builder) goWithSource(source *dagger.Directory, race bool) *gomod.Go {
+	return gomod.New(gomod.GoOpts{
 		Ws:        build.ws,
 		Source:    source,
 		VcsCommit: build.vcsCommit,
@@ -257,22 +269,22 @@ func (build *Builder) runtimeBin() *dagger.File {
 	// crun is C: cross-compile it with xx, as runc is, statically linked,
 	// from the checksummed release tarball, which carries its libocispec
 	// submodule.
-	src := dag.HTTP(
+	src := core.HTTP(
 		"https://github.com/containers/crun/releases/download/"+consts.CrunVersion+"/crun-"+consts.CrunVersion+".tar.gz",
 		dagger.HTTPOpts{Checksum: consts.CrunChecksum},
 	)
-	jsonc := dag.HTTP(
+	jsonc := core.HTTP(
 		"https://github.com/json-c/json-c/archive/refs/tags/json-c-"+consts.JSONCVersion+".tar.gz",
 		dagger.HTTPOpts{Checksum: consts.JSONCChecksum},
 	)
-	return dag.Container().
+	return core.NewContainer().
 		From(consts.AlpineImage).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
 		WithExec([]string{"apk", "add", "--no-cache",
 			"clang", "lld", "llvm", "make", "autoconf", "automake", "libtool", "pkgconf", "python3", "cmake",
 		}).
-		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
+		WithDirectory("/", core.NewContainer().From(consts.XxImage).Rootfs()).
 		WithExec([]string{"xx-apk", "add", "--no-cache",
 			"musl-dev", "gcc", "linux-headers",
 			"libcap-dev", "libcap-static", "libseccomp-dev", "libseccomp-static", "argp-standalone",
@@ -306,11 +318,11 @@ func (build *Builder) gitRemoteEntireBin() *dagger.File {
 	if !ok {
 		return nil
 	}
-	archive := dag.HTTP(
+	archive := core.HTTP(
 		"https://github.com/entireio/cli/releases/download/v"+consts.EntireCLIVersion+"/entire_linux_"+arch+".tar.gz",
 		dagger.HTTPOpts{Checksum: checksum},
 	)
-	return dag.Container().
+	return core.NewContainer().
 		From(consts.AlpineImage).
 		WithMountedFile("/entire.tar.gz", archive).
 		WithExec([]string{"tar", "xzf", "/entire.tar.gz", "-C", "/", "git-remote-entire"}).
@@ -321,14 +333,13 @@ func (build *Builder) sshfsBin() *dagger.File {
 	// Wolfi's sshfs package currently lags upstream at 3.7.4, so build the
 	// known-good release from source. Prefer the Wolfi package again once it
 	// catches up.
-	src := dag.
+	src := core.
 		Git("https://github.com/libfuse/sshfs.git").
 		Tag("sshfs-" + consts.SSHFSVersion).
 		Tree()
 
-	return dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	return wolfi.New().
+		Container(wolfi.WolfiContainerOpts{
 			Packages: []string{
 				"build-base",
 				"ca-certificates-bundle",
@@ -347,7 +358,7 @@ func (build *Builder) sshfsBin() *dagger.File {
 }
 
 func (build *Builder) cniPlugins() (bins []*dagger.File) {
-	src := dag.Git("github.com/containernetworking/plugins").Tag(consts.CniVersion).Tree()
+	src := core.Git("github.com/containernetworking/plugins").Tag(consts.CniVersion).Tree()
 
 	for _, pluginPath := range []string{
 		"./plugins/main/bridge",
@@ -357,7 +368,7 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 	} {
 		// CNI plugins are third-party; VCS stamping is irrelevant here, so we
 		// don't thread any VCS info into their build.
-		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.ws}).Binary(pluginPath, dagger.GoBinaryOpts{
+		bin := gomod.New(gomod.GoOpts{Source: src, Ws: build.ws}).Binary(pluginPath, gomod.GoBinaryOpts{
 			NoSymbols: true,
 			NoDwarf:   true,
 			Platform:  build.platform,
@@ -381,7 +392,7 @@ func (build *Builder) Init() *dagger.File {
 	case "arm64":
 		url = "https://github.com/krallin/tini/releases/download/v0.19.0/tini-arm64"
 	}
-	return dag.HTTP(url)
+	return core.HTTP(url)
 }
 
 func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
@@ -406,9 +417,8 @@ func (build *Builder) verifyPlatform(ctx context.Context, bin *dagger.File) erro
 		return fmt.Errorf("failed to get name of binary: %w", err)
 	}
 	mntPath := filepath.Join("/mnt", name)
-	out, err := dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	out, err := wolfi.New().
+		Container(wolfi.WolfiContainerOpts{
 			Packages: []string{"file"},
 		}).
 		WithMountedFile(mntPath, bin).

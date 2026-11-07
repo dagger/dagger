@@ -47,7 +47,14 @@ import (
 type Directory struct {
 	filesystemOutput
 	transferPending *persistedDirectoryPayload
-	Platform        Platform
+	// transferShell is set when the directory decoded from another engine's
+	// record without its recipe, and never changes after.
+	transferShell bool
+	// completedElsewhere is set when the directory decoded from another
+	// engine's record of an operation that completed there, and never
+	// changes after.
+	completedElsewhere bool
+	Platform           Platform
 	// Services necessary to provision the directory.
 	Services ServiceBindings
 
@@ -335,6 +342,11 @@ func (dir *Directory) persistedPayloadLocked(ctx context.Context, enc *dagql.Per
 	}
 	if dir.Lazy != nil {
 		payload.Form = persistedDirectoryFormLazy
+		if dir.completedElsewhere {
+			// Its operation completed on the engine it came from, though not
+			// here: a record of it says so, as the one it came in did.
+			payload.OperationState = "evaluated"
+		}
 		payload.LazyKind, payload.LazyJSON, err = encodePersistedDirectoryLazy(ctx, enc, dir.Lazy)
 		if err != nil {
 			return persistedDirectoryPayload{}, nil, err
@@ -372,6 +384,15 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 		dir.OutputRev++ // private decoded output, before publication
 		dir.outputMu.Unlock()
 	}()
+	dir.completedElsewhere = persisted.OperationState == "evaluated"
+	// A record from another engine that holds no download address decodes
+	// as local persistence decodes a pending directory: its recipe armed.
+	if persisted.Form == transferPending && persisted.LazyKind != "" && dec.ArmRecipe() {
+		if err := foreignFamilyCodec("Directory").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload, Call: dec.Call()}); err != nil {
+			return nil, err
+		}
+		persisted.Form = persistedDirectoryFormLazy
+	}
 	if persisted.Dir != "" && persisted.Form != transferPending {
 		dir.SetPath(persisted.Dir)
 	}
@@ -381,6 +402,7 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 			return nil, err
 		}
 		dir.transferPending = &persisted
+		dir.transferShell = true
 		if persisted.ValueKnown {
 			dir.SetPath(persisted.Dir)
 		}
@@ -415,6 +437,15 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dec *dagql.Pe
 func (*Directory) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	return decodePersistedDirectoryWithSnapshotRole(ctx, dec, payload, "snapshot")
 }
+
+// PartTransferShell reports whether the directory decoded from another
+// engine's record without its recipe, so that its content comes only through
+// part acquisition.
+func (dir *Directory) PartTransferShell() bool { return dir.transferShell }
+
+// OperationCompletedElsewhere reports whether the directory decoded from
+// another engine's record of an operation that completed there.
+func (dir *Directory) OperationCompletedElsewhere() bool { return dir.completedElsewhere }
 
 func loadCanonicalScratchDirectory(ctx context.Context) (string, bkcache.ImmutableRef, error) {
 	query, err := CurrentQuery(ctx)
@@ -1588,6 +1619,16 @@ func (lazy *DirectoryChownLazy) EncodePersisted(ctx context.Context, enc *dagql.
 }
 
 func (dir *Directory) Digest(ctx context.Context, self dagql.ObjectResult[*Directory]) (string, error) {
+	return dir.digest(ctx, self, bkcontenthash.ChecksumOpts{})
+}
+
+// DigestExcluding is Digest without the entries matching excludes, which are
+// patterns relative to the directory.
+func (dir *Directory) DigestExcluding(ctx context.Context, self dagql.ObjectResult[*Directory], excludes []string) (string, error) {
+	return dir.digest(ctx, self, bkcontenthash.ChecksumOpts{ExcludePatterns: excludes})
+}
+
+func (dir *Directory) digest(ctx context.Context, self dagql.ObjectResult[*Directory], opts bkcontenthash.ChecksumOpts) (string, error) {
 	snapshot, err := dir.Snapshot.GetOrEval(ctx, self.Result)
 	if err != nil {
 		return "", fmt.Errorf("failed to evaluate directory: %w", err)
@@ -1604,7 +1645,7 @@ func (dir *Directory) Digest(ctx context.Context, self dagql.ObjectResult[*Direc
 		ctx,
 		snapshot,
 		dirPath,
-		bkcontenthash.ChecksumOpts{},
+		opts,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to compute digest: %w", err)

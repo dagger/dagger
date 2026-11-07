@@ -1828,6 +1828,24 @@ func (ContainerSuite) TestWithMountedFiles(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "one", contents)
 	})
 
+	t.Run("files of a layered snapshot, read again", func(ctx context.Context, t *testctx.T) {
+		// One file changed in the snapshot's topmost layer, shadowing its old
+		// contents below, and one only in a layer below. The second read of each
+		// finds its layer already known.
+		layered := ctr.
+			WithExec([]string{"sh", "-c", "mkdir /out; echo old > /out/changed; echo kept > /out/kept; chmod 640 /out/changed /out/kept"}).
+			WithExec([]string{"sh", "-c", "echo new > /out/changed; chmod 640 /out/changed"})
+		files := []*sdkcore.File{layered.File("/out/changed"), layered.File("/out/kept")}
+		mounted := ctr.WithMountedFiles("/mnt/files", files)
+		for _, read := range []string{"first", "second"} {
+			out, err := mounted.
+				WithExec([]string{"sh", "-c", "echo " + read + "; cat /mnt/files/changed /mnt/files/kept; stat -c %a /mnt/files/changed /mnt/files/kept"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, read+"\nnew\nkept\n640\n640\n", out)
+		}
+	})
+
 	t.Run("empty list", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.WithMountedFiles("/mnt/files", []*sdkcore.File{}).
 			WithExec([]string{"sh", "-c", "test -d /mnt/files && ls -A /mnt/files"}).

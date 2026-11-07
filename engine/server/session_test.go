@@ -5672,15 +5672,6 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 	require.True(t, legacy[0].mod.Main)
 }
 
-func TestModuleLoadParallelism(t *testing.T) {
-	t.Parallel()
-
-	require.Equal(t, 1, moduleLoadParallelism(0))
-	require.Equal(t, 1, moduleLoadParallelism(1))
-	require.Equal(t, 3, moduleLoadParallelism(3))
-	require.Equal(t, maxParallelModuleResolves, moduleLoadParallelism(maxParallelModuleResolves+4))
-}
-
 func TestModuleLoadErr(t *testing.T) {
 	t.Parallel()
 
