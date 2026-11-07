@@ -678,6 +678,10 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 }
 
 func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, root bool, visit PersistedRefVisitor) (PersistedResultEnvelope, error) {
+	if err := validateResultFacts(env, root); err != nil {
+		return PersistedResultEnvelope{}, err
+	}
+	env.ResultFacts = cloneResultFacts(env.ResultFacts)
 	if env.Version != persistedResultEnvelopeVersion {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unsupported version %d", path, env.Version)
 	}

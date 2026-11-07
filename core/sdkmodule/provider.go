@@ -213,6 +213,7 @@ func (provider *Provider) instantiate(ctx context.Context) (*instance, error) {
 		return nil, fmt.Errorf("create SDK-module server: %w", err)
 	}
 	dag.Around(core.AroundFunc)
+	dag.ObserveCalls(core.ObserveWorkspaceInputs)
 	core.InstallCoreSchemaLoaders(dag)
 
 	if err := core.NewUserMod(provider.mod).Install(ctx, dag); err != nil {

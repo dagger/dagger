@@ -154,6 +154,7 @@ type AnyObjectResult interface {
 	//
 	// Any Nullable values are automatically unwrapped.
 	Select(context.Context, *Server, Selector) (AnyResult, error)
+	Plan(context.Context, *Server, Selector) (*CallRequest, error)
 }
 
 // A type that has a callback attached that needs to always run when the result is removed

@@ -157,13 +157,17 @@ func (fc *FuncCommand) selectArtifactRoot(ctx context.Context, cmd *cobra.Comman
 	}
 	cmd.Annotations[artifactCallTarget] = target
 
-	artifacts, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, nil, false)
+	artifacts, ws, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, nil, false)
 	if err != nil {
 		return err
 	}
 	// Selectors also match what hangs off the item, such as a check defined on
 	// it. The item named by the deepest selector is the one being called.
 	artifacts = artifacts.FilterTypes([]string{target})
+	artifacts, err = filterArtifactsBySource(ctx, dag, ws, artifacts, cmd)
+	if err != nil {
+		return err
+	}
 	// Count before evaluating: an ambiguous selection would otherwise run the
 	// module code behind every candidate just to report that it is ambiguous.
 	items, err := readListedArtifacts(ctx, dag, artifacts, false, true)

@@ -785,11 +785,31 @@ func detectWorkspaceFilesInDirectory(
 	return detected, nil
 }
 
+// moduleCallerNeedsDeclaredSources permits owner-routed Workspace reads while
+// rejecting ambient source access under the module's own client identity.
+func moduleCallerNeedsDeclaredSources(ctx context.Context) (bool, error) {
+	if inModuleFunction, err := core.CallerInModuleFunction(ctx); err != nil || !inModuleFunction {
+		return false, err
+	}
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return false, err
+	}
+	// CurrentFunctionCall has already required a held executable ClientScope.
+	scope, _ := engine.ClientScopeFromContext(ctx)
+	return scope.ClientID() == md.ClientID, nil
+}
+
 func (s *workspaceSchema) currentWorkspace(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Query],
 	_ struct{},
 ) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	if needsDeclaredSources, err := moduleCallerNeedsDeclaredSources(ctx); err != nil {
+		return inst, err
+	} else if needsDeclaredSources {
+		return inst, fmt.Errorf("currentWorkspace is not available to module functions; pass a Workspace explicitly")
+	}
 	// Prefer a Workspace explicitly bound into the context (an LLM operating on
 	// its own, possibly overlaid, Workspace; a generator/check group threading
 	// the workspace it was rolled up from) over the session's frozen current

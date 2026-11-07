@@ -394,11 +394,15 @@ func composeAgents(ctx context.Context, dag *dagger.Client, include []string, cm
 	if err != nil {
 		return nil, err
 	}
-	all, err := commandArtifactsWithFlags(ctx, dag, workspace, cmd, include, true)
+	all, workspace, err := commandArtifactsWithFlags(ctx, dag, workspace, cmd, include, true)
 	if err != nil {
 		return nil, err
 	}
 	selection := all.FilterTypes([]string{"Expertise"})
+	selection, err = filterArtifactsBySource(ctx, dag, workspace, selection, cmd)
+	if err != nil {
+		return nil, err
+	}
 	expertise, err := selection.AsExpertise(ctx)
 	if err != nil {
 		return nil, err
@@ -429,9 +433,13 @@ func snapshotWorkspace(ctx context.Context, dag *dagger.Client) (*core.Workspace
 }
 
 func listAgents(ctx context.Context, dag *dagger.Client, include []string, cmd *cobra.Command) error {
-	all, err := commandArtifactsWithFlags(ctx, dag, core.NewQuery(dag).CurrentWorkspace(), cmd, include, true)
+	all, ws, err := commandArtifactsWithFlags(ctx, dag, core.NewQuery(dag).CurrentWorkspace(), cmd, include, true)
 	if err != nil {
 		return err
 	}
-	return listArtifactSelection(ctx, dag, all.FilterTypes([]string{"Expertise"}), cmd)
+	selection, err := filterArtifactsBySource(ctx, dag, ws, all.FilterTypes([]string{"Expertise"}), cmd)
+	if err != nil {
+		return err
+	}
+	return listArtifactSelection(ctx, dag, selection, cmd)
 }

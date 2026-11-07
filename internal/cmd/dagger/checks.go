@@ -72,11 +72,15 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			ws := core.NewQuery(dag).CurrentWorkspace()
-			artifacts, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, false)
+			artifacts, ws, err := commandArtifactsWithFlags(ctx, dag, ws, cmd, args, false)
 			if err != nil {
 				return err
 			}
-			checks, err := commandArtifactTargets(ctx, dag, cmd, artifacts)
+			checks, err := commandArtifactTargets(ctx, dag, ws, cmd, artifacts)
+			if err != nil {
+				return err
+			}
+			checks, err = filterArtifactsBySource(ctx, dag, ws, checks, cmd)
 			if err != nil {
 				return err
 			}
@@ -98,7 +102,7 @@ func checksClientParams(args []string) (client.Params, error) {
 	}, args)
 }
 
-func runChecks(ctx context.Context, dag *dagger.Client, checks *core.Artifacts, _ *cobra.Command, include []string) error {
+func runChecks(ctx context.Context, dag *dagger.Client, checks *core.Artifacts, cmd *cobra.Command, include []string) error {
 	ctx = artifactExecutionContext(ctx)
 	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
 	defer zoomSpan.End()
@@ -111,8 +115,10 @@ func runChecks(ctx context.Context, dag *dagger.Client, checks *core.Artifacts, 
 	if err != nil {
 		return err
 	}
-	if err := validateCheckSelection(include, len(results)); err != nil {
-		return err
+	if !artifactSourceFilterEnabled(cmd) {
+		if err := validateCheckSelection(include, len(results)); err != nil {
+			return err
+		}
 	}
 	if err := artifactResultErrors(results); err != nil {
 		return idtui.ExitError{OriginalCode: 1, Original: err}

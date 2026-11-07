@@ -39,8 +39,13 @@ var _ SchemaResolvers = &hostSchema{}
 func (s *hostSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("host", func(ctx context.Context, parent *core.Query, args struct{}) (*core.Host, error) {
+			if needsDeclaredSources, err := moduleCallerNeedsDeclaredSources(ctx); err != nil {
+				return nil, err
+			} else if needsDeclaredSources {
+				return nil, fmt.Errorf("host is not available to module functions; use declared File, Directory, or Workspace inputs")
+			}
 			return parent.NewHost(), nil
-		}).Doc(`Queries the host environment.`),
+		}).WithInput(dagql.PerClientInput).Doc(`Queries the host environment.`),
 
 		dagql.NodeFunc("_builtinContainer", s.builtinContainer).
 			WithInput(engineDefaultPlatformInput).

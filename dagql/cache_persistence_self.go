@@ -40,8 +40,12 @@ const persistedResultEnvelopeVersion = 5
 // while still carrying enough structured data to decode common SDK-return
 // shapes (scalars, object IDs, lists, nested combinations).
 type PersistedResultEnvelope struct {
-	Imported      bool                 `json:"imported,omitempty"`
-	PendingOffers []PersistedPartOffer `json:"pendingOffers,omitempty"`
+	// Facts are root-only application JSON. An absent coverage marker denotes
+	// legacy or incomplete origins, even when some facts are present.
+	FactsCoverageVersion int                  `json:"coverageVersion,omitempty"`
+	ResultFacts          []ResultFact         `json:"facts,omitempty"`
+	Imported             bool                 `json:"imported,omitempty"`
+	PendingOffers        []PersistedPartOffer `json:"pendingOffers,omitempty"`
 	// PersistDeclined is the entry's mark that its call declined to persist
 	// its value (sharedResult.persistDeclined). Only a saved envelope
 	// carries it: restore takes it back onto the entry, and no record sent
@@ -149,9 +153,11 @@ func encodePersistedResult(ctx context.Context, cache PersistedObjectCache, res 
 	var (
 		resultID uint64
 		frame    *ResultCall
+		facts    sharedResultPayloadState
 	)
 	if res != nil {
 		if shared := res.cacheSharedResult(); shared != nil {
+			facts = shared.loadPayloadState()
 			frame = shared.loadResultCall()
 			if cache != nil {
 				if persistedResultID, err := cache.PersistedResultID(res); err == nil {
@@ -163,10 +169,17 @@ func encodePersistedResult(ctx context.Context, cache PersistedObjectCache, res 
 	enc := NewPersistEncodeContext(cache, resultID, frame)
 	enc.quiescent, _ = ctx.Value(quiescentPersistKey{}).(bool)
 	enc.parts = parts
-	return encodePersistedResultEnvelope(ctx, enc, res, true)
+	encoding, err := encodePersistedResultEnvelope(ctx, enc, res, true)
+	if err == nil {
+		setEnvelopeResultFacts(&encoding.Envelope, facts.resultFacts, facts.resultFactsIncomplete)
+	}
+	return encoding, err
 }
 
 func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (ret AnyResult, rerr error) {
+	if err := validateResultFacts(env, true); err != nil {
+		return nil, err
+	}
 	dec := NewPersistDecodeContext(dag, resultID, call)
 	dec.roles, _ = ctx.Value(copiedDecodeRolesKey{}).(*copiedDecodeRoles)
 	if dec.roles != nil && dec.roles.ResultID != resultID {
@@ -193,7 +206,12 @@ func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, 
 	}()
 	ret, rerr = decodePersistedResultEnvelope(ctx, dec, env, true)
 	if rerr == nil && ret != nil {
-		ret.cacheSharedResult().onRelease = cleanup
+		shared := ret.cacheSharedResult()
+		shared.resultFacts = cloneResultFacts(env.ResultFacts)
+		shared.resultFactsIncomplete = env.FactsCoverageVersion != resultFactsCoverageVersion
+		shared.resultFactBytes = resultFactPayloadBytes(shared.resultFacts)
+		shared.payloadBytes += shared.resultFactBytes
+		shared.onRelease = cleanup
 	}
 	return ret, rerr
 }
@@ -203,6 +221,7 @@ func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, 
 // is null.
 func persistedAbsentEnvelope(resultID uint64, handle SessionResourceHandle) PersistedResultEnvelope {
 	return PersistedResultEnvelope{
+		FactsCoverageVersion:  resultFactsCoverageVersion,
 		Version:               persistedResultEnvelopeVersion,
 		Kind:                  persistedResultKindNull,
 		ResultID:              resultID,
@@ -365,7 +384,11 @@ func encodePersistedAbsentValue(enc *PersistEncodeContext, resultID uint64, hand
 			return PersistedResultEncoding{}, fmt.Errorf("persist absent value of result %d: %w", resultID, err)
 		}
 	}
-	return PersistedResultEncoding{Envelope: persistedAbsentEnvelope(resultID, handle)}, nil
+	env := persistedAbsentEnvelope(resultID, handle)
+	if !root {
+		env.FactsCoverageVersion = 0
+	}
+	return PersistedResultEncoding{Envelope: env}, nil
 }
 
 // persistedListItemCall derives the recorded call of the i-th (1-based) item

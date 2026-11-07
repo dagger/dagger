@@ -186,21 +186,37 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 // with defaults (no leafArgs), so leafArgs only ever fill the leaf itself — e.g.
 // the @agent fold supplies `base` here.
 func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []dagql.NamedInput) error {
-	// We can't direct-select the dagql path, because Select() doesn't support traversing
-	// lists
-	// FIXME: as an optimization, one-shot when possible?
-	srv := node.DagqlServer
 	if node.RootValue != nil {
-		return srv.Select(ctx, node.RootValue, dest)
+		return node.DagqlServer.Select(ctx, node.RootValue, dest)
 	}
-	// 1. Are we the root? Select the module's main object from Query root.
-	// A node is also treated as root if its parent is a synthetic naming-only
-	// node (e.g. injected by workspace checks reparenting, which sets
-	// Parent to an empty ModTreeNode with nil Module).
+	receiver, selector, err := node.selection(ctx, leafArgs)
+	if err != nil {
+		return err
+	}
+	return node.DagqlServer.Select(dagql.WithNonInternalTelemetry(ctx), receiver, dest, selector)
+}
+
+func (node *ModTreeNode) plannedCall(ctx context.Context, inputs ...dagql.NamedInput) (*dagql.ResultCall, error) {
+	if node.RootValue != nil {
+		return node.RootValue.ResultCall()
+	}
+	receiver, selector, err := node.selection(ctx, inputs)
+	if err != nil {
+		return nil, err
+	}
+	request, err := receiver.Plan(ctx, node.DagqlServer, selector)
+	if err != nil {
+		return nil, err
+	}
+	return request.ResultCall, nil
+}
+
+func (node *ModTreeNode) selection(ctx context.Context, leafArgs []dagql.NamedInput) (dagql.AnyObjectResult, dagql.Selector, error) {
+	srv := node.DagqlServer
 	if node.Parent == nil || (node.Parent.Module.Self() == nil && node.Parent.RootValue == nil && node.Parent.Type.Self() == nil) {
 		mod := node.Module.Self()
 		if mod == nil {
-			return fmt.Errorf("%q: get value: missing module", node.PathString())
+			return nil, dagql.Selector{}, fmt.Errorf("%q: get value: missing module", node.PathString())
 		}
 		var ctor *Function
 		if objType := node.ObjectType(); objType != nil && objType.Constructor.Valid {
@@ -208,49 +224,48 @@ func (node *ModTreeNode) dagqlValue(ctx context.Context, dest any, leafArgs []da
 		}
 		args, err := boundWorkspaceArgs(ctx, srv, ctor)
 		if err != nil {
-			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
+			return nil, dagql.Selector{}, fmt.Errorf("%q: get value: %w", node.PathString(), err)
 		}
-		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{
+		return srv.Root(), dagql.Selector{
 			Field: mod.ConstructorName(),
 			Args:  append(args, leafArgs...),
-		})
+		}, nil
 	}
-	// 2. Is parent an object?
 	if parentObjType := node.Parent.ObjectType(); parentObjType != nil {
 		var parentObjValue dagql.AnyObjectResult
 		if err := node.Parent.DagqlValue(ctx, &parentObjValue); err != nil {
-			return err
+			return nil, dagql.Selector{}, err
 		}
 		var err error
 		parentObjValue, err = node.legacyBatchReceiver(ctx, parentObjValue)
 		if err != nil {
-			return err
+			return nil, dagql.Selector{}, err
 		}
 		fn, _ := parentObjType.FunctionByName(node.Name)
 		args, err := node.boundArtifactArgs(ctx, srv, fn, leafArgs)
 		if err != nil {
-			return fmt.Errorf("%q: get value: %w", node.PathString(), err)
+			return nil, dagql.Selector{}, fmt.Errorf("%q: get value: %w", node.PathString(), err)
 		}
 		if node.CollectionDimension != nil {
 			if node.CollectionKey == nil {
-				return fmt.Errorf("collection item %q has no key", node.CollectionDimension.Identifier)
+				return nil, dagql.Selector{}, fmt.Errorf("collection item %q has no key", node.CollectionDimension.Identifier)
 			}
 			members, err := parentObjType.CollectionMembers()
 			if err != nil {
-				return err
+				return nil, dagql.Selector{}, err
 			}
 			key, err := collectionInputFromText(members.Get.Args[0].Self().TypeDef.Self(), *node.CollectionKey)
 			if err != nil {
-				return err
+				return nil, dagql.Selector{}, err
 			}
 			args = append(args, dagql.NamedInput{Name: "key", Value: key})
 		}
-		return srv.Select(dagql.WithNonInternalTelemetry(ctx), parentObjValue, dest, dagql.Selector{
+		return parentObjValue, dagql.Selector{
 			Field: node.Name,
 			Args:  append(args, leafArgs...),
-		})
+		}, nil
 	}
-	return fmt.Errorf("%q: get value: parent is not an object", node.PathString())
+	return nil, dagql.Selector{}, fmt.Errorf("%q: get value: parent is not an object", node.PathString())
 }
 
 func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function) ([]dagql.NamedInput, error) {

@@ -13,6 +13,11 @@ type CallRequest struct {
 	DoNotCache     bool
 	IsPersistable  bool
 
+	// Prepared facts are attached during publication, before readers or
+	// snapshot sharing can observe the result. They are not cache identity.
+	ResultFacts           []ResultFact
+	ResultFactsIncomplete bool
+
 	// ListItem marks a read of item Nth of the receiver, a cache-backed list
 	// whose value holds the item inline. Such a read is answered only by the
 	// item the receiver recorded for that position (sharedResult.listItems):
@@ -60,15 +65,17 @@ func (req *CallRequest) Clone() *CallRequest {
 		frame = &ResultCall{}
 	}
 	return &CallRequest{
-		ResultCall:           frame,
-		ConcurrencyKey:       req.ConcurrencyKey,
-		TTL:                  req.TTL,
-		DoNotCache:           req.DoNotCache,
-		IsPersistable:        req.IsPersistable,
-		ListItem:             req.ListItem,
-		DeduplicateTelemetry: req.DeduplicateTelemetry,
-		PassthroughTelemetry: req.PassthroughTelemetry,
-		ReceiverTypeName:     req.ReceiverTypeName,
+		ResultCall:            frame,
+		ConcurrencyKey:        req.ConcurrencyKey,
+		TTL:                   req.TTL,
+		DoNotCache:            req.DoNotCache,
+		IsPersistable:         req.IsPersistable,
+		ResultFacts:           cloneResultFacts(req.ResultFacts),
+		ResultFactsIncomplete: req.ResultFactsIncomplete,
+		ListItem:              req.ListItem,
+		DeduplicateTelemetry:  req.DeduplicateTelemetry,
+		PassthroughTelemetry:  req.PassthroughTelemetry,
+		ReceiverTypeName:      req.ReceiverTypeName,
 		// CacheEvidence is deliberately NOT carried over: it is per-invocation
 		// state owned by the one AroundFunc-wrapped invocation that allocated
 		// it; a cloned request is a different (or internal) invocation and

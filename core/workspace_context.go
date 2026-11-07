@@ -64,7 +64,7 @@ func workspaceArgValue(ctx context.Context, srv *dagql.Server) (dagql.Input, err
 	}
 	// A running module function must pass a Workspace to its dependencies
 	// explicitly, so it doesn't silently inherit its caller's.
-	if inModuleFunction, err := callerInModuleFunction(ctx); err != nil {
+	if inModuleFunction, err := CallerInModuleFunction(ctx); err != nil {
 		return nil, err
 	} else if inModuleFunction {
 		return nil, nil
