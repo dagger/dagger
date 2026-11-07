@@ -863,6 +863,17 @@ func keptRows[Row any](rows []Row, keep func(*Row) bool) []Row {
 
 // fetchLogBatch is fetchSpanBatch for log records.
 func fetchLogBatch(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Log) bool) (next int64, req *collogspb.ExportLogsServiceRequest, rows int, err error) {
+	next, kept, rows, err := fetchLogRows(ctx, db, since, limit, keep)
+	if err != nil || rows == 0 {
+		return next, nil, rows, err
+	}
+	return next, &collogspb.ExportLogsServiceRequest{
+		ResourceLogs: clientdb.LogsToPB(kept),
+	}, rows, nil
+}
+
+// fetchLogRows is fetchSpanRows for log records.
+func fetchLogRows(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Log) bool) (next int64, kept []clientdb.Log, rows int, err error) {
 	logs, err := db.Read().SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
 		ID:    since,
 		Limit: int64(limit),
@@ -873,11 +884,7 @@ func fetchLogBatch(ctx context.Context, db *clientdb.DB, since int64, limit int,
 	if len(logs) == 0 {
 		return since, nil, 0, nil
 	}
-	next = logs[len(logs)-1].ID
-	kept := keptRows(logs, keep)
-	return next, &collogspb.ExportLogsServiceRequest{
-		ResourceLogs: clientdb.LogsToPB(kept),
-	}, len(logs), nil
+	return logs[len(logs)-1].ID, keptRows(logs, keep), len(logs), nil
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
@@ -903,13 +910,23 @@ func fetchTraceStreamBatch(ctx context.Context, db *clientdb.DB, since int64, li
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
-		next, req, rows, err := fetchLogBatch(ctx, db, since, limit, nil)
-		if req == nil {
-			return next, nil, rows, err
+	return ps.streamHandler(w, r, record, fetchLogStreamBatch)
+}
+
+// fetchLogStreamBatch is fetchTraceStreamBatch for log records.
+func fetchLogStreamBatch(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
+	next, logs, rows, err := fetchLogRows(ctx, db, since, limit, nil)
+	if err != nil || rows == 0 {
+		return next, nil, rows, err
+	}
+	return next, func(buf []byte, binary bool) ([]byte, error) {
+		if binary {
+			return clientdb.AppendLogsRequestPB(buf, logs)
 		}
-		return next, encodeMessage(req), rows, err
-	})
+		return protojson.MarshalOptions{}.MarshalAppend(buf, &collogspb.ExportLogsServiceRequest{
+			ResourceLogs: clientdb.LogsToPB(logs),
+		})
+	}, rows, nil
 }
 
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
