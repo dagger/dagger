@@ -46,6 +46,42 @@ func GetContentHashFromDirectory(
 	return dgst, nil
 }
 
+// GetDirectoryRootHeaderHash returns the hash of the header of the directory
+// at dirPath in snapshot: its mode, owner and extended attributes, as content
+// hashes record them for every other entry. GetContentHashFromDirectory leaves
+// the root out, but a copy of the directory's contents to another path gives
+// the destination directory this header.
+func GetDirectoryRootHeaderHash(
+	ctx context.Context,
+	snapshot bkcache.ImmutableRef,
+	dirPath string,
+) (digest.Digest, error) {
+	if snapshot == nil {
+		return "", fmt.Errorf("failed to get directory snapshot: nil")
+	}
+	var dgst digest.Digest
+	err := MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
+		p, err := containerdfs.RootPath(root, dirPath)
+		if err != nil {
+			return err
+		}
+		fi, err := os.Stat(p)
+		if err != nil {
+			return err
+		}
+		h, err := bkcontenthash.NewFileHash(p, fi)
+		if err != nil {
+			return err
+		}
+		dgst = digest.NewDigest(digest.SHA256, h)
+		return nil
+	}, mountRefAsReadOnly)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash directory header: %w", err)
+	}
+	return dgst, nil
+}
+
 func GetContentHashFromFile(
 	ctx context.Context,
 	snapshot bkcache.ImmutableRef,

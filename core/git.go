@@ -2390,6 +2390,25 @@ func deferPrivateGitTreeContentDigest(ctx context.Context, operation Lazy[*Direc
 	return dagql.PartTaskFromContext(ctx).SetContentDigestAfterEvaluation(contentDigest)
 }
 
+// DefersContentDigest reports whether dir is a remote Git tree that publishes
+// its content digest only once its checkout succeeds (see
+// deferGitTreeContentDigest). Until then its call has no content digest. A
+// checkout runs no container command, so a call that narrows such a tree can
+// materialize it and hash its own content, as it does for a tree that already
+// published its digest.
+func DefersContentDigest(dir *Directory) bool {
+	if dir == nil {
+		return false
+	}
+	switch lazy := dir.Lazy.(type) {
+	case *DirectoryGitTreeLazy:
+		return lazy.ContentDigest != ""
+	case *DirectoryGitCommitTreeLazy:
+		return lazy.ContentDigest != ""
+	}
+	return false
+}
+
 // evaluateGitTreeInto is the shared evaluation of the two git tree recipes:
 // validate the receiver, resolve the server, produce the tree into dir, and
 // release whatever the producer left unmoved.
