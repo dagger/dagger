@@ -895,11 +895,7 @@ func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.
 
 			namedSpecs := namedFetchRefSpecs(refs)
 			if len(namedSpecs) == 0 {
-				shas := make([]string, len(refs))
-				for i, ref := range refs {
-					shas[i] = ref.SHA
-				}
-				return false, fmt.Errorf("failed to fetch remote %s: %w: %s", repo.URL.Remote(), err, strings.Join(shas, ", "))
+				return false, fmt.Errorf("failed to fetch remote %s: %w: %s", repo.URL.Remote(), err, joinRefSHAs(refs))
 			}
 			defer cleanupScratchFetchRefs(namedSpecs)
 
@@ -976,6 +972,14 @@ func gitMirrorIsComplete(ctx context.Context, git *gitutil.GitCLI, gitDir string
 // fetchedGitRef is private to the mutable mirror, never a checkout refspec.
 func fetchedGitRef(sha string) string {
 	return "refs/dagger.fetched/" + sha
+}
+
+func joinRefSHAs(refs []*RemoteGitRef) string {
+	shas := make([]string, len(refs))
+	for i, ref := range refs {
+		shas[i] = ref.SHA
+	}
+	return strings.Join(shas, ", ")
 }
 
 // namedFetchRefSpecs builds the bounded fallback refspec set used when SHA fetch is unsupported.
