@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "files": {
+    "alpine.gen.go": "9b43e83f7c7fbac77101a1dac69b10fcb0f3699b0fc36c9572aa63a69f700c14",
+    "dagger.gen.go": "7c57abbb3b5f1100afe0a7e4c7436e6fea4e3e7542b49bca213ce1f842d298a3"
+  }
+}

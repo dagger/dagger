@@ -8,7 +8,12 @@ import (
 	"runtime"
 	"strings"
 
+	"dagger.io/dagger/core"
+
 	"dagger/python-client-dev/internal/dagger"
+	"dagger/python-client-dev/internal/dagger/clients/dockerd"
+	enginedev "dagger/python-client-dev/internal/dagger/clients/engine-dev"
+	"dagger/python-client-dev/internal/dagger/clients/wolfi"
 )
 
 // A toolchain to develop the Dagger Python SDK
@@ -56,12 +61,12 @@ func New(
 	ws *dagger.Workspace,
 ) *PythonClientDev {
 	return &PythonClientDev{
-		DevContainer: dag.DaggerEngine(ws, dagger.DaggerEngineOpts{
+		DevContainer: enginedev.New(ws, enginedev.EngineDevOpts{
 			ClientDockerConfig: clientDockerConfig,
 		}).InstallClient(
-			dagger.DaggerEngineInstallClientOpts{
-				Client: dag.Wolfi().
-					Container(dagger.WolfiContainerOpts{Packages: []string{"libgcc"}}).
+			enginedev.EngineDevInstallClientOpts{
+				Client: wolfi.New().
+					Container(wolfi.WolfiContainerOpts{Packages: []string{"libgcc"}}).
 					WithEnvVariable("PYTHONUNBUFFERED", "1").
 					WithEnvVariable(
 						"PATH",
@@ -85,6 +90,7 @@ var supportedVersions = []string{"3.14", "3.13", "3.12", "3.11", "3.10"}
 // Lint the Python snippets in the documentation
 // +check
 func (t PythonClientDev) LintDocsSnippets(
+	ctx context.Context,
 	// +defaultPath="/"
 	// +ignore=[
 	//  "*",
@@ -93,18 +99,25 @@ func (t PythonClientDev) LintDocsSnippets(
 	//  "!.ruff.toml"
 	// ]
 	workspace *dagger.Directory,
-) *dagger.Container {
+) error {
 	// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
-	return t.WithDirectory(workspace).Lint([]string{"../../docs"})
+	_, err := t.WithDirectory(workspace).lint([]string{"../../docs"}).Sync(ctx)
+	return err
 }
 
 // +check
 // Check for linting errors
 func (t PythonClientDev) Lint(
+	ctx context.Context,
 	// List of files or directories to check
 	// +default=[]
 	paths []string,
-) *dagger.Container {
+) error {
+	_, err := t.lint(paths).Sync(ctx)
+	return err
+}
+
+func (t PythonClientDev) lint(paths []string) *dagger.Container {
 	return t.DevContainer.
 		WithExec(append(uvRun("ruff", "check"), paths...)).
 		WithExec(append(uvRun("ruff", "format", "--check", "--diff"), paths...))
@@ -113,16 +126,19 @@ func (t PythonClientDev) Lint(
 // +check
 // Format source files
 func (t PythonClientDev) Format(
+	ctx context.Context,
 	// List of files or directories to check
 	// +default=[]
 	paths []string,
-) *dagger.Changeset {
+) error {
 	before := t.DevContainer.Directory("/src")
-	return t.DevContainer.
+	_, err := t.DevContainer.
 		WithExec(append(uvRun("ruff", "check", "--fix-only"), paths...)).
 		WithExec(append(uvRun("ruff", "format"), paths...)).
 		Directory("/src").
-		Changes(before)
+		Changes(before).
+		Sync(ctx)
+	return err
 }
 
 // Run the type checker (mypy)
@@ -193,9 +209,9 @@ func (t PythonClientDev) ClientLibrary(_ context.Context) (*dagger.Changeset, er
 	srcMountPath := "/src"
 	src := devContainer.Directory(srcMountPath)
 	// FIXME: workaround for Directory.changes() bug
-	src = dag.Directory().WithDirectory("", src)
+	src = core.NewDirectory().WithDirectory("", src)
 	genFile := devContainer.
-		WithMountedFile("/schema.json", dag.DaggerEngine(t.Ws).IntrospectionJSON()).
+		WithMountedFile("/schema.json", enginedev.New(t.Ws).IntrospectionJSON()).
 		WithWorkdir("codegen").
 		WithExec(uvRun(
 			"python", "-m", "codegen", "generate", "-i", "/schema.json", "-o", "gen.py",
@@ -361,10 +377,10 @@ func (t PythonClientDev) Provision(
 
 	dockerVersion := "24.0.7"
 
-	ctr := dag.Dockerd().Attach(
+	ctr := dockerd.New().Attach(
 		t.DevContainer.WithMountedFile(
 			"/opt/docker.tgz",
-			dag.HTTP(fmt.Sprintf("https://download.docker.com/linux/static/stable/%s/docker-%s.tgz", runtime.GOARCH, dockerVersion)),
+			core.HTTP(fmt.Sprintf("https://download.docker.com/linux/static/stable/%s/docker-%s.tgz", runtime.GOARCH, dockerVersion)),
 			dagger.ContainerWithMountedFileOpts{Owner: "root"}).
 			WithExec([]string{
 				"tar",
@@ -375,7 +391,7 @@ func (t PythonClientDev) Provision(
 				"/usr/local/bin",
 				"docker/docker",
 			}),
-		dagger.DockerdAttachOpts{DockerVersion: dockerVersion})
+		dockerd.DockerdAttachOpts{DockerVersion: dockerVersion})
 
 	if runnerHost != "" {
 		ctr = ctr.WithEnvVariable(
@@ -388,7 +404,7 @@ func (t PythonClientDev) Provision(
 			WithEnvVariable("_INTERNAL_DAGGER_TEST_CLI_URL", archiveURL).
 			WithEnvVariable("_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL", checksumsURL).
 			WithExec(
-				[]string{"pytest", "-m", "provision"},
+				[]string{"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "pytest", "-m", "provision"},
 				dagger.ContainerWithExecOpts{InsecureRootCapabilities: true}),
 		nil
 }
