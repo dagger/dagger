@@ -563,7 +563,7 @@ var skipSharedTelemetryExporters bool
 // the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
 // telemetry warnings (e.g. the preflight session for a dynamic SDK command).
 // Preparation sessions use only their own frontend exporters.
-func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes) {
+func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes, *enginetel.SpanQueueCounts) {
 	return engineTelemetryConfigWithExporters(ctx, enginetel.ConfiguredCloudExporters, configuredCollectorExporters)
 }
 
@@ -613,11 +613,14 @@ func withoutIndex[T any](all []T, i int) []T {
 	return out
 }
 
-func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc, configuredCollectorExporters configuredCollectorExportersFunc) (telemetry.Config, cloudTelemetryIndexes) {
+// engineTelemetryConfigWithExporters also returns the counts of the spans
+// queued for the user's own collector, or nil when there is none.
+func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc, configuredCollectorExporters configuredCollectorExportersFunc) (telemetry.Config, cloudTelemetryIndexes, *enginetel.SpanQueueCounts) {
 	cfg := telemetry.Config{
 		Resource: Resource(ctx),
 	}
 	cloud := noCloudTelemetry
+	var collectorSpans *enginetel.SpanQueueCounts
 	if !frontendTelemetryDisabled(ctx) {
 		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
 	}
@@ -654,7 +657,8 @@ func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExpo
 		// spans the CLI forwards; give them a large queue, like Cloud's.
 		spans, logs, metrics := configuredCollectorExporters(ctx)
 		if spans != nil {
-			cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewCollectorSpanProcessor(spans, telemetry.LiveTracesEnabled))
+			collectorSpans = new(enginetel.SpanQueueCounts)
+			cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewCollectorSpanProcessor(spans, telemetry.LiveTracesEnabled, collectorSpans))
 		}
 		if logs != nil {
 			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
@@ -663,11 +667,11 @@ func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExpo
 			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
 		}
 	}
-	return cfg, cloud
+	return cfg, cloud, collectorSpans
 }
 
 func initEngineTelemetry(ctx context.Context) (context.Context, func(error) error) {
-	cfg, cloud := engineTelemetryConfig(ctx)
+	cfg, cloud, collectorSpans := engineTelemetryConfig(ctx)
 	// Init replaces telemetry.SpanProcessors but appends to LogProcessors and
 	// MetricExporters, which may hold an earlier Init's entries.
 	if cloud.configured() {
@@ -774,6 +778,7 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error) erro
 		telemetry.EndWithCause(span, &rerr)
 		// telemetry.Close owns the remote providers created by Init.
 		telemetry.Close()
+		reportCollectorSpanDrops(os.Stderr, collectorSpans)
 		if diagnostics != nil {
 			// Remote processors above remain owned by telemetry.Close. Only
 			// close the local diagnostic processor here, with a short budget.
@@ -782,6 +787,21 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error) erro
 			cancel()
 		}
 		return drainErr
+	}
+}
+
+// reportCollectorSpanDrops tells the user how many spans never reached their
+// own collector's exporter, once telemetry.Close has shut its processor down:
+// those dropped when its queue was full, and any still queued when the
+// shutdown ran out of time. It writes to stderr directly, like the local
+// diagnostics, which a session without a frontend doesn't have.
+func reportCollectorSpanDrops(w io.Writer, counts *enginetel.SpanQueueCounts) {
+	if counts == nil {
+		return
+	}
+	if dropped := counts.Dropped(); dropped > 0 {
+		fmt.Fprintf(w, "WARNING: %d of %d spans were not sent to the OpenTelemetry collector configured by OTEL_EXPORTER_OTLP_*: its queue was full, or exiting timed out\n",
+			dropped, counts.Queued())
 	}
 }
 
