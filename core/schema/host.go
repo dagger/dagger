@@ -43,7 +43,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 		}).Doc(`Queries the host environment.`),
 
 		dagql.NodeFunc("_builtinContainer", s.builtinContainer).
-			WithInput(engineDefaultPlatformInput).
+			WithInput(core.EngineDefaultPlatformInput).
 			IsPersistable().
 			Doc("Retrieves a container builtin to the engine."),
 

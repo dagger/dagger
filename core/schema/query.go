@@ -36,7 +36,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 			View(AllVersion).
 			IsPersistable().
 			WithInput(dagql.CurrentSchemaInput).
-			WithInput(engineDefaultPlatformInput).
+			WithInput(core.EngineDefaultPlatformInput).
 			Doc("Get the current schema as a JSON file.").
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),

@@ -92,6 +92,8 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 
 			inputs := modFn.cacheImplicitInputs()
 			byName := mapImplicitInputsByName(inputs)
+			_, hasPlatformInput := byName[EngineDefaultPlatformInput.Name]
+			require.True(t, hasPlatformInput, "every policy is scoped by the engine's default platform")
 			callInput, hasCallInput := byName[dagql.PerCallInput.Name]
 			require.Equal(t, tc.expectCallScope, hasCallInput)
 			if tc.expectCallScope {

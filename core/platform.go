@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -13,6 +14,25 @@ import (
 )
 
 type Platform specs.Platform
+
+// EngineDefaultPlatformInput scopes a call by the engine's default platform,
+// for a call whose result depends on that platform without an argument naming
+// it.
+var EngineDefaultPlatformInput = dagql.ImplicitInput{
+	Name: "engineDefaultPlatform",
+	Resolver: func(ctx context.Context, _ map[string]dagql.Input) (dagql.Input, error) {
+		return CurrentEngineDefaultPlatform(ctx)
+	},
+}
+
+// CurrentEngineDefaultPlatform returns the engine's default platform.
+func CurrentEngineDefaultPlatform(ctx context.Context) (Platform, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return Platform{}, err
+	}
+	return query.Platform(), nil
+}
 
 func (p Platform) Spec() specs.Platform {
 	return specs.Platform(p)

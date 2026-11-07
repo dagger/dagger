@@ -147,7 +147,10 @@ func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
 		return nil
 	}
 
-	var implicitInputs []dagql.ImplicitInput
+	// A function body can read the engine's default platform, directly or by
+	// running on the engine, so its result is scoped by that platform: an
+	// engine of another platform must not be served it.
+	implicitInputs := []dagql.ImplicitInput{EngineDefaultPlatformInput}
 	cachePolicy := fn.metadata.derivedCachePolicy(fn.mod.Self())
 	switch cachePolicy {
 	case FunctionCachePolicyNever:

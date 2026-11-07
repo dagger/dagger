@@ -43,7 +43,7 @@ func builtinLazyFixture(t *testing.T, missing, fallback bool) (context.Context, 
 		require.NoError(t, content.WriteBlob(ctx, packaged, "manifest", bytes.NewReader(raw), desc))
 		dgst = desc.Digest
 	}
-	dagql.Fields[*core.Query]{dagql.NodeFunc("_builtinContainer", (&hostSchema{}).builtinContainer).IsPersistable().WithInput(engineDefaultPlatformInput)}.Install(srv)
+	dagql.Fields[*core.Query]{dagql.NodeFunc("_builtinContainer", (&hostSchema{}).builtinContainer).IsPersistable().WithInput(core.EngineDefaultPlatformInput)}.Install(srv)
 	var parent dagql.ObjectResult[*core.Container]
 	require.NoError(t, srv.Select(ctx, srv.Root(), &parent, dagql.Selector{Field: "_builtinContainer", Args: []dagql.NamedInput{{Name: "digest", Value: dagql.String(dgst)}}}))
 	require.False(t, parent.Self().Lazy.IsEvaluated())
