@@ -170,6 +170,10 @@ type SchemaBuilderMemo struct {
 	// whose artifacts it discovers, evaluates or checks
 	// (dagqlServerForModule).
 	moduleServers map[string]*moduleServerEntry
+	// builtModuleSets holds what this session built a schema server for, by
+	// module set, and builtServers how many it holds (countSchemaBuild).
+	builtModuleSets map[string]*sessionBuilds
+	builtServers    int
 }
 
 func NewSchemaBuilderMemo() *SchemaBuilderMemo {

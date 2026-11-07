@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
@@ -14,6 +15,8 @@ import (
 type SchemaASTCache struct {
 	mu      sync.Mutex
 	entries map[call.View]*schemaASTEntry
+	// OnBuild, if set, is told of each description the cache builds.
+	OnBuild func(call.View)
 }
 
 type schemaASTEntry struct {
@@ -35,8 +38,22 @@ func (c *SchemaASTCache) get(view call.View, build func(call.View) (*ast.Schema,
 	c.mu.Unlock()
 	// sync.Once does not retain build (and therefore the building server) after
 	// it returns. Other servers retain only the immutable AST and its digest.
-	entry.once.Do(func() { entry.schema, entry.digest = build(view) })
+	entry.once.Do(func() {
+		schemaASTBuilds.Add(1)
+		if c.OnBuild != nil {
+			c.OnBuild(view)
+		}
+		entry.schema, entry.digest = build(view)
+	})
 	return entry
+}
+
+var schemaASTBuilds atomic.Int64
+
+// SchemaASTBuilds returns how many GraphQL descriptions (a schema's syntax
+// tree and digest for one view) this process has built, shared or not.
+func SchemaASTBuilds() int64 {
+	return schemaASTBuilds.Load()
 }
 
 // UseSchemaASTCache reuses descriptions of an exactly equivalent schema.

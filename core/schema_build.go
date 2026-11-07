@@ -115,7 +115,9 @@ func buildSchema(
 	if err := installModules(ctx, dag, mods, coreMod); err != nil {
 		return nil, err
 	}
-	dag.UseSchemaASTCache(currentSessionSchemaBuilderMemo(ctx).schemaASTCache(mods))
+	memo := currentSessionSchemaBuilderMemo(ctx)
+	memo.countSchemaBuild(root, mods)
+	dag.UseSchemaASTCache(memo.schemaASTCache(mods))
 
 	return dag, nil
 }

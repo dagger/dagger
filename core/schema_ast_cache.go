@@ -1,6 +1,9 @@
 package core
 
-import "github.com/dagger/dagger/dagql"
+import (
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+)
 
 // schemaASTCache shares only the GraphQL description, never a client's server.
 // Authored defaults can expand the caller's host environment, so schemas with
@@ -37,7 +40,9 @@ func (m *SchemaBuilderMemo) schemaASTCache(mods []modInstall) *dagql.SchemaASTCa
 		m.schemaASTs = make(map[string]*dagql.SchemaASTCache)
 	}
 	if m.schemaASTs[key] == nil {
-		m.schemaASTs[key] = &dagql.SchemaASTCache{}
+		m.schemaASTs[key] = &dagql.SchemaASTCache{
+			OnBuild: func(view call.View) { countDescription(key, view) },
+		}
 	}
 	return m.schemaASTs[key]
 }
