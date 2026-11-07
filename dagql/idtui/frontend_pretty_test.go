@@ -1707,9 +1707,9 @@ func TestRerunSectionNamesFailedCollectionItems(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	const (
 		group  = "packages/tests/verify"
-		bar    = "packages/tests/verify?view-package=left&view-case=Bar"
-		baz    = "packages/tests/verify?view-package=right&view-case=Baz"
-		passed = "packages/tests/verify?view-package=left&view-case=Foo"
+		bar    = "dag://?check=verify&view-package=left&view-case=Bar"
+		baz    = "dag://?check=verify&view-package=right&view-case=Baz"
+		passed = "dag://?check=verify&view-package=left&view-case=Foo"
 	)
 	start := time.Unix(100, 0)
 	end := start.Add(2 * time.Second)
@@ -1726,7 +1726,7 @@ func TestRerunSectionNamesFailedCollectionItems(t *testing.T) {
 			status = sdktrace.Status{Code: codes.Ok}
 		}
 		spans = append(spans, dagui.SpanSnapshot{
-			ID: prettyTestSpanID(i + 2), TraceID: prettyTestTraceID(), Name: item, ParentID: groupID,
+			ID: prettyTestSpanID(byte(i + 2)), TraceID: prettyTestTraceID(), Name: item, ParentID: groupID,
 			StartTime: start, EndTime: end, Status: status, Final: true,
 			CheckName: item, CheckPassed: item == passed,
 		})
@@ -1761,12 +1761,32 @@ func TestRerunSectionNamesFailedCollectionItems(t *testing.T) {
 		t.Fatalf("CI re-run should target the collection group once:\n%s", joined)
 	}
 
-	// Zoomed to one failed item, only that item is suggested.
-	itemSpan := db.Spans.Map[prettyTestSpanID(3)]
-	lines = fe.renderRerunSection(itemSpan)
-	local = localSection(lines)
-	if !strings.Contains(local, fmt.Sprintf("dagger check %q", baz)) || strings.Contains(local, bar) {
-		t.Fatalf("zoomed rerun should name only the zoomed item:\n%s", strings.Join(lines, "\n"))
+	// Zoomed to one failed item, only that item is suggested locally, and the
+	// CI re-run still targets its group.
+	for _, zoom := range []struct {
+		id   dagui.SpanID
+		want []string
+	}{
+		{prettyTestSpanID(3), []string{baz}},
+		{groupID, []string{bar, baz}},
+	} {
+		fe.ZoomedSpan = zoom.id
+		fe.recalculateViewLocked()
+		lines = fe.renderRerunSection(db.Spans.Map[zoom.id])
+		joined = strings.Join(lines, "\n")
+		local = localSection(lines)
+		if got := strings.Count(local, "dagger check "); got != len(zoom.want) {
+			t.Fatalf("zoomed to %s: want %d local commands, got %d:\n%s", zoom.id, len(zoom.want), got, joined)
+		}
+		for _, item := range zoom.want {
+			if !strings.Contains(local, fmt.Sprintf("dagger check %q", item)) {
+				t.Fatalf("zoomed to %s: missing local command for %s:\n%s", zoom.id, item, joined)
+			}
+		}
+		if !strings.Contains(joined, fmt.Sprintf("dagger cloud checks rerun --commit abc123 --check %q", group)) ||
+			strings.Count(joined, "dagger cloud checks rerun") != 1 {
+			t.Fatalf("zoomed to %s: CI re-run should target the collection group once:\n%s", zoom.id, joined)
+		}
 	}
 }
 
