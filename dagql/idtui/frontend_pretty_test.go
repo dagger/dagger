@@ -1700,39 +1700,87 @@ func TestRerunSuggestionHookReplacesRunLocally(t *testing.T) {
 	}
 }
 
+// A collection grouped under one check, as the CLI reports it: two failed
+// items and one passing item beneath the group.
+const (
+	collectionGroup      = "packages/tests/verify"
+	collectionBarItem    = "dag://?check=verify&view-package=left&view-case=Bar"
+	collectionBazItem    = "dag://?check=verify&view-package=right&view-case=Baz"
+	collectionPassedItem = "dag://?check=verify&view-package=left&view-case=Foo"
+)
+
+// collectionCheckSpans returns the group (span 1) and its items (spans 2-4),
+// with the group beneath parent.
+func collectionCheckSpans(parent dagui.SpanID) []dagui.SpanSnapshot {
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	failed := sdktrace.Status{Code: codes.Error}
+	groupID := prettyTestSpanID(1)
+	spans := []dagui.SpanSnapshot{{
+		ID: groupID, TraceID: prettyTestTraceID(), Name: collectionGroup, ParentID: parent,
+		StartTime: start, EndTime: end, Status: failed, Final: true,
+		CheckName: collectionGroup, CheckCollectionGroup: true,
+	}}
+	for i, item := range []string{collectionBarItem, collectionBazItem, collectionPassedItem} {
+		status := failed
+		if item == collectionPassedItem {
+			status = sdktrace.Status{Code: codes.Ok}
+		}
+		spans = append(spans, dagui.SpanSnapshot{
+			ID: prettyTestSpanID(byte(i + 2)), TraceID: prettyTestTraceID(), Name: item, ParentID: groupID,
+			StartTime: start, EndTime: end, Status: status, Final: true,
+			CheckName: item, CheckPassed: item == collectionPassedItem,
+		})
+	}
+	return spans
+}
+
+// TestChecksHeaderCountsCollectionItems covers the top CHECKS tally: a
+// collection group counts as the items that ran, as it did before items were
+// grouped, rather than as one check.
+func TestChecksHeaderCountsCollectionItems(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	start := time.Unix(100, 0)
+	spans := append([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger check", StartTime: start, EndTime: start.Add(3 * time.Second), Final: true},
+		{
+			ID: prettyTestSpanID(11), TraceID: prettyTestTraceID(), Name: "lint", ParentID: rootID,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			CheckName: "lint", CheckPassed: true,
+		},
+	}, collectionCheckSpans(rootID)...)
+	db := dagui.NewDB()
+	db.ImportSnapshots(spans)
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.checksReport(tuist.Context{Width: 120}, r, false)
+	if len(lines) == 0 {
+		t.Fatal("checksReport returned no lines")
+	}
+	// The group's two failed items, plus lint and the passing item.
+	if !strings.HasPrefix(lines[0], "CHECKS") || !strings.Contains(lines[0], "2 failed") || !strings.Contains(lines[0], "2 passed") {
+		t.Fatalf("top CHECKS header = %q, want the items counted (2 failed, 2 passed)\n%s", lines[0], strings.Join(lines, "\n"))
+	}
+}
+
 // TestRerunSectionNamesFailedCollectionItems covers a collection grouped under
 // one check: running the group would rerun every item, so each failed item
 // gets its own local command, while the native CI re-run keeps the group.
 func TestRerunSectionNamesFailedCollectionItems(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	const (
-		group  = "packages/tests/verify"
-		bar    = "dag://?check=verify&view-package=left&view-case=Bar"
-		baz    = "dag://?check=verify&view-package=right&view-case=Baz"
-		passed = "dag://?check=verify&view-package=left&view-case=Foo"
+		group  = collectionGroup
+		bar    = collectionBarItem
+		baz    = collectionBazItem
+		passed = collectionPassedItem
 	)
-	start := time.Unix(100, 0)
-	end := start.Add(2 * time.Second)
-	failed := sdktrace.Status{Code: codes.Error}
 	groupID := prettyTestSpanID(1)
-	spans := []dagui.SpanSnapshot{{
-		ID: groupID, TraceID: prettyTestTraceID(), Name: group,
-		StartTime: start, EndTime: end, Status: failed, Final: true,
-		CheckName: group, CheckCollectionGroup: true,
-	}}
-	for i, item := range []string{bar, baz, passed} {
-		status := failed
-		if item == passed {
-			status = sdktrace.Status{Code: codes.Ok}
-		}
-		spans = append(spans, dagui.SpanSnapshot{
-			ID: prettyTestSpanID(byte(i + 2)), TraceID: prettyTestTraceID(), Name: item, ParentID: groupID,
-			StartTime: start, EndTime: end, Status: status, Final: true,
-			CheckName: item, CheckPassed: item == passed,
-		})
-	}
 	db := dagui.NewDB()
-	db.ImportSnapshots(spans)
+	db.ImportSnapshots(collectionCheckSpans(dagui.SpanID{}))
 	db.SetPrimarySpan(groupID)
 	fe := NewWithDB(io.Discard, db)
 	fe.recalculateViewLocked()
