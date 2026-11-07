@@ -1700,6 +1700,76 @@ func TestRerunSuggestionHookReplacesRunLocally(t *testing.T) {
 	}
 }
 
+// TestRerunSectionNamesFailedCollectionItems covers a collection grouped under
+// one check: running the group would rerun every item, so each failed item
+// gets its own local command, while the native CI re-run keeps the group.
+func TestRerunSectionNamesFailedCollectionItems(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	const (
+		group  = "packages/tests/verify"
+		bar    = "packages/tests/verify?view-package=left&view-case=Bar"
+		baz    = "packages/tests/verify?view-package=right&view-case=Baz"
+		passed = "packages/tests/verify?view-package=left&view-case=Foo"
+	)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	failed := sdktrace.Status{Code: codes.Error}
+	groupID := prettyTestSpanID(1)
+	spans := []dagui.SpanSnapshot{{
+		ID: groupID, TraceID: prettyTestTraceID(), Name: group,
+		StartTime: start, EndTime: end, Status: failed, Final: true,
+		CheckName: group, CheckCollectionGroup: true,
+	}}
+	for i, item := range []string{bar, baz, passed} {
+		status := failed
+		if item == passed {
+			status = sdktrace.Status{Code: codes.Ok}
+		}
+		spans = append(spans, dagui.SpanSnapshot{
+			ID: prettyTestSpanID(i + 2), TraceID: prettyTestTraceID(), Name: item, ParentID: groupID,
+			StartTime: start, EndTime: end, Status: status, Final: true,
+			CheckName: item, CheckPassed: item == passed,
+		})
+	}
+	db := dagui.NewDB()
+	db.ImportSnapshots(spans)
+	db.SetPrimarySpan(groupID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+	fe.ciMeta = &ciContext{commit: "abc123", isNativeCI: true}
+	localSection := func(lines []string) string {
+		i := indexOfLine(lines, "RUN LOCALLY")
+		if i < 0 {
+			t.Fatalf("missing RUN LOCALLY section:\n%s", strings.Join(lines, "\n"))
+		}
+		return strings.Join(lines[i:], "\n")
+	}
+
+	lines := fe.renderRerunSection(nil)
+	joined := strings.Join(lines, "\n")
+	local := localSection(lines)
+	for _, item := range []string{bar, baz} {
+		if !strings.Contains(local, fmt.Sprintf("dagger check %q", item)) {
+			t.Fatalf("missing local command for failed item %s:\n%s", item, joined)
+		}
+	}
+	if strings.Contains(local, fmt.Sprintf("dagger check %q", group)) || strings.Contains(local, passed) {
+		t.Fatalf("local commands should name only the failed items:\n%s", joined)
+	}
+	if !strings.Contains(joined, fmt.Sprintf("dagger cloud checks rerun --commit abc123 --check %q", group)) ||
+		strings.Count(joined, "dagger cloud checks rerun") != 1 {
+		t.Fatalf("CI re-run should target the collection group once:\n%s", joined)
+	}
+
+	// Zoomed to one failed item, only that item is suggested.
+	itemSpan := db.Spans.Map[prettyTestSpanID(3)]
+	lines = fe.renderRerunSection(itemSpan)
+	local = localSection(lines)
+	if !strings.Contains(local, fmt.Sprintf("dagger check %q", baz)) || strings.Contains(local, bar) {
+		t.Fatalf("zoomed rerun should name only the zoomed item:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
 func TestOutermostSurfacedCheckRollsUpNestedName(t *testing.T) {
 	db := rerunReportDB(t)
 	fe := NewWithDB(io.Discard, db)
