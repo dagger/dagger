@@ -196,7 +196,6 @@ func TestDecompressStreamLetsGoOfTheStreamOnClose(t *testing.T) {
 	require.NoError(t, err)
 	dec := rc.(*zstdReader).dec
 	require.NoError(t, rc.Close())
-	r, rc = nil, nil
 	deadline := time.After(10 * time.Second)
 	for done := false; !done; {
 		runtime.GC()
