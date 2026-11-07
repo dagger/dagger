@@ -228,3 +228,30 @@ func assertSyncedFile(t *testing.T, ref bkcache.ImmutableRef, name, want string)
 	assert.NilError(t, err)
 	assert.Equal(t, string(got), want)
 }
+
+func TestPathInCopyPath(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		copyPath string
+		path     string
+		want     string
+		wantOK   bool
+	}{
+		{copyPath: "", path: "package.json", want: "package.json", wantOK: true},
+		{copyPath: "p", path: "p", want: "", wantOK: true},
+		{copyPath: "p", path: "p/package.json", want: "/package.json", wantOK: true},
+		{copyPath: "p/", path: "p/package.json", want: "/package.json", wantOK: true},
+		{copyPath: "p", path: "package.json", wantOK: false},
+		{copyPath: "p", path: "private/tmp", wantOK: false},
+		{copyPath: "p*", path: "p*/a.txt", want: "/a.txt", wantOK: true},
+		{copyPath: "p*", path: "p*x", wantOK: false},
+		{copyPath: "a/b", path: "a/bc/d", wantOK: false},
+		{copyPath: "a/b", path: "a", wantOK: false},
+	} {
+		local := &localFS{copyPath: tc.copyPath}
+		got, ok := local.pathInCopyPath(tc.path)
+		assert.Equal(t, ok, tc.wantOK, "copyPath %q, path %q", tc.copyPath, tc.path)
+		assert.Equal(t, got, tc.want, "copyPath %q, path %q", tc.copyPath, tc.path)
+	}
+}
