@@ -224,7 +224,7 @@ func selectsItemKeys(ctx context.Context, dag *dagger.Client, ws *core.Workspace
 	for _, pair := range selected {
 		id, err := defs.Resolve(pair.Dimension)
 		if err != nil || !artifact.IsStaticDimension(id) {
-			return true, nil
+			return true, nil //nolint:nilerr // an unresolved key leaves the run to report its error
 		}
 	}
 	// Only a type key removes schema paths. Other keyed skips, module keys
@@ -232,7 +232,7 @@ func selectsItemKeys(ctx context.Context, dag *dagger.Client, ws *core.Workspace
 	for _, pair := range skipped {
 		id, err := defs.Resolve(pair.Dimension)
 		if err != nil || !strings.HasPrefix(id, "type:") {
-			return true, nil
+			return true, nil //nolint:nilerr // an unresolved key leaves the run to report its error
 		}
 	}
 	return false, nil

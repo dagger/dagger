@@ -4318,6 +4318,8 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // staleness check also gets a "REGENERATE" section ('dagger generate' for its
 // generator), since running the generator is what fixes it. Returns nil when
 // no failed check applies. Controlled by showSuggestions at the call site.
+//
+//nolint:gocyclo // one section per rerun kind; splitting obscures the layout
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.db == nil {
 		return nil
