@@ -12,6 +12,8 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
+
+	"github.com/dagger/dagger/engine/ebpf/internal/ebpfutil"
 )
 
 // Executor workloads are accounted at cgroup socket-buffer hooks attached once
@@ -44,7 +46,7 @@ func (t *Tracer) AttachWorkloads(parent string) (rerr error) {
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return fmt.Errorf("creating workload parent cgroup %s: %w", parent, err)
 	}
-	id, err := cgroupID(parent)
+	id, err := ebpfutil.CgroupID(parent)
 	if err != nil {
 		return err
 	}
@@ -120,7 +122,7 @@ func (t *Tracer) Workload(path string, netnsCookie uint64) (_ *Workload, rerr er
 	case !os.IsExist(err):
 		return nil, fmt.Errorf("creating workload cgroup %s: %w", path, err)
 	}
-	id, err := cgroupID(path)
+	id, err := ebpfutil.CgroupID(path)
 	if err != nil {
 		return nil, err
 	}

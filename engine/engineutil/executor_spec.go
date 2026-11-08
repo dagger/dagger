@@ -24,11 +24,11 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	ctdoci "github.com/containerd/containerd/v2/pkg/oci"
-	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/ebpf/nettracer"
+	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/slog"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
@@ -39,6 +39,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bknetwork "github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/util/cleanups"
+	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/google/uuid"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -153,6 +154,10 @@ type execState struct {
 	profUsageWanted bool
 	profUsageMu     sync.Mutex
 	profUsage       map[string]wcprof.Usage
+	// profEBPF is the exec as the eBPF programs a recording asked for
+	// measure it (engine/ebpf/wcbpf), from before its first mount helper to
+	// its cgroups' final reading; nil when none measures it.
+	profEBPF *wcbpf.Exec
 
 	// sessionHelperStatus carries /.init's report that a nested client's
 	// session helper failed, and failSessionHelper fails the waits for its
@@ -205,28 +210,30 @@ func newExecState(
 type executorSetupFunc func(context.Context, *execState) error
 
 // startingContainerLog is the logger for an exec's "starting container" and
-// "container done" lines.
+// "container done" lines. Its fields are set at once, and args formatted
+// once for both lines, as the text formatter would.
 func startingContainerLog(ctx context.Context, state *execState) *logrus.Entry {
 	cacheMounts := 0
 	if state.execMD != nil {
 		cacheMounts = state.execMD.CacheMounts
 	}
-	lg := bklog.G(ctx).
-		WithField("id", state.id).
-		WithField("args", state.spec.Process.Args).
-		WithField("cache_mounts", cacheMounts)
+	fields := logrus.Fields{
+		"id":           state.id,
+		"args":         fmt.Sprint(state.spec.Process.Args),
+		"cache_mounts": cacheMounts,
+	}
 	if state.execMD != nil {
 		if state.execMD.CallDigest != "" {
-			lg = lg.WithField("call_id", state.execMD.CallDigest)
+			fields["call_id"] = state.execMD.CallDigest
 		}
 	}
 	if state.callerClientID != "" {
-		lg = lg.WithField("caller_client_id", state.callerClientID)
+		fields["caller_client_id"] = state.callerClientID
 	}
 	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
-		lg = lg.WithField("nested_client_id", state.nestedClientMetadata.ClientID)
+		fields["nested_client_id"] = state.nestedClientMetadata.ClientID
 	}
-	return lg
+	return bklog.G(ctx).WithFields(fields)
 }
 
 //nolint:gocyclo
@@ -531,9 +538,11 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	state.cleanups.Add("finish exec mount resource sample", func() error {
 		// After the final parent sample, with the helpers' cgroup not yet
 		// removed: the resource cgroup's total, the workload and its mount
-		// helpers, and the helpers' own share.
+		// helpers, and the helpers' own share; and what the eBPF programs
+		// measured of them.
 		defer recordExecUsage(ctx, state, wcprof.UsageScopeMountHelpers)
 		defer recordExecUsage(ctx, state, wcprof.UsageScopeExecCgroup)
+		defer state.profEBPF.Finish(ctx, state.profExecOpID)
 		if state.stopResourceSampler != nil {
 			state.stopResourceSampler()
 			return nil
@@ -560,6 +569,12 @@ func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 		"",
 		func(ctx context.Context, spec *specs.Spec) context.Context {
 			state.resourceCgroupPath = spec.Linux.CgroupsPath
+			if state.profExecOpID != 0 {
+				if dir := execUsageCgroup(state.resourceCgroupPath, wcprof.UsageScopeExecCgroup); dir != "" {
+					injectedInit := state.execMD == nil || !state.execMD.NoInit
+					state.profEBPF = wcbpf.WatchExec(dir, injectedInit)
+				}
+			}
 			state.mountResources = enginetel.NewExecMountResources(spec.Linux.CgroupsPath)
 			if state.mountResources != nil {
 				return enginetel.WithExecMountResources(ctx, state.mountResources)
@@ -653,7 +668,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	})
 	state.spec.Root.Path = state.rootfsPath
 	if state.rootMount.Selector != "" {
-		state.spec.Root.Path, err = fs.RootPath(state.rootfsPath, state.rootMount.Selector)
+		state.spec.Root.Path, err = fsxutil.RootPath(state.rootfsPath, state.rootMount.Selector)
 		if err != nil {
 			return fmt.Errorf("root mount %s points to invalid root path: %w", state.rootMount.Selector, err)
 		}
@@ -754,7 +769,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 
 	for _, mnt := range state.nonRootMounts {
 		mnt, recursiveReadOnly := consumeRecursiveReadOnlyOption(mnt)
-		dstPath, err := fs.RootPath(state.spec.Root.Path, mnt.Target)
+		dstPath, err := fsxutil.RootPath(state.spec.Root.Path, mnt.Target)
 		if err != nil {
 			return fmt.Errorf("mount %s points to invalid target: %w", mnt.Target, err)
 		}
@@ -1126,7 +1141,7 @@ func (c *Client) setupSecretScrubbing(ctx context.Context, state *execState) err
 			filePath = filepath.Join(ctrCwd, filePath)
 		}
 		var err error
-		filePath, err = fs.RootPath(state.rootfsPath, filePath)
+		filePath, err = fsxutil.RootPath(state.rootfsPath, filePath)
 		if err != nil {
 			return fmt.Errorf("secret file path %s points to invalid target: %w", filePath, err)
 		}
@@ -1257,7 +1272,7 @@ func (c *Client) enableGPU(_ context.Context, state *execState) error {
 }
 
 func (c *Client) createCWD(_ context.Context, state *execState) error {
-	newp, err := fs.RootPath(state.rootfsPath, state.procInfo.Meta.Cwd)
+	newp, err := fsxutil.RootPath(state.rootfsPath, state.procInfo.Meta.Cwd)
 	if err != nil {
 		return fmt.Errorf("working dir %s points to invalid target: %w", newp, err)
 	}
@@ -1381,6 +1396,10 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		// connections, which would kill every module function call that runs
 		// longer than it.
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+			if wcprof.Active() != nil {
+				// whether the request's session records is only known later
+				req = req.WithContext(wcprof.ContextWithRequestArrival(req.Context(), time.Now()))
+			}
 			transport, metadata, status, err := transports.transportForRequest(req)
 			if err != nil {
 				http.Error(resp, err.Error(), status)
@@ -1747,7 +1766,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		})
 	}
 
-	if err := json.NewEncoder(f).Encode(initFDs.withEnv(state.spec)); err != nil {
+	if err := writeSpec(f, initFDs.withEnv(state.spec)); err != nil {
 		return fmt.Errorf("failed to encode spec: %w", err)
 	}
 	f.Close()
@@ -2028,14 +2047,16 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 				}
 			}
 
-			_, err = c.Runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
-				Started:       started,
-				IO:            io,
-				ConsoleSocket: consoleSocket,
-				PidFile:       pidFile,
-				ExtraFiles:    initFDs.files,
+			return startWithTHP(state.procInfo.Meta.TransparentHugePages, started, func(started chan<- int) error {
+				_, err := c.Runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
+					Started:       started,
+					IO:            io,
+					ConsoleSocket: consoleSocket,
+					PidFile:       pidFile,
+					ExtraFiles:    initFDs.files,
+				})
+				return err
 			})
-			return err
 		})
 		return eg.Wait()
 	}
@@ -2093,7 +2114,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		releasedWall = workloadReleasedAt(pidFile, profStartedWallTime)
 	}
 	emitOTelExecSplit(ctx, state.id, profStartWall, profStartedWallTime, releasedWall, endWall, runErr, profArgv, phaseOps)
-	return exitError(ctx, state.exitCodePath, runErr, state.procInfo.Meta.ValidExitCodes)
+	return exitError(ctx, state.exitCodePath, state.resourceCgroupPath, runErr, state.procInfo.Meta.ValidExitCodes)
 }
 
 // runtimeBoundMount reports whether the container runtime, not the engine,

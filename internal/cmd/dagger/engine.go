@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"reflect"
 	"slices"
 	"time"
 
@@ -141,22 +143,18 @@ func withEngineAction(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
-	if err := applyWorkspaceClientParams(&params); err != nil {
+	run := fn
+	fn = func(ctx context.Context, sess *client.Client) error {
+		ctx = context.WithValue(ctx, llmConfigUpdaterKey{}, llmConfigUpdater(sess.UpdateLLMConfig))
+		ctx = context.WithValue(ctx, llmModelConfigKey{}, llmModelConfigReader(sess.LLMModelConfig))
+		return run(ctx, sess)
+	}
+	if open := takeOpenSession(ctx); open != nil {
+		return open.run(ctx, action, params, fn)
+	}
+	params, err := engineClientParams(params)
+	if err != nil {
 		return err
-	}
-	coreModuleSelected := isCoreModuleSelected()
-	if coreModuleSelected {
-		params.LoadWorkspaceModules = false
-	}
-	if !moduleNoURL {
-		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
-			if !isCoreModuleRef(modRef) {
-				params.Module = modRef
-			}
-		}
-	}
-	if sessionWorkspace != "" && params.Workspace == nil {
-		params.Workspace = &sessionWorkspace
 	}
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
@@ -198,6 +196,94 @@ func withEngineAction(
 	})
 }
 
+// engineClientParams adds the session settings the global flags select.
+func engineClientParams(params client.Params) (client.Params, error) {
+	if err := applyWorkspaceClientParams(&params); err != nil {
+		return params, err
+	}
+	if isCoreModuleSelected() {
+		params.LoadWorkspaceModules = false
+	}
+	if !moduleNoURL {
+		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
+			if !isCoreModuleRef(modRef) {
+				params.Module = modRef
+			}
+		}
+	}
+	if sessionWorkspace != "" && params.Workspace == nil {
+		params.Workspace = &sessionWorkspace
+	}
+	return params, nil
+}
+
+type openSessionKey struct{}
+
+// openSession is a session the CLI connected before Cobra ran the command,
+// kept for the command's own engine call (see artifactDiscovery). The frontend
+// and telemetry of that session are already running.
+type openSession struct {
+	// params are the ones the session connected with, as the command passes
+	// them to withEngine.
+	params client.Params
+	client *client.Client
+	// stdout and stderr are the session's span stdio, where the command's
+	// output goes during its engine call, as initEngineTelemetry sets it.
+	stdout, stderr io.Writer
+	taken          bool
+}
+
+func withOpenSession(ctx context.Context, params client.Params, c *client.Client, stdout, stderr io.Writer) context.Context {
+	return context.WithValue(ctx, openSessionKey{}, &openSession{params: params, client: c, stdout: stdout, stderr: stderr})
+}
+
+// takeOpenSession returns the open session the first time it is asked for.
+// Any later engine call connects as usual.
+func takeOpenSession(ctx context.Context) *openSession {
+	open, _ := ctx.Value(openSessionKey{}).(*openSession)
+	if open == nil || open.taken {
+		return nil
+	}
+	open.taken = true
+	return open
+}
+
+// run runs fn in the open session when the command connects with the params
+// it was opened with. Otherwise it connects a new session under the running
+// frontend, as the command asked.
+func (open *openSession) run(ctx context.Context, action string, params client.Params, fn runClientCallback) (rerr error) {
+	oldOut, oldErr := rootCmd.OutOrStdout(), rootCmd.ErrOrStderr()
+	rootCmd.SetOut(open.stdout)
+	rootCmd.SetErr(open.stderr)
+	defer func() {
+		rootCmd.SetOut(oldOut)
+		rootCmd.SetErr(oldErr)
+	}()
+	if action != "" {
+		var span trace.Span
+		ctx, span = Tracer().Start(ctx, action, telemetry.Encapsulate())
+		defer telemetry.EndWithCause(span, &rerr)
+	}
+	if reflect.DeepEqual(params, open.params) {
+		return fn(ctx, open.client)
+	}
+	params, err := engineClientParams(params)
+	if err != nil {
+		return err
+	}
+	params, err = finalizeEngineParams(ctx, params)
+	if err != nil {
+		return err
+	}
+	sess, err := client.Connect(ctx, params)
+	if err != nil {
+		return err
+	}
+	defer func() { rerr = errors.Join(rerr, sess.Close()) }()
+	Frontend.SetClient(sess.Dagger())
+	return fn(ctx, sess)
+}
+
 // finalizeEngineParams fills in the run-scoped client params that depend on the
 // frontend and telemetry being set up. Must be called inside Frontend.Run,
 // after initEngineTelemetry. Shared by withEngine and withSetupSessions.
@@ -223,6 +309,10 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.GitRemote, params.WorkspacePath = cloudWorkspace(ctx, params.Workspace)
 
 	params.Profile = profileFlag
+	if len(profileEBPFFlag) > 0 && !profileFlag {
+		return params, errors.New("--profile-ebpf needs --profile")
+	}
+	params.ProfileEBPF = profileEBPFFlag
 
 	params.CloudURLCallback = func(ctx context.Context, url string, msg string, logged bool) {
 		Frontend.SetCloudURL(ctx, url, msg, logged)
@@ -518,7 +608,6 @@ func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 	}
 	cloud := noCloudTelemetry
 	if !frontendTelemetryDisabled(ctx) {
-		cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, Frontend.SpanExporter())
 		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
 	}
 	if !skipSharedTelemetryExporters {
@@ -539,6 +628,14 @@ func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
 			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
 		}
+	}
+	if !frontendTelemetryDisabled(ctx) {
+		// Not a LiveTraceExporter, which telemetry.Init wraps in the default
+		// 2048-slot BSP: that drops spans on a burst, such as the engine's spans
+		// for hundreds of checks ending at once, and a check whose final span is
+		// dropped is reported as never finishing. The frontend waits for queue
+		// space instead, like its logs below.
+		cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewBlockingLiveSpanProcessor(Frontend.SpanExporter()))
 	}
 	return cfg, cloud
 }
@@ -571,9 +668,10 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error) erro
 			logOpts = append(logOpts, sdklog.WithProcessor(processor))
 		}
 		// Diagnostics can be emitted by the frontend consumer, an error
-		// handler, or cleanup. Keep default slog best-effort and independent
-		// of frontend I/O; it must never wait on the command output queue.
-		diagnostics = sdklog.NewBatchProcessor(cliDiagnosticExporter{out: os.Stderr},
+		// handler, or cleanup. Keep default slog best-effort and on its own
+		// queue; it must never wait on the command output queue. While a TUI
+		// draws on the terminal, it goes to the frontend instead of stderr.
+		diagnostics = sdklog.NewBatchProcessor(newCLIDiagnosticExporter(os.Stderr, stderrIsTTY, Frontend),
 			sdklog.WithMaxQueueSize(enginetel.LogQueueSize),
 			sdklog.WithExportMaxBatchSize(enginetel.LogExportMaxBatchSize),
 			sdklog.WithExportInterval(telemetry.NearlyImmediate),
@@ -629,6 +727,13 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error) erro
 	return ctx, func(rerr error) error {
 		rootCmd.SetOut(oldOut)
 		rootCmd.SetErr(oldErr)
+		if diagnostics != nil {
+			// Hand a TUI what slog has queued before its stream ends, with
+			// the same short budget as the processor's shutdown below.
+			diagnosticCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			_ = diagnostics.ForceFlush(diagnosticCtx)
+			cancel()
+		}
 		// EOF emission can wait for queue space too. Give it the same bounded
 		// budget as the local drain, before starting remote shutdown.
 		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)

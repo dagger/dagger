@@ -52,7 +52,7 @@ func (funcs goTemplateFuncs) isCoreLibrary() bool {
 // package as the generated types. In that case, prefix the function with
 // "New" instead.
 func (funcs goTemplateFuncs) coreConstructorName(f introspection.Field) string {
-	name := formatName(f.Name)
+	name := funcs.formatName(f.Name)
 	if funcs.schema.Types.Get(name) != nil {
 		return "New" + name
 	}
@@ -329,37 +329,12 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 		}
 	}()
 
-	parentName, err := fnCall.ParentName(ctx)
+	parentName, fnName, parentJson, inputArgs, err := fnCall.DispatchInputs(ctx)
 	if err != nil {
-		return fmt.Errorf("get parent name: %w", err)
-	}
-	fnName, err := fnCall.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn name: %w", err)
-	}
-	parentJson, err := fnCall.Parent(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn parent: %w", err)
-	}
-	fnArgs, err := fnCall.InputArgs(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn args: %w", err)
+		return fmt.Errorf("get fn call: %w", err)
 	}
 
-	inputArgs := map[string][]byte{}
-	for _, fnArg := range fnArgs {
-		argName, err := fnArg.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg name: %w", err)
-		}
-		argValue, err := fnArg.Value(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg value: %w", err)
-		}
-		inputArgs[argName] = []byte(argValue)
-	}
-
-	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
+	result, err := invoke(ctx, parentJson, parentName, fnName, inputArgs)
 	if err != nil {
 		return err
 	}

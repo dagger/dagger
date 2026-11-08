@@ -1,7 +1,6 @@
 package artifact
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 )
@@ -83,44 +82,14 @@ func MatchTypeKey(candidates []string, key string) []string {
 	return matches
 }
 
-// ResolveTypeKey lists the full paths a type key selects among candidates. A
-// key that names several paths selects them all, such as every staleness
-// check. But a key that names both an operation on each item of a collection
-// and the same operation on the collection's batch, such as up on each
-// service and up on a batch of services, would run it twice: that is an error
-// that lists the paths, never their union.
-func ResolveTypeKey(candidates Paths, name, key string) ([]string, error) {
+// ResolveTypeKey lists the full paths a type key selects among candidates.
+func ResolveTypeKey(candidates Paths, key string) []string {
 	var keys []string
 	for _, path := range candidates {
 		keys = append(keys, path.Key)
 	}
 	slices.Sort(keys)
-	matches := MatchTypeKey(slices.Compact(keys), key)
-	for _, item := range candidates {
-		for _, batch := range candidates {
-			if slices.Contains(matches, item.Key) && slices.Contains(matches, batch.Key) && isBatchOf(batch, item) {
-				return nil, fmt.Errorf("%s=%s is ambiguous: it matches %s; use a longer suffix", name, key, strings.Join(matches, ", "))
-			}
-		}
-	}
-	return matches, nil
-}
-
-// isBatchOf reports whether batch runs item's operation on the batch of item's
-// collection: its path inserts batch before the operation, and it keys every
-// collection dimension item keys but the collection's own.
-func isBatchOf(batch, item Path) bool {
-	parent, operation, ok := strings.Cut(item.Key, "/")
-	for ok {
-		if batch.Key == parent+"/batch/"+operation {
-			return len(batch.Dimensions)+1 == len(item.Dimensions) &&
-				!slices.ContainsFunc(batch.Dimensions, func(d string) bool { return !slices.Contains(item.Dimensions, d) })
-		}
-		var next string
-		next, operation, ok = strings.Cut(operation, "/")
-		parent += "/" + next
-	}
-	return false
+	return MatchTypeKey(slices.Compact(keys), key)
 }
 
 // ShortTypeKey is the shortest suffix of path that names only path among the

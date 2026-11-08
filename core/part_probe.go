@@ -9,6 +9,29 @@ func (family foreignFamilyCodec) DescribeParts(v dagql.PersistedPayloadVisit) ([
 	if err != nil {
 		return nil, err
 	}
+	return family.describePayload(v, payload)
+}
+
+// describeLivePayload describes an object from the payload its encoder builds
+// and the snapshot links its encoding carries, as DescribeParts describes that
+// encoding, without encoding it. The description reads only names, kinds,
+// paths and flags of the payload, which decode from the encoding as built.
+func (family foreignFamilyCodec) describeLivePayload(enc *dagql.PersistEncodeContext, payload *partPayload, links []dagql.PersistedSnapshotRefLink) (dagql.PersistedPartsDescription, bool, error) {
+	probes, err := family.describePayload(enc.PayloadVisit(links), payload)
+	if err != nil {
+		return dagql.PersistedPartsDescription{}, false, err
+	}
+	desc := dagql.PersistedPartsDescription{SnapshotLinks: links}
+	for _, probe := range probes {
+		if probe.LocalComplete {
+			desc.Complete = append(desc.Complete, probe.Descriptor.Address)
+		}
+	}
+	return desc, true, nil
+}
+
+// describePayload is DescribeParts for v's decoded payload.
+func (family foreignFamilyCodec) describePayload(v dagql.PersistedPayloadVisit, payload *partPayload) ([]dagql.PartProbe, error) {
 	outputs, err := family.mapSnapshotParts(v, payload)
 	if err != nil {
 		return nil, err

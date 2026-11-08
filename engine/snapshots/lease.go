@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/leases"
-	"github.com/containerd/containerd/v2/pkg/namespaces"
 	cerrdefs "github.com/containerd/errdefs"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -354,32 +353,32 @@ func (l *LeaseManager) WithNamespace(ns string) *LeaseManager {
 }
 
 func (l *LeaseManager) Create(ctx context.Context, opts ...leases.Opt) (leases.Lease, error) {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = WithNamespace(ctx, l.ns)
 	return l.manager.Create(ctx, opts...)
 }
 
 func (l *LeaseManager) Delete(ctx context.Context, lease leases.Lease, opts ...leases.DeleteOpt) error {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = WithNamespace(ctx, l.ns)
 	return l.manager.Delete(ctx, lease, opts...)
 }
 
 func (l *LeaseManager) List(ctx context.Context, filters ...string) ([]leases.Lease, error) {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = WithNamespace(ctx, l.ns)
 	return l.manager.List(ctx, filters...)
 }
 
 func (l *LeaseManager) AddResource(ctx context.Context, lease leases.Lease, resource leases.Resource) error {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = WithNamespace(ctx, l.ns)
 	return l.manager.AddResource(ctx, lease, resource)
 }
 
 func (l *LeaseManager) DeleteResource(ctx context.Context, lease leases.Lease, resource leases.Resource) error {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = WithNamespace(ctx, l.ns)
 	return l.manager.DeleteResource(ctx, lease, resource)
 }
 
 func (l *LeaseManager) ListResources(ctx context.Context, lease leases.Lease) ([]leases.Resource, error) {
-	ctx = namespaces.WithNamespace(ctx, l.ns)
+	ctx = WithNamespace(ctx, l.ns)
 	return l.manager.ListResources(ctx, lease)
 }
 

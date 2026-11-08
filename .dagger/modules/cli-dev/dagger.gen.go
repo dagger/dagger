@@ -157,37 +157,12 @@ func dispatch(ctx context.Context) (rerr error) {
 		}
 	}()
 
-	parentName, err := fnCall.ParentName(ctx)
+	parentName, fnName, parentJson, inputArgs, err := fnCall.DispatchInputs(ctx)
 	if err != nil {
-		return fmt.Errorf("get parent name: %w", err)
-	}
-	fnName, err := fnCall.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn name: %w", err)
-	}
-	parentJson, err := fnCall.Parent(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn parent: %w", err)
-	}
-	fnArgs, err := fnCall.InputArgs(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn args: %w", err)
+		return fmt.Errorf("get fn call: %w", err)
 	}
 
-	inputArgs := map[string][]byte{}
-	for _, fnArg := range fnArgs {
-		argName, err := fnArg.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg name: %w", err)
-		}
-		argValue, err := fnArg.Value(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg value: %w", err)
-		}
-		inputArgs[argName] = []byte(argValue)
-	}
-
-	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
+	result, err := invoke(ctx, parentJson, parentName, fnName, inputArgs)
 	if err != nil {
 		return err
 	}
@@ -487,18 +462,18 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("PublishMetadata",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("publish.go", 103, 1)).
-							WithArg("awsAccessKeyID", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 106, 2)}).
-							WithArg("awsSecretAccessKey", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 107, 2)}).
-							WithArg("awsRegion", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 108, 2)}).
-							WithArg("awsBucket", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 109, 2)}).
-							WithArg("awsCloudfrontDistribution", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 110, 2)}).
-							WithArg("awsEndpointURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 111, 2)})).
+							WithSourceMap(dag.SourceMap("publish.go", 107, 1)).
+							WithArg("awsAccessKeyID", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 110, 2)}).
+							WithArg("awsSecretAccessKey", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 111, 2)}).
+							WithArg("awsRegion", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 112, 2)}).
+							WithArg("awsBucket", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 113, 2)}).
+							WithArg("awsCloudfrontDistribution", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 114, 2)}).
+							WithArg("awsEndpointURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("publish.go", 115, 2)})).
 					WithFunction(
 						dag.Function("ReleaseDryRun",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Verify that the CLI builds without actually publishing anything").
-							WithSourceMap(dag.SourceMap("publish.go", 174, 1)).
+							WithSourceMap(dag.SourceMap("publish.go", 178, 1)).
 							WithCheck()).
 					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 114, 2)}).
 					WithField("Tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 115, 2)}).

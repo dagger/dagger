@@ -165,6 +165,11 @@ type SchemaBuilderMemo struct {
 	canonicalArgTypes map[string]*canonicalArgType
 	modTypes          map[modTypeMemoKey]*modTypeMemoEntry
 	schemaASTs        map[string]*dagql.SchemaASTCache
+	gitClients        map[declaredGitClientsKey]*declaredGitClientsEntry
+	// moduleServers holds the client's standalone server for each module
+	// whose artifacts it discovers, evaluates or checks
+	// (dagqlServerForModule).
+	moduleServers map[string]*moduleServerEntry
 }
 
 func NewSchemaBuilderMemo() *SchemaBuilderMemo {

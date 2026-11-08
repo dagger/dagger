@@ -165,6 +165,9 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		{path: consts.DaggerInitSessionPath, file: build.binary("./cmd/init-session", false)},
 		{path: consts.TiniPath, file: build.Init(), fileOpts: []dagger.ContainerWithFileOpts{{Permissions: 0o755}}},
 	}
+	if entire := build.gitRemoteEntireBin(); entire != nil {
+		bins = append(bins, binAndPath{path: consts.GitRemoteEntirePath, file: entire})
+	}
 	qemuDir, qemuNames := build.qemuBins()
 	for _, name := range qemuNames {
 		bins = append(bins, binAndPath{path: filepath.Join("/usr/local/bin", name), file: qemuDir.File(name)})
@@ -292,6 +295,26 @@ llvm-strip crun
 xx-verify --static crun
 `}).
 		File("/src/crun")
+}
+
+// gitRemoteEntireBin is the git remote helper for entire:// remotes, taken
+// from the checksummed Entire CLI release. Entire publishes it for amd64 and
+// arm64 only; engines for other architectures do not support entire://.
+func (build *Builder) gitRemoteEntireBin() *dagger.File {
+	arch := build.platformSpec.Architecture
+	checksum, ok := consts.EntireCLIChecksums[arch]
+	if !ok {
+		return nil
+	}
+	archive := dag.HTTP(
+		"https://github.com/entireio/cli/releases/download/v"+consts.EntireCLIVersion+"/entire_linux_"+arch+".tar.gz",
+		dagger.HTTPOpts{Checksum: checksum},
+	)
+	return dag.Container().
+		From(consts.AlpineImage).
+		WithMountedFile("/entire.tar.gz", archive).
+		WithExec([]string{"tar", "xzf", "/entire.tar.gz", "-C", "/", "git-remote-entire"}).
+		File("/git-remote-entire")
 }
 
 func (build *Builder) sshfsBin() *dagger.File {

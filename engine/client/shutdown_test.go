@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
@@ -21,6 +22,7 @@ func shutdownTestClient(dial func(ctx context.Context) (net.Conn, error)) *Clien
 		internalCtx: context.Background(),
 		httpClient: &httpClient{
 			inner: &http.Client{
+				//nolint:staticcheck // SA1019: x/net's HTTP/2 client and server are deprecated in favor of net/http's; moving off them is its own change
 				Transport: &http2.Transport{
 					AllowHTTP: true,
 					DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
@@ -42,7 +44,7 @@ func TestShutdownErrorSaysWhenNoConnectionWasMade(t *testing.T) {
 		return nil, ctx.Err()
 	})
 
-	err := client.shutdownServer()
+	err := client.shutdownServer(context.Background())
 	require.ErrorContains(t, err, "no connection to the engine after")
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
@@ -58,6 +60,7 @@ func TestShutdownErrorSaysWhenTheEngineDidNotAnswer(t *testing.T) {
 			clientConn.Close()
 			engineConn.Close()
 		})
+		//nolint:staticcheck // SA1019: x/net's HTTP/2 client and server are deprecated in favor of net/http's; moving off them is its own change
 		go (&http2.Server{}).ServeConn(engineConn, &http2.ServeConnOpts{
 			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 				<-engineDone
@@ -66,7 +69,7 @@ func TestShutdownErrorSaysWhenTheEngineDidNotAnswer(t *testing.T) {
 		return clientConn, nil
 	})
 
-	err := client.shutdownServer()
+	err := client.shutdownServer(context.Background())
 	require.ErrorContains(t, err, "new connection after")
 	require.ErrorContains(t, err, "request sent after")
 	require.ErrorContains(t, err, "no response after")
@@ -117,7 +120,22 @@ func TestShutdownErrorDescribesTheLastAttempt(t *testing.T) {
 		return clientConn, nil
 	})
 
-	err := client.shutdownServer()
+	err := client.shutdownServer(context.Background())
 	require.ErrorContains(t, err, "connection attempt 2: no connection to the engine after")
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+// A shared parent deadline must take precedence over the per-client timeout.
+func TestShutdownRespectsCallerDeadline(t *testing.T) {
+	t.Setenv(shutdownTimeoutEnvName, "1h")
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	client := shutdownTestClient(func(ctx context.Context) (net.Conn, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	start := time.Now()
+	err := client.shutdownServer(ctx)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Less(t, time.Since(start), 5*time.Second)
 }

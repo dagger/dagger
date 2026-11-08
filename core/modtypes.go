@@ -199,6 +199,10 @@ type ModType interface {
 
 	// The core API TypeDef representation of this type
 	TypeDef(context.Context) (dagql.ObjectResult[*TypeDef], error)
+
+	// Kind is the kind of the TypeDef this type returns, known without
+	// building it.
+	Kind() TypeDefKind
 }
 
 // PrimitiveType are the basic types like string, int, bool, void, etc.
@@ -235,6 +239,10 @@ func (t *PrimitiveType) CollectContent(ctx context.Context, value dagql.AnyResul
 
 func (t *PrimitiveType) SourceMod() Mod {
 	return nil
+}
+
+func (t *PrimitiveType) Kind() TypeDefKind {
+	return t.Def.Kind
 }
 
 func (t *PrimitiveType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
@@ -371,6 +379,10 @@ func (t *ListType) SourceMod() Mod {
 	return t.Underlying.SourceMod()
 }
 
+func (t *ListType) Kind() TypeDefKind {
+	return TypeDefKindList
+}
+
 func (t *ListType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -454,6 +466,10 @@ func (t *NullableType) CollectContent(ctx context.Context, value dagql.AnyResult
 
 func (t *NullableType) SourceMod() Mod {
 	return t.Inner.SourceMod()
+}
+
+func (t *NullableType) Kind() TypeDefKind {
+	return t.Inner.Kind()
 }
 
 func (t *NullableType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeDef], error) {

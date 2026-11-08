@@ -578,32 +578,38 @@ func (r *PythonClientDevTestForPythonVersion) UnmarshalJSON(bs []byte) error {
 }
 
 // Run the pytest command.
-func (r *PythonClientDevTestForPythonVersion) Run(ctx context.Context, args []string) error {
+func (r *PythonClientDevTestForPythonVersion) Run(ctx context.Context, ws *Workspace, args []string) error {
+	assertNotNil("ws", ws)
 	if r.run != nil {
 		return nil
 	}
 	q := r.query.Select("run")
+	q = q.Arg("ws", ws)
 	q = q.Arg("args", args)
 
 	return q.Execute(ctx)
 }
 
 // Run python slow tests
-func (r *PythonClientDevTestForPythonVersion) Slow(ctx context.Context) error {
+func (r *PythonClientDevTestForPythonVersion) Slow(ctx context.Context, ws *Workspace) error {
+	assertNotNil("ws", ws)
 	if r.slow != nil {
 		return nil
 	}
 	q := r.query.Select("slow")
+	q = q.Arg("ws", ws)
 
 	return q.Execute(ctx)
 }
 
 // Run python unit tests
-func (r *PythonClientDevTestForPythonVersion) Unit(ctx context.Context) error {
+func (r *PythonClientDevTestForPythonVersion) Unit(ctx context.Context, ws *Workspace) error {
+	assertNotNil("ws", ws)
 	if r.unit != nil {
 		return nil
 	}
 	q := r.query.Select("unit")
+	q = q.Arg("ws", ws)
 
 	return q.Execute(ctx)
 }

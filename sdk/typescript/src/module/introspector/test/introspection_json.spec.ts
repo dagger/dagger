@@ -56,24 +56,17 @@ describe("serializeIntrospection", function () {
     const schema = serializeIntrospection(module as never).__schema
     const collection = typeByName(schema, "CollectionsItems")
     assert.deepEqual(collection?.fields?.map((f) => f.name).sort(), [
-      "batch",
       "get",
       "id",
       "keys",
       "list",
+      "selected",
       "subset",
     ])
     assert.equal(fieldByName(collection, "get")?.args[0]?.name, "key")
-    assert.equal(
-      fieldByName(collection, "batch")?.type.ofType?.name,
-      "CollectionsItems_Batch",
-    )
-    assert.deepEqual(
-      typeByName(schema, "CollectionsItems_Batch")
-        ?.fields?.map((f) => f.name)
-        .sort(),
-      ["id", "selected"],
-    )
+    assert.equal(fieldByName(collection, "batch"), undefined)
+    assert.equal(typeByName(schema, "CollectionsItems_Batch"), undefined)
+    assert.ok(fieldByName(collection, "selected"))
     assert.deepEqual(
       fieldByName(collection, "keys")?.type,
       fieldByName(collection, "subset")?.args[0]?.type,

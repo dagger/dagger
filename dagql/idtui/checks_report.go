@@ -75,8 +75,12 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 	switch {
 	case node.Failed() && !node.HasFailedChild():
 		if fe.checkDefersToTests(node.Span) {
-			// The check's failures are test cases: render them per-test with
-			// rolled-up logs (richer than the check's raw command output).
+			// The tests beneath the check get per-test rendering with rolled-up logs
+			// (richer than the check's raw command output). They may not explain
+			// this check, though: a test run shared by several checks sits under
+			// whichever one started it. So its own error comes first, even when its
+			// origin has a row: the report leaves the rows out.
+			fe.renderSpanErrorMessage(out, r, &dagui.TraceRow{Span: node.Span, Expanded: true, Depth: depth + 1}, strings.Repeat("  ", depth+1))
 			for _, line := range fe.renderCheckTests(ctx, node.Span, depth) {
 				fmt.Fprintln(out, line)
 			}
@@ -133,15 +137,23 @@ func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dag
 // surfacedSpanStatus is the icon, color and status label for a surfaced check
 // or generator, read straight off its span in the same order the span's own
 // tree row checks (statusIcon): still running, then failed, then passed.
+// A span canceled or left running when the trace ended has no final state, so
+// it reports neither failure nor success.
 func surfacedSpanStatus(span *dagui.Span) (icon string, color termenv.Color, status string) {
 	switch {
 	case span.IsRunningOrEffectsRunning():
 		return DotHalf, termenv.ANSIYellow, "RUNNING"
 	case span.IsFailedOrCausedFailure():
 		return IconFailure, termenv.ANSIRed, "ERROR"
+	case spanUnreported(span):
+		return IconUnreported, termenv.ANSIBrightBlack, "NOT REPORTED"
 	default:
 		return IconSuccess, termenv.ANSIGreen, "OK"
 	}
+}
+
+func spanUnreported(span *dagui.Span) bool {
+	return span.LeftRunning || span.IsCanceled()
 }
 
 // surfacedSpanCounts tallies surfaced checks' or generators' spans for a
@@ -154,6 +166,8 @@ func surfacedSpanCounts(spans []*dagui.Span) dagui.TestCounts {
 			counts.Running++
 		case span.IsFailedOrCausedFailure():
 			counts.Failing++
+		case spanUnreported(span):
+			counts.Unreported++
 		default:
 			counts.Passing++
 		}

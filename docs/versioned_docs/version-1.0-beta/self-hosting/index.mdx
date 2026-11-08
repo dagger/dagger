@@ -58,13 +58,14 @@ In each CI job, set `DAGGER_ENGINE` to the engine for the checks of that job:
 | Same Kubernetes node as the CI runner | `unix:///run/dagger/engine.sock` |
 | Kubernetes pod, and the CI runner can use `kubectl` | `kube-pod://POD?namespace=NAMESPACE` |
 | Other host on the network | `tcp://HOST:PORT` |
+| Other host, with client certificates | `tls://HOST:PORT?ca_path=CA&cert_path=CERT&key_path=KEY` |
 | Cloud Engines | `cloud` |
 
 Set `DAGGER_ENGINE` in every CI job. If it is not set, the CLI starts an engine on the CI runner. On an ephemeral runner, the cache of that engine is lost after each job.
 
 Install the CLI in the CI job at the same version as the engine.
 
-A `tcp://` address has no authentication. Any system that can connect to the port can run containers on the engine. Make the port available only on a private network that the CI runners use. With `kube-pod://`, the Kubernetes permissions of the CI runner control access to the engine.
+A `tcp://` address has no authentication. Any system that can connect to the port can run containers on the engine. Make the port available only on a private network that the CI runners use, or [require client certificates](#require-client-certificates). With `kube-pod://`, the Kubernetes permissions of the CI runner control access to the engine.
 
 To run a check on Cloud Engines, set `DAGGER_ENGINE=cloud` and `DAGGER_CLOUD_TOKEN`. With this token, the CLI also sends the traces of the job to Dagger Cloud.
 
@@ -198,6 +199,29 @@ On a host without Kubernetes, run the engine image with Docker:
 The `dagger-engine-cache` volume keeps the cache when the container restarts. Connect to the engine with `DAGGER_ENGINE=tcp://HOST:1234`.
 
 To put more than one host behind one address, use a TCP load balancer with source IP affinity, as explained in [CI runners outside the cluster](#ci-runners-outside-the-cluster).
+
+### Require client certificates
+
+The engine can require mutual TLS on its TCP address. It then accepts only clients with a certificate signed by the CA that `--tlscacert` names. Mount the server certificate, the server key and that CA certificate into the container:
+
+<CodeBlock language="shell">
+{`docker run -d --name dagger-engine --privileged --restart always \\
+  -v dagger-engine-cache:/var/lib/dagger \\
+  -v /etc/dagger/certs:/certs:ro \\
+  -p 1234:1234 \\
+  registry.dagger.io/engine:v${daggerVersion} \\
+  --addr tcp://0.0.0.0:1234 \\
+  --tlscert /certs/server.crt --tlskey /certs/server.key \\
+  --tlscacert /certs/ca.crt`}
+</CodeBlock>
+
+The server certificate must be valid for the host name that the CI runners connect to. Give each CI runner a client certificate and its key, and the CA certificate that signed the server certificate. Then connect with `tls://`:
+
+```shell
+DAGGER_ENGINE='tls://HOST:1234?ca_path=/path/to/ca.crt&cert_path=/path/to/client.crt&key_path=/path/to/client.key' dagger check
+```
+
+Without `--tlscacert`, the engine encrypts the connection but accepts any client. Connect with only `ca_path` in that case.
 
 ## Configure the engines
 

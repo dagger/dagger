@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -166,4 +167,49 @@ func TestLateExportToReclaimedClientDoesNotReplayStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, lateLogs, 1)
 	require.Equal(t, int64(history+1), lateLogs[0].ID)
+}
+
+// TestRetainedStoreIndexesOnlyForIndexedReader: a client holds its store open
+// without indexes, so a session whose readers only stream it builds none. The
+// first reader that needs them builds them over everything written so far.
+func TestRetainedStoreIndexesOnlyForIndexedReader(t *testing.T) {
+	srv := &Server{clientDBs: clientdb.NewDBs(t.TempDir())}
+	t.Cleanup(func() { require.NoError(t, srv.clientDBs.Close()) })
+	ps := NewPubSub(srv)
+	sess := &daggerSession{
+		sessionID:       "session",
+		telemetryPubSub: ps,
+		clientRuntimes:  make(map[string]*clientRuntime),
+	}
+	client := &clientRuntime{
+		clientRecord: &clientRecord{clientID: "client", daggerSession: sess},
+		state:        clientStateInitialized,
+	}
+	sess.clientRuntimes[client.clientID] = client
+	installTestClientRecords(sess)
+	require.NoError(t, client.retainTelemetryDB(t.Context()))
+	defer func() { require.NoError(t, client.closeTelemetryDB()) }()
+
+	const traceID = "00000000000000000000000000000001"
+	parent := clientdb.Span{TraceID: traceID, SpanID: "0000000000000001", Name: "parent"}
+	child := clientdb.Span{TraceID: traceID, SpanID: "0000000000000002", Name: "child",
+		ParentSpanID: sql.NullString{String: parent.SpanID, Valid: true}}
+	require.NoError(t, ps.appendSpans(t.Context(), client.clientID, []clientdb.Span{parent, child}))
+
+	// Streaming reads rows in order through the retained, unindexed store.
+	streamed, err := client.telemetryDB.Read().SelectSpansSince(t.Context(), clientdb.SelectSpansSinceParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, streamed, 2)
+	require.Empty(t, client.telemetryDB.SpanIDs(), "holding and streaming the store builds no index")
+
+	reader, err := client.clientRecord.TelemetryDB(t.Context())
+	require.NoError(t, err)
+	defer reader.Close()
+	require.Same(t, client.telemetryDB, reader, "the indexed reader shares the retained store")
+	require.Equal(t, map[string]struct{}{child.SpanID: {}}, reader.ChildSpanIDs(parent.SpanID))
+
+	late := clientdb.Span{TraceID: traceID, SpanID: "0000000000000003", Name: "late",
+		ParentSpanID: sql.NullString{String: parent.SpanID, Valid: true}}
+	require.NoError(t, ps.appendSpans(t.Context(), client.clientID, []clientdb.Span{late}))
+	require.True(t, reader.HasSpan(late.SpanID), "once built, the indexes follow new rows")
 }

@@ -23,6 +23,7 @@ import (
 
 type currentTypeDefsTestServer struct {
 	deps             *core.SchemaBuilder
+	defaultDeps      *core.SchemaBuilder
 	dag              *dagql.Server
 	mainClient       *engine.ClientMetadata
 	platform         core.Platform
@@ -33,6 +34,10 @@ type currentTypeDefsTestServer struct {
 
 func (*currentTypeDefsTestServer) CurrentClientModules(context.Context) ([]core.WorkspaceClientModule, error) {
 	return nil, nil
+}
+
+func (*currentTypeDefsTestServer) SharedCloudArtifactClient(context.Context, string) (*engineclient.Client, error) {
+	panic("unexpected SharedCloudArtifactClient")
 }
 
 func (*currentTypeDefsTestServer) AuthorizeGitPush(context.Context, string, string, bool, bool) (*core.GitPushAuthorization, error) {
@@ -95,7 +100,7 @@ func (s *currentTypeDefsTestServer) SpecificClientAttachableConn(context.Context
 }
 
 func (s *currentTypeDefsTestServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
-	return nil, nil
+	return s.defaultDeps, nil
 }
 
 func (s *currentTypeDefsTestServer) SchemaBuilderMemo(context.Context) (*core.SchemaBuilderMemo, error) {

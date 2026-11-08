@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Restarting an engine no longer throws away its whole local cache when the cache holds a module object with another module object in one of its fields, such as a Go object with a collection field. The engine used to reject the saved cache at the next start, log `dagql persistence import failed; wiping and cold-starting`, and start empty.
+time: 2026-11-02T19:47:49Z
+custom:
+  Author: sipsma
+  PR: "15035"

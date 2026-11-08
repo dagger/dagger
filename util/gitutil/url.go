@@ -11,11 +11,14 @@ import (
 )
 
 const (
-	HTTPProtocol  string = "http"
-	HTTPSProtocol string = "https"
-	SSHProtocol   string = "ssh"
-	GitProtocol   string = "git"
+	HTTPProtocol   string = "http"
+	HTTPSProtocol  string = "https"
+	SSHProtocol    string = "ssh"
+	GitProtocol    string = "git"
+	EntireProtocol string = "entire"
 )
+
+const EntireWebURL = "https://entire.io"
 
 var (
 	ErrUnknownProtocol = errors.New("unknown protocol")
@@ -23,10 +26,11 @@ var (
 )
 
 var supportedProtos = map[string]struct{}{
-	HTTPProtocol:  {},
-	HTTPSProtocol: {},
-	SSHProtocol:   {},
-	GitProtocol:   {},
+	HTTPProtocol:   {},
+	HTTPSProtocol:  {},
+	SSHProtocol:    {},
+	GitProtocol:    {},
+	EntireProtocol: {},
 }
 
 var protoRegexp = regexp.MustCompile(`^[a-zA-Z0-9]+://`)
@@ -76,8 +80,12 @@ func (gitURL *GitURL) RedactedRemote() string {
 
 // HTMLURL returns a best-effort browser URL for the repository, without clone
 // credentials or revision selectors. SSH and Git transport ports are not web
-// ports, so only HTTP(S) ports are retained.
+// ports, so only HTTP(S) ports are retained. Entire repositories link to
+// Entire's web interface rather than to the cluster host they are cloned from.
 func (gitURL *GitURL) HTMLURL() string {
+	if gitURL.Scheme == EntireProtocol {
+		return EntireWebURL + "/" + repositoryPath(gitURL.Path)
+	}
 	u := &url.URL{
 		Scheme: gitURL.Scheme,
 		Host:   gitURL.Host,
@@ -157,7 +165,7 @@ func effectivePort(scheme, port string) string {
 	switch scheme {
 	case SSHProtocol:
 		return "22"
-	case HTTPSProtocol:
+	case HTTPSProtocol, EntireProtocol:
 		return "443"
 	case HTTPProtocol:
 		return "80"

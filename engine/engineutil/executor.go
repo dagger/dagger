@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -504,7 +505,7 @@ func (c *Client) Exec(ctx context.Context, id string, process executor.ProcessIn
 	}
 
 	err = c.exec(ctx, id, spec.Process, process, nil)
-	return exitError(ctx, "", err, process.Meta.ValidExitCodes)
+	return exitError(ctx, "", "", err, process.Meta.ValidExitCodes)
 }
 
 func (c *Client) exec(ctx context.Context, id string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
@@ -515,11 +516,13 @@ func (c *Client) exec(ctx context.Context, id string, specsProcess *specs.Proces
 	defer killer.Cleanup()
 
 	return c.callWithIO(ctx, &process, started, killer, func(ctx context.Context, started chan<- int, io runc.IO, consoleSocket runc.ConsoleSocket, pidfile string) error {
-		return c.Runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
-			Started:       started,
-			IO:            io,
-			ConsoleSocket: consoleSocket,
-			PidFile:       pidfile,
+		return startWithTHP(process.Meta.TransparentHugePages, started, func(started chan<- int) error {
+			return c.Runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
+				Started:       started,
+				IO:            io,
+				ConsoleSocket: consoleSocket,
+				PidFile:       pidfile,
+			})
 		})
 	})
 }
@@ -531,7 +534,9 @@ func (c *Client) validateEntitlements(meta executor.Meta) error {
 	})
 }
 
-func exitError(ctx context.Context, exitCodePath string, err error, validExitCodes []int) error {
+// exitError reports how a process ended. cgroupPath, when set, is the
+// cgroup of the process's execution, where an OOM kill is detected.
+func exitError(ctx context.Context, exitCodePath, cgroupPath string, err error, validExitCodes []int) error {
 	exitErr := &gatewayapi.ExitError{ExitCode: uint32(gatewayapi.UnknownExitStatus), Err: err}
 
 	if err == nil {
@@ -541,6 +546,7 @@ func exitError(ctx context.Context, exitCodePath string, err error, validExitCod
 		if errors.As(err, &runcExitError) {
 			exitErr = &gatewayapi.ExitError{ExitCode: uint32(runcExitError.Status)}
 		}
+		detectOOM(ctx, cgroupPath, exitErr)
 	}
 
 	if exitCodePath != "" {
@@ -575,6 +581,28 @@ func exitError(ctx context.Context, exitCodePath string, err error, validExitCod
 	}
 }
 
+// detectOOM says in exitErr when the kernel's OOM killer killed a process of
+// the execution whose cgroup is cgroupPath. memory.events counts the kills in
+// the cgroup and all its descendants, including the container's cgroup the
+// runtime has already removed.
+func detectOOM(ctx context.Context, cgroupPath string, exitErr *gatewayapi.ExitError) {
+	// Systemd cgroup paths aren't filesystem paths.
+	if !filepath.IsAbs(cgroupPath) || strings.Contains(cgroupPath, ":") {
+		return
+	}
+	events, err := os.ReadFile(filepath.Join(cgroupMountpoint, cgroupPath, "memory.events"))
+	if err != nil {
+		bklog.G(ctx).WithError(err).Debug("failed to read execution memory events")
+		return
+	}
+	for line := range strings.Lines(string(events)) {
+		if count, ok := strings.CutPrefix(strings.TrimSpace(line), "oom_kill "); ok && count != "0" {
+			exitErr.Err = fmt.Errorf("exit code: %d: out of memory: the kernel's OOM killer killed a process", exitErr.ExitCode)
+			return
+		}
+	}
+}
+
 type forwardIO struct {
 	stdin          io.ReadCloser
 	stdout, stderr io.WriteCloser
@@ -586,8 +614,36 @@ func (s *forwardIO) Close() error {
 
 func (s *forwardIO) Set(cmd *exec.Cmd) {
 	cmd.Stdin = s.stdin
-	cmd.Stdout = s.stdout
-	cmd.Stderr = s.stderr
+	cmd.Stdout = withPooledCopy(s.stdout)
+	cmd.Stderr = withPooledCopy(s.stderr)
+}
+
+// os/exec copies a process's output into a writer that isn't an *os.File
+// with io.Copy, which allocates a 32 KiB buffer for each stream of every
+// container run. withPooledCopy gives such a writer a ReadFrom that copies
+// through a pooled buffer instead; nil and *os.File writers are left as
+// they are, for os/exec to handle itself.
+func withPooledCopy(w io.WriteCloser) io.Writer {
+	if w == nil {
+		return nil
+	}
+	if f, ok := w.(*os.File); ok {
+		return f
+	}
+	return pooledCopyWriter{w}
+}
+
+var outputCopyBufPool = sync.Pool{New: func() any {
+	buf := make([]byte, 32<<10)
+	return &buf
+}}
+
+type pooledCopyWriter struct{ io.Writer }
+
+func (w pooledCopyWriter) ReadFrom(r io.Reader) (int64, error) {
+	buf := outputCopyBufPool.Get().(*[]byte)
+	defer outputCopyBufPool.Put(buf)
+	return io.CopyBuffer(w.Writer, r, *buf)
 }
 
 func (s *forwardIO) Stdin() io.WriteCloser {

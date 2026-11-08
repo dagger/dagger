@@ -351,6 +351,40 @@ func TestParse(t *testing.T) {
 				SourceCloneRef: "ssh://someuser@golang.org:29418/x/review",
 			},
 		},
+		// Entire: the repository is always /<forge>/<owner>/<repo>, found without
+		// go-import discovery, and links to Entire's web interface.
+		{
+			urlStr: "entire://aws-us-east-2.entire.io/et/acme/api/ci/lint@v1.2",
+			want: Parsed{
+				ModPath:        "aws-us-east-2.entire.io/et/acme/api/ci/lint",
+				ModVersion:     "v1.2",
+				HasVersion:     true,
+				Selector:       ModuleVersionSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "aws-us-east-2.entire.io/et/acme/api", Repo: "https://entire.io/et/acme/api"},
+				Scheme:         SchemeEntire,
+				RepoRootSubdir: "ci/lint",
+				CloneRef:       "entire://aws-us-east-2.entire.io/et/acme/api",
+				SourceCloneRef: "entire://aws-us-east-2.entire.io/et/acme/api",
+			},
+		},
+		{
+			urlStr: "entire://cluster.test:8443/gh/acme/api.git#main:ci",
+			want: Parsed{
+				ModPath:        "cluster.test/gh/acme/api.git",
+				ModVersion:     "main",
+				HasVersion:     true,
+				Selector:       GitRefSelector,
+				RepoRoot:       &vcs.RepoRoot{Root: "cluster.test/gh/acme/api.git", Repo: "https://entire.io/gh/acme/api"},
+				Scheme:         SchemeEntire,
+				RepoRootSubdir: "ci",
+				CloneRef:       "entire://cluster.test:8443/gh/acme/api.git",
+				SourceCloneRef: "entire://cluster.test:8443/gh/acme/api.git",
+			},
+		},
+		{
+			urlStr:          "entire://aws-us-east-2.entire.io/et/acme",
+			wantErrContains: "must name a repository",
+		},
 	} {
 		t.Run(tc.urlStr, func(t *testing.T) {
 			t.Parallel()

@@ -1,0 +1,16 @@
+kind: Added
+body: |
+  Git repositories hosted on [Entire](https://entire.com) can be read and
+  pushed with `entire://<cluster-host>/<forge>/<owner>/<repo>` URLs, in
+  `git`, module references and dependencies. The engine bundles Entire's
+  `git-remote-entire` helper (linux/amd64 and linux/arm64).
+
+  Pass the Entire token as `httpAuthToken`, or let the client's git credential
+  helper supply it as the password, e.g. scoped with
+  `credential.entire://*.entire.io.helper`. Git requires the helper to print a
+  username too; it is ignored. Module source links point to the repository
+  on `https://entire.io`. `entire://` submodules are not fetched.
+time: 2026-10-30T00:10:13Z
+custom:
+  Author: marcosnils
+  PR: "14970"

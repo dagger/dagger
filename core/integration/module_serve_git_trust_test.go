@@ -210,4 +210,18 @@ func (ModuleLoadingSuite) TestServeModuleDeclaredGitClient(ctx context.Context, 
 		require.NoError(t, err)
 		require.Equal(t, "hi from hello", out)
 	})
+
+	t.Run("module in a git workspace serves a client the workspace declares", func(ctx context.Context, t *testctx.T) {
+		// The workspace is the caller's repository, selected by its git ref.
+		workspaceRef := workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Directory().
+			WithNewFile("dagger.toml", serveGitTrustWorkspaceConfig(hello)).
+			WithNewFile("modules/caller/dagger.json", serveTreeCallerManifest).
+			WithNewFile("modules/caller/main.go", serveTreeCallerSource))
+
+		out, err := serveGitTrustBase(t, c, repoURL).
+			With(daggerExec("-W", workspaceRef, "call", "caller", "message", "--address="+hello)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from hello", out)
+	})
 }

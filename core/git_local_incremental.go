@@ -354,7 +354,7 @@ func applyIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, de
 		return err
 	}
 	if len(plan.changed) == 0 {
-		return unix.UtimesNanoAt(unix.AT_FDCWD, dest, []unix.Timespec{{Sec: 1}, {Sec: 1}}, unix.AT_SYMLINK_NOFOLLOW)
+		return unix.UtimesNanoAt(unix.AT_FDCWD, dest, gitCheckoutTimes(), unix.AT_SYMLINK_NOFOLLOW)
 	}
 	var checkout *gitutil.GitCLI
 	if len(plan.checkout) > 0 {
@@ -454,7 +454,7 @@ func applyIncrementalGitCheckout(ctx context.Context, source *gitutil.GitCLI, de
 }
 
 func normalizeIncrementalGitCheckout(ctx context.Context, root *os.Root, dest string, touched map[string]bool) error {
-	times := []unix.Timespec{{Sec: 1}, {Sec: 1}}
+	times := gitCheckoutTimes()
 normalize:
 	for p := range touched {
 		if err := ctx.Err(); err != nil {

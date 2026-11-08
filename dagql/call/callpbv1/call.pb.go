@@ -38,7 +38,6 @@ type DAG struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Value:
-	//
 	//	*DAG_Recipe
 	//	*DAG_EngineResult
 	Value isDAG_Value `protobuf_oneof:"value"`
@@ -661,7 +660,6 @@ type Literal struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Value:
-	//
 	//	*Literal_CallDigest
 	//	*Literal_Null
 	//	*Literal_Bool

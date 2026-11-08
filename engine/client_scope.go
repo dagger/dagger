@@ -149,7 +149,8 @@ func (lease *ClientLifecycleLease) Release() {
 
 // ClientScope is an immutable client identity and metadata snapshot paired
 // with one held lifecycle lease. Copies are safe: they refer to the same
-// idempotent lease, while Clone acquires independent ownership.
+// idempotent lease, while Clone acquires independent ownership. The metadata
+// snapshot is never modified, so clones share it.
 type ClientScope struct {
 	sessionID             string
 	clientID              string
@@ -219,7 +220,7 @@ func (scope ClientScope) Clone(kind ClientLeaseKind, ownerID string) (ClientScop
 	return ClientScope{
 		sessionID:             scope.sessionID,
 		clientID:              scope.clientID,
-		metadata:              append([]byte(nil), scope.metadata...),
+		metadata:              scope.metadata,
 		useRecipeIDsByDefault: scope.useRecipeIDsByDefault,
 		sdkEntrypoint:         scope.sdkEntrypoint,
 		lease:                 lease,
@@ -246,7 +247,7 @@ func (scope ClientScope) Delegate(kind ClientLeaseKind, ownerID string) (ClientS
 	return ClientScope{
 		sessionID:             scope.sessionID,
 		clientID:              scope.clientID,
-		metadata:              append([]byte(nil), scope.metadata...),
+		metadata:              scope.metadata,
 		useRecipeIDsByDefault: scope.useRecipeIDsByDefault,
 		sdkEntrypoint:         scope.sdkEntrypoint,
 		lease:                 lease,

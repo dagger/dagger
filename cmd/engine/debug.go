@@ -29,6 +29,7 @@ import (
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
 
+	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -128,6 +129,8 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 	// Engine-global profiling toggle: GET reports state, POST "on"/"off"
 	// (or any strconv.ParseBool value) flips it. Disabling keeps buffered
 	// events dumpable and does not stop sessions that opted in via --profile.
+	// A POST "on" with ?ebpf=<name>,<name> also asks for those eBPF programs
+	// (engine/ebpf/wcbpf) while recording is on; each POST replaces them.
 	m.Handle("/debug/wcprof/enabled", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost {
 			body, err := io.ReadAll(io.LimitReader(req.Body, 64))
@@ -153,6 +156,14 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 					return
 				}
 			}
+			var programs []string
+			if v := req.URL.Query().Get("ebpf"); on && v != "" {
+				programs = strings.Split(v, ",")
+			}
+			if err := wcbpf.SetEngineWide(programs); err != nil {
+				http.Error(rw, err.Error(), http.StatusBadRequest)
+				return
+			}
 			if on {
 				wcprof.EnableGlobal()
 				logrus.Info("wcprof global recording enabled via debug endpoint")
@@ -162,9 +173,10 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 			}
 		}
 		rw.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(rw).Encode(map[string]bool{ //nolint:errcheck,errchkjson
+		json.NewEncoder(rw).Encode(map[string]any{ //nolint:errcheck,errchkjson
 			"global_enabled":  wcprof.GloballyEnabled(),
 			"recorder_active": wcprof.Active() != nil,
+			"ebpf":            wcbpf.EngineWide(),
 		})
 	}))
 	m.Handle("/debug/wcprof/dump", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -185,6 +197,19 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 	// "session" so far: the next session's life, from its initialization to
 	// the end of its removal). The request waits for the run to end; it
 	// disarms if the client leaves before the run starts.
+	// Session watch: GET reports its threshold ("off" when it's off); POST a
+	// duration such as "60s" switches it on, so a session running past it gets
+	// a capture of what the engine was doing, and POST "off" switches it off.
+	// /debug/wcprof/captures returns the captures kept, oldest first.
+	m.Handle("/debug/wcprof/watch", wcprofWatchHandler(eng))
+	m.Handle("/debug/wcprof/captures", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if eng == nil {
+			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)
+			return
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(rw).Encode(eng.Captures()) //nolint:errcheck,errchkjson
+	}))
 	m.Handle("/debug/wcprof/profile", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		if eng == nil {
 			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)
@@ -218,6 +243,40 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 	logrus.Debugf("debug handlers listening at %s", addr)
 	go http.Serve(l, m)
 	return nil
+}
+
+// wcprofWatchHandler serves /debug/wcprof/watch, the session watch's switch.
+func wcprofWatchHandler(eng *server.Server) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if eng == nil {
+			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)
+			return
+		}
+		if req.Method == http.MethodPost {
+			body, err := io.ReadAll(io.LimitReader(req.Body, 64))
+			if err != nil {
+				http.Error(rw, err.Error(), http.StatusBadRequest)
+				return
+			}
+			val := strings.TrimSpace(string(body))
+			if strings.EqualFold(val, "off") {
+				eng.Watch(0)
+			} else {
+				threshold, err := time.ParseDuration(val)
+				if err != nil || threshold <= 0 {
+					http.Error(rw, fmt.Sprintf("POST body must be a positive duration or off, got %q", val), http.StatusBadRequest)
+					return
+				}
+				eng.Watch(threshold)
+			}
+		}
+		threshold := "off"
+		if t := eng.WatchThreshold(); t > 0 {
+			threshold = t.String()
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(rw).Encode(map[string]string{"threshold": threshold}) //nolint:errcheck,errchkjson
+	})
 }
 
 // logTraceMetrics logs information useful for debugging but too expensive for the

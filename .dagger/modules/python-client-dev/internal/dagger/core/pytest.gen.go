@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/dagger/querybuilder"
 )
@@ -12,8 +13,14 @@ import (
 type Pytest struct { // pytest (../../../../../../:0:0)
 	query *querybuilder.Selection
 
-	id   *ID
-	test *Void
+	cwdScopeCheck   *Void
+	discoveryCheck  *Void
+	id              *ID
+	pythonVersion   *string
+	runner          *PytestRunner
+	skipInstallDeps *bool
+	test            *Void
+	testAll         *Void
 }
 
 func (r *Pytest) WithGraphQLQuery(q *querybuilder.Selection) *Pytest {
@@ -22,14 +29,46 @@ func (r *Pytest) WithGraphQLQuery(q *querybuilder.Selection) *Pytest {
 	}
 }
 
-// Optional: A custom container with Python and uv installed.
-// If not provided, defaults to Alpine Linux with uv.
+// Additional arguments to pass to pytest (e.g., ["-x", "--tb=short"])
+func (r *Pytest) Args(ctx context.Context) ([]string, error) { // pytest (../../../../../../:0:0)
+	q := r.query.Select("args")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Optional: a custom image that replaces the default Alpine+uv base.
+// When set, Python provisioning (`uv venv`) is skipped.
 func (r *Pytest) Container() *Container { // pytest (../../../../../../:0:0)
 	q := r.query.Select("container")
 
 	return &Container{
 		query: q,
 	}
+}
+
+// From a configless subdirectory, automatic testing skips a failing ancestor
+// but still fails for a broken descendant project.
+func (r *Pytest) CwdScopeCheck(ctx context.Context) error { // pytest (../../../../../../:0:0)
+	if r.cwdScopeCheck != nil {
+		return nil
+	}
+	q := r.query.Select("cwdScopeCheck")
+
+	return q.Execute(ctx)
+}
+
+// Discovery is cwd-relative, prunes vendored trees, and automatic checks
+// exclude strict ancestors.
+func (r *Pytest) DiscoveryCheck(ctx context.Context) error { // pytest (../../../../../../:0:0)
+	if r.discoveryCheck != nil {
+		return nil
+	}
+	q := r.query.Select("discoveryCheck")
+
+	return q.Execute(ctx)
 }
 
 // A unique identifier for this Pytest.
@@ -81,7 +120,113 @@ func (r *Pytest) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// Optional: The source directory containing your Python project
+// PytestInstallPytestOtelOpts contains options for Pytest.InstallPytestOtel
+type PytestInstallPytestOtelOpts struct {
+	Runner PytestRunner // pytest (../../../../../../:0:0)
+
+	EnvTarget PytestEnvTarget // pytest (../../../../../../:0:0)
+}
+
+// Install pytest_otel into a container you manage yourself.
+//
+// `runner` AUTO detects the tool at runtime (uv -> pip -> python -m pip); UV or
+// PIP forces that tool even when others are present.
+//
+// `envTarget` chooses where pytest_otel lands. AUTO installs into an existing
+// virtual environment when one is present and otherwise falls back to a system
+// install; VENV forces a virtual environment, creating it when missing; SYSTEM
+// forces a system install (`uv ... --system --break-system-packages` /
+// `pip ... --break-system-packages`). Use SYSTEM (or AUTO) for containers
+// without a `.venv`.
+//
+// Returns the container with pytest_otel installed; run pytest yourself on it.
+func (r *Pytest) InstallPytestOtel(ctr *Container, opts ...PytestInstallPytestOtelOpts) *Container { // pytest (../../../../../../:0:0)
+	assertNotNil("ctr", ctr)
+	q := r.query.Select("installPytestOtel")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `runner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Runner) {
+			q = q.Arg("runner", opts[i].Runner)
+		}
+		// `envTarget` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EnvTarget) {
+			q = q.Arg("envTarget", opts[i].EnvTarget)
+		}
+	}
+	q = q.Arg("ctr", ctr)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Pytest projects visible from the client's cwd: its nearest enclosing project
+// plus projects at or below it. Paths are cwd-relative.
+func (r *Pytest) Projects(ctx context.Context, ws *Workspace) ([]string, error) { // pytest (../../../../../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("projects")
+	q = q.Arg("ws", ws)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The bundled pytest_otel library, as a Directory, for fully-manual integration
+// (the package is not yet published to PyPI).
+func (r *Pytest) PytestOtel() *Directory { // pytest (../../../../../../:0:0)
+	q := r.query.Select("pytestOtel")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Optional: Python version to use (e.g., "3.14", "3.13", "3.12")
+//
+// Only relevant when using the default base.
+func (r *Pytest) PythonVersion(ctx context.Context) (string, error) { // pytest (../../../../../../:0:0)
+	if r.pythonVersion != nil {
+		return *r.pythonVersion, nil
+	}
+	q := r.query.Select("pythonVersion")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Which Python tool to use. AUTO probes the container (prefers uv, else pip).
+func (r *Pytest) Runner(ctx context.Context) (PytestRunner, error) { // pytest (../../../../../../:0:0)
+	if r.runner != nil {
+		return *r.runner, nil
+	}
+	q := r.query.Select("runner")
+
+	var response PytestRunner
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Skip installing project dependencies and mounting the source code directory
+// before running `test`. Set true when the container already has both baked in.
+func (r *Pytest) SkipInstallDeps(ctx context.Context) (bool, error) { // pytest (../../../../../../:0:0)
+	if r.skipInstallDeps != nil {
+		return *r.skipInstallDeps, nil
+	}
+	q := r.query.Select("skipInstallDeps")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The source directory containing your Python project, taken from the
+// workspace at `sourcePath` in the constructor.
 func (r *Pytest) Source() *Directory { // pytest (../../../../../../:0:0)
 	q := r.query.Select("source")
 
@@ -90,45 +235,56 @@ func (r *Pytest) Source() *Directory { // pytest (../../../../../../:0:0)
 	}
 }
 
-// PytestTestOpts contains options for Pytest.Test
-type PytestTestOpts struct {
-	//
-	// Additional arguments to pass to pytest (e.g., ["-x", "--tb=short"])
-	//
-	Args []string // pytest (../../../../../../:0:0)
-	//
-	// Python version to use (e.g., "3.12", "3.11", "3.10")
-	//
-	Version string // pytest (../../../../../../:0:0)
-}
-
 // Test a Python project with pytest and OpenTelemetry tracing.
 //
-// This function automatically injects pytest_otel for test tracing visibility
-// in Dagger TUI and Dagger Cloud. No configuration required.
-//
-// The function will:
-// - Use the provided container or default to Alpine Linux with uv
-// - Install your project dependencies using uv sync
-// - Inject pytest_otel for automatic test tracing
-// - Run pytest with the specified Python version
-func (r *Pytest) Test(ctx context.Context, opts ...PytestTestOpts) error { // pytest (../../../../../../:0:0)
+// Builds a container from the base (custom or default), adds your source,
+// optionally installs dependencies, then dispatches to the uv or pip run path
+// (auto-detected unless `runner` is set explicitly).
+func (r *Pytest) Test(ctx context.Context) error { // pytest (../../../../../../:0:0)
 	if r.test != nil {
 		return nil
 	}
 	q := r.query.Select("test")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
-	}
 
 	return q.Execute(ctx)
+}
+
+// Test every Pytest project in the caller's cone. A strict ancestor is returned
+// by discovery for context but is not tested from a descendant cwd.
+func (r *Pytest) TestAll(ctx context.Context, ws *Workspace) error { // pytest (../../../../../../:0:0)
+	assertNotNil("ws", ws)
+	if r.testAll != nil {
+		return nil
+	}
+	q := r.query.Select("testAll")
+	q = q.Arg("ws", ws)
+
+	return q.Execute(ctx)
+}
+
+// Run pytest with pip on a container that already has source + deps. Installs
+// pytest_otel (forced pip), then `python -m pytest`. Returns the post-run container.
+func (r *Pytest) TestPip(ctr *Container) *Container { // pytest (../../../../../../:0:0)
+	assertNotNil("ctr", ctr)
+	q := r.query.Select("testPip")
+	q = q.Arg("ctr", ctr)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Run pytest with uv on a container that already has source + deps. Installs
+// pytest_otel (forced uv, into the project venv since `uv run` is venv-based),
+// then `uv run pytest`. Returns the post-run container.
+func (r *Pytest) TestUv(ctr *Container) *Container { // pytest (../../../../../../:0:0)
+	assertNotNil("ctr", ctr)
+	q := r.query.Select("testUv")
+	q = q.Arg("ctr", ctr)
+
+	return &Container{
+		query: q,
+	}
 }
 
 // AsNode returns this Pytest as a Node.
@@ -141,31 +297,180 @@ func (r *Pytest) AsNode() Node {
 
 // PytestOpts contains options for Query.Pytest
 type PytestOpts struct {
+	SourcePath string // pytest (../../../../../../:0:0)
+
+	Args []string // pytest (../../../../../../:0:0)
 	//
-	// Optional: The source directory containing your Python project
+	// Optional: Python version to use (e.g., "3.14", "3.13", "3.12")
 	//
-	Source *Directory // pytest (../../../../../../:0:0)
+	// Only relevant when using the default base.
 	//
-	// Optional: A custom container with Python and uv installed.
-	// If not provided, defaults to Alpine Linux with uv.
-	//
+	PythonVersion string // pytest (../../../../../../:0:0)
+
 	Container *Container // pytest (../../../../../../:0:0)
+
+	Runner PytestRunner // pytest (../../../../../../:0:0)
+	//
+	// Skip installing project dependencies and mounting the source code directory
+	// before running `test`. Set true when the container already has both baked in.
+	//
+	SkipInstallDeps bool // pytest (../../../../../../:0:0)
 }
 
-func (r *Query) Pytest(opts ...PytestOpts) *Pytest { // pytest (../../../../../../:0:0)
+func (r *Query) Pytest(ws *Workspace, opts ...PytestOpts) *Pytest { // pytest (../../../../../../:0:0)
+	assertNotNil("ws", ws)
 	q := r.query.Select("pytest")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
+		// `sourcePath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
+			q = q.Arg("sourcePath", opts[i].SourcePath)
+		}
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
+		// `pythonVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PythonVersion) {
+			q = q.Arg("pythonVersion", opts[i].PythonVersion)
 		}
 		// `container` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Container) {
 			q = q.Arg("container", opts[i].Container)
 		}
+		// `runner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Runner) {
+			q = q.Arg("runner", opts[i].Runner)
+		}
+		// `skipInstallDeps` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipInstallDeps) {
+			q = q.Arg("skipInstallDeps", opts[i].SkipInstallDeps)
+		}
 	}
+	q = q.Arg("ws", ws)
 
 	return &Pytest{
 		query: q,
 	}
 }
+
+type PytestEnvTarget string // pytest (../../../../../../:0:0)
+
+func (PytestEnvTarget) IsEnum() {}
+
+func (v PytestEnvTarget) Name() string {
+	switch v {
+	case PytestEnvTargetAuto:
+		return "AUTO"
+	case PytestEnvTargetVenv:
+		return "VENV"
+	case PytestEnvTargetSystem:
+		return "SYSTEM"
+	default:
+		return ""
+	}
+}
+
+func (v PytestEnvTarget) Value() string {
+	return string(v)
+}
+
+func (v *PytestEnvTarget) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *PytestEnvTarget) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "AUTO":
+		*v = PytestEnvTargetAuto
+	case "SYSTEM":
+		*v = PytestEnvTargetSystem
+	case "VENV":
+		*v = PytestEnvTargetVenv
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	PytestEnvTargetAuto PytestEnvTarget = "AUTO" // pytest (../../../../../../:0:0)
+
+	PytestEnvTargetVenv PytestEnvTarget = "VENV" // pytest (../../../../../../:0:0)
+
+	PytestEnvTargetSystem PytestEnvTarget = "SYSTEM" // pytest (../../../../../../:0:0)
+
+)
+
+type PytestRunner string // pytest (../../../../../../:0:0)
+
+func (PytestRunner) IsEnum() {}
+
+func (v PytestRunner) Name() string {
+	switch v {
+	case PytestRunnerPip:
+		return "PIP"
+	case PytestRunnerAuto:
+		return "AUTO"
+	case PytestRunnerUv:
+		return "UV"
+	default:
+		return ""
+	}
+}
+
+func (v PytestRunner) Value() string {
+	return string(v)
+}
+
+func (v *PytestRunner) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *PytestRunner) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "AUTO":
+		*v = PytestRunnerAuto
+	case "PIP":
+		*v = PytestRunnerPip
+	case "UV":
+		*v = PytestRunnerUv
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	PytestRunnerPip PytestRunner = "PIP" // pytest (../../../../../../:0:0)
+
+	PytestRunnerAuto PytestRunner = "AUTO" // pytest (../../../../../../:0:0)
+
+	PytestRunnerUv PytestRunner = "UV" // pytest (../../../../../../:0:0)
+
+)

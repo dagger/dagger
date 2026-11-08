@@ -18,6 +18,15 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
+const (
+	// portCheckInterval is how long a port health check waits between dials.
+	portCheckInterval = 100 * time.Millisecond
+
+	// portNotReadyWarnInterval is how often a port health check repeats the
+	// same "port not ready" warning.
+	portNotReadyWarnInterval = 10 * time.Second
+)
+
 type portHealthChecker struct {
 	bk    *engineutil.Client
 	ns    engineutil.Namespaced
@@ -58,10 +67,15 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 	}
 
 	for _, port := range ports {
+		// Dial at a short, steady interval rather than backing off: a dial
+		// into the service's own network namespace is cheap, and a longer
+		// interval only delays noticing a service that is already listening.
 		retry := backoff.NewExponentialBackOff(
-			backoff.WithInitialInterval(100*time.Millisecond),
-			backoff.WithMaxInterval(10*time.Second),
+			backoff.WithInitialInterval(portCheckInterval),
+			backoff.WithMaxInterval(portCheckInterval),
 		)
+		var lastWarned time.Time
+		var lastWarnErr string
 		endpoint, err := backoff.RetryWithData(func() (string, error) {
 			return engineutil.RunInNetNS(ctx, d.bk, d.ns, func() (string, error) {
 				// NB(vito): it's a _little_ silly to dial a UDP network to see that it's
@@ -72,7 +86,13 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 					net.JoinHostPort(d.host, fmt.Sprintf("%d", port.Port)),
 				)
 				if err != nil {
-					slog.Warn("port not ready", "error", err, "elapsed", retry.GetElapsedTime())
+					// Report a new error at once, and a repeated one at most
+					// every portNotReadyWarnInterval.
+					if err.Error() != lastWarnErr || time.Since(lastWarned) >= portNotReadyWarnInterval {
+						slog.Warn("port not ready", "error", err, "elapsed", retry.GetElapsedTime())
+						lastWarned = time.Now()
+						lastWarnErr = err.Error()
+					}
 					return "", err
 				}
 

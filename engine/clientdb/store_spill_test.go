@@ -113,14 +113,14 @@ func TestSpillFileReadIDs(t *testing.T) {
 	require.Equal(t, rows, got)
 
 	for _, row := range []Metric{rows[0], rows[255], rows[256], rows[899]} {
-		id, err := frameRowID(metricCodec.encode(row))
+		id, err := frameRowID(metricCodec.encode(nil, row))
 		require.NoError(t, err)
 		require.Equal(t, row.ID, id)
 	}
-	spanID, err := frameRowID(spanCodec.encode(Span{ID: 1234, SpanID: "x"}))
+	spanID, err := frameRowID(spanCodec.encode(nil, Span{ID: 1234, SpanID: "x"}))
 	require.NoError(t, err)
 	require.Equal(t, int64(1234), spanID)
-	logID, err := frameRowID(logCodec.encode(Log{ID: 5678, Body: []byte("x")}))
+	logID, err := frameRowID(logCodec.encode(nil, Log{ID: 5678, Body: []byte("x")}))
 	require.NoError(t, err)
 	require.Equal(t, int64(5678), logID)
 }

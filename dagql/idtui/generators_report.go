@@ -61,21 +61,22 @@ func (fe *frontendPretty) renderGeneratorNode(ctx tuist.Context, out TermOutput,
 	// defers to the failed children that explain it. Explicit error-origin
 	// links (a lazy-eval span that did the failing work elsewhere) render like
 	// a check's causes; otherwise the generator span itself carries the detail
-	// -- its changeset is forced inside the span (see runGeneratorLocally), so
-	// its rolled-up logs and error ARE the exec failure. Hunting descendants
+	// -- the CLI reports the exec error and its saved output on that span.
+	// Hunting descendants
 	// instead would repeat the generator's own row and surface runtime
 	// internals (e.g. exec.processRun's runc exit status).
 	if node.Failed() && !node.HasFailedChild() {
-		if origins := node.Span.ErrorOrigins.Spans(); len(origins) > 0 {
-			for _, origin := range origins {
-				if !origin.Received {
-					// Incremental --full may not have loaded the origin (or its
-					// logs); skip rather than render an empty stub.
-					continue
-				}
-				fe.renderCauseDetail(ctx, out, r, origin, depth+1)
+		renderedOrigin := false
+		for _, origin := range node.Span.ErrorOrigins.Spans() {
+			// A cached error can point to a successful transport span, or an
+			// origin that this trace did not receive. Neither carries the error.
+			if !origin.Received || !hasSpanErrorMessage(origin) {
+				continue
 			}
-		} else {
+			fe.renderCauseDetail(ctx, out, r, origin, depth+1)
+			renderedOrigin = true
+		}
+		if !renderedOrigin {
 			fe.renderSpanFailureDetail(out, r, node.Span, depth+1)
 		}
 	}

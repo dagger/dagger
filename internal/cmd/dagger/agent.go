@@ -36,7 +36,13 @@ var agentFocus string
 var agentCmd = &cobra.Command{
 	Use:   "agent [FILTERS] [OPTIONS]",
 	Short: "Compose your installed agent modules and drop into an interactive prompt.",
-	Args:  cobra.ArbitraryArgs,
+	Long: `Compose your installed agent modules and drop into an interactive prompt.
+
+If no LLM provider is configured, interactive setup runs automatically.
+Use /setup to connect an AI account, /model to choose a model and optionally
+save it as your default, and /logout to disconnect a saved account.
+Use /help for everyday commands and advanced options.`,
+	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
 		// Drop into the same interactive prompt mode as `dagger shell`, so keep
 		// completed conversation items in scrollback rather than GC'ing them
@@ -97,6 +103,17 @@ var agentCmd = &cobra.Command{
 				if agentListMode {
 					return listAgents(ctx, dag, args, cmd)
 				}
+				ready, err := ensureAgentLLMConfigured(ctx, traceID,
+					canPromptForInit(progress, stdinIsTTY, false),
+					engineClient.LLMConfigured,
+					func(ctx context.Context) (bool, error) {
+						return llmconfig.InteractiveSetup(ctx, Frontend)
+					},
+					(&shellCallHandler{}).reloadLLMConfig,
+				)
+				if err != nil || !ready {
+					return err
+				}
 				// Mint the agent before composing selected expertise onto its
 				// workspace-bound seed, then open the prompt on that runtime.
 				//
@@ -104,7 +121,6 @@ var agentCmd = &cobra.Command{
 				// anchors, not a destination base LLM, own the provider and workspace.
 				var llmID string
 				var initialAgent *core.Agent
-				var err error
 				if traceID == "" {
 					initialAgent, err = composeAgents(ctx, dag, args, cmd)
 					if err == nil {

@@ -199,6 +199,11 @@ func (*WorkspaceSourceDirectory) workspaceSource() {}
 
 type WorkspaceSourceGitRef struct {
 	Ref dagql.Result[*GitRef]
+	// Sparse holds the part of the tree module loading reads, so that reading
+	// it doesn't make the full checkout. It only serves reads faster: it's not
+	// part of the workspace's identity, and a workspace without one reads
+	// everything from its tree.
+	Sparse *GitSparseTree
 }
 
 func (*WorkspaceSourceGitRef) workspaceSource() {}
@@ -319,6 +324,25 @@ func (ws *Workspace) SourceDirectory() (dagql.ObjectResult[*Directory], bool) {
 		return ws.rootfs, true
 	}
 	return dagql.ObjectResult[*Directory]{}, false
+}
+
+// GitSparseTree returns the sparse tree of a Git workspace without edits.
+func (ws *Workspace) GitSparseTree() (*GitSparseTree, bool) {
+	src, ok := ws.Source().(*WorkspaceSourceGitRef)
+	if !ok || src.Sparse == nil {
+		return nil, false
+	}
+	return src.Sparse, true
+}
+
+// GitSparseTreeFS returns where to stat and read this workspace's tree
+// without making its checkout, if it has a sparse tree.
+func (ws *Workspace) GitSparseTreeFS() (*GitSparseTreeFS, bool) {
+	sparse, ok := ws.GitSparseTree()
+	if !ok {
+		return nil, false
+	}
+	return &GitSparseTreeFS{Sparse: sparse, Full: ws.rootfs}, true
 }
 
 func (ws *Workspace) SourceGitRef() (dagql.Result[*GitRef], bool) {
@@ -1018,16 +1042,30 @@ func attachWorkspaceSource(
 		if err != nil {
 			return nil, fmt.Errorf("attach workspace git ref source: %w", err)
 		}
+		var deps []dagql.AnyResult
 		switch ref := attached.(type) {
 		case dagql.Result[*GitRef]:
 			src.Ref = ref
-			return []dagql.AnyResult{ref}, nil
+			deps = append(deps, ref)
 		case dagql.ObjectResult[*GitRef]:
 			src.Ref = ref.Result
-			return []dagql.AnyResult{ref}, nil
+			deps = append(deps, ref)
 		default:
 			return nil, fmt.Errorf("attach workspace git ref source: unexpected result %T", attached)
 		}
+		if src.Sparse != nil && src.Sparse.Root.Self() != nil {
+			attachedRoot, err := attach(src.Sparse.Root)
+			if err != nil {
+				return nil, fmt.Errorf("attach workspace sparse tree: %w", err)
+			}
+			root, ok := attachedRoot.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach workspace sparse tree: unexpected result %T", attachedRoot)
+			}
+			src.Sparse.Root = root
+			deps = append(deps, root)
+		}
+		return deps, nil
 	case *WorkspaceSourceOverlay:
 		var deps []dagql.AnyResult
 		baseDeps, err := attachWorkspaceSource(attach, src.Base)

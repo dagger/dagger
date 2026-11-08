@@ -3756,7 +3756,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 	t.Run("Docker", func(ctx context.Context, t *testctx.T) {
 		out, err := sdkcore.NewQuery(c).Container().
 			Import(sdkcore.NewQuery(c).Container().From(alpineImage).WithEnvVariable("FOO", "bar").AsTarball(sdkcore.ContainerAsTarballOpts{
-				MediaTypes: sdkcore.ImageMediaTypesDockerMediaTypes,
+				MediaTypes: sdkcore.ImageMediaTypesDocker,
 			})).
 			WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -4556,7 +4556,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 			)).
 			Stderr(ctx)
 		require.NoError(t, err)
-		require.Contains(t, stderr, "insecureSkipTLSVerify cannot be used with HTTP registry protocol")
+		require.Contains(t, stderr, "insecureSkipTlsVerify cannot be used with HTTP registry protocol")
 	})
 }
 
@@ -4750,6 +4750,86 @@ func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testct
 			require.Contains(t, out, privCap)
 		}
 	}
+}
+
+func (ContainerSuite) TestTransparentHugePages(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// The exec's mode, as PR_GET_THP_DISABLE reads it: 0 for huge pages
+	// allowed, 3 for off except where the program asks (Linux 6.18+). Python
+	// runs as a child of the shell, so this also checks the mode is inherited.
+	mode := func(label string, opts ...sdkcore.ContainerWithExecOpts) string {
+		out, err := sdkcore.NewQuery(c).Container().From(pythonImage).
+			WithExec([]string{"sh", "-c", "python3 -c 'import ctypes; print(ctypes.CDLL(None).prctl(42, 0, 0, 0, 0))' # " + label}, opts...).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+	release, err := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"uname", "-r"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, "0", mode("opted in", sdkcore.ContainerWithExecOpts{TransparentHugePages: true}))
+	if kernelAtLeast(t, release, 6, 18) {
+		require.Equal(t, "3", mode("default"))
+	} else {
+		// Older kernels lack the mode, and the engine leaves execs alone.
+		require.Equal(t, "0", mode("default"))
+	}
+
+	// The setting isn't part of the exec's cache key: the same command with
+	// and without it runs once.
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithEnvVariable("RUN", rand.Text())
+	cmd := []string{"cat", "/proc/sys/kernel/random/uuid"}
+	first, err := ctr.WithExec(cmd, sdkcore.ContainerWithExecOpts{TransparentHugePages: true}).Stdout(ctx)
+	require.NoError(t, err)
+	second, err := ctr.WithExec(cmd).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+}
+
+// kernelAtLeast reports whether a kernel release such as "7.0.0-1014-aws" is
+// at least major.minor.
+func kernelAtLeast(t testing.TB, release string, major, minor int) bool {
+	var gotMajor, gotMinor int
+	_, err := fmt.Sscanf(strings.TrimSpace(release), "%d.%d", &gotMajor, &gotMinor)
+	require.NoError(t, err)
+	return gotMajor > major || gotMajor == major && gotMinor >= minor
+}
+
+// An exec whose process the kernel's OOM killer killed fails with an error
+// that says so, not only with its exit code.
+func (ContainerSuite) TestExecOOMKilled(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage)
+	out, err := ctr.
+		WithExec([]string{"sh", "-c", "test -f /sys/fs/cgroup/cgroup.controllers || echo no-cgroup-v2"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	if strings.TrimSpace(out) == "no-cgroup-v2" {
+		t.Skip("the engine's execs aren't on cgroup v2")
+	}
+
+	// Give a process a memory limit it exceeds, in a cgroup of its own below
+	// the exec's. A cgroup with children can't hold processes, so the exec's
+	// processes move to a sibling first.
+	_, err = ctr.
+		WithExec([]string{"sh", "-c", `
+cd /sys/fs/cgroup
+mkdir procs oom
+for pid in $(cat cgroup.procs); do echo $pid > procs/cgroup.procs 2>/dev/null || :; done
+set -e
+echo +memory > cgroup.subtree_control
+echo 16M > oom/memory.max
+sh -c 'echo $$ > /sys/fs/cgroup/oom/cgroup.procs && exec tail /dev/zero'
+`}, sdkcore.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		}).
+		Sync(ctx)
+	requireErrOut(t, err, "exit code: 137: out of memory")
 }
 
 func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context, t *testctx.T) {
@@ -5101,7 +5181,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			sdkcore.ImageLayerCompressionEstarGz,
+			sdkcore.ImageLayerCompressionEstargz,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
@@ -5279,11 +5359,11 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			sdkcore.ImageMediaTypesOcimediaTypes,
+			sdkcore.ImageMediaTypesOci,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			sdkcore.ImageMediaTypesDockerMediaTypes,
+			sdkcore.ImageMediaTypesDocker,
 			"application/vnd.docker.image.rootfs.diff.tar.gzip",
 		},
 	} {
@@ -5399,7 +5479,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), version: dockerVersion})
-		for _, mediaType := range []sdkcore.ImageMediaTypes{sdkcore.ImageMediaTypesOcimediaTypes, sdkcore.ImageMediaTypesDockerMediaTypes} {
+		for _, mediaType := range []sdkcore.ImageMediaTypes{sdkcore.ImageMediaTypesOci, sdkcore.ImageMediaTypesDocker} {
 			for _, compression := range []sdkcore.ImageLayerCompression{sdkcore.ImageLayerCompressionGzip, sdkcore.ImageLayerCompressionZstd, sdkcore.ImageLayerCompressionUncompressed} {
 				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(ctx context.Context, t *testctx.T) {
 					tmpdir := t.TempDir()

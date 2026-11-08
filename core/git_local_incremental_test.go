@@ -114,7 +114,7 @@ func TestIncrementalGitCheckout(t *testing.T) {
 			require.Equal(t, int64(42), outsideInfo.ModTime().Unix(), "never normalize through a replacement symlink")
 			rootInfo, err := os.Stat(dest)
 			require.NoError(t, err)
-			require.Equal(t, int64(1), rootInfo.ModTime().Unix())
+			require.Equal(t, gitCheckoutTime.Unix(), rootInfo.ModTime().Unix())
 			fresh := t.TempDir()
 			require.NoError(t, doLocalGitTreeCheckout(ctx, cli, localTreeCheckoutCLI(fresh), nil, source, &gitutil.Ref{SHA: child}))
 			require.Equal(t, localTreeSnapshot(t, fresh), localTreeSnapshot(t, dest))

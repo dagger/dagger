@@ -129,3 +129,30 @@ func TestGeneratorsPromoteLive(t *testing.T) {
 		t.Fatalf("generator span missing from host.RevealedSpans: %+v", host.RevealedSpans.Spans())
 	}
 }
+
+// A transport can succeed while the GraphQL operation fails. Its origin link
+// must not hide the generator's error or display a success row as its cause.
+func TestGeneratorReportKeepsErrorWithSuccessfulOrigin(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	id := prettyTestSpanID
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: id(1), TraceID: prettyTestTraceID(), Name: "generate", StartTime: start, EndTime: end, Final: true},
+		{ID: id(2), TraceID: prettyTestTraceID(), ParentID: id(1), Name: "generate-fail", GeneratorName: "generate-fail", StartTime: start, EndTime: end, Final: true, Status: sdktrace.Status{Code: codes.Error, Description: "exit code: 3"}},
+		{ID: id(3), TraceID: prettyTestTraceID(), ParentID: id(2), Name: "POST /query", StartTime: start, EndTime: end, Final: true, Status: sdktrace.Status{Code: codes.Ok}},
+	})
+	db.Spans.Map[id(2)].AddErrorOrigin(db.Spans.Map[id(3)])
+	db.SetPrimarySpan(id(1))
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+	var output bytes.Buffer
+	if err := fe.FinalRender(&output); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	if !strings.Contains(got, "exit code: 3") || strings.Contains(got, "POST /query") {
+		t.Fatalf("report lost the generator's own error: %s", got)
+	}
+}

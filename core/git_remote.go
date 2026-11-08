@@ -55,7 +55,10 @@ type RemoteGitRepository struct {
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
 
-const remoteGitLockPrefix = "git-remote::"
+const (
+	remoteGitLockPrefix         = "git-remote::"
+	remoteGitBloblessLockSuffix = "::blobless"
+)
 
 type RemoteGitRef struct {
 	*gitutil.Ref
@@ -89,7 +92,7 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("loaded git remote metadata", "cache_hit", hit, "cache_key", cacheKey)
+	slog.Debug("loaded git remote metadata", "cache_hit", hit, "cache_key", cacheKey)
 	return remote, nil
 }
 
@@ -390,6 +393,12 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 		"gc.autoDetach":          "false",
 		"maintenance.autoDetach": "false",
 	})}
+	if repo.Mirror.Self() != nil && repo.Mirror.Self().Blobless {
+		// Every fetch into a blobless mirror is an explicit one. Git would
+		// otherwise answer the check for a commit it doesn't have yet by
+		// fetching it with its whole history.
+		opts = append(opts, gitutil.WithEnv("GIT_NO_LAZY_FETCH=1"))
+	}
 	if sshAuthSock != "" {
 		opts = append(opts, gitutil.WithSSHAuthSock(sshAuthSock))
 	}
@@ -440,12 +449,26 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 		})
 	}
 
+	if repo.URL != nil && repo.URL.Scheme == gitutil.EntireProtocol {
+		if repo.AuthHeader.Self() != nil {
+			return nil, nil, fmt.Errorf("entire:// remotes take a token, not an HTTP authorization header")
+		}
+		configDir, cacheHome, err := entireHelperDirs(ctx, query)
+		if err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, gitutil.WithEntireHelperDirs(repo.URL, configDir, cacheHome))
+	}
+
 	if repo.AuthToken.Self() != nil {
 		password, err := repo.AuthToken.Self().Plaintext(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
-		opts = append(opts, gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername))
+		opts = append(opts,
+			gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername),
+			gitutil.WithEntireTokenAuth(repo.URL, string(password)),
+		)
 	} else if repo.AuthHeader.Self() != nil {
 		byteAuthHeader, err := repo.AuthHeader.Self().Plaintext(ctx)
 		if err != nil {
@@ -459,6 +482,71 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 	}))
 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
+}
+
+// GitRemoteEntireDir holds git-remote-entire's state under the engine root.
+// Nothing in it outlives the engine process: the engine removes it on start.
+const GitRemoteEntireDir = "git-remote-entire"
+
+// entireNodesCacheLimit bounds git-remote-entire's per-repository replica
+// cache. The helper never drops expired entries and rewrites the whole file on
+// every operation, so a bigger file costs every Entire git operation.
+const entireNodesCacheLimit = 5 << 20
+
+// entireHelperDirs returns the engine-wide directories git-remote-entire runs
+// with: an empty config directory, so it never finds a saved login, and the
+// cache home for its discovery cache, which holds no credentials and is shared
+// by every session.
+func entireHelperDirs(ctx context.Context, query *Query) (configDir, cacheHome string, _ error) {
+	root := query.EngineVolumeState().RootDir
+	if root == "" {
+		return "", "", fmt.Errorf("engine root is not configured")
+	}
+	base := filepath.Join(root, GitRemoteEntireDir)
+	configDir = filepath.Join(base, "config")
+	cacheHome = filepath.Join(base, "cache")
+	for _, dir := range []string{configDir, cacheHome} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return "", "", fmt.Errorf("create git-remote-entire directory: %w", err)
+		}
+	}
+	if err := trimEntireNodesCache(cacheHome, entireNodesCacheLimit); err != nil {
+		// Trimming only bounds a cache; the helper works with or without it.
+		slog.SpanLogger(ctx, InstrumentationLibrary).Warn("failed to trim git-remote-entire cache", "error", err)
+	}
+	return configDir, cacheHome, nil
+}
+
+// trimEntireNodesCache removes git-remote-entire's replica cache once it
+// exceeds limit bytes. The helper rebuilds entries from the cluster's
+// redirects as repositories are used again. The removal takes the lock the
+// helper holds for its read-modify-write, and skips the trim when a helper is
+// mid-update rather than waiting for it.
+func trimEntireNodesCache(cacheHome string, limit int64) error {
+	cache := filepath.Join(cacheHome, "entire", "nodes.json")
+	info, err := os.Stat(cache)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && info.Size() <= limit) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(cache+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	// Closing the lock file releases the lock.
+	defer lock.Close()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return nil
+		}
+		return fmt.Errorf("lock %s: %w", cache, err)
+	}
+	if err := os.Remove(cache); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(context.Context, *gitutil.GitCLI) error) (retErr error) {
@@ -610,6 +698,52 @@ func gitRefsToFetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []
 		}
 	}
 	return fetchRefs, nil
+}
+
+// withBloblessMirror returns this repository reading from its blobless mirror,
+// with the same remote and credentials.
+func (repo *RemoteGitRepository) withBloblessMirror(ctx context.Context, dag *dagql.Server) (*RemoteGitRepository, error) {
+	blobless := *repo
+	if err := dag.Select(ctx, dag.Root(), &blobless.Mirror, dagql.Selector{
+		Field: "_remoteGitMirror",
+		Args: []dagql.NamedInput{
+			{Name: "remoteURL", Value: dagql.String(repo.URL.Remote())},
+			{Name: "blobless", Value: dagql.Boolean(true)},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("failed to select blobless git mirror: %w", err)
+	}
+	return &blobless, nil
+}
+
+// fetchBlobs fetches file contents by object ID into a blobless mirror, in one
+// request, the way Git asks a promisor remote for a batch of them.
+func (repo *RemoteGitRepository) fetchBlobs(ctx context.Context, git *gitutil.GitCLI, oids io.Reader) (rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindIO, "git.mirror.fetch.blobs", wcprof.OpOpts{Ident: remoteGitLockPrefix + repo.URL.RedactedRemote(), WorkType: wcprof.WorkTypeEngine})
+	defer func() { op.EndErr(rerr) }()
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, repo.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+	_, err = git.RunWithStdin(ctx, oids,
+		"-c", "fetch.negotiationAlgorithm=noop",
+		"fetch", "origin",
+		"--no-tags",
+		"--no-write-fetch-head",
+		"--recurse-submodules=no",
+		"--filter=blob:none",
+		"--stdin",
+	)
+	return err
 }
 
 // fetch fetches refs into the mirror; retried says the remote refused a
@@ -861,7 +995,13 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx con
 		return err
 	}
 	locker := query.Locker()
+	if repo.Mirror.Self() == nil {
+		return fmt.Errorf("remote git mirror is nil for %s", repo.URL.Remote())
+	}
 	lockKey := remoteGitLockPrefix + repo.URL.Remote()
+	if repo.Mirror.Self().Blobless {
+		lockKey += remoteGitBloblessLockSuffix
+	}
 	// Traces and profiles are shared: identify the lock without the URL's
 	// userinfo, which may carry credentials.
 	lockIdent := remoteGitLockPrefix + repo.URL.RedactedRemote()
@@ -889,9 +1029,6 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx con
 	ctx, holdOp := wcprof.BeginOp(ctx, wcprof.OpKindIO, "git.mirror.locked", wcprof.OpOpts{Ident: lockIdent, WorkType: wcprof.WorkTypeEngine})
 	defer func() { holdOp.EndErr(retErr) }()
 
-	if repo.Mirror.Self() == nil {
-		return fmt.Errorf("remote git mirror is nil for %s", repo.URL.Remote())
-	}
 	if err := EnsureBackingSnapshot(ctx, repo.Mirror); err != nil {
 		return err
 	}
@@ -938,6 +1075,20 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(ctx con
 
 		if _, err := git.Run(ctx, "remote", "add", "origin", repo.URL.Remote()); err != nil {
 			return fmt.Errorf("failed add origin repo at %s: %w", dir, err)
+		}
+
+		if repo.Mirror.Self().Blobless {
+			// A remote that doesn't support filters ignores this and sends
+			// everything, so such a mirror simply holds it all.
+			for _, config := range [][2]string{
+				{"extensions.partialClone", "origin"},
+				{"remote.origin.promisor", "true"},
+				{"remote.origin.partialCloneFilter", "blob:none"},
+			} {
+				if _, err := git.Run(ctx, "config", config[0], config[1]); err != nil {
+					return fmt.Errorf("failed to configure blobless mirror at %s: %w", dir, err)
+				}
+			}
 		}
 	}
 

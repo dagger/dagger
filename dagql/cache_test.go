@@ -523,6 +523,86 @@ func TestSessionResultInstallSpanContextsSorted(t *testing.T) {
 	assert.DeepEqual(t, got, []trace.SpanContext{spanCtxA, spanCtxB})
 }
 
+// A result installed by several spans keeps each one once, and a span that
+// later owns the result's closure is a closure owner, whichever of the
+// result's install spans it is.
+func TestSessionResultInstallSpansMergeClosureOwnership(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	owner := &sharedResult{id: 1}
+	dep := &sharedResult{id: 2}
+	c.resultsByID[owner.id] = owner
+	c.resultsByID[dep.id] = dep
+	c.egraphMu.Lock()
+	err := c.addExplicitDependencyLocked(ctx, owner, dep, "test")
+	c.egraphMu.Unlock()
+	assert.NilError(t, err)
+
+	spanCtxs := make([]trace.SpanContext, 3)
+	for i := range spanCtxs {
+		spanCtxs[i] = trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: trace.TraceID{byte(i + 1)},
+			SpanID:  trace.SpanID{byte(i + 1)},
+		})
+		c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[i], false)
+	}
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", dep.id), []trace.SpanContext(nil))
+
+	// The first span and a later one come to own the closure.
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], true)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[0], true)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], false)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[0], false)
+
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", owner.id), spanCtxs)
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", dep.id),
+		[]trace.SpanContext{spanCtxs[0], spanCtxs[2]})
+}
+
+// A result installed by more spans than its slice keeps still reports each
+// span once, closure owners included, after its installs move to a map.
+func TestSessionResultInstallSpansBeyondTheSlice(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	owner := &sharedResult{id: 1}
+	dep := &sharedResult{id: 2}
+	c.resultsByID[owner.id] = owner
+	c.resultsByID[dep.id] = dep
+	c.egraphMu.Lock()
+	err := c.addExplicitDependencyLocked(ctx, owner, dep, "test")
+	c.egraphMu.Unlock()
+	assert.NilError(t, err)
+
+	n := maxFewInstallSpans + 3
+	spanCtxs := make([]trace.SpanContext, n)
+	for i := range spanCtxs {
+		spanCtxs[i] = trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID: trace.TraceID{byte(i + 1)},
+			SpanID:  trace.SpanID{byte(i + 1)},
+		})
+	}
+	for _, i := range []int{0, 1, 2, 1} {
+		c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[i], false)
+	}
+	// A span in the slice comes to own the closure, then the installs move.
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], true)
+	for i := 3; i < n; i++ {
+		c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[i], false)
+	}
+	// Spans already in the map merge there, and a later write doesn't demote.
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[n-1], true)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[n-1], false)
+	c.recordSessionResultInstallSpanLocked(ctx, "test-session", owner.id, spanCtxs[2], false)
+
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", owner.id), spanCtxs)
+	assert.DeepEqual(t, c.sessionResultInstallSpanContexts("test-session", dep.id),
+		[]trace.SpanContext{spanCtxs[2], spanCtxs[n-1]})
+}
+
 // Install-span lookups walk dep edges upward: a result sees its own direct
 // install spans plus closure-owning (module API call return) install spans of
 // results that transitively depend on it. Non-owning installs on ancestors
@@ -7960,6 +8040,71 @@ func TestCacheAddExplicitDependencyAcceptsSessionResourceDepsAndRecomputesAncest
 	assert.Assert(t, loadedShared != nil && loadedShared.id == topShared.id)
 
 	assert.NilError(t, c.ReleaseSession(otherCtx, "latedep-other"))
+	cacheTestReleaseSession(t, c, ctx)
+}
+
+func TestCacheAttachedDependencyResultsRequireEveryDepsSessionResources(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx := ContextWithCache(baseCtx, c)
+	srv := cacheTestServer(t)
+	first := cacheTestVolatileSessionResourceHandle("ATTACH_FIRST")
+	last := cacheTestVolatileSessionResourceHandle("ATTACH_LAST")
+
+	Fields[cacheTestQuery]{
+		NodeFunc("plain", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+			return NewResultForCurrentCall(ctx, &cacheTestObject{Value: 1})
+		}),
+		NodeFunc("manyDeps", func(ctx context.Context, self ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+			firstLeaf, err := cacheTestSessionResourceLeaf(ctx, first)
+			if err != nil {
+				return Result[*cacheTestObject]{}, err
+			}
+			var plain Result[*cacheTestObject]
+			if err := srv.Select(ctx, self, &plain, Selector{Field: "plain"}); err != nil {
+				return Result[*cacheTestObject]{}, err
+			}
+			lastLeaf, err := cacheTestSessionResourceLeaf(ctx, last)
+			if err != nil {
+				return Result[*cacheTestObject]{}, err
+			}
+			return NewResultForCurrentCall(ctx, &cacheTestObject{
+				Value:             2,
+				dependencyResults: []AnyResult{firstLeaf, plain, lastLeaf},
+			})
+		}),
+	}.Install(srv)
+	assert.NilError(t, c.BindSessionResource(ctx, "test-session", "dagql-test-client", first, "bound"))
+	assert.NilError(t, c.BindSessionResource(ctx, "test-session", "dagql-test-client", last, "bound"))
+
+	var res Result[*cacheTestObject]
+	assert.NilError(t, srv.Select(ctx, srv.Root(), &res, Selector{Field: "manyDeps"}))
+	shared := res.cacheSharedResult()
+	assert.Assert(t, shared != nil && shared.id != 0)
+	c.egraphMu.RLock()
+	requiresFirst := cacheTestSessionResourceSetContains(shared.requiredSessionResources, first)
+	requiresLast := cacheTestSessionResourceSetContains(shared.requiredSessionResources, last)
+	c.egraphMu.RUnlock()
+	assert.Assert(t, requiresFirst, "the first attached dep's session resource is missing")
+	assert.Assert(t, requiresLast, "the last attached dep's session resource is missing")
+	// The required set is computed once over all the deps, not once per dep.
+	assert.Equal(t, uint64(1), shared.requiredSessionResourcesGen.Load())
+	assertCacheRequiredSessionResourcesExact(t, c)
+
+	// A session that bound only one of the two is refused the result.
+	otherCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "attach-many-other-client",
+		SessionID: "attach-many-other",
+	})
+	otherCtx = ContextWithCache(otherCtx, c)
+	assert.NilError(t, c.BindSessionResource(otherCtx, "attach-many-other", "attach-many-other-client", first, "bound"))
+	_, err = c.LoadResultByResultID(otherCtx, "attach-many-other", srv, uint64(shared.id))
+	assert.ErrorContains(t, err, "has not bound the session resources this result requires")
+
+	assert.NilError(t, c.ReleaseSession(otherCtx, "attach-many-other"))
 	cacheTestReleaseSession(t, c, ctx)
 }
 

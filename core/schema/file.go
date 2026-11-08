@@ -46,6 +46,10 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	// asJson is asJSON in views before engine.IdentifierCasingVersion.
+	asJSONField := dagql.NodeFunc("asJson", s.asJSON).
+		Doc(`Parse the file contents as JSON.`)
+
 	dagql.Fields[*core.File]{
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
@@ -134,8 +138,8 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-beta.10")).
 			IsPersistable().
 			Doc(`Interpret this file as a Git bundle by lazily parsing its header.`),
-		dagql.NodeFunc("asJSON", s.asJSON).
-			Doc(`Parse the file contents as JSON.`),
+		casedField(asJSONField),
+		legacyField(asJSONField, "asJSON"),
 		dagql.NodeFunc("extract", s.extract).
 			View(AfterVersion("v1.0.0-0")).
 			IsPersistable().
@@ -146,6 +150,12 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				dagql.Arg("stripComponents").Doc(
 					`Remove this many leading elements from each entry's path, as tar --strip-components does.`,
 					`Entries with no more elements than this are skipped.`),
+				dagql.Arg("include").Doc(
+					`If set, only entries matching one of these glob patterns, or in a directory that does, are extracted (e.g., ["src/", "*.go"]).`,
+					`Patterns match entry paths after stripComponents is applied.`),
+				dagql.Arg("exclude").Doc(
+					`If set, entries matching one of these glob patterns, or in a directory that does, are not extracted (e.g., ["**/testdata", "**/*_test.go"]).`,
+					`Patterns match entry paths after stripComponents is applied.`),
 			),
 	}.Install(srv)
 }
@@ -464,7 +474,9 @@ func (s *fileSchema) asGitBundle(
 }
 
 type fileExtractArgs struct {
-	StripComponents int `default:"0"`
+	StripComponents int      `default:"0"`
+	Include         []string `default:"[]"`
+	Exclude         []string `default:"[]"`
 }
 
 func (s *fileSchema) extract(
@@ -474,6 +486,9 @@ func (s *fileSchema) extract(
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
 	if args.StripComponents < 0 {
 		return inst, fmt.Errorf("stripComponents must not be negative")
+	}
+	if err := core.ValidateExtractPatterns(args.Include, args.Exclude); err != nil {
+		return inst, err
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -486,6 +501,8 @@ func (s *fileSchema) extract(
 			LazyState:       core.NewLazyState(),
 			Source:          parent,
 			StripComponents: args.StripComponents,
+			Include:         args.Include,
+			Exclude:         args.Exclude,
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),

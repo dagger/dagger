@@ -45,7 +45,7 @@ func (GitSuite) TestGitRefWithCommitReftable(ctx context.Context, t *testctx.T) 
 	_, err = changes.ModifiedPaths(ctx)
 	require.NoError(t, err)
 	result := base.WithCommit(changes, "edit reftable source", workspaceCommitDate, "Author", "author@example.com")
-	parents, err := result.TargetCommit().ParentShas(ctx)
+	parents, err := result.TargetCommit().ParentSHAs(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{baseSHA}, parents)
 	contents, err := result.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("file.txt").Contents(ctx)
@@ -95,7 +95,7 @@ func (GitSuite) TestGitRefWithCommitGitDirSymlink(ctx context.Context, t *testct
 	_, err = changes.ModifiedPaths(ctx)
 	require.NoError(t, err)
 	result := base.WithCommit(changes, "edit symlinked hooks source", workspaceCommitDate, "Author", "author@example.com")
-	parents, err := result.TargetCommit().ParentShas(ctx)
+	parents, err := result.TargetCommit().ParentSHAs(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{baseSHA}, parents)
 	contents, err := result.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("file.txt").Contents(ctx)
@@ -240,7 +240,7 @@ func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
 			contents, err := next.Tree(core.GitRefTreeOpts{DiscardGitDir: true}).File("followup").Contents(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.name, contents)
-			parents, err := next.TargetCommit().ParentShas(ctx)
+			parents, err := next.TargetCommit().ParentSHAs(ctx)
 			require.NoError(t, err)
 			require.Equal(t, []string{got}, parents)
 		}()
@@ -271,7 +271,7 @@ func (GitSuite) TestGitRefWithCommitNative(ctx context.Context, t *testctx.T) {
 	require.NoError(t, group.Wait())
 	require.NotEqual(t, shas[0], shas[1])
 	for i, fork := range forks {
-		parents, err := fork.TargetCommit().ParentShas(ctx)
+		parents, err := fork.TargetCommit().ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{baseSHA}, parents)
 		branch, err := fork.AsRepository().Branch("main").CommitSHA(ctx)
@@ -370,9 +370,10 @@ func gitFullCheckoutOracle(ref *core.GitRef) *core.Directory {
 }
 
 // Manifests intentionally exclude times. Source-only Git checkouts normalize
-// every path to 1s. Container mounting/copying replaces the root's mtime even
-// for the legacy oracle, so inspect its descendants here; backend tests check
-// the snapshot root directly, before this consumer wrapper changes it.
+// every path to 1980-01-02T00:00:00Z. Container mounting/copying replaces the
+// root's mtime even for the legacy oracle, so inspect its descendants here;
+// backend tests check the snapshot root directly, before this consumer wrapper
+// changes it.
 func requireGitCheckoutTimes(ctx context.Context, t *testctx.T, inspector *core.Container, dir *core.Directory) {
 	t.Helper()
 	out, err := inspector.WithDirectory("/inspect", dir).
@@ -381,7 +382,7 @@ import os, stat
 bad = []
 def visit(path):
     s = os.lstat(path)
-    if path != '/inspect' and s.st_mtime_ns != 1000000000:
+    if path != '/inspect' and s.st_mtime_ns != 315619200000000000:
         bad.append((path, s.st_mtime_ns))
     if stat.S_ISDIR(s.st_mode):
         for name in sorted(os.listdir(path)):
@@ -876,7 +877,7 @@ func (GitSuite) TestGitRefWithCommit(ctx context.Context, t *testctx.T) {
 		}
 		parentSHA, err := ours.CommitSHA(ctx)
 		require.NoError(t, err)
-		parents, err := meta.ParentShas(ctx)
+		parents, err := meta.ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{parentSHA}, parents)
 	})

@@ -304,11 +304,8 @@ func normalizeMainFunctionRef(ctx context.Context, dag *dagger.Client, setting w
 	}, &dagger.Response{Data: &functions}); err != nil {
 		return "", err
 	}
-	want := gqlFieldName(value)
-	for _, fn := range functions.CurrentWorkspace.Module.Functions {
-		if fn == want {
-			return "dag://" + main + "/" + value, nil
-		}
+	if containsFieldName(functions.CurrentWorkspace.Module.Functions, value) {
+		return "dag://" + main + "/" + value, nil
 	}
 	return value, nil
 }

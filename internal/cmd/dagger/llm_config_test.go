@@ -156,10 +156,10 @@ func TestApplyWorkspaceClientParamsSendsLLMConfig(t *testing.T) {
 	require.Nil(t, params.LLMConfig)
 }
 
-// TestRemoveKeyClearsDefaultModel verifies that removing the default provider
+// TestLogoutClearsDefaultModel verifies that removing the default provider
 // also clears the default model. Otherwise the stale model stays bound to
 // whatever provider becomes default next and breaks every LLM call.
-func TestRemoveKeyClearsDefaultModel(t *testing.T) {
+func TestLogoutClearsDefaultModel(t *testing.T) {
 	useTempLLMConfig(t, &llmconfig.Config{
 		LLM: llmconfig.LLMConfig{
 			DefaultProvider: "anthropic",
@@ -170,10 +170,11 @@ func TestRemoveKeyClearsDefaultModel(t *testing.T) {
 		},
 	})
 
-	llmRemoveKeyCmd.SetOut(io.Discard)
-	if err := llmRemoveKeyCmd.RunE(llmRemoveKeyCmd, []string{"anthropic"}); err != nil {
-		t.Fatalf("remove-key failed: %v", err)
+	commands, _, reloads := newTestLLMConfigCommands(t, selectLogoutProvider(t, 0))
+	if err := runLLMConfigCommand(t, commands, ".logout"); err != nil {
+		t.Fatalf("logout failed: %v", err)
 	}
+	require.Equal(t, 1, *reloads)
 
 	loaded, err := llmconfig.Load()
 	if err != nil {

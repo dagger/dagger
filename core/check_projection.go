@@ -5,6 +5,10 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // runFunction runs the author function only when a check result is
@@ -44,12 +48,21 @@ func checkRunFieldName(function string) string {
 
 func (c *Check) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	var owned []dagql.AnyResult
-	if c.RemoteArtifact != nil {
-		deps, err := c.RemoteArtifact.AttachDependencyResults(ctx, nil, attach)
+	if c.Unaddressed.Self() != nil {
+		result, err := attach(c.Unaddressed)
 		if err != nil {
 			return nil, err
 		}
-		owned = append(owned, deps...)
+		c.Unaddressed = result.(dagql.ObjectResult[*Check])
+		owned = append(owned, result)
+	}
+	if c.RemoteArtifact.Self() != nil {
+		result, err := attach(c.RemoteArtifact)
+		if err != nil {
+			return nil, err
+		}
+		c.RemoteArtifact = result.(dagql.ObjectResult[*Artifact])
+		owned = append(owned, result)
 	}
 	if c.Receiver.Self() != nil {
 		result, err := attach(c.Receiver)
@@ -95,11 +108,27 @@ func (c *Check) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, 
 }
 
 func (c *Check) runRemote(ctx context.Context) error {
-	var outcome struct{ Pass bool }
-	if err := c.RemoteArtifact.QueryCloud(ctx, c.RemoteArguments, `... on Check { pass }`, &outcome); err != nil {
+	var outcome struct {
+		Sync struct {
+			Pass  bool
+			Error *Error
+		}
+	}
+	if err := queryArtifactCloud(ctx, c.RemoteArtifact, c.RemoteArguments, `... on Check { sync { pass error { message values { name value } } } }`, &outcome); err != nil {
+		// The remote engine reports the check's span. When the request
+		// fails, it may never run, so report the failed check here.
+		_, span := Tracer(ctx).Start(ctx, c.Address, trace.WithAttributes(
+			attribute.String(telemetry.CheckNameAttr, c.Address),
+			attribute.Bool(telemetryattrs.CheckCollectionItemAttr, c.RemoteArtifact.Self().IsCollectionItem()),
+			attribute.Bool(telemetry.CheckPassedAttr, false),
+		))
+		telemetry.EndWithCause(span, &err)
 		return err
 	}
-	if !outcome.Pass {
+	if outcome.Sync.Error != nil {
+		return outcome.Sync.Error
+	}
+	if !outcome.Sync.Pass {
 		return fmt.Errorf("check failed")
 	}
 	return nil

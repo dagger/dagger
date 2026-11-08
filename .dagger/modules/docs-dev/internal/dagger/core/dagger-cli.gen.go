@@ -194,10 +194,10 @@ func (r *DaggerCli) Publish(tag string, commit string, githubOrgName string, opt
 
 // DaggerCliPublishMetadataOpts contains options for DaggerCli.PublishMetadata
 type DaggerCliPublishMetadataOpts struct {
-	AwsEndpointURL string // dagger-cli (../../../../../../.dagger/modules/cli-dev/publish.go:111:2)
+	AwsEndpointURL string // dagger-cli (../../../../../../.dagger/modules/cli-dev/publish.go:115:2)
 }
 
-func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...DaggerCliPublishMetadataOpts) error { // dagger-cli (../../../../../../.dagger/modules/cli-dev/publish.go:103:1)
+func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...DaggerCliPublishMetadataOpts) error { // dagger-cli (../../../../../../.dagger/modules/cli-dev/publish.go:107:1)
 	assertNotNil("awsAccessKeyId", awsAccessKeyId)
 	assertNotNil("awsSecretAccessKey", awsSecretAccessKey)
 	if r.publishMetadata != nil {
@@ -220,7 +220,7 @@ func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret,
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *DaggerCli) ReleaseDryRun(ctx context.Context) error { // dagger-cli (../../../../../../.dagger/modules/cli-dev/publish.go:174:1)
+func (r *DaggerCli) ReleaseDryRun(ctx context.Context) error { // dagger-cli (../../../../../../.dagger/modules/cli-dev/publish.go:178:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}

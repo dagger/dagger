@@ -1464,88 +1464,6 @@ impl Node for ArtifactPath {
     }
 }
 #[derive(Clone)]
-pub struct ArtifactResult {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for ArtifactResult {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for ArtifactResult {
-    fn graphql_type() -> &'static str {
-        "ArtifactResult"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl ArtifactResult {
-    /// A unique identifier for this ArtifactResult.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The artifact that was evaluated.
-    pub fn artifact(&self) -> Artifact {
-        let query = self.selection.select("artifact");
-        Artifact {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// The evaluation failure, if any.
-    pub async fn error(&self) -> Result<Option<Error>, DaggerError> {
-        let query = self.selection.select("error");
-        let query = query.select("id");
-        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(id.map(|id| Error {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Error"),
-            graphql_client: self.graphql_client.clone(),
-        }))
-    }
-    /// The evaluated value, or null when evaluation failed.
-    pub async fn value(&self) -> Result<Option<NodeClient>, DaggerError> {
-        let query = self.selection.select("value");
-        let query = query.select("id");
-        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(id.map(|id| NodeClient {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("Node"),
-            graphql_client: self.graphql_client.clone(),
-        }))
-    }
-}
-impl Node for ArtifactResult {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
 pub struct Artifacts {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -1562,18 +1480,6 @@ pub struct ArtifactsPathDefinitionsOpts<'a> {
     /// Include the artifact type in each address scheme.
     #[builder(setter(into, strip_option), default)]
     pub type_assertion: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct ArtifactsValuesOpts {
-    /// Field arguments applied to each artifact, as a JSON object.
-    #[builder(setter(into, strip_option), default)]
-    pub arguments: Option<Json>,
-    /// Cancel remaining work after the first failure.
-    #[builder(setter(into, strip_option), default)]
-    pub fail_fast: Option<bool>,
-    /// Evaluate at most this many artifacts at once on this engine; the rest wait. Checks that scale out to cloud engines are not counted. 0 means no limit.
-    #[builder(setter(into, strip_option), default)]
-    pub max_concurrency: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsFilterDirectivesOpts {
@@ -1784,60 +1690,6 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Evaluate the selection in parallel, retaining each result and error.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn values(&self) -> Result<Vec<ArtifactResult>, DaggerError> {
-        let query = self.selection.select("values");
-        let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| ArtifactResult {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("ArtifactResult"),
-                graphql_client: self.graphql_client.clone(),
-            })
-            .collect())
-    }
-    /// Evaluate the selection in parallel, retaining each result and error.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn values_opts(
-        &self,
-        opts: ArtifactsValuesOpts,
-    ) -> Result<Vec<ArtifactResult>, DaggerError> {
-        let mut query = self.selection.select("values");
-        if let Some(fail_fast) = opts.fail_fast {
-            query = query.arg("failFast", fail_fast);
-        }
-        if let Some(arguments) = opts.arguments {
-            query = query.arg("arguments", arguments);
-        }
-        if let Some(max_concurrency) = opts.max_concurrency {
-            query = query.arg("maxConcurrency", max_concurrency);
-        }
-        let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| ArtifactResult {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("ArtifactResult"),
-                graphql_client: self.graphql_client.clone(),
-            })
-            .collect())
-    }
     /// List the modules represented in this selection without evaluating artifact values.
     pub async fn modules(&self) -> Result<Vec<Module>, DaggerError> {
         let query = self.selection.select("modules");
@@ -2007,23 +1859,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Combine two selections, keeping each workspace address once. Different addresses remain distinct even if they return the same object.
-    pub fn with_artifacts(&self, artifacts: impl IntoID<Id>) -> Artifacts {
-        let mut query = self.selection.select("withArtifacts");
-        query = query.arg_lazy(
-            "artifacts",
-            Box::new(move || {
-                let artifacts = artifacts.clone();
-                Box::pin(async move { artifacts.into_id().await.unwrap().quote() })
-            }),
-        );
-        Artifacts {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Remove artifacts selected by a DAG address.
+    /// Remove artifacts selected by a DAG address. Retain the collection view.
     pub fn without_uri(&self, uri: impl Into<String>) -> Artifacts {
         let mut query = self.selection.select("withoutUri");
         query = query.arg("uri", uri.into());
@@ -2113,7 +1949,7 @@ impl Artifacts {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Keep artifacts with any listed key in this dimension.
+    /// Keep artifacts with any listed key in this dimension. Replace collection references with matching subsets. Skip absent keys and leave the source view unchanged.
     pub fn filter_dimension_keys(
         &self,
         dimension: impl Into<String>,
@@ -2182,7 +2018,7 @@ impl Artifacts {
             })
             .collect())
     }
-    /// Enumerate complete artifacts without evaluating their values.
+    /// List artifact descriptions with their collection view. Discover collection keys without evaluating leaf values.
     pub async fn items(&self) -> Result<Vec<Artifact>, DaggerError> {
         let query = self.selection.select("items");
         let query = query.select("id");
@@ -2763,7 +2599,7 @@ impl Cloud {
     }
     /// The trace URL for the current session
     pub async fn trace_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("traceURL");
+        let query = self.selection.select("traceUrl");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -2879,21 +2715,6 @@ impl CollectionTypeDef {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
-    }
-    /// The type of batch operations, or null when there are none.
-    pub async fn batch_type(&self) -> Result<Option<TypeDef>, DaggerError> {
-        let query = self.selection.select("batchType");
-        let query = query.select("id");
-        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(id.map(|id| TypeDef {
-            proc: self.proc.clone(),
-            selection: query
-                .root()
-                .select("node")
-                .arg("id", &id.0)
-                .inline_fragment("TypeDef"),
-            graphql_client: self.graphql_client.clone(),
-        }))
     }
 }
 impl Node for CollectionTypeDef {
@@ -3339,6 +3160,11 @@ pub struct ContainerWithExecOpts<'a> {
     /// Content to write to the command's standard input. Example: "Hello world")
     #[builder(setter(into, strip_option), default)]
     pub stdin: Option<&'a str>,
+    /// Let the command, and the processes it starts, use the Linux kernel's transparent huge pages. Large-memory programs such as compilers can run faster with them, at some cost in memory.
+    /// Without this, a command gets huge pages only for memory its own program asks huge pages for, as on a host set to "madvise". That only matters on hosts with Linux 6.18 or later whose transparent huge pages are set to "always" (/sys/kernel/mm/transparent_hugepage/enabled, or a size under /sys/kernel/mm/transparent_hugepage/hugepages-*). With the usual default settings, this changes nothing. On older kernels, commands get what the host's settings give them, whether they set this or not.
+    /// It isn't part of the exec's cache key: an exec that differs from a cached one only in this setting reuses the cached result, whichever setting produced it.
+    #[builder(setter(into, strip_option), default)]
+    pub transparent_huge_pages: Option<bool>,
     /// Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
     #[builder(setter(into, strip_option), default)]
     pub use_entrypoint: Option<bool>,
@@ -3695,7 +3521,7 @@ impl Container {
             query = query.arg("protocol", protocol);
         }
         if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
-            query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
+            query = query.arg("insecureSkipTlsVerify", insecure_skip_tls_verify);
         }
         if let Some(no_lock) = opts.no_lock {
             query = query.arg("noLock", no_lock);
@@ -5399,6 +5225,9 @@ impl Container {
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
         }
+        if let Some(transparent_huge_pages) = opts.transparent_huge_pages {
+            query = query.arg("transparentHugePages", transparent_huge_pages);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -5551,7 +5380,7 @@ impl Container {
             query = query.arg("protocol", protocol);
         }
         if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
-            query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
+            query = query.arg("insecureSkipTlsVerify", insecure_skip_tls_verify);
         }
         if let Some(source_date_epoch) = opts.source_date_epoch {
             query = query.arg("sourceDateEpoch", source_date_epoch);
@@ -6221,7 +6050,7 @@ impl Container {
     /// Configures all GPUs available on the host to be accessible to this container.
     /// This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
     pub fn with_gpu(&self) -> Container {
-        let query = self.selection.select("withGPU");
+        let query = self.selection.select("withGpu");
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -6235,7 +6064,7 @@ impl Container {
     ///
     /// * `devices` - List of devices to be accessible to this container.
     pub fn experimental_with_gpu(&self, devices: Vec<impl Into<String>>) -> Container {
-        let mut query = self.selection.select("experimentalWithGPU");
+        let mut query = self.selection.select("experimentalWithGpu");
         query = query.arg(
             "devices",
             devices
@@ -6251,8 +6080,8 @@ impl Container {
     }
     /// Configures all available GPUs on the host to be accessible to this container.
     /// This currently works for Nvidia devices only.
-    pub fn experimental_with_all_gp_us(&self) -> Container {
-        let query = self.selection.select("experimentalWithAllGPUs");
+    pub fn experimental_with_all_gpus(&self) -> Container {
+        let query = self.selection.select("experimentalWithAllGpus");
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -6502,6 +6331,16 @@ impl CurrentModule {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The names the engine gives this module's own declarations: the same as its source's ModuleSource.naming, for module runtimes, which have no ModuleSource.
+    /// It answers for the module under its own name (ModuleSource.moduleName), by the naming rules of the version the module is named by. A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.
+    pub fn naming(&self) -> ModuleNaming {
+        let query = self.selection.select("naming");
+        ModuleNaming {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
     pub fn source(&self) -> Directory {
@@ -9127,7 +8966,15 @@ pub struct FileExportOpts {
     pub allow_parent_dir_path: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct FileExtractOpts {
+pub struct FileExtractOpts<'a> {
+    /// If set, entries matching one of these glob patterns, or in a directory that does, are not extracted (e.g., ["**/testdata", "**/*_test.go"]).
+    /// Patterns match entry paths after stripComponents is applied.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    /// If set, only entries matching one of these glob patterns, or in a directory that does, are extracted (e.g., ["src/", "*.go"]).
+    /// Patterns match entry paths after stripComponents is applied.
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
     /// Remove this many leading elements from each entry's path, as tar --strip-components does.
     /// Entries with no more elements than this are skipped.
     #[builder(setter(into, strip_option), default)]
@@ -9478,7 +9325,7 @@ impl File {
     }
     /// Parse the file contents as JSON.
     pub fn as_json(&self) -> JsonValue {
-        let query = self.selection.select("asJSON");
+        let query = self.selection.select("asJson");
         JsonValue {
             proc: self.proc.clone(),
             selection: query,
@@ -9507,10 +9354,16 @@ impl File {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn extract_opts(&self, opts: FileExtractOpts) -> Directory {
+    pub fn extract_opts<'a>(&self, opts: FileExtractOpts<'a>) -> Directory {
         let mut query = self.selection.select("extract");
         if let Some(strip_components) = opts.strip_components {
             query = query.arg("stripComponents", strip_components);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
         }
         Directory {
             proc: self.proc.clone(),
@@ -10235,7 +10088,7 @@ impl GeneratedCode {
     }
     /// Set the list of paths to mark generated in version control.
     pub fn with_vcs_generated_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
-        let mut query = self.selection.select("withVCSGeneratedPaths");
+        let mut query = self.selection.select("withVcsGeneratedPaths");
         query = query.arg(
             "paths",
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
@@ -10248,7 +10101,7 @@ impl GeneratedCode {
     }
     /// Set the list of paths to ignore in version control.
     pub fn with_vcs_ignored_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
-        let mut query = self.selection.select("withVCSIgnoredPaths");
+        let mut query = self.selection.select("withVcsIgnoredPaths");
         query = query.arg(
             "paths",
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
@@ -10409,6 +10262,11 @@ impl GitBundle {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Commits that must already exist wherever this bundle is applied.
+    pub async fn prerequisite_shas(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("prerequisiteShas");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Bundle format version (2 or 3).
     pub async fn version(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("version");
@@ -10435,11 +10293,6 @@ impl GitBundle {
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
-    }
-    /// Commits that must already exist wherever this bundle is applied.
-    pub async fn prerequisite_sh_as(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("prerequisiteSHAs");
-        query.execute(self.graphql_client.clone()).await
     }
 }
 impl Node for GitBundle {
@@ -10734,7 +10587,7 @@ impl GitCommit {
     /// The ID of the commit's Git tree object.
     /// Commits with identical trees have identical contents and file modes.
     pub async fn tree_sha(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("treeSHA");
+        let query = self.selection.select("treeSha");
         query.execute(self.graphql_client.clone()).await
     }
     /// Git author date, in RFC3339 format.
@@ -10830,14 +10683,14 @@ impl GitPushResult {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The previous remote object ID; empty when the ref was created.
+    pub async fn previous_sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("previousSha");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The fully qualified remote ref.
     pub async fn r#ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("ref");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The previous remote object ID; empty when the ref was created.
-    pub async fn previous_sha(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("previousSHA");
         query.execute(self.graphql_client.clone()).await
     }
     /// The object ID pushed to the remote.
@@ -10990,7 +10843,7 @@ impl GitRef {
             query = query.arg("branch", branch);
         }
         if let Some(expected_remote_sha) = opts.expected_remote_sha {
-            query = query.arg("expectedRemoteSHA", expected_remote_sha);
+            query = query.arg("expectedRemoteSha", expected_remote_sha);
         }
         GitPushResult {
             proc: self.proc.clone(),
@@ -11009,7 +10862,7 @@ impl GitRef {
     }
     /// The resolved commit SHA at this ref.
     pub async fn commit_sha(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("commitSHA");
+        let query = self.selection.select("commitSha");
         query.execute(self.graphql_client.clone()).await
     }
     /// The filesystem tree at this ref.
@@ -13600,7 +13453,7 @@ impl Llm {
     /// * `name` - The name of the MCP server
     /// * `service` - The MCP service to run and communicate with over stdio
     pub fn with_mcp_server(&self, name: impl Into<String>, service: impl IntoID<Id>) -> Llm {
-        let mut query = self.selection.select("withMCPServer");
+        let mut query = self.selection.select("withMcpServer");
         query = query.arg("name", name.into());
         query = query.arg_lazy(
             "service",
@@ -14601,7 +14454,7 @@ impl Module {
     /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
     /// Note: this is in the context of a module, so some core types may be hidden.
     pub fn introspection_schema_json(&self) -> File {
-        let query = self.selection.select("introspectionSchemaJSON");
+        let query = self.selection.select("introspectionSchemaJson");
         File {
             proc: self.proc.clone(),
             selection: query,
@@ -14909,10 +14762,151 @@ impl Node for ModuleConfigClient {
     }
 }
 #[derive(Clone)]
+pub struct ModuleNaming {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for ModuleNaming {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ModuleNaming {
+    fn graphql_type() -> &'static str {
+        "ModuleNaming"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl ModuleNaming {
+    /// A unique identifier for this ModuleNaming.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The normalized engine version whose naming rules name the module.
+    pub async fn version(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("version");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The module's name, which namespaces its types.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The module's original name, which its main object and namespaced type names are spelled after. It differs from name when the module is loaded under another name, as a dependency alias.
+    pub async fn original_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("originalName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The schema names of objects, interfaces and enums this module declares, as the engine installs them: namespaced under the module's name, in input order.
+    /// A name is prefixed with the module's name unless it already starts with the module's name on a word boundary. With the engine's identifier naming rules: HttpClient in module my-mod is MyModHTTPClient; Postman in module post is PostPostman, while PostMan stays PostMan; K8STools in module k8s-tools is K8sTools, the module's own name. With the legacy strcase rules, HttpClient in module my-mod is MyModHttpClient.
+    /// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The type names as the module's source declares them.
+    pub async fn type_names(
+        &self,
+        names: Vec<impl Into<String>>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("typeNames");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The schema names of functions, object fields and function arguments this module declares, including interface functions and their arguments, in input order.
+    /// With the engine's identifier naming rules, acronyms are written like words: getURL is getUrl, baseURL is baseUrl, HTTPClient is httpClient. With the legacy strcase rules, HTTPClient is httpclient and e2eTest is e2ETest.
+    /// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The function, field and argument names as the module's source declares them.
+    pub async fn field_names(
+        &self,
+        names: Vec<impl Into<String>>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("fieldNames");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The schema names of enum members this module declares, in input order: SCREAMING_SNAKE_CASE.
+    /// A name already written in GraphQL's enum member convention (HTTP2, P_256) is kept as it is. With the engine's identifier naming rules, Arm64 is ARM64 and GitHub is GITHUB; with the legacy strcase rules, Arm64 is ARM_64.
+    /// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The enum member names as the module's source declares them.
+    pub async fn enum_member_names(
+        &self,
+        names: Vec<impl Into<String>>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("enumMemberNames");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Which of the candidates, the names of objects this module declares, the engine takes as the module's main object; null if none.
+    /// The engine finds the main object by the module's name, in any casing: the first candidate, in input order, whose name normalizes to the same type name as the module's, or is spelled as that type name already (K8STools for module k8s-tools, by either rules: strcase spells k8s-tools K8STools, though it would normalize K8STools again to K8Stools). Failing that, with the engine's identifier naming rules only, the only candidate spelled the same once lowercased without word boundaries (Sha256Sum for module sha256sum); several such candidates are ambiguous, and give null.
+    /// Errors on a name the module's naming rules can't parse (non-ASCII, no letters or digits, or over 256 bytes). The legacy rules name anything.
+    ///
+    /// # Arguments
+    ///
+    /// * `candidates` - The object names as the module's source declares them.
+    pub async fn main_object(
+        &self,
+        candidates: Vec<impl Into<String>>,
+    ) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("mainObject");
+        query = query.arg(
+            "candidates",
+            candidates
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ModuleNaming {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct ModuleSource {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleSourceClientSchemaIntrospectionJsonOpts<'a> {
+    /// The engine version of the client the schema is generated for, e.g. the engineVersion of the module that depends on this one: core is described as that client sees it, capped at this engine's version.
+    /// This module is still loaded at the engine version it declares, and so named by its own naming rules, as the engine serves it to such a client. Defaults to this module's own engine version.
+    /// Use this rather than withEngineVersion, which makes this module declare another version and so changes its names.
+    #[builder(setter(into, strip_option), default)]
+    pub client_version: Option<&'a str>,
 }
 impl IntoID<Id> for ModuleSource {
     fn into_id(
@@ -15026,7 +15020,7 @@ impl ModuleSource {
     ///
     /// * `source` - The SDK source to set.
     pub fn with_sdk(&self, source: impl Into<String>) -> ModuleSource {
-        let mut query = self.selection.select("withSDK");
+        let mut query = self.selection.select("withSdk");
         query = query.arg("source", source.into());
         ModuleSource {
             proc: self.proc.clone(),
@@ -15305,7 +15299,7 @@ impl ModuleSource {
     /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
     /// Note: this is in the context of a module, so some core types may be hidden.
     pub fn introspection_schema_json(&self) -> File {
-        let query = self.selection.select("introspectionSchemaJSON");
+        let query = self.selection.select("introspectionSchemaJson");
         File {
             proc: self.proc.clone(),
             selection: query,
@@ -15313,9 +15307,33 @@ impl ModuleSource {
         }
     }
     /// The client-facing introspection schema JSON file for this module source.
-    /// This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+    /// This is the schema consumed by client codegen: unlike introspectionSchemaJson (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn client_schema_introspection_json(&self) -> File {
-        let query = self.selection.select("clientSchemaIntrospectionJSON");
+        let query = self.selection.select("clientSchemaIntrospectionJson");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The client-facing introspection schema JSON file for this module source.
+    /// This is the schema consumed by client codegen: unlike introspectionSchemaJson (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn client_schema_introspection_json_opts<'a>(
+        &self,
+        opts: ModuleSourceClientSchemaIntrospectionJsonOpts<'a>,
+    ) -> File {
+        let mut query = self.selection.select("clientSchemaIntrospectionJson");
+        if let Some(client_version) = opts.client_version {
+            query = query.arg("clientVersion", client_version);
+        }
         File {
             proc: self.proc.clone(),
             selection: query,
@@ -15343,12 +15361,12 @@ impl ModuleSource {
     }
     /// The URL to the source's git repo in a web browser. Only valid for git sources.
     pub async fn html_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("htmlURL");
+        let query = self.selection.select("htmlUrl");
         query.execute(self.graphql_client.clone()).await
     }
     /// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
     pub async fn html_repo_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("htmlRepoURL");
+        let query = self.selection.select("htmlRepoUrl");
         query.execute(self.graphql_client.clone()).await
     }
     /// The specified version of the git repo this source points to.
@@ -15543,6 +15561,18 @@ impl ModuleSource {
         let query = self.selection.select("kind");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The names the engine gives this module's own declarations, by the naming rules of the version the module is named by: its engine version, capped at the engine's own.
+    /// Modules declaring a version before the identifier casing cut get the legacy strcase names; later ones get the engine's identifier naming rules.
+    /// For SDK codegen, which must reproduce these names before the module is loaded: this reads only the source's name, original name and engine version, so it answers before the module's entrypoint is generated.
+    /// It answers for the module under its own name (moduleName). A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.
+    pub fn naming(&self) -> ModuleNaming {
+        let query = self.selection.select("naming");
+        ModuleNaming {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 impl Node for ModuleSource {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
@@ -15573,6 +15603,179 @@ impl Syncer for ModuleSource {
                 graphql_client,
             })
         }
+    }
+}
+#[derive(Clone)]
+pub struct Naming {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct NamingFormatIdentifiersOpts {
+    /// How to write acronyms and terms where a word starts with a capital.
+    #[builder(setter(into, strip_option), default)]
+    pub acronyms: Option<AcronymStyle>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct NamingModuleOpts<'a> {
+    /// The module's original name, when it's loaded under another (as a dependency alias): its main object and namespaced type names are spelled after it. Defaults to name.
+    #[builder(setter(into, strip_option), default)]
+    pub original_name: Option<&'a str>,
+}
+impl IntoID<Id> for Naming {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Naming {
+    fn graphql_type() -> &'static str {
+        "Naming"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Naming {
+    /// A unique identifier for this Naming.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The normalized engine version these rules answer for.
+    pub async fn version(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("version");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Parse a name in any casing into words.
+    /// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name to parse.
+    pub fn identifier(&self, name: impl Into<String>) -> Identifier {
+        let mut query = self.selection.select("identifier");
+        query = query.arg("name", name.into());
+        Identifier {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Format many names at once, for codegen. Returns them in input order.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The names to format, in any casing.
+    /// * `casing` - The casing to format the names in.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn format_identifiers(
+        &self,
+        names: Vec<impl Into<String>>,
+        casing: Casing,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("formatIdentifiers");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query = query.arg("casing", casing);
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Format many names at once, for codegen. Returns them in input order.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - The names to format, in any casing.
+    /// * `casing` - The casing to format the names in.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn format_identifiers_opts(
+        &self,
+        names: Vec<impl Into<String>>,
+        casing: Casing,
+        opts: NamingFormatIdentifiersOpts,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("formatIdentifiers");
+        query = query.arg(
+            "names",
+            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query = query.arg("casing", casing);
+        if let Some(acronyms) = opts.acronyms {
+            query = query.arg("acronyms", acronyms);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The acronyms and terms used to parse and format identifiers.
+    pub async fn dictionary(&self) -> Result<Vec<NamingTerm>, DaggerError> {
+        let query = self.selection.select("dictionary");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| NamingTerm {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("NamingTerm"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// The names the engine gives the declarations of a module named by these rules.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The module's name, which namespaces its types.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module(&self, name: impl Into<String>) -> ModuleNaming {
+        let mut query = self.selection.select("module");
+        query = query.arg("name", name.into());
+        ModuleNaming {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The names the engine gives the declarations of a module named by these rules.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The module's name, which namespaces its types.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: NamingModuleOpts<'a>,
+    ) -> ModuleNaming {
+        let mut query = self.selection.select("module");
+        query = query.arg("name", name.into());
+        if let Some(original_name) = opts.original_name {
+            query = query.arg("originalName", original_name);
+        }
+        ModuleNaming {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for Naming {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
     }
 }
 #[derive(Clone)]
@@ -15974,11 +16177,8 @@ pub struct QueryLlmOpts<'a> {
     pub provider: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryFormatIdentifiersOpts<'a> {
-    /// How to write acronyms and terms where a word starts with a capital.
-    #[builder(setter(into, strip_option), default)]
-    pub acronyms: Option<AcronymStyle>,
-    /// The engine version whose naming dictionary to parse the names with, e.g. the __schemaVersion of a schema being generated. Defaults to the caller's engine version.
+pub struct QueryNamingOpts<'a> {
+    /// The engine version to answer for, e.g. the engine version a module declares. Defaults to the caller's. Normalized as a module's is: a version past the engine's is capped at the engine's own.
     #[builder(setter(into, strip_option), default)]
     pub version: Option<&'a str>,
 }
@@ -16830,84 +17030,34 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Parse a name in any casing into words.
-    /// Known acronyms and terms come from the naming dictionary; everything else falls back to the case heuristic. Errors on non-ASCII input, input with no letters or digits, or input over 256 bytes.
+    /// The engine's identifier naming rules at an engine version.
     ///
     /// # Arguments
     ///
-    /// * `name` - The name to parse.
-    pub fn identifier(&self, name: impl Into<String>) -> Identifier {
-        let mut query = self.selection.select("identifier");
-        query = query.arg("name", name.into());
-        Identifier {
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn naming(&self) -> Naming {
+        let query = self.selection.select("naming");
+        Naming {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Format many names at once, for codegen. Returns them in input order.
+    /// The engine's identifier naming rules at an engine version.
     ///
     /// # Arguments
     ///
-    /// * `names` - The names to format, in any casing.
-    /// * `casing` - The casing to format the names in.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn format_identifiers(
-        &self,
-        names: Vec<impl Into<String>>,
-        casing: Casing,
-    ) -> Result<Vec<String>, DaggerError> {
-        let mut query = self.selection.select("formatIdentifiers");
-        query = query.arg(
-            "names",
-            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
-        );
-        query = query.arg("casing", casing);
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Format many names at once, for codegen. Returns them in input order.
-    ///
-    /// # Arguments
-    ///
-    /// * `names` - The names to format, in any casing.
-    /// * `casing` - The casing to format the names in.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn format_identifiers_opts<'a>(
-        &self,
-        names: Vec<impl Into<String>>,
-        casing: Casing,
-        opts: QueryFormatIdentifiersOpts<'a>,
-    ) -> Result<Vec<String>, DaggerError> {
-        let mut query = self.selection.select("formatIdentifiers");
-        query = query.arg(
-            "names",
-            names.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
-        );
-        query = query.arg("casing", casing);
-        if let Some(acronyms) = opts.acronyms {
-            query = query.arg("acronyms", acronyms);
-        }
+    pub fn naming_opts<'a>(&self, opts: QueryNamingOpts<'a>) -> Naming {
+        let mut query = self.selection.select("naming");
         if let Some(version) = opts.version {
             query = query.arg("version", version);
         }
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The acronyms and terms used to parse and format identifiers.
-    pub async fn naming_dictionary(&self) -> Result<Vec<NamingTerm>, DaggerError> {
-        let query = self.selection.select("namingDictionary");
-        let query = query.select("id");
-        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
-        Ok(ids
-            .into_iter()
-            .map(|id| NamingTerm {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query()
-                    .select("node")
-                    .arg("id", &id.0)
-                    .inline_fragment("NamingTerm"),
-                graphql_client: self.graphql_client.clone(),
-            })
-            .collect())
+        Naming {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Load a GraphQL introspection schema for merging.
     ///
@@ -20030,7 +20180,7 @@ impl Workspace {
     /// * `r#ref` - SDK module reference to install.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_sdk(&self, r#ref: impl Into<String>) -> Workspace {
-        let mut query = self.selection.select("withSDK");
+        let mut query = self.selection.select("withSdk");
         query = query.arg("ref", r#ref.into());
         Workspace {
             proc: self.proc.clone(),
@@ -20049,7 +20199,7 @@ impl Workspace {
         r#ref: impl Into<String>,
         opts: WorkspaceWithSdkOpts<'a>,
     ) -> Workspace {
-        let mut query = self.selection.select("withSDK");
+        let mut query = self.selection.select("withSdk");
         query = query.arg("ref", r#ref.into());
         if let Some(name) = opts.name {
             query = query.arg("name", name);
@@ -20073,7 +20223,7 @@ impl Workspace {
     /// * `name` - Name of the installed SDK entry to remove.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_sdk(&self, name: impl Into<String>) -> Workspace {
-        let mut query = self.selection.select("withoutSDK");
+        let mut query = self.selection.select("withoutSdk");
         query = query.arg("name", name.into());
         Workspace {
             proc: self.proc.clone(),
@@ -20092,7 +20242,7 @@ impl Workspace {
         name: impl Into<String>,
         opts: WorkspaceWithoutSdkOpts,
     ) -> Workspace {
-        let mut query = self.selection.select("withoutSDK");
+        let mut query = self.selection.select("withoutSdk");
         query = query.arg("name", name.into());
         if let Some(here) = opts.here {
             query = query.arg("here", here);
@@ -21341,6 +21491,35 @@ impl WorkspaceSdk {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The value a setting records in this SDK's scope settings, as a native JSON value.
+    /// Reads [sdks.<name>.scopes."<scope>".settings] from the workspace config, in the scope whose key resolves to path. The setting key is matched without regard to case.
+    /// Null when no scope resolves to path, or the scope records no such setting. Fails when the config is invalid, path escapes the workspace root, key matches several recorded settings, or the value cannot be represented as JSON.
+    /// Fails when this SDK is no longer installed in the workspace config, even if Workspace.sdk returned it earlier.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Scope path, relative to the workspace cwd or absolute from the workspace root.
+    /// * `key` - Setting name, matched without regard to case.
+    pub async fn scope_setting(
+        &self,
+        path: impl Into<String>,
+        key: impl Into<String>,
+    ) -> Result<Option<JsonValue>, DaggerError> {
+        let mut query = self.selection.select("scopeSetting");
+        query = query.arg("path", path.into());
+        query = query.arg("key", key.into());
+        let query = query.select("id");
+        let id: Option<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(id.map(|id| JsonValue {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("JSONValue"),
+            graphql_client: self.graphql_client.clone(),
+        }))
+    }
     /// The user-facing SDK name.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -21516,11 +21695,11 @@ pub enum FileType {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum FunctionCachePolicy {
-    #[serde(rename = "Default")]
+    #[serde(rename = "DEFAULT")]
     Default,
-    #[serde(rename = "Never")]
+    #[serde(rename = "NEVER")]
     Never,
-    #[serde(rename = "PerSession")]
+    #[serde(rename = "PER_SESSION")]
     PerSession,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -21545,27 +21724,21 @@ pub enum IdentifierWordKind {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageLayerCompression {
-    #[serde(rename = "EStarGZ")]
-    EStarGz,
     #[serde(rename = "ESTARGZ")]
     Estargz,
-    #[serde(rename = "Gzip")]
+    #[serde(rename = "GZIP")]
     Gzip,
-    #[serde(rename = "Uncompressed")]
+    #[serde(rename = "UNCOMPRESSED")]
     Uncompressed,
-    #[serde(rename = "Zstd")]
+    #[serde(rename = "ZSTD")]
     Zstd,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageMediaTypes {
     #[serde(rename = "DOCKER")]
     Docker,
-    #[serde(rename = "DockerMediaTypes")]
-    DockerMediaTypes,
     #[serde(rename = "OCI")]
     Oci,
-    #[serde(rename = "OCIMediaTypes")]
-    OciMediaTypes,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum LlmContentBlockKind {

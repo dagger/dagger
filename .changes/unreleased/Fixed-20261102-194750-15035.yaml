@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Listing a collection's items under an ancestor with `+cache="never"` no longer fails with `does not contain key "…" in the current subset` when the ancestor returns different keys on another run. Items are now read from the run whose keys were listed.
+time: 2026-11-02T19:47:49Z
+custom:
+  Author: sipsma
+  PR: "15035"

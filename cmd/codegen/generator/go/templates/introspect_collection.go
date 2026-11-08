@@ -8,7 +8,7 @@ import (
 )
 
 // Self-call bindings must use the same collection schema as engine clients.
-func introspectCollection(spec *parsedObjectType) (*introspection.Type, *introspection.Type, error) {
+func introspectCollection(spec *parsedObjectType) (*introspection.Type, error) {
 	var keys *fieldSpec
 	var get *funcTypeSpec
 	for _, field := range spec.fields {
@@ -32,11 +32,11 @@ func introspectCollection(spec *parsedObjectType) (*introspection.Type, *introsp
 		}
 	}
 	if keys == nil || get == nil {
-		return nil, nil, fmt.Errorf("collection %q requires a stored keys field and a get function", spec.name)
+		return nil, fmt.Errorf("collection %q requires a stored keys field and a get function", spec.name)
 	}
 	lookup := introspectMethod(get)
 	if len(lookup.Args) != 1 {
-		return nil, nil, fmt.Errorf("collection %q get function requires one argument", spec.name)
+		return nil, fmt.Errorf("collection %q get function requires one argument", spec.name)
 	}
 	lookup.Name = "get"
 	lookup.Args[0].Name = "key"
@@ -51,21 +51,11 @@ func introspectCollection(spec *parsedObjectType) (*introspection.Type, *introsp
 			{Name: "subset", TypeRef: self, Args: introspection.InputValues{{Name: "keys", TypeRef: keyList}}},
 			introspectNodeIDField(name),
 		}}
-	var batch *introspection.Type
 	for _, method := range spec.methods {
 		if method == get {
 			continue
 		}
-		if batch == nil {
-			batch = &introspection.Type{Kind: introspection.TypeKindObject, Name: name + "_Batch", Interfaces: []*introspection.Type{}}
-		}
-		batch.Fields = append(batch.Fields, introspectMethod(method))
+		collection.Fields = append(collection.Fields, introspectMethod(method))
 	}
-	if batch != nil {
-		batch.Fields = append(batch.Fields, introspectNodeIDField(batch.Name))
-		collection.Fields = append(collection.Fields, &introspection.Field{Name: "batch",
-			TypeRef: &introspection.TypeRef{Kind: introspection.TypeKindNonNull, OfType: &introspection.TypeRef{Kind: introspection.TypeKindObject, Name: batch.Name}},
-			Args:    introspection.InputValues{}})
-	}
-	return collection, batch, nil
+	return collection, nil
 }

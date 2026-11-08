@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -150,4 +152,38 @@ func TestModDepsForCallInstalledPreferenceTraversal(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, scopedID, candidates[i].ScopedResultID)
 	}
+}
+
+// A call that references no module doesn't resolve the session's installed
+// modules; a call that references one does.
+func TestModDepsForCallResolvesInstalledOnlyWhenNeeded(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "only-when-needed")
+	ctx, cache, srv := env.open(t)
+	sentinel := errors.New("installed modules resolved")
+	var resolved atomic.Int32
+	dagql.Fields[*Module]{dagql.NodeFunc("_implementationScoped", func(context.Context, dagql.ObjectResult[*Module], struct{}) (dagql.ObjectResult[*Module], error) {
+		resolved.Add(1)
+		return dagql.ObjectResult[*Module]{}, sentinel
+	})}.Install(srv)
+	query, err := CurrentQuery(ctx)
+	require.NoError(t, err)
+	installed := preferenceModule(t, env, ctx, cache, srv, "installed", "installed")
+	query.Server = &installedPreferenceServer{
+		persistedFamiliesTestQueryServer: query.Server.(*persistedFamiliesTestQueryServer),
+		served:                           NewSchemaBuilder(query, []Mod{NewUserMod(installed)}),
+	}
+	typ := dagql.NewResultCallType(dagql.String("").Type())
+
+	_, err = query.ModDepsForCall(ctx, &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "report", Type: typ})
+	require.NoError(t, err)
+	require.Zero(t, resolved.Load(), "a call without module references resolved the installed modules")
+
+	id, err := cache.PersistedResultID(installed)
+	require.NoError(t, err)
+	_, err = query.ModDepsForCall(ctx, &dagql.ResultCall{
+		Kind: dagql.ResultCallKindField, Field: "report", Type: typ,
+		Module: &dagql.ResultCallModule{Name: "installed", ResultRef: &dagql.ResultCallRef{ResultID: id}},
+	})
+	require.ErrorContains(t, err, sentinel.Error())
+	require.NotZero(t, resolved.Load())
 }

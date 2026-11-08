@@ -43,7 +43,7 @@ dagger api call go --version=1.25 module --path=. test
 Secrets are passed the same way, via provider URIs:
 
 ```shell
-dagger api call deploy --token=env:DEPLOY_TOKEN
+dagger api call deploy --token=env://DEPLOY_TOKEN
 ```
 
 ## Chain functions
@@ -59,28 +59,9 @@ dagger -m core api call container \
 
 ## Collections
 
-A function that discovers the units of a project, such as Go packages or test files, returns a collection. Every collection has the same functions:
+Some functions return a collection of items, such as Go packages or test files. Use `keys` to see the available items. Use `get` to select one and continue calling functions on it.
 
-| Function | Returns |
-| --- | --- |
-| `keys` | The keys, in the order the module discovered them |
-| `list` | Every item |
-| `get` | The item with the given key |
-| `subset` | A collection of the items with the given keys |
-| `batch` | Functions that run once over every item in the collection |
-
-Select an item with `get` and keep chaining from it. In [Dagger Shell](../reference/glossary.mdx#dagger-shell), list the tests in one Go package:
-
-```shell
-dagger -c 'go | packages | get store | tests | keys'
-```
-
-```text
-TestFixture
-TestDatabase
-```
-
-`dagger check` and `dagger generate` select collection items with flags instead. See [Select collection items](./checking.mdx#select-collection-items).
+`dagger check` and `dagger generate` select collection items with flags. See [Select collection items](./checking.mdx#select-collection-items).
 
 ## Output
 

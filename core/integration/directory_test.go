@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -588,6 +589,35 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 	})
 }
 
+// A directory put together from content-keyed directories is keyed by its
+// content: a command over one of its subdirectories stays cached when a file
+// elsewhere in it changes.
+func (DirectorySuite) TestWithDirectoryContentKeyed(ctx context.Context, t *testctx.T) {
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, "pkg"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "pkg", "a.txt"), []byte(rand.Text()), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "other.txt"), []byte("1"), 0o644))
+	extra := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(extra, "extra.txt"), []byte(rand.Text()), 0o644))
+
+	// Each run is a new client, so it reads the host directories again.
+	run := func() string {
+		c := connect(ctx, t)
+		q := sdkcore.NewQuery(c)
+		merged := q.Host().Directory(base).WithDirectory(".", q.Host().Directory(extra))
+		out, err := q.Container().From(alpineImage).
+			WithMountedDirectory("/pkg", merged.Directory("pkg")).
+			WithExec([]string{"cat", "/proc/sys/kernel/random/uuid"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+
+	first := run()
+	require.NoError(t, os.WriteFile(filepath.Join(base, "other.txt"), []byte("2"), 0o644))
+	require.Equal(t, first, run())
+}
+
 func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -974,6 +1004,27 @@ func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, content, "5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef")
+	})
+
+	t.Run("changes symlink timestamps without following them", func(ctx context.Context, t *testctx.T) {
+		links := sdkcore.NewQuery(c).Directory().
+			WithNewFile("some-file", "content").
+			WithSymlink("does-not-exist", "dangling").
+			WithSymlink("/etc/passwd", "absolute").
+			WithSymlink("some-file", "relative").
+			WithTimestamps(int(reallyImportantTime.Unix()))
+
+		ls, err := sdkcore.NewQuery(c).Container().
+			From(alpineImage).
+			WithMountedDirectory("/dir", links).
+			WithEnvVariable("RANDOM", rand.Text()).
+			WithExec([]string{"ls", "-al", "/dir"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		for _, link := range []string{"dangling -> does-not-exist", "absolute -> /etc/passwd", "relative -> some-file"} {
+			require.Regexp(t, regexp.MustCompile(`lrwxrwxrwx\s+\d+ root\s+root\s+\d+ Oct 26  1985 `+regexp.QuoteMeta(link)), ls)
+		}
+		require.Regexp(t, regexp.MustCompile(`-rw-r--r--\s+\d+ root\s+root\s+\d+ Oct 26  1985 some-file`), ls)
 	})
 }
 

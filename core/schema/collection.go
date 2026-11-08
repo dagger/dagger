@@ -23,14 +23,15 @@ func installCollectionSchema(s *moduleSchema, dag *dagql.Server) {
 			Doc("Collection metadata, or null if this object is not a collection."),
 	}.Install(dag)
 	dagql.Fields[*core.ObjectTypeDef]{
-		dagql.Func("__withCollectionMember", s.objectTypeDefWithCollectionMember),
+		// Records the caller's view, which selects the naming rules for the
+		// member name (see typeDefNamingView).
+		dagql.Func("__withCollectionMember", s.objectTypeDefWithCollectionMember).View(AllVersion),
 		dagql.NodeFunc("__collectionProjection", s.collectionProjection),
 		dagql.NodeFunc("__collectionTypeDef", s.collectionTypeDef),
 	}.Install(dag)
 	dagql.Fields[*core.CollectionTypeDef]{
 		dagql.Func("keyType", s.collectionKeyType).Doc("The type of collection keys."),
 		dagql.Func("valueType", s.collectionValueType).Doc("The object type returned by get."),
-		dagql.Func("batchType", s.collectionBatchType).Doc("The type of batch operations, or null when there are none."),
 	}.Install(dag)
 	dagql.Fields[*core.Query]{
 		dagql.Func("__collectionDelta", s.collectionDelta),
@@ -72,6 +73,7 @@ func withCollectionMember(ctx context.Context, def *core.TypeDef, role, name str
 	var obj dagql.ObjectResult[*core.ObjectTypeDef]
 	err = dag.Select(ctx, def.AsObject.Value, &obj, dagql.Selector{
 		Field: "__withCollectionMember",
+		View:  typeDefNamingView(ctx),
 		Args:  []dagql.NamedInput{{Name: "role", Value: dagql.String(role)}, {Name: "name", Value: dagql.String(name)}},
 	})
 	if err != nil {
@@ -80,8 +82,8 @@ func withCollectionMember(ctx context.Context, def *core.TypeDef, role, name str
 	return def.WithObjectTypeDef(obj), nil
 }
 
-func (s *moduleSchema) objectTypeDefWithCollectionMember(_ context.Context, obj *core.ObjectTypeDef, args struct{ Role, Name string }) (*core.ObjectTypeDef, error) {
-	return obj.WithCollectionMember(args.Role, args.Name)
+func (s *moduleSchema) objectTypeDefWithCollectionMember(ctx context.Context, obj *core.ObjectTypeDef, args struct{ Role, Name string }) (*core.ObjectTypeDef, error) {
+	return obj.WithCollectionMember(core.NamerFromContext(ctx), args.Role, args.Name)
 }
 
 // typeDefAsCollection is uncached, like the other as* accessors: the CLI
@@ -127,14 +129,6 @@ func (s *moduleSchema) collectionValueType(_ context.Context, def *core.Collecti
 		return dagql.ObjectResult[*core.TypeDef]{}, err
 	}
 	return members.Get.ReturnType, nil
-}
-
-func (s *moduleSchema) collectionBatchType(ctx context.Context, def *core.CollectionTypeDef, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.TypeDef]], error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.Null[dagql.ObjectResult[*core.TypeDef]](), err
-	}
-	return core.CollectionBatchType(ctx, dag, def.Object)
 }
 
 func (s *moduleSchema) collectionDelta(_ context.Context, _ *core.Query, args struct{ AddedKeys, RemovedKeys []string }) (*core.CollectionDelta, error) {

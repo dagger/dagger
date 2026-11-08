@@ -73,7 +73,7 @@ func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, wor
 	if include != nil {
 		result.Selector.Paths = make([]string, 0, len(include))
 		for _, pattern := range include {
-			result.Selector.Paths = append(result.Selector.Paths, IncludePattern(pattern))
+			result.Selector.Paths = append(result.Selector.Paths, IncludePatterns(pattern)...)
 		}
 	}
 	// A fresh binding yields to a workspace module that loaded; not to one
@@ -88,6 +88,7 @@ func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, wor
 		if yields[ArtifactTypeName(entry.ModuleName)] {
 			continue
 		}
+		result.CollectionRoots = append(result.CollectionRoots, entry.Clone())
 		match, err := matchesInclude(entry, result.Selector.Paths)
 		if err != nil {
 			return nil, err
@@ -101,6 +102,12 @@ func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, wor
 			result.Entries = append(result.Entries, entry)
 		}
 	}
+	for _, root := range workspace.CollectionRoots {
+		if name := ArtifactTypeName(root.ModuleName); !shadowed[name] || yields[name] {
+			result.CollectionRoots = append(result.CollectionRoots, root.Clone())
+		}
+	}
+	result.SetCollectionRoots(result.CollectionRoots)
 	slices.SortStableFunc(result.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
 	result.NameEntries()
 	return result, nil
@@ -236,7 +243,7 @@ func isFreshConstruction(ctx context.Context, mod *Module, root dagql.AnyObjectR
 	// The recipe, not the runtime handle: a handle is opaque, with no call
 	// to inspect.
 	id, err := root.RecipeID(ctx)
-	if err != nil || id == nil || id.IsHandle() || id.Receiver() != nil || id.Field() != gqlFieldName(mod.Name()) {
+	if err != nil || id == nil || id.IsHandle() || id.Receiver() != nil || id.Field() != mod.ConstructorName() {
 		return false
 	}
 	for _, arg := range id.Args() {
@@ -299,7 +306,7 @@ func qualifyBoundTree(entries []*Artifact, typeName string) {
 			root.Parent = &ModTreeNode{Name: root.Name, Parent: root.Parent}
 			root.Name = typeName
 		}
-		entry.Path = entry.Node.Path().CliCase()
+		entry.Path = entry.Node.CLIPath()
 	}
 }
 
@@ -360,7 +367,9 @@ func scopeWorkspaceArtifacts(ctx context.Context, srv *dagql.Server, ws dagql.Ob
 	for _, entry := range artifacts.Self().Entries {
 		entries = append(entries, entry.Clone())
 	}
-	return &Artifacts{Entries: entries, AllDimensions: artifacts.Self().AllDimensions, AllPaths: artifacts.Self().AllPaths}, nil
+	result := artifacts.Self().filter(func(*Artifact) bool { return true })
+	result.Entries = entries
+	return result, nil
 }
 
 // scopeLLM returns the conversation whose scope (LLM.artifacts) a tool

@@ -44,7 +44,7 @@ func TestUserOrgMembershipError(t *testing.T) {
 }
 
 func TestGitHubAppInstallURL(t *testing.T) {
-	const prod = "https://github.com/apps/dagger-cloud/installations/select_target"
+	const prod = "https://github.com/apps/dagger-for-github/installations/select_target"
 	const dev = "https://github.com/apps/dagger-cloud-dev/installations/select_target"
 
 	t.Run("production when DAGGER_CLOUD_URL unset", func(t *testing.T) {
@@ -64,18 +64,35 @@ func TestGitHubAppInstallURL(t *testing.T) {
 }
 
 func TestGitHubAppNotInstalledError(t *testing.T) {
-	t.Setenv("DAGGER_CLOUD_URL", "")
-	err := gitHubAppNotInstalledError("github.com/dagger/hello-dagger")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), `"dagger"`) // owner
-	require.Contains(t, err.Error(), "not installed")
-	require.Contains(t, err.Error(), "https://github.com/apps/dagger-cloud/installations/select_target")
-}
-
-func TestIsCloudUnauthorized(t *testing.T) {
-	require.True(t, isCloudUnauthorized(errors.New("GetOrgMappedSources: unauthorized; unauthorized")))
-	require.False(t, isCloudUnauthorized(errors.New("connection refused")))
-	require.False(t, isCloudUnauthorized(nil))
+	for _, tc := range []struct {
+		name       string
+		cloudURL   string
+		installURL string
+	}{
+		{
+			name:       "production by default",
+			installURL: "https://github.com/apps/dagger-for-github/installations/select_target",
+		},
+		{
+			name:       "production for api.dagger.cloud",
+			cloudURL:   "https://api.dagger.cloud",
+			installURL: "https://github.com/apps/dagger-for-github/installations/select_target",
+		},
+		{
+			name:       "dev for a local/non-prod API",
+			cloudURL:   "http://localhost:8020",
+			installURL: "https://github.com/apps/dagger-cloud-dev/installations/select_target",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DAGGER_CLOUD_URL", tc.cloudURL)
+			err := gitHubAppNotInstalledError("github.com/dagger/hello-dagger")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), `"dagger"`) // owner
+			require.Contains(t, err.Error(), "not installed")
+			require.Contains(t, err.Error(), tc.installURL)
+		})
+	}
 }
 
 func TestRepoAccessError(t *testing.T) {
@@ -101,6 +118,8 @@ func TestInstallationSettingsURL(t *testing.T) {
 func TestIsRepoNotInInstallation(t *testing.T) {
 	require.True(t, isRepoNotInInstallation(errors.New(
 		"ConfigureSource: repository github.com/marcosnils/bin does not belong to installation 161781848. Verify that the GitHub app has been granted access to the repository.")))
+	require.True(t, isRepoNotInInstallation(errors.New(
+		"UpdateOrgRepoSettings: github.com/marcosnils/bin is not available through this GitHub installation")))
 	require.False(t, isRepoNotInInstallation(errors.New("unauthorized")))
 	require.False(t, isRepoNotInInstallation(nil))
 }

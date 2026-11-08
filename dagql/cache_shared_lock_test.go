@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"gotest.tools/v3/assert"
+
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // runWhileEgraphReadLocked runs f while another goroutine holds egraphMu for
@@ -89,8 +92,21 @@ func TestCacheReadPathsShareEgraphLock(t *testing.T) {
 		})
 	})
 
-	// A persistable hit teaches the e-graph and records a retention edge,
-	// so it still takes the write lock, and still hits.
+	t.Run("result ID", func(t *testing.T) {
+		runWhileEgraphReadLocked(t, c, func() error {
+			id, err := c.resultIDForCall(ctx, cacheTestIntCall("shared-lock"))
+			if err != nil {
+				return err
+			}
+			if id != seededID {
+				return fmt.Errorf("expected result %d, got %d", seededID, id)
+			}
+			return nil
+		})
+	})
+
+	// The first persistable hit records a retention edge, so it still takes
+	// the write lock, and still hits.
 	res, err := c.GetOrInitCall(ctx, "persistable", noopTypeResolver{}, &CallRequest{ResultCall: cacheTestIntCall("shared-lock"), IsPersistable: true}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("persistable hit executed the call")
 	})
@@ -102,11 +118,77 @@ func TestCacheReadPathsShareEgraphLock(t *testing.T) {
 	c.egraphMu.RUnlock()
 	assert.Assert(t, retained)
 
+	// A repeat persistable hit finds its identity taught and its edge in
+	// place: it changes nothing, so it stays under the read lock.
+	t.Run("repeat persistable hit", func(t *testing.T) {
+		runWhileEgraphReadLocked(t, c, func() error {
+			res, err := c.GetOrInitCall(ctx, "persistable-again", noopTypeResolver{}, &CallRequest{ResultCall: cacheTestIntCall("shared-lock"), IsPersistable: true}, func(context.Context) (AnyResult, error) {
+				return nil, fmt.Errorf("repeat persistable hit executed the call")
+			})
+			if err != nil {
+				return err
+			}
+			if !res.HitCache() || res.cacheSharedResult().id != seededID {
+				return fmt.Errorf("expected a hit on result %d, got hit=%v result %d", seededID, res.HitCache(), res.cacheSharedResult().id)
+			}
+			return nil
+		})
+	})
+
 	assertCacheOwnershipExact(t, c)
-	for _, sessionID := range []string{"seed", "hit", "miss", "track", "load", "persistable"} {
+	for _, sessionID := range []string{"seed", "hit", "miss", "track", "load", "persistable", "persistable-again"} {
 		assert.NilError(t, c.ReleaseSession(ctx, sessionID))
 	}
 	assertCacheOwnershipExact(t, c)
+}
+
+// usesPartAcquisition answers under the read lock whenever its answer needs no
+// write: no part state, an unmanaged gate with no part state, or a managed
+// gate. Only starting to manage a gate needs the write lock.
+func TestCachePartAcquisitionAnswersUnderReadLock(t *testing.T) {
+	ctx, c, srv := persistedListTestCache(t, "")
+	srv.InstallObject(NewClass(srv, ClassOpts[*inlineCaptureTestValue]{}))
+	value := &inlineCaptureTestValue{}
+	frame := persistCodecFrame("part-acquisition", value)
+	res, err := c.GetOrInitCall(ctx, "part-acquisition", noopTypeResolver{}, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+		r, err := NewResultForCall(value, frame)
+		return r, err
+	})
+	assert.NilError(t, err)
+	row := res.cacheSharedResult()
+
+	runWhileEgraphReadLocked(t, c, func() error {
+		if c.usesPartAcquisition(res, row) {
+			return fmt.Errorf("part acquisition for a result with no part state")
+		}
+		return nil
+	})
+
+	// A gate that exists but is not managed, on a row with no part state,
+	// still answers false without the write lock.
+	c.egraphMu.Lock()
+	gate := row.partGate.loadOrCreate()
+	c.egraphMu.Unlock()
+	runWhileEgraphReadLocked(t, c, func() error {
+		if c.usesPartAcquisition(res, row) {
+			return fmt.Errorf("part acquisition for an unmanaged gate with no part state")
+		}
+		return nil
+	})
+
+	c.egraphMu.Lock()
+	gate.mu.Lock()
+	gate.managed = true
+	row.partGate.active.Store(true)
+	gate.mu.Unlock()
+	c.egraphMu.Unlock()
+	runWhileEgraphReadLocked(t, c, func() error {
+		if !c.usesPartAcquisition(res, row) {
+			return fmt.Errorf("no part acquisition for a result whose gate is managed")
+		}
+		return nil
+	})
+	assert.NilError(t, c.ReleaseSession(ctx, "part-acquisition"))
 }
 
 // Concurrent sessions hitting, tracking and loading the same results under
@@ -187,6 +269,103 @@ func TestCacheConcurrentSharedClaimsKeepOwnershipExact(t *testing.T) {
 	remaining := len(c.resultsByID)
 	c.egraphMu.RUnlock()
 	assert.Equal(t, remaining, 0)
+}
+
+// Concurrent result ID lookups under the read lock, each through the
+// structural route that reads eq-class roots, interleaved with publications
+// that create and merge eq-classes under the write lock, all resolve the
+// attached result. Run with -race, a lookup that wrote the e-graph or read it
+// without the lock fails the test.
+func TestCacheConcurrentResultIDsBesideEgraphMerges(t *testing.T) {
+	ctx := t.Context()
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	opOver := func(src digest.Digest) *ResultCall {
+		frame := cacheTestIntCall("result-id-merges-op")
+		frame.Args = []*ResultCallArg{{
+			Name: "src",
+			Value: &ResultCallLiteral{
+				Kind:                 ResultCallLiteralKindDigestedString,
+				DigestedStringValue:  "witnessed",
+				DigestedStringDigest: src,
+			},
+		}}
+		return frame
+	}
+	inputDigest := func(i int) digest.Digest {
+		return digest.FromString(fmt.Sprintf("result-id-merges-input-%d", i))
+	}
+	teach := func(sessionID, field string, a, b digest.Digest) error {
+		teacher := cacheTestIntCall(field,
+			call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: a},
+			call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: b},
+		)
+		_, err := c.GetOrInitCall(ctx, sessionID, noopTypeResolver{}, &CallRequest{ResultCall: teacher}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(teacher, 0), nil
+		})
+		return err
+	}
+
+	seedFrame := opOver(inputDigest(0))
+	seeded, err := c.GetOrInitCall(ctx, "seed", noopTypeResolver{}, &CallRequest{ResultCall: seedFrame}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(seedFrame, 1), nil
+	})
+	assert.NilError(t, err)
+	seededID := seeded.cacheSharedResult().id
+	assert.NilError(t, teach("seed", "result-id-merges-teacher-1", inputDigest(0), inputDigest(1)))
+
+	// Each writer chains new input digests onto the seeded input's class, so
+	// the classes' parents change while the readers walk them.
+	const writers, merges = 4, 16
+	const readers, lookups = 16, 64
+	var wg sync.WaitGroup
+	errs := make(chan error, writers+readers)
+	for w := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			prev := inputDigest(0)
+			for m := range merges {
+				n := 2 + w*merges + m
+				if err := teach("writer", fmt.Sprintf("result-id-merges-teacher-%d", n), prev, inputDigest(n)); err != nil {
+					errs <- err
+					return
+				}
+				prev = inputDigest(n)
+			}
+		}()
+	}
+	for range readers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range lookups {
+				id, err := c.resultIDForCall(ctx, opOver(inputDigest(1)))
+				if err != nil {
+					errs <- err
+					return
+				}
+				if id != seededID {
+					errs <- fmt.Errorf("expected result %d, got %d", seededID, id)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		assert.NilError(t, err)
+	}
+
+	// The merges joined every writer's inputs to the seeded input's class.
+	for w := range writers {
+		id, err := c.resultIDForCall(ctx, opOver(inputDigest(1+(w+1)*merges)))
+		assert.NilError(t, err)
+		assert.Equal(t, id, seededID)
+	}
+	assert.NilError(t, c.ReleaseSession(ctx, "writer"))
+	assert.NilError(t, c.ReleaseSession(ctx, "seed"))
 }
 
 // BenchmarkCacheParallelHits measures concurrent cache hits from many

@@ -194,11 +194,11 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		return err
 	}
 
+	if err := env.assertCLIPackageManagers(ctx); err != nil {
+		return err
+	}
 	if !isPrerelease {
 		if err := env.assertCLIGitHubRelease(ctx); err != nil {
-			return err
-		}
-		if err := env.assertCLIPackageManagers(ctx); err != nil {
 			return err
 		}
 		if err := env.assertComponentGitHubReleases(ctx); err != nil {
@@ -869,11 +869,6 @@ func (env *publishCheckEnv) assertPrereleaseStableOutputsAbsent(ctx context.Cont
 		`"kind": "github_release_asset_delete"`,
 		`"kind": "github_release_asset_upload"`,
 		`"kind": "github_release_publish"`,
-		`/api/v3/repos/dagger/nix/contents/pkgs/dagger/default.nix`,
-		`/api/v3/repos/dagger/homebrew-tap/contents/dagger.rb`,
-		`/api/v3/repos/dagger/winget-pkgs/contents/`,
-		`/api/v3/repos/dagger/winget-pkgs/git/refs`,
-		`/api/v3/repos/microsoft/winget-pkgs/pulls`,
 	} {
 		msg := "prerelease should not perform stable release publishing"
 		if err := requireNotContains(events, needle, msg); err != nil {
@@ -2342,6 +2337,12 @@ github_releases = {}
 deleted_github_assets = set()
 state_lock = threading.Lock()
 existing_content_sha = "9999999999999999999999999999999999999999"
+# The single-version package files pin an older release, so publishing
+# replaces them.
+existing_package_content = {
+    ("dagger", "homebrew-tap", "dagger.rb"): '  version "0.0.1"\n',
+    ("dagger", "nix", "pkgs/dagger/default.nix"): '  version = "0.0.1";\n',
+}
 
 publish_check_tag = os.environ["PUBLISH_CHECK_TAG"]
 publish_check_assets = [
@@ -2688,11 +2689,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/api/v3/repos/") and "/contents/" in self.path:
             record("github_content_lookup", self, b"")
             owner, repo, content_path = github_content_target(self.path)
-            if (owner, repo, content_path) in {
-                ("dagger", "homebrew-tap", "dagger.rb"),
-                ("dagger", "nix", "pkgs/dagger/default.nix"),
-            }:
-                self.send_json(200, {"sha": existing_content_sha})
+            if (owner, repo, content_path) in existing_package_content:
+                content = existing_package_content[(owner, repo, content_path)]
+                self.send_json(200, {
+                    "sha": existing_content_sha,
+                    "content": base64.encodebytes(content.encode()).decode(),
+                })
                 return
             self.send_json(404, {"message": "Not Found"})
             return

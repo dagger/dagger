@@ -19,7 +19,10 @@ type CollectionConfig struct {
 	Delta   string `json:"delta,omitempty"`
 }
 
-func (obj *ObjectTypeDef) WithCollectionMember(role, name string) (*ObjectTypeDef, error) {
+// WithCollectionMember marks the object as a collection, or names the member
+// that plays role in it. The name is normalized with namer, the naming rules
+// of the module that declares the collection, as its fields were.
+func (obj *ObjectTypeDef) WithCollectionMember(namer Namer, role, name string) (*ObjectTypeDef, error) {
 	obj = obj.Clone()
 	if obj.Collection == nil {
 		obj.Collection = &CollectionConfig{}
@@ -45,7 +48,7 @@ func (obj *ObjectTypeDef) WithCollectionMember(role, name string) (*ObjectTypeDe
 	default:
 		return nil, fmt.Errorf("unknown collection member role %q", role)
 	}
-	name = gqlFieldName(name)
+	name = namer.FieldName(name)
 	if *member != "" && *member != name {
 		return nil, fmt.Errorf("collection %q has multiple %s members: %q and %q", obj.OriginalName, role, *member, name)
 	}
@@ -101,17 +104,33 @@ func (obj *ObjectTypeDef) CollectionMembers() (*CollectionMembers, error) {
 	if valueType == nil || valueType.Optional || valueType.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("collection %q get function must return a non-null object", obj.OriginalName)
 	}
-	members := &CollectionMembers{Keys: keys, Get: get}
-	if delta, ok := obj.FieldByName(deltaName); ok {
+	for _, fn := range obj.Functions {
+		if fn.Self().Name == get.Name {
+			continue
+		}
+		switch fn.Self().Name {
+		case "keys", "list", "get", "subset":
+			return nil, fmt.Errorf("collection %q function %q conflicts with a collection operation", obj.OriginalName, fn.Self().Name)
+		}
+	}
+	delta, err := obj.collectionDeltaField(deltaName)
+	if err != nil {
+		return nil, err
+	}
+	return &CollectionMembers{Keys: keys, Get: get, Delta: delta}, nil
+}
+
+func (obj *ObjectTypeDef) collectionDeltaField(name string) (*FieldTypeDef, error) {
+	if delta, ok := obj.FieldByName(name); ok {
 		typ := delta.TypeDef.Self()
 		if typ.Kind != TypeDefKindObject || !typ.AsObject.Valid || typ.AsObject.Value.Self().Name != "CollectionDelta" {
 			return nil, fmt.Errorf("collection %q delta field must have type CollectionDelta", obj.OriginalName)
 		}
-		members.Delta = delta
+		return delta, nil
 	} else if obj.Collection.Delta != "" {
-		return nil, fmt.Errorf("collection %q delta field %q does not exist", obj.OriginalName, deltaName)
+		return nil, fmt.Errorf("collection %q delta field %q does not exist", obj.OriginalName, name)
 	}
-	return members, nil
+	return nil, nil
 }
 
 func isCollectionKeyType(typ *TypeDef) bool {

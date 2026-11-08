@@ -125,7 +125,7 @@ func TestGitBundleSchema(t *testing.T) {
 
 	bundleType := schema.Types.Get("GitBundle")
 	require.NotNil(t, bundleType)
-	for _, name := range []string{"version", "objectFormat", "refs", "prerequisiteSHAs", "validate", "asFile"} {
+	for _, name := range []string{"version", "objectFormat", "refs", "prerequisiteShas", "validate", "asFile"} {
 		require.NotNil(t, schemaField(bundleType, name), name)
 	}
 	bundleRefType := schema.Types.Get("GitBundleRef")
@@ -758,7 +758,7 @@ fragment FieldParts on FieldTypeDef { name typeDef { ...TypeDefRefParts } }
 		asInterface { name functions { ...FunctionParts } }
 		asInput { name fields { ...FieldParts } }
 		asList { elementTypeDef { ...TypeDefRefParts } }
-		asCollection { keyType { ...TypeDefRefParts } valueType { ...TypeDefRefParts } batchType { ...TypeDefRefParts } }
+		asCollection { keyType { ...TypeDefRefParts } valueType { ...TypeDefRefParts } }
 	}
 }`
 

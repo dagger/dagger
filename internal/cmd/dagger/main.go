@@ -81,6 +81,7 @@ var (
 	// Any value selects Dagger Cloud.
 	_, cloudEngineEnvSet = os.LookupEnv(cloudEngineEnv)
 	profileFlag          bool
+	profileEBPFFlag      []string
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -498,6 +499,8 @@ func installMayCallEngineFlags(flags *pflag.FlagSet) {
 	_ = engineFlags.MarkDeprecated("interactive-command", "use --shell-command-on-error instead")
 	engineFlags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
 	engineFlags.Lookup("profile").Hidden = true
+	engineFlags.StringSliceVar(&profileEBPFFlag, "profile-ebpf", nil, "With --profile, eBPF programs to profile this session with, such as exec_sched")
+	engineFlags.Lookup("profile-ebpf").Hidden = true
 	setFlagSetCapabilities(engineFlags, mayCallEngine)
 	flags.AddFlagSet(engineFlags)
 }
@@ -1111,7 +1114,8 @@ func Main() {
 	if err := prepareModuleSDKCommands(ctx, rootCmd, commandArgs, invocationDir, registerModuleSDKCommands); err != nil {
 		exitWithCode(commandErrorStatus(err))
 	}
-	if err := prepareArtifactCommands(ctx, rootCmd, commandArgs, os.Args[1:]); err != nil {
+	discovery, err := prepareArtifactCommands(ctx, rootCmd, commandArgs, os.Args[1:])
+	if err != nil {
 		exitWithCode(commandErrorStatus(err))
 	}
 	// A trailing inherited --x-release is known only after SDK discovery.
@@ -1143,7 +1147,13 @@ func Main() {
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 
-	if err := rootCmd.ExecuteContext(ctx); err != nil {
+	execute := rootCmd.ExecuteContext
+	if discovery != nil {
+		execute = func(ctx context.Context) error {
+			return discovery.execute(ctx, rootCmd.ExecuteContext)
+		}
+	}
+	if err := execute(ctx); err != nil {
 		exitWithCode(commandErrorStatus(err))
 	}
 	stop()

@@ -64,14 +64,11 @@ func TestCollectionSchema(t *testing.T) {
 
 	var metadata dagql.ObjectResult[*core.CollectionTypeDef]
 	require.NoError(t, dag.Select(ctx, collection, &metadata, dagql.Selector{Field: "asCollection"}))
-	var gotKey, gotValue, gotBatch dagql.ObjectResult[*core.TypeDef]
+	var gotKey, gotValue dagql.ObjectResult[*core.TypeDef]
 	require.NoError(t, dag.Select(ctx, metadata, &gotKey, dagql.Selector{Field: "keyType"}))
 	require.NoError(t, dag.Select(ctx, metadata, &gotValue, dagql.Selector{Field: "valueType"}))
-	require.NoError(t, dag.Select(ctx, metadata, &gotBatch, dagql.Selector{Field: "batchType"}))
 	require.Equal(t, core.TypeDefKindString, gotKey.Self().Kind)
 	require.Equal(t, "Item", gotValue.Self().AsObject.Value.Self().Name)
-	require.Equal(t, "Items_Batch", gotBatch.Self().AsObject.Value.Self().Name)
-	require.Len(t, gotBatch.Self().AsObject.Value.Self().Functions, 1)
 
 	// asCollection isn't cached per session, but the metadata it returns must
 	// still have an ID that loads in a later request, as the SDKs' AsCollection
@@ -117,8 +114,8 @@ func TestCollectionSchema(t *testing.T) {
 	for _, fn := range public.Self().Functions {
 		functions = append(functions, fn.Self().Name)
 	}
-	require.Equal(t, []string{"keys", "list", "batch"}, fields)
-	require.Equal(t, []string{"get", "subset"}, functions)
+	require.Equal(t, []string{"keys", "list"}, fields)
+	require.Equal(t, []string{"get", "subset", "summary"}, functions)
 	require.Equal(t, "key", public.Self().Functions[0].Self().Args[0].Self().Name)
 	require.Equal(t, "names", collection.Self().AsObject.Value.Self().Fields[0].Self().Name)
 }

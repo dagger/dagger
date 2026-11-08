@@ -327,7 +327,7 @@ func TestCleanGitWorktree(t *testing.T) {
 	edit := func(dir string) {
 		file := filepath.Join(dir, "file")
 		require.NoError(t, os.WriteFile(file, []byte("TIP"), 0644)) // same size as "tip"
-		require.NoError(t, unix.UtimesNanoAt(unix.AT_FDCWD, file, []unix.Timespec{{Sec: 1}, {Sec: 1}}, 0))
+		require.NoError(t, unix.UtimesNanoAt(unix.AT_FDCWD, file, gitCheckoutTimes(), 0))
 		require.NoError(t, os.Remove(filepath.Join(dir, "executable")))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "untracked"), []byte("untracked"), 0644))
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "new", "dir"), 0755))

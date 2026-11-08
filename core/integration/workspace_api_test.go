@@ -2646,3 +2646,35 @@ func (WorkspaceAPISuite) TestWorkspaceBoundLLMAcrossSessions(ctx context.Context
 	require.NoError(t, err, "second session must not fail on a stale workspace client binding")
 	require.Equal(t, string(out1), string(out2))
 }
+
+func (WorkspaceAPISuite) TestWorkspaceSDKScopeSetting(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.Mkdir(filepath.Join(workdir, "app"), 0o755))
+	config := filepath.Join(workdir, "dagger.toml")
+	provider := "[modules.scope-sdk]\nsource = \"sdk\"\n"
+	require.NoError(t, os.WriteFile(config, []byte(provider+`
+[sdks.scope]
+module = "scope-sdk"
+
+[sdks.scope.scopes.app.settings]
+targetVersion = "v1"
+`), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(workdir, "app")))
+	sdk := core.NewQuery(c).CurrentWorkspace().SDK("scope")
+	value, err := sdk.ScopeSetting(ctx, ".", "targetVersion")
+	require.NoError(t, err)
+	require.NotNil(t, value)
+	contents, err := value.Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, core.JSON(`"v1"`), contents)
+
+	sdkID, err := sdk.ID(ctx)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(config, []byte(provider), 0o644))
+	_, err = testutil.QueryWithClient[json.RawMessage](c, t,
+		`query($id: ID!) { node(id: $id) { ... on WorkspaceSDK { scopeSetting(path: ".", key: "targetVersion") { id } } } }`,
+		&testutil.QueryOptions{Variables: map[string]any{"id": sdkID}})
+	require.ErrorContains(t, err, `"scope" is not installed as an SDK in this workspace`)
+}

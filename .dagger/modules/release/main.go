@@ -470,7 +470,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		report.Artifacts = append(report.Artifacts, artifact)
 	}
 
-	if semver.IsValid(version) && !isPrerelease {
+	if semver.IsValid(version) {
 		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{
 			Name: "❄️ Nix",
 			Link: "https://github.com/dagger/nix",
@@ -481,12 +481,15 @@ func (r *Release) Publish( //nolint:gocyclo
 			Link: "https://github.com/dagger/homebrew-tap",
 		})
 		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{
-			Name: "🍺 Homebrew Core",
-			Link: "https://github.com/Homebrew/homebrew-core/pulls?q=is%3Apr+in%3Atitle+dagger+" + strings.TrimPrefix(version, "v"),
-		})
-		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{
 			Name: "🪟 Winget pkgs",
 			Link: "https://github.com/microsoft/winget-pkgs/pulls?q=is%3Apr+in%3Atitle+dagger+" + strings.TrimPrefix(version, "v"),
+		})
+	}
+
+	if semver.IsValid(version) && !isPrerelease {
+		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{
+			Name: "🍺 Homebrew Core",
+			Link: "https://github.com/Homebrew/homebrew-core/pulls?q=is%3Apr+in%3Atitle+dagger+" + strings.TrimPrefix(version, "v"),
 		})
 
 		report.FollowUps = append(report.FollowUps, &ReleaseReportFollowUp{

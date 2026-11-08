@@ -2,6 +2,8 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/engine/client"
@@ -171,12 +174,19 @@ func artifactClientParams(params client.Params, addresses []string) (client.Para
 func artifactPaths(addresses []*dagaddress.Address, keys ...dagaddress.Pair) []string {
 	var paths []string
 	for _, addr := range addresses {
-		path := addr.ArtifactPath()
+		// A type key can be a suffix. Resolve it against schema paths before
+		// narrowing discovery; only an explicit address path is exact here.
+		path := addr.Path
 		if path == "" {
 			// Module selectors are known before schema discovery. Reuse include
 			// narrowing without guessing which module owns a type or collection.
+			// A type needs no binding, and its key resolves among the selected
+			// modules' paths either way.
 			var modules []string
 			for _, pair := range slices.Concat(addr.Query, keys) {
+				if strings.HasPrefix(pair.Dimension, "type:") {
+					continue
+				}
 				if pair.Dimension != artifact.ModuleDimension {
 					return nil // Preserve the schema scope used to bind other dimensions.
 				}
@@ -292,7 +302,7 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 		return err
 	}
 	flags := artifactKeyFlags(cmd)
-	return withEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
+	return withArtifactEngine(cmd.Context(), params, func(ctx context.Context, ec *client.Client) error {
 		workspaceID, err := core.NewQuery(ec.Dagger()).CurrentWorkspace().ID(ctx)
 		if err != nil {
 			return err
@@ -309,38 +319,12 @@ func runArtifacts(cmd *cobra.Command, addresses []string) error {
 		if err := bindArtifactDimensions(flags, defs); err != nil {
 			return err
 		}
-		var selected *core.Artifacts
-		for _, addr := range parsed {
-			artifacts := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: artifactPaths([]*dagaddress.Address{addr}, flags...)})
-			var pathDefs artifact.Dimensions
-			if len(addr.Query) > 0 {
-				pathDefs, err = artifactDimensions(ctx, ec.Dagger(), artifacts)
-				if err != nil {
-					return err
-				}
-				if err := bindArtifactDimensions(addr.Query, pathDefs); err != nil {
-					return err
-				}
-			}
-			artifacts = listArtifactTargets(artifacts, cmd, defs)
-			addr.Query = append(addr.Query, flags...)
-			if slices.ContainsFunc(addr.Query, func(p dagaddress.Pair) bool { return p.HasKey && strings.HasPrefix(p.Dimension, "type:") }) {
-				paths, err := readArtifactListPaths(ctx, ec.Dagger(), artifacts)
-				if err != nil {
-					return err
-				}
-				artifacts, err = filterArtifactTypeKeys(artifacts, paths, addr)
-				if err != nil {
-					return err
-				}
-			}
-			artifacts = applyArtifactFilters(cmd, addr, artifacts)
-			if selected == nil {
-				selected = artifacts
-			} else {
-				selected = selected.WithArtifacts(artifacts)
-			}
+		selected, err := commandArtifacts(ctx, ec.Dagger(), ws, cmd, addresses, false, flags...)
+		if err != nil {
+			return err
 		}
+		selected = listArtifactTargets(selected, cmd, defs)
+		selected = applyArtifactFilters(cmd, &dagaddress.Address{}, selected)
 		return listArtifactSelection(ctx, ec.Dagger(), selected, cmd)
 	})
 }
@@ -540,6 +524,55 @@ func readListedArtifacts(ctx context.Context, dag *dagger.Client, selection *cor
 		}
 	}
 	return response.Node.Items, nil
+}
+
+// isMissingArtifactListingField reports whether an older engine rejected the
+// query because it lacks __listing. The client returns validation failures as
+// an HTTP error, before discovery runs. A resolver error must not trigger
+// another query, even if its message quotes the validator.
+func isMissingArtifactListingField(err error) bool {
+	const missing = `Cannot query field "__listing" on type "Artifacts".`
+	var httpErr *graphql.HTTPError
+	if !errors.As(err, &httpErr) || len(httpErr.Response.Errors) != 1 {
+		return false
+	}
+	gqlErr := httpErr.Response.Errors[0]
+	return gqlErr != nil && len(gqlErr.Path) == 0 && gqlErr.Extensions["code"] == "GRAPHQL_VALIDATION_FAILED" && strings.HasPrefix(gqlErr.Message, missing)
+}
+
+func readListedArtifactsMetadata(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute, typed bool) ([]listedArtifact, error) {
+	id, err := selection.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Node struct {
+			Listing     string
+			Definitions artifact.Dimensions
+		}
+	}
+	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!, $typeAssertion: Boolean!) {
+	 node(id: $id) { ... on Artifacts {
+	   definitions: dimensionDefinitions { kind identifier name qualifiedName itemType }
+	   listing: __listing(absolute: $absolute, typeAssertion: $typeAssertion)
+	 } }
+ }`, Variables: map[string]any{"id": id, "absolute": absolute, "typeAssertion": typed}}, &dagger.Response{Data: &response})
+	if err != nil {
+		if isMissingArtifactListingField(err) {
+			return readListedArtifacts(ctx, dag, selection, absolute, typed)
+		}
+		return nil, err
+	}
+	var items []listedArtifact
+	if err := json.Unmarshal([]byte(response.Node.Listing), &items); err != nil {
+		return nil, fmt.Errorf("decode artifact listing metadata: %w", err)
+	}
+	for i := range items {
+		if err := items[i].keysFromAddress(response.Node.Definitions); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, dimension string, absolute, expand bool) ([]listedArtifact, error) {

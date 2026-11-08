@@ -1632,11 +1632,11 @@ func (GeneratorsSuite) TestGeneratorArtifactEvaluation(ctx context.Context, t *t
 	require.NoError(t, err)
 	out, err := modGen.WithWorkdir("hello-with-generators").With(daggerQuery(`{
  currentWorkspace { artifacts(include: ["generate-files"]) { filterTypes(types: ["Generator"]) {
-  values { error { message } value { ... on Generator { changeset { isEmpty } } } }
+  items { value { ... on Generator { changeset { isEmpty } } } }
  } } }
 }`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterTypes":{"values":[{"error":null,"value":{"changeset":{"isEmpty":false}}}]}}}}`, out)
+	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterTypes":{"items":[{"value":{"changeset":{"isEmpty":false}}}]}}}}`, out)
 }
 
 // TestClientSchemaIntrospectionJSON locks in that
@@ -1653,8 +1653,8 @@ func (GeneratorsSuite) TestClientSchemaIntrospectionJSON(ctx context.Context, t 
 
 	modGen := moduleFixture(t, c, "go/minimal")
 
-	clientTypes, clientQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "clientSchemaIntrospectionJSON")
-	moduleTypes, moduleQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "introspectionSchemaJSON")
+	clientTypes, clientQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "clientSchemaIntrospectionJson")
+	moduleTypes, moduleQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "introspectionSchemaJson")
 
 	// No hidden types in the client-facing schema: Host and Engine* (both hidden
 	// from the module-facing schema) are present.

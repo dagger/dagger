@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
@@ -170,31 +171,17 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 			bound.Selector.DimensionAlternatives = append(bound.Selector.DimensionAlternatives, ids)
 		}
 	}
-	if err := bound.resolveTypeKeys(); err != nil {
-		return nil, err
-	}
+	bound.resolveTypeKeys()
 	return bound, nil
-}
-
-func (a *Artifacts) dimensionDisplayName(identifier string) string {
-	for _, dim := range a.AllDimensions {
-		if dim.Identifier == identifier {
-			return a.AllDimensions.DisplayName(dim)
-		}
-	}
-	if typeName, ok := strings.CutPrefix(identifier, "type:"); ok {
-		return ArtifactTypeName(typeName)
-	}
-	return identifier
 }
 
 // resolveTypeKeys replaces each short type key filter with the full paths it
 // names among the loaded paths that have every filtered collection dimension
 // (see artifact.ResolveTypeKey). A full path names only itself, and a key
 // that names nothing stays, matching nothing.
-func (a *Artifacts) resolveTypeKeys() error {
+func (a *Artifacts) resolveTypeKeys() {
 	if len(a.AllPaths) == 0 {
-		return nil
+		return
 	}
 	paths := a.AllPaths
 	var dimensions []string
@@ -216,10 +203,7 @@ func (a *Artifacts) resolveTypeKeys() error {
 			full := []string{key}
 			// A full path names itself, so a stored address stays exact.
 			if !slices.ContainsFunc(candidates, func(path artifact.Path) bool { return path.Key == key }) {
-				matches, err := artifact.ResolveTypeKey(candidates, a.dimensionDisplayName(filter.Dimension), key)
-				if err != nil {
-					return err
-				}
+				matches := artifact.ResolveTypeKey(candidates, key)
 				if len(matches) > 0 {
 					full = matches
 				}
@@ -232,7 +216,6 @@ func (a *Artifacts) resolveTypeKeys() error {
 		}
 		a.Selector.Dimensions[i].Keys = keys
 	}
-	return nil
 }
 
 func (a *Artifacts) ResolveDimension(name string) (string, error) {
@@ -305,19 +288,16 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 			if err != nil {
 				return nil, err
 			}
-			// A batch-only operation carries the same dimension on its batch
-			// receiver. Project it to get(key), never to the batch object.
 			itemNode := *node
 			itemNode.Name = "get"
 			itemNode.Type = members.Get.ReturnType
 			itemNode.Description = members.Get.Description
 			itemNode.Directives = nil
-			itemNode.CollectionKeys = nil
 			item := *selected
 			item.Node = &itemNode
-			item.Path = itemNode.CommandPath().CliCase()
+			item.Path = itemNode.CommandCLIPath()
 			if len(item.Path) == 0 {
-				item.Path = itemNode.Path().CliCase()
+				item.Path = itemNode.CLIPath()
 			}
 			item.TypeName = itemNode.ObjectType().Name
 			item.Directives = nil
@@ -399,28 +379,161 @@ func (a *Artifacts) ExpandDimensionKeys(ctx context.Context, name string) ([]str
 // Expand evaluates only the collection receivers needed to enumerate selected
 // keys. A leaf artifact's value remains deferred.
 func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
-	return a.expand(ctx, artifactCollectionKeys)
+	discovery, err := a.viewDiscovery()
+	if err != nil {
+		return nil, err
+	}
+	if len(discovery.view.state.Rules) == 0 {
+		return a.expand(ctx, artifactCollectionKeys)
+	}
+	ctx = dagql.WithResultScope(ctx, nil)
+	discoveryCtx := context.WithValue(ctx, artifactViewDiscoveryKey{}, discovery)
+	roots := a.CollectionRoots
+	if roots == nil {
+		catalog := &Artifacts{}
+		catalog.SetCollectionRoots(a.Entries)
+		roots = catalog.CollectionRoots
+	}
+	var filters []ArtifactDimensionFilter
+	for _, rule := range discovery.view.state.Rules {
+		filters = append(filters, ArtifactDimensionFilter{Dimension: rule.Dimension, Keys: rule.Keys})
+	}
+	rootsCtx := withArtifactReceivers(discoveryCtx)
+	for _, root := range roots {
+		if !slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
+			return filter.Dimension == root.Node.CollectionDimension.Identifier
+		}) {
+			continue
+		}
+		if _, err := expandArtifactNode(rootsCtx, root.Node, root, filters, artifactCollectionKeys); err != nil {
+			return nil, err
+		}
+	}
+	_, err = a.expand(discoveryCtx, artifactCollectionKeys)
+	if err != nil {
+		return nil, err
+	}
+	// Sort references by recipe so discovery order and local handles do not
+	// change the view's cache identity.
+	type sourceKey struct {
+		index  int
+		recipe string
+		origin string
+	}
+	order := make([]sourceKey, len(discovery.view.sources))
+	for i, source := range discovery.view.sources {
+		id, err := source.RecipeID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := id.Encode()
+		if err != nil {
+			return nil, err
+		}
+		order[i] = sourceKey{i, encoded, artifactViewOrigin(id)}
+	}
+	slices.SortFunc(order, func(a, b sourceKey) int { return strings.Compare(a.recipe, b.recipe) })
+	view := &ArtifactView{state: artifactViewState{Rules: discovery.view.state.Rules}}
+	if err := view.addPaths(ctx, roots); err != nil {
+		return nil, err
+	}
+	for _, source := range order {
+		view.sources = append(view.sources, discovery.view.sources[source.index])
+		view.state.Keys = append(view.state.Keys, discovery.view.state.Keys[source.index])
+		view.state.Origins = append(view.state.Origins, source.origin)
+	}
+	if err := view.setKey(); err != nil {
+		return nil, err
+	}
+	selected := a.filter(func(*Artifact) bool { return true })
+	for _, entry := range selected.Entries {
+		entry.View = view
+	}
+	return selected.expand(ctx, func(ctx context.Context, receiver *Artifact) ([]collectionKey, error) {
+		keys, err := artifactCollectionKeys(ctx, receiver)
+		if err == nil {
+			err = discovery.validate(receiver, keys)
+		}
+		return keys, err
+	})
 }
 
 // artifactCollectionKeyFunc evaluates a collection receiver, never the item or leaf.
 type artifactCollectionKeyFunc func(context.Context, *Artifact) ([]collectionKey, error)
 
 func artifactCollectionKeys(ctx context.Context, artifact *Artifact) ([]collectionKey, error) {
-	// Each receiver evaluates in its own workspace, so one selection can mix
-	// workspaces and bound artifacts.
+	_, keys, err := artifactCollection(ctx, artifact)
+	return keys, err
+}
+
+func artifactCollection(ctx context.Context, artifact *Artifact) (dagql.AnyObjectResult, []collectionKey, error) {
 	ctx, err := artifact.WorkspaceContext(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var value dagql.AnyResult
+	var value dagql.AnyObjectResult
 	if err := artifact.Evaluate(ctx, &value); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	obj, ok := dagql.UnwrapAs[*ModuleObject](value)
 	if !ok {
-		return nil, fmt.Errorf("returned %T instead of a collection", value.Unwrap())
+		return nil, nil, fmt.Errorf("returned %T instead of a collection", value.Unwrap())
 	}
-	return obj.collectionKeys(ctx)
+	artifactReceiversFrom(ctx).store(artifact, value)
+	keys, err := obj.collectionKeys(ctx)
+	return value, keys, err
+}
+
+// artifactReceivers holds the collection receivers one expansion has already
+// evaluated, so a deeper receiver or item evaluates from its nearest one
+// instead of selecting every ancestor again from the root. One expansion
+// evaluates all its receivers in the same context, and a receiver's value
+// also depends on the workspace and view it evaluates in, so values are kept
+// per node and per those.
+type artifactReceivers struct {
+	mu     sync.Mutex
+	values map[artifactReceiverKey]dagql.AnyObjectResult
+}
+
+type artifactReceiverKey struct {
+	node             *ModTreeNode
+	workspace        *Workspace
+	contextWorkspace *Workspace
+	view             *ArtifactView
+}
+
+type artifactReceiversKey struct{}
+
+func withArtifactReceivers(ctx context.Context) context.Context {
+	return context.WithValue(ctx, artifactReceiversKey{}, &artifactReceivers{values: map[artifactReceiverKey]dagql.AnyObjectResult{}})
+}
+
+func artifactReceiversFrom(ctx context.Context) *artifactReceivers {
+	receivers, _ := ctx.Value(artifactReceiversKey{}).(*artifactReceivers)
+	return receivers
+}
+
+func (r *artifactReceivers) key(a *Artifact, node *ModTreeNode) artifactReceiverKey {
+	return artifactReceiverKey{node: node, workspace: a.Workspace.Self(), contextWorkspace: a.ContextWorkspace.Self(), view: a.View}
+}
+
+func (r *artifactReceivers) store(a *Artifact, value dagql.AnyObjectResult) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.values[r.key(a, a.Node)] = value
+}
+
+func (r *artifactReceivers) load(a *Artifact, node *ModTreeNode) (dagql.AnyObjectResult, bool) {
+	if r == nil {
+		return nil, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	value, ok := r.values[r.key(a, node)]
+	return value, ok
 }
 
 func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectionKeyFunc) (*Artifacts, error) {
@@ -479,8 +592,9 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 		}
 		return bound, nil
 	}
-	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, AllDimensions: bound.AllDimensions, AllPaths: bound.AllPaths}
+	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, AllDimensions: bound.AllDimensions, AllPaths: bound.AllPaths, CollectionRoots: bound.CollectionRoots}
 	names := bound.displayNames()
+	ctx = withArtifactReceivers(ctx)
 	// Each worker owns one slot; flatten only after all workers finish so
 	// discovery order is independent of evaluation completion order.
 	entries := make([][]*Artifact, len(bound.Entries))
@@ -564,15 +678,9 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 		}) {
 			return nil, nil
 		}
-		// A key filter on an item that is already keyed may have dropped its
-		// siblings, which this node cannot see.
-		keyFiltered := node.CollectionDimension != nil && slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
-			return filter.Dimension == node.CollectionDimension.Identifier && filter.Keys != nil
-		})
 		for _, parent := range parents {
 			copy := *node
 			copy.Parent = parent
-			copy.CollectionComplete = copy.CollectionComplete && !keyFiltered
 			expanded = append(expanded, &copy)
 		}
 		return expanded, nil
@@ -587,11 +695,21 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			keys, err := collectionKeys(ctx, &Artifact{Node: parent, Workspace: template.Workspace, ContextWorkspace: template.ContextWorkspace})
+			receiver := &Artifact{Node: parent, Workspace: template.Workspace, ContextWorkspace: template.ContextWorkspace, View: template.View}
+			var keys []collectionKey
+			var err error
+			if discovery, ok := ctx.Value(artifactViewDiscoveryKey{}).(*artifactViewDiscovery); ok {
+				var value dagql.AnyObjectResult
+				value, keys, err = artifactCollection(ctx, receiver)
+				if err == nil {
+					err = discovery.record(receiver, value, node.CollectionDimension, keys)
+				}
+			} else {
+				keys, err = collectionKeys(ctx, receiver)
+			}
 			if err != nil {
 				return fmt.Errorf("dimension %q: %w", node.CollectionDimension.Identifier, err)
 			}
-			complete := true
 			for _, key := range keys {
 				keep := true
 				for _, filter := range filters {
@@ -604,12 +722,7 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 					copy.Parent = parent
 					copy.CollectionKey = &key.text
 					children[i] = append(children[i], &copy)
-				} else {
-					complete = false
 				}
-			}
-			for _, child := range children[i] {
-				child.CollectionComplete = complete
 			}
 			return nil
 		})
@@ -654,30 +767,41 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		return err
 	}
 	if members != nil {
+		// Artifact dimensions use current CLI spelling, even when their
+		// backing collection's GraphQL names belong to an older view.
+		namer := LatestNamer
 		path := []string{}
 		parent := node
 		for parent.Parent != nil && parent.CollectionDimension == nil {
-			path = append(path, ArtifactTypeName(parent.Name))
+			path = append(path, namer.CLIName(parent.Name))
 			parent = parent.Parent
 		}
 		slices.Reverse(path)
-		prefix := "/" + ArtifactTypeName(node.Module.Self().Name())
+		prefix := "/" + namer.CLIName(node.Module.Self().Name())
 		if parent.CollectionDimension != nil {
 			prefix = parent.CollectionDimension.Identifier
 		}
 		identifier := strings.Join(append([]string{prefix}, path...), "/")
-		// The namespaced name keeps short names unique across modules.
+		// The namespaced current spelling keeps short names unique across modules.
 		itemType := members.Get.ReturnType.Self().AsObject.Value.Self().Name
 		dim := &ArtifactDimension{
 			Kind: "COLLECTION", CollectionType: obj.Name,
 			Identifier:     identifier,
-			Name:           ArtifactTypeName(itemType),
+			Name:           namer.CLIName(itemType),
 			ItemType:       itemType,
 			KeyName:        members.Get.Args[0].Self().Name,
 			KeyDescription: members.Get.Args[0].Self().Description,
 		}
 		qualified := strings.Split(strings.TrimPrefix(identifier, "/"), "/")
-		itemName := strings.TrimPrefix(dim.Name, qualified[0]+"-")
+		// Trim the module prefix (the identifier's first segment, spelled by
+		// the same rules) from the item name.
+		itemName := dim.Name
+		for _, prefix := range []string{qualified[0], namer.CLIName(node.Module.Self().Name())} {
+			if rest, ok := strings.CutPrefix(itemName, prefix+"-"); ok {
+				itemName = rest
+				break
+			}
+		}
 		qualified = append(qualified, itemName)
 		dim.QualifiedName = strings.Join(qualified, "-")
 		item := &ModTreeNode{Parent: node, Name: "get", Type: members.Get.ReturnType, Description: members.Get.Description,
@@ -685,16 +809,18 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		if err := walkArtifactNodes(ctx, item, visit, visiting); err != nil {
 			return err
 		}
-		batch, err := CollectionBatchType(ctx, node.DagqlServer, node.Type.Self().AsObject.Value)
-		if err != nil {
-			return err
-		}
-		if batch.Valid {
-			batchNode := &ModTreeNode{Parent: node, Name: "batch", Type: batch.Value,
-				Module: node.Module, OriginalModule: node.OriginalModule, DagqlServer: node.DagqlServer, types: node.types}
-			visit(batchNode)
-			if err := walkArtifactBatch(ctx, batchNode, item, visit, visiting); err != nil {
+		for _, fn := range obj.Functions {
+			if fn.Self().Name == members.Get.Name {
+				continue
+			}
+			child, err := node.Child(ctx, fn.Self().Name)
+			if err != nil {
 				return err
+			}
+			if child != nil {
+				if err := walkArtifactNodes(ctx, child, visit, visiting); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -711,43 +837,6 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		seen[child.Name] = true
 		if err := walkArtifactNodes(ctx, child, visit, visiting); err != nil {
 			return err
-		}
-	}
-	return nil
-}
-
-func walkArtifactBatch(ctx context.Context, batchNode, item *ModTreeNode, visit func(*ModTreeNode), visiting map[string]bool) error {
-	children, err := batchNode.Children(ctx)
-	if err != nil {
-		return err
-	}
-	// Batch results are leaves. Enumerating collections below one
-	// would execute a batch during discovery.
-	seen := map[string]bool{}
-	for _, child := range children {
-		if typ := child.Type.Self(); !seen[child.Name] && typ != nil && !typ.Optional && typ.Kind == TypeDefKindObject {
-			seen[child.Name] = true
-			if artifactBatchDirective(child) != "" {
-				// Use the item operation's address when it has a matching
-				// batch. Batch-only operations use the same implicit dimension.
-				counterpart, err := item.Child(ctx, child.Name)
-				if err != nil {
-					return err
-				}
-				if counterpart != nil && artifactBatchDirective(counterpart) == artifactBatchDirective(child) && counterpart.Type.Self().ToType().Name() == child.Type.Self().ToType().Name() {
-					continue
-				}
-				receiver := *batchNode
-				receiver.CollectionDimension = item.CollectionDimension
-				child.Parent = &receiver
-				// Checks and Generators have no runtime collections to
-				// enumerate. Include Generator.stale without calling the batch.
-				if err := walkArtifactNodes(ctx, child, visit, visiting); err != nil {
-					return err
-				}
-			} else {
-				visit(child)
-			}
 		}
 	}
 	return nil

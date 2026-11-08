@@ -4,15 +4,8 @@ package dagger
 
 import (
 	"context"
-	"fmt"
-	"net"
-	"net/http"
-	"os"
-	"strconv"
 
 	"github.com/Khan/genqlient/graphql"
-	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/querybuilder"
@@ -342,6 +335,9 @@ type ContainerWithMountedDirectoryOpts = core.ContainerWithMountedDirectoryOpts
 
 // ContainerWithMountedFileOpts contains options for Container.WithMountedFile
 type ContainerWithMountedFileOpts = core.ContainerWithMountedFileOpts
+
+// ContainerWithMountedFilesOpts contains options for Container.WithMountedFiles
+type ContainerWithMountedFilesOpts = core.ContainerWithMountedFilesOpts
 
 // ContainerWithMountedSecretOpts contains options for Container.WithMountedSecret
 type ContainerWithMountedSecretOpts = core.ContainerWithMountedSecretOpts
@@ -1041,7 +1037,7 @@ type Client struct {
 var dag *Client
 
 func init() {
-	gqlClient := getClientParams()
+	gqlClient := core.ModuleGraphQLClient()
 	dag = &Client{
 		Query:  core.NewQuery(gqlClient),
 		client: core.WrapClient(gqlClient),
@@ -1060,56 +1056,4 @@ func (c *Client) GraphQLClient() graphql.Client {
 // QueryBuilder returns the underlying query builder.
 func (c *Client) QueryBuilder() *querybuilder.Selection {
 	return c.Query.QueryBuilder()
-}
-
-func getClientParams() graphql.Client {
-	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
-	if !ok {
-		panic("DAGGER_SESSION_PORT is not set")
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		panic(fmt.Errorf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err))
-	}
-
-	sessionToken := os.Getenv("DAGGER_SESSION_TOKEN")
-	if sessionToken == "" {
-		panic("DAGGER_SESSION_TOKEN is not set")
-	}
-
-	host := fmt.Sprintf("127.0.0.1:%d", port)
-
-	dialTransport := &http.Transport{
-		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("tcp", host)
-		},
-	}
-	httpClient := &http.Client{
-		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-			r.SetBasicAuth(sessionToken, "")
-
-			// detect $TRACEPARENT set by 'dagger run'
-			r = r.WithContext(fallbackSpanContext(r.Context()))
-
-			// propagate span context via headers (i.e. for Dagger-in-Dagger)
-			telemetry.Propagator.Inject(r.Context(), propagation.HeaderCarrier(r.Header))
-
-			return dialTransport.RoundTrip(r)
-		}),
-	}
-	return graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)
-}
-
-func fallbackSpanContext(ctx context.Context) context.Context {
-	if trace.SpanContextFromContext(ctx).IsValid() {
-		return ctx
-	}
-	return telemetry.Propagator.Extract(ctx, telemetry.NewEnvCarrier(true))
-}
-
-// TODO: pollutes namespace, move to non internal package in dagger.io/dagger
-type roundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return fn(req)
 }

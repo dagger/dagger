@@ -68,7 +68,7 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 					id
 					version
 					objectFormat
-					prerequisiteSHAs
+					prerequisiteShas
 					refs { name sha }
 					file: asFile { id size }
 					validated: validate { version }
@@ -101,7 +101,7 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 		node(id: $file) {
 			... on File {
 				bundle: asGitBundle {
-					version objectFormat prerequisiteSHAs refs { name sha }
+					version objectFormat prerequisiteShas refs { name sha }
 				}
 			}
 		}
@@ -129,7 +129,7 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 			... on GitRepository {
 				withBundle(bundle: $bundle, prerequisiteRef: "refs/heads/main") {
 					ref(name: $head) {
-						commitSHA
+						commitSha
 						tree(discardGitDir: true) { file(path: "local.txt") { contents } }
 					}
 				}
@@ -148,7 +148,7 @@ func (GitSuite) TestGitBundleRoundTripAndStockInterop(ctx context.Context, t *te
 		node(id: $repo) {
 			... on GitRepository {
 				withBundle(bundle: $bundle, prerequisiteRef: "refs/heads/main") {
-					ref(name: "refs/dagger/bundle/prerequisites/0") { commitSHA }
+					ref(name: "refs/dagger/bundle/prerequisites/0") { commitSha }
 				}
 			}
 		}
@@ -255,7 +255,7 @@ func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testc
 	refs, err := bundle.Refs(ctx)
 	require.NoError(t, err)
 	require.Len(t, refs, 1)
-	bundleSHA, err := refs[0].Sha(ctx)
+	bundleSHA, err := refs[0].SHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, tagSHA, bundleSHA)
 
@@ -265,7 +265,7 @@ func (GitSuite) TestGitBundlePreservesAnnotatedTag(ctx context.Context, t *testc
 	remoteRefs, err := remoteBundle.Refs(ctx)
 	require.NoError(t, err)
 	require.Len(t, remoteRefs, 1)
-	remoteBundleSHA, err := remoteRefs[0].Sha(ctx)
+	remoteBundleSHA, err := remoteRefs[0].SHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, tagSHA, remoteBundleSHA)
 
@@ -349,7 +349,7 @@ EOF
 		name, err := tag.Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "refs/tags/v1.0.0", name)
-		sha, err := tag.Sha(ctx)
+		sha, err := tag.SHA(ctx)
 		require.NoError(t, err)
 		require.Equal(t, tagSHA, sha)
 
@@ -456,7 +456,7 @@ func (GitSuite) TestGitBundleImportAfterPrerequisiteRefAdvances(ctx context.Cont
 			... on GitRepository {
 				withBundle(bundle: $bundle, prerequisiteRef: "refs/heads/main") {
 					ref(name: $head) {
-						commitSHA
+						commitSha
 						tree(discardGitDir: true) { entries }
 					}
 				}

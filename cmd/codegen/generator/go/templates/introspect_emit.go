@@ -466,14 +466,11 @@ func (funcs goTemplateFuncs) ModuleIntrospectionJSON(moduleName string) ([]byte,
 		RootVisitor: func(_ string) error { return nil },
 		StructVisitor: func(_ *parseState, _ *types.Named, _ *types.TypeName, spec *parsedObjectType, _ *types.Struct) error {
 			if spec.isCollection {
-				collection, batch, err := introspectCollection(spec)
+				collection, err := introspectCollection(spec)
 				if err != nil {
 					return err
 				}
 				moduleTypes = append(moduleTypes, collection)
-				if batch != nil {
-					moduleTypes = append(moduleTypes, batch)
-				}
 			} else {
 				moduleTypes = append(moduleTypes, introspectObject(spec))
 			}

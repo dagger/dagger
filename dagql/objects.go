@@ -547,11 +547,31 @@ func (spec *FieldSpec) resolveModule(ctx context.Context, srv *Server) (*ResultC
 
 // Select calls the field on the instance specified by the selector
 func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (AnyResult, error) {
+	ctx = resultScopeFromReceiver(ctx, r)
+	scoped, err := scopeObject(ctx, s, r)
+	if err != nil {
+		return nil, err
+	}
+	r = scoped.(ObjectResult[T])
 	r, preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, err
 	}
-	return r.call(ctx, s, preselectResult.request, preselectResult.inputArgs)
+	result, err := r.call(ctx, s, preselectResult.request, preselectResult.inputArgs)
+	if err != nil {
+		return nil, err
+	}
+	if object, ok := result.(AnyObjectResult); ok {
+		return scopeObject(ctx, s, object)
+	}
+	if _, scoped := UnwrapAs[HasResultScope](result); scoped && CurrentResultScope(ctx) != nil {
+		object, err := s.toSelectable(ctx, result)
+		if err != nil {
+			return nil, err
+		}
+		return scopeObject(ctx, s, object)
+	}
+	return result, nil
 }
 
 type preselectResult struct {
@@ -573,6 +593,89 @@ func (r ObjectResult[T]) sortCallArgsToSchema(fieldSpec *FieldSpec, view call.Vi
 	})
 }
 
+// scopeDynamicInputs scopes the arguments the dynamic input hook set or
+// replaced, and defaults. The selector inputs still in scoped were scoped
+// already: scoping loads every object argument again.
+func scopeDynamicInputs(ctx context.Context, srv *Server, scope ResultScope, spec *FieldSpec, view call.View, inputArgs map[string]Input, req *CallRequest, scoped map[string]*ResultCallArg) error {
+	for _, argSpec := range spec.Args.Inputs(view) {
+		input, ok := inputArgs[argSpec.Name]
+		if !ok {
+			continue
+		}
+		if arg := scoped[argSpec.Name]; arg != nil && slices.Contains(req.Args, arg) {
+			continue
+		}
+		updated, changed, err := scopeSelectorInput(ctx, srv, scope, argSpec, input)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			continue
+		}
+		inputArgs[argSpec.Name] = updated
+		if err := req.SetArgInput(ctx, argSpec.Name, updated, argSpec.Sensitive); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func prepareSelectorInputs(ctx context.Context, srv *Server, spec *FieldSpec, view call.View, selectorArgs []NamedInput) (map[string]Input, []*ResultCallArg, error) {
+	inputArgs := make(map[string]Input, len(selectorArgs))
+	frameArgs := make([]*ResultCallArg, 0, len(selectorArgs))
+	for _, argSpec := range spec.Args.Inputs(view) {
+		// just be n^2 since the overhead of a map is likely more expensive
+		// for the expected low value of n
+		var namedInput NamedInput
+		for _, selArg := range selectorArgs {
+			if selArg.Name == argSpec.Name {
+				namedInput = selArg
+				break
+			}
+		}
+
+		switch {
+		case namedInput.Value != nil && argSpec.Volatile:
+			// Volatile arguments go to the resolver but not into the call.
+			inputArgs[argSpec.Name] = namedInput.Value
+
+		case namedInput.Value != nil:
+			if scope := CurrentResultScope(ctx); scope != nil {
+				updated, _, err := scopeSelectorInput(ctx, srv, scope, argSpec, namedInput.Value)
+				if err != nil {
+					return nil, nil, err
+				}
+				namedInput.Value = updated
+			}
+			inputArgs[argSpec.Name] = namedInput.Value
+			frameArg, err := resultCallArgFromInput(ctx, argSpec.Name, namedInput.Value, argSpec.Sensitive)
+			if err != nil {
+				return nil, nil, err
+			}
+			frameArgs = append(frameArgs, frameArg)
+
+		case argSpec.Default != nil:
+			inputArgs[argSpec.Name] = argSpec.Default
+
+		case argSpec.Type.Type().NonNull:
+			// error out if the arg is missing but required
+			return nil, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+		}
+	}
+
+	return inputArgs, frameArgs, nil
+}
+
+// putVolatileInputs copies the volatile arguments' values from prepared into
+// inputs, which were rebuilt from a call that doesn't hold them.
+func putVolatileInputs(spec *FieldSpec, view call.View, prepared, inputs map[string]Input) {
+	for _, argSpec := range spec.Args.Inputs(view) {
+		if input, ok := prepared[argSpec.Name]; ok && argSpec.Volatile {
+			inputs[argSpec.Name] = input
+		}
+	}
+}
+
 func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selector) (ObjectResult[T], *preselectResult, error) {
 	view := sel.View
 	field, ok := r.class.Field(sel.Field, view)
@@ -584,35 +687,9 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 		// selector (since they're global from all perspectives)
 		view = ""
 	}
-	inputArgs := make(map[string]Input, len(sel.Args))
-	frameArgs := make([]*ResultCallArg, 0, len(sel.Args))
-	for _, argSpec := range field.Spec.Args.Inputs(view) {
-		// just be n^2 since the overhead of a map is likely more expensive
-		// for the expected low value of n
-		var namedInput NamedInput
-		for _, selArg := range sel.Args {
-			if selArg.Name == argSpec.Name {
-				namedInput = selArg
-				break
-			}
-		}
-
-		switch {
-		case namedInput.Value != nil:
-			inputArgs[argSpec.Name] = namedInput.Value
-			frameArg, err := resultCallArgFromInput(ctx, argSpec.Name, namedInput.Value, argSpec.Sensitive)
-			if err != nil {
-				return r, nil, err
-			}
-			frameArgs = append(frameArgs, frameArg)
-
-		case argSpec.Default != nil:
-			inputArgs[argSpec.Name] = argSpec.Default
-
-		case argSpec.Type.Type().NonNull:
-			// error out if the arg is missing but required
-			return r, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
-		}
+	inputArgs, frameArgs, err := prepareSelectorInputs(ctx, srv, field.Spec, view, sel.Args)
+	if err != nil {
+		return r, nil, err
 	}
 
 	astType := field.Spec.Type.Type()
@@ -669,6 +746,15 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 	} else {
 		req.ConcurrencyKey = clientMD.SessionID
 	}
+	// The hook can replace arguments in place, so record the scoped
+	// selector arguments before it runs.
+	var scoped map[string]*ResultCallArg
+	if CurrentResultScope(ctx) != nil {
+		scoped = make(map[string]*ResultCallArg, len(frameArgs))
+		for _, arg := range frameArgs {
+			scoped[arg.Name] = arg
+		}
+	}
 	if field.Spec.GetDynamicInput != nil {
 		if err := field.Spec.GetDynamicInput(ctx, r, inputArgs, view, req); err != nil {
 			typ := r.Type()
@@ -678,10 +764,22 @@ func (r ObjectResult[T]) preselect(ctx context.Context, srv *Server, sel Selecto
 			return r, nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", typ.Name(), sel.Field, err)
 		}
 		r.sortCallArgsToSchema(field.Spec, view, req.Args)
+		volatileInputs := inputArgs
 		inputArgs, err = field.Spec.Args.InputsFromResultCallArgs(ctx, req.Args, view)
 		if err != nil {
 			return r, nil, err
 		}
+		putVolatileInputs(field.Spec, view, volatileInputs, inputArgs)
+	}
+
+	if scope := CurrentResultScope(ctx); scope != nil {
+		if err := scopeDynamicInputs(ctx, srv, scope, field.Spec, view, inputArgs, req, scoped); err != nil {
+			return r, nil, err
+		}
+		r.sortCallArgsToSchema(field.Spec, view, req.Args)
+	}
+
+	if field.Spec.GetDynamicInput != nil || CurrentResultScope(ctx) != nil {
 		implicitInputs, err = field.Spec.resolveImplicitInputCallArgs(ctx, inputArgs)
 		if err != nil {
 			typ := r.Type()
@@ -1188,6 +1286,15 @@ type InputSpec struct {
 	// object only to expose its type's methods as tools, so restoring the
 	// conversation must not re-run the call that produced that object.
 	LazyRef bool
+
+	// Volatile marks an argument whose value goes to the resolver but never
+	// into the call: not its cache identity, its ID, or its telemetry. Calls
+	// that differ only in it are the same call, and share whichever result
+	// was made first. Use it only for an argument that cannot change the
+	// result, such as a performance hint. It needs a default: rebuilding a
+	// call fills its arguments from the call before the volatile values are
+	// put back.
+	Volatile bool
 }
 
 func (spec *InputSpec) merge(other *InputSpec) {
@@ -1221,6 +1328,9 @@ func (spec *InputSpec) merge(other *InputSpec) {
 	}
 	if other.LazyRef {
 		spec.LazyRef = other.LazyRef
+	}
+	if other.Volatile {
+		spec.Volatile = other.Volatile
 	}
 }
 
@@ -1256,6 +1366,13 @@ func (arg Argument) Internal() Argument {
 // InputSpec.LazyRef.
 func (arg Argument) LazyRef() Argument {
 	arg.Spec.LazyRef = true
+	return arg
+}
+
+// Volatile marks an argument whose value never enters the call. See
+// InputSpec.Volatile.
+func (arg Argument) Volatile() Argument {
+	arg.Spec.Volatile = true
 	return arg
 }
 
@@ -1432,7 +1549,11 @@ func (specs InputSpecs) ArgumentDefinitions(view call.View) []*ast.ArgumentDefin
 			Type:        arg.Type.Type(),
 		}
 		if arg.Default != nil {
-			schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
+			if viewed, ok := arg.Default.(ViewLiteraler); ok {
+				schemaArg.DefaultValue = viewed.ViewLiteral(view).ToAST()
+			} else {
+				schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
+			}
 		}
 		if len(arg.Directives) > 0 {
 			schemaArg.Directives = slices.Clone(arg.Directives)

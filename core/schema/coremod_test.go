@@ -109,3 +109,49 @@ func TestCoreModObjectReturnReplayability(t *testing.T) {
 		require.Equal(t, before, executions.Load())
 	})
 }
+
+func TestCoreModScalarSDKInputRepresentations(t *testing.T) {
+	ctx := t.Context()
+	srv, err := dagql.NewServer(ctx, core.NewRoot(&currentTypeDefsTestServer{}))
+	require.NoError(t, err)
+	srv.InstallScalar(core.Platform{})
+	mod := &CoreMod{base: &CoreSchemaBase{views: map[call.View]*coreSchemaViewState{
+		"": {server: srv},
+	}}}
+	scalar := &CoreModScalar{coreMod: mod, name: "Platform"}
+	native, err := (core.Platform{}).DecodeInput("linux/arm64/v8")
+	require.NoError(t, err)
+	for name, value := range map[string]dagql.Typed{
+		"native object field": native,
+		"SDK argument":        dagql.NewScalar("Platform", dagql.String("linux/arm64/v8")),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := scalar.ConvertToSDKInput(ctx, value)
+			require.NoError(t, err)
+			require.Equal(t, "linux/arm64", got)
+		})
+	}
+	_, err = scalar.ConvertToSDKInput(ctx, dagql.Int(42))
+	require.Error(t, err, "the registered scalar decoder must still validate the value")
+}
+
+func TestCoreModScalarEmptyJSONSDKInput(t *testing.T) {
+	ctx := t.Context()
+	srv, err := dagql.NewServer(ctx, core.NewRoot(&currentTypeDefsTestServer{}))
+	require.NoError(t, err)
+	srv.InstallScalar(core.JSON{})
+	mod := &CoreMod{base: &CoreSchemaBase{views: map[call.View]*coreSchemaViewState{
+		"": {server: srv},
+	}}}
+	scalar := &CoreModScalar{coreMod: mod, name: "JSON"}
+	for name, value := range map[string]dagql.Typed{
+		"SDK argument": dagql.NewScalar("JSON", dagql.String("")),
+		"native value": core.JSON(""),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := scalar.ConvertToSDKInput(ctx, value)
+			require.NoError(t, err)
+			require.Nil(t, got, "empty JSON must remain null at the SDK boundary")
+		})
+	}
+}

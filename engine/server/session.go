@@ -56,6 +56,7 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
@@ -87,6 +88,9 @@ type daggerSession struct {
 	// module/SDK clients) is recorded even when engine-global recording is
 	// off.
 	wcprofEnabled bool
+	// releaseEBPF releases the eBPF programs the session asked for with its
+	// profile (ClientMetadata.ProfileEBPF); nil when it asked for none.
+	releaseEBPF func()
 
 	// phase is the session's run of PhaseSession (wcprof_phase.go), from its
 	// initialization to the end of its removal: an op over it when it is
@@ -190,7 +194,8 @@ type daggerSession struct {
 	cloudFlushers []func(context.Context)
 	// cloudRefresh admits OAuth token refreshes until the main client's
 	// shutdown starts.
-	cloudRefresh *cloudRefreshGate
+	cloudRefresh      *cloudRefreshGate
+	cloudPrepareToken func(context.Context) error
 	// cloudTokenExpiry is when the session's Cloud token expires, in Unix
 	// nanoseconds, or zero when it does not. Token refreshes update it.
 	cloudTokenExpiry atomic.Int64
@@ -322,6 +327,11 @@ type clientRecord struct {
 	// externally returned value is a deep clone of it.
 	metadataSealed bool
 
+	// Live LLM configuration is separate from immutable bootstrap metadata.
+	// Protected by daggerSession.scopeMu; revision > 0 includes explicit reset.
+	llmConfig         *engine.LLMConfig
+	llmConfigRevision uint64
+
 	// closed after the shutdown endpoint is called
 	shutdownCh        chan struct{}
 	closeShutdownOnce sync.Once
@@ -356,6 +366,15 @@ type clientRecord struct {
 
 	// Synthetic clients may route host services through this stable ancestor ID.
 	hostServiceProxyClientID string
+
+	// telemetryUnread says nothing reads this client's telemetry store, so
+	// telemetry is not written to it and it has none. Sealed at transport
+	// registration. It is set for an exec's own identity, shared by its SDK
+	// calls and its session helper, and for in-engine SDK clients: none of
+	// them subscribe. Root clients, and nested clients registered under an
+	// identity of their own (a CLI, which subscribes to its own stream), keep
+	// their store.
+	telemetryUnread bool
 
 	// SDK clients execute inside the engine and have no host-side attachables.
 	// Reject their attachable lookups instead of waiting or proxying to an ancestor.
@@ -411,6 +430,12 @@ type clientRuntime struct {
 	// If the client is itself from a function call in a user module, this is set with the
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
+
+	cloudArtifactMu         sync.Mutex
+	cloudArtifactClients    map[string]*engineclient.Client
+	cloudArtifactLLMConfigs map[string]*cloudLLMConfigState
+	cloudArtifactClosed     bool
+	cloudArtifactConnect    singleflight.Group[string, *engineclient.Client]
 
 	// Trace and log providers are session-owned. These lightweight bound
 	// exporters are retained only for integrations that deliver telemetry for a
@@ -515,12 +540,37 @@ func (client *clientRuntime) String() string {
 	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
 }
 
+func (client *clientRuntime) closeCloudArtifactClients(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, sessionTelemetryFlushTimeout)
+	defer cancel()
+	if budget := client.daggerSession.cloudBound.budget; budget != nil {
+		if deadline, ok := budget.current(); ok {
+			var cancelBudget context.CancelFunc
+			ctx, cancelBudget = context.WithDeadline(ctx, deadline)
+			defer cancelBudget()
+		}
+	}
+	client.cloudArtifactMu.Lock()
+	client.cloudArtifactClosed = true
+	clients := client.cloudArtifactClients
+	client.cloudArtifactClients = nil
+	client.cloudArtifactMu.Unlock()
+	var group errgroup.Group
+	for _, remote := range clients {
+		group.Go(func() error { return remote.CloseWithContext(ctx) })
+	}
+	return group.Wait()
+}
+
 // releaseHeavyState drops every execution-only edge after the runtime has been
 // atomically unpublished. Released lease handles may remain in stale contexts,
 // and their callbacks intentionally still point at this small shell, so clearing
 // the fields here ensures those harmless handles cannot retain a DagQL/schema
 // graph. Zero typed leases proves no legitimate execution can race these writes.
 func (client *clientRuntime) releaseHeavyState() {
+	if err := client.closeCloudArtifactClients(context.Background()); err != nil {
+		slog.Error("close cloud artifact clients", "error", err)
+	}
 	client.stateMu.Lock()
 	client.state = clientStateReclaimed
 	client.dag = nil
@@ -629,13 +679,14 @@ func (sess *daggerSession) ancestorRuntimes(record *clientRecord) ([]*clientRunt
 	return ancestors, nil
 }
 
-// telemetryRouteClientIDs returns the exact nested-to-ancestor fan-out order:
-// the origin first, followed by ancestors from the root to the direct parent.
+// telemetryRouteClientIDs returns the clients whose stores receive record's
+// telemetry, in nested-to-ancestor fan-out order: the origin first, followed
+// by ancestors from the root to the direct parent, leaving out clients whose
+// store nothing reads (see clientRecord.telemetryUnread).
 func (sess *daggerSession) telemetryRouteClientIDs(record *clientRecord) ([]string, error) {
 	sess.clientMu.RLock()
 	defer sess.clientMu.RUnlock()
 
-	route := append([]string{record.clientID}, record.parentClientIDs...)
 	for i, parentID := range record.parentClientIDs {
 		parent, ok := sess.clientRecords[parentID]
 		if !ok {
@@ -645,11 +696,12 @@ func (sess *daggerSession) telemetryRouteClientIDs(record *clientRecord) ([]stri
 			return nil, fmt.Errorf("telemetry ancestor client %q has mismatched ancestry for client %q", parentID, record.clientID)
 		}
 	}
-	return route, nil
+	return sess.telemetryReadersLocked(record, record.parentClientIDs), nil
 }
 
 // telemetryRouteOriginClientID resolves an immutable origin ID through the
-// session's validated client record graph. Exporters call this at batch delivery
+// session's validated client record graph to the clients whose stores receive
+// its telemetry (see telemetryRouteClientIDs). Exporters call this at batch delivery
 // time, so routing does not retain or require a client runtime.
 func (sess *daggerSession) telemetryRouteOriginClientID(originClientID string) ([]string, error) {
 	sess.clientMu.RLock()
@@ -676,7 +728,23 @@ func (sess *daggerSession) telemetryRouteOriginClientID(originClientID string) (
 		}
 		route = append(route, parentID)
 	}
-	return route, nil
+	return sess.telemetryReadersLocked(record, record.parentClientIDs), nil
+}
+
+// telemetryReadersLocked returns origin and its validated ancestors, in that
+// order, leaving out clients whose store nothing reads (see
+// clientRecord.telemetryUnread). Requires clientMu.
+func (sess *daggerSession) telemetryReadersLocked(origin *clientRecord, ancestorIDs []string) []string {
+	readers := make([]string, 0, len(ancestorIDs)+1)
+	if !origin.telemetryUnread {
+		readers = append(readers, origin.clientID)
+	}
+	for _, ancestorID := range ancestorIDs {
+		if !sess.clientRecords[ancestorID].telemetryUnread {
+			readers = append(readers, ancestorID)
+		}
+	}
+	return readers
 }
 
 // telemetryDeliveryClientIDs preserves the delivery-domain key order used by
@@ -686,17 +754,24 @@ func (sess *daggerSession) telemetryDeliveryClientIDs(record *clientRecord) ([]s
 	if err != nil {
 		return nil, err
 	}
+	if record.telemetryUnread {
+		return route, nil
+	}
 	return append(slices.Clone(route[1:]), route[0]), nil
 }
 
 // retainTelemetryDB is called during initialization with a request lease held.
+// A client whose store nothing reads has none to retain.
 func (client *clientRuntime) retainTelemetryDB(ctx context.Context) error {
+	if client.telemetryUnread {
+		return nil
+	}
 	client.telemetryDBMu.Lock()
 	defer client.telemetryDBMu.Unlock()
 	if client.telemetryDB != nil {
 		return nil
 	}
-	db, err := client.TelemetryDB(ctx)
+	db, err := client.telemetryStore(ctx)
 	if err != nil {
 		return err
 	}
@@ -709,12 +784,25 @@ func (client *clientRuntime) closeTelemetryDB() error {
 	db := client.telemetryDB
 	client.telemetryDB = nil
 	client.telemetryDBMu.Unlock()
+	if db == nil {
+		return nil
+	}
 	return db.Close()
 }
 
+// TelemetryDB opens the client's telemetry store with its indexes built, for
+// readers that look spans and logs up by their relationships.
 // NOTE: be sure to defer closing the DB when done with it, otherwise it may leak
 func (record *clientRecord) TelemetryDB(ctx context.Context) (*clientdb.DB, error) {
 	return record.daggerSession.telemetryPubSub.srv.clientDBs.Open(ctx, record.clientID)
+}
+
+// telemetryStore opens the client's telemetry store without building its
+// indexes, for holding it open and for reading its rows in order. Indexes
+// are built when a reader that needs them opens it (see TelemetryDB), so a
+// session that never has one builds none. Close it when done with it.
+func (record *clientRecord) telemetryStore(ctx context.Context) (*clientdb.DB, error) {
+	return record.daggerSession.telemetryPubSub.srv.clientDBs.OpenForAppend(ctx, record.clientID)
 }
 
 // slowDrainOp flags a shutdown-drain operation that ate a meaningful chunk of
@@ -925,6 +1013,7 @@ func (srv *Server) initializeClientMetrics(client *clientRuntime) {
 	}
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
+		sdkmetric.WithView(engineutil.ResourceMetricsView()),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
 			exporter,
 			sdkmetric.WithInterval(metricReaderInterval),
@@ -1072,6 +1161,14 @@ func (srv *Server) initializeDaggerSession(
 	// construction (before the session is published) and are immutable /
 	// clientMu-protected thereafter; they are deliberately not assigned here.
 	sess.wcprofEnabled = clientMetadata.Profile
+	if sess.wcprofEnabled && len(clientMetadata.ProfileEBPF) > 0 {
+		release, err := wcbpf.Acquire(clientMetadata.ProfileEBPF)
+		if err != nil {
+			return err
+		}
+		sess.releaseEBPF = release
+		failureCleanups.Add("release eBPF programs", cleanups.Infallible(release))
+	}
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
@@ -1331,6 +1428,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	errs = errors.Join(errs, telemetryErr)
 	archiveErrs = errors.Join(archiveErrs, telemetryErr)
 	errs = errors.Join(errs, srv.finalizeSessionArchive(telemetryCtx, sess, archiveErrs))
+	srv.retireSessionTelemetryStores(sess)
 	step.end()
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
@@ -1340,7 +1438,37 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	teardown.end()
 	sess.phase.end(srv)
+	if sess.releaseEBPF != nil {
+		sess.releaseEBPF()
+	}
 	return errs
+}
+
+// retireSessionTelemetryStores deletes the session's telemetry stores once its
+// final telemetry is written: nothing can read them after the session ends but
+// an archive, which keeps its store, and a Cloud forwarder or a draining
+// subscription, which the store waits for (see clientdb.DBs.Retire).
+func (srv *Server) retireSessionTelemetryStores(sess *daggerSession) {
+	if srv.clientDBs == nil {
+		return
+	}
+	var keep map[string]bool
+	if srv.archives != nil {
+		keep = srv.archives.KeepSet()
+	}
+	sess.clientMu.RLock()
+	clientIDs := make([]string, 0, len(sess.clientRecords))
+	for clientID, record := range sess.clientRecords {
+		if !record.telemetryUnread && !keep[clientID] {
+			clientIDs = append(clientIDs, clientID)
+		}
+	}
+	sess.clientMu.RUnlock()
+	for _, clientID := range clientIDs {
+		if err := srv.clientDBs.Retire(clientID); err != nil {
+			slog.Warn("retire client telemetry store", "session", sess.sessionID, "client", clientID, "err", err)
+		}
+	}
 }
 
 // deleteSession drops a session from the registry only when the map entry is
@@ -1630,11 +1758,15 @@ func (srv *Server) initializeClientRuntime(
 		client.mod = modInst
 
 		// A module client that didn't declare its version gets the core view
-		// of the module it calls from: its engineVersion, capped at the
-		// engine's view.
+		// of the module it calls from: the view of the engine version it
+		// declares, capped at the engine's own
+		// (engine.ModuleAPIViewVersion), whose naming rules the typedefs
+		// its runtime declares are named by (see
+		// core.ModuleSource.NamingView). A declared client keeps its own
+		// core view; serveQuery still names its typedefs by the module's
+		// (core.ContextWithNamingView).
 		if !client.clientMetadata.ClientVersionDeclared {
-			engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
-			coreView = call.View(engine.ModuleAPIViewVersion(engineVersion))
+			coreView = client.mod.Self().Source.Value.Self().NamingView()
 			client.dag.View = coreView
 			coreMod = coreSchemaBase.CoreMod(coreView)
 		}
@@ -1946,20 +2078,32 @@ func (srv *Server) getOrInitClient(
 
 	// get or initialize the session as a whole
 
-	srv.daggerSessionsMu.Lock()
+	// Every request of a session looks it up here, so an existing session is
+	// found under the read lock, and only a new one takes the write lock.
+	srv.daggerSessionsMu.RLock()
 	if srv.isShuttingDown() {
-		srv.daggerSessionsMu.Unlock()
+		srv.daggerSessionsMu.RUnlock()
 		return nil, nil, errServerShuttingDown
 	}
-	// A newly constructed session is still unreachable when lifecycleMu is
-	// acquired, so this is the one unpublished-object exception to the rule that
-	// lifecycleMu and daggerSessionsMu are not nested.
-	sess, createdSession, err := srv.getOrCreateSessionLocked(sessionID, clientID)
-	if err != nil {
+	sess := srv.daggerSessions[sessionID]
+	srv.daggerSessionsMu.RUnlock()
+	createdSession := false
+	if sess == nil {
+		srv.daggerSessionsMu.Lock()
+		if srv.isShuttingDown() {
+			srv.daggerSessionsMu.Unlock()
+			return nil, nil, errServerShuttingDown
+		}
+		// A newly constructed session is still unreachable when lifecycleMu is
+		// acquired, so this is the one unpublished-object exception to the rule that
+		// lifecycleMu and daggerSessionsMu are not nested.
+		sess, createdSession, err = srv.getOrCreateSessionLocked(sessionID, clientID)
+		if err != nil {
+			srv.daggerSessionsMu.Unlock()
+			return nil, nil, err
+		}
 		srv.daggerSessionsMu.Unlock()
-		return nil, nil, err
 	}
-	srv.daggerSessionsMu.Unlock()
 
 	if !createdSession {
 		// Fast, lock-free check: if the session is already a removed tombstone,
@@ -2489,31 +2633,38 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		ctx = dagql.WithRepeatedTelemetry(ctx)
 	}
 
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
-		WithField("trace", trace.SpanContextFromContext(ctx).TraceID().String()).
-		WithField("span", trace.SpanContextFromContext(ctx).SpanID().String()).
-		WithField("client_id", clientMetadata.ClientID).
-		WithField("client_hostname", clientMetadata.ClientHostname).
-		WithField("session_id", clientMetadata.SessionID))
+	spanCtx := trace.SpanContextFromContext(ctx)
+	traceID, spanID := spanCtx.TraceID().String(), spanCtx.SpanID().String()
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithFields(logrus.Fields{
+		"trace":           traceID,
+		"span":            spanID,
+		"client_id":       clientMetadata.ClientID,
+		"client_hostname": clientMetadata.ClientHostname,
+		"session_id":      clientMetadata.SessionID,
+	}))
 	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With(
 		"client_id", clientMetadata.ClientID,
 		"client_hostname", clientMetadata.ClientHostname,
 		"session_id", clientMetadata.SessionID,
-		"trace", trace.SpanContextFromContext(ctx).TraceID().String(),
-		"span", trace.SpanContextFromContext(ctx).SpanID().String(),
+		"trace", traceID,
+		"span", spanID,
 	))
 	ctx = dagql.ContextWithCache(ctx, srv.engineCache)
 
-	// Debug https://github.com/dagger/dagger/issues/7592 by logging method and some headers, which
-	// are checked by gqlgen's handler
-	bklog.G(ctx).WithFields(logrus.Fields{
-		"path":          r.URL.Path,
-		"method":        r.Method,
-		"upgradeHeader": r.Header.Get("Upgrade"),
-		"contentType":   r.Header.Get("Content-Type"),
-		"trace":         trace.SpanContextFromContext(ctx).TraceID().String(),
-		"span":          trace.SpanContextFromContext(ctx).SpanID().String(),
-	}).Debug("handling http request")
+	// Log the method and some headers, which gqlgen's handler checks, to debug transport errors
+	// such as https://github.com/dagger/dagger/issues/7592. This runs for every request, and the
+	// engine logs at debug level by default, so it's logged, and its fields built, only at trace
+	// level.
+	if logger := bklog.G(ctx); logger.Logger.IsLevelEnabled(logrus.TraceLevel) {
+		logger.WithFields(logrus.Fields{
+			"path":          r.URL.Path,
+			"method":        r.Method,
+			"upgradeHeader": r.Header.Get("Upgrade"),
+			"contentType":   r.Header.Get("Content-Type"),
+			"trace":         traceID,
+			"span":          spanID,
+		}).Trace("handling http request")
+	}
 
 	if r.URL.Path == "/v1/telemetry/archives" || strings.HasPrefix(r.URL.Path, "/v1/telemetry/archives/") {
 		record, err := srv.archiveRequestRecord(clientMetadata.ClientID, clientMetadata.SessionID, clientMetadata.ClientSecretToken)
@@ -2525,7 +2676,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	childMetadata := r.Header.Values(engine.ChildClientMetadataMetaKey)
 
-	mux := http.NewServeMux()
+	var mux *http.ServeMux
 	switch path := r.URL.Path; {
 	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics"):
 		// Telemetry subscriptions require only the stable client record.
@@ -2533,6 +2684,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		if err != nil {
 			return fmt.Errorf("get client record: %w", err)
 		}
+		mux = http.NewServeMux()
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, record))
@@ -2594,19 +2746,52 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
 
-		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
-		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
-		mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
-		mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
-		sess.endpointMu.RLock()
-		for path, handler := range sess.endpoints {
-			mux.Handle(path, handler)
-		}
-		sess.endpointMu.RUnlock()
+		srv.serveClientEndpoints(w, r, client)
+		return nil
 	}
 
 	mux.ServeHTTP(w, r)
 	return nil
+}
+
+func (srv *Server) serveClientEndpoints(w http.ResponseWriter, r *http.Request, client *clientRuntime) {
+	sess := client.daggerSession
+	// The session's built-in endpoints are exact paths, so while no endpoint was mixed in through
+	// MuxEndpoint they're served without building a mux for every request; any other request
+	// goes through the mux as before, which also keeps a mixed-in pattern's precedence.
+	sess.endpointMu.RLock()
+	mixedIn := len(sess.endpoints) > 0
+	sess.endpointMu.RUnlock()
+	switch path := r.URL.Path; {
+	case mixedIn:
+	case path == engine.QueryEndpoint:
+		httpHandlerFunc(srv.serveQuery, client).ServeHTTP(w, r)
+		return
+	case path == engine.SessionAttachablesEndpoint:
+		httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord).ServeHTTP(w, r)
+		return
+	case path == engine.InitEndpoint:
+		httpHandlerFunc(srv.serveInit, client).ServeHTTP(w, r)
+		return
+	case path == engine.LLMConfigEndpoint:
+		httpHandlerFunc(srv.serveLLMConfig, client).ServeHTTP(w, r)
+		return
+	case path == engine.ShutdownEndpoint:
+		httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
+		return
+	}
+	mux := http.NewServeMux()
+	mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
+	mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
+	mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
+	mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
+	mux.Handle(engine.LLMConfigEndpoint, httpHandlerFunc(srv.serveLLMConfig, client))
+	sess.endpointMu.RLock()
+	for path, handler := range sess.endpoints {
+		mux.Handle(path, handler)
+	}
+	sess.endpointMu.RUnlock()
+	mux.ServeHTTP(w, r)
 }
 
 // serveChildClient serves a request that parent forwarded for a Dagger client
@@ -2731,6 +2916,36 @@ func withRequestTelemetrySuppression(ctx context.Context, r *http.Request) (cont
 	return dagql.WithSkip(ctx), true
 }
 
+func recoverQueryPanic(ctx context.Context, result *error) {
+	if v := recover(); v != nil {
+		bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
+		switch v := v.(type) {
+		case error:
+			*result = gqlErr(v, http.StatusInternalServerError)
+		case string:
+			*result = gqlErr(errors.New(v), http.StatusInternalServerError)
+		default:
+			*result = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
+		}
+	}
+}
+
+// beginServeQueryOp begins a profiled request's session.serveQuery op. A
+// request the engine stamped on arrival is served from then: its routing here
+// is the op's first part, session.route.
+func beginServeQueryOp(ctx context.Context, clientID string) (context.Context, *wcprof.Op) {
+	arrival := wcprof.RequestArrival(ctx)
+	routedNS := wcprof.NowNS()
+	ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.serveQuery", wcprof.OpOpts{
+		ClientID: clientID,
+		Start:    arrival,
+	})
+	if !arrival.IsZero() {
+		wcprof.RecordOp(ctx, wcprof.OpKindSessionPhase, "session.route", wcprof.OpOpts{ClientID: clientID}, wcprof.TimeNS(arrival), routedNS, wcprof.OutcomeOK)
+	}
+	return ctx, op
+}
+
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *clientRuntime) (rerr error) {
 	sess := client.daggerSession
 
@@ -2772,19 +2987,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 
 	// turn panics into graphql errors — must be set up before any code that
 	// could panic (including ensureExtraModulesLoaded and schema loading).
-	defer func() {
-		if v := recover(); v != nil {
-			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
-			switch v := v.(type) {
-			case error:
-				rerr = gqlErr(v, http.StatusInternalServerError)
-			case string:
-				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
-			default:
-				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
-			}
-		}
-	}()
+	defer recoverQueryPanic(ctx, &rerr)
 
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.
@@ -2850,15 +3053,21 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
+	if client.fnCall != nil && client.fnCall.ResultScope != nil {
+		ctx = dagql.WithResultScope(ctx, client.fnCall.ResultScope)
+	}
+
+	// A module client's typedef constructors name the module's declarations
+	// by the module's rules, even when the client declared a core view of
+	// its own (see initializeClientRuntime).
+	ctx = client.withModuleNaming(ctx)
 
 	var profServeOp *wcprof.Op
 	if profiling {
 		if profiledSession {
 			ctx = wcprof.ContextWithProfiling(ctx)
 		}
-		ctx, profServeOp = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.serveQuery", wcprof.OpOpts{
-			ClientID: client.clientID,
-		})
+		ctx, profServeOp = beginServeQueryOp(ctx, client.clientID)
 		if callerSpan.IsValid() {
 			// Resolves, in the dump, to the caller's op when the caller
 			// reported itself (see engine/wcprof/contract).
@@ -2912,8 +3121,19 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
-	gqlSrv := dagql.NewDefaultHandler(schema)
-	// NB: break glass when needed:
+	queryCtx := ctx
+	if profiling {
+		var queryOp *wcprof.Op
+		queryCtx, queryOp = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.query", wcprof.OpOpts{ClientID: client.clientID})
+		defer queryOp.End(wcprof.OutcomeOK)
+		r = r.WithContext(queryCtx)
+	}
+
+	_, handlerStep := dagql.BeginStep(queryCtx, "graphql.handler")
+	gqlSrv := schema.Handler()
+	handlerStep.End(nil)
+	// NB: break glass when needed, in dagql.NewDefaultHandler, since the handler is shared by
+	// every request to this schema:
 	// gqlSrv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
 	// 	res := next(ctx)
 	// 	pl, err := json.Marshal(res)
@@ -2921,14 +3141,22 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	// 	return res
 	// })
 
-	if profiling {
-		queryCtx, queryOp := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.query", wcprof.OpOpts{ClientID: client.clientID})
-		defer queryOp.End(wcprof.OutcomeOK)
-		r = r.WithContext(queryCtx)
-	}
-
-	gqlSrv.ServeHTTP(w, r)
+	dagql.ServeHTTPWithWriteStep(gqlSrv, w, r)
 	return nil
+}
+
+// withModuleNaming returns ctx for serving a query of client. A module
+// client that declared its version is served the core view of that version,
+// but the typedef constructors still name its module's declarations by the
+// module's rules: they select at the module's NamingView
+// (core.ContextWithNamingView). Other clients' core view already is it, or
+// they have no module.
+func (client *clientRuntime) withModuleNaming(ctx context.Context) context.Context {
+	mod := client.mod.Self()
+	if mod == nil || client.clientMetadata == nil || !client.clientMetadata.ClientVersionDeclared {
+		return ctx
+	}
+	return core.ContextWithNamingView(ctx, mod.Source.Value.Self().NamingView())
 }
 
 func (client *clientRuntime) claimSingleQueryRequest() error {
@@ -3076,10 +3304,17 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	}
 
 	if isMainClient {
-		slog.Info("main client is shutting down")
-		// Every wait on Cloud from here until the request returns shares one
-		// deadline, well within the client's own shutdown limit.
 		defer sess.startCloudShutdownBudget()()
+	}
+	if err := drainPhase("close cloud artifact clients", func() error {
+		return client.closeCloudArtifactClients(context.WithoutCancel(ctx))
+	}); err != nil {
+		shutdownErr = errors.Join(shutdownErr, err)
+	}
+
+	if isMainClient {
+		slog.Info("main client is shutting down")
+		// Remote clients and telemetry share the shutdown budget started above.
 		err := drainPhase("flush workspace locks", func() error {
 			return srv.flushWorkspaceLocks(context.WithoutCancel(ctx), client)
 		})
@@ -3503,18 +3738,25 @@ func readRemoteWorkspaceLock(ctx context.Context, ws *core.Workspace) (*workspac
 	if root.Self() == nil {
 		return nil, true, fmt.Errorf("remote Git workspace has no root filesystem")
 	}
-	lock, err := readWorkspaceLockFromRootfs(ctx, root, ws.LockFile)
+	var statFS core.StatFS = &core.DirectoryStatFS{Dir: root}
+	readFile := func(ctx context.Context, path string) ([]byte, error) {
+		return core.DirectoryReadFile(ctx, root, path)
+	}
+	if fs, ok := ws.GitSparseTreeFS(); ok {
+		statFS, readFile = fs, fs.ReadFile
+	}
+	lock, err := readWorkspaceLockFromTree(ctx, statFS, readFile, ws.LockFile)
 	return lock, true, err
 }
 
-func readWorkspaceLockFromRootfs(
+func readWorkspaceLockFromTree(
 	ctx context.Context,
-	root dagql.ObjectResult[*core.Directory],
+	statFS core.StatFS,
+	readFile func(context.Context, string) ([]byte, error),
 	lockPath string,
 ) (*workspace.Lock, error) {
 	lockPath = filepath.ToSlash(lockPath)
 	legacyPath := filepath.ToSlash(workspace.LegacyLockFilePathForCanonical(lockPath))
-	statFS := &core.DirectoryStatFS{Dir: root}
 
 	_, exists, err := core.StatFSExists(ctx, statFS, lockPath)
 	if err != nil {
@@ -3531,7 +3773,7 @@ func readWorkspaceLockFromRootfs(
 		return workspace.NewLock(), nil
 	}
 
-	data, err := core.DirectoryReadFile(ctx, root, lockPath)
+	data, err := readFile(ctx, lockPath)
 	if err != nil {
 		if lockPath == legacyPath {
 			return nil, fmt.Errorf("reading legacy lock: %w", err)
@@ -4529,12 +4771,95 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 	return record.TelemetryDB(ctx)
 }
 
-// Return a client connected to a cloud engine. If bool return is false, the local engine should be used. Session attachables for the returned client will be proxied back to the calling client.
+// Related artifacts share a cloud session and its module call cache.
+func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) (*engineclient.Client, error) {
+	parent, err := srv.nonModuleParentClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	client, _, err := parent.cloudArtifactConnect.Do(ctx, scope, func(ctx context.Context) (*engineclient.Client, error) {
+		parent.cloudArtifactMu.Lock()
+		cached, closed := parent.cloudArtifactClients[scope], parent.cloudArtifactClosed
+		var llmState *cloudLLMConfigState
+		if cached != nil && !closed {
+			if parent.cloudArtifactLLMConfigs == nil {
+				parent.cloudArtifactLLMConfigs = make(map[string]*cloudLLMConfigState)
+			}
+			llmState = parent.cloudArtifactLLMConfigs[scope]
+			if llmState == nil {
+				llmState = &cloudLLMConfigState{}
+				parent.cloudArtifactLLMConfigs[scope] = llmState
+			}
+		}
+		parent.cloudArtifactMu.Unlock()
+		if closed {
+			return nil, fmt.Errorf("cloud artifact clients are closed")
+		}
+		if cached != nil {
+			if err := llmState.sync(ctx, parent.daggerSession, parent.clientRecord, cached); err != nil {
+				return nil, fmt.Errorf("refresh cloud LLM configuration: %w", err)
+			}
+			return cached, nil
+		}
+		// Setup can outlive its first caller. Retain the parent until it ends.
+		clientScope, err := parent.daggerSession.acquireRootClientScope(parent, engine.ClientLeaseSharedWork, "cloud-artifacts/"+scope)
+		if err != nil {
+			return nil, err
+		}
+		defer clientScope.Lease().Release()
+		ctx, err = engine.ContextWithClientScope(ctx, clientScope)
+		if err != nil {
+			return nil, err
+		}
+		llmState = &cloudLLMConfigState{}
+		client, remote, err := srv.cloudEngineClient(ctx, "", "checks", nil, llmState)
+		if err != nil {
+			return nil, err
+		}
+		if !remote {
+			return nil, fmt.Errorf("cloud execution is unavailable")
+		}
+		parent.cloudArtifactMu.Lock()
+		cached, closed = parent.cloudArtifactClients[scope], parent.cloudArtifactClosed
+		if !closed && cached == nil {
+			if parent.cloudArtifactClients == nil {
+				parent.cloudArtifactClients = make(map[string]*engineclient.Client)
+			}
+			parent.cloudArtifactClients[scope] = client
+			if parent.cloudArtifactLLMConfigs == nil {
+				parent.cloudArtifactLLMConfigs = make(map[string]*cloudLLMConfigState)
+			}
+			parent.cloudArtifactLLMConfigs[scope] = llmState
+		}
+		parent.cloudArtifactMu.Unlock()
+		if closed || cached != nil {
+			closeErr := client.Close()
+			if closed {
+				return nil, errors.Join(fmt.Errorf("cloud artifact clients are closed"), closeErr)
+			}
+			return cached, closeErr
+		}
+		return client, nil
+	})
+	return client, err
+}
+
+// Return a cloud client whose session attachables proxy to the calling client.
 func (srv *Server) CloudEngineClient(
 	ctx context.Context,
 	module string,
 	function string,
 	execCmd []string,
+) (*engineclient.Client, bool, error) {
+	return srv.cloudEngineClient(ctx, module, function, execCmd, &cloudLLMConfigState{})
+}
+
+func (srv *Server) cloudEngineClient(
+	ctx context.Context,
+	module string,
+	function string,
+	execCmd []string,
+	llmState *cloudLLMConfigState,
 ) (*engineclient.Client, bool, error) {
 	parentClient, err := srv.nonModuleParentClient(ctx)
 	if err != nil {
@@ -4554,12 +4879,13 @@ func (srv *Server) CloudEngineClient(
 		runnerHost = testHost
 	}
 
+	llmConfig := llmState.bootstrap(parentClient.daggerSession, parentClient.clientRecord)
 	params := engineclient.Params{
 		RunnerHost:     runnerHost,
 		Workspace:      parentClient.clientMetadata.Workspace,
 		WorkspaceEnv:   parentClient.clientMetadata.WorkspaceEnv,
 		UserConfigPath: parentClient.clientMetadata.UserConfigPath,
-		LLMConfig:      parentClient.clientMetadata.LLMConfig,
+		LLMConfig:      llmConfig,
 		ExtraModules:   parentClient.clientMetadata.ExtraModules,
 		// Artifact queries load their own selected modules.
 		SkipWorkspaceModules: true,

@@ -353,11 +353,7 @@ func WithModuleObjectFields(ctx context.Context, srv *dagql.Server, prev, next d
 		return nil, fmt.Errorf("previous and new state have different types")
 	}
 	if c := nextObj.TypeDef.Collection; c != nil && c.Enabled {
-		// A collection's identity includes its CollectionBase, which lives
-		// outside Fields; and a bound collection has no author methods anyway
-		// (they are installed on the batch type), so this is not a case worth
-		// modelling. Refuse loudly rather than record a wrong base.
-		return nil, fmt.Errorf("%s is a collection type: its state cannot be recorded field-wise; bind the batch object as tools instead", nextObj.TypeDef.Name)
+		return nil, fmt.Errorf("%s is a collection type: its state cannot be recorded field-wise", nextObj.TypeDef.Name)
 	}
 	changed, err := changedStateFields(prevObj.Fields, nextObj.Fields)
 	if err != nil {

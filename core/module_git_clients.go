@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,27 +17,100 @@ import (
 // ModuleDeclaredGitClients reads the git clients that the config governing a
 // module declares for it, from the tree the module was loaded from, the same
 // tree its local clients resolve in. It is empty for a module without one.
+//
+// Every call of the module's functions asks, to key the call. A git or
+// directory module's tree is an immutable result, so the session reads its
+// declarations once per tree; a local module's are read from its host every
+// time, since the file there can change.
 func ModuleDeclaredGitClients(ctx context.Context, dag *dagql.Server, src *ModuleSource) ([]string, error) {
-	read, err := moduleTreeReader(ctx, dag, src)
-	if err != nil || read == nil {
-		return nil, err
+	read := func() ([]string, error) {
+		reader, err := moduleTreeReader(ctx, dag, src)
+		if err != nil || reader == nil {
+			return nil, err
+		}
+		return workspace.DeclaredGitClients(ctx, src.SourceRootSubpath, reader)
 	}
-	return workspace.DeclaredGitClients(ctx, src.SourceRootSubpath, read)
+	tree, ok := moduleTree(src)
+	if !ok {
+		return read()
+	}
+	memo := currentSessionSchemaBuilderMemo(ctx)
+	id, err := tree.ID()
+	if memo == nil || err != nil {
+		return read()
+	}
+	// The tree's result is new whenever a file in it changes, dagger.toml
+	// included, and result IDs are never reused.
+	return memo.declaredGitClients(declaredGitClientsKey{treeID: id.EngineResultID(), moduleDir: src.SourceRootSubpath}, read)
+}
+
+// moduleTree is the immutable tree a git or directory module was loaded
+// from.
+func moduleTree(src *ModuleSource) (dagql.ObjectResult[*Directory], bool) {
+	switch {
+	case src.Kind == ModuleSourceKindGit && src.Git != nil:
+		return src.Git.UnfilteredContextDir, true
+	case src.Kind == ModuleSourceKindDir && src.DirSrc != nil:
+		return src.DirSrc.OriginalContextDir, true
+	default:
+		return dagql.ObjectResult[*Directory]{}, false
+	}
 }
 
 // moduleTreeReader is nil for a module whose tree this engine cannot reach,
 // such as a local module whose host belongs to another engine.
 func moduleTreeReader(ctx context.Context, dag *dagql.Server, src *ModuleSource) (workspace.TreeFileReader, error) {
-	switch {
-	case src.Kind == ModuleSourceKindGit && src.Git != nil:
-		return directoryFileReader(ctx, dag, src.Git.UnfilteredContextDir), nil
-	case src.Kind == ModuleSourceKindDir && src.DirSrc != nil:
-		return directoryFileReader(ctx, dag, src.DirSrc.OriginalContextDir), nil
-	case src.Kind == ModuleSourceKindLocal && src.Local != nil && !src.Local.Foreign:
-		return hostFileReader(ctx, src)
-	default:
-		return nil, nil
+	if tree, ok := moduleTree(src); ok {
+		// A module loaded through a Git workspace has that workspace's tree.
+		if ws := src.Workspace.Self(); ws != nil {
+			if fs, ok := ws.GitSparseTreeFS(); ok {
+				return func(rel string) ([]byte, bool, error) {
+					return directoryFileReader(ctx, dag, fs.dirFor(ctx, rel))(rel)
+				}, nil
+			}
+		}
+		return directoryFileReader(ctx, dag, tree), nil
 	}
+	if src.Kind == ModuleSourceKindLocal && src.Local != nil && !src.Local.Foreign {
+		return hostFileReader(ctx, src)
+	}
+	return nil, nil
+}
+
+type declaredGitClientsKey struct {
+	treeID    uint64
+	moduleDir string
+}
+
+type declaredGitClientsEntry struct {
+	mu       sync.Mutex
+	declared []string
+	loaded   bool
+}
+
+// declaredGitClients returns the declarations read for key, reading them at
+// most once while reads succeed. A failed read is retried by the next call.
+func (m *SchemaBuilderMemo) declaredGitClients(key declaredGitClientsKey, read func() ([]string, error)) ([]string, error) {
+	m.mu.Lock()
+	if m.gitClients == nil {
+		m.gitClients = make(map[declaredGitClientsKey]*declaredGitClientsEntry)
+	}
+	entry := m.gitClients[key]
+	if entry == nil {
+		entry = &declaredGitClientsEntry{}
+		m.gitClients[key] = entry
+	}
+	m.mu.Unlock()
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.loaded {
+		return entry.declared, nil
+	}
+	declared, err := read()
+	if err == nil {
+		entry.declared, entry.loaded = declared, true
+	}
+	return declared, err
 }
 
 func directoryFileReader(ctx context.Context, dag *dagql.Server, tree dagql.ObjectResult[*Directory]) workspace.TreeFileReader {

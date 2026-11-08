@@ -243,40 +243,46 @@ func (c *Cache) lazySpanCacheState(ctx context.Context, row *sharedResult, frame
 // deferred-work vocabulary, so it keeps its error-origin-stamping role
 // (EndWithCause); the non-resume lazy op is pure profiling emission and must
 // never stamp (EndProfSpan).
-func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, partial, abandoned bool, storedPart PartKey, cacheState lazySpanCacheState, errPtr *error) {
+//
+// attrs are end attributes the caller already collected; they go on the span
+// together with the op's own.
+func endOTelLazyOp(span trace.Span, attrs []attribute.KeyValue, isResume bool, sharedID sharedResultID, partial, abandoned bool, storedPart PartKey, cacheState lazySpanCacheState, errPtr *error) {
 	if sharedID != 0 {
 		deps := make([]string, len(cacheState.deps))
 		for i, dep := range cacheState.deps {
 			deps[i] = strconv.FormatUint(dep, 10)
 		}
-		span.SetAttributes(
+		attrs = append(attrs,
 			attribute.String(telemetryattrs.CacheResultIDAttr, strconv.FormatUint(uint64(sharedID), 10)),
 			attribute.StringSlice(telemetryattrs.CacheDepsAttr, deps),
 		)
 		if len(cacheState.parts) > 0 {
-			span.SetAttributes(attribute.StringSlice(telemetryattrs.CachePartsAttr, cacheState.parts))
+			attrs = append(attrs, attribute.StringSlice(telemetryattrs.CachePartsAttr, cacheState.parts))
 		}
 		if cacheState.contentDigest != "" {
-			span.SetAttributes(attribute.String(telemetryattrs.CacheOutputContentDigestAttr, cacheState.contentDigest.String()))
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheOutputContentDigestAttr, cacheState.contentDigest.String()))
 		}
 		if cacheState.replacements != 0 {
-			span.SetAttributes(attribute.String(telemetryattrs.CacheReplacementsAttr, strconv.FormatUint(cacheState.replacements, 10)))
+			attrs = append(attrs, attribute.String(telemetryattrs.CacheReplacementsAttr, strconv.FormatUint(cacheState.replacements, 10)))
 		}
 	}
 	if storedPart != "" && *errPtr == nil {
-		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetry.CachedAttr, true))
 	}
 	if isResume && partial {
-		span.SetAttributes(attribute.Bool(telemetryattrs.DagPartialAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetryattrs.DagPartialAttr, true))
 	}
 	// An attempt abandoned by its waiters will be retried. Mark its resume
 	// span as blocked so the canceled attempt does not read as a call failure.
 	if isResume && abandoned {
-		span.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetryattrs.DagBlockedAttr, true))
 	}
 	if isResume && *errPtr != nil && blockedOnPrerequisite(*errPtr, sharedID) {
-		span.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetryattrs.DagBlockedAttr, true))
 	}
+	// One call: each SetAttributes that outgrows the span's attribute slice
+	// copies the whole slice.
+	span.SetAttributes(attrs...)
 	// A reselect is not a failure of this attempt: part acquisition observed
 	// that its sources changed under it and the evaluation loop tries again
 	// at once (evaluateOne, EvaluateParts). The span records what was

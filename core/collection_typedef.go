@@ -19,44 +19,6 @@ func collectionTypeRef(ctx context.Context, dag *dagql.Server, obj dagql.ObjectR
 	return result, err
 }
 
-func CollectionBatchType(ctx context.Context, dag *dagql.Server, obj dagql.ObjectResult[*ObjectTypeDef]) (dagql.Nullable[dagql.ObjectResult[*TypeDef]], error) {
-	null := dagql.Null[dagql.ObjectResult[*TypeDef]]()
-	members, err := obj.Self().CollectionMembers()
-	if err != nil || members == nil {
-		return null, err
-	}
-	if len(obj.Self().Functions) == 1 {
-		return null, nil
-	}
-	var batch dagql.ObjectResult[*ObjectTypeDef]
-	name := obj.Self().Name + "_Batch"
-	err = dag.Select(ctx, dag.Root(), &batch, dagql.Selector{
-		Field: "__objectTypeDef", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(name)}},
-	}, dagql.Selector{Field: "__withName", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(name)}}})
-	if err != nil {
-		return null, err
-	}
-	for _, fn := range obj.Self().Functions {
-		if fn.Self().Name == members.Get.Name {
-			continue
-		}
-		id, err := fn.ID()
-		if err != nil {
-			return null, err
-		}
-		if err := dag.Select(ctx, batch, &batch, dagql.Selector{
-			Field: "__withFunction", Args: []dagql.NamedInput{{Name: "function", Value: dagql.NewID[*Function](id)}},
-		}); err != nil {
-			return null, err
-		}
-	}
-	typ, err := collectionTypeRef(ctx, dag, batch)
-	if err != nil {
-		return null, err
-	}
-	return dagql.NonNull(typ), nil
-}
-
 // CollectionPublicObject exposes the engine operations to TypeDef consumers.
 // The author definition remains unchanged for SDK calls and serialization.
 func CollectionPublicObject(ctx context.Context, dag *dagql.Server, obj dagql.ObjectResult[*ObjectTypeDef]) (*ObjectTypeDef, error) {
@@ -135,13 +97,9 @@ func CollectionPublicObject(ctx context.Context, dag *dagql.Server, obj dagql.Ob
 		}
 		projected.Functions = append(projected.Functions, fn)
 	}
-	batch, err := CollectionBatchType(ctx, dag, obj)
-	if err != nil {
-		return nil, err
-	}
-	if batch.Valid {
-		if err := addField("batch", batch.Value); err != nil {
-			return nil, err
+	for _, fn := range obj.Self().Functions {
+		if fn.Self().Name != members.Get.Name {
+			projected.Functions = append(projected.Functions, fn)
 		}
 	}
 	return projected, nil

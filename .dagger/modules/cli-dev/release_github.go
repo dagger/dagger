@@ -12,6 +12,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/dagger/dagger/util/parallel"
@@ -49,7 +51,8 @@ type githubRef struct {
 }
 
 type githubContent struct {
-	SHA string `json:"sha"`
+	SHA     string `json:"sha"`
+	Content string `json:"content"`
 }
 
 type githubReleaseAsset struct {
@@ -246,11 +249,40 @@ func (gh *githubClient) writeContent(
 	branch string,
 	message string,
 ) error {
+	return gh.writeVersionedContent(ctx, owner, repo, path, content, branch, message, "", nil)
+}
+
+// writeVersionedContent writes content like writeContent, but leaves the file
+// alone when versionRe finds a newer version pinned in it than version. This
+// keeps single-version package files (the Homebrew tap, Nix) on the newest
+// release when an older release line publishes after a newer one.
+func (gh *githubClient) writeVersionedContent(
+	ctx context.Context,
+	owner string,
+	repo string,
+	path string,
+	content string,
+	branch string,
+	message string,
+	version string,
+	versionRe *regexp.Regexp,
+) error {
 	contentPath := githubPath("repos", owner, repo, "contents") + "/" + url.PathEscape(path) + "?ref=" + url.QueryEscape(branch)
 	var existing githubContent
 	status, err := gh.requestJSON(ctx, http.MethodGet, contentPath, nil, &existing)
 	if err != nil && status != http.StatusNotFound {
 		return err
+	}
+
+	if status != http.StatusNotFound && versionRe != nil {
+		current, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(existing.Content, "\n", ""))
+		if err != nil {
+			return fmt.Errorf("decode %s/%s/%s: %w", owner, repo, path, err)
+		}
+		if published := newerPublishedVersion(string(current), versionRe, version); published != "" {
+			fmt.Fprintf(os.Stderr, "not publishing %s to %s/%s/%s: it already has newer version %s\n", version, owner, repo, path, published)
+			return nil
+		}
 	}
 
 	payload := map[string]any{
@@ -444,14 +476,14 @@ func (cli *CliDev) publishPackageManagers(
 		if err != nil {
 			return err
 		}
-		return gh.writeContent(ctx, githubOrgName, "homebrew-tap", "dagger.rb", homebrew, "main", "Brew formula update for dagger version "+tag)
+		return gh.writeVersionedContent(ctx, githubOrgName, "homebrew-tap", "dagger.rb", homebrew, "main", "Brew formula update for dagger version "+tag, version, homebrewVersionRe)
 	})
 	jobs = jobs.WithJob("publish nix", func(ctx context.Context) error {
 		nixArchives, err := cli.releaseNixArchives(ctx, dist, tag, checksums)
 		if err != nil {
 			return err
 		}
-		return gh.writeContent(ctx, githubOrgName, "nix", "pkgs/dagger/default.nix", nixPackage(version, baseURL, nixArchives), "main", "dagger:  -> "+tag)
+		return gh.writeVersionedContent(ctx, githubOrgName, "nix", "pkgs/dagger/default.nix", nixPackage(version, baseURL, nixArchives), "main", "dagger:  -> "+tag, version, nixVersionRe)
 	})
 	jobs = jobs.WithJob("publish winget", func(ctx context.Context) error {
 		wingetBranch := "dagger-" + version

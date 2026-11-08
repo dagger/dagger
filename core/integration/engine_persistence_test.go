@@ -1161,6 +1161,22 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		randomB := runRandom(ctx, t, engineClientB)
 		require.NotEqual(t, randomA, randomB, "cache state from before the unclean shutdown should be discarded")
 
+		// The reset recreates the snapshotter on an empty worker dir; it must
+		// still be overlayfs, whose snapshots each keep their files in fs/,
+		// rather than the native snapshotter, which copies every layer whole.
+		snapshotLayout, err := core.NewQuery(c).
+			Container().
+			From(alpineImage).
+			WithMountedCache("/state", core.NewQuery(c).CacheVolume(stateKey)).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
+			WithExec([]string{"sh", "-ec", "ls -d /state/worker/snapshots/snapshots/* | wc -l; ls -d /state/worker/snapshots/snapshots/*/fs | wc -l"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		snapshotCounts := strings.Fields(snapshotLayout)
+		require.Len(t, snapshotCounts, 2)
+		require.NotEqual(t, "0", snapshotCounts[0], "the reset engine should have made snapshots")
+		require.Equal(t, snapshotCounts[0], snapshotCounts[1], "every snapshot after a reset should be an overlayfs snapshot")
+
 		// The reset renames the invalid worker state aside to a sibling
 		// worker-trash-* directory and removes it in the background; poll the
 		// state volume until the trash is swept, so discarded state cannot
@@ -1197,6 +1213,106 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 
 		randomC := runRandom(ctx, t, engineClientC)
 		require.Equal(t, randomB, randomC, "cache state produced after reset should survive a later clean restart")
+	})
+
+	t.Run("native snapshotter keeps its cache across a restart and resets after an unclean shutdown", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "persist-native-snapshotter-" + rand.Text()
+		nativeOpts := func() []func(*core.Container) *core.Container {
+			return []func(*core.Container) *core.Container{
+				engineWithPersistenceTestGC(ctx, t),
+				engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+					cfg.Workers.OCI.Snapshotter = "native"
+					return cfg
+				}),
+			}
+		}
+		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
+			t.Helper()
+			out, err := core.NewQuery(engineClient).
+				Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-ec", "head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			random := strings.TrimSpace(out)
+			require.NotEmpty(t, random)
+			return random
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, nativeOpts()...)
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+		randomA := runRandom(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA, engineSvcA, engineClientA = nil, nil, nil
+
+		// overlayfs keeps a work directory beside each snapshot; native
+		// doesn't, so the engine really ran on the native snapshotter.
+		_, err := core.NewQuery(c).
+			Container().
+			From(alpineImage).
+			WithMountedCache("/state", core.NewQuery(c).CacheVolume(stateKey)).
+			WithExec([]string{"sh", "-ec", "test -n \"$(ls /state/worker/snapshots/snapshots)\" && test -z \"$(ls -d /state/worker/snapshots/snapshots/*/work 2>/dev/null)\""}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, nativeOpts()...)
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+		require.Equal(t, randomA, runRandom(ctx, t, engineClientB), "the cache should survive a clean restart")
+
+		_, err = upstreamSvcB.Stop(ctx, core.ServiceStopOpts{Kill: true})
+		require.NoError(t, err)
+		upstreamSvcB = nil
+		_, err = engineSvcB.Stop(ctx, core.ServiceStopOpts{Kill: true})
+		require.NoError(t, err)
+		engineSvcB = nil
+		// The engine is gone, so this close can't succeed, but it stops the
+		// client's session process from logging after the test.
+		_ = engineClientB.Close()
+		engineClientB = nil
+
+		upstreamSvcC, engineSvcC, engineClientC := startEngine(c, ctx, t, stateKey, nativeOpts()...)
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcC, engineSvcC, engineClientC) })
+		require.NotEqual(t, randomA, runRandom(ctx, t, engineClientC), "the cache from before the unclean shutdown should be discarded")
+	})
+
+	t.Run("a start that fails without a reset leaves the cache for the next start", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "persist-failed-start-" + rand.Text()
+		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
+			t.Helper()
+			out, err := core.NewQuery(engineClient).
+				Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-ec", "head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			random := strings.TrimSpace(out)
+			require.NotEmpty(t, random)
+			return random
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+		randomA := runRandom(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA, engineSvcA, engineClientA = nil, nil, nil
+
+		// An unknown snapshotter fails the start after the engine has opened
+		// its metadata stores, for a reason a reset can't fix.
+		badEngine := devEngineContainerWithStateKey(c, stateKey,
+			engineWithPersistenceTestGC(ctx, t),
+			engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+				cfg.Workers.OCI.Snapshotter = "fuse-overlayfs"
+				return cfg
+			}),
+		)
+		_, err := devEngineContainerAsService(badEngine).Start(ctx)
+		require.Error(t, err, "an engine with an unknown snapshotter should fail to start")
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+		require.Equal(t, randomA, runRandom(ctx, t, engineClientB), "the failed start should leave the cache for the next start")
 	})
 
 	t.Run("container withNewFile hit survives restart", func(ctx context.Context, t *testctx.T) {
@@ -1574,6 +1690,37 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		_, tokenB, ok := strings.Cut(strings.TrimSpace(outB), ":")
 		require.True(t, ok, "unexpected output %q", outB)
 		require.Equal(t, tokenA, tokenB, "private-field credential result should survive engine restart with the cached holder state")
+	})
+
+	t.Run("module object with inline object fields survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "persist-inline-object-field-state-" + rand.Text()
+		seed := rand.Text()
+
+		callOuterTokens := func(client *dagger.Client) string {
+			out, err := moduleFixture(t, client, "go/persist-inline-object-field").
+				WithEnvVariable("CACHE_BUST", rand.Text()).
+				With(daggerCall("outer", "--seed", seed, "tokens")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(out)
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		tokensA := callOuterTokens(engineClientA)
+		require.Len(t, strings.Split(tokensA, ","), 3)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		tokensB := callOuterTokens(engineClientB)
+		require.Equal(t, tokensA, tokensB, "a cached object whose inline object fields hold directories should survive engine restart")
 	})
 
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {

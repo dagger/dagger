@@ -247,6 +247,10 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 		if !ok {
 			return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("invalid env entry %q", envKV))
 		}
+		if c.execEnvNames == nil {
+			c.execEnvNames = map[string]struct{}{}
+		}
+		c.execEnvNames[name] = struct{}{}
 		ctrID = appendCall(
 			ctrID,
 			containerType(),

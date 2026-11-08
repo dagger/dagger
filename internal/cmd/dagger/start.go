@@ -47,7 +47,7 @@ var startCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return withEngine(
+		return withArtifactEngine(
 			cmd.Context(),
 			params,
 			func(ctx context.Context, engineClient *client.Client) error {
@@ -71,6 +71,7 @@ var startCmd = &cobra.Command{
 }
 
 func runServices(ctx context.Context, dag *dagger.Client, services *core.Artifacts, _ *cobra.Command) (rerr error) {
+	ctx = artifactExecutionContext(ctx)
 	ctx, zoomSpan := Tracer().Start(ctx, "services", telemetry.Passthrough())
 	// The report uses this span's failure to include the cause and its logs.
 	defer telemetry.EndWithCause(zoomSpan, &rerr)

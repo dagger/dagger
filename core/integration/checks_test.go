@@ -21,6 +21,8 @@ import (
 	"dagger.io/dagger/core"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -32,6 +34,70 @@ type ChecksSuite struct{}
 
 func TestChecks(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ChecksSuite{})
+}
+
+func (ChecksSuite) TestCollectionItemMetadata(ctx context.Context, t *testctx.T) {
+	c, sink := connectWithTrace(ctx, t)
+	fixture := artifactViewWorkspace(t, c, `type View {
+  lint: Void @check { null }
+  cases: Cases! { Cases(names: ["first", "second", "third"]) }
+}
+type Cases @collection {
+  names: [String!]! @keys
+  item(name: String!): TestCase! @get { TestCase(name: name) }
+}
+type TestCase {
+  let name: String!
+  check: Void @check { null }
+}`)
+	for run := range 2 {
+		// Cached checks must still report each run's collection identity.
+		_, err := fixture.WithEnvVariable("METADATA_RUN", fmt.Sprint(run)).
+			With(daggerExec("check", "cases/check", "lint", "--generated=false")).CombinedOutput(ctx)
+		require.NoError(t, err)
+
+		var checks []*dagui.Span
+		require.Eventually(t, func() bool {
+			sink.read(func(db *dagui.DB) {
+				checks = checks[:0]
+				for _, span := range db.Spans.Order {
+					if span.CheckName != "" && !span.IsRunning() {
+						checks = append(checks, span)
+					}
+				}
+			})
+			return len(checks) == (run+1)*5
+		}, time.Minute, 20*time.Millisecond)
+
+		sink.read(func(_ *dagui.DB) {
+			var items, ordinary, groups int
+			for _, span := range checks {
+				require.True(t, span.CheckPassed)
+				group, _ := span.ExtraAttributes.Get(telemetryattrs.CheckCollectionGroupAttr)
+				item, _ := span.ExtraAttributes.Get(telemetryattrs.CheckCollectionItemAttr)
+				switch {
+				case string(group) == "true":
+					groups++
+					require.Equal(t, "cases/check", span.CheckName)
+				case string(item) == "true":
+					items++
+					parent := span.ParentSpan
+					for parent != nil && parent.CheckName == "" {
+						parent = parent.ParentSpan
+					}
+					require.NotNil(t, parent, "collection item must be under its summary")
+					require.Equal(t, "cases/check", parent.CheckName)
+				default:
+					ordinary++
+					require.Equal(t, "false", string(item))
+					require.Contains(t, span.CheckName, "lint")
+				}
+			}
+			require.Equal(t, 3*(run+1), items)
+			require.Equal(t, run+1, ordinary)
+			require.Equal(t, run+1, groups)
+		})
+	}
 }
 
 func checksTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {

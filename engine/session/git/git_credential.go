@@ -11,6 +11,7 @@ import (
 	strings "strings"
 	"time"
 
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/netrc"
 )
 
@@ -23,6 +24,9 @@ import (
 // - If the command times out: TIMEOUT
 // - If Git is not installed: NOT_FOUND
 // - If the request is invalid: INVALID_REQUEST
+//
+// Entire remotes fall back to ENTIRE_TOKEN and then the Entire CLI's login
+// instead of netrc.
 func (s GitAttachable) GetCredential(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -34,7 +38,11 @@ func (s GitAttachable) GetCredential(ctx context.Context, req *GitCredentialRequ
 
 	methods := []func(context.Context, *GitCredentialRequest) (*GitCredentialResponse, error){
 		s.getCredentialFromHelper,
-		s.getCredentialFromNetrc,
+	}
+	if req.Protocol == gitutil.EntireProtocol {
+		methods = append(methods, s.getEntireCredentialFromEnv, s.getEntireCredentialFromCLI)
+	} else {
+		methods = append(methods, s.getCredentialFromNetrc)
 	}
 
 	var firstResp *GitCredentialResponse
@@ -73,8 +81,10 @@ func (s GitAttachable) getCredentialFromHelper(ctx context.Context, req *GitCred
 
 	// Prepare input
 	input := fmt.Sprintf("protocol=%s\nhost=%s\n", req.Protocol, req.Host)
-	if req.Path != "" {
-		input += fmt.Sprintf("path=%s\n", req.Path)
+	// Git's credential path has no leading slash; with one, helpers scoped to
+	// a repository URL (credential.useHttpPath) never match.
+	if path := strings.TrimPrefix(req.Path, "/"); path != "" {
+		input += fmt.Sprintf("path=%s\n", path)
 	}
 	input += "\n"
 	cmd.Stdin = strings.NewReader(input)

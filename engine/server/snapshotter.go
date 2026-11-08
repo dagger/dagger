@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,10 +15,11 @@ import (
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	"github.com/containerd/containerd/v2/defaults"
 	"github.com/containerd/containerd/v2/pkg/dialer"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/plugins/snapshots/native"
 	"github.com/containerd/containerd/v2/plugins/snapshots/overlay"
 	"github.com/containerd/containerd/v2/plugins/snapshots/overlay/overlayutils"
-	fuseoverlayfs "github.com/containerd/fuse-overlayfs-snapshotter/v2"
+	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/engine/slog"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/sirupsen/logrus"
@@ -55,20 +57,17 @@ func newSnapshotter(
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to dial %q: %w", address, err)
 		}
-		return snproxy.NewSnapshotter(snapshotsapi.NewSnapshotsClient(conn), name), name, nil
+		return &namespaceHeaderSnapshotter{
+			Snapshotter: snproxy.NewSnapshotter(snapshotsapi.NewSnapshotsClient(conn), name),
+		}, name, nil
 	}
 
 	if name == "" {
-		if err := overlayutils.Supported(rootDir); err == nil {
+		if err := overlaySupported(rootDir); err == nil {
 			name = "overlayfs"
 		} else {
-			logrus.Debugf("auto snapshotter: overlayfs is not available for %s, trying fuse-overlayfs: %v", rootDir, err)
-			if err2 := fuseoverlayfs.Supported(rootDir); err2 == nil {
-				name = "fuse-overlayfs"
-			} else {
-				logrus.Debugf("auto snapshotter: fuse-overlayfs is not available for %s, falling back to native: %v", rootDir, err2)
-				name = "native"
-			}
+			logrus.Debugf("auto snapshotter: overlayfs is not available for %s, falling back to native: %v", rootDir, err)
+			name = "native"
 		}
 		logrus.Infof("auto snapshotter: using %s", name)
 	}
@@ -87,9 +86,9 @@ func newSnapshotter(
 			opts = append(opts, overlay.WithMountOptions([]string{"volatile"}))
 		}
 		sn, snErr = overlay.NewSnapshotter(rootDir, opts...)
-	case "fuse-overlayfs":
-		// no Opt (AsynchronousRemove is untested for fuse-overlayfs)
-		sn, snErr = fuseoverlayfs.NewSnapshotter(rootDir)
+		if snErr == nil {
+			sn = &overlayUsageSnapshotter{Snapshotter: sn, ms: mdStore, root: rootDir}
+		}
 	default:
 		return nil, "", fmt.Errorf("unknown snapshotter %q", name)
 	}
@@ -98,6 +97,91 @@ func newSnapshotter(
 	}
 
 	return sn, name, nil
+}
+
+// namespaceHeaderSnapshotter puts the context's containerd namespace on the
+// outgoing gRPC headers of each call to a proxied snapshotter, as containerd's
+// own daemon does for its proxy plugins. The engine's namespace wrappers set
+// only what its in-process stores read (engine/snapshots.WithNamespace), so
+// this is where a call leaves the process with it.
+type namespaceHeaderSnapshotter struct {
+	ctdsnapshot.Snapshotter
+}
+
+func withNamespaceHeaders(ctx context.Context) context.Context {
+	if ns, ok := namespaces.Namespace(ctx); ok {
+		return namespaces.WithNamespace(ctx, ns)
+	}
+	return ctx
+}
+
+func (s *namespaceHeaderSnapshotter) Stat(ctx context.Context, key string) (ctdsnapshot.Info, error) {
+	return s.Snapshotter.Stat(withNamespaceHeaders(ctx), key)
+}
+
+func (s *namespaceHeaderSnapshotter) Update(ctx context.Context, info ctdsnapshot.Info, fieldpaths ...string) (ctdsnapshot.Info, error) {
+	return s.Snapshotter.Update(withNamespaceHeaders(ctx), info, fieldpaths...)
+}
+
+func (s *namespaceHeaderSnapshotter) Usage(ctx context.Context, key string) (ctdsnapshot.Usage, error) {
+	return s.Snapshotter.Usage(withNamespaceHeaders(ctx), key)
+}
+
+func (s *namespaceHeaderSnapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, error) {
+	return s.Snapshotter.Mounts(withNamespaceHeaders(ctx), key)
+}
+
+func (s *namespaceHeaderSnapshotter) Prepare(ctx context.Context, key, parent string, opts ...ctdsnapshot.Opt) ([]mount.Mount, error) {
+	return s.Snapshotter.Prepare(withNamespaceHeaders(ctx), key, parent, opts...)
+}
+
+func (s *namespaceHeaderSnapshotter) View(ctx context.Context, key, parent string, opts ...ctdsnapshot.Opt) ([]mount.Mount, error) {
+	return s.Snapshotter.View(withNamespaceHeaders(ctx), key, parent, opts...)
+}
+
+func (s *namespaceHeaderSnapshotter) Commit(ctx context.Context, name, key string, opts ...ctdsnapshot.Opt) error {
+	return s.Snapshotter.Commit(withNamespaceHeaders(ctx), name, key, opts...)
+}
+
+func (s *namespaceHeaderSnapshotter) Remove(ctx context.Context, key string) error {
+	return s.Snapshotter.Remove(withNamespaceHeaders(ctx), key)
+}
+
+func (s *namespaceHeaderSnapshotter) Walk(ctx context.Context, fn ctdsnapshot.WalkFunc, filters ...string) error {
+	return s.Snapshotter.Walk(withNamespaceHeaders(ctx), fn, filters...)
+}
+
+// Cleanup keeps the proxy's Cleanup reachable: containerd's metadata store
+// calls it on snapshotters that have one.
+func (s *namespaceHeaderSnapshotter) Cleanup(ctx context.Context) error {
+	if c, ok := s.Snapshotter.(ctdsnapshot.Cleaner); ok {
+		return c.Cleanup(withNamespaceHeaders(ctx))
+	}
+	return nil
+}
+
+// overlaySupported is overlayutils.Supported without its probe mount where the
+// kernel takes the "volatile" option. Unmounting that probe, an overlay with
+// an upper directory, syncs the whole filesystem under rootDir, so a starting
+// engine waited for every pending write there, its own or not. The volatile
+// probe mounts the same overlay, with "volatile", whose unmount doesn't sync.
+func overlaySupported(rootDir string) error {
+	// The volatile probe runs once per process, so it doesn't create rootDir
+	// again after a cache reset moved the worker state aside.
+	if err := os.MkdirAll(rootDir, 0700); err != nil {
+		return err
+	}
+	if !overlayVolatileSupported(rootDir) {
+		return overlayutils.Supported(rootDir)
+	}
+	supportsDType, err := fs.SupportsDType(rootDir)
+	if err != nil {
+		return err
+	}
+	if !supportsDType {
+		return fmt.Errorf("%s does not support d_type. If the backing filesystem is xfs, please reformat with ftype=1 to enable d_type support", rootDir)
+	}
+	return nil
 }
 
 var overlayVolatileOnce sync.Once

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,12 +66,13 @@ func TestPartScopeEmptyBoot(t *testing.T) {
 
 type rekeyObservedManager struct {
 	bkcache.SnapshotManager
-	leases                         leases.Manager
-	attaches, scans, removed, peak int
+	leases               leases.Manager
+	attaches             atomic.Int64
+	scans, removed, peak int
 }
 
 func (m *rekeyObservedManager) AttachLease(ctx context.Context, id, key string) error {
-	m.attaches++
+	m.attaches.Add(1)
 	return m.SnapshotManager.AttachLease(ctx, id, key)
 }
 func (m *rekeyObservedManager) PinContent(context.Context, string, []ocispecs.Descriptor) error {
@@ -133,11 +135,11 @@ func TestPartScopeRootRekeyCost(t *testing.T) {
 			elapsed := time.Since(start)
 			require.NoError(t, err)
 			defer cache.CloseDiscardingPersistence()
-			require.Equal(t, n, observed.attaches)
+			require.Equal(t, int64(n), observed.attaches.Load())
 			require.Equal(t, n, observed.removed)
 			require.Equal(t, 2*n, observed.peak)
 			require.Equal(t, 1, observed.scans)
-			t.Logf("root_rekey roots=%d attaches=%d stale_scans=%d stale_removes=%d peak_owner_leases=%d elapsed=%s", n, observed.attaches, observed.scans, observed.removed, observed.peak, elapsed)
+			t.Logf("root_rekey roots=%d attaches=%d stale_scans=%d stale_removes=%d peak_owner_leases=%d elapsed=%s", n, observed.attaches.Load(), observed.scans, observed.removed, observed.peak, elapsed)
 		})
 	}
 }

@@ -2,75 +2,94 @@ package cloud
 
 import (
 	"context"
+	"time"
 )
 
-// MonthlyComputeUsage is the Cloud Engine compute usage total for a UTC calendar
-// month. The API also exposes a per-day breakdown via the daily field, but this
-// command reports only the total, so it is intentionally not requested: on the
-// server the daily field is resolved separately and skipping it avoids the
-// expensive per-day expansion for large orgs.
-type MonthlyComputeUsage struct {
-	CoreMinutes        float64 `json:"coreMinutes"`
-	CostUSD            float64 `json:"costUSD"`
-	PricePerCoreMinute float64 `json:"pricePerCoreMinute"`
+// BillingUsage is the saved billing estimate of an org for a UTC calendar
+// month, as shown on the Billing & usage page of Dagger Cloud. The API also
+// exposes daily quantities, which the CLI does not request.
+type BillingUsage struct {
+	Month string `json:"month"`
+	// Revision is zero until the month is calculated for the first time.
+	Revision int64 `json:"revision"`
+	// Calculation is the source of the quantities: "legacy" or "workload".
+	Calculation string     `json:"calculation"`
+	AsOf        *time.Time `json:"asOf"`
+	// ProcessedThrough is set for workload results: work that ended after it
+	// can be missing.
+	ProcessedThrough *time.Time           `json:"processedThrough"`
+	CalculatedAt     *time.Time           `json:"calculatedAt"`
+	RefreshStatus    string               `json:"refreshStatus"`
+	RefreshMonth     string               `json:"refreshMonth"`
+	NextRefreshAt    *time.Time           `json:"nextRefreshAt"`
+	Error            string               `json:"error"`
+	FinalizedAt      *time.Time           `json:"finalizedAt"`
+	InvoiceID        *string              `json:"invoiceID"`
+	InvoiceURL       *string              `json:"invoiceURL"`
+	Warnings         []string             `json:"warnings"`
+	Pricing          *BillingUsagePricing `json:"pricing"`
+	Bill             *BillingUsageBill    `json:"bill"`
 }
 
-// MonthlyUsage is the telemetry usage (spans and log lines ingested) for a UTC
-// calendar month, along with the plan cap.
-type MonthlyUsage struct {
-	Usage int `json:"usage"`
-	Cap   int `json:"cap"`
+type BillingUsagePricing struct {
+	PlanID     string  `json:"planID"`
+	Name       string  `json:"name"`
+	MinimumUSD float64 `json:"minimumUSD"`
 }
 
-const monthComputeUsageOperation = `
-query GetMonthlyComputeUsage($org: ID!, $month: String!) {
-	monthComputeUsage(org: $org, month: $month) {
-		coreMinutes
-		costUSD
-		pricePerCoreMinute
+type BillingUsageBill struct {
+	UsageUSD             float64                `json:"usageUSD"`
+	MinimumAdjustmentUSD float64                `json:"minimumAdjustmentUSD"`
+	TotalUSD             float64                `json:"totalUSD"`
+	Resources            []BillingUsageResource `json:"resources"`
+}
+
+// BillingUsageResource is the bill of one resource (CPU, Memory, Inputs or
+// Outputs). Quantities and prices use Unit (CPU-hours, GB-hours or GB).
+type BillingUsageResource struct {
+	Resource        string  `json:"resource"`
+	Unit            string  `json:"unit"`
+	NewQuantity     float64 `json:"newQuantity"`
+	RepeatRan       float64 `json:"repeatRan"`
+	RepeatCached    float64 `json:"repeatCached"`
+	RepeatEstimated float64 `json:"repeatEstimated"`
+	NewPrice        float64 `json:"newPrice"`
+	RepeatPrice     float64 `json:"repeatPrice"`
+	NewChargeUSD    float64 `json:"newChargeUSD"`
+	RepeatChargeUSD float64 `json:"repeatChargeUSD"`
+	Estimated       bool    `json:"estimated"`
+}
+
+const billingUsageOperation = `
+query GetBillingUsage($org: ID!, $month: String!) {
+	billingUsage(org: $org, month: $month) {
+		month revision calculation asOf processedThrough calculatedAt
+		refreshStatus refreshMonth nextRefreshAt error
+		finalizedAt invoiceID invoiceURL warnings
+		pricing { planID name minimumUSD }
+		bill {
+			usageUSD minimumAdjustmentUSD totalUSD
+			resources {
+				resource unit newQuantity repeatRan repeatCached repeatEstimated
+				newPrice repeatPrice newChargeUSD repeatChargeUSD estimated
+			}
+		}
 	}
 }
 `
 
-// MonthComputeUsage returns the Cloud Engine compute usage total (core minutes
-// and cost) for the given org and UTC month (YYYY-MM). The daily breakdown is
-// intentionally not requested; see MonthlyComputeUsage.
-func (c *Client) MonthComputeUsage(ctx context.Context, orgID, month string) (*MonthlyComputeUsage, error) {
+// BillingUsage returns the saved billing estimate of the org for the UTC month
+// (YYYY-MM). Reading does not start a calculation.
+func (c *Client) BillingUsage(ctx context.Context, orgID, month string) (*BillingUsage, error) {
 	vars := map[string]any{
 		"org":   orgID,
 		"month": month,
 	}
 	var data struct {
-		MonthComputeUsage MonthlyComputeUsage `json:"monthComputeUsage"`
+		BillingUsage BillingUsage `json:"billingUsage"`
 	}
-	if err := c.doGraphQL(ctx, "GetMonthlyComputeUsage", monthComputeUsageOperation, vars, &data); err != nil {
+	if err := c.doGraphQL(ctx, "GetBillingUsage", billingUsageOperation, vars, &data); err != nil {
 		return nil, err
 	}
-	return &data.MonthComputeUsage, nil
-}
-
-const monthUsageOperation = `
-query GetMonthlyUsage($org: ID!, $month: String!) {
-	monthUsage(org: $org, month: $month) {
-		usage
-		cap
-	}
-}
-`
-
-// MonthUsage returns the telemetry usage (spans and log lines) for the given
-// org and month. The month argument is the first day of the UTC month
-// (YYYY-MM-01).
-func (c *Client) MonthUsage(ctx context.Context, orgID, month string) (*MonthlyUsage, error) {
-	vars := map[string]any{
-		"org":   orgID,
-		"month": month,
-	}
-	var data struct {
-		MonthUsage MonthlyUsage `json:"monthUsage"`
-	}
-	if err := c.doGraphQL(ctx, "GetMonthlyUsage", monthUsageOperation, vars, &data); err != nil {
-		return nil, err
-	}
-	return &data.MonthUsage, nil
+	return &data.BillingUsage, nil
 }

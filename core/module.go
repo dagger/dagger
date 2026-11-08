@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -120,6 +122,25 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+// Namer normalizes the module's own names: the rules of the engine version
+// it declares (see ModuleSource.Namer), or of SourceOverrides' when set. A
+// module without a source is named by the latest rules.
+func (mod *Module) Namer() Namer {
+	if mod.SourceOverrides != nil {
+		return NamerForEngineVersion(mod.SourceOverrides.EngineVersion)
+	}
+	if src := mod.GetSource(); src != nil {
+		return src.Namer()
+	}
+	return LatestNamer
+}
+
+// ConstructorName is the name of the module's constructor field on Query:
+// its name in camelCase, by the module's naming rules.
+func (mod *Module) ConstructorName() string {
+	return mod.Namer().FieldName(mod.Name())
+}
+
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	if src := mod.GetSource(); src != nil && src.Entrypoint != nil {
 		for _, objDef := range mod.ObjectDefs {
@@ -145,24 +166,20 @@ func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 // This is needed because namespaceObject rewrites obj.Name to match the
 // module's final name, but obj.OriginalName always reflects the SDK name.
 func (mod *Module) ObjectByOriginalName(name string) (*ObjectTypeDef, bool) {
-	for _, objDef := range mod.ObjectDefs {
-		typeDef := objDef.Self()
-		if typeDef.AsObject.Valid {
-			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.OriginalName) == gqlObjectName(name) {
-				return obj, true
-			}
-		}
+	objDef, ok := mod.objectTypeDefResultByOriginalName(name)
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	return objDef.Self().AsObject.Value.Self(), true
 }
 
 func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
+	namer := mod.Namer()
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
 			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.Name) == gqlObjectName(name) {
+			if obj.Name == name || namer.ObjectName(obj.Name) == namer.ObjectName(name) {
 				return obj, true
 			}
 		}
@@ -568,45 +585,51 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *da
 	return nil
 }
 
-func functionResultByOriginalName(obj *ObjectTypeDef, name string) (dagql.ObjectResult[*Function], bool) {
+func functionResultByOriginalName(namer Namer, obj *ObjectTypeDef, name string) (dagql.ObjectResult[*Function], bool) {
 	for _, fn := range obj.Functions {
 		fnSelf := fn.Self()
-		if strings.EqualFold(fnSelf.OriginalName, name) || strings.EqualFold(fnSelf.Name, gqlFieldName(name)) {
+		if strings.EqualFold(fnSelf.OriginalName, name) || strings.EqualFold(fnSelf.Name, namer.FieldName(name)) {
 			return fn, true
 		}
 	}
 	return dagql.ObjectResult[*Function]{}, false
 }
 
-func functionArgResultByName(fn *Function, name string) (dagql.ObjectResult[*FunctionArg], bool) {
+func functionArgResultByName(namer Namer, fn *Function, name string) (dagql.ObjectResult[*FunctionArg], bool) {
 	for _, arg := range fn.Args {
 		argSelf := arg.Self()
-		if strings.EqualFold(argSelf.OriginalName, name) || strings.EqualFold(argSelf.Name, gqlFieldName(name)) {
+		if strings.EqualFold(argSelf.OriginalName, name) || strings.EqualFold(argSelf.Name, namer.ArgName(name)) {
 			return arg, true
 		}
 	}
 	return dagql.ObjectResult[*FunctionArg]{}, false
 }
 
+// objectTypeDefResultByOriginalName finds the object the SDK registered as
+// name, in any casing (see Namer.DeclaredNameIndex).
 func (mod *Module) objectTypeDefResultByOriginalName(name string) (dagql.ObjectResult[*TypeDef], bool) {
+	var objects []dagql.ObjectResult[*TypeDef]
+	var declared []string
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
-			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.OriginalName) == gqlObjectName(name) {
-				return objDef, true
-			}
+			objects = append(objects, objDef)
+			declared = append(declared, typeDef.AsObject.Value.Self().OriginalName)
 		}
+	}
+	if i := mod.Namer().DeclaredNameIndex(name, declared); i >= 0 {
+		return objects[i], true
 	}
 	return dagql.ObjectResult[*TypeDef]{}, false
 }
 
 func (mod *Module) objectTypeDefResultByName(name string) (dagql.ObjectResult[*TypeDef], bool) {
+	namer := mod.Namer()
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
 			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.Name) == gqlObjectName(name) {
+			if obj.Name == name || namer.ObjectName(obj.Name) == namer.ObjectName(name) {
 				return objDef, true
 			}
 		}
@@ -635,7 +658,7 @@ func (mod *Module) customizationTarget(path []string) (dagql.ObjectResult[*TypeD
 		return objDef, obj.Constructor.Value, true
 	}
 	for i, segment := range path {
-		fn, ok := functionResultByOriginalName(obj, segment)
+		fn, ok := functionResultByOriginalName(mod.Namer(), obj, segment)
 		if !ok {
 			return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
 		}
@@ -666,7 +689,7 @@ func (mod *Module) patchFunctionArg(
 	argName string,
 	patch func(dagql.ObjectResult[*FunctionArg]) (dagql.ObjectResult[*FunctionArg], error),
 ) (dagql.ObjectResult[*Function], bool, error) {
-	arg, ok := functionArgResultByName(fn.Self(), argName)
+	arg, ok := functionArgResultByName(mod.Namer(), fn.Self(), argName)
 	if !ok {
 		return fn, false, nil
 	}
@@ -1275,15 +1298,6 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.Objec
 	typeDefs = append(typeDefs, mod.ObjectDefs...)
 	typeDefs = append(typeDefs, mod.InterfaceDefs...)
 	typeDefs = append(typeDefs, mod.EnumDefs...)
-	for _, def := range mod.ObjectDefs {
-		batch, err := CollectionBatchType(ctx, dag, def.Self().AsObject.Value)
-		if err != nil {
-			return nil, err
-		}
-		if batch.Valid {
-			typeDefs = append(typeDefs, batch.Value)
-		}
-	}
 	return typeDefs, nil
 }
 
@@ -1425,7 +1439,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 }
 
 func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, field *FieldTypeDef, state *moduleValidationState) error {
-	if gqlFieldName(field.Name) == "id" {
+	if mod.Namer().FieldName(field.Name) == "id" {
 		return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
 	}
 	// Workspace cannot be stored as a field on a module object
@@ -1451,7 +1465,7 @@ func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, 
 }
 
 func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDef, fn *Function, state *moduleValidationState) error {
-	if gqlFieldName(fn.Name) == "id" {
+	if mod.Namer().FieldName(fn.Name) == "id" {
 		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 	}
 	if fn.IsCheck && fn.CheckReturnType.Self() == nil && fn.ReturnType.Self().Kind != TypeDefKindVoid &&
@@ -1544,7 +1558,7 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef dagql.O
 	}
 	for _, fnRes := range iface.Functions {
 		fn := fnRes.Self()
-		if gqlFieldName(fn.Name) == "id" {
+		if mod.Namer().FieldName(fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on interface %q", fn.Name, iface.Name)
 		}
 		if err := mod.validateTypeDef(ctx, fn.ReturnType, state); err != nil {
@@ -1752,7 +1766,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, fmt.Errorf("namespace object type lookup: %w", err)
 		}
 		if !ok {
-			targetName := namespaceObject(obj.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := mod.Namer().NamespaceObject(obj.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if obj.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
 					Field: "__withName",
@@ -1863,7 +1877,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, fmt.Errorf("namespace interface type lookup: %w", err)
 		}
 		if !ok {
-			targetName := namespaceObject(iface.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := mod.Namer().NamespaceObject(iface.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if iface.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedIface, &updatedIface, dagql.Selector{
 					Field: "__withName",
@@ -1941,7 +1955,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, nil
 		}
 		if !ok {
-			targetName := namespaceObject(enum.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := mod.Namer().NamespaceObject(enum.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if enum.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedEnum, &updatedEnum, dagql.Selector{
 					Field: "__withName",
@@ -2119,6 +2133,36 @@ func (mod *Module) sourceEngineVersionAfter(version string) bool {
 		return AfterVersion(version).Contains(call.View(mod.SourceOverrides.EngineVersion))
 	}
 	return mod.Source.Valid && AfterVersion(version).Contains(call.View(mod.Source.Value.Self().EngineVersion))
+}
+
+type sdkViewKey struct{}
+
+// contextWithSDKView records the API view of the module's source, the view
+// its SDK's generated code has, for values converted to its SDK's inputs
+// (SDKViewFromContext): the view of its engine version, capped at the
+// engine's (engine.ModuleAPIViewVersion), like ModuleSource.NamingView.
+func (mod *Module) contextWithSDKView(ctx context.Context) context.Context {
+	version := ""
+	switch {
+	case mod.SourceOverrides != nil:
+		version = mod.SourceOverrides.EngineVersion
+	case mod.Source.Valid && mod.Source.Value.Self() != nil:
+		version = mod.Source.Value.Self().EngineVersion
+	}
+	view := engine.ModuleAPIViewVersion(version)
+	if !semver.IsValid(view) {
+		return ctx
+	}
+	return context.WithValue(ctx, sdkViewKey{}, call.View(view))
+}
+
+// SDKViewFromContext is the API view of the module whose SDK inputs are being
+// converted, if any: enum values its schema spells differently, like a core
+// enum's old spellings in modules from before engine.IdentifierCasingVersion,
+// are spelled for it.
+func SDKViewFromContext(ctx context.Context) (call.View, bool) {
+	view, ok := ctx.Value(sdkViewKey{}).(call.View)
+	return view, ok
 }
 
 // modulePath gets the prefix for the file sourcemaps, so that the sourcemap is

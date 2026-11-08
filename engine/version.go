@@ -42,9 +42,15 @@ var (
 	// we will enable default function caching behavior.
 	MinimumDefaultFunctionCachingModuleVersion = "v0.19.4"
 
-	// MinimumDangV2ModuleVersion is the minimum module engine version that gets
-	// Dang v2 semantics (`.{ }` is dot-block application, `.{{ }}` is
-	// selection); older modules keep Dang v1 semantics (`.{ }` is selection).
+	// CollectionItemChecksVersion is the first module version where collection
+	// checks no longer replace matching item checks during execution.
+	CollectionItemChecksVersion = "v1.0.0-beta.22"
+
+	// MinimumDangV2ModuleVersion is the minimum module engine version whose
+	// Dang source defaults to Dang 2 (`.{ }` is dot-block application, `.{{ }}`
+	// is selection) when no dang.toml declares a `dang` version; older modules
+	// default to Dang 1.0 (`.{ }` is selection), the language of the Dang v1
+	// line they were written for.
 	MinimumDangV2ModuleVersion = "v0.21.5"
 )
 
@@ -183,18 +189,19 @@ const PrereleaseViewsVersion = "v1.0.0-beta.22"
 const basePrereleaseView = "v1.0.0-beta.21"
 
 // IdentifierCasingVersion is the first engine version with the identifier
-// casing rules: new module naming rules and the renamed core API (e.g.
-// GitCommit.shortSHA). Gate on it with a view filter,
-// View(AfterVersion(engine.IdentifierCasingVersion)) and
+// casing rules: new module naming rules and the core API renamed to the
+// GraphQL casing convention (e.g. GitRef.commitSha). Gate on it with a view
+// filter, View(AfterVersion(engine.IdentifierCasingVersion)) and
 // View(BeforeVersion(engine.IdentifierCasingVersion)), in a resolver with
 // core.Supports(ctx, engine.IdentifierCasingVersion), and for a declared
 // version outside a call with APIVersionAtLeast.
 //
 // It must not be older than PrereleaseViewsVersion: earlier prereleases share
-// one view, which a gate cannot split. Prerelease views exist for this cut,
-// so the two ship together; if PrereleaseViewsVersion ships before the
-// casing changes do, give this its own, later, value.
-const IdentifierCasingVersion = PrereleaseViewsVersion
+// one view, which a gate cannot split. Prerelease views shipped first (in
+// v1.0.0-beta.22), so this has its own, later, value; until a release ships
+// with the casing changes, if the release it names ships without them, move
+// it to a later one (see internal-docs/version-gating.md).
+const IdentifierCasingVersion = "v1.0.0-beta.26"
 
 // APIViewVersion returns the API view for a client or module that declares
 // version.

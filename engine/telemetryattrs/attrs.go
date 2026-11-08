@@ -163,6 +163,14 @@ const (
 	// running it would only repeat the failure. (string)
 	CheckGeneratorAttr = "dagger.io/check.generator"
 
+	// CheckCollectionItemAttr marks checks selected through a collection item.
+	// Status publishers can keep these under the parent run while retaining
+	// each result in the trace. Ordinary checks explicitly report false. (bool)
+	CheckCollectionItemAttr = "dagger.io/check.collection_item"
+
+	// CheckCollectionGroupAttr marks the summary of a collection check. (bool)
+	CheckCollectionGroupAttr = "dagger.io/check.collection_group"
+
 	// DagBlockedAttr marks a lazy-evaluation resume span that aborted because a
 	// prerequisite result's evaluation failed, rather than because the result's
 	// own deferred work failed. The UI treats a blocked resumption as if the
@@ -519,8 +527,10 @@ const (
 
 	// WcprofUsageAttrPrefix prefixes an exec.run span's resource readings,
 	// one set per scope (see wcprof's UsageScope constants):
-	// <prefix><scope>.cpu_user_us, .cpu_system_us and .mem_peak_bytes, int64
-	// attributes, the same readings the recorder dumps as usage events.
+	// <prefix><scope>.cpu_user_us, .cpu_system_us, and when known
+	// .mem_peak_bytes, .faults_minor, .faults_major, .faults_huge,
+	// .cpu_stall_us and .mem_stall_us, int64 attributes, the same readings the
+	// recorder dumps as usage events.
 	WcprofUsageAttrPrefix = "wcprof.usage."
 
 	// LinkPurposeWait is a new value for telemetry.LinkPurposeAttr
@@ -795,15 +805,16 @@ const (
 //
 // When the engine has prepared a cache volume's backing snapshot for an exec
 // or service mount, or with cacheVolumes.dir has acquired its directory, it
-// reports the preparation on an internal span named
-// "<CacheVolumeMountSpan>: <key>", which also writes one log line with the
-// same facts. The span belongs to the session, so its EngineCacheAttr
-// resource attribute names the engine cache it ran in: another identity is
-// another cache database (a new disk, or the same disk after the engine wiped
-// its cache), another generation on the same identity is another start of
-// that cache, and the same generation is the same engine process.
+// reports the preparation as a CacheVolumeMountEvent on the span that mounts
+// the volume, with the attributes below. It is for diagnosing runs from their
+// traces, so it is an event: neither the CLI nor Dagger Cloud shows events.
+// The span belongs to the session, so its EngineCacheAttr resource attribute
+// names the engine cache it ran in: another identity is another cache
+// database (a new disk, or the same disk after the engine wiped its cache),
+// another generation on the same identity is another start of that cache,
+// and the same generation is the same engine process.
 const (
-	CacheVolumeMountSpan = "cache volume mount"
+	CacheVolumeMountEvent = "cache volume mount"
 
 	// CacheVolumeKeyAttr is the volume's key. (string)
 	CacheVolumeKeyAttr = "dagger.io/cache_volume.key"

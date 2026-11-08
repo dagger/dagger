@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core/artifact"
@@ -58,6 +57,7 @@ func (*ArtifactPath) TypeDescription() string {
 // e.g. an LLM's bound tool object. It evaluates in its ContextWorkspace, if
 // any, else in the caller's context.
 type Artifact struct {
+	View           *ArtifactView
 	ModuleName     string `field:"true" doc:"The installed module name."`
 	DimensionNames map[string]string
 	Path           []string                `field:"true" doc:"Ordered, literal fields to follow. Workspace main targets use their shorthand."`
@@ -105,14 +105,22 @@ type ArtifactURIOpts struct {
 	Absolute      bool
 	DimensionKeys bool
 	TypeAssertion bool
-	// Full prints the stored form of an address with keys: the full path in
-	// the type key, and every item key of a batch. Without it, an address
-	// with keys is a projection, the shortest that selects the same artifact
-	// in the loaded workspace: a short type key (see TypeKeyName), and a
-	// batch that runs its whole collection named by its parent keys. A schema
-	// change can alter a projection, so select by the full address whatever
-	// must keep its meaning.
+	// Full prints the full path in the type key instead of its shortest
+	// unambiguous name in the loaded workspace (see TypeKeyName). A schema
+	// change can alter the short name, so persisted selectors use the full path.
 	Full bool
+}
+
+// IsCollectionItem reports whether the artifact runs under a collection member.
+// Inspect the receiver path, not address keys: a legacy whole-collection check
+// can retain selected keys without executing as an individual item.
+func (a *Artifact) IsCollectionItem() bool {
+	for node := a.Node; node != nil; node = node.Parent {
+		if node.CollectionDimension != nil && node.CollectionKey != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // URI is the artifact's DAG address. See hack/designs/collections-issue.md,
@@ -121,12 +129,8 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 	var keys []dagaddress.Pair
 	var dimensions []string
 	if opts.DimensionKeys {
-		var collapsed string
-		if !opts.Full {
-			collapsed = a.completeBatchDimension()
-		}
 		for _, key := range a.DimensionKeys {
-			if artifact.IsStaticDimension(key.Dimension) || key.Dimension == collapsed {
+			if artifact.IsStaticDimension(key.Dimension) {
 				continue
 			}
 			keys = append(keys, dagaddress.Pair{Dimension: a.dimensionName(key.Dimension), Key: key.Key, HasKey: true})
@@ -180,32 +184,15 @@ func (a *Artifact) StaleArtifact() *Artifact {
 	return stale
 }
 
-// projectedDimensions are the collection dimensions a projected address keys:
-// every collection dimension on the path, except the dimension of a batch
-// that runs its whole collection.
+// projectedDimensions are the collection dimensions a projected address keys.
 func (a *Artifact) projectedDimensions() []string {
-	collapsed := a.completeBatchDimension()
 	var dimensions []string
 	for _, dim := range a.DimensionDefinitions() {
-		if !artifact.IsStaticDimension(dim.Identifier) && dim.Identifier != collapsed && !slices.Contains(dimensions, dim.Identifier) {
+		if !artifact.IsStaticDimension(dim.Identifier) && !slices.Contains(dimensions, dim.Identifier) {
 			dimensions = append(dimensions, dim.Identifier)
 		}
 	}
 	return dimensions
-}
-
-// completeBatchDimension is the dimension of a batch receiver that runs every
-// item of its collection (see Artifacts.Batch), or "".
-func (a *Artifact) completeBatchDimension() string {
-	for node := a.Node; node != nil; node = node.Parent {
-		if node.CollectionDimension != nil && node.CollectionKeys != nil {
-			if node.CollectionComplete {
-				return node.CollectionDimension.Identifier
-			}
-			return ""
-		}
-	}
-	return ""
 }
 
 // Description is the description of the field that supplies the artifact. A
@@ -287,9 +274,11 @@ func WithArtifactReference(ctx context.Context, ref string) (context.Context, er
 
 // ArtifactTypeName is the CLI-case form of a GraphQL type name, as used in a
 // DAG address scheme: Container gives "container", ProviderDocs gives
-// "provider-docs".
+// "provider-docs". Artifacts and DAG addresses only exist for clients at
+// engine version v1.0.0 and up, so it always uses the latest naming rules;
+// a type name doesn't say which module, and so which rules, it came from.
 func ArtifactTypeName(typeName string) string {
-	return strcase.ToKebab(typeName)
+	return LatestNamer.CLIName(typeName)
 }
 
 // GitAddress is the workspace's Git address as a Go import path, and the commit
@@ -350,12 +339,11 @@ type ArtifactSelector struct {
 	ExcludedURIs []string
 }
 
-// Artifacts is an immutable selection. Filtering changes only the entry list
-// and the recorded selector, preserving each artifact's address, module tree,
-// and workspace.
+// Artifacts selects workspace fields and the collection view used to evaluate them.
 type Artifacts struct {
-	Entries  []*Artifact
-	Selector ArtifactSelector
+	Entries         []*Artifact
+	CollectionRoots []*Artifact
+	Selector        ArtifactSelector
 	// AllDimensions lists the dimensions of every loaded module. Names resolve
 	// against it, so a filter cannot change what a name means. It omits
 	// modules that are not loaded, but names start with their module, so
@@ -379,11 +367,14 @@ var _ dagql.HasDependencyResults = (*Artifacts)(nil)
 
 func (*Artifacts) Type() *ast.Type { return &ast.Type{NamedType: "Artifacts", NonNull: true} }
 func (*Artifacts) TypeDescription() string {
-	return "An immutable selection of workspace artifacts. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>."
+	return "A selection of workspace artifacts and their immutable collection view. Collection key filters replace collection references with subsets. Static filters change only membership. Listed types, dimensions, and keys use OR; chained filters use AND. Empty alternatives match nothing; unknown names match nothing but module load failures. Filters never change addresses or dimension identifiers. Module keys match a module's configured or kebab-case name. A module that failed to load has no schema, so its load failure stands in for whatever it would hold: a filter keeps it when the module could hold something the filter selects, and an exclusion drops it only by its own address, such as <module>/** or ?module=<module>."
 }
 
 func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
 	selected := &Artifacts{Entries: make([]*Artifact, 0, len(a.Entries)), Selector: a.Selector.clone(), AllDimensions: a.AllDimensions, AllPaths: a.AllPaths, exact: a.exact}
+	for _, root := range a.CollectionRoots {
+		selected.CollectionRoots = append(selected.CollectionRoots, root.Clone())
+	}
 	for _, artifact := range a.Entries {
 		if matches(artifact) {
 			selected.Entries = append(selected.Entries, artifact.Clone())
@@ -547,7 +538,7 @@ func (a *Artifact) unqualifiedPath() []string {
 	if root == nil || root.Parent == nil || root.Parent.Name == "" {
 		return nil
 	}
-	path := a.Node.Path().CliCase()
+	path := a.Node.CLIPath()
 	qualifier := len(root.Path()) - 1
 	if qualifier < 0 || qualifier >= len(path) {
 		return nil
@@ -573,24 +564,6 @@ func (a *Artifact) WorkspaceContext(ctx context.Context) (context.Context, error
 		return nil, err
 	}
 	return WorkspaceToContext(ctx, ws), nil
-}
-
-func (a *Artifacts) WithArtifacts(other *Artifacts) (*Artifacts, error) {
-	selected := &Artifacts{Entries: []*Artifact{}, AllDimensions: artifact.Union(a.AllDimensions, other.AllDimensions), AllPaths: artifact.UnionPaths(a.AllPaths, other.AllPaths)}
-	seen := map[string]bool{}
-	for _, artifact := range slices.Concat(a.Entries, other.Entries) {
-		key, err := artifact.identity()
-		if err != nil {
-			return nil, err
-		}
-		if !seen[key] {
-			seen[key] = true
-			selected.Entries = append(selected.Entries, artifact.Clone())
-		}
-	}
-	slices.SortStableFunc(selected.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
-	selected.Selector.Paths = selected.exactPaths()
-	return selected, nil
 }
 
 func (a *Artifacts) WithoutArtifacts(other *Artifacts) (*Artifacts, error) {
@@ -639,8 +612,9 @@ func (a *Artifacts) Types() []string {
 
 func (a *Artifacts) withPathFilter(matches func(*Artifact) bool, patterns []string) *Artifacts {
 	selected := a.filter(matches)
-	// A question mark is a path glob here, but starts the query in a DAG link.
-	if a.Selector.Paths == nil && !slices.ContainsFunc(patterns, func(pattern string) bool { return strings.Contains(pattern, "?") }) {
+	// A question mark starts a URI query, and an empty URI path means all
+	// paths. Materialize either filter so replay cannot broaden the selection.
+	if a.Selector.Paths == nil && !slices.ContainsFunc(patterns, func(pattern string) bool { return pattern == "" || strings.Contains(pattern, "?") }) {
 		selected.Selector.Paths = patterns
 	} else {
 		selected.Selector.Paths = selected.exactPaths()
@@ -684,21 +658,22 @@ func (a *Artifacts) FilterPattern(pattern string) (*Artifacts, error) {
 	return selected, nil
 }
 
-// artifactPattern normalizes a path pattern to CLI case, as artifact paths are.
+// artifactPattern spells a path pattern using the current CLI naming rules,
+// independently of the backing modules' GraphQL views. Explicit user glob
+// alternatives are preserved; no legacy alternatives are added.
 func artifactPattern(pattern string) string {
 	segments := strings.Split(pattern, "/")
 	for i, segment := range segments {
-		segments[i] = strcase.ToKebab(segment)
+		segments[i] = LatestNamer.CLIName(segment)
 	}
 	return strings.Join(segments, "/")
 }
 
-// IncludePattern is the DAG address pattern with the same meaning as a
-// Workspace.artifacts include pattern: a literal path also selects its
-// children.
-func IncludePattern(include string) string {
-	pattern := artifactPattern(strings.ReplaceAll(include, ":", "/"))
-	return pattern + "/**"
+// IncludePatterns returns the canonical DAG address pattern with the same
+// meaning as a Workspace.artifacts include: a literal path also selects its
+// children. The slice shape is shared with callers combining several includes.
+func IncludePatterns(include string) []string {
+	return []string{artifactPattern(strings.ReplaceAll(include, ":", "/")) + "/**"}
 }
 
 func (a *Artifact) matchesPattern(pattern string) (bool, error) {
@@ -708,7 +683,7 @@ func (a *Artifact) matchesPattern(pattern string) (bool, error) {
 	if a.Node == nil {
 		return false, nil
 	}
-	if match, err := doublestar.PathMatch(pattern, strings.Join(a.Node.Path().CliCase(), "/")); err != nil || match {
+	if match, err := doublestar.PathMatch(pattern, strings.Join(a.Node.CLIPath(), "/")); err != nil || match {
 		return match, err
 	}
 	// A bound tree qualified by its type still answers to the plain path,
@@ -990,26 +965,37 @@ func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root d
 			continue
 		}
 		artifacts.Entries = append(artifacts.Entries, &Artifact{
-			ModuleName: tree.Name, Path: node.Path().CliCase(), DimensionKeys: []*ArtifactDimensionKey{},
+			ModuleName: tree.Name, Path: node.CLIPath(), DimensionKeys: []*ArtifactDimensionKey{},
 			Directives: node.Directives, TypeName: node.ObjectType().Name, Node: node,
 		})
 	}
 	slices.SortFunc(artifacts.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
 	artifacts.AllDimensions = artifacts.DimensionDefinitions()
 	artifacts.AllPaths = artifacts.PathIndex()
+	artifacts.SetCollectionRoots(artifacts.Entries)
 	return artifacts, nil
 }
 
 // Evaluate selects the artifact's value in the caller's session. The cached
 // module tree carries the dagql server that discovered it, whose field specs
-// reference module provenance results owned by that session. A fresh server
-// binds the provenance to results this session owns, so evaluation does not
-// depend on the discovering session being alive.
+// reference module provenance results owned by that session. The caller's own
+// server for the module binds the provenance to results this session owns, so
+// evaluation does not depend on the discovering session being alive.
 func (a *Artifact) Evaluate(ctx context.Context, dest any, inputs ...dagql.NamedInput) error {
 	if a.Node == nil {
 		return fmt.Errorf("artifact %s has no module tree", strings.Join(a.Path, "/"))
 	}
 	artifact := a.Clone()
+	// Within an expansion, start from the nearest receiver it has already
+	// evaluated rather than selecting every ancestor again.
+	if receivers := artifactReceiversFrom(ctx); receivers != nil {
+		for node, clone := a.Node.Parent, artifact.Node.Parent; node != nil; node, clone = node.Parent, clone.Parent {
+			if value, ok := receivers.load(a, node); ok {
+				clone.RootValue = value
+				break
+			}
+		}
+	}
 	servers := map[uint64]*dagql.Server{}
 	for node := artifact.Node; node != nil; node = node.Parent {
 		if node.Module.Self() == nil {
@@ -1034,6 +1020,9 @@ func (a *Artifact) Evaluate(ctx context.Context, dest any, inputs ...dagql.Named
 			servers[key] = srv
 		}
 		node.DagqlServer = srv
+	}
+	if a.View != nil {
+		ctx = dagql.WithResultScope(ctx, a.View)
 	}
 	return artifact.Node.dagqlValue(ctx, dest, inputs)
 }
@@ -1073,40 +1062,52 @@ type persistedArtifact struct {
 	Node           int
 	Workspace      uint64
 	// ContextWorkspace is Artifact.ContextWorkspace; zero when unset.
-	ContextWorkspace uint64 `json:",omitempty"`
+	ContextWorkspace uint64                 `json:",omitempty"`
+	View             *persistedArtifactView `json:",omitempty"`
 }
 type persistedArtifacts struct {
-	Tree          persistedModTree
-	Entries       []persistedArtifact
-	Selector      ArtifactSelector
-	AllDimensions artifact.Dimensions
-	AllPaths      artifact.Paths `json:",omitempty"`
+	Tree            persistedModTree
+	Entries         []persistedArtifact
+	CollectionRoots []persistedArtifact
+	Selector        ArtifactSelector
+	AllDimensions   artifact.Dimensions
+	AllPaths        artifact.Paths `json:",omitempty"`
 }
 
-func encodeArtifacts(enc *dagql.PersistEncodeContext, entries []*Artifact, selector ArtifactSelector, allDimensions artifact.Dimensions, allPaths artifact.Paths) (dagql.PersistedObjectEncoding, error) {
+func encodeArtifacts(enc *dagql.PersistEncodeContext, entries, roots []*Artifact, selector ArtifactSelector, allDimensions artifact.Dimensions, allPaths artifact.Paths) (dagql.PersistedObjectEncoding, error) {
 	tree := newPersistedModTreeEncoder(enc)
 	payload := persistedArtifacts{Selector: selector, AllDimensions: allDimensions, AllPaths: allPaths}
-	for _, a := range entries {
-		p := persistedArtifact{ModuleName: a.ModuleName, LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, TypeKeyName: a.TypeKeyName, Directives: a.Directives}
-		p.DimensionNames = a.DimensionNames
-		var err error
-		p.Node, err = tree.Add(a.Node)
-		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
-		}
-		if a.Workspace.Self() != nil {
-			p.Workspace, err = encodePersistedObjectRef(enc, a.Workspace, "artifact workspace")
+	for i, group := range [][]*Artifact{entries, roots} {
+		for _, a := range group {
+			p := persistedArtifact{ModuleName: a.ModuleName, LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, TypeKeyName: a.TypeKeyName, Directives: a.Directives}
+			p.DimensionNames = a.DimensionNames
+			var err error
+			p.View, err = a.View.encode(enc)
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
-		}
-		if a.ContextWorkspace.Self() != nil {
-			p.ContextWorkspace, err = encodePersistedObjectRef(enc, a.ContextWorkspace, "artifact context workspace")
+			p.Node, err = tree.Add(a.Node)
 			if err != nil {
 				return dagql.PersistedObjectEncoding{}, err
 			}
+			if a.Workspace.Self() != nil {
+				p.Workspace, err = encodePersistedObjectRef(enc, a.Workspace, "artifact workspace")
+				if err != nil {
+					return dagql.PersistedObjectEncoding{}, err
+				}
+			}
+			if a.ContextWorkspace.Self() != nil {
+				p.ContextWorkspace, err = encodePersistedObjectRef(enc, a.ContextWorkspace, "artifact context workspace")
+				if err != nil {
+					return dagql.PersistedObjectEncoding{}, err
+				}
+			}
+			if i == 0 {
+				payload.Entries = append(payload.Entries, p)
+			} else {
+				payload.CollectionRoots = append(payload.CollectionRoots, p)
+			}
 		}
-		payload.Entries = append(payload.Entries, p)
 	}
 	payload.Tree = tree.tree
 	return encodePersistedObjectPayload(payload)
@@ -1121,29 +1122,39 @@ func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw j
 		return nil, err
 	}
 	result := &Artifacts{Selector: payload.Selector, AllDimensions: payload.AllDimensions, AllPaths: payload.AllPaths}
-	for _, p := range payload.Entries {
-		a := &Artifact{ModuleName: p.ModuleName, LoadFailure: p.LoadFailure, Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, TypeKeyName: p.TypeKeyName, Directives: p.Directives, Node: nodes[p.Node]}
-		a.DimensionNames = p.DimensionNames
-		if a.DimensionKeys == nil {
-			a.DimensionKeys = []*ArtifactDimensionKey{}
+	for i, group := range [][]persistedArtifact{payload.Entries, payload.CollectionRoots} {
+		for _, p := range group {
+			a := &Artifact{ModuleName: p.ModuleName, LoadFailure: p.LoadFailure, Path: p.Path, DimensionKeys: p.DimensionKeys, TypeName: p.TypeName, TypeKeyName: p.TypeKeyName, Directives: p.Directives, Node: nodes[p.Node]}
+			a.View, err = p.View.decode(ctx, dec)
+			if err != nil {
+				return nil, err
+			}
+			a.DimensionNames = p.DimensionNames
+			if a.DimensionKeys == nil {
+				a.DimensionKeys = []*ArtifactDimensionKey{}
+			}
+			if a.Node == nil && a.LoadFailure == nil {
+				return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
+			}
+			a.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.Workspace, "artifact workspace")
+			if err != nil {
+				return nil, err
+			}
+			a.ContextWorkspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.ContextWorkspace, "artifact context workspace")
+			if err != nil {
+				return nil, err
+			}
+			if i == 0 {
+				result.Entries = append(result.Entries, a)
+			} else {
+				result.CollectionRoots = append(result.CollectionRoots, a)
+			}
 		}
-		if a.Node == nil && a.LoadFailure == nil {
-			return nil, fmt.Errorf("artifact references missing tree node %d", p.Node)
-		}
-		a.Workspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.Workspace, "artifact workspace")
-		if err != nil {
-			return nil, err
-		}
-		a.ContextWorkspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.ContextWorkspace, "artifact context workspace")
-		if err != nil {
-			return nil, err
-		}
-		result.Entries = append(result.Entries, a)
 	}
 	return result, nil
 }
 func (a *Artifact) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	return encodeArtifacts(enc, []*Artifact{a}, ArtifactSelector{}, nil, nil)
+	return encodeArtifacts(enc, []*Artifact{a}, nil, ArtifactSelector{}, nil, nil)
 }
 func (*Artifact) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	result, err := decodeArtifacts(ctx, dec, raw)
@@ -1156,7 +1167,7 @@ func (*Artifact) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDe
 	return result.Entries[0], nil
 }
 func (a *Artifacts) EncodePersistedObject(_ context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
-	return encodeArtifacts(enc, a.Entries, a.Selector, a.AllDimensions, a.AllPaths)
+	return encodeArtifacts(enc, a.Entries, a.CollectionRoots, a.Selector, a.AllDimensions, a.AllPaths)
 }
 func (*Artifacts) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	return decodeArtifacts(ctx, dec, raw)
@@ -1190,11 +1201,16 @@ func (a *Artifact) AttachDependencyResults(_ context.Context, _ dagql.AnyResult,
 		}
 		owned = append(owned, value)
 	}
-	return owned, nil
+	view, deps, err := a.View.attach(attach)
+	if err != nil {
+		return nil, err
+	}
+	a.View = view
+	return append(owned, deps...), nil
 }
 func (a *Artifacts) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	var owned []dagql.AnyResult
-	for _, entry := range a.Entries {
+	for _, entry := range slices.Concat(a.Entries, a.CollectionRoots) {
 		deps, err := entry.AttachDependencyResults(ctx, nil, attach)
 		if err != nil {
 			return nil, err
