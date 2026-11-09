@@ -275,6 +275,13 @@ func (r *Release) Publish( //nolint:gocyclo
 
 	pythonWorkspaceDir := r.Workspace.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: pythonClientDevWorkspaceIgnore})
 	phpWorkspaceDir := r.Workspace.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: phpClientDevWorkspaceIgnore})
+	// The Go and PHP SDKs release from release's own repository. Publish runs
+	// on the engine .github/actions/call pins, and an engine without "core:
+	// give a module served from a module's tree its contextual git" resolves
+	// their default source repository, in a module release serves from its
+	// tree, to a checkout without the remote's branches and tags (Go) or to
+	// nothing (PHP). Drop this once the pinned engine includes that change.
+	sdkSourceRepo := r.Workspace.Git().Head().AsRepository()
 	components := []struct {
 		name    string
 		path    string
@@ -295,12 +302,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			dev:  true,
 			release: func(ctx context.Context) error {
 				return goclientdev.New(r.Workspace).Release(ctx, tag, goclientdev.GoClientDevReleaseOpts{
+					SourceRepo:  sdkSourceRepo,
 					GithubToken: githubToken,
 					DestRemote:  goSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return goclientdev.New(r.Workspace).ReleaseDryRun(ctx)
+				return goclientdev.New(r.Workspace).ReleaseDryRun(ctx, goclientdev.GoClientDevReleaseDryRunOpts{SourceRepo: sdkSourceRepo})
 			},
 		},
 		{
@@ -388,12 +396,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			dev:  true,
 			release: func(ctx context.Context) error {
 				return phpclientdev.New(r.Workspace, phpclientdev.PhpClientDevOpts{WorkspaceDir: phpWorkspaceDir}).Release(ctx, tag, phpclientdev.PhpClientDevReleaseOpts{
+					SourceRepo:  sdkSourceRepo,
 					GithubToken: githubToken,
 					Dest:        phpSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return phpclientdev.New(r.Workspace, phpclientdev.PhpClientDevOpts{WorkspaceDir: phpWorkspaceDir}).ReleaseDryRun(ctx)
+				return phpclientdev.New(r.Workspace, phpclientdev.PhpClientDevOpts{WorkspaceDir: phpWorkspaceDir}).ReleaseDryRun(ctx, phpclientdev.PhpClientDevReleaseDryRunOpts{SourceRepo: sdkSourceRepo})
 			},
 		},
 		{

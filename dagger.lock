@@ -124,6 +124,7 @@
 ["","oci-sha",["gcr.io/go-containerregistry/crane:debug"],"sha256:e78770b31258a3846f878036d9c1f63fbe4c871f9f56990bf77fd95c013e3c1b"]
 ["","oci-sha",["ghcr.io/miniscruff/changie:v1.21.0"],"sha256:5eaf4f7e3607dea190551802bc34e7a2084cdb3b41e55e1ce8dc353661549a3e"]
 ["","oci-sha",["ghcr.io/miniscruff/changie:v1.26.0"],"sha256:c6feb4e6b36661f0347354c9af582a529b1f8f9c5575b39a28931fd8ab962b4d"]
+["","oci-sha",["registry.dagger.io/engine:v1.0.0-beta.25"],"sha256:39abecfe0eba4c91035dcfc9f72c8a3963ae60481326082b48d78f2230202834"]
 ["","vanity-url",["https://dagger.io/dotnet/PsScriptAnalyzer"],"https://github.com/dagger/PsScriptAnalyzer"]
 ["","vanity-url",["https://dagger.io/go"],"https://github.com/dagger/go"]
 ["","vanity-url",["https://dagger.io/kubernetes/helm"],"https://github.com/dagger/helm"]

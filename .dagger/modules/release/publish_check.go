@@ -26,6 +26,10 @@ const (
 	publishCheckRegistryAddress = "registry:5000"
 	publishCheckRegistryImage   = publishCheckRegistryAddress + "/dagger/engine"
 	publishCheckEngineStateDir  = "/var/lib/dagger"
+
+	// publishCheckEngineCLIPath is where an engine image keeps the dagger CLI
+	// of its own version.
+	publishCheckEngineCLIPath = "/usr/local/bin/dagger"
 )
 
 type publishCheckEnv struct {
@@ -36,6 +40,9 @@ type publishCheckEnv struct {
 	releaseVersion string
 	commit         string
 	moduleRef      string
+
+	// releaseEngineImage is the engine image release runs on.
+	releaseEngineImage string
 
 	awsBucket                 string
 	awsCloudfrontDistribution string
@@ -130,6 +137,12 @@ func (r *Release) PublishWithMockEndpoints(
 		return err
 	}
 	if err := requireContains(initialOut, "- [x] 🚗 CLI", "initial main publish should publish the CLI"); err != nil {
+		return err
+	}
+	if err := requireContains(initialOut, "- [x] 🐹 Go SDK", "initial main publish should publish the Go SDK"); err != nil {
+		return err
+	}
+	if err := requireContains(initialOut, "- [x] 🐘 PHP SDK", "initial main publish should publish the PHP SDK"); err != nil {
 		return err
 	}
 	if err := env.assertPublishOrder(ctx, "main", initialStart); err != nil {
@@ -293,6 +306,10 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagge
 	if err != nil {
 		return nil, err
 	}
+	releaseEngineImage, err := publishWorkflowEngineImage(ctx, source)
+	if err != nil {
+		return nil, err
+	}
 
 	// A stable release reads release notes from a changelog file per published
 	// component: the root .changes/<tag>.md for the engine and CLI (cli-dev's
@@ -332,13 +349,14 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, ws *dagge
 	}
 
 	env := &publishCheckEnv{
-		source:          source,
-		workspace:       ws,
-		releaseTag:      releaseTag,
-		releaseVersion:  releaseVersion,
-		awsBucket:       "dagger-release-test-" + strings.ToLower(randomID()),
-		platform:        platform,
-		platformArchive: platformArchive,
+		source:             source,
+		workspace:          ws,
+		releaseTag:         releaseTag,
+		releaseVersion:     releaseVersion,
+		releaseEngineImage: releaseEngineImage,
+		awsBucket:          "dagger-release-test-" + strings.ToLower(randomID()),
+		platform:           platform,
+		platformArchive:    platformArchive,
 	}
 
 	gitSetup := core.NewContainer().
@@ -473,9 +491,12 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 		return nil, err
 	}
 
-	// This replaces engine-dev's default engine.json, so keep its docker.io
+	// Release runs on the engine the Publish workflow publishes with, not on
+	// one built from the tree: that is the engine a real publish runs on.
+	// This replaces the image's default engine.json, so keep a docker.io
 	// mirror: without it the release engine pulls straight from Docker Hub.
-	engineCtr := dev.Container().
+	engineCtr := core.NewContainer().
+		From(env.releaseEngineImage).
 		WithNewFile("/etc/dagger/engine.json", `{
   "registries": {
     "docker.io": {
@@ -508,9 +529,15 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 	}), nil
 }
 
-func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
-	dev := enginedev.New(env.workspace)
-	client := wolfi.New().
+// client is a container with the CLI of the release engine's version, bound
+// to engine.
+func (env *publishCheckEnv) client(ctx context.Context, engine *dagger.Service) (*dagger.Container, error) {
+	endpoint, err := engine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	if err != nil {
+		return nil, err
+	}
+	cli := core.NewContainer().From(env.releaseEngineImage).File(publishCheckEngineCLIPath)
+	return wolfi.New().
 		Container(wolfi.WolfiContainerOpts{
 			Packages: []string{"apk-tools", "ca-certificates", "curl", "git"},
 		}).
@@ -523,12 +550,35 @@ func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 		WithServiceBinding("verdaccio", env.verdaccio).
 		WithServiceBinding("mock", env.mockSvc).
 		WithServiceBinding("github.test", env.mockSvc).
-		WithMountedFile("/github-ca.pem", env.certs.caRootCert)
+		WithMountedFile("/github-ca.pem", env.certs.caRootCert).
+		WithServiceBinding("dagger-engine", engine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithMountedFile("/.dagger-cli", cli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/.dagger-cli").
+		WithSymlink("/.dagger-cli", "/usr/local/bin/dagger"), nil
+}
 
-	return dev.InstallClient(enginedev.EngineDevInstallClientOpts{
-		Client:  client,
-		Service: engine,
-	})
+// publishWorkflowEngineImage is the engine image the Publish workflow runs
+// release on: the dagger version .github/actions/call runs by default.
+func publishWorkflowEngineImage(ctx context.Context, source *dagger.Directory) (string, error) {
+	const path = ".github/actions/call/action.yml"
+	contents, err := source.File(path).Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	var action struct {
+		Inputs map[string]struct {
+			Default string `json:"default"`
+		} `json:"inputs"`
+	}
+	if err := yaml.Unmarshal([]byte(contents), &action); err != nil {
+		return "", fmt.Errorf("parse %s: %w", path, err)
+	}
+	version := action.Inputs["version"].Default
+	if !semver.IsValid(version) {
+		return "", fmt.Errorf("%s: the version input's default %q is not a version", path, version)
+	}
+	return "registry.dagger.io/engine:" + version, nil
 }
 
 // runReleasePublish runs release publish for tag in the nested engine.
@@ -574,7 +624,11 @@ cat /tmp/publish.log
 exit "$status"
 `
 
-	out, err := env.client(engine).
+	client, err := env.client(ctx, engine)
+	if err != nil {
+		return "", err
+	}
+	out, err := client.
 		WithSecretVariable("REGISTRY_PASSWORD", core.SetSecret("release-registry-password-"+randomID(), registryPassword)).
 		WithSecretVariable("FAKE_GITHUB_TOKEN", core.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
 		WithSecretVariable("FAKE_NETLIFY_TOKEN", core.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token"+tokenSuffix)).
