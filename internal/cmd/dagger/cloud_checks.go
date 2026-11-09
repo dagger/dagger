@@ -208,10 +208,12 @@ func cloudWorkspaceSelectors(base cloudCheckSelectorFlags, version string) []clo
 }
 
 func cloudPullRequestNumber(version string) string {
-	if rest, ok := strings.CutPrefix(version, "pull/"); ok {
-		number, suffix, ok := strings.Cut(rest, "/")
-		if ok && suffix == "head" {
-			return number
+	for _, prefix := range []string{"pull/", "merge-requests/"} {
+		if rest, ok := strings.CutPrefix(version, prefix); ok {
+			number, suffix, ok := strings.Cut(rest, "/")
+			if ok && suffix == "head" {
+				return number
+			}
 		}
 	}
 	return ""
@@ -372,11 +374,11 @@ func cloudDimensionMatches(dim, got string, values []string) bool {
 	for _, want := range values {
 		switch dim {
 		case "github-repo":
-			if strings.EqualFold(normalizeGitHubRepo(got), normalizeGitHubRepo(want)) {
+			if sameCloudRepository(got, want) {
 				return true
 			}
 		case "workspace":
-			if strings.EqualFold(normalizeGitHubRepo(got), normalizeGitHubRepo(want)) {
+			if sameCloudRepository(got, want) {
 				return true
 			}
 		case "git-sha":
@@ -571,6 +573,11 @@ func cloudCheckWorkspaceAddress(row cloudCheckRow) (string, string) {
 	}
 	switch {
 	case row.Dimensions["github-pr"] != "":
+		for _, ref := range row.Commit.Refs {
+			if ref.Typename == "CheckCommitPullRequestRef" && strings.Contains(ref.URL, "/-/merge_requests/") {
+				return "mr", base + "@merge-requests/" + row.Dimensions["github-pr"] + "/head"
+			}
+		}
 		return "pr", base + "@pull/" + row.Dimensions["github-pr"] + "/head"
 	case row.Dimensions["git-branch"] != "":
 		return "branch", base + "@" + row.Dimensions["git-branch"]
