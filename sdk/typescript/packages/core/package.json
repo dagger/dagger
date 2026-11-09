@@ -1,6 +1,6 @@
 {
   "name": "@dagger.io/core",
-  "version": "1.0.0-beta.24",
+  "version": "1.0.0-beta.25.2",
   "author": "hello@dagger.io",
   "license": "Apache-2.0",
   "type": "module",
@@ -22,7 +22,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@dagger.io/session": "^1.0.0-beta.1"
+    "@dagger.io/session": "^1.0.0-beta.2"
   },
   "devDependencies": {
     "typescript": "^6.0.3"
