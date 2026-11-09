@@ -526,7 +526,10 @@ type WithDirectoryArgs struct {
 	core.CopyFilter
 }
 
-func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+// withDirectory copies args' source into parent. included is the identity of
+// what an include copy brings (see includedContent), or empty when the copy
+// has no such identity.
+func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs, included digest.Digest) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
@@ -565,7 +568,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return res, err
 	}
-	return withDirectoryContentDigest(ctx, res, parent, srcDir, args, perms)
+	return withDirectoryContentDigest(ctx, res, parent, srcDir, args, perms, included)
 }
 
 // withDirectoryContentDigest keys a copy of one content-keyed directory into
@@ -576,6 +579,10 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 // holds rather than by every part it was made from. The digest comes from the
 // inputs' digests, so the copy stays lazy. Either side without a content
 // digest leaves the copy keyed by its recipe.
+//
+// A non-empty included replaces the source's digest and accepts a parent
+// without a content digest: an include copy is keyed by what it brings, so a
+// change to a file that it leaves out does not re-key it.
 func withDirectoryContentDigest(
 	ctx context.Context,
 	res dagql.ObjectResult[*core.Directory],
@@ -583,18 +590,29 @@ func withDirectoryContentDigest(
 	src dagql.ObjectResult[*core.Directory],
 	args WithDirectoryArgs,
 	perms *int,
+	included digest.Digest,
 ) (dagql.ObjectResult[*core.Directory], error) {
-	parentCall, err := parent.ResultCall()
-	if err != nil {
-		return res, err
-	}
-	srcCall, err := src.ResultCall()
-	if err != nil {
-		return res, err
-	}
-	parentDgst, srcDgst := parentCall.ContentDigest(), srcCall.ContentDigest()
-	if parentDgst == "" || srcDgst == "" {
-		return res, nil
+	var parentDgst, srcDgst digest.Digest
+	if included != "" {
+		var err error
+		parentDgst, err = parent.ContentPreferredDigest(ctx)
+		if err != nil {
+			return res, fmt.Errorf("failed to content hash directory copy: parent digest: %w", err)
+		}
+		srcDgst = included
+	} else {
+		parentCall, err := parent.ResultCall()
+		if err != nil {
+			return res, err
+		}
+		srcCall, err := src.ResultCall()
+		if err != nil {
+			return res, err
+		}
+		parentDgst, srcDgst = parentCall.ContentDigest(), srcCall.ContentDigest()
+		if parentDgst == "" || srcDgst == "" {
+			return res, nil
+		}
 	}
 	permissions := "unset"
 	if perms != nil {
@@ -627,12 +645,12 @@ func withDirectoryContentDigest(
 // A filtered copy onto a scratch directory's root is the source's
 // Directory.filter: it hashes its result, which holds only the filtered
 // files. A copy onto any other parent that is a scratch directory, a Git tree,
-// or has no pending lazy work takes its identity from the parent's, the
-// copy's arguments, and the content that it brings (see includedContent).
-// The parent stays lazy.
+// or has no pending lazy work is keyed by withDirectoryContentDigest with the
+// content that it brings (see includedContent). The parent stays lazy. This
+// function only decides whether to compute that content.
 func (s *directorySchema) withDirectoryContentHashed(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
 	if len(args.Include) == 0 {
-		return s.withDirectory(ctx, parent, args)
+		return s.withDirectory(ctx, parent, args, "")
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -647,7 +665,7 @@ func (s *directorySchema) withDirectoryContentHashed(ctx context.Context, parent
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
 	if !ok {
-		return s.withDirectory(ctx, parent, args)
+		return s.withDirectory(ctx, parent, args, "")
 	}
 	scratch, err := isScratchDirectory(parent)
 	if err != nil {
@@ -661,42 +679,20 @@ func (s *directorySchema) withDirectoryContentHashed(ctx context.Context, parent
 	// copy of it into a container evaluates it when that call is made, which
 	// would run those commands early.
 	if !scratch && dagql.HasPendingLazyComputation(parent) && !core.DefersContentDigest(parent.Self()) {
-		return s.withDirectory(ctx, parent, args)
+		return s.withDirectory(ctx, parent, args, "")
 	}
 
 	included, err := includedContent(ctx, srv, src, args.CopyFilter)
 	if err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
 	}
-	if included == "" {
-		return s.withDirectory(ctx, parent, args)
-	}
-	res, err := s.withDirectory(ctx, parent, args)
-	if err != nil {
-		return res, err
-	}
-	parentDgst, err := parent.ContentPreferredDigest(ctx)
-	if err != nil {
-		return res, fmt.Errorf("failed to content hash directory copy: parent digest: %w", err)
-	}
-	permissions := "unset"
-	if args.Permissions.Valid {
-		permissions = strconv.Itoa(int(args.Permissions.Value))
-	}
-	return res.WithContentDigest(ctx, hashutil.HashStrings(
-		"withDirectory",
-		string(parentDgst),
-		args.Path,
-		args.Owner,
-		permissions,
-		string(included),
-	))
+	return s.withDirectory(ctx, parent, args, included)
 }
 
 // withDirectoryResultHashed performs a filtered copy onto a scratch
 // directory's root and content hashes its result.
 func (s *directorySchema) withDirectoryResultHashed(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
-	res, err := s.withDirectory(ctx, parent, args)
+	res, err := s.withDirectory(ctx, parent, args, "")
 	if err != nil {
 		return res, err
 	}
