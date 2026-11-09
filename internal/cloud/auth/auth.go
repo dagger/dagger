@@ -43,9 +43,18 @@ func init() {
 
 var authConfig = &oauth2.Config{
 	// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
-	ClientID: "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv",
+	ClientID: authClientIDFromEnv(),
 	Scopes:   []string{"openid", "offline_access"},
 	Endpoint: authEndpoint(authDomainFromEnv()),
+}
+
+// Local and preview APIs use the existing dev Auth0 application. Keep its
+// public client ID configurable alongside DAGGER_CLOUD_AUTH_URL.
+func authClientIDFromEnv() string {
+	if id := os.Getenv("DAGGER_CLOUD_AUTH_CLIENT_ID"); id != "" {
+		return id
+	}
+	return "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv"
 }
 
 // authDomainFromEnv is the OAuth domain, overridden by DAGGER_CLOUD_AUTH_URL
