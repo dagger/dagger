@@ -139,6 +139,11 @@ func setWorkspaceAutocheckState(cmd *cobra.Command, remote workspaceRemoteAddres
 		if err := ensureCloudCheckFeatures(cmd, client, current.Provider, current.OrgName); err != nil {
 			return workspaceAutocheckState{}, err
 		}
+		if current.Provider == cloudCheckGitLab {
+			if err := findGitLabCheckSource(cmd, client, &current); err != nil {
+				return workspaceAutocheckState{}, err
+			}
+		}
 		if current.Triggers && current.DefaultBranch && current.PullRequest {
 			return current, nil
 		}
@@ -217,14 +222,18 @@ func findGitHubCheckSource(cmd *cobra.Command, client *cloudapi.Client, state *w
 	return nil
 }
 
-// A personal connection does not grant an organization access. Only use the
-// namespaces already granted to the selected organization, including tokens
-// supplied by another admin. Repository selection uses the same API as Sources.
+// Use saved organization access first, including a token or a grant from
+// another admin. The explicit checks-on action may also grant access through
+// the caller's own connected account, matching the Sources UI.
 func findGitLabCheckSource(cmd *cobra.Command, client *cloudapi.Client, state *workspaceAutocheckState) error {
 	ctx := cmd.Context()
-	org, err := currentCloudOrg(ctx, client)
-	if err != nil {
-		return err
+	org := &cloudauth.Org{ID: state.OrgID, Name: state.OrgName}
+	if org.ID == "" {
+		var err error
+		org, err = currentCloudOrg(ctx, client)
+		if err != nil {
+			return err
+		}
 	}
 	if err := ensureCloudCheckFeatures(cmd, client, cloudCheckGitLab, org.Name); err != nil {
 		return err
@@ -238,12 +247,17 @@ func findGitLabCheckSource(cmd *cobra.Command, client *cloudapi.Client, state *w
 	if err != nil {
 		return fmt.Errorf("lookup GitLab access for organization %q: %w", org.Name, err)
 	}
-	for _, source := range sources {
-		prefix := normalizeRepository(source.InstanceURL + "/" + source.NamespacePath)
-		name, matches := strings.CutPrefix(state.Repo, prefix+"/")
-		if !matches || name == "" || strings.Contains(name, "/") {
-			continue
+	source, found := gitLabSourceForRepo(sources, state.Repo)
+	needsGrant := false
+	if !found {
+		available, err := client.GitLabSources(ctx, org.ID)
+		if err != nil {
+			return fmt.Errorf("lookup your GitLab accounts for organization %q: %w", org.Name, err)
 		}
+		source, found = gitLabSourceForRepo(available, state.Repo)
+		needsGrant = found && source.Access == nil
+	}
+	if found {
 		state.Provider = cloudCheckGitLab
 		repositories, err := client.SourceRepositories(ctx, source.ID, org.ID)
 		if err != nil {
@@ -256,11 +270,29 @@ func findGitLabCheckSource(cmd *cobra.Command, client *cloudapi.Client, state *w
 			if !repository.Eligible {
 				return fmt.Errorf("%s is already enabled through another Cloud source or organization", state.Repo)
 			}
+			if needsGrant {
+				if err := client.UseGitLabAccount(ctx, org.ID, source.ID); err != nil {
+					return fmt.Errorf("grant GitLab access to organization %q: %w", org.Name, err)
+				}
+			}
 			state.Repo, state.InstallationID = repository.Repository, source.ID
 			return nil
 		}
 	}
 	return &repoAccessError{provider: cloudCheckGitLab, settingsURL: settings}
+}
+
+// A namespace owns its direct repositories; a parent group cannot stand in for
+// a subgroup, and equal names on different servers are different sources.
+func gitLabSourceForRepo(sources []cloudapi.GitLabSource, repository string) (cloudapi.GitLabSource, bool) {
+	for _, source := range sources {
+		prefix := normalizeRepository(source.InstanceURL + "/" + source.NamespacePath)
+		name, matches := strings.CutPrefix(repository, prefix+"/")
+		if matches && name != "" && !strings.Contains(name, "/") {
+			return source, true
+		}
+	}
+	return cloudapi.GitLabSource{}, false
 }
 
 // GitLab approval is handled by the existing Cloud UI. The CLI never receives
