@@ -379,7 +379,7 @@ func (c *workspaceInputCollector) ref(ref *dagql.ResultCallRef) {
 	if complete && captured {
 		return
 	}
-	if !captured {
+	if !captured && !c.storedField(frame) {
 		if typeName == "Module" {
 			c.issue("%s input from %s has no complete source query capture", typeName, frame.Field)
 		} else {
@@ -387,6 +387,24 @@ func (c *workspaceInputCollector) ref(ref *dagql.ResultCallRef) {
 		}
 	}
 	c.inputs(frame)
+}
+
+// Inline SDK objects have field call frames, but no field resolver ran. Their
+// inputs are the containing object's recorded inputs.
+func (c *workspaceInputCollector) storedField(frame *dagql.ResultCall) bool {
+	if frame.Receiver == nil || frame.Receiver.ResultID == 0 {
+		return false
+	}
+	value, err := c.cache.LoadResultByResultID(c.ctx, c.session, c.server, frame.Receiver.ResultID)
+	if err != nil {
+		return false
+	}
+	obj, ok := dagql.UnwrapAs[*ModuleObject](value)
+	if !ok {
+		return false
+	}
+	_, ok = obj.TypeDef.FieldByName(frame.Field)
+	return ok
 }
 
 func (c *workspaceInputCollector) legacySources(ref *dagql.ResultCallRef) {
@@ -717,7 +735,7 @@ func (c *workspaceInputCollector) gitSourceCall(req *dagql.CallRequest) {
 
 func workspaceSourceQuery(field string) bool {
 	switch field {
-	case "address", "cwd", "path", "git", "snapshot", "resolve", "withWorkdir", "withConfigPaths", "withConfigEnvironment",
+	case "address", "cwd", "path", "git", "snapshot", "resolve", "artifacts", "withWorkdir", "withConfigPaths", "withConfigEnvironment",
 		"withNewFile", "withFile", "withNewDirectory", "withDirectory", "withoutFile", "withoutFiles", "withoutDirectory",
 		"withChanges", "withPatchFile", "withMountedDirectory", "withMountedFile", "withoutMount":
 		return false

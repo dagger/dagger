@@ -14,6 +14,68 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func (ArtifactsSuite) TestInlineCollectionProvenance(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	source := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.probe]\nsource = './probe'\n").
+		WithNewFile("probe/dagger-module.toml", "name = 'probe'\nengineVersion = 'v1.0.0-beta.20'\n[runtime]\nsource = 'dang'\n").
+		WithNewFile("probe/main.dang", `type Probe {
+ pub packages(ws: Workspace!): Packages! {
+   ws.file("/catalogue.txt").contents
+   Packages(names: ["pkg"], entries: [Package(tests: Tests(names: ["one"], input: ws.file("/src/input.txt")))])
+ }
+}
+type Packages @collection {
+ names: [String!]! @keys
+ entries: [Package!]!
+ function(name: String!): Package! @get { entries[0]! }
+}
+type Package { tests: Tests! }
+type Tests @collection {
+ names: [String!]! @keys
+ let input: File!
+ function(name: String!): Test! @get { Test(input: input) }
+}
+type Test {
+ let input: File!
+ pub verify: Void @check { raise "check must not run" }
+}`).
+		WithNewFile("catalogue.txt", "catalogue").
+		WithNewFile("src/input.txt", "source").
+		WithNewFile("README.md", "unrelated")
+	ws, err := source.AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+
+	type item struct {
+		Path       []string
+		Provenance struct{ Issues []string }
+	}
+	type selection struct{ Items []item }
+	got, err := testutil.QueryWithClient[struct {
+		Node struct {
+			Artifacts struct {
+				FilterTypes struct {
+					All, Source, Catalogue, Readme selection
+				}
+			}
+		}
+	}](c, t, `query($ws: ID!) {
+ node(id: $ws) { ... on Workspace { artifacts { filterTypes(types: ["Check"]) {
+  all: filterAffectedByPath(paths: ["/"]) { items { path provenance { issues } } }
+  source: filterAffectedByPath(paths: ["/src/input.txt"]) { items { path } }
+  catalogue: filterAffectedByPath(paths: ["/catalogue.txt"]) { items { path } }
+  readme: filterAffectedByPath(paths: ["/README.md"]) { items { path } }
+ } } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})
+	require.NoError(t, err)
+	checks := got.Node.Artifacts.FilterTypes
+	require.Len(t, checks.All.Items, 1)
+	require.Empty(t, checks.All.Items[0].Provenance.Issues)
+	require.Len(t, checks.Source.Items, 1)
+	require.Len(t, checks.Catalogue.Items, 1)
+	require.Empty(t, checks.Readme.Items)
+}
+
 func (ArtifactsSuite) TestInputProvenanceBeforeExecution(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	source := core.NewQuery(c).Directory().
