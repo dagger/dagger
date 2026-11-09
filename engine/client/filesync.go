@@ -733,6 +733,12 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 	// or --glob natively. We do our best.
 
 	for _, glob := range opts.Globs {
+		// grep --include uses plain fnmatch globs: brace alternation ("{a,b}")
+		// and negation ("!pattern") are silently treated as literals, which
+		// makes the search return no results instead of failing.
+		if strings.ContainsAny(glob, "{}") || strings.HasPrefix(glob, "!") {
+			return nil, fmt.Errorf("glob %q is not supported by the grep fallback (no brace expansion or negation); install ripgrep (rg) to use it", glob)
+		}
 		args = append(args, "--include="+glob)
 	}
 

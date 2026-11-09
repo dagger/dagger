@@ -314,3 +314,27 @@ func TestFileStreamExportReplacesAtomically(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, `{"third":1}`, string(rewritten), "an ordinary export rewrites the file in place")
 }
+
+func TestSearchWithGrepUnsupportedGlobs(t *testing.T) {
+	if _, err := exec.LookPath("grep"); err != nil {
+		t.Skip("grep not available")
+	}
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.test.ts"), []byte("needle\n"), 0o644))
+
+	for _, glob := range []string{"*.{test,spec}.ts", "!*.md"} {
+		_, err := searchWithGrep(context.Background(), root, &engine.LocalSearchOpts{
+			Pattern: "needle",
+			Globs:   []string{glob},
+		})
+		require.ErrorContains(t, err, "install ripgrep", glob)
+	}
+
+	// plain globs keep working
+	res, err := searchWithGrep(context.Background(), root, &engine.LocalSearchOpts{
+		Pattern: "needle",
+		Globs:   []string{"*.ts"},
+	})
+	require.NoError(t, err)
+	require.Len(t, res, 1)
+}
