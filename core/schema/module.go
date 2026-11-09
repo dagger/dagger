@@ -442,6 +442,14 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("generatedContextDirectory", s.currentModuleGeneratedContextDirectory).
 			Doc("The generated files and directories made on top of the module source's context directory."),
 
+		dagql.FuncWithDynamicInputs("gitRef", s.currentModuleGitRef, s.currentModuleNamingCacheKey).
+			View(AfterVersion("v1.0.0-beta.26")).
+			Doc(`The Git ref of the module's source: the resolved commit of a Git source, or the HEAD of the repository that contains a local source. Null for a Directory source, or a local source outside a Git repository.`,
+				`Its asRepository pins HEAD to that commit. For a local source, the repository holds the whole checkout, including files the module does not load, so asRepository.uncommitted lists the uncommitted changes of the whole checkout.`,
+				`For a Git source loaded from a private remote, asRepository and tree are read without the credentials of the client that loaded the module and may fail to authenticate; commitSha needs none.`,
+				`A local repository is read when this field is first selected for a module load, not when the module loads: a file changed in between can differ from the module's contextDirectory.`,
+				`A function result cached across sessions is not recomputed when the repository changes: use the PER_SESSION or NEVER cache policy for a function that returns what it reads from this field.`),
+
 		dagql.Func("name", s.currentModuleName).
 			Doc(`The name of the module being executed in`),
 
@@ -3044,9 +3052,9 @@ type currentModuleNamingArgs struct {
 }
 
 // currentModuleNamingCacheKey records the source of the module the caller
-// actually runs as, so CurrentModule.naming answers, and is cached, for that
-// load rather than whichever load the implementation-scoped CurrentModule
-// came from.
+// actually runs as, so CurrentModule.naming and gitRef answer, and are cached,
+// for that load rather than whichever load the implementation-scoped
+// CurrentModule came from.
 func (s *moduleSchema) currentModuleNamingCacheKey(
 	ctx context.Context,
 	_ dagql.ObjectResult[*core.CurrentModule],
@@ -3089,6 +3097,49 @@ func (s *moduleSchema) currentModuleNaming(
 		return nil, fmt.Errorf("failed to load current module source: %w", err)
 	}
 	return src.Self().Naming(), nil
+}
+
+// currentModuleGitRef reads the repository on selection; the cache key scopes
+// that read to the module load, so later selections reuse it.
+func (s *moduleSchema) currentModuleGitRef(
+	ctx context.Context,
+	_ *core.CurrentModule,
+	args currentModuleNamingArgs,
+) (inst dagql.Nullable[dagql.ObjectResult[*core.GitRef]], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	srcRes, err := args.ModuleSource.Value.Load(ctx, dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load current module source: %w", err)
+	}
+	src := srcRes.Self()
+	if src.Kind == core.ModuleSourceKindDir {
+		return inst, nil
+	}
+	repo, err := src.LoadContextGit(ctx, dag)
+	if errors.Is(err, core.ErrNoGitContext) {
+		return inst, nil
+	}
+	if err != nil {
+		return inst, err
+	}
+	sel := dagql.Selector{Field: "head"}
+	if src.Kind == core.ModuleSourceKindGit {
+		// Not head, which consults the caller's workspace lock for this
+		// remote. Named by its commit, not its branch: asRepository.head
+		// resolves the name through the remote's current listing.
+		sel = dagql.Selector{Field: "__resolvedRef", Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(src.Git.Commit)},
+			{Name: "commit", Value: dagql.String(src.Git.Commit)},
+		}}
+	}
+	var ref dagql.ObjectResult[*core.GitRef]
+	if err := dag.Select(ctx, repo, &ref, sel); err != nil {
+		return inst, fmt.Errorf("failed to load current module git ref: %w", err)
+	}
+	return dagql.NonNull(ref), nil
 }
 
 func (s *moduleSchema) currentModuleGeneratedContextDirectory(

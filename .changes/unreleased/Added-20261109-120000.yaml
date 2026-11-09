@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  `CurrentModule.gitRef` returns the Git ref of the module's own source: the
+  resolved commit of a Git source, or the HEAD of the repository that contains
+  a local source. It is null for a Directory source. `gitRef.asRepository`
+  pins HEAD to that commit; for a local source, its `uncommitted` lists the
+  uncommitted changes of the whole checkout. The local repository is read when
+  a function first selects the field, so a file changed after the module
+  loaded can differ from `contextDirectory`.
+time: 2026-11-09T12:00:00Z
+custom:
+  Author: eunomie
+  PR: "15114"
