@@ -138,10 +138,14 @@ defmodule Dagger.Directory do
   @doc """
   Retrieves a directory at the given path.
   """
-  @spec directory(t(), String.t()) :: Dagger.Directory.t()
-  def directory(%__MODULE__{} = directory, path) do
+  @spec directory(t(), String.t(), [{:resolve_broken_symlinks, boolean() | nil}]) ::
+          Dagger.Directory.t()
+  def directory(%__MODULE__{} = directory, path, optional_args \\ []) do
     query_builder =
-      directory.query_builder |> QB.select("directory") |> QB.put_arg("path", path)
+      directory.query_builder
+      |> QB.select("directory")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("resolveBrokenSymlinks", optional_args[:resolve_broken_symlinks])
 
     %Dagger.Directory{
       query_builder: query_builder,

@@ -6573,6 +6573,12 @@ pub struct DirectoryStatOpts {
     pub do_not_follow_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryDirectoryOpts {
+    /// Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
+    #[builder(setter(into, strip_option), default)]
+    pub resolve_broken_symlinks: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
@@ -7137,9 +7143,32 @@ impl Directory {
     /// # Arguments
     ///
     /// * `path` - Location of the directory to retrieve. Example: "/src"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves a directory at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory to retrieve. Example: "/src"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory_opts(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryDirectoryOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("directory");
+        query = query.arg("path", path.into());
+        if let Some(resolve_broken_symlinks) = opts.resolve_broken_symlinks {
+            query = query.arg("resolveBrokenSymlinks", resolve_broken_symlinks);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,

@@ -64,7 +64,7 @@ func TestFilesystemEvaluatedLazyOperationPersistence(t *testing.T) {
 				parentDir := parent.(dagql.ObjectResult[*Directory])
 				if kind == "Directory" {
 					var err error
-					value, err = source.Subdirectory(ctx, parentDir, "nested")
+					value, err = source.Subdirectory(ctx, parentDir, "nested", false)
 					require.NoError(t, err)
 					wantKind, wantPath, wantInputPath = persistedDirectoryLazyKindSubdirectory, "/selected/nested", "nested"
 				} else {
@@ -104,7 +104,7 @@ func TestFilesystemEvaluatedLazyOperationPersistence(t *testing.T) {
 			require.Equal(t, []dagql.PersistedSnapshotRefLink{{Role: "snapshot", RefKey: "operation-tree"}}, rec.SnapshotLinks)
 
 			if dir, ok := value.(*Directory); ok {
-				derived, err := dir.Subdirectory(ctx, child.(dagql.ObjectResult[*Directory]), "another")
+				derived, err := dir.Subdirectory(ctx, child.(dagql.ObjectResult[*Directory]), "another", false)
 				require.NoError(t, err)
 				require.False(t, derived.Lazy.IsEvaluated())
 				require.Empty(t, derived.lazyJSON)
@@ -189,4 +189,26 @@ func TestFilesystemEvaluatedLazyOperationPersistence(t *testing.T) {
 			assertParentsUnloaded()
 		})
 	}
+}
+
+func TestResolveBrokenSymlinksPendingPersistence(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "symlink-selection")
+	ctx, cache, srv := env.open(t)
+	source := containerPersistenceTestDirectory("source", "/")
+	parent := env.attach(t, ctx, cache, srv, "parent", source).(dagql.ObjectResult[*Directory])
+	selected, err := source.Subdirectory(ctx, parent, "src", true)
+	require.NoError(t, err)
+	child := env.attach(t, ctx, cache, srv, "selected", selected)
+	rec, err := cache.CapturePersistedRecord(ctx, child)
+	require.NoError(t, err)
+	ctx, cache, srv = env.restart(t, ctx, cache)
+	loaded, err := cache.LoadResultByResultID(ctx, env.session, srv, rec.ResultID)
+	require.NoError(t, err)
+	restored := loaded.Unwrap().(*Directory)
+	lazy := restored.Lazy.(*DirectorySubdirectoryLazy)
+	require.True(t, lazy.ResolveBrokenSymlinks)
+	require.Equal(t, "src", lazy.Subdir)
+	encoded, err := restored.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, rec.ResultID, rec.Call))
+	require.NoError(t, err)
+	require.JSONEq(t, string(rec.Envelope.ObjectJSON), string(encoded.JSON))
 }

@@ -2976,6 +2976,13 @@ type Directory implements Exportable & Node & Syncer {
     Location of the directory to retrieve. Example: "/src"
     """
     path: String!
+
+    """
+    Repair symlinks that directory selection would break. Copy targets from this
+    directory into the result. Preserve working relative links and links that
+    already have no target.
+    """
+    resolveBrokenSymlinks: Boolean = false
   ): Directory!
 
   """Return a snapshot with a directory added"""

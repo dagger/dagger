@@ -1730,6 +1730,13 @@ export type DirectoryAsWorkspaceOpts = {
   cwd?: string
 }
 
+export type DirectoryDirectoryOpts = {
+  /**
+   * Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
+   */
+  resolveBrokenSymlinks?: boolean
+}
+
 export type DirectoryDockerBuildOpts = {
   /**
    * Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
@@ -8883,9 +8890,10 @@ export class Directory extends BaseClient {
   /**
    * Retrieves a directory at the given path.
    * @param path Location of the directory to retrieve. Example: "/src"
+   * @param opts.resolveBrokenSymlinks Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
    */
-  directory = (path: string): Directory => {
-    const ctx = this._ctx.select("directory", { path })
+  directory = (path: string, opts?: DirectoryDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("directory", { path, ...opts })
     return new Directory(ctx)
   }
 

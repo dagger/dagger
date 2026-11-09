@@ -6590,9 +6590,21 @@ func (r *Directory) Digest(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// DirectoryDirectoryOpts contains options for Directory.Directory
+type DirectoryDirectoryOpts struct {
+	// Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
+	ResolveBrokenSymlinks bool
+}
+
 // Retrieves a directory at the given path.
-func (r *Directory) Directory(path string) *Directory {
+func (r *Directory) Directory(path string, opts ...DirectoryDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `resolveBrokenSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ResolveBrokenSymlinks) {
+			q = q.Arg("resolveBrokenSymlinks", opts[i].ResolveBrokenSymlinks)
+		}
+	}
 	q = q.Arg("path", path)
 
 	return &Directory{
