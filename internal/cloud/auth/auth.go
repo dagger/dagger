@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	authDomain = "https://auth.dagger.cloud"
+	authDomain   = "https://auth.dagger.cloud"
+	authClientID = "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv"
 )
 
 var (
@@ -54,7 +55,7 @@ func authClientIDFromEnv() string {
 	if id := os.Getenv("DAGGER_CLOUD_AUTH_CLIENT_ID"); id != "" {
 		return id
 	}
-	return "brEY7u4SEoFypOgYBdYMs32b4ShRVIEv"
+	return authClientID
 }
 
 // authDomainFromEnv is the OAuth domain, overridden by DAGGER_CLOUD_AUTH_URL
