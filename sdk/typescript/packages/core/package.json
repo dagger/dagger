@@ -22,7 +22,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@dagger.io/session": "1.0.0-beta.1"
+    "@dagger.io/session": "^1.0.0-beta.1"
   },
   "devDependencies": {
     "typescript": "^6.0.3"
