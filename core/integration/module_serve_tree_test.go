@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -278,6 +279,67 @@ func serveTreeCachedModules(c *dagger.Client) *core.Directory {
 		WithNewFile("modules/mid/cached.go", strings.ReplaceAll(serveTreeCachedSource, "Caller", "Mid"))
 }
 
+// serveTreeOtherHelloSource is a different sibling with the same API.
+const serveTreeOtherHelloSource = `type Hello {
+  pub message: String! {
+    "hi from the other hello"
+  }
+
+  pub cached(token: String!): String! {
+    "other " + token
+  }
+}
+`
+
+// serveTreeEntrypointCaller is a caller module with an entrypoint: like an
+// SDK's generated one, it runs each function in a process it starts, and
+// that process serves the sibling and calls it.
+var serveTreeEntrypointCaller = fmt.Sprintf(`type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Caller")
+        .withConstructor(function("", typeDef.withObject("Caller")))
+        .withFunction(function("Cached", typeDef.withKind(TypeDefKind.STRING_KIND))
+          .withArg("token", typeDef.withKind(TypeDefKind.STRING_KIND)))
+        .withFunction(function("Shared", typeDef.withKind(TypeDefKind.STRING_KIND))
+          .withArg("token", typeDef.withKind(TypeDefKind.STRING_KIND))
+          .withCachePolicy(FunctionCachePolicy.Never)),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else {
+      (JSON.encode(container
+        .from(%q)
+        .withNewFile("/args.json", JSON.encode(fnArgs))
+        .withNewFile("/serve.sh", %q)
+        .withExec(["sh", "/serve.sh"], experimentalPrivilegedNesting: true)
+        .stdout) :: JSON!)
+    }
+  }
+}
+`, alpineImage, serveTreeEntrypointScript)
+
+// serveTreeEntrypointScript serves the sibling from the process and asks it
+// for the call's token.
+const serveTreeEntrypointScript = `set -e
+apk add -q curl
+TOKEN=$(sed 's/.*token[^a-z]*\([a-z]*\).*/\1/' /args.json)
+q() { curl -s -u "$DAGGER_SESSION_TOKEN:" -H 'Content-Type: application/json' -d "$1" "http://127.0.0.1:$DAGGER_SESSION_PORT/query"; echo; }
+q '{"query":"{serveModule(address: \"/modules/hello\")}"}'
+q "{\"query\":\"{hello{cached(token: \\\"$TOKEN\\\")}}\"}"
+echo "process-run-$(cat /proc/sys/kernel/random/uuid)"
+`
+
 // serveTreeCachedHelloSource appends a token to a cache volume and returns
 // every token appended so far, which shows the module the volume is shared
 // with.
@@ -306,6 +368,21 @@ func serveTreeModules(c *dagger.Client) *core.Directory {
 		WithNewFile("modules/caller/main.go", serveTreeCallerSource).
 		WithNewFile("modules/hello/dagger-module.toml", serveModuleHelloManifest).
 		WithNewFile("modules/hello/main.dang", serveModuleHelloSource)
+}
+
+// serveTreeProcessRun finds the line serveTreeEntrypointScript prints with a
+// value new to each run of the process.
+var serveTreeProcessRun = regexp.MustCompile(`process-run-[0-9a-f-]+`)
+
+// serveTreeToken is a token of lowercase letters, which is all
+// serveTreeEntrypointScript reads.
+func serveTreeToken() string {
+	return strings.Map(func(r rune) rune {
+		if r >= '2' && r <= '7' {
+			return -1
+		}
+		return r
+	}, strings.ToLower(rand.Text()))
 }
 
 func (ModuleLoadingSuite) TestServeModuleCallerTree(ctx context.Context, t *testctx.T) {
@@ -619,6 +696,278 @@ source = "modules/runner"
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, `"message":"hi from hello"`)
+	})
+
+	// A module result is shared by sources with the same content, wherever
+	// they were loaded from. Serving from the module's tree must still read
+	// the tree the current session loaded it from. Each call passes its own
+	// token, so it runs rather than hitting the previous call's cache.
+	t.Run("module cached from another host serves from this host's tree", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		tree := goGitBase(t, c).
+			WithNewFile("dagger.toml", `[modules.caller]
+source = "modules/caller"
+`).
+			WithDirectory(".", serveTreeCachedModules(c))
+
+		first, second := serveTreeToken(), serveTreeToken()
+		out, err := tree.
+			With(daggerCallAt("caller", "cached", "--address=/modules/hello", "--token="+first)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, first+"\n", out)
+
+		// The same tree at another path on another host.
+		out, err = goGitBase(t, c).
+			WithDirectory("/elsewhere", tree.Directory("/work")).
+			WithWorkdir("/elsewhere").
+			With(daggerCallAt("caller", "cached", "--address=/modules/hello", "--token="+second)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, first+"\n"+second+"\n", out)
+	})
+
+	t.Run("module cached from another checkout serves from this checkout's tree", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		manifest := `[modules.caller]
+source = "modules/caller"
+`
+		// Two checkouts on one host: the same caller, different siblings.
+		ctr := goGitBase(t, c).
+			WithNewFile("/a/dagger.toml", manifest).
+			WithDirectory("/a", serveTreeCachedModules(c)).
+			WithNewFile("/b/dagger.toml", manifest).
+			WithDirectory("/b", serveTreeCachedModules(c).WithNewFile("modules/hello/main.dang", serveTreeOtherHelloSource)).
+			WithWorkdir("/a").
+			WithExec([]string{"git", "init", "-q"}).
+			WithWorkdir("/b").
+			WithExec([]string{"git", "init", "-q"})
+
+		first, second := serveTreeToken(), serveTreeToken()
+		ctr = ctr.WithWorkdir("/a").
+			With(daggerCallAt("caller", "cached", "--address=/modules/hello", "--token="+first))
+		out, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, first+"\n", out)
+
+		out, err = ctr.WithWorkdir("/b").
+			With(daggerCallAt("caller", "cached", "--address=/modules/hello", "--token="+second)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "other "+second, out)
+	})
+
+	t.Run("module served from its tree in one session serves again in the next", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		first, second := serveTreeToken(), serveTreeToken()
+		out, err := goGitBase(t, c).
+			WithNewFile("dagger.toml", `[modules.caller]
+source = "modules/caller"
+`).
+			WithDirectory(".", serveTreeCachedModules(c)).
+			With(daggerCallAt("caller", "cached", "--address=/modules/hello", "--token="+first)).
+			With(daggerCallAt("caller", "cached", "--address=/modules/hello", "--token="+second)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, first+"\n"+second+"\n", out)
+	})
+
+	t.Run("entrypoint module cached from another host serves from this host's tree", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		tree := goGitBase(t, c).
+			WithDirectory(".", serveTreeCachedModules(c)).
+			WithNewFile("modules/caller/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, `name = "caller"`, 1)).
+			WithNewFile("modules/caller/entrypoint/main.dang", serveTreeEntrypointCaller).
+			WithoutFile("modules/caller/dagger.json")
+
+		first, second := serveTreeToken(), serveTreeToken()
+		out, err := tree.
+			With(daggerCallAt("./modules/caller", "cached", "--token="+first)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"cached":"`+first+`\n"`)
+
+		// The same tree at another path, on a host without the first path.
+		out, err = tree.
+			WithDirectory("/elsewhere", tree.Directory("/work")).
+			WithWorkdir("/elsewhere").
+			WithoutDirectory("/work").
+			With(daggerCallAt("./modules/caller", "cached", "--token="+second)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, second+`\n"`)
+	})
+
+	// Serving from the client's own tree must not enter the process's
+	// identity: the same module at another path still shares the process.
+	// Shared is never cached, so each call runs the entrypoint; a process
+	// that ran again would print a new run marker.
+	t.Run("entrypoint module at another path shares its process", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		token := serveTreeToken()
+		tree := goGitBase(t, c).
+			WithDirectory(".", serveTreeCachedModules(c)).
+			WithNewFile("modules/caller/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, `name = "caller"`, 1)).
+			WithNewFile("modules/caller/entrypoint/main.dang", serveTreeEntrypointCaller).
+			WithoutFile("modules/caller/dagger.json")
+
+		out, err := tree.
+			With(daggerCallAt("./modules/caller", "shared", "--token="+token)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"cached":"`+token+`\n"`)
+		firstRun := serveTreeProcessRun.FindString(out)
+		require.NotEmpty(t, firstRun)
+
+		out, err = tree.
+			WithDirectory("/elsewhere", tree.Directory("/work")).
+			WithWorkdir("/elsewhere").
+			WithoutDirectory("/work").
+			With(daggerCallAt("./modules/caller", "shared", "--token="+token)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, firstRun, serveTreeProcessRun.FindString(out), "the process ran again: %s", out)
+	})
+
+	// The same entrypoint module in two checkouts on one host, with different
+	// siblings and different arguments.
+	t.Run("entrypoint module cached from another checkout serves from this checkout's tree", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		first, second := serveTreeToken(), serveTreeToken()
+		entrypointFiles := func(d *core.Directory) *core.Directory {
+			return d.
+				WithNewFile("modules/caller/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, `name = "caller"`, 1)).
+				WithNewFile("modules/caller/entrypoint/main.dang", serveTreeEntrypointCaller).
+				WithoutFile("modules/caller/dagger.json")
+		}
+		ctr := goGitBase(t, c).
+			WithDirectory("/a", entrypointFiles(serveTreeCachedModules(c))).
+			WithDirectory("/b", entrypointFiles(serveTreeCachedModules(c).WithNewFile("modules/hello/main.dang", serveTreeOtherHelloSource))).
+			WithWorkdir("/a").
+			WithExec([]string{"git", "init", "-q"}).
+			WithWorkdir("/b").
+			WithExec([]string{"git", "init", "-q"})
+
+		ctr = ctr.WithWorkdir("/a").
+			With(daggerCallAt("./modules/caller", "cached", "--token="+first))
+		out, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"cached":"`+first+`\n"`)
+
+		out, err = ctr.WithWorkdir("/b").
+			With(daggerCallAt("./modules/caller", "cached", "--token="+second)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"cached":"other `+second+`"`)
+	})
+
+	// The entrypoint case on a second host, with each CLI in a session of its
+	// own.
+	t.Run("entrypoint module cached from another session serves from this host's tree", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		first, second := serveTreeToken(), serveTreeToken()
+		newSessionCall := func(token string) core.WithContainerFunc {
+			return func(ctr *core.Container) *core.Container {
+				return ctr.WithExec([]string{"dagger", "call", "-m", "./modules/caller", "cached", "--token=" + token}, core.ContainerWithExecOpts{
+					UseEntrypoint:            true,
+					DaggerInDaggerNewSession: true,
+				})
+			}
+		}
+		tree := goGitBase(t, c).
+			WithDirectory(".", serveTreeCachedModules(c)).
+			WithNewFile("modules/caller/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, `name = "caller"`, 1)).
+			WithNewFile("modules/caller/entrypoint/main.dang", serveTreeEntrypointCaller).
+			WithoutFile("modules/caller/dagger.json")
+
+		out, err := tree.With(newSessionCall(first)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"cached":"`+first+`\n"`)
+
+		out, err = tree.
+			WithDirectory("/elsewhere", tree.Directory("/work")).
+			WithWorkdir("/elsewhere").
+			WithoutDirectory("/work").
+			With(newSessionCall(second)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, second+`\n"`)
+	})
+
+	// The legacy two-checkout case with each CLI in a session of its own.
+	t.Run("module cached from another checkout in another session serves from this checkout's tree", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		manifest := "[modules.caller]\nsource = \"modules/caller\"\n"
+		first, second := serveTreeToken(), serveTreeToken()
+		newSessionCall := func(token string) core.WithContainerFunc {
+			return func(ctr *core.Container) *core.Container {
+				return ctr.WithExec([]string{"dagger", "call", "-m", "caller", "cached", "--address=/modules/hello", "--token=" + token}, core.ContainerWithExecOpts{
+					UseEntrypoint:            true,
+					DaggerInDaggerNewSession: true,
+				})
+			}
+		}
+		ctr := goGitBase(t, c).
+			WithNewFile("/a/dagger.toml", manifest).
+			WithDirectory("/a", serveTreeCachedModules(c)).
+			WithNewFile("/b/dagger.toml", manifest).
+			WithDirectory("/b", serveTreeCachedModules(c).WithNewFile("modules/hello/main.dang", serveTreeOtherHelloSource)).
+			WithWorkdir("/a").
+			WithExec([]string{"git", "init", "-q"}).
+			WithWorkdir("/b").
+			WithExec([]string{"git", "init", "-q"})
+
+		ctr = ctr.WithWorkdir("/a").With(newSessionCall(first))
+		out, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, first+"\n", out)
+
+		out, err = ctr.WithWorkdir("/b").With(newSessionCall(second)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "other "+second, out)
+	})
+
+	// The entrypoint module is a dependency, so no client serves it directly.
+	t.Run("entrypoint module used as a dependency, cached from another host, serves from this host's tree", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		first, second := serveTreeToken(), serveTreeToken()
+		tree := goGitBase(t, c).
+			WithDirectory(".", serveTreeCachedModules(c)).
+			WithNewFile("modules/caller/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, `name = "caller"`, 1)).
+			WithNewFile("modules/caller/entrypoint/main.dang", serveTreeEntrypointCaller).
+			WithoutFile("modules/caller/dagger.json").
+			WithNewFile("modules/outer/dagger-module.toml", `name = "outer"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "dang"
+
+[[dependencies]]
+name = "caller"
+source = "../caller"
+`).
+			WithNewFile("modules/outer/main.dang", `type Outer {
+  pub cached(token: String!): String! {
+    caller.cached(token: token)
+  }
+}
+`)
+
+		out, err := tree.
+			With(daggerCallAt("./modules/outer", "cached", "--token="+first)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, first+`\n"`)
+
+		out, err = tree.
+			WithDirectory("/elsewhere", tree.Directory("/work")).
+			WithWorkdir("/elsewhere").
+			WithoutDirectory("/work").
+			With(daggerCallAt("./modules/outer", "cached", "--token="+second)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, second+`\n"`)
 	})
 
 	t.Run("process without a module resolves in its workspace", func(ctx context.Context, t *testctx.T) {
