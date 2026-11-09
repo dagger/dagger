@@ -3487,6 +3487,7 @@ class Container(Type):
         path: str,
         *,
         expand: bool | None = False,
+        resolve_broken_symlinks: bool | None = False,
     ) -> "Directory":
         """Retrieve a directory from the container's root filesystem
 
@@ -3500,10 +3501,18 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
+        resolve_broken_symlinks:
+            Repair symlinks that directory selection would break. Resolve
+            targets across the root filesystem and directory or file mounts.
+            Preserve working relative links and links that already have no
+            target. Cache, volume, tmpfs, secret, and socket mounts cause an
+            error if selection, a resolved link, or mount target resolution
+            needs their contents.
         """
         _args = [
             Arg("path", path),
             Arg("expand", expand, False),
+            Arg("resolveBrokenSymlinks", resolve_broken_symlinks, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)

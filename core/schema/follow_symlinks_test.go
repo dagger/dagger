@@ -25,7 +25,7 @@ func TestDirectoryResolveBrokenSymlinksSchema(t *testing.T) {
 		dag, err := base.Fork(ctx, core.NewRoot(srv), view)
 		require.NoError(t, err)
 		schema := dag.SchemaForView(view)
-		for _, typ := range []string{"Directory"} {
+		for _, typ := range []string{"Directory", "Container"} {
 			arg := schema.Types[typ].Fields.ForName("directory").Arguments.ForName("resolveBrokenSymlinks")
 			if version == "v0.21.6" {
 				require.Nil(t, arg, typ)

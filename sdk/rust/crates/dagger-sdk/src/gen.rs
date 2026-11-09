@@ -2835,6 +2835,9 @@ pub struct ContainerDirectoryOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error if selection, a resolved link, or mount target resolution needs their contents.
+    #[builder(setter(into, strip_option), default)]
+    pub resolve_broken_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerFileOpts {
@@ -3593,6 +3596,9 @@ impl Container {
         query = query.arg("path", path.into());
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        if let Some(resolve_broken_symlinks) = opts.resolve_broken_symlinks {
+            query = query.arg("resolveBrokenSymlinks", resolve_broken_symlinks);
         }
         Directory {
             proc: self.proc.clone(),

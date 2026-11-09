@@ -836,7 +836,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 		if err != nil {
 			return nil, err
 		}
-		return &ContainerDirectoryLazy{LazyState: NewLazyState(), Parent: parent, Path: persisted.Path}, nil
+		return &ContainerDirectoryLazy{LazyState: NewLazyState(), Parent: parent, Path: persisted.Path, ResolveBrokenSymlinks: persisted.ResolveBrokenSymlinks}, nil
 	case persistedDirectoryLazyKindWithDirectory:
 		var persisted persistedDirectoryWithDirectoryLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
