@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  The default Google model no longer points at `gemini-2.5-flash`, which Google
+  has deprecated and closed to new users, so `dagger` LLM calls with only a
+  Google key keep working.
+time: 2026-11-08T12:00:00Z
+custom:
+  Author: pcbeingused333
+  PR: 0
