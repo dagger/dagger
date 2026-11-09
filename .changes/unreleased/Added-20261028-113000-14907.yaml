@@ -1,0 +1,14 @@
+kind: Added
+body: |
+  Add the `resolveBrokenSymlinks` option to `Directory.directory` and
+  `Container.directory`.
+
+  Set this option to `true` to repair links that selection would break.
+  The result includes the required targets. Working relative links and
+  links that already have no target stay unchanged. Container selection
+  resolves targets across the root filesystem and directory or file
+  mounts. The default is `false`.
+time: 2026-10-28T18:30:00Z
+custom:
+  Author: tiborvass
+  PR: "14907"

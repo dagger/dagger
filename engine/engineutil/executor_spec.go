@@ -1029,7 +1029,15 @@ func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 		destClientID = state.callerClientID
 	}
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	// A process with API access logs where its telemetry goes (see
+	// ExecutionMetadata.UserFacingSpanCtx). That is the exec's own span except
+	// for a module entrypoint's module process, whose output is the function
+	// body's and so shows on the function call, as a runtime's does.
+	stdioCtx := ctx
+	if state.nestedClientMetadata != nil && state.execMD != nil && state.execMD.UserFacingSpanCtx.IsValid() {
+		stdioCtx = trace.ContextWithSpanContext(ctx, state.execMD.UserFacingSpanCtx)
+	}
+	stdio := telemetry.SpanStdio(stdioCtx, InstrumentationLibrary)
 	state.cleanups.Add("close logs", stdio.Close)
 	// A stream redirected to a file is meant to go to that file, not to the
 	// exec's logs, so leave it out of telemetry. setupStdio still captures it
