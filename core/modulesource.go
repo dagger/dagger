@@ -181,6 +181,7 @@ type ModuleSource struct {
 	ConfigFilename                string
 	Entrypoint                    *modules.ModuleEntrypointConfig
 	EntrypointSources             bool
+	EntrypointInputsKey           string
 	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
 	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
 	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
@@ -508,6 +509,7 @@ type persistedModuleSourcePayload struct {
 	ConfigFilename                      string                                `json:"configFilename,omitempty"`
 	Entrypoint                          *modules.ModuleEntrypointConfig       `json:"entrypoint,omitempty"`
 	EntrypointSources                   bool                                  `json:"entrypointSources,omitempty"`
+	EntrypointInputsKey                 string                                `json:"entrypointInputsKey,omitempty"`
 	ModuleName                          string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName                  string                                `json:"moduleOriginalName,omitempty"`
 	EngineVersion                       string                                `json:"engineVersion,omitempty"`
@@ -838,6 +840,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 		ConfigFilename:                      src.ConfigFilename,
 		Entrypoint:                          src.Entrypoint,
 		EntrypointSources:                   src.EntrypointSources,
+		EntrypointInputsKey:                 src.EntrypointInputsKey,
 		ModuleName:                          src.ModuleName,
 		ModuleOriginalName:                  src.ModuleOriginalName,
 		EngineVersion:                       src.EngineVersion,
@@ -1014,6 +1017,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 		ConfigFilename:                      persisted.ConfigFilename,
 		Entrypoint:                          persisted.Entrypoint,
 		EntrypointSources:                   persisted.EntrypointSources,
+		EntrypointInputsKey:                 persisted.EntrypointInputsKey,
 		ModuleName:                          persisted.ModuleName,
 		ModuleOriginalName:                  persisted.ModuleOriginalName,
 		EngineVersion:                       persisted.EngineVersion,

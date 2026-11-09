@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -931,24 +930,9 @@ func (fn *ModuleFunction) declaredClientsDigest(ctx context.Context) (string, er
 			return "", err
 		}
 	}
-	if ws.HostPath() == "" {
-		return "", nil
-	}
-	modulePath, err := filepath.Rel(ws.HostPath(), filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath))
+	targets, err := declaredClientTargets(ws, src)
 	if err != nil {
 		return "", err
-	}
-
-	targets := map[string]bool{}
-	pending := slices.Clone(ws.ModuleClients(filepath.ToSlash(modulePath)))
-	for len(pending) > 0 {
-		target := pending[0]
-		pending = pending[1:]
-		if targets[target] {
-			continue
-		}
-		targets[target] = true
-		pending = append(pending, ws.ModuleClients(target)...)
 	}
 	if len(targets) == 0 {
 		return "", nil
@@ -963,7 +947,7 @@ func (fn *ModuleFunction) declaredClientsDigest(ctx context.Context) (string, er
 		return "", err
 	}
 	inputs := []string{declaredClientsInput}
-	for _, target := range slices.Sorted(maps.Keys(targets)) {
+	for _, target := range targets {
 		var targetDigest string
 		if err := dag.Select(ctx, wsRes, &targetDigest,
 			dagql.Selector{
@@ -1105,6 +1089,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
+	recordWorkspaceRuntimeInputs(ctx, mod, runtime)
 
 	// Delegate the actual function execution to the runtime
 	ctx = withWorkspaceInputFunction(ctx, fnCall)

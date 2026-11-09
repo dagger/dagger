@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -68,7 +70,7 @@ func TestCompletedResultFactsSurviveProducerCancellation(t *testing.T) {
 	})
 }
 
-func TestResultFactsFollowEquivalentValuesAcrossCollectionRestartAndImport(t *testing.T) {
+func TestResultFactsStayWithProducerAcrossCollectionRestartAndImport(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "facts.db")
 	ctx, cache, srv := persistedListTestCache(t, dbPath)
 	preparedFrame := cacheTestIntCall("facts-prepared")
@@ -104,123 +106,155 @@ func TestResultFactsFollowEquivalentValuesAcrossCollectionRestartAndImport(t *te
 	require.NoError(t, err)
 	require.Len(t, hitFacts, 2)
 	require.False(t, complete)
-	a := persistedListTestResult(t, ctx, cache, srv, "facts-a", Int(1))
-	b := persistedListTestResult(t, ctx, cache, srv, "facts-b", Int(1))
+	aFrame, bFrame := cacheTestIntCall("facts-a"), cacheTestIntCall("facts-b")
+	fact := func(path string) ResultFact {
+		encoded, err := json.Marshal(map[string]string{"path": path})
+		require.NoError(t, err)
+		return ResultFact{Namespace: "source-test", Payload: encoded}
+	}
+	makeValue := func(frame *ResultCall, path string) AnyResult {
+		value, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{
+			ResultCall: frame, IsPersistable: true, ResultFacts: []ResultFact{fact(path)},
+		}, func(context.Context) (AnyResult, error) { return NewResultForCall(Int(1), frame) })
+		require.NoError(t, err)
+		return value
+	}
+	a, b := makeValue(aFrame, "/a"), makeValue(bFrame, "/b")
 	aID, bID := a.cacheSharedResult().id, b.cacheSharedResult().id
-	require.NotEqual(t, aID, bID)
-	applyFacts := func(ctx context.Context, cache *Cache, result AnyResult, frame *ResultCall, facts []ResultFact, incomplete bool) {
-		t.Helper()
-		_, err := cache.GetOrInitCall(ctx, "test-session", CurrentDagqlServer(ctx), &CallRequest{
-			ResultCall: frame.clone(), IsPersistable: true, ResultFacts: facts, ResultFactsIncomplete: incomplete,
-		}, func(context.Context) (AnyResult, error) { return result, nil })
-		require.NoError(t, err)
-	}
-	annotate := func(ctx context.Context, cache *Cache, result AnyResult, frame *ResultCall, source string) {
-		t.Helper()
-		payload, err := json.Marshal(map[string]string{"path": source})
-		require.NoError(t, err)
-		applyFacts(ctx, cache, result, frame, []ResultFact{{Namespace: "source-test", Payload: payload}}, false)
-	}
-	markIncomplete := func(ctx context.Context, cache *Cache, result AnyResult) {
-		t.Helper()
-		origin, err := result.ResultCall()
-		require.NoError(t, err)
-		applyFacts(ctx, cache, result, origin, nil, true)
-	}
-	check := func(ctx context.Context, cache *Cache, id sharedResultID, count int, complete bool) {
-		t.Helper()
-		facts, covered, err := cache.ResultFacts(ctx, "test-session", &ResultCallRef{ResultID: uint64(id)}, "source-test")
-		require.NoError(t, err)
-		require.Len(t, facts, count)
-		require.Equal(t, complete, covered)
-		total, sum := cacheTestPayloadTotalConsistent(cache)
-		require.Equal(t, sum, total, "fact changes preserve payload accounting")
-		if len(facts) != 0 {
-			facts[0].Payload[0] = 'x'
-			again, _, err := cache.ResultFacts(ctx, "test-session", &ResultCallRef{ResultID: uint64(id)}, "source-test")
-			require.NoError(t, err)
-			require.True(t, json.Valid(again[0].Payload), "readers cannot mutate stored facts")
-		}
-	}
-	aFrame, err := a.ResultCall()
-	require.NoError(t, err)
-	bFrame, err := b.ResultCall()
-	require.NoError(t, err)
-	annotate(ctx, cache, a, aFrame, "/a")
-	annotate(ctx, cache, b, bFrame, "/b")
 	content := digest.FromString("equal source contents")
 	require.NoError(t, cache.TeachContentDigest(ctx, a, content))
 	require.NoError(t, cache.TeachContentDigest(ctx, b, content))
-	aliasFrame := cacheTestIntCall("facts-alias")
-	alias, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: aliasFrame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
-		return b, nil
+	check := func(ctx context.Context, c *Cache, id uint64, paths ...string) {
+		t.Helper()
+		facts, complete, err := c.ResultFacts(ctx, "test-session", &ResultCallRef{ResultID: id}, "source-test")
+		require.NoError(t, err)
+		require.True(t, complete)
+		var expected []ResultFact
+		for _, path := range paths {
+			expected = append(expected, fact(path))
+		}
+		require.ElementsMatch(t, expected, facts)
+		total, sum := cacheTestPayloadTotalConsistent(c)
+		require.Equal(t, sum, total)
+		if len(facts) != 0 {
+			facts[0].Payload[0] = 'x'
+			again, _, err := c.ResultFacts(ctx, "test-session", &ResultCallRef{ResultID: id}, "source-test")
+			require.NoError(t, err)
+			require.True(t, json.Valid(again[0].Payload))
+		}
+	}
+	check(ctx, cache, uint64(aID), "/a")
+	check(ctx, cache, uint64(bID), "/b")
+	preparedValueReq := &CallRequest{
+		ResultCall:  cacheTestIntCall("facts-prepared-value", call.ExtraDigest{Label: call.ExtraDigestLabelContent, Digest: content}),
+		ResultFacts: []ResultFact{fact("/prepared-value")}, ResultFactsPrepared: true,
+	}
+	preparedValue, err := cache.GetOrInitCall(ctx, "test-session", srv, preparedValueReq, func(context.Context) (AnyResult, error) {
+		t.Fatal("equal payload should be reused without running this operation")
+		return nil, nil
 	})
 	require.NoError(t, err)
-	annotate(ctx, cache, alias, aliasFrame, "/alias")
-	// A conflicting report is another fact, and an identical report is a no-op.
-	annotate(ctx, cache, alias, aliasFrame, "/alias-extra")
-	annotate(ctx, cache, alias, aliasFrame, "/alias")
-	// A different request recipe with the same static fact does not add a
-	// duplicate, even when it adopts the same value.
-	annotate(ctx, cache, b, cacheTestIntCall("facts-alias-same-payload"), "/alias")
-	check(ctx, cache, bID, 4, true)
+	check(ctx, cache, uint64(preparedValue.cacheSharedResult().id), "/prepared-value")
+
+	// The caller combines the facts of both actual inputs, even when their
+	// values are equal. Merely teaching that equality must combine nothing.
+	var inputFacts []ResultFact
+	consumerFrame := cacheTestIntCall("facts-consumer")
+	for i, value := range []AnyResult{a, b} {
+		id := uint64(value.cacheSharedResult().id)
+		facts, complete, err := cache.ResultFacts(ctx, "test-session", &ResultCallRef{ResultID: id}, "source-test")
+		require.NoError(t, err)
+		require.True(t, complete)
+		inputFacts = append(inputFacts, facts...)
+		consumerFrame.Args = append(consumerFrame.Args, &ResultCallArg{Name: string(rune('a' + i)), Value: &ResultCallLiteral{Kind: ResultCallLiteralKindResultRef, ResultRef: &ResultCallRef{ResultID: id}}})
+	}
+	consumer, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: consumerFrame, ResultFacts: inputFacts}, func(context.Context) (AnyResult, error) { return NewResultForCall(Int(2), consumerFrame) })
+	require.NoError(t, err)
+	check(ctx, cache, uint64(consumer.cacheSharedResult().id), "/a", "/b")
+	aliasFrame := cacheTestIntCall("facts-alias")
+	aliasReq := &CallRequest{ResultCall: aliasFrame, IsPersistable: true, ResultFacts: []ResultFact{fact("/alias")}}
+	alias, err := cache.GetOrInitCall(ctx, "test-session", srv, aliasReq, func(context.Context) (AnyResult, error) { return b, nil })
+	require.NoError(t, err)
+	aliasID := uint64(alias.cacheSharedResult().id)
+	require.NotEqual(t, uint64(bID), aliasID, "an adopted payload retains the requesting call identity")
+	check(ctx, cache, aliasID, "/b", "/alias")
+	check(ctx, cache, uint64(bID), "/b")
+	aliasHit, err := cache.GetOrInitCall(ctx, "test-session", srv, aliasReq, func(context.Context) (AnyResult, error) { t.Fatal("alias must hit"); return nil, nil })
+	require.NoError(t, err)
+	require.Equal(t, aliasID, uint64(aliasHit.cacheSharedResult().id))
+	list := persistedListTestResult(t, ctx, cache, srv, "facts-list", DynamicResultArrayOutput{Elem: Int(0), Values: []AnyResult{b}})
+	cache.egraphMu.Lock()
+	cache.setResultFactsLocked(list.cacheSharedResult(), []ResultFact{fact("/list")}, false)
+	cache.egraphMu.Unlock()
+	item, err := list.NthValue(ctx, 1)
+	require.NoError(t, err)
+	itemID := uint64(item.cacheSharedResult().id)
+	require.NotEqual(t, uint64(bID), itemID)
+	check(ctx, cache, itemID, "/b", "/list")
+	check(ctx, cache, uint64(bID), "/b")
+	nullable := persistedListTestResult(t, ctx, cache, srv, "facts-nullable", DynamicNullable{Elem: Int(0), Value: b, Valid: true})
+	cache.egraphMu.Lock()
+	cache.setResultFactsLocked(nullable.cacheSharedResult(), []ResultFact{fact("/nullable")}, false)
+	cache.egraphMu.Unlock()
+	deref, valid := nullable.DerefValue()
+	require.True(t, valid)
+	require.Same(t, nullable.cacheSharedResult(), deref.cacheSharedResult())
+	nullableID := uint64(deref.cacheSharedResult().id)
+	require.Equal(t, Int(1), deref.Unwrap(), "the outer ID exposes the inner typed payload")
+	check(ctx, cache, nullableID, "/nullable")
+	check(ctx, cache, uint64(bID), "/b")
 	require.NoError(t, cache.ReleaseSession(ctx, "test-session"))
 	_, removed, _, err := cache.removePrunedEdge(ctx, aID)
 	require.NoError(t, err)
 	require.True(t, removed)
-	require.NotContains(t, cache.resultsByID, aID, "fact origin can be collected while its equivalent survives")
+	require.NotContains(t, cache.resultsByID, aID)
 	require.NoError(t, cache.Close(ctx))
 	ctx, cache, srv = persistedListTestCache(t, dbPath)
-	b, err = cache.LoadResultByResultID(ctx, "test-session", srv, uint64(bID))
+	alias, err = cache.LoadResultByResultID(ctx, "test-session", srv, aliasID)
 	require.NoError(t, err)
-	check(ctx, cache, bID, 4, true)
-	bundle := exportTestBundle(t, ctx, cache, b)
-	require.Len(t, bundle.Values, 1, "facts do not require separate retained rows")
+	require.Equal(t, Int(1), alias.Unwrap())
+	check(ctx, cache, aliasID, "/b", "/alias")
+	check(ctx, cache, uint64(bID), "/b")
+	nullable, err = cache.LoadResultByResultID(ctx, "test-session", srv, nullableID)
+	require.NoError(t, err)
+	deref, valid = nullable.DerefValue()
+	require.True(t, valid)
+	require.Equal(t, Int(1), deref.Unwrap())
+	require.Equal(t, nullableID, uint64(deref.cacheSharedResult().id))
+	check(ctx, cache, nullableID, "/nullable")
 
+	bundle := exportTestBundle(t, ctx, cache, alias)
+	require.Len(t, bundle.Values, 2, "alias retains one shared payload row")
 	otherCtx, other, otherSrv := transferTestCache(t)
-	kept := persistedListTestResult(t, otherCtx, other, otherSrv, "facts-b", Int(1))
-	keptFrame, err := kept.ResultCall()
-	require.NoError(t, err)
-	annotate(otherCtx, other, kept, keptFrame, "/local")
 	reply, err := other.MergeValues(otherCtx, cloudCacheID, bundle)
 	require.NoError(t, err)
-	require.Equal(t, uint64(kept.cacheSharedResult().id), reply.Imported()[0].ResultID)
-	check(otherCtx, other, kept.cacheSharedResult().id, 5, true)
+	importedID := reply.Imported()[0].ResultID
+	imported, err := other.LoadResultByResultID(otherCtx, "test-session", otherSrv, importedID)
+	require.NoError(t, err)
+	require.Equal(t, Int(1), imported.Unwrap())
+	check(otherCtx, other, importedID, "/b", "/alias")
+	// Legacy values are usable, but union-based coverage proves no call's
+	// individual provenance. Loading them must remain conservative.
 	legacy, err := cloneValueBundle(bundle)
 	require.NoError(t, err)
-	legacy.Values[0].Record.Envelope.FactsCoverageVersion = 0
-	legacy.Values[0].Record.Envelope.ResultFacts = nil
-	_, err = other.MergeValues(otherCtx, cloudCacheID, legacy)
+	for i := range legacy.Values {
+		legacy.Values[i].Record.Envelope.FactsCoverageVersion = 1
+		legacy.Values[i].Record.Envelope.Version = 5
+	}
+	legacyCtx, legacyCache, legacySrv := transferTestCache(t)
+	legacyReply, err := legacyCache.MergeValues(legacyCtx, cloudCacheID, legacy)
 	require.NoError(t, err)
-	check(otherCtx, other, kept.cacheSharedResult().id, 5, false)
-	annotate(otherCtx, other, kept, keptFrame, "/later")
-	check(otherCtx, other, kept.cacheSharedResult().id, 6, false)
-	markIncomplete(ctx, cache, b)
-	check(ctx, cache, bID, 4, false)
+	legacyID := legacyReply.Imported()[0].ResultID
+	legacyValue, err := legacyCache.LoadResultByResultID(legacyCtx, "test-session", legacySrv, legacyID)
+	require.NoError(t, err)
+	require.Equal(t, Int(1), legacyValue.Unwrap())
+	_, complete, err = legacyCache.ResultFacts(legacyCtx, "test-session", &ResultCallRef{ResultID: legacyID}, "source-test")
+	require.NoError(t, err)
+	require.False(t, complete)
+}
 
-	// A list can return an existing core value with an independent row. Its
-	// selected item's ID must retain the function/list input facts.
-	child := persistedListTestResult(t, otherCtx, other, otherSrv, "facts-item", Int(2))
-	list := persistedListTestResult(t, otherCtx, other, otherSrv, "facts-list", DynamicResultArrayOutput{Elem: Int(0), Values: []AnyResult{child}})
-	listFrame, err := list.ResultCall()
-	require.NoError(t, err)
-	annotate(otherCtx, other, list, listFrame, "/list")
-	check(otherCtx, other, child.cacheSharedResult().id, 0, true)
-	item, err := list.NthValue(otherCtx, 1)
-	require.NoError(t, err)
-	require.Same(t, child.cacheSharedResult(), item.cacheSharedResult())
-	check(otherCtx, other, child.cacheSharedResult().id, 1, true)
-	nullable := persistedListTestResult(t, otherCtx, other, otherSrv, "facts-nullable", DynamicNullable{Elem: Int(0), Value: child, Valid: true})
-	nullableFrame, err := nullable.ResultCall()
-	require.NoError(t, err)
-	annotate(otherCtx, other, nullable, nullableFrame, "/nullable")
-	deref, valid := nullable.DerefValue()
-	require.True(t, valid)
-	require.Same(t, child.cacheSharedResult(), deref.cacheSharedResult())
-	check(otherCtx, other, child.cacheSharedResult().id, 2, true)
-	markIncomplete(otherCtx, other, nullable)
-	check(otherCtx, other, child.cacheSharedResult().id, 2, false)
-
+func TestResultFactsFollowValueGenerationAndPruning(t *testing.T) {
+	otherCtx, other, otherSrv := transferTestCache(t)
 	// An in-place recomputation starts a new value generation. Old source
 	// paths and incomplete coverage must not survive into its fresh value.
 	generationFrame := cacheTestIntCall("facts-generation")
@@ -272,4 +306,44 @@ func TestResultFactsFollowEquivalentValuesAcrossCollectionRestartAndImport(t *te
 	require.NoError(t, err)
 	require.Equal(t, newRequest.ResultFacts, restoredFacts)
 	require.True(t, restoredComplete)
+}
+
+func TestResultFactsAliasesShareLazyValueAndReleaseOnce(t *testing.T) {
+	ctx, cache, srv := persistedListTestCache(t, "")
+	srv.InstallObject(NewClass(srv, ClassOpts[*captureTestValue]{}))
+	var evaluations, attachments, releases atomic.Int32
+	value := &captureTestValue{
+		lazy:    func(context.Context) error { evaluations.Add(1); return nil },
+		attach:  func(context.Context) error { attachments.Add(1); return nil },
+		release: func(context.Context) error { releases.Add(1); return nil },
+	}
+	sourceFrame := &ResultCall{Kind: ResultCallKindField, Field: "fact-lazy-source", Type: NewResultCallType(value.Type())}
+	source, err := cache.GetOrInitCall(ctx, "source-session", srv, &CallRequest{ResultCall: sourceFrame}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(value, sourceFrame)
+	})
+	require.NoError(t, err)
+	cache.testBeforePublicationIndex = func(oc *ongoingCall) {
+		if oc.res.valueSource == nil {
+			return
+		}
+		cache.testBeforePublicationIndex = nil
+		require.NoError(t, cache.ReleaseSession(ctx, "source-session"))
+		require.Zero(t, releases.Load(), "the alias handoff pins its payload before publication")
+	}
+	var aliases []AnyResult
+	for _, name := range []string{"first", "second"} {
+		frame := &ResultCall{Kind: ResultCallKindSynthetic, SyntheticOp: name, Type: NewResultCallType(value.Type())}
+		alias, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{
+			ResultCall: frame, ResultFacts: []ResultFact{{Namespace: "source-test", Payload: json.RawMessage(`{"prepared":true}`)}},
+		}, func(context.Context) (AnyResult, error) { return source, nil })
+		require.NoError(t, err)
+		require.NotSame(t, source.cacheSharedResult(), alias.cacheSharedResult())
+		aliases = append(aliases, alias)
+	}
+	require.NoError(t, cache.Evaluate(ctx, aliases...))
+	require.Equal(t, int32(1), evaluations.Load(), "aliases reuse the source's lazy task")
+	require.Equal(t, int32(1), attachments.Load(), "aliases do not reattach shared mutable payloads")
+	require.NoError(t, cache.ReleaseSession(ctx, "test-session"))
+	require.NoError(t, cache.CloseDiscardingPersistence())
+	require.Equal(t, int32(1), releases.Load(), "only the payload owner runs its release hook")
 }

@@ -18,12 +18,14 @@ const (
 	// persistedResultKindRef names a separately attached row from inside a
 	// list. It carries only the row identity; the row's own envelope holds
 	// its body.
-	persistedResultKindRef = "result_ref"
+	persistedResultKindRef   = "result_ref"
+	persistedResultKindAlias = "call_result"
 )
 
 // persistedResultEnvelopeVersion is the current interpretation of
 // PersistedResultEnvelope. Every change to how an envelope is read cuts a new
-// version, including scoped (OutputPath, Role) snapshot links; older versions are never read (see cachePersistenceSchemaVersion).
+// version. Version 5 remains readable: its fact coverage is independently
+// versioned, so legacy values remain usable with incomplete provenance.
 //
 // 3: attached absent values keep their row identity as null envelopes;
 // scalars decode losslessly; lists rebuild their declared recursive type from
@@ -31,7 +33,8 @@ const (
 // name their codec family; list items naming another row are result_ref
 // envelopes without a duplicated body.
 // 4: root origin and independent pending offer ownership.
-const persistedResultEnvelopeVersion = 5
+// 6: call-result aliases retain their own identity and a separate value row.
+const persistedResultEnvelopeVersion = 6
 
 // PersistedResultEnvelope is the shared on-disk payload envelope for persisted
 // result self values.
@@ -67,6 +70,7 @@ type PersistedResultEnvelope struct {
 	// ResultID is the attached row identity of the value. The root envelope
 	// of a row repeats that row's ID; a null root keeps the identity of an
 	// attached absent value; a result_ref item names another attached row.
+	ValueResultID         uint64                    `json:"valueResultID,omitempty"`
 	ResultID              uint64                    `json:"resultID,omitempty"`
 	SessionResourceHandle SessionResourceHandle     `json:"sessionResourceHandle,omitempty"`
 	ObjectJSON            json.RawMessage           `json:"objectJSON,omitempty"`
@@ -255,6 +259,16 @@ func encodePersistedResultEnvelope(ctx context.Context, enc *PersistEncodeContex
 			Kind:     persistedResultKindRef,
 			ResultID: resultID,
 		}}, nil
+	}
+
+	if root && shared != nil {
+		if source := shared.loadPayloadState().valueSource; source != nil {
+			return PersistedResultEncoding{Envelope: PersistedResultEnvelope{
+				Version: persistedResultEnvelopeVersion, Kind: persistedResultKindAlias,
+				ResultID: resultID, ValueResultID: uint64(source.id),
+				SessionResourceHandle: sessionResourceHandle,
+			}}, nil
+		}
 	}
 
 	value, present := res.DerefValue()
@@ -449,7 +463,7 @@ func persistedAbsentValue(call *ResultCall) (Typed, error) {
 }
 
 func decodePersistedResultEnvelope(ctx context.Context, dec *PersistDecodeContext, env PersistedResultEnvelope, root bool) (AnyResult, error) {
-	if env.Version != persistedResultEnvelopeVersion {
+	if env.Version != persistedResultEnvelopeVersion && env.Version != 5 {
 		return nil, fmt.Errorf("decode persisted result envelope: unsupported version %d (kind %q)", env.Version, env.Kind)
 	}
 	setHandle := func(res AnyResult) AnyResult {
@@ -470,6 +484,17 @@ func decodePersistedResultEnvelope(ctx context.Context, dec *PersistDecodeContex
 	dag := dec.Server()
 
 	switch env.Kind {
+	case persistedResultKindAlias:
+		if !root || env.ValueResultID == 0 || env.ValueResultID == env.ResultID {
+			return nil, fmt.Errorf("decode call result: invalid value reference")
+		}
+		source, err := dec.ResultRef(ctx, env.ValueResultID)
+		if err != nil {
+			return nil, err
+		}
+		alias := newCallResultAlias(call, source, true)
+		return wrapSharedResultWithResolver(ctx, alias, true, dag)
+
 	case persistedResultKindNull:
 		if env.ResultID == 0 {
 			return nil, nil

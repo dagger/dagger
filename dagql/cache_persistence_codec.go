@@ -682,7 +682,7 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 		return PersistedResultEnvelope{}, err
 	}
 	env.ResultFacts = cloneResultFacts(env.ResultFacts)
-	if env.Version != persistedResultEnvelopeVersion {
+	if env.Version != persistedResultEnvelopeVersion && env.Version != 5 {
 		return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: unsupported version %d", path, env.Version)
 	}
 	if !root && (env.Imported || len(env.PendingOffers) != 0) {
@@ -703,6 +703,15 @@ func visitPersistedEnvelope(env PersistedResultEnvelope, ownerCall *ResultCall, 
 	}
 
 	switch env.Kind {
+	case persistedResultKindAlias:
+		if !root || env.ValueResultID == 0 || env.ValueResultID == env.ResultID || len(env.Items) != 0 || len(env.ObjectJSON) != 0 || len(env.ScalarJSON) != 0 {
+			return PersistedResultEnvelope{}, fmt.Errorf("invalid call result reference")
+		}
+		if _, err := VisitPersistedRow(visit, PersistedRefChild, path.Field("value"), &env.ValueResultID); err != nil {
+			return PersistedResultEnvelope{}, err
+		}
+		return env, nil
+
 	case persistedResultKindNull, persistedResultKindScalar:
 		if len(env.Items) != 0 || len(env.ObjectJSON) != 0 {
 			return PersistedResultEnvelope{}, fmt.Errorf("visit persisted envelope at %q: %s kind carries a body", path, env.Kind)

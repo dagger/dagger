@@ -29,6 +29,7 @@ func (prov cachePersistInputProvenance) validate() error {
 }
 
 type persistResultSnapshot struct {
+	valueSource           *sharedResult
 	resultFacts           []ResultFact
 	resultFactsIncomplete bool
 	imported              bool

@@ -17,6 +17,12 @@ type CallRequest struct {
 	// snapshot sharing can observe the result. They are not cache identity.
 	ResultFacts           []ResultFact
 	ResultFactsIncomplete bool
+	// ResultFactsPrepared says these facts fully describe the operation,
+	// without needing facts from a reused payload producer. It never clears
+	// an explicit ResultFactsIncomplete flag. It is not cache identity.
+	ResultFactsPrepared bool
+	// omitValueFacts separates unrelated output-equivalent producers.
+	omitValueFacts bool
 
 	// ListItem marks a read of item Nth of the receiver, a cache-backed list
 	// whose value holds the item inline. Such a read is answered only by the
@@ -72,6 +78,7 @@ func (req *CallRequest) Clone() *CallRequest {
 		IsPersistable:         req.IsPersistable,
 		ResultFacts:           cloneResultFacts(req.ResultFacts),
 		ResultFactsIncomplete: req.ResultFactsIncomplete,
+		ResultFactsPrepared:   req.ResultFactsPrepared,
 		ListItem:              req.ListItem,
 		DeduplicateTelemetry:  req.DeduplicateTelemetry,
 		PassthroughTelemetry:  req.PassthroughTelemetry,

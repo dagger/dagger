@@ -1518,6 +1518,7 @@ func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src 
 // the declaredClients input hash the module digest without loading the module.
 func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *core.ModuleSource) (rerr error) {
 	src.EntrypointSources = false
+	src.EntrypointInputsKey = ""
 	if src.Entrypoint == nil {
 		return nil
 	}
@@ -1584,6 +1585,10 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 		}
 	}
 	contextDir, err := mergeEntrypointSources(ctx, dag, sources, moduleContext)
+	if err != nil {
+		return fail(err)
+	}
+	contextDir, err = core.CaptureWorkspaceInputDirectory(ctx, contextDir, sources)
 	if err != nil {
 		return fail(err)
 	}

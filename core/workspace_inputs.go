@@ -27,6 +27,7 @@ type workspaceInputSource struct {
 	Workspace string                `json:"workspace"`
 	Selectors []provenance.Selector `json:"selectors"`
 	Issues    []string              `json:"issues,omitempty"`
+	Captures  []string              `json:"captures,omitempty"`
 }
 
 func workspaceInputKey(ws *Workspace) string {
@@ -57,6 +58,7 @@ func (s workspaceInputSummary) normalized() workspaceInputSummary {
 		group.Workspace = source.Workspace
 		group.Selectors = append(group.Selectors, source.Selectors...)
 		group.Issues = append(group.Issues, source.Issues...)
+		group.Captures = append(group.Captures, source.Captures...)
 		byWorkspace[source.Workspace] = group
 	}
 	s.Sources = nil
@@ -64,6 +66,8 @@ func (s workspaceInputSummary) normalized() workspaceInputSummary {
 		group.Selectors = provenance.Normalize(group.Selectors)
 		slices.Sort(group.Issues)
 		group.Issues = slices.Compact(group.Issues)
+		slices.Sort(group.Captures)
+		group.Captures = slices.Compact(group.Captures)
 		s.Sources = append(s.Sources, group)
 	}
 	slices.SortFunc(s.Sources, func(a, b workspaceInputSource) int { return strings.Compare(a.Workspace, b.Workspace) })
@@ -104,6 +108,7 @@ type workspaceInputCollector struct {
 	origin     string
 	scope      string
 	evaluating bool
+	native     bool
 	retained   map[uint64]bool
 }
 
@@ -213,6 +218,9 @@ func (c *workspaceInputCollector) moduleInputs(ref *dagql.ResultCallRef) {
 		c.issue("called module source has type %T", value.Unwrap())
 		return
 	}
+	if c.builtinModuleInputs(mod) {
+		return
+	}
 	evaluating := c.evaluating
 	c.evaluating = false
 	c.ref(ref)
@@ -226,7 +234,7 @@ func (c *workspaceInputCollector) moduleInputs(ref *dagql.ResultCallRef) {
 		}
 	}
 	c.evaluating = evaluating
-	if src := mod.GetSource(); !mod.Runtime.Valid && src != nil && src.SDKImpl != nil {
+	if src := mod.GetSource(); c.evaluating && !mod.Runtime.Valid && src != nil && src.SDKImpl != nil {
 		_, moduleBacked := src.SDKImpl.AsModule()
 		if sdk, ok := src.SDKImpl.(*persistedModuleSourceLazySDK); ok {
 			moduleBacked = sdk.capabilities.ModuleBacked == nil || *sdk.capabilities.ModuleBacked
@@ -236,6 +244,33 @@ func (c *workspaceInputCollector) moduleInputs(ref *dagql.ResultCallRef) {
 		}
 	}
 	c.entrypointModuleInputs(mod)
+}
+
+func (c *workspaceInputCollector) builtinModuleInputs(mod *Module) bool {
+	src := mod.GetSource()
+	if src == nil || src.SDKImpl == nil {
+		return false
+	}
+	if _, ok := src.SDKImpl.AsModule(); ok {
+		return false
+	}
+	if sdk, ok := src.SDKImpl.(*persistedModuleSourceLazySDK); ok &&
+		(sdk.capabilities.ModuleBacked == nil || *sdk.capabilities.ModuleBacked) {
+		return false
+	}
+	ws := workspaceInputSourceWorkspace(c.ctx)
+	if ws == nil {
+		ws = src.Workspace.Self()
+	}
+	if ws == nil {
+		return false
+	}
+	// Native SDKs load a module context to prepare its implementation. The
+	// module's source regions describe those inputs, not the loader's ancestry.
+	c.moduleSources(ws, mod, "module source")
+	c.declaredClientSources(ws, mod)
+	c.entrypointModuleInputs(mod)
+	return true
 }
 
 func (c *workspaceInputCollector) entrypointModuleInputs(mod *Module) {
@@ -253,6 +288,13 @@ func (c *workspaceInputCollector) entrypointModuleInputs(mod *Module) {
 			return
 		}
 		c.ref(&dagql.ResultCallRef{ResultID: id.EngineResultID()})
+		ws := workspaceInputSourceWorkspace(c.ctx)
+		captured := ws != nil && src.EntrypointInputsKey != "" && slices.ContainsFunc(c.result.Sources, func(source workspaceInputSource) bool {
+			return source.Workspace == workspaceInputKey(ws) && slices.Contains(source.Captures, src.EntrypointInputsKey)
+		})
+		if !captured {
+			c.issue("entrypoint sources input has no complete source query capture")
+		}
 		return
 	}
 	var ws *Workspace
@@ -316,10 +358,23 @@ func (c *workspaceInputCollector) ref(ref *dagql.ResultCallRef) {
 	if frame.Type != nil {
 		typeName = frame.Type.NamedType
 	}
+	if c.native && typeName == "ModuleSource" && frame.Module == nil && frame.Field == "_implementationScoped" && ref.ResultID != 0 {
+		inFunction, err := CallerInModuleFunction(c.ctx)
+		if err == nil && !inFunction {
+			if value, err := c.cache.LoadResultByResultID(c.ctx, c.session, c.server, ref.ResultID); err == nil {
+				if source, ok := value.(dagql.ObjectResult[*ModuleSource]); ok && c.builtinModuleInputs(&Module{Source: dagql.NonNull(source)}) {
+					return
+				}
+			}
+		}
+	}
 	nativeModule := typeName == "Module" && frame.Module == nil && (frame.Field == "module" || frame.Field == "_implementationScoped" || strings.HasPrefix(frame.Field, "with") || frame.Kind == dagql.ResultCallKindSynthetic && frame.SyntheticOp == "sdk_scope_module")
 	if nativeModule && ref.ResultID != 0 {
 		if value, err := c.cache.LoadResultByResultID(c.ctx, c.session, c.server, ref.ResultID); err == nil {
 			if mod, ok := dagql.UnwrapAs[*Module](value); ok {
+				if c.builtinModuleInputs(mod) {
+					return
+				}
 				if ws := workspaceInputSourceWorkspace(c.ctx); ws != nil {
 					c.moduleSources(ws, mod, "module source")
 				}
@@ -379,7 +434,7 @@ func (c *workspaceInputCollector) ref(ref *dagql.ResultCallRef) {
 	if complete && captured {
 		return
 	}
-	if !captured && !c.storedField(frame) {
+	if !captured && frame.Module != nil && !c.storedField(frame) {
 		if typeName == "Module" {
 			c.issue("%s input from %s has no complete source query capture", typeName, frame.Field)
 		} else {
@@ -603,33 +658,27 @@ func ObserveWorkspaceInputs(ctx context.Context, req *dagql.CallRequest) (contex
 	if req.Field == "id" || (req.ReceiverTypeName == "Query" && (req.Field == "node" || req.Field == "currentFunctionCall")) || transport {
 		return ctx, nil, nil
 	}
+	if _, inSource := ctx.Value(workspaceInputSourceContextKey{}).(workspaceInputSummary); inSource && req.Module == nil {
+		return ctx, nil, nil
+	}
 	source := req.Module == nil && req.ReceiverTypeName == "Workspace" && workspaceSourceQuery(req.Field)
 	gitSource := req.Module == nil && req.ReceiverTypeName == "WorkspaceGit"
 	hostSource := req.Module == nil && req.ReceiverTypeName == "Host" && (req.Field == "file" || req.Field == "directory")
-	parentSource, inSource := ctx.Value(workspaceInputSourceContextKey{}).(workspaceInputSummary)
 	view := workspaceInputView(req)
 	metadata := req.Module == nil && req.ReceiverTypeName == "Query" && req.Field == "currentModule"
-	boundary, _ := ctx.Value(workspaceInputBoundaryKey{}).(bool)
-	nativeSourceValue := req.Receiver != nil && (req.ReceiverTypeName == "File" || req.ReceiverTypeName == "Directory" || req.Type != nil && (req.Type.NamedType == "File" || req.Type.NamedType == "Directory"))
-	sourceInternal := inSource && req.Module == nil && (req.ReceiverTypeName == "Host" && !hostSource || boundary && nativeSourceValue)
 	collector, err := newWorkspaceInputCollector(ctx)
 	if err != nil {
 		req.ResultFactsIncomplete = true
 		return ctx, nil, nil
 	}
+	collector.native = req.Module == nil
 	switch {
 	case source:
 		collector.sourceCall(req)
 	case gitSource:
 		collector.gitSourceCall(req)
-	case sourceInternal:
-		collector.result.merge(parentSource)
 	case hostSource:
-		if inSource {
-			collector.result.merge(parentSource)
-		} else {
-			collector.issue("Host source input has no workspace source mapping")
-		}
+		collector.issue("Host source input has no workspace source mapping")
 	default:
 		collector.inputs(req.ResultCall)
 	}
@@ -641,25 +690,26 @@ func ObserveWorkspaceInputs(ctx context.Context, req *dagql.CallRequest) (contex
 		}
 	}
 	if req.Module != nil {
+		collector.moduleInputs(req.Module.ResultRef)
 		collector.calledModuleSource(req)
 	}
 	summary := collector.result.normalized()
+	req.ResultFactsPrepared = source || gitSource || hostSource || view || metadata
 	if source || gitSource || view {
 		ctx = context.WithValue(ctx, workspaceInputSourceContextKey{}, summary)
-		ctx = context.WithValue(ctx, workspaceInputBoundaryKey{}, true)
 	}
-	appendWorkspaceInputFact(ctx, req, summary, source || gitSource || sourceInternal || hostSource || view || metadata)
+	appendWorkspaceInputFact(ctx, req, summary, source || gitSource || hostSource || view || metadata)
 	observation := &workspaceInputCall{
 		request:  req,
 		reads:    &workspaceInputReads{summary: summary, workspace: workspaceInputSourceWorkspace(ctx)},
-		prepared: source || gitSource || sourceInternal || hostSource || view || metadata,
+		prepared: source || gitSource || hostSource || view || metadata,
 	}
 	if req.Module == nil && req.ReceiverTypeName == "Workspace" {
 		if ws, err := collector.workspace(req.Receiver); err == nil {
 			observation.reads.workspace = ws
 		}
 	}
-	if source || gitSource || view || sourceInternal || hostSource && inSource {
+	if source || gitSource || view {
 		observation.view = &summary
 	}
 	ctx = context.WithValue(ctx, workspaceInputCallKey{}, observation)

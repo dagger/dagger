@@ -141,7 +141,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if env.Kind == "" {
 				return fmt.Errorf("import result %d: empty self payload kind", resultID)
 			}
-			if env.Version != persistedResultEnvelopeVersion {
+			if env.Version != persistedResultEnvelopeVersion && env.Version != 5 {
 				return fmt.Errorf("import result %d: unsupported self payload version %d", resultID, env.Version)
 			}
 			if err := validateResultFacts(*env, true); err != nil {
@@ -505,8 +505,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			if !res.hasValue && res.persistedEnvelope != nil && res.payloadRevision == state.payloadRevision {
 				markRestoredPartDelegation(res, *state.persistedEnvelope, call, state.snapshotOwnerLinks)
+				res.valueSource = decoded.cacheSharedResult().loadPayloadState().valueSource
+				res.isObject = decoded.cacheSharedResult().loadPayloadState().isObject
 				c.bindPartHost(res, decoded)
-				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok {
+				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok && res.valueSource == nil {
 					withSelf.InitializeResultReference(Result[Typed]{shared: res})
 				}
 				res.self = decoded.Unwrap()
@@ -738,6 +740,9 @@ func persistedEnvelopeTypeNames(env PersistedResultEnvelope, names []persistedEn
 // Callers hold no cache locks: sizing may take the value's own lock.
 func (c *Cache) updateDecodedPayloadBytes(res *sharedResult, decoded Typed, revision uint64) {
 	n := cachePayloadBytes(decoded)
+	if res.loadPayloadState().valueSource != nil {
+		n = 0
+	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	res.payloadMu.RLock()
@@ -749,6 +754,9 @@ func (c *Cache) updateDecodedPayloadBytes(res *sharedResult, decoded Typed, revi
 }
 
 func (c *Cache) retainDecodedDependencyResults(ctx context.Context, res *sharedResult, decoded AnyResult) error {
+	if decoded != nil && decoded.cacheSharedResult().loadPayloadState().valueSource != nil {
+		return nil
+	}
 	var deps []AnyResult
 	collectDecodedDependencyResults(decoded, &deps)
 	if len(deps) == 0 {
@@ -996,8 +1004,10 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			}
 			if !res.hasValue && res.persistedEnvelope != nil && res.payloadRevision == state.payloadRevision {
 				markRestoredPartDelegation(res, *state.persistedEnvelope, call, roles)
+				res.valueSource = decoded.cacheSharedResult().loadPayloadState().valueSource
+				res.isObject = decoded.cacheSharedResult().loadPayloadState().isObject
 				c.bindPartHost(res, decoded)
-				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok {
+				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok && res.valueSource == nil {
 					withSelf.InitializeResultReference(Result[Typed]{shared: res})
 				}
 				res.self = decoded.Unwrap()

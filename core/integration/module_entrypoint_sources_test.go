@@ -194,18 +194,43 @@ func (ModuleSuite) TestModuleEntrypointSources(ctx context.Context, t *testctx.T
 
 	t.Run("workspace module loads the returned files", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := local(t, c, sharedSourcesMember).
+		ctr := local(t, c, `  pub sources(workspace: Workspace!): Directory! {
+    workspace.file("/choice.txt").contents
+    directory
+      .withDirectory("shared", workspace.directory("/shared", exclude: ["testdata"]))
+      .withDirectory(workspace.cwd, workspace.directory("."))
+  }`).
+			WithNewFile("choice.txt", "source selection").
 			WithNewFile("dagger.toml", "[modules.m]\nsource = \"m\"\n")
 
 		requireLoaded(t, strings.Fields(call(ctx, t, ctr, "m", "context-files")))
 		require.Equal(t, "from the shared sibling", call(ctx, t, ctr, "m", "shared"))
 		out, err := ctr.With(daggerQuery(`{
  currentWorkspace { snapshot { artifacts { filterTypes(types: ["Check"]) {
-  one { provenance { selectors { path } } }
+  one { provenance { selectors { path } issues } }
+  choice: filterAffectedByPath(paths: ["/choice.txt"]) { items { path } }
+  unrelated: filterAffectedByPath(paths: ["/other/unlisted.txt"]) { items { path } }
  } } } }
 }`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Regexp(t, `"path"\s*:\s*"/shared"`, out, "the deferred check receives the directory returned by sources")
+		var result struct {
+			CurrentWorkspace struct {
+				Snapshot struct {
+					Artifacts struct {
+						FilterTypes struct {
+							One               struct{ Provenance struct{ Issues []string } }
+							Choice, Unrelated struct{ Items []struct{ Path []string } }
+						}
+					}
+				}
+			}
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &result))
+		checks := result.CurrentWorkspace.Snapshot.Artifacts.FilterTypes
+		require.Empty(t, checks.One.Provenance.Issues)
+		require.Len(t, checks.Choice.Items, 1, "sources discarded the read, but it still affects the check")
+		require.Empty(t, checks.Unrelated.Items)
 	})
 
 	// The workspace that sources gets reads the module's own checkout through

@@ -118,6 +118,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	}
 	res.storeResultCall(nil)
 	res.payloadMu.Lock()
+	res.valueSource = nil
 	res.self = nil
 	res.isObject = false
 	res.objClass = objectClassRef{}

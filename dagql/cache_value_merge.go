@@ -1109,7 +1109,6 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			// need relocation. Its fact JSON comes from the validated input.
 			incoming := row.value.Record.Envelope
 			c.setResultFactsLocked(row.res, unionResultFacts(row.res.resultFacts, incoming.ResultFacts), row.res.resultFactsIncomplete || incoming.FactsCoverageVersion != resultFactsCoverageVersion)
-			c.syncResultFactsLocked(row.res)
 			continue
 		case mergeRetire:
 			c.retireResultLocked(row.target)
@@ -1283,6 +1282,7 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 	res.payloadMu.Lock()
 	res.isObject = rec.Envelope.Kind == persistedResultKindObject
 	res.hasValue = false
+	res.valueSource = nil
 	res.self = nil
 	res.persistedEnvelope = &rec.Envelope
 	res.payloadRevision++
@@ -1513,6 +1513,7 @@ func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, qu
 		res.storedRecordBytes = 0
 		res.storedTransfer.Store(nil)
 		res.payloadMu.Lock()
+		res.valueSource = nil
 		res.self = nil
 		res.persistedEnvelope = nil
 		res.hasValue = false

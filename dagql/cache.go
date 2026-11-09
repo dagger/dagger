@@ -1402,6 +1402,9 @@ func HasPendingLazyEvaluation(res AnyResult) bool {
 		return false
 	}
 
+	if source := shared.loadPayloadState().valueSource; source != nil {
+		return HasPendingLazyEvaluation(Result[Typed]{shared: source})
+	}
 	shared.lazyMu.Lock()
 	defer shared.lazyMu.Unlock()
 	if shared.lazyEvalComplete {
@@ -1433,6 +1436,9 @@ func HasPendingLazyComputation(res AnyResult) bool {
 	shared := res.cacheSharedResult()
 	if shared == nil || shared.id == 0 {
 		return false
+	}
+	if source := shared.loadPayloadState().valueSource; source != nil {
+		return HasPendingLazyComputation(Result[Typed]{shared: source})
 	}
 	shared.lazyMu.Lock()
 	defer shared.lazyMu.Unlock()
@@ -2017,6 +2023,9 @@ func desiredSnapshotLinksForResult(ctx context.Context, res *sharedResult, forSy
 		return nil, nil
 	}
 	state := res.loadPayloadState()
+	if state.valueSource != nil {
+		return nil, nil
+	}
 	if state.hasValue && state.self != nil {
 		return collectSnapshotOwnerLinks(ctx, state.self, res.loadResultCall(), forSync)
 	}
@@ -2756,6 +2765,7 @@ type sharedResult struct {
 	resultFactsIncomplete bool
 	resultFactBytes       int64
 	resultFactsRevision   uint64
+	valueSource           *sharedResult
 	inlineBorrow          *PartHost
 	// Origin is immutable; slots and graph revisions are guarded by egraphMu.
 	imported bool
@@ -3016,6 +3026,7 @@ func (res *sharedResult) attachmentState() resultAttachmentState {
 type snapshotLinkIntent struct{ Links []PersistedSnapshotRefLink }
 
 type sharedResultPayloadState struct {
+	valueSource           *sharedResult
 	resultFacts           []ResultFact
 	resultFactsIncomplete bool
 	resultFactsRevision   uint64
@@ -3100,6 +3111,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	}
 	res.payloadMu.RLock()
 	state := sharedResultPayloadState{
+		valueSource:           res.valueSource,
 		resultFacts:           res.resultFacts,
 		resultFactsIncomplete: res.resultFactsIncomplete,
 		resultFactsRevision:   res.resultFactsRevision,
@@ -3230,6 +3242,9 @@ func resultIsObject(val AnyResult, resolver TypeResolver) (bool, ObjectType, err
 func sharedResultObjectTypeName(res *sharedResult, state sharedResultPayloadState) string {
 	if res == nil || !state.isObject {
 		return ""
+	}
+	if state.valueSource != nil {
+		return sharedResultObjectTypeName(state.valueSource, state.valueSource.loadPayloadState())
 	}
 	if frame := res.loadResultCall(); frame != nil && frame.Type != nil && frame.Type.NamedType != "" {
 		return frame.Type.NamedType
@@ -4068,6 +4083,9 @@ func (r Result[T]) Unwrap() Typed {
 		if r.derefView {
 			if inner, ok := derefTyped(self); ok && inner != nil {
 				wrapped = inner
+				if result, ok := inner.(AnyResult); ok {
+					wrapped = result.Unwrap()
+				}
 			}
 		}
 		return DynamicNullable{
@@ -4078,6 +4096,9 @@ func (r Result[T]) Unwrap() Typed {
 	}
 	if r.derefView {
 		if inner, ok := derefTyped(self); ok && inner != nil {
+			if result, ok := inner.(AnyResult); ok {
+				return result.Unwrap()
+			}
 			return inner
 		}
 	}
@@ -4103,8 +4124,8 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 		}
 		return r, true
 	}
-	if anyRes, ok := inner.(AnyResult); ok {
-		return anyRes, true
+	if _, ok := inner.(AnyResult); ok {
+		return r.withDerefViewAny(), true
 	}
 	return r.resultWithDerefView(), true
 }
@@ -4137,14 +4158,6 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr e
 		return nil, err
 	}
 	defer func() {
-		if rerr == nil && ret != nil && r.shared != nil && r.shared.id != 0 {
-			cache, err := EngineCache(ctx)
-			if err != nil {
-				ret, rerr = nil, err
-			} else {
-				cache.inheritResultFacts(r.shared, ret.cacheSharedResult())
-			}
-		}
 		if op.finish(rerr == nil && ret != nil) {
 			ret = nil
 			rerr = fmt.Errorf("load %dth value from %T: %w: %q", nth, r.Self(), ErrCacheSessionReleased, sessionID)
@@ -4168,7 +4181,7 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr e
 		return detached, nil
 	}
 
-	if childShared := detached.cacheSharedResult(); childShared != nil && childShared.id != 0 {
+	if childShared := detached.cacheSharedResult(); childShared != nil && childShared.id != 0 && !r.shared.hasResultFacts() {
 		return r.claimCacheBackedNthValue(ctx, nth, self, childShared)
 	}
 
@@ -4180,8 +4193,10 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (ret AnyResult, rerr e
 		return nil, fmt.Errorf("cannot get %dth value from %T without element type", nth, self)
 	}
 	req := &CallRequest{
-		ResultCall: parentCall.fork(),
-		ListItem:   true,
+		ResultCall:            parentCall.fork(),
+		ListItem:              true,
+		ResultFacts:           cloneResultFacts(r.shared.loadPayloadState().resultFacts),
+		ResultFactsIncomplete: r.shared.loadPayloadState().resultFactsIncomplete,
 	}
 	req.Type = req.Type.Elem.clone()
 	req.Receiver = &ResultCallRef{ResultID: uint64(r.shared.id), shared: r.shared}
@@ -4308,6 +4323,7 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 		}
 	}
 	r.shared = &sharedResult{
+		valueSource:           state.valueSource,
 		resultFacts:           cloneResultFacts(state.resultFacts),
 		resultFactsIncomplete: state.resultFactsIncomplete,
 		resultFactBytes:       resultFactPayloadBytes(state.resultFacts),
@@ -4426,6 +4442,7 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 	}
 	reqs.Insert(handle)
 	r.shared = &sharedResult{
+		valueSource:              state.valueSource,
 		resultFacts:              cloneResultFacts(state.resultFacts),
 		resultFactsIncomplete:    state.resultFactsIncomplete,
 		resultFactBytes:          resultFactPayloadBytes(state.resultFacts),
@@ -4539,8 +4556,8 @@ func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
 		}
 		return r, true
 	}
-	if anyRes, ok := inner.(AnyResult); ok {
-		return anyRes, true
+	if _, ok := inner.(AnyResult); ok {
+		return r.withDerefViewAny(), true
 	}
 	r.Result = r.Result.resultWithDerefView()
 	return r, true
@@ -4683,7 +4700,7 @@ func lazyEvalFuncOfResult(val AnyResult) LazyEvalFunc {
 }
 
 func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
-	if shared == nil || val == nil {
+	if shared == nil || val == nil || shared.loadPayloadState().valueSource != nil {
 		return
 	}
 
@@ -4947,6 +4964,9 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 // groups: the whole-result group for plain lazy values, the resolved
 // named groups for parts values. nil or empty parts means "everything".
 func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sharedResult, parts []PartKey) error {
+	if source := shared.loadPayloadState().valueSource; source != nil {
+		return c.evaluateResolved(ctx, Result[Typed]{shared: source}, source, parts)
+	}
 	if c.usesPartAcquisition(res, shared) {
 		return c.evaluateAcquiredParts(ctx, res, shared, parts)
 	}
@@ -6064,7 +6084,10 @@ func (c *Cache) GetOrInitCall(
 		return nil, fmt.Errorf("get or init call: %w", err)
 	}
 	res, callErr := c.getOrInitCall(ctx, sessionID, resolver, req, fn)
-	if callErr == nil && res != nil && req != nil && (len(req.ResultFacts) != 0 || req.ResultFactsIncomplete) {
+	if callErr == nil && res != nil && requestHasResultFacts(req) {
+		res, callErr = c.callResultForRequest(ctx, sessionID, resolver, req, res)
+	}
+	if callErr == nil && res != nil && requestHasResultFacts(req) {
 		row := res.cacheSharedResult()
 		c.egraphMu.RLock()
 		satisfied := requestFactsSatisfiedLocked(req, row)
@@ -6859,7 +6882,7 @@ func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *share
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, oc *ongoingCall, req *CallRequest, sessionID string) error {
+func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, oc *ongoingCall, req *CallRequest, sessionID string) (rerr error) {
 	resWasCacheBacked := false
 	now := time.Now()
 	oc.persistedEdgeExpiresAtUnix = candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds)
@@ -6887,9 +6910,32 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// Materialize shared result for this completed call.
 	oc.res = &sharedResult{}
 	if oc.val != nil {
-		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.id != 0 {
+		existingRes := oc.val.cacheSharedResult()
+		if existingRes != nil && existingRes.id != 0 {
+			// Pin the payload before deriving frames or publishing the alias.
+			// Its producing session can otherwise collect it while this call
+			// has not yet installed the alias's explicit value dependency.
 			wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
-			oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix(), true)
+			if c.resultsByID[existingRes.id] != existingRes {
+				c.egraphMu.Unlock()
+				return fmt.Errorf("call result value %d was already collected", existingRes.id)
+			}
+			c.incrementIncomingOwnershipLocked(ctx, existingRes)
+			sourceHold := &ongoingCall{res: existingRes, handoffHoldActive: true}
+			c.egraphMu.Unlock()
+			defer func() {
+				rerr = errors.Join(rerr, c.releaseOngoingCallHandoff(context.WithoutCancel(ctx), sourceHold))
+			}()
+		}
+		if existingRes != nil && existingRes.id != 0 && (requestHasResultFacts(req) || existingRes.hasResultFacts()) && !c.resultMatchesRequest(existingRes, req) {
+			oc.res = newCallResultAlias(req.ResultCall, oc.val, !req.omitValueFacts && !req.ResultFactsPrepared)
+		} else if existingRes != nil && existingRes.id != 0 {
+			wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+			if requestHasResultFacts(req) || existingRes.hasResultFacts() {
+				oc.res = existingRes
+			} else {
+				oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix(), true)
+			}
 			// Take the publication handoff hold inside the same critical
 			// section as the canonical pick: the adopted result may be owned
 			// only by another session, and a concurrent session release must
@@ -6952,7 +6998,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if !resWasCacheBacked {
 		oc.res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(oc.res), oc.res.onRelease)
 		// Set before the result is indexed, so every hit sees it.
-		oc.res.persistDeclined = oc.persistDecline.isDeclined()
+		oc.res.persistDeclined = oc.res.persistDeclined || oc.persistDecline.isDeclined()
 	}
 	requestForIndex := req
 	if oc.res.createdAtUnixNano == 0 {
@@ -7017,6 +7063,13 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			return fmt.Errorf("derive result digest: %w", err)
 		}
 	}
+	if source := oc.res.loadPayloadState().valueSource; source != nil {
+		responseDigest, err = source.loadResultCall().deriveRecipeDigest(c)
+		if err != nil {
+			return err
+		}
+	}
+
 	type resultCallDep struct {
 		resultID sharedResultID
 		path     string
@@ -7145,6 +7198,12 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 	}
 
+	if source, err := c.aliasValueDependency(oc.res); err != nil {
+		return err
+	} else if source != nil {
+		resultCallDeps = append(resultCallDeps, resultCallDep{resultID: source.id, path: "value"})
+	}
+
 	if c.testBeforePublicationIndex != nil {
 		c.testBeforePublicationIndex(oc)
 	}
@@ -7168,7 +7227,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// The recipe is the stored frame's: the value's own frame, or, for a call
 	// answered with nothing, the request frame indexing stores on the row.
 	recipeDigest := responseDigest
-	if recipeDigest == "" {
+	if recipeDigest == "" || oc.res.loadPayloadState().valueSource != nil {
 		recipeDigest = requestDigest
 	}
 	for !resWasCacheBacked {
@@ -7531,7 +7590,7 @@ func AttachmentResolverServer(ctx context.Context) *Server {
 }
 
 func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) error {
-	if parent == nil || val == nil || parent.inlineBorrow != nil {
+	if parent == nil || val == nil || parent.inlineBorrow != nil || parent.loadPayloadState().valueSource != nil {
 		return nil
 	}
 	withKinds, hasKinds := UnwrapAs[HasDependencyResultsKinds](val)

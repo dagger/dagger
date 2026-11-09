@@ -77,8 +77,7 @@ func withWorkspaceInputSetup(ctx context.Context) context.Context {
 	if !ok {
 		return ctx
 	}
-	ctx = context.WithValue(ctx, workspaceInputSourceContextKey{}, observation.reads.snapshot())
-	return context.WithValue(ctx, workspaceInputBoundaryKey{}, false)
+	return context.WithValue(ctx, workspaceInputSourceContextKey{}, observation.reads.snapshot())
 }
 
 type workspaceInputFact struct {
@@ -105,7 +104,6 @@ func workspaceInputOperation(ctx context.Context, frame *dagql.ResultCall) strin
 
 type workspaceInputCallKey struct{}
 type workspaceInputReadsKey struct{}
-type workspaceInputBoundaryKey struct{}
 
 func workspaceInputTransport(typ *dagql.ResultCallType) bool {
 	for typ != nil && typ.Elem != nil {
@@ -135,9 +133,29 @@ func withWorkspaceInputFunction(ctx context.Context, call *FunctionCall) context
 		return ctx
 	}
 	call.workspaceInputs = observation.reads
-	ctx = context.WithValue(ctx, workspaceInputReadsKey{}, observation.reads)
-	ctx = context.WithValue(ctx, workspaceInputBoundaryKey{}, false)
-	return context.WithValue(ctx, workspaceInputSourceContextKey{}, struct{}{})
+	// Runtime setup stays under the native input boundary. The module's client
+	// records its own queries through FunctionCall, without that substitution.
+	return context.WithValue(ctx, workspaceInputReadsKey{}, observation.reads)
+}
+
+func recordWorkspaceRuntimeInputs(ctx context.Context, mod *Module, runtime ModuleRuntime) {
+	container, ok := runtime.AsContainer()
+	if !ok {
+		return
+	}
+	reads := currentWorkspaceInputReads(ctx)
+	if reads == nil {
+		return
+	}
+	collector, err := newWorkspaceInputCollector(ctx)
+	if err != nil {
+		reads.add(workspaceInputSummary{Issues: []string{"cannot inspect function runtime inputs: " + err.Error()}})
+		return
+	}
+	if !collector.builtinModuleInputs(mod) {
+		collector.retainedField(container, "module runtime")
+	}
+	reads.add(collector.result.normalized())
 }
 
 func publishWorkspaceInputReads(ctx context.Context) {
@@ -199,7 +217,7 @@ func workspaceInputReadCompletion(ctx context.Context, parent *workspaceInputRea
 				}
 			}
 		}
-		if !covered {
+		if !covered && req.Module != nil {
 			summary.Issues = append(summary.Issues, "call "+req.Field+" has no complete source query capture")
 		}
 		parent.add(summary)

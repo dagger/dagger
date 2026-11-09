@@ -373,10 +373,6 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 	if joinsEntries {
 		c.noteJoinedEntriesLocked(ra)
 	}
-	for id := range c.outputEqClassResults[ra] {
-		c.syncResultFactsLocked(c.resultsByID[id])
-		break
-	}
 	return ra, absorbedInputTerms
 }
 
@@ -970,6 +966,12 @@ func (c *Cache) lookupCacheForRequestLocked(
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
 	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
 
+	if requestHasResultFacts(req) && !req.ListItem {
+		if own := c.currentEntryForRecipeLocked(requestDigest); own != nil && c.servableCandidateLocked(own.id, nowUnix, nil) != nil && c.sessionSatisfiesResourceRequirementsLocked(sessionID, own) {
+			hitRes = own
+		}
+	}
+
 	// Fill the request's cache-evidence carrier (when armed) with the facts
 	// that exist only at this decision point; plain field writes of values
 	// already in hand, changing nothing about the lookup itself.
@@ -1498,6 +1500,10 @@ func (c *Cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
+	if own := c.currentEntryForRecipeLocked(requestDigest); own != nil && c.servableCandidateLocked(own.id, time.Now().Unix(), nil) != nil {
+		return own.id, nil
+	}
+
 	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
 	if match.candidates == nil || match.candidates.Empty() {
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
@@ -1603,7 +1609,6 @@ func (c *Cache) addResultOutputEqClassLocked(resID sharedResultID, outputEqID eq
 		// New membership in an existing class, with no union of its own.
 		// Recorded only once both memberships exist.
 		c.recordShareMembershipLocked(outputEqID)
-		c.syncResultFactsLocked(c.resultsByID[resID])
 	}
 }
 

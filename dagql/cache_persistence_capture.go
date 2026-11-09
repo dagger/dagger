@@ -181,6 +181,7 @@ func (c *Cache) describeHeldParts(ctx context.Context, shared *sharedResult, imp
 func capturedRowValue(shared *sharedResult, payload sharedResultPayloadState, frame *ResultCall) Result[Typed] {
 	captured := &sharedResult{
 		id:                    shared.id,
+		valueSource:           payload.valueSource,
 		self:                  payload.self,
 		isObject:              payload.isObject,
 		hasValue:              payload.hasValue,

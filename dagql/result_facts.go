@@ -8,14 +8,14 @@ import (
 	"slices"
 )
 
-// ResultFact is application-owned JSON attached to a value's lifetime. Payload
+// ResultFact is application-owned JSON attached to a call result's lifetime. Payload
 // must not contain engine-local result IDs. Facts do not affect value identity.
 type ResultFact struct {
 	Namespace string          `json:"namespace"`
 	Payload   json.RawMessage `json:"payload"`
 }
 
-const resultFactsCoverageVersion = 1
+const resultFactsCoverageVersion = 2
 
 func cloneResultFacts(facts []ResultFact) []ResultFact {
 	out := slices.Clone(facts)
@@ -108,7 +108,7 @@ func validateResultFacts(env PersistedResultEnvelope, root bool) error {
 	if !root && (env.FactsCoverageVersion != 0 || len(env.ResultFacts) != 0) {
 		return fmt.Errorf("result facts are only valid on a root envelope")
 	}
-	if env.FactsCoverageVersion != 0 && env.FactsCoverageVersion != resultFactsCoverageVersion {
+	if env.FactsCoverageVersion != 0 && env.FactsCoverageVersion != 1 && env.FactsCoverageVersion != resultFactsCoverageVersion {
 		return fmt.Errorf("unsupported result facts coverage version %d", env.FactsCoverageVersion)
 	}
 	for _, fact := range env.ResultFacts {
@@ -119,76 +119,6 @@ func validateResultFacts(env PersistedResultEnvelope, root bool) error {
 	return nil
 }
 
-// syncResultFactsLocked copies the union to every equivalent value. A later
-// collection of one producer must not remove an origin from surviving values.
-func (c *Cache) syncResultFactsLocked(seeds ...*sharedResult) {
-	rows := map[*sharedResult]bool{}
-	queue := slices.Clone(seeds)
-	var groups [][]ResultFact
-	incomplete := false
-	for len(queue) != 0 {
-		row := queue[len(queue)-1]
-		queue = queue[:len(queue)-1]
-		if row == nil || rows[row] {
-			continue
-		}
-		rows[row] = true
-		if row.hasOwnValueLocked() {
-			groups = append(groups, row.resultFacts)
-			incomplete = incomplete || row.resultFactsIncomplete
-		}
-		for class := range c.outputEqClassRootsLocked(row.id) {
-			for id := range c.outputEqClassResults[class] {
-				if peer := c.resultsByID[id]; peer != nil && !rows[peer] {
-					queue = append(queue, peer)
-				}
-			}
-		}
-	}
-	facts := unionResultFacts(groups...)
-	for row := range rows {
-		if row.hasOwnValueLocked() {
-			c.setResultFactsLocked(row, facts, incomplete)
-		}
-	}
-	for row := range rows {
-		// DerefValue normally keeps the outer row. Its nullable AnyResult
-		// branch instead returns an existing inner row and has no context in
-		// which to find this cache. Give that inner row the outer facts while
-		// storing them, before a later dereference can expose its ID.
-		state := row.loadPayloadState()
-		if inner, valid := derefTyped(state.self); valid {
-			if result, ok := inner.(AnyResult); ok {
-				c.inheritResultFactsLocked(row, result.cacheSharedResult())
-			}
-		}
-	}
-}
-
-func (c *Cache) inheritResultFactsLocked(parent, child *sharedResult) {
-	if parent == nil || child == nil || parent == child || (child.id != 0 && c.resultsByID[child.id] != child) {
-		return
-	}
-	facts := unionResultFacts(child.resultFacts, parent.resultFacts)
-	incomplete := child.resultFactsIncomplete || parent.resultFactsIncomplete
-	if resultFactsEqual(child.resultFacts, facts) && child.resultFactsIncomplete == incomplete {
-		return
-	}
-	c.setResultFactsLocked(child, facts, incomplete)
-	c.syncResultFactsLocked(child)
-}
-
-// inheritResultFacts is a trusted value-conversion operation. It adds no
-// execution dependency or value equivalence between the parent and child.
-func (c *Cache) inheritResultFacts(parent, child *sharedResult) {
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
-	if parent == nil || (parent.id != 0 && c.resultsByID[parent.id] != parent) {
-		return
-	}
-	c.inheritResultFactsLocked(parent, child)
-}
-
 // applyRequestFactsLocked runs in publication's graph critical section, or
 // before returning an existing value. Facts were prepared before execution.
 func (c *Cache) applyRequestFactsLocked(req *CallRequest, row *sharedResult) {
@@ -196,11 +126,10 @@ func (c *Cache) applyRequestFactsLocked(req *CallRequest, row *sharedResult) {
 		return
 	}
 	c.setResultFactsLocked(row, unionResultFacts(row.resultFacts, req.ResultFacts), row.resultFactsIncomplete || req.ResultFactsIncomplete)
-	c.syncResultFactsLocked(row)
 }
 
 // requestFactsSatisfiedLocked needs only the graph read lock. Repeat facts
-// do not change the row or its already-synchronized equivalent values.
+// do not change the row.
 func requestFactsSatisfiedLocked(req *CallRequest, row *sharedResult) bool {
 	if req == nil || row == nil {
 		return true
@@ -219,7 +148,7 @@ func requestFactsSatisfiedLocked(req *CallRequest, row *sharedResult) bool {
 }
 
 // ResultFacts reads facts without evaluating a value. complete reports coverage
-// of all origins, independently of whether this namespace has any records.
+// of this producer, independently of whether this namespace has any records.
 func (c *Cache) ResultFacts(ctx context.Context, sessionID string, ref *ResultCallRef, namespace string) ([]ResultFact, bool, error) {
 	if ref == nil {
 		return nil, false, fmt.Errorf("result facts: nil reference")

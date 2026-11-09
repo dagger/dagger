@@ -299,6 +299,11 @@ func validateTransferEnvelope(env PersistedResultEnvelope, typ *ResultCallType, 
 // one case per envelope kind.
 func validateTransferEnvelopeKind(env PersistedResultEnvelope, typ *ResultCallType, root bool) error {
 	switch env.Kind {
+	case persistedResultKindAlias:
+		if !root || env.ValueResultID == 0 || env.ValueResultID == env.ResultID || env.TypeName != "" || env.ObjectCodec != "" || len(env.Items) != 0 || len(env.ObjectJSON) != 0 || len(env.ScalarJSON) != 0 {
+			return fmt.Errorf("invalid call result reference")
+		}
+
 	case persistedResultKindNull:
 		if typ.NonNull {
 			return fmt.Errorf("null under non-null type")
@@ -339,13 +344,18 @@ func validateTransferEnvelopeStructure(env PersistedResultEnvelope, root bool) e
 	if err := validateResultFacts(env, root); err != nil {
 		return err
 	}
-	if env.Version != persistedResultEnvelopeVersion {
+	if env.Version != persistedResultEnvelopeVersion && env.Version != 5 {
 		return fmt.Errorf("unsupported envelope version %d", env.Version)
 	}
 	if !root && (env.Imported || len(env.PendingOffers) != 0) {
 		return fmt.Errorf("root metadata on inline value")
 	}
 	switch env.Kind {
+	case persistedResultKindAlias:
+		if !root || env.ValueResultID == 0 || env.ValueResultID == env.ResultID || len(env.Items) != 0 || len(env.ObjectJSON) != 0 || len(env.ScalarJSON) != 0 {
+			return fmt.Errorf("invalid call result reference")
+		}
+
 	case persistedResultKindNull, persistedResultKindScalar:
 		if len(env.Items) != 0 || len(env.ObjectJSON) != 0 {
 			return fmt.Errorf("%s kind carries a body", env.Kind)

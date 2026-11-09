@@ -638,11 +638,11 @@ func (mod *Module) objectTypeDefResultByName(name string) (dagql.ObjectResult[*T
 }
 
 func (mod *Module) mainObjectTypeDefResult() (dagql.ObjectResult[*TypeDef], bool) {
-	name := mod.OriginalName
-	if name == "" {
-		name = mod.NameField
+	main, ok := mod.MainObject()
+	if !ok {
+		return dagql.ObjectResult[*TypeDef]{}, false
 	}
-	return mod.objectTypeDefResultByOriginalName(name)
+	return mod.objectTypeDefResultByName(main.Name)
 }
 
 func (mod *Module) customizationTarget(path []string) (dagql.ObjectResult[*TypeDef], dagql.ObjectResult[*Function], bool) {

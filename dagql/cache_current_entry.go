@@ -157,6 +157,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.storeResultCall(fresh.loadResultCall())
 
 	cur.payloadMu.Lock()
+	cur.valueSource = fresh.valueSource
 	cur.self = fresh.self
 	cur.isObject = fresh.isObject
 	cur.objClass = fresh.objClass
@@ -175,7 +176,6 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	// Facts belong to this value generation. Recomputing an expired value
 	// replaces its old paths and coverage before joining current equivalents.
 	c.setResultFactsLocked(cur, fresh.resultFacts, fresh.resultFactsIncomplete)
-	c.syncResultFactsLocked(cur)
 
 	if edge, retained := c.persistedEdgesByResult[cur.id]; retained && !edge.unpruneable {
 		edge.expiresAtUnix = retentionExpiresAtUnix

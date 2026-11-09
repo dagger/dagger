@@ -75,15 +75,13 @@ Git dirty-state Boolean, belongs in DagQL caching, not a second validation layer
 inside path filtering.
 
 DagQL can reuse equal File or Directory contents from different source paths.
-The engine must preserve those origins when it reuses values. Origins must stay
-with the value through collection, persistence, and transfer. Losing an origin
-must never cause a false exclusion.
+Equal contents do not mean equal source dependencies. Keep source facts on the
+call result, while sharing the cached contents. An empty Git directory must not
+add a Git dependency to every other empty directory.
 
-Store source-origin facts with cached values. These facts include the queries
-made by the calls that prepared the inputs; they do not require a previous
-check run. Calls that reuse a cached result retain its facts. They do not change
-execution cache keys. Combine origins when the engine shares a value across
-producers. This can give a wider dependency set than one producer alone.
+A cache hit retains that call's recorded reads and adds its current input
+origins. Preserve those facts through IDs, collection, persistence, and transfer.
+They do not change execution cache keys or require a previous check run.
 
 Older values without complete origin data remain conservative and report the
 missing coverage. A new fact cannot prove that all older origins are known.
