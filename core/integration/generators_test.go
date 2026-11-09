@@ -1125,6 +1125,45 @@ func (GeneratorsSuite) TestSDKScopeGenerationRepairsLocalDependency(ctx context.
 	require.Contains(t, parseSchemaContents(t, clientSchema).typeNames(), "Query")
 }
 
+// TestSDKScopeGenerationReusesLocalSDK checks that generate scopes share one
+// local SDK module until a scope changes the module's files. Scopes run as ".",
+// "nested", "other": nested writes through the symlinked SDK root, so other must
+// load the SDK again and see that file.
+func (GeneratorsSuite) TestSDKScopeGenerationReusesLocalSDK(ctx context.Context, t *testctx.T) {
+	fixture, err := filepath.Abs("testdata/workspaces/sdk-scope-generation")
+	require.NoError(t, err)
+	workdir := t.TempDir()
+	require.NoError(t, fs.CopyDir(workdir, fixture))
+	config, err := os.ReadFile(filepath.Join(workdir, "dagger.toml"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), append(config, "\n[sdks.test.scopes.other]\nis-module = true\nname = \"other\"\n"...), 0o644))
+	sdkDir := filepath.Join(workdir, ".dagger/modules/scope-sdk")
+	require.NoError(t, os.Rename(sdkDir, sdkDir+"-impl"))
+	require.NoError(t, os.Symlink("scope-sdk-impl", sdkDir))
+	sdkCode, err := os.ReadFile(filepath.Join(sdkDir, "main.dang"))
+	require.NoError(t, err)
+	// The context directory is the workspace the SDK module was loaded from.
+	patched := strings.Replace(string(sdkCode), "ws\n        .withNewFile(", `ws
+        .withNewFile("sdk-context.txt", currentModule.contextDirectory.digest)
+        .withNewFile("saw-marker.txt", JSON.encode(currentModule.source.exists("marker.txt")))
+        .withNewFile(if (name == "nested") { "/.dagger/modules/scope-sdk-impl/marker.txt" } else { "unused.txt" }, name)
+        .withNewFile(`, 1)
+	require.NotEqual(t, string(sdkCode), patched)
+	require.NoError(t, os.WriteFile(filepath.Join(sdkDir, "main.dang"), []byte(patched), 0o644))
+	initGitRepo(ctx, t, workdir)
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+	layer := core.NewQuery(c).CurrentWorkspace().SDK("test").Generate().Layer()
+	read := func(path string) string {
+		contents, err := layer.File(path).Contents(ctx)
+		require.NoError(t, err)
+		return contents
+	}
+	require.Equal(t, read("sdk-context.txt"), read("nested/sdk-context.txt"))
+	require.Equal(t, "false", read("nested/saw-marker.txt"))
+	require.Equal(t, "true", read("other/saw-marker.txt"))
+}
+
 // TestWorkspaceListsSyntheticGeneratorWithoutLoadingSDK proves that generator
 // discovery uses only workspace configuration. The SDK can be temporarily
 // invalid because generation can be the operation that repairs it.
