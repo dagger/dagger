@@ -19,12 +19,16 @@ func TestGitIgnoreRuleOverrides(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("old.txt\n.venv/\n"), 0o600))
 	require.NoError(t, os.Mkdir(filepath.Join(root, "nested"), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "nested", ".gitignore"), []byte("old.txt\n"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".venv", "lib"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".venv", "lib", "keep"), nil, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".venv", "lib", "drop"), nil, 0o600))
 	fs, err := fsutil.NewFS(root)
 	require.NoError(t, err)
 	matcher := NewGitIgnoreMatcherWithOverrides(fs, map[string]string{
-		".gitignore":         ".venv/\nnew.txt\n",
-		"nested/.gitignore":  "",
-		"created/.gitignore": "secret.txt\n",
+		".gitignore":           ".venv/\nnew.txt\n",
+		"nested/.gitignore":    "",
+		"created/.gitignore":   "secret.txt\n",
+		".venv/lib/.gitignore": "!keep\n",
 	})
 	for file, want := range map[string]bool{
 		"old.txt":            false,
@@ -33,11 +37,19 @@ func TestGitIgnoreRuleOverrides(t *testing.T) {
 		"nested/old.txt":     false,
 		"nested/new.txt":     true,
 		"created/secret.txt": true,
+		".venv/lib/keep":     false,
+		".venv/lib/drop":     true,
 	} {
 		ignored, err := matcher.Matches(file, false)
 		require.NoError(t, err)
 		require.Equal(t, want, ignored, file)
 	}
+
+	gfs, err := NewGitIgnoreMarkedFS(fs, matcher)
+	require.NoError(t, err)
+	got := collectWalk(t, gfs)
+	require.Equal(t, walkEntry{kind: "file", ignored: false}, got[".venv/lib/keep"])
+	require.Equal(t, walkEntry{kind: "file", ignored: true}, got[".venv/lib/drop"])
 }
 
 type walkEntry struct {
@@ -89,6 +101,8 @@ func TestGitIgnoreBasic(t *testing.T) {
 		`ADD bar.log file`,
 		`ADD temp dir`,
 		`ADD temp/nested.txt file`,
+		`ADD zzz dir`,
+		`ADD zzz/after.txt file`,
 	}))
 	require.NoError(t, err)
 	defer os.RemoveAll(d)
@@ -101,13 +115,44 @@ func TestGitIgnoreBasic(t *testing.T) {
 
 	got := collectWalk(t, gfs)
 	expected := map[string]walkEntry{
-		".gitignore":      {kind: "file", ignored: false},
-		"foo.txt":         {kind: "file", ignored: false},
-		"bar.log":         {kind: "file", ignored: true},
-		"temp":            {kind: "dir", ignored: true},
-		"temp/nested.txt": {kind: "file", ignored: true},
+		".gitignore":    {kind: "file", ignored: false},
+		"foo.txt":       {kind: "file", ignored: false},
+		"bar.log":       {kind: "file", ignored: true},
+		"temp":          {kind: "dir", ignored: true},
+		"zzz":           {kind: "dir", ignored: false},
+		"zzz/after.txt": {kind: "file", ignored: false},
 	}
 	assert.Equal(t, expected, got)
+}
+
+func TestGitIgnoreSkipThroughFilterFS(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		`ADD .gitignore file "temp/"`,
+		`ADD temp dir`,
+		`ADD temp/nested.txt file`,
+		`ADD temp/other.txt file`,
+		`ADD zzz dir`,
+		`ADD zzz/after.txt file`,
+	}))
+	require.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	fs, err := fsutil.NewFS(d)
+	require.NoError(t, err)
+	// The exception makes FilterFS hold temp back and report it only once it
+	// reaches temp/nested.txt.
+	filtered, err := fsutil.NewFilterFS(fs, &fsutil.FilterOpt{ExcludePatterns: []string{"temp", "!temp/nested.txt"}})
+	require.NoError(t, err)
+	gfs, err := NewGitIgnoreMarkedFS(filtered, NewGitIgnoreMatcher(fs))
+	require.NoError(t, err)
+
+	expected := map[string]walkEntry{
+		".gitignore":    {kind: "file", ignored: false},
+		"temp":          {kind: "dir", ignored: true},
+		"zzz":           {kind: "dir", ignored: false},
+		"zzz/after.txt": {kind: "file", ignored: false},
+	}
+	assert.Equal(t, expected, collectWalk(t, gfs))
 }
 
 func TestGitIgnoreNestedGitIgnore(t *testing.T) {
@@ -147,6 +192,11 @@ func TestGitIgnoreDirectoryOnly(t *testing.T) {
 		`ADD .gitignore file "build/\n*.tmp"`,
 		`ADD build dir`,
 		`ADD build/output.txt file`,
+		// git never reads a .gitignore beneath an ignored directory, so this
+		// "!keep.txt" cannot re-include build/sub/keep.txt.
+		`ADD build/sub dir`,
+		`ADD build/sub/.gitignore file "!keep.txt"`,
+		`ADD build/sub/keep.txt file`,
 		`ADD build.tmp file`,
 		`ADD buildfile file`,
 	}))
@@ -161,11 +211,10 @@ func TestGitIgnoreDirectoryOnly(t *testing.T) {
 
 	got := collectWalk(t, gfs)
 	expected := map[string]walkEntry{
-		".gitignore":       {kind: "file", ignored: false},
-		"build":            {kind: "dir", ignored: true},
-		"build/output.txt": {kind: "file", ignored: true},
-		"build.tmp":        {kind: "file", ignored: true},
-		"buildfile":        {kind: "file", ignored: false},
+		".gitignore": {kind: "file", ignored: false},
+		"build":      {kind: "dir", ignored: true},
+		"build.tmp":  {kind: "file", ignored: true},
+		"buildfile":  {kind: "file", ignored: false},
 	}
 	assert.Equal(t, expected, got)
 }
@@ -227,17 +276,15 @@ func TestGitIgnoreDoublestar(t *testing.T) {
 
 	got := collectWalk(t, gfs)
 	expected := map[string]walkEntry{
-		".gitignore":               {kind: "file", ignored: false},
-		"node_modules":             {kind: "dir", ignored: true},
-		"node_modules/react":       {kind: "file", ignored: true},
-		"project":                  {kind: "dir", ignored: false},
-		"project/node_modules":     {kind: "dir", ignored: true},
-		"project/node_modules/vue": {kind: "file", ignored: true},
-		"script.py":                {kind: "file", ignored: false},
-		"script.pyc":               {kind: "file", ignored: true},
-		"deep":                     {kind: "dir", ignored: false},
-		"deep/nested":              {kind: "dir", ignored: false},
-		"deep/nested/file.pyc":     {kind: "file", ignored: true},
+		".gitignore":           {kind: "file", ignored: false},
+		"node_modules":         {kind: "dir", ignored: true},
+		"project":              {kind: "dir", ignored: false},
+		"project/node_modules": {kind: "dir", ignored: true},
+		"script.py":            {kind: "file", ignored: false},
+		"script.pyc":           {kind: "file", ignored: true},
+		"deep":                 {kind: "dir", ignored: false},
+		"deep/nested":          {kind: "dir", ignored: false},
+		"deep/nested/file.pyc": {kind: "file", ignored: true},
 	}
 	assert.Equal(t, expected, got)
 }
@@ -302,10 +349,9 @@ func TestGitIgnoreTrailingSlash(t *testing.T) {
 
 	got := collectWalk(t, gfs)
 	expected := map[string]walkEntry{
-		".gitignore":         {kind: "file", ignored: false},
-		"build-foo":          {kind: "dir", ignored: true},
-		"build-foo/file.txt": {kind: "file", ignored: true},
-		"build-bar":          {kind: "file", ignored: false},
+		".gitignore": {kind: "file", ignored: false},
+		"build-foo":  {kind: "dir", ignored: true},
+		"build-bar":  {kind: "file", ignored: false},
 	}
 	assert.Equal(t, expected, got)
 }
@@ -458,15 +504,14 @@ func TestGitIgnoreEdgeCasePatterns(t *testing.T) {
 
 	got := collectWalk(t, gfs)
 	expected := map[string]walkEntry{
-		".gitignore":                  {kind: "file", ignored: false},
-		"file1.txt":                   {kind: "file", ignored: true},
-		"file2.txt":                   {kind: "file", ignored: true},
-		"file4.txt":                   {kind: "file", ignored: false},
-		"test.log":                    {kind: "file", ignored: true},
-		"special*file.txt":            {kind: "file", ignored: true},
-		"dir with spaces":             {kind: "dir", ignored: true},
-		"dir with spaces/content.txt": {kind: "file", ignored: true},
-		"normal.txt":                  {kind: "file", ignored: false},
+		".gitignore":       {kind: "file", ignored: false},
+		"file1.txt":        {kind: "file", ignored: true},
+		"file2.txt":        {kind: "file", ignored: true},
+		"file4.txt":        {kind: "file", ignored: false},
+		"test.log":         {kind: "file", ignored: true},
+		"special*file.txt": {kind: "file", ignored: true},
+		"dir with spaces":  {kind: "dir", ignored: true},
+		"normal.txt":       {kind: "file", ignored: false},
 	}
 	assert.Equal(t, expected, got)
 }
