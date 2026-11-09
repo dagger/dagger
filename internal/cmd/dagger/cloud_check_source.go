@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -18,6 +19,7 @@ type cloudCheckProvider string
 
 const (
 	cloudCheckGitHub cloudCheckProvider = "GitHub"
+	cloudCheckGitLab cloudCheckProvider = "GitLab"
 	cloudCheckEntire cloudCheckProvider = "Entire"
 )
 
@@ -28,9 +30,9 @@ const featureCloudEntireForge cloudFeature = "CLOUD_ENTIRE_FORGE"
 const entireRepoSegments = 3
 
 // cloudCheckRepo returns the provider of a repository and the key Cloud
-// stores it under: "github.com/<owner>/<name>" for GitHub, and
-// "entire.com/<forge>/<owner>/<name>" for Entire. Entire repositories are
-// named by their entire:// clone URL or their entire.com web address.
+// stores it under. GitLab keeps its server and complete namespace; GitHub uses
+// "github.com/<owner>/<name>" and Entire "entire.com/<forge>/<owner>/<name>".
+// Entire repositories use their entire:// clone URL or entire.com web address.
 func cloudCheckRepo(ref string) (cloudCheckProvider, string, error) {
 	ref = strings.TrimSpace(ref)
 	var path string
@@ -41,7 +43,20 @@ func cloudCheckRepo(ref string) (cloudCheckProvider, string, error) {
 		web := strings.TrimPrefix(strings.TrimPrefix(ref, "https://"), "http://")
 		var ok bool
 		if path, ok = strings.CutPrefix(web, "entire.com/"); !ok {
-			return cloudCheckGitHub, "github.com/" + normalizeGitHubRepo(ref), nil
+			key := normalizeRepository(ref)
+			host, path, valid := strings.Cut(key, "/")
+			if !valid || path == "" {
+				return "", "", fmt.Errorf("invalid Cloud repository %q", ref)
+			}
+			switch host {
+			case "github.com":
+				return cloudCheckGitHub, "github.com/" + normalizeGitHubRepo(ref), nil
+			case "gitlab.com":
+				return cloudCheckGitLab, key, nil
+			default:
+				// Cloud's saved source identifies a configured server's provider.
+				return "", key, nil
+			}
 		}
 	}
 	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
@@ -131,6 +146,8 @@ func setWorkspaceAutocheckState(cmd *cobra.Command, remote workspaceRemoteAddres
 		switch current.Provider {
 		case cloudCheckEntire:
 			err = findEntireCheckSource(cmd, client, &current)
+		case cloudCheckGitLab, "":
+			err = findGitLabCheckSource(cmd, client, &current)
 		default:
 			err = findGitHubCheckSource(cmd, client, &current)
 		}
@@ -198,6 +215,75 @@ func findGitHubCheckSource(cmd *cobra.Command, client *cloudapi.Client, state *w
 	state.OrgID, state.OrgName = org.ID, org.Name
 	state.InstallationID, state.ConfigURL = source.ID, source.ConfigURL
 	return nil
+}
+
+// A personal connection does not grant an organization access. Only use the
+// namespaces already granted to the selected organization, including tokens
+// supplied by another admin. Repository selection uses the same API as Sources.
+func findGitLabCheckSource(cmd *cobra.Command, client *cloudapi.Client, state *workspaceAutocheckState) error {
+	ctx := cmd.Context()
+	org, err := currentCloudOrg(ctx, client)
+	if err != nil {
+		return err
+	}
+	if err := ensureCloudCheckFeatures(cmd, client, cloudCheckGitLab, org.Name); err != nil {
+		return err
+	}
+	settings, err := gitLabIntegrationURL(org.Name)
+	if err != nil {
+		return err
+	}
+	state.OrgID, state.OrgName, state.ConfigURL = org.ID, org.Name, settings
+	sources, err := client.GitLabOrganizationSources(ctx, org.ID)
+	if err != nil {
+		return fmt.Errorf("lookup GitLab access for organization %q: %w", org.Name, err)
+	}
+	for _, source := range sources {
+		prefix := normalizeRepository(source.InstanceURL + "/" + source.NamespacePath)
+		name, matches := strings.CutPrefix(state.Repo, prefix+"/")
+		if !matches || name == "" || strings.Contains(name, "/") {
+			continue
+		}
+		state.Provider = cloudCheckGitLab
+		repositories, err := client.SourceRepositories(ctx, source.ID, org.ID)
+		if err != nil {
+			return fmt.Errorf("lookup repositories of GitLab namespace %q: %w", source.NamespacePath, err)
+		}
+		for _, repository := range repositories {
+			if !sameCloudRepository(repository.Repository, state.Repo) {
+				continue
+			}
+			if !repository.Eligible {
+				return fmt.Errorf("%s is already enabled through another Cloud source or organization", state.Repo)
+			}
+			state.Repo, state.InstallationID = repository.Repository, source.ID
+			return nil
+		}
+	}
+	return &repoAccessError{provider: cloudCheckGitLab, settingsURL: settings}
+}
+
+// GitLab approval is handled by the existing Cloud UI. The CLI never receives
+// provider credentials. Preview and local APIs use their matching frontend.
+func gitLabIntegrationURL(org string) (string, error) {
+	base := os.Getenv("DAGGER_CLOUD_EXTERNAL_URL")
+	if base == "" {
+		base = "https://dagger.cloud"
+		api, err := url.Parse(os.Getenv("DAGGER_CLOUD_URL"))
+		if err == nil {
+			if prefix, ok := strings.CutSuffix(api.Hostname(), "-api.preview.dagger.cloud"); ok {
+				base = "https://" + prefix + "-v3.preview.dagger.cloud"
+			} else if api.Hostname() == "localhost" || api.Hostname() == "127.0.0.1" {
+				base = "http://localhost:3000"
+			}
+		}
+	}
+	u, err := url.Parse(base)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("DAGGER_CLOUD_EXTERNAL_URL must be a Cloud web address")
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/" + url.PathEscape(org) + "/integrations/gitlab"
+	return u.String(), nil
 }
 
 // findEntireCheckSource locates the Entire installation of the current
@@ -271,6 +357,9 @@ func ensureCloudCheckFeatures(cmd *cobra.Command, client *cloudapi.Client, provi
 	features := commandCloudFeatures(cmd)
 	if provider == cloudCheckEntire {
 		features = append(features, featureCloudEntireForge)
+	}
+	if provider == cloudCheckGitLab {
+		features = append(features, cloudFeature("CLOUD_GITLAB"))
 	}
 	if orgName == "" {
 		return nil
@@ -362,6 +451,10 @@ func installationSettingsURL(state workspaceAutocheckState) string {
 	if state.ConfigURL != "" {
 		return state.ConfigURL
 	}
+	if state.Provider == cloudCheckGitLab {
+		settings, _ := gitLabIntegrationURL(state.OrgName)
+		return settings
+	}
 	return "https://github.com/settings/installations/" + state.InstallationID
 }
 
@@ -414,6 +507,9 @@ func findWorkspaceAutocheckState(ctx context.Context, client *cloudapi.Client, r
 	state.Repo = repository.Ref
 	state.Enabled = true
 	mapped := repository.MappedSource
+	if mapped.Provider == "GITLAB" {
+		state.Provider = cloudCheckGitLab
+	}
 	state.InstallationID, state.ConfigURL = mapped.InstallationID, mapped.ConfigURL
 	state.OrgID, state.OrgName = mapped.Org.ID, mapped.Org.Name
 	if settings := repository.Settings; settings != nil {
@@ -429,7 +525,7 @@ func findWorkspaceAutocheckState(ctx context.Context, client *cloudapi.Client, r
 func workspaceRepositoryForRef(repositories []cloudapi.Repository, provider cloudCheckProvider, repo string) (cloudapi.Repository, bool) {
 	for _, repository := range repositories {
 		ref := strings.TrimPrefix(strings.TrimPrefix(repository.Ref, "https://"), "http://")
-		if provider == cloudCheckEntire && ref == repo {
+		if provider != cloudCheckGitHub && sameCloudRepository(ref, repo) {
 			return repository, true
 		}
 		if provider == cloudCheckGitHub && strings.EqualFold(normalizeGitHubRepo(ref), normalizeGitHubRepo(repo)) {
