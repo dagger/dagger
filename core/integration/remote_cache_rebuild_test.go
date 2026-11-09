@@ -43,7 +43,7 @@ func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func
 		client           *dagger.Client
 	}
 	start := func(state string, volume *core.CacheVolume) *running {
-		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *core.Container) *core.Container {
+		ctr := devEngineContainerWithStateKey(outer, state, withoutImageEntries, func(ctr *core.Container) *core.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
 		e := &running{upstream: devEngineContainerAsService(ctr)}

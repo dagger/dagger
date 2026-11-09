@@ -69,36 +69,42 @@ func Syncer[T dagql.Typed]() dagql.Field[T] {
 	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {
 		Recipe bool `default:"false" internal:"true"`
 	}) (res dagql.Result[dagql.ID[T]], _ error) {
-		if _, ok := dagql.UnwrapAs[dagql.HasLazyEvaluation](self); ok {
-			cache, err := dagql.EngineCache(ctx)
-			if err != nil {
-				return res, err
-			}
-			if err := cache.Evaluate(ctx, self); err != nil {
-				return res, err
-			}
-		} else {
-			syncable, ok := dagql.UnwrapAs[core.Syncable](self)
-			if !ok {
-				return res, fmt.Errorf("internal error: %T does not support sync", self.Self())
-			}
-			if err := syncable.Sync(ctx); err != nil {
-				return res, err
-			}
-		}
-		var selfID *call.ID
-		var err error
-		if args.Recipe {
-			selfID, err = self.RecipeID(ctx)
-		} else {
-			selfID, err = self.ID()
-		}
-		if err != nil {
+		if err := syncEvaluate(ctx, self); err != nil {
 			return res, err
 		}
-		id := dagql.NewID[T](selfID)
-		return dagql.NewResultForCurrentCall(ctx, id)
-	}).DoNotCache("sync is an operational boundary and each object already controls its own underlying lazy/cached state")
+		return syncedID(ctx, self, args.Recipe)
+	}).DoNotCache(syncDoNotCacheReason)
+}
+
+const syncDoNotCacheReason = "sync is an operational boundary and each object already controls its own underlying lazy/cached state"
+
+func syncEvaluate[T dagql.Typed](ctx context.Context, self dagql.ObjectResult[T]) error {
+	if _, ok := dagql.UnwrapAs[dagql.HasLazyEvaluation](self); ok {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		return cache.Sync(ctx, self)
+	}
+	syncable, ok := dagql.UnwrapAs[core.Syncable](self)
+	if !ok {
+		return fmt.Errorf("internal error: %T does not support sync", self.Self())
+	}
+	return syncable.Sync(ctx)
+}
+
+func syncedID[T dagql.Typed](ctx context.Context, self dagql.ObjectResult[T], recipe bool) (res dagql.Result[dagql.ID[T]], _ error) {
+	var selfID *call.ID
+	var err error
+	if recipe {
+		selfID, err = self.RecipeID(ctx)
+	} else {
+		selfID, err = self.ID()
+	}
+	if err != nil {
+		return res, err
+	}
+	return dagql.NewResultForCurrentCall(ctx, dagql.NewID[T](selfID))
 }
 
 func collectInputsSlice[T dagql.Type](inputs []dagql.InputObject[T]) []T {

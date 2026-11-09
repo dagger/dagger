@@ -97,9 +97,9 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 		require.NoError(t, adapter.Stop(boundedContext(t)), "stop is idempotent")
 		_, err := adapter.OfferParts(t.Context(), protocol.Offer{Items: []protocol.OfferItem{{Number: 1, Offers: []protocol.CloudPart{{Offer: renewalOnlyOffer(), CloudNumber: 1}}}}})
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
-		_, err = adapter.Merge(t.Context(), protocol.Merge{})
+		_, err = adapter.Merge(t.Context(), 1, protocol.Merge{}, nil)
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
-		err = adapter.Export(t.Context(), protocol.Export{Roots: []uint64{1}}, func(context.Context, remotecache.Export) error {
+		err = adapter.Export(t.Context(), protocol.Export{Roots: []uint64{1}}, nil, func(context.Context, remotecache.Export) error {
 			t.Fatal("a stopped adapter exports nothing")
 			return nil
 		})
@@ -107,8 +107,10 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 		_, err = adapter.TakeRenewalRequest(t.Context())
 		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
 		require.Equal(t, dagql.RenewalReplyDiscarded, adapter.ReplyRenewal(dagql.RenewalReply{Unavailable: true}))
+		_, _, err = adapter.TakeLookupMisses(t.Context(), 32, 0)
+		require.ErrorIs(t, err, ErrRemoteCacheAdapterClosed)
 	})
-	t.Run("shutdown context cancels run", func(t *testing.T) {
+	t.Run("the stop, not its start, cancels run", func(t *testing.T) {
 		cache := newGCTestCache(t)
 		ctx, shutdown := context.WithCancelCause(t.Context())
 		srv := &Server{engineCache: cache, shutdownCtx: ctx, shutdownCancel: shutdown}
@@ -117,9 +119,15 @@ func TestRemoteCacheAdapterLifetime(t *testing.T) {
 			return context.Cause(ctx)
 		}}))
 		srv.BeginGracefulStop()
+		select {
+		case <-srv.remoteCacheAdapter.runDone:
+			t.Fatal("run ended when the graceful stop began")
+		case <-time.After(100 * time.Millisecond):
+		}
+		require.True(t, bridgeAttached(cache))
+		require.NoError(t, srv.stopRemoteCacheIntegration(boundedContext(t)))
 		within(t, srv.remoteCacheAdapter.runDone)
 		require.False(t, bridgeAttached(cache))
-		require.NoError(t, srv.stopRemoteCacheIntegration(boundedContext(t)))
 	})
 	t.Run("run exit detaches without failing ordinary work", func(t *testing.T) {
 		cache := newGCTestCache(t)
@@ -250,4 +258,128 @@ func TestRemoteCacheGracefulStop(t *testing.T) {
 		require.NoError(t, srv.GracefulStop(boundedContext(t)))
 		require.Equal(t, dagql.CachePersistenceResetNone, reopen(t, path))
 	})
+}
+
+// slowExport starts srv's integration with a Run that asks for one export and
+// holds it in progress, as a slow upload does, until release closes or its
+// context ends. It returns once the export is in progress, with the export's
+// result to come.
+func slowExport(t *testing.T, srv *Server, release <-chan struct{}) <-chan error {
+	t.Helper()
+	started, exported := make(chan struct{}), make(chan error, 1)
+	require.NoError(t, srv.startRemoteCacheIntegration(&RemoteCacheIntegrationConfig{Run: func(ctx context.Context, a *RemoteCacheAdapter) error {
+		exported <- a.Export(ctx, protocol.Export{Roots: []uint64{goneNumber}}, nil, func(ctx context.Context, _ remotecache.Export) error {
+			close(started)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return context.Cause(ctx)
+			}
+		})
+		<-ctx.Done()
+		return nil
+	}}))
+	within(t, started)
+	return exported
+}
+
+// An export in progress when the engine begins its graceful stop finishes:
+// the stop's start doesn't cancel it, and the stop waits for it.
+func TestRemoteCacheGracefulStopLetsExportsFinish(t *testing.T) {
+	t.Parallel()
+	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	release := make(chan struct{})
+	exported := slowExport(t, srv, release)
+
+	srv.BeginGracefulStop()
+	stopped := make(chan error, 1)
+	// A stop without a deadline gives the export as long as it takes.
+	go func() { stopped <- srv.GracefulStop(t.Context()) }()
+	select {
+	case err := <-exported:
+		t.Fatalf("the export ended when the stop began: %v", err)
+	case err := <-stopped:
+		t.Fatalf("the stop ended with the export in progress: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	require.NoError(t, <-exported)
+	select {
+	case err := <-stopped:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the stop")
+	}
+}
+
+// An export that doesn't finish gets until the stop's deadline less the
+// reserve, and is then canceled; the stop still ends cleanly before its
+// deadline.
+func TestRemoteCacheGracefulStopCutsOffExportsAtTheReserve(t *testing.T) {
+	t.Parallel()
+	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	exported := slowExport(t, srv, nil)
+	srv.remoteCacheAdapter.stopReserve = time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+
+	srv.BeginGracefulStop()
+	stopped := make(chan error, 1)
+	go func() { stopped <- srv.GracefulStop(ctx) }()
+	// The export lives until the cutoff, a second before the deadline.
+	select {
+	case err := <-exported:
+		t.Fatalf("the export ended before the cutoff: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+	require.ErrorIs(t, <-exported, errServerShuttingDown)
+	require.NoError(t, <-stopped)
+	require.True(t, time.Now().Before(deadline), "the stop ended past its deadline")
+}
+
+// Closing waits for an operation that begins while it waits, and refuses
+// any that begins after it saw none running: an export can't slip in as the
+// last one ends and then be canceled with drain time left.
+func TestInProgressCloseWhenIdle(t *testing.T) {
+	t.Parallel()
+	for range 200 {
+		var p inProgress
+		require.True(t, p.tryBegin())
+		closed := make(chan error, 1)
+		go func() { closed <- p.closeWhenIdle(t.Context()) }()
+		p.end()
+		if !p.tryBegin() {
+			// Closing saw none running first.
+			within(t, closed)
+			continue
+		}
+		select {
+		case <-closed:
+			t.Fatal("closed with an operation in progress")
+		case <-time.After(time.Millisecond):
+		}
+		p.end()
+		within(t, closed)
+		require.False(t, p.tryBegin())
+	}
+}
+
+// With no export in progress, the stop doesn't wait for its deadline.
+func TestRemoteCacheGracefulStopWithoutExportsIsPrompt(t *testing.T) {
+	t.Parallel()
+	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	require.NoError(t, srv.startRemoteCacheIntegration(&RemoteCacheIntegrationConfig{Run: func(ctx context.Context, _ *RemoteCacheAdapter) error {
+		<-ctx.Done()
+		return nil
+	}}))
+	srv.remoteCacheAdapter.stopReserve = time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	start := time.Now()
+	srv.BeginGracefulStop()
+	require.NoError(t, srv.GracefulStop(ctx))
+	require.Less(t, time.Since(start), 10*time.Second)
 }

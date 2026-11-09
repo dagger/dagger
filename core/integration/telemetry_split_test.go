@@ -202,23 +202,23 @@ func (got telemetrySplitReceived) requireSpansFromOneWriter(t *testctx.T) {
 
 // telemetrySplitEngine is an engine container from ctr that serves on
 // tcp://:1234 and reaches the fake Cloud. It has no Cloud token of its own,
-// so it exports no engine cache events.
-func telemetrySplitEngine(c *dagger.Client, ctr *core.Container, cloud telemetrySplitCloud) *core.Container {
-	return telemetrySplitEngineWithoutCloud(c, cloud.bind(ctr))
+// so it exports no engine cache events. args are further engine arguments.
+func telemetrySplitEngine(c *dagger.Client, ctr *core.Container, cloud telemetrySplitCloud, args ...string) *core.Container {
+	return telemetrySplitEngineWithoutCloud(c, cloud.bind(ctr), args...)
 }
 
 // telemetrySplitEngineWithoutCloud is telemetrySplitEngine for an engine with
 // no route to the fake Cloud.
-func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *core.Container) *core.Container {
+func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *core.Container, args ...string) *core.Container {
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
 	return ctr.
 		WithMountedCache("/var/lib/dagger", core.NewQuery(c).CacheVolume("dagger-telemetry-split-state-"+rand.Text())).
 		WithExposedPort(1234, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
-		WithDefaultArgs([]string{
+		WithDefaultArgs(append([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--network-name", deviceName,
 			"--network-cidr", cidr,
-		})
+		}, args...))
 }
 
 func telemetrySplitEngineBase(c *dagger.Client, released bool) *core.Container {

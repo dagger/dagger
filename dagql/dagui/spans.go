@@ -331,6 +331,10 @@ type SpanSnapshot struct {
 	RollUpLogs   bool `json:",omitempty"`
 	RollUpSpans  bool `json:",omitempty"`
 
+	// FunctionPlumbing marks the work that runs a module function call
+	// without being its body (telemetryattrs.UIFunctionPlumbingAttr).
+	FunctionPlumbing bool `json:",omitempty"`
+
 	// Check status (see CheckName)
 	CheckPassed bool `json:",omitempty"`
 
@@ -554,6 +558,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.UIEncapsulateAttr:
 		snapshot.Encapsulate = val.(bool)
+
+	case telemetryattrs.UIFunctionPlumbingAttr:
+		snapshot.FunctionPlumbing = val.(bool)
 
 	case telemetry.UIEncapsulatedAttr:
 		snapshot.Encapsulated = val.(bool)

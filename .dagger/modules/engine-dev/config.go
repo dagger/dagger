@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 
+	"dagger.io/dagger/core"
 	"golang.org/x/exp/maps"
 
 	"dagger/engine-dev/consts"
@@ -120,7 +121,7 @@ func generateEntrypoint() (*dagger.File, error) {
 		return nil, err
 	}
 
-	entrypoint := dag.Directory().
+	entrypoint := core.NewDirectory().
 		WithNewFile("dagger-entrypoint.sh", buf.String(), dagger.DirectoryWithNewFileOpts{
 			Permissions: 0o755,
 		}).
@@ -151,7 +152,7 @@ func generateConfig(logLevel string) (*dagger.File, error) {
 	}
 
 	filename := filepath.Base(engineJSONPath)
-	config := dag.Directory().
+	config := core.NewDirectory().
 		WithNewFile(filename, string(res)).
 		File(filename)
 	return config, nil
@@ -185,7 +186,7 @@ func generateEngineTOML(kvs []string) (*dagger.File, error) {
 	}
 
 	filename := filepath.Base(engineTOMLPath)
-	config := dag.Directory().
+	config := core.NewDirectory().
 		WithNewFile(filename, buf.String()).
 		File(filename)
 	return config, nil

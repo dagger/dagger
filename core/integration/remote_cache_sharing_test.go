@@ -38,7 +38,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 		require.NoError(t, stopNestedEngine(ctx, &e.client, &e.upstream, &e.tunnel))
 	}
 	start := func(state string, volume *core.CacheVolume, workdir string) *running {
-		ctr := devEngineContainerWithStateKey(outer, state, func(ctr *core.Container) *core.Container {
+		ctr := devEngineContainerWithStateKey(outer, state, withoutImageEntries, func(ctr *core.Container) *core.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
 		ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)
@@ -140,8 +140,9 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Len(t, installedRow.SnapshotLinks, 1, "the receiver owns its own snapshot link")
 	require.Equal(t, donorRef, installedRow.SnapshotLinks[0].RefKey, "it is the donor's exact snapshot, owned independently")
 
-	// Restart B: ownership survives, and demanding the exact restored row
-	// installs, downloads, evaluates and settles nothing for that row.
+	// Restart B: ownership survives, and demanding the exact restored row is
+	// served from the snapshot it owns, as a restored local row is: nothing is
+	// installed, downloaded or computed again for it.
 	stop(b)
 	b = start(bState, bVolume, bDir)
 	var restored transferFixtureReport
@@ -161,14 +162,36 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 	require.Contains(t, restoredEntries, "notes.txt")
 	var afterRead transferFixtureReport
 	require.NoError(t, transferFixture(ctx, b.client, "report", "", []string{}, &afterRead))
-	// The demand's own task always records its row-level owner-sync; nothing
-	// else may name the row, and nothing may name one of its parts.
+	// The read may sync the row's owner leases and settle its snapshot part
+	// once, as a restored local row does. Installing it from a source,
+	// downloading it, or entering its operation again would each show here.
+	settled := 0
 	for _, event := range afterRead.Parts {
 		if event.ResultID != restoredRow.ResultID {
 			continue
 		}
 		t.Logf("restored read event for row=%d: %+v", restoredRow.ResultID, event)
-		require.Equal(t, "owner-sync", event.Kind, "a read of a restored owned snapshot needs no part operation: %+v", event)
-		require.Empty(t, event.Address.Part, "a read of a restored owned snapshot needs no part operation: %+v", event)
+		switch event.Kind {
+		case "owner-sync":
+			require.Empty(t, event.Address.Part, "owner leases sync for the whole row: %+v", event)
+		case "settled":
+			require.Equal(t, dagql.PartKey("snapshot"), event.Address.Part, "only the snapshot part settles: %+v", event)
+			settled++
+		default:
+			require.Failf(t, "a read of a restored owned snapshot installs, downloads or computes nothing", "%+v", event)
+		}
 	}
+	require.LessOrEqual(t, settled, 1, "the snapshot part settles at most once")
+	// It reads the snapshot it owns: the donor's exact snapshot, by the same
+	// link. Computing the directory again would make a new snapshot and
+	// replace the link.
+	var readRow *dagql.TransferFixtureRow
+	for i := range afterRead.Rows {
+		if afterRead.Rows[i].ResultID == restoredRow.ResultID {
+			readRow = &afterRead.Rows[i]
+		}
+	}
+	require.NotNil(t, readRow)
+	require.Len(t, readRow.SnapshotLinks, 1, "the read leaves the row owning one snapshot")
+	require.Equal(t, donorRef, readRow.SnapshotLinks[0].RefKey, "the read uses the snapshot the row owns")
 }

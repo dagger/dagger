@@ -2213,6 +2213,13 @@ export type FileSearchOpts = {
   globs?: string[]
 }
 
+export type FileSyncOpts = {
+  /**
+   * Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.
+   */
+  keyByContent?: boolean
+}
+
 export type FileWithReplacedOpts = {
   /**
    * Replace all occurrences of the pattern.
@@ -9269,6 +9276,19 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Retrieves this directory, declared as made for the given platform.
+   *
+   * Declare a result whose contents are the same whichever platform made them, such as a Go package compiled for a platform by any platform's Go toolchain. An engine of another platform that makes the same directory for the same platform then finds this one, and the other way around.
+   *
+   * The contents are not checked: a declared result that depends on the platform it was made on can be found where it doesn't belong.
+   * @param platform The platform the directory's contents are for (e.g., "linux/arm64").
+   */
+  withPlatform = (platform: Platform): Directory => {
+    const ctx = this._ctx.select("withPlatform", { platform })
+    return new Directory(ctx)
+  }
+
+  /**
    * Return a snapshot with a symlink
    * @param target Location of the file or directory to link to (e.g., "/existing/file").
    * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").
@@ -10875,9 +10895,10 @@ export class File extends BaseClient {
 
   /**
    * Force evaluation in the engine.
+   * @param opts.keyByContent Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.
    */
-  sync = async (): Promise<File> => {
-    const ctx = this._ctx.select("sync")
+  sync = async (opts?: FileSyncOpts): Promise<File> => {
+    const ctx = this._ctx.select("sync", { ...opts })
 
     const response: Awaited<ID> = await ctx.execute()
 

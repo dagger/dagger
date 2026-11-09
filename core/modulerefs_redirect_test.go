@@ -199,6 +199,64 @@ func TestResolveDaggerGetRedirectCachesPerSession(t *testing.T) {
 	require.EqualValues(t, 2, requests.Load(), "different sessions should not share redirect results")
 }
 
+func TestResolveDaggerGetRedirectSkipsKnownCodeHosts(t *testing.T) {
+	// Answer every probe the way GitHub answers one for a renamed repository:
+	// a redirect to another repository that keeps the query. A probe that
+	// reached a known code host would rewrite the ref.
+	var requests atomic.Int32
+	daggerGetClientForTest(t, func(r *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusMovedPermanently,
+			Header:     http.Header{"Location": {"https://github.com/new-owner/repo?" + r.URL.RawQuery}},
+			Body:       http.NoBody,
+			Request:    r,
+		}, nil
+	})
+
+	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{SessionID: "session"})
+	ctx = dagql.ContextWithCache(ctx, cache)
+
+	for _, ref := range []string{
+		"github.com/old-owner/repo",
+		"github.com/old-owner/repo/sub@v1.0.0",
+		"https://github.com/old-owner/repo@main",
+		"https://git@github.com/old-owner/repo",
+		"bitbucket.org/old-owner/repo",
+		"codeberg.org/old-owner/repo/sub",
+	} {
+		resolved, err := ResolveDaggerGetRedirect(ctx, ref)
+		require.NoError(t, err)
+		require.Equal(t, ref, resolved)
+	}
+	require.Zero(t, requests.Load(), "known code hosts must not be probed")
+
+	resolved, err := ResolveDaggerGetRedirect(ctx, "example.com/go@v1.0.0")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/new-owner/repo@v1.0.0", resolved)
+	require.EqualValues(t, 1, requests.Load(), "other hosts are still probed")
+}
+
+// daggerGetClientForTest answers every redirect probe with respond for the
+// rest of the test.
+func daggerGetClientForTest(t *testing.T, respond func(*http.Request) (*http.Response, error)) {
+	t.Helper()
+	oldClient := daggerGetClient
+	daggerGetClient = &http.Client{
+		Transport:     roundTripFunc(respond),
+		CheckRedirect: oldClient.CheckRedirect,
+	}
+	t.Cleanup(func() { daggerGetClient = oldClient })
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
 func TestResolveDaggerGetRedirectRequiresSessionInfrastructure(t *testing.T) {
 	var requests atomic.Int32
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -415,6 +415,20 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Retrieves this directory, declared as made for the given platform.
+     *
+     * Declare a result whose contents are the same whichever platform made them, such as a Go package compiled for a platform by any platform's Go toolchain. An engine of another platform that makes the same directory for the same platform then finds this one, and the other way around.
+     *
+     * The contents are not checked: a declared result that depends on the platform it was made on can be found where it doesn't belong.
+     */
+    public function withPlatform(Platform $platform): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPlatform');
+        $innerQueryBuilder->setArgument('platform', $platform);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this directory with all file/dir timestamps set to the given time.
      */
     public function withTimestamps(int $timestamp): Directory

@@ -39,6 +39,11 @@ const (
 	GoSDKManifestDigestEnvName         = "DAGGER_GO_SDK_MANIFEST_DIGEST"
 	PythonSDKManifestDigestEnvName     = "DAGGER_PYTHON_SDK_MANIFEST_DIGEST"
 	TypescriptSDKManifestDigestEnvName = "DAGGER_TYPESCRIPT_SDK_MANIFEST_DIGEST"
+
+	// EngineContainerImageEntriesDir holds the entries the engine image ships,
+	// which the engine merges into its cache at start: their bundle and its
+	// blobs.
+	EngineContainerImageEntriesDir = "/usr/local/share/dagger/entries"
 )
 
 const (
@@ -51,6 +56,17 @@ const (
 	BusyboxVersion = "1.37.0"
 	BusyboxImage   = "busybox:" + BusyboxVersion
 )
+
+// GoSDKBuildFlags are the go build flags the built-in Go SDK builds every Go
+// module runtime with, which the engine gives it, and which the engine image's
+// entries are built with, so that its builds are the runtimes' own. The link
+// drops debug information, so compiles don't generate it, but for the
+// standard library, whose archives stay the ones every other build reads from
+// the engine image. The generated client compiles without inlining: it is
+// about half of its compile's CPU, on code that makes network calls.
+func GoSDKBuildFlags() []string {
+	return []string{"-ldflags=-s -w", "-gcflags=all=-dwarf=false", "-gcflags=std=", "-gcflags=./internal/dagger/...=-dwarf=false -l"}
+}
 
 const (
 	OCIVersionAnnotation = "org.opencontainers.image.version"

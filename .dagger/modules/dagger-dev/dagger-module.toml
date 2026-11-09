@@ -10,4 +10,4 @@ engineVersion = "v1.0.0-beta.12"
 
 [[dependencies]]
   name = "wolfi"
-  source = "dagger.io/linux/wolfi@main"
+  source = "github.com/dagger/wolfi@f762661d70b5b19dc63b96bdfa455e2f77bbd179"

@@ -12,6 +12,8 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // mergeTestSource publishes a root in a sending cache and exports it. It
@@ -2428,4 +2430,61 @@ func TestMergeValuesItemThroughTheCloudIsNotRead(t *testing.T) {
 	require.Equal(t, "a", item.Unwrap().(String).String())
 
 	require.Equal(t, []string{"c", "a", "b"}, mergeTestReadList(t, cctx, list))
+}
+
+// TestMergeCommitNamesItsHolder: a merge's commit takes the graph lock as
+// its op, so a wait behind it names the merge; its loop marks the holder on
+// each take and clears it on each release, here while it waits for an
+// attachment between two takes.
+func TestMergeCommitNamesItsHolder(t *testing.T) {
+	wcprof.EnsureRecorder()
+	actx, a := storedPartTestCache(t)
+	sent := storedPartTestPublish(t, actx, a, "a", "merge-holder", &captureTestValue{text: "sent"})
+	bundle := exportTestBundle(t, actx, a, sent)
+
+	bctx, b := storedPartTestCache(t)
+	frame := &ResultCall{Kind: ResultCallKindField, Field: "merge-holder", Type: NewResultCallType((&captureTestValue{}).Type())}
+	attachStarted, attachRelease := make(chan struct{}), make(chan struct{})
+	local := &captureTestValue{text: "local", attach: func(context.Context) error {
+		close(attachStarted)
+		<-attachRelease
+		return nil
+	}}
+	published := make(chan error, 1)
+	go func() {
+		_, err := b.GetOrInitCall(bctx, "b", noopTypeResolver{}, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+			return NewResultForCall(local, frame.clone())
+		})
+		published <- err
+	}()
+	<-attachStarted
+
+	var taken []uint64
+	b.testMergeCommitLocked = func() {
+		h, _ := b.egraphMu.Holder()
+		taken = append(taken, h)
+	}
+	var released uint64
+	waited := make(chan struct{}, 1)
+	b.testMergeWaitsOnAttachment = func(*sharedResult) {
+		released, _ = b.egraphMu.Holder()
+		waited <- struct{}{}
+	}
+	mergeCtx, mergeOp := wcprof.BeginOp(wcprof.ContextWithProfiling(bctx), wcprof.OpKindRemoteCache, "test.merge", wcprof.OpOpts{})
+	defer mergeOp.End(wcprof.OutcomeOK)
+	merged := make(chan error, 1)
+	go func() {
+		_, err := b.MergeValues(mergeCtx, cloudCacheID, bundle)
+		merged <- err
+	}()
+	<-waited
+	close(attachRelease)
+	require.NoError(t, <-published)
+	require.NoError(t, <-merged)
+
+	require.GreaterOrEqual(t, len(taken), 2, "the commit took the lock, waited, and took it again")
+	for _, h := range taken {
+		require.Equal(t, mergeOp.ID(), h, "each take names the merge")
+	}
+	require.Equal(t, wcprof.HolderUnknown, released, "each release clears the holder")
 }

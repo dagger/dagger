@@ -192,7 +192,9 @@ func (r *Resolver) ResolveImageConfig(
 	opts ResolveImageConfigOpts,
 ) (_ string, _ digest.Digest, _ []byte, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.resolve", ref)
 	defer func() {
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -223,7 +225,7 @@ func (r *Resolver) ResolveImageConfig(
 		if err != nil {
 			return nil, fmt.Errorf("create registry resolve network recorder: %w", err)
 		}
-		resolvedRef, rootDesc, fetcher, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, network)
+		resolvedRef, rootDesc, fetcher, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, network, false)
 		if err != nil {
 			return nil, err
 		}
@@ -286,10 +288,12 @@ func (r *Resolver) ResolveImageDigest(
 ) (_ string, _ digest.Digest, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "resolving "+ref,
 		telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.resolve", ref)
 	ctx, input := registryTransfer(ctx, ref, opts.Network, enginetelemetry.StartWorkloadInput)
 	var identity string
 	defer func() {
 		input.End(identity, rerr)
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -332,7 +336,9 @@ func registryImageIdentity(manifest digest.Digest) string { return "image:" + ma
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "pulling "+bkcache.DisplayRef(ref), telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.pull", ref)
 	defer func() {
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -503,10 +509,10 @@ func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, op
 			if err != nil {
 				return "", ocispecs.Descriptor{}, nil, err
 			}
-			return resolvedRef, rootDesc, fetcher, nil
+			return resolvedRef, rootDesc, profFetcher(ctx, fetcher), nil
 		}
 	}
-	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, recorder)
+	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, recorder, true)
 }
 
 // remoteResolver asks the registry through a transport that records every
@@ -529,11 +535,14 @@ func (r *Resolver) remoteHosts(network NetworkConfig, registryTransport Registry
 // such check: its root is the first thing fetched either way. So it is
 // fetched straight away, checked against the digest, and served from memory
 // when the fetcher is asked for it, saving a registry round trip.
-func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
+//
+// A pull's fetcher records each download when work under ctx is profiled
+// (profFetcher), the pinned root's included; a resolve's records none.
+func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator, pull bool) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
 	hosts := r.remoteHosts(network, registryTransport, recorder)
 	if parsed, err := reference.ParseNormalizedNamed(ref); err == nil {
 		if canonical, ok := parsed.(reference.Canonical); ok {
-			return fetchPinnedRoot(ctx, hosts, ref, canonical.Digest())
+			return fetchPinnedRoot(ctx, hosts, ref, canonical.Digest(), pull)
 		}
 	}
 	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: hosts})
@@ -545,14 +554,20 @@ func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, 
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
+	if pull {
+		fetcher = profFetcher(ctx, fetcher)
+	}
 	return resolvedRef, rootDesc, fetcher, nil
 }
 
-func fetchPinnedRoot(ctx context.Context, hosts docker.RegistryHosts, ref string, dgst digest.Digest) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
+func fetchPinnedRoot(ctx context.Context, hosts docker.RegistryHosts, ref string, dgst digest.Digest, pull bool) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
 	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: acceptEveryManifestType(hosts)})
 	fetcher, err := resolver.Fetcher(ctx, ref)
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
+	}
+	if pull {
+		fetcher = profFetcher(ctx, fetcher)
 	}
 	// Any manifest media type sends the request to the manifests endpoint.
 	// The fetcher doesn't return the response's type, so it's read from the
@@ -868,7 +883,9 @@ func (r *Resolver) localCanonicalRootDescriptor(ctx context.Context, dgst digest
 
 func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, opts PushOpts) (rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.push", ref)
 	defer func() {
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -1457,7 +1474,11 @@ func pushHandler(
 	provider content.Provider,
 	network *enginetelemetry.NetworkAccumulator,
 ) images.HandlerFunc {
-	return func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
+	return func(ctx context.Context, desc ocispecs.Descriptor) (_ []ocispecs.Descriptor, rerr error) {
+		// The blob's upload, as a profile op: its size when it was sent, none
+		// when the registry had it.
+		ctx, profOp := beginRegistryOp(ctx, "image.push.blob", desc.Digest.String())
+		defer func() { profOp.EndErr(rerr) }()
 		cw, err := pusher.Push(ctx, desc)
 		if err != nil {
 			if errors.Is(err, cerrdefs.ErrAlreadyExists) {
@@ -1483,6 +1504,7 @@ func pushHandler(
 			}
 			return nil, fmt.Errorf("push content %s (%d bytes): %w", desc.Digest, desc.Size, err)
 		}
+		profOp.SetBytes(desc.Size)
 		return nil, nil
 	}
 }

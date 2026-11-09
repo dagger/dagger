@@ -162,11 +162,10 @@ func ModuleSourceIdentity(ref, dir string) ModuleSourceKey {
 		return key
 	}
 	source = moduleSourceWithoutTransport(source)
-	// Supplying the scheme disables Git endpoint probes in static discovery.
 	// Launchpad's Bazaar-specific discovery performs network I/O; Git module
 	// selection does not need that discovery.
 	if !strings.HasPrefix(source, "launchpad.net/") {
-		if repo, err := vcs.RepoRootForImportPathStatic(source, "https"); err == nil && repo.VCS.Cmd == "git" {
+		if repo, err := vcs.RepoRootForImportPathStatic(source); err == nil && repo.VCS.Cmd == "git" {
 			return ModuleSourceKey{
 				Repository: strings.TrimSuffix(repo.Root, ".git"),
 				Subpath:    strings.Trim(path.Clean("/"+strings.TrimPrefix(source, repo.Root)), "/"),

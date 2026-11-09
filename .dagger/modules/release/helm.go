@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"dagger/release/internal/dagger"
+	"dagger/release/internal/dagger/clients/wolfi"
 
+	"dagger.io/dagger/core"
 	"helm.sh/helm/v3/pkg/chart"
 	"sigs.k8s.io/yaml"
 )
@@ -20,8 +22,8 @@ func (r *Release) helmChartSource() *dagger.Directory {
 }
 
 func (r *Release) helmChart() *dagger.Container {
-	return dag.Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	return wolfi.New().
+		Container(wolfi.WolfiContainerOpts{
 			Packages: []string{
 				"helm-3~3.19.2",
 			},
@@ -51,7 +53,7 @@ func (r *Release) helmSetVersion(ctx context.Context, version string) (*dagger.F
 		return nil, err
 	}
 
-	return dag.File("Chart.yaml", string(updatedChart)), nil
+	return core.NewFile("Chart.yaml", string(updatedChart)), nil
 }
 
 func (r *Release) helmReleaseDryRun(ctx context.Context) error {

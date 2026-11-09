@@ -1,0 +1,14 @@
+# The built-in Go SDK, as the engine image carries it at /sdk/runtime. It
+# builds every Go module runtime with dagger/go, pinned as go-sdk pins it for
+# the modules it generates, so both build with the same dagger/go and share
+# its builds. Until dagger/go releases it, the pin names an unreleased
+# commit of github.com/dagger/go.
+name = "go-sdk"
+engineVersion = "v1.0.0-beta.24"
+
+[runtime]
+  source = "dang"
+
+[[dependencies]]
+  name = "go"
+  source = "github.com/dagger/go@f8c4b0b2574ca3b0eaeabe730d04dc25af3cbfa4"
