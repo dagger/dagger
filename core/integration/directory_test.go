@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -3223,4 +3224,440 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, out, "")
+}
+
+func (DirectorySuite) TestDirectoryResolveBrokenSymlinks(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dag := sdkcore.NewQuery(c)
+	source := dag.Directory().
+		WithNewDirectory("src", sdkcore.DirectoryWithNewDirectoryOpts{Permissions: 0700}).
+		WithNewFile("target/nested/keep.txt", "hello").
+		WithSymlink("nested/keep.txt", "target/file-link").
+		WithSymlink("../target", "src/relative").
+		WithSymlink("/target", "src/absolute").
+		WithSymlink("relative", "src/chain")
+
+	selectors := []struct {
+		name      string
+		selectDir func(*sdkcore.Directory, string, bool) *sdkcore.Directory
+	}{
+		{"directory", func(parent *sdkcore.Directory, path string, follow bool) *sdkcore.Directory {
+			return parent.Directory(path, sdkcore.DirectoryDirectoryOpts{ResolveBrokenSymlinks: follow})
+		}},
+		{"container", func(parent *sdkcore.Directory, path string, follow bool) *sdkcore.Directory {
+			return dag.Container().WithRootfs(parent).
+				Directory(path, sdkcore.ContainerDirectoryOpts{ResolveBrokenSymlinks: follow})
+		}},
+		{"container mount", func(parent *sdkcore.Directory, path string, follow bool) *sdkcore.Directory {
+			return dag.Container().WithRootfs(parent).WithMountedDirectory("/mount", parent).
+				Directory("/mount/"+path, sdkcore.ContainerDirectoryOpts{ResolveBrokenSymlinks: follow})
+		}},
+	}
+	for _, tc := range selectors {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			for _, follow := range []bool{false, true} {
+				out := tc.selectDir(source, "src", follow)
+				stat, err := out.Stat(ctx, ".")
+				require.NoError(t, err)
+				permissions, err := stat.Permissions(ctx)
+				require.NoError(t, err)
+				require.Equal(t, 0700, permissions)
+				for _, name := range []string{"relative", "absolute", "chain"} {
+					stat, err := out.Stat(ctx, name, sdkcore.DirectoryStatOpts{DoNotFollowSymlinks: true})
+					require.NoError(t, err)
+					typ, err := stat.FileType(ctx)
+					require.NoError(t, err)
+					if !follow {
+						require.Equal(t, sdkcore.FileTypeSymlink, typ)
+						continue
+					}
+					if name == "absolute" || name == "relative" && tc.name == "container mount" {
+						require.Equal(t, sdkcore.FileTypeDirectory, typ)
+					} else {
+						require.Equal(t, sdkcore.FileTypeSymlink, typ)
+					}
+					stat, err = out.Stat(ctx, name+"/file-link", sdkcore.DirectoryStatOpts{DoNotFollowSymlinks: true})
+					require.NoError(t, err)
+					typ, err = stat.FileType(ctx)
+					require.NoError(t, err)
+					require.Equal(t, sdkcore.FileTypeSymlink, typ)
+				}
+			}
+
+			for _, selected := range []struct{ path, file string }{
+				{".", "src/absolute/file-link"}, {"alias", "file-link"},
+			} {
+				t.Run("select "+selected.path, func(ctx context.Context, t *testctx.T) {
+					parent := source.WithSymlink("target", "alias")
+					content, err := tc.selectDir(parent, selected.path, true).File(selected.file).Contents(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "hello", content)
+				})
+			}
+
+			t.Run("select a symlink with dot dot after another link", func(ctx context.Context, t *testctx.T) {
+				for _, decoy := range []string{"missing", "file", "directory"} {
+					t.Run(decoy, func(ctx context.Context, t *testctx.T) {
+						parent := dag.Directory().
+							WithNewDirectory("outside/deep").
+							WithNewFile("outside/chosen/value", "correct").
+							WithSymlink("../outside/deep", "src/link").
+							WithSymlink("link/../chosen", "src/alias")
+						switch decoy {
+						case "file":
+							parent = parent.WithNewFile("src/chosen", "wrong")
+						case "directory":
+							parent = parent.WithNewFile("src/chosen/value", "wrong")
+						}
+						out := tc.selectDir(parent, "src/alias", true)
+						content, err := out.File("value").Contents(ctx)
+						require.NoError(t, err)
+						require.Equal(t, "correct", content)
+					})
+				}
+			})
+
+			t.Run("copy needs no parent", func(ctx context.Context, t *testctx.T) {
+				out := tc.selectDir(source, "src", true)
+				copies := []*sdkcore.Directory{
+					out,
+					dag.Directory().WithDirectory("out", out).Directory("out"),
+					dag.Container().WithDirectory("/out", out).Directory("/out"),
+				}
+				for _, copied := range copies {
+					for _, name := range []string{"relative", "absolute", "chain"} {
+						content, err := copied.File(name + "/file-link").Contents(ctx)
+						require.NoError(t, err)
+						require.Equal(t, "hello", content)
+					}
+				}
+				// A fresh snapshot must not retain the parent's sibling paths.
+				_, err := out.Directory("../target").Sync(ctx)
+				require.ErrorContains(t, err, "no such file or directory")
+				entries, err := out.Directory("..").Entries(ctx)
+				require.NoError(t, err)
+				expected := []string{"absolute/", "chain", "relative"}
+				if tc.name == "container mount" {
+					expected[2] = "relative/"
+				}
+				require.Equal(t, expected, entries)
+			})
+
+			t.Run("parent selection is the boundary", func(ctx context.Context, t *testctx.T) {
+				parent := source.Directory("src")
+				out := tc.selectDir(parent, ".", true)
+				_, err := out.Sync(ctx)
+				require.NoError(t, err)
+				_, err = out.File("relative/file-link").Contents(ctx)
+				require.ErrorContains(t, err, "no such file or directory")
+			})
+
+			t.Run("content hash reuse keeps the result isolated", func(ctx context.Context, t *testctx.T) {
+				root := t.TempDir()
+				_, err := dag.Directory().WithNewFile("src/file", "hello").
+					WithNewFile("outside/secret", "outside").Export(ctx, root)
+				require.NoError(t, err)
+				parent := dag.Host().Directory(root)
+				// Prime a selection with identical contents but a larger snapshot.
+				_, err = parent.Directory("src").Sync(ctx)
+				require.NoError(t, err)
+				out := tc.selectDir(parent, "src", true)
+				entries, err := out.Directory("..").Entries(ctx)
+				require.NoError(t, err)
+				require.Equal(t, []string{"file"}, entries)
+			})
+
+			t.Run("absolute links use the parent root", func(ctx context.Context, t *testctx.T) {
+				parent := dag.Directory().WithNewFile("target/value", "outside").
+					WithNewFile("project/target/value", "inside").
+					WithSymlink("/target", "project/src/link").Directory("project")
+				content, err := tc.selectDir(parent, "src", true).File("link/value").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "inside", content)
+			})
+
+			for _, link := range []struct{ target, wantErr string }{
+				{"missing", "no such file or directory"}, {".", ""},
+				{"link", "too many links"}, {"/etc/hostname", "no such file or directory"},
+				{"/proc/mounts", "no such file or directory"},
+			} {
+				t.Run("preserve target "+link.target, func(ctx context.Context, t *testctx.T) {
+					parent := dag.Directory().WithSymlink(link.target, "src/link")
+					out := tc.selectDir(parent, "src", true)
+					stat, err := out.Stat(ctx, "link", sdkcore.DirectoryStatOpts{DoNotFollowSymlinks: true})
+					require.NoError(t, err)
+					typ, err := stat.FileType(ctx)
+					require.NoError(t, err)
+					require.Equal(t, sdkcore.FileTypeSymlink, typ)
+					if link.wantErr != "" {
+						_, err := out.File("link").Contents(ctx)
+						require.ErrorContains(t, err, link.wantErr)
+					}
+				})
+			}
+			for _, path := range []string{"missing", "file"} {
+				t.Run("invalid selection "+path, func(ctx context.Context, t *testctx.T) {
+					parent := dag.Directory().WithNewFile("file", "hello")
+					_, err := tc.selectDir(parent, path, true).Sync(ctx)
+					if path == "missing" {
+						require.ErrorContains(t, err, "no such file or directory")
+					} else {
+						require.ErrorContains(t, err, "not a directory")
+					}
+				})
+			}
+		})
+	}
+
+	t.Run("later copies can filter the materialized targets", func(ctx context.Context, t *testctx.T) {
+		selected := source.Directory("src", sdkcore.DirectoryDirectoryOpts{ResolveBrokenSymlinks: true})
+		out := dag.Directory().WithDirectory("out", selected, sdkcore.DirectoryWithDirectoryOpts{
+			Include: []string{"absolute/nested/*.txt"},
+		})
+		paths, err := out.Glob(ctx, "**/*.txt")
+		require.NoError(t, err)
+		require.Equal(t, []string{"out/absolute/nested/keep.txt"}, paths)
+	})
+}
+
+func (DirectorySuite) TestDirectoryResolveBrokenSymlinksResources(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dag := sdkcore.NewQuery(c)
+	opts := sdkcore.ContainerDirectoryOpts{ResolveBrokenSymlinks: true}
+	socketPath := filepath.Join(t.TempDir(), "selection.sock")
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+	defer listener.Close()
+	for _, tc := range []struct {
+		name, target string
+		mount        func(*sdkcore.Container) *sdkcore.Container
+	}{
+		{"cache", "/resource", func(ctr *sdkcore.Container) *sdkcore.Container {
+			return ctr.WithMountedCache("/resource", dag.CacheVolume("selection-resource"))
+		}},
+		{"tmpfs", "/resource", func(ctr *sdkcore.Container) *sdkcore.Container {
+			return ctr.WithMountedTemp("/resource")
+		}},
+		{"secret", "/resource/hidden", func(ctr *sdkcore.Container) *sdkcore.Container {
+			return ctr.WithMountedSecret("/resource/hidden", dag.SetSecret("selection-resource", "secret"))
+		}},
+		{"socket", "/resource/hidden", func(ctr *sdkcore.Container) *sdkcore.Container {
+			return ctr.WithUnixSocket("/resource/hidden", dag.Host().UnixSocket(socketPath))
+		}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			root := dag.Directory().WithNewFile("shared/value", "shared").
+				WithNewFile("resource/hidden", "hidden").WithSymlink("../shared", "app/link")
+			ctr := tc.mount(dag.Container().WithRootfs(root))
+			content, err := ctr.Directory("/app", opts).File("link/value").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "shared", content)
+			if tc.target == "/resource" {
+				known := ctr.WithMountedDirectory("/resource/known", dag.Directory().WithNewFile("value", "known"))
+				for _, path := range []string{"/resource/known", "/resource", "/app"} {
+					_, err := known.Directory(path, opts).Sync(ctx)
+					require.ErrorContains(t, err, "cannot resolve mount target through non-snapshot mount /resource")
+				}
+			}
+			for _, path := range []string{tc.target, "/"} {
+				_, err := ctr.Directory(path, opts).Sync(ctx)
+				require.ErrorContains(t, err, "cannot retrieve path from non-snapshot mount "+tc.target)
+			}
+			for _, target := range []string{tc.target, "/resource/hidden"} {
+				linked := tc.mount(dag.Container().WithRootfs(root.WithSymlink(target, "app/blocked")))
+				_, err := linked.Directory("/app", opts).Sync(ctx)
+				require.ErrorContains(t, err, "cannot retrieve path from non-snapshot mount "+tc.target)
+			}
+		})
+	}
+	t.Run("cache alias cannot expose a covered rootfs path", func(ctx context.Context, t *testctx.T) {
+		ctr := dag.Container().From(alpineImage).WithNewFile("/app/value", "hidden").
+			WithMountedCache("/cache", dag.CacheVolume("opaque-parent-"+rand.Text())).
+			WithExec([]string{"sh", "-c", "ln -s /app /cache/redirect"}).
+			WithMountedDirectory("/cache/redirect", dag.Directory().WithNewFile("value", "mounted"))
+		_, err := ctr.Directory("/app", opts).File("value").Contents(ctx)
+		require.ErrorContains(t, err, "cannot resolve mount target through non-snapshot mount /cache")
+	})
+}
+
+func (DirectorySuite) TestDirectoryResolveBrokenSymlinksLazyMounts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dag := sdkcore.NewQuery(c)
+	opts := sdkcore.ContainerDirectoryOpts{ResolveBrokenSymlinks: true}
+	root := dag.Directory().WithNewFile("shared/value", "shared").WithSymlink("../shared", "app/link")
+	failing := dag.Container().From(alpineImage).WithExec([]string{"sh", "-c", "exit 3"})
+	for _, tc := range []struct {
+		name  string
+		mount func(*sdkcore.Container, string) *sdkcore.Container
+	}{
+		{"directory", func(ctr *sdkcore.Container, target string) *sdkcore.Container {
+			return ctr.WithMountedDirectory(target, failing.Directory("/"))
+		}},
+		{"file", func(ctr *sdkcore.Container, target string) *sdkcore.Container {
+			return ctr.WithMountedFile(target, failing.File("/value"))
+		}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			ctr := tc.mount(dag.Container().WithRootfs(root), "/other")
+			content, err := ctr.Directory("/app", opts).File("link/value").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "shared", content)
+			linked := tc.mount(dag.Container().WithRootfs(root.WithSymlink("/other", "app/reached")), "/other")
+			_, err = linked.Directory("/app", opts).Sync(ctx)
+			require.ErrorContains(t, err, "exit code: 3")
+			_, err = tc.mount(dag.Container().WithRootfs(root), "/app/nested").Directory("/app", opts).Sync(ctx)
+			require.ErrorContains(t, err, "exit code: 3")
+		})
+	}
+	t.Run("mountpoint resolution needs an available rootfs", func(ctx context.Context, t *testctx.T) {
+		// The rootfs is needed to tell whether /app is a mountpoint alias.
+		_, err := failing.WithMountedDirectory("/app", dag.Directory().WithNewFile("value", "mounted")).
+			Directory("/app", opts).File("value").Contents(ctx)
+		require.ErrorContains(t, err, "exit code: 3")
+	})
+	t.Run("files mount hides rootfs contents", func(ctx context.Context, t *testctx.T) {
+		root := root.WithNewFile("files/hidden", "hidden").WithSymlink("/files", "app/files")
+		file := dag.Directory().WithNewFile("value", "mounted").File("value")
+		out := dag.Container().WithRootfs(root).WithMountedFiles("/files", []*sdkcore.File{file}).Directory("/app", opts)
+		content, err := out.File("files/value").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "mounted", content)
+		_, err = out.File("files/hidden").Contents(ctx)
+		require.ErrorContains(t, err, "no such file or directory")
+	})
+	t.Run("shared source keeps each mount context", func(ctx context.Context, t *testctx.T) {
+		root := dag.Directory().WithNewFile("left/value", "left").WithNewFile("right/value", "right").
+			WithSymlink("/left/data", "app/a").WithSymlink("/right/data", "app/b")
+		mounted := dag.Directory().WithSymlink("../value", "link")
+		out := dag.Container().WithRootfs(root).WithMountedDirectory("/left/data", mounted).
+			WithMountedDirectory("/right/data", mounted).Directory("/app", opts)
+		for _, tc := range []struct{ name, want string }{{"a/link", "left"}, {"b/link", "right"}} {
+			content, err := out.File(tc.name).Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, content)
+		}
+	})
+}
+
+func (DirectorySuite) TestDirectoryResolveBrokenSymlinksMounts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dag := sdkcore.NewQuery(c)
+	opts := sdkcore.ContainerDirectoryOpts{ResolveBrokenSymlinks: true}
+	root := dag.Directory().WithNewFile("data/v", "rootfs").
+		WithNewFile("data/hidden", "hidden").
+		WithNewFile("etc/release", "root release").
+		WithSymlink("/data", "app/link")
+	mounted := dag.Directory().WithNewFile("v", "mount").
+		WithNewFile("nested/v", "old nested").
+		WithSymlink("/etc/release", "release").
+		WithSymlink("/data/nested", "nested-link")
+	ctr := dag.Container().WithRootfs(root).
+		WithMountedDirectory("/data", mounted).
+		WithMountedDirectory("/data/nested", dag.Directory().WithNewFile("v", "nested mount")).
+		WithMountedFile("/etc/release", dag.Directory().WithNewFile("value", "file mount").File("value"))
+	for _, tc := range []struct{ selection, file, want string }{
+		{"/app", "link/v", "mount"},
+		{"/app", "link/nested/v", "nested mount"},
+		{"/data", "release", "file mount"},
+		{"/data", "nested-link/v", "nested mount"},
+	} {
+		t.Run(tc.selection+"/"+tc.file, func(ctx context.Context, t *testctx.T) {
+			out := ctr.Directory(tc.selection, opts)
+			content, err := out.File(tc.file).Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, content)
+			copied := dag.Directory().WithDirectory("copy", out)
+			content, err = copied.File("copy/" + tc.file).Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, content)
+		})
+	}
+	_, err := ctr.Directory("/app", opts).File("link/hidden").Contents(ctx)
+	require.ErrorContains(t, err, "no such file or directory")
+	t.Run("root mount retains earlier child mounts", func(ctx context.Context, t *testctx.T) {
+		for _, rootFirst := range []bool{false, true} {
+			t.Run(fmt.Sprintf("root first=%t", rootFirst), func(ctx context.Context, t *testctx.T) {
+				ctr := dag.Container().WithRootfs(dag.Directory())
+				if rootFirst {
+					ctr = ctr.WithMountedDirectory("/", root)
+				}
+				ctr = ctr.WithMountedDirectory("/data", dag.Directory().WithNewFile("v", "mount"))
+				if !rootFirst {
+					ctr = ctr.WithMountedDirectory("/", root)
+				}
+				out := ctr.Directory("/app", opts)
+				content, err := out.File("link/v").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "mount", content)
+				_, err = out.File("link/hidden").Contents(ctx)
+				require.ErrorContains(t, err, "no such file or directory")
+			})
+		}
+	})
+	t.Run("mount aliases use exec order", func(ctx context.Context, t *testctx.T) {
+		root := dag.Directory().WithNewFile("z/v", "rootfs").
+			WithSymlink("/z", "a").WithSymlink("/z", "app/link")
+		ctr := dag.Container().WithRootfs(root).
+			WithMountedDirectory("/z", dag.Directory().WithNewFile("v", "z mount")).
+			WithMountedDirectory("/a", dag.Directory().WithNewFile("v", "a mount").WithNewFile("hidden", "hidden"))
+		out := ctr.Directory("/app", opts)
+		content, err := out.File("link/v").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "z mount", content)
+		_, err = out.File("link/hidden").Contents(ctx)
+		require.ErrorContains(t, err, "no such file or directory")
+	})
+	t.Run("direct mount aliases keep their canonical parent", func(ctx context.Context, t *testctx.T) {
+		root := dag.Directory().WithNewFile("value", "wrong").WithNewFile("deep/value", "right").
+			WithNewFile("deep/target/hidden", "hidden").WithSymlink("/deep/target", "alias")
+		mounted := dag.Directory().WithSymlink("../value", "link")
+		ctr := dag.Container().WithRootfs(root).WithMountedDirectory("/alias", mounted)
+		for _, out := range []*sdkcore.Directory{
+			ctr.Directory("/alias", opts), ctr.Directory("/", opts).Directory("alias"),
+		} {
+			content, err := out.File("link").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "right", content)
+			_, err = out.File("hidden").Contents(ctx)
+			require.ErrorContains(t, err, "no such file or directory")
+		}
+	})
+	t.Run("mount back to rootfs", func(ctx context.Context, t *testctx.T) {
+		content, err := dag.Container().WithRootfs(root).WithMountedDirectory("/src", mounted).
+			Directory("/src", opts).File("release").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "root release", content)
+	})
+	t.Run("replaced mount ancestors keep their own timestamps", func(ctx context.Context, t *testctx.T) {
+		for _, keepOld := range []bool{false, true} {
+			t.Run(fmt.Sprintf("keep old=%t", keepOld), func(ctx context.Context, t *testctx.T) {
+				root := dag.Directory().WithNewDirectory("z/old").
+					WithSymlink("/z", "a").WithTimestamps(111)
+				replacement := dag.Directory().WithNewFile("value", "replacement")
+				if keepOld {
+					replacement = replacement.WithNewDirectory("old")
+				}
+				replacement = replacement.WithTimestamps(222)
+				out := dag.Container().WithRootfs(root).
+					WithMountedDirectory("/a/old/child", dag.Directory().WithNewFile("hidden", "hidden")).
+					WithMountedDirectory("/z", replacement).Directory("/z", opts)
+				content, err := out.File("value").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "replacement", content)
+				_, err = out.File("old/child/hidden").Contents(ctx)
+				require.ErrorContains(t, err, "no such file or directory")
+				args := []string{"stat", "-c", "%Y", "/result"}
+				want := "222\n"
+				if keepOld {
+					args = append(args, "/result/old")
+					want += "222\n"
+				}
+				stamps, err := dag.Container().From(alpineImage).
+					WithMountedDirectory("/result", out, sdkcore.ContainerWithMountedDirectoryOpts{ReadOnly: true}).
+					WithExec(args).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, want, stamps)
+			})
+		}
+	})
 }
