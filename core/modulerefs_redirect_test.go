@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -390,4 +391,124 @@ func TestResolveDaggerGetRedirectPreservesDestinationVersion(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestDaggerGetProbeConfigured(t *testing.T) {
+	// Configured vanity URLs resolve without any request: point the probe
+	// client at a server that fails the test if it is reached.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected probe request: %s", r.URL)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	defer func() { daggerGetClient = oldClient }()
+
+	require.NoError(t, SetModuleRedirects(map[string]string{
+		"dagger.io/sdk/helpers":   "github.com/dagger/sdk-helpers",
+		"dagger.io/sdk/python":    "github.com/dagger/python-sdk",
+		"Dagger.io/linux/alpine/": "github.com/dagger/alpine",
+	}))
+	defer SetModuleRedirects(nil)
+
+	for _, tc := range []struct {
+		ref  string
+		want string
+	}{
+		{"https://dagger.io/sdk/helpers", "https://github.com/dagger/sdk-helpers"},
+		{"dagger.io/sdk/helpers@v1", "https://github.com/dagger/sdk-helpers@v1"},
+		{"dagger.io/sdk/python/runtime", "https://github.com/dagger/python-sdk/runtime"},
+		{"https://dagger.io/linux/alpine/", "https://github.com/dagger/alpine"},
+	} {
+		t.Run(tc.ref, func(t *testing.T) {
+			require.Equal(t, tc.want, daggerGetProbe(context.Background(), tc.ref))
+		})
+	}
+
+	for _, ref := range []string{
+		"https://dagger.io/sdk/helpersx",
+		"https://dagger.io:8443/sdk/helpers",
+		"https://user@dagger.io/sdk/helpers",
+	} {
+		_, ok := configuredModuleRedirect(mustParseURL(t, ref))
+		require.False(t, ok, ref)
+	}
+}
+
+func TestSetModuleRedirectsInvalid(t *testing.T) {
+	for _, tc := range []map[string]string{
+		{"https://dagger.io/sdk/go": "github.com/dagger/go-sdk"},
+		{"dagger.io/sdk/go": "https://github.com/dagger/go-sdk"},
+		{"dagger.io/sdk/go@v1": "github.com/dagger/go-sdk"},
+		{"dagger.io/sdk/go": ""},
+	} {
+		require.Error(t, SetModuleRedirects(tc), tc)
+	}
+}
+
+func TestResolveDaggerGetRedirectConfiguredChain(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected probe request: %s", r.URL)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	defer func() { daggerGetClient = oldClient }()
+
+	require.NoError(t, SetModuleRedirects(map[string]string{
+		"dagger.io/sdk/python":         "github.com/dagger/python-sdk",
+		"github.com/dagger/python-sdk": "git.example.com/mirrors/python-sdk",
+	}))
+	defer SetModuleRedirects(nil)
+
+	// The lock's entry is what dagger.io redirects to outside this engine's
+	// network; the configured redirects still apply to it.
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationVanityURL,
+		[]any{"https://dagger.io/sdk/helpers"},
+		"https://github.com/dagger/python-sdk/helpers",
+	))
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &mockServer{workspaceLock: lock, lockWritable: true}})
+
+	for _, tc := range []struct {
+		ref  string
+		want string
+	}{
+		{"dagger.io/sdk/python@v1.1.1", "https://git.example.com/mirrors/python-sdk@v1.1.1"},
+		{"dagger.io/sdk/python/runtime", "https://git.example.com/mirrors/python-sdk/runtime"},
+		{"github.com/dagger/python-sdk@v1.1.1", "https://git.example.com/mirrors/python-sdk@v1.1.1"},
+		{"https://github.com/dagger/python-sdk", "https://git.example.com/mirrors/python-sdk"},
+		{"dagger.io/sdk/helpers@v1", "https://git.example.com/mirrors/python-sdk/helpers@v1"},
+	} {
+		t.Run(tc.ref, func(t *testing.T) {
+			resolved, err := ResolveDaggerGetRedirect(ctx, tc.ref)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, resolved)
+		})
+	}
+
+	entries := lock.Entries()
+	require.Len(t, entries, 1, "configured redirects must not be written to the lock")
+}
+
+func TestSetModuleRedirectsLoop(t *testing.T) {
+	for _, tc := range []map[string]string{
+		{"github.com/dagger/go-sdk": "github.com/dagger/go-sdk"},
+		{"github.com/dagger/go-sdk": "github.com/dagger/go-sdk/sub"},
+		{"dagger.io/sdk/go": "github.com/dagger/go-sdk", "github.com/dagger/go-sdk": "dagger.io/sdk/go"},
+	} {
+		require.ErrorContains(t, SetModuleRedirects(tc), "loop", tc)
+	}
+	require.Empty(t, configuredModuleRedirects, "a rejected config must not apply")
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+	return u
 }

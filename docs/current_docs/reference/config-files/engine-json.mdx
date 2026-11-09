@@ -1,7 +1,7 @@
 ---
 title: "engine.json"
 slug: /reference/config-files/engine-json
-description: "Engine configuration: log level, registries, security, garbage collection, and resource metrics."
+description: "Engine configuration: log level, registries, security, garbage collection, git URL rewrites, module redirects, and resource metrics."
 ---
 
 # engine.json
@@ -156,6 +156,133 @@ Other `gc` settings:
   for the in-memory metadata cache, in bytes. When the estimated size is larger
   than `maxEstimatedBytes`, the engine prunes it down to
   `targetEstimatedBytes`. Zero uses the built-in default
+
+## Git URL rewrites
+
+The engine's own git commands, such as fetches of module sources, do not read
+gitconfig files in the engine container. To fetch through a git proxy or
+mirror, set `git.url`. It has the same meaning as git's
+`url.<base>.insteadOf`: each key is a base URL, and its `insteadOf` list holds
+the URL prefixes that base replaces.
+
+```json
+{
+  "git": {
+    "url": {
+      "https://git-proxy.example.com/github/": {
+        "insteadOf": ["https://github.com/"]
+      }
+    }
+  }
+}
+```
+
+With this setting, the module source `github.com/dagger/go-sdk` is fetched
+from `https://git-proxy.example.com/github/dagger/go-sdk`. The rewrite applies
+to every git command the engine runs. When several prefixes match a URL, the
+longest one wins.
+
+Workspace configuration and `dagger.lock` keep the original URLs. The same
+files work on engines with and without the rewrite.
+
+## Module redirects
+
+A module URL such as `dagger.io/sdk/go` redirects to the repository that holds
+the module. The engine resolves it by requesting
+`https://dagger.io/sdk/go?dagger-get=1` and reading the redirect. Dagger's SDK
+modules depend on several of these URLs, so an engine that cannot reach
+dagger.io needs them pinned with `moduleRedirects`. The engine uses a pinned
+target without sending a request.
+
+This example pins the dagger.io URLs of Dagger's SDKs and of the modules they
+depend on:
+
+```json
+{
+  "moduleRedirects": {
+    "dagger.io/linux/alpine": "github.com/dagger/alpine",
+    "dagger.io/linux/wolfi": "github.com/dagger/wolfi",
+    "dagger.io/sdk/dang": "github.com/dagger/dang-sdk",
+    "dagger.io/sdk/elixir": "github.com/dagger/elixir-sdk",
+    "dagger.io/sdk/go": "github.com/dagger/go-sdk",
+    "dagger.io/sdk/helpers": "github.com/dagger/sdk-helpers",
+    "dagger.io/sdk/java": "github.com/dagger/java-sdk",
+    "dagger.io/sdk/php": "github.com/dagger/php-sdk",
+    "dagger.io/sdk/python": "github.com/dagger/python-sdk",
+    "dagger.io/sdk/typescript": "github.com/dagger/typescript-sdk"
+  }
+}
+```
+
+Keys and values are a host and path, without a scheme, version, or query. The
+engine does not start if an entry has any of them, or if a value is empty.
+
+A sub-path of a pinned URL maps to the same sub-path of its target:
+`dagger.io/sdk/python/runtime` resolves to
+`github.com/dagger/python-sdk/runtime`. A version carries over from the module
+ref: `dagger.io/sdk/helpers@v1` resolves to `github.com/dagger/sdk-helpers@v1`.
+Module URLs that are not pinned are resolved with a request.
+
+A target can be pinned in turn. With these entries, both
+`dagger.io/sdk/python` and `github.com/dagger/python-sdk` resolve to
+`git.example.com/mirrors/python-sdk`:
+
+```json
+{
+  "moduleRedirects": {
+    "dagger.io/sdk/python": "github.com/dagger/python-sdk",
+    "github.com/dagger/python-sdk": "git.example.com/mirrors/python-sdk"
+  }
+}
+```
+
+The engine does not start if the entries form a loop.
+
+Pinned redirects take precedence over the redirects recorded in `dagger.lock`,
+and apply to their targets too. They are not written to `dagger.lock`, so a
+workspace keeps the same `dagger.toml` and `dagger.lock` on every engine. The
+commit pins in `dagger.lock` belong to the resolved URL, so a mirror whose
+commits differ from the original's gets pins of its own.
+
+Use `moduleRedirects` rather than `git.url` for a mirror that changes the
+module's files. With `git.url`, the engine keeps the original URL and its pins,
+which name commits the mirror does not have.
+
+To find the target of a module URL, request it from a machine that can reach
+the host:
+
+```sh
+curl -sI 'https://dagger.io/sdk/go?dagger-get=1' | grep -i '^location'
+```
+
+```text
+location: https://github.com/dagger/go-sdk?dagger-get=1
+```
+
+Pin the location without `https://` and without the `dagger-get` query:
+`github.com/dagger/go-sdk`.
+
+An engine that reaches GitHub only through a git proxy needs both settings.
+`moduleRedirects` maps the dagger.io URLs to GitHub, and `git.url` sends the
+GitHub fetches through the proxy:
+
+```json
+{
+  "git": {
+    "url": {
+      "https://git-proxy.example.com/github/": {
+        "insteadOf": ["https://github.com/"]
+      }
+    }
+  },
+  "moduleRedirects": {
+    "dagger.io/sdk/go": "github.com/dagger/go-sdk",
+    "dagger.io/sdk/helpers": "github.com/dagger/sdk-helpers"
+  }
+}
+```
+
+The engine reads both settings at startup. Restart it after changing them.
 
 ## Engine resource metrics
 

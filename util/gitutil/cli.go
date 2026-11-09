@@ -321,6 +321,7 @@ func (cli *GitCLI) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 		cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+cli.sshAuthSock)
 	}
 
+	cmd.Env = append(cmd.Env, urlRewriteEnv...)
 	if len(cli.config) > 0 {
 		cmd.Env = MergeGitConfigEnv(cmd.Env, cli.config)
 	}

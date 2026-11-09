@@ -1,0 +1,99 @@
+#!/usr/bin/env sh
+
+# Fill in moduleRedirects in an engine.json: module URLs pinned to the URLs
+# their dagger-get redirect points to, so the engine resolves them without
+# asking the redirecting host (e.g. dagger.io from an air-gapped engine).
+#
+# Each module URL already in the file, plus any given as arguments, is probed
+# at https://<url>?dagger-get=1 and its redirect target recorded. When there
+# are none, the dagger.io URLs Dagger's SDKs use are probed. An entry already
+# in the file whose host answers without a redirect, such as one sending
+# github.com/dagger/python-sdk to a mirror, is kept as it is. Other keys in the
+# file are kept; a missing file is created.
+#
+#   hack/update-module-redirects ./engine.json                     # refresh
+#   hack/update-module-redirects ./engine.json dagger.io/sdk/rust  # add one
+#
+# The engine reads the file at startup (/etc/dagger/engine.json in the engine
+# container), so restart the engine to apply changes.
+#
+# Requires curl and jq. Fails without writing if any URL does not redirect
+# the way the engine's probe requires.
+
+set -eu
+
+if [ $# -lt 1 ]; then
+	echo "usage: $0 ENGINE_JSON [MODULE_URL...]" >&2
+	exit 1
+fi
+file="$1"
+shift
+
+defaults="
+dagger.io/linux/alpine
+dagger.io/linux/wolfi
+dagger.io/sdk/dang
+dagger.io/sdk/elixir
+dagger.io/sdk/go
+dagger.io/sdk/helpers
+dagger.io/sdk/java
+dagger.io/sdk/php
+dagger.io/sdk/python
+dagger.io/sdk/typescript
+"
+
+config='{}'
+if [ -f "$file" ]; then
+	config="$(cat "$file")"
+fi
+
+existing="$(printf '%s\n' "$config" | jq -c '.moduleRedirects // {}')"
+names="$( (printf '%s\n' "$existing" | jq -r 'keys[]'; for name in "$@"; do echo "$name"; done) | sort -u)"
+if [ -z "$names" ]; then
+	names="$defaults"
+fi
+
+for name in $names; do
+	case "$name" in
+	*://* | *@* | *\?* | *\#*)
+		echo "$name: give a host and path, without scheme, version, or query" >&2
+		exit 1
+		;;
+	esac
+done
+
+redirects='{}'
+for name in $names; do
+	headers="$(curl -sS -o /dev/null -D - --max-time 10 "https://$name?dagger-get=1")"
+	status="$(printf '%s\n' "$headers" | sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p')"
+	location="$(printf '%s\n' "$headers" | tr -d '\r' | sed -n 's/^[Ll]ocation: *//p')"
+	case "$status" in
+	3??) ;;
+	*)
+		kept="$(printf '%s\n' "$existing" | jq -r --arg k "$name" '.[$k] // empty')"
+		if [ -n "$kept" ] && [ -n "$status" ]; then
+			echo "$name -> $kept (kept: HTTP $status, no redirect)"
+			redirects="$(printf '%s\n' "$redirects" | jq -S --arg k "$name" --arg v "$kept" '.[$k] = $v')"
+			continue
+		fi
+		echo "$name: expected a redirect, got HTTP $status" >&2
+		exit 1
+		;;
+	esac
+	# Like the engine's probe: the target must be absolute https and echo the
+	# dagger-get marker, which is the only query it may carry.
+	case "$location" in
+	https://*\?dagger-get=1) target="${location#https://}" target="${target%\?dagger-get=1}" ;;
+	*)
+		echo "$name: unusable redirect target ${location:-(none)}" >&2
+		exit 1
+		;;
+	esac
+	echo "$name -> $target"
+	redirects="$(printf '%s\n' "$redirects" | jq -S --arg k "$name" --arg v "$target" '.[$k] = $v')"
+done
+
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+printf '%s\n' "$config" | jq --argjson r "$redirects" '.moduleRedirects = $r' >"$tmp"
+cp "$tmp" "$file"
