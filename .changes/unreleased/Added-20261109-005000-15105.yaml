@@ -1,0 +1,12 @@
+kind: Added
+body: |
+  `JSON` arguments accept raw JSON values: objects, lists, numbers and
+  booleans, as literals in the query or in variables, so standard GraphQL
+  clients can pass them directly instead of a string of JSON text. A raw value
+  is stored as its compact JSON text, and gets the same ID and cache key as
+  that text passed as a string. Strings still mean JSON text, and `JSON`
+  output is unchanged.
+time: 2026-11-09T00:50:00Z
+custom:
+  Author: vito
+  PR: "15105"
