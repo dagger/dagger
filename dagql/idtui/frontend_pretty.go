@@ -4313,10 +4313,13 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // check'); otherwise it emits just "RUN LOCALLY". The "RUN LOCALLY" section can
 // be overridden by FrontendOpts.RerunSuggestion, for consumers that don't have
 // a CLI to run. Only outermost
-// checks are re-runnable, so sub-checks roll up to their root. A failed
+// checks are re-runnable, so sub-checks roll up to their root; a collection
+// group is the exception, since each of its items is re-runnable locally. A failed
 // staleness check also gets a "REGENERATE" section ('dagger generate' for its
 // generator), since running the generator is what fixes it. Returns nil when
 // no failed check applies. Controlled by showSuggestions at the call site.
+//
+//nolint:gocyclo // one section per rerun kind; splitting obscures the layout
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.db == nil {
 		return nil
@@ -4342,20 +4345,57 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 			addGenerators(child)
 		}
 	}
-	add := func(n *dagui.CheckNode) {
-		if n.Name == "" || seen[n.Name] {
+	addLocal := func(n *dagui.CheckNode) {
+		if seen[n.Name] {
 			return
 		}
 		seen[n.Name] = true
 		names = append(names, n.Name)
 		addGenerators(n)
 	}
+	// Native CI reports a collection as its group check, so a CI re-run
+	// targets the group. Locally, each failed item is its own re-runnable
+	// check, named by the address that selects it; the group itself is only
+	// suggested when no item failed (e.g. it was cancelled before any ran).
+	var ciNames []string
+	seenCI := map[string]bool{}
+	add := func(n *dagui.CheckNode) {
+		if n.Name == "" {
+			return
+		}
+		ciName := n.Name
+		if group := collectionGroupOf(n.Span); group != nil {
+			ciName = group.CheckName
+		}
+		if !seenCI[ciName] {
+			seenCI[ciName] = true
+			ciNames = append(ciNames, ciName)
+		}
+		if n.Span.CheckCollectionGroup {
+			var failedItem bool
+			for _, item := range n.Children {
+				if item.Name != "" && item.Failed() {
+					failedItem = true
+					addLocal(item)
+				}
+			}
+			if failedItem {
+				return
+			}
+		}
+		addLocal(n)
+	}
 
 	switch {
 	case zoomed != nil && zoomed.CheckName != "":
 		// Zoomed to a check: re-run its outermost surfaced check (the re-runnable
-		// unit), if that check failed.
-		if root := outermostSurfacedCheck(roots, zoomed.CheckName); root != nil && root.Failed() {
+		// unit), if that check failed. Within a collection, the unit is the
+		// zoomed item.
+		root := outermostSurfacedCheck(roots, zoomed.CheckName)
+		if root != nil && root.Span.CheckCollectionGroup && root.Name != zoomed.CheckName {
+			root = outermostSurfacedCheck(root.Children, zoomed.CheckName)
+		}
+		if root != nil && root.Failed() {
 			add(root)
 		}
 	case zoomed == nil:
@@ -4378,8 +4418,8 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	// commit). A distinct section from the local reproduce: it kicks off a fresh
 	// Cloud run, it doesn't run anything here.
 	if fe.ciMeta != nil && fe.ciMeta.isNativeCI && fe.ciMeta.commit != "" {
-		body := make([]string, 0, len(names))
-		for _, name := range names {
+		body := make([]string, 0, len(ciNames))
+		for _, name := range ciNames {
 			body = append(body, fmt.Sprintf("dagger cloud checks rerun --commit %s --check %q", fe.ciMeta.commit, name))
 		}
 		lines = append(lines, reportSectionLines(out, fe.agentStyle(), "RE-RUN IN CI", body)...)
@@ -4428,6 +4468,18 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	}
 
 	return lines
+}
+
+// collectionGroupOf returns the collection group check span is, or sits
+// beneath, or nil. It walks the span's ancestors rather than the surfaced
+// tree, which a zoom into one item scopes to that item.
+func collectionGroupOf(span *dagui.Span) *dagui.Span {
+	for ; span != nil; span = span.ParentSpan {
+		if span.CheckCollectionGroup {
+			return span
+		}
+	}
+	return nil
 }
 
 // outermostSurfacedCheck returns the top-level surfaced check whose subtree
@@ -4481,13 +4533,21 @@ func checksHeaderLine(out TermOutput, agent bool, nodes []*dagui.CheckNode) stri
 // "✔ N passed" parts (via the test summary's renderer, so the two headers stay
 // in visual lockstep) for the given checks, counted directly rather than
 // recursively: each CHECKS header tallies the checks listed directly beneath
-// it. Boundaries are already honored by SurfacedChecks, so checks a test
-// intentionally runs aren't among the nodes. NB: with incremental --full
-// loading the passed tally only covers checks already fetched.
+// it. A collection group counts as its items, the checks that ran, so the
+// tally reads as it did before items were grouped. Boundaries are already
+// honored by SurfacedChecks, so checks a test intentionally runs aren't among
+// the nodes. NB: with incremental --full loading the passed tally only covers
+// checks already fetched.
 func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
-	spans := make([]*dagui.Span, len(nodes))
-	for i, n := range nodes {
-		spans[i] = n.Span
+	spans := make([]*dagui.Span, 0, len(nodes))
+	for _, n := range nodes {
+		if n.Span.CheckCollectionGroup && len(n.Children) > 0 {
+			for _, item := range n.Children {
+				spans = append(spans, item.Span)
+			}
+			continue
+		}
+		spans = append(spans, n.Span)
 	}
 	return renderTestCountParts(out, surfacedSpanCounts(spans))
 }

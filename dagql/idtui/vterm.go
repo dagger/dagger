@@ -26,6 +26,10 @@ type Vterm struct {
 	Profile termenv.Profile
 
 	vt *midterm.Terminal
+	// Resizes made before the screen exists, each at the length the raw log
+	// had then: midterm doesn't reflow rows already written, so the screen
+	// replays them where they happened.
+	pendingResizes []vtermResize
 
 	// Media uses ordered blocks; text-only terminals retain their legacy path.
 	images      *kittyImages
@@ -55,7 +59,6 @@ type Vterm struct {
 func NewVterm(profile termenv.Profile) *Vterm {
 	return &Vterm{
 		Profile:     profile,
-		vt:          midterm.NewAutoResizingTerminal(),
 		viewBuf:     new(bytes.Buffer),
 		rawBuf:      new(bytes.Buffer),
 		markdownBuf: new(bytes.Buffer),
@@ -64,7 +67,60 @@ func NewVterm(profile termenv.Profile) *Vterm {
 }
 
 func (term *Vterm) Term() *midterm.Terminal {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	return term.screen()
+}
+
+// screen returns the terminal screen that lays out and renders the log. A
+// screen keeps each character as a rune and its format, several times the
+// size of the log itself, and most logs are never shown: a run of tests can
+// stream hundreds of megabytes into logs nobody opens. So a log of plain
+// writes keeps only its raw bytes until something first needs its screen,
+// which then replays them. Callers hold term.mu, or are the frontend's own
+// render path.
+func (term *Vterm) screen() *midterm.Terminal {
+	if term.vt == nil {
+		vt := midterm.NewAutoResizingTerminal()
+		raw := term.rawBuf.Bytes()
+		var at int
+		for _, resize := range term.pendingResizes {
+			_, _ = vt.Write(raw[at:resize.at])
+			vt.ResizeX(resize.cols)
+			at = resize.at
+		}
+		_, _ = vt.Write(raw[at:])
+		term.vt = vt
+		term.pendingResizes = nil
+		// Nothing scrolls a log before its screen exists, so it follows the
+		// end of the log, as each Write would have.
+		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+	}
 	return term.vt
+}
+
+type vtermResize struct {
+	at   int
+	cols int
+}
+
+// resizeScreen sets the screen's width, or notes it for the screen to replay
+// once it's built.
+func (term *Vterm) resizeScreen(cols int) {
+	if term.vt != nil {
+		term.vt.ResizeX(cols)
+		return
+	}
+	term.pendingResizes = append(term.pendingResizes, vtermResize{at: term.rawBuf.Len(), cols: cols})
+}
+
+// screenAutoResizesX reports whether the screen still sizes its width to its
+// content: it does until its first resize.
+func (term *Vterm) screenAutoResizesX() bool {
+	if term.vt != nil {
+		return term.vt.AutoResizeX
+	}
+	return len(term.pendingResizes) == 0
 }
 
 func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
@@ -74,6 +130,9 @@ func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
 	if term.segments != nil {
 		return term.writeMediaText(p, true, false), nil
 	}
+	// The raw log is about to hold bytes the screen never sees, so it can no
+	// longer be replayed into one.
+	term.screen()
 	n, err := term.markdownBuf.Write(p)
 	if err != nil {
 		return n, err
@@ -99,7 +158,7 @@ func (term *Vterm) WriteDiff(p []byte) (int, error) {
 	}
 
 	highlighted := highlightDiff(term.Profile, string(p))
-	if _, err := term.vt.Write([]byte(highlighted)); err != nil {
+	if _, err := term.screen().Write([]byte(highlighted)); err != nil {
 		return 0, err
 	}
 	if _, err := term.rawBuf.Write(p); err != nil {
@@ -119,6 +178,11 @@ func (term *Vterm) Write(p []byte) (int, error) {
 
 	if term.segments != nil {
 		return term.writeMediaText(p, false, false), nil
+	}
+	if term.vt == nil {
+		// No screen yet: keep the bytes for it to replay when it's needed.
+		term.needsRedraw = true
+		return term.rawBuf.Write(p)
 	}
 	atBottom := term.Offset+term.Height >= term.usedHeightLocked()
 	if term.Height == 0 {
@@ -151,7 +215,7 @@ func (term *Vterm) usedHeightLocked() int {
 		term.layoutMedia()
 		return len(term.mediaRows)
 	}
-	return term.vt.UsedHeight()
+	return term.screen().UsedHeight()
 }
 
 func (term *Vterm) SetHeight(height int) {
@@ -183,7 +247,7 @@ func (term *Vterm) SetWidth(width int) {
 	}
 	prefixWidth := lipgloss.Width(term.Prefix)
 	if width > prefixWidth {
-		term.vt.ResizeX(width - prefixWidth)
+		term.resizeScreen(width - prefixWidth)
 	}
 	term.needsRedraw = true
 }
@@ -211,8 +275,8 @@ func (term *Vterm) SetPrefix(prefix string) {
 		return
 	}
 	prefixWidth := lipgloss.Width(prefix)
-	if term.Width > prefixWidth && !term.vt.AutoResizeX {
-		term.vt.ResizeX(term.Width - prefixWidth)
+	if term.Width > prefixWidth && !term.screenAutoResizesX() {
+		term.resizeScreen(term.Width - prefixWidth)
 	}
 	term.needsRedraw = true
 }
@@ -257,7 +321,7 @@ func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 	}
 	if query == "" {
 		if term.SearchQuery != "" {
-			term.vt.SearchClear()
+			term.screen().SearchClear()
 			term.needsRedraw = true
 		}
 		term.SearchQuery = ""
@@ -266,14 +330,14 @@ func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 	}
 
 	// Always re-run search to pick up new content.
-	term.vt.Search(query)
+	term.screen().Search(query)
 
 	// Mark the current match by row.
 	if currentRow >= 0 {
 		term.setCurrentMatchByRow(currentRow)
 	} else {
 		// Clear any previous current highlight.
-		term.vt.SearchSetCurrent(-1)
+		term.screen().SearchSetCurrent(-1)
 	}
 
 	if term.SearchQuery != query || term.SearchCurrentRow != currentRow {
@@ -286,9 +350,10 @@ func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 // setCurrentMatchByRow finds the first search match on the given row and
 // marks it as "current" in midterm. Must be called with term.mu held.
 func (term *Vterm) setCurrentMatchByRow(row int) {
-	for i, m := range term.vt.SearchMatches {
+	screen := term.screen()
+	for i, m := range screen.SearchMatches {
 		if m.Row == row {
-			term.vt.SearchSetCurrent(i)
+			screen.SearchSetCurrent(i)
 			return
 		}
 	}
@@ -364,18 +429,19 @@ func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
 		term.layoutMedia()
 	}
 	if query == "" {
-		term.vt.SearchClear()
+		term.screen().SearchClear()
 		term.SearchQuery = ""
 		term.SearchCurrentRow = -1
 		term.needsRedraw = true
 		return 0, -1
 	}
 
-	count = term.vt.Search(query)
+	screen := term.screen()
+	count = screen.Search(query)
 	if currentIdx < 0 || currentIdx >= count {
-		row, _ = term.vt.SearchSetCurrent(-1)
+		row, _ = screen.SearchSetCurrent(-1)
 	} else {
-		row, _ = term.vt.SearchSetCurrent(currentIdx)
+		row, _ = screen.SearchSetCurrent(currentIdx)
 	}
 	term.SearchQuery = query
 	term.SearchCurrentRow = row
@@ -539,7 +605,8 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 		term.renderMedia(w, offset, height)
 		return
 	}
-	used := term.vt.UsedHeight()
+	screen := term.screen()
+	used := screen.UsedHeight()
 	if used == 0 {
 		return
 	}
@@ -548,7 +615,7 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 	w = vt
 
 	var lines int
-	for row := range term.vt.Content {
+	for row := range screen.Content {
 		if row < offset {
 			continue
 		}
@@ -557,7 +624,7 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 		}
 
 		fmt.Fprint(w, vt.String(term.Prefix))
-		term.vt.RenderLineFgBg(w, row, nil, nil)
+		screen.RenderLineFgBg(w, row, nil, nil)
 		fmt.Fprintln(w)
 		lines++
 
@@ -573,14 +640,15 @@ func (term *Vterm) LastLine() string {
 	if term.segments != nil {
 		term.layoutMedia()
 	}
-	used := term.vt.UsedHeight()
+	screen := term.screen()
+	used := screen.UsedHeight()
 	if used == 0 {
 		return ""
 	}
 	var lastLine string
 	for row := used - 1; row >= 0; row-- {
 		buf := new(strings.Builder)
-		_ = term.vt.RenderLine(buf, row)
+		_ = screen.RenderLine(buf, row)
 		if strings.TrimSpace(buf.String()) == "" {
 			continue
 		}
@@ -596,9 +664,10 @@ func (term *Vterm) Print(w io.Writer) error {
 		_, err := io.WriteString(w, ansi.Strip(term.rawBuf.String()))
 		return err
 	}
-	used := term.vt.UsedHeight()
+	screen := term.screen()
+	used := screen.UsedHeight()
 
-	for row, l := range term.vt.Content {
+	for row, l := range screen.Content {
 		_, err := fmt.Fprintln(w, strings.TrimRight(string(l), " "))
 		if err != nil {
 			return err
@@ -626,14 +695,15 @@ func (term *Vterm) PrintTail(n int) ([]string, int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 	// Print writes rows 0 through used+1, as far as the content goes.
-	rows := min(term.vt.UsedHeight()+2, len(term.vt.Content))
+	screen := term.screen()
+	rows := min(screen.UsedHeight()+2, len(screen.Content))
 	if rows == 0 {
 		// Print writes nothing, which splits into one empty line.
 		return []string{""}[:min(n, 1)], 1
 	}
 	from := max(rows-n, 0)
 	lines := make([]string, 0, rows-from)
-	for _, l := range term.vt.Content[from:rows] {
+	for _, l := range screen.Content[from:rows] {
 		lines = append(lines, strings.TrimRight(string(l), " "))
 	}
 	return lines, rows

@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Log records, such as call results and exec output, no longer appear twice under
+  a `dagger` CLI run inside a container or under `dagger run`.
+time: 2026-11-07T08:20:00Z
+custom:
+  Author: sipsma
+  PR: "15100"
