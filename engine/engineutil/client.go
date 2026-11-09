@@ -36,6 +36,7 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/hashicorp/go-multierror"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -84,6 +85,9 @@ type Opts struct {
 	// OOMScoreAdj is every exec's OOM score, set so that the kernel kills an
 	// exec before the engine when memory runs out.
 	OOMScoreAdj int
+
+	// ParallelismSem, if set, limits how many container execs run at once.
+	ParallelismSem *semaphore.Weighted
 
 	HostMntNS  *os.File
 	CleanMntNS *os.File
