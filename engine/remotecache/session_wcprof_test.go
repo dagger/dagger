@@ -82,7 +82,7 @@ func profiledExport(t *testing.T, exportID string) (profiledEvent, []profiledEve
 // each blob's PUT a child of that with the blob's size, after a wait for an
 // upload slot. The adapter's capture runs under it.
 func TestExportProfiled(t *testing.T) {
-	d1, d2 := digest.FromString("one"), digest.FromString("two")
+	d1, d2 := digest.FromString("first"), digest.FromString("second")
 	data := blobs{d1: "first", d2: "second"}
 	adapter := newFakeAdapter()
 	var adapterOp uint64
