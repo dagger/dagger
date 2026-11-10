@@ -1377,9 +1377,10 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*core.Director
 		require.NoError(t, err)
 		require.Contains(t, entries, "new-empty/")
 
+		// The subdirectory is its own root: ".." stays in it.
 		parentEntries, err := resultDir.Directory("..").Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"subdir/"}, parentEntries)
+		require.Equal(t, []string{"new-empty/"}, parentEntries)
 	})
 
 	t.Run("file replaced by empty directory", func(ctx context.Context, t *testctx.T) {
