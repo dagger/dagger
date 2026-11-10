@@ -353,7 +353,9 @@ type TestSplit {
   Test Container
   """
   pub testContainer: Void @check {
-    testSpecific(["TestContainer", "TestDockerfile"])
+    # Some of its tests load Go modules in fresh nested engines made from this
+    # one.
+    testSpecific(["TestContainer", "TestDockerfile"], imageEntries: true)
   }
 
   """
