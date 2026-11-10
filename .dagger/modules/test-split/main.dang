@@ -30,9 +30,9 @@ type TestSplit {
   """
   let devEngine(imageEntries: Boolean! = false): EngineDev! {
     if (imageEntries) {
-      engineDev(ws: self.ws)
+      engineDev(ws: self.ws).withImageEntries
     } else {
-      engineDev(ws: self.ws).withoutImageEntries
+      engineDev(ws: self.ws)
     }
   }
 

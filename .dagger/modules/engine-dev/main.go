@@ -109,7 +109,7 @@ type EngineDev struct {
 	EBPFProgs    []string // +private
 
 	Race               bool // +private
-	NoImageEntries     bool // +private
+	ImageEntries       bool // +private
 	ClientDockerConfig *dagger.Secret
 
 	Ws *dagger.Workspace // +private
@@ -144,12 +144,13 @@ func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
 	return dev
 }
 
-// Build the engine without the cache entries its image ships. Making them
-// starts a separate engine of the build and costs minutes, while an engine
-// that serves many clients, such as a test run's, builds the same results
-// once for its first client.
-func (dev *EngineDev) WithoutImageEntries() *EngineDev {
-	dev.NoImageEntries = true
+// Build the engine with the cache entries its image ships, as a release
+// does. Making them starts a separate engine of the build and costs minutes,
+// while an engine that serves many clients, such as a test run's, builds the
+// same results once for its first client, and one that loads no Go module
+// never needs them; so an engine built for anything else goes without.
+func (dev *EngineDev) WithImageEntries() *EngineDev {
+	dev.ImageEntries = true
 	return dev
 }
 
@@ -183,7 +184,7 @@ func (dev *EngineDev) Container(
 	if err != nil {
 		return nil, err
 	}
-	if dev.NoImageEntries {
+	if !dev.ImageEntries {
 		return ctr, nil
 	}
 	exporter := ctr
@@ -608,7 +609,8 @@ func (dev *EngineDev) Publish(
 	// +optional
 	registryPassword *dagger.Secret,
 ) error {
-	targetResults, err := dev.buildTargets(ctx, tag)
+	// The released image ships its entries.
+	targetResults, err := dev.WithImageEntries().buildTargets(ctx, tag)
 	if err != nil {
 		return err
 	}

@@ -651,6 +651,20 @@ func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev {
 	}
 }
 
+// Build the engine with the cache entries its image ships, as a release
+// does. Making them starts a separate engine of the build and costs minutes,
+// while an engine that serves many clients, such as a test run's, builds the
+// same results once for its first client, and one that loads no Go module
+// never needs them; so an engine built for anything else goes without.
+func (r *EngineDev) WithImageEntries() *EngineDev {
+	q := r.query.Select("withImageEntries")
+
+	return &EngineDev{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
 func (r *EngineDev) WithLogLevel(level string) *EngineDev {
 	q := r.query.Select("withLogLevel")
 	q = q.Arg("level", level)
@@ -663,19 +677,6 @@ func (r *EngineDev) WithLogLevel(level string) *EngineDev {
 
 func (r *EngineDev) WithRace() *EngineDev {
 	q := r.query.Select("withRace")
-
-	return &EngineDev{
-		query:     q,
-		refetchID: r.refetchID,
-	}
-}
-
-// Build the engine without the cache entries its image ships. Making them
-// starts a separate engine of the build and costs minutes, while an engine
-// that serves many clients, such as a test run's, builds the same results
-// once for its first client.
-func (r *EngineDev) WithoutImageEntries() *EngineDev {
-	q := r.query.Select("withoutImageEntries")
 
 	return &EngineDev{
 		query:     q,
