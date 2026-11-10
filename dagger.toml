@@ -420,8 +420,7 @@ is-module = true
 [sdks.go.scopes.".dagger/modules/go".settings]
 dangEntrypoint = true
 unifiedClients = true
-daggerGo = true
-targetVersion = "v1.0.0-beta.26"
+daggerGo = false
 
 [modules.dagger-dev]
 source = ".dagger/modules/dagger-dev"
