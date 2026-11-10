@@ -428,7 +428,9 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTag
 			return err
 		}
 
-		git := gitutil.NewGitCLI(gitutil.WithDir(src))
+		// The repository is the directory's own: Git doesn't search the
+		// directories above it, which aren't part of it.
+		git := gitutil.NewGitCLI(gitutil.WithDir(src), gitutil.WithEnv("GIT_CEILING_DIRECTORIES="+filepath.Dir(src)))
 		return fn(ctx, git)
 	}, mountRefAsReadOnly)
 }
