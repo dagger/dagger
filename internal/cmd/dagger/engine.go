@@ -387,7 +387,32 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	}
 	params.CloudAuth = ca
 
+	if err := applyHostPolicy(&params); err != nil {
+		return params, err
+	}
+
 	return params, nil
+}
+
+// applyHostPolicy sets the host policy from the environment. The engine reads
+// some files of this host at session start; a policy that does not allow them
+// leaves them out, so that the session does not stop before it starts.
+func applyHostPolicy(params *client.Params) error {
+	policy, err := client.ParseHostPolicy(os.Getenv(client.HostPolicyEnv))
+	if err != nil {
+		return fmt.Errorf("%s: %w", client.HostPolicyEnv, err)
+	}
+	if policy == nil {
+		return nil
+	}
+	params.HostPolicy = policy
+	if !policy.AllowsRead(params.UserConfigPath) {
+		params.UserConfigPath = ""
+	}
+	if !policy.AllowsRead(params.CloudCredentialsPath) {
+		params.CloudCredentialsPath = ""
+	}
+	return nil
 }
 
 // primarySpanNamer applies span-name records the engine publishes for the

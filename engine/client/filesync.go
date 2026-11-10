@@ -113,12 +113,21 @@ func (s FilesyncSource) FindUp(ctx context.Context, req *filesync.FindUpRequest)
 	if err != nil {
 		return nil, fmt.Errorf("get full root path: %w", err)
 	}
-	remaining := make(map[string]struct{}, len(req.Names))
-	for _, name := range req.Names {
+	return findUp(start, req.Names, nil)
+}
+
+// findUp searches start and its parents for names. A non-nil searchable stops
+// the search at the first directory that it rejects.
+func findUp(start string, names []string, searchable func(dir string) bool) (*filesync.FindUpResponse, error) {
+	remaining := make(map[string]struct{}, len(names))
+	for _, name := range names {
 		remaining[name] = struct{}{}
 	}
 	found := make(map[string]string, len(remaining))
 	for dir := start; len(remaining) > 0; {
+		if searchable != nil && !searchable(dir) {
+			break
+		}
 		for name := range remaining {
 			p := filepath.Join(dir, name)
 			if _, err := fsutil.Stat(p); err != nil {

@@ -193,6 +193,10 @@ type Params struct {
 	Profile bool
 	// ProfileEBPF names the eBPF programs to profile the session with.
 	ProfileEBPF []string
+
+	// HostPolicy limits what this client does on its host for the engine.
+	// Nil serves every host request. See HostPolicy.
+	HostPolicy *HostPolicy
 }
 
 type Client struct {
@@ -218,6 +222,9 @@ type Client struct {
 	// attachables connection before Close started. The engine retires the
 	// session when it does that, so every later request fails with this cause.
 	sessionLost atomic.Pointer[error]
+
+	// hostPolicy enforces Params.HostPolicy. Nil when there is no policy.
+	hostPolicy *hostPolicyEnforcer
 
 	telemetry *errgroup.Group
 
@@ -276,6 +283,13 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	params.SkipWorkspaceModules = false
 
 	c := &Client{Params: params}
+
+	if params.HostPolicy != nil {
+		c.hostPolicy, err = newHostPolicyEnforcer(params.HostPolicy)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	if c.ID == "" {
 		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
@@ -339,6 +353,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv(nestedSessionPortEnv)
 	if isNestedSession {
+		if c.hostPolicy != nil {
+			// A nested client uses the host services of the session that it
+			// joins, so it cannot apply its own policy to them.
+			return nil, fmt.Errorf("a host policy cannot apply to a nested session (%s is set)", nestedSessionPortEnv)
+		}
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
 		if err != nil {
 			return nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
@@ -691,6 +710,43 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	clientMetadata := c.clientMetadata()
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
 
+	attachables, err := c.sessionAttachables(ctx)
+	if err != nil {
+		return err
+	}
+
+	sessionConn, err := c.DialContext(ctx, "", "")
+	if err != nil {
+		return fmt.Errorf("dial for session attachables: %w", err)
+	}
+	defer func() {
+		if rerr != nil {
+			sessionConn.Close()
+		}
+	}()
+
+	c.sessionSrv, err = ConnectSessionAttachables(ctx,
+		sessionConn,
+		c.AppendHTTPRequestHeaders(http.Header{}),
+		attachables...,
+	)
+	if err != nil {
+		return fmt.Errorf("connect session attachables: %w", err)
+	}
+
+	c.runSessionAttachables()
+
+	c.httpClient = c.newHTTPClient()
+	return nil
+}
+
+// sessionAttachables returns the host services that this client serves to
+// the engine.
+func (c *Client) sessionAttachables(ctx context.Context) ([]SessionAttachable, error) {
+	if c.hostPolicy != nil {
+		return c.hostPolicy.attachables(ctx)
+	}
+
 	attachables := []SessionAttachable{
 		// sockets
 		SocketProvider{EnableHostNetworkAccess: true},
@@ -717,7 +773,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	// filesync
 	filesyncer, err := NewFilesyncer()
 	if err != nil {
-		return fmt.Errorf("new filesyncer: %w", err)
+		return nil, fmt.Errorf("new filesyncer: %w", err)
 	}
 	attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 	if c.Params.PromptHandler != nil {
@@ -727,34 +783,11 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	if c.imageLoader != nil {
 		attachable, err := store.NewImageLoaderAttachable(c.imageLoader)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		attachables = append(attachables, attachable)
 	}
-
-	sessionConn, err := c.DialContext(ctx, "", "")
-	if err != nil {
-		return fmt.Errorf("dial for session attachables: %w", err)
-	}
-	defer func() {
-		if rerr != nil {
-			sessionConn.Close()
-		}
-	}()
-
-	c.sessionSrv, err = ConnectSessionAttachables(ctx,
-		sessionConn,
-		c.AppendHTTPRequestHeaders(http.Header{}),
-		attachables...,
-	)
-	if err != nil {
-		return fmt.Errorf("connect session attachables: %w", err)
-	}
-
-	c.runSessionAttachables()
-
-	c.httpClient = c.newHTTPClient()
-	return nil
+	return attachables, nil
 }
 
 func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.ClientConn) (rerr error) {
@@ -849,6 +882,43 @@ func (c *Client) SessionLost() error {
 		return *err
 	}
 	return nil
+}
+
+// HostPolicyViolation returns the first host request that the host policy
+// refused, or nil. A refusal stops the session.
+func (c *Client) HostPolicyViolation() error {
+	if c.hostPolicy == nil {
+		return nil
+	}
+	return c.hostPolicy.err()
+}
+
+// HostPolicyStopped is closed when the host policy refuses a host request.
+// Without a policy, it is never closed.
+func (c *Client) HostPolicyStopped() <-chan struct{} {
+	if c.hostPolicy == nil {
+		return nil
+	}
+	return c.hostPolicy.stopped.Done()
+}
+
+// sessionStopped returns why the session cannot serve more requests, or nil.
+func (c *Client) sessionStopped() error {
+	if err := c.SessionLost(); err != nil {
+		return err
+	}
+	return c.HostPolicyViolation()
+}
+
+// cancelOnHostPolicyViolation cancels a request when the host policy stops
+// the session. Call the returned function when the request ends.
+func (c *Client) cancelOnHostPolicyViolation(cancel context.CancelCauseFunc) func() bool {
+	if c.hostPolicy == nil {
+		return func() bool { return false }
+	}
+	return context.AfterFunc(c.hostPolicy.stopped, func() {
+		cancel(c.hostPolicy.err())
+	})
 }
 
 // How long the engine has to answer the session attachables request. It's
@@ -1035,6 +1105,13 @@ func (c *Client) Close() error {
 // CloseWithContext uses one caller-controlled deadline for graceful shutdown
 // and telemetry draining. Transport cleanup still runs when the deadline expires.
 func (c *Client) CloseWithContext(ctx context.Context) (rerr error) {
+	// A session that the host policy stopped failed, even when every request
+	// that its caller made succeeded.
+	defer func() {
+		if err := c.HostPolicyViolation(); err != nil {
+			rerr = errors.Join(err, rerr)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(ctx, clientShutdownTimeout())
 	defer cancel()
 	stop := context.AfterFunc(ctx, func() {
@@ -1721,6 +1798,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r = r.WithContext(ctx)
 	defer cancel(errors.New("client done serving HTTP"))
+	defer c.cancelOnHostPolicyViolation(cancel)()
 
 	if c.SecretToken != "" {
 		username, _, ok := r.BasicAuth()
@@ -1731,7 +1809,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := c.SessionLost(); err != nil {
+	if err := c.sessionStopped(); err != nil {
 		writeSessionLost(w, r, err)
 		return
 	}
@@ -1768,6 +1846,11 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := c.httpClient.Do(proxyReq)
 	if err != nil {
+		if violation := c.HostPolicyViolation(); violation != nil {
+			// The refusal cancelled this request: answer with it.
+			writeSessionLost(w, r, violation)
+			return
+		}
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("http do: " + err.Error()))
 		return
@@ -1911,7 +1994,8 @@ func (c *Client) Do(
 		return err
 	}
 	defer cancel(errors.New("Client.Do done"))
-	if err := c.SessionLost(); err != nil {
+	defer c.cancelOnHostPolicyViolation(cancel)()
+	if err := c.sessionStopped(); err != nil {
 		return err
 	}
 
@@ -2197,7 +2281,7 @@ func (c *httpClient) Close() error {
 
 func EngineConn(engineClient *Client) DirectConn {
 	return func(req *http.Request) (*http.Response, error) {
-		if err := engineClient.SessionLost(); err != nil {
+		if err := engineClient.sessionStopped(); err != nil {
 			return nil, err
 		}
 		return engineClient.httpClient.Do(req)
