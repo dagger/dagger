@@ -263,7 +263,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			Link: "https://docs.dagger.io",
 		}
 		if !dryRun {
-			if err := docsdev.New(docsdev.DocsDevOpts{Source: r.Workspace.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: docsDevSourceIgnore})}).Publish(ctx, netlifyToken, docsdev.DocsDevPublishOpts{
+			if err := docsdev.New().Publish(ctx, netlifyToken, docsdev.DocsDevPublishOpts{
 				APIURL: netlifyAPIURL,
 			}); err != nil {
 				artifact.Errors = append(artifact.Errors, core.NewError(err.Error()))
@@ -272,8 +272,6 @@ func (r *Release) Publish( //nolint:gocyclo
 		report.Artifacts = append(report.Artifacts, artifact)
 	}
 
-	pythonWorkspaceDir := r.Workspace.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: pythonClientDevWorkspaceIgnore})
-	phpWorkspaceDir := r.Workspace.Directory("/", dagger.WorkspaceDirectoryOpts{Exclude: phpClientDevWorkspaceIgnore})
 	// The Go and PHP SDKs release from release's own repository. Publish runs
 	// on the engine .github/actions/call pins, and an engine without "core:
 	// give a module served from a module's tree its contextual git" resolves
@@ -316,14 +314,14 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/python/",
 			link: "https://pypi.org/project/dagger-io/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return pythonclientdev.New(r.Workspace, pythonclientdev.PythonClientDevOpts{WorkspaceDir: pythonWorkspaceDir}).Release(ctx, tag, pythonclientdev.PythonClientDevReleaseOpts{
+				return pythonclientdev.New(r.Workspace).Release(ctx, tag, pythonclientdev.PythonClientDevReleaseOpts{
 					PypiRepo:  pypiRepo,
 					PypiURL:   pypiURL,
 					PypiToken: pypiToken,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return checkError(ctx, pythonclientdev.New(r.Workspace, pythonclientdev.PythonClientDevOpts{WorkspaceDir: pythonWorkspaceDir}).ReleaseDryRun())
+				return checkError(ctx, pythonclientdev.New(r.Workspace).ReleaseDryRun())
 			},
 			published: func(ctx context.Context) (bool, error) {
 				u, err := pypiVersionURL(pypiRepo, pypiURL, strings.TrimPrefix(version, "v"))
@@ -394,14 +392,14 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://packagist.org/packages/dagger/dagger#" + cmp.Or(version, "dev-main"),
 			dev:  true,
 			release: func(ctx context.Context) error {
-				return phpclientdev.New(r.Workspace, phpclientdev.PhpClientDevOpts{WorkspaceDir: phpWorkspaceDir}).Release(ctx, tag, phpclientdev.PhpClientDevReleaseOpts{
+				return phpclientdev.New(r.Workspace).Release(ctx, tag, phpclientdev.PhpClientDevReleaseOpts{
 					SourceRepo:  sdkSourceRepo,
 					GithubToken: githubToken,
 					Dest:        phpSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return phpclientdev.New(r.Workspace, phpclientdev.PhpClientDevOpts{WorkspaceDir: phpWorkspaceDir}).ReleaseDryRun(ctx, phpclientdev.PhpClientDevReleaseDryRunOpts{SourceRepo: sdkSourceRepo})
+				return phpclientdev.New(r.Workspace).ReleaseDryRun(ctx, phpclientdev.PhpClientDevReleaseDryRunOpts{SourceRepo: sdkSourceRepo})
 			},
 		},
 		{
