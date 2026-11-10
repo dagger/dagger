@@ -121,7 +121,8 @@ func (s *Store) Walk(ctx context.Context, fn content.WalkFunc, filters ...string
 			return nil
 		}
 		dgst := digest.NewDigestFromEncoded(digest.Algorithm(alg), encoded)
-		if dgst.Validate() != nil {
+		if isBlob := dgst.Validate() == nil; !isBlob {
+			// A file not named by a digest isn't a blob.
 			return nil
 		}
 		fi, err := d.Info()
