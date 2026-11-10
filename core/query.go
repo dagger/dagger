@@ -123,6 +123,12 @@ type Server interface {
 	// for operations like generate that may be exactly what repairs the module.
 	EnsureWorkspaceModules(ctx context.Context, include []string, mode ModuleLoadMode) (loadFailures []ModuleLoadFailure, _ error)
 
+	// The module that the current client's workspace installs as name, as the
+	// session loaded it from that workspace, loading it first if it is still
+	// pending. ok is false when the workspace installs no module with that
+	// name, or when the module cannot load.
+	SessionWorkspaceModule(ctx context.Context, name string) (mod dagql.ObjectResult[*Module], ok bool, _ error)
+
 	// A snapshot of the current workspace lockfile. When requireWritable is
 	// true, returns ok=false for read-only workspace lock sources.
 	CurrentWorkspaceLock(ctx context.Context, requireWritable bool) (*workspacepkg.Lock, bool, error)

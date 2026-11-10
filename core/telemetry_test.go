@@ -82,6 +82,10 @@ func (ms *mockServer) EnsureWorkspaceModules(context.Context, []string, ModuleLo
 	return nil, nil
 }
 
+func (ms *mockServer) SessionWorkspaceModule(context.Context, string) (dagql.ObjectResult[*Module], bool, error) {
+	return dagql.ObjectResult[*Module]{}, false, nil
+}
+
 func (ms *mockServer) CurrentModule(_ context.Context) (dagql.ObjectResult[*Module], error) {
 	var zero dagql.ObjectResult[*Module]
 	if ms.moduleSource == nil {
