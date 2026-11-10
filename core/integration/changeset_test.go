@@ -732,15 +732,14 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"file2.txt"}, entries)
 
-		topLevelDir := d.Directory("..")
-
-		entries, err = topLevelDir.Entries(ctx)
-		require.NoError(t, err)
-		require.Equal(t, []string{"subdir/"}, entries)
-
-		s, err := topLevelDir.File("subdir/file2.txt").Contents(ctx)
+		s, err := d.File("file2.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, s, "content2")
+
+		// The subdirectory is its own root: ".." stays in it.
+		entries, err = d.Directory("..").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"file2.txt"}, entries)
 	})
 
 	t.Run("test changes are restricted to subdir", func(ctx context.Context, t *testctx.T) {
