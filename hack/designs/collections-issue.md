@@ -219,7 +219,7 @@ Fill the dimension fields defined by Artifacts:
 
 ```graphql
 extend type Artifact {
-  dimensionKeys: [ArtifactDimensionKey!]!
+  dimensionKeys(all: Boolean = false): [ArtifactDimensionKey!]!
 }
 
 type ArtifactDimensionKey implements Node {
@@ -232,7 +232,7 @@ extend type Artifacts {
   dimensionDefinitions: [ArtifactDimension!]!
   filterDimensions(dimensions: [String!]!): Artifacts!
   filterDimensionKeys(dimension: String!, keys: [String!]!): Artifacts!
-  dimensions: [String!]!
+  dimensions(all: Boolean = false): [String!]!
   dimensionKeys(dimension: String!): [String!]!
 }
 
@@ -284,7 +284,7 @@ Artifact identity is the set of all dimension keys, including the static keys. T
 
 #### Projections
 
-An address printed for people, such as a `dagger list` row, a check name, or an `Artifact.uri()` result, is a projection: the smallest set of keys, in their shortest names, that selects the same artifact in the loaded workspace. A schema or module change can alter a projection. A stored identifier, such as a Cloud check name or the address an engine sends a cloud engine, uses the full form: every key, and the full path in the type key. `Artifact.uri` prints the full form only for an address without collection keys, whose full path is then its stable name.
+An address printed for people, such as a `dagger list` row, a check name, or an `Artifact.uri()` result, uses the smallest set of keys, in their shortest names, that selects that artifact in the addressed workspace. It must not depend on the source selection's visible columns. A schema or module change can alter this short form. A stored identifier, such as a Cloud check name or the address an engine sends a cloud engine, uses the full form: every key, and the full path in the type key.
 
 A projection shortens two keys:
 
@@ -297,7 +297,42 @@ Distinct keys remain distinct even if `get` returns the same object. Filters nev
 
 Alternatives in one filter use OR. Chained filters use AND. Unknown dimension names or keys match nothing. An ambiguous name is an error. A key filter applies to all collection values represented by its dimension. Skip keys that do not match, but retain the original collection for value lookup. A test absent from one module must not fail selection in another.
 
-`dimensions()` reports identifiers represented by selected artifacts. `dimensionKeys()` reports their keys. Both results are sorted and contain no duplicates. Collection `keys` and `list` retain author order.
+#### Table columns
+
+`Artifacts` is the table. `items` supplies its rows. Do not add a table wrapper.
+
+Flattening produces all workspace dimensions and each artifact's full coordinates. Filters must not change these dimensions or coordinates. Column hiding is a separate display rule.
+
+`Artifacts.dimensions()` returns the dimensions that vary across the selected rows. Hide a dimension when all cells are absent or every row has the same present value. A missing cell differs from every string, including `""`. An empty selection or a selection with one row has no varying dimensions.
+
+`Artifacts.dimensions(all: true)` returns all workspace schema dimensions. This includes dimensions outside the selection and dimensions for empty collections. Filters and collection contents must not change this list. Do not discover collection keys to produce it.
+
+`Artifact.dimensionKeys()` returns the row's coordinates in the visible dimensions of its source `Artifacts` snapshot. Use exactly the dimension set that the parent's `dimensions()` returns. Do not compute visibility from that row alone. A missing coordinate has no entry.
+
+`Artifact.dimensionKeys(all: true)` returns all coordinates of that artifact. Keep these full coordinates internally, regardless of column hiding. Preserve the source snapshot's visible dimensions when an artifact is passed to another client or loaded by ID. An artifact with no source display context returns its full coordinates.
+
+The `all` argument applies only to that field. To render all columns, request `all: true` on both `Artifacts.dimensions` and `Artifact.dimensionKeys`.
+
+Dimension identifiers are sorted and contain no duplicates. Collection `keys` and `list` retain author order. `Artifacts.dimensionKeys(dimension: ...)` remains the list of distinct present keys for that dimension in the selection.
+
+#### Table columns and DAG links
+
+These operations use different reference sets:
+
+| Operation | Reference set | Rule |
+| -- | -- | -- |
+| Choose table columns | Selected artifacts | Omit constant or absent columns |
+| Choose a link's key-value pairs | Entire addressed workspace | Use the fewest pairs that select exactly that artifact |
+
+`Artifact.uri()` chooses its pairs independently of the source selection. Account for any path and type constraints already encoded in the address. A hidden table column can still be required in a link. Conversely, a visible column can be redundant in a link.
+
+For example, a table of docs checks can hide `module=docs`. If another module has the same check name, the link can still need `module=docs` to select the right check. Copying the table's visible coordinates into a link is not sufficient.
+
+Several equally small pair sets can identify an artifact. Choose one with a fixed tie rule. Removing each pair once is not proof that the result has the fewest pairs.
+
+No new link API is needed. The `all` argument controls table metadata. It does not control `uri()`. The existing `absolute` option supplies the workspace address when the link must name its source workspace.
+
+The remaining link rule is under review: must uniqueness follow from the workspace schema, or may it depend on the currently discovered collection contents? A schema guarantee remains valid as collections gain items. A choice based on current contents can use fewer pairs, but new items can make the address ambiguous. This choice does not affect table column hiding.
 
 #### Discovery and evaluation
 

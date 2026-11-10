@@ -233,11 +233,14 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * List dimension identifiers represented in this selection, sorted with no duplicates.
+     * List dimensions whose cells differ across selected rows. Missing cells differ from present keys.
      */
-    public function dimensions(): array
+    public function dimensions(?bool $all = false): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensions');
+        if (null !== $all) {
+        $leafQueryBuilder->setArgument('all', $all);
+        }
         return (array)$this->queryLeaf($leafQueryBuilder, 'dimensions');
     }
 
@@ -271,7 +274,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
+     * Require exactly one artifact from the selected items snapshot; fail if there are zero or multiple matches.
      */
     public function one(): Artifact
     {
