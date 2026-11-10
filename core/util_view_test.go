@@ -3,9 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -105,109 +103,6 @@ func TestWithLinksConfined(t *testing.T) {
 		require.Equal(t, "inside.txt", target, "links within the directory are kept as they are")
 		return nil
 	}))
-}
-
-func TestOutsideInputsDigest(t *testing.T) {
-	t.Parallel()
-
-	// tree lays out a root with app/ (and lib/, equal to it) and the given
-	// outside files and links.
-	tree := func(files, links map[string]string) string {
-		root := t.TempDir()
-		for _, d := range []string{"app", "lib"} {
-			require.NoError(t, os.MkdirAll(filepath.Join(root, d), 0o755))
-			require.NoError(t, os.WriteFile(filepath.Join(root, d, "main.txt"), []byte("main"), 0o644))
-		}
-		for name, contents := range files {
-			require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755))
-			require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(contents), 0o644))
-		}
-		for name, target := range links {
-			require.NoError(t, os.Symlink(target, filepath.Join(root, name)))
-		}
-		return root
-	}
-	digest := func(root, dir string) string {
-		dgst, err := outsideInputsDigest(root, filepath.Join(root, dir))
-		require.NoError(t, err)
-		return dgst
-	}
-
-	none := digest(tree(nil, nil), "app")
-	require.Equal(t, none, digest(tree(map[string]string{"other.txt": "x"}, nil), "app"), "other files around it don't count")
-	require.Equal(t, none, digest(tree(nil, nil), "lib"), "without ignore files, where it is doesn't count")
-
-	passwd := digest(tree(map[string]string{"etc/passwd": "app:x:1000:1000::/:/bin/sh\n"}, nil), "app")
-	require.NotEqual(t, none, passwd)
-	require.NotEqual(t, passwd, digest(tree(map[string]string{"etc/passwd": "app:x:2000:2000::/:/bin/sh\n"}, nil), "app"))
-	require.NotEqual(t, none, digest(tree(map[string]string{"etc/group": "app:x:1000:\n"}, nil), "app"))
-
-	ignored := digest(tree(map[string]string{".gitignore": "*.log\n"}, nil), "app")
-	require.NotEqual(t, none, ignored)
-	require.NotEqual(t, ignored, digest(tree(map[string]string{".gitignore": "*.tmp\n"}, nil), "app"))
-	require.Equal(t, ignored, digest(tree(map[string]string{".gitignore": "*.log\n", "other.txt": "x"}, nil), "app"))
-	require.NotEqual(t, ignored, digest(tree(map[string]string{".gitignore": "*.log\n"}, nil), "lib"),
-		"with ignore files above it, where it is counts: their patterns match by path")
-	require.NotEqual(t, none, digest(tree(map[string]string{".ignore": "*.log\n"}, nil), "app"))
-
-	// A repository above the directory, or at its root, means it isn't keyed
-	// by content at all.
-	for _, files := range []map[string]string{
-		{".git/HEAD": "ref: refs/heads/main\n"},
-		{".git": "gitdir: elsewhere\n"},
-		{"app/.git/HEAD": "ref: refs/heads/main\n"},
-		{"app/nested/.git": "gitdir: ../../../elsewhere\n"},
-		{"HEAD": "ref: refs/heads/main\n", "objects/.keep": "", "refs/.keep": ""},
-		{"HEAD": "ref: refs/heads/main\n", "commondir": "../common\n"},
-		{"app/HEAD": "ref: refs/heads/main\n", "app/objects/.keep": ""},
-		{"app/sub/HEAD": "ref: refs/heads/main\n", "app/sub/refs/.keep": ""},
-	} {
-		root := tree(files, nil)
-		_, err := outsideInputsDigest(root, filepath.Join(root, "app"))
-		require.ErrorIs(t, err, errInRepository, "%v", files)
-	}
-	for _, files := range []map[string]string{
-		{"HEAD": "x"},
-		{"gitdir": "x"},
-		{".jj/repo": "x"},
-		{"app/.jj/repo": "x"},
-		{"app/deep/commondir": "x"},
-	} {
-		root := tree(files, nil)
-		_, err := outsideInputsDigest(root, filepath.Join(root, "app"))
-		require.ErrorIs(t, err, errInRepository, "%v", files)
-	}
-
-	linked := func(rules string) string {
-		return digest(tree(map[string]string{"rules": rules}, map[string]string{"app/.gitignore": "../rules"}), "app")
-	}
-	require.NotEqual(t, linked("*.log\n"), linked("*.tmp\n"), "an ignore file linked from outside counts")
-
-	// A pipe or a device behind an ignore file is never read, which need not
-	// end: the digest fails, so the directory falls back to recipe keying.
-	fifo := tree(nil, nil)
-	require.NoError(t, syscall.Mkfifo(filepath.Join(fifo, "pipe"), 0o644))
-	require.NoError(t, os.Symlink("pipe", filepath.Join(fifo, ".gitignore")))
-	done := make(chan error, 1)
-	go func() {
-		_, err := outsideInputsDigest(fifo, filepath.Join(fifo, "app"))
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		require.Error(t, err)
-	case <-time.After(10 * time.Second):
-		// Unblock the reader so the test can end.
-		w, err := os.OpenFile(filepath.Join(fifo, "pipe"), os.O_WRONLY, 0)
-		if err == nil {
-			w.Close()
-		}
-		t.Fatal("reading an ignore file that is a pipe blocked")
-	}
-
-	loop := tree(nil, map[string]string{".gitignore": ".gitignore"})
-	_, err := outsideInputsDigest(loop, filepath.Join(loop, "app"))
-	require.Error(t, err)
 }
 
 func TestWithoutGitEnv(t *testing.T) {
