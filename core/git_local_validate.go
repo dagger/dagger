@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -111,6 +112,68 @@ func (repo *LocalGitRepository) ValidateSelfContained(ctx context.Context) error
 		if err := check(gitDir); err != nil {
 			return err
 		}
-		return check(commonDir)
+		if err := check(commonDir); err != nil {
+			return err
+		}
+		for _, config := range []string{
+			filepath.Join(gitDir, "config"),
+			filepath.Join(gitDir, "config.worktree"),
+			filepath.Join(commonDir, "config"),
+		} {
+			if err := checkConfigIncludes(ctx, git, root, config, map[string]bool{}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
+}
+
+// checkConfigIncludes ensures that the Git config file at config, and the
+// files it includes, include no file outside root. Git reads an included file
+// as part of the config, so one outside would be read too. A path that leaves
+// root by its text is rejected without being read.
+func checkConfigIncludes(ctx context.Context, git *gitutil.GitCLI, root, config string, seen map[string]bool) error {
+	if seen[config] {
+		return nil
+	}
+	seen[config] = true
+	if _, err := os.Lstat(config); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "config", "--file", config, "--no-includes", "-z", "--get-regexp", `^include\.path$|^includeif\..*\.path$`)
+	if err != nil {
+		return err
+	}
+	for _, entry := range strings.Split(string(out), "\x00") {
+		_, include, ok := strings.Cut(entry, "\n")
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(include, "~") {
+			return fmt.Errorf("git storage must be self-contained: config %q includes %q outside the supplied directory", config, include)
+		}
+		if !filepath.IsAbs(include) {
+			include = filepath.Join(filepath.Dir(config), include)
+		}
+		rel, err := filepath.Rel(root, include)
+		if err != nil || !filepath.IsLocal(rel) {
+			return fmt.Errorf("git storage must be self-contained: config %q includes %q outside the supplied directory", config, include)
+		}
+		resolved, err := filepath.EvalSymlinks(include)
+		if errors.Is(err, os.ErrNotExist) {
+			// Git skips an include that doesn't exist.
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		rel, err = filepath.Rel(root, resolved)
+		if err != nil || !filepath.IsLocal(rel) {
+			return fmt.Errorf("git storage must be self-contained: config %q includes %q outside the supplied directory", config, include)
+		}
+		if err := checkConfigIncludes(ctx, git, root, resolved, seen); err != nil {
+			return err
+		}
+	}
+	return nil
 }
