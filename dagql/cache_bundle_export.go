@@ -31,11 +31,14 @@ type BundleWriter interface {
 }
 
 // ExportBundle exports results as a bundle directory's content: each result,
-// with its record and its closure's, and the complete parts of the result and
-// of every result its value holds (its child references, followed
-// recursively), whatever their types. A Git module source carries its
-// checkout this way, and a container its filesystem, image config and exec
-// metadata. Every result the export reads parts from is decoded, with
+// with its record and its closure's, and the complete parts of the result,
+// whatever its type. A result with no parts of its own carries those of the
+// results its value holds instead (its child references), and so on down
+// through any that have none either. A container carries its filesystem,
+// image config and exec metadata, which are its own parts, and a Git module
+// source, which has none, carries its checkout's. What a result with parts
+// was made from travels as records only: a lookup of the result reads its own
+// parts, not those of what made it. Every result the export reads parts from is decoded, with
 // resolver, and evaluated first, with every part it declares, and a part that
 // still isn't complete fails the export. Every result must be captured: a
 // result left out fails the export.
@@ -129,11 +132,11 @@ func (c *Cache) ExportBundle(ctx context.Context, resolver TypeResolver, results
 	})
 }
 
-// holdBundleRows evaluates results and every result their values hold, their
-// child references followed recursively, holding each one it reaches, and
-// returns them: results first, then each held child once. A child is
-// evaluated before its own references are read, since evaluating a value can
-// complete what it holds.
+// holdBundleRows evaluates results and, for each one with no parts of its
+// own, the results its value holds, followed down through those that have
+// none either, holding each one it reaches, and returns them: results first,
+// then each held child once. A result is evaluated before its parts and
+// references are read, since evaluating a value can complete what it holds.
 func (c *Cache) holdBundleRows(ctx context.Context, resolver TypeResolver, results []AnyResult) (_ []AnyResult, _ func(context.Context) error, rerr error) {
 	var releases []func(context.Context) error
 	release := func(ctx context.Context) error {
@@ -166,7 +169,7 @@ func (c *Cache) holdBundleRows(ctx context.Context, resolver TypeResolver, resul
 			}
 			seen[shared.id] = true
 			held = append(held, res)
-			children, err := c.childReferences(ctx, shared)
+			children, err := c.partHolders(ctx, shared)
 			if err != nil {
 				return nil, nil, fmt.Errorf("export bundle: result %d: %w", shared.id, err)
 			}
@@ -234,13 +237,21 @@ func (c *Cache) pendingDeclaredParts(ctx context.Context, res AnyResult) ([]Part
 	return pending, nil
 }
 
-// childReferences returns the results row's record holds as its children
-// (PersistedRefChild): the results its value holds, as opposed to those its
-// call only took as inputs.
-func (c *Cache) childReferences(ctx context.Context, row *sharedResult) ([]uint64, error) {
+// partHolders returns, for a row whose record declares no parts of its own,
+// the results its record holds as its children (PersistedRefChild): the
+// results its value holds, as opposed to those its call only took as inputs.
+// A row with parts of its own returns none.
+func (c *Cache) partHolders(ctx context.Context, row *sharedResult) ([]uint64, error) {
 	record, err := c.captureRowRecord(ctx, row)
 	if err != nil {
 		return nil, err
+	}
+	probes, err := describePartRecord(record)
+	if err != nil {
+		return nil, err
+	}
+	if len(probes) > 0 {
+		return nil, nil
 	}
 	// An offer's owner references what made the offer, not what the value
 	// holds.
