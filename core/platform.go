@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/containerd/platforms"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -89,4 +91,44 @@ func (p *Platform) UnmarshalJSON(payload []byte) error {
 	}
 	*p = plat
 	return nil
+}
+
+// EngineDefaultPlatformInput names the implicit input that gives a call the
+// platform of the engine that made it.
+const EngineDefaultPlatformInput = "engineDefaultPlatform"
+
+// DeclaredPlatformDigest is the identity of the result of frame declared as
+// made for platform (dagql.Cache.PlatformDigest), with what its inputs know
+// of their contents now.
+func DeclaredPlatformDigest(ctx context.Context, frame *dagql.ResultCall, platform Platform) (digest.Digest, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", err
+	}
+	dig, err := cache.PlatformDigest(frame, platform.Format(), dagql.BuildPlatform{
+		ImplicitInput: EngineDefaultPlatformInput,
+		IsPlatformArg: func(receiverType, field string, view call.View, arg string) bool {
+			typ, ok := srv.ObjectType(receiverType)
+			if !ok {
+				return false
+			}
+			spec, ok := typ.FieldSpec(field, view)
+			if !ok {
+				return false
+			}
+			input, ok := spec.Args.Input(arg, view)
+			return ok && input.Type.Type().Name() == (Platform{}).TypeName()
+		},
+		IsCommand: func(receiverType, field string) bool {
+			return receiverType == (&Container{}).Type().Name() && field == "withExec"
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("identify the result declared for %s: %w", platform.Format(), err)
+	}
+	return dig, nil
 }
