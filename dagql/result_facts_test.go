@@ -70,6 +70,31 @@ func TestCompletedResultFactsSurviveProducerCancellation(t *testing.T) {
 	})
 }
 
+func TestResultFactsForCachedNull(t *testing.T) {
+	ctx, cache, srv := persistedListTestCache(t, "")
+	frame := cacheTestIntCall("facts-null")
+	frame.Type.NonNull = false
+	fact := ResultFact{Namespace: "source-test", Payload: json.RawMessage(`{"path":"/null-source"}`)}
+	req := &CallRequest{ResultCall: frame, ResultFacts: []ResultFact{fact}}
+	result, err := cache.GetOrInitCall(ctx, "test-session", srv, req, func(context.Context) (AnyResult, error) {
+		return nil, nil
+	})
+	require.NoError(t, err)
+	require.Nil(t, result.Unwrap())
+	hit, err := cache.GetOrInitCall(ctx, "test-session", srv, req.Clone(), func(context.Context) (AnyResult, error) {
+		t.Fatal("null result must hit the cache")
+		return nil, nil
+	})
+	require.NoError(t, err)
+	require.True(t, hit.HitCache())
+	for _, ref := range []*ResultCallRef{{Call: frame}, {ResultID: uint64(hit.cacheSharedResult().id)}} {
+		facts, complete, err := cache.ResultFacts(ctx, "test-session", ref, "source-test")
+		require.NoError(t, err)
+		require.True(t, complete)
+		require.Equal(t, []ResultFact{fact}, facts)
+	}
+}
+
 func TestResultFactsStayWithProducerAcrossCollectionRestartAndImport(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "facts.db")
 	ctx, cache, srv := persistedListTestCache(t, dbPath)

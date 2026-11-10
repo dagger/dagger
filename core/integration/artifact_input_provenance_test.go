@@ -20,8 +20,13 @@ func (ArtifactsSuite) TestInlineCollectionProvenance(ctx context.Context, t *tes
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = './probe'\n").
 		WithNewFile("probe/dagger-module.toml", "name = 'probe'\nengineVersion = 'v1.0.0-beta.20'\n[runtime]\nsource = 'dang'\n").
 		WithNewFile("probe/main.dang", `type Probe {
- pub packages(ws: Workspace!): Packages! {
+ let catalogue(ws: Workspace!): String {
    ws.file("/catalogue.txt").contents
+   null
+ }
+ pub packages(ws: Workspace!): Packages! {
+   catalogue(ws)
+   catalogue(ws)
    Packages(names: ["pkg"], entries: [Package(tests: Tests(names: ["one"], input: ws.file("/src/input.txt")))])
  }
 }

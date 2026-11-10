@@ -177,7 +177,9 @@ func (c *Cache) ResultFacts(ctx context.Context, sessionID string, ref *ResultCa
 	if row == nil || !c.sessionSatisfiesResourceRequirementsLocked(sessionID, row) {
 		return nil, false, fmt.Errorf("result facts: result is unavailable to session %q", sessionID)
 	}
-	if !row.hasOwnValueLocked() {
+	// A cached null has facts even though it has no decoded or stored value.
+	// Use the same availability rule as call lookup to exclude holding-only rows.
+	if row.noValueLocked() {
 		return nil, false, nil
 	}
 	var facts []ResultFact

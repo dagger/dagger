@@ -176,7 +176,7 @@ func workspaceInputReadCompletion(ctx context.Context, parent *workspaceInputRea
 	if parent == nil {
 		return nil
 	}
-	return func(_ dagql.AnyResult, callErr error) {
+	return func(result dagql.AnyResult, callErr error) {
 		summary := observation.summary()
 		req := observation.request
 		operation := workspaceInputOperation(ctx, req.ResultCall)
@@ -187,6 +187,11 @@ func workspaceInputReadCompletion(ctx context.Context, parent *workspaceInputRea
 				summary.Issues = append(summary.Issues, "cannot inspect called result inputs: "+err.Error())
 			} else {
 				ref := &dagql.ResultCallRef{Call: req.ResultCall}
+				if result != nil && result.Unwrap() != nil {
+					if id, err := result.ID(); err == nil && id != nil && id.EngineResultID() != 0 {
+						ref = &dagql.ResultCallRef{ResultID: id.EngineResultID()}
+					}
+				}
 				collector.legacySources(ref)
 				summary.merge(collector.result)
 				facts, complete, err := collector.cache.ResultFacts(ctx, collector.session, ref, workspaceInputsNamespace)
