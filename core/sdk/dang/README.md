@@ -78,5 +78,13 @@ it, so modules written for that engine on default to it. The resolved version
 keys the module source digest, so cached results built under one version never
 answer for another.
 
+A pin covers only what Dang gates on its language version. Changes Dang makes
+to every version reach every module: from vito/dang v2.4.1, bare `JSON` in a
+type is Dang's builtin JSON-text scalar, not Dagger's `JSON` scalar, which is
+`Dagger.JSON` (convert between them with a cast). The module entrypoint
+contract keeps bare `JSON`, as released engines declare it. Values display as
+Dang literals (a Dagger object as its lazy query, not its ID) in `toString`,
+interpolation and `print`.
+
 A new Dang major that breaks the v2 line's compatibility would need its own
 package again; prefer a language version gate upstream.
