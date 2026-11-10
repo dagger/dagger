@@ -6553,6 +6553,15 @@ func dockerfileCompatMountSourcePathHasDirHint(sourcePath string) bool {
 	return strings.HasSuffix(sourcePath, "/") || strings.HasSuffix(sourcePath, "/.")
 }
 
+// DockerfileCompatMountSourcePath returns where sourcePath, the source of a
+// Dockerfile bind mount out of the build context at contextDir of snapshot,
+// is in the snapshot. It resolves within the context, as selecting a file or
+// directory of it does (see viewSubpath), so the mount and its content hash
+// read only the context's files.
+func DockerfileCompatMountSourcePath(ctx context.Context, snapshot bkcache.ImmutableRef, contextDir, sourcePath string) (string, error) {
+	return viewSubpath(ctx, snapshot, contextDir, sourcePath)
+}
+
 //nolint:dupl // symmetric with detachedFileAtSourcePath; sharing hides Directory vs File specifics
 func detachedDirectoryAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Directory], sourcePath string) (*Directory, error) {
 	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
@@ -6582,7 +6591,11 @@ func detachedDirectoryAtSourcePath(ctx context.Context, source dagql.ObjectResul
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	dir.SetPath(path.Join(sourceDirPath, sourcePath))
+	dirPath, err := DockerfileCompatMountSourcePath(ctx, sourceSnapshot, sourceDirPath, sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	dir.SetPath(dirPath)
 	dir.SetSnapshot(reopened)
 	return dir, nil
 }
@@ -6616,7 +6629,11 @@ func detachedFileAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Di
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	file.SetPath(path.Join(sourceDirPath, sourcePath))
+	filePath, err := DockerfileCompatMountSourcePath(ctx, sourceSnapshot, sourceDirPath, sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	file.SetPath(filePath)
 	file.SetSnapshot(reopened)
 	return file, nil
 }
