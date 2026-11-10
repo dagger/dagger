@@ -763,11 +763,13 @@ func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *en
 	return results, nil
 }
 
+// searchWithGrep searches with the options that GNU grep and busybox grep
+// share. It does not report byte offsets, because busybox grep has no -b.
 func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOpts) (results []engine.LocalSearchResult, rerr error) {
 	var args []string
 	args = append(args, "-r") // recursive
 	args = append(args, "-n") // line numbers
-	args = append(args, "-b") // byte offset
+	args = append(args, "-H") // file names, also for a single file
 
 	if opts.Literal {
 		args = append(args, "-F") // fixed strings
@@ -841,30 +843,26 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 			}
 		}
 	} else {
-		// Parse grep -rnb output: file:line:offset:content
+		// Parse grep -rnH output: file:line:content
 		scan := bufio.NewScanner(strings.NewReader(output))
 		for scan.Scan() {
 			line := scan.Text()
 			if line == "" {
 				continue
 			}
-			// Format: file:line:byte_offset:matched_line
-			parts := strings.SplitN(line, ":", 4)
-			if len(parts) < 4 {
+			parts := strings.SplitN(line, ":", 3)
+			if len(parts) < 3 {
 				continue
 			}
 			filePath := strings.TrimPrefix(filepath.ToSlash(parts[0]), "./")
 			lineNum := 0
 			fmt.Sscanf(parts[1], "%d", &lineNum)
-			byteOffset := 0
-			fmt.Sscanf(parts[2], "%d", &byteOffset)
-			matchedLine := parts[3]
+			matchedLine := parts[2]
 
 			results = append(results, engine.LocalSearchResult{
-				FilePath:       filePath,
-				LineNumber:     lineNum,
-				AbsoluteOffset: byteOffset,
-				MatchedLines:   matchedLine + "\n",
+				FilePath:     filePath,
+				LineNumber:   lineNum,
+				MatchedLines: matchedLine + "\n",
 			})
 			if opts.Limit != nil && len(results) >= *opts.Limit {
 				break
