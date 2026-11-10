@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 
 	containerdfs "github.com/containerd/continuity/fs"
 
@@ -77,6 +78,24 @@ func withLinksConfined(base string, f func(string) error) error {
 		}
 	}
 	return f(confined)
+}
+
+// withIgnoreFilesConfined calls f with the directory at base, or, if one of
+// its ignore files is a symlink leading out of it, with a copy of it whose
+// symlinks leading out of it point where they resolve within it (see
+// withLinksConfined). ripgrep opens ignore files by path, so such a link
+// would otherwise apply rules from outside the directory.
+func withIgnoreFilesConfined(base string, f func(string) error) error {
+	leaving, err := linksLeavingDir(base)
+	if err != nil {
+		return err
+	}
+	for _, rel := range leaving {
+		if slices.Contains(ignoreFiles, filepath.Base(rel)) {
+			return withLinksConfined(base, f)
+		}
+	}
+	return f(base)
 }
 
 // linksLeavingDir returns the paths, relative to base, of the symlinks in the

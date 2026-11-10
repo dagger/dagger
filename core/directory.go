@@ -2426,34 +2426,45 @@ func (dir *Directory) Search(ctx context.Context, self dagql.ObjectResult[*Direc
 		if err != nil {
 			return err
 		}
-		rgArgs := opts.RipgrepArgs()
-		for _, glob := range globs {
-			rgArgs = append(rgArgs, "--glob="+glob)
+		if opts.SkipIgnored {
+			return withIgnoreFilesConfined(resolvedDir, func(resolvedDir string) error {
+				results, err = searchIn(ctx, opts, verbose, resolvedDir, paths, globs)
+				return err
+			})
 		}
-		if len(paths) > 0 {
-			rgArgs = append(rgArgs, "--")
-			for _, p := range paths {
-				resolved, err := containerdfs.RootPath(resolvedDir, p)
-				if err != nil {
-					return err
-				}
-				// make it relative, now that it's safe, just for less obtuse errors
-				resolved, err = filepath.Rel(resolvedDir, resolved)
-				if err != nil {
-					return err
-				}
-				rgArgs = append(rgArgs, resolved)
-			}
-		}
-		rg := exec.Command("rg", rgArgs...)
-		rg.Dir = resolvedDir
-		results, err = opts.RunRipgrep(ctx, rg, verbose)
+		results, err = searchIn(ctx, opts, verbose, resolvedDir, paths, globs)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return results, nil
+}
+
+// searchIn runs ripgrep for opts in the directory at resolvedDir.
+func searchIn(ctx context.Context, opts SearchOpts, verbose bool, resolvedDir string, paths, globs []string) ([]*SearchResult, error) {
+	rgArgs := opts.RipgrepArgs()
+	for _, glob := range globs {
+		rgArgs = append(rgArgs, "--glob="+glob)
+	}
+	if len(paths) > 0 {
+		rgArgs = append(rgArgs, "--")
+		for _, p := range paths {
+			resolved, err := containerdfs.RootPath(resolvedDir, p)
+			if err != nil {
+				return nil, err
+			}
+			// make it relative, now that it's safe, just for less obtuse errors
+			resolved, err = filepath.Rel(resolvedDir, resolved)
+			if err != nil {
+				return nil, err
+			}
+			rgArgs = append(rgArgs, resolved)
+		}
+	}
+	rg := exec.Command("rg", rgArgs...)
+	rg.Dir = resolvedDir
+	return opts.RunRipgrep(ctx, rg, verbose)
 }
 
 // cleanDotsAndSlashes is similar to path.Clean; however it does not remove any directory names, e.g. "keep/../this//.//" will return "keep/../this".
