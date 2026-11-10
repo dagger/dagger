@@ -57,6 +57,15 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	dagql.Fields[*core.EngineCache]{
+		dagql.NodeFunc("_export", s.cacheExport).
+			Doc(`The cache entries of results, exported as a bundle directory that an engine can merge into its cache: each result with what it was built from, and the data of the result and of every result its value holds.`).
+			Args(
+				dagql.Arg("results").Doc(`The results to export.`),
+				dagql.Arg("forcedCompression").Doc(`Force each layer of the exported data to this compression, converting layers that have another.`),
+			),
+	}.Install(srv)
+
 	dagql.Fields[*core.EngineCacheEntrySet]{
 		dagql.Func("entries", s.cacheEntrySetEntries).
 			Doc("The list of individual cache entries in the set"),
