@@ -17,6 +17,7 @@
 ["","git-latest",["github.com/dagger/pytest"],"refs/heads/main"]
 ["","git-latest",["github.com/dagger/python",["tagPrefix","pytest"]],"refs/tags/v0.2.0"]
 ["","git-latest",["github.com/dagger/sdk-helpers",["version","v1"]],"refs/tags/v1.0.11"]
+["","git-latest",["github.com/dagger/sdk-helpers",["version","v1.0.11"]],"refs/tags/v1.0.11"]
 ["","git-latest",["github.com/dagger/sdk-helpers",["version","v1.0.8"]],"refs/tags/v1.0.8"]
 ["","git-latest",["github.com/dagger/sdk-helpers",["version","v1.0.9"]],"refs/tags/v1.0.9"]
 ["","git-latest",["github.com/dagger/shellcheck"],"refs/heads/main"]
