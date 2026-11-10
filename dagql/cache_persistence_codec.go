@@ -141,7 +141,12 @@ type copiedDecodeRoles struct {
 	ResultID uint64
 	Links    []PersistedSnapshotRefLink
 	Imported bool
-	Host     *PartHost
+	// ArmRecipe is set for a row whose record came from another engine and
+	// holds no download address for any of its parts: a pending value then
+	// decodes with its recipe armed, as local persistence decodes one, so that
+	// it evaluates as a local lazy result does.
+	ArmRecipe bool
+	Host      *PartHost
 }
 
 type PersistedSnapshotScope struct {
@@ -150,14 +155,15 @@ type PersistedSnapshotScope struct {
 }
 
 type PersistDecodeContext struct {
-	scope    PersistedSnapshotScope
-	cleanup  *OnReleaseFunc
-	roles    *copiedDecodeRoles
-	imported bool
-	host     *PartHost
-	server   *Server
-	resultID uint64
-	call     *ResultCall
+	scope     PersistedSnapshotScope
+	cleanup   *OnReleaseFunc
+	roles     *copiedDecodeRoles
+	imported  bool
+	armRecipe bool
+	host      *PartHost
+	server    *Server
+	resultID  uint64
+	call      *ResultCall
 }
 
 // NewPersistDecodeContext returns a decode context for one owner row. dag is
@@ -312,7 +318,7 @@ func (dec *PersistDecodeContext) item(itemCall *ResultCall, index int) *PersistD
 	if dec.host != nil {
 		host = dec.host.at(scope.OutputPath)
 	}
-	return &PersistDecodeContext{server: dec.Server(), call: itemCall, imported: dec.imported, host: host, scope: scope, roles: dec.roles, cleanup: dec.cleanup}
+	return &PersistDecodeContext{server: dec.Server(), call: itemCall, imported: dec.imported, armRecipe: dec.armRecipe, host: host, scope: scope, roles: dec.roles, cleanup: dec.cleanup}
 }
 
 // DecodeLosslessJSON decodes exactly one JSON value, keeping numbers as
@@ -879,6 +885,12 @@ func visitResultCallLiteralReferences(lit *ResultCallLiteral, path PersistedRefP
 
 // Imported reports the copied owner origin, never a temporary decoded row.
 func (dec *PersistDecodeContext) Imported() bool { return dec != nil && dec.imported }
+
+// ArmRecipe reports whether a value whose record came from another engine
+// decodes with its recipe armed, as local persistence decodes a pending value
+// (copiedDecodeRoles.ArmRecipe). A value with no recipe decodes as it would
+// otherwise.
+func (dec *PersistDecodeContext) ArmRecipe() bool { return dec != nil && dec.armRecipe }
 func (dec *PersistDecodeContext) PartHost() *PartHost {
 	if dec == nil {
 		return nil

@@ -77,6 +77,150 @@ func TestImportChainLocalStores(t *testing.T) {
 	t.Logf("A, A+B, A: source reads=%d apply calls=%d", provider.Reads.Load(), consumer.Applies.Load())
 }
 
+// A chain import with Timing sums where its time went over the layers: a
+// fresh layer is fetched and applied; a reimported one reuses its snapshot,
+// and is neither.
+func TestImportChainTiming(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "timed prefix")
+	ab, _ := producer.Build(t, a, "b.txt", "timed suffix")
+	chain := exportChain(t, ab)
+	require.Len(t, chain.Layers, 2)
+	var fresh bkcache.ImportTiming
+	importChain(t, consumer, &bkcache.ExportChain{Layers: chain.Layers, Provider: chain.Provider, Timing: &fresh})
+	require.Positive(t, fresh.Fetch)
+	require.Positive(t, fresh.Apply)
+	require.GreaterOrEqual(t, fresh.LayerWait, time.Duration(0))
+	var reused bkcache.ImportTiming
+	importChain(t, consumer, &bkcache.ExportChain{Layers: chain.Layers, Provider: chain.Provider, Timing: &reused})
+	require.Zero(t, reused.Fetch)
+	require.Zero(t, reused.Apply)
+	require.EqualValues(t, 2, consumer.Applies.Load())
+}
+
+// An export's stats count its layers: a fresh snapshot's are diffed into
+// blobs, and exported again they are reused.
+func TestExportChainStats(t *testing.T) {
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "stats prefix")
+	ab, _ := store.Build(t, a, "b.txt", "stats suffix")
+	first := exportChain(t, ab)
+	require.Len(t, first.Layers, 2)
+	var size int64
+	for _, layer := range first.Layers {
+		size += layer.Descriptor.Size
+	}
+	require.Equal(t, 2, first.Stats.Layers)
+	require.Equal(t, 2, first.Stats.LayersDiffed)
+	require.Zero(t, first.Stats.LayersReused)
+	require.Equal(t, size, first.Stats.BlobBytes)
+	require.Positive(t, first.Stats.RawBytes)
+	require.Positive(t, first.Stats.DiffTime)
+	require.GreaterOrEqual(t, first.Stats.LockWait, time.Duration(0))
+	second := exportChain(t, ab)
+	require.Equal(t, 2, second.Stats.Layers)
+	require.Equal(t, 2, second.Stats.LayersReused)
+	require.Zero(t, second.Stats.LayersDiffed)
+	require.Zero(t, second.Stats.DiffTime)
+	require.Zero(t, second.Stats.RawBytes)
+	require.Zero(t, second.Stats.BlobBytes)
+}
+
+// computedLayers lists, for each of chain's layers, whether the export
+// computed its blob.
+func computedLayers(chain *bkcache.ExportChain) []bool {
+	marks := make([]bool, len(chain.Layers))
+	for i, layer := range chain.Layers {
+		marks[i] = layer.Computed
+	}
+	return marks
+}
+
+// An export marks the layers whose blobs it computed. A fresh snapshot's
+// blob is computed; exported again, or imported elsewhere and exported
+// from there, the blob already exists and is used as it is.
+func TestExportChainMarksComputedLayers(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "computed prefix")
+	ab, _ := producer.Build(t, a, "b.txt", "computed suffix")
+	first := exportChain(t, ab)
+	require.Equal(t, []bool{true, true}, computedLayers(first), "a fresh chain's blobs are computed")
+	require.Equal(t, []bool{false, false}, computedLayers(exportChain(t, ab)), "exported again, its blobs are used as they are")
+	imported := importChain(t, consumer, supplied(first, first.Provider))
+	require.Equal(t, []bool{false, false}, computedLayers(exportChain(t, imported)), "an imported chain's blobs are used as they are")
+}
+
+// A layer whose blob was lost since it was recorded has its blob computed
+// again by the next export.
+func TestExportChainMarksALostBlobComputed(t *testing.T) {
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lost blob")
+	chain := exportChain(t, a)
+	imported := importChain(t, consumer, supplied(chain, chain.Provider))
+	owners, err := consumer.Leases.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, owners, 1)
+	// Keep the snapshot under a lease that names only it, and lose its blob.
+	keep := flatLeaseNamingOnly(t, consumer, "snapshot-only", imported.SnapshotID())
+	t.Cleanup(func() { require.NoError(t, consumer.Leases.Delete(ctx, keep)) })
+	require.NoError(t, consumer.Leases.Delete(ctx, owners[0]))
+	consumer.GC(t)
+	_, err = consumer.Content.Info(ctx, chain.Layers[0].Descriptor.Digest)
+	require.True(t, cerrdefs.IsNotFound(err), "the blob is lost")
+	require.Equal(t, []bool{true}, computedLayers(exportChain(t, imported)), "the lost blob is computed again")
+}
+
+// A forced compression converts a layer's stored blob to the requested one
+// the first time, which computes a blob. The next forced export finds that
+// variant stored and computes none.
+func TestExportChainMarksAForcedConversionComputed(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "forced")
+	require.Equal(t, []bool{true}, computedLayers(exportChain(t, a)), "the uncompressed blob is computed")
+	forcedGzip := func() *bkcache.ExportChain {
+		chain, err := a.ExportChain(ctx, config.RefConfig{Compression: compression.New(compression.Gzip).SetForce(true)})
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, chain.Release(ctx)) })
+		return chain
+	}
+	first := forcedGzip()
+	require.Equal(t, ocispecs.MediaTypeImageLayerGzip, first.Layers[0].Descriptor.MediaType)
+	require.Equal(t, []bool{true}, computedLayers(first), "converting the blob to gzip computes one")
+	second := forcedGzip()
+	require.Equal(t, first.Layers[0].Descriptor, second.Layers[0].Descriptor)
+	require.Equal(t, []bool{false}, computedLayers(second), "the stored gzip variant is used as it is")
+}
+
+// A snapshot labelled as merged has its layer counted as merged when it is
+// diffed; a plain chain's never is. The labels are the merge-usage ones a merge,
+// a diff application or CommitWithUsage writes (merge.go withMergeUsage); a
+// real merge's diff application needs mount privileges these stores lack.
+func TestExportChainMergedStats(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "plain a")
+	plain := exportChain(t, a)
+	require.Zero(t, plain.Stats.LayersMerged)
+	b, _ := store.Build(t, nil, "b.txt", "labelled b")
+	_, err := store.Snapshots.Update(ctx, ctdsnapshots.Info{
+		Name: b.SnapshotID(),
+		Labels: map[string]string{
+			"buildkit.mergeUsageSize":   "4096",
+			"buildkit.mergeUsageInodes": "1",
+		},
+	}, "labels.buildkit.mergeUsageSize", "labels.buildkit.mergeUsageInodes")
+	require.NoError(t, err)
+	chain := exportChain(t, b)
+	require.Len(t, chain.Layers, 1)
+	require.Equal(t, 1, chain.Stats.LayersMerged)
+	require.Equal(t, chain.Layers[0].Descriptor.Size, chain.Stats.MergedBlobBytes)
+	// The export reads a labelled snapshot's usage from its labels.
+	require.Equal(t, int64(4096), chain.Stats.MergedRawBytes)
+	require.Positive(t, chain.Stats.MergedDiffTime)
+}
+
 func TestImportChainSameManager(t *testing.T) {
 	for _, root := range []string{"absent", "scratch", "empty"} {
 		t.Run(root, func(t *testing.T) {
@@ -242,6 +386,16 @@ func TestImportChainFailurePrefix(t *testing.T) {
 			failure := &failingLayerProvider{Provider: provider, digest: chain.Layers[1].Descriptor.Digest.String()}
 			if cancelSource {
 				failure.cancel = cancel
+				// The suffix's blob is fetched while the prefix applies; the
+				// cancellation lands once the prefix is in, while the suffix
+				// downloads.
+				failure.wait = func() {
+					for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+						if len(consumer.Manager.PersistentMetadataRows().ImportedByDiff) > 0 {
+							return
+						}
+					}
+				}
 			}
 
 			ref, err := consumer.Manager.ImportChain(ctx, supplied(chain, failure))
@@ -417,6 +571,150 @@ func TestImportChainSnapshotAndBlobPins(t *testing.T) {
 	})
 }
 
+// deepChain builds a chain of layers on producer, one file each, and exports
+// it.
+func deepChain(tb testing.TB, producer *testutil.Store, layers int) *bkcache.ExportChain {
+	tb.Helper()
+	var top bkcache.ImmutableRef
+	for i := range layers {
+		top, _ = producer.Build(tb, top, fmt.Sprintf("layer-%d.txt", i), fmt.Sprintf("layer %d", i))
+	}
+	chain, err := top.ExportChain(context.Background(), transferConfig)
+	require.NoError(tb, err)
+	tb.Cleanup(func() { require.NoError(tb, chain.Release(context.Background())) })
+	require.Len(tb, chain.Layers, layers)
+	return chain
+}
+
+// An import of a deep chain whose leading layers the engine already has
+// takes them as one snapshot, with one walk of its parents, rather than a
+// walk per layer. Engines import many small parts on chains of 80 layers or
+// more, all sharing most of their layers. Its lease owns every layer and
+// blob, as when the chain was first imported.
+func TestImportChainLocalPrefixWalkedOnce(t *testing.T) {
+	const layers = 40
+	for _, tc := range []struct {
+		name string
+		// local is how many of the chain's leading layers the consumer
+		// imported first.
+		local int
+	}{
+		{name: "whole chain local", local: layers},
+		{name: "all but the top local", local: layers - 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+			chain := deepChain(t, producer, layers)
+			provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+			first := importChain(t, consumer, &bkcache.ExportChain{Layers: chain.Layers[:tc.local], Provider: provider})
+			reads, applies := provider.Reads.Load(), consumer.Applies.Load()
+			var stats atomic.Int64
+			consumer.BeforeStat = func(context.Context, string) { stats.Add(1) }
+			second := importChain(t, consumer, supplied(chain, provider))
+			consumer.BeforeStat = nil
+			require.EqualValues(t, layers-tc.local, provider.Reads.Load()-reads)
+			require.EqualValues(t, layers-tc.local, consumer.Applies.Load()-applies)
+			// A walk of the chain is a Stat per layer. Taking the local
+			// layers walks it twice, attaching the lease and then loading the
+			// ref, and importing a layer onto them about four times more. A
+			// walk per local layer is about layers*layers/2 Stat calls.
+			require.LessOrEqual(t, stats.Load(), int64(8*layers), "Stat calls importing a chain of %d layers with %d local", layers, tc.local)
+			require.NoError(t, first.Release(ctx))
+			consumer.GC(t)
+			assertChainResources(t, consumer, second.SnapshotID(), chain)
+			testutil.CheckFile(t, second, "layer-0.txt", "layer 0")
+			testutil.CheckFile(t, second, fmt.Sprintf("layer-%d.txt", layers-1), fmt.Sprintf("layer %d", layers-1))
+			t.Logf("%d layers, %d local: Stat calls=%d", layers, tc.local, stats.Load())
+		})
+	}
+}
+
+// reuserKey marks the context of the import a test watches.
+type reuserKey struct{}
+
+// An import that takes a chain's local layers as one snapshot waits for
+// the import that applied its top layer to finish telling the chain's
+// Applied of it, as reusing that layer under its import lock did: Applied
+// runs before any other import can reuse the snapshot.
+func TestImportChainLocalPrefixAfterApplied(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower")
+	ab, _ := producer.Build(t, a, "b.txt", "upper")
+	chain := exportChain(t, ab)
+	provider := &testutil.Provider{InfoReaderProvider: chain.Provider}
+	upper := chain.Layers[1].Descriptor.Digest
+	entered, release := make(chan struct{}), make(chan struct{})
+	var applied, reuserStatted atomic.Bool
+	reuserSawApplied := make(chan bool, 1)
+	consumer.BeforeStat = func(ctx context.Context, _ string) {
+		if ctx.Value(reuserKey{}) != nil && reuserStatted.CompareAndSwap(false, true) {
+			reuserSawApplied <- applied.Load()
+		}
+	}
+	applier := supplied(chain, provider)
+	applier.Applied = func(_ context.Context, desc ocispecs.Descriptor, _ string) {
+		if desc.Digest != upper {
+			return
+		}
+		close(entered)
+		<-release
+		applied.Store(true)
+	}
+	applierDone := make(chan error, 1)
+	go func() {
+		ref, err := consumer.Manager.ImportChain(context.Background(), applier)
+		if err == nil {
+			err = ref.Release(context.Background())
+		}
+		applierDone <- err
+	}()
+	<-entered
+	reuserDone := make(chan error, 1)
+	go func() {
+		ref, err := consumer.Manager.ImportChain(context.WithValue(context.Background(), reuserKey{}, true), supplied(chain, provider))
+		if err == nil {
+			err = ref.Release(context.Background())
+		}
+		reuserDone <- err
+	}()
+	// The reuser's first snapshot Stat is its attach. Once it waits, as it
+	// should, it makes none until Applied returns.
+	select {
+	case <-time.After(200 * time.Millisecond):
+	case saw := <-reuserSawApplied:
+		reuserSawApplied <- saw
+	}
+	close(release)
+	require.NoError(t, <-applierDone)
+	require.NoError(t, <-reuserDone)
+	require.True(t, <-reuserSawApplied, "the reuser attached the top layer before its Applied returned")
+	require.EqualValues(t, 2, consumer.Applies.Load())
+}
+
+// Engines import many small parts on chains of 80 layers or more whose
+// layers they already have. Reusing such a chain should cost about one walk
+// of its layers.
+func BenchmarkImportChainLocalPrefix(b *testing.B) {
+	const layers = 80
+	ctx := context.Background()
+	producer, consumer := testutil.NewStore(b), testutil.NewStore(b)
+	chain := deepChain(b, producer, layers)
+	first, err := consumer.Manager.ImportChain(ctx, chain)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, first.Release(context.Background())) })
+	b.ResetTimer()
+	for range b.N {
+		ref, err := consumer.Manager.ImportChain(ctx, chain)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := ref.Release(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestExportChainExistingBlobPins(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewStore(t)
@@ -573,6 +871,8 @@ type failingLayerProvider struct {
 	*testutil.Provider
 	digest string
 	cancel context.CancelFunc
+	// wait, when set, runs before the failure.
+	wait func()
 }
 
 func (p *failingLayerProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
@@ -580,12 +880,13 @@ func (p *failingLayerProvider) ReaderAt(ctx context.Context, desc ocispecs.Descr
 	if err != nil || desc.Digest.String() != p.digest {
 		return reader, err
 	}
-	return &failingLayerReader{ReaderAt: reader, cancel: p.cancel}, nil
+	return &failingLayerReader{ReaderAt: reader, cancel: p.cancel, wait: p.wait}, nil
 }
 
 type failingLayerReader struct {
 	content.ReaderAt
 	cancel context.CancelFunc
+	wait   func()
 }
 
 func (r *failingLayerReader) ReadAt(p []byte, off int64) (int, error) {
@@ -595,6 +896,9 @@ func (r *failingLayerReader) ReadAt(p []byte, off int64) (int, error) {
 	n, err := r.ReaderAt.ReadAt(p, off)
 	if err != nil && err != io.EOF {
 		return n, err
+	}
+	if r.wait != nil {
+		r.wait()
 	}
 	if r.cancel != nil {
 		r.cancel()

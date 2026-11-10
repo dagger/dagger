@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"dagger.io/dagger/core"
 	"dagger/registry-config/internal/dagger"
 )
 
@@ -54,5 +55,5 @@ func (c *Config) toSecret(name string) (*dagger.Secret, error) {
 		name = fmt.Sprintf("registry-config-%x", h.Sum(nil))
 	}
 
-	return dag.SetSecret(name, string(out)), nil
+	return core.SetSecret(name, string(out)), nil
 }

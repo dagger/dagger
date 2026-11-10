@@ -134,23 +134,23 @@ func TestArtifactPatternCharacterClasses(t *testing.T) {
 	}
 	require.Equal(t, []string{"ci/test[0-9]/**"}, IncludePatterns("ci:test[0-9]"))
 	node := &ModTreeNode{Name: "test5", Parent: &ModTreeNode{Name: "ci", Parent: &ModTreeNode{}}}
-	matched, err := node.Match(t.Context(), []string{"ci:test[0-9]"})
+	matched, err := node.Match([]string{"ci:test[0-9]"})
 	require.NoError(t, err)
 	require.True(t, matched)
 	node.Name = "test09"
-	matched, err = node.Match(t.Context(), []string{"ci:test[0-9]"})
+	matched, err = node.Match([]string{"ci:test[0-9]"})
 	require.NoError(t, err)
 	require.False(t, matched, "a character class is not a literal-prefix shortcut")
 	for _, name := range []string{"test5", "test09"} {
 		parent := &ModTreeNode{Name: name, Parent: &ModTreeNode{Name: "ci", Parent: &ModTreeNode{}}}
 		child := &ModTreeNode{Name: "check", Parent: parent}
-		matched, err := child.Match(t.Context(), []string{"ci:test[0-9]"})
+		matched, err := child.Match([]string{"ci:test[0-9]"})
 		require.NoError(t, err)
 		replayed, err := matchesInclude(&Artifact{Path: child.CLIPath(), Node: child}, IncludePatterns("ci:test[0-9]"))
 		require.NoError(t, err)
 		require.Equal(t, name == "test5", matched)
 		require.Equal(t, matched, replayed)
-		matched, err = child.Match(t.Context(), []string{"ci:" + name})
+		matched, err = child.Match([]string{"ci:" + name})
 		require.NoError(t, err)
 		require.True(t, matched, "literal includes still select descendants")
 	}

@@ -20,6 +20,8 @@ func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string)
 		return nil, fmt.Errorf("builtin Container manifest digest: %w", err)
 	}
 	container := NewContainer(platform)
+	// Its image fills it when it's evaluated: it isn't scratch for From.
+	container.fromContentDigestSafe = false
 	container.Lazy = &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: platform, ManifestDigest: manifestDigest}
 	return container, nil
 }

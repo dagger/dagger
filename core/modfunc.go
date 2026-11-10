@@ -1015,7 +1015,7 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRunt
 		return nil, fmt.Errorf("no runtime implemented")
 	}
 
-	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.SDKDeps(), mod.Source.Value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
@@ -1096,6 +1096,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if caller, ok := CallerAgent(ctx); ok {
 		fnCall.SetCallerAgent(caller)
 	}
+	// A call made as the engine's own work, such as an SDK building a
+	// module's runtime, carries that to everything its module does to answer
+	// it: its calls are internal in telemetry, as the engine's own selects
+	// are, down through any module it calls in turn.
+	fnCall.engineWork = IsEngineWork(ctx)
 
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)

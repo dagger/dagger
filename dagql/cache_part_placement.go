@@ -48,7 +48,7 @@ func PlacePart(part PersistedPartOffer, place func(service uint64) (uint64, bool
 // the classes under one hold. It reports false when a service can't be
 // mapped: the part is not placed.
 func (c *Cache) PlaceOffer(receiver HolderKey, part PersistedPartOffer) (PersistedPartOffer, bool, error) {
-	if receiver.Cache == "" || receiver.Cache == cloudCacheID {
+	if receiver.Cache == "" || senderCache(receiver.Cache) {
 		return PersistedPartOffer{}, false, fmt.Errorf("place offer: %q is not an engine cache", receiver.Cache)
 	}
 	c.egraphMu.RLock()

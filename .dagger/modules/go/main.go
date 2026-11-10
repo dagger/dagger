@@ -15,8 +15,10 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	toml "github.com/pelletier/go-toml"
 
+	"dagger.io/dagger/core"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/modules/go/internal/dagger"
+	"github.com/dagger/dagger/modules/go/internal/dagger/clients/wolfi"
 	"github.com/dagger/dagger/util/parallel"
 )
 
@@ -109,17 +111,17 @@ func New(
 	vcsDirty bool,
 ) *Go {
 	if source == nil {
-		source = dag.Directory()
+		source = core.NewDirectory()
 	}
 	if moduleCache == nil {
 		// Cache volumes should be namespaced by module, but they aren't (yet).
 		// For now, we namespace them explicitly here.
-		moduleCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:modules")
+		moduleCache = core.NewCacheVolume("github.com/dagger/dagger/modules/go:modules")
 	}
 	if buildCache == nil {
 		// Cache volumes should be namespaced by module, but they aren't (yet).
 		// For now, we namespace them explicitly here.
-		buildCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:build")
+		buildCache = core.NewCacheVolume("github.com/dagger/dagger/modules/go:build")
 	}
 	customBase := base != nil
 	if base == nil {
@@ -139,13 +141,12 @@ func New(
 		if len(extraPackages) > 0 {
 			packages = append(packages, extraPackages...)
 		}
-		base = dag.
-			Wolfi().
-			Container(dagger.WolfiContainerOpts{Packages: packages}).
+		base = wolfi.New().
+			Container(wolfi.WolfiContainerOpts{Packages: packages}).
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
 			WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
-			WithDirectory("/usr/local/bin", dag.Directory()).
+			WithDirectory("/usr/local/bin", core.NewDirectory()).
 			// Configure caches
 			WithMountedCache("/go/pkg/mod", moduleCache).
 			WithMountedCache("/root/.cache/go-build", buildCache).
@@ -386,7 +387,7 @@ func (p *Go) Build(
 	for _, pkg := range mainPkgs {
 		env = env.WithExec(goCommand(cmd, []string{pkg}, ldflags, p.Tags, p.Values, p.Race))
 	}
-	return dag.Directory().WithDirectory(output, env.Directory(output)), nil
+	return core.NewDirectory().WithDirectory(output, env.Directory(output)), nil
 }
 
 // Build a single main package, and return the compiled binary
@@ -606,7 +607,7 @@ func (p *Go) Tidy(
 	if err := jobs.Run(ctx); err != nil {
 		return nil, err
 	}
-	return dag.Changeset().WithChangesets(tidyModules), nil
+	return core.NewChangeset().WithChangesets(tidyModules), nil
 }
 
 // Generate Dagger runtime files for Go SDK modules in the configured source.

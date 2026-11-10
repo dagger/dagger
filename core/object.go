@@ -1771,7 +1771,6 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		projectionSpec := *field.Spec
 		projectionSpec.Type = fun.ReturnType.Self().ToTyped()
 		projectionSpec.ViewFilter = AfterVersion("v1.0.0-0")
-		projectionSpec.IsPersistable = false
 		// The projection keeps the function's cache inputs: a check that
 		// must run fresh gets a new Check object, and every read of one
 		// object shares its run.
@@ -1780,6 +1779,12 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 			Spec: &projectionSpec,
 			Func: func(ctx context.Context, receiver dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
 				workspace, _ := WorkspaceFromContext(ctx)
+				// A check is planned again in a later session unless its
+				// workspace is identified by its content and its function is
+				// cached across sessions.
+				if workspace.Self() == nil || !workspace.Self().HasContentIdentity() || dagql.CurrentCall(ctx).SessionBound() {
+					dagql.DeclinePersistence(ctx)
+				}
 				var inputs []CallInput
 				for name, value := range args {
 					inputs = append(inputs, CallInput{Name: name, Value: value})

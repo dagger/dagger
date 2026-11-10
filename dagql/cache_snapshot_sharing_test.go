@@ -42,6 +42,9 @@ func (r *shareTestRef) Mount(context.Context, bool) (snapshots.MountableRef, err
 func (r *shareTestRef) ExportChain(context.Context, config.RefConfig) (*snapshots.ExportChain, error) {
 	panic("snapshot sharing must not export")
 }
+func (r *shareTestRef) ExportFileChain(context.Context, config.RefConfig, string) (*snapshots.ExportChain, error) {
+	panic("snapshot sharing must not export")
+}
 
 var _ snapshots.ImmutableRef = (*shareTestRef)(nil)
 

@@ -100,3 +100,75 @@ func BenchmarkDBIngest(b *testing.B) {
 		}
 	}
 }
+
+// concurrentLiveTrace builds the updates a live run delivers: width spans
+// that keep running, such as the tests of a large go test run, beneath a
+// chain of depth shared ancestors, and n short spans beneath them that arrive
+// once, already ended, as most spans do.
+func concurrentLiveTrace(n, width, depth int) [][]sdktrace.ReadOnlySpan {
+	traceID := trace.TraceID{2}
+	spanID := func(i int) trace.SpanID {
+		var id trace.SpanID
+		binary.BigEndian.PutUint64(id[:], uint64(i)+1)
+		return id
+	}
+	epoch := time.Unix(1_700_000_000, 0)
+	stub := func(i, parent int, ended bool) sdktrace.ReadOnlySpan {
+		start := epoch.Add(time.Duration(i) * time.Microsecond)
+		s := tracetest.SpanStub{
+			Name: fmt.Sprintf("span %d", i),
+			SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID: traceID,
+				SpanID:  spanID(i),
+			}),
+			StartTime: start,
+		}
+		if parent >= 0 {
+			s.Parent = trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID: traceID,
+				SpanID:  spanID(parent),
+			})
+		}
+		if ended {
+			s.EndTime = start.Add(time.Microsecond)
+		}
+		return s.Snapshot()
+	}
+	var batches [][]sdktrace.ReadOnlySpan
+	for i := range depth {
+		batches = append(batches, []sdktrace.ReadOnlySpan{stub(i, i-1, false)})
+	}
+	for i := depth; i < depth+width; i++ {
+		batches = append(batches, []sdktrace.ReadOnlySpan{stub(i, depth-1, false)})
+	}
+	const batch = 64
+	for i := 0; i < n; i += batch {
+		var spans []sdktrace.ReadOnlySpan
+		for j := i; j < min(n, i+batch); j++ {
+			id := depth + width + j
+			spans = append(spans, stub(id, depth+j%width, true))
+		}
+		batches = append(batches, spans)
+	}
+	return batches
+}
+
+// BenchmarkDBIngestLive feeds a live run through the ingestion path in
+// export-sized batches, with more and more spans running at once.
+func BenchmarkDBIngestLive(b *testing.B) {
+	const n, depth = 20_000, 20
+	for _, width := range []int{100, 1_000, 5_000} {
+		batches := concurrentLiveTrace(n, width, depth)
+		b.Run(fmt.Sprintf("running=%d", width), func(b *testing.B) {
+			ctx := context.Background()
+			for b.Loop() {
+				db := NewDB()
+				for _, batch := range batches {
+					if err := db.ExportSpans(ctx, batch); err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
+	}
+}

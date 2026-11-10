@@ -574,6 +574,9 @@ var persistedModuleVisitor = persistedStructVisitor("", func(p *persistedModuleP
 	if err := w.children("depModuleResultIDs", p.DepModuleResultIDs); err != nil {
 		return err
 	}
+	if err := w.children("entrypointDepModuleResultIDs", p.EntrypointDepModuleResultIDs); err != nil {
+		return err
+	}
 	if err := w.children("objectDefResultIDs", p.ObjectDefResultIDs); err != nil {
 		return err
 	}
@@ -616,6 +619,9 @@ func visitPersistedWorkspaceSourceRefs(w *persistedRefWalker, src *persistedWork
 		return err
 	}
 	if err := w.child("gitRefResultID", &src.GitRefResultID); err != nil {
+		return err
+	}
+	if err := w.child("sparseResultID", &src.SparseResultID); err != nil {
 		return err
 	}
 	if err := w.child("changesID", &src.ChangesID); err != nil {

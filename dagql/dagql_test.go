@@ -154,6 +154,31 @@ func TestLeafListElements(t *testing.T) {
 	assert.Equal(t, 1, cache.Size())
 }
 
+// A list of objects selected without subfields renders its elements whole.
+// Clients rely on it, the PHP SDK among them, so the server's HTTP handler
+// turns off GraphQL's ScalarLeafs validation rule, which would reject the
+// query.
+func TestObjectListWithoutSubfields(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+	dagql.Fields[Query]{
+		dagql.Func("listOfObjects", func(ctx context.Context, self Query, args struct {
+		}) ([]*points.Point, error) {
+			return []*points.Point{
+				{X: 1, Y: 2},
+				{X: 3, Y: 4},
+			}, nil
+		}),
+	}.Install(srv)
+	gql := newTestClient(srv)
+
+	var res struct {
+		ListOfObjects []points.Point
+	}
+	req(t, gql, `query { listOfObjects }`, &res)
+	assert.DeepEqual(t, []points.Point{{X: 1, Y: 2}, {X: 3, Y: 4}}, res.ListOfObjects)
+}
+
 func TestBasic(t *testing.T) {
 	cache := newCache(t)
 	srv := newExternalDagqlServerForTest(t, Query{})

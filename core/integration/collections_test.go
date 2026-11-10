@@ -658,6 +658,26 @@ func (*Item) Assistant(base *dagger.LLM) *dagger.LLM { panic("agent evaluated") 
 		out, err = base.With(daggerExec("list", "-a", "empty/verify")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Empty(t, out)
+		// A listed check with no items has nothing to run: it passes, and says so.
+		stderr, err := base.With(daggerExec("check", "empty/verify")).Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stderr, `check "empty/verify" has no items to check`)
+		// Keys that match none of a check's items still match nothing.
+		_, err = base.With(daggerExec("check", "items/verify", "--collections-items-item=missing")).Sync(ctx)
+		requireErrOut(t, err, `no checks matched pattern "items/verify"`)
+		// A module-keyed skip removes items, not the check's path.
+		_, err = base.With(daggerExec("check", "items/verify", "--skip=dag://?module=collections")).Sync(ctx)
+		requireErrOut(t, err, `no checks matched pattern "items/verify"`)
+	})
+	t.Run("nested keys that match no item", func(ctx context.Context, t *testctx.T) {
+		// Excluded parents' collections stay deferred: Parts panics for them.
+		source := collectionGoSource + `
+// +check
+func (*Part) Verify() error { return nil }
+`
+		nested := goGitBase(t, c).WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).WithWorkdir("/work")
+		_, err := nested.With(daggerExec("check", "items/parts/verify?collections-items-item=a&collections-items-part=missing")).Sync(ctx)
+		requireErrOut(t, err, `no checks matched pattern "items/parts/verify?`)
 	})
 	t.Run("key filters still resolve keys", func(ctx context.Context, t *testctx.T) {
 		_, err := base.With(daggerExec("check", "-l", "deferred/verify", "--collections-deferred-item=a")).Stdout(ctx)

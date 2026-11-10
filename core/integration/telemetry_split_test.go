@@ -202,23 +202,23 @@ func (got telemetrySplitReceived) requireSpansFromOneWriter(t *testctx.T) {
 
 // telemetrySplitEngine is an engine container from ctr that serves on
 // tcp://:1234 and reaches the fake Cloud. It has no Cloud token of its own,
-// so it exports no engine cache events.
-func telemetrySplitEngine(c *dagger.Client, ctr *core.Container, cloud telemetrySplitCloud) *core.Container {
-	return telemetrySplitEngineWithoutCloud(c, cloud.bind(ctr))
+// so it exports no engine cache events. args are further engine arguments.
+func telemetrySplitEngine(c *dagger.Client, ctr *core.Container, cloud telemetrySplitCloud, args ...string) *core.Container {
+	return telemetrySplitEngineWithoutCloud(c, cloud.bind(ctr), args...)
 }
 
 // telemetrySplitEngineWithoutCloud is telemetrySplitEngine for an engine with
 // no route to the fake Cloud.
-func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *core.Container) *core.Container {
+func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *core.Container, args ...string) *core.Container {
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
 	return ctr.
 		WithMountedCache("/var/lib/dagger", core.NewQuery(c).CacheVolume("dagger-telemetry-split-state-"+rand.Text())).
 		WithExposedPort(1234, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
-		WithDefaultArgs([]string{
+		WithDefaultArgs(append([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--network-name", deviceName,
 			"--network-cidr", cidr,
-		})
+		}, args...))
 }
 
 func telemetrySplitEngineBase(c *dagger.Client, released bool) *core.Container {
@@ -600,6 +600,52 @@ func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T)
 		}
 	}
 	require.True(t, engineMetrics, "the engine publishes metrics")
+}
+
+// TestEngineTelemetryNestedCLIPublishesOnce: a CLI run in an exec with
+// privileged nesting is a nested client of the session, whose telemetry the
+// engine delivers to the main client's store too. The nested CLI's own exec
+// output and call results reach Cloud once, not a second time through the
+// nested CLI forwarding its stream back to the engine.
+func (ClientSuite) TestEngineTelemetryNestedCLIPublishesOnce(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	cloud := newTelemetrySplitCloud(t, c)
+	engine, err := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), cloud)).Start(ctx)
+	require.NoError(t, err)
+
+	id := rand.Text()
+	marker := "nested-marker-" + id
+	// The nested CLI prints the exec's stdout to a file, so its own output
+	// does not carry the marker.
+	nestedArgs := markerExecArgs("nested-marker-", id)
+	args := []string{
+		"/bin/dagger", "core", "container",
+		"from", "--address=" + alpineImage,
+		"with-file", "--path=/bin/dagger", "--source=/bin/dagger",
+		"with-exec", "--experimental-privileged-nesting", "--redirect-stdout=/nested.out",
+	}
+	for _, arg := range nestedArgs {
+		args = append(args, "--args="+arg)
+	}
+	args = append(args, "exit-code")
+	_, err = telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
+		WithExec(args, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	got := readTelemetrySplit(ctx, t, cloud)
+	for scope, what := range map[string]string{
+		"dagger.io/engine.buildkit": "the nested CLI's exec output",
+		"dagger.io/core":            "the nested CLI's Container.stdout result",
+	} {
+		var records []telemetrySplitRecord
+		for _, rec := range got.records {
+			if rec.Scope == scope && strings.TrimSpace(rec.Body) == marker {
+				records = append(records, rec)
+			}
+		}
+		require.Len(t, records, 1, "%s reaches Cloud once: %+v", what, records)
+	}
 }
 
 // TestEngineTelemetryCloudOAuthRefresh (from #13339): with a `dagger login`

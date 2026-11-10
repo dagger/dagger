@@ -120,7 +120,9 @@ type OCIConfig struct {
 	// SELinux enables applying SELinux labels.
 	SELinux bool `toml:"selinux"`
 
-	// MaxParallelism is the maximum number of parallel build steps that can be run at the same time.
+	// MaxParallelism is the maximum number of container execs that can run at
+	// the same time. An exec stops counting toward the limit once its command
+	// calls the Dagger API, as module function calls do.
 	MaxParallelism int `toml:"max-parallelism"`
 }
 

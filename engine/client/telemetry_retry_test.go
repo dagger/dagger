@@ -15,6 +15,10 @@ import (
 	"github.com/dagger/dagger/engine"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/stretchr/testify/require"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -196,5 +200,97 @@ func TestClientCloseBoundsTelemetryDrain(t *testing.T) {
 		cancelInternal(context.Canceled)
 		<-done
 		t.Fatal("telemetry drain did not honor shutdown timeout")
+	}
+}
+
+// The trace, log and metric subscriptions don't wait for each other: with a
+// remote engine, each would otherwise add a round trip to every connection.
+// The fake engine answers no subscription until all of them have arrived, so
+// subscribing one after another never finishes.
+func TestSubscribeTelemetrySubscribesAtOnce(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	const subscriptions = 3
+	var arrived sync.WaitGroup
+	arrived.Add(subscriptions)
+	allArrived := make(chan struct{})
+	go func() {
+		arrived.Wait()
+		close(allArrived)
+	}()
+	hc := &httpClient{inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		arrived.Done()
+		select {
+		case <-allArrived:
+		case <-time.After(3 * time.Second):
+			return nil, fmt.Errorf("%s answered before the other subscriptions arrived", req.URL.Path)
+		}
+		var body bytes.Buffer
+		if err := enginetel.WriteLiveHello(&body, 0); err != nil {
+			return nil, err
+		}
+		if err := enginetel.WriteLiveTerminal(&body, 0); err != nil {
+			return nil, err
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {enginetel.LiveContentType}},
+			Body: io.NopCloser(&body), Request: req}, nil
+	})}}
+
+	c := &Client{Params: Params{
+		EngineTrace:   tracetest.NewInMemoryExporter(),
+		EngineLogs:    noopLogExporter{},
+		EngineMetrics: []sdkmetric.Exporter{noopMetricExporter{}},
+	}, internalCtx: ctx}
+	require.NoError(t, c.subscribeTelemetryWith(ctx, hc))
+	require.NoError(t, c.telemetry.Wait())
+}
+
+type noopLogExporter struct{}
+
+func (noopLogExporter) Export(context.Context, []sdklog.Record) error { return nil }
+func (noopLogExporter) Shutdown(context.Context) error                { return nil }
+func (noopLogExporter) ForceFlush(context.Context) error              { return nil }
+
+type noopMetricExporter struct{}
+
+func (noopMetricExporter) Temporality(k sdkmetric.InstrumentKind) metricdata.Temporality {
+	return sdkmetric.DefaultTemporalitySelector(k)
+}
+
+func (noopMetricExporter) Aggregation(k sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.DefaultAggregationSelector(k)
+}
+func (noopMetricExporter) Export(context.Context, *metricdata.ResourceMetrics) error { return nil }
+func (noopMetricExporter) ForceFlush(context.Context) error                          { return nil }
+func (noopMetricExporter) Shutdown(context.Context) error                            { return nil }
+
+// A subscription that fails ends connecting with its error at once, even while
+// another subscription is still waiting for the engine's answer.
+func TestSubscribeTelemetryFailureCancelsPendingSubscriptions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	hc := &httpClient{inner: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/v1/traces" {
+			return &http.Response{StatusCode: http.StatusNotFound, Header: http.Header{"Content-Type": {"text/plain"}},
+				Body: io.NopCloser(strings.NewReader("no such stream")), Request: req}, nil
+		}
+		// The log subscription never gets an answer.
+		<-req.Context().Done()
+		return nil, context.Cause(req.Context())
+	})}}
+
+	c := &Client{Params: Params{
+		EngineTrace: tracetest.NewInMemoryExporter(),
+		EngineLogs:  noopLogExporter{},
+	}, internalCtx: ctx}
+	done := make(chan error, 1)
+	go func() { done <- c.subscribeTelemetryWith(ctx, hc) }()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, errPermanentTelemetryConnection)
+	case <-time.After(3 * time.Second):
+		t.Fatal("connecting kept waiting on the log subscription after the trace subscription failed")
 	}
 }

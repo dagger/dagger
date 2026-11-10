@@ -346,9 +346,26 @@ func (srv *Server) gc() {
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
 
-	if err := srv.gcLocked(context.Background(), localCacheGCScheduled); err != nil {
-		bklog.G(context.Background()).Errorf("gc error: %+v", err)
+	ctx := srv.backgroundGCContext()
+	if err := srv.gcLocked(ctx, localCacheGCScheduled); err != nil {
+		if ctx.Err() != nil {
+			bklog.G(ctx).Infof("gc abandoned by the engine's stop: %v", err)
+			return
+		}
+		bklog.G(ctx).Errorf("gc error: %+v", err)
 	}
+}
+
+// backgroundGCContext is the context of the passes the engine starts on its
+// own: after sessions end, and under disk pressure. With the state discarded,
+// it ends when the stop begins: the stop abandons a running pass, whose
+// collection of the cache volume directory would otherwise hold up the
+// stop's own.
+func (srv *Server) backgroundGCContext() context.Context {
+	if srv.stateDiscarded && srv.shutdownCtx != nil {
+		return srv.shutdownCtx
+	}
+	return context.Background()
 }
 
 func (srv *Server) gcAfterSessionCompletion() {
@@ -357,7 +374,7 @@ func (srv *Server) gcAfterSessionCompletion() {
 }
 
 func (srv *Server) gcIfLocalCachePressure() {
-	ctx := context.Background()
+	ctx := srv.backgroundGCContext()
 
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
@@ -367,6 +384,10 @@ func (srv *Server) gcIfLocalCachePressure() {
 	}
 
 	if err := srv.gcLocked(ctx, localCacheGCMonitor); err != nil {
+		if ctx.Err() != nil {
+			bklog.G(ctx).Infof("local cache pressure gc abandoned by the engine's stop: %v", err)
+			return
+		}
 		bklog.G(ctx).Errorf("local cache pressure gc error: %+v", err)
 	}
 }

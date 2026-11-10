@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  The CLI uses far less memory on large runs: a log's terminal screen is built
+  only when something shows it. On a heavy test run, peak memory fell from 7.5 GB
+  to 2.9 GB.
+time: 2026-11-07T08:20:00Z
+custom:
+  Author: sipsma
+  PR: "15100"

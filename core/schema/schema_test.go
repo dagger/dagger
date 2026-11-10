@@ -73,6 +73,41 @@ func TestReevaluateDirectiveGatedByView(t *testing.T) {
 	}
 }
 
+// File.sync's keyByContent is in views from v1.0.0-beta.24, the version
+// gobuild's generated entrypoint declares for its calls.
+func TestFileSyncKeyByContentView(t *testing.T) {
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "file-sync-view-client",
+		SessionID: "file-sync-view-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		engineVersion string
+		has           bool
+	}{
+		{engineVersion: "v1.0.0-beta.22", has: false},
+		{engineVersion: "v1.0.0-beta.24", has: true},
+	} {
+		view := call.View(engine.ModuleAPIViewVersion(tc.engineVersion))
+		dag, err := coreSchemaBase.Fork(ctx, root, view)
+		require.NoError(t, err)
+		sync := dag.SchemaForView(view).Types["File"].Fields.ForName("sync")
+		require.NotNil(t, sync, tc.engineVersion)
+		if tc.has {
+			require.NotNil(t, sync.Arguments.ForName("keyByContent"), tc.engineVersion)
+		} else {
+			require.Nil(t, sync.Arguments.ForName("keyByContent"), tc.engineVersion)
+		}
+	}
+}
+
 func TestBaseSchemaAllowlist(t *testing.T) {
 	// base_schema.json is the public API surface visible to the oldest supported
 	// module view. New APIs should not appear here unless they are intentionally

@@ -1187,6 +1187,15 @@ type Container implements Exportable & Node & Syncer {
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
+
+    """
+    Repair symlinks that directory selection would break. Resolve targets across
+    the root filesystem and directory or file mounts. Preserve working relative
+    links and links that already have no target. Cache, volume, tmpfs, secret,
+    and socket mounts cause an error if selection, a resolved link, or mount
+    target resolution needs their contents.
+    """
+    resolveBrokenSymlinks: Boolean = false
   ): Directory!
 
   """
@@ -2976,6 +2985,13 @@ type Directory implements Exportable & Node & Syncer {
     Location of the directory to retrieve. Example: "/src"
     """
     path: String!
+
+    """
+    Repair symlinks that directory selection would break. Copy targets from this
+    directory into the result. Preserve working relative links and links that
+    already have no target.
+    """
+    resolveBrokenSymlinks: Boolean = false
   ): Directory!
 
   """Return a snapshot with a directory added"""
@@ -3144,6 +3160,22 @@ type Directory implements Exportable & Node & Syncer {
     """
     ssh: ID @expectedType(name: "Socket")
   ): Container!
+
+  """
+  Retrieves this directory, declared as made for the given platform.
+
+  Declare a result whose contents are the same whichever platform made them,
+  such as a Go package compiled for a platform by any platform's Go toolchain.
+  An engine of another platform that makes the same directory for the same
+  platform then finds this one, and the other way around.
+
+  The contents are not checked: a declared result that depends on the platform
+  it was made on can be found where it doesn't belong.
+  """
+  withPlatform(
+    """The platform the directory's contents are for (e.g., "linux/arm64")."""
+    platform: Platform!
+  ): Directory!
 
   """
   Retrieves this directory with all file/dir timestamps set to the given time.
@@ -3641,7 +3673,14 @@ type File implements Exportable & Node & Syncer {
   id: ID!
 
   """Force evaluation in the engine."""
-  sync: ID! @expectedType(name: "File")
+  sync(
+    """
+    Also key the file by its content, so that what consumes it is cached across
+    any two recipes that produce the same file. This hashes the file unless it
+    already has a content key.
+    """
+    keyByContent: Boolean = false
+  ): ID! @expectedType(name: "File")
 
   """Retrieves the contents of the file."""
   contents(

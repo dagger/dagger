@@ -43,6 +43,9 @@ type served struct {
 	ID      string
 	Objects []servedObject
 	Runtime struct{ ID string }
+	Source  struct {
+		ContextDirectory struct{ ID string }
+	}
 }
 
 func functionNamesOf(objects []servedObject) []string {
@@ -88,14 +91,14 @@ type definitionEngine struct {
 	endpoint string
 }
 
-func startDefinitionEngine(ctx context.Context, t *testctx.T, outer *dagger.Client, name string) *definitionEngine {
+func startDefinitionEngine(ctx context.Context, t *testctx.T, outer *dagger.Client, name string, withs ...func(*core.Container) *core.Container) *definitionEngine {
 	t.Helper()
 	e := &definitionEngine{name: name, volume: core.NewQuery(outer).CacheVolume("module-definition-" + name + "-" + rand.Text())}
-	ctr := devEngineContainerWithStateKey(outer, "module-definition-"+name+"-state-"+rand.Text(), func(ctr *core.Container) *core.Container {
+	ctr := devEngineContainerWithStateKey(outer, "module-definition-"+name+"-state-"+rand.Text(), append([]func(*core.Container) *core.Container{func(ctr *core.Container) *core.Container {
 		return ctr.WithMountedCache("/transfer-fixture", e.volume).
 			WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture").
 			WithEntrypoint([]string{"sh", "-c", `exec /usr/local/bin/dagger-entrypoint.sh "$@" 2>>/transfer-fixture/engine.log`, "dagger-engine"})
-	})
+	}}, withs...)...)
 	// Retained rows must outlive the sessions that made them for the row
 	// counts below to mean anything, independently of the host's disk
 	// pressure; the predecessor's two-engine test pins the same bounds.
@@ -168,29 +171,41 @@ func definitionRows(t *testctx.T, report transferFixtureReport) map[uint64]defin
 }
 
 // moduleTypesDefinitionRows closes client after reading the cache report
-// and returns the _moduleTypesDefinition rows in it.
-func moduleTypesDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client) []uint64 {
+// and returns the _moduleTypesDefinition rows in it for module.
+func moduleTypesDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client, module string) []uint64 {
 	t.Helper()
-	return fieldRows(ctx, t, client, "_moduleTypesDefinition")
+	return moduleFieldRows(ctx, t, client, "_moduleTypesDefinition", module)
 }
 
 // namespacedDefinitionRows closes client after reading the cache report
-// and returns the _moduleNamespacedDefinition rows in it.
-func namespacedDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client) []uint64 {
+// and returns the _moduleNamespacedDefinition rows in it for module.
+func namespacedDefinitionRows(ctx context.Context, t *testctx.T, client *dagger.Client, module string) []uint64 {
 	t.Helper()
-	return fieldRows(ctx, t, client, "_moduleNamespacedDefinition")
+	return moduleFieldRows(ctx, t, client, "_moduleNamespacedDefinition", module)
 }
 
-// fieldRows closes client after reading the cache report and returns the
-// rows in it whose call selects field.
-func fieldRows(ctx context.Context, t *testctx.T, client *dagger.Client, field string) []uint64 {
+// moduleFieldRows closes client after reading the cache report and returns
+// the rows in it whose call selects field for the module named module. The
+// engine also loads the modules an SDK is built from, such as the Go SDK
+// module and its dependencies, and those have rows of their own.
+func moduleFieldRows(ctx context.Context, t *testctx.T, client *dagger.Client, field, module string) []uint64 {
 	t.Helper()
 	defer func() { require.NoError(t, client.Close()) }()
 	var report transferFixtureReport
 	require.NoError(t, transferFixture(ctx, client, "report", "", []string{}, &report))
 	var out []uint64
 	for _, row := range report.Rows {
-		if row.Call != nil && row.Call.Field == field {
+		if row.Call == nil || row.Call.Field != field {
+			continue
+		}
+		var name string
+		for _, arg := range row.Call.Args {
+			if arg.Name == "moduleName" && arg.Value != nil {
+				name = arg.Value.StringValue
+			}
+		}
+		t.Logf("%s row %d module=%s", field, row.ResultID, name)
+		if name == module {
 			out = append(out, row.ResultID)
 		}
 	}
@@ -205,7 +220,7 @@ func rowNumbers(rows map[uint64]definitionRow) []uint64 {
 	return out
 }
 
-const servedQuery = `{moduleSource(refString:"."){asModule{id objects{asObject{name description functions{name description sourceMap{filename line}}}} runtime{id}}}}`
+const servedQuery = `{moduleSource(refString:"."){asModule{id objects{asObject{name description functions{name description sourceMap{filename line}}}} runtime{id} source{contextDirectory{id}}}}}`
 
 // A Go module's type definitions are a cached, content-keyed result. On one
 // engine: the first client's load computes them through the runtime, a
@@ -246,7 +261,7 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 	}
 	functionNames := func(s served) []string { return functionNamesOf(s.Objects) }
 
-	namespacedRows := func() []uint64 { return namespacedDefinitionRows(ctx, t, a.connect(ctx, t, checkout)) }
+	namespacedRows := func() []uint64 { return namespacedDefinitionRows(ctx, t, a.connect(ctx, t, checkout), "probe") }
 
 	first, firstRows := load(t, a, checkout)
 	require.Len(t, firstRows, 1, "the first load computed one definition")
@@ -293,7 +308,7 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 
 	// Its definition is a _moduleTypesDefinition row instead: a second
 	// client hits it, and a source edit makes a new one.
-	typesRows := func() []uint64 { return moduleTypesDefinitionRows(ctx, t, a.connect(ctx, t, dangDir)) }
+	typesRows := func() []uint64 { return moduleTypesDefinitionRows(ctx, t, a.connect(ctx, t, dangDir), "native") }
 	require.Len(t, typesRows(), 1)
 	load(t, a, dangDir)
 	require.Len(t, typesRows(), 1, "the second client hit the same definition")
@@ -325,13 +340,20 @@ func (ModuleDefinitionSuite) TestCachedAcrossClients(ctx context.Context, t *tes
 
 	// Export the edited module with its runtime's filesystem from A, as a
 	// session report's bundle carries them, and import it into cold engine B.
+	// The bundle carries no calls, so B runs the runtime's call again. That run
+	// can reach a read of the module's directory by one of A's clients: the
+	// edited source's, or the first source's, which the edited runtime's build
+	// reused where the edit changed nothing, such as its Go module downloads.
+	// B cannot repeat another client's read, so the bundle carries both reads'
+	// contents, as the reports of the sessions that made them do.
 	exporter := a.connect(ctx, t, checkout)
 	var exported struct {
 		ModuleSource struct{ AsModule served }
 	}
 	require.NoError(t, exporter.Do(ctx, &dagger.Request{Query: servedQuery}, &dagger.Response{Data: &exported}))
+	module := exported.ModuleSource.AsModule
 	var mapping []transferFixtureMapping
-	require.NoError(t, transferFixtureSelected(ctx, exporter, "definition.json", []string{exported.ModuleSource.AsModule.ID}, []string{exported.ModuleSource.AsModule.Runtime.ID}, &mapping))
+	require.NoError(t, transferFixtureSelected(ctx, exporter, "definition.json", []string{module.ID}, []string{module.Runtime.ID, module.Source.ContextDirectory.ID, first.Source.ContextDirectory.ID}, &mapping))
 	require.NotEmpty(t, mapping)
 	require.NoError(t, exporter.Close())
 

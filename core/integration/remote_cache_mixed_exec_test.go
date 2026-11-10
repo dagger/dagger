@@ -18,7 +18,7 @@ import (
 func (RemoteCacheTransferSuite) TestPartMixedExecOutputs(ctx context.Context, t *testctx.T) {
 	outer := connect(ctx, t)
 	start := func(volume *core.CacheVolume) *dagger.Client {
-		ctr := devEngineContainerWithStateKey(outer, "b4-mixed-state-"+rand.Text(), func(ctr *core.Container) *core.Container {
+		ctr := devEngineContainerWithStateKey(outer, "b4-mixed-state-"+rand.Text(), withoutImageEntries, func(ctr *core.Container) *core.Container {
 			return ctr.WithMountedCache("/transfer-fixture", volume).WithEnvVariable("_DAGGER_TEST_REMOTE_CACHE_FIXTURE_ROOT", "/transfer-fixture")
 		})
 		ctr = engineWithConfig(ctx, t, engineConfigWithEnabled(true), engineConfigWithGC("1000000000000000", "0", "1000000000000000", "0"))(ctr)

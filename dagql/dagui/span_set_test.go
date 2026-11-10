@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"encoding/binary"
+	"math"
 	"testing"
 	"time"
 
@@ -131,5 +132,35 @@ func TestSpanSetStableForEqualStarts(t *testing.T) {
 	got := set.Spans()
 	if len(got) != 3 || got[0] != first || got[1] != second || got[2] != third {
 		t.Fatalf("order = %v", got)
+	}
+}
+
+// Most spans arrive once, already ended, and each tries to leave the
+// RunningSpans of every ancestor it never joined. That must not cost a scan
+// of those sets, or a run with many spans running at once ingests each span
+// in time proportional to how many are running, and the CLI falls behind the
+// engine's telemetry until its shutdown deadline drops the end of the run.
+func TestIngestCostDoesNotGrowWithRunningSpans(t *testing.T) {
+	const n, depth = 5_000, 20
+	ingest := func(width int) time.Duration {
+		batches := concurrentLiveTrace(n, width, depth)
+		fastest := time.Duration(math.MaxInt64)
+		for range 3 {
+			db := NewDB()
+			start := time.Now()
+			for _, batch := range batches {
+				if err := db.ExportSpans(t.Context(), batch); err != nil {
+					t.Fatal(err)
+				}
+			}
+			fastest = min(fastest, time.Since(start))
+		}
+		return fastest
+	}
+	few, many := ingest(100), ingest(5_000)
+	// Scanning made this about 17x; without the scan it's under 2x. The bound
+	// sits between, so a slower machine slows both runs alike.
+	if ratio := float64(many) / float64(few); ratio > 5 {
+		t.Fatalf("ingesting %d spans took %s with 100 spans running and %s with 5000 (%.1fx)", n, few, many, ratio)
 	}
 }

@@ -109,6 +109,13 @@ func (set *SpanSet) remove(span *Span) bool {
 	if set == nil {
 		return false
 	}
+	if set.index != nil {
+		// Spans that never ran try to leave every ancestor's RunningSpans, so
+		// an absent span is the common case and must not cost a scan.
+		if _, ok := set.index[span.ID]; !ok {
+			return false
+		}
+	}
 	i := slices.IndexFunc(set.order, func(s *Span) bool { return s.ID == span.ID })
 	if i < 0 {
 		return false

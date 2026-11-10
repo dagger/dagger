@@ -46,6 +46,8 @@ const (
 	// EventTypeSpan names the OTel span an op owns: the span the engine
 	// emits for the same work.
 	EventTypeSpan
+	// EventTypeTally is an op's tallied calls of one class (Tally).
+	EventTypeTally
 )
 
 // OpKind classifies operations.
@@ -88,6 +90,9 @@ const (
 	// OpKindAcquire is a reported acquisition of one unit of a resource, from
 	// the request to the release.
 	OpKindAcquire
+	// OpKindRemoteCache is remote-cache work: a part's install, an export
+	// and its uploads, an offer or a merge.
+	OpKindRemoteCache
 )
 
 var opKindNames = map[OpKind]string{
@@ -104,6 +109,7 @@ var opKindNames = map[OpKind]string{
 	OpKindTaskGroup:    "task_group",
 	OpKindResource:     "resource",
 	OpKindAcquire:      "acquire",
+	OpKindRemoteCache:  "remote_cache",
 }
 
 func (k OpKind) String() string {
@@ -162,6 +168,12 @@ const (
 	OutcomeError
 	// OutcomeCanceled: op canceled.
 	OutcomeCanceled
+	// OutcomeRefused: op gave way to coordination (e.g. a remote-cache
+	// install refused so its demand selects again); not a failure.
+	OutcomeRefused
+	// OutcomeSuperseded: op's work was done by another op meanwhile (e.g. a
+	// part another install installed first).
+	OutcomeSuperseded
 )
 
 var outcomeNames = map[Outcome]string{
@@ -173,6 +185,8 @@ var outcomeNames = map[Outcome]string{
 	OutcomeOK:         "ok",
 	OutcomeError:      "error",
 	OutcomeCanceled:   "canceled",
+	OutcomeRefused:    "refused",
+	OutcomeSuperseded: "superseded",
 }
 
 func (o Outcome) String() string {
@@ -207,6 +221,9 @@ const (
 	// WaitReasonDependency: a reported task waited for one of its
 	// dependencies' results (zero-length when it was already done).
 	WaitReasonDependency
+	// WaitReasonAttach: a publication blocked on a result's dependency
+	// attachment, which another publication or a merge holds open.
+	WaitReasonAttach
 )
 
 var waitReasonNames = map[WaitReason]string{
@@ -218,6 +235,7 @@ var waitReasonNames = map[WaitReason]string{
 	WaitReasonExec:         "exec",
 	WaitReasonIO:           "io",
 	WaitReasonDependency:   "dependency",
+	WaitReasonAttach:       "attach",
 }
 
 func (r WaitReason) String() string {
@@ -248,6 +266,13 @@ const (
 	// LinkKindUnresolvedSpan: a reported op (from) refers to a span (the
 	// ident, "<trace>/<span>") that wasn't recorded by the time of the dump.
 	LinkKindUnresolvedSpan
+	// LinkKindFact: the fact named by the link's ident was true of the op
+	// (e.g. "hit.remote" on a call), about the dagql result with ResultID
+	// when set.
+	LinkKindFact
+	// LinkKindPart: the dagql result with ResultID has the part named by the
+	// link's ident, of Bytes bytes (the compressed size of its chain).
+	LinkKindPart
 )
 
 var linkKindNames = map[LinkKind]string{
@@ -256,6 +281,8 @@ var linkKindNames = map[LinkKind]string{
 	LinkKindReusedResult:   "reused_result",
 	LinkKindReportedCause:  "reported_cause",
 	LinkKindUnresolvedSpan: "unresolved_span",
+	LinkKindFact:           "fact",
+	LinkKindPart:           "part",
 }
 
 func (k LinkKind) String() string {
@@ -276,6 +303,8 @@ func (k LinkKind) String() string {
 //     interned identifier (optional), ResultID a dagql result (optional).
 //   - Span: OpID is the op, TargetID and ResultID the high and low halves of
 //     its span's trace ID, ParentID the span ID, all big-endian.
+//
+// Bytes is a byte count an op moved or a part link names, 0 when none.
 type Event struct {
 	Type     EventType
 	OpKind   OpKind
@@ -296,11 +325,17 @@ type Event struct {
 	// scalar JSON-array encoding of a user exec's scrubbed argv), 0 when none.
 	MetaID uint32
 
+	Bytes int64
+
 	StartNS int64
 	EndNS   int64
 }
 
-const defaultMaxEvents = 4 << 20 // ~4M events ≈ 300MB
+// defaultMaxEvents caps the events a recorder keeps in memory, at 80 bytes
+// each; an engine that never records keeps none. It is sized from the
+// largest recording measured, test-base's in-place fresh engine at about 4.7
+// million events, with room for the ops later changes add.
+const defaultMaxEvents = 12 << 20 // ~12.6M events ≈ 1GB
 
 const numShards = 16
 
@@ -323,6 +358,8 @@ type openOp struct {
 	metaID   uint32
 	parentID uint64
 	startNS  int64
+	// handle is the op, for the tallies a dump records while it's open.
+	handle *Op
 }
 
 // Recorder collects profiling events. Safe for concurrent use.
@@ -365,6 +402,11 @@ func NewRecorder(maxEvents int64) *Recorder {
 // Now returns the current recorder-relative timestamp in nanoseconds.
 func (r *Recorder) Now() int64 {
 	return int64(time.Since(r.epoch))
+}
+
+// at returns t as a recorder-relative timestamp in nanoseconds.
+func (r *Recorder) at(t time.Time) int64 {
+	return int64(t.Sub(r.epoch))
 }
 
 // Intern interns s and returns its table ID.

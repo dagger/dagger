@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
@@ -183,19 +184,26 @@ func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
 // dependencies: its shape, as validateTransferRecordShape does, its payload by
 // its codec, and every reference it makes.
 func validateTransferRecord(rec PersistedRecord, deps []uint64) error {
-	if err := validateTransferRecordHeader(rec); err != nil {
-		return err
-	}
-	if err := validateTransferPayloads(rec); err != nil {
-		return err
-	}
-	direct, err := validateTransferDependencies(rec, deps)
+	direct, err := validateTransferRecordContent(rec, deps)
 	if err != nil {
 		return err
 	}
 	rec.Envelope.PendingOffers = nil
 	_, err = VisitEncodedReferences(rec, directTransferReferences(direct))
 	return err
+}
+
+// validateTransferRecordContent checks what validateTransferRecord checks but
+// the references outside its offers, and returns its direct dependencies, for
+// a caller that visits those references itself.
+func validateTransferRecordContent(rec PersistedRecord, deps []uint64) (map[uint64]bool, error) {
+	if err := validateTransferRecordHeader(rec); err != nil {
+		return nil, err
+	}
+	if err := validateTransferPayloads(rec); err != nil {
+		return nil, err
+	}
+	return validateTransferDependencies(rec, deps)
 }
 
 // validateTransferPayloads checks each payload of a transferred record by
@@ -390,7 +398,7 @@ func validateTransferOffer(offer PersistedPartOffer, part CapturedCodecOutput) e
 	}
 	blobs := map[digest.Digest]bool{}
 	for _, layer := range offer.Chain.Layers {
-		if err := layer.Descriptor.Digest.Validate(); err != nil {
+		if err := validateLayerDigest(layer.Descriptor.Digest); err != nil {
 			return fmt.Errorf("invalid layer digest: %w", err)
 		}
 		if layer.Descriptor.Size < 0 || layer.Descriptor.MediaType == "" {
@@ -403,7 +411,43 @@ func validateTransferOffer(offer PersistedPartOffer, part CapturedCodecOutput) e
 			return fmt.Errorf("address for unknown layer %s", dig)
 		}
 	}
+	for dig, pack := range offer.Chain.Packs {
+		if !blobs[dig] {
+			return fmt.Errorf("pack for unknown layer %s", dig)
+		}
+		if err := pack.Validate(); err != nil {
+			return fmt.Errorf("invalid pack of layer %s: %w", dig, err)
+		}
+	}
 	return nil
+}
+
+// validateLayerDigest validates d as digest.Digest.Validate does, with the
+// same errors. Validate checks a SHA-2 digest's encoding with a regular
+// expression, a large share of a merge's validation, which carries a digest
+// for every layer of every chain: for those, the same check, lowercase hex
+// of the algorithm's length, is made directly.
+func validateLayerDigest(d digest.Digest) error {
+	i := strings.IndexByte(string(d), ':')
+	if i > 0 {
+		switch alg := digest.Algorithm(d[:i]); alg {
+		case digest.SHA256, digest.SHA384, digest.SHA512:
+			encoded := string(d[i+1:])
+			if encoded == "" {
+				return digest.ErrDigestInvalidFormat
+			}
+			if len(encoded) != alg.Size()*2 {
+				return digest.ErrDigestInvalidLength
+			}
+			for j := 0; j < len(encoded); j++ {
+				if c := encoded[j]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+					return digest.ErrDigestInvalidFormat
+				}
+			}
+			return nil
+		}
+	}
+	return d.Validate()
 }
 
 // A result_ref selects the separately owned row. Inline list paths keep the

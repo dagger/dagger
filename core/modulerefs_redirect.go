@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/vcs"
 )
 
 const (
@@ -92,6 +93,14 @@ func ResolveDaggerGetRedirect(ctx context.Context, refString string) (string, er
 				}
 			}
 		}
+	}
+
+	// Known code hosts such as github.com are never probed, as go get never
+	// looks them up: a vanity URL is served from its owner's own domain. A
+	// renamed repository on such a host still resolves, because git follows the
+	// host's redirect when it clones.
+	if u, err := url.Parse(sourceURL); err == nil && vcs.IsKnownCodeHost(u.Host+u.Path) {
+		return refString, nil
 	}
 
 	cache, cacheErr := dagql.EngineCache(ctx)

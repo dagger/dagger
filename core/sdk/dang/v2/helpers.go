@@ -1458,13 +1458,21 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 		},
 	}
 
-	for memberName, val := range enumMod.Values {
-		if _, ok := val.(dang.EnumValue); !ok {
-			continue
+	// Register the members in the order the module declares them, which Dang
+	// keeps in the enum's values list. enumMod.Values is a map, so ranging over
+	// it would give a different order on every load.
+	members, ok := enumMod.Values["values"].(dang.ListValue)
+	if !ok {
+		return res, fmt.Errorf("enum %s has no values list", name)
+	}
+	for _, member := range members.Elements {
+		enumVal, ok := member.(dang.EnumValue)
+		if !ok {
+			return res, fmt.Errorf("enum %s: unexpected member %T", name, member)
 		}
 		sels = append(sels, dagql.Selector{
 			Field: "withEnumMember",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(memberName)}},
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(enumVal.Val)}},
 		})
 	}
 

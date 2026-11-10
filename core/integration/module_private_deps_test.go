@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"os/exec"
@@ -179,6 +180,46 @@ func (ModuleSuite) TestGeneratePrivateGitDependency(ctx context.Context, t *test
 	out, err = run("generate", "-y", "--progress=plain")
 	require.NoError(t, err, string(out))
 	require.NotContains(t, string(out), "authentication failed")
+}
+
+// TestGoRuntimeSharedAcrossGitSettings verifies that clients whose git
+// identity, URL rewrites and SSH agent differ, such as a laptop and a CI
+// runner, share a Go module's runtime when the module has no private
+// dependencies: none of those settings change how it is built.
+func (ModuleSuite) TestGoRuntimeSharedAcrossGitSettings(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+	defer cleanup()
+
+	mod := moduleFixture(t, c, "go/minimal").
+		With(fileContents("dagger.json", `{"name": "minimal", "engineVersion": "latest", "sdk": {"source": "go"}}`))
+
+	// The first client has goGitBase's identity and no SSH agent. The second
+	// has another identity, URL rewrites and an SSH agent.
+	first := mod
+	second := mod.
+		WithNewFile("/root/.gitconfig", `[user]
+	name = Someone Else
+	email = someone@example.com
+[url "ssh://git@github.com/"]
+	insteadOf = https://github.com/
+	pushInsteadOf = https://github.com/
+`).
+		WithUnixSocket("/sock/unix-socket", core.NewQuery(c).Host().UnixSocket(sockPath)).
+		WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket")
+
+	// An exec on the module's runtime prints a value it draws when it runs,
+	// so a client that gets the runtime another client built hits the exec
+	// and prints the same value.
+	nonce := rand.Text()
+	draw := func(ctr *core.Container) string {
+		out, err := ctr.
+			With(daggerQuery(`{moduleSource(refString:"."){asModule{runtime{withEnvVariable(name:"NONCE",value:%q){withExec(args:["cat","/proc/sys/kernel/random/uuid"]){stdout}}}}}}`, nonce)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	require.Equal(t, draw(first), draw(second), "the second client must get the runtime the first one built")
 }
 
 func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -63,7 +65,8 @@ func TestValueTransferPartsSelectedChain(t *testing.T) {
 		opened, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: entry.Layers, Provider: entry.Provider})
 		require.NoError(t, err)
 		defer opened.Release(context.WithoutCancel(ctx))
-		testutil.CheckFile(t, opened, "private.txt", "whole parent bytes")
+		require.Len(t, entry.Layers, 1, "a file's chain holds the file alone")
+		require.NoFileExists(t, filepath.Join(testutil.Root(t, opened), "private.txt"))
 		testutil.CheckFile(t, opened, "visible/value.txt", "selected bytes")
 		return nil
 	})
@@ -90,6 +93,86 @@ func TestValueTransferPartsSelectedChain(t *testing.T) {
 		return nil
 	}))
 }
+
+// What the File operations that look past the file see: a named chown
+// resolves through the account databases of the File's filesystem, and
+// withName renames next to its siblings.
+type pastTheFile struct {
+	owner   string
+	renamed string
+}
+
+func lookPastTheFile(t *testing.T, ctx context.Context, file dagql.ObjectResult[*File]) pastTheFile {
+	t.Helper()
+	newFile := func() *File {
+		return &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: file.Self().Platform}
+	}
+	chowned := newFile()
+	require.NoError(t, chowned.Chown(ctx, file, "auser:agroup"))
+	chownedRef, _ := chowned.Snapshot.Peek()
+	t.Cleanup(func() { require.NoError(t, chownedRef.Release(context.Background())) })
+	chownedPath, _ := chowned.File.Peek()
+	info, err := os.Lstat(filepath.Join(testutil.Root(t, chownedRef), chownedPath))
+	require.NoError(t, err)
+	stat := info.Sys().(*syscall.Stat_t)
+	renamed := newFile()
+	require.NoError(t, renamed.WithName(ctx, file, "output"))
+	renamedRef, _ := renamed.Snapshot.Peek()
+	t.Cleanup(func() { require.NoError(t, renamedRef.Release(context.Background())) })
+	renamedPath, _ := renamed.File.Peek()
+	contents, err := os.ReadFile(filepath.Join(testutil.Root(t, renamedRef), renamedPath))
+	require.NoError(t, err)
+	return pastTheFile{owner: fmt.Sprintf("%d:%d", stat.Uid, stat.Gid), renamed: string(contents)}
+}
+
+// A File exported as its own content behaves on the importing cache as on the
+// one that made it, for the operations that look past the file. A named chown
+// resolves the source's names, and withName replaces a directory that sat
+// next to the file in the source, which the File can't otherwise see.
+func TestValueTransferFileLooksPastItselfTheSame(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	write := func(t *testing.T, root, name, value string) {
+		path := filepath.Join(root, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
+		require.NoError(t, os.WriteFile(path, []byte(value), 0640))
+	}
+	base, _ := producer.BuildWith(t, nil, func(root string) {
+		write(t, root, "etc/passwd", "auser:x:1234:4321::/home/auser:/bin/sh\n")
+		write(t, root, "etc/group", "agroup:x:4321:\n")
+		write(t, root, "src/output/keep.txt", "sibling bytes")
+	})
+	tree, _ := producer.BuildWith(t, base, func(root string) { write(t, root, "src/go.mod", "module example\n") })
+	ctx, cache, srv := transferCache(t, producer, filepath.Join(t.TempDir(), "a.db"), "a")
+	file := &File{File: new(LazyAccessor[string, *File]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]), Platform: Platform{OS: "linux", Architecture: "amd64"}}
+	file.SetPath("/src/go.mod")
+	file.SetSnapshot(tree)
+	fileResult := attachTransferObject(t, ctx, cache, srv, "a", "goMod", file)
+	require.NoError(t, cache.Evaluate(ctx, fileResult))
+	local := lookPastTheFile(t, ctx, fileResult)
+	require.Equal(t, pastTheFile{owner: "1234:4321", renamed: "module example\n"}, local)
+
+	var bundle dagql.ValueBundle
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{fileResult}, Outputs: []dagql.SelectedValueOutput{{Result: fileResult, Address: dagql.PersistedPartAddress{Part: "snapshot"}}}}
+	require.NoError(t, cache.WithExportedValues(ctx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(ctx context.Context, values *dagql.ExportedValues) error {
+		bundle = values.Bundle
+		require.Len(t, values.Chains.Entries, 1)
+		entry := values.Chains.Entries[0]
+		opened, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: entry.Layers, Provider: entry.Provider})
+		require.NoError(t, err)
+		defer opened.Release(context.WithoutCancel(ctx))
+		require.NoDirExists(t, filepath.Join(testutil.Root(t, opened), "src/output"), "the importing cache gets the file's own content")
+		return nil
+	}))
+	bctx, b, bsrv := transferCache(t, consumer, filepath.Join(t.TempDir(), "b.db"), "b")
+	reply, err := b.MergeValues(bctx, dagql.CloudCacheID, bundle)
+	require.NoError(t, err)
+	loaded, err := b.LoadResultByResultID(bctx, "b", bsrv, reply.Imported()[0].ResultID)
+	require.NoError(t, err)
+	imported := loaded.(dagql.ObjectResult[*File])
+	require.NoError(t, b.Evaluate(bctx, imported))
+	require.Equal(t, local, lookPastTheFile(t, bctx, imported))
+}
+
 func mustTransferPath(t *testing.T, ctx context.Context, file dagql.ObjectResult[*File]) string {
 	t.Helper()
 	path, err := file.Self().PathOrEval(ctx, file)
@@ -135,6 +218,71 @@ func TestValueTransferPartsContainerMount(t *testing.T) {
 		return nil
 	})
 	require.ErrorContains(t, err, "injected snapshot open failure")
+}
+
+// One export's selected outputs build their missing layers at once, up to
+// the export's workers.
+func TestValueTransferPartsChainsBuildTogether(t *testing.T) {
+	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	rootfs, _ := producer.Build(t, nil, "rootfs.txt", "fs bytes")
+	mounted, _ := producer.Build(t, nil, "mounted.txt", "mount bytes")
+	var running, peak atomic.Int64
+	producer.BeforeDiff = func(ctx context.Context) error {
+		n := running.Add(1)
+		defer running.Add(-1)
+		for {
+			if p := peak.Load(); n <= p || peak.CompareAndSwap(p, n) {
+				break
+			}
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for peak.Load() < 2 && time.Now().Before(deadline) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Millisecond):
+			}
+		}
+		return nil
+	}
+	ctx, cache, srv := transferCache(t, producer, filepath.Join(t.TempDir(), "a.db"), "a")
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	newDir := func(ref bkcache.ImmutableRef) *Directory {
+		dir := &Directory{Dir: new(LazyAccessor[string, *Directory]), Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]), Platform: platform}
+		dir.SetPath("/")
+		dir.SetSnapshot(ref)
+		return dir
+	}
+	ctr := NewContainer(platform)
+	ctr.FS.setValue(newDir(rootfs))
+	mount := new(LazyAccessor[*Directory, *Container])
+	mount.setValue(newDir(mounted))
+	ctr.Mounts = ContainerMounts{{Target: "/selected", DirectorySource: mount}}
+	result := attachTransferObject(t, ctx, cache, srv, "a", "buildTogether", ctr)
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{result}, Outputs: []dagql.SelectedValueOutput{
+		{Result: result, Address: dagql.PersistedPartAddress{Part: "fs"}},
+		{Result: result, Address: dagql.PersistedPartAddress{Part: "mount:/selected"}},
+	}}
+	cfg := config.RefConfig{Compression: compression.New(compression.Uncompressed), Builds: config.LayerBuilds{Workers: 2}}
+	require.NoError(t, cache.WithExportedValues(ctx, selection, cfg, func(ctx context.Context, values *dagql.ExportedValues) error {
+		require.Len(t, values.Chains.Entries, 2)
+		require.Equal(t, 2, values.Chains.Stats.LayersDiffed)
+		found := map[string]string{}
+		for _, chain := range values.Chains.Entries {
+			ref, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: chain.Provider})
+			require.NoError(t, err)
+			defer ref.Release(context.WithoutCancel(ctx))
+			root := testutil.Root(t, ref)
+			for _, name := range []string{"rootfs.txt", "mounted.txt"} {
+				if data, err := os.ReadFile(filepath.Join(root, name)); err == nil {
+					found[name] = string(data)
+				}
+			}
+		}
+		require.Equal(t, map[string]string{"rootfs.txt": "fs bytes", "mounted.txt": "mount bytes"}, found)
+		return nil
+	}))
+	require.EqualValues(t, 2, peak.Load(), "both outputs' layers built at once")
 }
 
 // Spike 2 of the engine-service protocol design (6.2), kept as a test of
@@ -240,10 +388,10 @@ func TestValueMergeChainSecondBundleLandsOnTheParent(t *testing.T) {
 }
 
 // transferOutputChainLengths returns the bundle's output chain lengths,
-// sorted.
+// sorted, a prefix's resolved to the layers of the chain it names.
 func transferOutputChainLengths(bundle dagql.ValueBundle) []int {
 	var lengths []int
-	for _, output := range bundle.Outputs {
+	for _, output := range resolvedTransferOutputs(bundle) {
 		if output.Chain != nil {
 			lengths = append(lengths, len(output.Chain.Layers))
 		}
@@ -253,15 +401,26 @@ func transferOutputChainLengths(bundle dagql.ValueBundle) []int {
 }
 
 // transferOutputOrdinals returns the ordinals of the bundle's outputs with a
-// chain, by their chain length.
+// chain, by their chain length, a prefix's resolved to the layers of the
+// chain it names.
 func transferOutputOrdinals(bundle dagql.ValueBundle) map[dagql.TransferOrdinal]int {
 	out := map[dagql.TransferOrdinal]int{}
-	for _, output := range bundle.Outputs {
+	for _, output := range resolvedTransferOutputs(bundle) {
 		if output.Chain != nil {
 			out[output.Ordinal] = len(output.Chain.Layers)
 		}
 	}
 	return out
+}
+
+// resolvedTransferOutputs returns the bundle's outputs with each prefix
+// resolved to the layers of the chain it names, leaving the bundle as it was.
+func resolvedTransferOutputs(bundle dagql.ValueBundle) []dagql.TransferredOutput {
+	bundle.Outputs = slices.Clone(bundle.Outputs)
+	if err := dagql.ResolveChainPrefixes(&bundle); err != nil {
+		panic(err)
+	}
+	return bundle.Outputs
 }
 
 // transferOrdinalOf returns the bundle ordinal of a sending cache's entry.
@@ -307,9 +466,53 @@ func TestValueExportPrefixesOfAChainOfTen(t *testing.T) {
 		require.Equal(t, []string{snapshot.SnapshotID()}, observed.opens, "only the tenth step's snapshot is opened")
 		require.Positive(t, ex.ChainTime, "the time opening the chain took")
 		require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, transferOutputChainLengths(ex.Bundle))
-		for _, output := range ex.Bundle.Outputs {
+		for _, output := range resolvedTransferOutputs(ex.Bundle) {
 			require.Equal(t, ex.Chains.Entries[0].Layers[:len(output.Chain.Layers)], output.Chain.Layers, "each is a prefix of the selected chain")
 		}
+		return nil
+	}))
+}
+
+// The prefixes of a selected chain name it and how many of its layers they
+// take, instead of carrying the layers again: a chain of ten's bundle carries
+// ten layers, not the fifty-five of every prefix's own copy.
+func TestValueExportPrefixesNameTheirChain(t *testing.T) {
+	store := testutil.NewStore(t)
+	ctx, cache, srv := transferCache(t, store, "", "a")
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	var snapshot bkcache.ImmutableRef
+	var step dagql.ObjectResult[*Container]
+	for i := range 10 {
+		snapshot, _ = store.Build(t, snapshot, fmt.Sprintf("named-%d.txt", i), fmt.Sprintf("named %d", i))
+		ctr := NewContainer(platform)
+		ctr.FS.setValue(partTestDirectory(snapshot, "/"))
+		if i == 0 {
+			step = attachTransferObject(t, ctx, cache, srv, "a", "namedBase", ctr)
+		} else {
+			step = attachDelegationChild(t, ctx, cache, srv, "a", "namedStep", step, ctr)
+		}
+	}
+	fs := dagql.PersistedPartAddress{Part: "fs"}
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{step}, Outputs: []dagql.SelectedValueOutput{{Result: step, Address: fs}}}
+	require.NoError(t, cache.WithExportedValues(ctx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, ex *dagql.ExportedValues) error {
+		selected := transferOrdinalOf(t, cache, ex.Bundle, step)
+		var layers int
+		var prefixes []int
+		for _, output := range ex.Bundle.Outputs {
+			if output.Chain != nil {
+				require.Equal(t, selected, output.Ordinal, "only the selected output carries its chain")
+				require.Nil(t, output.Prefix)
+				layers += len(output.Chain.Layers)
+				continue
+			}
+			require.NotNil(t, output.Prefix, "a prefix names its chain")
+			require.Equal(t, selected, output.Prefix.Ordinal)
+			require.Equal(t, fs, output.Prefix.Address)
+			prefixes = append(prefixes, output.Prefix.Layers)
+		}
+		require.Equal(t, 10, layers, "the bundle carries each layer once")
+		slices.Sort(prefixes)
+		require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8, 9}, prefixes)
 		return nil
 	}))
 }

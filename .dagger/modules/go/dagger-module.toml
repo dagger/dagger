@@ -1,14 +1,6 @@
 name = "go"
-engineVersion = "v1.0.0-0"
-include = ["../../../go.sum", "../../../go.mod", "../../../util/parallel"]
+include = ["../../../go.mod", "../../../util/parallel/*.go", "../../../util/parallel/*.h", "../../../util/parallel/*.s", "../../../util/parallel/*.syso", "!../../../**/*_test.go", "**/*_test.go"]
 
-[runtime]
-  source = "go"
-
-[[dependencies]]
-  name = "wolfi"
-  source = "https://github.com/dagger/wolfi@main"
-  pin = "0b73dcbea9c7d63969d747386f96b0694fb4dadc"
-
-[codegen]
-  automaticGitignore = false
+[entrypoint]
+  kind = "dang"
+  source = "./internal/dagger/entrypoint"
