@@ -1901,6 +1901,11 @@ func (s *gitSchema) unresolvedRef(ctx context.Context, parent dagql.ObjectResult
 	// available object database, like `git rev-parse` would. Named refs always
 	// win over prefixes, matching git's own precedence.
 	if gitutil.IsCommitSHAPrefix(args.Name) {
+		if gitutil.IsCommitSHA(args.Commit) && strings.HasPrefix(args.Commit, args.Name) {
+			// The caller already knows the commit (e.g. a module dependency
+			// pinned at an abbreviated SHA): nothing to expand or fetch.
+			return s.commitSHARef(ctx, parent, args.Commit)
+		}
 		sha, shaErr := s.resolveShortSHA(ctx, repo, args.Name)
 		if shaErr == nil {
 			return s.selectCommitRef(ctx, parent, sha)
@@ -2050,7 +2055,7 @@ func (s *gitSchema) selectCommitRef(ctx context.Context, parent dagql.ObjectResu
 		return dagql.Result[*core.GitRef]{}, err
 	}
 	var result dagql.ObjectResult[*core.GitRef]
-	err = srv.Select(ctx, parent, &result, dagql.Selector{Field: "ref", Args: []dagql.NamedInput{
+	err = srv.Select(ctx, parent, &result, dagql.Selector{Field: "ref", View: currentCallView(ctx), Args: []dagql.NamedInput{
 		{Name: "name", Value: dagql.String(sha)},
 	}})
 	return result.Result, err
@@ -2065,10 +2070,20 @@ func (s *gitSchema) selectCommit(ctx context.Context, parent dagql.ObjectResult[
 		return dagql.Result[*core.GitCommit]{}, err
 	}
 	var result dagql.ObjectResult[*core.GitCommit]
-	err = srv.Select(ctx, parent, &result, dagql.Selector{Field: "commit", Args: []dagql.NamedInput{
+	err = srv.Select(ctx, parent, &result, dagql.Selector{Field: "commit", View: currentCallView(ctx), Args: []dagql.NamedInput{
 		{Name: "id", Value: dagql.String(sha)},
 	}})
 	return result.Result, err
+}
+
+// currentCallView is the view of the call being resolved, for a selection
+// standing in for it: made in the same view, it has the same recipe as a
+// caller's own selection of it.
+func currentCallView(ctx context.Context) call.View {
+	if cur := dagql.CurrentCall(ctx); cur != nil {
+		return cur.View
+	}
+	return ""
 }
 
 // resolveShortSHA expands an abbreviated SHA in repo (see

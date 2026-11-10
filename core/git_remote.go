@@ -284,15 +284,35 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 // a prefix (ls-remote only advertises ref tips, and a fetch wants full
 // object names), so the mirror's objects answer first: a commit fetched
 // before, e.g. by a tree checkout, resolves without contacting the remote.
-// When nothing there matches, the history of the refs the remote advertises
-// is fetched and the prefix expanded again (see fetchForShortSHA), like a
-// clone followed by `git rev-parse` would.
+// When nothing there matches, the remote's blobless mirror fetches the
+// history of the refs the remote advertises and expands the prefix there
+// (see fetchForShortSHA), like a clone followed by `git rev-parse` would.
+// Fetching only commits and trees keeps that affordable, and the separate
+// mirror leaves checkouts of the remote free to proceed meanwhile.
 func (repo *RemoteGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
+	sha, err := repo.resolveShortSHA(ctx, prefix, false)
+	if !errors.Is(err, gitutil.ErrShortSHANotFound) || repo.Mirror.Self().Blobless {
+		return sha, err
+	}
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", err
+	}
+	blobless, err := repo.withBloblessMirror(ctx, dag)
+	if err != nil {
+		return "", err
+	}
+	return blobless.resolveShortSHA(ctx, prefix, true)
+}
+
+// resolveShortSHA expands prefix against this mirror's objects, fetching the
+// remote's history into it first when they lack the commit and fetch is set.
+func (repo *RemoteGitRepository) resolveShortSHA(ctx context.Context, prefix string, fetch bool) (string, error) {
 	var sha string
 	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		var err error
 		sha, err = git.ResolveShortSHA(ctx, prefix)
-		if errors.Is(err, gitutil.ErrShortSHANotFound) {
+		if fetch && errors.Is(err, gitutil.ErrShortSHANotFound) {
 			sha, err = repo.fetchForShortSHA(ctx, git, prefix)
 		}
 		return err
@@ -315,10 +335,10 @@ var shortSHAFetchRefSpecs = [][]string{
 
 const shortSHAScratchRefs = "refs/dagger.shortsha/"
 
-// fetchForShortSHA fetches the complete history of the remote's advertised
-// refs into the mirror, round by round (see shortSHAFetchRefSpecs), until
-// prefix expands. The expanded commit is retained in the mirror like any
-// fetched commit, so a checkout of it fetches nothing more. A prefix no
+// fetchForShortSHA fetches the commits and trees of the remote's advertised
+// refs, without file contents, into the mirror, round by round (see
+// shortSHAFetchRefSpecs), until prefix expands. The expanded commit is kept
+// reachable, so expanding the prefix again fetches nothing. A prefix no
 // advertised ref reaches cannot be expanded at all: remotes do not serve
 // unreachable commits by prefix.
 func (repo *RemoteGitRepository) fetchForShortSHA(ctx context.Context, git *gitutil.GitCLI, prefix string) (_ string, rerr error) {
@@ -335,14 +355,16 @@ func (repo *RemoteGitRepository) fetchForShortSHA(ctx context.Context, git *gitu
 		defer func() { op.EndErr(rerr) }()
 		var resolveErr error
 		for _, refSpecs := range shortSHAFetchRefSpecs {
-			args := []string{"fetch", "--progress", "--no-tags", "--force"}
+			// A remote that doesn't support filters ignores this and sends
+			// the contents too.
+			args := []string{"fetch", "--progress", "--no-tags", "--force", "--filter=blob:none"}
 			if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
 				// Commits behind a shallow boundary are absent too.
 				args = append(args, "--unshallow")
 			}
 			args = append(args, "origin")
 			if _, err := fetchGit.Run(ctx, append(args, refSpecs...)...); err != nil {
-				return fmt.Errorf("fetch remote %s to expand short SHA %q: %w", repo.URL.Remote(), prefix, err)
+				return fmt.Errorf("fetch remote %s to expand short SHA %q: %w", repo.URL.RedactedRemote(), prefix, err)
 			}
 			sha, resolveErr = git.ResolveShortSHA(ctx, prefix)
 			if resolveErr == nil {
@@ -353,7 +375,7 @@ func (repo *RemoteGitRepository) fetchForShortSHA(ctx context.Context, git *gitu
 				return resolveErr
 			}
 		}
-		return fmt.Errorf("%w in any ref %s advertises: use the full SHA of a commit it serves", resolveErr, repo.URL.Remote())
+		return fmt.Errorf("%w in any ref %s advertises: use the full SHA of a commit it serves", resolveErr, repo.URL.RedactedRemote())
 	})
 	return sha, err
 }

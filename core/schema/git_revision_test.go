@@ -235,6 +235,7 @@ func recordedRefName(t *testing.T, f *gitRevisionFixture, result dagql.AnyResult
 	record, err := f.cache.CapturePersistedRecord(f.ctx, result)
 	require.NoError(t, err)
 	require.Equal(t, field, record.Call.Field)
+	require.EqualValues(t, f.srv.View, record.Call.View, "recorded in the caller's view")
 	for _, arg := range record.Call.Args {
 		if arg.Name == "name" || arg.Name == "id" {
 			return arg.Value.StringValue
@@ -318,5 +319,28 @@ func TestGitRefShortSHARecordsFullSHA(t *testing.T) {
 		require.Equal(t, full, commit.Self().Ref.SHA)
 		require.Equal(t, 1, calls)
 		require.Equal(t, full, recordedRefName(t, f, commit, "commit"))
+
+		// the same result as selecting the full SHA directly
+		var direct dagql.ObjectResult[*core.GitCommit]
+		require.NoError(t, f.srv.Select(f.ctx, f.parent, &direct, dagql.Selector{
+			Field: "commit",
+			View:  f.srv.View,
+			Args:  []dagql.NamedInput{{Name: "id", Value: dagql.String(full)}},
+		}))
+		viaPrefix, err := f.cache.CapturePersistedRecord(f.ctx, commit)
+		require.NoError(t, err)
+		viaFull, err := f.cache.CapturePersistedRecord(f.ctx, direct)
+		require.NoError(t, err)
+		require.Equal(t, viaFull.ResultID, viaPrefix.ResultID)
+	})
+
+	t.Run("pinned commit", func(t *testing.T) {
+		f := newGitRevisionFixture(t, remote, "", errors.New("must not walk"))
+		var calls int
+		f.stubShortSHA(full, &calls)
+		ref, err := f.ref(f.ctx, full[:7], dagql.NamedInput{Name: "commit", Value: dagql.String(full)})
+		require.NoError(t, err)
+		require.Equal(t, full, ref.Self().Ref.SHA)
+		require.Zero(t, calls, "a prefix pinned to its commit is not expanded")
 	})
 }
