@@ -4,3 +4,7 @@ include = ["../../../engine/distconsts/*.go", "../../../engine/distconsts/*.h", 
 [entrypoint]
   kind = "dang"
   source = "./internal/dagger/entrypoint"
+
+[[dependencies]]
+  name = "go"
+  source = "github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"

@@ -3,8 +3,8 @@
   "files": {
     "dagger.dispatch.gen.go": "79d75a227cc15bf8461313b8c06eb1b2d47598ba87000e6b94a43aa84ba4d4e3",
     "dagger.gen.go": "b40dd0d861959d6c6d000ba61f926edf49fc9f85636c1d391f60fac11150bbe1",
-    "internal/dagger/dagger.gen.go": "8ea4f4e2d114191a297047ac5ef07de34102ce01f82583a83f7ff1115e5691b8",
+    "internal/dagger/dagger.gen.go": "d119cc4b958fb3acfb2ef0679846eb7d3b261af6e4a7ca50ce5623bca8acc408",
     "internal/dagger/docs-dev.gen.go": "fee64b34c223ca750f705bb53c7c323d79cfb80c41a8de55f4b25a49750b5dad",
-    "internal/dagger/entrypoint/main.dang": "9ccbf746ab9d818f139825c3e9708b45a57db6af74846f014f5472a0a350e9ee"
+    "internal/dagger/entrypoint/main.dang": "ea639aaf901c2a58b7331f083dc748a4f508fca2a35fd551bc8c0ac2c3a9e29c"
   }
 }

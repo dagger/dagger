@@ -244,9 +244,9 @@ func (r *Gh) Terminal(opts ...GhTerminalOpts) *Container { // gh (../../main.go:
 }
 
 // Set an additional CA certificate for the GitHub host.
-func (r *Gh) WithCacert(caCert *File) *Gh { // gh (../../main.go:110:1)
+func (r *Gh) WithCaCert(caCert *File) *Gh { // gh (../../main.go:110:1)
 	assertNotNil("caCert", caCert)
-	q := r.query.Select("withCacert")
+	q := r.query.Select("withCaCert")
 	q = q.Arg("caCert", caCert)
 
 	return &Gh{

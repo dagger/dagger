@@ -7,21 +7,16 @@ type Entrypoint implements ModuleEntrypoint {
       .withDirectory(workspace.cwd, workspace.directory(".", exclude: ["**/.git"], gitignore: true))
   }
 
-  let dispatch: File! {
-    container
-      .from("golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83")
-      .withMountedCache("/go/pkg/mod", cacheVolume("go-sdk-v2-mod"))
-      .withMountedCache("/root/.cache/go-build", cacheVolume("go-sdk-v2-build"))
-      .withMountedDirectory("/workspace", currentModule.contextDirectory)
-      .withWorkdir("/workspace/" + currentModule.sourceSubpath)
-      .withEnvVariable("CGO_ENABLED", "0")
-      .withEnvVariable("GOWORK", "off")
-      .withExec(["sh", "-c", "go build -o /tmp/dispatch . 2>/tmp/build.log && exit 0; cat /tmp/build.log >&2; grep -q -e 'no required module provides package' -e 'replacement directory' -e 'no matching files found' /tmp/build.log && echo 'The build misses files outside the module directory: run dagger generate after changing go.mod replace directives, the imports from a replace target or their embeds.' >&2; exit 1"])
-      .file("/tmp/dispatch")
+  let dispatch(platform: Platform!): File! {
+    let ws = currentModule.contextDirectory.asWorkspace
+    let src = currentModule.sourceSubpath
+    let root = src
+    let pkg = src
+    go.module(ws, path: root, findUp: false).packages(ws).get(pkg).platforms.get(`${platform}`.split("/").takeFirst(2).join("/")).binary(ws)
   }
 
-  pub prebuild: File! {
-    dispatch
+  pub prebuild(platform: Platform): File! {
+    dispatch(platform ?? defaultPlatform)
   }
 
   pub runtimeImage(platform: Platform): Container! {
@@ -114,13 +109,13 @@ type Entrypoint implements ModuleEntrypoint {
       fnArgs: fnArgs,
     }})
     # A build failure stays out of the rescue below, so it surfaces unchanged.
-    let binary = dispatch.sync
+    let binary = dispatch(defaultPlatform).sync
     let result = runtimeImage(defaultPlatform)
       .withFile("/usr/local/bin/dispatch", binary, permissions: 755)
       .withMountedDirectory("/workspace", currentModule.contextDirectory)
       .withWorkdir("/workspace/" + currentModule.sourceSubpath)
       .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
-      .withEnvVariable("DAGGER_CLIENT_VERSION", "v1.0.0-beta.25")
+      .withEnvVariable("DAGGER_CLIENT_VERSION", "v1.0.0-beta.26")
       .withExec(
         ["/usr/local/bin/dispatch", "engine-call", "/dagger/result.json"],
         stdin: request,

@@ -1,11 +1,11 @@
 module github.com/dagger/dagger/modules/go
 
-go 1.26.6
+go 1.27
 
 replace github.com/dagger/dagger => ../../..
 
 require (
-	dagger.io/dagger v1.0.0-beta.25
+	dagger.io/dagger v1.0.0-beta.26
 	github.com/Khan/genqlient v0.8.1
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/containerd/platforms v1.0.0-rc.2

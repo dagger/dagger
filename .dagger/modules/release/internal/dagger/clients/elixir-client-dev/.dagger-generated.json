@@ -1,7 +1,7 @@
 {
   "version": 1,
   "files": {
-    "dagger.gen.go": "11121d8160fc1321328e4b7991f758e5ce10d0e1a62cbab044a5e14bc4e65297",
+    "dagger.gen.go": "da4f913b9e828be48fc22e65b8fd1fb5faf85900c717845a565658c508906fc2",
     "elixir-client-dev.gen.go": "4f25619b594379dd37bccba26676742f04e155be618fa369a9187d68c6344141"
   }
 }

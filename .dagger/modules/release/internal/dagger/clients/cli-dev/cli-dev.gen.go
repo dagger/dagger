@@ -10,7 +10,7 @@ import (
 )
 
 // Develop the Dagger CLI
-type CliDev struct { // cli-dev (../../main.go:115:6)
+type CLIDev struct { // cli-dev (../../main.go:115:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -23,8 +23,8 @@ type CliDev struct { // cli-dev (../../main.go:115:6)
 	version         *string
 }
 
-func (r *CliDev) WithGraphQLQuery(q *querybuilder.Selection) *CliDev {
-	return &CliDev{
+func (r *CLIDev) WithGraphQLQuery(q *querybuilder.Selection) *CLIDev {
+	return &CLIDev{
 		query: q,
 		// The query's origin is unknown: it may go through a field that
 		// must be reevaluated.
@@ -32,13 +32,13 @@ func (r *CliDev) WithGraphQLQuery(q *querybuilder.Selection) *CliDev {
 	}
 }
 
-// CliDevBinaryOpts contains options for CliDev.Binary
-type CliDevBinaryOpts struct {
+// CLIDevBinaryOpts contains options for CLIDev.Binary
+type CLIDevBinaryOpts struct {
 	Platform Platform // cli-dev (../../main.go:125:2)
 }
 
 // Build the dagger CLI binary for a single platform
-func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../main.go:123:1)
+func (r *CLIDev) Binary(opts ...CLIDevBinaryOpts) *File { // cli-dev (../../main.go:123:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -50,14 +50,14 @@ func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../main
 	return new(File).WithGraphQLQuery(q)
 }
 
-// CliDevDevBinariesOpts contains options for CliDev.DevBinaries
-type CliDevDevBinariesOpts struct {
+// CLIDevDevBinariesOpts contains options for CLIDev.DevBinaries
+type CLIDevDevBinariesOpts struct {
 	Platform Platform // cli-dev (../../main.go:138:2)
 }
 
 // Build dev CLI binaries
 // TODO: remove this
-func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-dev (../../main.go:136:1)
+func (r *CLIDev) DevBinaries(opts ...CLIDevDevBinariesOpts) *Directory { // cli-dev (../../main.go:136:1)
 	q := r.query.Select("devBinaries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -69,8 +69,8 @@ func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-
 	return new(Directory).WithGraphQLQuery(q)
 }
 
-// A unique identifier for this CliDev.
-func (r *CliDev) ID(ctx context.Context) (ID, error) {
+// A unique identifier for this CLIDev.
+func (r *CLIDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -89,17 +89,17 @@ func (r *CliDev) ID(ctx context.Context) (ID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *CliDev) XXX_GraphQLType() string {
-	return "CliDev"
+func (r *CLIDev) XXX_GraphQLType() string {
+	return "CLIDev"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *CliDev) XXX_GraphQLIDType() string {
+func (r *CLIDev) XXX_GraphQLIDType() string {
 	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *CliDev) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *CLIDev) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -107,25 +107,25 @@ func (r *CliDev) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *CliDev) MarshalJSON() ([]byte, error) {
+func (r *CLIDev) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(id)
 }
-func (r *CliDev) UnmarshalJSON(bs []byte) error {
+func (r *CLIDev) UnmarshalJSON(bs []byte) error {
 	var id string
 	err := json.Unmarshal(bs, &id)
 	if err != nil {
 		return err
 	}
-	*r = CliDev{query: selectNode(Connect().QueryBuilder(), id, "CliDev")}
+	*r = CLIDev{query: selectNode(Connect().QueryBuilder(), id, "CLIDev")}
 	return nil
 }
 
-// CliDevPublishOpts contains options for CliDev.Publish
-type CliDevPublishOpts struct {
+// CLIDevPublishOpts contains options for CLIDev.Publish
+type CLIDevPublishOpts struct {
 	GithubToken *Secret // cli-dev (../../publish.go:25:2)
 
 	GithubHost string // cli-dev (../../publish.go:26:2)
@@ -148,7 +148,7 @@ type CliDevPublishOpts struct {
 }
 
 // Publish the CLI release artifacts.
-func (r *CliDev) Publish(tag string, commit string, githubOrgName string, opts ...CliDevPublishOpts) *Directory { // cli-dev (../../publish.go:19:1)
+func (r *CLIDev) Publish(tag string, commit string, githubOrgName string, opts ...CLIDevPublishOpts) *Directory { // cli-dev (../../publish.go:19:1)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `githubToken` optional argument
@@ -199,12 +199,12 @@ func (r *CliDev) Publish(tag string, commit string, githubOrgName string, opts .
 	return new(Directory).WithGraphQLQuery(q)
 }
 
-// CliDevPublishMetadataOpts contains options for CliDev.PublishMetadata
-type CliDevPublishMetadataOpts struct {
+// CLIDevPublishMetadataOpts contains options for CLIDev.PublishMetadata
+type CLIDevPublishMetadataOpts struct {
 	AwsEndpointURL string // cli-dev (../../publish.go:116:2)
 }
 
-func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../publish.go:108:1)
+func (r *CLIDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CLIDevPublishMetadataOpts) error { // cli-dev (../../publish.go:108:1)
 	assertNotNil("awsAccessKeyId", awsAccessKeyId)
 	assertNotNil("awsSecretAccessKey", awsSecretAccessKey)
 	if r.publishMetadata != nil {
@@ -227,13 +227,13 @@ func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, aw
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun() *Check { // cli-dev (../../publish.go:179:1)
+func (r *CLIDev) ReleaseDryRun() *Check { // cli-dev (../../publish.go:179:1)
 	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)
 }
 
-func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../main.go:117:2)
+func (r *CLIDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../main.go:117:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}
@@ -245,7 +245,7 @@ func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../ma
 	return response, q.Execute(ctx)
 }
 
-func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../../main.go:116:2)
+func (r *CLIDev) Version(ctx context.Context) (string, error) { // cli-dev (../../main.go:116:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -257,9 +257,9 @@ func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../.
 	return response, q.Execute(ctx)
 }
 
-// AsNode returns this CliDev as a Node.
+// AsNode returns this CLIDev as a Node.
 // This is a local type conversion — no GraphQL call.
-func (r *CliDev) AsNode() Node {
+func (r *CLIDev) AsNode() Node {
 	return new(NodeClient).WithGraphQLQuery(r.query)
 }
 
@@ -303,7 +303,7 @@ type CliDevOpts struct {
 }
 
 // Develop the Dagger CLI
-func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../main.go:14:1)
+func (r *Query) CliDev(opts ...CliDevOpts) *CLIDev { // cli-dev (../../main.go:14:1)
 	q := r.query.Select("cliDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `runnerHost` optional argument
@@ -336,7 +336,7 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../main.go:1
 		}
 	}
 
-	return &CliDev{
+	return &CLIDev{
 		query:     q,
 		refetchID: r.refetchID,
 	}
@@ -346,6 +346,6 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../main.go:1
 // Use Connect(connection).CliDev to call it on an explicit connection.
 //
 // Develop the Dagger CLI
-func New(opts ...CliDevOpts) *CliDev {
+func New(opts ...CliDevOpts) *CLIDev {
 	return Connect().CliDev(opts...)
 }

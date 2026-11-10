@@ -678,8 +678,8 @@ func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (
 	return response, q.Execute(ctx)
 }
 
-func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (../../main.go:127:1)
-	q := r.query.Select("withEbpfprogs")
+func (r *EngineDev) WithEbpfProgs(names []string) *EngineDev { // engine-dev (../../main.go:127:1)
+	q := r.query.Select("withEbpfProgs")
 	q = q.Arg("names", names)
 
 	return &EngineDev{
