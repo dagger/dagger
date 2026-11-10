@@ -1,9 +1,14 @@
 package gogenerator
 
 import (
+	"go/version"
+	"io/fs"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/psanford/memfs"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/mod/modfile"
 )
@@ -37,4 +42,41 @@ func TestSyncModReplaceAndTidyPinsDaggerWithoutUpdatingTransitiveDeps(t *testing
 	}
 
 	require.Equal(t, []string{"go", "get", "dagger.io/dagger@v1.2.3"}, goGetArgs)
+}
+
+func TestNewModuleGoModNamesNoPatchRelease(t *testing.T) {
+	t.Parallel()
+
+	g := GoGenerator{
+		Config: generator.Config{
+			OutputDir: t.TempDir(),
+			ModuleConfig: &generator.ModuleGeneratorConfig{
+				ModuleName:       "test",
+				ModuleSourcePath: ".",
+			},
+		},
+	}
+	mfs := memfs.New()
+	_, _, err := g.bootstrapMod(mfs, &generator.GeneratedState{}, true)
+	require.NoError(t, err)
+
+	content, err := fs.ReadFile(mfs, "go.mod")
+	require.NoError(t, err)
+	mod, err := modfile.Parse("go.mod", content, nil)
+	require.NoError(t, err)
+	// Any patch release of the Go codegen is built with must build the
+	// module, not only that patch or later ones.
+	require.Equal(t, strings.TrimPrefix(version.Lang(runtime.Version()), "go")+".0", mod.Go.Version)
+}
+
+func TestGoModVersion(t *testing.T) {
+	t.Parallel()
+
+	for release, want := range map[string]string{
+		"go1.27.4":  "1.27.0",
+		"go1.27.0":  "1.27.0",
+		"go1.28rc1": "1.28.0",
+	} {
+		require.Equal(t, want, goModVersion(release), release)
+	}
 }
