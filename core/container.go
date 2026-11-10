@@ -3666,7 +3666,12 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			if !ok || mountedSnapshot == nil {
 				return fmt.Errorf("container directory lazy: missing mounted directory snapshot for %s", mnt.Target)
 			}
-			finalDir := path.Join(mountedDirPath, subpath)
+			// The path resolves within the mounted Directory, as it does
+			// through the Directory itself (see viewSubpath).
+			finalDir, err := viewSubpath(ctx, mountedSnapshot, mountedDirPath, subpath)
+			if err != nil {
+				return RestoreErrPath(err, lazy.Path)
+			}
 			if err := MountRef(ctx, mountedSnapshot, func(root string, _ *mount.Mount) error {
 				resolvedPath, err := containerdfs.RootPath(root, finalDir)
 				if err != nil {
@@ -3812,7 +3817,12 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 			if !ok || mountedSnapshot == nil {
 				return fmt.Errorf("container file lazy: missing mounted directory snapshot for %s", mnt.Target)
 			}
-			finalFile := path.Join(mountedDirPath, subpath)
+			// The path resolves within the mounted Directory, as it does
+			// through the Directory itself (see viewSubpath).
+			finalFile, err := viewSubpath(ctx, mountedSnapshot, mountedDirPath, subpath)
+			if err != nil {
+				return RestoreErrPath(err, lazy.Path)
+			}
 			if err := MountRef(ctx, mountedSnapshot, func(root string, _ *mount.Mount) error {
 				resolvedPath, err := containerdfs.RootPath(root, finalFile)
 				if err != nil {
