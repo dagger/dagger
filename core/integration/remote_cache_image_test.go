@@ -240,6 +240,52 @@ func (RemoteCacheTransferSuite) TestCacheExportCarriesEveryPart(ctx context.Cont
 	require.Equal(t, map[string]bool{"metadata": true, "fs": true, "execMeta": true}, parts)
 }
 
+// A cache export carries a result's own data, and what made it as records
+// only: a directory an exec wrote brings its snapshot, but not the exec
+// container's filesystem, which a lookup of the directory never reads.
+func (RemoteCacheTransferSuite) TestCacheExportLeavesWhatMadeAResultAsRecords(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dir := core.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"sh", "-c", "mkdir /out && echo " + rand.Text() + " > /out/f"}).
+		Directory("/out")
+	id, err := dir.ID(ctx)
+	require.NoError(t, err)
+	var res struct {
+		Engine struct {
+			LocalCache struct {
+				Export struct {
+					File struct {
+						Contents string `json:"contents"`
+					} `json:"file"`
+				} `json:"_export"`
+			} `json:"localCache"`
+		} `json:"engine"`
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!, $bundle: String!) { engine { localCache { _export(results: [$id]) { file(path: $bundle) { contents } } } } }`,
+		Variables: map[string]any{"id": id, "bundle": dagql.BundleFile},
+	}, &dagger.Response{Data: &res}))
+	var bundle dagql.ValueBundle
+	require.NoError(t, json.Unmarshal([]byte(res.Engine.LocalCache.Export.File.Contents), &bundle))
+	require.Len(t, bundle.Roots, 1)
+	root := bundle.Roots[0].Ordinal
+	execs := 0
+	for _, value := range bundle.Values {
+		if call := value.Record.Call; call != nil && call.Field == "withExec" {
+			execs++
+		}
+	}
+	require.NotZero(t, execs, "the exec that made the directory travels as a record")
+	// A part another value shares layers with may be named as a prefix of
+	// the directory's chain, which carries no data of its own; only a chain
+	// carries layers.
+	for _, output := range bundle.Outputs {
+		if output.Chain != nil && len(output.Chain.Layers) > 0 {
+			require.Equal(t, root, output.Ordinal, "only the directory's own part carries data, not %s of value %d", output.Address.Part, output.Ordinal)
+		}
+	}
+}
+
 // Exporting a Git module source carries its checkout's data: the checkout is
 // a result the source's value holds, so the export carries it with no case for
 // module sources. Only the source is exported, so nothing else selects a part
