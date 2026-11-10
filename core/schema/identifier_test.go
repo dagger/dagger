@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -54,4 +55,30 @@ func TestNamingVersion(t *testing.T) {
 		require.Equal(t, tc.want, res.Naming.Version, tc.version)
 		require.Equal(t, []string{"withGpu", "callId"}, res.Naming.FormatIdentifiers, tc.version)
 	}
+}
+
+// The v1 views before v1.0.0-beta.26 serve v1.0.0-beta.25's identifier API,
+// with its dictionary, whatever the version asked for.
+func TestBeta25IdentifierAPI(t *testing.T) {
+	ctx, dag := newNestingTestServer(t, call.View(engine.APIViewVersion("v1.0.0-beta.25")))
+	h := dagql.NewDefaultHandler(dag)
+	gql := client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(ctx))
+	}))
+	type term struct{ Spelling string }
+	var res struct {
+		Identifier        struct{ Words []struct{ Text string } }
+		FormatIdentifiers []string
+		NamingDictionary  []term
+	}
+	require.NoError(t, gql.Post(`{
+		identifier(name: "K8STools") { words { text } }
+		formatIdentifiers(names: ["withGPU", "K8STools", "K3SCluster"], casing: PASCAL, version: "v1.0.0")
+		namingDictionary { spelling }
+	}`, &res))
+	require.Equal(t, []struct{ Text string }{{"K8S"}, {"tools"}}, res.Identifier.Words)
+	require.Equal(t, []string{"WithGPU", "K8STools", "K3SCluster"}, res.FormatIdentifiers)
+	require.Contains(t, res.NamingDictionary, term{"GraphQL"})
+	require.NotContains(t, res.NamingDictionary, term{"K8s"})
+	require.NotContains(t, res.NamingDictionary, term{"K3s"})
 }

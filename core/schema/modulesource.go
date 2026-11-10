@@ -105,6 +105,12 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("sourceRootPath").Doc(
 					`An optional subpath of the directory which contains the module's configuration file.`,
 					`If not set, the module source code is loaded from the root of the directory.`),
+				// Args puts listed arguments first: list them all to keep their positions.
+				dagql.Arg("workspace"),
+				dagql.Arg("allowNotExists"),
+				dagql.Arg("originRoot"),
+				dagql.Arg("originHostPath").View(AfterVersion("v1.0.0-beta.26")),
+				dagql.Arg("originGit").View(AfterVersion("v1.0.0-beta.26")),
 			),
 	}.Install(dag)
 
@@ -127,9 +133,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`The client-facing introspection schema JSON file for this module source.`,
 				`This is the schema consumed by client codegen: unlike `+introspectionSchemaJSON+` (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.`).
 			Args(
-				// In every view: the SDK modules that generate their
-				// dependencies' clients with it declare pre-cut versions.
-				dagql.Arg("clientVersion").Doc(
+				dagql.Arg("clientVersion").View(AfterVersion("v1.0.0-beta.26")).Doc(
 					`The engine version of the client the schema is generated for, e.g. the engineVersion of the module that depends on this one: core is described as that client sees it, capped at this engine's version.`,
 					`This module is still loaded at the engine version it declares, and so named by its own naming rules, as the engine serves it to such a client. Defaults to this module's own engine version.`,
 					`Use this rather than withEngineVersion, which makes this module declare another version and so changes its names.`),

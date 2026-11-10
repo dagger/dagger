@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -14,13 +15,19 @@ var _ SchemaResolvers = &identifierSchema{}
 
 const identifierExperimental = "Identifier casing APIs are likely to change."
 
-// identifierVersion is the first engine version with the identifier API: it's
-// served on every v1 view, including the views whose modules keep the legacy
-// strcase names (before core.IdentifierNamingVersion). Which naming rules a
-// module follows is decided by the engine version it declares, capped at the
-// engine's own (core.ModuleSource.NamingView), not by the presence of this
-// API; Query.naming's version argument selects them.
+// identifierVersion is the first engine version with the identifier API: its
+// types are served on every v1 view, including the views whose modules keep
+// the legacy strcase names (before core.IdentifierNamingVersion). Which naming
+// rules a module follows is decided by the engine version it declares, capped
+// at the engine's own (core.ModuleSource.NamingView), not by the presence of
+// this API; Query.naming's version argument selects them.
 const identifierVersion = "v1.0.0-0"
+
+// beta25Dictionary is the dictionary v1.0.0-beta.25 parsed every name with:
+// K8s and K3s became terms after it.
+var beta25Dictionary = naming.MustDictionary(slices.DeleteFunc(naming.Initial.Terms(), func(t naming.Term) bool {
+	return t.Spelling == "K8s" || t.Spelling == "K3s"
+}))
 
 // formatIdentifiersDoNotCache is why formatIdentifiers skips the cache: it's
 // pure and fast, and caching costs far more than formatting. For the core
@@ -31,6 +38,8 @@ const formatIdentifiersDoNotCache = "Formatting is pure and much cheaper than ca
 
 func (s identifierSchema) Install(srv *dagql.Server) {
 	view := AfterVersion(identifierVersion)
+	namingView := AfterVersion("v1.0.0-beta.26")
+	beta25View := core.WithinView(view, BeforeVersion("v1.0.0-beta.26"))
 
 	core.IdentifierWordKinds.Install(srv, view)
 	core.Casings.Install(srv, view)
@@ -40,11 +49,39 @@ func (s identifierSchema) Install(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass[*core.IdentifierWord](srv).View(view))
 	srv.InstallObject(dagql.NewClass[*core.NamingTerm](srv).View(view))
 
-	srv.InstallObject(dagql.NewClass[*core.Naming](srv).View(view))
+	srv.InstallObject(dagql.NewClass[*core.Naming](srv).View(namingView))
 
 	dagql.Fields[*core.Query]{
+		dagql.Func("identifier", s.beta25Identifier).
+			View(beta25View).
+			Experimental(identifierExperimental).
+			Doc(`Parse a name in any casing into words.`,
+				`Known acronyms and terms come from the naming dictionary; everything
+				else falls back to the case heuristic. Errors on non-ASCII input,
+				input with no letters or digits, or input over 256 bytes.`).
+			Args(
+				dagql.Arg("name").Doc("The name to parse."),
+			),
+		dagql.Func("formatIdentifiers", s.beta25FormatIdentifiers).
+			View(beta25View).
+			DoNotCache(formatIdentifiersDoNotCache).
+			Experimental(identifierExperimental).
+			Doc(`Format many names at once, for codegen. Returns them in input order.`).
+			Args(
+				dagql.Arg("names").Doc("The names to format, in any casing."),
+				dagql.Arg("casing").Doc("The casing to format the names in."),
+				dagql.Arg("acronyms").Doc("How to write acronyms and terms where a word starts with a capital."),
+				dagql.Arg("version").Doc(
+					`The engine version whose naming dictionary to parse the names with,
+					e.g. the __schemaVersion of a schema being generated. Defaults to the
+					caller's engine version.`),
+			),
+		dagql.Func("namingDictionary", s.beta25NamingDictionary).
+			View(beta25View).
+			Experimental(identifierExperimental).
+			Doc(`The acronyms and terms used to parse and format identifiers.`),
 		dagql.Func("naming", s.naming).
-			View(view).
+			View(namingView).
 			Experimental(identifierExperimental).
 			Doc(`The engine's identifier naming rules at an engine version.`).
 			Args(
@@ -119,6 +156,24 @@ func (s identifierSchema) naming(ctx context.Context, _ *core.Query, args struct
 	return core.NamingFor(version), nil
 }
 
+func (s identifierSchema) beta25Identifier(_ context.Context, _ *core.Query, args struct{ Name string }) (*core.Identifier, error) {
+	return parseIdentifier(beta25Dictionary, args.Name)
+}
+
+func (s identifierSchema) beta25FormatIdentifiers(_ context.Context, _ *core.Query, args struct {
+	Names    []string
+	Casing   core.Casing
+	Acronyms core.AcronymStyle `default:"UPPERCASE"`
+	// Unread: v1.0.0-beta.25 parsed names of every version with one dictionary.
+	Version dagql.Optional[dagql.String]
+}) ([]dagql.String, error) {
+	return formatNames(beta25Dictionary, args.Names, args.Casing, args.Acronyms)
+}
+
+func (s identifierSchema) beta25NamingDictionary(context.Context, *core.Query, struct{}) ([]*core.NamingTerm, error) {
+	return namingTerms(beta25Dictionary), nil
+}
+
 func (s identifierSchema) namingVersion(_ context.Context, n *core.Naming, _ struct{}) (dagql.String, error) {
 	return dagql.String(n.Version), nil
 }
@@ -126,7 +181,11 @@ func (s identifierSchema) namingVersion(_ context.Context, n *core.Naming, _ str
 func (s identifierSchema) identifier(_ context.Context, n *core.Naming, args struct {
 	Name string
 }) (*core.Identifier, error) {
-	id, err := n.Dictionary().Parse(args.Name)
+	return parseIdentifier(n.Dictionary(), args.Name)
+}
+
+func parseIdentifier(dict *naming.Dictionary, name string) (*core.Identifier, error) {
+	id, err := dict.Parse(name)
 	if err != nil {
 		return nil, err
 	}
@@ -188,12 +247,16 @@ func (s identifierSchema) module(_ context.Context, n *core.Naming, args struct 
 }
 
 func (s identifierSchema) dictionary(_ context.Context, n *core.Naming, _ struct{}) ([]*core.NamingTerm, error) {
-	terms := n.Dictionary().Terms()
+	return namingTerms(n.Dictionary()), nil
+}
+
+func namingTerms(dict *naming.Dictionary) []*core.NamingTerm {
+	terms := dict.Terms()
 	out := make([]*core.NamingTerm, len(terms))
 	for i, t := range terms {
 		out[i] = core.NewNamingTerm(t)
 	}
-	return out, nil
+	return out
 }
 
 func (s identifierSchema) format(_ context.Context, id *core.Identifier, args identifierFormatArgs) (dagql.String, error) {

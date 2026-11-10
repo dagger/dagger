@@ -34,7 +34,7 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "github.com/dagger/go@a4df0c1a515f15a478dc8241df7bfca5e3288a25"
+source = "github.com/dagger/go@8dce82239261887d8a435cb269863b19c2a47618"
 legacy-default-path = true
 
 [modules.golang.settings]
@@ -149,7 +149,7 @@ source = "dagger.io/sdk/dang@main"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk]
-source = "dagger.io/sdk/go@98a7945966577f10e835027d4499269e208d6ba4"
+source = "dagger.io/sdk/go@bb23e8dea3328a427b18e43ceb045cc8dc0312bb"
 
 [modules.go-sdk.settings]
 lock = true

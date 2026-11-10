@@ -602,6 +602,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"Fails if the path does not point to an initialized module.").
 			Args(
 				dagql.Arg("path").Doc(`Location of the module source to load, relative to the workspace cwd or absolute from the workspace root.`),
+				dagql.Arg("allowNotExists").View(AfterVersion("v1.0.0-beta.26")),
 			),
 		dagql.Func("cwd", s.cwd).
 			View(AfterVersion("v1.0.0-0")).

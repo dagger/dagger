@@ -151,7 +151,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves a directory at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
-				dagql.Arg("resolveBrokenSymlinks").Doc(`Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.`).View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("resolveBrokenSymlinks").Doc(`Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.`).View(AfterVersion("v1.0.0-beta.26")),
 			),
 		dagql.NodeFunc("withDirectory", s.withDirectory).
 			IsPersistable().
@@ -264,10 +264,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`(e.g., for Dockerfile RUN --mount=type=ssh instructions).`,
 					`Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.`),
 			),
-		// Every module version sees it: generated module entrypoints and
-		// dagger/go declare what they build for a platform, whatever engine
-		// version the module declares.
 		dagql.NodeFuncWithDynamicInputs("withPlatform", s.withPlatform, withPlatformDynamicInputs[*core.Directory]).
+			View(AfterVersion("v1.0.0-beta.26")).
 			Doc(withPlatformDoc("directory")...).
 			Args(
 				dagql.Arg("platform").Doc(`The platform the directory's contents are for (e.g., "linux/arm64").`),

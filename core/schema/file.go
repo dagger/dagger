@@ -57,7 +57,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			DoNotCache(syncDoNotCacheReason).
 			Doc(`Force evaluation in the engine.`).
 			Args(
-				dagql.Arg("keyByContent").View(AfterVersion("v1.0.0-beta.24")).Doc(`Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.`),
+				dagql.Arg("keyByContent").View(AfterVersion("v1.0.0-beta.26")).Doc(`Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.`),
 			),
 		dagql.NodeFunc("contents", s.contents).
 			IsPersistable().
