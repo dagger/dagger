@@ -298,6 +298,16 @@ func gitLabSourceForRepo(sources []cloudapi.GitLabSource, repository string) (cl
 // GitLab approval is handled by the existing Cloud UI. The CLI never receives
 // provider credentials. Preview and local APIs use their matching frontend.
 func gitLabIntegrationURL(org string) (string, error) {
+	u, err := cloudFrontendURL()
+	if err != nil {
+		return "", err
+	}
+	u.Path += "/" + url.PathEscape(org) + "/integrations/gitlab"
+	return u.String(), nil
+}
+
+// cloudFrontendURL keeps browser links in the same environment as the API.
+func cloudFrontendURL() (*url.URL, error) {
 	base := os.Getenv("DAGGER_CLOUD_EXTERNAL_URL")
 	if base == "" {
 		base = "https://dagger.cloud"
@@ -312,10 +322,10 @@ func gitLabIntegrationURL(org string) (string, error) {
 	}
 	u, err := url.Parse(base)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", fmt.Errorf("DAGGER_CLOUD_EXTERNAL_URL must be a Cloud web address")
+		return nil, fmt.Errorf("DAGGER_CLOUD_EXTERNAL_URL must be a Cloud web address")
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/" + url.PathEscape(org) + "/integrations/gitlab"
-	return u.String(), nil
+	u.Path = strings.TrimRight(u.Path, "/")
+	return u, nil
 }
 
 // findEntireCheckSource locates the Entire installation of the current

@@ -642,7 +642,12 @@ func cloudTraceURL(orgName, traceID string) string {
 	if traceID == "" {
 		return ""
 	}
-	return fmt.Sprintf("https://dagger.cloud/%s/traces/%s", orgName, traceID)
+	u, err := cloudFrontendURL()
+	if err != nil {
+		return ""
+	}
+	u.Path += "/" + orgName + "/traces/" + traceID
+	return u.String()
 }
 
 func firstNonEmpty(values ...string) string {
