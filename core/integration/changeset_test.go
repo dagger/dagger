@@ -781,10 +781,11 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"file2.txt"}, entries)
 
-		// make sure ignored.txt didn't show up in the parent dir
+		// The subdirectory is its own root: ".." stays in it, and
+		// ignored.txt from the old directory's parent didn't show up.
 		entries, err = d.Directory("..").Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"new-dir/"}, entries)
+		require.Equal(t, []string{"file2.txt"}, entries)
 	})
 }
 
