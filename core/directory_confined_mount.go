@@ -80,6 +80,10 @@ func withLinksConfined(base string, f func(string) error) error {
 	return f(confined)
 }
 
+// ignoreFiles are the ignore files ripgrep reads in each directory it
+// searches.
+var ignoreFiles = []string{".gitignore", ".ignore", ".rgignore"}
+
 // withIgnoreFilesConfined calls f with the directory at base, or, if one of
 // its ignore files is a symlink leading out of it, with a copy of it whose
 // symlinks leading out of it point where they resolve within it (see

@@ -809,9 +809,6 @@ func (s *directorySchema) withDirectoryDockerfileCompatResultHashed(
 	if err != nil {
 		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
 	}
-	if dgst == "" {
-		return res, nil
-	}
 	res, err = res.WithContentDigest(ctx, dgst)
 	if err != nil {
 		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
@@ -2281,11 +2278,9 @@ func maintainContentHashing[A any](
 			if err != nil {
 				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
 			}
-			if dgst != "" {
-				res, err = res.WithContentDigest(ctx, dgst)
-				if err != nil {
-					return res, fmt.Errorf("failed to make directory content hashed: %w", err)
-				}
+			res, err = res.WithContentDigest(ctx, dgst)
+			if err != nil {
+				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
 			}
 		}
 		return res, nil
