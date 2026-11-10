@@ -1897,9 +1897,11 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 func (s *gitSchema) unresolvedRef(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs, err error) (dagql.Result[*core.GitRef], error) {
 	repo := parent.Self()
 	// A name that looks like a hex prefix may be an abbreviated commit SHA
-	// (tools routinely print short hashes): expand it against the locally
-	// available object database, like `git rev-parse` would. Named refs always
-	// win over prefixes, matching git's own precedence.
+	// (tools routinely print short hashes): expand it like `git rev-parse`
+	// would, against the objects the repository holds, which for a remote
+	// means fetching its advertised refs' history when the mirror lacks the
+	// commit. Named refs always win over prefixes, matching git's own
+	// precedence.
 	if gitutil.IsCommitSHAPrefix(args.Name) {
 		if gitutil.IsCommitSHA(args.Commit) && strings.HasPrefix(args.Commit, args.Name) {
 			// The caller already knows the commit (e.g. a module dependency

@@ -288,7 +288,8 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 // history of the refs the remote advertises and expands the prefix there
 // (see fetchForShortSHA), like a clone followed by `git rev-parse` would.
 // Fetching only commits and trees keeps that affordable, and the separate
-// mirror leaves checkouts of the remote free to proceed meanwhile.
+// mirror leaves full checkouts of the remote free to proceed meanwhile
+// (sparse reads, which share the blobless mirror, wait for it).
 func (repo *RemoteGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
 	sha, err := repo.resolveShortSHA(ctx, prefix, false)
 	if !errors.Is(err, gitutil.ErrShortSHANotFound) || repo.Mirror.Self().Blobless {
