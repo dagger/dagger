@@ -65,10 +65,10 @@ func governingConfig(ctx context.Context, moduleDir string, read TreeFileReader)
 // moduleScopeIn is the module scope key for moduleDir in a config at
 // configDir, both relative to the root of the tree.
 func moduleScopeIn(moduleDir, configDir string) string {
-	switch {
-	case configDir == moduleDir:
+	switch configDir {
+	case moduleDir:
 		return "."
-	case configDir == ".":
+	case ".":
 		return moduleDir
 	default:
 		return strings.TrimPrefix(moduleDir, configDir+"/")

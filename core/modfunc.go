@@ -950,7 +950,7 @@ func localDeclaredClientsDigest(ctx context.Context, dag *dagql.Server, src *Mod
 	}
 	inputs := []string{declaredClientsInput}
 	for _, target := range targets {
-		var parent dagql.AnyObjectResult = dag.Root()
+		parent := dag.Root()
 		sel := dagql.Selector{
 			Field: "moduleSource",
 			Args:  []dagql.NamedInput{{Name: "refString", Value: dagql.String(filepath.Join(src.Local.ContextDirectoryPath, filepath.FromSlash(target)))}},
