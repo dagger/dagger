@@ -395,7 +395,7 @@ func (c *workspaceInputCollector) ref(ref *dagql.ResultCallRef) {
 		return
 	}
 	if typeName == "Host" {
-		c.issue("Host input has no workspace source mapping")
+		c.issue("Host input has no workspace source mapping (%s)", c.origin)
 		return
 	}
 	if c.evaluating && ref.ResultID != 0 {

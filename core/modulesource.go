@@ -1426,7 +1426,6 @@ func (src *ModuleSource) LoadUserDefaults(ctx context.Context) (rerr error) {
 		}
 		ctx = engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
 	}
-	ctx = withWorkspaceInputDefaults(ctx, src)
 	innerEnvFile, err := src.innerEnvFile(ctx)
 	if err != nil {
 		return err
