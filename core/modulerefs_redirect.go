@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 const (
@@ -249,6 +250,11 @@ func daggerGetProbe(ctx context.Context, refString string) string {
 
 	if target, ok := configuredModuleRedirect(u); ok {
 		return sourceURLWithVersion(target, version)
+	}
+	// Configured Git transport handles rewritten refs; skip the optional probe
+	// on the original host to avoid unnecessary requests.
+	if gitutil.RewriteURL(u.String()) != u.String() {
+		return refString
 	}
 
 	probe := *u
