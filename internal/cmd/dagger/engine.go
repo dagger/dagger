@@ -149,12 +149,12 @@ func withEngineAction(
 		ctx = context.WithValue(ctx, llmModelConfigKey{}, llmModelConfigReader(sess.LLMModelConfig))
 		return run(ctx, sess)
 	}
-	if open := takeOpenSession(ctx); open != nil {
-		return open.run(ctx, action, params, fn)
-	}
 	params, err := engineClientParams(params)
 	if err != nil {
 		return err
+	}
+	if open := takeOpenSession(ctx); open != nil {
+		return open.run(ctx, action, params, fn)
 	}
 	var collectorSpans *enginetel.SpanQueueCounts
 	// After the frontend has given the terminal back.
@@ -218,6 +218,31 @@ func engineClientParams(params client.Params) (client.Params, error) {
 	if sessionWorkspace != "" && params.Workspace == nil {
 		params.Workspace = &sessionWorkspace
 	}
+	return engineConnectionParams(params)
+}
+
+// Resolve connection options before comparing sessions. Telemetry callbacks and
+// other per-run values are attached separately by finalizeEngineParams.
+func engineConnectionParams(params client.Params) (client.Params, error) {
+	if debugFlag {
+		params.LogLevel = slog.LevelDebug
+	}
+	if selectedEngine() != "" || params.RunnerHost == "" {
+		params.RunnerHost = configuredRunnerHost()
+	}
+	if RunnerImageLoader != "" {
+		backend, err := imageload.GetBackend(RunnerImageLoader)
+		if err != nil {
+			return params, err
+		}
+		params.ImageLoaderBackend = backend
+	}
+	params.AllowedLLMModules = slices.Clone(allowedLLMModules)
+	params.Profile = profileFlag
+	if len(profileEBPFFlag) > 0 && !profileFlag {
+		return params, errors.New("--profile-ebpf needs --profile")
+	}
+	params.ProfileEBPF = slices.Clone(profileEBPFFlag)
 	return params, nil
 }
 
@@ -227,8 +252,8 @@ type openSessionKey struct{}
 // kept for the command's own engine call (see artifactDiscovery). The frontend
 // and telemetry of that session are already running.
 type openSession struct {
-	// params are the ones the session connected with, as the command passes
-	// them to withEngine.
+	// params include the resolved workspace and module selection, before
+	// finalizeEngineParams adds telemetry and other run-scoped values.
 	params client.Params
 	client *client.Client
 	// stdout and stderr are the session's span stdio, where the command's
@@ -271,11 +296,7 @@ func (open *openSession) run(ctx context.Context, action string, params client.P
 	if reflect.DeepEqual(params, open.params) {
 		return fn(ctx, open.client)
 	}
-	params, err := engineClientParams(params)
-	if err != nil {
-		return err
-	}
-	params, err = finalizeEngineParams(ctx, params)
+	params, err := finalizeEngineParams(ctx, params)
 	if err != nil {
 		return err
 	}
@@ -292,31 +313,7 @@ func (open *openSession) run(ctx context.Context, action string, params client.P
 // frontend and telemetry being set up. Must be called inside Frontend.Run,
 // after initEngineTelemetry. Shared by withEngine and withSetupSessions.
 func finalizeEngineParams(ctx context.Context, params client.Params) (client.Params, error) {
-	if debugFlag {
-		params.LogLevel = slog.LevelDebug
-	}
-
-	if selectedEngine() != "" || params.RunnerHost == "" {
-		params.RunnerHost = configuredRunnerHost()
-	}
-
-	if RunnerImageLoader != "" {
-		backend, err := imageload.GetBackend(RunnerImageLoader)
-		if err != nil {
-			return params, err
-		}
-		params.ImageLoaderBackend = backend
-	}
-
-	params.AllowedLLMModules = allowedLLMModules
-
 	params.GitRemote, params.WorkspacePath = cloudWorkspace(ctx, params.Workspace)
-
-	params.Profile = profileFlag
-	if len(profileEBPFFlag) > 0 && !profileFlag {
-		return params, errors.New("--profile-ebpf needs --profile")
-	}
-	params.ProfileEBPF = profileEBPFFlag
 
 	params.CloudURLCallback = func(ctx context.Context, url string, msg string, logged bool) {
 		Frontend.SetCloudURL(ctx, url, msg, logged)
@@ -511,7 +508,11 @@ func withLazySessions(
 		})
 
 		connect := func(ctx context.Context) (*client.Client, func(), error) {
-			fp, err := finalizeEngineParams(ctx, params)
+			fp, err := engineConnectionParams(params)
+			if err != nil {
+				return nil, nil, err
+			}
+			fp, err = finalizeEngineParams(ctx, fp)
 			if err != nil {
 				return nil, nil, err
 			}
