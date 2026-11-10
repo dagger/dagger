@@ -182,6 +182,28 @@ func (DirectorySuite) TestSubdirectoryViewResolution(ctx context.Context, t *tes
 		}
 	})
 
+	t.Run("dockerfile bind mount", func(ctx context.Context, t *testctx.T) {
+		// Both roots have the same other.txt outside app/ and differ only in
+		// app/other.txt, which is what app/link resolves to within app/, so
+		// each build must mount its own app/other.txt.
+		nonce := rand.Text()
+		dockerfile := "FROM " + alpineImage + "\n" +
+			"RUN --mount=type=bind,source=link,target=/mnt/in cat /mnt/in > /out\n"
+		for _, inside := range []string{"a", "b"} {
+			dir := t.TempDir()
+			writeTree(t, dir,
+				map[string]string{
+					"other.txt":      "outside " + nonce,
+					"app/other.txt":  inside + " " + nonce,
+					"app/Dockerfile": dockerfile,
+				},
+				map[string]string{"app/link": "../other.txt"})
+			contents, err := host(dir).Directory("app").DockerBuild().File("/out").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, inside+" "+nonce, contents)
+		}
+	})
+
 	t.Run("destination through a link", func(ctx context.Context, t *testctx.T) {
 		dir := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "outside"), 0o755))
