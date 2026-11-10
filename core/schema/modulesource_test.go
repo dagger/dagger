@@ -367,7 +367,7 @@ func TestDangSourceVersionMutations(t *testing.T) {
 				} else if override == "v0.19.0" {
 					require.Equal(t, "1.0", before.DangVersion)
 				} else {
-					require.Equal(t, "2.1", before.DangVersion, "grammar default follows final API version")
+					require.Equal(t, "2.4", before.DangVersion, "grammar default follows final API version")
 				}
 			})
 		}

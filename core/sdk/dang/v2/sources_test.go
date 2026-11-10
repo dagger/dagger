@@ -246,7 +246,10 @@ func TestDeclaresEntrypointPrebuildParsesOncePerContent(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, declared)
 	again := allocated(func() {
-		declared, err := declaresEntrypointMember(t.Context(), dir, EntrypointPrebuildMember)
+		// At the entrypoint's version, as the run checks it (see
+		// contextWithEntrypointVersion).
+		ctx := dang.ContextWithVersion(t.Context(), DefaultEntrypointDangVersion)
+		declared, err := declaresEntrypointMember(ctx, dir, EntrypointPrebuildMember)
 		require.NoError(t, err)
 		require.True(t, declared)
 	})
