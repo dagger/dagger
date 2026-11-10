@@ -82,18 +82,12 @@ func (WorkspaceSuite) TestFilteredReadsAreContentKeyed(ctx context.Context, t *t
 				})
 			}
 
-			// This change leaves a subpath read without a filter as it was: a
-			// view into the root, through which linked/link still reaches the
-			// root's file. linked/marker.txt makes each root's linked differ,
-			// so the check doesn't depend on how equal views are keyed.
+			// A subpath read is its own root, so linked/link, which climbs
+			// above it, doesn't reach the root's file.
 			t.Run("link out of subpath", func(ctx context.Context, t *testctx.T) {
-				for _, tc := range []struct {
-					ws   *core.Workspace
-					want string
-				}{{baseWS, "a"}, {sameWS, "b"}} {
-					contents, err := tc.ws.Directory("/linked").File("link").Contents(ctx)
-					require.NoError(t, err)
-					require.Equal(t, tc.want, contents)
+				for _, ws := range []*core.Workspace{baseWS, sameWS} {
+					contents, err := ws.Directory("/linked").File("link").Contents(ctx)
+					require.Error(t, err, "a link out of a subpath read must not reach the root's file, got %q", contents)
 				}
 			})
 
