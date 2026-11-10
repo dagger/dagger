@@ -173,7 +173,15 @@ func (dev *EngineDev) Container(
 	// The image's entries are made by an engine of this build that runs
 	// here, for the image's platform: an engine runs its own platform's
 	// binaries, and every build the entries hold compiles for any platform.
-	native := builder
+	// That engine is built without the version, which labels the image and
+	// stamps its CLI but not the engine, whose version is the source's: so
+	// every version's image of a platform gets its entries from one making,
+	// and a release's images reuse the entries its main images made.
+	native, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty, dev.Ws)
+	if err != nil {
+		return nil, err
+	}
+	native = native.WithRace(dev.Race)
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}
@@ -187,11 +195,9 @@ func (dev *EngineDev) Container(
 	if !dev.ImageEntries {
 		return ctr, nil
 	}
-	exporter := ctr
-	if builder.Platform() != native.Platform() || gpuSupport {
-		if exporter, err = dev.engine(ctx, native, "", version); err != nil {
-			return nil, err
-		}
+	exporter, err := dev.engine(ctx, native, "", "")
+	if err != nil {
+		return nil, err
 	}
 	entries, err := dev.imageEntries(ctx, native, exporter, builder.Platform())
 	if err != nil {
