@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -532,6 +533,21 @@ func withLazySessions(
 			return cleanupTelemetry(rerr)
 		})
 
+		// The callers ignore Close errors, so a host policy refusal is
+		// returned here: a session that the policy stopped failed.
+		var sessionsMu sync.Mutex
+		var sessions []*client.Client
+		defer func() {
+			sessionsMu.Lock()
+			defer sessionsMu.Unlock()
+			for _, sess := range sessions {
+				if err := sess.HostPolicyViolation(); err != nil {
+					rerr = errors.Join(rerr, err)
+					return
+				}
+			}
+		}()
+
 		connect := func(ctx context.Context) (*client.Client, func(), error) {
 			fp, err := engineConnectionParams(params)
 			if err != nil {
@@ -545,6 +561,9 @@ func withLazySessions(
 			if err != nil {
 				return nil, nil, err
 			}
+			sessionsMu.Lock()
+			sessions = append(sessions, sess)
+			sessionsMu.Unlock()
 			Frontend.SetClient(sess.Dagger())
 			return sess, func() { _ = sess.Close() }, nil
 		}

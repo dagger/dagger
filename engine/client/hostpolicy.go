@@ -68,7 +68,9 @@ type HostPolicy struct {
 
 type HostPolicySecrets struct {
 	// Providers lists the secret provider schemes that the client resolves,
-	// such as "op" or "vault".
+	// such as "op" or "vault". A provider runs on the host with the client's
+	// access, and the read paths do not limit it: "env", "file", "cmd" and
+	// "llmconfig" give access to the host environment, files and commands.
 	Providers []string `json:"providers,omitempty"`
 }
 
