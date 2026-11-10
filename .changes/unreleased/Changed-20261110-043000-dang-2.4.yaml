@@ -2,8 +2,8 @@ kind: Changed
 body: |
   Dang SDK modules evaluate with Dang 2.4. A module whose `dang.toml` declares
   no `dang` version (or that has no `dang.toml`) is pinned by its
-  `engineVersion`: before v0.21.5 it is Dang 1.0, before v1.0.0-beta.26 Dang
-  2.1, and from v1.0.0-beta.26 on Dang 2.4, where type patterns spell the
+  `engineVersion`: before v0.21.5 it is Dang 1.0, before v1.0.0-beta.28 Dang
+  2.1, and from v1.0.0-beta.28 on Dang 2.4, where type patterns spell the
   non-null type they bind (`e: Error! =>`). Manifest v2 entrypoints that declare
   none stay on Dang 2.1.
 

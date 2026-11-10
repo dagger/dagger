@@ -46,7 +46,7 @@ var DefaultEntrypointDangVersion = dang.Version2_1
 // engine keep Dang 2.1, which that engine evaluated them as. Until a release
 // ships Dang 2.4, if the release it names ships without it, move it to a
 // later one.
-const Dang24ModuleVersion = "v1.0.0-beta.26"
+const Dang24ModuleVersion = "v1.0.0-beta.28"
 
 // Versions are the versions a Dang module is written against.
 type Versions struct {

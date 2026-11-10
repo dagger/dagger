@@ -31,7 +31,7 @@ reads itself (the runtime presets the Dagger import, so Dang skips the file's
   | engine version                                               | Dang |
   | ------------------------------------------------------------ | ---- |
   | before `engine.MinimumDangV2ModuleVersion` (v0.21.5)         | 1.0  |
-  | before `Dang24ModuleVersion` (v1.0.0-beta.26)                | 2.1  |
+  | before `Dang24ModuleVersion` (v1.0.0-beta.28)                | 2.1  |
   | `Dang24ModuleVersion` and later                              | 2.4  |
 
   Dang 1.0 (`.{ }` is selection) is the language of the Dang v1 line these

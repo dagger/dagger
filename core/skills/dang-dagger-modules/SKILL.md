@@ -48,8 +48,8 @@ as a **Dagger module SDK**.
   language version.
 - Without `dang = ...`, `engineVersion` picks the Dang language: `< v0.21.5` is
   Dang 1.0 (where `.{ }` is GraphQL selection); `v0.21.5` up to
-  `v1.0.0-beta.26` is Dang 2.1 (`.{ }` is dot-block application, `.{{ }}` is
-  selection); `>= v1.0.0-beta.26` is Dang 2.4, where a type pattern spells the
+  `v1.0.0-beta.28` is Dang 2.1 (`.{ }` is dot-block application, `.{{ }}` is
+  selection); `>= v1.0.0-beta.28` is Dang 2.4, where a type pattern spells the
   non-null type its arm binds (`c: Cat! =>`, `e: Error! =>` in `rescue`).
   Don't bump an old module's `engineVersion` without checking its syntax
   (`dang migrate` rewrites it), or pin `dang = "X.Y"`.

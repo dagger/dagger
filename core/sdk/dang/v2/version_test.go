@@ -221,10 +221,24 @@ func TestResolveEntrypointVersionsLikeEngineVersion(t *testing.T) {
 	}
 }
 
+// withEngineVersion makes t run as an engine of version, restoring
+// engine.Version when t ends. A module's view, and so its Dang version, is
+// capped at the engine's (engine.ModuleAPIViewVersion): until a release
+// reaches Dang24ModuleVersion, only an engine of that version serves its
+// modules Dang 2.4. A test using it must not be parallel, so it runs before
+// the package's parallel tests, which read engine.Version.
+func withEngineVersion(t *testing.T, version string) {
+	t.Helper()
+	previous := engine.Version
+	engine.Version = version
+	t.Cleanup(func() { engine.Version = previous })
+}
+
 // A Dang SDK module's dang.toml wins over its manifest's engineVersion; what
 // it leaves undeclared follows the manifest, as the Dang CLI reads it.
 func TestResolveModuleVersions(t *testing.T) {
-	t.Parallel()
+	// Not parallel: it runs as the engine of Dang24ModuleVersion.
+	withEngineVersion(t, Dang24ModuleVersion)
 
 	for _, tc := range []struct {
 		name     string
@@ -366,7 +380,8 @@ func TestResolveModuleVersions(t *testing.T) {
 }
 
 func TestDefaultModuleVersions(t *testing.T) {
-	t.Parallel()
+	// Not parallel: it runs as the engine of Dang24ModuleVersion.
+	withEngineVersion(t, Dang24ModuleVersion)
 
 	// Modules written before Dang 2 ran on the Dang v1 line.
 	require.Equal(t, dang.Version1_0, DefaultModuleDangVersion("v0.20.6"))
@@ -379,12 +394,40 @@ func TestDefaultModuleVersions(t *testing.T) {
 	require.Equal(t, dang.Version2_1, DefaultModuleDangVersion("v1.0.0-0"))
 	require.Equal(t, dang.Version2_1, DefaultModuleDangVersion("v1.0.0-beta.20"))
 	require.Equal(t, dang.Version2_1, DefaultModuleDangVersion("v1.0.0-beta.25"))
+	// v1.0.0-beta.26 shipped Dang 2.1, and so does v1.0.0-beta.27.
+	require.Equal(t, dang.Version2_1, DefaultModuleDangVersion("v1.0.0-beta.26"))
+	require.Equal(t, dang.Version2_1, DefaultModuleDangVersion("v1.0.0-beta.27"))
 	require.Equal(t, dang.Version2_4, DefaultModuleDangVersion(Dang24ModuleVersion))
 	require.Equal(t, dang.Version2_4, DefaultModuleDangVersion(engine.Version))
 
 	require.Equal(t, "1.0", DefaultModuleVersions("v0.20.6").DangString())
 	require.Equal(t, "2.1", DefaultModuleVersions("v0.21.9").DangString())
+	require.Equal(t, "2.1", DefaultModuleVersions("v1.0.0-beta.27").DangString())
 	require.Equal(t, "2.4", DefaultModuleVersions(Dang24ModuleVersion).DangString())
+}
+
+// A module's Dang version follows its view, which the engine caps at its own:
+// an engine before Dang24ModuleVersion serves a module declaring it, or
+// v1.0.0, the view of its own version, and so Dang 2.1. A dev build of a
+// version is past every prerelease gate of that version, so it serves Dang
+// 2.4.
+func TestDefaultModuleDangVersionCappedAtEngine(t *testing.T) {
+	for _, tc := range []struct {
+		engine string
+		dang   dang.Version
+	}{
+		{engine: "v1.0.0-beta.27", dang: dang.Version2_1},
+		{engine: Dang24ModuleVersion, dang: dang.Version2_4},
+		{engine: "v1.0.0-dev-123", dang: dang.Version2_4},
+	} {
+		t.Run(tc.engine, func(t *testing.T) {
+			// Not parallel: it runs as the engine of tc.engine.
+			withEngineVersion(t, tc.engine)
+			require.Equal(t, tc.dang, DefaultModuleDangVersion(Dang24ModuleVersion))
+			require.Equal(t, tc.dang, DefaultModuleDangVersion("v1.0.0"))
+			require.Equal(t, dang.Version2_1, DefaultModuleDangVersion("v1.0.0-beta.27"))
+		})
+	}
 }
 
 // legacyCommaSource separates top-level forms with a comma, which Dang 2.0

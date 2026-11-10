@@ -439,13 +439,24 @@ func dangTypePattern(pattern string) string {
 
 // A Dang SDK module that declares no Dang version is pinned to the one the
 // engines of its engineVersion evaluated it as: Dang 2.1 before
-// v1.0.0-beta.26, where a type pattern may leave out the `!`, and Dang 2.4
-// from it on, where it must not.
+// v1.0.0-beta.28, where a type pattern may leave out the `!`, and Dang 2.4
+// from it on, where it must not. v1.0.0-beta.27 is the last version before
+// the cut.
+//
+// An engine caps a module's view, and so its default Dang version, at its own
+// version, so the modules run on a nested dev engine that reports
+// v1.0.0-beta.28, as an engine of that release will.
 func (DangSuite) TestDangTomlTypePatternVersion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	const before, from = "v1.0.0-beta.25", "v1.0.0-beta.26"
+	const before, from = "v1.0.0-beta.27", "v1.0.0-beta.28"
 	bare := dangTypePattern("e: Error")
 	banged := dangTypePattern("e: Error!")
+	onEngine := withDevEngineVersion(ctx, t, c, from)
+	call := func(ctr *core.Container) *core.Container {
+		return ctr.WithExec([]string{"dagger", "call", "-m", "tiny", "size"}, core.ContainerWithExecOpts{
+			DisableDaggerInDagger: true,
+		})
+	}
 
 	for _, tc := range []struct {
 		name     string
@@ -462,7 +473,8 @@ func (DangSuite) TestDangTomlTypePatternVersion(ctx context.Context, t *testctx.
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := dangTomlModule(t, c, tc.manifest, tc.source, tc.files).
-				With(daggerCallAt("tiny", "size")).
+				With(onEngine).
+				With(call).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "9", strings.TrimSpace(out))
@@ -478,9 +490,29 @@ func (DangSuite) TestDangTomlTypePatternVersion(ctx context.Context, t *testctx.
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			_, err := dangTomlModule(t, c, from, bare, tc.files).
-				With(daggerCallAt("tiny", "size")).
+				With(onEngine).
+				With(call).
 				Sync(ctx)
 			requireErrOut(t, err, "write `e: Error! =>`")
 		})
+	}
+}
+
+// withDevEngineVersion points a container's dagger CLI at a nested dev engine
+// that reports version, as futureClient does. Its execs must disable nesting
+// (DisableDaggerInDagger) to reach that engine.
+func withDevEngineVersion(ctx context.Context, t *testctx.T, c *dagger.Client, version string) core.WithContainerFunc {
+	t.Helper()
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
+		return ctr.WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", version)
+	}))
+	endpoint, err := devEngine.Endpoint(ctx, core.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	require.NoError(t, err)
+	return func(ctr *core.Container) *core.Container {
+		return ctr.
+			WithServiceBinding("dev-engine", devEngine).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", version)
 	}
 }
