@@ -280,24 +280,98 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 }
 
 // ResolveShortSHA expands an abbreviated commit SHA against the engine's
-// local mirror of the remote. Remote repositories are resolved via ls-remote,
-// which only advertises refs: a prefix can only be expanded when the commit's
-// objects were already fetched (e.g. by a previous tree checkout). Nothing is
-// fetched to answer the expansion.
+// local mirror of the remote. The Git protocol cannot ask a remote to expand
+// a prefix (ls-remote only advertises ref tips, and a fetch wants full
+// object names), so the mirror's objects answer first: a commit fetched
+// before, e.g. by a tree checkout, resolves without contacting the remote.
+// When nothing there matches, the history of the refs the remote advertises
+// is fetched and the prefix expanded again (see fetchForShortSHA), like a
+// clone followed by `git rev-parse` would.
 func (repo *RemoteGitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
 	var sha string
 	err := repo.mount(ctx, 0, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
 		var err error
 		sha, err = git.ResolveShortSHA(ctx, prefix)
+		if errors.Is(err, gitutil.ErrShortSHANotFound) {
+			sha, err = repo.fetchForShortSHA(ctx, git, prefix)
+		}
 		return err
 	})
 	if err != nil {
-		if errors.Is(err, gitutil.ErrShortSHANotFound) {
-			return "", fmt.Errorf("%w; a remote repository can only expand an abbreviated SHA against already-fetched commits: use the full SHA or a named ref", err)
-		}
 		return "", err
 	}
 	return sha, nil
+}
+
+// shortSHAFetchRefSpecs are the refs fetched, round by round, to expand an
+// abbreviated SHA the mirror lacks: branches and tags first, where the
+// commits people abbreviate almost always are, then every other ref the
+// remote advertises (e.g. pull request heads), which can be many more. Their
+// destinations are scratch refs, deleted once the prefix is resolved.
+var shortSHAFetchRefSpecs = [][]string{
+	{"+refs/heads/*:" + shortSHAScratchRefs + "heads/*", "+refs/tags/*:" + shortSHAScratchRefs + "tags/*"},
+	{"+refs/*:" + shortSHAScratchRefs + "all/*"},
+}
+
+const shortSHAScratchRefs = "refs/dagger.shortsha/"
+
+// fetchForShortSHA fetches the complete history of the remote's advertised
+// refs into the mirror, round by round (see shortSHAFetchRefSpecs), until
+// prefix expands. The expanded commit is retained in the mirror like any
+// fetched commit, so a checkout of it fetches nothing more. A prefix no
+// advertised ref reaches cannot be expanded at all: remotes do not serve
+// unreachable commits by prefix.
+func (repo *RemoteGitRepository) fetchForShortSHA(ctx context.Context, git *gitutil.GitCLI, prefix string) (_ string, rerr error) {
+	gitDir, err := git.GitDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		rerr = errors.Join(rerr, deleteGitRefs(ctx, git, shortSHAScratchRefs))
+	}()
+	var sha string
+	err = repo.withFetch(ctx, git, func(ctx context.Context, fetchGit *gitutil.GitCLI) (rerr error) {
+		ctx, op := wcprof.BeginOp(ctx, wcprof.OpKindIO, "git.mirror.fetch.shortsha", wcprof.OpOpts{Ident: remoteGitLockPrefix + repo.URL.RedactedRemote(), WorkType: wcprof.WorkTypeEngine})
+		defer func() { op.EndErr(rerr) }()
+		var resolveErr error
+		for _, refSpecs := range shortSHAFetchRefSpecs {
+			args := []string{"fetch", "--progress", "--no-tags", "--force"}
+			if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+				// Commits behind a shallow boundary are absent too.
+				args = append(args, "--unshallow")
+			}
+			args = append(args, "origin")
+			if _, err := fetchGit.Run(ctx, append(args, refSpecs...)...); err != nil {
+				return fmt.Errorf("fetch remote %s to expand short SHA %q: %w", repo.URL.Remote(), prefix, err)
+			}
+			sha, resolveErr = git.ResolveShortSHA(ctx, prefix)
+			if resolveErr == nil {
+				_, err := git.Run(ctx, "update-ref", fetchedGitRef(sha), sha)
+				return err
+			}
+			if !errors.Is(resolveErr, gitutil.ErrShortSHANotFound) {
+				return resolveErr
+			}
+		}
+		return fmt.Errorf("%w in any ref %s advertises: use the full SHA of a commit it serves", resolveErr, repo.URL.Remote())
+	})
+	return sha, err
+}
+
+// deleteGitRefs deletes every ref under prefix, in one process however many
+// there are.
+func deleteGitRefs(ctx context.Context, git *gitutil.GitCLI, prefix string) error {
+	out, err := git.Run(ctx, "for-each-ref", "--format=delete %(refname)", prefix)
+	if err != nil {
+		return fmt.Errorf("list %s refs: %w", prefix, err)
+	}
+	if len(bytes.TrimSpace(out)) == 0 {
+		return nil
+	}
+	if _, err := git.RunWithStdin(ctx, bytes.NewReader(out), "update-ref", "--stdin"); err != nil {
+		return fmt.Errorf("delete %s refs: %w", prefix, err)
+	}
+	return nil
 }
 
 func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, error) {
@@ -749,14 +823,26 @@ func (repo *RemoteGitRepository) fetchBlobs(ctx context.Context, git *gitutil.Gi
 // fetch fetches refs into the mirror; retried says the remote refused a
 // commit and its named ref was fetched instead (see fetchObjects).
 func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) (retried bool, rerr error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return false, err
-	}
-
 	if len(refs) == 0 && !includeTags {
 		// Nothing requested: avoid an implicit broad fetch from origin.
 		return false, nil
+	}
+
+	rerr = repo.withFetch(ctx, git, func(ctx context.Context, git *gitutil.GitCLI) error {
+		var err error
+		retried, err = repo.fetchObjects(ctx, git, depth, includeTags, refs)
+		return err
+	})
+	return retried, rerr
+}
+
+// withFetch runs fn with what fetching from the remote needs: its service
+// bindings started, and git reporting transfer progress on a "fetching
+// <remote>" span.
+func (repo *RemoteGitRepository) withFetch(ctx context.Context, git *gitutil.GitCLI, fn func(context.Context, *gitutil.GitCLI) error) (rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Encapsulated like the resolver's "pulling" span: hidden unless it
@@ -770,15 +856,15 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to get services: %w", err)
+		return fmt.Errorf("failed to get services: %w", err)
 	}
 	detach, _, err := svcs.StartBindings(ctx, repo.Services)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer detach()
 
-	return repo.fetchObjects(ctx, git, depth, includeTags, refs)
+	return fn(ctx, git)
 }
 
 // fetchObjects operates on the private mirror; service bindings and progress
