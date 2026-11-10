@@ -204,6 +204,28 @@ func (DirectorySuite) TestSubdirectoryViewResolution(ctx context.Context, t *tes
 		}
 	})
 
+	t.Run("container path under a mounted subdirectory", func(ctx context.Context, t *testctx.T) {
+		// A path below a mounted Directory resolves within that Directory, as
+		// it does through the Directory itself, so a link climbing out of it
+		// reaches neither the file nor the directory beside it in the parent.
+		dir := t.TempDir()
+		writeTree(t, dir,
+			map[string]string{
+				"other.txt":          "outside",
+				"outside/secret.txt": "secret",
+				"app/other.txt":      "inside",
+			},
+			map[string]string{"app/link": "../other.txt", "app/dlink": "../outside"})
+		ctr := core.NewQuery(c).Container().WithMountedDirectory("/mnt", host(dir).Directory("app"))
+
+		contents, err := ctr.File("/mnt/link").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "inside", contents)
+
+		entries, err := ctr.Directory("/mnt/dlink").Entries(ctx)
+		require.Error(t, err, "a link out of a mounted subdirectory must not reach the parent's directory, got %v", entries)
+	})
+
 	t.Run("destination through a link", func(ctx context.Context, t *testctx.T) {
 		dir := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "outside"), 0o755))
