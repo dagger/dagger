@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"errors"
+	"os"
+	"path"
 	"path/filepath"
 	"sync"
 
@@ -20,8 +22,9 @@ import (
 //
 // Every call of the module's functions asks, to key the call. A git or
 // directory module's tree is an immutable result, so the session reads its
-// declarations once per tree; a local module's are read from its host every
-// time, since the file there can change.
+// declarations once per tree; a local module's are read every time, through
+// the workspace it was loaded through or from its host, since the file there
+// can change.
 func ModuleDeclaredGitClients(ctx context.Context, dag *dagql.Server, src *ModuleSource) ([]string, error) {
 	read := func() ([]string, error) {
 		reader, err := moduleTreeReader(ctx, dag, src)
@@ -71,10 +74,38 @@ func moduleTreeReader(ctx context.Context, dag *dagql.Server, src *ModuleSource)
 		}
 		return directoryFileReader(ctx, dag, tree), nil
 	}
+	if src.Kind == ModuleSourceKindLocal && src.Local != nil && src.Workspace.Self() != nil {
+		// A local module loaded through a workspace reads its files through
+		// it, as its source does: the workspace carries its edits and its
+		// owner's route to the host.
+		return workspaceFileReader(ctx, dag, src.Workspace), nil
+	}
 	if src.Kind == ModuleSourceKindLocal && src.Local != nil && !src.Local.Foreign {
 		return hostFileReader(ctx, src)
 	}
 	return nil, nil
+}
+
+// workspaceFileReader reads files of ws by their path from its root, each
+// through a directory of ws that holds only that file.
+func workspaceFileReader(ctx context.Context, dag *dagql.Server, ws dagql.ObjectResult[*Workspace]) workspace.TreeFileReader {
+	return func(rel string) ([]byte, bool, error) {
+		var dir dagql.ObjectResult[*Directory]
+		err := dag.Select(ctx, ws, &dir, dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path.Join("/", path.Dir(rel)))},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(path.Base(rel))}},
+			},
+		})
+		if errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound {
+			return nil, false, nil
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		return directoryFileReader(ctx, dag, dir)(path.Base(rel))
+	}
 }
 
 type declaredGitClientsKey struct {
