@@ -885,40 +885,12 @@ func (c *Client) SessionLost() error {
 }
 
 // HostPolicyViolation returns the first host request that the host policy
-// refused, or nil. A refusal stops the session.
+// refused, or nil. A refusal fails the session: Close returns it.
 func (c *Client) HostPolicyViolation() error {
 	if c.hostPolicy == nil {
 		return nil
 	}
 	return c.hostPolicy.err()
-}
-
-// HostPolicyStopped is closed when the host policy refuses a host request.
-// Without a policy, it is never closed.
-func (c *Client) HostPolicyStopped() <-chan struct{} {
-	if c.hostPolicy == nil {
-		return nil
-	}
-	return c.hostPolicy.stopped.Done()
-}
-
-// sessionStopped returns why the session cannot serve more requests, or nil.
-func (c *Client) sessionStopped() error {
-	if err := c.SessionLost(); err != nil {
-		return err
-	}
-	return c.HostPolicyViolation()
-}
-
-// cancelOnHostPolicyViolation cancels a request when the host policy stops
-// the session. Call the returned function when the request ends.
-func (c *Client) cancelOnHostPolicyViolation(cancel context.CancelCauseFunc) func() bool {
-	if c.hostPolicy == nil {
-		return func() bool { return false }
-	}
-	return context.AfterFunc(c.hostPolicy.stopped, func() {
-		cancel(c.hostPolicy.err())
-	})
 }
 
 // How long the engine has to answer the session attachables request. It's
@@ -1105,8 +1077,8 @@ func (c *Client) Close() error {
 // CloseWithContext uses one caller-controlled deadline for graceful shutdown
 // and telemetry draining. Transport cleanup still runs when the deadline expires.
 func (c *Client) CloseWithContext(ctx context.Context) (rerr error) {
-	// A session that the host policy stopped failed, even when every request
-	// that its caller made succeeded.
+	// A session with a host policy refusal failed, even when the caller, or a
+	// module, handled the error of the refused request.
 	defer func() {
 		if err := c.HostPolicyViolation(); err != nil {
 			rerr = errors.Join(err, rerr)
@@ -1798,7 +1770,6 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r = r.WithContext(ctx)
 	defer cancel(errors.New("client done serving HTTP"))
-	defer c.cancelOnHostPolicyViolation(cancel)()
 
 	if c.SecretToken != "" {
 		username, _, ok := r.BasicAuth()
@@ -1809,7 +1780,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := c.sessionStopped(); err != nil {
+	if err := c.SessionLost(); err != nil {
 		writeSessionLost(w, r, err)
 		return
 	}
@@ -1846,11 +1817,6 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := c.httpClient.Do(proxyReq)
 	if err != nil {
-		if violation := c.HostPolicyViolation(); violation != nil {
-			// The refusal cancelled this request: answer with it.
-			writeSessionLost(w, r, violation)
-			return
-		}
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("http do: " + err.Error()))
 		return
@@ -1994,8 +1960,7 @@ func (c *Client) Do(
 		return err
 	}
 	defer cancel(errors.New("Client.Do done"))
-	defer c.cancelOnHostPolicyViolation(cancel)()
-	if err := c.sessionStopped(); err != nil {
+	if err := c.SessionLost(); err != nil {
 		return err
 	}
 
@@ -2281,7 +2246,7 @@ func (c *httpClient) Close() error {
 
 func EngineConn(engineClient *Client) DirectConn {
 	return func(req *http.Request) (*http.Response, error) {
-		if err := engineClient.sessionStopped(); err != nil {
+		if err := engineClient.SessionLost(); err != nil {
 			return nil, err
 		}
 		return engineClient.httpClient.Do(req)

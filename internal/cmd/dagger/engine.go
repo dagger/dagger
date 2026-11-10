@@ -395,13 +395,17 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	return params, nil
 }
 
-// applyHostPolicy sets the host policy from the environment. The engine reads
-// some files of this host at session start; a policy that does not allow them
-// leaves them out, so that the session does not stop before it starts.
+// cliHostPolicy is the host policy of the user config file. The CLI reads it
+// once, and does not start when the policy is not valid.
+var cliHostPolicy = sync.OnceValues(client.LoadHostPolicy)
+
+// applyHostPolicy sets the host policy of the user config file. The engine
+// reads some files of this host at session start; a policy that does not allow
+// them leaves them out, so that the session does not fail on them.
 func applyHostPolicy(params *client.Params) error {
-	policy, err := client.ParseHostPolicy(os.Getenv(client.HostPolicyEnv))
+	policy, err := cliHostPolicy()
 	if err != nil {
-		return fmt.Errorf("%s: %w", client.HostPolicyEnv, err)
+		return err
 	}
 	if policy == nil {
 		return nil
@@ -534,7 +538,7 @@ func withLazySessions(
 		})
 
 		// The callers ignore Close errors, so a host policy refusal is
-		// returned here: a session that the policy stopped failed.
+		// returned here: a session with a refusal failed.
 		var sessionsMu sync.Mutex
 		var sessions []*client.Client
 		defer func() {

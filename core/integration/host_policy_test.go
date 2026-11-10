@@ -1,8 +1,8 @@
 package core
 
-// These tests cover the host policy that a client can run with
-// (_EXPERIMENTAL_DAGGER_HOST_POLICY). The client serves only the host access
-// that the policy allows, and the first refused request stops the session.
+// These tests cover the host policy that a client can run with (the
+// [host_policy] table of the user config file). The client serves only the
+// host access that the policy allows, and a refused request fails the session.
 
 import (
 	"context"
@@ -28,9 +28,31 @@ func TestHostPolicy(t *testing.T) {
 }
 
 const (
-	hostPolicyEnv     = "_EXPERIMENTAL_DAGGER_HOST_POLICY"
+	hostPolicyBase = `[host_policy]
+version = 1
+reason = "test"
+`
 	hostPolicyRefusal = "host access denied by session policy (test)"
 )
+
+// hostPolicyConfig writes a user config file with the policy, and returns the
+// environment variable that selects the file.
+func hostPolicyConfig(t *testctx.T, policy string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte(policy), 0o600))
+	return "DAGGER_CONFIG=" + path
+}
+
+// hostPolicyEnvSecrets allows the env secret provider.
+const hostPolicyEnvSecrets = `[host_policy.secrets]
+providers = ["env"]
+`
+
+// hostPolicyReads allows reads of dir.
+func hostPolicyReads(dir string) string {
+	return fmt.Sprintf("[host_policy.files]\nread = [%q]\n", dir)
+}
 
 // connectWithHostPolicy starts a new `dagger session` with the policy, as an
 // SDK does, instead of joining the test's session. It returns the session's
@@ -42,7 +64,7 @@ func connectWithHostPolicy(ctx context.Context, t *testctx.T, workdir, policy st
 		Workdir:   workdir,
 		LogOutput: logs,
 		UnsetEnv:  []string{"DAGGER_SESSION_PORT", "DAGGER_SESSION_TOKEN"},
-		ExtraEnv:  append([]string{hostPolicyEnv + "=" + policy}, env...),
+		ExtraEnv:  append([]string{hostPolicyConfig(t, policy)}, env...),
 	}
 	conn, found, err := engineconn.FromLocalCLI(ctx, &cfg)
 	require.NoError(t, err)
@@ -59,13 +81,13 @@ func hostPolicyCLI(ctx context.Context, t *testctx.T, workdir, policy string, en
 	cmd.Env = slices.DeleteFunc(cmd.Env, func(kv string) bool {
 		return strings.HasPrefix(kv, "DAGGER_SESSION_PORT=") || strings.HasPrefix(kv, "DAGGER_SESSION_TOKEN=")
 	})
-	cmd.Env = append(cmd.Env, hostPolicyEnv+"="+policy)
+	cmd.Env = append(cmd.Env, hostPolicyConfig(t, policy))
 	cmd.Env = append(cmd.Env, env...)
 	return cmd
 }
 
 func (HostPolicySuite) TestCoreAPIWithoutHostAccess(ctx context.Context, t *testctx.T) {
-	c, _ := connectWithHostPolicy(ctx, t, t.TempDir(), `{"version": 1, "reason": "test"}`)
+	c, _ := connectWithHostPolicy(ctx, t, t.TempDir(), hostPolicyBase)
 	q := core.NewQuery(c)
 
 	out, err := q.Container().From(alpineImage).WithExec([]string{"echo", "hello"}).Stdout(ctx)
@@ -77,7 +99,7 @@ func (HostPolicySuite) TestCoreAPIWithoutHostAccess(ctx context.Context, t *test
 func (HostPolicySuite) TestSecretProviders(ctx context.Context, t *testctx.T) {
 	marker := filepath.Join(t.TempDir(), "marker")
 	c, logs := connectWithHostPolicy(ctx, t, t.TempDir(),
-		`{"version": 1, "reason": "test", "secrets": {"providers": ["env"]}}`,
+		hostPolicyBase+hostPolicyEnvSecrets,
 		"HOST_POLICY_TOKEN=hello")
 	q := core.NewQuery(c)
 
@@ -89,10 +111,8 @@ func (HostPolicySuite) TestSecretProviders(ctx context.Context, t *testctx.T) {
 	require.ErrorContains(t, err, hostPolicyRefusal+`: secret provider "cmd" is not allowed (allowed: env)`)
 	require.NoFileExists(t, marker)
 
-	// The refusal stopped the session: `dagger session` exits with an error
-	// and logs the refusal.
-	_, err = q.Container().From(alpineImage).WithExec([]string{"true"}).Sync(ctx)
-	require.Error(t, err)
+	// The caller handled the refusal, but it still fails the session:
+	// `dagger session` exits with an error and logs the refusal.
 	require.Error(t, c.Close())
 	require.Contains(t, logs.String(), hostPolicyRefusal)
 }
@@ -102,7 +122,7 @@ func (HostPolicySuite) TestFileReads(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "inside.txt"), []byte("inside"), 0o600))
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o600))
-	policy := fmt.Sprintf(`{"version": 1, "reason": "test", "files": {"read": [%q]}}`, root)
+	policy := hostPolicyBase + hostPolicyReads(root)
 
 	t.Run("under a read path", func(ctx context.Context, t *testctx.T) {
 		c, _ := connectWithHostPolicy(ctx, t, root, policy)
@@ -124,19 +144,21 @@ func (HostPolicySuite) TestFileReads(ctx context.Context, t *testctx.T) {
 }
 
 func (HostPolicySuite) TestHostSockets(ctx context.Context, t *testctx.T) {
-	c, _ := connectWithHostPolicy(ctx, t, t.TempDir(), `{"version": 1, "reason": "test"}`)
+	c, logs := connectWithHostPolicy(ctx, t, t.TempDir(), hostPolicyBase)
 	q := core.NewQuery(c)
 
-	_, err := q.Container().From(alpineImage).
+	// The client refuses the connection. Whether nc fails on that or not, the
+	// session fails.
+	_, _ = q.Container().From(alpineImage).
 		WithUnixSocket("/tmp/host.sock", q.Host().UnixSocket("/var/run/docker.sock")).
 		WithExec([]string{"sh", "-c", "echo hello | nc local:/tmp/host.sock"}).
 		Sync(ctx)
-	require.ErrorContains(t, err, hostPolicyRefusal+": host socket")
 	require.Error(t, c.Close())
+	require.Contains(t, logs.String(), hostPolicyRefusal+": host socket unix:///var/run/docker.sock is not allowed")
 }
 
 func (HostPolicySuite) TestHostTunnels(ctx context.Context, t *testctx.T) {
-	c, _ := connectWithHostPolicy(ctx, t, t.TempDir(), `{"version": 1, "reason": "test"}`)
+	c, _ := connectWithHostPolicy(ctx, t, t.TempDir(), hostPolicyBase)
 	q := core.NewQuery(c)
 
 	svc, _ := httpService(ctx, t, c, "hello")
@@ -187,7 +209,7 @@ token = %q
 func (HostPolicySuite) TestWorkspaceSettings(ctx context.Context, t *testctx.T) {
 	t.Run("allowed provider", func(ctx context.Context, t *testctx.T) {
 		dir := hostPolicyWorkspace(ctx, t, "env://HOST_POLICY_TOKEN")
-		policy := fmt.Sprintf(`{"version": 1, "reason": "test", "secrets": {"providers": ["env"]}, "files": {"read": [%q]}}`, dir)
+		policy := hostPolicyBase + hostPolicyEnvSecrets + hostPolicyReads(dir)
 		out, err := hostPolicyCLI(ctx, t, dir, policy, []string{"HOST_POLICY_TOKEN=hello"}, "check", "--module=consumer").CombinedOutput()
 		require.NoError(t, err, string(out))
 	})
@@ -195,7 +217,7 @@ func (HostPolicySuite) TestWorkspaceSettings(ctx context.Context, t *testctx.T) 
 	t.Run("refused provider", func(ctx context.Context, t *testctx.T) {
 		marker := filepath.Join(t.TempDir(), "marker")
 		dir := hostPolicyWorkspace(ctx, t, "cmd://touch "+marker)
-		policy := fmt.Sprintf(`{"version": 1, "reason": "test", "secrets": {"providers": ["env"]}, "files": {"read": [%q]}}`, dir)
+		policy := hostPolicyBase + hostPolicyEnvSecrets + hostPolicyReads(dir)
 		out, err := hostPolicyCLI(ctx, t, dir, policy, nil, "check", "--module=consumer").CombinedOutput()
 		require.Error(t, err, string(out))
 		// The check does not use the token, so it passes. The refusal still
@@ -207,16 +229,16 @@ func (HostPolicySuite) TestWorkspaceSettings(ctx context.Context, t *testctx.T) 
 
 func (HostPolicySuite) TestPolicyFailsClosed(ctx context.Context, t *testctx.T) {
 	t.Run("invalid policy", func(ctx context.Context, t *testctx.T) {
-		cmd := hostPolicyCLI(ctx, t, t.TempDir(), `{"version": 2}`, nil, "query")
+		cmd := hostPolicyCLI(ctx, t, t.TempDir(), "[host_policy]\nversion = 2\n", nil, "query")
 		cmd.Stdin = strings.NewReader(`{version}`)
 		out, err := cmd.CombinedOutput()
 		require.Error(t, err, string(out))
-		require.Contains(t, string(out), hostPolicyEnv+": host policy version 2 is not supported")
+		require.Contains(t, string(out), "host policy version 2 is not supported")
 	})
 
 	t.Run("nested session", func(ctx context.Context, t *testctx.T) {
 		// A nested client uses the host services of the session that it joins.
-		cmd := hostPolicyCLI(ctx, t, t.TempDir(), `{"version": 1}`, []string{"DAGGER_SESSION_PORT=1"}, "query")
+		cmd := hostPolicyCLI(ctx, t, t.TempDir(), hostPolicyBase, []string{"DAGGER_SESSION_PORT=1"}, "query")
 		cmd.Stdin = strings.NewReader(`{version}`)
 		out, err := cmd.CombinedOutput()
 		require.Error(t, err, string(out))

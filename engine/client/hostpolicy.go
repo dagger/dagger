@@ -1,11 +1,10 @@
 package client
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,11 +12,13 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/session/auth/authprovider"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/session/secrets"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/docker/cli/cli/config"
+	toml "github.com/pelletier/go-toml"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -27,11 +28,12 @@ import (
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
+	"github.com/dagger/dagger/internal/userconfig"
 )
 
-// HostPolicyEnv is the environment variable from which the CLI reads a
-// HostPolicy, as JSON. An empty or unset value means no policy.
-const HostPolicyEnv = "_EXPERIMENTAL_DAGGER_HOST_POLICY"
+// hostPolicyTable is the table of the user config file that holds a
+// HostPolicy.
+const hostPolicyTable = "host_policy"
 
 // HostPolicy limits what a client does on its host when the engine asks it to.
 // A client without a policy serves every host request. A client with a policy
@@ -49,21 +51,24 @@ const HostPolicyEnv = "_EXPERIMENTAL_DAGGER_HOST_POLICY"
 // them. Outside the read paths, the host looks empty: a stat finds nothing,
 // except the directories that contain a read path. The client refuses
 // requests for secrets, file contents, Git configuration, sockets and tunnels
-// that the policy does not allow, and the first refusal stops the session:
-// later requests fail with the refusal, and Close returns it.
+// that the policy does not allow. A refusal fails the session: Close returns
+// the first refusal, also when the caller handled the error of the request.
+//
+// The client checks a read path and then opens it, so nothing untrusted must
+// be able to change the read paths while a session runs.
 type HostPolicy struct {
 	// Version must be 1.
-	Version int `json:"version"`
+	Version int `toml:"version"`
 	// Reason names who set the policy. Refusal messages include it.
-	Reason string `json:"reason,omitempty"`
+	Reason string `toml:"reason"`
 
-	Secrets HostPolicySecrets `json:"secrets"`
-	Files   HostPolicyFiles   `json:"files"`
-	Git     HostPolicyGit     `json:"git"`
+	Secrets HostPolicySecrets `toml:"secrets"`
+	Files   HostPolicyFiles   `toml:"files"`
+	Git     HostPolicyGit     `toml:"git"`
 
 	// RegistryAuth allows registry credentials from the host's Docker
 	// configuration.
-	RegistryAuth bool `json:"registryAuth,omitempty"`
+	RegistryAuth bool `toml:"registry_auth"`
 }
 
 type HostPolicySecrets struct {
@@ -71,37 +76,71 @@ type HostPolicySecrets struct {
 	// such as "op" or "vault". A provider runs on the host with the client's
 	// access, and the read paths do not limit it: "env", "file", "cmd" and
 	// "llmconfig" give access to the host environment, files and commands.
-	Providers []string `json:"providers,omitempty"`
+	Providers []string `toml:"providers"`
 }
 
 type HostPolicyFiles struct {
 	// Read lists absolute paths. The client serves reads of these paths and
 	// of everything under them, after it resolves symlinks.
-	Read []string `json:"read,omitempty"`
+	Read []string `toml:"read"`
 }
 
 type HostPolicyGit struct {
 	// Credentials allows Git credentials and the host's Git configuration for
 	// remote repositories.
-	Credentials bool `json:"credentials,omitempty"`
+	Credentials bool `toml:"credentials"`
 }
 
-// ParseHostPolicy parses a policy from JSON. It returns nil for an empty
-// value. It returns an error for unknown fields, an unsupported version,
-// unknown secret providers and relative paths, so that a client never runs
-// with a policy that it does not fully understand.
-func ParseHostPolicy(value string) (*HostPolicy, error) {
-	if strings.TrimSpace(value) == "" {
+// LoadHostPolicy reads the [host_policy] table of the user config file
+// (userconfig.Path). It returns nil when the file or the table does not
+// exist. See ParseHostPolicy.
+func LoadHostPolicy() (*HostPolicy, error) {
+	return loadHostPolicy(userconfig.Path())
+}
+
+func loadHostPolicy(path string) (*HostPolicy, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
-	dec := json.NewDecoder(strings.NewReader(value))
-	dec.DisallowUnknownFields()
-	var policy HostPolicy
-	if err := dec.Decode(&policy); err != nil {
-		return nil, fmt.Errorf("parse host policy: %w", err)
+	if err != nil {
+		// The file can have a policy.
+		return nil, fmt.Errorf("read host policy: %w", err)
 	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, errors.New("parse host policy: unexpected data after the policy")
+	policy, err := ParseHostPolicy(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return policy, nil
+}
+
+// ParseHostPolicy parses the [host_policy] table of a user config file. It
+// returns nil when the table does not exist.
+//
+// Other settings of the file are read leniently, but a policy fails closed. A
+// file that does not parse and contains "host_policy", unknown fields, an
+// unsupported version, unknown secret providers and relative paths are
+// errors, so that a client never runs with a policy that it does not fully
+// understand.
+func ParseHostPolicy(data []byte) (*HostPolicy, error) {
+	doc, err := toml.LoadBytes(data)
+	if err != nil {
+		if bytes.Contains(data, []byte(hostPolicyTable)) {
+			return nil, fmt.Errorf("parse host policy: %w", err)
+		}
+		return nil, nil
+	}
+	value := doc.Get(hostPolicyTable)
+	if value == nil {
+		return nil, nil
+	}
+	table, ok := value.(*toml.Tree)
+	if !ok {
+		return nil, fmt.Errorf("parse host policy: %s is not a table", hostPolicyTable)
+	}
+	var policy HostPolicy
+	if err := toml.NewDecoder(strings.NewReader(table.String())).Strict(true).Decode(&policy); err != nil {
+		return nil, fmt.Errorf("parse host policy: %w", err)
 	}
 	if policy.Version != 1 {
 		return nil, fmt.Errorf("host policy version %d is not supported", policy.Version)
@@ -121,16 +160,22 @@ func ParseHostPolicy(value string) (*HostPolicy, error) {
 	return &policy, nil
 }
 
-// AllowsRead reports whether p is under a read path of the policy, without
-// resolving symlinks. The client checks every read again with symlinks
-// resolved.
+// AllowsRead reports whether an absolute path is under a read path of the
+// policy, with symlinks resolved.
 func (p *HostPolicy) AllowsRead(path string) bool {
 	if p == nil {
 		return true
 	}
-	path = filepath.Clean(path)
+	if !filepath.IsAbs(path) {
+		return false
+	}
+	resolved, err := resolveHostPath(path)
+	if err != nil {
+		return false
+	}
 	return slices.ContainsFunc(p.Files.Read, func(root string) bool {
-		return pathWithin(path, root)
+		resolvedRoot, err := resolveHostPath(root)
+		return err == nil && pathWithin(resolved, resolvedRoot)
 	})
 }
 
@@ -140,9 +185,7 @@ type hostPolicyEnforcer struct {
 	// readRoots are the policy's read paths with symlinks resolved.
 	readRoots []string
 
-	// stopped is cancelled with the first refusal.
-	stopped   context.Context
-	stop      context.CancelCauseFunc
+	// violation is the first refusal.
 	violation atomic.Pointer[error]
 }
 
@@ -155,7 +198,6 @@ func newHostPolicyEnforcer(policy *HostPolicy) (*hostPolicyEnforcer, error) {
 		}
 		e.readRoots = append(e.readRoots, resolved)
 	}
-	e.stopped, e.stop = context.WithCancelCause(context.Background())
 	return e, nil
 }
 
@@ -175,13 +217,11 @@ func (e *hostPolicyEnforcer) hidden(path string) error {
 }
 
 // deny records a refusal and returns the error for the engine. The first
-// refusal stops the session.
+// refusal is the result of the session.
 func (e *hostPolicyEnforcer) deny(format string, args ...any) error {
 	msg := e.message(format, args...)
 	err := errors.New(msg)
-	if e.violation.CompareAndSwap(nil, &err) {
-		e.stop(err)
-	}
+	e.violation.CompareAndSwap(nil, &err)
 	return status.Error(codes.PermissionDenied, msg)
 }
 
@@ -238,7 +278,11 @@ func (e *hostPolicyEnforcer) attachables(ctx context.Context) ([]SessionAttachab
 		policyDeniedTunnels{policy: e},
 	}
 	if e.policy.RegistryAuth {
-		attachables = append(attachables, authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil))
+		provider, ok := authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil).(auth.AuthServer)
+		if !ok {
+			return nil, errors.New("host policy: the registry auth provider does not serve credentials")
+		}
+		attachables = append(attachables, policyRegistryAuth{AuthServer: provider})
 	}
 	if e.policy.Git.Credentials {
 		attachables = append(attachables, policyGitCredentials{GitAttachable: git.NewGitAttachable(ctx), policy: e})
@@ -263,17 +307,28 @@ func pathWithin(p, root string) bool {
 }
 
 // resolveHostPath resolves every symlink in an absolute path. For a path that
-// does not exist, it resolves its deepest existing parent.
+// does not exist, it resolves its deepest existing parent. A symlink whose
+// target does not exist resolves to that target.
 func resolveHostPath(p string) (string, error) {
 	p = filepath.Clean(p)
 	var missing []string
-	for {
+	for links := 0; ; {
 		resolved, err := filepath.EvalSymlinks(p)
 		if err == nil {
 			return filepath.Join(append([]string{resolved}, missing...)...), nil
 		}
 		if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
 			return "", err
+		}
+		if target, err := os.Readlink(p); err == nil {
+			if links++; links > 255 {
+				return "", &os.PathError{Op: "resolve", Path: p, Err: syscall.ELOOP}
+			}
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(p), target)
+			}
+			p = filepath.Clean(target)
+			continue
 		}
 		parent := filepath.Dir(p)
 		if parent == p {
@@ -302,6 +357,16 @@ func (p policySecretProvider) GetSecret(ctx context.Context, req *secrets.GetSec
 		return nil, p.policy.deny("secret provider %q is not allowed (allowed: %s)", scheme, strings.Join(allowed, ", "))
 	}
 	return secretprovider.NewSecretProvider().GetSecret(ctx, req)
+}
+
+// policyRegistryAuth serves only registry credentials. The engine does not
+// ask the client to fetch tokens.
+type policyRegistryAuth struct {
+	auth.AuthServer
+}
+
+func (a policyRegistryAuth) Register(server *grpc.Server) {
+	auth.RegisterCredentialsServer(server, a)
 }
 
 type policyFilesyncSource struct {
@@ -342,9 +407,9 @@ func (s policyFilesyncSource) TarStream(filesync.FileSync_TarStreamServer) error
 	return status.Error(codes.Unimplemented, "tarstream not supported")
 }
 
-// FindUp searches only directories under the read roots. Like a stat, it
-// finds nothing elsewhere and refuses nothing: a search above a workspace is
-// normal.
+// FindUp searches only under the read roots: in their directories, for names
+// whose paths stay under them. Like a stat, it finds nothing elsewhere and
+// refuses nothing: a search above a workspace is normal.
 func (s policyFilesyncSource) FindUp(ctx context.Context, req *filesync.FindUpRequest) (*filesync.FindUpResponse, error) {
 	start, err := Filesyncer{}.fullRootPathAndBaseName(req.Start, false)
 	if err != nil {
@@ -403,6 +468,9 @@ func (p policyDeniedTunnels) Register(server *grpc.Server) {
 	h2c.RegisterTunnelListenerServer(server, p)
 }
 
-func (p policyDeniedTunnels) Listen(h2c.TunnelListener_ListenServer) error {
+// Listen refuses a tunnel. It reads the listen request first, so that the
+// engine gets the refusal and not a closed stream.
+func (p policyDeniedTunnels) Listen(stream h2c.TunnelListener_ListenServer) error {
+	_, _ = stream.Recv()
 	return p.policy.deny("listening on host ports is not allowed")
 }

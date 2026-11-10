@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -122,21 +120,6 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 		srv := sessionServer(ctx, sess)
 
-		// A host policy refusal stops the session. The shutdown lets requests
-		// in flight return the refusal; closing the session then reports it,
-		// and the process exits with an error.
-		policyShutdown := make(chan struct{})
-		go func() {
-			defer close(policyShutdown)
-			select {
-			case <-sess.HostPolicyStopped():
-				shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-				defer cancel()
-				srv.Shutdown(shutdownCtx)
-			case <-ctx.Done():
-			}
-		}()
-
 		paramBytes, err := json.Marshal(connectParams{
 			Port:         port,
 			SessionToken: sessionToken.String(),
@@ -153,12 +136,6 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		}()
 
 		err = srv.Serve(l)
-		if errors.Is(err, http.ErrServerClosed) {
-			// Only a host policy refusal shuts the server down. Closing the
-			// session reports the refusal.
-			<-policyShutdown
-			return nil
-		}
 		// if error is "use of closed network connection", it's expected
 		if err != nil && !errors.Is(err, net.ErrClosed) {
 			return err
