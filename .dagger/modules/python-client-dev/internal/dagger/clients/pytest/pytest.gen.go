@@ -361,12 +361,12 @@ func (PytestEnvTarget) IsEnum() {}
 
 func (v PytestEnvTarget) Name() string {
 	switch v {
+	case PytestEnvTargetSystem:
+		return "SYSTEM"
 	case PytestEnvTargetAuto:
 		return "AUTO"
 	case PytestEnvTargetVenv:
 		return "VENV"
-	case PytestEnvTargetSystem:
-		return "SYSTEM"
 	default:
 		return ""
 	}
@@ -408,11 +408,11 @@ func (v *PytestEnvTarget) UnmarshalJSON(dt []byte) error {
 }
 
 const (
+	PytestEnvTargetSystem PytestEnvTarget = "SYSTEM" // pytest (../../:0:0)
+
 	PytestEnvTargetAuto PytestEnvTarget = "AUTO" // pytest (../../:0:0)
 
 	PytestEnvTargetVenv PytestEnvTarget = "VENV" // pytest (../../:0:0)
-
-	PytestEnvTargetSystem PytestEnvTarget = "SYSTEM" // pytest (../../:0:0)
 
 )
 
@@ -422,12 +422,12 @@ func (PytestRunner) IsEnum() {}
 
 func (v PytestRunner) Name() string {
 	switch v {
+	case PytestRunnerPip:
+		return "PIP"
 	case PytestRunnerAuto:
 		return "AUTO"
 	case PytestRunnerUv:
 		return "UV"
-	case PytestRunnerPip:
-		return "PIP"
 	default:
 		return ""
 	}
@@ -469,10 +469,10 @@ func (v *PytestRunner) UnmarshalJSON(dt []byte) error {
 }
 
 const (
+	PytestRunnerPip PytestRunner = "PIP" // pytest (../../:0:0)
+
 	PytestRunnerAuto PytestRunner = "AUTO" // pytest (../../:0:0)
 
 	PytestRunnerUv PytestRunner = "UV" // pytest (../../:0:0)
-
-	PytestRunnerPip PytestRunner = "PIP" // pytest (../../:0:0)
 
 )
