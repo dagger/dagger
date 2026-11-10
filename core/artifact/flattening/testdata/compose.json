@@ -1,0 +1,36 @@
+[
+  {
+    "module": "docker",
+    "path": ["docker", "compose", "projects", "services", "up"],
+    "type": "Service",
+    "collections": [
+      {
+        "fields": ["compose", "projects"],
+        "type": "DockerComposeProjects",
+        "itemType": "DockerComposeProject",
+        "keyName": "name"
+      },
+      {
+        "fields": ["services"],
+        "type": "DockerComposeServices",
+        "itemType": "DockerComposeService",
+        "keyName": "name"
+      }
+    ],
+    "items": [["e2e", "web"], ["e2e", "worker"]]
+  },
+  {
+    "module": "docker",
+    "path": ["docker", "compose", "projects", "services", "all", "up"],
+    "type": "Service",
+    "collections": [
+      {
+        "fields": ["compose", "projects"],
+        "type": "DockerComposeProjects",
+        "itemType": "DockerComposeProject",
+        "keyName": "name"
+      }
+    ],
+    "items": [["e2e"]]
+  }
+]

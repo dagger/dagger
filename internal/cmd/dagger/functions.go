@@ -17,6 +17,7 @@ import (
 
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/artifact"
+	"github.com/dagger/dagger/core/artifact/flattening"
 
 	"github.com/charmbracelet/huh"
 	"github.com/opencontainers/go-digest"
@@ -874,20 +875,8 @@ func collectionCommandDimension(path *functionCommandPath, collectionType *modTy
 	if path == nil || path.Module == "" || collectionType == nil || collection.ValueType == nil || collection.KeyType == nil {
 		return nil, errors.New("collection command is missing selector metadata")
 	}
-	itemType := collection.ValueType.Name()
-	identifier := "/" + strings.Join(append([]string{path.Module}, path.Fields...), "/")
-	dimension := &artifact.Dimension{
-		Kind:           "COLLECTION",
-		CollectionType: collectionType.Name(),
-		Identifier:     identifier,
-		Name:           cliName(itemType),
-		ItemType:       itemType,
-		KeyName:        "key",
-	}
-	qualified := append([]string{path.Module}, path.Fields...)
-	itemName := strings.TrimPrefix(dimension.Name, path.Module+"-")
-	dimension.QualifiedName = strings.Join(append(qualified, itemName), "-")
-	return dimension, nil
+	c := flattening.Collection{Fields: path.Fields, Type: collectionType.Name(), ItemType: collection.ValueType.Name(), KeyName: "key"}
+	return (*artifact.Dimension)(c.Dimension(path.Module, nil, cliName)), nil
 }
 
 // makeSubCmd creates a sub-command for a function definition.

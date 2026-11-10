@@ -1,0 +1,16 @@
+ID                              DISPLAY NAME    KEY FLAG        PRESENCE FLAG
+/golang/modules                 golang-module   golang-module   golang-modules
+/golang/modules/packages        golang-package  golang-package  golang-packages
+/golang/modules/packages/tests  golang-test     golang-test     golang-tests
+module                          module          module
+type:Check                      check           check
+
+PATH                                    /golang/modules  /golang/modules/packages  /golang/modules/packages/tests  module         type:Check
+docs/check                              -                -                         -                               docs           docs/check
+docs/references/stale                   -                -                         -                               docs           docs/references/stale
+python-client/python-310/unit           -                -                         -                               python-client  python-client/python-310/unit
+python-client/python-310/slow           -                -                         -                               python-client  python-client/python-310/slow
+golang/modules/packages/generate/stale  .                cmd/codegen               -                               golang         golang/modules/packages/generate/stale
+golang/modules/packages/generate/stale  .                cmd/codegen/generator/go  -                               golang         golang/modules/packages/generate/stale
+golang/modules/packages/tests/test      e2e/helm         e2e/helm                  TestCustomProbes                golang         golang/modules/packages/tests/test
+golang/modules/packages/tests/test      e2e/helm         e2e/helm                  TestInstallK3S                  golang         golang/modules/packages/tests/test
