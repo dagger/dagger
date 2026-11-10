@@ -29,9 +29,9 @@ type cacheExportArgs struct {
 }
 
 // cacheExport exports the cache entries of results as a bundle directory
-// (dagql.Cache.ExportBundle): each result with what it was built from, and
-// the data of the result and of every result its value holds, whatever their
-// types.
+// (dagql.Cache.ExportBundle): each result with what it was built from, as
+// records, and the result's own data, whatever its type, or, for a result
+// with no data of its own, the data of the results its value holds.
 func (s *engineSchema) cacheExport(ctx context.Context, _ dagql.ObjectResult[*core.EngineCache], args cacheExportArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
