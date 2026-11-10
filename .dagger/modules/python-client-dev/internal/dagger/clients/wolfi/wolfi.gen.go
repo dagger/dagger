@@ -28,7 +28,7 @@ func New() *Wolfi {
 }
 
 // A Wolfi Linux configuration
-type Wolfi struct { // wolfi (https://github.com/dagger/wolfi/tree/f762661d70b5b19dc63b96bdfa455e2f77bbd179/main.go#L13)
+type Wolfi struct { // wolfi (../../:0:0)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -52,28 +52,28 @@ type WolfiContainerOpts struct {
 	//
 	// APK packages to install
 	//
-	Packages []string // wolfi (https://github.com/dagger/wolfi/tree/f762661d70b5b19dc63b96bdfa455e2f77bbd179/main.go#L19)
+	Packages []string // wolfi (../../:0:0)
 	//
 	// Hardware architecture to target
 	//
-	Arch string // wolfi (https://github.com/dagger/wolfi/tree/f762661d70b5b19dc63b96bdfa455e2f77bbd179/main.go#L22)
+	Arch string // wolfi (../../:0:0)
 	//
 	// Extra repositories to add to the package resolver
 	//
-	ExtraRepositories []string // wolfi (https://github.com/dagger/wolfi/tree/f762661d70b5b19dc63b96bdfa455e2f77bbd179/main.go#L25)
+	ExtraRepositories []string // wolfi (../../:0:0)
 	//
 	// Extra keys needed to authenticate the extra repositories
 	//
-	ExtraKeyUrls []string // wolfi (https://github.com/dagger/wolfi/tree/f762661d70b5b19dc63b96bdfa455e2f77bbd179/main.go#L28)
+	ExtraKeyUrls []string // wolfi (../../:0:0)
 	//
 	// Overlay images to merge on top of the base.
 	// See https://twitter.com/ibuildthecloud/status/1721306361999597884
 	//
-	Overlays []*Container // wolfi (https://github.com/dagger/wolfi/tree/f762661d70b5b19dc63b96bdfa455e2f77bbd179/main.go#L32)
+	Overlays []*Container // wolfi (../../:0:0)
 }
 
 // Build a Wolfi Linux container
-func (r *Wolfi) Container(opts ...WolfiContainerOpts) *Container { // wolfi (https://github.com/dagger/wolfi/tree/f762661d70b5b19dc63b96bdfa455e2f77bbd179/main.go#L16)
+func (r *Wolfi) Container(opts ...WolfiContainerOpts) *Container { // wolfi (../../:0:0)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `packages` optional argument
