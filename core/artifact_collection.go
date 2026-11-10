@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/core/artifact"
+	"github.com/dagger/dagger/core/artifact/flattening"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
 	"golang.org/x/sync/errgroup"
@@ -65,7 +66,7 @@ func (a *Artifacts) typeKeyName(entry *Artifact) string {
 		return ""
 	}
 	path := strings.Join(entry.Path, "/")
-	short := artifact.ShortTypeKey(a.AllPaths.Candidates("type:"+entry.TypeName, dimensions, nil), path)
+	short := flattening.ShortKey(a.AllPaths, entry.TypeName, entry.Path, dimensions)
 	if short == path {
 		return ""
 	}
@@ -75,7 +76,6 @@ func (a *Artifacts) typeKeyName(entry *Artifact) string {
 // PathIndex lists the entries' schema paths for AllPaths.
 func (a *Artifacts) PathIndex() artifact.Paths {
 	var paths artifact.Paths
-	seen := map[string]bool{}
 	for _, entry := range a.Entries {
 		if entry.TypeName == "" {
 			continue
@@ -86,13 +86,9 @@ func (a *Artifacts) PathIndex() artifact.Paths {
 				path.Dimensions = append(path.Dimensions, dim.Identifier)
 			}
 		}
-		key := path.Type + "\x00" + path.Key + "\x00" + path.Module + "\x00" + strings.Join(path.Dimensions, "\x00")
-		if !seen[key] {
-			seen[key] = true
-			paths = append(paths, path)
-		}
+		paths = append(paths, path)
 	}
-	return paths
+	return artifact.UnionPaths(paths)
 }
 
 func collectionInputFromText(typ *TypeDef, text string) (dagql.Input, error) {
@@ -109,20 +105,19 @@ func collectionInputFromText(typ *TypeDef, text string) (dagql.Input, error) {
 }
 
 func (a *Artifact) DimensionDefinitions() []*ArtifactDimension {
-	var dims []*ArtifactDimension
+	var collections flattening.Dimensions
 	for node := a.Node; node != nil; node = node.Parent {
 		if node.CollectionDimension != nil {
-			dims = append(dims, node.CollectionDimension)
+			collections = append(collections, (*flattening.Dimension)(node.CollectionDimension))
 		}
 	}
-	slices.Reverse(dims)
-	if a.ModuleName != "" {
-		dims = append([]*ArtifactDimension{{Kind: "MODULE", Identifier: artifact.ModuleDimension, Name: "module", QualifiedName: "module", KeyName: "name"}}, dims...)
+	slices.Reverse(collections)
+	dims := flattening.ArtifactDimensions(a.ModuleName, a.TypeName, collections)
+	result := make([]*ArtifactDimension, len(dims))
+	for i, d := range dims {
+		result[i] = (*ArtifactDimension)(d)
 	}
-	if a.TypeName != "" {
-		dims = append(dims, &ArtifactDimension{Kind: "TYPE", Identifier: "type:" + a.TypeName, Name: ArtifactTypeName(a.TypeName), QualifiedName: "artifact-" + ArtifactTypeName(a.TypeName), ItemType: a.TypeName, KeyName: "name"})
-	}
-	return dims
+	return result
 }
 
 func (a *Artifacts) DimensionDefinitions() artifact.Dimensions {
@@ -777,33 +772,17 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			parent = parent.Parent
 		}
 		slices.Reverse(path)
-		prefix := "/" + namer.CLIName(node.Module.Self().Name())
+		var parentDimension *flattening.Dimension
 		if parent.CollectionDimension != nil {
-			prefix = parent.CollectionDimension.Identifier
+			parentDimension = (*flattening.Dimension)(parent.CollectionDimension)
 		}
-		identifier := strings.Join(append([]string{prefix}, path...), "/")
-		// The namespaced current spelling keeps short names unique across modules.
-		itemType := members.Get.ReturnType.Self().AsObject.Value.Self().Name
-		dim := &ArtifactDimension{
-			Kind: "COLLECTION", CollectionType: obj.Name,
-			Identifier:     identifier,
-			Name:           namer.CLIName(itemType),
-			ItemType:       itemType,
+		collection := flattening.Collection{
+			Fields: path, Type: obj.Name,
+			ItemType:       members.Get.ReturnType.Self().AsObject.Value.Self().Name,
 			KeyName:        members.Get.Args[0].Self().Name,
 			KeyDescription: members.Get.Args[0].Self().Description,
 		}
-		qualified := strings.Split(strings.TrimPrefix(identifier, "/"), "/")
-		// Trim the module prefix (the identifier's first segment, spelled by
-		// the same rules) from the item name.
-		itemName := dim.Name
-		for _, prefix := range []string{qualified[0], namer.CLIName(node.Module.Self().Name())} {
-			if rest, ok := strings.CutPrefix(itemName, prefix+"-"); ok {
-				itemName = rest
-				break
-			}
-		}
-		qualified = append(qualified, itemName)
-		dim.QualifiedName = strings.Join(qualified, "-")
+		dim := (*ArtifactDimension)(collection.Dimension(node.Module.Self().Name(), parentDimension, nil))
 		item := &ModTreeNode{Parent: node, Name: "get", Type: members.Get.ReturnType, Description: members.Get.Description,
 			Module: node.Module, OriginalModule: node.OriginalModule, DagqlServer: node.DagqlServer, CollectionDimension: dim, types: node.types}
 		if err := walkArtifactNodes(ctx, item, visit, visiting); err != nil {
@@ -893,12 +872,14 @@ func (a *Artifacts) SchemaSelection() (*Artifacts, error) {
 }
 
 func (a *Artifact) setStaticDimensions() {
-	a.DimensionKeys = slices.DeleteFunc(slices.Clone(a.DimensionKeys), func(key *ArtifactDimensionKey) bool { return artifact.IsStaticDimension(key.Dimension) })
-	if a.ModuleName != "" {
-		a.DimensionKeys = append([]*ArtifactDimensionKey{{Dimension: artifact.ModuleDimension, Key: a.ModuleName}}, a.DimensionKeys...)
+	keys := make([]flattening.Coordinate, 0, len(a.DimensionKeys))
+	for _, key := range a.DimensionKeys {
+		keys = append(keys, flattening.Coordinate{Dimension: key.Dimension, Key: key.Key})
 	}
-	if a.TypeName != "" {
-		a.DimensionKeys = append(a.DimensionKeys, &ArtifactDimensionKey{Dimension: "type:" + a.TypeName, Key: strings.Join(a.Path, "/")})
+	coordinates := flattening.Coordinates(a.ModuleName, a.Path, a.TypeName, keys)
+	a.DimensionKeys = make([]*ArtifactDimensionKey, 0, len(coordinates))
+	for _, key := range coordinates {
+		a.DimensionKeys = append(a.DimensionKeys, &ArtifactDimensionKey{Dimension: key.Dimension, Key: key.Key})
 	}
 }
 
