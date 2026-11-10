@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	containerdfs "github.com/containerd/continuity/fs"
+
 	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/pkg/errors"
@@ -34,6 +36,38 @@ func NewGitIgnoreMatcher(fs fsutil.FS) *GitignoreMatcher {
 		gitignoreCachePatterns: make(map[string][]gitignore.Pattern),
 	}
 	return gfs
+}
+
+// NewGitIgnoreMatcherInRoot creates a GitignoreMatcher for the directory at
+// root that reads its .gitignore files as if root were the whole filesystem:
+// a .gitignore that is a symlink, absolute or climbing above root, resolves
+// within root, as every path in a Directory does.
+func NewGitIgnoreMatcherInRoot(root string) (*GitignoreMatcher, error) {
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	fs, err := fsutil.NewFS(root)
+	if err != nil {
+		return nil, err
+	}
+	return NewGitIgnoreMatcher(rootFS{FS: fs, root: root}), nil
+}
+
+// rootFS opens files within root, resolving their paths with root as the
+// root of the filesystem.
+type rootFS struct {
+	fsutil.FS
+	root string
+}
+
+func (fs rootFS) Open(p string) (io.ReadCloser, error) {
+	resolved, err := containerdfs.RootPath(fs.root, p)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	rc, err := os.Open(resolved)
+	return rc, errors.WithStack(err)
 }
 
 func NewGitIgnoreMatcherWithOverrides(fs fsutil.FS, overrides map[string]string) *GitignoreMatcher {

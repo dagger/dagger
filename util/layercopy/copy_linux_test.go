@@ -773,7 +773,7 @@ func TestCopyEntryMissingSourceAfterFilter(t *testing.T) {
 	missingErr := &os.PathError{Op: "lstat", Path: "/src/gone.txt", Err: os.ErrNotExist}
 
 	t.Run("excluded", func(t *testing.T) {
-		matcher, err := newMatcher("/src", Filter{
+		matcher, err := newMatcher("/src", "", Filter{
 			Only: map[string]struct{}{
 				"keep.txt": {},
 			},
@@ -790,7 +790,7 @@ func TestCopyEntryMissingSourceAfterFilter(t *testing.T) {
 	})
 
 	t.Run("included", func(t *testing.T) {
-		matcher, err := newMatcher("/src", Filter{
+		matcher, err := newMatcher("/src", "", Filter{
 			Only: map[string]struct{}{
 				"gone.txt": {},
 			},
@@ -1175,7 +1175,7 @@ func filteredCopy(t *testing.T, srcRoot string, filter Filter, noPrune bool) (co
 	src.onReadDir = func(rel string) {
 		read = append(read, rel)
 	}
-	m, err := newMatcher(srcRoot, filter)
+	m, err := newMatcher(srcRoot, "", filter)
 	require.NoError(t, err)
 	if noPrune {
 		m.onlyPrefixIncludes = false
