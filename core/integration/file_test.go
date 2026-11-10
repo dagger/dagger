@@ -1279,13 +1279,13 @@ func (FileSuite) TestFileRespectsSymlinks(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "important", s)
 
-		s, err = d.
+		// Through the subdirectory, the link can't leave it.
+		_, err = d.
 			Directory("subdir").
 			File("d").
 			Contents(ctx)
 
-		require.NoError(t, err)
-		require.Equal(t, "important", s)
+		require.Error(t, err)
 	})
 }
 
