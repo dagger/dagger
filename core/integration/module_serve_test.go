@@ -105,7 +105,8 @@ func (ModuleLoadingSuite) TestServeModuleFromModule(ctx context.Context, t *test
 		return ctr.
 			WithNewFile("dagger.toml", `[modules.caller]
 source = ".dagger/modules/caller"
-`).
+
+`+serveTreeClientsConfig(map[string][]string{".dagger/modules/caller": {".dagger/modules/hello"}})).
 			// Legacy manifest so the Go runtime generates its bindings at load
 			// time: a dagger-module.toml module builds from committed generated
 			// files, which a fixture written inline has no way to carry.

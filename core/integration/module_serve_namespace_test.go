@@ -105,8 +105,9 @@ func (ModuleLoadingSuite) TestServeModuleCacheNamespaces(ctx context.Context, t 
 		callee calleeKind
 		depth  int
 		// checked is the module whose volume the case checks, reached is the
-		// module the caller serves, and query is what the caller runs on it.
-		checked, reached, query string
+		// module the caller serves, served is the module reached serves in
+		// turn, if any, and query is what the caller runs on reached.
+		checked, reached, served, query string
 	}
 
 	tree := core.NewQuery(c).Directory()
@@ -133,7 +134,7 @@ func (ModuleLoadingSuite) TestServeModuleCacheNamespaces(ctx context.Context, t 
 					if depth == 2 {
 						// An entrypoint module declares no dependencies, so
 						// its second level is a sibling a served sibling serves.
-						k.reached, k.query = "mid2", fmt.Sprintf("{mid2{call(address: %s, query: %s)}}", gqlString("/modules/"+id), gqlString(k.query))
+						k.reached, k.served, k.query = "mid2", id, fmt.Sprintf("{mid2{call(address: %s, query: %s)}}", gqlString("/modules/"+id), gqlString(k.query))
 					}
 				case legacyCallee:
 					tree = tree.
@@ -150,7 +151,7 @@ func (ModuleLoadingSuite) TestServeModuleCacheNamespaces(ctx context.Context, t 
 				}
 				if caller == dirCaller {
 					k.query = fmt.Sprintf("{mid{call(address: %s, query: %s)}}", gqlString("/modules/"+k.reached), gqlString(k.query))
-					k.reached = "mid"
+					k.reached, k.served = "mid", k.reached
 				}
 				cases = append(cases, k)
 			}
@@ -163,8 +164,19 @@ func (ModuleLoadingSuite) TestServeModuleCacheNamespaces(ctx context.Context, t 
 	gitCtr := goGitBase(t, c).
 		WithServiceBinding(gitHost, gitDaemon).
 		WithNewFile("dagger.toml", "\n")
+	// A host module, and a module served from its tree, serve only the
+	// clients their config lists.
+	localClients := map[string][]string{}
+	for _, k := range cases {
+		if k.caller == localCaller {
+			localClients["modules/caller"] = append(localClients["modules/caller"], "modules/"+k.reached)
+			if k.served != "" {
+				localClients["modules/"+k.reached] = append(localClients["modules/"+k.reached], "modules/"+k.served)
+			}
+		}
+	}
 	localCtr := goGitBase(t, c).
-		WithNewFile("dagger.toml", "[modules.caller]\nsource = \"modules/caller\"\n").
+		WithNewFile("dagger.toml", "[modules.caller]\nsource = \"modules/caller\"\n\n"+serveTreeClientsConfig(localClients)).
 		WithDirectory(".", tree)
 
 	for _, tc := range cases {

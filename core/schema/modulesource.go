@@ -1645,6 +1645,9 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 		return fail(err)
 	}
 	src.ContextDirectory = contextDir
+	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
+		src.DirSrc.ContextNarrowed = true
+	}
 	slog.Info("entrypoint sources evaluated", "module", src.ModuleName)
 	return nil
 }
@@ -1654,13 +1657,18 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 // without repository metadata, as evaluating sources and merging what it
 // returns narrows it, for a module whose include replaces sources.
 func keepDirectoryModuleOwnFiles(ctx context.Context, dag *dagql.Server, src *core.ModuleSource) error {
-	return dag.Select(ctx, src.DirSrc.OriginalContextDir, &src.ContextDirectory, dagql.Selector{
+	err := dag.Select(ctx, src.DirSrc.OriginalContextDir, &src.ContextDirectory, dagql.Selector{
 		Field: "filter",
 		Args: []dagql.NamedInput{
 			{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(moduleSourceContextIncludes(src)...))},
 			{Name: "exclude", Value: dagql.ArrayInput[dagql.String]{".git", "**/.git"}},
 		},
 	})
+	if err != nil {
+		return err
+	}
+	src.DirSrc.ContextNarrowed = true
+	return nil
 }
 
 // mergeEntrypointSources overlays the module's own files as the engine loads

@@ -11,8 +11,10 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger/core"
@@ -472,9 +474,7 @@ func (ModuleLoadingSuite) TestServeModuleCallerTree(ctx context.Context, t *test
 	t.Run("sibling served from a host module shares the caches of the same module loaded directly", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := goGitBase(t, c).
-			WithNewFile("dagger.toml", `[modules.caller]
-source = "modules/caller"
-`).
+			WithNewFile("dagger.toml", serveTreeCallerConfig("modules/hello")).
 			WithDirectory(".", serveTreeCachedModules(c))
 
 		out, err := ctr.
@@ -493,9 +493,10 @@ source = "modules/caller"
 	t.Run("sibling served from a host module resolves its contextual git to the host checkout", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := goGitBase(t, c).
-			WithNewFile("dagger.toml", `[modules.caller]
-source = "modules/caller"
-`).
+			WithNewFile("dagger.toml", "[modules.caller]\nsource = \"modules/caller\"\n\n"+serveTreeClientsConfig(map[string][]string{
+				"modules/caller": {"modules/gitctx", "modules/mid", "modules/usesgit"},
+				"modules/mid":    {"modules/gitctx"},
+			})).
 			WithDirectory(".", serveTreeGitModules(c)).
 			WithExec([]string{"git", "add", "."}).
 			WithExec([]string{"git", "commit", "-m", "init"})
@@ -652,9 +653,7 @@ source = "modules/gitctx"
 		c := connect(ctx, t)
 
 		_, err := goGitBase(t, c).
-			WithNewFile("dagger.toml", `[modules.caller]
-source = "modules/caller"
-`).
+			WithNewFile("dagger.toml", serveTreeCallerConfig("modules/escape")).
 			WithDirectory(".", serveTreeModules(c)).
 			WithNewFile("/outside/hello/dagger-module.toml", serveModuleHelloManifest).
 			WithNewFile("/outside/hello/main.dang", serveTreeDecoySource).
@@ -668,9 +667,7 @@ source = "modules/caller"
 		c := connect(ctx, t)
 
 		out, err := goGitBase(t, c).
-			WithNewFile("dagger.toml", `[modules.caller]
-source = "modules/caller"
-`).
+			WithNewFile("dagger.toml", serveTreeCallerConfig("modules/hello")).
 			WithDirectory(".", serveTreeModules(c)).
 			WithNewFile("modules/caller/nested.go", serveTreeNestedSource).
 			With(daggerCallAt("caller", "nested-message")).
@@ -686,9 +683,7 @@ source = "modules/caller"
 		// not hold the workspace, so the caller's tree has to be read from the
 		// host the workspace belongs to.
 		out, err := goGitBase(t, c).
-			WithNewFile("dagger.toml", `[modules.runner]
-source = "modules/runner"
-`).
+			WithNewFile("dagger.toml", "[modules.runner]\nsource = \"modules/runner\"\n\n"+serveTreeClientsConfig(map[string][]string{"modules/caller": {"modules/hello"}})).
 			WithDirectory(".", serveTreeModules(c)).
 			WithNewFile("modules/runner/dagger.json", strings.Replace(serveTreeCallerManifest, `"caller"`, `"runner"`, 1)).
 			WithNewFile("modules/runner/main.go", serveTreeWorkspaceNestedSource).
@@ -705,9 +700,7 @@ source = "modules/runner"
 	t.Run("module cached from another host serves from this host's tree", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		tree := goGitBase(t, c).
-			WithNewFile("dagger.toml", `[modules.caller]
-source = "modules/caller"
-`).
+			WithNewFile("dagger.toml", serveTreeCallerConfig("modules/hello")).
 			WithDirectory(".", serveTreeCachedModules(c))
 
 		first, second := serveTreeToken(), serveTreeToken()
@@ -729,9 +722,7 @@ source = "modules/caller"
 
 	t.Run("module cached from another checkout serves from this checkout's tree", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		manifest := `[modules.caller]
-source = "modules/caller"
-`
+		manifest := serveTreeCallerConfig("modules/hello")
 		// Two checkouts on one host: the same caller, different siblings.
 		ctr := goGitBase(t, c).
 			WithNewFile("/a/dagger.toml", manifest).
@@ -761,9 +752,7 @@ source = "modules/caller"
 		c := connect(ctx, t)
 		first, second := serveTreeToken(), serveTreeToken()
 		out, err := goGitBase(t, c).
-			WithNewFile("dagger.toml", `[modules.caller]
-source = "modules/caller"
-`).
+			WithNewFile("dagger.toml", serveTreeCallerConfig("modules/hello")).
 			WithDirectory(".", serveTreeCachedModules(c)).
 			With(daggerCallAt("caller", "cached", "--address=/modules/hello", "--token="+first)).
 			With(daggerCallAt("caller", "cached", "--address=/modules/hello", "--token="+second)).
@@ -778,7 +767,8 @@ source = "modules/caller"
 			WithDirectory(".", serveTreeCachedModules(c)).
 			WithNewFile("modules/caller/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, `name = "caller"`, 1)).
 			WithNewFile("modules/caller/entrypoint/main.dang", serveTreeEntrypointCaller).
-			WithoutFile("modules/caller/dagger.json")
+			WithoutFile("modules/caller/dagger.json").
+			WithNewFile("dagger.toml", serveTreeClientsConfig(map[string][]string{"modules/caller": {"modules/hello"}}))
 
 		first, second := serveTreeToken(), serveTreeToken()
 		out, err := tree.
@@ -809,7 +799,8 @@ source = "modules/caller"
 			WithDirectory(".", serveTreeCachedModules(c)).
 			WithNewFile("modules/caller/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, `name = "caller"`, 1)).
 			WithNewFile("modules/caller/entrypoint/main.dang", serveTreeEntrypointCaller).
-			WithoutFile("modules/caller/dagger.json")
+			WithoutFile("modules/caller/dagger.json").
+			WithNewFile("dagger.toml", serveTreeClientsConfig(map[string][]string{"modules/caller": {"modules/hello"}}))
 
 		out, err := tree.
 			With(daggerCallAt("./modules/caller", "shared", "--token="+token)).
@@ -838,7 +829,8 @@ source = "modules/caller"
 			return d.
 				WithNewFile("modules/caller/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, `name = "caller"`, 1)).
 				WithNewFile("modules/caller/entrypoint/main.dang", serveTreeEntrypointCaller).
-				WithoutFile("modules/caller/dagger.json")
+				WithoutFile("modules/caller/dagger.json").
+				WithNewFile("dagger.toml", serveTreeClientsConfig(map[string][]string{"modules/caller": {"modules/hello"}}))
 		}
 		ctr := goGitBase(t, c).
 			WithDirectory("/a", entrypointFiles(serveTreeCachedModules(c))).
@@ -878,7 +870,8 @@ source = "modules/caller"
 			WithDirectory(".", serveTreeCachedModules(c)).
 			WithNewFile("modules/caller/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, `name = "caller"`, 1)).
 			WithNewFile("modules/caller/entrypoint/main.dang", serveTreeEntrypointCaller).
-			WithoutFile("modules/caller/dagger.json")
+			WithoutFile("modules/caller/dagger.json").
+			WithNewFile("dagger.toml", serveTreeClientsConfig(map[string][]string{"modules/caller": {"modules/hello"}}))
 
 		out, err := tree.With(newSessionCall(first)).Stdout(ctx)
 		require.NoError(t, err)
@@ -897,7 +890,7 @@ source = "modules/caller"
 	// The legacy two-checkout case with each CLI in a session of its own.
 	t.Run("module cached from another checkout in another session serves from this checkout's tree", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		manifest := "[modules.caller]\nsource = \"modules/caller\"\n"
+		manifest := serveTreeCallerConfig("modules/hello")
 		first, second := serveTreeToken(), serveTreeToken()
 		newSessionCall := func(token string) core.WithContainerFunc {
 			return func(ctr *core.Container) *core.Container {
@@ -936,6 +929,7 @@ source = "modules/caller"
 			WithNewFile("modules/caller/dagger-module.toml", strings.Replace(sourcesModuleManifest, `name = "m"`, `name = "caller"`, 1)).
 			WithNewFile("modules/caller/entrypoint/main.dang", serveTreeEntrypointCaller).
 			WithoutFile("modules/caller/dagger.json").
+			WithNewFile("dagger.toml", serveTreeClientsConfig(map[string][]string{"modules/caller": {"modules/hello"}})).
 			WithNewFile("modules/outer/dagger-module.toml", `name = "outer"
 engineVersion = "latest"
 source = "."
@@ -984,6 +978,121 @@ source = "../caller"
 	})
 }
 
+// serveTreeLeafSource is a module that a served sibling serves in turn.
+func serveTreeLeafSource(message string) string {
+	return fmt.Sprintf(`type Leaf {
+  pub message: String! {
+    %q
+  }
+}
+`, message)
+}
+
+const serveTreeLeafManifest = `name = "leaf"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "dang"
+`
+
+// serveTreeSourcesHelloManifest names a module hello, so the caller's message
+// function calls it, whose entrypoint has a sources member, like the Go SDK's
+// generated entrypoint.
+const serveTreeSourcesHelloManifest = `name = "hello"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`
+
+// serveTreeIncludeHelloManifest is serveTreeSourcesHelloManifest with an
+// include list, which replaces the entrypoint's sources.
+const serveTreeIncludeHelloManifest = `name = "hello"
+include = []
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`
+
+// serveTreeSourcesHelloEntrypoint keeps only the module's own directory in its
+// sources, and its message serves the leaf beside it from a process it
+// starts, and returns the leaf's answer. Like a generated entrypoint, it keys
+// that process on the call through callDigest.
+var serveTreeSourcesHelloEntrypoint = fmt.Sprintf(`type Entrypoint implements ModuleEntrypoint {
+  pub sources(workspace: Workspace!): Directory! {
+    directory.withDirectory(workspace.cwd, workspace.directory(".", gitignore: true))
+  }
+
+  pub types: [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Hello")
+        .withConstructor(function("", typeDef.withObject("Hello")))
+        .withFunction(function("Message", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!, callDigest: String): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else {
+      (JSON.encode(
+        container
+          .from(%q)
+          .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
+          .withFile("/serve.sh", currentModule.source.file("serve.sh"))
+          .withExec(["sh", "/serve.sh"], experimentalPrivilegedNesting: true)
+          .stdout
+      ) :: JSON!)
+    }
+  }
+}
+`, alpineImage)
+
+const serveTreeSourcesHelloScript = `set -e
+apk add -q curl
+q() { curl -s -u "$DAGGER_SESSION_TOKEN:" -H 'Content-Type: application/json' -d "$1" "http://127.0.0.1:$DAGGER_SESSION_PORT/query"; echo; }
+q '{"query":"{serveModule(address: \"../leaf\")}"}'
+q '{"query":"{leaf{message}}"}'
+`
+
+// serveTreeChainModules is a tree whose caller serves hello, a module with
+// entrypoint sources, which serves leaf in turn.
+func serveTreeChainModules(c *dagger.Client, nonce string) *core.Directory {
+	return core.NewQuery(c).Directory().
+		WithNewFile("modules/caller/dagger.json", serveTreeCallerManifest).
+		WithNewFile("modules/caller/main.go", serveTreeCallerSource).
+		WithNewFile("modules/caller/nonce.go", "package main\n\n// "+nonce+"\n").
+		WithNewFile("modules/mid/dagger-module.toml", serveTreeSourcesHelloManifest).
+		WithNewFile("modules/mid/entrypoint/main.dang", serveTreeSourcesHelloEntrypoint).
+		WithNewFile("modules/mid/serve.sh", serveTreeSourcesHelloScript).
+		WithNewFile("modules/mid/nonce.txt", nonce+"\n").
+		WithNewFile("modules/leaf/dagger-module.toml", serveTreeLeafManifest).
+		WithNewFile("modules/leaf/main.dang", serveTreeLeafSource("hi from leaf"))
+}
+
+// serveTreeClientsConfig is a dagger.toml whose SDK scopes list each module's
+// local clients, as `dagger module client add` writes them: scopes maps a
+// module's directory to its clients' directories.
+func serveTreeClientsConfig(scopes map[string][]string) string {
+	cfg := "[modules.go]\nsource = \"go\"\n\n[sdks.go]\nmodule = \"go\"\n"
+	for _, scope := range slices.Sorted(maps.Keys(scopes)) {
+		clients := make([]string, 0, len(scopes[scope]))
+		for _, client := range scopes[scope] {
+			clients = append(clients, strconv.Quote("./"+client))
+		}
+		cfg += fmt.Sprintf("\n[sdks.go.scopes.%q]\nis-module = true\nclients = [%s]\n", scope, strings.Join(clients, ", "))
+	}
+	return cfg
+}
+
+// serveTreeCallerConfig installs the caller module and lists its clients.
+func serveTreeCallerConfig(clients ...string) string {
+	return "[modules.caller]\nsource = \"modules/caller\"\n\n" + serveTreeClientsConfig(map[string][]string{"modules/caller": clients})
+}
+
 // twoBranchRepo commits tree on main, and on next the same tree with one file
 // changed.
 func twoBranchRepo(c *dagger.Client, tree *core.Directory, path, contents string) *core.Directory {
@@ -1010,6 +1119,155 @@ func twoBranchRepo(c *dagger.Client, tree *core.Directory, path, contents string
 // served module leaves the caller's result stale. Every subtest gets its own
 // caller, so parallel subtests never hit each other's results.
 func (ModuleLoadingSuite) TestServeModuleCallerTreeCache(ctx context.Context, t *testctx.T) {
+	t.Run("host module refuses to serve a module dagger.toml does not list", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := goGitBase(t, c).
+			WithNewFile("dagger.toml", serveTreeCallerConfig()).
+			WithDirectory(".", serveTreeModules(c)).
+			With(daggerCallAt("caller", "message", "--address=/modules/hello")).
+			Stdout(ctx)
+		requireErrOut(t, err, `"modules/hello" is not one of its clients`)
+	})
+
+	t.Run("module with entrypoint sources served from a host module follows a change to the module it serves", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := goGitBase(t, c).
+			WithNewFile("dagger.toml", "[modules.caller]\nsource = \"modules/caller\"\n\n"+serveTreeClientsConfig(map[string][]string{
+				"modules/caller": {"modules/mid"},
+				"modules/mid":    {"modules/leaf"},
+			})).
+			WithDirectory(".", serveTreeChainModules(c, rand.Text()))
+
+		out, err := ctr.With(daggerCallAt("caller", "message", "--address=/modules/mid")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"message":"hi from leaf"`)
+
+		out, err = ctr.
+			WithNewFile("modules/leaf/main.dang", serveTreeLeafSource("changed leaf")).
+			With(daggerCallAt("caller", "message", "--address=/modules/mid")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"message":"changed leaf"`)
+	})
+
+	t.Run("module with entrypoint sources served from a git module follows a new commit of the module it serves", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		tree := serveTreeChainModules(c, rand.Text()).
+			WithNewFile("dagger.toml", serveTreeClientsConfig(map[string][]string{"modules/mid": {"modules/leaf"}}))
+		gitDaemon, repoURL := gitService(ctx, t, c,
+			twoBranchRepo(c, tree, "modules/leaf/main.dang", serveTreeLeafSource("changed leaf")))
+		gitHost, err := gitDaemon.Hostname(ctx)
+		require.NoError(t, err)
+		ctr := goGitBase(t, c).
+			WithServiceBinding(gitHost, gitDaemon).
+			WithNewFile("dagger.toml", "\n")
+
+		out, err := ctr.With(daggerCallAt(repoURL+"#main:modules/caller", "message", "--address=/modules/mid")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"message":"hi from leaf"`)
+
+		out, err = ctr.With(daggerCallAt(repoURL+"#next:modules/caller", "message", "--address=/modules/mid")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"message":"changed leaf"`)
+	})
+
+	// A module served from a host module's tree has a key covering that whole
+	// tree, but the host module's key covers it only as its own files and the
+	// clients it lists.
+	t.Run("module served from a host module refuses to serve a module dagger.toml does not list", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := goGitBase(t, c).
+			WithNewFile("dagger.toml", serveTreeCallerConfig("modules/mid")).
+			WithDirectory(".", serveTreeCachedModules(c)).
+			With(daggerCallAt("caller", "chain", "--address=/modules/mid", "--next=../hello", "--token=same")).
+			Stdout(ctx)
+		requireErrOut(t, err, `"modules/hello" is not one of its clients`)
+	})
+
+	t.Run("host module follows a change to a module its client serves", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := goGitBase(t, c).
+			WithNewFile("dagger.toml", "[modules.caller]\nsource = \"modules/caller\"\n\n"+serveTreeClientsConfig(map[string][]string{
+				"modules/caller": {"modules/mid"},
+				"modules/mid":    {"modules/hello"},
+			})).
+			WithDirectory(".", serveTreeCachedModules(c))
+
+		out, err := ctr.With(daggerCallAt("caller", "chain", "--address=/modules/mid", "--next=../hello", "--token=same")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "same\n", out)
+
+		out, err = ctr.
+			WithNewFile("modules/hello/main.dang", serveTreeOtherHelloSource).
+			With(daggerCallAt("caller", "chain", "--address=/modules/mid", "--next=../hello", "--token=same")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "other same", out)
+	})
+
+	for _, tc := range []struct {
+		name     string
+		manifest string
+	}{
+		{name: "entrypoint sources", manifest: serveTreeSourcesHelloManifest},
+		{name: "an include that replaces entrypoint sources", manifest: serveTreeIncludeHelloManifest},
+	} {
+		t.Run("module with "+tc.name+" refuses to serve a module dagger.toml does not list", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			gitDaemon, repoURL := gitService(ctx, t, c, serveTreeChainModules(c, rand.Text()).
+				WithNewFile("modules/mid/dagger-module.toml", tc.manifest))
+			gitHost, err := gitDaemon.Hostname(ctx)
+			require.NoError(t, err)
+
+			// The served module's process prints the error serving leaf returns.
+			out, err := goGitBase(t, c).
+				WithServiceBinding(gitHost, gitDaemon).
+				WithNewFile("dagger.toml", "\n").
+				With(daggerCallAt(repoURL+"#main:modules/caller", "message", "--address=/modules/mid")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, `\"modules/leaf\" is not one of its clients`)
+		})
+	}
+
+	// The served module's clients are listed in a dagger.toml nearer to it
+	// than the caller's, which governs it.
+	subTree := func(t *testctx.T, c *dagger.Client, subConfig string) *core.Container {
+		chain := serveTreeChainModules(c, rand.Text())
+		return goGitBase(t, c).
+			WithNewFile("dagger.toml", serveTreeCallerConfig("sub/mid")).
+			WithDirectory("modules/caller", chain.Directory("modules/caller")).
+			WithDirectory("sub/mid", chain.Directory("modules/mid")).
+			WithDirectory("sub/leaf", chain.Directory("modules/leaf")).
+			WithNewFile("sub/dagger.toml", subConfig)
+	}
+
+	t.Run("host module follows a change to a client its client's own dagger.toml lists", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := subTree(t, c, serveTreeClientsConfig(map[string][]string{"mid": {"leaf"}}))
+
+		out, err := ctr.With(daggerCallAt("caller", "message", "--address=/sub/mid")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"message":"hi from leaf"`)
+
+		out, err = ctr.
+			WithNewFile("sub/leaf/main.dang", serveTreeLeafSource("changed leaf")).
+			With(daggerCallAt("caller", "message", "--address=/sub/mid")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"message":"changed leaf"`)
+	})
+
+	t.Run("refusal says what to add to the dagger.toml that governs the module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := subTree(t, c, serveTreeClientsConfig(nil)).
+			With(daggerCallAt("caller", "message", "--address=/sub/mid")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		// The process prints the error as JSON, which escapes < and >.
+		require.Contains(t, out, `add \"./leaf\" to clients under [sdks.\u003csdk\u003e.scopes.\"mid\"] in sub/dagger.toml`)
+	})
+
 	t.Run("git module follows a new commit of a sibling it serves", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		tree := serveTreeModules(c).
