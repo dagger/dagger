@@ -2768,7 +2768,7 @@ func (dir *Directory) withDirectory(
 		var ownership *Ownership
 		if owner != "" {
 			var err error
-			ownership, err = resolveDirectoryOwner(destRoot, owner)
+			ownership, err = resolveDirectoryOwner(filepath.Join(destRoot, boundary), owner)
 			if err != nil {
 				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 			}
@@ -2985,7 +2985,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 		}
 		var ownership *Ownership
 		if owner != "" {
-			ownerRoot := copyDest
+			ownerRoot := filepath.Join(copyDest, boundary)
 			if parentRoot != "" {
 				ownerRoot = parentRoot
 			}
@@ -3422,7 +3422,7 @@ func (dir *Directory) copyFiles(
 		var ownership *Ownership
 		if owner != "" {
 			var err error
-			ownership, err = resolveDirectoryOwner(root, owner)
+			ownership, err = resolveViewOwner(root, ourDir, owner)
 			if err != nil {
 				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 			}
@@ -4315,6 +4315,17 @@ func ParseDirectoryOwner(owner string) (*Ownership, error) {
 	}, nil
 }
 
+// resolveViewOwner resolves owner, a user and group by name or id, for the
+// directory at dirPath of the filesystem mounted at root, in that directory's
+// own account databases, as if it were the whole filesystem.
+func resolveViewOwner(root, dirPath, owner string) (*Ownership, error) {
+	boundary, err := viewBase(root, dirPath)
+	if err != nil {
+		return nil, err
+	}
+	return resolveDirectoryOwner(filepath.Join(root, boundary), owner)
+}
+
 func resolveDirectoryOwner(root, owner string) (*Ownership, error) {
 	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
 
@@ -4397,7 +4408,7 @@ func (dir *Directory) Chown(ctx context.Context, parent dagql.ObjectResult[*Dire
 		return err
 	}
 	err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
-		ownership, err := resolveDirectoryOwner(root, owner)
+		ownership, err := resolveViewOwner(root, parentDir, owner)
 		if err != nil {
 			return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
 		}
