@@ -164,12 +164,15 @@ type SchemaBuilderMemo struct {
 	// of nested clients. It never shares their query roots or installed fields.
 	canonicalArgTypes map[string]*canonicalArgType
 	modTypes          map[modTypeMemoKey]*modTypeMemoEntry
-	schemaASTs        map[string]*dagql.SchemaASTCache
 	gitClients        map[declaredGitClientsKey]*declaredGitClientsEntry
 	// moduleServers holds the client's standalone server for each module
 	// whose artifacts it discovers, evaluates or checks
 	// (dagqlServerForModule).
 	moduleServers map[string]*moduleServerEntry
+	// builtModuleSets holds what this session built a schema server for, by
+	// module set, and builtServers how many it holds (countSchemaBuild).
+	builtModuleSets map[string]*sessionBuilds
+	builtServers    int
 }
 
 func NewSchemaBuilderMemo() *SchemaBuilderMemo {

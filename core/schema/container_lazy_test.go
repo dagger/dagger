@@ -457,3 +457,27 @@ func TestMountConstructionLeavesParentBytesPending(t *testing.T) {
 	require.True(t, f.HasPendingLazyComputation())
 	require.Empty(t, server.manager.outputs)
 }
+
+// A container an image fills isn't the scratch container From may give a
+// content digest: From keeps its environment (PREFIX here), so sharing a
+// scratch parent's From would serve results without it. A builtin isn't
+// scratch before its image fills it either.
+func TestImageFilledContainerIsNoScratchForFrom(t *testing.T) {
+	ctx, _, cache, server, parent := builtinLazyFixture(t, false, false)
+	require.False(t, parent.Self().CanUseFromContentDigest(), "unevaluated builtin")
+	manifest := parent.Self().Lazy.(*core.ContainerBuiltinLazy).ManifestDigest
+	store := testutil.NewStore(t)
+	server.manager.SnapshotManager = store.Manager
+	server.manager.imageRef, _ = store.Build(t, nil, "go/pkg/data", "saved")
+	require.NoError(t, cache.Evaluate(ctx, parent))
+	require.False(t, parent.Self().CanUseFromContentDigest(), "evaluated builtin")
+
+	info, err := server.content.Info(ctx, manifest)
+	require.NoError(t, err)
+	ctr := core.NewContainer(server.platform)
+	require.True(t, ctr.CanUseFromContentDigest())
+	ctr, err = ctr.FromOCIStore(ctx, ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: manifest, Size: info.Size}, "")
+	require.NoError(t, err)
+	require.Contains(t, ctr.Config.Env, "PREFIX=/go")
+	require.False(t, ctr.CanUseFromContentDigest(), "container filled from an OCI store")
+}

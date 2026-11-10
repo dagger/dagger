@@ -23,6 +23,10 @@ func (c *Copier) CopyFile(context.Context, Mount, string, string, CopyOptions) e
 	return errors.New("layercopy is only implemented on linux")
 }
 
+func (c *Copier) CopyFileFromLayer(context.Context, string, string, string, CopyOptions) (bool, error) {
+	return false, errors.New("layercopy is only implemented on linux")
+}
+
 func (c *Copier) Mkdir(context.Context, string, CopyOptions) error {
 	return errors.New("layercopy is only implemented on linux")
 }

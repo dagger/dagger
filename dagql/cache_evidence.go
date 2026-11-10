@@ -67,6 +67,12 @@ type CacheDecision struct {
 	// resource requirements. Meaningful only for misses (Outcome executed).
 	MissIncompatibleCandidates bool
 
+	// MissUnavailableParts records that the lookup passed by a candidate
+	// because a part of its value that a demand found no source for is still
+	// incomplete: the call runs again to make it. Meaningful only for misses
+	// (Outcome executed).
+	MissUnavailableParts bool
+
 	// MissSawExpired records that TTL expiry eliminated at least one
 	// otherwise-matching result during candidate accumulation. Meaningful only
 	// for misses (Outcome executed).
@@ -85,6 +91,35 @@ type CacheDecision struct {
 	// choice. Meaningful only for misses (Outcome executed).
 	MissProducerReleased bool
 	MissRequirementsGrew bool
+
+	// MissExpiredRemote records that a candidate expiry eliminated (see
+	// MissSawExpired) was a value a Cloud merge installed, and
+	// MissIncompatibleRemote that a session-incompatible candidate (see
+	// MissIncompatibleCandidates) was. Meaningful only for misses (Outcome
+	// executed). A serve-time miss keeps HitRemote for the hit it chose.
+	MissExpiredRemote      bool
+	MissIncompatibleRemote bool
+
+	// MissFreshInputs are the indices into StructuralInputs of the inputs
+	// whose equivalence class was the input of no term at lookup time, so no
+	// term could match: the inputs new to the cache. Recorded when the
+	// structural lookup was possible (every input known). Meaningful only for
+	// misses (Outcome executed).
+	MissFreshInputs []int
+
+	// MissRemoteLookup is what the miss did about asking the remote cache
+	// service for the call's value (RemoteLookupQueued, RemoteLookupAsked or
+	// RemoteLookupDropped), or "" when no connection serves lookups.
+	// Meaningful only for misses (Outcome executed).
+	MissRemoteLookup string
+
+	// Adopted records that the publication this call executed or joined
+	// adopted its recipe's live current entry in place of the call's new
+	// value; AdoptedRemote that the entry's value came from a Cloud merge,
+	// and AdoptedMergedAtUnixNano when that merge committed (0 when unknown).
+	Adopted                 bool
+	AdoptedRemote           bool
+	AdoptedMergedAtUnixNano int64
 
 	// SelfDigest is the engine-derived structural self digest of the call.
 	// Empty for CacheOutcomeUncached, whose path skips identity derivation.
@@ -122,6 +157,10 @@ type CacheResultState struct {
 	ExpiresAtUnix int64
 	// Parts are the part addresses of the entry's complete parts, sorted.
 	Parts []string
+	// PartSizes are the raw sizes of Parts, index-aligned, on an engine with
+	// the remote cache (completePartKeysAndSizes); nil elsewhere, and when a
+	// size could not be read.
+	PartSizes []int64
 	// Replacements counts the replacements of the entry's value in place;
 	// the state above describes the current value.
 	Replacements uint64

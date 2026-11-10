@@ -82,3 +82,32 @@ func TestArtifactCollectionItemNames(t *testing.T) {
 		})
 	}
 }
+
+func TestArtifactIsCollectionItem(t *testing.T) {
+	key := "first"
+	emptyKey := ""
+	dimension := &ArtifactDimension{Identifier: "app/cases"}
+	item := &ModTreeNode{CollectionDimension: dimension, CollectionKey: &key}
+	for _, tc := range []struct {
+		name     string
+		artifact *Artifact
+		item     bool
+	}{
+		{"ordinary check", &Artifact{Node: &ModTreeNode{Name: "lint"}}, false},
+		{"collection definition", &Artifact{Node: &ModTreeNode{CollectionDimension: dimension}}, false},
+		{"collection item", &Artifact{Node: &ModTreeNode{Name: "check", Parent: item}}, true},
+		{"nested check", &Artifact{Node: &ModTreeNode{Name: "check", Parent: &ModTreeNode{Parent: item}}}, true},
+		{"empty item key", &Artifact{Node: &ModTreeNode{CollectionDimension: dimension, CollectionKey: &emptyKey}}, true},
+		{"legacy aggregate with selected keys", &Artifact{
+			Node:          &ModTreeNode{Name: "check", LegacyBatchKeys: []string{"first", "second"}},
+			DimensionKeys: []*ArtifactDimensionKey{{Dimension: "app/cases", Key: "first"}},
+		}, false},
+		{"legacy aggregate within a parent item", &Artifact{
+			Node: &ModTreeNode{Name: "check", LegacyBatchKeys: []string{"first", "second"}, Parent: item},
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.item, tc.artifact.IsCollectionItem())
+		})
+	}
+}

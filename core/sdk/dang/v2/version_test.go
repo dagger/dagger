@@ -370,17 +370,17 @@ func TestDeclaresEntrypointSourcesAtVersion(t *testing.T) {
 		"main.dang": entrypointSource(sourcesMember, goSDKMethods) + legacyCommaSource,
 	})
 
-	declared, err := DeclaresEntrypointSources(dir, "2.0")
+	declared, err := DeclaresEntrypointSources(t.Context(), dir, "2.0")
 	require.NoError(t, err)
 	require.True(t, declared)
 
 	// Parsed as the default version, the file does not parse, so it declares
 	// nothing.
-	declared, err = DeclaresEntrypointSources(dir, "")
+	declared, err = DeclaresEntrypointSources(t.Context(), dir, "")
 	require.NoError(t, err)
 	require.False(t, declared)
 
-	_, err = DeclaresEntrypointSources(dir, "99.0")
+	_, err = DeclaresEntrypointSources(t.Context(), dir, "99.0")
 	require.ErrorContains(t, err, "module entrypoint Dang version")
 }
 

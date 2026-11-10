@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/distribution/reference"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
@@ -28,10 +30,10 @@ import (
 func resolveModuleRef(ctx context.Context, address *core.Address, typeName string, dest any) (bool, error) {
 	addr := address.Value
 	ws := address.BoundWorkspace
+	if isExternalAddress(address) {
+		return false, nil
+	}
 	if !dagaddress.IsAddress(addr) {
-		if strings.Contains(addr, "://") || ws.Self() != nil || address.ExternalOnly {
-			return false, nil
-		}
 		return resolveLegacyModuleRef(ctx, addr, dest)
 	}
 	if ws.Self() == nil {
@@ -72,6 +74,16 @@ func resolveModuleRef(ctx context.Context, address *core.Address, typeName strin
 		return true, fmt.Errorf("resolve %q: %w", addr, err)
 	}
 	return true, nil
+}
+
+// isExternalAddress reports whether the address keeps its external meaning,
+// such as an image reference, without any lookup of a module reference: it
+// has no dag:// scheme, and it is bound to a workspace, external-only, or has
+// another scheme.
+func isExternalAddress(address *core.Address) bool {
+	addr := address.Value
+	return !dagaddress.IsAddress(addr) &&
+		(strings.Contains(addr, "://") || address.BoundWorkspace.Self() != nil || address.ExternalOnly)
 }
 
 // hasModuleRefScope reports whether a decoder that skips legacy module
@@ -340,8 +352,8 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Address]{
 		dagql.Func("value", s.value).
 			Doc(`The address value`),
-		dagql.NodeFunc("container", s.container).
-			WithInput(dagql.PerCallInput).
+		dagql.NodeFuncWithDynamicInputs("container", s.container, s.containerDynamicInputs).
+			Reevaluate().
 			Doc(`Load a container from the address.`).
 			Args(noLockArg("image tag")),
 		dagql.NodeFunc("directory", s.directory).
@@ -756,6 +768,79 @@ func withRefName(q []dagql.Selector, name string) []dagql.Selector {
 func getLocalPath(path string) string {
 	// file://PATH -> PATH
 	return strings.TrimPrefix(path, "file://")
+}
+
+// containerDynamicInputs keys Address.container like the lookup it makes. An
+// external address loads its image through Container.from, so it shares that
+// call's scope: a tag resolves once per session and workspace lock, and every
+// evaluation of a module setting set to it gets the same container. A tag the
+// workspace lock pins resolves to the pinned image in any session, so it is
+// keyed by the pin instead. A DAG address or a legacy module reference runs a
+// function that may give a new result each time, so it stays per call, as
+// does an address Container.from can't parse, whose error the lookup reports.
+func (s *addressSchema) containerDynamicInputs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Address],
+	args AddressLookupArgs,
+	req *dagql.CallRequest,
+) error {
+	if isExternalAddress(parent.Self()) {
+		pin, err := lockedImagePin(ctx, parent.Self().Value, args, req)
+		if err != nil {
+			return err
+		}
+		if pin != "" {
+			return req.SetImplicitInput(ctx, addressImagePinInput, dagql.NewString(pin))
+		}
+		scope, err := fromSessionScopeInput.Resolver(ctx, map[string]dagql.Input{
+			"address": dagql.NewString(parent.Self().Value),
+		})
+		if err == nil {
+			return req.SetImplicitInput(ctx, fromSessionScopeInput.Name, scope)
+		}
+	}
+	perCall, err := dagql.PerCallInput.Resolver(ctx, nil)
+	if err != nil {
+		return err
+	}
+	return req.SetImplicitInput(ctx, dagql.PerCallInput.Name, perCall)
+}
+
+const addressImagePinInput = "imagePin"
+
+// lockedImagePin returns the digest the workspace lock pins an image tag to,
+// when Container.from would load the tag through that pin: the address names
+// a tag, and neither noLock, a lock refresh, nor the call's API view sets the
+// lock aside. It returns "" otherwise, including for an address that names
+// only a repository, whose lookup may select its latest release instead.
+func lockedImagePin(ctx context.Context, address string, args AddressLookupArgs, req *dagql.CallRequest) (string, error) {
+	if args.NoLock {
+		return "", nil
+	}
+	ref, err := reference.ParseNormalizedNamed(address)
+	if err != nil {
+		// Keyed as before, the lookup reports the address it can't parse.
+		return "", nil //nolint:nilerr // deliberate: no pin, not a failure
+	}
+	if reference.IsNameOnly(ref) {
+		return "", nil
+	}
+	if _, canonical := ref.(reference.Canonical); canonical {
+		return "", nil
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	// The lock applies as the call's API view allows.
+	ctx = dagql.ContextWithCall(ctx, req.ResultCall)
+	lookupLock, err := lookupLockForAPI(ctx, query, workspace.LockOperationOCISHA)
+	if err != nil {
+		return "", err
+	}
+	resolution := resolveLookupFromLoadedLock(lookupLock, workspace.LockOperationOCISHA,
+		workspace.LookupInputs([]any{reference.TagNameOnly(ref).String()}))
+	return resolution.Pin, nil
 }
 
 func (s *addressSchema) container(

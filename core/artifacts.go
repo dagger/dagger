@@ -111,6 +111,18 @@ type ArtifactURIOpts struct {
 	Full bool
 }
 
+// IsCollectionItem reports whether the artifact runs under a collection member.
+// Inspect the receiver path, not address keys: a legacy whole-collection check
+// can retain selected keys without executing as an individual item.
+func (a *Artifact) IsCollectionItem() bool {
+	for node := a.Node; node != nil; node = node.Parent {
+		if node.CollectionDimension != nil && node.CollectionKey != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // URI is the artifact's DAG address. See hack/designs/collections-issue.md,
 // section 4.
 func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
@@ -1160,6 +1172,29 @@ func (a *Artifacts) EncodePersistedObject(_ context.Context, enc *dagql.PersistE
 func (*Artifacts) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, raw json.RawMessage) (dagql.Typed, error) {
 	return decodeArtifacts(ctx, dec, raw)
 }
+
+// ArtifactItems is a list of artifacts that owns what they reference, as
+// each artifact does as a result of its own. A list of plain values owns
+// nothing, so a kept list of artifacts would store references to results it
+// doesn't keep.
+type ArtifactItems struct {
+	dagql.Array[*Artifact]
+}
+
+var _ dagql.HasDependencyResults = ArtifactItems{}
+
+func (items ArtifactItems) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	var owned []dagql.AnyResult
+	for _, item := range items.Array {
+		deps, err := item.AttachDependencyResults(ctx, nil, attach)
+		if err != nil {
+			return nil, err
+		}
+		owned = append(owned, deps...)
+	}
+	return owned, nil
+}
+
 func (a *Artifact) AttachDependencyResults(_ context.Context, _ dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	owned, err := attachModTreeNodeDependencyResults(a.Node, attach)
 	if err != nil {

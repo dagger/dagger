@@ -11,13 +11,16 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/core"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	toml "github.com/pelletier/go-toml"
 	"golang.org/x/mod/modfile"
 
 	"github.com/dagger/dagger/engine/distconsts"
 
 	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
+	"dagger/engine-dev/internal/dagger/clients/wolfi"
 
 	"github.com/dagger/dagger/sdk/typescript/runtime/tsdistconsts"
 )
@@ -45,7 +48,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 	pythonImageSource := build.source.Directory("sdk/python/runtime/images/base")
 	uvImageSource := build.source.Directory("sdk/python/runtime/images/uv")
 
-	pySrc := dag.Directory().WithDirectory(
+	pySrc := core.NewDirectory().WithDirectory(
 		"/",
 		build.source.Directory("sdk/python"),
 		dagger.DirectoryWithDirectoryOpts{
@@ -117,7 +120,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 		}).
 		WithFile("dist/codegen", codegen)
 
-	sdkCtrTarball := dag.Container().
+	sdkCtrTarball := core.NewContainer().
 		WithRootfs(rootfs).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
@@ -143,12 +146,12 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 const TypescriptSDKTSXVersion = "4.15.6"
 
 func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, error) {
-	tsxNodeModule := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+	tsxNodeModule := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultNodeImageRef).
 		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("tsx@%s", TypescriptSDKTSXVersion)}).
 		Directory("/usr/local/lib/node_modules/tsx")
 
-	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
+	rootfs := core.NewDirectory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			"src/**/*.ts",
 			"LICENSE",
@@ -165,7 +168,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		},
 	})
 
-	bunBuilderCtr := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+	bunBuilderCtr := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultBunImageRef).
 		// NodeJS is required to run tsc.
 		WithExec([]string{"apk", "add", "nodejs"}).
@@ -189,7 +192,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		WithExec([]string{"tsc", "--emitDeclarationOnly"}).
 		WithExec([]string{"bun", "x", "rollup", "-c", "rollup.dts.config.mjs", "-o", "/out-node/core.d.ts"})
 
-	sdkCtrTarball := dag.Container().
+	sdkCtrTarball := core.NewContainer().
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
 		// We need to mount the typescript library because bun will not be able to resolve the
@@ -226,11 +229,11 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	if err != nil {
 		return nil, err
 	}
-	sdkCache := dag.Container().
+	sdkCache := core.NewContainer().
 		From(consts.GolangImage).
 		With(build.goPlatformEnv).
 		// import xx
-		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
+		WithDirectory("/", core.NewContainer().From(consts.XxImage).Rootfs()).
 		// set envs read by xx
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
@@ -257,15 +260,34 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 		WithExec([]string{"go", "mod", "tidy"}).
 		WithExec([]string{"go", "list", "-m", "all"})
 
-	sdkCtrTarball := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+	// golangci-lint's export driver serves codegen the export data of what a
+	// module imports from dagger/go's archives, so no Go build cache ships.
+	exportDriver := core.NewContainer().
+		From(consts.GolangImage).
+		With(build.goPlatformEnv).
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithDirectory("/src", core.Git("https://github.com/dagger/golangci-lint").
+			Commit(consts.GolangciLintCommit).
+			Tree().
+			Directory("helpers/export-driver")).
+		WithWorkdir("/src").
+		WithExec([]string{"go", "build", "-o", "/export-driver", "."}).
+		File("/export-driver")
+
+	sdkCtrTarball := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.GolangImage).
 		With(build.goPlatformEnv).
 		WithExec([]string{"apk", "add", "git", "openssh", "openssl"}).
 		WithEnvVariable("GOTOOLCHAIN", "auto").
 		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
-		// these cache directories should match the cache volume locations in the engine's goSDK.base
+		WithFile("/usr/local/bin/export-driver", exportDriver).
+		// The Go SDK module, which the engine loads for every module with the
+		// Go runtime. It depends on dagger/go by go-sdk's pin, and builds
+		// every runtime with it as dagger/go builds a user's Go code: one
+		// graph of package builds and one cache.
+		WithDirectory("/sdk/runtime", build.source.Directory("sdk/go/runtime")).
+		// this cache directory should match the module cache volume location in the engine's goSDK.base
 		WithDirectory("/go/pkg/mod", sdkCache.Directory("/go/pkg/mod")).
-		WithDirectory("/root/.cache/go-build", sdkCache.Directory("/root/.cache/go-build")).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
@@ -287,11 +309,153 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	}, nil
 }
 
+// GoImageEntriesSeed is the Go module whose dependencies' builds the engine
+// image ships for Go module runtimes: a module as module codegen generates
+// one (goModuleSeed), tidied with the dagger.io/dagger version codegen pins,
+// whose main package imports every package of the standard library a build
+// can import and everything generated module code imports. The builds of what its
+// root package imports are what every Go module's codegen and runtime build
+// read first: the standard library and the constant dependencies.
+func (build *Builder) GoImageEntriesSeed(ctx context.Context) (*dagger.Directory, error) {
+	seedMod, libVersion, err := goModuleSeed(ctx, build.source)
+	if err != nil {
+		return nil, err
+	}
+	stdList, err := core.NewContainer().
+		From(consts.GolangImage).
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithExec([]string{"go", "list", "-e", "-f", "{{if and (not .Incomplete) (ne .Name \"main\") (not .Error)}}{{.ImportPath}}{{end}}", "std"}).
+		Stdout(ctx)
+	if err != nil {
+		return nil, err
+	}
+	generated, err := goFileImports(ctx, build.source.File("sdk/go/internal/codegendeps/codegendeps.go"))
+	if err != nil {
+		return nil, err
+	}
+	// Generated module code imports these, and none of dagger.io/dagger:
+	// a module has bindings of its own.
+	imports := generated
+	for _, pkg := range strings.Split(strings.TrimSpace(stdList), "\n") {
+		if pkg == "" || strings.HasPrefix(pkg, "vendor/") || strings.HasPrefix(pkg, "cmd/") ||
+			pkg == "internal" || strings.HasPrefix(pkg, "internal/") || strings.Contains(pkg, "/internal/") || strings.HasSuffix(pkg, "/internal") {
+			continue
+		}
+		imports = append(imports, pkg)
+	}
+	var mainGo strings.Builder
+	mainGo.WriteString("package main\n\nimport (\n")
+	for _, imp := range imports {
+		fmt.Fprintf(&mainGo, "\t_ %q\n", imp)
+	}
+	mainGo.WriteString(")\n\nfunc main() {}\n")
+	return core.NewContainer().
+		From(consts.GolangImage).
+		WithEnvVariable("GOPROXY", seedGoProxy).
+		WithDirectory("/seed", seedMod.WithNewFile("main.go", mainGo.String())).
+		WithWorkdir("/seed").
+		WithExec([]string{"go", "get", "dagger.io/dagger@" + libVersion}).
+		WithExec([]string{"go", "mod", "tidy"}).
+		Directory("/seed"), nil
+}
+
+// seedGoProxy is the GOPROXY of the seeds' downloads: proxy.golang.org
+// sometimes resets a module zip download mid-stream, which Go's default fails
+// on; "|" retries the proxy once, then fetches from the origin, as the Go SDK
+// does (core/sdk's goSDKDefaultGoProxy). go.sum still verifies the result.
+const seedGoProxy = "https://proxy.golang.org|https://proxy.golang.org|direct"
+
+// GoSDKVersions is what go-sdk's versions.toml names that the engine
+// image's builds for go-sdk's modules depend on.
+type GoSDKVersions struct {
+	// DefaultTarget is the dagger.io/dagger release a new module pins.
+	DefaultTarget string `toml:"defaultTarget"`
+	// DaggerGo is the dagger/go its modules build with.
+	DaggerGo string `toml:"daggerGo"`
+}
+
+// ReadGoSDKVersions reads go-sdk's versions.toml from goSDK, go-sdk's tree.
+func ReadGoSDKVersions(ctx context.Context, goSDK *dagger.Directory) (GoSDKVersions, error) {
+	var versions GoSDKVersions
+	contents, err := goSDK.File("versions.toml").Contents(ctx)
+	if err != nil {
+		return versions, err
+	}
+	if err := toml.Unmarshal([]byte(contents), &versions); err != nil {
+		return versions, fmt.Errorf("parse go-sdk's versions.toml: %w", err)
+	}
+	return versions, nil
+}
+
+// GoSDKImageEntriesSeed is the Go module whose dependencies' builds the
+// engine image ships for the modules go-sdk generates: one that imports
+// what their generated code imports, tidied with the dagger.io/dagger
+// version they pin, libVersion (go-sdk's defaultTarget), and sdk/go's
+// requirements. GoImageEntriesSeed has the standard library's.
+//
+// goSDK is go-sdk's tree. Its generated-imports.txt lists what a new
+// module's generated code imports besides the standard library, which
+// go-sdk's end-to-end checks hold to its generator's output.
+//
+// The seed requires sdk/go's raised requirements itself until a release of
+// dagger.io/dagger carries them. Then go-sdk's defaultTarget names that
+// release, whose go.mod requires them, and the seed needs no requirements of
+// its own. Until then a new go-sdk module on the released target's lower
+// requirements misses these builds.
+func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context, goSDK *dagger.Directory, libVersion string) (*dagger.Directory, error) {
+	importList, err := goSDK.File("generated-imports.txt").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var imports []string
+	for _, line := range strings.Split(importList, "\n") {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+			imports = append(imports, line)
+		}
+	}
+	sdkGoMod, err := build.source.File("sdk/go/go.mod").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sdkMod, err := modfile.Parse("go.mod", []byte(sdkGoMod), nil)
+	if err != nil {
+		return nil, fmt.Errorf("parse sdk/go/go.mod: %w", err)
+	}
+	seedMod := new(modfile.File)
+	if err := seedMod.AddModuleStmt("seed"); err != nil {
+		return nil, err
+	}
+	if err := seedMod.AddGoStmt(distconsts.GolangVersion); err != nil {
+		return nil, err
+	}
+	for _, req := range sdkMod.Require {
+		seedMod.AddNewRequire(req.Mod.Path, req.Mod.Version, req.Indirect)
+	}
+	goMod, err := seedMod.Format()
+	if err != nil {
+		return nil, err
+	}
+	var mainGo strings.Builder
+	mainGo.WriteString("package main\n\nimport (\n")
+	for _, imp := range imports {
+		fmt.Fprintf(&mainGo, "\t_ %q\n", imp)
+	}
+	mainGo.WriteString(")\n\nfunc main() {}\n")
+	return core.NewContainer().
+		From(consts.GolangImage).
+		WithEnvVariable("GOPROXY", seedGoProxy).
+		WithNewFile("/seed/go.mod", string(goMod)).
+		WithNewFile("/seed/main.go", mainGo.String()).
+		WithWorkdir("/seed").
+		WithExec([]string{"go", "get", "dagger.io/dagger@" + libVersion}).
+		WithExec([]string{"go", "mod", "tidy"}).
+		Directory("/seed"), nil
+}
+
 func unpackTar(tarball *dagger.File) *dagger.Directory {
-	return dag.
-		Wolfi().
+	return wolfi.New().
 		Container().
-		WithMountedDirectory("/out", dag.Directory()).
+		WithMountedDirectory("/out", core.NewDirectory()).
 		WithMountedFile("/target.tar", tarball).
 		WithExec([]string{"tar", "xf", "/target.tar", "-C", "/out"}).
 		Directory("/out")
@@ -350,12 +514,12 @@ func goModuleSeed(ctx context.Context, source *dagger.Directory) (*dagger.Direct
 	}
 	mainGo.WriteString(")\n\nfunc main() {}\n")
 
-	libVersion, err := goSDKLibVersion(ctx, source.File("core/sdk/go_sdk.go"))
+	libVersion, err := goSDKLibVersion(ctx, source.File("core/sdk/go_sdk_module.go"))
 	if err != nil {
 		return nil, "", err
 	}
 
-	return dag.Directory().
+	return core.NewDirectory().
 		WithNewFile("go.mod", string(goMod)).
 		WithFile("go.sum", source.File("sdk/go/go.sum")).
 		WithNewFile("main.go", mainGo.String()), libVersion, nil
@@ -383,7 +547,7 @@ func goFileImports(ctx context.Context, file *dagger.File) ([]string, error) {
 }
 
 // goSDKLibVersion returns the dagger.io/dagger version the engine has module
-// codegen pin: the goSDKLibVersion constant in core/sdk/go_sdk.go.
+// codegen pin: the goSDKLibVersion constant in core/sdk/go_sdk_module.go.
 func goSDKLibVersion(ctx context.Context, file *dagger.File) (string, error) {
 	src, err := file.Contents(ctx)
 	if err != nil {
@@ -410,5 +574,5 @@ func goSDKLibVersion(ctx context.Context, file *dagger.File) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("goSDKLibVersion constant not found in core/sdk/go_sdk.go")
+	return "", fmt.Errorf("goSDKLibVersion constant not found in core/sdk/go_sdk_module.go")
 }

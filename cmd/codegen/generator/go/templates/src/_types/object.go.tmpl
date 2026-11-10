@@ -40,6 +40,19 @@ func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *
 	}
 }
 
+{{- if and MemoizeIDs (not IsStandaloneClient) }}
+{{- range $field := .Fields }}
+{{- if eq $field.Name "id" }}
+
+// withLoadedID is the {{ $.Name | FormatName }} that q, a query of the node whose
+// ID is id, selects, knowing that ID (Loaded).
+func (r *{{ $.Name | FormatName }}) withLoadedID(q *querybuilder.Selection, id ID) *{{ $.Name | FormatName }} {
+	return &{{ $.Name | FormatName }}{query: q, id: &id}
+}
+{{- end }}
+{{- end }}
+{{- end }}
+
 
 {{ range $field := .Fields }}
 {{- if HasOptionals $field.Args }}

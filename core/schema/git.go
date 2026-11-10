@@ -91,6 +91,13 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRepository]{
+		dagql.NodeFunc("__sparseFiles", s.sparseFiles).
+			IsPersistable().
+			Doc(`(Internal-only) The given files of this repository, by object ID, with only those fetched.`).
+			Args(
+				dagql.Arg("files").Doc(`Each file as "mode oid path".`),
+				dagql.Arg("dirs").Doc("Directories to write, even when empty."),
+			),
 		dagql.NodeFunc("__resolvedRef", s.resolvedRef).
 			View(AllVersion).
 			IsPersistable().
@@ -1200,8 +1207,10 @@ func agentAddressScopedInput(input dagql.ImplicitInput) dagql.ImplicitInput {
 // gets a fresh key per call, except for a full SHA: it is immutable.
 func gitLockScopedInput(argName string) dagql.ImplicitInput {
 	perClient := gitLiveInput(dagql.PerClientInput)
+	name := "cachePerClientLock:" + argName
+	dagql.SessionScopedInput(name)
 	return dagql.ImplicitInput{
-		Name:        "cachePerClientLock:" + argName,
+		Name:        name,
 		PerCallWhen: perClient.PerCallWhen,
 		Resolver: func(ctx context.Context, args map[string]dagql.Input) (dagql.Input, error) {
 			if name, ok := args[argName].(dagql.String); ok {
@@ -2375,6 +2384,16 @@ func (s *gitSchema) asWorkspace(ctx context.Context, parent dagql.ObjectResult[*
 	if err := srv.Select(ctx, ref, &ws, dagql.Selector{Field: "asWorkspace", Args: []dagql.NamedInput{{Name: "cwd", Value: dagql.NewString(args.Cwd)}}}); err != nil {
 		return ws, err
 	}
+	// A clean repository has no uncommitted changes to apply, so its workspace
+	// is its head's: an overlay that changes nothing would still read as an
+	// edit to whatever keys on the workspace's edits.
+	dirty, err := parent.Self().Backend.Dirty(ctx)
+	if err != nil {
+		return ws, err
+	}
+	if dirty.Self() == nil {
+		return ws, nil
+	}
 	var changes dagql.ObjectResult[*core.Changeset]
 	if err := srv.Select(ctx, parent, &changes, dagql.Selector{Field: "uncommitted"}); err != nil {
 		return ws, err
@@ -2596,8 +2615,14 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	// later SHA-based selection (such as Workspace.snapshot) can reuse the
 	// first writer's mutable branch recipe. Keep named refs for trees with .git,
 	// where the ref name is part of the checkout metadata and content identity.
+	// A remote ref with no name was looked up by a full SHA, as a workspace or
+	// module at a commit pins it: its recipe holds no mutable ref, so its trees
+	// stay its own, and a workspace and its module at one commit share one
+	// checkout (RemoteGitRef's tree without .git is made from its tree with
+	// .git).
 	ref := parent.Self()
-	if (ref.Repo.Self().DiscardGitDir || args.DiscardGitDir) && ref.Ref.Name != ref.Ref.SHA {
+	_, remote := ref.Repo.Self().Backend.(*core.RemoteGitRepository)
+	if (ref.Repo.Self().DiscardGitDir || args.DiscardGitDir) && ref.Ref.Name != ref.Ref.SHA && (ref.Ref.Name != "" || !remote) {
 		return pinnedGitTree(ctx, srv, ref.Repo, ref.Ref.SHA, args)
 	}
 

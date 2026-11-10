@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 // WorkspaceRemoteRef is a git ref that denotes a workspace: a clone ref, an
@@ -120,7 +121,8 @@ func normalizeWorkspaceRemoteSubdir(subdir string) (string, error) {
 
 // workspaceGitRefSelector picks how a remote workspace ref resolves. HEAD
 // without a selector and literal ref resolution, unless an @ selector carries a
-// SemVer query this API version supports.
+// SemVer query this API version supports. A literal ref named by a full commit
+// SHA is pinned to that commit (workspaceGitPin).
 func workspaceGitRefSelector(remote WorkspaceRemoteRef, supportsVersionQueries bool) dagql.Selector {
 	refSelector := dagql.Selector{Field: "head"}
 	if remote.Version == "" {
@@ -133,6 +135,9 @@ func workspaceGitRefSelector(remote WorkspaceRemoteRef, supportsVersionQueries b
 	if remote.Selector != gitref.ModuleVersionSelector ||
 		!supportsVersionQueries ||
 		!IsReleaseVersionQuery(remote.Version) {
+		if pin := workspaceGitPin(remote); pin != "" {
+			refSelector.Args = append(refSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(pin)})
+		}
 		return refSelector
 	}
 	refSelector = dagql.Selector{
@@ -151,6 +156,19 @@ func workspaceGitRefSelector(remote WorkspaceRemoteRef, supportsVersionQueries b
 	return refSelector
 }
 
+// workspaceGitPin is the commit a remote workspace ref's git calls are pinned
+// to: its version, when that is a full commit SHA, as a Git module at a commit
+// pins its own (ParsedGitRefString.GitRef). The workspace and the modules in
+// it at that commit then resolve through the same calls, and so share one
+// checkout, and the pinned resolution checks the session's access to the
+// repository, which a SHA alone doesn't.
+func workspaceGitPin(remote WorkspaceRemoteRef) string {
+	if gitutil.IsCommitSHA(remote.Version) {
+		return remote.Version
+	}
+	return ""
+}
+
 // CloneWorkspaceGitTree resolves a remote workspace ref and returns its tree.
 // Going through the ordinary git(url).head / .ref(name) / .latest(version)
 // selectors is what records the resolved commit in the workspace lockfile.
@@ -161,14 +179,18 @@ func CloneWorkspaceGitTree(
 ) (dagql.ObjectResult[*Directory], dagql.ObjectResult[*GitRef], error) {
 	supportsVersionQueries := AfterVersion(workspace.VersionQueriesVersion).Contains(dag.View)
 
+	repoSelector := dagql.Selector{
+		Field: "git",
+		Args: []dagql.NamedInput{
+			{Name: "url", Value: dagql.String(remote.CloneRef)},
+		},
+	}
+	if pin := workspaceGitPin(remote); pin != "" {
+		repoSelector.Args = append(repoSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(pin)})
+	}
 	var gitRef dagql.ObjectResult[*GitRef]
 	err := dag.Select(ctx, dag.Root(), &gitRef,
-		dagql.Selector{
-			Field: "git",
-			Args: []dagql.NamedInput{
-				{Name: "url", Value: dagql.String(remote.CloneRef)},
-			},
-		},
+		repoSelector,
 		workspaceGitRefSelector(remote, supportsVersionQueries),
 	)
 	if err != nil {
@@ -210,4 +232,25 @@ func LoadGitWorkspaceSparseTree(
 		return nil, err
 	}
 	return &GitSparseTree{Root: root}, nil
+}
+
+// LoadGitSparseFiles loads a sparse tree holding exactly files, identified by
+// their object IDs, from a workspace's repository.
+func LoadGitSparseFiles(
+	ctx context.Context,
+	dag *dagql.Server,
+	gitRef dagql.Result[*GitRef],
+	files *GitSparseReadFiles,
+) (dagql.ObjectResult[*Directory], error) {
+	var root dagql.ObjectResult[*Directory]
+	ref := gitRef.Self()
+	if ref == nil {
+		return root, fmt.Errorf("sparse files: workspace has no git ref")
+	}
+	args := []dagql.NamedInput{{Name: "files", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(files.Files...))}}
+	if len(files.Dirs) > 0 {
+		args = append(args, dagql.NamedInput{Name: "dirs", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(files.Dirs...))})
+	}
+	err := dag.Select(ctx, ref.Repo, &root, dagql.Selector{Field: "__sparseFiles", Args: args})
+	return root, err
 }

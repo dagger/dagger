@@ -48,15 +48,15 @@ func (term *Vterm) WriteMedia(media dagui.MediaRecord, fallback string) {
 		if term.markdownBuf.Len() > 0 {
 			term.segments = append(term.segments, newVtermTextSegment(term.markdownBuf.String(), true))
 		}
-		if used := term.vt.UsedHeight(); used > 0 {
+		if used := term.screen().UsedHeight(); used > 0 {
 			// Highlights belong to the search projection, not the saved text.
-			term.vt.SearchClear()
+			term.screen().SearchClear()
 			var snapshot strings.Builder
 			for row := 0; row < used; row++ {
 				if row > 0 {
 					snapshot.WriteString("\r\n")
 				}
-				term.vt.RenderLineFgBg(&snapshot, row, nil, nil)
+				term.screen().RenderLineFgBg(&snapshot, row, nil, nil)
 			}
 			term.segments = append(term.segments, newVtermTextSegment(snapshot.String(), false))
 		}
@@ -109,7 +109,7 @@ func (term *Vterm) mediaAtBottom() bool {
 		return true
 	}
 	if term.segments == nil {
-		return term.Offset+term.Height >= term.vt.UsedHeight()
+		return term.Offset+term.Height >= term.screen().UsedHeight()
 	}
 	if term.mediaRows == nil {
 		return term.mediaFollow

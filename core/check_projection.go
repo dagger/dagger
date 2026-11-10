@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -79,6 +80,12 @@ func (c *Check) AttachDependencyResults(ctx context.Context, _ dagql.AnyResult, 
 		c.Generator = result.(dagql.ObjectResult[*Generator])
 		owned = append(owned, result)
 	}
+	inputs, deps, err := c.attachInputs(ctx, attach)
+	if err != nil {
+		return nil, err
+	}
+	c.Inputs = inputs
+	owned = append(owned, deps...)
 	if c.Workspace.Self() != nil {
 		result, err := attach(c.Workspace)
 		if err != nil {
@@ -118,6 +125,7 @@ func (c *Check) runRemote(ctx context.Context) error {
 		// fails, it may never run, so report the failed check here.
 		_, span := Tracer(ctx).Start(ctx, c.Address, trace.WithAttributes(
 			attribute.String(telemetry.CheckNameAttr, c.Address),
+			attribute.Bool(telemetryattrs.CheckCollectionItemAttr, c.RemoteArtifact.Self().IsCollectionItem()),
 			attribute.Bool(telemetry.CheckPassedAttr, false),
 		))
 		telemetry.EndWithCause(span, &err)

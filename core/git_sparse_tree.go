@@ -27,6 +27,9 @@ import (
 const (
 	gitSparseTreeDir      = "tree"
 	gitSparseManifestFile = "manifest"
+	// gitSparseObjectsFile lists each path's mode and object ID, so a read can
+	// be identified by the objects it selects without asking Git.
+	gitSparseObjectsFile = "objects"
 )
 
 // How the manifest marks each path of the commit's tree that isn't a directory.
@@ -41,6 +44,8 @@ const (
 	gitModeSymlink = "120000"
 	gitModeGitlink = "160000"
 )
+
+const gitignoreFile = ".gitignore"
 
 // GitTreeFiles is a commit's tree in a blobless mirror: every path and object
 // ID is known, and file contents are fetched by ID when asked for.
@@ -127,6 +132,17 @@ func (files *GitTreeFiles) hasSubmodules() bool {
 	return false
 }
 
+// objectList returns "mode oid path\0" for every path of the tree that isn't
+// a directory.
+func (files *GitTreeFiles) objectList() []byte {
+	var list bytes.Buffer
+	for p, entry := range files.entries {
+		list.WriteString(entry.mode + " " + entry.oid + " " + p)
+		list.WriteByte(0)
+	}
+	return list.Bytes()
+}
+
 // Has reports whether p is in the tree and isn't a directory.
 func (files *GitTreeFiles) Has(p string) bool {
 	_, ok := files.entries[p]
@@ -198,8 +214,9 @@ func (files *GitTreeFiles) writeSparseTree(ctx context.Context, snapshotRoot str
 		wanted[p] = struct{}{}
 	}
 	for p, entry := range files.entries {
-		// Git reads attributes from the index, so they apply as in a checkout.
-		if entry.mode == gitModeSymlink || path.Base(p) == ".gitattributes" {
+		// Git reads attributes from the index, so they apply as in a checkout,
+		// and a copy with a gitignore filter reads ignore files from the tree.
+		if entry.mode == gitModeSymlink || path.Base(p) == ".gitattributes" || path.Base(p) == gitignoreFile {
 			wanted[p] = struct{}{}
 		}
 	}
@@ -320,6 +337,9 @@ func (ref *RemoteGitRef) SparseTree(
 			if err != nil {
 				return err
 			}
+			if err := os.WriteFile(filepath.Join(root, gitSparseObjectsFile), files.objectList(), 0o600); err != nil {
+				return err
+			}
 			return os.WriteFile(filepath.Join(root, gitSparseManifestFile), manifest, 0o600)
 		})
 		if err != nil {
@@ -362,6 +382,9 @@ type gitSparseManifest struct {
 	tree       *layercopy.PathTree
 	entries    map[string]byte
 	submodules bool
+	// objects holds each path's mode and object ID; nil for a tree written
+	// before sparse trees listed them.
+	objects map[string]gitTreeEntry
 }
 
 func (t *GitSparseTree) loadManifest(ctx context.Context) (*gitSparseManifest, error) {
@@ -390,6 +413,40 @@ func readGitSparseManifest(ctx context.Context, root dagql.ObjectResult[*Directo
 	}, mountRefAsReadOnly); err != nil {
 		return nil, fmt.Errorf("read sparse tree manifest: %w", err)
 	}
+	m := parseGitSparseManifest(data)
+	if err := MountRef(ctx, snapshot, func(dir string, _ *mount.Mount) error {
+		objects, err := os.ReadFile(filepath.Join(dir, gitSparseObjectsFile))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		m.objects = parseGitSparseObjects(objects)
+		return nil
+	}, mountRefAsReadOnly); err != nil {
+		return nil, fmt.Errorf("read sparse tree objects: %w", err)
+	}
+	return m, nil
+}
+
+func parseGitSparseObjects(data []byte) map[string]gitTreeEntry {
+	objects := map[string]gitTreeEntry{}
+	for rec := range bytes.SplitSeq(data, []byte{0}) {
+		mode, rest, ok := bytes.Cut(rec, []byte{' '})
+		if !ok {
+			continue
+		}
+		oid, p, ok := bytes.Cut(rest, []byte{' '})
+		if !ok {
+			continue
+		}
+		objects[string(p)] = gitTreeEntry{mode: string(mode), oid: string(oid)}
+	}
+	return objects
+}
+
+func parseGitSparseManifest(data []byte) *gitSparseManifest {
 	m := &gitSparseManifest{entries: map[string]byte{}}
 	var paths []string
 	for entry := range bytes.SplitSeq(data, []byte{0}) {
@@ -402,39 +459,196 @@ func readGitSparseManifest(ctx context.Context, root dagql.ObjectResult[*Directo
 		paths = append(paths, p)
 	}
 	m.tree = layercopy.NewPathTree(paths)
-	return m, nil
+	return m
 }
 
-// CoversRead reports whether a copy of the directory dir with this filter gets
-// from the sparse tree exactly what it gets from the full tree: dir is a real
-// directory of the tree, reached through no symlink, and the sparse tree holds
-// everything the filter selects there, which is less than all that dir holds. A
-// dir the commit doesn't have, which fails the same way in both, is covered as
-// well.
-func (t *GitSparseTree) CoversRead(ctx context.Context, dir string, filter CopyFilter) (bool, error) {
+// GitSparseReadSource is where a filtered read of a Git workspace's tree comes
+// from.
+type GitSparseReadSource int
+
+const (
+	// GitSparseReadFull reads the full checkout.
+	GitSparseReadFull GitSparseReadSource = iota
+	// GitSparseReadPlanned reads the sparse tree, which holds what it selects.
+	GitSparseReadPlanned
+	// GitSparseReadOwn reads a sparse tree of its own, written with only the
+	// files it selects, identified by their object IDs (see ReadFiles).
+	GitSparseReadOwn
+)
+
+// ReadSource picks where a copy of the directory dir with this filter gets
+// exactly what it gets from the full tree. A sparse tree serves it when dir is
+// a real directory of the tree, reached through no symlink, and the filter
+// selects less than all that dir holds: this one if it holds every selected
+// file and every .gitignore a gitignore filter reads, and otherwise one of the
+// read's own. A dir the commit doesn't have, which fails the same way in both,
+// is read from this one as well.
+func (t *GitSparseTree) ReadSource(ctx context.Context, dir string, filter CopyFilter) (GitSparseReadSource, error) {
 	m, err := t.loadManifest(ctx)
 	if err != nil {
-		return false, err
+		return GitSparseReadFull, err
 	}
+	return m.readSource(dir, filter)
+}
+
+func (m *gitSparseManifest) readSource(dir string, filter CopyFilter) (GitSparseReadSource, error) {
 	if m.submodules {
-		return false, nil
+		return GitSparseReadFull, nil
 	}
 	if !m.tree.IsDir(dir) {
-		return t.coversPath(ctx, dir)
+		if !m.coversPath(dir) {
+			return GitSparseReadFull, nil
+		}
+		return GitSparseReadPlanned, nil
 	}
+	// A gitignore filter only drops what the others select, reading the
+	// .gitignore files at and below dir and above it, all of which every
+	// sparse tree writes. So both trees select the same files with it.
 	selected, err := m.tree.SelectedFiles(dir, layercopy.Filter{Include: filter.Include, Exclude: filter.Exclude})
 	if err != nil {
-		return false, err
-	}
-	for _, p := range selected {
-		if mark := m.entries[p]; mark != gitSparseEntryFile && mark != gitSparseEntrySymlink {
-			return false, nil
-		}
+		return GitSparseReadFull, err
 	}
 	// A copy of everything in dir has the content digest of dir itself, so one
 	// can stand in for the other. A view of dir in the full tree can follow a
 	// symlink out of it, which a copy can't, so the view must exist first.
-	return len(selected) < m.tree.FileCount(dir), nil
+	if len(selected) == m.tree.FileCount(dir) {
+		return GitSparseReadFull, nil
+	}
+	if filter.Gitignore {
+		ignoresHeld, ok := m.gitignoresHeld(dir)
+		if !ok {
+			return GitSparseReadFull, nil
+		}
+		if !ignoresHeld {
+			return GitSparseReadOwn, nil
+		}
+	}
+	for _, p := range selected {
+		if mark := m.entries[p]; mark != gitSparseEntryFile && mark != gitSparseEntrySymlink {
+			return GitSparseReadOwn, nil
+		}
+	}
+	return GitSparseReadPlanned, nil
+}
+
+// GitSparseReadFiles identifies a read by what it selects: each file's mode,
+// object ID and path ("mode oid path"), with the attribute and ignore files
+// that apply to them, and the directories it holds. Two commits that give a
+// read the same list give it the same files.
+type GitSparseReadFiles struct {
+	Files []string
+	Dirs  []string
+}
+
+// ReadFiles returns the list identifying a read that ReadSource sends to a
+// tree of its own. It's nil for a tree written before sparse trees listed
+// their objects.
+func (t *GitSparseTree) ReadFiles(ctx context.Context, dir string, filter CopyFilter) (*GitSparseReadFiles, error) {
+	m, err := t.loadManifest(ctx)
+	if err != nil || m.objects == nil {
+		return nil, err
+	}
+	return m.readFiles(dir, filter)
+}
+
+func (m *gitSparseManifest) readFiles(dir string, filter CopyFilter) (*GitSparseReadFiles, error) {
+	dir = strings.TrimPrefix(path.Clean("/"+dir), "/")
+	selected, selectedDirs, err := m.tree.SelectedPaths(dir, layercopy.Filter{Include: filter.Include, Exclude: filter.Exclude})
+	if err != nil {
+		return nil, err
+	}
+	paths := map[string]struct{}{}
+	dirs := map[string]struct{}{}
+	addParents := func(p string) {
+		for parent := path.Dir(p); parent != "." && parent != "/"; parent = path.Dir(parent) {
+			dirs[parent] = struct{}{}
+		}
+	}
+	for _, p := range selected {
+		paths[p] = struct{}{}
+		addParents(p)
+	}
+	for _, d := range selectedDirs {
+		dirs[d] = struct{}{}
+		addParents(d)
+	}
+	if dir != "" {
+		dirs[dir] = struct{}{}
+		addParents(dir)
+	}
+	// Attributes apply to a file from its own directory and every directory
+	// above it; a gitignore filter reads ignore files at, below and above dir.
+	under := func(p, d string) bool { return d == "" || p == d || strings.HasPrefix(p, d+"/") }
+	for p := range m.objects {
+		base := path.Base(p)
+		parent := path.Dir(p)
+		if parent == "." {
+			parent = ""
+		}
+		switch {
+		case base == ".gitattributes":
+			if under(dir, parent) {
+				paths[p] = struct{}{}
+				continue
+			}
+			for d := range dirs {
+				if under(d, parent) {
+					paths[p] = struct{}{}
+					break
+				}
+			}
+		case base == gitignoreFile && filter.Gitignore:
+			if under(dir, parent) || under(p, dir) {
+				paths[p] = struct{}{}
+			}
+		}
+	}
+	files := make([]string, 0, len(paths))
+	for p := range paths {
+		obj, ok := m.objects[p]
+		if !ok {
+			return nil, fmt.Errorf("sparse read files: no object for %q", p)
+		}
+		files = append(files, obj.mode+" "+obj.oid+" "+p)
+	}
+	slices.Sort(files)
+	dirList := make([]string, 0, len(dirs))
+	for d := range dirs {
+		dirList = append(dirList, d)
+	}
+	slices.Sort(dirList)
+	return &GitSparseReadFiles{Files: files, Dirs: dirList}, nil
+}
+
+// gitignoresHeld reports whether the sparse tree holds every .gitignore a
+// gitignore filter on dir can read: those in dir and below it, and those in the
+// directories above it. A tree written before sparse trees held them doesn't.
+// It's not ok when one is a symlink, whose target no sparse tree needs to hold.
+func (m *gitSparseManifest) gitignoresHeld(dir string) (held, ok bool) {
+	dir = strings.TrimPrefix(path.Clean("/"+dir), "/")
+	held = true
+	for p, mark := range m.entries {
+		if path.Base(p) != gitignoreFile {
+			continue
+		}
+		parent := path.Dir(p)
+		if parent == "." {
+			parent = ""
+		}
+		reads := parent == "" || dir == parent || strings.HasPrefix(dir, parent+"/") ||
+			dir == "" || strings.HasPrefix(p, dir+"/")
+		if !reads {
+			continue
+		}
+		switch mark {
+		case gitSparseEntryFile:
+		case gitSparseEntrySymlink:
+			return false, false
+		default:
+			held = false
+		}
+	}
+	return held, true
 }
 
 // coversPath reports whether looking p up in the sparse tree answers as the
@@ -445,23 +659,27 @@ func (t *GitSparseTree) coversPath(ctx context.Context, p string) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+	return m.coversPath(p), nil
+}
+
+func (m *gitSparseManifest) coversPath(p string) bool {
 	if m.submodules {
-		return false, nil
+		return false
 	}
 	p = strings.TrimPrefix(path.Clean("/"+filepath.ToSlash(p)), "/")
 	if p == "" {
-		return true, nil
+		return true
 	}
 	mark, inTree := m.entries[p]
 	if inTree && mark != gitSparseEntryFile {
-		return false, nil
+		return false
 	}
 	for parent := path.Dir(p); parent != "."; parent = path.Dir(parent) {
 		if _, notDir := m.entries[parent]; notDir {
-			return false, nil
+			return false
 		}
 	}
-	return true, nil
+	return true
 }
 
 // GitSparseTreeFS answers stats and file reads on a Git workspace's tree from
@@ -500,4 +718,186 @@ func (fs *GitSparseTreeFS) Exists(ctx context.Context, p string) (string, bool, 
 
 func (fs *GitSparseTreeFS) ReadFile(ctx context.Context, p string) ([]byte, error) {
 	return DirectoryReadFile(ctx, fs.dirFor(ctx, p), p)
+}
+
+// gitBlobPools holds, per repository result, the objects readers are waiting
+// to have fetched. Whoever of them holds the mirror next fetches all of them
+// in one request, so reads that arrive together make one request between
+// them. A repository result carries its credentials, so readers only pool
+// with readers that could fetch the same objects.
+var gitBlobPools sync.Map // pool key -> *gitBlobPool
+
+type gitBlobPool struct {
+	mu      sync.Mutex
+	pending map[string]struct{}
+}
+
+func (pool *gitBlobPool) add(oids []string) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	for _, oid := range oids {
+		pool.pending[oid] = struct{}{}
+	}
+}
+
+func (pool *gitBlobPool) drain() []string {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	oids := make([]string, 0, len(pool.pending))
+	for oid := range pool.pending {
+		oids = append(oids, oid)
+	}
+	pool.pending = map[string]struct{}{}
+	return oids
+}
+
+// SparseFiles writes files, each "mode oid path", and the directories dirs
+// into a new snapshot under gitSparseTreeDir, fetching into the blobless
+// mirror whichever of the objects it doesn't hold, along with those other
+// readers of the same repository result, poolKey, are waiting for.
+func (repo *RemoteGitRepository) SparseFiles(ctx context.Context, dag *dagql.Server, poolKey string, files, dirs []string) (_ *Directory, rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Every caller of this URL shares the mirror, so objects another caller
+	// fetched are there without asking the remote. Listing the remote with
+	// this caller's credentials, as resolving a ref does, establishes that it
+	// may read the repository before anything is served from the mirror.
+	if _, err := repo.Remote(ctx); err != nil {
+		return nil, fmt.Errorf("sparse files: %w", err)
+	}
+	blobless, err := repo.withBloblessMirror(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+	var index bytes.Buffer
+	oids := make([]string, 0, len(files))
+	for _, f := range files {
+		mode, rest, ok1 := strings.Cut(f, " ")
+		oid, p, ok2 := strings.Cut(rest, " ")
+		if !ok1 || !ok2 || !filepath.IsLocal(p) {
+			return nil, fmt.Errorf("sparse files: bad entry %q", f)
+		}
+		if mode != gitModeGitlink {
+			oids = append(oids, oid)
+		}
+		fmt.Fprintf(&index, "%s %s\t%s\x00", mode, oid, p)
+	}
+	poolAny, _ := gitBlobPools.LoadOrStore(poolKey, &gitBlobPool{pending: map[string]struct{}{}})
+	pool := poolAny.(*gitBlobPool)
+	pool.add(oids)
+
+	checkoutRef, err := query.SnapshotManager().New(ctx, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
+		bkcache.WithDescription(fmt.Sprintf("git sparse files from %s", repo.URL.Remote())))
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if rerr != nil && checkoutRef != nil {
+			checkoutRef.Release(context.WithoutCancel(ctx))
+		}
+	}()
+	err = MountRef(ctx, checkoutRef, func(root string, _ *mount.Mount) error {
+		err := blobless.mount(ctx, 1, false, nil, func(ctx context.Context, git *gitutil.GitCLI) error {
+			err := fetchPooled(oids, pool.drain(),
+				func(oids []string) ([]string, error) { return gitMissingObjects(ctx, git, oids) },
+				func(oids []string) error {
+					return blobless.fetchBlobs(ctx, git, strings.NewReader(strings.Join(oids, "\n")+"\n"))
+				})
+			if err != nil {
+				return fmt.Errorf("fetch file contents: %w", err)
+			}
+			dest := filepath.Join(root, gitSparseTreeDir)
+			if err := os.Mkdir(dest, 0o755); err != nil {
+				return err
+			}
+			for _, d := range dirs {
+				if !filepath.IsLocal(d) {
+					return fmt.Errorf("sparse files: bad directory %q", d)
+				}
+				if err := os.MkdirAll(filepath.Join(dest, d), 0o755); err != nil {
+					return err
+				}
+			}
+			for _, f := range files {
+				_, rest, _ := strings.Cut(f, " ")
+				_, p, _ := strings.Cut(rest, " ")
+				if err := os.MkdirAll(filepath.Join(dest, filepath.Dir(p)), 0o755); err != nil {
+					return err
+				}
+			}
+			indexFile := filepath.Join(root, "index")
+			git = git.New(gitutil.WithWorkTree(dest), gitutil.WithIndexFile(indexFile))
+			if _, err := git.RunWithStdin(ctx, &index, "update-index", "-z", "--add", "--index-info"); err != nil {
+				return fmt.Errorf("build index: %w", err)
+			}
+			if _, err := git.Run(ctx, "checkout-index", "--all", "--force"); err != nil {
+				return fmt.Errorf("write files: %w", err)
+			}
+			return os.Remove(indexFile)
+		})
+		if err != nil {
+			return err
+		}
+		return normalizeGitCheckoutTimes(ctx, root, "")
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sparse files from %s: %w", repo.URL.Remote(), err)
+	}
+	snap, err := checkoutRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	checkoutRef = nil
+	dir := &Directory{
+		Platform: query.Platform(),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	dir.SetPath("/" + gitSparseTreeDir)
+	dir.SetSnapshot(snap)
+	return dir, nil
+}
+
+// fetchPooled fetches whatever own and pooled, the objects other readers are
+// waiting for, lack, in one request. If that fails, it fetches own's alone,
+// so another reader's objects, which may be gone from the remote, can't fail
+// this read; that reader asks for its own again when it holds the mirror.
+func fetchPooled(own, pooled []string, missing func([]string) ([]string, error), fetch func([]string) error) error {
+	lacking, err := missing(append(slices.Clone(pooled), own...))
+	if err != nil || len(lacking) == 0 {
+		return err
+	}
+	if fetch(lacking) == nil {
+		return nil
+	}
+	lacking, err = missing(own)
+	if err != nil || len(lacking) == 0 {
+		return err
+	}
+	return fetch(lacking)
+}
+
+// gitMissingObjects returns which of oids the mirror doesn't hold, without
+// fetching any of them.
+func gitMissingObjects(ctx context.Context, git *gitutil.GitCLI, oids []string) ([]string, error) {
+	if len(oids) == 0 {
+		return nil, nil
+	}
+	oids = slices.Clone(oids)
+	slices.Sort(oids)
+	oids = slices.Compact(oids)
+	out, err := git.New(gitutil.WithEnv("GIT_NO_LAZY_FETCH=1")).RunWithStdin(ctx, strings.NewReader(strings.Join(oids, "\n")+"\n"), "cat-file", "--batch-check=%(objectname)")
+	if err != nil {
+		return nil, fmt.Errorf("check objects: %w", err)
+	}
+	var missing []string
+	for line := range strings.SplitSeq(string(out), "\n") {
+		if oid, ok := strings.CutSuffix(line, " missing"); ok {
+			missing = append(missing, oid)
+		}
+	}
+	return missing, nil
 }

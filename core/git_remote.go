@@ -887,13 +887,15 @@ func (repo *RemoteGitRepository) fetchObjects(ctx context.Context, git *gitutil.
 	if len(shaRefSpecs) > 0 {
 		err = runFetch(shaRefSpecs)
 		if err != nil {
-			if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
+			// A server that serves only advertised tips refuses other
+			// commits as not found, so a named ref may still fetch them.
+			if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) && !errors.Is(err, gitutil.ErrCommitNotFound) {
 				return false, fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
 			}
 
 			namedSpecs := namedFetchRefSpecs(refs)
 			if len(namedSpecs) == 0 {
-				return false, fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+				return false, fmt.Errorf("failed to fetch remote %s: %w: %s", repo.URL.Remote(), err, joinRefSHAs(refs))
 			}
 			defer cleanupScratchFetchRefs(namedSpecs)
 
@@ -970,6 +972,14 @@ func gitMirrorIsComplete(ctx context.Context, git *gitutil.GitCLI, gitDir string
 // fetchedGitRef is private to the mutable mirror, never a checkout refspec.
 func fetchedGitRef(sha string) string {
 	return "refs/dagger.fetched/" + sha
+}
+
+func joinRefSHAs(refs []*RemoteGitRef) string {
+	shas := make([]string, len(refs))
+	for i, ref := range refs {
+		shas[i] = ref.SHA
+	}
+	return strings.Join(shas, ", ")
 }
 
 // namedFetchRefSpecs builds the bounded fallback refspec set used when SHA fetch is unsupported.
@@ -1191,6 +1201,65 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	dir.SetPath("/")
 	dir.SetSnapshot(snap)
 	return dir, nil
+}
+
+// remoteTreeWithoutGitDir makes a remote ref's tree without .git from its
+// tree with .git at the same depth, selected through the call cache, as a
+// child that removes .git: a workspace and a module loaded from one commit
+// then share one checkout, where each checked the commit out on its own. A
+// checkout without .git copies the objects and writes .git as one with .git
+// does, removing it last (finishGitCheckout), so this costs no more for a
+// tree without .git alone. As there, the root's times are normalized after
+// .git goes, so the tree is the one a checkout without .git makes.
+func remoteTreeWithoutGitDir(ctx context.Context, srv *dagql.Server, dst *Directory, ref dagql.ObjectResult[*GitRef], depth int) (rerr error) {
+	var withGitDir dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, ref, &withGitDir, dagql.Selector{Field: "tree", Args: []dagql.NamedInput{
+		{Name: "depth", Value: dagql.NewInt(depth)},
+	}}); err != nil {
+		return err
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	if err := cache.Evaluate(ctx, withGitDir); err != nil {
+		return err
+	}
+	parent, err := withGitDir.Self().Snapshot.GetOrEval(ctx, withGitDir.Result)
+	if err != nil {
+		return err
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	child, err := query.SnapshotManager().New(ctx, parent, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("git tree without .git for %s (%s)", ref.Self().Repo.Self().Backend.(*RemoteGitRepository).URL.Remote(), ref.Self().Ref.SHA)))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if rerr != nil && child != nil {
+			child.Release(context.WithoutCancel(ctx))
+		}
+	}()
+	if err := MountRef(ctx, child, func(root string, _ *ctdmount.Mount) error {
+		if err := os.RemoveAll(filepath.Join(root, ".git")); err != nil {
+			return err
+		}
+		return unix.UtimesNanoAt(unix.AT_FDCWD, root, gitCheckoutTimes(), unix.AT_SYMLINK_NOFOLLOW)
+	}); err != nil {
+		return err
+	}
+	snap, err := child.Commit(ctx)
+	if err != nil {
+		return err
+	}
+	child = nil
+	dst.SetPath("/")
+	dst.SetSnapshot(snap)
+	return nil
 }
 
 func (ref *RemoteGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(context.Context, *gitutil.GitCLI) error) error {

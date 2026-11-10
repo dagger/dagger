@@ -2835,6 +2835,9 @@ pub struct ContainerDirectoryOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error if selection, a resolved link, or mount target resolution needs their contents.
+    #[builder(setter(into, strip_option), default)]
+    pub resolve_broken_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerFileOpts {
@@ -3593,6 +3596,9 @@ impl Container {
         query = query.arg("path", path.into());
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        if let Some(resolve_broken_symlinks) = opts.resolve_broken_symlinks {
+            query = query.arg("resolveBrokenSymlinks", resolve_broken_symlinks);
         }
         Directory {
             proc: self.proc.clone(),
@@ -6573,6 +6579,12 @@ pub struct DirectoryStatOpts {
     pub do_not_follow_symlinks: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryDirectoryOpts {
+    /// Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.
+    #[builder(setter(into, strip_option), default)]
+    pub resolve_broken_symlinks: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
@@ -7137,9 +7149,32 @@ impl Directory {
     /// # Arguments
     ///
     /// * `path` - Location of the directory to retrieve. Example: "/src"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves a directory at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory to retrieve. Example: "/src"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory_opts(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryDirectoryOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("directory");
+        query = query.arg("path", path.into());
+        if let Some(resolve_broken_symlinks) = opts.resolve_broken_symlinks {
+            query = query.arg("resolveBrokenSymlinks", resolve_broken_symlinks);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -7446,6 +7481,22 @@ impl Directory {
             query = query.arg("ssh", ssh);
         }
         Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory, declared as made for the given platform.
+    /// Declare a result whose contents are the same whichever platform made them, such as a Go package compiled for a platform by any platform's Go toolchain. An engine of another platform that makes the same directory for the same platform then finds this one, and the other way around.
+    /// The contents are not checked: a declared result that depends on the platform it was made on can be found where it doesn't belong.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - The platform the directory's contents are for (e.g., "linux/arm64").
+    pub fn with_platform(&self, platform: Platform) -> Directory {
+        let mut query = self.selection.select("withPlatform");
+        query = query.arg("platform", platform);
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -8905,6 +8956,12 @@ pub struct File {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct FileSyncOpts {
+    /// Also key the file by its content, so that what consumes it is cached across any two recipes that produce the same file. This hashes the file unless it already has a content key.
+    #[builder(setter(into, strip_option), default)]
+    pub key_by_content: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct FileContentsOpts {
     /// Maximum number of lines to read
     #[builder(setter(into, strip_option), default)]
@@ -9016,8 +9073,33 @@ impl File {
         query.execute(self.graphql_client.clone()).await
     }
     /// Force evaluation in the engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn sync(&self) -> Result<File, DaggerError> {
         let query = self.selection.select("sync");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(File {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("File"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
+    /// Force evaluation in the engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn sync_opts(&self, opts: FileSyncOpts) -> Result<File, DaggerError> {
+        let mut query = self.selection.select("sync");
+        if let Some(key_by_content) = opts.key_by_content {
+            query = query.arg("keyByContent", key_by_content);
+        }
         let id: Id = query.execute(self.graphql_client.clone()).await?;
         Ok(File {
             proc: self.proc.clone(),

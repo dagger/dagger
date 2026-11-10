@@ -15,7 +15,9 @@ import (
 	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 	telemetry "github.com/dagger/otel-go"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
@@ -133,6 +135,45 @@ func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsP
 		return nil, fmt.Errorf("failed to stat path: %w", err)
 	}
 	return &msg, nil
+}
+
+// ErrFindUpUnsupported reports a client that can't search its directories in
+// one call. The caller then stats each name at each level itself.
+var ErrFindUpUnsupported = errors.New("client does not support find-up")
+
+const findUpMethod = "/moby.filesync.v1.FileSync/FindUp"
+
+// FindUpCallerHostPaths looks for each name in start, resolved against the
+// caller's current directory, and in each of its parents, with one call to the
+// caller. It returns start as an absolute path and, for each name found, the
+// absolute path of the nearest directory holding it.
+func (c *Client) FindUpCallerHostPaths(ctx context.Context, start string, names []string) (string, map[string]string, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	defer cancel(errors.New("find-up done"))
+
+	caller, err := c.GetSessionCaller(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get requester session: %w", err)
+	}
+	if !caller.Supports(findUpMethod) {
+		return "", nil, ErrFindUpUnsupported
+	}
+	resp, err := filesync.NewFileSyncClient(caller.Conn()).FindUp(injectTraceContext(ctx), &filesync.FindUpRequest{
+		Start: start,
+		Names: names,
+	})
+	if err != nil {
+		// A proxy, such as a scale-out engine's, offers the method even
+		// when the client behind it doesn't.
+		if status.Code(err) == codes.Unimplemented {
+			return "", nil, ErrFindUpUnsupported
+		}
+		return "", nil, fmt.Errorf("failed to find up %v from %s: %w", names, start, err)
+	}
+	return resp.Start, resp.Found, nil
 }
 
 // RealCallerHostPath returns the absolute path of the given path on the

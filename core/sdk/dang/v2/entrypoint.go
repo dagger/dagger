@@ -14,9 +14,13 @@ import (
 	"github.com/dagger/dagger/core/sdk/entrypoint"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/dang/v2/pkg/dang"
+	"github.com/vito/dang/v2/pkg/hm"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const moduleEntrypointTypeName = "ModuleEntrypoint"
@@ -132,7 +136,8 @@ func (r *entrypointRuntime) Call(
 	fnCall.SetModuleProcess()
 	fnCall.SetProcessSpanContext(dagql.UserFacingSpanContext(ctx))
 
-	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Internal(), telemetry.Encapsulate())
+	ctx, span := core.Tracer(ctx).Start(ctx, "call module entrypoint", telemetry.Internal(), telemetry.Encapsulate(),
+		trace.WithAttributes(attribute.Bool(telemetryattrs.UIFunctionPlumbingAttr, true)))
 	defer telemetry.EndWithCause(span, &rerr)
 	fnCall.SetPlumbingSpanContext(span.SpanContext())
 
@@ -223,6 +228,182 @@ func (r *entrypointRuntime) Call(
 	return fnCall.ReturnValue(ctx, core.JSON(resultJSON))
 }
 
+// EntrypointPrebuildMember is the optional entrypoint member that returns the
+// file every call of the module builds on, such as the module's compiled
+// binary. The engine calls it without arguments for its own calls, and with
+// a platform, as a string such as "linux/arm64", for the calls of an engine
+// of another platform, as an engine image of that platform ships: a member
+// that takes no platform declares no file for another. Since the file
+// doesn't depend on a call, the
+// engine can build it ahead of the module's first call, and a call that
+// builds on the same file then finds it built or joins its build.
+const EntrypointPrebuildMember = "prebuild"
+
+// EntrypointRuntimeImageMember is the optional entrypoint member that returns
+// the image every call of the module runs its process in, which the call
+// starts its container from. The engine calls it as it calls
+// EntrypointPrebuildMember, with a platform for another platform's engine.
+// What a fresh engine fetches before the module's first call, such as an
+// engine image pre-warms, is then read from the module, not from its
+// entrypoint's text.
+const EntrypointRuntimeImageMember = "runtimeImage"
+
+// EntrypointPrebuildFile returns the file of mod's built-in Dang module
+// entrypoint's prebuild member, not yet built, or false when the entrypoint
+// declares no such member. The entrypoint runs as the module's calls see it:
+// currentModule is mod.
+func EntrypointPrebuildFile(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+	platform *core.Platform,
+) (file dagql.ObjectResult[*core.File], declared bool, rerr error) {
+	declared, rerr = evalEntrypointMember(ctx, mod, EntrypointPrebuildMember, platform, func(ctx context.Context, dag *dagql.Server, value dang.Value) (err error) {
+		file, err = loadEntrypointObject[*core.File](ctx, dag, EntrypointPrebuildMember, value)
+		return err
+	})
+	return file, declared, rerr
+}
+
+// EntrypointRuntimeImage returns the container of mod's built-in Dang module
+// entrypoint's runtimeImage member, not yet pulled, or false when the
+// entrypoint declares no such member, as EntrypointPrebuildFile returns its
+// prebuild file.
+func EntrypointRuntimeImage(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+	platform *core.Platform,
+) (image dagql.ObjectResult[*core.Container], declared bool, rerr error) {
+	declared, rerr = evalEntrypointMember(ctx, mod, EntrypointRuntimeImageMember, platform, func(ctx context.Context, dag *dagql.Server, value dang.Value) (err error) {
+		image, err = loadEntrypointObject[*core.Container](ctx, dag, EntrypointRuntimeImageMember, value)
+		return err
+	})
+	return image, declared, rerr
+}
+
+// evalEntrypointMember calls member of mod's built-in Dang module entrypoint,
+// a member that takes no arguments but an optional platform, and passes its
+// value to load. It reports false, without calling load, when the entrypoint
+// declares no such member. The entrypoint runs as the module's calls see it:
+// currentModule is mod.
+func evalEntrypointMember(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+	member string,
+	platform *core.Platform,
+	load func(context.Context, *dagql.Server, dang.Value) error,
+) (declared bool, rerr error) {
+	defer func() {
+		if rerr != nil {
+			rerr = dangshared.ConvertError(rerr)
+		}
+	}()
+	if !mod.Self().Source.Valid {
+		return false, fmt.Errorf("module %q has no source", mod.Self().Name())
+	}
+	src := mod.Self().Source.Value
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, fmt.Errorf("get Dagger server for entrypoint %s: %w", member, err)
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return false, fmt.Errorf("get current query for entrypoint %s: %w", member, err)
+	}
+	entrySrc, err := entrypoint.ResolveSource(ctx, dag, src)
+	if err != nil {
+		return false, err
+	}
+	schemaJSONFile, err := mod.Self().SDKDeps().SchemaIntrospectionJSONFileForModule(ctx)
+	if err != nil {
+		return false, fmt.Errorf("get entrypoint schema: %w", err)
+	}
+	nestedClientMetadata, err := dangshared.NewNestedClientMetadata(ctx)
+	if err != nil {
+		return false, err
+	}
+	nestedClientMetadata.SDKEntrypoint = true
+
+	// The program runs as the module's process, as a call's does: an exec it
+	// starts is keyed on the module it runs for, so the result it returns is
+	// the one the module's calls build.
+	fnCall := &core.FunctionCall{Name: member}
+	fnCall.SetModuleProcess()
+
+	contract := entrypointContract{dangVersion: src.Self().DangVersion, member: member}
+	_, err = evalDangSource(
+		ctx,
+		query,
+		entrySrc,
+		schemaJSONFile,
+		nestedClientMetadata,
+		true, /* inert attachables */
+		fnCall,
+		mod,
+		false, /* the member reads no object directives */
+		contract.run,
+		func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
+			if !contract.declaresMember {
+				return nil, nil
+			}
+			declared = true
+			entrypointName, err := findModuleEntrypoint(env)
+			if err != nil {
+				return nil, err
+			}
+			// Another platform's is the member's with that platform as its
+			// argument; this engine's, the member's without one, as every
+			// entrypoint that declares it takes it.
+			var args []*core.FunctionCallArgValue
+			if platform != nil {
+				// A member that takes no platform answers for this engine's,
+				// whatever it is given.
+				takes, err := entrypointMemberTakes(ctx, env, entrypointName, member, "platform")
+				if err != nil {
+					return nil, err
+				}
+				if !takes {
+					return nil, fmt.Errorf("module entrypoint %s takes no platform: it answers for this engine's platform only, not %s", member, platform.Format())
+				}
+				value, err := json.Marshal(platform.Format())
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, &core.FunctionCallArgValue{Name: "platform", Value: core.JSON(value)})
+			}
+			value, err := callEntrypointMethod(ctx, env, entrypointName, member, mod, args)
+			if err != nil {
+				return nil, fmt.Errorf("call module entrypoint %s: %w", member, err)
+			}
+			return nil, load(ctx, dag, value)
+		},
+	)
+	if err != nil {
+		return false, err
+	}
+	return declared, nil
+}
+
+// loadEntrypointObject loads the object of type T that the entrypoint's
+// member returned as value.
+func loadEntrypointObject[T dagql.Typed](ctx context.Context, dag *dagql.Server, member string, value dang.Value) (dagql.ObjectResult[T], error) {
+	var inst dagql.ObjectResult[T]
+	var zero T
+	typeName := zero.Type().Name()
+	object, ok := value.(dang.GraphQLValue)
+	if !ok || object.TypeName != typeName {
+		return inst, fmt.Errorf("module entrypoint %s returned %T instead of a %s", member, value, typeName)
+	}
+	encoded, err := object.ID(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("get module entrypoint %s %s ID: %w", member, typeName, err)
+	}
+	var id dagql.ID[T]
+	if err := id.Decode(encoded); err != nil {
+		return inst, fmt.Errorf("decode module entrypoint %s %s ID: %w", member, typeName, err)
+	}
+	return id.Load(ctx, dag)
+}
+
 const moduleEntrypointInterface = `interface ModuleEntrypoint {
   types(workspace: Workspace!): [TypeDef!]!
   call(
@@ -260,15 +441,33 @@ type entrypointContract struct {
 	// (ModuleSource.DangVersion).
 	dangVersion string
 	sources     bool
+	// member is the optional entrypoint member the evaluation calls, if any,
+	// and declaresMember whether the entrypoint declares it.
+	member         string
+	declaresMember bool
 }
 
-func (c *entrypointContract) run(ctx context.Context, dir string) (dang.ValueScope, error) {
-	sources, err := DeclaresEntrypointSources(dir, c.dangVersion)
+func (c *entrypointContract) run(ctx context.Context, sourceDir string) (dang.ValueScope, error) {
+	// The sources check parses through the syntax cache at the version on
+	// ctx, so set the entrypoint's version before it, not only for the run.
+	ctx, err := contextWithEntrypointVersion(ctx, c.dangVersion)
 	if err != nil {
 		return nil, err
 	}
-	c.sources = sources
-	return runEntrypointDir(ctx, dir, c.dangVersion, sources)
+	dir, err := copyEntrypointDir(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	if c.sources, err = declaresEntrypointMember(ctx, dir, EntrypointSourcesMember); err != nil {
+		return nil, err
+	}
+	if c.member != "" {
+		if c.declaresMember, err = declaresEntrypointMember(ctx, dir, c.member); err != nil {
+			return nil, err
+		}
+	}
+	return runCopiedEntrypoint(ctx, dir, c.sources)
 }
 
 func (c *entrypointContract) workspaceArgs(
@@ -291,31 +490,52 @@ func (c *entrypointContract) workspaceArgs(
 }
 
 func runEntrypointDir(ctx context.Context, sourceDir string, dangVersion string, sources bool) (dang.ValueScope, error) {
-	ctx = withDangSyntaxCache(ctx)
 	ctx, err := contextWithEntrypointVersion(ctx, dangVersion)
 	if err != nil {
 		return nil, err
 	}
-	dir, err := os.MkdirTemp("", "dagger-module-entrypoint-")
-	if err != nil {
-		return nil, fmt.Errorf("create module entrypoint directory: %w", err)
-	}
-	defer os.RemoveAll(dir)
-
-	files, err := entrypointFiles(sourceDir)
+	dir, err := copyEntrypointDir(sourceDir)
 	if err != nil {
 		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	return runCopiedEntrypoint(ctx, dir, sources)
+}
+
+// copyEntrypointDir copies the entrypoint's top-level Dang files, and nothing
+// else, to a new temporary directory, where the engine installs the
+// entrypoint interface beside them and runs them. The caller removes it.
+func copyEntrypointDir(sourceDir string) (_ string, rerr error) {
+	dir, err := os.MkdirTemp("", "dagger-module-entrypoint-")
+	if err != nil {
+		return "", fmt.Errorf("create module entrypoint directory: %w", err)
+	}
+	defer func() {
+		if rerr != nil {
+			os.RemoveAll(dir)
+		}
+	}()
+	files, err := entrypointFiles(sourceDir)
+	if err != nil {
+		return "", err
 	}
 	for _, path := range files {
 		name := filepath.Base(path)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("read module entrypoint file %q: %w", name, err)
+			return "", fmt.Errorf("read module entrypoint file %q: %w", name, err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
-			return nil, fmt.Errorf("copy module entrypoint file %q: %w", name, err)
+			return "", fmt.Errorf("copy module entrypoint file %q: %w", name, err)
 		}
 	}
+	return dir, nil
+}
+
+// runCopiedEntrypoint installs the entrypoint interface in dir, a copy from
+// copyEntrypointDir, and runs it.
+func runCopiedEntrypoint(ctx context.Context, dir string, sources bool) (dang.ValueScope, error) {
+	ctx = withDangSyntaxCache(ctx)
 	contractPath := filepath.Join(dir, "__module_entrypoint.dang")
 	contract, err := os.OpenFile(contractPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
@@ -369,6 +589,38 @@ func findModuleEntrypoint(env dang.ValueScope) (string, error) {
 	default:
 		return "", fmt.Errorf("module entrypoint source defines multiple %s types: %s", moduleEntrypointTypeName, strings.Join(matches, ", "))
 	}
+}
+
+// entrypointMemberTakes reports whether the entrypoint's member takes the
+// argument arg.
+func entrypointMemberTakes(ctx context.Context, env dang.ValueScope, entrypointName, member, arg string) (bool, error) {
+	base, found, err := env.Lookup(ctx, entrypointName)
+	if err != nil {
+		return false, fmt.Errorf("lookup module entrypoint %s: %w", entrypointName, err)
+	}
+	constructor, ok := base.(*dang.ConstructorFunction)
+	if !found || !ok {
+		return false, fmt.Errorf("module entrypoint %s is not a type", entrypointName)
+	}
+	scheme, found := constructor.ObjectType.SchemeOf(member)
+	if !found {
+		return false, fmt.Errorf("module entrypoint %s has no member %s", entrypointName, member)
+	}
+	t, _ := scheme.Type()
+	fn, ok := t.(*hm.FunctionType)
+	if !ok {
+		return false, nil
+	}
+	args, ok := fn.Arg().(*dang.RecordType)
+	if !ok {
+		return false, nil
+	}
+	for _, field := range args.Fields {
+		if field.Key == arg {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func callEntrypointMethod(

@@ -20,6 +20,23 @@ type TestSplit {
   let ws: Workspace!
 
   """
+  The dev engine tests run against. Making the cache entries the engine image
+  ships starts a separate engine and takes minutes, before the first test; a
+  shard's one dev engine builds the same results for its first Go module
+  instead. So it ships them only for the shards that need them: tests that
+  check them, and shards whose Go modules the engine would otherwise build
+  from scratch many times over, in fresh nested engines or in many tests
+  loading Go modules at once.
+  """
+  let devEngine(imageEntries: Boolean! = false): EngineDev! {
+    if (imageEntries) {
+      engineDev(ws: self.ws)
+    } else {
+      engineDev(ws: self.ws).withoutImageEntries
+    }
+  }
+
+  """
   Lower-level API for running specific tests
   """
   pub testSpecific(
@@ -33,8 +50,12 @@ type TestSplit {
     Run the privileged eBPF tests (Linux 6.15 or newer)
     """
     ebpf: Boolean,
+    """
+    Run against an engine with the cache entries its image ships
+    """
+    imageEntries: Boolean! = false,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    devEngine(imageEntries: imageEntries).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   let testCliEngineSpecific(
@@ -42,8 +63,9 @@ type TestSplit {
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
     race: Boolean,
+    imageEntries: Boolean! = false,
   ): Void {
-    engineDev(ws: self.ws)
+    devEngine(imageEntries: imageEntries)
       .withEngineConfig("worker.oci", [
         "minFreeSpace = \"30%\"",
         "maxUsedSpace = \"50%\"",
@@ -58,7 +80,7 @@ type TestSplit {
     race: Boolean,
     parallel: Int,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    devEngine.test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   """
@@ -162,6 +184,8 @@ type TestSplit {
       ],
       race: true,
       parallel: 16,
+      # The remote cache transfer suite checks the engine image's entries.
+      imageEntries: true,
     )
   }
 
@@ -284,7 +308,7 @@ type TestSplit {
   """
   pub testTelemetry: Void @check {
     # Rendering goldens require their warmup cache to survive session teardown.
-    engineDev(ws: self.ws)
+    devEngine
       .withEngineConfig("worker.oci", "gc = false")
       .test(run: "^TestTelemetry$", pkg: "./dagql/idtui", testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
     testSpecific(["^TestTelemetry$"])
@@ -296,8 +320,9 @@ type TestSplit {
   Test Call and Shell
   """
   pub testCallAndShell: Void @check {
-    testSpecific(["^TestCall$", "^TestShell$"])
-    testSpecific(["^TestDaggerCMD$"], pkg: "./internal/cmd/dagger")
+    # Many of their tests load Go modules at once.
+    testSpecific(["^TestCall$", "^TestShell$"], imageEntries: true)
+    testSpecific(["^TestDaggerCMD$"], pkg: "./internal/cmd/dagger", imageEntries: true)
 
     null
   }
@@ -313,7 +338,8 @@ type TestSplit {
   Test cache persistence
   """
   pub testCachePersistence: Void @check {
-    testCliEngineSpecific(["TestCachePersistence"])
+    # Its tests load Go modules in fresh nested engines made from this one.
+    testCliEngineSpecific(["TestCachePersistence"], imageEntries: true)
   }
 
   """
@@ -334,7 +360,8 @@ type TestSplit {
   Test Interface
   """
   pub testInterface: Void @check {
-    testSpecific(["TestInterface"])
+    # Its tests all load Go modules at once.
+    testSpecific(["TestInterface"], imageEntries: true)
   }
 
   """
@@ -348,7 +375,8 @@ type TestSplit {
   Test Module Runtimes
   """
   pub testModuleRuntimes: Void @check {
-    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
+    # Many of its tests load Go modules at once.
+    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"], imageEntries: true)
   }
 
   """
@@ -374,11 +402,12 @@ type TestSplit {
   }
 
   """
-  Test eBPF network accounting of engine subprocesses and executor workloads
-  in a privileged test container
+  Test eBPF network accounting of engine subprocesses and executor workloads,
+  and the trees of chains imported onto overlayfs, whose whiteouts and opaque
+  directories need privileges, in a privileged test container
   """
   pub testEbpf: Void @check {
-    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$"], pkg: "./engine/ebpf/nettracer", ebpf: true)
+    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$", "^TestImportChainOverlayTree$"], pkg: "./engine/ebpf/nettracer ./engine/snapshots", ebpf: true)
   }
 
   """

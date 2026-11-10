@@ -10,8 +10,6 @@ import (
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/telemetryattrs"
-
-	"github.com/dagger/dagger/util/parallel"
 )
 
 type ModTreeNode struct {
@@ -283,14 +281,6 @@ func boundWorkspaceArgs(ctx context.Context, srv *dagql.Server, fn *Function) ([
 	}}, nil
 }
 
-func debugTrace(ctx context.Context, msg string, args ...any) {
-	_ = parallel.
-		New().
-		WithContextualTracer(true).
-		WithJob(fmt.Sprintf(msg, args...), nil).
-		Run(ctx)
-}
-
 // Walk the tree and return all matching nodes, with include and exclude filters applied.
 func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeNode) (bool, bool), include []string, exclude []string) ([]*ModTreeNode, error) {
 	var res []*ModTreeNode
@@ -300,15 +290,14 @@ func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeN
 		collect, descend := matches(n)
 		if collect {
 			if len(include) > 0 {
-				if match, err := n.Match(ctx, include); err != nil {
+				if match, err := n.Match(include); err != nil {
 					return false, err
 				} else if !match {
-					debugTrace(ctx, "%q: does not match %v. Skipping", n.PathString(), include)
 					return false, nil
 				}
 			}
 			if len(exclude) > 0 {
-				if match, err := n.Match(ctx, exclude); err != nil {
+				if match, err := n.Match(exclude); err != nil {
 					return false, err
 				} else if match {
 					return false, nil
@@ -356,49 +345,35 @@ func (p ModTreePath) APICase(namer Namer) []string {
 	return apiCase
 }
 
-func (p ModTreePath) Contains(ctx context.Context, namer Namer, target ModTreePath) (result bool) {
-	defer func() {
-		debugTrace(ctx, "%v.Contains(%v) -> %v", p, target, result)
-	}()
+func (p ModTreePath) Contains(namer Namer, target ModTreePath) bool {
 	if len(target) < len(p) {
 		// if the target is shorter, it can't be a sub-path
 		return false
 	}
 	targetParent := target[:len(p)]
-	return p.Equals(ctx, namer, targetParent)
+	return p.Equals(namer, targetParent)
 }
 
-func (p ModTreePath) Equals(ctx context.Context, namer Namer, other ModTreePath) (result bool) {
-	defer func() {
-		debugTrace(ctx, "%v.Equals(%v) -> %v", p, other, result)
-	}()
+func (p ModTreePath) Equals(namer Namer, other ModTreePath) bool {
 	if len(p) != len(other) {
 		return false
 	}
 	for i := range p {
 		if namer.FieldName(p[i]) != namer.FieldName(other[i]) {
-			debugTrace(ctx, "%v.Equals(%v): %q != %q -> NOT EQUAL", p, other, namer.FieldName(p[i]), namer.FieldName(other[i]))
 			return false
 		}
 	}
 	return true
 }
 
-func (p ModTreePath) Glob(ctx context.Context, namer Namer, pattern string) (bool, error) {
+func (p ModTreePath) Glob(namer Namer, pattern string) (bool, error) {
 	// Normalize both pattern and path to CLI case (kebab-case) for consistent matching
 	slashPattern := strings.Join(NewModTreePath(pattern).CliCase(namer), "/")
 	slashPath := strings.Join(p.CliCase(namer), "/")
-	if match, err := doublestar.PathMatch(slashPattern, slashPath); err != nil {
-		return false, err
-	} else if match {
-		debugTrace(ctx, "%q.Glob(%q) -> MATCH", slashPath, slashPattern)
-		return true, nil
-	}
-	debugTrace(ctx, "%q.Glob(%q) -> no match", slashPath, slashPattern)
-	return false, nil
+	return doublestar.PathMatch(slashPattern, slashPath)
 }
 
-func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, error) {
+func (node *ModTreeNode) Match(patterns []string) (bool, error) {
 	if node.Parent == nil {
 		// The root node matches everything
 		return true, nil
@@ -408,7 +383,7 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 	}
 	namer := LatestNamer
 	for _, pattern := range patterns {
-		if match, err := node.Path().Glob(ctx, namer, pattern); err != nil {
+		if match, err := node.Path().Glob(namer, pattern); err != nil {
 			return false, err
 		} else if match {
 			return true, nil
@@ -416,7 +391,7 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 		// Includes also select descendants. Keep this a glob match: turning
 		// a pattern into API field names would strip classes such as [0-9]
 		// and make discovery disagree with the recorded include selector.
-		if match, err := node.Path().Glob(ctx, namer, pattern+":**"); err != nil {
+		if match, err := node.Path().Glob(namer, pattern+":**"); err != nil {
 			return false, err
 		} else if match {
 			return true, nil

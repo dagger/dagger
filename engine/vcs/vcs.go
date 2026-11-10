@@ -43,9 +43,6 @@ type Cmd struct {
 	TagSyncDefault string   // command to sync to default tag
 
 	LogCmd string // command to list repository changelogs in an XML format
-
-	Scheme  []string
-	PingCmd string
 }
 
 // A TagCmd describes a command to list available tags
@@ -89,9 +86,6 @@ var vcsGit = &Cmd{
 	},
 	TagSyncCmd:     "checkout {tag}",
 	TagSyncDefault: "checkout master",
-
-	Scheme:  []string{"git", "https", "http", "git+ssh"},
-	PingCmd: "ls-remote {scheme}://{repo}",
 }
 
 func (v *Cmd) String() string {
@@ -107,12 +101,6 @@ func (v *Cmd) String() string {
 // Otherwise run discards the command's output.
 func (v *Cmd) run(dir string, cmd string, keyval ...string) error {
 	_, err := v.run1(dir, cmd, keyval, true)
-	return err
-}
-
-// runVerboseOnly is like run but only generates error output to standard error in verbose mode.
-func (v *Cmd) runVerboseOnly(dir string, cmd string, keyval ...string) error {
-	_, err := v.run1(dir, cmd, keyval, false)
 	return err
 }
 
@@ -160,12 +148,6 @@ func (v *Cmd) run1(dir string, cmdline string, keyval []string, verbose bool) ([
 		return nil, err
 	}
 	return out, nil
-}
-
-// Ping pings the repo to determine if scheme used is valid.
-// This repo must be pingable with this scheme and VCS.
-func (v *Cmd) Ping(scheme, repo string) error {
-	return v.runVerboseOnly(".", v.PingCmd, "scheme", scheme, "repo", repo)
 }
 
 // Create creates a new copy of repo in dir.
@@ -266,7 +248,6 @@ type vcsPath struct {
 	repo   string                              // repository to use (expand with match of re)
 	vcs    string                              // version control system to use (expand with match of re)
 	check  func(match map[string]string) error // additional checks
-	ping   bool                                // ping for scheme to use to download repo
 
 	regexp *regexp.Regexp // cached compiled form of re
 }
@@ -340,7 +321,7 @@ type RepoRoot struct {
 // RepoRootForImportPath analyzes importPath to determine the
 // version control system, and code repository to use.
 func RepoRootForImportPath(importPath string, verbose bool) (*RepoRoot, error) {
-	rr, err := RepoRootForImportPathStatic(importPath, "")
+	rr, err := RepoRootForImportPathStatic(importPath)
 	if err == errUnknownSite {
 		rr, err = RepoRootForImportDynamic(importPath, verbose)
 		if err != nil {
@@ -361,13 +342,23 @@ func RepoRootForImportPath(importPath string, verbose bool) (*RepoRoot, error) {
 
 var errUnknownSite = errors.New("dynamic lookup required to find mapping")
 
+// IsKnownCodeHost reports whether importPath is on one of the code hosts in
+// vcsPaths, such as github.com. Their repository roots follow from the path
+// itself, so they are never looked up dynamically.
+func IsKnownCodeHost(importPath string) bool {
+	for _, srv := range vcsPaths {
+		if srv.prefix != "" && strings.HasPrefix(importPath, srv.prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // RepoRootForImportPathStatic attempts to map importPath to a
 // RepoRoot using the commonly-used VCS hosting sites in vcsPaths
 // (github.com/user/dir), or from a fully-qualified importPath already
 // containing its VCS type (foo.com/repo.git/dir)
-//
-// If scheme is non-empty, that scheme is forced.
-func RepoRootForImportPathStatic(importPath, scheme string) (*RepoRoot, error) {
+func RepoRootForImportPathStatic(importPath string) (*RepoRoot, error) {
 	if strings.Contains(importPath, "://") {
 		return nil, fmt.Errorf("invalid import path %q", importPath)
 	}
@@ -407,18 +398,6 @@ func RepoRootForImportPathStatic(importPath, scheme string) (*RepoRoot, error) {
 		vcs := ByCmd(match["vcs"])
 		if vcs == nil {
 			return nil, fmt.Errorf("unknown version control system %q", match["vcs"])
-		}
-		if srv.ping {
-			if scheme != "" {
-				match["repo"] = scheme + "://" + match["repo"]
-			} else {
-				for _, scheme := range vcs.Scheme {
-					if vcs.Ping(scheme, match["repo"]) == nil {
-						match["repo"] = scheme + "://" + match["repo"]
-						break
-					}
-				}
-			}
 		}
 		rr := &RepoRoot{
 			VCS:  vcs,
@@ -694,7 +673,6 @@ var vcsPaths = []*vcsPath{
 	// General syntax for any server
 	{
 		re:   `^(?P<root>(?P<repo>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/~]*?)\.(?P<vcs>bzr|git|hg|svn))(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
-		ping: true,
 		repo: "https://{root}",
 		// for static analysis of general servers (GitLab ref with .git for example)
 		check: func(match map[string]string) error {

@@ -92,6 +92,10 @@ func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err e
 			slog.Info("done!")
 			break
 		}
+		if cfg.ModuleConfig != nil && cfg.ModuleConfig.Bootstrap {
+			slog.Info("bootstrapped")
+			break
+		}
 
 		slog.Info("needs another pass...")
 	}

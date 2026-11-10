@@ -949,6 +949,98 @@ func (EngineSuite) TestConcurrentCallContextCanceled(ctx context.Context, t *tes
 	}
 }
 
+func (EngineSuite) TestMaxParallelism(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	connectEngine := func(t *testctx.T, maxParallelism int) *core.Query {
+		devEngine := devEngineContainer(c, engineWithBkConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+			cfg.Workers.OCI.MaxParallelism = maxParallelism
+			return cfg
+		}))
+		engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
+		endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+		require.NoError(t, err)
+		nested := connect(ctx, t,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+		return core.NewQuery(nested)
+	}
+
+	t.Run("limits concurrent execs", func(ctx context.Context, t *testctx.T) {
+		const maxParallelism = 2
+		const execs = 4
+		nested := connectEngine(t, maxParallelism)
+
+		// Each exec reports the system uptime when it starts and ends, a clock
+		// that all containers on the host share. The execs can reach the Dagger
+		// API but never call it, so they count toward the limit throughout.
+		type interval struct{ start, end float64 }
+		intervals := make([]interval, execs)
+		base := nested.Container().From(alpineImage)
+		var eg errgroup.Group
+		for i := range execs {
+			eg.Go(func() error {
+				out, err := base.
+					WithEnvVariable("EXEC", strconv.Itoa(i)).
+					WithExec([]string{"sh", "-c", `cut -d" " -f1 /proc/uptime; sleep 3; cut -d" " -f1 /proc/uptime`}).
+					Stdout(ctx)
+				if err != nil {
+					return err
+				}
+				fields := strings.Fields(out)
+				if len(fields) != 2 {
+					return fmt.Errorf("exec %d: unexpected output %q", i, out)
+				}
+				start, err := strconv.ParseFloat(fields[0], 64)
+				if err != nil {
+					return err
+				}
+				end, err := strconv.ParseFloat(fields[1], 64)
+				if err != nil {
+					return err
+				}
+				intervals[i] = interval{start, end}
+				return nil
+			})
+		}
+		require.NoError(t, eg.Wait())
+
+		// The most execs running at once is the most intervals that contain
+		// any interval's start.
+		maxRunning := 0
+		for _, a := range intervals {
+			running := 0
+			for _, b := range intervals {
+				if b.start <= a.start && a.start < b.end {
+					running++
+				}
+			}
+			maxRunning = max(maxRunning, running)
+		}
+		t.Logf("exec intervals: %+v", intervals)
+		require.Equal(t, maxParallelism, maxRunning)
+	})
+
+	t.Run("an exec that calls the API gives up its slot", func(ctx context.Context, t *testctx.T) {
+		nested := connectEngine(t, 1)
+
+		// With a limit of 1, the inner exec can only run if the outer exec,
+		// which waits for it, no longer holds the only slot.
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		out, err := nested.Container().From(alpineImage).
+			WithExec([]string{"dagger", "query"}, core.ContainerWithExecOpts{
+				Stdin: `{container{from(address:"` + alpineImage + `"){withExec(args:["echo","inner exec ran"]){stdout}}}}`,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "inner exec ran")
+	})
+}
+
 func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

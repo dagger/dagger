@@ -33,6 +33,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
+	"github.com/dagger/dagger/internal/buildkit/util/resolver/retryhandler"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
@@ -192,7 +193,9 @@ func (r *Resolver) ResolveImageConfig(
 	opts ResolveImageConfigOpts,
 ) (_ string, _ digest.Digest, _ []byte, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.resolve", ref)
 	defer func() {
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -223,7 +226,7 @@ func (r *Resolver) ResolveImageConfig(
 		if err != nil {
 			return nil, fmt.Errorf("create registry resolve network recorder: %w", err)
 		}
-		resolvedRef, rootDesc, fetcher, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, network)
+		resolvedRef, rootDesc, fetcher, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, network, false)
 		if err != nil {
 			return nil, err
 		}
@@ -286,10 +289,12 @@ func (r *Resolver) ResolveImageDigest(
 ) (_ string, _ digest.Digest, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "resolving "+ref,
 		telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.resolve", ref)
 	ctx, input := registryTransfer(ctx, ref, opts.Network, enginetelemetry.StartWorkloadInput)
 	var identity string
 	defer func() {
 		input.End(identity, rerr)
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -332,7 +337,9 @@ func registryImageIdentity(manifest digest.Digest) string { return "image:" + ma
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "pulling "+bkcache.DisplayRef(ref), telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.pull", ref)
 	defer func() {
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -416,9 +423,14 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		return nil, err
 	}
 	childrenHandler := images.ChildrenHandler(r.contentStore)
+	// A registry can drop a connection partway through a blob, and containerd
+	// only reconnects on an unexpected EOF, so retry the blob's fetch.
+	fetchHandler := retryhandler.New(remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher), func(msg []byte) {
+		bklog.G(ctx).Warnf("pulling %s: %s", resolvedRef, bytes.TrimSpace(msg))
+	})
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(progressIngester{Ingester: r.contentStore}, fetcher),
+		fetchHandler,
 		childrenHandler,
 		dslHandler,
 	)
@@ -503,10 +515,10 @@ func (r *Resolver) resolvePullRootDescriptor(ctx context.Context, ref string, op
 			if err != nil {
 				return "", ocispecs.Descriptor{}, nil, err
 			}
-			return resolvedRef, rootDesc, fetcher, nil
+			return resolvedRef, rootDesc, profFetcher(ctx, fetcher), nil
 		}
 	}
-	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, recorder)
+	return r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport, recorder, true)
 }
 
 // remoteResolver asks the registry through a transport that records every
@@ -529,15 +541,32 @@ func (r *Resolver) remoteHosts(network NetworkConfig, registryTransport Registry
 // such check: its root is the first thing fetched either way. So it is
 // fetched straight away, checked against the digest, and served from memory
 // when the fetcher is asked for it, saving a registry round trip.
-func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
+//
+// A pull's fetcher records each download when work under ctx is profiled
+// (profFetcher), the pinned root's included; a resolve's records none.
+func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport, recorder *enginetelemetry.NetworkAccumulator, pull bool) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
 	hosts := r.remoteHosts(network, registryTransport, recorder)
 	if parsed, err := reference.ParseNormalizedNamed(ref); err == nil {
 		if canonical, ok := parsed.(reference.Canonical); ok {
-			return fetchPinnedRoot(ctx, hosts, ref, canonical.Digest())
+			var resolvedRef string
+			var rootDesc ocispecs.Descriptor
+			var fetcher remotes.Fetcher
+			err := retryResolve(ctx, ref, func(ctx context.Context) error {
+				var err error
+				resolvedRef, rootDesc, fetcher, err = fetchPinnedRoot(ctx, hosts, ref, canonical.Digest(), pull)
+				return err
+			})
+			return resolvedRef, rootDesc, fetcher, err
 		}
 	}
 	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: hosts})
-	resolvedRef, rootDesc, err := resolver.Resolve(ctx, ref)
+	var resolvedRef string
+	var rootDesc ocispecs.Descriptor
+	err := retryResolve(ctx, ref, func(ctx context.Context) error {
+		var err error
+		resolvedRef, rootDesc, err = resolver.Resolve(ctx, ref)
+		return err
+	})
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
@@ -545,14 +574,33 @@ func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, 
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
 	}
+	if pull {
+		fetcher = profFetcher(ctx, fetcher)
+	}
 	return resolvedRef, rootDesc, fetcher, nil
 }
 
-func fetchPinnedRoot(ctx context.Context, hosts docker.RegistryHosts, ref string, dgst digest.Digest) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
+// retryResolve runs resolve, and runs it again after a network error.
+// containerd retries a manifest request after some error statuses, but not
+// after a network error such as a TLS handshake timeout, so the root is
+// resolved again the way a blob fetch is retried.
+func retryResolve(ctx context.Context, ref string, resolve func(context.Context) error) error {
+	_, err := retryhandler.New(func(ctx context.Context, _ ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
+		return nil, resolve(ctx)
+	}, func(msg []byte) {
+		bklog.G(ctx).Warnf("resolving %s: %s", ref, bytes.TrimSpace(msg))
+	})(ctx, ocispecs.Descriptor{})
+	return err
+}
+
+func fetchPinnedRoot(ctx context.Context, hosts docker.RegistryHosts, ref string, dgst digest.Digest, pull bool) (string, ocispecs.Descriptor, remotes.Fetcher, error) {
 	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: acceptEveryManifestType(hosts)})
 	fetcher, err := resolver.Fetcher(ctx, ref)
 	if err != nil {
 		return "", ocispecs.Descriptor{}, nil, err
+	}
+	if pull {
+		fetcher = profFetcher(ctx, fetcher)
 	}
 	// Any manifest media type sends the request to the manifests endpoint.
 	// The fetcher doesn't return the response's type, so it's read from the
@@ -868,7 +916,9 @@ func (r *Resolver) localCanonicalRootDescriptor(ctx context.Context, dgst digest
 
 func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, opts PushOpts) (rerr error) {
 	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
+	ctx, profOp := beginRegistryOp(ctx, "image.push", ref)
 	defer func() {
+		profOp.EndErr(rerr)
 		tracing.FinishWithError(span, rerr)
 	}()
 
@@ -1457,7 +1507,11 @@ func pushHandler(
 	provider content.Provider,
 	network *enginetelemetry.NetworkAccumulator,
 ) images.HandlerFunc {
-	return func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
+	return func(ctx context.Context, desc ocispecs.Descriptor) (_ []ocispecs.Descriptor, rerr error) {
+		// The blob's upload, as a profile op: its size when it was sent, none
+		// when the registry had it.
+		ctx, profOp := beginRegistryOp(ctx, "image.push.blob", desc.Digest.String())
+		defer func() { profOp.EndErr(rerr) }()
 		cw, err := pusher.Push(ctx, desc)
 		if err != nil {
 			if errors.Is(err, cerrdefs.ErrAlreadyExists) {
@@ -1483,6 +1537,7 @@ func pushHandler(
 			}
 			return nil, fmt.Errorf("push content %s (%d bytes): %w", desc.Digest, desc.Size, err)
 		}
+		profOp.SetBytes(desc.Size)
 		return nil, nil
 	}
 }

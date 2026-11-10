@@ -2,10 +2,12 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 // module is an SDK implemented as module; i.e. every module besides the special case go sdk.
@@ -19,11 +21,44 @@ type module struct {
 	rawConfig                map[string]any
 
 	funcs map[string]*core.Function
+
+	moduleSDKOpts
+}
+
+// moduleSDKOpts are what an SDK the engine carries needs of it beyond a
+// module SDK's own.
+type moduleSDKOpts struct {
+	// builtinArgs are constructor arguments the engine gives the SDK's
+	// module: what it knows of the engine and the calling client that a
+	// module can't reach itself. They depend on nothing but the session and
+	// the client, which instanceKey keys by.
+	builtinArgs func(context.Context) ([]dagql.NamedInput, error)
+	// selfCalls reports that the SDK's modules always enable self calls
+	// (core.ModuleSource.SelfCallsEnabled).
+	selfCalls bool
+	// generatedFiles are the files, from a module's source directory, that a
+	// module building from committed files must have. Without one, loading it
+	// fails with core.MissingGeneratedFileError, which callers tell apart from
+	// a failed build, as a module can't.
+	generatedFiles []string
+	// debugTerminal opens a terminal in a module's runtime container when
+	// its SDK config sets debug, as the built-in Go SDK did.
+	debugTerminal bool
+	// moduleTypes reports a module's types without its runtime, in the engine.
+	// Such a module has no reason to build while it loads.
+	moduleTypes core.ModuleTypes
 }
 
 type moduleInstance struct {
 	dag *dagql.Server
 	sdk dagql.AnyObjectResult
+}
+
+// selectSDK selects from the SDK object as the engine's own work
+// (core.WithEngineWork): what the SDK does to answer is the engine's
+// machinery, internal in telemetry, as the built-in SDKs' work is.
+func (inst *moduleInstance) selectSDK(ctx context.Context, dest any, sels ...dagql.Selector) error {
+	return inst.dag.Select(core.WithEngineWork(ctx), inst.sdk, dest, sels...)
 }
 
 func newModuleSDK(
@@ -33,12 +68,24 @@ func newModuleSDK(
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
 	rawConfig map[string]any,
 ) (*module, error) {
+	return newModuleSDKWith(ctx, root, sdkModMeta, optionalFullSDKSourceDir, rawConfig, moduleSDKOpts{})
+}
+
+func newModuleSDKWith(
+	ctx context.Context,
+	root *core.Query,
+	sdkModMeta dagql.ObjectResult[*core.Module],
+	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
+	rawConfig map[string]any,
+	opts moduleSDKOpts,
+) (*module, error) {
 	sdk := &module{
 		root:                     root,
 		mod:                      sdkModMeta,
 		optionalFullSDKSourceDir: optionalFullSDKSourceDir,
 		rawConfig:                rawConfig,
 		funcs:                    listImplementedFunctions(sdkModMeta.Self()),
+		moduleSDKOpts:            opts,
 	}
 
 	if _, err := sdk.instantiate(ctx); err != nil {
@@ -94,7 +141,98 @@ func (sdk *module) RuntimeTrustsCommittedFiles() bool {
 	return false
 }
 
+// instantiate serves the SDK module, configured, in a server of its own.
+// Serving it costs more than a call to it whose result is cached, and every
+// module of a session calls its SDK several times (types, codegen, runtime),
+// so a session serves each SDK once, as SchemaBuilderMemo builds a session's
+// module schemas once. The server is only selected from.
 func (sdk *module) instantiate(ctx context.Context) (*moduleInstance, error) {
+	key, ok, err := sdk.instanceKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return sdk.newInstance(ctx)
+	}
+	return sessionModuleInstance(ctx, key, sdk.newInstance)
+}
+
+// instanceKey identifies the SDK instance this module SDK serves within the
+// session: its module and full source directory by attached result, and its
+// configuration. ok is false when the context has no session or a result
+// isn't attached, which leaves nothing to key by.
+func (sdk *module) instanceKey(ctx context.Context) (string, bool, error) {
+	metadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil || metadata.SessionID == "" {
+		return "", false, nil //nolint:nilerr // no session: serve without the session's cache
+	}
+	modID, ok := attachedResultID(sdk.mod)
+	if !ok {
+		return "", false, nil
+	}
+	var srcDirID uint64
+	if sdk.optionalFullSDKSourceDir.Self() != nil {
+		if srcDirID, ok = attachedResultID(sdk.optionalFullSDKSourceDir); !ok {
+			return "", false, nil
+		}
+	}
+	key, err := moduleInstanceKey(metadata.SessionID, sdk.root, modID, srcDirID, sdk.rawConfig)
+	if err != nil {
+		return "", false, err
+	}
+	return key, true, nil
+}
+
+// attachedResultID is res's engine result ID, or false when it has none.
+func attachedResultID(res dagql.AnyResult) (uint64, bool) {
+	id, err := res.ID()
+	if err != nil || id == nil || !id.IsHandle() || id.EngineResultID() == 0 {
+		return 0, false
+	}
+	return id.EngineResultID(), true
+}
+
+// moduleInstanceKey is the session cache key of an SDK instance. The cache
+// finds entries by key alone, so the key carries the session, and the root,
+// as a SchemaBuilderMemo keys a client's servers.
+func moduleInstanceKey(sessionID string, root *core.Query, modID, srcDirID uint64, config map[string]any) (string, error) {
+	// encoding/json writes a map's keys sorted, so equal configs key alike.
+	cfg, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("sdk config: %w", err)
+	}
+	return fmt.Sprintf("module-sdk-instance:%s:%p:%d:%d:%s", sessionID, root, modID, srcDirID, cfg), nil
+}
+
+// sessionModuleInstance is the session's SDK instance for key, made by
+// build the first time the session asks for it. A failed build isn't kept,
+// so the next call builds again.
+func sessionModuleInstance(ctx context.Context, key string, build func(context.Context) (*moduleInstance, error)) (*moduleInstance, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return build(ctx)
+	}
+	metadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil || metadata.SessionID == "" {
+		return build(ctx)
+	}
+	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, key, func(ctx context.Context) (any, error) {
+		return build(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	inst, ok := res.Value().(*moduleInstance)
+	if !ok {
+		return nil, fmt.Errorf("sdk instance: unexpected %T", res.Value())
+	}
+	return inst, nil
+}
+
+// newInstance serves the SDK module, configured, in a new server.
+func (sdk *module) newInstance(ctx context.Context) (*moduleInstance, error) {
+	// Making and configuring the SDK object is the engine's own work too.
+	ctx = core.WithEngineWork(ctx)
 	dag, err := dagql.NewServer(ctx, sdk.root)
 	if err != nil {
 		return nil, fmt.Errorf("create sdk module server: %w", err)
@@ -127,6 +265,13 @@ func (sdk *module) instantiate(ctx context.Context) (*moduleInstance, error) {
 			{Name: "sdkSourceDir", Value: dagql.Opt(dagql.NewID[*core.Directory](sdkSourceDirID))},
 		}
 	}
+	if sdk.builtinArgs != nil {
+		args, err := sdk.builtinArgs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get constructor arguments for sdk module %s: %w", sdk.mod.Self().Name(), err)
+		}
+		constructorArgs = append(constructorArgs, args...)
+	}
 
 	if err := dag.Select(ctx, dag.Root(), &sdkObj,
 		dagql.Selector{
@@ -143,6 +288,12 @@ func (sdk *module) instantiate(ctx context.Context) (*moduleInstance, error) {
 	}
 
 	return &moduleInstance{dag: dag, sdk: sdkObj}, nil
+}
+
+// AlwaysEnablesSelfCalls reports whether the SDK's modules always enable self
+// calls, as the Go SDK's do.
+func (sdk *module) AlwaysEnablesSelfCalls() bool {
+	return sdk.selfCalls
 }
 
 // withConfig function checks if the moduleSDK exposes a function with name `WithConfig`.
@@ -275,6 +426,9 @@ func (sdk *module) AsRuntime() (core.Runtime, bool) {
 }
 
 func (sdk *module) AsModuleTypes() (core.ModuleTypes, bool) {
+	if sdk.moduleSDKOpts.moduleTypes != nil {
+		return sdk.moduleSDKOpts.moduleTypes, true
+	}
 	if _, ok := sdk.funcs["moduleTypes"]; !ok {
 		return nil, false
 	}
@@ -339,7 +493,7 @@ func (sdk *module) TargetRuntime(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("initialize sdk module %s targetRuntime: %w", sdk.mod.Self().Name(), err)
 	}
 	var out dagql.String
-	if err := sdkInst.dag.Select(ctx, sdkInst.sdk, &out, dagql.Selector{
+	if err := sdkInst.selectSDK(ctx, &out, dagql.Selector{
 		Field: "targetRuntime",
 	}); err != nil {
 		return "", fmt.Errorf("call sdk %s targetRuntime: %w", sdk.mod.Self().Name(), err)

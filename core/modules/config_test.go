@@ -46,6 +46,97 @@ source = "./entrypoint"
 	require.Nil(t, cfg.SDK)
 }
 
+// A version 2 manifest names the files outside the module directory that its
+// build reads, and writes them back in the same place.
+func TestModuleManifestV2Include(t *testing.T) {
+	t.Parallel()
+
+	src := `name = "tiny"
+include = ["../../../go.mod", "../../../util/parallel/*.go", "!../../../util/parallel/*_test.go"]
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`
+	cfg, err := ParseModuleConfigForFilename([]byte(src), Filename)
+	require.NoError(t, err)
+	require.Equal(t, []string{"../../../go.mod", "../../../util/parallel/*.go", "!../../../util/parallel/*_test.go"}, cfg.Include)
+
+	out, err := MarshalModuleConfigForFilename(cfg, Filename)
+	require.NoError(t, err)
+	require.Equal(t, src, string(out))
+}
+
+// A version 2 manifest that declares include replaces its entrypoint's
+// sources member, even with an empty list, so an empty include is read as
+// declared and written back; one without include stays without.
+func TestModuleManifestV2IncludeDeclared(t *testing.T) {
+	t.Parallel()
+
+	empty := `name = "tiny"
+include = []
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`
+	cfg, err := ParseModuleConfigForFilename([]byte(empty), Filename)
+	require.NoError(t, err)
+	require.True(t, cfg.IncludeDeclared)
+	require.Empty(t, cfg.Include)
+	out, err := MarshalModuleConfigForFilename(cfg, Filename)
+	require.NoError(t, err)
+	require.Equal(t, empty, string(out))
+
+	without := `name = "tiny"
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`
+	cfg, err = ParseModuleConfigForFilename([]byte(without), Filename)
+	require.NoError(t, err)
+	require.False(t, cfg.IncludeDeclared)
+
+	// A fat manifest's include also serves the pre-v2 format, whose include
+	// never had to list what sources returns, so it doesn't replace sources.
+	fat, err := ParseModuleConfigForFilename([]byte(`name = "tiny"
+include = ["../shared/*.txt"]
+
+[runtime]
+source = "go"
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`), Filename)
+	require.NoError(t, err)
+	require.NotNil(t, fat.Entrypoint)
+	require.Equal(t, []string{"../shared/*.txt"}, fat.Include)
+	require.False(t, fat.IncludeDeclared)
+	out, err = MarshalModuleConfigForFilename(cfg, Filename)
+	require.NoError(t, err)
+	require.Equal(t, without, string(out))
+}
+
+// A fat manifest's include applies to both formats, so a version 2 read takes
+// its pre-v2 exclude with it, as the pre-v2 format does.
+func TestFatModuleManifestIncludeKeepsExclude(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := ParseModuleConfigForFilename([]byte(`name = "tiny"
+include = ["../shared/*.txt"]
+exclude = ["../shared/skip.txt", "!../shared/keep.txt"]
+
+[entrypoint]
+  kind = "dang"
+  source = "./entrypoint"
+`), Filename)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Entrypoint)
+	require.Equal(t, []string{"../shared/*.txt", "!../shared/skip.txt", "../shared/keep.txt"}, cfg.Include)
+}
+
 // The entrypoint table is the only manifest version 2 selector. A manifest
 // without it is the pre-v2 format.
 func TestParseModuleConfigSelectsFormatByEntrypoint(t *testing.T) {
@@ -100,8 +191,9 @@ source = "go"
 }
 
 // A fat manifest carries a version 2 entrypoint table and the pre-v2 fields at
-// the same time. Manifest version 2 has no dependency list, so a manifest that
-// declares dependencies stays on the pre-v2 format. See config_fat_manifest.go.
+// the same time. Manifest version 2 lists only an entrypoint's own
+// dependencies, so a manifest that declares a runtime and dependencies stays
+// on the pre-v2 format. See config_fat_manifest.go.
 func TestParseFatModuleManifest(t *testing.T) {
 	t.Parallel()
 
@@ -157,21 +249,32 @@ source = "./entrypoint"
 		require.Equal(t, "github.com/acme/dep", cfg.Dependencies[0].Source)
 	})
 
-	t.Run("entrypoint with dependencies and no runtime is an error", func(t *testing.T) {
+	t.Run("entrypoint with dependencies and no runtime has the entrypoint's dependencies", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := ParseModuleConfigForFilename([]byte(`
-name = "fat"
+		cfg, err := ParseModuleConfigForFilename([]byte(`
+name = "app"
 
 [[dependencies]]
-source = "github.com/acme/dep"
+name = "go"
+source = "github.com/acme/go"
 
 [entrypoint]
 kind = "dang"
 source = "./entrypoint"
 `), Filename)
-		require.ErrorContains(t, err, `sets "entrypoint" and "dependencies" without "runtime"`)
-		require.ErrorContains(t, err, "manifest version 2 has no dependency list")
+		require.NoError(t, err)
+		require.Equal(t, "app", cfg.Name)
+		require.Equal(t, ModuleEntrypointKindDang, cfg.Entrypoint.Kind)
+		require.Len(t, cfg.Dependencies, 1)
+		require.Equal(t, "go", cfg.Dependencies[0].Name)
+		require.Equal(t, "github.com/acme/go", cfg.Dependencies[0].Source)
+
+		out, err := MarshalModuleConfigForFilename(cfg, Filename)
+		require.NoError(t, err)
+		got, err := ParseModuleConfigForFilename(out, Filename)
+		require.NoError(t, err)
+		require.Equal(t, cfg, got)
 	})
 }
 
