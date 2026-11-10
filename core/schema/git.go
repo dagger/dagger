@@ -92,6 +92,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.GitRepository]{
 		dagql.NodeFunc("__sparseFiles", s.sparseFiles).
+			View(AfterVersion("v1.0.0-beta.26")).
 			IsPersistable().
 			Doc(`(Internal-only) The given files of this repository, by object ID, with only those fetched.`).
 			Args(
@@ -351,6 +352,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			IsPersistable().
 			Doc(`(Internal-only) Materialize full history and Git metadata regardless of keepGitDir.`),
 		dagql.NodeFunc("__sparseWorkspaceTree", s.sparseWorkspaceTree).
+			View(AfterVersion("v1.0.0-beta.26")).
 			IsPersistable().
 			Doc(`(Internal-only) The files of this ref that loading a workspace at it reads, with only those fetched.`).
 			Args(
