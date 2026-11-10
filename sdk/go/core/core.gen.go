@@ -1105,9 +1105,21 @@ func (r *Artifact) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The module name, collection keys, and full path key in the artifact type dimension.
-func (r *Artifact) DimensionKeys(ctx context.Context) ([]ArtifactDimensionKey, error) {
+// ArtifactDimensionKeysOpts contains options for Artifact.DimensionKeys
+type ArtifactDimensionKeysOpts struct {
+	// Return all artifact coordinates, including constant dimensions.
+	All bool
+}
+
+// The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
+func (r *Artifact) DimensionKeys(ctx context.Context, opts ...ArtifactDimensionKeysOpts) ([]ArtifactDimensionKey, error) {
 	q := r.query.Select("dimensionKeys")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `all` optional argument
+		if !querybuilder.IsZeroValue(opts[i].All) {
+			q = q.Arg("all", opts[i].All)
+		}
+	}
 
 	q = q.Select("id")
 
@@ -2043,9 +2055,21 @@ func (r *Artifacts) DimensionKeys(ctx context.Context, dimension string) ([]stri
 	return response, q.Execute(ctx)
 }
 
-// List dimension identifiers represented in this selection, sorted with no duplicates.
-func (r *Artifacts) Dimensions(ctx context.Context) ([]string, error) {
+// ArtifactsDimensionsOpts contains options for Artifacts.Dimensions
+type ArtifactsDimensionsOpts struct {
+	// List all workspace schema dimensions without runtime discovery.
+	All bool
+}
+
+// List dimensions whose cells differ across selected rows. Missing cells differ from present keys.
+func (r *Artifacts) Dimensions(ctx context.Context, opts ...ArtifactsDimensionsOpts) ([]string, error) {
 	q := r.query.Select("dimensions")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `all` optional argument
+		if !querybuilder.IsZeroValue(opts[i].All) {
+			q = q.Arg("all", opts[i].All)
+		}
+	}
 
 	var response []string
 
@@ -2317,7 +2341,7 @@ func (r *Artifacts) Modules(ctx context.Context) ([]Module, error) {
 	return convert(response), nil
 }
 
-// Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
+// Require exactly one artifact from the selected items snapshot; fail if there are zero or multiple matches.
 func (r *Artifacts) One() *Artifact {
 	q := r.query.Select("one")
 

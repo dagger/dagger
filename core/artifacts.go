@@ -15,6 +15,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core/artifact"
+	"github.com/dagger/dagger/core/artifact/flattening"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
@@ -60,9 +61,12 @@ type Artifact struct {
 	View           *ArtifactView
 	ModuleName     string `field:"true" doc:"The installed module name."`
 	DimensionNames map[string]string
-	Path           []string                `field:"true" doc:"Ordered, literal fields to follow. Workspace main targets use their shorthand."`
-	DimensionKeys  []*ArtifactDimensionKey `field:"true" doc:"The module name, collection keys, and full path key in the artifact type dimension."`
-	TypeName       string
+	Path           []string `field:"true" doc:"Ordered, literal fields to follow. Workspace main targets use their shorthand."`
+	DimensionKeys  []*ArtifactDimensionKey
+	// dimensionDisplay is nil without a source selection. A non-nil empty view
+	// hides every coordinate. It never changes address or evaluation keys.
+	dimensionDisplay *artifactDimensionDisplay
+	TypeName         string
 	// TypeKeyName is the shortest type key that names this path among the
 	// paths with its collection dimensions (see artifact.ShortTypeKey), or
 	// empty for the full path. Addresses with item keys print it.
@@ -86,6 +90,9 @@ type Artifact struct {
 // rewrites those wrappers, including the module tree's parent chain.
 func (a *Artifact) Clone() *Artifact {
 	copy := *a
+	if a.dimensionDisplay != nil {
+		copy.dimensionDisplay = &artifactDimensionDisplay{Dimensions: slices.Clone(a.dimensionDisplay.Dimensions)}
+	}
 	parent := &copy.Node
 	for node := a.Node; node != nil; node = node.Parent {
 		cloned := *node
@@ -372,6 +379,9 @@ func (*Artifacts) TypeDescription() string {
 
 func (a *Artifacts) filter(matches func(*Artifact) bool) *Artifacts {
 	selected := &Artifacts{Entries: make([]*Artifact, 0, len(a.Entries)), Selector: a.Selector.clone(), AllDimensions: a.AllDimensions, AllPaths: a.AllPaths, exact: a.exact}
+	if selected.AllDimensions == nil {
+		selected.AllDimensions = a.DimensionDefinitions()
+	}
 	for _, root := range a.CollectionRoots {
 		selected.CollectionRoots = append(selected.CollectionRoots, root.Clone())
 	}
@@ -733,7 +743,7 @@ func (sel *ArtifactSelector) addDimension(filter ArtifactDimensionFilter) {
 	sel.Dimensions = append(sel.Dimensions, filter)
 }
 
-func (a *Artifacts) Dimensions() []string {
+func (a *Artifacts) RepresentedDimensions() []string {
 	names := map[string]struct{}{}
 	for _, artifact := range a.Entries {
 		for _, key := range artifact.DimensionKeys {
@@ -741,6 +751,59 @@ func (a *Artifacts) Dimensions() []string {
 		}
 	}
 	return slices.Sorted(maps.Keys(names))
+}
+
+// Dimensions returns the varying columns of an expanded selection.
+func (a *Artifacts) Dimensions() []string {
+	rows := make([][]flattening.Coordinate, len(a.Entries))
+	for i, entry := range a.Entries {
+		for _, key := range entry.DimensionKeys {
+			rows[i] = append(rows[i], flattening.Coordinate{Dimension: key.Dimension, Key: key.Key})
+		}
+	}
+	return artifact.VisibleDimensions(rows)
+}
+
+// SchemaDimensions lists all workspace columns without runtime discovery.
+func (a *Artifacts) SchemaDimensions() []string {
+	dims := a.AllDimensions
+	if dims == nil {
+		dims = a.DimensionDefinitions()
+	}
+	names := map[string]struct{}{}
+	for _, dim := range dims {
+		names[dim.Identifier] = struct{}{}
+	}
+	// Hand-built selections can have coordinates without a module tree.
+	if a.AllDimensions == nil {
+		for _, id := range a.RepresentedDimensions() {
+			names[id] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(names))
+}
+
+type artifactDimensionDisplay struct{ Dimensions []string }
+
+// WithDimensionDisplay clones an artifact and records its source selection's
+// columns. Empty columns differ from the absent context of older artifacts.
+func (a *Artifact) WithDimensionDisplay(dimensions []string) *Artifact {
+	result := a.Clone()
+	result.dimensionDisplay = &artifactDimensionDisplay{Dimensions: slices.Clone(dimensions)}
+	return result
+}
+
+// DisplayDimensionKeys preserves complete coordinates when all is true or no
+// source selection context exists, including artifacts from older persistence.
+func (a *Artifact) DisplayDimensionKeys(all bool) []*ArtifactDimensionKey {
+	result := make([]*ArtifactDimensionKey, 0, len(a.DimensionKeys))
+	for _, key := range a.DimensionKeys {
+		if all || a.dimensionDisplay == nil || slices.Contains(a.dimensionDisplay.Dimensions, key.Dimension) {
+			copy := *key
+			result = append(result, &copy)
+		}
+	}
+	return result
 }
 
 func (a *Artifacts) DimensionKeys(dimension string) []string {
@@ -855,7 +918,7 @@ var ErrNoArtifactMatch = errors.New("no artifact matches")
 func (a *Artifacts) One() (*Artifact, error) {
 	switch len(a.Entries) {
 	case 1:
-		return a.Entries[0].Clone(), nil
+		return a.Entries[0].WithDimensionDisplay(a.Dimensions()), nil
 	case 0:
 		return nil, fmt.Errorf("%w %s", ErrNoArtifactMatch, a.URI())
 	default:
@@ -1051,16 +1114,17 @@ func ArtifactNodes(ctx context.Context, root *ModTreeNode) ([]*ModTreeNode, erro
 // Persist both individual artifacts and selections. One tree encoding shares
 // module and type references across all entries in a selection.
 type persistedArtifact struct {
-	ModuleName     string
-	DimensionNames map[string]string
-	LoadFailure    *ModuleLoadFailure
-	Path           []string
-	DimensionKeys  []*ArtifactDimensionKey
-	TypeName       string
-	TypeKeyName    string `json:",omitempty"`
-	Directives     []string
-	Node           int
-	Workspace      uint64
+	ModuleName       string
+	DimensionNames   map[string]string
+	LoadFailure      *ModuleLoadFailure
+	Path             []string
+	DimensionKeys    []*ArtifactDimensionKey
+	TypeName         string
+	TypeKeyName      string                    `json:",omitempty"`
+	DimensionDisplay *artifactDimensionDisplay `json:",omitempty"`
+	Directives       []string
+	Node             int
+	Workspace        uint64
 	// ContextWorkspace is Artifact.ContextWorkspace; zero when unset.
 	ContextWorkspace uint64                 `json:",omitempty"`
 	View             *persistedArtifactView `json:",omitempty"`
@@ -1081,6 +1145,7 @@ func encodeArtifacts(enc *dagql.PersistEncodeContext, entries, roots []*Artifact
 		for _, a := range group {
 			p := persistedArtifact{ModuleName: a.ModuleName, LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, TypeKeyName: a.TypeKeyName, Directives: a.Directives}
 			p.DimensionNames = a.DimensionNames
+			p.DimensionDisplay = a.dimensionDisplay
 			var err error
 			p.View, err = a.View.encode(enc)
 			if err != nil {
@@ -1130,6 +1195,7 @@ func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw j
 				return nil, err
 			}
 			a.DimensionNames = p.DimensionNames
+			a.dimensionDisplay = p.DimensionDisplay
 			if a.DimensionKeys == nil {
 				a.DimensionKeys = []*ArtifactDimensionKey{}
 			}
