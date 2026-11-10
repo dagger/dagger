@@ -35,14 +35,15 @@ type BundleWriter interface {
 // of every result its value holds (its child references, followed
 // recursively), whatever their types. A Git module source carries its
 // checkout this way, and a container its filesystem, image config and exec
-// metadata. Every result the export reads parts from is evaluated first, so
-// its parts are complete. Every result must be captured: a result left out
-// fails the export.
-func (c *Cache) ExportBundle(ctx context.Context, results []AnyResult, cfg config.RefConfig, w BundleWriter) (rerr error) {
+// metadata. Every result the export reads parts from is decoded, with
+// resolver, and evaluated first, with every part it declares, and a part that
+// still isn't complete fails the export. Every result must be captured: a
+// result left out fails the export.
+func (c *Cache) ExportBundle(ctx context.Context, resolver TypeResolver, results []AnyResult, cfg config.RefConfig, w BundleWriter) (rerr error) {
 	if len(results) == 0 {
 		return errors.New("export bundle: no results")
 	}
-	held, release, err := c.holdBundleRows(ctx, results)
+	held, release, err := c.holdBundleRows(ctx, resolver, results)
 	if err != nil {
 		return err
 	}
@@ -133,7 +134,7 @@ func (c *Cache) ExportBundle(ctx context.Context, results []AnyResult, cfg confi
 // returns them: results first, then each held child once. A child is
 // evaluated before its own references are read, since evaluating a value can
 // complete what it holds.
-func (c *Cache) holdBundleRows(ctx context.Context, results []AnyResult) (_ []AnyResult, _ func(context.Context) error, rerr error) {
+func (c *Cache) holdBundleRows(ctx context.Context, resolver TypeResolver, results []AnyResult) (_ []AnyResult, _ func(context.Context) error, rerr error) {
 	var releases []func(context.Context) error
 	release := func(ctx context.Context) error {
 		var err error
@@ -178,7 +179,13 @@ func (c *Cache) holdBundleRows(ctx context.Context, results []AnyResult) (_ []An
 					return nil, nil, fmt.Errorf("export bundle: result %d's child %d: %w", shared.id, id, err)
 				}
 				releases = append(releases, release)
-				next = append(next, child)
+				// A held entry is undecoded, and an undecoded value has
+				// nothing to evaluate its parts with.
+				decoded, err := c.ensurePersistedHitValueLoaded(ctx, resolver, child)
+				if err != nil {
+					return nil, nil, fmt.Errorf("export bundle: result %d's child %d: %w", shared.id, id, err)
+				}
+				next = append(next, decoded)
 			}
 		}
 		level = next
@@ -188,15 +195,35 @@ func (c *Cache) holdBundleRows(ctx context.Context, results []AnyResult) (_ []An
 
 // completeDeclaredParts evaluates the parts res's record declares and doesn't
 // have complete yet, such as a container's filesystem when only its image
-// config was read, so the export carries every part of the value.
+// config was read, so the export carries every part of the value. It fails
+// when one is still not complete after.
 func (c *Cache) completeDeclaredParts(ctx context.Context, res AnyResult) error {
+	pending, err := c.pendingDeclaredParts(ctx, res)
+	if err != nil || len(pending) == 0 {
+		return err
+	}
+	if err := c.EvaluateParts(ctx, res, pending...); err != nil {
+		return fmt.Errorf("export bundle: result %d: evaluate parts %v: %w", res.cacheSharedResult().id, pending, err)
+	}
+	if pending, err = c.pendingDeclaredParts(ctx, res); err != nil {
+		return err
+	}
+	if len(pending) > 0 {
+		return fmt.Errorf("export bundle: result %d: parts %v are not complete after evaluating them", res.cacheSharedResult().id, pending)
+	}
+	return nil
+}
+
+// pendingDeclaredParts returns the parts at the root of res's value that its
+// record declares and doesn't have complete.
+func (c *Cache) pendingDeclaredParts(ctx context.Context, res AnyResult) ([]PartKey, error) {
 	record, err := c.captureRowRecord(ctx, res.cacheSharedResult())
 	if err != nil {
-		return fmt.Errorf("export bundle: %w", err)
+		return nil, fmt.Errorf("export bundle: %w", err)
 	}
 	probes, err := describePartRecord(record)
 	if err != nil {
-		return fmt.Errorf("export bundle: %w", err)
+		return nil, fmt.Errorf("export bundle: %w", err)
 	}
 	var pending []PartKey
 	for _, probe := range probes {
@@ -204,13 +231,7 @@ func (c *Cache) completeDeclaredParts(ctx context.Context, res AnyResult) error 
 			pending = append(pending, probe.Descriptor.Address.Part)
 		}
 	}
-	if len(pending) == 0 {
-		return nil
-	}
-	if err := c.EvaluateParts(ctx, res, pending...); err != nil {
-		return fmt.Errorf("export bundle: evaluate parts %v: %w", pending, err)
-	}
-	return nil
+	return pending, nil
 }
 
 // childReferences returns the results row's record holds as its children

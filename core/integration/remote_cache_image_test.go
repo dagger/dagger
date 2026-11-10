@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 // A transfer that lands on a row the engine's image already holds keeps the
@@ -239,28 +240,91 @@ func (RemoteCacheTransferSuite) TestCacheExportCarriesEveryPart(ctx context.Cont
 	require.Equal(t, map[string]bool{"metadata": true, "fs": true, "execMeta": true}, parts)
 }
 
-// The engine image ships dagger/go's checkout, the tree the Go SDK's
-// dependency loads from, with its data: the image's build exports dagger/go's
-// module source, and the export carries what the source holds, the checkout
-// among it, with no case for module sources.
-func (RemoteCacheTransferSuite) TestImageEntriesShipTheGoSDKCheckout(ctx context.Context, t *testctx.T) {
+// Exporting a Git module source carries its checkout's data: the checkout is
+// a result the source's value holds, so the export carries it with no case for
+// module sources. Only the source is exported, so nothing else selects a part
+// the checkout's data could arrive through.
+func (RemoteCacheTransferSuite) TestCacheExportCarriesAModuleSourceCheckout(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	raw, err := devEngineContainer(c).File(distconsts.EngineContainerImageEntriesDir + "/" + dagql.BundleFile).Contents(ctx)
-	require.NoError(t, err)
+	ref := "github.com/dagger/dagger-test-modules/top-level@" + vcsTestCaseCommit
+	var res struct {
+		Engine struct {
+			LocalCache struct {
+				Export struct {
+					File struct {
+						Contents string `json:"contents"`
+					} `json:"file"`
+				} `json:"_export"`
+			} `json:"localCache"`
+		} `json:"engine"`
+	}
+	var src struct {
+		ModuleSource struct {
+			ID string `json:"id"`
+		} `json:"moduleSource"`
+	}
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($ref: String!) { moduleSource(refString: $ref) { id } }`,
+		Variables: map[string]any{"ref": ref},
+	}, &dagger.Response{Data: &src}))
+	require.NoError(t, c.Do(ctx, &dagger.Request{
+		Query:     `query($id: ID!, $bundle: String!) { engine { localCache { _export(results: [$id]) { file(path: $bundle) { contents } } } } }`,
+		Variables: map[string]any{"id": src.ModuleSource.ID, "bundle": dagql.BundleFile},
+	}, &dagger.Response{Data: &res}))
 	var bundle dagql.ValueBundle
-	require.NoError(t, json.Unmarshal([]byte(raw), &bundle))
-	trees := map[dagql.TransferOrdinal]bool{}
+	require.NoError(t, json.Unmarshal([]byte(res.Engine.LocalCache.Export.File.Contents), &bundle))
+	require.Len(t, bundle.Roots, 1)
+	var rootRecord []byte
 	for _, value := range bundle.Values {
-		if call := value.Record.Call; call != nil && call.Field == "tree" {
-			trees[value.Ordinal] = true
+		if value.Ordinal == bundle.Roots[0].Ordinal {
+			raw, err := json.Marshal(value.Record)
+			require.NoError(t, err)
+			rootRecord = raw
 		}
 	}
-	require.NotEmpty(t, trees, "the bundle holds a Git tree")
-	shipped := false
+	require.NotEmpty(t, rootRecord, "the bundle holds the module source's record")
+	// The source's record names its checkout by its ordinal in the bundle.
+	checkout := findJSONKey(gjson.ParseBytes(rootRecord), "gitUnfilteredContextDirResultID")
+	require.True(t, checkout.Exists(), "the module source's record names its checkout: %s", rootRecord)
+	carried := false
 	for _, output := range bundle.Outputs {
-		if trees[output.Ordinal] && output.Address.Part == "snapshot" && (output.Chain != nil || output.Prefix != nil) {
-			shipped = true
+		if uint64(output.Ordinal) == checkout.Uint() && output.Address.Part == "snapshot" && (output.Chain != nil || output.Prefix != nil) {
+			carried = true
 		}
 	}
-	require.True(t, shipped, "a Git tree's snapshot ships with its data")
+	require.True(t, carried, "the checkout's snapshot ships with its data")
+}
+
+// findJSONKey returns the first value under key anywhere in v, decoding JSON
+// strings that hold JSON on the way, as a record's payloads are.
+func findJSONKey(v gjson.Result, key string) gjson.Result {
+	var found gjson.Result
+	var walk func(v gjson.Result)
+	walk = func(v gjson.Result) {
+		if found.Exists() {
+			return
+		}
+		switch {
+		case v.IsObject():
+			v.ForEach(func(k, child gjson.Result) bool {
+				if k.String() == key {
+					found = child
+					return false
+				}
+				walk(child)
+				return !found.Exists()
+			})
+		case v.IsArray():
+			v.ForEach(func(_, child gjson.Result) bool {
+				walk(child)
+				return !found.Exists()
+			})
+		case v.Type == gjson.String && gjson.Valid(v.String()):
+			if inner := gjson.Parse(v.String()); inner.IsObject() || inner.IsArray() {
+				walk(inner)
+			}
+		}
+	}
+	walk(v)
+	return found
 }

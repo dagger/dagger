@@ -48,7 +48,7 @@ func imageEntriesDir(t *testing.T) (string, dagql.ValueBundle) {
 	shipped := src.file(t, "shipped")
 	require.NoError(t, src.cache.Evaluate(src.ctx, shipped))
 	dir := t.TempDir()
-	require.NoError(t, src.cache.ExportBundle(src.ctx, []dagql.AnyResult{shipped}, exportRefConfig, testImageDir{dir}))
+	require.NoError(t, src.cache.ExportBundle(src.ctx, src.srv, []dagql.AnyResult{shipped}, exportRefConfig, testImageDir{dir}))
 	raw, err := os.ReadFile(filepath.Join(dir, dagql.BundleFile))
 	require.NoError(t, err)
 	var bundle dagql.ValueBundle

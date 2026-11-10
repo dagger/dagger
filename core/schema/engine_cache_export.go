@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -80,10 +81,11 @@ func (s *engineSchema) cacheExport(ctx context.Context, _ dagql.ObjectResult[*co
 			return err
 		}
 		defer dir.Close()
-		return cache.ExportBundle(ctx, results, cfg, bundleDir{root: dir})
+		return cache.ExportBundle(ctx, srv, results, cfg, bundleDir{root: dir})
 	})
 	if err != nil {
-		return inst, err
+		// Commit consumes the ref; an export that failed never commits it.
+		return inst, errors.Join(err, ref.Release(context.WithoutCancel(ctx)))
 	}
 	snap, err := ref.Commit(ctx)
 	if err != nil {
