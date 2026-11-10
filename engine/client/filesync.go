@@ -789,6 +789,9 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 
 	args = append(args, "-e", opts.Pattern)
 
+	// grep reads options after operands too, so "--" keeps a path such as
+	// "-R" a file name.
+	args = append(args, "--")
 	if len(opts.Paths) > 0 {
 		args = append(args, opts.Paths...)
 	} else {
