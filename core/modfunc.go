@@ -1322,6 +1322,8 @@ func (fn *ModuleFunction) loadContextualArg(
 	if dag == nil {
 		return nil, fmt.Errorf("dagql server is nil but required for contextual argument %q", arg.OriginalName)
 	}
+	// Contextual arguments are author inputs, including during SDK setup.
+	ctx = context.WithValue(ctx, workspaceInputSourceContextKey{}, struct{}{})
 
 	// Handle Container types with DefaultAddress
 	if arg.DefaultAddress != "" {

@@ -194,7 +194,7 @@ func workspaceInputReadCompletion(ctx context.Context, parent *workspaceInputRea
 				}
 				collector.legacySources(ref)
 				summary.merge(collector.result)
-				facts, complete, err := collector.cache.ResultFacts(ctx, collector.session, ref, workspaceInputsNamespace)
+				facts, complete, err := collector.cache.ResultFacts(context.WithoutCancel(ctx), collector.session, ref, workspaceInputsNamespace)
 				if err != nil {
 					summary.Issues = append(summary.Issues, "cannot inspect cached source queries: "+err.Error())
 				} else {

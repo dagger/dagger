@@ -417,7 +417,8 @@ func (c *workspaceInputCollector) ref(ref *dagql.ResultCallRef) {
 		c.result.merge(fact.workspaceInputSummary)
 		captured = captured || fact.Complete && fact.Operation == operation
 	}
-	facts, complete, err := c.cache.ResultFacts(c.ctx, c.session, ref, workspaceInputsNamespace)
+	// Cached facts remain valid after their producing request ends.
+	facts, complete, err := c.cache.ResultFacts(context.WithoutCancel(c.ctx), c.session, ref, workspaceInputsNamespace)
 	if err != nil {
 		c.issue("cannot inspect %s input origins: %v", typeName, err)
 	} else if !complete {
@@ -463,7 +464,7 @@ func (c *workspaceInputCollector) storedField(frame *dagql.ResultCall) bool {
 }
 
 func (c *workspaceInputCollector) legacySources(ref *dagql.ResultCallRef) {
-	facts, _, err := c.cache.ResultFacts(c.ctx, c.session, ref, "workspace-inputs/v1")
+	facts, _, err := c.cache.ResultFacts(context.WithoutCancel(c.ctx), c.session, ref, "workspace-inputs/v1")
 	if err != nil {
 		c.issue("cannot inspect earlier source origins: %v", err)
 		return
