@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-November%202,%202026-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-November%209,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -161,6 +161,10 @@ to dagger.
 
 - [ ] Confirm that all checks on `$RELEASE_BRANCH` are green, for main you're basically [checking](https://github.com/dagger/dagger/commits/main/) that the merged prep commit is has a green check.
       Do not push tags until this is finished.
+
+  ```console
+  gh api repos/{owner}/{repo}/commits/$RELEASE_BRANCH/status --jq '"\(.state)"'
+  ```
 
 > [!NOTE]
 >
