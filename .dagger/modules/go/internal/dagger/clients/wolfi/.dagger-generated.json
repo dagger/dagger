@@ -1,7 +1,7 @@
 {
   "version": 1,
   "files": {
-    "dagger.gen.go": "ae21f51bfc58ee2ca62257590e398132cab64be065c2b5d699f1bda6193ff1bd",
-    "wolfi.gen.go": "747aafa3b5278d7465c40ccb0b8fcc548c9a2b8f0853e27a9f2c25217a144aa6"
+    "dagger.gen.go": "72d54c8a8042e6ad09b0eb30cb5b59dcf8342240411b14bcf536aa9155cec766",
+    "wolfi.gen.go": "18b4010f53d7f75ab3014e4942dae4bd40118b017964b9546c27099920a52e24"
   }
 }

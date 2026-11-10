@@ -121,7 +121,7 @@ func hostTreeModuleSource(
 	}
 	// The module's files are on the host of the client that loaded it, not of
 	// the process calling serveModule.
-	hostMetadata, err := query.ModuleParentHostClientMetadata(ctx)
+	hostMetadata, err := core.LocalSourceHostClientMetadata(ctx, query, src)
 	if err != nil {
 		return inst, err
 	}

@@ -1962,8 +1962,10 @@ func (src *ModuleSource) loadContextFromSource(
 			path = filepath.Join("/", src.SourceRootSubpath, path)
 		}
 
-		// Use the Dir context directory.
-		ctxDir := src.ContextDirectory
+		// Use the directory the module was loaded from, as a Git module uses
+		// its whole checkout: the module context holds only what the module
+		// builds from, such as what its entrypoint's sources member returns.
+		ctxDir, _ := moduleTree(src)
 
 		if path != "/" {
 			if err := dag.Select(ctx, ctxDir, &ctxDir,
@@ -2095,12 +2097,12 @@ func (src *ModuleSource) LoadContextFile(
 		}
 
 	case ModuleSourceKindGit, ModuleSourceKindDir:
-		ctxDir := src.ContextDirectory
 		if src.Kind == ModuleSourceKindGit {
 			slog.Debug("moduleSource.LoadContext: loading contextual file from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
-			// Use the Git context directory without module config includes applied.
-			ctxDir = src.Git.UnfilteredContextDir
 		}
+		// Use the tree the module was loaded from, without module config
+		// includes or an entrypoint's sources applied.
+		ctxDir, _ := moduleTree(src)
 		if !filepath.IsAbs(path) {
 			path = filepath.Join("/", src.SourceRootSubpath, path)
 		}

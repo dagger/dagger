@@ -2380,6 +2380,10 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 			defer stopServiceMonitors()
 		}
 
+		moduleContext, err := query.ProcessModuleContext(ctx, state.ModuleContext)
+		if err != nil {
+			return err
+		}
 		var nestedClientMetadata *engine.ClientMetadata
 		if opts.ExperimentalPrivilegedNesting {
 			nestedClientMetadata = &engine.ClientMetadata{
@@ -2419,7 +2423,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				clientMetadata.SessionID,
 				clientMetadata.ClientID,
 				nestedClientMetadata,
-				state.ModuleContext,
+				moduleContext,
 				state.FunctionCall,
 			)
 		}()
