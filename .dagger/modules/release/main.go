@@ -217,7 +217,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		artifact.Errors = append(artifact.Errors, core.NewError("skipped: the engine publish failed"))
 	case !dryRun:
 		_, err := cliDev.
-			Publish(tag, commit, githubOrgName, clidev.CliDevPublishOpts{
+			Publish(tag, commit, githubOrgName, clidev.CLIDevPublishOpts{
 				GithubToken:        githubToken,
 				GithubHost:         githubHost,
 				GithubCaCert:       githubCaCert,
@@ -232,7 +232,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, core.NewError(err.Error()))
 		}
-		err = cliDev.PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, clidev.CliDevPublishMetadataOpts{
+		err = cliDev.PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, clidev.CLIDevPublishMetadataOpts{
 			AwsEndpointURL: awsEndpointURL,
 		})
 		if err != nil {

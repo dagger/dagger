@@ -1,7 +1,7 @@
 {
   "version": 1,
   "files": {
-    "dagger.gen.go": "80b1d3ec5324ae471d20df79b36ca4a4ddc26e6fbf5e202d8a4cfb9c353fcf03",
-    "rust-client-dev.gen.go": "ba680f8e908d8898deb18734116cf492a7f50d944e66ab56300441373c52f508"
+    "dagger.gen.go": "5346219cb10ad2203eb43de853dac7069dab5390563a18798eb4a30adf67140e",
+    "rust-client-dev.gen.go": "094dd2d793a529f38a186974b22223b905c14987899fa96a183a9d7b735cb5d2"
   }
 }

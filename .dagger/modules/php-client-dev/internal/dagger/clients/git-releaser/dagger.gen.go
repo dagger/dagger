@@ -71,6 +71,11 @@ func Load[T core.Loadable[T]](ctx context.Context, client *Client, id core.ID) (
 	return core.Load[T](ctx, new(core.Query).WithGraphQLQuery(client.query), id)
 }
 
+// loaded is the core object q's request returned as id, knowing that ID.
+func loaded[T core.LoadedNode[T]](q *querybuilder.Selection, id core.ID) T {
+	return core.Loaded[T](new(core.Query).WithGraphQLQuery(q.Root()), id)
+}
+
 // idMemo holds the ID fetched for one object query.
 type idMemo struct {
 	mu       sync.Mutex

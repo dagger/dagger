@@ -1,6 +1,6 @@
 module dagger/cli-dev
 
-go 1.26.6
+go 1.27
 
 replace (
 	github.com/dagger/dagger => ../../..
@@ -8,7 +8,7 @@ replace (
 )
 
 require (
-	dagger.io/dagger v1.0.0-beta.25
+	dagger.io/dagger v1.0.0-beta.26
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000

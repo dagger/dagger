@@ -83,8 +83,8 @@ func (r *RustClientDev) WithGraphQLQuery(q *querybuilder.Selection) *RustClientD
 }
 
 // Regenerate the Rust SDK API client.
-func (r *RustClientDev) Apiclient() *Changeset { // rust-client-dev (../../main.go:166:1)
-	q := r.query.Select("apiclient")
+func (r *RustClientDev) APIClient() *Changeset { // rust-client-dev (../../main.go:166:1)
+	q := r.query.Select("apiClient")
 
 	return new(Changeset).WithGraphQLQuery(q)
 }
