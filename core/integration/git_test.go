@@ -3449,7 +3449,7 @@ func (GitSuite) TestRemoteTreeWithoutGitDirMatchesTreeWithGitDir(ctx context.Con
 	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
 	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
-	client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 	q := core.NewQuery(client)
@@ -3517,7 +3517,7 @@ func (GitSuite) TestRemoteWorkspaceAndItsModuleShareCheckout(ctx context.Context
 	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 
-	plain, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	plain, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { plain.Close() })
 	sha, err := core.NewQuery(plain).Git(repoURL).Branch("main").CommitSHA(ctx)

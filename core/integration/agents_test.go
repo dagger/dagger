@@ -501,7 +501,7 @@ func (AgentsSuite) TestExpertiseOriginalModuleOutlivesReadingSession(ctx context
 
 	// Session A serves the module, holds one of its objects and lists its
 	// expertise.
-	a, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(workdir), dagger.WithLoadWorkspaceModules(), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	a, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(workdir), dagger.WithLoadWorkspaceModules(), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = a.Close() })
 	var held struct{ Probe struct{ ID core.ID } }
@@ -522,7 +522,7 @@ func (AgentsSuite) TestExpertiseOriginalModuleOutlivesReadingSession(ctx context
 	// Session B reads the module through one of A's expertise entries, along
 	// with its dependencies (which include the module itself), then leaves,
 	// releasing everything only it owns.
-	b, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	b, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 	require.NoError(t, err)
 	var original struct {
 		Node struct {

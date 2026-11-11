@@ -210,7 +210,7 @@ func (WorkspaceSuite) TestWorkspacePullColdTrees(ctx context.Context, t *testctx
 	t.Cleanup(func() { engineSvc.Stop(ctx) })
 	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
-	nested := engineconn.Config{RunnerHost: endpoint, LogOutput: testutil.NewTWriter(t)}
+	nested := engineconn.Config{RunnerHost: endpoint, LogOutput: testutil.ClientLogOutput(t)}
 
 	c, sink := connectWithTrace(ctx, t, nested)
 	content := core.NewQuery(c).Directory().
@@ -286,7 +286,7 @@ git -C /root/srv/repo.git config uploadpack.allowAnySHA1InWant true
 	// Replay both recipes on an engine that has forgotten everything, like a
 	// resumed session: concurrently, as restored agents are.
 	replay := func() map[string]map[string]bool {
-		pruner, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		pruner, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 		require.NoError(t, err)
 		require.NoError(t, core.NewQuery(pruner).Engine().LocalCache().Prune(ctx))
 		require.NoError(t, pruner.Close())

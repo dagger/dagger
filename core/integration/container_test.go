@@ -4370,7 +4370,7 @@ func credentials(r *http.Request) (string, string, bool) {
 		return connect(ctx, t,
 			dagger.WithRunnerHost(endpoint),
 			dagger.WithEnvironmentVariable("DOCKER_CONFIG", emptyDockerConfig),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 	}
 
