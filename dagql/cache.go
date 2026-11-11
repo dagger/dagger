@@ -2437,8 +2437,8 @@ type Cache struct {
 	// accepts SetStoredPart (WithBlobStore).
 	blobBacked bool
 	// storedLayers holds each distinct layer of the stored parts' chains
-	// once.
-	storedLayers storedLayers
+	// once. Set with blobBacked.
+	storedLayers *storedLayers
 	// holderEntries maps each holding's key to the entry it sits on, and
 	// entriesByRecipe each recipe digest to its entry. remoteCaches keeps each
 	// held engine cache's own indexes. All guarded by egraphMu. See
