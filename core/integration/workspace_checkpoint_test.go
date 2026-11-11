@@ -317,7 +317,7 @@ func (WorkspaceSuite) TestWorkspaceSnapshotRejectsOversizedBundle(ctx context.Co
 	require.NoError(t, os.WriteFile(filename, data, 0o644))
 
 	c := connect(ctx, t, dagger.WithWorkdir(workdir))
-	_, err = c.CurrentWorkspace().Snapshot().ID(ctx)
+	_, err = core.NewQuery(c).CurrentWorkspace().Snapshot().ID(ctx)
 	require.ErrorContains(t, err, "too large to capture")
 	require.ErrorContains(t, err, "32.0 MiB limit")
 }
