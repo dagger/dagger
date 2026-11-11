@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"go/format"
 	"go/token"
 	"go/version"
 	"os"
@@ -305,15 +304,11 @@ func renderFile(
 		return nil, nil
 	}
 
-	formatted, err := format.Source(source)
+	// goimports formats the file as gofmt does, after fixing its imports.
+	formatted, err := imports.Process(filepath.Join(outputDir, "dummy.go"), source, nil)
 	if err != nil {
 		os.Stderr.Write(source)
 		return nil, fmt.Errorf("error formatting generated code: %w", err)
-	}
-	formatted, err = imports.Process(filepath.Join(outputDir, "dummy.go"), formatted, nil)
-	if err != nil {
-		os.Stderr.Write(source)
-		return nil, fmt.Errorf("error processing imports in generated code: %w", err)
 	}
 	return formatted, nil
 }
