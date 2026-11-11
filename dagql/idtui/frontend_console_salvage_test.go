@@ -130,12 +130,15 @@ func TestConsolePartialCheckpoint(t *testing.T) {
 	db.Calls = salvageCalls()
 	agent := consoleAgent{ID: "worker", State: "IDLE", SnapshotDigest: "xxh3:d12"}
 
-	_, err := decodeConsoleCheckpoint(db, agent)
-	require.ErrorContains(t, err, "not a core LLM selector", "strict decoding still refuses the module step")
+	recorded, err := decodeConsoleCheckpoint(db, agent)
+	require.NoError(t, err, "recorded checkpoints retain recoverable messages with explicit gaps")
+	require.Equal(t, "recorded-checkpoint", recorded.Source)
 
 	snap, err := decodeLoadedCheckpoint(db, agent)
 	require.NoError(t, err)
 	require.Equal(t, "loaded-telemetry", snap.Source)
+	require.Equal(t, recorded.Snapshot.Messages, snap.Snapshot.Messages)
+	require.Equal(t, recorded.Gaps, snap.Gaps)
 	msgs := snap.Snapshot.Messages
 	require.Len(t, msgs, 11)
 	require.Equal(t, "fix the lag", msgs[0].Content[0].Text, "crossed the checkout through its llm argument")
@@ -274,7 +277,7 @@ func TestConsoleTraceFallsBackToLoadedTelemetry(t *testing.T) {
 	_, inspector := salvageFrontend(t)
 
 	w := httptest.NewRecorder()
-	inspector.agents(w, httptest.NewRequest(http.MethodGet, "/agents", nil))
+	inspector.agents(w, httptest.NewRequest(http.MethodGet, "/agents?format=json", nil))
 	require.Equal(t, 200, w.Code, w.Body.String())
 	var roster struct {
 		Agents  []consoleAgent
@@ -287,7 +290,7 @@ func TestConsoleTraceFallsBackToLoadedTelemetry(t *testing.T) {
 	require.Len(t, roster.Agents, 1)
 
 	w = httptest.NewRecorder()
-	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&limit=100", nil))
+	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&limit=100&format=json", nil))
 	require.Equal(t, 200, w.Code, w.Body.String())
 	var page struct {
 		Source   string
@@ -305,7 +308,7 @@ func TestConsoleTraceFallsBackToLoadedTelemetry(t *testing.T) {
 	require.Equal(t, 11, page.Total)
 
 	w = httptest.NewRecorder()
-	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&role=gap", nil))
+	inspector.transcript(w, httptest.NewRequest(http.MethodGet, "/transcript?agent=worker&role=gap&format=json", nil))
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &page))
 	require.Equal(t, 1, page.Total)
