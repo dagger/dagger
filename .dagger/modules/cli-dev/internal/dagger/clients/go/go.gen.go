@@ -9,29 +9,22 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-// A Go project
-type Go struct { // go (../../main.go:208:6)
+// Test, build and run go generate on Go modules across a workspace.
+//
+// For lint checks, use github.com/dagger/go/golangci-lint or
+// github.com/dagger/go/staticcheck.
+type Go struct { // go (../../:0:0)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
 	// field again.
 	refetchID bool
 
-	cgo     *bool
-	id      *ID
-	limit   *int
-	race    *bool
-	test    *Void
-	tests   *string
-	version *string
-}
-type WithGoFunc func(r *Go) *Go
-
-// With calls the provided function with current Go.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Go) With(f WithGoFunc) *Go {
-	return f(r)
+	goflags   *string
+	id        *ID
+	image     *string
+	mountPath *string
+	version   *string
 }
 
 func (r *Go) WithGraphQLQuery(q *querybuilder.Selection) *Go {
@@ -43,185 +36,24 @@ func (r *Go) WithGraphQLQuery(q *querybuilder.Selection) *Go {
 	}
 }
 
-// Base container from which to run all operations
-func (r *Go) Base() *Container { // go (../../main.go:222:2)
+// Custom base image for Go containers, if set.
+func (r *Go) Base(ctx context.Context) (*Container, error) { // go (../../:0:0)
 	q := r.query.Select("base")
 
-	return new(Container).WithGraphQLQuery(q)
-}
-
-// GoBinaryOpts contains options for Go.Binary
-type GoBinaryOpts struct {
-	//
-	// Disable symbol table
-	//
-	NoSymbols bool // go (../../main.go:400:2)
-	//
-	// Disable DWARF generation
-	//
-	NoDwarf bool // go (../../main.go:403:2)
-	//
-	// Target build platform
-	//
-	Platform Platform // go (../../main.go:406:2)
-}
-
-// Build a single main package, and return the compiled binary
-func (r *Go) Binary(pkg string, opts ...GoBinaryOpts) *File { // go (../../main.go:394:1)
-	q := r.query.Select("binary")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `noSymbols` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoSymbols) {
-			q = q.Arg("noSymbols", opts[i].NoSymbols)
-		}
-		// `noDwarf` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoDwarf) {
-			q = q.Arg("noDwarf", opts[i].NoDwarf)
-		}
-		// `platform` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Platform) {
-			q = q.Arg("platform", opts[i].Platform)
-		}
+	q = q.Select("id")
+	var objectID *ID
+	if err := q.Bind(&objectID).Execute(ctx); err != nil {
+		return nil, err
 	}
-	q = q.Arg("pkg", pkg)
-
-	return new(File).WithGraphQLQuery(q)
+	if objectID == nil {
+		return nil, nil
+	}
+	return loaded[*Container](q, *objectID), nil
 }
 
-// GoBuildOpts contains options for Go.Build
-type GoBuildOpts struct {
-	//
-	// Which targets to build (default all main packages)
-	//
-	//
-	// Default: ["./..."]
-	Pkgs []string // go (../../main.go:342:2)
-	//
-	// Disable symbol table
-	//
-	NoSymbols bool // go (../../main.go:345:2)
-	//
-	// Disable DWARF generation
-	//
-	NoDwarf bool // go (../../main.go:348:2)
-	//
-	// Target build platform
-	//
-	Platform Platform // go (../../main.go:351:2)
-	//
-	// Output directory
-	//
-	//
-	// Default: "./bin/"
-	Output string // go (../../main.go:355:2)
-}
-
-// Build the given main packages, and return the build directory
-func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../main.go:337:1)
+// Main packages to build, by module-relative or workspace path. "!" excludes.
+func (r *Go) Build(ctx context.Context) ([]string, error) { // go (../../:0:0)
 	q := r.query.Select("build")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `pkgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
-			q = q.Arg("pkgs", opts[i].Pkgs)
-		}
-		// `noSymbols` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoSymbols) {
-			q = q.Arg("noSymbols", opts[i].NoSymbols)
-		}
-		// `noDwarf` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoDwarf) {
-			q = q.Arg("noDwarf", opts[i].NoDwarf)
-		}
-		// `platform` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Platform) {
-			q = q.Arg("platform", opts[i].Platform)
-		}
-		// `output` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Output) {
-			q = q.Arg("output", opts[i].Output)
-		}
-	}
-
-	return new(Directory).WithGraphQLQuery(q)
-}
-
-// Go build cache
-func (r *Go) BuildCache() *CacheVolume { // go (../../main.go:219:2)
-	q := r.query.Select("buildCache")
-
-	return new(CacheVolume).WithGraphQLQuery(q)
-}
-
-// Enable CGO
-func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../main.go:234:2)
-	if r.cgo != nil {
-		return *r.cgo, nil
-	}
-	q := r.query.Select("cgo")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// GoCheckTidyOpts contains options for Go.CheckTidy
-type GoCheckTidyOpts struct {
-	Include []string // go (../../main.go:820:2)
-
-	Exclude []string // go (../../main.go:821:2)
-}
-
-// Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(opts ...GoCheckTidyOpts) *Check { // go (../../main.go:818:1)
-	q := r.query.Select("checkTidy")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
-	}
-
-	return new(Check).WithGraphQLQuery(q)
-}
-
-// Download dependencies into the module cache
-func (r *Go) Download() *Go { // go (../../main.go:257:1)
-	q := r.query.Select("download")
-
-	return &Go{
-		query:     q,
-		refetchID: r.refetchID,
-	}
-}
-
-// GoEnvOpts contains options for Go.Env
-type GoEnvOpts struct {
-	Platform Platform // go (../../main.go:278:2)
-}
-
-// Prepare a build environment for the given Go source code:
-//   - Build a base container with Go tooling installed and configured
-//   - Apply configuration
-//   - Mount the source code
-func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../main.go:276:1)
-	q := r.query.Select("env")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `platform` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Platform) {
-			q = q.Arg("platform", opts[i].Platform)
-		}
-	}
-
-	return new(Container).WithGraphQLQuery(q)
-}
-
-func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../main.go:244:2)
-	q := r.query.Select("exclude")
 
 	var response []string
 
@@ -229,9 +61,9 @@ func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../main.
 	return response, q.Execute(ctx)
 }
 
-// Enable go experiments
-func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../main.go:240:2)
-	q := r.query.Select("experiment")
+// Extra flags for go build only.
+func (r *Go) BuildFlags(ctx context.Context) ([]string, error) { // go (../../:0:0)
+	q := r.query.Select("buildFlags")
 
 	var response []string
 
@@ -239,21 +71,27 @@ func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../ma
 	return response, q.Execute(ctx)
 }
 
-func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../main.go:659:1)
-	q := r.query.Select("generateDaggerRuntime")
-	q = q.Arg("start", start)
+// Directories to run go generate in. "!" excludes.
+func (r *Go) Generate(ctx context.Context) ([]string, error) { // go (../../:0:0)
+	q := r.query.Select("generate")
 
-	return &Go{
-		query:     q,
-		refetchID: r.refetchID,
-	}
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
-// Generate Dagger runtime files for Go SDK modules in the configured source.
-func (r *Go) GenerateDaggerRuntimes() *Changeset { // go (../../main.go:615:1)
-	q := r.query.Select("generateDaggerRuntimes")
+// GOFLAGS for every Go container.
+func (r *Go) Goflags(ctx context.Context) (string, error) { // go (../../:0:0)
+	if r.goflags != nil {
+		return *r.goflags, nil
+	}
+	q := r.query.Select("goflags")
 
-	return new(Changeset).WithGraphQLQuery(q)
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this Go.
@@ -311,88 +149,70 @@ func (r *Go) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../main.go:242:2)
-	q := r.query.Select("include")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Pass arguments to 'go build -ldflags'
-func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../main.go:225:2)
-	q := r.query.Select("ldflags")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Max number of parallel jobs to run
-func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../main.go:247:2)
-	if r.limit != nil {
-		return *r.limit, nil
+// The image a Go container at version starts from, as every build here
+// names it.
+func (r *Go) Image(ctx context.Context, version string) (string, error) { // go (../../:0:0)
+	if r.image != nil {
+		return *r.image, nil
 	}
-	q := r.query.Select("limit")
+	q := r.query.Select("image")
+	q = q.Arg("version", version)
 
-	var response int
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }
 
-// GoListPackagesOpts contains options for Go.ListPackages
-type GoListPackagesOpts struct {
-	//
-	// Filter by name or pattern. Example './foo/...'
-	//
-	//
-	// Default: ["./..."]
-	Pkgs []string // go (../../main.go:490:2)
-	//
-	// Only list main packages
-	//
-	OnlyMain bool // go (../../main.go:493:2)
+// Extra workspace files mounted for Go commands, as include patterns.
+func (r *Go) IncludeExtraFiles(ctx context.Context) ([]string, error) { // go (../../:0:0)
+	q := r.query.Select("includeExtraFiles")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
-// List packages matching the specified criteria
-func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]string, error) { // go (../../main.go:485:1)
-	q := r.query.Select("listPackages")
+// GoModuleOpts contains options for Go.Module
+type GoModuleOpts struct {
+	FindUp bool // go (../../:0:0)
+}
+
+// The Go module containing a workspace path.
+func (r *Go) Module(ws *Workspace, path string, opts ...GoModuleOpts) *GoModule { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("module")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `pkgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
-			q = q.Arg("pkgs", opts[i].Pkgs)
-		}
-		// `onlyMain` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OnlyMain) {
-			q = q.Arg("onlyMain", opts[i].OnlyMain)
+		// `findUp` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FindUp) {
+			q = q.Arg("findUp", opts[i].FindUp)
 		}
 	}
+	q = q.Arg("ws", ws)
+	q = q.Arg("path", path)
 
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Go module cache
-func (r *Go) ModuleCache() *CacheVolume { // go (../../main.go:216:2)
-	q := r.query.Select("moduleCache")
-
-	return new(CacheVolume).WithGraphQLQuery(q)
+	return &GoModule{
+		query:     q,
+		refetchID: r.refetchID,
+	}
 }
 
 // GoModulesOpts contains options for Go.Modules
 type GoModulesOpts struct {
-	Include []string // go (../../main.go:565:2)
+	Include []string // go (../../:0:0)
 
-	Exclude []string // go (../../main.go:566:2)
+	Exclude []string // go (../../:0:0)
+
+	IncludeSkipTest bool // go (../../:0:0)
+
+	IncludeSkipGenerate bool // go (../../:0:0)
 }
 
-// Scan the source for go modules, and return their paths
-func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, error) { // go (../../main.go:563:1)
+// Go modules at or below the working directory, keyed by root directory.
+// Use list to read the selected modules as an array.
+func (r *Go) Modules(ws *Workspace, opts ...GoModulesOpts) *GoModules { // go (../../:0:0)
+	assertNotNil("ws", ws)
 	q := r.query.Select("modules")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -403,141 +223,30 @@ func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, erro
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
 			q = q.Arg("exclude", opts[i].Exclude)
 		}
-	}
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Enable race detector
-func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../main.go:237:2)
-	if r.race != nil {
-		return *r.race, nil
-	}
-	q := r.query.Select("race")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Project source directory
-func (r *Go) Source() *Directory { // go (../../main.go:213:2)
-	q := r.query.Select("source")
-
-	return new(Directory).WithGraphQLQuery(q)
-}
-
-// Pass arguments to 'go build -tags'
-func (r *Go) Tags(ctx context.Context) ([]string, error) { // go (../../main.go:228:2)
-	q := r.query.Select("tags")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// GoTestOpts contains options for Go.Test
-type GoTestOpts struct {
-	//
-	// Only run these tests
-	//
-	Run string // go (../../main.go:436:2)
-	//
-	// Skip these tests
-	//
-	Skip string // go (../../main.go:439:2)
-	//
-	// Abort test run on first failure
-	//
-	FailFast bool // go (../../main.go:442:2)
-	//
-	// How many tests to run in parallel - defaults to the number of CPUs
-	//
-	Parallel int // go (../../main.go:446:2)
-	//
-	// How long before timing out the test run
-	//
-	//
-	// Default: "30m"
-	Timeout string // go (../../main.go:450:2)
-
-	// Default: 1
-	Count int // go (../../main.go:453:2)
-	//
-	// Which packages to test
-	//
-	//
-	// Default: ["./..."]
-	Pkgs []string // go (../../main.go:457:2)
-}
-
-// Run tests for the given packages
-func (r *Go) Test(ctx context.Context, opts ...GoTestOpts) error { // go (../../main.go:432:1)
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `run` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Run) {
-			q = q.Arg("run", opts[i].Run)
+		// `includeSkipTest` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeSkipTest) {
+			q = q.Arg("includeSkipTest", opts[i].IncludeSkipTest)
 		}
-		// `skip` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Skip) {
-			q = q.Arg("skip", opts[i].Skip)
-		}
-		// `failFast` optional argument
-		if !querybuilder.IsZeroValue(opts[i].FailFast) {
-			q = q.Arg("failFast", opts[i].FailFast)
-		}
-		// `parallel` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Parallel) {
-			q = q.Arg("parallel", opts[i].Parallel)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-		// `count` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Count) {
-			q = q.Arg("count", opts[i].Count)
-		}
-		// `pkgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
-			q = q.Arg("pkgs", opts[i].Pkgs)
+		// `includeSkipGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeSkipGenerate) {
+			q = q.Arg("includeSkipGenerate", opts[i].IncludeSkipGenerate)
 		}
 	}
+	q = q.Arg("ws", ws)
 
-	return q.Execute(ctx)
+	return &GoModules{
+		query:     q,
+		refetchID: r.refetchID,
+	}
 }
 
-// GoTestsOpts contains options for Go.Tests
-type GoTestsOpts struct {
-	//
-	// Packages to list tests from (default all packages)
-	//
-	//
-	// Default: ["./..."]
-	Pkgs []string // go (../../main.go:327:2)
-}
-
-// List tests
-func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { // go (../../main.go:322:1)
-	if r.tests != nil {
-		return *r.tests, nil
+// Configured workspace mount path. Null uses "/src/<workspace name>", or
+// "/src" for a workspace made from a directory or git ref.
+func (r *Go) MountPath(ctx context.Context) (string, error) { // go (../../:0:0)
+	if r.mountPath != nil {
+		return *r.mountPath, nil
 	}
-	q := r.query.Select("tests")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `pkgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pkgs) {
-			q = q.Arg("pkgs", opts[i].Pkgs)
-		}
-	}
+	q := r.query.Select("mountPath")
 
 	var response string
 
@@ -545,39 +254,9 @@ func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { /
 	return response, q.Execute(ctx)
 }
 
-// GoTidyOpts contains options for Go.Tidy
-type GoTidyOpts struct {
-	Include []string // go (../../main.go:588:2)
-
-	Exclude []string // go (../../main.go:589:2)
-}
-
-func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../main.go:586:1)
-	q := r.query.Select("tidy")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
-	}
-
-	return new(Changeset).WithGraphQLQuery(q)
-}
-
-func (r *Go) TidyModule(module string) *Changeset { // go (../../main.go:575:1)
-	q := r.query.Select("tidyModule")
-	q = q.Arg("module", module)
-
-	return new(Changeset).WithGraphQLQuery(q)
-}
-
-// Add string value definition of the form importpath.name=value
-func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../main.go:231:2)
-	q := r.query.Select("values")
+// Module roots to test. "!" excludes.
+func (r *Go) Test(ctx context.Context) ([]string, error) { // go (../../:0:0)
+	q := r.query.Select("test")
 
 	var response []string
 
@@ -585,8 +264,8 @@ func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../main.g
 	return response, q.Execute(ctx)
 }
 
-// Go version
-func (r *Go) Version(ctx context.Context) (string, error) { // go (../../main.go:210:2)
+// Go version for every module. Null uses each module's go.mod.
+func (r *Go) Version(ctx context.Context) (string, error) { // go (../../:0:0)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -598,163 +277,2421 @@ func (r *Go) Version(ctx context.Context) (string, error) { // go (../../main.go
 	return response, q.Execute(ctx)
 }
 
+// Settings that were given but are ignored.
+func (r *Go) Warnings(ctx context.Context) ([]string, error) { // go (../../:0:0)
+	q := r.query.Select("warnings")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // AsNode returns this Go as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Go) AsNode() Node {
 	return new(NodeClient).WithGraphQLQuery(r.query)
 }
 
+// What a Go module's archives read from the cache that every build of the
+// packages with the same toolchain, flags and go.sum shares. The results are
+// references the cache keeps for as long as it keeps this: a caller takes each
+// one's ID in its own session, as an engine image's entries do.
+type GoArchiveBuilds struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *GoArchiveBuilds) WithGraphQLQuery(q *querybuilder.Selection) *GoArchiveBuilds {
+	return &GoArchiveBuilds{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Each package's build, in the order the walk ran them: a directory of what
+// its exec wrote, with its archives.
+func (r *GoArchiveBuilds) Builds(ctx context.Context) ([]Directory, error) { // go (../../:0:0)
+	q := r.query.Select("builds")
+
+	q = q.Select("id")
+
+	type builds struct {
+		Id ID
+	}
+
+	convert := func(fields []builds) []Directory {
+		out := []Directory{}
+
+		for i := range fields {
+			val := *loaded[*Directory](q, fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []builds
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Each module download, in the order of its module cache directory name: a
+// directory of its plan pack and zip.
+func (r *GoArchiveBuilds) Downloads(ctx context.Context) ([]Directory, error) { // go (../../:0:0)
+	q := r.query.Select("downloads")
+
+	q = q.Select("id")
+
+	type downloads struct {
+		Id ID
+	}
+
+	convert := func(fields []downloads) []Directory {
+		out := []Directory{}
+
+		for i := range fields {
+			val := *loaded[*Directory](q, fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []downloads
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// gomod's go-includes helper, for the engine's platform.
+func (r *GoArchiveBuilds) Helper() *Container { // go (../../:0:0)
+	q := r.query.Select("helper")
+
+	return new(Container).WithGraphQLQuery(q)
+}
+
+// gomod's go-includes binary for the builds' platform, which the helper of
+// an engine of that platform runs.
+func (r *GoArchiveBuilds) HelperBinary() *File { // go (../../:0:0)
+	q := r.query.Select("helperBinary")
+
+	return new(File).WithGraphQLQuery(q)
+}
+
+// A unique identifier for this GoArchiveBuilds.
+func (r *GoArchiveBuilds) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoArchiveBuilds) XXX_GraphQLType() string {
+	return "GoArchiveBuilds"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoArchiveBuilds) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoArchiveBuilds) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoArchiveBuilds) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoArchiveBuilds) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoArchiveBuilds{query: selectNode(Connect().QueryBuilder(), id, "GoArchiveBuilds")}
+	return nil
+}
+
+// The source write-manifest is built from, golangci-lint's manifest module at
+// gobuild's pin, which a fresh engine would otherwise fetch to find its build.
+func (r *GoArchiveBuilds) ManifestSource() *Directory { // go (../../:0:0)
+	q := r.query.Select("manifestSource")
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
+// golangci-lint's write-manifest, which writes the archives' manifest, for
+// every machine an engine runs on.
+func (r *GoArchiveBuilds) ManifestTool() *Directory { // go (../../:0:0)
+	q := r.query.Select("manifestTool")
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
+// gobuild's gohdr, the tool the builds' execs run, for every machine an
+// engine runs on.
+func (r *GoArchiveBuilds) Tool() *Directory { // go (../../:0:0)
+	q := r.query.Select("tool")
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
+// Go's own tools the builds run, built by its toolchain for every machine an
+// engine runs on: pack.
+func (r *GoArchiveBuilds) Tools() *Directory { // go (../../:0:0)
+	q := r.query.Select("tools")
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
+// AsNode returns this GoArchiveBuilds as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoArchiveBuilds) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+type GoGenerateDirectory struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *GoGenerateDirectory) WithGraphQLQuery(q *querybuilder.Selection) *GoGenerateDirectory {
+	return &GoGenerateDirectory{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this GoGenerateDirectory.
+func (r *GoGenerateDirectory) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoGenerateDirectory) XXX_GraphQLType() string {
+	return "GoGenerateDirectory"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoGenerateDirectory) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoGenerateDirectory) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoGenerateDirectory) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoGenerateDirectory) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoGenerateDirectory{query: selectNode(Connect().QueryBuilder(), id, "GoGenerateDirectory")}
+	return nil
+}
+
+// AsNode returns this GoGenerateDirectory as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoGenerateDirectory) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+type GoGenerateInputs struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *GoGenerateInputs) WithGraphQLQuery(q *querybuilder.Selection) *GoGenerateInputs {
+	return &GoGenerateInputs{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this GoGenerateInputs.
+func (r *GoGenerateInputs) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoGenerateInputs) XXX_GraphQLType() string {
+	return "GoGenerateInputs"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoGenerateInputs) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoGenerateInputs) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoGenerateInputs) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoGenerateInputs) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoGenerateInputs{query: selectNode(Connect().QueryBuilder(), id, "GoGenerateInputs")}
+	return nil
+}
+
+// AsNode returns this GoGenerateInputs as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoGenerateInputs) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+type GoGeneration struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *GoGeneration) WithGraphQLQuery(q *querybuilder.Selection) *GoGeneration {
+	return &GoGeneration{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this GoGeneration.
+func (r *GoGeneration) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoGeneration) XXX_GraphQLType() string {
+	return "GoGeneration"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoGeneration) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoGeneration) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoGeneration) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoGeneration) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoGeneration{query: selectNode(Connect().QueryBuilder(), id, "GoGeneration")}
+	return nil
+}
+
+// AsNode returns this GoGeneration as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoGeneration) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+// A Go module rooted at a workspace-relative path.
+type GoModule struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	hasGenerateDirectives *bool
+	id                    *ID
+	mountPath             *string
+	path                  *string
+	scanFailure           *string
+	skipGenerate          *bool
+	skipTest              *bool
+	test                  *Void
+	version               *string
+}
+
+func (r *GoModule) WithGraphQLQuery(q *querybuilder.Selection) *GoModule {
+	return &GoModule{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// GoModuleArchiveBuildsOpts contains options for GoModule.ArchiveBuilds
+type GoModuleArchiveBuildsOpts struct {
+	//
+	// Only the packages from other modules and the standard library.
+	//
+	Dependencies bool // go (../../:0:0)
+	//
+	// The packages whose imports are compiled, as go list patterns from the
+	// module's directory.
+	//
+	Packages []string // go (../../:0:0)
+	//
+	// Without the packages' test variants and external test packages, and
+	// what only they import.
+	//
+	NoTests bool // go (../../:0:0)
+	//
+	// The GOOS/GOARCH they're compiled for, e.g. "linux/arm64": the engine's
+	// platform when unset.
+	//
+	Platform string // go (../../:0:0)
+}
+
+// What archives reads from the cache that every build of the packages with
+// the same toolchain, flags and go.sum shares (GoArchiveBuilds). A cache
+// that is to have exactly these results, such as the cache an engine image
+// pre-warms, is filled from them. The arguments are archives'.
+func (r *GoModule) ArchiveBuilds(ws *Workspace, opts ...GoModuleArchiveBuildsOpts) *GoArchiveBuilds { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("archiveBuilds")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `dependencies` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dependencies) {
+			q = q.Arg("dependencies", opts[i].Dependencies)
+		}
+		// `packages` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Packages) {
+			q = q.Arg("packages", opts[i].Packages)
+		}
+		// `noTests` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoTests) {
+			q = q.Arg("noTests", opts[i].NoTests)
+		}
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+	}
+	q = q.Arg("ws", ws)
+
+	return &GoArchiveBuilds{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// GoModuleArchivesOpts contains options for GoModule.Archives
+type GoModuleArchivesOpts struct {
+	//
+	// Only the packages from other modules and the standard library, keyed by
+	// their content alone: an edit of this module's own packages leaves them
+	// as they are.
+	//
+	Dependencies bool // go (../../:0:0)
+	//
+	// The packages whose imports are archived, as go list patterns from the
+	// module's directory, e.g. ["."] for what its root package type-checks
+	// against.
+	//
+	Packages []string // go (../../:0:0)
+	//
+	// Without the packages' test variants and external test packages, and
+	// what only they import, which a lint reads.
+	//
+	NoTests bool // go (../../:0:0)
+	//
+	// The GOOS/GOARCH they're compiled for, e.g. "linux/arm64": the engine's
+	// platform when unset. The engine's own toolchain compiles them, so an
+	// engine of any platform makes them for any other.
+	//
+	Platform string // go (../../:0:0)
+}
+
+// The compiled packages a lint of this module reads, for golangci-lint's
+// export driver: a directory of their export data, the archives go tool
+// compile -pack -linkobj writes without the object code, under archives/,
+// the Go files cgo wrote for each cgo
+// package under cgo/, and manifest.json, which describes them: the Go
+// version, target and build tags they were compiled for, and for each
+// package, by its ID as go list -test names it, its archive, its cgo files
+// and output, and a digest of the files it was compiled from.
+//
+// The packages are what go list -export -deps -test compiles for the
+// module: its packages, main packages included, their test variants and
+// external test packages, what is recompiled against those, and every
+// package they import, for the engine's platform, with buildFlags. With them
+// the driver compiles nothing and runs no cgo. Each compiles in a cached
+// exec of its own, as a binary's packages do, so a package compiled the same
+// way for a build or a test binary is shared.
+func (r *GoModule) Archives(ws *Workspace, opts ...GoModuleArchivesOpts) *Directory { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("archives")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `dependencies` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dependencies) {
+			q = q.Arg("dependencies", opts[i].Dependencies)
+		}
+		// `packages` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Packages) {
+			q = q.Arg("packages", opts[i].Packages)
+		}
+		// `noTests` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoTests) {
+			q = q.Arg("noTests", opts[i].NoTests)
+		}
+		// `platform` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+		}
+	}
+	q = q.Arg("ws", ws)
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
+// Go container for this module, before source is added.
+func (r *GoModule) Base(ws *Workspace) *Container { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("base")
+	q = q.Arg("ws", ws)
+
+	return new(Container).WithGraphQLQuery(q)
+}
+
+// Run go generate in this module.
+func (r *GoModule) Generate(ws *Workspace) *Changeset { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("generate")
+	q = q.Arg("ws", ws)
+
+	return new(Changeset).WithGraphQLQuery(q)
+}
+
+// Directories go generate runs in, in lexical order.
+func (r *GoModule) GenerateDirectories(ctx context.Context, ws *Workspace) ([]string, error) { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("generateDirectories")
+	q = q.Arg("ws", ws)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether this module has go:generate commands, regardless of selection.
+func (r *GoModule) HasGenerateDirectives(ctx context.Context, ws *Workspace) (bool, error) { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	if r.hasGenerateDirectives != nil {
+		return *r.hasGenerateDirectives, nil
+	}
+	q := r.query.Select("hasGenerateDirectives")
+	q = q.Arg("ws", ws)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this GoModule.
+func (r *GoModule) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoModule) XXX_GraphQLType() string {
+	return "GoModule"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoModule) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoModule) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoModule) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoModule) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoModule{query: selectNode(Connect().QueryBuilder(), id, "GoModule")}
+	return nil
+}
+
+// GoModuleIncludeOpts contains options for GoModule.Include
+type GoModuleIncludeOpts struct {
+	Test bool // go (../../:0:0)
+
+	Generate bool // go (../../:0:0)
+}
+
+// All include patterns for this module's source.
+func (r *GoModule) Include(ctx context.Context, ws *Workspace, opts ...GoModuleIncludeOpts) ([]string, error) { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("include")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `test` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Test) {
+			q = q.Arg("test", opts[i].Test)
+		}
+		// `generate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Generate) {
+			q = q.Arg("generate", opts[i].Generate)
+		}
+	}
+	q = q.Arg("ws", ws)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Built-in include patterns for this module's Go files.
+func (r *GoModule) IncludeBase(ctx context.Context) ([]string, error) { // go (../../:0:0)
+	q := r.query.Select("includeBase")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GoModuleIncludeDiscoveredOpts contains options for GoModule.IncludeDiscovered
+type GoModuleIncludeDiscoveredOpts struct {
+	Test bool // go (../../:0:0)
+
+	Generate bool // go (../../:0:0)
+}
+
+// Include patterns found by scanning Go directives and local replaces.
+func (r *GoModule) IncludeDiscovered(ctx context.Context, ws *Workspace, opts ...GoModuleIncludeDiscoveredOpts) ([]string, error) { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("includeDiscovered")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `test` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Test) {
+			q = q.Arg("test", opts[i].Test)
+		}
+		// `generate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Generate) {
+			q = q.Arg("generate", opts[i].Generate)
+		}
+	}
+	q = q.Arg("ws", ws)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Extra workspace files mounted for Go commands, as include patterns.
+func (r *GoModule) IncludeExtraFiles(ctx context.Context) ([]string, error) { // go (../../:0:0)
+	q := r.query.Select("includeExtraFiles")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Where the workspace is mounted in Go containers.
+func (r *GoModule) MountPath(ctx context.Context) (string, error) { // go (../../:0:0)
+	if r.mountPath != nil {
+		return *r.mountPath, nil
+	}
+	q := r.query.Select("mountPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Packages owned by this module. Nested Go modules have their own collection.
+func (r *GoModule) Packages(ws *Workspace) *GoPackages { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("packages")
+	q = q.Arg("ws", ws)
+
+	return &GoPackages{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Module root, relative to the workspace.
+func (r *GoModule) Path(ctx context.Context) (string, error) { // go (../../:0:0)
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Why this module could not be scanned, or null.
+func (r *GoModule) ScanFailure(ctx context.Context, ws *Workspace) (string, error) { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	if r.scanFailure != nil {
+		return *r.scanFailure, nil
+	}
+	q := r.query.Select("scanFailure")
+	q = q.Arg("ws", ws)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether go generate has nothing to run in this module.
+func (r *GoModule) SkipGenerate(ctx context.Context, ws *Workspace) (bool, error) { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	if r.skipGenerate != nil {
+		return *r.skipGenerate, nil
+	}
+	q := r.query.Select("skipGenerate")
+	q = q.Arg("ws", ws)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether tests are skipped for this module.
+func (r *GoModule) SkipTest(ctx context.Context) (bool, error) { // go (../../:0:0)
+	if r.skipTest != nil {
+		return *r.skipTest, nil
+	}
+	q := r.query.Select("skipTest")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GoModuleSourceOpts contains options for GoModule.Source
+type GoModuleSourceOpts struct {
+	Test bool // go (../../:0:0)
+
+	Generate bool // go (../../:0:0)
+}
+
+// Source mounted for this module's Go commands.
+func (r *GoModule) Source(ws *Workspace, opts ...GoModuleSourceOpts) *Directory { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("source")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `test` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Test) {
+			q = q.Arg("test", opts[i].Test)
+		}
+		// `generate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Generate) {
+			q = q.Arg("generate", opts[i].Generate)
+		}
+	}
+	q = q.Arg("ws", ws)
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
+// Run tests in this module.
+func (r *GoModule) Test(ctx context.Context, ws *Workspace) error { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	if r.test != nil {
+		return nil
+	}
+	q := r.query.Select("test")
+	q = q.Arg("ws", ws)
+
+	return q.Execute(ctx)
+}
+
+// Testdata directories mounted for this module's tests.
+func (r *GoModule) TestData(ws *Workspace) *Directory { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("testData")
+	q = q.Arg("ws", ws)
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
+// Go version this module runs under. Null with a custom base.
+func (r *GoModule) Version(ctx context.Context, ws *Workspace) (string, error) { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+	q = q.Arg("ws", ws)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this GoModule as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoModule) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+// Go modules in a workspace, keyed by root directory.
+type GoModules struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+type WithGoModulesFunc func(r *GoModules) *GoModules
+
+// With calls the provided function with current GoModules.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GoModules) With(f WithGoModulesFunc) *GoModules {
+	return f(r)
+}
+
+func (r *GoModules) WithGraphQLQuery(q *querybuilder.Selection) *GoModules {
+	return &GoModules{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+func (r *GoModules) Get(key string) *GoModule { // go (../../:0:0)
+	q := r.query.Select("get")
+	q = q.Arg("key", key)
+
+	return &GoModule{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// A unique identifier for this GoModules.
+func (r *GoModules) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoModules) XXX_GraphQLType() string {
+	return "GoModules"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoModules) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoModules) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoModules) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoModules) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoModules{query: selectNode(Connect().QueryBuilder(), id, "GoModules")}
+	return nil
+}
+
+// Current keys, in author order.
+func (r *GoModules) Keys(ctx context.Context) ([]string, error) {
+	q := r.query.Select("keys")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Items in the same order as keys.
+func (r *GoModules) List(ctx context.Context) ([]GoModule, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id ID
+	}
+
+	convert := func(fields []list) []GoModule {
+		out := []GoModule{}
+
+		for i := range fields {
+			val := GoModule{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GoModule")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Select keys from this collection. Preserve author order.
+func (r *GoModules) Subset(keys []string) *GoModules {
+	q := r.query.Select("subset")
+	q = q.Arg("keys", keys)
+
+	return &GoModules{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this GoModules as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoModules) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+type GoPackage struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id   *ID
+	path *string
+}
+
+func (r *GoPackage) WithGraphQLQuery(q *querybuilder.Selection) *GoPackage {
+	return &GoPackage{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// This package's binary for the engine's platform. It must be a main package.
+func (r *GoPackage) Binary(ws *Workspace) *File { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("binary")
+	q = q.Arg("ws", ws)
+
+	return new(File).WithGraphQLQuery(q)
+}
+
+// Run go generate in this package.
+func (r *GoPackage) Generate() *Changeset { // go (../../:0:0)
+	q := r.query.Select("generate")
+
+	return new(Changeset).WithGraphQLQuery(q)
+}
+
+// A unique identifier for this GoPackage.
+func (r *GoPackage) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoPackage) XXX_GraphQLType() string {
+	return "GoPackage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoPackage) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoPackage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoPackage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoPackage) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoPackage{query: selectNode(Connect().QueryBuilder(), id, "GoPackage")}
+	return nil
+}
+
+// Package directory, relative to the workspace.
+func (r *GoPackage) Path(ctx context.Context) (string, error) { // go (../../:0:0)
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Platforms this package can be built for, keyed by GOOS/GOARCH.
+func (r *GoPackage) Platforms() *GoPlatforms { // go (../../:0:0)
+	q := r.query.Select("platforms")
+
+	return &GoPlatforms{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// This package's test binary for the engine's platform, as go test -c builds
+// it. The package must have test files.
+//
+// Unlike go test -c, it does not run go vet on the package: vet is left to
+// the lint checks, such as golangci-lint's.
+func (r *GoPackage) TestBinary(ws *Workspace) *File { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("testBinary")
+	q = q.Arg("ws", ws)
+
+	return new(File).WithGraphQLQuery(q)
+}
+
+// Tests in this package, keyed by name.
+func (r *GoPackage) Tests() *GoTests { // go (../../:0:0)
+	q := r.query.Select("tests")
+
+	return &GoTests{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this GoPackage as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoPackage) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+// A Go package.
+type GoPackageSelection struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	directory *string
+	id        *ID
+}
+
+func (r *GoPackageSelection) WithGraphQLQuery(q *querybuilder.Selection) *GoPackageSelection {
+	return &GoPackageSelection{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+func (r *GoPackageSelection) Directory(ctx context.Context) (string, error) { // go (../../:0:0)
+	if r.directory != nil {
+		return *r.directory, nil
+	}
+	q := r.query.Select("directory")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this GoPackageSelection.
+func (r *GoPackageSelection) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoPackageSelection) XXX_GraphQLType() string {
+	return "GoPackageSelection"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoPackageSelection) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoPackageSelection) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoPackageSelection) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoPackageSelection) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoPackageSelection{query: selectNode(Connect().QueryBuilder(), id, "GoPackageSelection")}
+	return nil
+}
+
+func (r *GoPackageSelection) Tests() *GoTests { // go (../../:0:0)
+	q := r.query.Select("tests")
+
+	return &GoTests{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this GoPackageSelection as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoPackageSelection) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+// Go packages in one module, keyed by workspace-relative directory.
+type GoPackages struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id       *ID
+	narrowed *bool
+}
+type WithGoPackagesFunc func(r *GoPackages) *GoPackages
+
+// With calls the provided function with current GoPackages.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GoPackages) With(f WithGoPackagesFunc) *GoPackages {
+	return f(r)
+}
+
+func (r *GoPackages) WithGraphQLQuery(q *querybuilder.Selection) *GoPackages {
+	return &GoPackages{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// Binaries of the selected main packages for the engine's platform, one file
+// each.
+func (r *GoPackages) Binary(ws *Workspace) *Directory { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("binary")
+	q = q.Arg("ws", ws)
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
+// Run go generate in the selected packages.
+func (r *GoPackages) Generate(ws *Workspace) *Changeset { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("generate")
+	q = q.Arg("ws", ws)
+
+	return new(Changeset).WithGraphQLQuery(q)
+}
+
+func (r *GoPackages) Get(key string) *GoPackage { // go (../../:0:0)
+	q := r.query.Select("get")
+	q = q.Arg("key", key)
+
+	return &GoPackage{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// A unique identifier for this GoPackages.
+func (r *GoPackages) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoPackages) XXX_GraphQLType() string {
+	return "GoPackages"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoPackages) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoPackages) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoPackages) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoPackages) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoPackages{query: selectNode(Connect().QueryBuilder(), id, "GoPackages")}
+	return nil
+}
+
+// Current keys, in author order.
+func (r *GoPackages) Keys(ctx context.Context) ([]string, error) {
+	q := r.query.Select("keys")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Items in the same order as keys.
+func (r *GoPackages) List(ctx context.Context) ([]GoPackage, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id ID
+	}
+
+	convert := func(fields []list) []GoPackage {
+		out := []GoPackage{}
+
+		for i := range fields {
+			val := GoPackage{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GoPackage")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Whether the active selection removed tests or packages from this collection.
+func (r *GoPackages) Narrowed(ctx context.Context) (bool, error) { // go (../../:0:0)
+	if r.narrowed != nil {
+		return *r.narrowed, nil
+	}
+	q := r.query.Select("narrowed")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Select keys from this collection. Preserve author order.
+func (r *GoPackages) Subset(keys []string) *GoPackages {
+	q := r.query.Select("subset")
+	q = q.Arg("keys", keys)
+
+	return &GoPackages{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this GoPackages as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoPackages) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+// A platform a Go package can be built for.
+type GoPlatform struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id   *ID
+	name *string
+}
+
+func (r *GoPlatform) WithGraphQLQuery(q *querybuilder.Selection) *GoPlatform {
+	return &GoPlatform{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// This package's binary for this platform.
+func (r *GoPlatform) Binary(ws *Workspace) *File { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("binary")
+	q = q.Arg("ws", ws)
+
+	return new(File).WithGraphQLQuery(q)
+}
+
+// A unique identifier for this GoPlatform.
+func (r *GoPlatform) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoPlatform) XXX_GraphQLType() string {
+	return "GoPlatform"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoPlatform) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoPlatform) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoPlatform) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoPlatform) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoPlatform{query: selectNode(Connect().QueryBuilder(), id, "GoPlatform")}
+	return nil
+}
+
+// GOOS/GOARCH, e.g. "linux/arm64".
+func (r *GoPlatform) Name(ctx context.Context) (string, error) { // go (../../:0:0)
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// This package's test binary for this platform, as go test -c builds it,
+// but without go vet, which is left to the lint checks.
+func (r *GoPlatform) TestBinary(ws *Workspace) *File { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("testBinary")
+	q = q.Arg("ws", ws)
+
+	return new(File).WithGraphQLQuery(q)
+}
+
+// AsNode returns this GoPlatform as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoPlatform) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+// Platforms a Go package can be built for, keyed by GOOS/GOARCH.
+type GoPlatforms struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+type WithGoPlatformsFunc func(r *GoPlatforms) *GoPlatforms
+
+// With calls the provided function with current GoPlatforms.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GoPlatforms) With(f WithGoPlatformsFunc) *GoPlatforms {
+	return f(r)
+}
+
+func (r *GoPlatforms) WithGraphQLQuery(q *querybuilder.Selection) *GoPlatforms {
+	return &GoPlatforms{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// This package's binary for the selected platforms, or the engine's when none
+// is, one directory per platform, e.g. "linux-arm64/".
+func (r *GoPlatforms) Binary(ws *Workspace) *Directory { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("binary")
+	q = q.Arg("ws", ws)
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
+// The platform with this GOOS/GOARCH.
+func (r *GoPlatforms) Get(key string) *GoPlatform { // go (../../:0:0)
+	q := r.query.Select("get")
+	q = q.Arg("key", key)
+
+	return &GoPlatform{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// A unique identifier for this GoPlatforms.
+func (r *GoPlatforms) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoPlatforms) XXX_GraphQLType() string {
+	return "GoPlatforms"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoPlatforms) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoPlatforms) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoPlatforms) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoPlatforms) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoPlatforms{query: selectNode(Connect().QueryBuilder(), id, "GoPlatforms")}
+	return nil
+}
+
+// Current keys, in author order.
+func (r *GoPlatforms) Keys(ctx context.Context) ([]string, error) {
+	q := r.query.Select("keys")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Items in the same order as keys.
+func (r *GoPlatforms) List(ctx context.Context) ([]GoPlatform, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id ID
+	}
+
+	convert := func(fields []list) []GoPlatform {
+		out := []GoPlatform{}
+
+		for i := range fields {
+			val := GoPlatform{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GoPlatform")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Select keys from this collection. Preserve author order.
+func (r *GoPlatforms) Subset(keys []string) *GoPlatforms {
+	q := r.query.Select("subset")
+	q = q.Arg("keys", keys)
+
+	return &GoPlatforms{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// AsNode returns this GoPlatforms as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoPlatforms) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+// A Go test function.
+type GoTest struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id   *ID
+	name *string
+}
+
+func (r *GoTest) WithGraphQLQuery(q *querybuilder.Selection) *GoTest {
+	return &GoTest{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this GoTest.
+func (r *GoTest) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoTest) XXX_GraphQLType() string {
+	return "GoTest"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoTest) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoTest) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoTest) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoTest) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoTest{query: selectNode(Connect().QueryBuilder(), id, "GoTest")}
+	return nil
+}
+
+// Test function name.
+func (r *GoTest) Name(ctx context.Context) (string, error) { // go (../../:0:0)
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Run go tests
+func (r *GoTest) Test(selection *GoPackages) *Check { // go (../../:0:0)
+	assertNotNil("selection", selection)
+	q := r.query.Select("test")
+	q = q.Arg("selection", selection)
+
+	return new(Check).WithGraphQLQuery(q)
+}
+
+// AsNode returns this GoTest as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoTest) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+type GoTestInputs struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *GoTestInputs) WithGraphQLQuery(q *querybuilder.Selection) *GoTestInputs {
+	return &GoTestInputs{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this GoTestInputs.
+func (r *GoTestInputs) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoTestInputs) XXX_GraphQLType() string {
+	return "GoTestInputs"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoTestInputs) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoTestInputs) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoTestInputs) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoTestInputs) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoTestInputs{query: selectNode(Connect().QueryBuilder(), id, "GoTestInputs")}
+	return nil
+}
+
+// AsNode returns this GoTestInputs as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoTestInputs) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+type GoTestResults struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *GoTestResults) WithGraphQLQuery(q *querybuilder.Selection) *GoTestResults {
+	return &GoTestResults{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this GoTestResults.
+func (r *GoTestResults) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoTestResults) XXX_GraphQLType() string {
+	return "GoTestResults"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoTestResults) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoTestResults) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoTestResults) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoTestResults) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoTestResults{query: selectNode(Connect().QueryBuilder(), id, "GoTestResults")}
+	return nil
+}
+
+// AsNode returns this GoTestResults as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoTestResults) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+type GoTestSelection struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *GoTestSelection) WithGraphQLQuery(q *querybuilder.Selection) *GoTestSelection {
+	return &GoTestSelection{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this GoTestSelection.
+func (r *GoTestSelection) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoTestSelection) XXX_GraphQLType() string {
+	return "GoTestSelection"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoTestSelection) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoTestSelection) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoTestSelection) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoTestSelection) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoTestSelection{query: selectNode(Connect().QueryBuilder(), id, "GoTestSelection")}
+	return nil
+}
+
+// AsNode returns this GoTestSelection as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoTestSelection) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+// Go tests in a package, keyed by name.
+type GoTests struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id       *ID
+	narrowed *bool
+	test     *Void
+}
+type WithGoTestsFunc func(r *GoTests) *GoTests
+
+// With calls the provided function with current GoTests.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GoTests) With(f WithGoTestsFunc) *GoTests {
+	return f(r)
+}
+
+func (r *GoTests) WithGraphQLQuery(q *querybuilder.Selection) *GoTests {
+	return &GoTests{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// The test function with this name.
+func (r *GoTests) Get(key string) *GoTest { // go (../../:0:0)
+	q := r.query.Select("get")
+	q = q.Arg("key", key)
+
+	return &GoTest{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// A unique identifier for this GoTests.
+func (r *GoTests) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoTests) XXX_GraphQLType() string {
+	return "GoTests"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoTests) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoTests) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoTests) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoTests) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoTests{query: selectNode(Connect().QueryBuilder(), id, "GoTests")}
+	return nil
+}
+
+// Current keys, in author order.
+func (r *GoTests) Keys(ctx context.Context) ([]string, error) {
+	q := r.query.Select("keys")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Items in the same order as keys.
+func (r *GoTests) List(ctx context.Context) ([]GoTest, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id ID
+	}
+
+	convert := func(fields []list) []GoTest {
+		out := []GoTest{}
+
+		for i := range fields {
+			val := GoTest{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "GoTest")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Whether the active selection removed tests or packages from this collection.
+func (r *GoTests) Narrowed(ctx context.Context) (bool, error) { // go (../../:0:0)
+	if r.narrowed != nil {
+		return *r.narrowed, nil
+	}
+	q := r.query.Select("narrowed")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Select keys from this collection. Preserve author order.
+func (r *GoTests) Subset(keys []string) *GoTests {
+	q := r.query.Select("subset")
+	q = q.Arg("keys", keys)
+
+	return &GoTests{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Run the selected tests in this package.
+func (r *GoTests) Test(ctx context.Context, ws *Workspace) error { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	if r.test != nil {
+		return nil
+	}
+	q := r.query.Select("test")
+	q = q.Arg("ws", ws)
+
+	return q.Execute(ctx)
+}
+
+// AsNode returns this GoTests as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoTests) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
 // GoOpts contains options for Query.Go
 type GoOpts struct {
 	//
-	// Project source directory
+	// Go version for every module, overriding go.mod. Ignored when base is set.
 	//
-	Source *Directory // go (../../main.go:39:2)
+	Version string // go (../../:0:0)
 	//
-	// Go version
+	// Base image for Go containers. Must include a Go toolchain.
 	//
+	Base *Container // go (../../:0:0)
 	//
-	// Default: "1.27"
-	Version string // go (../../main.go:43:2)
+	// Container module downloads run with: its environment, such as GOPROXY
+	// and GOPRIVATE, its credentials and its mounts, such as git configuration
+	// or an SSH agent. Compiles never read it, so their results are shared
+	// with builds that download differently. Null downloads with the Go
+	// containers' own settings.
 	//
-	// Use a custom module cache
+	Downloads *Container // go (../../:0:0)
 	//
-	ModuleCache *CacheVolume // go (../../main.go:46:2)
+	// Extra workspace files to mount for Go commands, as include patterns.
 	//
-	// Use a custom build cache
+	IncludeExtraFiles []string // go (../../:0:0)
 	//
-	BuildCache *CacheVolume // go (../../main.go:50:2)
+	// Module roots to test, e.g. ["**", "!docs"]. "!" excludes.
 	//
-	// Use a custom base container.
-	// The container must have Go installed.
+	Test []string // go (../../:0:0)
 	//
-	Base *Container // go (../../main.go:55:2)
+	// Directories to run go generate in, as workspace-root globs. "!" excludes.
 	//
-	// Pass arguments to 'go build -ldflags'
+	Generate []string // go (../../:0:0)
 	//
-	Ldflags []string // go (../../main.go:59:2)
+	// Main packages to build, by module-relative or workspace path. "!" excludes.
 	//
-	// Pass arguments to 'go build -tags'
+	Build []string // go (../../:0:0)
 	//
-	Tags []string // go (../../main.go:63:2)
+	// Extra flags for go build only, e.g. ["-trimpath", "-ldflags=-s -w"].
 	//
-	// Add string value definition of the form importpath.name=value
-	// Example: "github.com/my/module.Foo=bar"
+	BuildFlags []string // go (../../:0:0)
 	//
-	Values []string // go (../../main.go:68:2)
+	// GOFLAGS for every Go container, e.g. "-tags=extended".
 	//
-	// Enable CGO
+	Goflags string // go (../../:0:0)
 	//
-	Cgo bool // go (../../main.go:72:2)
+	// Where to mount the workspace in Go containers. Defaults to "/src/<workspace name>".
 	//
-	// Enable race detector. Implies cgo=true
-	//
-	Race bool // go (../../main.go:76:2)
-	//
-	// Enable go experiments https://pkg.go.dev/internal/goexperiment
-	//
-	Experiment []string // go (../../main.go:80:2)
-	//
-	// extra system packages to include in the default base image; only
-	// valid if 'base' arg is nil
-	//
-	ExtraPackages []string // go (../../main.go:85:2)
-	//
-	// max number of parallel jobs to run for tidy/check tidy/lint/runtime generation
-	//
-	//
-	// Default: 10
-	Limit int // go (../../main.go:89:2)
-	//
-	// Workspace whose git HEAD commit and dirty state are stamped into built
-	// binaries as VCS info (see the stamping block in New).
-	//
-	// The engine only auto-injects a Workspace on a *direct* client call;
-	// module-runtime callers don't inherit it. Rather than forward the
-	// Workspace (a session-scoped resource that would make this build's cache
-	// key session-specific and prevent disk-cache reuse across engine restarts),
-	// parent toolchains resolve it to the scalar vcsCommit/vcsDirty below, which take
-	// precedence over ws. Omitted → no stamping.
-	//
-	Ws *Workspace // go (../../main.go:102:2)
-	//
-	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
-	// precedence over ws so the Workspace never enters this build's cache key.
-	//
-	VcsCommit string // go (../../main.go:107:2)
-	//
-	// Resolved VCS dirty state to stamp, paired with vcsCommit.
-	//
-	VcsDirty bool // go (../../main.go:111:2)
+	MountPath string // go (../../:0:0)
 }
 
-// A Go project
-func (r *Query) Go(opts ...GoOpts) *Go { // go (../../main.go:34:1)
+// Test, build and run go generate on Go modules across a workspace.
+//
+// For lint checks, use github.com/dagger/go/golangci-lint or
+// github.com/dagger/go/staticcheck.
+func (r *Query) Go(opts ...GoOpts) *Go { // go (../../:0:0)
 	q := r.query.Select("go")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
-		}
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
-		}
-		// `moduleCache` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ModuleCache) {
-			q = q.Arg("moduleCache", opts[i].ModuleCache)
-		}
-		// `buildCache` optional argument
-		if !querybuilder.IsZeroValue(opts[i].BuildCache) {
-			q = q.Arg("buildCache", opts[i].BuildCache)
 		}
 		// `base` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Base) {
 			q = q.Arg("base", opts[i].Base)
 		}
-		// `ldflags` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ldflags) {
-			q = q.Arg("ldflags", opts[i].Ldflags)
+		// `downloads` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Downloads) {
+			q = q.Arg("downloads", opts[i].Downloads)
 		}
-		// `tags` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Tags) {
-			q = q.Arg("tags", opts[i].Tags)
+		// `includeExtraFiles` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeExtraFiles) {
+			q = q.Arg("includeExtraFiles", opts[i].IncludeExtraFiles)
 		}
-		// `values` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Values) {
-			q = q.Arg("values", opts[i].Values)
+		// `test` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Test) {
+			q = q.Arg("test", opts[i].Test)
 		}
-		// `cgo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Cgo) {
-			q = q.Arg("cgo", opts[i].Cgo)
+		// `generate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Generate) {
+			q = q.Arg("generate", opts[i].Generate)
 		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
+		// `build` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Build) {
+			q = q.Arg("build", opts[i].Build)
 		}
-		// `experiment` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Experiment) {
-			q = q.Arg("experiment", opts[i].Experiment)
+		// `buildFlags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].BuildFlags) {
+			q = q.Arg("buildFlags", opts[i].BuildFlags)
 		}
-		// `extraPackages` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExtraPackages) {
-			q = q.Arg("extraPackages", opts[i].ExtraPackages)
+		// `goflags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Goflags) {
+			q = q.Arg("goflags", opts[i].Goflags)
 		}
-		// `limit` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Limit) {
-			q = q.Arg("limit", opts[i].Limit)
-		}
-		// `ws` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ws) {
-			q = q.Arg("ws", opts[i].Ws)
-		}
-		// `vcsCommit` optional argument
-		if !querybuilder.IsZeroValue(opts[i].VcsCommit) {
-			q = q.Arg("vcsCommit", opts[i].VcsCommit)
-		}
-		// `vcsDirty` optional argument
-		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
-			q = q.Arg("vcsDirty", opts[i].VcsDirty)
+		// `mountPath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MountPath) {
+			q = q.Arg("mountPath", opts[i].MountPath)
 		}
 	}
 
@@ -767,7 +2704,10 @@ func (r *Query) Go(opts ...GoOpts) *Go { // go (../../main.go:34:1)
 // New calls Go on the default connection.
 // Use Connect(connection).Go to call it on an explicit connection.
 //
-// A Go project
+// Test, build and run go generate on Go modules across a workspace.
+//
+// For lint checks, use github.com/dagger/go/golangci-lint or
+// github.com/dagger/go/staticcheck.
 func New(opts ...GoOpts) *Go {
 	return Connect().Go(opts...)
 }

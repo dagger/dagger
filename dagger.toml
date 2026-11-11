@@ -253,11 +253,11 @@ clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/go"]
 
 [sdks.dang.scopes.".dagger/modules/typescript-client-dev"]
 is-module = true
-clients = ["./cmd/codegen", "./.dagger/modules/engine-dev", "./.dagger/modules/go"]
+clients = ["./cmd/codegen", "./.dagger/modules/engine-dev"]
 
 [sdks.dang.scopes."cmd/codegen"]
 is-module = true
-clients = ["./.dagger/modules/go"]
+clients = ["github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"]
 
 [sdks.dang.scopes."modules/markdownlint"]
 is-module = true
@@ -268,7 +268,7 @@ module = "go-sdk"
 
 [sdks.go.scopes.".dagger/modules/cli-dev"]
 is-module = true
-clients = ["github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a", "./.dagger/modules/go"]
+clients = ["github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a", "github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"]
 
 [sdks.go.scopes.".dagger/modules/cli-dev".settings]
 dangEntrypoint = true

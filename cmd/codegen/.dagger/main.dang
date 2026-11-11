@@ -14,6 +14,28 @@ type Codegen {
   let ws: Workspace!
 
   pub binary: File! {
-    go(ws: self.ws, source: source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
+    # The source is the build's workspace, so the build is keyed by its
+    # content and never by the caller's session.
+    let src = source.asWorkspace
+    go(version: "1.27", buildFlags: ["-ldflags=-s -w" + vcsStamp])
+      .module(ws: src, path: "cmd/codegen")
+      .packages(ws: src)
+      .get(key: "cmd/codegen")
+      .binary(ws: src)
+  }
+
+  # The -X definitions that stamp the workspace's git commit into the binary,
+  # or none outside a git checkout.
+  let vcsStamp: String! {
+    let commit = self.ws.git.head.commitSHA rescue { err: Error => "" }
+    if (commit == "") {
+      ""
+    } else {
+      let clean = self.ws.git.uncommitted.isEmpty rescue { err: Error => true }
+      let buildinfo = "github.com/dagger/dagger/internal/version/buildinfo"
+      " -X '" + buildinfo + ".InjectedVCS=git'"
+        + " -X '" + buildinfo + ".InjectedVCSRevision=" + commit + "'"
+        + " -X '" + buildinfo + ".InjectedVCSModified=" + (if (clean) { "false" } else { "true" }) + "'"
+    }
   }
 }
