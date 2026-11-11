@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
@@ -19,9 +20,9 @@ type schemaModuleCandidateWalk struct {
 }
 
 // describe names the module, its shared result and how the walk reached it,
-// e.g. `"dep" (result 12, dependency of "app" (result 7, served))`.
+// e.g. `"dep" (result 12, dependency of "app" (result 7, installed))`.
 func (w *schemaModuleCandidateWalk) describe() string {
-	via := "served"
+	via := "installed"
 	if w.parent != nil {
 		via = "dependency of " + w.parent.describe()
 	}
@@ -31,12 +32,24 @@ func (w *schemaModuleCandidateWalk) describe() string {
 	return fmt.Sprintf("%q (result %d, %s)", w.name, w.id, via)
 }
 
+// installedSchemaModuleCandidates returns the modules the current client has
+// installed, and their dependencies: its own module, if it has one, and the
+// modules it serves. A module entrypoint's client serves only the
+// entrypoint's schema, which never holds the module, but the module is
+// still that client's own.
 func (q *Query) installedSchemaModuleCandidates(ctx context.Context, cache *dagql.Cache) ([]dagql.SchemaModuleCandidate, error) {
+	var queue []*schemaModuleCandidateWalk
+	own, err := q.CurrentModule(ctx)
+	switch {
+	case err == nil:
+		queue = append(queue, &schemaModuleCandidateWalk{mod: NewUserMod(own)})
+	case !errors.Is(err, ErrNoCurrentModule):
+		return nil, fmt.Errorf("current module for schema recovery: %w", err)
+	}
 	served, err := q.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("served modules for schema recovery: %w", err)
 	}
-	var queue []*schemaModuleCandidateWalk
 	for _, mod := range served.Mods() {
 		queue = append(queue, &schemaModuleCandidateWalk{mod: mod})
 	}
