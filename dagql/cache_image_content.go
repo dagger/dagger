@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/engine/snapshots"
@@ -226,6 +227,35 @@ func (c *Cache) FromImage(result AnyResult) bool {
 	defer c.egraphMu.RUnlock()
 	_, image := res.imageHoldingLocked()
 	return image != nil
+}
+
+// ImageEntryByContent returns the number of an entry the engine image ships
+// whose value is of type typeName and whose content digest is contentDigest,
+// or ErrUnknownEntry when the image ships none. Only the image's entries
+// answer: a content digest isn't secret, and the image's entries are already
+// every client's, while another client's result is not.
+func (c *Cache) ImageEntryByContent(contentDigest digest.Digest, typeName string) (uint64, error) {
+	if contentDigest == "" {
+		return 0, errors.New("image entry by content: no digest")
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	candidates := newSharedResultSet()
+	c.appendDigestResultsLocked(candidates, contentDigest, time.Now().Unix(), nil)
+	for res := range candidates.Items() {
+		if _, image := res.imageHoldingLocked(); image == nil {
+			continue
+		}
+		frame := res.loadResultCall()
+		if frame == nil || frame.Type == nil || frame.Type.NamedType != typeName {
+			continue
+		}
+		if frame.ContentDigest() != contentDigest {
+			continue
+		}
+		return uint64(res.id), nil
+	}
+	return 0, fmt.Errorf("image entry of type %s with content %s: %w", typeName, contentDigest, ErrUnknownEntry)
 }
 
 // ImageBundleWriter receives an engine image's bundle as ExportImageBundle

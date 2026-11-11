@@ -194,3 +194,30 @@ func TestCloudOfferOfAnImageEntryIsLeftOut(t *testing.T) {
 		require.True(t, imageOfferLayers(&offer.record), "the image's offer stays")
 	}
 }
+
+// An entry the image ships is found by its content digest and type, and
+// only an entry the image ships is: a result of the same content that a
+// session made answers no lookup.
+func TestImageEntryByContent(t *testing.T) {
+	t.Parallel()
+	content := digest.FromString("bundled content")
+	ctx, a, srv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, a, srv, "root", &transferTestValue{Text: "bundled"})
+	require.NoError(t, a.TeachContentDigest(ctx, root, content))
+	bundle := exportTestBundle(t, ctx, a, root)
+
+	_, err := a.ImageEntryByContent(content, "TransferTestValue")
+	require.ErrorIs(t, err, ErrUnknownEntry, "a session's result of that content isn't the image's")
+
+	ctx, b, _ := transferTestCache(t)
+	reply, err := b.MergeValues(ctx, ImageCacheID, bundle)
+	require.NoError(t, err)
+	number, err := b.ImageEntryByContent(content, "TransferTestValue")
+	require.NoError(t, err)
+	require.Equal(t, reply.Imported()[0].ResultID, number)
+
+	_, err = b.ImageEntryByContent(content, "Directory")
+	require.ErrorIs(t, err, ErrUnknownEntry, "another type")
+	_, err = b.ImageEntryByContent(digest.FromString("other content"), "TransferTestValue")
+	require.ErrorIs(t, err, ErrUnknownEntry, "other content")
+}

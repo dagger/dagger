@@ -49,14 +49,11 @@ type Store struct {
 	// LeaseCommitErr, when set, rolls back each transaction the manager
 	// makes through SnapshotManagerOpt.MetadataDB and returns it.
 	LeaseCommitErr error
-	// Builtin, when set before the manager is (re)opened, plays the engine's
-	// builtin image store for chain imports.
-	Builtin     content.InfoReaderProvider
-	BeforeAdd   func(context.Context, leases.Lease, leases.Resource) error
-	AfterAdd    func(context.Context, leases.Lease, leases.Resource)
-	AfterCreate func(leases.Lease)
-	root        string
-	rawContent  *blobstore.Store
+	BeforeAdd      func(context.Context, leases.Lease, leases.Resource) error
+	AfterAdd       func(context.Context, leases.Lease, leases.Resource)
+	AfterCreate    func(leases.Lease)
+	root           string
+	rawContent     *blobstore.Store
 
 	// SharedMountLinger and MaxIdleSharedMounts, when set before the manager
 	// is (re)opened, bound its idle shared read-only mounts.
@@ -130,7 +127,6 @@ func (s *Store) openManager(t testing.TB) {
 		ApplyFrom:      applierFrom,
 		Differ:         &observedDiffer{Comparer: inPlaceDiffer{store: observed}, store: s},
 		MountPoolRoot:  filepath.Join(s.root, "mounts"),
-		BuiltinContent: s.Builtin,
 		MetadataDB:     observedTransactor{DB: s.DB, store: s},
 		InPlaceContent: s.rawContent.InPlace,
 		LocalMounter: func(ms []mount.Mount) bkcache.Mounter {
@@ -140,14 +136,6 @@ func (s *Store) openManager(t testing.TB) {
 		MaxIdleSharedMounts: s.MaxIdleSharedMounts,
 	})
 	require.NoError(t, err)
-}
-
-// WithBuiltin reopens the manager with provider as the builtin image store,
-// keeping the persistent metadata.
-func (s *Store) WithBuiltin(t testing.TB, provider content.InfoReaderProvider) {
-	t.Helper()
-	s.Builtin = provider
-	s.Reload(t)
 }
 
 // WithSharedMounts reopens the manager with the given bounds on its idle

@@ -90,19 +90,6 @@ func (build *Builder) WithGPUSupport() *Builder {
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent}
-	sdkContents := make([]*sdkContent, len(sdks))
-	for i, sdk := range sdks {
-		eg.Go(func() error {
-			content, err := sdk(ctx)
-			if err != nil {
-				return err
-			}
-			sdkContents[i] = content
-			return nil
-		})
-	}
-
 	if build.gpuSupport {
 		switch build.platformSpec.Architecture {
 		case "amd64":
@@ -198,9 +185,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
-	}
-	for _, content := range sdkContents {
-		ctr = ctr.With(content.apply)
 	}
 
 	return ctr, nil
@@ -526,20 +510,6 @@ func (build *Builder) Init() *dagger.File {
 		url = "https://github.com/krallin/tini/releases/download/v0.19.0/tini-arm64"
 	}
 	return core.HTTP(url)
-}
-
-func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
-	ctr = ctr.WithEnvVariable("GOOS", build.platformSpec.OS)
-	ctr = ctr.WithEnvVariable("GOARCH", build.platformSpec.Architecture)
-	switch build.platformSpec.Architecture {
-	case "arm", "arm64":
-		switch build.platformSpec.Variant {
-		case "", "v8":
-		default:
-			ctr = ctr.WithEnvVariable("GOARM", strings.TrimPrefix(build.platformSpec.Variant, "v"))
-		}
-	}
-	return ctr
 }
 
 // this makes 100% sure that we built the binary for the right platform and didn't, e.g., forget

@@ -24,6 +24,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/filesync"
@@ -42,10 +43,8 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			return parent.NewHost(), nil
 		}).Doc(`Queries the host environment.`),
 
-		dagql.NodeFunc("_builtinContainer", s.builtinContainer).
-			WithInput(engineDefaultPlatformInput).
-			IsPersistable().
-			Doc("Retrieves a container builtin to the engine."),
+		dagql.NodeFunc("__bundledDirectory", s.bundledDirectory).
+			Doc("The directory with this content digest that the engine image's entries hold, such as a built-in SDK's files. Fails when the image ships none: no other result answers, since a content digest is not a secret."),
 
 		dagql.NodeFunc("_engineImageBundle", s.engineImageBundle).
 			View(AfterVersion("v1.0.0-beta.26")).
@@ -146,27 +145,28 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 }
 
-type builtinContainerArgs struct {
-	Digest string `doc:"Digest of the image manifest"`
+type bundledDirectoryArgs struct {
+	Digest string `doc:"The directory's content digest."`
 }
 
-func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectResult[*core.Query], args builtinContainerArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+func (s *hostSchema) bundledDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Query], args bundledDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
-
-	ctr, err := core.BuiltInContainer(ctx, parent.Self().Platform(), args.Digest)
+	dgst, err := digest.Parse(args.Digest)
+	if err != nil {
+		return inst, fmt.Errorf("bundled directory digest: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return inst, err
 	}
-
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, ctr.OnRelease(context.WithoutCancel(ctx)))
-		}
-	}()
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+	number, err := cache.ImageEntryByContent(dgst, (&core.Directory{}).Type().Name())
+	if err != nil {
+		return inst, fmt.Errorf("bundled directory: %w", err)
+	}
+	return dagql.NewID[*core.Directory](call.NewEngineResultID(number, call.NewType((&core.Directory{}).Type()))).Load(ctx, srv)
 }
 
 type hostDirectoryArgs struct {

@@ -43,10 +43,6 @@ type SnapshotManagerOpt struct {
 	ApplyFrom     func(provider content.Provider) diff.Applier
 	Differ        diff.Comparer
 	MountPoolRoot string
-	// BuiltinContent is the engine's builtin image store, consulted by
-	// chain imports for a layer blob before the chain's provider. Nil means
-	// no such store.
-	BuiltinContent content.InfoReaderProvider
 	// MetadataDB is the containerd metadata database behind LeaseManager.
 	// When set, AttachLease makes its lease writes in one transaction.
 	MetadataDB metadata.Transactor
@@ -72,12 +68,6 @@ type ImportedImage struct {
 	ConfigDesc   ocispecs.Descriptor
 	Layers       []ocispecs.Descriptor
 	Nonlayers    []ocispecs.Descriptor
-}
-
-// BuiltinContent is the builtin image store chain imports consult, nil
-// when there is none.
-func (cm *snapshotManager) BuiltinContent() content.InfoReaderProvider {
-	return cm.builtinContent
 }
 
 // Blobs lists every blob of the image: manifest, config, layers and the
@@ -124,7 +114,6 @@ type SnapshotManager interface {
 	SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error)
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
 	RemoveLease(ctx context.Context, leaseID string) error
-	PinContent(ctx context.Context, leaseID string, descs []ocispecs.Descriptor) error
 	// LoadPersistentMetadata takes ownership of the content-hash data buffers.
 	// Callers must not modify them after loading.
 	LoadPersistentMetadata(rows PersistentMetadataRows) error
@@ -149,8 +138,6 @@ type snapshotManager struct {
 	applyFrom     func(content.Provider) diff.Applier
 	Differ        diff.Comparer
 	metadataStore *metadataStore
-	// builtinContent is SnapshotManagerOpt.BuiltinContent.
-	builtinContent content.InfoReaderProvider
 	// metadataDB is SnapshotManagerOpt.MetadataDB.
 	metadataDB metadata.Transactor
 	// inPlaceContent is SnapshotManagerOpt.InPlaceContent.
@@ -209,7 +196,6 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		Applier:                opt.Applier,
 		applyFrom:              opt.ApplyFrom,
 		Differ:                 opt.Differ,
-		builtinContent:         opt.BuiltinContent,
 		metadataDB:             opt.MetadataDB,
 		inPlaceContent:         opt.InPlaceContent,
 		metadataStore:          newMetadataStore(),

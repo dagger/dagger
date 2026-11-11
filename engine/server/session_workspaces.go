@@ -1678,7 +1678,7 @@ func isCoreRootField(field string) bool {
 		"__scalarTypeDef",
 		"__enumTypeDef",
 		"__workspaceModule",
-		"_builtinContainer",
+		"__bundledDirectory",
 		"_clientFilesyncMirror",
 		"_httpState",
 		"_remoteCacheFixture",

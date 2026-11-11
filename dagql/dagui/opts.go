@@ -223,7 +223,7 @@ func ShouldSkipFunction(obj, field string) bool {
 	case "Query":
 		switch field {
 		// for SDKs only
-		case "_builtinContainer",
+		case "__bundledDirectory",
 			"generatedCode",
 			"currentFunctionCall",
 			"currentModule",

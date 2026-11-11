@@ -2,7 +2,6 @@ package build
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -11,7 +10,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger/core"
-	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	toml "github.com/pelletier/go-toml"
 	"golang.org/x/mod/modfile"
 
@@ -20,31 +18,34 @@ import (
 	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
 	golang "dagger/engine-dev/internal/dagger/clients/go"
-	"dagger/engine-dev/internal/dagger/clients/wolfi"
 
 	"github.com/dagger/dagger/sdk/typescript/runtime/tsdistconsts"
 )
 
-type sdkContent struct {
-	index   ocispecs.Index
-	sdkDir  *dagger.Directory
-	envName string
+// SDKFiles are a built-in SDK's files. The engine image's entries ship them as
+// a directory, and the engine finds it by its content digest, which the
+// image gives in the variable EnvName.
+type SDKFiles struct {
+	// Name names the SDK: go, python or typescript.
+	Name    string
+	EnvName string
+	Dir     *dagger.Directory
 }
 
-func (content *sdkContent) apply(ctr *dagger.Container) *dagger.Container {
-	manifest := content.index.Manifests[0]
-	manifestDgst := manifest.Digest.String()
-
-	return ctr.
-		WithEnvVariable(content.envName, manifestDgst).
-		WithDirectory(distconsts.EngineContainerBuiltinContentDir, content.sdkDir, dagger.ContainerWithDirectoryOpts{
-			Include: []string{"blobs/"},
-		})
+// SDKFiles are the built-in SDKs' files, for the image of build's platform.
+func (build *Builder) SDKFiles(ctx context.Context) ([]SDKFiles, error) {
+	goFiles, err := build.goSDKFiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return []SDKFiles{
+		{Name: "go", EnvName: distconsts.GoSDKDigestEnvName, Dir: goFiles},
+		{Name: "python", EnvName: distconsts.PythonSDKDigestEnvName, Dir: build.pythonSDKFiles()},
+		{Name: "typescript", EnvName: distconsts.TypescriptSDKDigestEnvName, Dir: build.typescriptSDKFiles()},
+	}, nil
 }
 
-type sdkContentF func(ctx context.Context) (*sdkContent, error)
-
-func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error) {
+func (build *Builder) pythonSDKFiles() *dagger.Directory {
 	pythonImageSource := build.source.Directory("sdk/python/runtime/images/base")
 	uvImageSource := build.source.Directory("sdk/python/runtime/images/uv")
 
@@ -113,39 +114,17 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 		}).
 		File("/codegen")
 
-	rootfs := pySrc.
+	return pySrc.
 		// bundle the uv binaries
 		WithDirectory("dist", targetUV.Rootfs(), dagger.DirectoryWithDirectoryOpts{
 			Include: []string{"uv*"},
 		}).
 		WithFile("dist/codegen", codegen)
-
-	sdkCtrTarball := core.NewContainer().
-		WithRootfs(rootfs).
-		AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.ImageLayerCompressionZstd,
-		})
-	sdkDir := unpackTar(sdkCtrTarball)
-
-	var index ocispecs.Index
-	indexContents, err := sdkDir.File("index.json").Contents(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
-		return nil, err
-	}
-
-	return &sdkContent{
-		index:   index,
-		sdkDir:  sdkDir,
-		envName: distconsts.PythonSDKManifestDigestEnvName,
-	}, nil
 }
 
 const TypescriptSDKTSXVersion = "4.15.6"
 
-func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, error) {
+func (build *Builder) typescriptSDKFiles() *dagger.Directory {
 	tsxNodeModule := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultNodeImageRef).
 		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("tsx@%s", TypescriptSDKTSXVersion)}).
@@ -192,36 +171,16 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		WithExec([]string{"tsc", "--emitDeclarationOnly"}).
 		WithExec([]string{"bun", "x", "rollup", "-c", "rollup.dts.config.mjs", "-o", "/out-node/core.d.ts"})
 
-	sdkCtrTarball := core.NewContainer().
-		WithRootfs(rootfs).
-		WithFile("/codegen", build.CodegenBinary()).
+	return rootfs.
+		WithFile("codegen", build.CodegenBinary()).
 		// We need to mount the typescript library because bun will not be able to resolve the
 		// typescript library when introspecting the user's module.
 		// TODO: As a follow up, this also enable skipping dependencies installation inside the module
 		// runtime if only typescript library is used (by default)
-		WithDirectory("/typescript-library", bunBuilderCtr.Directory("/src/node_modules/typescript")).
-		WithFile("/bin/ts-introspector", bunBuilderCtr.File("/bin/ts-introspector")).
-		WithDirectory("/tsx_module", tsxNodeModule).
-		WithDirectory("/bundled_lib", bunBuilderCtr.Directory("/out-node")).
-		AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.ImageLayerCompressionZstd,
-		})
-	sdkDir := unpackTar(sdkCtrTarball)
-
-	var index ocispecs.Index
-	indexContents, err := sdkDir.File("index.json").Contents(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
-		return nil, err
-	}
-
-	return &sdkContent{
-		index:   index,
-		sdkDir:  sdkDir,
-		envName: distconsts.TypescriptSDKManifestDigestEnvName,
-	}, nil
+		WithDirectory("typescript-library", bunBuilderCtr.Directory("/src/node_modules/typescript")).
+		WithFile("bin/ts-introspector", bunBuilderCtr.File("/bin/ts-introspector")).
+		WithDirectory("tsx_module", tsxNodeModule).
+		WithDirectory("bundled_lib", bunBuilderCtr.Directory("/out-node"))
 }
 
 // ExportDriver is golangci-lint's export driver: a GOPACKAGESDRIVER that
@@ -237,7 +196,12 @@ func (build *Builder) ExportDriver() *dagger.File {
 	})
 }
 
-func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
+// goSDKFiles are the built-in Go SDK's files: the codegen binary and the
+// export driver in usr/local/bin, the SDK's Dang module in sdk/runtime, the
+// module cache codegen starts from in go/pkg/mod, and in apk what installing
+// git and SSH adds to the Go toolchain image. The engine puts them on that
+// image (core/sdk's goSDKContainer).
+func (build *Builder) goSDKFiles(ctx context.Context) (*dagger.Directory, error) {
 	seedMod, libVersion, err := goModuleSeed(ctx, build.source)
 	if err != nil {
 		return nil, err
@@ -257,39 +221,22 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	// module imports from dagger/go's archives, so no Go build cache ships.
 	exportDriver := build.ExportDriver()
 
-	sdkCtrTarball := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
-		From(consts.GolangImage).
-		With(build.goPlatformEnv).
-		WithExec([]string{"apk", "add", "git", "openssh", "openssl"}).
-		WithEnvVariable("GOTOOLCHAIN", "auto").
-		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
-		WithFile("/usr/local/bin/export-driver", exportDriver).
+	// Installed here, for the image's platform, so no engine installs them:
+	// the engine copies in what the install added.
+	toolchain := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).From(distconsts.GoSDKGolangImage)
+	withGitAndSSH := toolchain.WithExec(append([]string{"apk", "add"}, distconsts.GoSDKBasePackages...))
+
+	return core.NewDirectory().
+		WithDirectory("apk", toolchain.Rootfs().Diff(withGitAndSSH.Rootfs())).
+		WithFile("usr/local/bin/codegen", build.CodegenBinary()).
+		WithFile("usr/local/bin/export-driver", exportDriver).
 		// The Go SDK module, which the engine loads for every module with the
 		// Go runtime. It depends on dagger/go by go-sdk's pin, and builds
 		// every runtime with it as dagger/go builds a user's Go code: one
 		// graph of package builds and one cache.
-		WithDirectory("/sdk/runtime", build.source.Directory("sdk/go/runtime")).
-		// this cache directory should match the module cache volume location in the engine's goSDK.base
-		WithDirectory("/go/pkg/mod", sdkCache.Directory("/go/pkg/mod")).
-		AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.ImageLayerCompressionZstd,
-		})
-	sdkDir := unpackTar(sdkCtrTarball)
-
-	var index ocispecs.Index
-	indexContents, err := sdkDir.File("index.json").Contents(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
-		return nil, err
-	}
-
-	return &sdkContent{
-		index:   index,
-		sdkDir:  sdkDir,
-		envName: distconsts.GoSDKManifestDigestEnvName,
-	}, nil
+		WithDirectory("sdk/runtime", build.source.Directory("sdk/go/runtime")).
+		// this cache directory seeds the module cache volume the engine mounts at /go/pkg/mod (core/sdk's goSDKConstructorArgs)
+		WithDirectory("go/pkg/mod", sdkCache.Directory("/go/pkg/mod")), nil
 }
 
 // GoImageEntriesSeed is the Go module whose dependencies' builds the engine
@@ -433,15 +380,6 @@ func (build *Builder) GoSDKImageEntriesSeed(ctx context.Context, goSDK *dagger.D
 		WithExec([]string{"go", "get", "dagger.io/dagger@" + libVersion}).
 		WithExec([]string{"go", "mod", "tidy"}).
 		Directory("/seed"), nil
-}
-
-func unpackTar(tarball *dagger.File) *dagger.Directory {
-	return wolfi.New().
-		Container().
-		WithMountedDirectory("/out", core.NewDirectory()).
-		WithMountedFile("/target.tar", tarball).
-		WithExec([]string{"tar", "xf", "/target.tar", "-C", "/out"}).
-		Directory("/out")
 }
 
 // goModuleSeed returns a Go module shaped like the ones module codegen
