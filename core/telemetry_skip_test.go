@@ -1,7 +1,10 @@
 package core
 
 import (
+	"context"
 	"testing"
+
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
@@ -136,4 +139,43 @@ func TestAroundFuncStampsProfileSkipBeforeInheritedSkip(t *testing.T) {
 	}
 	AroundFunc(t.Context(), plainReq)
 	require.False(t, plainReq.ResultCall.ProfileSkip)
+}
+
+// A call is reported, and so can be looked up in the remote cache, exactly
+// when telemetry would carry its cache decision: an ordinary call, whether or
+// not this engine's span records, and not a reflection call or a call under
+// a hidden context, whose decisions telemetry leaves out.
+func TestAroundFuncMarksReportedCalls(t *testing.T) {
+	t.Parallel()
+	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	base := dagql.ContextWithCache(t.Context(), cache)
+	call := func(ctx context.Context, receiver, field string) *dagql.CallRequest {
+		req := &dagql.CallRequest{
+			ResultCall:       testResultCall(field, dagql.String(""), nil),
+			ReceiverTypeName: receiver,
+		}
+		_, done := AroundFunc(ctx, req)
+		var err error
+		done(nil, false, &err)
+		return req
+	}
+
+	// base has no recording span: the call is still reported.
+	plain := call(base, "Container", "withExec")
+	require.True(t, plain.CacheReported, "an ordinary call is reported, recording or not")
+	require.Nil(t, plain.CacheEvidence, "its evidence is armed only when its span records")
+
+	require.False(t, call(base, "Function", "args").CacheReported, "a reflection call isn't reported")
+	require.False(t, call(dagql.WithSkip(base), "Container", "withExec").CacheReported, "a call under a hidden context isn't reported")
+
+	// Armed and reported agree: what records evidence is what is reported.
+	_, span := evidenceTestRecordingSpan(t)
+	ctx := trace.ContextWithSpan(base, span)
+	recorded := call(ctx, "Container", "withExec")
+	require.True(t, recorded.CacheReported)
+	require.NotNil(t, recorded.CacheEvidence)
+	skipped := call(ctx, "Function", "args")
+	require.False(t, skipped.CacheReported)
+	require.Nil(t, skipped.CacheEvidence)
 }

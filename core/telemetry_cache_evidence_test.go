@@ -109,14 +109,15 @@ func evidenceTestStringSlice(kvs []attribute.KeyValue, key string) ([]string, bo
 func TestInitCacheEvidenceGates(t *testing.T) {
 	t.Parallel()
 
-	// Recording span + ordinary call: armed.
+	// Recording span + reported call: armed.
 	_, span := evidenceTestRecordingSpan(t)
-	req := &dagql.CallRequest{ResultCall: evidenceTestFrame("ordinary")}
+	req := &dagql.CallRequest{ResultCall: evidenceTestFrame("ordinary"), CacheReported: true}
 	initCacheEvidence(span, req)
 	assert.Assert(t, req.CacheEvidence != nil)
 	assert.Equal(t, -1, req.CacheEvidence.MissUnknownInputIndex)
 
-	// ProfileSkip-classified call: never armed.
+	// A call telemetry doesn't report, such as a ProfileSkip-classified one,
+	// which AroundFunc leaves unreported: never armed.
 	skipReq := &dagql.CallRequest{ResultCall: evidenceTestFrame("skipped")}
 	skipReq.ResultCall.ProfileSkip = true
 	initCacheEvidence(span, skipReq)
@@ -124,7 +125,7 @@ func TestInitCacheEvidenceGates(t *testing.T) {
 
 	// Non-recording span: never armed.
 	_, noopSpan := tracenoop.NewTracerProvider().Tracer("t").Start(context.Background(), "noop")
-	noopReq := &dagql.CallRequest{ResultCall: evidenceTestFrame("nonrecording")}
+	noopReq := &dagql.CallRequest{ResultCall: evidenceTestFrame("nonrecording"), CacheReported: true}
 	initCacheEvidence(noopSpan, noopReq)
 	assert.Assert(t, noopReq.CacheEvidence == nil)
 

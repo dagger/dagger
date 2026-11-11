@@ -198,12 +198,14 @@ func (l *remoteLookups) close() {
 }
 
 // noteRemoteMiss queues a call's lookup miss for the remote cache service,
-// when a connection serves lookups, and returns what it did (RemoteLookup*),
-// or "". self and inputs are the term the lookup tried. It runs after the
-// lookup, with no lock held.
+// when a connection serves lookups and telemetry reports the call
+// (CacheReported): the service learns calls only from what telemetry
+// reports, so it can't know any other. It returns what it did
+// (RemoteLookup*), or "". self and inputs are the term the lookup tried. It
+// runs after the lookup, with no lock held.
 func (c *Cache) noteRemoteMiss(req *CallRequest, recipe, self digest.Digest, inputs []digest.Digest) string {
 	b := c.partContentSource.attachedBridge()
-	if b == nil || !b.lookups.on.Load() || recipe == "" || req.ListItem {
+	if b == nil || !b.lookups.on.Load() || recipe == "" || req.ListItem || !req.CacheReported {
 		return ""
 	}
 	miss := RemoteMiss{Recipe: recipe, Field: req.ResultCall.Field, Self: self, Inputs: inputs}
