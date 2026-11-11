@@ -32,3 +32,29 @@ func TestPersistedModuleRelocatesEntrypointDependencies(t *testing.T) {
 	require.True(t, got.HasEntrypointDeps)
 	require.Equal(t, []uint64{103, 104}, got.EntrypointDepModuleResultIDs)
 }
+
+// A persisted directory module source's references are relocated together: the
+// git repository a module served from a module's tree resolves contextual git
+// to, with its original context directory. A reference left behind keeps the
+// sending engine's number, which names no row, or another row, on the
+// receiving one.
+func TestPersistedModuleSourceRelocatesDirSourceReferences(t *testing.T) {
+	t.Parallel()
+	payload, err := json.Marshal(persistedModuleSourcePayload{
+		Kind: ModuleSourceKindDir,
+		DirSrc: &persistedDirModuleSourcePayload{
+			OriginalContextDirResultID: 1,
+			OriginGitResultID:          2,
+		},
+	})
+	require.NoError(t, err)
+	rewritten, err := persistedModuleSourceVisitor.VisitPersistedReferences(dagql.PersistedPayloadVisit{Payload: payload}, func(ref *dagql.PersistedRef) error {
+		ref.ResultID += 100
+		return nil
+	})
+	require.NoError(t, err)
+	var got persistedModuleSourcePayload
+	require.NoError(t, json.Unmarshal(rewritten, &got))
+	require.Equal(t, uint64(101), got.DirSrc.OriginalContextDirResultID)
+	require.Equal(t, uint64(102), got.DirSrc.OriginGitResultID)
+}
