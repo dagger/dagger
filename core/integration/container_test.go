@@ -7172,11 +7172,14 @@ func (ContainerSuite) TestWithMountedDirectoryCaching(ctx context.Context, t *te
 	go func() {
 		for {
 			conn, err := l.Accept()
-			if err == nil {
-				t.Logf("New connection from %s\n", conn.RemoteAddr().String())
-				numConnections.Add(1)
-				conn.Close()
+			if err != nil {
+				// The listener closes when the test ends; without returning,
+				// this loop would spin for the rest of the test binary's life.
+				return
 			}
+			t.Logf("New connection from %s\n", conn.RemoteAddr().String())
+			numConnections.Add(1)
+			conn.Close()
 		}
 	}()
 
