@@ -37,6 +37,15 @@ type CallRequest struct {
 	// receiver-resolution lookup per call.
 	ReceiverTypeName string
 
+	// CacheReported marks a call whose cache decision telemetry reports,
+	// which is how the remote cache service learns calls: core.AroundFunc
+	// sets it by the one rule that decides what telemetry carries
+	// (reportsCacheDecision). Evidence for its span is armed only when it is
+	// set, and only a reported call's miss asks the service (noteRemoteMiss):
+	// the service can't know a call telemetry never reports. Like
+	// ReceiverTypeName it is request-only carrier state.
+	CacheReported bool
+
 	// CacheEvidence is the per-invocation cache-decision evidence carrier.
 	// Like ReceiverTypeName it is request-only carrier state (never digested,
 	// never persisted); unlike ReceiverTypeName it is additionally scoped to a

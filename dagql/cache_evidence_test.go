@@ -22,6 +22,7 @@ func cacheTestArmedRequest(frame *ResultCall) *CallRequest {
 	return &CallRequest{
 		ResultCall:    frame,
 		CacheEvidence: NewCacheDecision(),
+		CacheReported: true,
 	}
 }
 
