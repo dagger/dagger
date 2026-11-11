@@ -21,6 +21,7 @@ type EngineDev struct { // engine-dev (../../:0:0)
 	networkCidr *string
 	publish     *Void
 	test        *Void
+	testModule  *Void
 	tests       *string
 }
 type WithEngineDevFunc func(r *EngineDev) *EngineDev
@@ -473,6 +474,56 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 			q = q.Arg("dumpAfter", opts[i].DumpAfter)
 		}
 	}
+
+	return q.Execute(ctx)
+}
+
+// EngineDevTestModuleOpts contains options for EngineDev.TestModule
+type EngineDevTestModuleOpts struct {
+	// Only run these tests
+	Run string
+	// Skip these tests
+	Skip string
+	// Package patterns, relative to the module
+	//
+	// Default: "./..."
+	Pkg string
+	// Enable verbose output
+	TestVerbose bool
+}
+
+// Run the tests of another Go module, such as the Go SDK's, in the caller's
+// container, as Test runs the engine's: each package's test binary is built
+// by dagger/go's per-package build and run with otelgotest from its package's
+// directory, several packages at once.
+func (r *EngineDev) TestModule(ctx context.Context, container *Container, source *Directory, module string, opts ...EngineDevTestModuleOpts) error {
+	assertNotNil("container", container)
+	assertNotNil("source", source)
+	if r.testModule != nil {
+		return nil
+	}
+	q := r.query.Select("testModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+	}
+	q = q.Arg("container", container)
+	q = q.Arg("source", source)
+	q = q.Arg("module", module)
 
 	return q.Execute(ctx)
 }

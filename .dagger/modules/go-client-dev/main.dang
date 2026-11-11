@@ -47,10 +47,22 @@ type GoClientDev {
   Test the Go SDK
   """
   pub test: Void @check {
-    devContainer
-      .withExec(["go", "test", "-v", "-skip=TestProvision", "./..."])
-      .sync
-
+    # As the engine's tests run: each package's test binary built by
+    # dagger/go's per-package build, and run from its package's directory.
+    # The tests never run the go command, so they run with the dev engine's
+    # client installed and no Go toolchain.
+    let engine = engineDev(ws: self.ws)
+    # "sdk" is an arbitrary name for state persistence
+    let client = engine
+      .installClient(service: engine.service("sdk"))
+      .withMountedDirectory("/app", workspaceDir)
+    engine.testModule(
+      container: client,
+      source: workspaceDir,
+      module: sourcePath,
+      skip: "TestProvision",
+      testVerbose: true,
+    )
     null
   }
 
