@@ -201,8 +201,8 @@ func (res *sharedResult) storedBlobsLocked() map[digest.Digest]int64 {
 	}
 	blobs := make(map[digest.Digest]int64)
 	for _, part := range res.storedParts {
-		for _, layer := range part.Chain.Layers {
-			blobs[layer.Descriptor.Digest] = layer.Descriptor.Size
+		for _, layer := range part.layers {
+			blobs[layer.layer.Descriptor.Digest] = layer.layer.Descriptor.Size
 		}
 	}
 	return blobs

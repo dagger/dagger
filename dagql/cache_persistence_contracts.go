@@ -32,7 +32,7 @@ type persistResultSnapshot struct {
 	imported              bool
 	persistDeclined       bool
 	pendingOffers         []PersistedPartOffer
-	storedParts           []PersistedPartOffer
+	storedParts           []storedPart
 	resultID              sharedResultID
 	frame                 *ResultCall
 	self                  Typed

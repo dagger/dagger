@@ -67,7 +67,7 @@ func storedPersistenceTestState(c *Cache) map[uint64]storedPersistenceTestEntry 
 		state := res.loadPayloadState()
 		out[uint64(id)] = storedPersistenceTestEntry{
 			retained:                retained,
-			storedParts:             res.storedParts,
+			storedParts:             storedPartTestOffers(res.storedParts),
 			deps:                    deps,
 			recordBytes:             res.storedRecordBytes,
 			createdAt:               state.createdAtUnixNano,

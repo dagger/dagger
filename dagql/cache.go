@@ -2436,6 +2436,9 @@ type Cache struct {
 	// blobBacked marks a cache that keeps parts in a blob store: only it
 	// accepts SetStoredPart (WithBlobStore).
 	blobBacked bool
+	// storedLayers holds each distinct layer of the stored parts' chains
+	// once.
+	storedLayers storedLayers
 	// holderEntries maps each holding's key to the entry it sits on, and
 	// entriesByRecipe each recipe digest to its entry. remoteCaches keeps each
 	// held engine cache's own indexes. All guarded by egraphMu. See
@@ -2838,9 +2841,10 @@ type sharedResult struct {
 	// egraphMu.
 	mergedAtUnixNano int64
 	// storedParts are the parts whose layer chains are in this cache's own
-	// blob store, by part address key. Only a blob-backed cache (the Cloud)
-	// sets them. Guarded by egraphMu.
-	storedParts map[string]PersistedPartOffer
+	// blob store, by part address key, their layers the cache's
+	// (storedLayers). Only a blob-backed cache (the Cloud) sets them. Guarded
+	// by egraphMu.
+	storedParts map[string]storedPart
 	// storedRecordBytes is the size of the record a blob-backed cache stores
 	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
 	// Guarded by egraphMu.

@@ -186,7 +186,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				// A blob-backed cache never decodes a value: it keeps every
 				// record as it was saved, which placement copies into
 				// bundles, and takes back its stored parts.
-				if err := restoreStoredPartsLocked(res, env, row.CallFrameJSON, row.SelfPayload); err != nil {
+				if err := c.restoreStoredPartsLocked(res, env, row.CallFrameJSON, row.SelfPayload); err != nil {
 					return fmt.Errorf("import result %d stored parts: %w", resultID, err)
 				}
 			} else if env.Kind == persistedResultKindNull {
