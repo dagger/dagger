@@ -389,3 +389,60 @@ func TestForcedVariantKeepsTheRecordedBlob(t *testing.T) {
 	require.Zero(t, writes, "without writing anything")
 	require.NoError(t, consumer.Manager.RemoveLease(ctx, owner))
 }
+
+// unreadProvider supplies blobs whose bytes must never be read.
+type unreadProvider struct {
+	content.InfoReaderProvider
+	t *testing.T
+}
+
+func (p unreadProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	ra, err := p.InfoReaderProvider.ReaderAt(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	return unreadReaderAt{ReaderAt: ra, t: p.t}, nil
+}
+
+type unreadReaderAt struct {
+	content.ReaderAt
+	t *testing.T
+}
+
+func (r unreadReaderAt) ReadAt([]byte, int64) (int, error) {
+	r.t.Error("the import read the blob from its provider")
+	return 0, errors.New("read from the provider")
+}
+
+// A chain whose blob the engine image holds imports with no byte read from
+// its provider, reads the blob from the image, and the snapshot's size leaves
+// the blob out: releasing the snapshot frees none of it.
+func TestImageBlobImportsInPlace(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer := testutil.NewStore(t)
+	built, _ := producer.Build(t, nil, "a.txt", "shipped in the image")
+	chain, err := built.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer chain.Release(context.Background())
+	layer := chain.Layers[0].Descriptor
+	blob, err := content.ReadBlob(ctx, chain.Provider, layer)
+	require.NoError(t, err)
+	image := t.TempDir()
+	name := filepath.Join(image, "blobs", layer.Digest.Algorithm().String(), layer.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+	require.NoError(t, os.WriteFile(name, blob, 0o444))
+
+	sizeOf := func(store *testutil.Store, provider content.InfoReaderProvider) int64 {
+		imported, err := store.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: provider})
+		require.NoError(t, err)
+		defer imported.Release(context.Background())
+		require.True(t, blobPresent(t, store, layer.Digest))
+		size, err := store.Manager.SnapshotSize(ctx, imported.SnapshotID())
+		require.NoError(t, err)
+		return size
+	}
+	inPlace := sizeOf(testutil.NewStoreWithImageBlobs(t, image), unreadProvider{InfoReaderProvider: chain.Provider, t: t})
+	copied := sizeOf(testutil.NewStore(t), chain.Provider)
+	require.Equal(t, copied-layer.Size, inPlace, "the snapshot's size leaves out the blob it holds in place")
+}

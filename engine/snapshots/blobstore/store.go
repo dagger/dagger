@@ -91,6 +91,20 @@ func (s *Store) imageBlobPath(dgst digest.Digest) string {
 	return filepath.Join(s.image, "blobs", dgst.Algorithm().String(), dgst.Encoded())
 }
 
+// InPlace reports whether the store holds dgst only in place, as one of the
+// image's blobs, which takes none of the store's own disk.
+func (s *Store) InPlace(dgst digest.Digest) bool {
+	p, err := s.blobPath(dgst)
+	if err != nil || s.image == "" {
+		return false
+	}
+	if _, err := os.Stat(p); !errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	_, err = os.Stat(s.imageBlobPath(dgst))
+	return err == nil
+}
+
 // open opens dgst's blob, the store's own or else the image's.
 func (s *Store) open(dgst digest.Digest) (*os.File, error) {
 	p, err := s.blobPath(dgst)

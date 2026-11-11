@@ -177,13 +177,13 @@ func sizeFromMetadata(
 			added := make(map[digest.Digest]struct{})
 			info, err := cm.ContentStore.Info(ctx, dgst)
 			if err == nil {
-				usage.Size += info.Size
+				usage.Size += cm.contentSize(info)
 				added[dgst] = struct{}{}
 			}
 			walkBlobVariantsOnly(ctx, cm.ContentStore, dgst, func(desc ocispecs.Descriptor) bool {
 				if _, ok := added[desc.Digest]; !ok {
 					if info, err := cm.ContentStore.Info(ctx, desc.Digest); err == nil {
-						usage.Size += info.Size
+						usage.Size += cm.contentSize(info)
 						added[desc.Digest] = struct{}{}
 					}
 				}
