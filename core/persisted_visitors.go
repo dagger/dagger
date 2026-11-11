@@ -685,10 +685,22 @@ var persistedArtifactsVisitor = persistedStructVisitor("", func(p *persistedArti
 			if err := w.at(group.field).index(i).child("ContextWorkspace", &group.artifacts[i].ContextWorkspace); err != nil {
 				return err
 			}
+			if err := visitPersistedArtifactViewRefs(w.at(group.field).index(i).at("View"), group.artifacts[i].View); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 })
+
+// visitPersistedArtifactViewRefs walks the collections an artifact view was
+// filtered from.
+func visitPersistedArtifactViewRefs(w *persistedRefWalker, view *persistedArtifactView) error {
+	if view == nil {
+		return nil
+	}
+	return w.children("Sources", view.Sources)
+}
 
 var persistedAddressVisitor = persistedStructVisitor("", func(p *persistedAddressPayload, w *persistedRefWalker) error {
 	return w.child("boundWorkspaceResultID", &p.BoundWorkspaceResultID)
@@ -727,6 +739,9 @@ func visitPersistedModuleObjectValue(w *persistedRefWalker, val *persistedModule
 
 var persistedModuleObjectVisitor = persistedStructVisitor("", func(p *persistedModuleObjectPayload, w *persistedRefWalker) error {
 	if err := w.child("collectionBase", &p.CollectionBase); err != nil {
+		return err
+	}
+	if err := visitPersistedArtifactViewRefs(w.at("artifactView"), p.ArtifactView); err != nil {
 		return err
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Fields)) {
