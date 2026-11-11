@@ -636,6 +636,13 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 //
 // origin is merged for a value a merge installed since the engine started,
 // and restored for any other.
+//
+// The computation is a second execution of the entry's recipe beside what
+// the cache holds from the first (cache_part_rebuild_mix.go): kept_parts are
+// the entry's other parts of the same operation group that are already
+// complete, which stay from the first; merged_dependents are the merged
+// entries computed from the first, counted up to rebuildMixCountLimit, with
+// merged_dependents_more set when the walk stopped there.
 func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, address PersistedPartAddress, route LazyOperationRoute, record PersistedRecord, check *SourceCheck) {
 	offers, failed, busy := 0, 0, false
 	for _, candidate := range check.candidates {
@@ -659,8 +666,14 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 	case busy:
 		reason = "holder_busy"
 	}
+	kept := 0
+	if probes, err := describePartRecord(record); err == nil {
+		key, _ := partAddressKey(address)
+		kept = keptParts(probes, route.WriteSet, key)
+	}
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	replacements, mergedAt := row.replacements, row.mergedAtUnixNano
+	dependents, more := c.mergedDependentsLocked(row, rebuildMixCountLimit)
 	c.egraphMu.RUnlock()
 	origin := "restored"
 	if mergedAt != 0 {
@@ -685,7 +698,10 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 		"group", string(route.Group.Group),
 		"reason", reason,
 		"candidates", len(check.candidates),
-		"offers", offers)
+		"offers", offers,
+		"kept_parts", kept,
+		"merged_dependents", dependents,
+		"merged_dependents_more", more)
 }
 
 // runCallForPart runs again the call that made res, for res's part key that
@@ -708,17 +724,31 @@ func (c *Cache) runCallForPart(ctx context.Context, res AnyResult, key string) e
 	if err != nil {
 		return fmt.Errorf("run call for part %s: %w", key, err)
 	}
+	// The call's run is a second execution beside the first's other parts
+	// and the merged entries computed from it, as logPartWithoutSource
+	// counts them.
+	kept := 0
+	var version capturedRowRevision
+	if record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version); err == nil {
+		if probes, err := describePartRecord(record); err == nil {
+			kept = keptParts(probes, nil, key)
+		}
+	}
 	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if row.unavailableParts == nil {
 		row.unavailableParts = map[string]struct{}{}
 	}
 	row.unavailableParts[key] = struct{}{}
+	dependents, more := c.mergedDependentsLocked(row, rebuildMixCountLimit)
 	c.egraphMu.Unlock()
 	slog.InfoContext(ctx, "remote cache part unavailable: running its call",
 		"cache", c.Identity().ID,
 		"entry", uint64(row.id),
 		"field", frame.Field,
-		"part", key)
+		"part", key,
+		"kept_parts", kept,
+		"merged_dependents", dependents,
+		"merged_dependents_more", more)
 	ran, err := srv.LoadTypeReplayable(ctx, id)
 	if err != nil {
 		return fmt.Errorf("run call for part %s: %w", key, err)
