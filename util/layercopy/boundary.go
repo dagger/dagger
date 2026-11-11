@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	continuityfs "github.com/containerd/continuity/fs"
+
+	"github.com/dagger/dagger/util/fsxutil"
 )
 
 // BoundedRootPath resolves p, a path in the filesystem mounted at root, as
@@ -37,6 +39,9 @@ func BoundedRootPath(root, boundary, p string, followFinalSymlink bool) (string,
 	}
 	if p == "/" {
 		return root, nil
+	}
+	if resolved, ok := fsxutil.RootPathWithoutSymlinks(root, p, followFinalSymlink); ok {
+		return resolved, nil
 	}
 	if followFinalSymlink {
 		return continuityfs.RootPath(root, p)
