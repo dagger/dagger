@@ -41,20 +41,20 @@ func init() {
 	})
 }
 
-// partReuse is an imported receiver whose snapshot part was installed from a
+// partReuseCase is an imported receiver whose snapshot part was installed from a
 // local donor and settled, in cache c; evaluate evaluates that exact row, as
 // a step of a later build reads it; and tasks counts the part tasks that have
 // finished on the row. An evaluation that reuses the part runs none.
-type partReuse struct {
+type partReuseCase struct {
 	c        *Cache
 	receiver AnyResult
 	evaluate func() error
 	tasks    func() int
 }
 
-// partReuseTestReceiver returns a partReuse, with setup applied to its cache
+// partReuseTestReceiver returns a partReuseCase, with setup applied to its cache
 // first.
-func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) partReuse {
+func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) partReuseCase {
 	t.Helper()
 	ctx, c, srv, _ := shareTestCache(t)
 	for _, f := range setup {
@@ -98,7 +98,7 @@ func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) partReuse {
 	release()
 	require.Equal(t, 1, barrier.awaitPass(t))
 	require.True(t, shareTestHasLink(receiver, "local-snapshot"))
-	return partReuse{c: c, receiver: receiver, evaluate: evaluate, tasks: func() int { return int(tasks.Load()) }}
+	return partReuseCase{c: c, receiver: receiver, evaluate: evaluate, tasks: func() int { return int(tasks.Load()) }}
 }
 
 // testMovePayload moves res's payload revision, as a change to its payload
