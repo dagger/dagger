@@ -641,8 +641,9 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 // the cache holds from the first (cache_part_rebuild_mix.go): kept_parts are
 // the entry's other parts of the same operation group that are already
 // complete, which stay from the first; merged_dependents are the merged
-// entries computed from the first, counted up to rebuildMixCountLimit, with
-// merged_dependents_more set when the walk stopped there.
+// entries computed from the first, over a walk of at most
+// rebuildMixCountLimit entries, with merged_dependents_more set when the walk
+// stopped there.
 func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, address PersistedPartAddress, route LazyOperationRoute, record PersistedRecord, check *SourceCheck) {
 	offers, failed, busy := 0, 0, false
 	for _, candidate := range check.candidates {
