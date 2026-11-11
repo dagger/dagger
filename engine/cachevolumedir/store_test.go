@@ -877,3 +877,25 @@ func TestTreeWalkStopsWhenCancelled(t *testing.T) {
 	_, _, err := treeWalk(ctx, root)
 	require.ErrorIs(t, err, context.Canceled)
 }
+
+func TestTreeWalkCountsAnInodeOnceWhenItsLinksChange(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	writeFile(t, a, mib)
+	require.NoError(t, os.Link(a, b))
+
+	// The walk reaches a while both names exist, a writer removes a, and
+	// then the walk reaches b, which now has a single link.
+	w := newTreeWalker()
+	infoA, err := os.Lstat(a)
+	require.NoError(t, err)
+	w.count(infoA)
+	require.NoError(t, os.Remove(a))
+	infoB, err := os.Lstat(b)
+	require.NoError(t, err)
+	w.count(infoB)
+
+	require.Equal(t, blocksOf(t, b), w.size.Load(), "one inode's space, counted once")
+	require.Equal(t, int64(2), w.files.Load())
+}
