@@ -389,42 +389,7 @@ func buildAgentRosterModel(agents []*dagui.AgentNode, focused string, keep map[s
 		entries[i] = entry(agent)
 	}
 
-	// The neighborhood of focus, and the ancestors that never fold. A
-	// read-only agent cannot be focused -- nothing walks onto it -- so its
-	// own children could never come into view by focusing it: they join the
-	// neighborhood whenever it does.
-	near := make([]bool, n)
-	chain := make([]bool, n)
-	var include func(int)
-	include = func(i int) {
-		if near[i] {
-			return
-		}
-		near[i] = true
-		if entries[i].ReadOnly {
-			for _, child := range children[i] {
-				include(child)
-			}
-		}
-	}
-	for _, root := range roots {
-		include(root)
-	}
-	if focus >= 0 {
-		for i := focus; i >= 0 && !chain[i]; i = parent[i] {
-			include(i)
-			chain[i] = true
-		}
-		for _, child := range children[focus] {
-			include(child)
-		}
-	} else {
-		for _, root := range roots {
-			for _, child := range children[root] {
-				include(child)
-			}
-		}
-	}
+	near, chain := agentRosterNeighborhood(entries, parent, children, roots, focus)
 
 	// STOPPED agents fold, unless they are the context of focus, or stopped
 	// while holding a tab under it.
@@ -470,6 +435,49 @@ func buildAgentRosterModel(agents []*dagui.AgentNode, focused string, keep map[s
 		}
 	}
 	return model
+}
+
+// agentRosterNeighborhood selects the visible neighborhood and the focused
+// ancestor chain whose tabs must stay unfolded.
+func agentRosterNeighborhood(entries []AgentRosterEntry, parent []int, children [][]int, roots []int, focus int) (near, chain []bool) {
+	// The neighborhood of focus, and the ancestors that never fold. A
+	// read-only agent cannot be focused -- nothing walks onto it -- so its
+	// own children could never come into view by focusing it: they join the
+	// neighborhood whenever it does.
+	near = make([]bool, len(entries))
+	chain = make([]bool, len(entries))
+	var include func(int)
+	include = func(i int) {
+		if near[i] {
+			return
+		}
+		near[i] = true
+		if entries[i].ReadOnly {
+			for _, child := range children[i] {
+				include(child)
+			}
+		}
+	}
+	for _, root := range roots {
+		include(root)
+	}
+	if focus >= 0 {
+		for i := focus; i >= 0 && !chain[i]; i = parent[i] {
+			include(i)
+			chain[i] = true
+		}
+		for _, child := range children[focus] {
+			include(child)
+		}
+	} else {
+		for _, root := range roots {
+			for _, child := range children[root] {
+				include(child)
+			}
+		}
+	}
+
+	return near, chain
 }
 
 // agentStateDisplay maps a lifecycle state to its compact symbol and color.
