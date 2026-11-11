@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
-	containerdfs "github.com/containerd/continuity/fs"
 	gitconfig "github.com/go-git/go-git/v5/plumbing/format/config"
 
 	"github.com/dagger/dagger/util/gitutil"
@@ -133,21 +133,65 @@ func containedPath(root, p string) (string, error) {
 		}
 		return "", outside
 	}
-	leaves, err := leavesDir(root, filepath.ToSlash(rel))
+	resolved, leaves, err := openedPath(root, rel)
 	if err != nil {
 		return "", err
 	}
 	if leaves {
 		return "", outside
 	}
-	resolved, err := containerdfs.RootPath(root, rel)
-	if err != nil {
-		return "", err
-	}
-	if _, err := os.Lstat(resolved); err != nil {
-		return "", err
-	}
 	return resolved, nil
+}
+
+// openedPath resolves rel, a path relative to root, one component at a time
+// as the kernel opens it: a link is replaced by its target, and a ".." climbs
+// from wherever the components before it led. It reports whether resolving
+// it leaves root, by a ".." or an absolute link, before reading anything
+// outside root. A path whose components don't all exist doesn't exist.
+func openedPath(root, rel string) (string, bool, error) {
+	var resolved []string
+	rest := strings.Split(filepath.ToSlash(rel), "/")
+	links := 0
+	for len(rest) > 0 {
+		name := rest[0]
+		rest = rest[1:]
+		switch name {
+		case "", ".":
+			continue
+		case "..":
+			if len(resolved) == 0 {
+				return "", true, nil
+			}
+			resolved = resolved[:len(resolved)-1]
+			continue
+		}
+		resolved = append(resolved, name)
+		current := filepath.Join(root, filepath.Join(resolved...))
+		info, err := os.Lstat(current)
+		if errors.Is(err, syscall.ENOTDIR) {
+			err = os.ErrNotExist
+		}
+		if err != nil {
+			return "", false, err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		// The kernel's limit on links followed in one lookup.
+		if links++; links > 40 {
+			return "", false, fmt.Errorf("resolving %s: %w", rel, syscall.ELOOP)
+		}
+		target, err := os.Readlink(current)
+		if err != nil {
+			return "", false, err
+		}
+		if filepath.IsAbs(target) {
+			return "", true, nil
+		}
+		resolved = resolved[:len(resolved)-1]
+		rest = append(strings.Split(filepath.ToSlash(target), "/"), rest...)
+	}
+	return filepath.Join(root, filepath.Join(resolved...)), false, nil
 }
 
 // joinPath joins p to dir unless p is absolute, keeping p's components as
