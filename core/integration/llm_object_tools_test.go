@@ -1005,7 +1005,7 @@ func (LLMSuite) TestChangesetToolEditsMounts(ctx context.Context, t *testctx.T) 
 
 	require.NoError(t, c.Close())
 	target := connect(ctx, t)
-	check(ctx, t, dagger.Ref[*dagger.LLM](target, recipe).Workspace())
+	check(ctx, t, core.Ref[*core.LLM](core.NewQuery(target), recipe).Workspace())
 }
 
 // TestChangesetToolFailsUnappliablePatch covers a patch git refuses to apply
