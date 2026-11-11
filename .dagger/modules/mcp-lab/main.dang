@@ -118,17 +118,7 @@ type McpLab {
     # build the dagger CLI from source
     let cli = cliDev(ws: source, source: srcDir).binary
 
-    # Build the HTTP<->stdio bridge from the workspace tree: it lives in the
-    # repo's root Go module, so it compiles against the exact mcp-go version
-    # the CLI serves.
-    let bridgeBin = goCli
-      .base
-      .withMountedDirectory("/src", srcDir)
-      .withWorkdir("/src")
-      # The bridge runs in Alpine, so it must not depend on the build image's libc.
-      .withEnvVariable("CGO_ENABLED", "0")
-      .withExec(["go", "build", "-o", "/out/mcp-bridge", "./.dagger/modules/mcp-lab/bridge"])
-      .file("/out/mcp-bridge")
+    let bridgeBin = bridgeBinary(srcDir)
 
     # MCP needs its own client attachables for the stdio pipe. Privileged
     # nesting forwards to the outer session, which may not have that pipe.
@@ -265,5 +255,29 @@ type McpLab {
         url + path,
       ])
       .stdout
+  }
+
+  # The HTTP<->stdio bridge, built with the repo's root Go module, so it
+  # compiles against the exact mcp-go version the CLI serves. dagger/go, like
+  # Go's package patterns, finds no packages under a directory whose name
+  # starts with ".", so the bridge can't build in place under .dagger/: it is
+  # grafted, from the workspace, into a build tree of the root module's go.mod
+  # and go.sum, as engine-lab grafts its wcprof-report helper. That tree is the
+  # build's workspace, so the build only re-runs when those or the bridge
+  # change, and never with the caller's session. The build image has no C
+  # toolchain, so the binary is static and runs in Alpine.
+  let bridgeBinary(src: Directory!): File! {
+    let pkg = "internal/mcplab/bridge"
+    let tree = directory
+      .withFile("go.mod", src.file("go.mod"))
+      .withFile("go.sum", src.file("go.sum"))
+      .withDirectory(pkg, src.directory(".dagger/modules/mcp-lab/bridge"))
+      .asWorkspace
+    # No tests: a binary build reads none of the module's test records.
+    go(version: "1.27", test: ["!**"])
+      .module(ws: tree, path: pkg)
+      .packages(ws: tree)
+      .get(key: pkg)
+      .binary(ws: tree)
   }
 }

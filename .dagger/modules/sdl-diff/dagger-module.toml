@@ -1,5 +1,9 @@
 name = "sdl-diff"
-engineVersion = "v1.0.0-beta.14"
+engineVersion = "v1.0.0-0"
 
 [runtime]
   source = "dang"
+
+[[dependencies]]
+  name = "go"
+  source = "github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"

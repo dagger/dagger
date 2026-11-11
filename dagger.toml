@@ -217,7 +217,7 @@ is-module = true
 clients = ["./.dagger/modules/engine-dev"]
 
 [sdks.dang.scopes.".dagger/modules/engine-lab"]
-clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/go-cli"]
+clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/go-cli"]
@@ -225,9 +225,10 @@ is-module = true
 
 [sdks.dang.scopes.".dagger/modules/sdl-diff"]
 is-module = true
+clients = ["github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"]
 
 [sdks.dang.scopes.".dagger/modules/mcp-lab"]
-clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "./.dagger/modules/go-cli"]
+clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/tui-qa"]
