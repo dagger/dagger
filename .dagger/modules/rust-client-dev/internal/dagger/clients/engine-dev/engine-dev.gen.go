@@ -21,6 +21,7 @@ type EngineDev struct { // engine-dev (../../main.go:96:6)
 	networkCidr *string
 	publish     *Void
 	test        *Void
+	testModule  *Void
 	tests       *string
 }
 type WithEngineDevFunc func(r *EngineDev) *EngineDev
@@ -82,11 +83,11 @@ type EngineDevGoEnvOpts struct {
 	//
 	// The source to work in; the engine's source by default
 	//
-	Source *Directory // engine-dev (../../test.go:801:2)
+	Source *Directory // engine-dev (../../test.go:862:2)
 	//
 	// Enable cgo
 	//
-	Cgo bool // engine-dev (../../test.go:804:2)
+	Cgo bool // engine-dev (../../test.go:865:2)
 }
 
 // GoEnv is a Go environment for working on dagger/dagger: wolfi with the Go
@@ -94,7 +95,7 @@ type EngineDevGoEnvOpts struct {
 // Go caches, and source as its working directory. It is for running Go code
 // and the go command; dagger/dagger's own binaries and test binaries are
 // built with dagger/go's per-package build, not here.
-func (r *EngineDev) GoEnv(opts ...EngineDevGoEnvOpts) *Container { // engine-dev (../../test.go:798:1)
+func (r *EngineDev) GoEnv(opts ...EngineDevGoEnvOpts) *Container { // engine-dev (../../test.go:859:1)
 	q := r.query.Select("goEnv")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
@@ -509,46 +510,104 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 	return q.Execute(ctx)
 }
 
+// EngineDevTestModuleOpts contains options for EngineDev.TestModule
+type EngineDevTestModuleOpts struct {
+	//
+	// Only run these tests
+	//
+	Run string // engine-dev (../../test.go:141:2)
+	//
+	// Skip these tests
+	//
+	Skip string // engine-dev (../../test.go:144:2)
+	//
+	// Package patterns, relative to the module
+	//
+	//
+	// Default: "./..."
+	Pkg string // engine-dev (../../test.go:148:2)
+	//
+	// Enable verbose output
+	//
+	TestVerbose bool // engine-dev (../../test.go:151:2)
+}
+
+// Run the tests of another Go module, such as the Go SDK's, in the caller's
+// container, as Test runs the engine's: each package's test binary is built
+// by dagger/go's per-package build and run with otelgotest from its package's
+// directory, several packages at once.
+func (r *EngineDev) TestModule(ctx context.Context, container *Container, source *Directory, module string, opts ...EngineDevTestModuleOpts) error { // engine-dev (../../test.go:131:1)
+	assertNotNil("container", container)
+	assertNotNil("source", source)
+	if r.testModule != nil {
+		return nil
+	}
+	q := r.query.Select("testModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+	}
+	q = q.Arg("container", container)
+	q = q.Arg("source", source)
+	q = q.Arg("module", module)
+
+	return q.Execute(ctx)
+}
+
 // EngineDevTestProfileOpts contains options for EngineDev.TestProfile
 type EngineDevTestProfileOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../test.go:158:2)
+	Run string // engine-dev (../../test.go:206:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../test.go:161:2)
+	Skip string // engine-dev (../../test.go:209:2)
 
 	// Default: "./..."
-	Pkg string // engine-dev (../../test.go:164:2)
+	Pkg string // engine-dev (../../test.go:212:2)
 	//
 	// Abort test run on first failure
 	//
-	FailFast bool // engine-dev (../../test.go:167:2)
+	FailFast bool // engine-dev (../../test.go:215:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // engine-dev (../../test.go:170:2)
+	Parallel int // engine-dev (../../test.go:218:2)
 	//
 	// How long before timing out the test run
 	//
-	Timeout string // engine-dev (../../test.go:173:2)
+	Timeout string // engine-dev (../../test.go:221:2)
 
-	Race bool // engine-dev (../../test.go:175:2)
+	Race bool // engine-dev (../../test.go:223:2)
 
 	// Default: 1
-	Count int // engine-dev (../../test.go:178:2)
+	Count int // engine-dev (../../test.go:226:2)
 
-	EnvFile *Secret // engine-dev (../../test.go:180:2)
+	EnvFile *Secret // engine-dev (../../test.go:228:2)
 	//
 	// Enable verbose output
 	//
-	TestVerbose bool // engine-dev (../../test.go:183:2)
+	TestVerbose bool // engine-dev (../../test.go:231:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../test.go:186:2)
+	EbpfProgs []string // engine-dev (../../test.go:234:2)
 }
 
 // Run core engine tests against an engine recording a wcprof wall-clock
@@ -559,7 +618,7 @@ type EngineDevTestProfileOpts struct {
 // not the tests passed, so a failing run still yields a profile. Benchmark
 // tests gated on _DAGGER_BENCH are opted in, since profiling is what they are
 // for: select them with `run` like any other test.
-func (r *EngineDev) TestProfile(opts ...EngineDevTestProfileOpts) *EngineDevTestProfileResult { // engine-dev (../../test.go:154:1)
+func (r *EngineDev) TestProfile(opts ...EngineDevTestProfileOpts) *EngineDevTestProfileResult { // engine-dev (../../test.go:202:1)
 	q := r.query.Select("testProfile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument
@@ -619,36 +678,36 @@ type EngineDevTestTelemetryOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../test.go:263:2)
+	Run string // engine-dev (../../test.go:311:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../test.go:266:2)
+	Skip string // engine-dev (../../test.go:314:2)
 
-	Update bool // engine-dev (../../test.go:268:2)
+	Update bool // engine-dev (../../test.go:316:2)
 
-	FailFast bool // engine-dev (../../test.go:270:2)
+	FailFast bool // engine-dev (../../test.go:318:2)
 
-	Parallel int // engine-dev (../../test.go:272:2)
+	Parallel int // engine-dev (../../test.go:320:2)
 
-	Timeout string // engine-dev (../../test.go:274:2)
+	Timeout string // engine-dev (../../test.go:322:2)
 
-	Race bool // engine-dev (../../test.go:276:2)
+	Race bool // engine-dev (../../test.go:324:2)
 
 	// Default: 1
-	Count int // engine-dev (../../test.go:278:2)
+	Count int // engine-dev (../../test.go:326:2)
 
-	EnvFile *Secret // engine-dev (../../test.go:280:2)
+	EnvFile *Secret // engine-dev (../../test.go:328:2)
 
-	TestVerbose bool // engine-dev (../../test.go:282:2)
+	TestVerbose bool // engine-dev (../../test.go:330:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../test.go:285:2)
+	EbpfProgs []string // engine-dev (../../test.go:333:2)
 }
 
 // Run telemetry tests
-func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../test.go:259:1)
+func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../test.go:307:1)
 	q := r.query.Select("testTelemetry")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument
@@ -916,7 +975,7 @@ func (r *EngineDevLoadedEngine) AsNode() Node {
 
 // The result of a profiled test run: the test engine's wcprof recording, and
 // how the tests went.
-type EngineDevTestProfileResult struct { // engine-dev (../../test.go:128:6)
+type EngineDevTestProfileResult struct { // engine-dev (../../test.go:176:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -939,14 +998,14 @@ func (r *EngineDevTestProfileResult) WithGraphQLQuery(q *querybuilder.Selection)
 
 // The test engine's wcprof dump (engine/wcprof), covering every
 // session the tests opened
-func (r *EngineDevTestProfileResult) Dump() *File { // engine-dev (../../test.go:131:2)
+func (r *EngineDevTestProfileResult) Dump() *File { // engine-dev (../../test.go:179:2)
 	q := r.query.Select("dump")
 
 	return new(File).WithGraphQLQuery(q)
 }
 
 // The exit status of `go test`
-func (r *EngineDevTestProfileResult) ExitCode(ctx context.Context) (int, error) { // engine-dev (../../test.go:133:2)
+func (r *EngineDevTestProfileResult) ExitCode(ctx context.Context) (int, error) { // engine-dev (../../test.go:181:2)
 	if r.exitCode != nil {
 		return *r.exitCode, nil
 	}
@@ -1014,7 +1073,7 @@ func (r *EngineDevTestProfileResult) UnmarshalJSON(bs []byte) error {
 }
 
 // The tail of the test output (stdout and stderr)
-func (r *EngineDevTestProfileResult) Output(ctx context.Context) (string, error) { // engine-dev (../../test.go:135:2)
+func (r *EngineDevTestProfileResult) Output(ctx context.Context) (string, error) { // engine-dev (../../test.go:183:2)
 	if r.output != nil {
 		return *r.output, nil
 	}

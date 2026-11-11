@@ -525,6 +525,62 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				}
 			}
 			return nil, (*EngineDev).Test(&parent, ctx, run, skip, pkg, failFast, parallel, timeout, race, count, envFile, testVerbose, update, ebpfProgs, ebpf, dumpAfter)
+		case "TestModule":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var container *core.Container
+			if inputArgs["container"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["container"]), &container)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg container", err))
+				}
+			}
+			var source *core.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			var module string
+			if inputArgs["module"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["module"]), &module)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg module", err))
+				}
+			}
+			var run string
+			if inputArgs["run"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["run"]), &run)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg run", err))
+				}
+			}
+			var skip string
+			if inputArgs["skip"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["skip"]), &skip)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg skip", err))
+				}
+			}
+			var pkg string
+			if inputArgs["pkg"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["pkg"]), &pkg)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pkg", err))
+				}
+			}
+			var testVerbose bool
+			if inputArgs["testVerbose"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["testVerbose"]), &testVerbose)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testVerbose", err))
+				}
+			}
+			return nil, (*EngineDev).TestModule(&parent, ctx, container, source, module, run, skip, pkg, testVerbose)
 		case "TestProfile":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

@@ -123,6 +123,54 @@ func (dev *EngineDev) Test(
 	return err
 }
 
+// Run the tests of another Go module, such as the Go SDK's, in the caller's
+// container, as Test runs the engine's: each package's test binary is built
+// by dagger/go's per-package build and run with otelgotest from its package's
+// directory, several packages at once.
+// +cache="session"
+func (dev *EngineDev) TestModule(
+	ctx context.Context,
+	// The container to run the tests in, with source at /app
+	container *dagger.Container,
+	// The source the container holds at /app
+	source *dagger.Directory,
+	// The module's directory in source, such as sdk/go
+	module string,
+	// Only run these tests
+	// +optional
+	run string,
+	// Skip these tests
+	// +optional
+	skip string,
+	// Package patterns, relative to the module
+	// +optional
+	// +default="./..."
+	pkg string,
+	// Enable verbose output
+	// +optional
+	testVerbose bool,
+) error {
+	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	if err != nil {
+		return err
+	}
+	otelgotest, err := builder.Otelgotest(ctx)
+	if err != nil {
+		return err
+	}
+	module = path.Clean(module)
+	_, err = dev.test(ctx, container.WithFile("/usr/local/bin/otelgotest", otelgotest), &testOpts{
+		module:        module,
+		moduleSource:  source.Directory(module),
+		runTestRegex:  run,
+		skipTestRegex: skip,
+		pkg:           pkg,
+		count:         1,
+		testVerbose:   testVerbose,
+	})
+	return err
+}
+
 // The result of a profiled test run: the test engine's wcprof recording, and
 // how the tests went.
 type TestProfileResult struct {
@@ -311,6 +359,11 @@ func (dev *EngineDev) TestTelemetry(
 }
 
 type testOpts struct {
+	// The directory of the Go module whose tests run, in the test
+	// container's source, and that module's own source; the engine's
+	// source's root module when empty
+	module        string
+	moduleSource  *dagger.Directory
 	ebpf          bool
 	runTestRegex  string
 	skipTestRegex string
@@ -347,8 +400,16 @@ func (dev *EngineDev) test(
 
 	// The test binaries are built by dagger/go's per-package build, as go
 	// test -c builds them, and run as go test runs them: each from its
-	// package's directory, several packages at once.
-	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	// package's directory, several packages at once. Another module is built
+	// from its own directory, so its builds are keyed by its content alone,
+	// and unstamped: the stamped package is not in its binaries.
+	source, commit, dirty := dev.Source, dev.VCSCommit, dev.VCSDirty
+	moduleDir := testSourcePath
+	if opts.module != "" {
+		source, commit, dirty = opts.moduleSource, "", false
+		moduleDir = path.Join(testSourcePath, opts.module)
+	}
+	builder, err := build.NewBuilder(ctx, source, "", commit, dirty)
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +496,7 @@ func (dev *EngineDev) test(
 		binaries[i] = builder.TestBinary(dir, opts.race)
 		runs[i] = container.
 			WithMountedFile(testBinaryPath, binaries[i]).
-			WithWorkdir(path.Join(testSourcePath, dir)).
+			WithWorkdir(path.Join(moduleDir, dir)).
 			WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
 			WithExec(withoutOuterSession(args...), execOpts)
 	}
