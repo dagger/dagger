@@ -29,7 +29,7 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("API", typeDef.withObject("Changeset"))
             .withDescription("Regenerate the PHP SDK API")
-            .withSourceMap(sourceMap("main.go", 146, 1))
+            .withSourceMap(sourceMap("main.go", 155, 1))
             .withGenerator
         )
         .withFunction(
@@ -38,63 +38,63 @@ type Entrypoint implements ModuleEntrypoint {
         )
         .withFunction(
           function("Changes", typeDef.withObject("Changeset"))
-            .withSourceMap(sourceMap("main.go", 150, 1))
+            .withSourceMap(sourceMap("main.go", 159, 1))
         )
         .withFunction(
           function("DevContainer", typeDef.withObject("Container"))
             .withDescription("Returns the PHP SDK workspace mounted in a dev container, with a client of a\ndev engine built from the workspace, and working directory set to the SDK source")
-            .withSourceMap(sourceMap("main.go", 78, 1))
-            .withArg("runInstall", typeDef.withKind(TypeDefKind.BOOLEAN_KIND), description: "Run composer install before returning the container", defaultValue: ("\"false\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 81, 2))
+            .withSourceMap(sourceMap("main.go", 83, 1))
+            .withArg("runInstall", typeDef.withKind(TypeDefKind.BOOLEAN_KIND), description: "Run composer install before returning the container", defaultValue: ("\"false\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 86, 2))
         )
         .withFunction(
           function("PhpCodeSniffer", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)")
-            .withSourceMap(sourceMap("main.go", 116, 1))
+            .withSourceMap(sourceMap("main.go", 125, 1))
             .withCheck
         )
         .withFunction(
           function("PhpStan", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Analyze the PHP code with PHPStan (https://phpstan.org)")
-            .withSourceMap(sourceMap("main.go", 126, 1))
+            .withSourceMap(sourceMap("main.go", 135, 1))
             .withCheck
         )
         .withFunction(
           function("Release", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Publish the PHP SDK")
-            .withSourceMap(sourceMap("main.go", 203, 1))
-            .withArg("sourceRepo", typeDef.withObject("GitRepository").withOptional(true), description: "The source git repository to release", defaultPath: "/", sourceMap: sourceMap("main.go", 208, 2))
-            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The source git tag to release", sourceMap: sourceMap("main.go", 211, 2))
-            .withArg("dest", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), defaultValue: ("\"https://github.com/dagger/dagger-php-sdk.git\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 215, 2))
-            .withArg("githubToken", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 217, 2))
+            .withSourceMap(sourceMap("main.go", 212, 1))
+            .withArg("sourceRepo", typeDef.withObject("GitRepository").withOptional(true), description: "The source git repository to release", defaultPath: "/", sourceMap: sourceMap("main.go", 217, 2))
+            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The source git tag to release", sourceMap: sourceMap("main.go", 220, 2))
+            .withArg("dest", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), defaultValue: ("\"https://github.com/dagger/dagger-php-sdk.git\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 224, 2))
+            .withArg("githubToken", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 226, 2))
         )
         .withFunction(
           function("ReleaseDryRun", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Test the publishing process")
-            .withSourceMap(sourceMap("main.go", 172, 1))
-            .withArg("sourceRepo", typeDef.withObject("GitRepository").withOptional(true), description: "Source git repository to fake-release", defaultPath: "/", sourceMap: sourceMap("main.go", 176, 2))
-            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to fake-release", defaultValue: ("\"HEAD\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 179, 2))
-            .withArg("destRemote", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Target git remote to fake-release *to*", defaultValue: ("\"https://github.com/dagger/dagger-php-sdk.git\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 182, 2))
+            .withSourceMap(sourceMap("main.go", 181, 1))
+            .withArg("sourceRepo", typeDef.withObject("GitRepository").withOptional(true), description: "Source git repository to fake-release", defaultPath: "/", sourceMap: sourceMap("main.go", 185, 2))
+            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to fake-release", defaultValue: ("\"HEAD\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 188, 2))
+            .withArg("destRemote", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Target git remote to fake-release *to*", defaultValue: ("\"https://github.com/dagger/dagger-php-sdk.git\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 191, 2))
         )
         .withFunction(
           function("Source", typeDef.withObject("Directory"))
             .withDescription("Source returns the source directory for the PHP SDK")
-            .withSourceMap(sourceMap("main.go", 110, 1))
+            .withSourceMap(sourceMap("main.go", 119, 1))
         )
         .withFunction(
           function("Test", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Test the PHP SDK with PHPUnit (https://phpunit.de/)")
-            .withSourceMap(sourceMap("main.go", 137, 1))
+            .withSourceMap(sourceMap("main.go", 146, 1))
             .withCheck
         )
         .withFunction(
           function("VersionFromTag", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("Get v1.2.3 from sdk/php/v1.2.3")
-            .withSourceMap(sourceMap("main.go", 197, 1))
-            .withArg("tag", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 197, 38))
+            .withSourceMap(sourceMap("main.go", 206, 1))
+            .withArg("tag", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 206, 38))
         )
         .withFunction(
           function("WithGeneratedClient", typeDef.withObject("PhpClientDev"))
-            .withSourceMap(sourceMap("main.go", 154, 1))
+            .withSourceMap(sourceMap("main.go", 163, 1))
         )
         .withConstructor(
           function("", typeDef.withObject("PhpClientDev"))

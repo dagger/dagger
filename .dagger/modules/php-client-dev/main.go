@@ -54,6 +54,11 @@ func New(
 }
 
 func (t PhpClientDev) BaseContainer() *dagger.Container {
+	return t.installClient(t.base())
+}
+
+// base is the PHP base container, without a Dagger engine.
+func (t PhpClientDev) base() *dagger.Container {
 	// Extract the PHP base container from the native SDK dev module
 	// - We build the base container eagerly, to avoid keeping a reference to DaggerDev
 	// - But we build the full dev container *lazily*, because we may have mutated our workspace with generated files
@@ -80,18 +85,22 @@ func (t PhpClientDev) DevContainer(
 	//+default="false"
 	runInstall bool,
 ) *dagger.Container {
+	return t.installClient(t.container(runInstall))
+}
+
+// installClient binds a dev engine built from the workspace to the given
+// container, and installs its CLI.
+func (t PhpClientDev) installClient(ctr *dagger.Container) *dagger.Container {
 	return enginedev.New(t.Ws, enginedev.EngineDevOpts{
 		ClientDockerConfig: t.ClientDockerConfig,
-	}).InstallClient(enginedev.EngineDevInstallClientOpts{
-		Client: t.container(runInstall),
-	})
+	}).InstallClient(enginedev.EngineDevInstallClientOpts{Client: ctr})
 }
 
 // container is the PHP SDK workspace mounted in a container without a Dagger
 // engine, with working directory set to the SDK source, for what doesn't run a
 // Dagger client.
 func (t PhpClientDev) container(runInstall bool) *dagger.Container {
-	ctr := t.BaseContainer().
+	ctr := t.base().
 		WithMountedDirectory(".", t.Workspace).
 		WithWorkdir(t.SourcePath)
 
