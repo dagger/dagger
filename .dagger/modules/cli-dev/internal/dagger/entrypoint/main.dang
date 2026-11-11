@@ -30,18 +30,18 @@ type Entrypoint implements ModuleEntrypoint {
 
   pub types: [TypeDef!]! {
     [
-      typeDef.withObject("CliDev", description: "Develop the Dagger CLI", sourceMap: sourceMap("main.go", 118, 6))
+      typeDef.withObject("CliDev", description: "Develop the Dagger CLI", sourceMap: sourceMap("main.go", 119, 6))
         .withFunction(
           function("Binary", typeDef.withObject("File"))
             .withDescription("Build the dagger CLI binary for a single platform")
-            .withSourceMap(sourceMap("main.go", 130, 1))
-            .withArg("platform", typeDef.withScalar("Platform").withOptional(true), sourceMap: sourceMap("main.go", 132, 2))
+            .withSourceMap(sourceMap("main.go", 131, 1))
+            .withArg("platform", typeDef.withScalar("Platform").withOptional(true), sourceMap: sourceMap("main.go", 133, 2))
         )
         .withFunction(
           function("DevBinaries", typeDef.withObject("Directory"))
             .withDescription("Build dev CLI binaries\nTODO: remove this")
-            .withSourceMap(sourceMap("main.go", 159, 1))
-            .withArg("platform", typeDef.withScalar("Platform").withOptional(true), sourceMap: sourceMap("main.go", 161, 2))
+            .withSourceMap(sourceMap("main.go", 160, 1))
+            .withArg("platform", typeDef.withScalar("Platform").withOptional(true), sourceMap: sourceMap("main.go", 162, 2))
         )
         .withFunction(
           function("Publish", typeDef.withObject("Directory"))
@@ -79,8 +79,8 @@ type Entrypoint implements ModuleEntrypoint {
             .withSourceMap(sourceMap("publish.go", 179, 1))
             .withCheck
         )
-        .withField("Version", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 119, 2))
-        .withField("Tag", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 120, 2))
+        .withField("Version", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 120, 2))
+        .withField("Tag", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 121, 2))
         .withConstructor(
           function("", typeDef.withObject("CliDev"))
             .withSourceMap(sourceMap("main.go", 16, 1))
@@ -88,9 +88,9 @@ type Entrypoint implements ModuleEntrypoint {
             .withArg("source", typeDef.withObject("Directory").withOptional(true), defaultPath: "/", ignore: ["*", ".*", "!cmd/dagger/*", "!internal/cmd/dagger/**", "!**/go.sum", "!**/go.mod", "!**/*.go", "!**/VERSION", "!vendor/**/*", "!**.graphql", "!.changes", "!LICENSE", "!install.sh", "!install.ps1", "!**/*.sql", "!core/prompts/*.md", "!core/sdk/sdkmeta/sdks.json"], sourceMap: sourceMap("main.go", 42, 2))
             .withArg("base", typeDef.withObject("Container").withOptional(true), description: "Base image for go build environment", sourceMap: sourceMap("main.go", 46, 2))
             .withArg("version", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Version of the Dagger CLI being built. Surfaced as CliDev.Version and\nconsumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,\nsemver release compatibility). The built binary self-reports its own version\nfrom the embedded internal/version/VERSION file regardless of what's\npassed here, but this decides which engine the binary provisions by\ndefault: a valid semver means a tag build (embedded VERSION already\nmatches, enforced by the publish workflow guard); anything else is a\ncommit build, whose default engine tag is pinned to the commit.", sourceMap: sourceMap("main.go", 57, 2))
-            .withArg("ws", typeDef.withObject("Workspace").withOptional(true), description: "Workspace whose git info stamps the CLI's VCS metadata and pins the\ndefault engine tag on commit builds. Auto-injected when cli-dev is\ncalled directly; a parent toolchain (e.g. engine-dev) instead resolves\nit to the scalar vcsCommit/vcsDirty below and forwards those, so the\nsession-scoped Workspace never makes the build cache key session-specific.", sourceMap: sourceMap("main.go", 65, 2))
-            .withArg("vcsCommit", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes\nprecedence over ws.", sourceMap: sourceMap("main.go", 70, 2))
-            .withArg("vcsDirty", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), description: "Resolved VCS dirty state to stamp, paired with vcsCommit.", sourceMap: sourceMap("main.go", 74, 2))
+            .withArg("ws", typeDef.withObject("Workspace").withOptional(true), description: "Workspace whose git info stamps the CLI's VCS metadata and pins the\ndefault engine tag on commit builds. Auto-injected when cli-dev is\ncalled directly; a parent toolchain such as engine-dev passes its own.\nOnly the commit and dirty state resolved from it reach the build, never\nthe session-scoped Workspace, so the build's cache key isn't\nsession-specific.", sourceMap: sourceMap("main.go", 66, 2))
+            .withArg("vcsCommit", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes\nprecedence over ws.", sourceMap: sourceMap("main.go", 71, 2))
+            .withArg("vcsDirty", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), description: "Resolved VCS dirty state to stamp, paired with vcsCommit.", sourceMap: sourceMap("main.go", 75, 2))
         )
     ]
   }

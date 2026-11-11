@@ -10,7 +10,7 @@ import (
 )
 
 // Develop the Dagger CLI
-type CLIDev struct { // cli-dev (../../main.go:118:6)
+type CLIDev struct { // cli-dev (../../main.go:119:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -34,11 +34,11 @@ func (r *CLIDev) WithGraphQLQuery(q *querybuilder.Selection) *CLIDev {
 
 // CLIDevBinaryOpts contains options for CLIDev.Binary
 type CLIDevBinaryOpts struct {
-	Platform Platform // cli-dev (../../main.go:132:2)
+	Platform Platform // cli-dev (../../main.go:133:2)
 }
 
 // Build the dagger CLI binary for a single platform
-func (r *CLIDev) Binary(opts ...CLIDevBinaryOpts) *File { // cli-dev (../../main.go:130:1)
+func (r *CLIDev) Binary(opts ...CLIDevBinaryOpts) *File { // cli-dev (../../main.go:131:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -52,12 +52,12 @@ func (r *CLIDev) Binary(opts ...CLIDevBinaryOpts) *File { // cli-dev (../../main
 
 // CLIDevDevBinariesOpts contains options for CLIDev.DevBinaries
 type CLIDevDevBinariesOpts struct {
-	Platform Platform // cli-dev (../../main.go:161:2)
+	Platform Platform // cli-dev (../../main.go:162:2)
 }
 
 // Build dev CLI binaries
 // TODO: remove this
-func (r *CLIDev) DevBinaries(opts ...CLIDevDevBinariesOpts) *Directory { // cli-dev (../../main.go:159:1)
+func (r *CLIDev) DevBinaries(opts ...CLIDevDevBinariesOpts) *Directory { // cli-dev (../../main.go:160:1)
 	q := r.query.Select("devBinaries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -233,7 +233,7 @@ func (r *CLIDev) ReleaseDryRun() *Check { // cli-dev (../../publish.go:179:1)
 	return new(Check).WithGraphQLQuery(q)
 }
 
-func (r *CLIDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../main.go:120:2)
+func (r *CLIDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../main.go:121:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}
@@ -245,7 +245,7 @@ func (r *CLIDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../ma
 	return response, q.Execute(ctx)
 }
 
-func (r *CLIDev) Version(ctx context.Context) (string, error) { // cli-dev (../../main.go:119:2)
+func (r *CLIDev) Version(ctx context.Context) (string, error) { // cli-dev (../../main.go:120:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -286,20 +286,21 @@ type CliDevOpts struct {
 	//
 	// Workspace whose git info stamps the CLI's VCS metadata and pins the
 	// default engine tag on commit builds. Auto-injected when cli-dev is
-	// called directly; a parent toolchain (e.g. engine-dev) instead resolves
-	// it to the scalar vcsCommit/vcsDirty below and forwards those, so the
-	// session-scoped Workspace never makes the build cache key session-specific.
+	// called directly; a parent toolchain such as engine-dev passes its own.
+	// Only the commit and dirty state resolved from it reach the build, never
+	// the session-scoped Workspace, so the build's cache key isn't
+	// session-specific.
 	//
-	Ws *Workspace // cli-dev (../../main.go:65:2)
+	Ws *Workspace // cli-dev (../../main.go:66:2)
 	//
 	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
 	// precedence over ws.
 	//
-	VcsCommit string // cli-dev (../../main.go:70:2)
+	VcsCommit string // cli-dev (../../main.go:71:2)
 	//
 	// Resolved VCS dirty state to stamp, paired with vcsCommit.
 	//
-	VcsDirty bool // cli-dev (../../main.go:74:2)
+	VcsDirty bool // cli-dev (../../main.go:75:2)
 }
 
 // Develop the Dagger CLI
