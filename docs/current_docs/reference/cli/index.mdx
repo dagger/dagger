@@ -1973,9 +1973,22 @@ Search for modules you can install
 
 ### Synopsis
 
-Search the module registry by name or description.
+Search the Dagger module index on Dagger Cloud by name, alias, description
+or artifacts.
 
-With no query, lists all known modules and SDK modules.
+Say what you are trying to do with --for, and what you need the module to do
+with --capability: each result shows whether it covers each capability, and
+with which check, generator, function or setting. It also tells Dagger which
+modules people need.
+
+Searches are logged to help Dagger see which modules people need: the query,
+--for and --capability values are recorded by Dagger Cloud. When you are logged
+in to Dagger Cloud, the search is attributed to your account; otherwise it is
+anonymous. With DO_NOT_TRACK=1, no account, org or trace is recorded.
+
+Search needs Dagger Cloud: there is no offline fallback.
+
+With no query and no --for, lists all published modules.
 
 ```
 dagger module search [query] [flags]
@@ -1985,12 +1998,16 @@ dagger module search [query] [flags]
 
 ```
 dagger module search wolfi
+dagger module search --for "lint Python code in CI" --capability lint --capability format
 ```
 
 ### Options
 
 ```
-      --sdk   Only show modules that provide SDK capabilities
+      --capability stringArray   Something you need the module to do, e.g. "lint" (repeatable)
+      --for string               What you are trying to do, e.g. "lint Python code in CI"
+      --json                     Print results as JSON
+      --sdk                      Only show modules that provide SDK capabilities
 ```
 
 ### Options inherited from parent commands
