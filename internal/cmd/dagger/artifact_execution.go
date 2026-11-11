@@ -483,9 +483,25 @@ func checkArtifactListFlags(cmd *cobra.Command, changed func(string) bool, value
 	return nil
 }
 
-// Preserve explicit check selection policy when a listed row is copied.
+// Preserve the source workspace and explicit check policy in copied commands.
 func artifactListReplayArgs(cmd *cobra.Command) []string {
 	var args []string
+	workspace, selected := "", false
+	if flag := cmd.Flag("workspace"); flag != nil && flag.Changed {
+		workspace, selected = flag.Value.String(), true
+	}
+	// Absolute addresses select the workspace before discovery, overriding -W.
+	if addresses, err := parseArtifactAddresses(cmd.Flags().Args()); err == nil {
+		for _, address := range addresses {
+			if address.Absolute {
+				workspace, selected = address.Workspace+"@"+address.Version, true
+				break
+			}
+		}
+	}
+	if selected {
+		args = append(args, "-W", workspace)
+	}
 	if cmd.Flags().Changed("generated") {
 		args = append(args, "--generated="+cmd.Flag("generated").Value.String())
 	}

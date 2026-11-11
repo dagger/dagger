@@ -1,6 +1,6 @@
 # Artifact flattening
 
-This package contains the current flattening rules. It maps artifact schema
+This package contains canonical and legacy flattening rules. It maps artifact schema
 paths and discovered collection keys to dimensions and coordinates. It also
 assigns selector names and CLI flag names.
 
@@ -8,7 +8,59 @@ It does not load a workspace or evaluate an artifact. The engine and CLI supply
 schema metadata. The package uses the pure `engine/naming` library. It has no
 engine runtime, GraphQL, or CLI framework dependency.
 
-## Try it
+## Canonical coordinates
+
+`CanonicalCoordinates` maps a module name, a local field path, and discovered
+collection coordinates to one artifact's coordinates:
+
+| Dimension | Coordinate |
+| --- | --- |
+| `module` | Configured module name, when present |
+| `/module/field/...` | Discovered collection item key |
+| `name` | Full local field path, separated by `.`, or `.` for the local root |
+
+The local root is the nearest enclosing collection item. With no enclosing
+collection item, it is the module's exposed root. Callers must supply the path
+relative to that root. The path uses actual schema field names, including
+camelCase. It has no module prefix or synthetic `get` operations.
+
+For a service in a project, these inputs:
+
+```go
+CanonicalCoordinates("docker", []string{"healthCheck", "run"}, []Coordinate{
+    {Dimension: "/docker/compose/projects", Key: "e2e"},
+    {Dimension: "/docker/compose/projects/services", Key: "web"},
+})
+```
+
+give `module=docker`, both collection coordinates, and
+`name=healthCheck.run`. The service item itself has `name=.`. A function on the
+services collection uses the enclosing project item as its root. For example,
+its name can be `services.all.up`, with only the project collection coordinate.
+
+Every ordinary object field remains in the name. Thus `unit.check` and
+`slow.check` are distinct even when both return a Check. Artifact types do not
+add dimensions. Filtering artifacts cannot change their names. The function
+does not require a complete schema or choose a shorter suffix.
+
+`CanonicalDimensions` converts legacy dimension metadata to module, collection,
+and name metadata. Both helpers remove legacy type dimensions. Collection
+identifiers and aliases keep their existing rules.
+
+`ExampleCanonicalCoordinates` and `TestCanonicalLocalRoots` show complete
+inputs and expected output. Run the pure package tests with:
+
+```sh
+go test ./core/artifact/flattening
+```
+
+## Legacy algorithm
+
+`New`, `Plan.Flatten`, `Coordinates`, and `ArtifactDimensions` retain the legacy
+type-path algorithm for existing schema and selector compatibility. The
+following sections describe that algorithm.
+
+### Try it
 
 From the repository root:
 
@@ -157,9 +209,10 @@ not assign dimension identities.
 
 ## Review boundary
 
-This package extracts the current algorithm. Changes to the heuristic are
-tracked in [#15125](https://github.com/dagger/dagger/issues/15125). Keep those
-changes separate from this extraction.
+The legacy `Plan` preserves the extracted type-path algorithm. Changes to that
+heuristic are tracked in [#15125](https://github.com/dagger/dagger/issues/15125).
+The canonical helpers provide the module, collection, and name coordinates
+described above.
 
 One current limitation is recorded in `TestCollectionItemIsAnotherCollection`.
 If a collection item is itself a collection, there is no intervening field to

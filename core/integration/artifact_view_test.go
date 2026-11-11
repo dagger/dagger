@@ -225,8 +225,9 @@ func (ArtifactsSuite) TestFilteredViewChecks(ctx context.Context, t *testctx.T) 
 	selection := "packages/tests/verify?view-package=left&view-package=right&view-case=Foo&view-case=Bar"
 	out, err := base.With(daggerExec("check", "-la", "-f=link", selection)).Stdout(ctx)
 	require.NoError(t, err, out)
-	require.Contains(t, out, "view-case=Foo")
-	require.Contains(t, out, "view-case=Bar")
+	require.Equal(t, "dag+check://packages/tests/verify?/view/packages=left&/view/packages/tests=Bar\n"+
+		"dag+check://packages/tests/verify?/view/packages=left&/view/packages/tests=Foo\n"+
+		"dag+check://packages/tests/verify?/view/packages=right&/view/packages/tests=Bar\n", out)
 	out, err = base.With(daggerQuery(`{
  currentWorkspace { artifacts { filterUri(uri: "` + selection + `") {
   asChecks { sync { pass error { message } } }
@@ -312,7 +313,7 @@ type Pkg {
 				WithNewFile("dagger.toml", fmt.Sprintf("[modules.%s]\nsource = \"./view\"\n", name))
 			out, err := base.With(daggerExec("check", "-l", "--all", "-f=link")).Stdout(ctx)
 			require.NoError(t, err, out)
-			require.Equal(t, 2, strings.Count(out, "check=test"), out)
+			require.Equal(t, 2, strings.Count(out, "dag+check://"), out)
 			out, err = base.With(daggerExec("check")).CombinedOutput(ctx)
 			require.NoError(t, err, out)
 		})

@@ -6,15 +6,112 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
 
+
+def comparable_name(name):
+    """Compare captured CLI spelling without inventing schema field spelling."""
+    return ''.join(char for char in name.casefold() if char.isalnum())
+
+
+def unique_match(values, name, context):
+    matches = [value for value in values if comparable_name(value) == comparable_name(name)]
+    if len(matches) != 1:
+        raise ValueError(f'{context}: expected one schema name for {name!r}, found {matches}')
+    return matches[0]
+
+
+class LocalPaths:
+    # Actual engine field names from core/schema/workspace.go and generator.go.
+    ENGINE_FIELDS = {'WorkspaceSDK': {'generate': 'Changeset'},
+                     'Generator': {'stale': 'Check'}}
+
+    def __init__(self, metadata, sdk_modules=()):
+        self.definitions = {d['identifier']: d for d in metadata['dimensionDefinitions']}
+        self.modules = {module['name']: module for module in metadata.get('modules', [])}
+        self.sdk_modules = set(sdk_modules)
+        self.projections = {}
+        for path in metadata['pathDefinitions']:
+            fields = self.fields(path)
+            types = [d[5:] for d in path['dimensions'] if d.startswith('type:')]
+            if len(types) != 1:
+                raise ValueError(f'Expected one artifact type: {path}')
+            key = (path['moduleName'], tuple(fields),
+                   frozenset(d for d in path['dimensions'] if d.startswith('/')))
+            previous = self.projections.setdefault(key, types[0])
+            if previous != types[0]:
+                raise ValueError(f'Ambiguous artifact projection at {key}: {previous}, {types[0]}')
+
+    @staticmethod
+    def fields(path):
+        pairs = parse_qsl(urlsplit(path['uri']).query, keep_blank_values=True)
+        if len(pairs) != 1:
+            raise ValueError(f'Expected one field path: {path}')
+        return pairs[0][1].split('/') if pairs[0][1] else []
+
+    def resolve(self, path):
+        module = path['moduleName']
+        fields = self.fields(path)
+        offset = int(bool(fields) and comparable_name(fields[0]) == comparable_name(module))
+        relative = fields[offset:]
+        dimensions = [d for d in path['dimensions'] if d.startswith('/')]
+        objects = {obj['asObject']['name']: obj['asObject']
+                   for obj in self.modules.get(module, {}).get('objects', []) if obj.get('asObject')}
+        if module in self.sdk_modules and relative[:1] == ['generate'] and not dimensions:
+            current = 'WorkspaceSDK'
+        else:
+            current = unique_match(objects, module, f'Module {module}')
+        boundaries = {}
+        for dimension in dimensions:
+            definition = self.definitions[dimension]
+            route = dimension.lstrip('/').split('/')
+            if route[0] != module:
+                raise ValueError(f'Collection {dimension} is outside module {module}')
+            boundaries[tuple(route[1:])] = definition
+        active = []
+        local = []
+        for index, segment in enumerate(relative):
+            if current in self.ENGINE_FIELDS:
+                candidates = self.ENGINE_FIELDS[current]
+                actual = unique_match(candidates, segment, f'Engine object {current}')
+                returns = candidates[actual]
+            else:
+                if current not in objects:
+                    raise ValueError(f'{module}/{"/".join(relative[:index])}: no object metadata for {current}')
+                obj = objects[current]
+                candidates = obj.get('fields', []) + obj.get('functions', [])
+                actual = unique_match([field['name'] for field in candidates], segment,
+                                      f'Object {current}')
+                field = next(field for field in candidates if field['name'] == actual)
+                result = field.get('typeDef') or field.get('returnType') or {}
+                returns = (result.get('asObject') or {}).get('name')
+            local.append(actual)
+            prefix = tuple(fields[:offset + index + 1])
+            # @generate changes a Changeset return into Generator. @check can
+            # also project a function whose original return is void.
+            current = self.projections.get((module, prefix, frozenset(active)), returns)
+            boundary = boundaries.get(tuple(relative[:index + 1]))
+            if boundary is not None:
+                if current != boundary['collectionType']:
+                    raise ValueError(f'{module}/{"/".join(relative[:index+1])}: '
+                                     f'expected collection {boundary["collectionType"]}, found {current}')
+                active.append(boundary['identifier'])
+                current = boundary['itemType']
+                local = []
+        if active != dimensions:
+            raise ValueError(f'Collection route was not resolved: {dimensions}; found {active}')
+        return local
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--schema', type=Path, required=True)
     parser.add_argument('--listing', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--sdk-module', action='append', default=[],
+                        help='Installed SDK provider module with WorkspaceSDK.generate. Repeat as needed.')
     parser.add_argument('--types', nargs='+', help='Keep items of these types. Retain all schema paths.')
     args = parser.parse_args()
     metadata = json.loads(args.schema.read_text())['currentWorkspace']['artifacts']
     definitions = {d['identifier']: d for d in metadata['dimensionDefinitions']}
+    local_paths = LocalPaths(metadata, args.sdk_module)
     aliases = {d['name']: d['identifier'] for d in definitions.values() if d['kind'] == 'COLLECTION'}
     entries = []
     by_path = {}
@@ -44,7 +141,8 @@ def main():
             })
             parent = dimension
         entry = {'Module': path['moduleName'], 'Path': fields, 'Type': typ,
-                 'Collections': collections, 'Description': '', 'Items': []}
+                 'Collections': collections, 'LocalPath': local_paths.resolve(path),
+                 'Description': '', 'Items': []}
         key = (path['moduleName'], tuple(fields), typ, frozenset(dimensions))
         if key in by_path:
             raise ValueError(f'Duplicate schema path: {key}')
@@ -56,12 +154,20 @@ def main():
         address = urlsplit(item['uri'])
         typ = schemes[address.scheme]
         coordinates = {}
-        for name, value in parse_qsl(address.query, keep_blank_values=True):
-            if name in aliases:
-                identifier = aliases[name]
-                if identifier in coordinates:
-                    raise ValueError(f'Repeated collection coordinate: {item["uri"]}')
-                coordinates[identifier] = value
+        if 'dimensionKeys' in item or 'coordinates' in item:
+            # Full metadata remains valid when the URI omits redundant keys.
+            pairs = [(key['dimension'], key['key'])
+                     for key in item.get('dimensionKeys', item.get('coordinates', []))
+                     if key['dimension'].startswith('/')]
+        else:
+            # Older captures retain every collection key in their URI.
+            pairs = [(aliases[name], value)
+                     for name, value in parse_qsl(address.query, keep_blank_values=True)
+                     if name in aliases]
+        for identifier, value in pairs:
+            if identifier in coordinates:
+                raise ValueError(f'Repeated collection coordinate: {item["uri"]}')
+            coordinates[identifier] = value
         key = (item['moduleName'], tuple(item['path']), typ, frozenset(coordinates))
         entry, dimensions = by_path[key]
         description = item.get('description', '')

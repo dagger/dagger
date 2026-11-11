@@ -66,15 +66,19 @@ type Artifact struct {
 	// dimensionDisplay is nil without a source selection. A non-nil empty view
 	// hides every coordinate. It never changes address or evaluation keys.
 	dimensionDisplay *artifactDimensionDisplay
-	TypeName         string
+	// dimensionDisplaySource defers loading a source selection's display mask.
+	// Full coordinate requests do not need to discover the source's rows.
+	dimensionDisplaySource dagql.ObjectResult[*Artifacts]
+	TypeName               string
 	// TypeKeyName is the shortest type key that names this path among the
 	// paths with its collection dimensions (see artifact.ShortTypeKey), or
 	// empty for the full path. Addresses with item keys print it.
-	TypeKeyName string
-	links       *artifact.Links
-	Directives  []string `field:"true" doc:"The directives carried by this artifact."`
-	LoadFailure *ModuleLoadFailure
-	Node        *ModTreeNode
+	TypeKeyName  string
+	links        *artifact.Links
+	addressPlans *artifactAddressPlans
+	Directives   []string `field:"true" doc:"The directives carried by this artifact."`
+	LoadFailure  *ModuleLoadFailure
+	Node         *ModTreeNode
 	// Workspace is the workspace that supplied the artifact: its address is
 	// relative to it, and it names the artifact's identity. Unset for a
 	// bound artifact.
@@ -159,20 +163,14 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 		}
 	}
 	switch {
-	case opts.DimensionKeys && !opts.Full && link != nil &&
-		len(keys) == len(dimensions) && slices.Equal(dimensions, a.projectedDimensions()):
-		if link.Module {
-			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: artifact.ModuleDimension, Key: a.ModuleName, HasKey: true})
+	case opts.Prune && opts.DimensionKeys && !opts.Full && a.addressKeys(opts.TypeAssertion) != nil:
+		for _, key := range a.addressKeys(opts.TypeAssertion).Keys {
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: a.dimensionName(key.Dimension), Key: key.Key, HasKey: true})
 		}
-		if link.TypeKey != "" {
-			id := "type:" + a.TypeName
-			name := a.dimensionName(id)
-			if link.ExactDimensions {
-				name = id
-			}
-			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: name, Key: link.TypeKey, HasKey: true})
-		}
-		if link.ExactDimensions {
+		keys = nil
+	case opts.Prune && !opts.Full:
+		addr.Path = path
+		if link != nil && link.ExactDimensions {
 			for i := range keys {
 				keys[i].Dimension = dimensions[i]
 			}
@@ -217,6 +215,7 @@ func (a *Artifact) StaleArtifact() *Artifact {
 	stale.TypeName = "Check"
 	stale.TypeKeyName = ""
 	stale.links = nil
+	stale.addressPlans = nil
 	stale.setStaticDimensions()
 	return stale
 }
@@ -789,9 +788,7 @@ func (a *Artifacts) RepresentedDimensions() []string {
 func (a *Artifacts) Dimensions() []string {
 	rows := make([][]flattening.Coordinate, len(a.Entries))
 	for i, entry := range a.Entries {
-		for _, key := range entry.DimensionKeys {
-			rows[i] = append(rows[i], flattening.Coordinate{Dimension: key.Dimension, Key: key.Key})
-		}
+		rows[i] = entry.CanonicalCoordinates()
 	}
 	return artifact.VisibleDimensions(rows)
 }
@@ -804,12 +801,19 @@ func (a *Artifacts) SchemaDimensions() []string {
 	}
 	names := map[string]struct{}{}
 	for _, dim := range dims {
-		names[dim.Identifier] = struct{}{}
+		switch {
+		case dim.Identifier == artifact.ModuleDimension, strings.HasPrefix(dim.Identifier, "/"):
+			names[dim.Identifier] = struct{}{}
+		case dim.Identifier == artifact.NameDimension, strings.HasPrefix(dim.Identifier, "type:"):
+			names[artifact.NameDimension] = struct{}{}
+		}
 	}
 	// Hand-built selections can have coordinates without a module tree.
 	if a.AllDimensions == nil {
-		for _, id := range a.RepresentedDimensions() {
-			names[id] = struct{}{}
+		for _, entry := range a.Entries {
+			for _, coordinate := range entry.CanonicalCoordinates() {
+				names[coordinate.Dimension] = struct{}{}
+			}
 		}
 	}
 	return slices.Sorted(maps.Keys(names))
@@ -822,14 +826,28 @@ type artifactDimensionDisplay struct{ Dimensions []string }
 func (a *Artifact) WithDimensionDisplay(dimensions []string) *Artifact {
 	result := a.Clone()
 	result.dimensionDisplay = &artifactDimensionDisplay{Dimensions: slices.Clone(dimensions)}
+	result.dimensionDisplaySource = dagql.ObjectResult[*Artifacts]{}
 	return result
 }
 
-// DisplayDimensionKeys preserves complete coordinates when all is true or no
-// source selection context exists, including artifacts from older persistence.
+// WithDimensionDisplaySource retains the exact source selection without
+// discovering its rows. The schema loads its display mask only when needed.
+func (a *Artifact) WithDimensionDisplaySource(source dagql.ObjectResult[*Artifacts]) *Artifact {
+	result := a.Clone()
+	result.dimensionDisplay = nil
+	result.dimensionDisplaySource = source
+	return result
+}
+
+func (a *Artifact) DimensionDisplaySource() dagql.ObjectResult[*Artifacts] {
+	return a.dimensionDisplaySource
+}
+
+// DisplayDimensionKeys returns canonical coordinates. It keeps every coordinate
+// when all is true or no source selection context exists.
 func (a *Artifact) DisplayDimensionKeys(all bool) []*ArtifactDimensionKey {
 	result := make([]*ArtifactDimensionKey, 0, len(a.DimensionKeys))
-	for _, key := range a.DimensionKeys {
+	for _, key := range a.CanonicalDimensionKeys() {
 		if all || a.dimensionDisplay == nil || slices.Contains(a.dimensionDisplay.Dimensions, key.Dimension) {
 			copy := *key
 			result = append(result, &copy)
@@ -841,7 +859,7 @@ func (a *Artifact) DisplayDimensionKeys(all bool) []*ArtifactDimensionKey {
 func (a *Artifacts) DimensionKeys(dimension string) []string {
 	keys := map[string]struct{}{}
 	for _, artifact := range a.Entries {
-		for _, key := range artifact.DimensionKeys {
+		for _, key := range artifact.CanonicalDimensionKeys() {
 			if key.Dimension == dimension {
 				keys[key.Key] = struct{}{}
 			}
@@ -1139,18 +1157,20 @@ func ArtifactNodes(ctx context.Context, root *ModTreeNode) ([]*ModTreeNode, erro
 // Persist both individual artifacts and selections. One tree encoding shares
 // module and type references across all entries in a selection.
 type persistedArtifact struct {
-	ModuleName       string
-	DimensionNames   map[string]string
-	LoadFailure      *ModuleLoadFailure
-	Path             []string
-	DimensionKeys    []*ArtifactDimensionKey
-	TypeName         string
-	TypeKeyName      string                    `json:",omitempty"`
-	DimensionDisplay *artifactDimensionDisplay `json:",omitempty"`
-	Links            *artifact.Links           `json:",omitempty"`
-	Directives       []string
-	Node             int
-	Workspace        uint64
+	ModuleName             string
+	DimensionNames         map[string]string
+	LoadFailure            *ModuleLoadFailure
+	Path                   []string
+	DimensionKeys          []*ArtifactDimensionKey
+	TypeName               string
+	TypeKeyName            string                    `json:",omitempty"`
+	DimensionDisplay       *artifactDimensionDisplay `json:",omitempty"`
+	DimensionDisplaySource uint64                    `json:",omitempty"`
+	AddressPlans           *artifactAddressPlans     `json:",omitempty"`
+	Links                  *artifact.Links           `json:",omitempty"`
+	Directives             []string
+	Node                   int
+	Workspace              uint64
 	// ContextWorkspace is Artifact.ContextWorkspace; zero when unset.
 	ContextWorkspace uint64                 `json:",omitempty"`
 	View             *persistedArtifactView `json:",omitempty"`
@@ -1174,6 +1194,7 @@ func encodeArtifacts(enc *dagql.PersistEncodeContext, entries, roots []*Artifact
 			p.DimensionNames = a.DimensionNames
 			p.DimensionDisplay = a.dimensionDisplay
 			p.Links = a.links
+			p.AddressPlans = a.addressPlans
 			var err error
 			p.View, err = a.View.encode(enc)
 			if err != nil {
@@ -1191,6 +1212,12 @@ func encodeArtifacts(enc *dagql.PersistEncodeContext, entries, roots []*Artifact
 			}
 			if a.ContextWorkspace.Self() != nil {
 				p.ContextWorkspace, err = encodePersistedObjectRef(enc, a.ContextWorkspace, "artifact context workspace")
+				if err != nil {
+					return dagql.PersistedObjectEncoding{}, err
+				}
+			}
+			if a.dimensionDisplaySource.Self() != nil {
+				p.DimensionDisplaySource, err = encodePersistedObjectRef(enc, a.dimensionDisplaySource, "artifact dimension display source")
 				if err != nil {
 					return dagql.PersistedObjectEncoding{}, err
 				}
@@ -1225,6 +1252,7 @@ func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw j
 			a.DimensionNames = p.DimensionNames
 			a.dimensionDisplay = p.DimensionDisplay
 			a.links = p.Links
+			a.addressPlans = p.AddressPlans
 			if a.DimensionKeys == nil {
 				a.DimensionKeys = []*ArtifactDimensionKey{}
 			}
@@ -1236,6 +1264,10 @@ func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw j
 				return nil, err
 			}
 			a.ContextWorkspace, err = loadPersistedObjectResultByResultID[*Workspace](ctx, dec, p.ContextWorkspace, "artifact context workspace")
+			if err != nil {
+				return nil, err
+			}
+			a.dimensionDisplaySource, err = loadPersistedObjectResultByResultID[*Artifacts](ctx, dec, p.DimensionDisplaySource, "artifact dimension display source")
 			if err != nil {
 				return nil, err
 			}
@@ -1316,6 +1348,18 @@ func (a *Artifact) AttachDependencyResults(_ context.Context, _ dagql.AnyResult,
 		a.ContextWorkspace, ok = value.(dagql.ObjectResult[*Workspace])
 		if !ok {
 			return nil, fmt.Errorf("artifact context workspace has unexpected type %T", value)
+		}
+		owned = append(owned, value)
+	}
+	if a.dimensionDisplaySource.Self() != nil {
+		value, err := attach(a.dimensionDisplaySource)
+		if err != nil {
+			return nil, err
+		}
+		var ok bool
+		a.dimensionDisplaySource, ok = value.(dagql.ObjectResult[*Artifacts])
+		if !ok {
+			return nil, fmt.Errorf("artifact dimension display source has unexpected type %T", value)
 		}
 		owned = append(owned, value)
 	}

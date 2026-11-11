@@ -84,6 +84,8 @@ class ArtifactDimensionKind(Enum):
 
     MODULE = "MODULE"
 
+    NAME = "NAME"
+
     TYPE = "TYPE"
 
 

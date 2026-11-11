@@ -314,6 +314,7 @@ export type ArtifactValueOpts = {
 export enum ArtifactDimensionKind {
   Collection = "COLLECTION",
   Module = "MODULE",
+  Name = "NAME",
   Type = "TYPE",
 }
 
@@ -329,6 +330,8 @@ export function ArtifactDimensionKindValueToName(
       return "COLLECTION"
     case ArtifactDimensionKind.Module:
       return "MODULE"
+    case ArtifactDimensionKind.Name:
+      return "NAME"
     case ArtifactDimensionKind.Type:
       return "TYPE"
     default:
@@ -348,6 +351,8 @@ export function ArtifactDimensionKindNameToValue(
       return ArtifactDimensionKind.Collection
     case "MODULE":
       return ArtifactDimensionKind.Module
+    case "NAME":
+      return ArtifactDimensionKind.Name
     case "TYPE":
       return ArtifactDimensionKind.Type
     default:
