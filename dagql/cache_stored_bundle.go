@@ -485,7 +485,7 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 		if donor == nil {
 			continue
 		}
-		placed, ok := PlacePart(part, func(service uint64) (uint64, bool) {
+		placed, ok := placeOwnedPart(part, func(service uint64) (uint64, bool) {
 			row := c.closureRowOfClassLocked(sharedResultID(service), build.ordinals)
 			return uint64(row), row != 0
 		})
@@ -512,7 +512,8 @@ func (build *storedBundleBuild) addOutput(res *sharedResult, part PersistedPartO
 }
 
 // storedPartDonorLocked returns the unexpired entry of res's class, other
-// than res, with the lowest number that stores the part, and the part.
+// than res, with the lowest number that stores the part, and a copy of the
+// part's offer.
 // Requires egraphMu.
 func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) (*sharedResult, PersistedPartOffer) {
 	var best *sharedResult

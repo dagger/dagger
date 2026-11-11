@@ -63,7 +63,9 @@ func (p storedPart) address() PersistedPartAddress {
 // storedLayers holds each distinct layer of a blob-backed cache's stored
 // parts once. It holds a layer weakly, by its blob: the parts that point to
 // it keep it, and once none does the collector frees it and the table
-// forgets it.
+// forgets it. The table is its own allocation, apart from the cache: the
+// runtime keeps a layer's cleanup, and so the table, alive while the layer
+// lives, and a cache the cleanup reached would keep its own layers alive.
 type storedLayers struct {
 	mu     sync.Mutex
 	byBlob map[digest.Digest][]weak.Pointer[storedLayer]
@@ -71,7 +73,8 @@ type storedLayers struct {
 
 // part returns offer as the cache holds it, its layers the table's. The
 // offer is the caller's own copy, which the cache keeps: nothing else may
-// change it after.
+// change it after. Its packs name its chain's layers (OfferedChain.Packs):
+// each layer keeps its own.
 func (t *storedLayers) part(offer PersistedPartOffer) storedPart {
 	if len(offer.Chain.Layers) == 0 {
 		return storedPart{held: offer}
