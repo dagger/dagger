@@ -398,14 +398,12 @@ func (c *Cache) preparePartDependenciesLocked(receiver *sharedResult, deps []*sh
 			req = req.Union(row.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
 		}
 		requirements[row] = req
-		if row.depParents != nil {
-			for id := range row.depParents.Items() {
-				parent := c.resultsByID[id]
-				if parent == nil {
-					return nil, fmt.Errorf("part graph: missing ancestor %d", id)
-				}
-				queue = append(queue, parent)
+		for id := range row.depParents {
+			parent := c.resultsByID[id]
+			if parent == nil {
+				return nil, fmt.Errorf("part graph: missing ancestor %d", id)
 			}
+			queue = append(queue, parent)
 		}
 	}
 	return requirements, nil
