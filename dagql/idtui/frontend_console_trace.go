@@ -107,6 +107,58 @@ func (i *consoleTraceInspector) transcript(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// decodeCheckpointWithFallback decodes a recorded checkpoint with explicit gaps,
+// falling back to inferred telemetry when no checkpoint was recorded.
+func decodeCheckpointWithFallback(db *dagui.DB, agent consoleAgent) (consoleAgentSnapshot, error) {
+	snap, err := decodeConsoleCheckpoint(db, agent)
+	if err == nil {
+		return snap, nil
+	}
+	partial, partialErr := decodeLoadedCheckpoint(db, agent)
+	if partialErr != nil {
+		return snap, err
+	}
+	partial.Source = snap.Source
+	if partial.Source == "" {
+		partial.Source = "recorded-checkpoint"
+	}
+	partial.Warning = "recorded checkpoint unavailable (" + err.Error() + "); decoded best-effort instead"
+	return partial, nil
+}
+
+// decodeLoadedCheckpoint is the best-effort decode: it never refuses a
+// transcript, but reports what it could not read as GAP messages, and fails
+// only when it recovers no message at all.
+func decodeLoadedCheckpoint(db *dagui.DB, agent consoleAgent) (consoleAgentSnapshot, error) {
+	inferred := false
+	if agent.SnapshotDigest == "" {
+		agent.SnapshotDigest = inferCheckpointDigest(db, agent.ID)
+		inferred = agent.SnapshotDigest != ""
+	}
+	snap, err := decodeConsoleCheckpoint(db, agent)
+	if err != nil {
+		return snap, err
+	}
+	for _, message := range snap.Snapshot.Messages {
+		if message.Role != consoleGapRole {
+			snap.Source = "loaded-telemetry"
+			if inferred {
+				// Messages after the newest traced call (e.g. a final reply)
+				// may be missing, so this is a trailing gap.
+				text := "no control record named the agent's checkpoint; inferred " + agent.SnapshotDigest +
+					" from its longest traced conversation, so later messages may be missing"
+				snap.Gaps = append(snap.Gaps, text)
+				snap.Snapshot.Messages = append(snap.Snapshot.Messages, consoleTranscriptMessage{
+					Index: len(snap.Snapshot.Messages), Role: consoleGapRole,
+					Content: []consoleTranscriptBlock{{Kind: consoleGapRole, Text: text}},
+				})
+			}
+			return snap, nil
+		}
+	}
+	return snap, fmt.Errorf("no messages recoverable from loaded telemetry: %s", strings.Join(snap.Gaps, "; "))
+}
+
 // consoleCheckpointConfig names core LLM selectors that configure a
 // conversation without adding messages to it. Their ID arguments (tools,
 // workspaces, expertise, ...) are never followed.
@@ -506,4 +558,188 @@ func consoleLiteralValue(literal *callpbv1.Literal, lenient bool) (any, error) {
 		}
 	}
 	return nil, fmt.Errorf("expected recorded literal data, got %T", literal.GetValue())
+}
+
+const consoleGapRole = "GAP"
+
+var consoleMessageSelectors = []string{"withPrompt", "withSystemPrompt", "withContent", "withResponse", "withToolResult"}
+
+// isConsoleSpineSelector reports whether the decoder knows frame as a core
+// LLM message or configuration selector.
+func isConsoleSpineSelector(frame *callpbv1.Call) bool {
+	if frame.Module != nil {
+		return false
+	}
+	return frame.Field == "llm" ||
+		slices.Contains(consoleMessageSelectors, frame.Field) ||
+		consoleCheckpointConfig[frame.Field] ||
+		frame.Field == "compose" || frame.Field == "__withContributionOwner" ||
+		frame.Field == "__withoutComposition" || frame.Field == "withoutSystemPrompts"
+}
+
+// nextSpineDigest is the frame before frame in its conversation: its
+// receiver, or, best-effort, the LLM-valued argument of a step that isn't
+// message data and whose receiver isn't the conversation.
+func nextSpineDigest(db *dagui.DB, frame *callpbv1.Call, partial bool) string {
+	next := frame.ReceiverDigest
+	if partial && !isConsoleSpineSelector(frame) && !isLLMFrame(db, next) {
+		if llm := llmArgument(db, frame); llm != "" {
+			next = llm
+		}
+	}
+	return next
+}
+
+// inferCheckpointDigest finds an agent's conversation tip when no control
+// record named it (the records ride the log stream, which a trace may not
+// have loaded): among the core LLM message calls traced under the agent's own
+// loop spans -- not its nested agents' -- the one with the longest spine.
+// Length, not recency, so a side chain such as a session-title prompt never
+// wins over the conversation it branched from.
+func inferCheckpointDigest(db *dagui.DB, agentID string) string {
+	var node *dagui.AgentNode
+	for _, candidate := range db.Agents() {
+		if candidate.ID == agentID {
+			node = candidate
+			break
+		}
+	}
+	if node == nil {
+		return ""
+	}
+	return inferConversationDigest(db, node.Spans, agentID)
+}
+
+// inferConversationDigest is inferCheckpointDigest over the conversation
+// traced beneath spans, skipping nested agents other than agentID's.
+func inferConversationDigest(db *dagui.DB, spans []*dagui.Span, agentID string) string {
+	var best string
+	bestLen := 0
+	seen := map[string]bool{}
+	var walk func(*dagui.Span)
+	walk = func(span *dagui.Span) {
+		for _, child := range span.ChildSpans.Spans() {
+			if child.Agent && child.AgentID != "" && child.AgentID != agentID {
+				continue
+			}
+			if dig := child.CallDigest; dig != "" && !seen[dig] {
+				seen[dig] = true
+				if frame := db.Calls[dig]; frame != nil && frame.Module == nil &&
+					frame.GetType().GetNamedType() == "LLM" && slices.Contains(consoleMessageSelectors, frame.Field) {
+					if n := spineLength(db, dig); n > bestLen {
+						best, bestLen = dig, n
+					}
+				}
+			}
+			walk(child)
+		}
+	}
+	for _, span := range spans {
+		walk(span)
+	}
+	if best == "" {
+		return ""
+	}
+	return extendCheckpointDigest(db, best)
+}
+
+// continuesConversation reports whether frame is a step of the conversation
+// its predecessor (nextSpineDigest) belongs to: a known message or
+// configuration selector, or a step that returns the conversation from its
+// LLM argument (as checkout does). Anything else on an LLM receiver -- e.g.
+// withoutMessageHistory, which a session title branches off with -- starts a
+// different conversation.
+func continuesConversation(db *dagui.DB, frame *callpbv1.Call) bool {
+	if frame.GetType().GetNamedType() != "LLM" {
+		return false
+	}
+	if isConsoleSpineSelector(frame) {
+		return true
+	}
+	return !isLLMFrame(db, frame.ReceiverDigest) && llmArgument(db, frame) != ""
+}
+
+// extendCheckpointDigest follows a conversation forward from tip through the
+// ingested calls: the furthest call that continues it. Spans load lazily, but
+// call payloads may already be in, so the newest traced span is not
+// necessarily the newest step.
+func extendCheckpointDigest(db *dagui.DB, tip string) string {
+	// distance[d] is how many steps d is past tip, or -1 if it never reaches it.
+	distance := map[string]int{tip: 0}
+	resolve := func(start string) int {
+		var path []string
+		dig := start
+		result := -1
+		for {
+			if d, ok := distance[dig]; ok {
+				result = d
+				break
+			}
+			frame := db.Calls[dig]
+			if frame == nil || !continuesConversation(db, frame) {
+				break
+			}
+			distance[dig] = -1 // guards against cycles while walking
+			path = append(path, dig)
+			dig = nextSpineDigest(db, frame, true)
+		}
+		for i := len(path) - 1; i >= 0; i-- {
+			if result >= 0 {
+				result++
+			}
+			distance[path[i]] = result
+		}
+		return result
+	}
+	best, bestDistance := tip, 0
+	digests := make([]string, 0, len(db.Calls))
+	for dig := range db.Calls {
+		digests = append(digests, dig)
+	}
+	slices.Sort(digests) // deterministic ties
+	for _, dig := range digests {
+		if d := resolve(dig); d > bestDistance {
+			best, bestDistance = dig, d
+		}
+	}
+	return best
+}
+
+// spineLength counts the steps of digest's conversation that are traced
+// back from it, stopping where another conversation branched off.
+func spineLength(db *dagui.DB, digest string) int {
+	seen := map[string]bool{}
+	for digest != "" && !seen[digest] {
+		frame := db.Calls[digest]
+		if frame == nil || !continuesConversation(db, frame) {
+			break
+		}
+		seen[digest] = true
+		digest = nextSpineDigest(db, frame, true)
+	}
+	return len(seen)
+}
+
+func isLLMFrame(db *dagui.DB, digest string) bool {
+	frame := db.Calls[digest]
+	return frame != nil && frame.GetType().GetNamedType() == "LLM"
+}
+
+// llmArgument returns the digest of frame's LLM-valued argument, preferring
+// one named llm, when it is present in db.
+func llmArgument(db *dagui.DB, frame *callpbv1.Call) string {
+	var found string
+	for _, arg := range frame.Args {
+		dig := arg.GetValue().GetCallDigest()
+		if dig == "" || !isLLMFrame(db, dig) {
+			continue
+		}
+		if arg.Name == "llm" {
+			return dig
+		}
+		if found == "" {
+			found = dig
+		}
+	}
+	return found
 }

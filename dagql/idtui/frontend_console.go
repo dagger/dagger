@@ -754,6 +754,8 @@ type consoleTranscriptMessage struct {
 type consoleAgentSnapshot struct {
 	Source string `json:"-"`
 	Digest string `json:"-"`
+	// Warning explains why a fallback transcript source was used.
+	Warning string `json:"-"`
 	// Gaps lists where a recorded checkpoint could not be fully decoded; each
 	// also stands in place as a GAP message.
 	Gaps     []string `json:"-"`
