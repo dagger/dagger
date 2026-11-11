@@ -25,7 +25,7 @@ func (m *Caller) Run(ctx context.Context) (string, error) {
 	svc := dag.Container().From("alpine").
 		WithMountedCache("/cache", cache).
 		WithExposedPort(8080).
-		WithDefaultArgs([]string{"sh", "-c", "echo started >> /cache/svc.txt && exec nc -lk -p 8080"}).
+		WithDefaultArgs([]string{"sh", "-c", "echo started >> /cache/svc.txt && while true; do nc -l -p 8080 </dev/null; done"}).
 		AsService()
 
 	// A different module, so a different client, brings the service up
