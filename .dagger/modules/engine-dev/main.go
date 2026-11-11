@@ -562,10 +562,14 @@ func (dev *EngineDev) introspectContainer(ctx context.Context) (*dagger.Containe
 	var introspect *dagger.File
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		var err error
-		if introspect, err = dev.IntrospectionTool(egctx); err != nil {
+		// Built without the source's commit: the schema doesn't read it, and
+		// a stamp would rebuild the tool, and rerun everything generated
+		// from its schema, on every commit.
+		builder, err := build.NewBuilder(egctx, dev.Source, "", "", false)
+		if err != nil {
 			return err
 		}
+		introspect = builder.IntrospectBinary()
 		_, err = introspect.Sync(egctx)
 		return err
 	})

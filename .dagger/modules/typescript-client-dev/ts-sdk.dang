@@ -118,7 +118,7 @@ type TypescriptClientDev {
     nodejsBase(nodeVersionPrevLts)
       .withMountedDirectory(".", workspaceDir)
       .withExec(["yarn", "--cwd", sourcePath, "install"])
-      .withFile("/usr/local/bin/codegen", codegen(ws: self.ws).binary)
+      .withFile("/usr/local/bin/codegen", codegen.binary)
       # Generating needs no engine: the introspection JSON is computed without one.
       .withMountedFile("/schema.json", daggerEngine(ws: self.ws).introspectionJson)
       .withExec(["codegen", "generate-library", "--lang", "typescript", "--introspection-json-path", "/schema.json", "-o", "./sdk/typescript/src/api/"])
@@ -275,6 +275,6 @@ type TypescriptClientDev {
   }
 
   pub binary: File! {
-    codegen(ws: self.ws).binary
+    codegen.binary
   }
 }
