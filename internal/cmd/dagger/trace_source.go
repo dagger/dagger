@@ -55,7 +55,13 @@ func engineTraceParams(ctx context.Context) (client.Params, error) {
 	// Reading a local archive needs no Cloud credentials: don't refresh a
 	// login (or fail on one) before Cloud is actually needed.
 	ctx = context.WithValue(ctx, doctorCloudAuthKey{}, (*auth.Cloud)(nil))
-	params, err := finalizeEngineParams(ctx, client.Params{LoadWorkspaceModules: false})
+	// Resolve the engine address and connection flags without selecting or
+	// loading the workspace at the directory the trace is being viewed from.
+	params, err := engineConnectionParams(client.Params{LoadWorkspaceModules: false})
+	if err != nil {
+		return params, err
+	}
+	params, err = finalizeEngineParams(ctx, params)
 	if err != nil {
 		return params, err
 	}
