@@ -23,13 +23,22 @@ const (
 // Releasing it makes the holder unknown before the lock is free, so a
 // waiter that reads it before the next taker marks itself reads
 // HolderUnknown, never the holder that released it; and a waiter whose
-// read overlaps a change of holder reads HolderUnknown too.
+// read overlaps a change of holder reads HolderUnknown too. Readers are
+// counted while a recorder is active, so the lock stays held by
+// HolderReaders until the last of them leaves.
 type RWMutex struct {
 	sync.RWMutex
 	holder atomic.Uint64
 	since  atomic.Int64
 	// seq counts changes of holder: odd while one is written (holderAt).
 	seq atomic.Uint64
+	// readers counts the readers holding m that took it while a recorder
+	// was active: each counts itself once it holds m, and uncounts itself
+	// before it releases m, so a positive count means a counted reader
+	// holds m and no writer can. A reader that took m before any recorder
+	// was active isn't counted, and its leaving can make the holder
+	// unknown while counted readers still hold m: unknown, never wrong.
+	readers atomic.Int64
 	// observe, when set, sees each holder an acquisition marks (ObserveMarks).
 	observe atomic.Pointer[func(holder uint64)]
 }
@@ -70,14 +79,36 @@ func (m *RWMutex) TryRLock() bool {
 	return true
 }
 
-// RUnlock unlocks m for reading. A reader leaving while others still read
-// makes the holder unknown until the next reader marks it: unknown, not
-// wrong.
+// RUnlock unlocks m for reading. The last reader leaving makes the holder
+// unknown.
 func (m *RWMutex) RUnlock() {
-	if global.Load() != nil && m.holder.Load() == HolderReaders {
-		m.set(HolderUnknown, 0)
+	if global.Load() != nil {
+		m.readerLeaving()
 	}
 	m.RWMutex.RUnlock()
+}
+
+// readerLeaving uncounts a reader about to release m, and makes the holder
+// unknown when it was the last. A count below zero, from a reader that took
+// m before any recorder was active, starts again from zero. A reader that
+// counts itself while the last one makes the holder unknown would be left
+// holding m as unknown, so the holder is the readers again whenever a
+// counted reader still holds m.
+func (m *RWMutex) readerLeaving() {
+	n := m.readers.Add(-1)
+	if n > 0 {
+		return
+	}
+	if n < 0 {
+		m.readers.CompareAndSwap(n, 0)
+	}
+	if m.holder.Load() != HolderReaders {
+		return
+	}
+	m.set(HolderUnknown, 0)
+	if m.readers.Load() > 0 {
+		m.set(HolderReaders, 0)
+	}
 }
 
 // mark records holder as m's holder from now, while a recorder is active.
@@ -116,11 +147,16 @@ func (m *RWMutex) set(holder uint64, since int64) {
 	m.seq.Add(1)
 }
 
-// markReaders records m as held for reading, writing only when its holder
-// changes, so that readers don't contend on it. Readers have no time: one
-// reader's would count the idle time before a later one as held.
+// markReaders counts a reader that holds m, and records m as held for
+// reading, writing the holder only when it changes, so that readers don't
+// contend on it. Readers have no time: one reader's would count the idle
+// time before a later one as held.
 func (m *RWMutex) markReaders() {
-	if global.Load() == nil || m.holder.Load() == HolderReaders {
+	if global.Load() == nil {
+		return
+	}
+	m.readers.Add(1)
+	if m.holder.Load() == HolderReaders {
 		return
 	}
 	m.set(HolderReaders, 0)
