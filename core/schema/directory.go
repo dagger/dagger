@@ -2148,10 +2148,6 @@ func (s *directorySchema) asGit(
 	backend := &core.LocalGitRepository{
 		Directory: dir,
 	}
-	// Git must read only the directory's own files.
-	if err := backend.ValidateSelfContained(ctx); err != nil {
-		return inst, err
-	}
 	repo, err := core.NewGitRepository(ctx, backend)
 	if err != nil {
 		return inst, err

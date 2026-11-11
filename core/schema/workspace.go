@@ -3874,11 +3874,6 @@ func (s *workspaceSchema) workspaceGitRepository(
 	backend := &core.LocalGitRepository{
 		Directory: dir,
 	}
-	// Git must read only the workspace's own files: a workspace made from
-	// a Directory keeps whatever .git it holds.
-	if err := backend.ValidateSelfContained(ctx); err != nil {
-		return inst, err
-	}
 	repo, err := core.NewGitRepository(ctx, backend)
 	if err != nil {
 		return inst, err
