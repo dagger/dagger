@@ -166,7 +166,7 @@ func (fc *FuncCommand) selectArtifactRoot(ctx context.Context, cmd *cobra.Comman
 	artifacts = artifacts.FilterTypes([]string{target})
 	// Count before evaluating: an ambiguous selection would otherwise run the
 	// module code behind every candidate just to report that it is ambiguous.
-	items, err := readListedArtifacts(ctx, dag, artifacts, false, true)
+	items, err := readListedArtifactsMetadata(ctx, dag, artifacts, false, true)
 	if err != nil {
 		return err
 	}

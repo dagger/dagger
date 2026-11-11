@@ -100,7 +100,13 @@ func hasModuleRefScope(address *core.Address) bool {
 // A short type key names no module, so when the narrowed load matches nothing,
 // resolve against every module.
 func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], parsed *dagaddress.Address, uri, typeName string) (*core.Artifact, error) {
-	if path := parsed.ArtifactPath(core.ArtifactTypeName(typeName)); path != "" {
+	path := parsed.Path
+	if len(parsed.Types) == 0 {
+		path = parsed.ArtifactPath(core.ArtifactTypeName(typeName))
+	}
+	// A typed query can use the type's name as a collection dimension. Its
+	// key is an item key, so bind query aliases against the workspace schema.
+	if path != "" {
 		artifact, err := resolveWorkspaceArtifactIn(ctx, ws, parsed, uri, []string{path})
 		if !errors.Is(err, core.ErrNoArtifactMatch) {
 			return artifact, err

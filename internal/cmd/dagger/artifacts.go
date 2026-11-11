@@ -428,7 +428,7 @@ func artifactTypeNames(types []commandListItem) []string {
 
 // artifactURIs prints one address per artifact, in the form filterUri accepts.
 func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *core.Artifacts, absolute bool) ([]string, error) {
-	items, err := readListedArtifacts(ctx, dag, artifacts, absolute, false)
+	items, err := readListedArtifactsMetadata(ctx, dag, artifacts, absolute, false)
 	if err != nil {
 		return nil, err
 	}
@@ -453,14 +453,16 @@ type listedArtifact struct {
 	DimensionKeys    []struct{ Dimension, Key string }
 }
 
-// The address already carries every runtime key. Read the row's static path
-// and module alongside it instead of loading an object per dimension key.
+// Older engines omit coordinates from listing metadata and carry every
+// runtime key in the address. Recover those keys only for those engines.
 func (item *listedArtifact) keysFromAddress(definitions artifact.Dimensions) error {
+	if item.DimensionKeys != nil {
+		return nil
+	}
 	address, err := dagaddress.Parse(item.URI)
 	if err != nil {
 		return err
 	}
-	item.DimensionKeys = nil
 	if item.ModuleName != "" {
 		item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{artifact.ModuleDimension, item.ModuleName})
 	}
@@ -491,6 +493,9 @@ func (item listedArtifact) fullPath() string {
 		if strings.HasPrefix(key.Dimension, "type:") {
 			return key.Key
 		}
+	}
+	if len(item.Path) > 0 {
+		return strings.Join(item.Path, "/")
 	}
 	if addr, err := dagaddress.Parse(item.URI); err == nil {
 		return addr.ArtifactPath(addr.Types...)

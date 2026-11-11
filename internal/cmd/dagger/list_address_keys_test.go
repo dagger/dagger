@@ -1,11 +1,56 @@
 package daggercmd
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/dagger/dagger/core/artifact"
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/stretchr/testify/require"
 )
+
+func TestListedArtifactPrunedLinkKeepsCoordinates(t *testing.T) {
+	var item listedArtifact
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"uri":"dag+check://?go-test=TestOne",
+		"moduleName":"go",
+		"path":["go","packages","tests","test"],
+		"dimensionKeys":[
+			{"dimension":"module","key":"go"},
+			{"dimension":"/go/packages","key":"api/v2"},
+			{"dimension":"/go/packages/tests","key":"TestOne"},
+			{"dimension":"type:Check","key":"go/packages/tests/test"}
+		]
+	}`), &item))
+	require.NoError(t, item.keysFromAddress(nil))
+	require.Equal(t, "go/packages/tests/test", item.fullPath())
+	require.Equal(t, &functionCommandPath{Module: "go", Fields: []string{"packages", "tests"}}, commandPathFromArtifact(item))
+	args, err := artifactCLIArguments(item, map[string]string{
+		"/go/packages": "go-package", "/go/packages/tests": "go-test", "type:Check": "check",
+	}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "--module=go --go-package=api/v2 --go-test=TestOne --check=go/packages/tests/test", args)
+}
+
+func TestListedArtifactCollapsedLinkWithCollectionAlias(t *testing.T) {
+	item := listedArtifact{
+		URI: "dag+collections-item://?collections-item=a",
+		DimensionKeys: []struct{ Dimension, Key string }{
+			{"/collections/items", "a"},
+			{"/collections/items", "b"},
+			{"type:CollectionsItem", "items"},
+		},
+	}
+	uri, err := collapsedArtifactURI(item)
+	require.NoError(t, err)
+	addr, err := dagaddress.Parse(uri)
+	require.NoError(t, err)
+	require.Equal(t, []dagaddress.Pair{
+		{Dimension: "type:CollectionsItem", Key: "/items", HasKey: true},
+		{Dimension: "/collections/items", Key: "a", HasKey: true},
+		{Dimension: "/collections/items", Key: "b", HasKey: true},
+	}, addr.Query)
+}
 
 func TestListedArtifactKeysFromAddress(t *testing.T) {
 	definitions := artifact.Dimensions{

@@ -89,6 +89,7 @@ func collectionSource(c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.collections]\nsource = \"./collections\"\nmain = true\n").
 		WithNewFile("collections/dagger.json", `{"name":"collections","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("collections/go.mod", "module dagger/collections\n\ngo 1.26.6\n").
 		WithNewFile("collections/main.go", collectionGoSource)
 }
 
@@ -315,9 +316,9 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-items-item=a"}, "dag+file://?file=file&collections-items-item=a\n"},
-		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "--collections-items-item=c"}, "dag+file://?file=file&collections-items-item=a\ndag+file://?file=file&collections-items-item=c\n"},
-		{[]string{"list", "collections-items", "items", "-a", "-f", "link"}, "dag+collections-item://?artifact-collections-item=items&collections-items-item=a\ndag+collections-item://?artifact-collections-item=items&collections-items-item=b\ndag+collections-item://?artifact-collections-item=items&collections-items-item=c\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-items-item=a"}, "dag+file://?/collections/items=a\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file?collections-items-item=a", "--collections-items-item=c"}, "dag+file://?/collections/items=a\ndag+file://?/collections/items=c\n"},
+		{[]string{"list", "collections-items", "items", "-a", "-f", "link"}, "dag+collections-item://?/collections/items=a\ndag+collections-item://?/collections/items=b\ndag+collections-item://?/collections/items=c\n"},
 	} {
 		out, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
 		require.NoError(t, err)
@@ -327,6 +328,49 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "addresses with different filters require a union of workspace views")
 	_, err = base.With(daggerExec("list", "-a", "--item=a")).Stdout(ctx)
 	requireErrOut(t, err, "unknown flag: --item")
+}
+
+func (CollectionsSuite) TestPrunedLinks(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := workspaceBase(t, c).
+		WithNewFile("dagger.toml", "[modules.selectors]\nsource = \"./selectors\"\nmain = true\n").
+		WithNewFile("selectors/dagger.json", `{"name":"selectors","engineVersion":"v1.0.0","sdk":{"source":"dang"},"source":"."}`).
+		WithNewFile("selectors/main.dang", `type Selectors {
+  pub projects: Projects! { Projects(paths: ["./api", "./web"]) }
+}
+type Projects @collection {
+  pub paths: [String!]! @keys
+  get(path: String!): Project! @get { Project(path: path) }
+}
+type Project {
+  pub path: String!
+  pub suites: Suites! { Suites(files: ["e2e.test.ts", "unit.test.ts"]) }
+}
+type Suites @collection {
+  pub files: [String!]! @keys
+  get(file: String!): Suite! @get { Suite(file: file) }
+}
+type Suite {
+  pub file: String!
+  pub run: Void @check { null }
+}
+`)
+	const link = "dag+check://?selectors-project=./api&selectors-suite=unit.test.ts"
+	out, err := base.With(daggerExec("check", "--list", "--all", "--format=link", "--selectors-project=./api", "--selectors-suite=unit.test.ts")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, link+"\n", out)
+
+	// Replay from the workspace without the original CLI selection.
+	out, err = base.With(daggerQueryAt("core", `{
+  currentWorkspace { artifacts { filterUri(uri: %q) { one { path uri(typeAssertion: true) } } } }
+}`, link)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, fmt.Sprintf(`{"currentWorkspace":{"artifacts":{"filterUri":{"one":{"path":["projects","suites","run"],"uri":%q}}}}}`, link), out)
+
+	// The test name repeats under both projects. Keep the project key.
+	out, err = base.With(daggerExec("check", "--list", "--all", "--format=link", "dag+check://?selectors-suite=unit.test.ts")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, link+"\ndag+check://?selectors-project=./web&selectors-suite=unit.test.ts\n", out)
 }
 
 func (CollectionsSuite) TestListFormats(ctx context.Context, t *testctx.T) {
@@ -346,7 +390,7 @@ func (CollectionsSuite) TestListFormats(ctx context.Context, t *testctx.T) {
 	t.Run("parent listing honors child filters", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("list", "collections-items", "-a", "items?collections-items-item=a&collections-items-item=b&collections-items-part=x", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+collections-item://?artifact-collections-item=items&collections-items-item=a\ndag+collections-item://?artifact-collections-item=items&collections-items-item=b\n", out)
+		require.Equal(t, "dag+collections-item://?/collections/items=a\ndag+collections-item://?/collections/items=b\n", out)
 	})
 	t.Run("type table does not evaluate leaf values", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("list", "containers", "-a", "items/broken?collections-items-item=a&collections-items-item=b")).Stdout(ctx)
@@ -362,7 +406,7 @@ collections +b +broken
 		require.Equal(t, "--collections --collections-items-item=b\n", out)
 		replayed, err := base.With(daggerExec(append([]string{"list", "containers", "-f=link"}, strings.Fields(out)...)...)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+container://?container=broken&collections-items-item=b\n", replayed)
+		require.Equal(t, "dag+container://?collections-items-item=b\n", replayed)
 	})
 
 	t.Run("cli output can select the same container", func(ctx context.Context, t *testctx.T) {
@@ -371,7 +415,7 @@ collections +b +broken
 		require.Equal(t, "--collections --collections-items-item=b\n", out)
 		replayed, err := base.With(daggerExec(append([]string{"list", "containers", "-f=link"}, strings.Fields(out)...)...)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+container://?container=broken&collections-items-item=b\n", replayed)
+		require.Equal(t, "dag+container://?collections-items-item=b\n", replayed)
 	})
 }
 
@@ -787,12 +831,12 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
 	require.JSONEq(t, `{"node":{"artifacts":{
   "selected":{
     "parents":[
-      {"uri":"dag+collections-item://?artifact-collections-item=items&collections-items-item=b","description":"Look up one item.","path":["items"],"dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"b"},{"dimension":"type:CollectionsItem","key":"items"}]},
-      {"uri":"dag+collections-item://?artifact-collections-item=items&collections-items-item=a","description":"Look up one item.","path":["items"],"dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"type:CollectionsItem","key":"items"}]}
+      {"uri":"dag+collections-item://?collections-items-item=b","description":"Look up one item.","path":["items"],"dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"b"},{"dimension":"type:CollectionsItem","key":"items"}]},
+      {"uri":"dag+collections-item://?collections-items-item=a","description":"Look up one item.","path":["items"],"dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"type:CollectionsItem","key":"items"}]}
     ],
     "children":[
-      {"uri":"dag://?artifact-collections-part=parts&collections-items-item=b&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"b"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]},
-      {"uri":"dag://?artifact-collections-part=parts&collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}
+      {"uri":"dag://?collections-items-item=b&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"b"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]},
+      {"uri":"dag://?collections-items-item=a&collections-items-part=x","dimensionKeys":[{"dimension":"module","key":"collections"},{"dimension":"/collections/items","key":"a"},{"dimension":"/collections/items/parts","key":"x"},{"dimension":"type:CollectionsPart","key":"items/parts"}]}
     ],
     "keys":["x"]
   },
