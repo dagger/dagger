@@ -189,6 +189,16 @@ type Params struct {
 	CloudURL             string
 	CloudCredentialsPath string
 
+	// EngineLogsPresence asks the engine's log push to omit display text
+	// (GET /v1/logs?display=presence): EngineLogs then receives every other
+	// record plus one body-less presence record per span with logs, and the
+	// frontend reads display text on demand with QueryLogs. Set it only when
+	// nothing receiving EngineLogs needs display text but a frontend that
+	// reads it on demand. The client still asks only an engine that serves
+	// the mode, and, with EngineCloudTelemetry, only one that confirmed it
+	// publishes to Cloud itself; LogsPresence reports the outcome.
+	EngineLogsPresence bool
+
 	// Profile enables engine wall-clock profiling (wcprof) for this session.
 	Profile bool
 	// ProfileEBPF names the eBPF programs to profile the session with.
@@ -220,6 +230,14 @@ type Client struct {
 	sessionLost atomic.Pointer[error]
 
 	telemetry *errgroup.Group
+	// telemetryHTTP is the subscriptions' transport, which outlives Close's
+	// request cancellation; live log queries use it too.
+	telemetryHTTP *httpClient
+	// telemetryFeatures lists the live telemetry features the engine named
+	// on its trace subscription, and logsPresence whether the log push omits
+	// display text. Both are settled before Connect returns.
+	telemetryFeatures map[string]bool
+	logsPresence      bool
 
 	httpClient *httpClient
 	bkClient   *bkclient.Client
@@ -649,6 +667,7 @@ func (c *Client) subscribeTelemetryWith(ctx context.Context, hc *httpClient) (re
 	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
 
 	c.telemetry = new(errgroup.Group)
+	c.telemetryHTTP = hc
 	// The three subscriptions don't depend on each other, so they're made at
 	// once: with a remote engine, each one waits a round trip for its answer.
 	// The first to fail cancels the others, so connecting reports its error
@@ -1136,9 +1155,11 @@ func (c *Client) CloseWithContext(ctx context.Context) (rerr error) {
 type otlpConsumer struct {
 	httpClient *httpClient
 	path       string
-	traceID    trace.TraceID
-	clientID   string
-	eg         *errgroup.Group
+	// query is the subscription's raw query string, if any.
+	query    string
+	traceID  trace.TraceID
+	clientID string
+	eg       *errgroup.Group
 
 	// reconnectDelay overrides telemetryReconnectDelay; zero uses the default.
 	reconnectDelay time.Duration
@@ -1150,6 +1171,20 @@ type otlpConsumer struct {
 	// Reconnects keep that answer, so forwarding never flips midway. Only
 	// the consuming goroutine touches it after the first connect.
 	enginePublishes bool
+	// features lists the optional live telemetry features (LiveFeature*)
+	// the engine named on the first response.
+	features map[string]bool
+}
+
+// liveTelemetryFeatures parses a subscription response's LiveFeaturesHeader.
+func liveTelemetryFeatures(resp *http.Response) map[string]bool {
+	features := map[string]bool{}
+	for _, f := range strings.Split(resp.Header.Get(enginetel.LiveFeaturesHeader), ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			features[f] = true
+		}
+	}
+	return features
 }
 
 // confirmsEnginePublishing reports whether a telemetry stream's response
@@ -1195,6 +1230,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 		return fmt.Errorf("connect to OTLP stream: %w", err)
 	}
 	c.enginePublishes = confirmsEnginePublishing(resp)
+	c.features = liveTelemetryFeatures(resp)
 	span.SetAttributes(attribute.Bool("dagger.io/telemetry.engine_publishes", c.enginePublishes))
 
 	c.eg.Go(func() error {
@@ -1273,9 +1309,10 @@ func (c *otlpConsumer) connectOnce(ctx context.Context, cursor int64) (*http.Res
 	req := (&http.Request{
 		Method: http.MethodGet,
 		URL: &url.URL{
-			Scheme: "http",
-			Host:   "dagger",
-			Path:   c.path,
+			Scheme:   "http",
+			Host:     "dagger",
+			Path:     c.path,
+			RawQuery: c.query,
 		},
 		Header: make(http.Header),
 	}).WithContext(ctx)
@@ -1465,7 +1502,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		eg:         c.telemetry,
 	}
 
-	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+	err := exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
 		var req coltracepb.ExportTraceServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
@@ -1487,6 +1524,16 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// The trace subscription connects first; what the engine said on it
+	// settles the log subscription's mode.
+	c.telemetryFeatures = exp.features
+	c.logsPresence = c.EngineLogsPresence &&
+		exp.features[enginetel.LiveFeatureLogPresence] &&
+		(!c.EngineCloudTelemetry || exp.enginePublishes)
+	return nil
 }
 
 func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
@@ -1496,6 +1543,9 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		clientID:   c.ID,
 		httpClient: httpClient,
 		eg:         c.telemetry,
+	}
+	if c.logsPresence {
+		exp.query = url.Values{enginetel.LiveDisplayParam: {enginetel.LiveDisplayPresence}}.Encode()
 	}
 
 	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
@@ -1853,7 +1903,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCau
 	clientConn, _, err := hij.Hijack()
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte("hijack: " + err.Error()))
+		w.Write([]byte("hijack: " + err.Error())) //nolint:gosec // G705: a plain-text proxy error, not rendered as HTML
 		return
 	}
 	go func() {

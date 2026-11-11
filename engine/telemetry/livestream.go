@@ -16,6 +16,24 @@ const (
 	LiveCursorHeader = "X-Dagger-Telemetry-Cursor"
 	// LegacyLiveCursorHeader resumes an SSE subscription after the last event ID.
 	LegacyLiveCursorHeader = "X-Last-Event-ID"
+	// LiveFeaturesHeader lists, on every live subscription response, the
+	// optional live telemetry features the engine serves (LiveFeature*),
+	// comma-separated. Older engines send none.
+	LiveFeaturesHeader = "X-Dagger-Telemetry-Features"
+	// LiveFeatureLogQuery: POST /v1/logs/query reads display text for a
+	// set of spans, one-shot or following.
+	LiveFeatureLogQuery = "log-query"
+	// LiveFeatureLogPresence: GET /v1/logs?display=presence pushes every
+	// record but display text, which it replaces with presence records.
+	// An engine listing it applies the mode whenever asked, so a client
+	// that asked and sees it listed knows the push carries no display text.
+	LiveFeatureLogPresence = "log-presence"
+	// LiveFeatureLogSearch: POST /v1/logs/search searches display text.
+	LiveFeatureLogSearch = "log-search"
+	// LiveDisplayParam selects the log push's display text mode; its only
+	// non-default value is LiveDisplayPresence.
+	LiveDisplayParam    = "display"
+	LiveDisplayPresence = "presence"
 
 	liveFrameHeaderSize = 16
 	// MaxLivePayloadSize bounds each protobuf frame while allowing a stream to
