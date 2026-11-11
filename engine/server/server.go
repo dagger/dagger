@@ -576,7 +576,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	defer func() {
 		time.AfterFunc(time.Second, srv.gc)
 	}()
-	srv.startLocalCachePressureGCMonitor()
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
@@ -598,6 +597,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// request, so the first module build already finds them. The start
 	// doesn't depend on them.
 	srv.mergeImageEntries(ctx, distconsts.EngineContainerImageEntriesDir)
+	// A prune never deletes what the image ships, which it knows by the
+	// image's merge: one that planned before the merge could still delete it.
+	srv.startLocalCachePressureGCMonitor()
 
 	// The integration attaches after local cache initialization and before
 	// the server dispatches any request.
