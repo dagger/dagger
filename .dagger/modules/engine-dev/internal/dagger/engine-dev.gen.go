@@ -78,6 +78,15 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container {
 	return new(Container).WithGraphQLQuery(q)
 }
 
+// Build the export driver the Go SDK's code generation loads packages
+// through: a GOPACKAGESDRIVER that serves the export data of what they import
+// from dagger/go's archives, so the go command compiles none of it.
+func (r *EngineDev) ExportDriver() *File {
+	q := r.query.Select("exportDriver")
+
+	return new(File).WithGraphQLQuery(q)
+}
+
 // EngineDevGoEnvOpts contains options for EngineDev.GoEnv
 type EngineDevGoEnvOpts struct {
 	// The source to work in; the engine's source by default

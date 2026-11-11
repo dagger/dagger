@@ -588,6 +588,17 @@ func (dev *EngineDev) IntrospectionTool(ctx context.Context) (*dagger.File, erro
 	return builder.IntrospectBinary(), nil
 }
 
+// Build the export driver the Go SDK's code generation loads packages
+// through: a GOPACKAGESDRIVER that serves the export data of what they import
+// from dagger/go's archives, so the go command compiles none of it.
+func (dev *EngineDev) ExportDriver(ctx context.Context) (*dagger.File, error) {
+	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	if err != nil {
+		return nil, err
+	}
+	return builder.ExportDriver(), nil
+}
+
 var targets = []struct {
 	Name       string
 	Tag        string
