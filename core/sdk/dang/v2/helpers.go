@@ -1508,6 +1508,11 @@ func dangDeclaredType(val *dang.Object) (*dang.Type, bool) {
 func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, mod *dang.Type, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
+	// A module's imports are file-local: evaluate the methods' directive
+	// arguments in the scope of the file declaring the interface, so they
+	// can name its imports.
+	directiveScope := dang.DeclarationScope(env, name)
+
 	sels := []dagql.Selector{
 		{Field: "typeDef"},
 		{
@@ -1523,7 +1528,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 		}
 		switch x := fieldType.(type) {
 		case *hm.FunctionType:
-			fnDef, err := createFunction(ctx, srv, mod, fieldName, x, env, localTypes)
+			fnDef, err := createFunction(ctx, srv, mod, fieldName, x, directiveScope, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create method %s for interface %s: %w", fieldName, name, err)
 			}

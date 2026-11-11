@@ -12761,7 +12761,7 @@ export class GitRepository extends BaseClient {
    * Returns details of a commit.
    * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
    *
-   * May be abbreviated to an unambiguous hex prefix (4-40 characters), which is expanded against locally available objects. Remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA otherwise.
+   * May be abbreviated to an unambiguous hex prefix (4-40 characters), which is expanded to the full SHA. A remote repository that has not fetched the commit yet fetches the history of the refs it advertises to find it.
    */
   commit = (id: string): GitCommit => {
     const ctx = this._ctx.select("commit", { id })
@@ -12809,7 +12809,7 @@ export class GitRepository extends BaseClient {
    * Returns details of a ref.
    * @param name Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
    *
-   * Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence. Abbreviated SHAs resolve against locally available objects, so remote repositories (resolved via ls-remote) can only expand prefixes of already-fetched commits; use the full SHA or a named ref otherwise.
+   * Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40 characters) of a commit SHA resolves like git rev-parse, with named refs taking precedence, to the full SHA. A remote repository that has not fetched the commit yet fetches the history of the refs it advertises to find it, so only commits reachable from those refs can be abbreviated.
    *
    * The name may be followed by git revision suffixes, applied left to right: `~N` follows first parents N times and `^N` selects the Nth parent (`~` and `^` mean 1, `^0` is the commit itself), e.g. `HEAD~3`, `main^2` or `abc1234~2`. The result is a detached ref of the resulting commit; remote repositories fetch the history the walk needs. Other git revision syntax (`^{...}`, `@{...}`, `:path`, ranges) is not supported.
    *
@@ -19711,9 +19711,9 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+   * Return this workspace with a directory mounted at the given path, without mutating the source.
    *
-   * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+   * Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.
    * @param path Location of the mounted directory. Relative paths resolve from the workspace cwd.
    * @param source Directory to mount.
    */
@@ -19723,9 +19723,9 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return this workspace with a file mounted read-only at the given path, without mutating the source.
+   * Return this workspace with a file mounted at the given path, without mutating the source.
    *
-   * Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+   * Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.
    * @param path Location of the mounted file. Relative paths resolve from the workspace cwd.
    * @param source File to mount.
    */
@@ -19764,7 +19764,7 @@ export class Workspace extends BaseClient {
   /**
    * Return this workspace with the given Git-compatible patch file applied, without mutating the source.
    *
-   * Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+   * Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Sections for paths in a mount apply to the mounted content; a section cannot move a file across a mount boundary or delete a mount point.
    * @param patch File containing the patch to apply
    * @param opts.onConflict How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
    * @experimental

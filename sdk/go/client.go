@@ -280,6 +280,7 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 
 type gqlExtendedError struct {
 	inner *gqlerror.Error
+	cause error
 }
 
 // Same as telemetry.ExtendedError, but without the dependency, to simplify
@@ -290,7 +291,7 @@ type extendedError interface {
 }
 
 func (e gqlExtendedError) Unwrap() error {
-	return e.inner
+	return e.cause
 }
 
 var _ extendedError = gqlExtendedError{}
@@ -306,13 +307,21 @@ func (e gqlExtendedError) Extensions() map[string]any {
 // getCustomError parses a GraphQL error into a more specific error type.
 func getCustomError(err error) error {
 	var gqlErr *gqlerror.Error
+	cause := err
 	if !errors.As(err, &gqlErr) {
-		return nil
+		// genqlient wraps non-2xx responses in HTTPError without unwrapping
+		// their GraphQL errors. Classify the decoded body just as for a 200,
+		// while keeping the HTTP status available through errors.As.
+		var httpErr *graphql.HTTPError
+		if !errors.As(err, &httpErr) || !errors.As(httpErr.Response.Errors, &gqlErr) {
+			return nil
+		}
+		cause = errors.Join(gqlErr, err)
 	}
 
 	ext := gqlErr.Extensions
 
-	lessNoisyErr := gqlExtendedError{gqlErr}
+	lessNoisyErr := gqlExtendedError{inner: gqlErr, cause: cause}
 
 	typ, ok := ext["_type"].(string)
 	if !ok {

@@ -4509,10 +4509,9 @@ type GitRepository implements Node {
 
     Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40
     characters) of a commit SHA resolves like git rev-parse, with named refs
-    taking precedence. Abbreviated SHAs resolve against locally available
-    objects, so remote repositories (resolved via ls-remote) can only expand
-    prefixes of already-fetched commits; use the full SHA or a named ref
-    otherwise.
+    taking precedence, to the full SHA. A remote repository that has not fetched
+    the commit yet fetches the history of the refs it advertises to find it, so
+    only commits reachable from those refs can be abbreviated.
 
     The name may be followed by git revision suffixes, applied left to right:
     `~N` follows first parents N times and `^N` selects the Nth parent (`~` and
@@ -4556,9 +4555,8 @@ type GitRepository implements Node {
     Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
 
     May be abbreviated to an unambiguous hex prefix (4-40 characters), which is
-    expanded against locally available objects. Remote repositories (resolved
-    via ls-remote) can only expand prefixes of already-fetched commits; use the
-    full SHA otherwise.
+    expanded to the full SHA. A remote repository that has not fetched the
+    commit yet fetches the history of the refs it advertises to find it.
     """
     id: String!
   ): GitCommit!
@@ -7979,7 +7977,9 @@ type Workspace implements Node {
   Return this workspace with the given Git-compatible patch file applied, without mutating the source.
 
   Paths in the patch are relative to the workspace root, whatever its cwd, as
-  `git diff` writes them. Patching a path at or under a mount is an error.
+  `git diff` writes them. Sections for paths in a mount apply to the mounted
+  content; a section cannot move a file across a mount boundary or delete a
+  mount point.
   """
   withPatchFile(
     """File containing the patch to apply"""
@@ -8002,11 +8002,12 @@ type Workspace implements Node {
   ): Workspace!
 
   """
-  Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+  Return this workspace with a directory mounted at the given path, without mutating the source.
 
-  Mounted content is readable through the normal workspace file tools but
-  shadows the source at the mount path and stays out of the pending changeset:
-  it never appears in changes, is never exported, and cannot be modified.
+  Mounted content is readable and editable through the normal workspace file
+  tools but shadows the source at the mount path and stays out of the pending
+  changeset: neither it nor edits to it appear in changes or are exported. Use
+  withoutMount to remove the mount.
   """
   withMountedDirectory(
     """
@@ -8019,11 +8020,12 @@ type Workspace implements Node {
   ): Workspace!
 
   """
-  Return this workspace with a file mounted read-only at the given path, without mutating the source.
+  Return this workspace with a file mounted at the given path, without mutating the source.
 
-  Mounted content is readable through the normal workspace file tools but
-  shadows the source at the mount path and stays out of the pending changeset:
-  it never appears in changes, is never exported, and cannot be modified.
+  Mounted content is readable and editable through the normal workspace file
+  tools but shadows the source at the mount path and stays out of the pending
+  changeset: neither it nor edits to it appear in changes or are exported. Use
+  withoutMount to remove the mount.
   """
   withMountedFile(
     """

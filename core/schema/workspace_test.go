@@ -673,7 +673,75 @@ func TestWorkspaceMountedPath(t *testing.T) {
 		empty := &core.Workspace{}
 		require.False(t, empty.MountedPath("anything"))
 		require.False(t, empty.HasMountsUnder("."))
+		require.False(t, empty.IsMountPoint("anything"))
 	})
+
+	t.Run("mount points", func(t *testing.T) {
+		require.True(t, ws.IsMountPoint("deps/vendored"))
+		require.True(t, ws.IsMountPoint(".refs/notes.txt"))
+		require.False(t, ws.IsMountPoint("deps/vendored/lib"))
+		require.False(t, ws.IsMountPoint("deps"))
+		require.NoError(t, guardMountPointRemoval(ws, "deps/vendored/lib"))
+		require.ErrorContains(t, guardMountPointRemoval(ws, "deps/vendored"), "use withoutMount")
+	})
+
+	t.Run("swapping the mounts tree keeps mount points", func(t *testing.T) {
+		swapped := ws.WithMountsDir(dagql.ObjectResult[*core.Directory]{})
+		require.Equal(t, ws.MountPoints(), swapped.MountPoints())
+	})
+}
+
+// TestSplitPatchAtMounts covers how Workspace.withPatchFile divides a patch
+// between the overlay and the mounts tree.
+func TestSplitPatchAtMounts(t *testing.T) {
+	ws := (&core.Workspace{}).
+		WithMounted(dagql.ObjectResult[*core.Directory]{}, ".refs/notes.txt").
+		WithMounted(dagql.ObjectResult[*core.Directory]{}, "deps/vendored")
+	section := func(old, new string, cp bool) core.PatchSection {
+		return core.PatchSection{
+			PatchFilePaths: core.PatchFilePaths{Old: old, New: new, Copy: cp},
+			Patch:          []byte("diff --git a/" + old + " b/" + new + "\n"),
+		}
+	}
+
+	root, mounted, err := splitPatchAtMounts(ws, []core.PatchSection{
+		section("src/main.go", "src/main.go", false),
+		section("deps/vendored/lib.go", "deps/vendored/lib.go", false),
+		section("", "deps/vendored/new.go", false),
+		section(".refs/notes.txt", ".refs/notes.txt", false),
+		section("deps/vendored/a.go", "deps/vendored/b.go", false),
+		section("deps/other.go", "", false),
+	})
+	require.NoError(t, err)
+	paths := func(sections []workspacePatchSection) (out []string) {
+		for _, s := range sections {
+			out = append(out, s.oldPath+">"+s.newPath)
+		}
+		return out
+	}
+	require.Equal(t, []string{"src/main.go>src/main.go", "deps/other.go>"}, paths(root))
+	require.Equal(t, []string{
+		"deps/vendored/lib.go>deps/vendored/lib.go",
+		">deps/vendored/new.go",
+		".refs/notes.txt>.refs/notes.txt",
+		"deps/vendored/a.go>deps/vendored/b.go",
+	}, paths(mounted))
+
+	for name, tc := range map[string]struct {
+		section core.PatchSection
+		err     string
+	}{
+		"rename out of a mount":    {section("deps/vendored/a.go", "src/a.go", false), "across a workspace mount boundary"},
+		"copy into a mount":        {section("src/a.go", "deps/vendored/a.go", true), "across a workspace mount boundary"},
+		"delete a file mount":      {section(".refs/notes.txt", "", false), "is a mount point"},
+		"rename a mount point":     {section("deps/vendored", "deps/vendored/x", false), "is a mount point"},
+		"names the workspace root": {section("", ".", false), "patch names the workspace root"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := splitPatchAtMounts(ws, []core.PatchSection{tc.section})
+			require.ErrorContains(t, err, tc.err)
+		})
+	}
 }
 
 // TestInitialWorkspaceConfigOmitsCheckGenerated verifies the default dagger.toml

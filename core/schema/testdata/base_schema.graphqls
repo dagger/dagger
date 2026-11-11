@@ -2807,10 +2807,9 @@ type GitRepository implements Node {
 
     Commit identifiers may be abbreviated: an unambiguous hex prefix (4-40
     characters) of a commit SHA resolves like git rev-parse, with named refs
-    taking precedence. Abbreviated SHAs resolve against locally available
-    objects, so remote repositories (resolved via ls-remote) can only expand
-    prefixes of already-fetched commits; use the full SHA or a named ref
-    otherwise.
+    taking precedence, to the full SHA. A remote repository that has not fetched
+    the commit yet fetches the history of the refs it advertises to find it, so
+    only commits reachable from those refs can be abbreviated.
 
     The name may be followed by git revision suffixes, applied left to right:
     `~N` follows first parents N times and `^N` selects the Nth parent (`~` and

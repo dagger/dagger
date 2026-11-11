@@ -154,7 +154,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.36
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
-	github.com/vito/dang/v2 v2.3.1-0.20261103042248-00dc3801b409
+	github.com/vito/dang/v2 v2.4.1
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5
