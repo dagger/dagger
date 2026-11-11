@@ -25,6 +25,12 @@ type GoSdk {
   # there (distconsts.GoSDKBuildFlags).
   let buildFlags: [String!]!
 
+  # What every module's generated code imports, which every runtime builds
+  # with as dagger/go's shared imports, so that the dependency calls for the
+  # packages they reach are found whole in the image's entries
+  # (distconsts.GoSDKSharedImports).
+  let sharedImports: [String!]! = []
+
   # The dagger.io/dagger version generated code pins, which the image's
   # module cache is seeded for.
   let libVersion: String!
@@ -39,10 +45,12 @@ type GoSdk {
     libVersion: String!,
     gitConfig: [String!]! = [],
     sshAuthSocket: Socket = null,
+    sharedImports: [String!]! = [],
   ) {
     self.base = base
     self.goVersion = goVersion
     self.buildFlags = buildFlags
+    self.sharedImports = sharedImports
     self.libVersion = libVersion
     self.gitConfig = gitConfig
     self.sshAuthSocket = sshAuthSocket
@@ -140,6 +148,7 @@ type GoSdk {
     go(
       version: goVersion,
       buildFlags: buildFlags,
+      sharedImports: sharedImports,
       downloads: if (goprivate == "") { base } else { withAccess(base) },
     )
   }
