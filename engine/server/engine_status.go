@@ -89,11 +89,11 @@ type sessionLedger struct {
 	sessions int
 	ended    map[clientClaim]time.Time
 	// claims are the sessions that started under a claim, by session ID,
-	// which the remote cache's settle state reports (settleState): live
-	// ones, and, with the remote cache, ended ones until a Settled covers
-	// them, so that a session that ends before its claim is sent is still
-	// sent before its settle.
-	claims map[string]string
+	// with when each started, which the remote cache's settle state reports
+	// (settleState): live ones, and, with the remote cache, ended ones until
+	// a Settled covers them, so that a session that ends before its claim is
+	// sent is still sent before its settle.
+	claims map[string]sessionClaim
 	// remote is the remote cache's settle state, while an integration is
 	// attached (attachRemote).
 	remote *remoteSettle
@@ -122,6 +122,12 @@ type remoteSettle struct {
 	timer             *time.Timer
 }
 
+// sessionClaim is a session's claim, and when the session started.
+type sessionClaim struct {
+	claim   string
+	started time.Time
+}
+
 func (l *sessionLedger) clock() time.Time {
 	if l.now != nil {
 		return l.now()
@@ -143,9 +149,9 @@ func (l *sessionLedger) sessionStarted(sessionID, clientID, claimID string) {
 	l.sessions++
 	if claimID != "" {
 		if l.claims == nil {
-			l.claims = map[string]string{}
+			l.claims = map[string]sessionClaim{}
 		}
-		l.claims[sessionID] = claimID
+		l.claims[sessionID] = sessionClaim{claim: claimID, started: l.clock()}
 		if l.remote != nil {
 			l.notifyLocked()
 		}
@@ -279,8 +285,8 @@ func (l *sessionLedger) settleState() (remotecache.SettleState, <-chan struct{})
 		return remotecache.SettleState{Live: l.sessions > 0}, l.changed
 	}
 	var claims []protocol.SessionClaim
-	for id, claim := range l.claims {
-		claims = append(claims, protocol.SessionClaim{ID: id, Claim: claim})
+	for id, c := range l.claims {
+		claims = append(claims, protocol.SessionClaim{ID: id, Claim: c.claim, Started: c.started})
 	}
 	slices.SortFunc(claims, func(a, b protocol.SessionClaim) int { return strings.Compare(a.ID, b.ID) })
 	return remotecache.SettleState{
