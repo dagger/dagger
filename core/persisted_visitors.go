@@ -606,7 +606,11 @@ var persistedModuleSourceVisitor = persistedStructVisitor("", func(p *persistedM
 		return err
 	}
 	if p.DirSrc != nil {
-		return w.at("dirSrc").child("originalContextDirResultID", &p.DirSrc.OriginalContextDirResultID)
+		dirSrc := w.at("dirSrc")
+		if err := dirSrc.child("originalContextDirResultID", &p.DirSrc.OriginalContextDirResultID); err != nil {
+			return err
+		}
+		return dirSrc.child("originGitResultID", &p.DirSrc.OriginGitResultID)
 	}
 	return nil
 })
