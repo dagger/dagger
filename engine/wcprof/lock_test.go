@@ -106,6 +106,39 @@ func TestReadLockedHolderIsReaders(t *testing.T) {
 	}
 }
 
+// A lock that overlapping readers hold stays held by HolderReaders when one
+// of them leaves: a writer that starts waiting while the others still read
+// names the readers, not an unknown holder.
+func TestOverlappingReadersHolderIsReaders(t *testing.T) {
+	r := withTestRecorder(t, 0)
+	waiterCtx, _ := BeginOp(context.Background(), OpKindLazy, "Container.withExec", OpOpts{})
+	var mu RWMutex
+	mu.RLock()
+	mu.RLock()
+	mu.RUnlock()
+	if w := lockWait(t, r, waiterCtx, &mu, mu.RUnlock); w.ResultID != HolderReaders {
+		t.Fatalf("wait %+v: want holder HolderReaders while a reader still holds the lock", w)
+	}
+}
+
+// Once the last reader leaves, the lock's holder is unknown until its next
+// taker marks itself: a writer that takes it and hasn't marked itself yet is
+// never named as the readers.
+func TestLastReaderLeavingIsNotNamed(t *testing.T) {
+	r := withTestRecorder(t, 0)
+	waiterCtx, _ := BeginOp(context.Background(), OpKindLazy, "Container.withExec", OpOpts{})
+	var mu RWMutex
+	mu.RLock()
+	mu.RLock()
+	mu.RUnlock()
+	mu.RUnlock()
+	// The next taker holds the mutex but hasn't marked itself yet.
+	mu.RWMutex.Lock()
+	if w := lockWait(t, r, waiterCtx, &mu, mu.RWMutex.Unlock); w.ResultID != HolderUnknown {
+		t.Fatalf("wait %+v: want holder HolderUnknown once the readers have left", w)
+	}
+}
+
 // A lock released by its holder and taken again before the new taker has
 // marked itself never names the released holder: the release itself makes
 // the holder unknown.
