@@ -53,19 +53,17 @@ type SdlDiff {
       .stdout
   }
 
-  let buildBase(ws: Workspace!): Container! {
-    container.from("golang:1.27")
-      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
-      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
-      .withWorkdir("/src")
-      .withDirectory("/src", ws.directory("/hack/sdl-diff", gitignore: true))
-  }
-
   let runner(ws: Workspace!): Container! {
-    let binary = buildBase(ws)
-      .withEnvVariable("CGO_ENABLED", "0")
-      .withExec(["go", "build", "-o", "/out/sdl-diff", "."])
-      .file("/out/sdl-diff")
+    # hack/sdl-diff is its own Go module. Its directory is the build's
+    # workspace, so the build is keyed by its content and never by the
+    # caller's session.
+    let src = ws.directory("/hack/sdl-diff", gitignore: true).asWorkspace
+    # No tests: a binary build reads none of the module's test records.
+    let binary = go(version: "1.27", test: ["!**"])
+      .module(ws: src, path: ".")
+      .packages(ws: src)
+      .get(key: ".")
+      .binary(ws: src)
     container.from("alpine:3.23")
       .withExec(["apk", "add", "--no-cache", "git", "ca-certificates"])
       .withFile("/usr/local/bin/sdl-diff", binary)

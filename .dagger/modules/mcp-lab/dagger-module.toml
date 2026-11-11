@@ -13,5 +13,5 @@ engineVersion = "v1.0.0-0"
   source = "../engine-dev"
 
 [[dependencies]]
-  name = "go-cli"
-  source = "../go-cli"
+  name = "go"
+  source = "github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"
