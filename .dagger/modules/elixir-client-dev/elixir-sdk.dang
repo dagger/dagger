@@ -32,7 +32,7 @@ type ElixirClientDev {
   Lint the SDK
   """
   pub lint: Void @check {
-    devContainer
+    withBase(source)
       .withExec(["mix", "credo"])
       .sync
 
@@ -78,7 +78,7 @@ type ElixirClientDev {
   Run dagger_codegen tests
   """
   pub codegenTest: Void @check {
-    withCodegen(devContainer)
+    withCodegen(withBase(source))
       .withEnvVariable("CI", "true")
       .withExec(["mix", "test"])
       .sync

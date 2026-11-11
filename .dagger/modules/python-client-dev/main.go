@@ -125,7 +125,7 @@ func (t PythonClientDev) Lint(
 }
 
 func (t PythonClientDev) lint(paths []string) *dagger.Container {
-	return t.DevContainer().
+	return t.BaseContainer.
 		WithExec(append(uvRun("ruff", "check"), paths...)).
 		WithExec(append(uvRun("ruff", "format", "--check", "--diff"), paths...))
 }
@@ -138,8 +138,8 @@ func (t PythonClientDev) Format(
 	// +default=[]
 	paths []string,
 ) error {
-	before := t.DevContainer().Directory("/src")
-	_, err := t.DevContainer().
+	before := t.BaseContainer.Directory("/src")
+	_, err := t.BaseContainer.
 		WithExec(append(uvRun("ruff", "check", "--fix-only"), paths...)).
 		WithExec(append(uvRun("ruff", "format"), paths...)).
 		Directory("/src").
