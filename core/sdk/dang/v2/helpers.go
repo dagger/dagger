@@ -32,6 +32,7 @@ import (
 	"github.com/vito/dang/v2/pkg/ioctx"
 	"github.com/vito/dang/v2/pkg/querybuilder"
 	"go.opentelemetry.io/otel/trace"
+	"resenje.org/singleflight"
 )
 
 type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
@@ -559,19 +560,27 @@ func moduleDeclaredTypeNames(ctx context.Context, modSrcDir, moduleName string) 
 		slog.Debug("ensureModuleSelfTypes: determine Dang version", "dir", modSrcDir, "error", err)
 		complete = false
 	}
-	var key string
-	if complete {
-		key = declaredTypeNamesKey(moduleName, version, files)
-		if names, ok := declaredTypeNames.Get(key); ok {
-			return names
-		}
+	if !complete {
+		return parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
 	}
-	names := parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
-	if complete {
+	key := declaredTypeNamesKey(moduleName, version, files)
+	if names, ok := declaredTypeNames.Get(key); ok {
+		return names
+	}
+	// The module's prebuild (PrebuildRuntime) parses the same source while
+	// its dependencies load; a load that needs the names before it is done
+	// waits for that parse rather than parsing the source a second time.
+	names, _, _ := declaredTypeNamesParses.Do(ctx, key, func(ctx context.Context) ([]string, error) {
+		names := parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
 		declaredTypeNames.Add(key, names)
-	}
+		return names, nil
+	})
 	return names
 }
+
+// declaredTypeNamesParses lets concurrent moduleDeclaredTypeNames calls for
+// the same source share one parse.
+var declaredTypeNamesParses singleflight.Group[string, []string]
 
 // declaredTypeNamesKey identifies a module's declared type names by its name,
 // the Dang version its source is parsed as, and the names and content of its

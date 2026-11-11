@@ -9,7 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/stretchr/testify/require"
@@ -254,6 +257,46 @@ func TestModuleDeclaredTypeNamesMemoized(t *testing.T) {
 	require.Equal(t, []string{"MyMod"}, moduleDeclaredTypeNames(t.Context(), configured, "my-mod"))
 	writeDangFilesIn(t, configured, map[string]string{"dang.toml": "dang = \"2.1\"\n"})
 	require.Equal(t, []string{"MyMod", "Thing"}, moduleDeclaredTypeNames(t.Context(), configured, "my-mod"))
+}
+
+// A module's prebuild parses its source while its dependencies load
+// (PrebuildRuntime). When the module's types are read before that parse
+// ends, they wait for it rather than parse the same source a second time.
+func TestModuleDeclaredTypeNamesSharesParse(t *testing.T) {
+	origParse, origNames := parseDangSource, declaredTypeNames
+	fresh, err := lru.New[string, []string](8)
+	require.NoError(t, err)
+	declaredTypeNames = fresh
+	var parses atomic.Int32
+	second := make(chan struct{})
+	var secondOnce sync.Once
+	parseDangSource = func(ctx context.Context, filename string) (*dang.FileBlock, error) {
+		if parses.Add(1) == 1 {
+			// Hold the first parse until a second one starts, or until the
+			// other call has long since asked for the names.
+			select {
+			case <-second:
+			case <-time.After(200 * time.Millisecond):
+			}
+		} else {
+			secondOnce.Do(func() { close(second) })
+		}
+		return origParse(ctx, filename)
+	}
+	t.Cleanup(func() { parseDangSource, declaredTypeNames = origParse, origNames })
+
+	dir := t.TempDir()
+	writeDangFilesIn(t, dir, map[string]string{"main.dang": "type Thing {\n  name: String! { \"thing\" }\n}\n"})
+	names := make([][]string, 2)
+	var wg sync.WaitGroup
+	for i := range names {
+		wg.Go(func() { names[i] = moduleDeclaredTypeNames(t.Context(), dir, "my-mod") })
+	}
+	wg.Wait()
+	for _, got := range names {
+		require.Equal(t, []string{"MyMod", "Thing"}, got)
+	}
+	require.Equal(t, int32(1), parses.Load(), "both calls share one parse")
 }
 
 // Object directives are put back on the environment by parsing every source
