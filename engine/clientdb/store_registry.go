@@ -203,6 +203,9 @@ func (r *DBs) openStoreRef(ctx context.Context, clientID string, hold bool) (*DB
 // holdLocked takes or refreshes clientID's idle hold on store. It requires
 // r.mu and clientID's per-store lock, with store open and referenced.
 func (r *DBs) holdLocked(clientID string, store *DB) {
+	if _, retired := r.retired[clientID]; retired {
+		return
+	}
 	if r.IdleHold <= 0 || r.MaxIdleHolds <= 0 {
 		return
 	}
