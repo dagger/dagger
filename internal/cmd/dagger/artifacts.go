@@ -450,12 +450,14 @@ type listedArtifact struct {
 	ModuleFlag       string            `json:"-"`
 	OmitTypeKey      bool              `json:"-"`
 	OmitCLITypeKey   bool              `json:"-"`
+	CLIPath          string            `json:"-"`
 	Presence         []string          `json:"presence,omitempty"`
 	DisplayKeys      map[string]string `json:"-"`
 	PresenceNames    map[string]string `json:"-"`
 	CollectionItem   bool              `json:"-"`
 	URI, Description string
 	ModuleName       string
+	LoadError        string
 	Name             string
 	Coordinates      []struct{ Dimension, Key string }
 	Path             []string
@@ -552,6 +554,43 @@ func isMissingArtifactListingField(err error) bool {
 	}
 	gqlErr := httpErr.Response.Errors[0]
 	return gqlErr != nil && len(gqlErr.Path) == 0 && gqlErr.Extensions["code"] == "GRAPHQL_VALIDATION_FAILED" && strings.HasPrefix(gqlErr.Message, missing)
+}
+
+// Schema listing was added after __listing. Only a validation error can
+// trigger the older pathDefinitions query; resolver failures must propagate.
+func isMissingArtifactSchemaListing(err error) bool {
+	if isMissingArtifactListingField(err) {
+		return true
+	}
+	var httpErr *graphql.HTTPError
+	if !errors.As(err, &httpErr) || len(httpErr.Response.Errors) != 1 {
+		return false
+	}
+	gqlErr := httpErr.Response.Errors[0]
+	return gqlErr != nil && len(gqlErr.Path) == 0 && gqlErr.Extensions["code"] == "GRAPHQL_VALIDATION_FAILED" &&
+		strings.HasPrefix(gqlErr.Message, `Unknown argument "schema" on field "Artifacts.__listing".`)
+}
+
+func readArtifactSchemaListing(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute bool) ([]listedArtifact, bool, error) {
+	id, err := selection.ID(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	var response struct{ Node struct{ Listing string } }
+	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
+  node(id:$id) { ... on Artifacts { listing:__listing(schema:true, absolute:$absolute, typeAssertion:true) } }
+}`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
+	if isMissingArtifactSchemaListing(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	var items []listedArtifact
+	if err := json.Unmarshal([]byte(response.Node.Listing), &items); err != nil {
+		return nil, true, err
+	}
+	return items, true, nil
 }
 
 func readListedArtifactsMetadata(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute, typed bool) ([]listedArtifact, error) {
