@@ -301,8 +301,12 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		io.WriteString(w, strings.Join(lines, "\n")+"\n") //nolint:gosec // G705: call listing as text/plain, never rendered as HTML.
 	})
 	inspector := &consoleTraceInspector{frontend: fe}
+	mux.HandleFunc("/call", fe.consoleCallHandler)
 	mux.HandleFunc("/agents", inspector.agents)
 	mux.HandleFunc("/transcript", inspector.transcript)
+	mux.HandleFunc("/salvage", inspector.salvage)
+	mux.HandleFunc("/head", inspector.head)
+	mux.HandleFunc("/heads", inspector.heads)
 	mux.HandleFunc("/timings", fe.consoleTimingsHandler)
 	mux.HandleFunc("/help", fe.consoleHelp)
 	mux.HandleFunc("/", fe.consoleHelp)
@@ -535,12 +539,20 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  GET  /span?id=<hex>  span detail: status, error, timing, flags, parent chain, direct children\n"+
 		"  GET  /timings?root=<hex>[&minDuration=10ms&limit=200]  loaded subtree wall timings (0 limit = unlimited)\n"+
 		"  GET  /id?dig=<dig>   encoded dagql ID rebuilt for a call digest\n"+
+		"  GET  /call?dig=<dig>[&arg=<name>]  one ingested call as JSON, arguments in full (arg: just that one, strings raw)\n"+
 		"  GET  /calls?grep=<re> content-search ingested call payloads (full search, bounded previews)\n"+
 		"  GET  /toolset        the interactive LLM session's tool docs, when one is live\n"+
 		"  GET  /agents[?all=true]  roster tree (handle, name, state); recorded traces hide agents without a checkpoint unless all=true\n"+
 		"  GET  /transcript?agent=<handle|name>[&role=user|assistant|tool|system|gap&tool=...&grep=...&offset=0&limit=20&clip=4000]\n"+
 		"                      readable transcript: recorded checkpoint data for dagger trace; idle runtime snapshots in engine sessions.\n"+
 		"                      Pages stop at ~40KiB; clip bounds each tool call/result in bytes (0 = unclipped). format=json for both routes\n"+
+		"                      falls back to a best-effort decode of loaded telemetry, with gaps marked\n"+
+		"  GET  /salvage?agent=<handle|name>  tar: index.md, head.json, transcript.md, and the agent's workspace-changing\n"+
+		"                      tool calls as steps/NNNN-<tool>.json (+ .patch), for recovering its work\n"+
+		"  GET  /head?agent=<handle|name>[&format=id]  the commit the agent's workspace last moved to, the traced\n"+
+		"                      GitRef call producing it, and whether its recipe rebuilds anywhere (JSON);\n"+
+		"                      format=id: that GitRef's encoded ID, when recoverable\n"+
+		"  GET  /heads          heads found so far: <handle> <commit> <recoverable yes|no> <name>, tab-separated\n"+
 		"  GET  /help           this list\n"+
 		"keys: ←↑↓→ move · right/l expand · left/h collapse · enter zoom · "+
 		"r error origin · L logs · +/- verbosity · / search\n"+
@@ -746,10 +758,12 @@ type consoleTranscriptMessage struct {
 type consoleAgentSnapshot struct {
 	Source string `json:"-"`
 	Digest string `json:"-"`
-	// Gaps lists where a recorded checkpoint could not be fully decoded; each
-	// also stands in place as a GAP message.
-	Gaps     []string `json:"-"`
-	State    string   `json:"state"`
+	// Gaps lists what a best-effort decode could not read; each also appears
+	// in place as a GAP message. Empty for a complete transcript.
+	Gaps []string `json:"-"`
+	// Warning explains why a fallback source was used.
+	Warning  string `json:"-"`
+	State    string `json:"state"`
 	Snapshot struct {
 		ID       string                     `json:"id"`
 		Messages []consoleTranscriptMessage `json:"messages"`
@@ -789,19 +803,6 @@ func readConsoleAgentSnapshot(ctx context.Context, dag *dagger.Client, handle, n
 	}, &dagger.Response{Data: &res})
 	res.LLM.Agent.Source = "runtime-snapshot"
 	return res.LLM.Agent, err
-}
-
-func (fe *frontendPretty) consoleTranscriptHandler(w http.ResponseWriter, r *http.Request) {
-	fe.consoleMu.Lock()
-	dag := fe.dag
-	fe.consoleMu.Unlock()
-	var read consoleSnapshotReader
-	if dag != nil {
-		read = func(ctx context.Context, handle, name string) (consoleAgentSnapshot, error) {
-			return readConsoleAgentSnapshot(ctx, dag, handle, name)
-		}
-	}
-	fe.serveConsoleTranscript(w, r, read)
 }
 
 func (fe *frontendPretty) serveConsoleTranscript(w http.ResponseWriter, r *http.Request, read consoleSnapshotReader) {
@@ -859,6 +860,46 @@ func serveConsoleTranscript(w http.ResponseWriter, r *http.Request, agents []con
 		}
 	}
 
+	agent, snapshot, ok := readConsoleTranscript(w, r, agents, read)
+	if !ok {
+		return
+	}
+	messages := selectConsoleTranscript(snapshot.Snapshot.Messages, role, q.Get("tool"), grep)
+	total := len(messages)
+	start := min(offset, total)
+	end := start + min(limit, total-start)
+	if q.Get("format") == "json" {
+		consoleJSON(w, struct {
+			Agent          consoleAgent               `json:"agent"`
+			Source         string                     `json:"source"`
+			SnapshotDigest string                     `json:"snapshotDigest,omitempty"`
+			SnapshotID     string                     `json:"snapshotID,omitempty"`
+			Partial        bool                       `json:"partial,omitempty"`
+			Gaps           []string                   `json:"gaps,omitempty"`
+			Warning        string                     `json:"warning,omitempty"`
+			Total          int                        `json:"total"`
+			Offset         int                        `json:"offset"`
+			Limit          int                        `json:"limit"`
+			HasMore        bool                       `json:"hasMore"`
+			Messages       []consoleTranscriptMessage `json:"messages"`
+		}{
+			agent, snapshot.Source, snapshot.Digest, snapshot.Snapshot.ID,
+			len(snapshot.Gaps) > 0, snapshot.Gaps, snapshot.Warning,
+			total, offset, limit, end < total, messages[start:end],
+		})
+		return
+	}
+	consoleText(w, renderConsoleTranscript(consoleTranscriptPage{
+		Agent: agent, Snapshot: snapshot, Messages: messages,
+		Offset: start, Limit: limit, Clip: clip, Filters: consoleTranscriptFilters(q),
+	}))
+}
+
+// readConsoleTranscript resolves the request's ?agent= against the roster and
+// reads its snapshot, writing an error response and returning false when
+// either fails.
+func readConsoleTranscript(w http.ResponseWriter, r *http.Request, agents []consoleAgent, read consoleSnapshotReader) (consoleAgent, consoleAgentSnapshot, bool) {
+	name := r.URL.Query().Get("agent")
 	var matches []consoleAgent
 	for _, agent := range agents {
 		if agent.ID == name {
@@ -871,15 +912,15 @@ func serveConsoleTranscript(w http.ResponseWriter, r *http.Request, agents []con
 	}
 	if len(matches) == 0 {
 		http.Error(w, "agent not found in loaded roster; use /agents", http.StatusNotFound)
-		return
+		return consoleAgent{}, consoleAgentSnapshot{}, false
 	}
 	if len(matches) > 1 {
 		http.Error(w, "agent name is ambiguous; select a handle from /agents", http.StatusConflict)
-		return
+		return consoleAgent{}, consoleAgentSnapshot{}, false
 	}
 	if read == nil {
 		http.Error(w, "transcripts require an engine session: use dagger agent -r <trace-id> without prompting the agents", http.StatusConflict)
-		return
+		return consoleAgent{}, consoleAgentSnapshot{}, false
 	}
 	// The network read must not hold consoleMu, change focus, or drive a turn.
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -887,44 +928,15 @@ func serveConsoleTranscript(w http.ResponseWriter, r *http.Request, agents []con
 	snapshot, err := read(ctx, matches[0].ID, matches[0].Name)
 	if err != nil {
 		http.Error(w, "read agent checkpoint: "+err.Error(), http.StatusBadGateway)
-		return
+		return consoleAgent{}, consoleAgentSnapshot{}, false
 	}
 	if snapshot.Snapshot.ID == "" && snapshot.Digest == "" {
 		http.Error(w, "engine returned no committed snapshot", http.StatusBadGateway)
-		return
+		return consoleAgent{}, consoleAgentSnapshot{}, false
 	}
-	messages := selectConsoleTranscript(snapshot.Snapshot.Messages, role, q.Get("tool"), grep)
-	total := len(messages)
-	start := min(offset, total)
-	end := start + min(limit, total-start)
 	agent := matches[0]
 	agent.State = snapshot.State
-	if q.Get("format") == "json" {
-		consoleJSON(w, struct {
-			Agent          consoleAgent               `json:"agent"`
-			Source         string                     `json:"source"`
-			SnapshotDigest string                     `json:"snapshotDigest,omitempty"`
-			SnapshotID     string                     `json:"snapshotID,omitempty"`
-			Total          int                        `json:"total"`
-			Offset         int                        `json:"offset"`
-			Limit          int                        `json:"limit"`
-			HasMore        bool                       `json:"hasMore"`
-			Partial        bool                       `json:"partial,omitempty"`
-			Gaps           []string                   `json:"gaps,omitempty"`
-			Messages       []consoleTranscriptMessage `json:"messages"`
-		}{agent, snapshot.Source, snapshot.Digest, snapshot.Snapshot.ID, total, offset, limit, end < total,
-			len(snapshot.Gaps) > 0, snapshot.Gaps, messages[start:end]})
-		return
-	}
-	consoleText(w, renderConsoleTranscript(consoleTranscriptPage{
-		Agent:    agent,
-		Snapshot: snapshot,
-		Messages: messages,
-		Offset:   start,
-		Limit:    limit,
-		Clip:     clip,
-		Filters:  consoleTranscriptFilters(q),
-	}))
+	return agent, snapshot, true
 }
 
 func selectConsoleTranscript(messages []consoleTranscriptMessage, role, tool string, grep *regexp.Regexp) []consoleTranscriptMessage {
