@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	gitconfig "github.com/go-git/go-git/v5/plumbing/format/config"
 
 	"github.com/dagger/dagger/util/gitutil"
@@ -93,7 +94,7 @@ func (repo *LocalGitRepository) ValidateSelfContained(ctx context.Context) error
 							continue
 						}
 						if !filepath.IsAbs(alternate) {
-							alternate = filepath.Join(filepath.Dir(filepath.Dir(p)), alternate)
+							alternate = joinPath(filepath.Dir(filepath.Dir(p)), alternate)
 						}
 						resolved, err := contained(alternate)
 						if err != nil {
@@ -117,25 +118,51 @@ func (repo *LocalGitRepository) ValidateSelfContained(ctx context.Context) error
 	})
 }
 
-// containedPath resolves p, relative to root unless absolute, and returns
-// it if it is within root. A path outside root by its text is rejected
-// without being read.
+// containedPath resolves p, relative to root unless absolute, as the kernel
+// opens it, and returns the resolved path if it stays within root. Each
+// component is resolved in turn, so a ".." after a link climbs from where the
+// link leads, and a path that would leave root is rejected without anything
+// outside it being read.
 func containedPath(root, p string) (string, error) {
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(root, p)
-	}
+	p = joinPath(root, p)
 	outside := fmt.Errorf("git storage must be self-contained: path %q is outside the supplied directory", p)
-	if rel, err := filepath.Rel(root, p); err != nil || !filepath.IsLocal(rel) {
+	rel, ok := strings.CutPrefix(p, root+string(filepath.Separator))
+	if !ok {
+		if p == root {
+			return root, nil
+		}
 		return "", outside
 	}
-	resolved, err := filepath.EvalSymlinks(p)
+	leaves, err := leavesDir(root, filepath.ToSlash(rel))
 	if err != nil {
 		return "", err
 	}
-	if rel, err := filepath.Rel(root, resolved); err != nil || !filepath.IsLocal(rel) {
+	if leaves {
 		return "", outside
 	}
+	resolved, err := containerdfs.RootPath(root, rel)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Lstat(resolved); err != nil {
+		return "", err
+	}
 	return resolved, nil
+}
+
+// joinPath joins p to dir unless p is absolute, keeping p's components as
+// they are: Git opens such paths as written, and cleaning ".." from them
+// would change where they lead when a component before it is a link.
+func joinPath(dir, p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return dir + string(filepath.Separator) + p
+}
+
+// parentPath is the directory part of p as written, without cleaning it.
+func parentPath(p string) string {
+	return p[:strings.LastIndex(p, string(filepath.Separator))]
 }
 
 // readContained reads the file at p, a path within root, if it and any link
@@ -170,9 +197,6 @@ func checkLayoutContained(root string) error {
 			return fmt.Errorf("git storage: %s is not a gitdir file", dotGit)
 		}
 		target = strings.TrimSpace(target)
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(root, target)
-		}
 		if gitDir, err = containedPath(root, target); err != nil {
 			return err
 		}
@@ -184,10 +208,7 @@ func checkLayoutContained(root string) error {
 	commonDir := gitDir
 	if data, err := readContained(root, filepath.Join(gitDir, "commondir")); err == nil {
 		target := strings.TrimSpace(string(data))
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(gitDir, target)
-		}
-		if commonDir, err = containedPath(root, target); err != nil {
+		if commonDir, err = containedPath(root, joinPath(gitDir, target)); err != nil {
 			return err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -233,9 +254,7 @@ func checkConfigIncludes(root, config string, seen map[string]bool) error {
 		if strings.HasPrefix(include, "~") {
 			return fmt.Errorf("git storage must be self-contained: config %q includes %q outside the supplied directory", config, include)
 		}
-		if !filepath.IsAbs(include) {
-			include = filepath.Join(filepath.Dir(config), include)
-		}
+		include = joinPath(parentPath(config), include)
 		if _, err := containedPath(root, include); errors.Is(err, os.ErrNotExist) {
 			// Git skips an include that doesn't exist.
 			continue
