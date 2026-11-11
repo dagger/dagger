@@ -1162,14 +1162,20 @@ func (activity *Activity) Add(span *Span) bool {
 	// optimization: if the new interval is wholly subsumed by an existing
 	// interval we can skip adding it. this is also handled by mergeIntervals,
 	// but it's harder to return false after the fact.
-	for _, existing := range activity.CompletedIntervals {
+	//
+	// The intervals are sorted and merged, so only the last one starting
+	// before ival can hold it: any earlier one ends before that one starts.
+	if idx > 0 {
+		existing := activity.CompletedIntervals[idx-1]
 		if ival.Start.After(existing.Start) && ival.End.Before(existing.End) {
 			return changed
 		}
 	}
 
 	activity.CompletedIntervals = slices.Insert(activity.CompletedIntervals, idx, ival)
-	activity.mergeIntervals()
+	// Everything before the interval preceding ival was merged already and
+	// doesn't overlap ival, so merging can start there.
+	activity.mergeIntervalsFrom(max(idx-1, 0))
 	changed = true
 	return changed
 }
@@ -1188,16 +1194,18 @@ func (activity *Activity) EndTimeOrFallback(now time.Time) time.Time {
 	return activity.CompletedIntervals[len(activity.CompletedIntervals)-1].End
 }
 
-// mergeIntervals merges overlapping intervals in the activity.
-func (activity *Activity) mergeIntervals() {
+// mergeIntervalsFrom merges overlapping intervals in the activity, given that
+// the intervals before index from are already merged: none overlaps the next
+// one. A merge from 0 would only copy them over themselves.
+func (activity *Activity) mergeIntervalsFrom(from int) {
 	// If there are no intervals, there's nothing to merge.
 	if len(activity.CompletedIntervals) == 0 {
 		return
 	}
 
 	// Keep track of the index of the last merged interval.
-	lastIndex := 0
-	for i := 1; i < len(activity.CompletedIntervals); i++ {
+	lastIndex := from
+	for i := from + 1; i < len(activity.CompletedIntervals); i++ {
 		ival := activity.CompletedIntervals[i]
 		// If the current interval overlaps with the last one, merge them.
 		if ival.Start.Before(activity.CompletedIntervals[lastIndex].End) {
