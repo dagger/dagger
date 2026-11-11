@@ -47,9 +47,12 @@ as a **Dagger module SDK**.
   = "vX.Y.Z"` is the engine version (API, naming), `dang = "X.Y"` the Dang
   language version.
 - Without `dang = ...`, `engineVersion` picks the Dang language: `< v0.21.5` is
-  Dang 1.0 (where `.{ }` is GraphQL selection); `>= v0.21.5` is Dang 2 (`.{ }`
-  is dot-block application, `.{{ }}` is selection). Don't bump an old module's
-  `engineVersion` without checking its selection syntax, or pin `dang = "1.0"`.
+  Dang 1.0 (where `.{ }` is GraphQL selection); `v0.21.5` up to
+  `v1.0.0-beta.28` is Dang 2.1 (`.{ }` is dot-block application, `.{{ }}` is
+  selection); `>= v1.0.0-beta.28` is Dang 2.4, where a type pattern spells the
+  non-null type its arm binds (`c: Cat! =>`, `e: Error! =>` in `rescue`).
+  Don't bump an old module's `engineVersion` without checking its syntax
+  (`dang migrate` rewrites it), or pin `dang = "X.Y"`.
 - Dependencies: `"dependencies": [{"name": "gochild", "source": "gochild"}]` —
   deps may use any SDK (Go, Python, TypeScript, Dang) side by side.
 - `"disableDefaultFunctionCaching": true` turns off default function caching
@@ -150,6 +153,15 @@ type Test {
   `apply(container: Dagger.Container!): Dagger.Container!`.
 - `scalar Timestamp` is exposed as a String at the boundary; values arrive as
   strings.
+- Bare `JSON` is Dang's builtin JSON-text scalar (`text :: JSON!`), beside
+  its codec (`JSON.encode`, `JSON.decode`); data of any shape decodes into
+  `Decoded`. Dagger's schema scalar is `Dagger.JSON`, as a Dagger API argument
+  of type `JSON` wants; convert between them with a cast
+  (`value :: Dagger.JSON!`).
+- A Dagger object displays as the lazy query it is, in string interpolation,
+  `toString` and `print`: `<Container: container.from(address: …)>`, argument
+  values elided. Nothing is sent to show it. Select `.id` where an ID is
+  wanted.
 
 ## Directives Dagger consumes
 
@@ -207,5 +219,9 @@ type Test {
 - Declaring `id` when implementing a dep interface → error; omit it.
 - Using v1 `.{ }` selection in a `>= v0.21.5` module — that's dot-block now;
   select with `.{{ }}`.
+- A bare type pattern (`c: Cat =>`) in a Dang 2.4 module → error; write
+  `c: Cat! =>`.
+- Passing bare `JSON` where a Dagger API wants its `JSON` scalar → type
+  mismatch; cast it, `value :: Dagger.JSON!`.
 - Only *top-level* type declarations become module types; types defined inside
   bodies aren't hoisted into the schema.
