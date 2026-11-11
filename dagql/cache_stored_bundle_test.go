@@ -448,7 +448,7 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		"dagql_test.StatePart":     {`{}`, 0},
 		"dagql_test.StateTwoPart":  {`{}`, 0},
 		"dagql_test.Share":         {`{"name":"relocated"}`, 0},
-		"dagql_test.FixtureDemand": {`{"name":"relocated"}`, 0},
+		"dagql_test.PartReuse":     {`{"name":"relocated"}`, 0},
 		"dagql_test.StoredCheck":   {`{"text":"relocated"}`, 0},
 		"dagql_test.DescribedPart": {`{"done":true}`, 0},
 	}

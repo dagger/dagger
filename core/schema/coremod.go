@@ -275,7 +275,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		schema.Install(dag)
 	}
 
-	return installRemoteCacheFixture(dag)
+	return nil
 }
 
 func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (core.ModType, bool, error) {

@@ -2354,11 +2354,13 @@ const (
 )
 
 type Cache struct {
-	partFixture              atomic.Pointer[partFixtureState]
 	testTransferCopied       func(uint64)
 	testTransferPlanPrepared func(int) error
 	testBeforeTransferCommit func()
 	testAfterTransferCommit  func()
+	// testPartInstalled runs as a part install's last act, after it has
+	// released every lock.
+	testPartInstalled func()
 
 	// testStoredSizeMeasure runs before StoredSizes measures each value,
 	// testStoredSizesHold after each hold of egraphMu it takes, with the

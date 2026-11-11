@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/dagger/dagger/core"
@@ -12,19 +11,14 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-// snapshotSharingReceivesImports reports whether this engine can ever hold an
-// imported row, which is the only kind of row early sharing can fill. A
-// configured remote-cache integration can receive them; so can the
-// environment-gated transfer fixture. Every other engine leaves sharing off,
-// registers no preparation callback and builds no core schema base early, so
-// its startup is unchanged and its notification hooks cost one flag check.
+// snapshotSharingReceivesImports reports whether this engine can receive
+// imported rows from a remote cache, the only kind of row early sharing can
+// fill: whether it has a configured remote-cache integration. Every other
+// engine leaves sharing off, registers no preparation callback and builds no
+// core schema base early, so its startup is unchanged and its notification
+// hooks cost one flag check.
 func snapshotSharingReceivesImports(opts *NewServerOpts) bool {
-	if opts != nil && opts.RemoteCacheIntegration != nil {
-		return true
-	}
-	// The fixture's own test: it is enabled by a non-empty root, so a
-	// variable that is set but empty enables neither it nor sharing.
-	return os.Getenv(core.RemoteCacheFixtureRootEnv) != ""
+	return opts != nil && opts.RemoteCacheIntegration != nil
 }
 
 // initSnapshotSharing builds the static core schema base, registers the

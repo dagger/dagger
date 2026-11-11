@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/dagger/dagger/dagql"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
@@ -19,6 +21,37 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
+
+// partImportObservedManager counts image imports, the snapshot step of a
+// builtin Container's whole operation, and the releases of the refs they
+// return.
+type partImportObservedManager struct {
+	bkcache.SnapshotManager
+	imports  atomic.Int64
+	released atomic.Int64
+}
+
+func (m *partImportObservedManager) ImportImage(ctx context.Context, img *bkcache.ImportedImage, opts bkcache.ImportImageOpts) (bkcache.ImmutableRef, error) {
+	m.imports.Add(1)
+	ref, err := m.SnapshotManager.ImportImage(ctx, img, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &partImportObservedRef{ImmutableRef: ref, manager: m}, nil
+}
+
+type partImportObservedRef struct {
+	bkcache.ImmutableRef
+	manager *partImportObservedManager
+}
+
+func (r *partImportObservedRef) Release(ctx context.Context) error {
+	err := r.ImmutableRef.Release(ctx)
+	if err == nil {
+		r.manager.released.Add(1)
+	}
+	return err
+}
 
 func TestPartWholeLazyOperationMixedRestart(t *testing.T) {
 	actx, _, a, asrv, aServer := executionFixture(t)
@@ -39,13 +72,14 @@ func TestPartWholeLazyOperationMixedRestart(t *testing.T) {
 	original := attachTransferObject(t, actx, a, asrv, "operation-execution", "_builtinContainer", ctr)
 	require.NoError(t, a.Evaluate(actx, original))
 	dbPath := filepath.Join(t.TempDir(), "mixed.db")
+	observed := &partImportObservedManager{}
 	open := func(session string) (context.Context, *dagql.Cache, *dagql.Server) {
 		ctx, cache, srv := transferCache(t, bStore, dbPath, session)
 		query, err := CurrentQuery(ctx)
 		require.NoError(t, err)
-		bServer.cacheManager, bServer.store, bServer.srv = bStore.Manager, bStore.Content, srv
+		observed.SnapshotManager = bStore.Manager
+		bServer.cacheManager, bServer.store, bServer.srv = observed, bStore.Content, srv
 		query.Server = bServer
-		cache.EnableTransferFixtureParts()
 		return ctx, cache, srv
 	}
 	bctx, b, bsrv := open("before")
@@ -78,6 +112,7 @@ func TestPartWholeLazyOperationMixedRestart(t *testing.T) {
 		fsID := view.Links[0].RefKey
 		reads := provider.Reads.Load()
 		require.Positive(t, reads)
+		imports, released := observed.imports.Load(), observed.released.Load()
 		require.NoError(t, b.ReleaseSession(bctx, "before"))
 		require.NoError(t, b.Close(bctx))
 		bStore.Reload(t)
@@ -92,32 +127,16 @@ func TestPartWholeLazyOperationMixedRestart(t *testing.T) {
 		require.Equal(t, containerPartPending, view.Payload.Parts[ContainerPartExecMeta].Kind)
 		require.Equal(t, fsID, view.Links[0].RefKey)
 		require.Equal(t, reads, provider.Reads.Load(), "boot cannot read provider content")
-		report, err := b.TransferFixtureSnapshot(bctx, "after", nil)
-		require.NoError(t, err)
-		require.Empty(t, report.Parts)
+		require.Equal(t, imports, observed.imports.Load(), "boot cannot run the operation")
 		require.NoError(t, b.EvaluateParts(bctx, result, ContainerPartExecMeta))
+		require.Equal(t, imports+1, observed.imports.Load(), "the whole operation runs once")
+		require.Equal(t, released+1, observed.released.Load(), "the operation's private FS ref is released")
 		view = result.Self().acquiredOutput.Load()
 		require.Equal(t, containerPartAbsent, view.Payload.Parts[ContainerPartExecMeta].Kind)
 		require.Len(t, view.Links, 1)
 		require.Equal(t, fsID, view.Links[0].RefKey)
 		require.JSONEq(t, string(savedRecipe), string(view.Payload.LazyJSON))
 		require.Equal(t, reads, provider.Reads.Load(), "whole operation must preserve the already downloaded FS")
-		report, err = b.TransferFixtureSnapshot(bctx, "after", nil)
-		require.NoError(t, err)
-		var operations, releases int
-		for _, event := range report.Parts {
-			if event.ResultID != imported[0].ResultID {
-				continue
-			}
-			switch event.Kind {
-			case "lazy-enter":
-				operations++
-			case "lazy-ref-released":
-				releases++
-			}
-		}
-		require.Equal(t, 1, operations)
-		require.Equal(t, 1, releases)
 		return nil
 	}))
 }
@@ -143,21 +162,18 @@ func TestPartWholeOperationWithoutAddressesRunsItsOperation(t *testing.T) {
 	require.NoError(t, err)
 	original := attachTransferObject(t, actx, a, asrv, "operation-execution", "_builtinContainer", ctr)
 	require.NoError(t, a.Evaluate(actx, original))
-	b.cache.EnableTransferFixtureParts()
+	var logs partSourceLogs
+	bctx := logs.into(b.ctx)
 	require.NoError(t, a.WithExportedValues(actx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
-		reply, err := b.cache.MergeValues(b.ctx, dagql.CloudCacheID, exported.Bundle)
+		reply, err := b.cache.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
 		require.NoError(t, err)
-		loaded, err := b.cache.LoadResultByResultID(b.ctx, "", b.srv, reply.Imported()[0].ResultID)
+		loaded, err := b.cache.LoadResultByResultID(bctx, "", b.srv, reply.Imported()[0].ResultID)
 		require.NoError(t, err)
 		result := loaded.(dagql.ObjectResult[*Container])
-		require.NoError(t, b.cache.Evaluate(b.ctx, result))
+		require.NoError(t, b.cache.Evaluate(bctx, result))
 		require.Equal(t, "/whole", result.Self().Config.WorkingDir)
 		require.False(t, dagql.HasPendingLazyComputation(result), "the container is computed")
-		report, err := b.cache.TransferFixtureSnapshot(b.ctx, "operation-execution", nil)
-		require.NoError(t, err)
-		for _, event := range report.Parts {
-			require.NotEqual(t, "lazy-enter", event.Kind, "no part is searched for and then computed for want of a source")
-		}
+		require.Empty(t, logs.computed(t), "no part is searched for and then computed for want of a source")
 		return nil
 	}))
 }
@@ -168,7 +184,6 @@ func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 	observed := &transferObservedSnapshots{SnapshotManager: bStore.Manager}
 	bStore.Manager = observed
 	bctx, b, bsrv := transferCache(t, bStore, "", "b")
-	b.EnableTransferFixtureParts()
 	platform := Platform{OS: "linux", Architecture: "amd64"}
 	parent := attachTransferObject(t, actx, a, asrv, "a", "parent", NewContainer(platform))
 	child := NewContainer(platform)
@@ -189,11 +204,6 @@ func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 		require.Equal(t, "/pending-image-config", ctr.Config.WorkingDir)
 		require.False(t, ctr.containerPartComputed(bctx, ctr.lazyOpForRouting(), ContainerPartFS), "the image's filesystem stays pending")
 		require.Empty(t, observed.opens)
-		report, err := b.TransferFixtureSnapshot(bctx, "b", nil)
-		require.NoError(t, err)
-		for _, event := range report.Parts {
-			require.NotEqual(t, "provider-read", event.Kind)
-		}
 		return nil
 	}))
 }
