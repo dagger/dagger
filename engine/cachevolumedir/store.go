@@ -479,13 +479,32 @@ type Entry struct {
 // returns the bytes the whole directory uses, including what is still being
 // created or removed.
 func (s *Store) Usage(ctx context.Context) ([]Entry, int64, error) {
-	entries, used, _, err := s.usage(ctx)
+	entries, used, _, err := s.usage(ctx, nil)
 	return entries, used, err
 }
 
-// usage is Usage, also returning the pending-removal bytes it counted.
-func (s *Store) usage(ctx context.Context) ([]Entry, int64, int64, error) {
-	entries, err := s.scan(ctx)
+// measurement is what a scan spent measuring stale volumes.
+type measurement struct {
+	volumes int
+	bytes   int64
+	files   int64
+	took    time.Duration
+}
+
+func (m *measurement) add(bytes, files int64, took time.Duration) {
+	if m == nil {
+		return
+	}
+	m.volumes++
+	m.bytes += bytes
+	m.files += files
+	m.took += took
+}
+
+// usage is Usage, also returning the pending-removal bytes it counted. It
+// adds what it spent measuring stale volumes to measured, if set.
+func (s *Store) usage(ctx context.Context, measured *measurement) ([]Entry, int64, int64, error) {
+	entries, err := s.scan(ctx, measured)
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -506,8 +525,9 @@ func (s *Store) usage(ctx context.Context) ([]Entry, int64, int64, error) {
 	return entries, used + tmpBytes + pending + stuck, pending, nil
 }
 
-// scan lists every volume, measuring stale sizes.
-func (s *Store) scan(ctx context.Context) ([]Entry, error) {
+// scan lists every volume, measuring stale sizes, and adds what that took
+// to measured, if set.
+func (s *Store) scan(ctx context.Context, measured *measurement) ([]Entry, error) {
 	vols, err := os.ReadDir(filepath.Join(s.formDir, "volumes"))
 	if err != nil {
 		return nil, fmt.Errorf("read cache volumes: %w", err)
@@ -520,7 +540,7 @@ func (s *Store) scan(ctx context.Context) ([]Entry, error) {
 		if !vol.IsDir() {
 			continue
 		}
-		e, err := s.volumeEntry(ctx, vol.Name())
+		e, err := s.volumeEntry(ctx, vol.Name(), measured)
 		if errors.Is(err, fs.ErrNotExist) {
 			// Removed while scanning.
 			continue
@@ -533,7 +553,7 @@ func (s *Store) scan(ctx context.Context) ([]Entry, error) {
 	return entries, nil
 }
 
-func (s *Store) volumeEntry(ctx context.Context, id string) (Entry, error) {
+func (s *Store) volumeEntry(ctx context.Context, id string, measured *measurement) (Entry, error) {
 	volDir := s.volumeDir(id)
 	if _, err := os.Stat(filepath.Join(volDir, fsName)); err != nil {
 		return Entry{}, err
@@ -571,7 +591,9 @@ func (s *Store) volumeEntry(ctx context.Context, id string) (Entry, error) {
 	}
 	s.mu.Unlock()
 
-	size, err := treeSize(ctx, filepath.Join(volDir, fsName))
+	start := time.Now()
+	size, files, err := treeWalk(ctx, filepath.Join(volDir, fsName))
+	measured.add(size, files, time.Since(start))
 	if err != nil {
 		return Entry{}, err
 	}
@@ -634,10 +656,21 @@ func (p Policy) targetBytes(usedBytes int64) int64 {
 	return max(target, 0)
 }
 
-// Report is what one Collect removed.
+// Report is what one Collect removed, and what it measured to decide.
 type Report struct {
 	Removed        []Entry
 	ReclaimedBytes int64
+	// UsedBytes is the directory's usage the collection decided on.
+	UsedBytes int64
+
+	// Measured is how many volumes written since their last measurement
+	// were walked to learn their size, a walk cut off by the context
+	// included; MeasuredBytes and MeasuredFiles are what those walks found,
+	// and MeasureTime how long they took.
+	Measured      int
+	MeasuredBytes int64
+	MeasuredFiles int64
+	MeasureTime   time.Duration
 }
 
 // Collect removes volumes until the policy is met, the least recently used
@@ -657,10 +690,13 @@ func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
-	entries, used, pending, err := s.usage(ctx)
+	var m measurement
+	entries, used, pending, err := s.usage(ctx, &m)
+	report.Measured, report.MeasuredBytes, report.MeasuredFiles, report.MeasureTime = m.volumes, m.bytes, m.files, m.took
 	if err != nil {
 		return report, err
 	}
+	report.UsedBytes = used
 	if s.afterUsage != nil {
 		s.afterUsage()
 	}
@@ -853,9 +889,15 @@ func writeMarker(path string) error {
 
 // treeSize is the disk space a tree takes, counting each inode once.
 func treeSize(ctx context.Context, root string) (int64, error) {
+	size, _, err := treeWalk(ctx, root)
+	return size, err
+}
+
+// treeWalk is treeSize, also returning how many entries it counted.
+func treeWalk(ctx context.Context, root string) (int64, int64, error) {
 	type inode struct{ dev, ino uint64 }
 	seen := map[inode]struct{}{}
-	var size int64
+	var size, files int64
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
@@ -874,6 +916,7 @@ func treeSize(ctx context.Context, root string) (int64, error) {
 			}
 			return err
 		}
+		files++
 		st, ok := info.Sys().(*syscall.Stat_t)
 		if !ok {
 			size += info.Size()
@@ -888,9 +931,9 @@ func treeSize(ctx context.Context, root string) (int64, error) {
 		return nil
 	})
 	if errors.Is(err, fs.ErrNotExist) {
-		return 0, nil
+		return 0, 0, nil
 	}
-	return size, err
+	return size, files, err
 }
 
 func removeContents(dir string) error {

@@ -137,6 +137,11 @@ func (srv *Server) collectCacheVolumeDir(ctx context.Context, all bool) (cachevo
 		return cachevolumedir.Report{}, err
 	}
 	report, err := srv.cacheVolumeDir.Collect(ctx, policy)
+	if report.Measured > 0 {
+		slog.Info("measured cache volumes written since their last measurement", "count", report.Measured,
+			"bytes", report.MeasuredBytes, "files", report.MeasuredFiles, "duration", report.MeasureTime,
+			"usedBytes", report.UsedBytes, "maxUsedBytes", policy.MaxUsedSpace, "freeBytes", policy.CurrentFreeSpace)
+	}
 	if len(report.Removed) > 0 {
 		slog.Info("removed cache volumes from the cache volume directory", "count", len(report.Removed), "bytes", report.ReclaimedBytes)
 	}
@@ -154,7 +159,10 @@ func (srv *Server) collectCacheVolumeDirAtShutdown(ctx context.Context) error {
 		return nil
 	}
 	_, err := srv.collectCacheVolumeDir(ctx, false)
-	if waitErr := srv.cacheVolumeDir.WaitRemovals(ctx); waitErr != nil {
+	waitStart := time.Now()
+	waitErr := srv.cacheVolumeDir.WaitRemovals(ctx)
+	slog.Info("waited for cache volume removals", "duration", time.Since(waitStart), "error", waitErr)
+	if waitErr != nil {
 		err = errors.Join(err, fmt.Errorf("wait for cache volume removals: %w", waitErr))
 	}
 	return err
