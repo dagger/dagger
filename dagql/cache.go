@@ -1189,6 +1189,10 @@ type sessionResultInstalls struct {
 	first sessionResultInstallSpan
 	few   []sessionResultInstallSpan
 	many  map[spanKey]sessionResultInstallSpan
+	// ownsClosure records that one of the spans owns the result's closure.
+	// An ancestor walk asks it of every result above the one resuming, and
+	// most own none.
+	ownsClosure bool
 }
 
 // maxFewInstallSpans is how many further install spans a result keeps in a
@@ -1196,6 +1200,7 @@ type sessionResultInstalls struct {
 const maxFewInstallSpans = 8
 
 func (installs *sessionResultInstalls) record(spanCtx trace.SpanContext, ownsClosure bool) {
+	installs.ownsClosure = installs.ownsClosure || ownsClosure
 	key := spanKeyOf(spanCtx)
 	merge := func(install *sessionResultInstallSpan) {
 		install.spanCtx = spanCtx
@@ -1378,7 +1383,7 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 	var out []trace.SpanContext
 	appendInstalls := func(id sharedResultID, closureOwnersOnly bool) {
 		installs := byResult[id]
-		if installs == nil {
+		if installs == nil || closureOwnersOnly && !installs.ownsClosure {
 			return
 		}
 		for install := range installs.all {
