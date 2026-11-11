@@ -70,6 +70,11 @@ func TestArchiveIndexRevisionAndReopening(t *testing.T) {
 	old.Revision = 2
 	old.Digest = "obsolete"
 	appendAgent(old)
+	// Display reads the newest revision, unverified.
+	latest, err := db.AgentControlRows(t.Context())
+	require.NoError(t, err)
+	require.Len(t, latest, 1)
+	require.EqualValues(t, 1, latest[0].ID)
 	want := agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{a.Key: 9}}
 	cut, err := db.Checkpoint(t.Context())
 	require.NoError(t, err)
@@ -87,6 +92,22 @@ func TestArchiveIndexRevisionAndReopening(t *testing.T) {
 	want.Agents[a.Key] = 10
 	_, err = db.ControlRows(t.Context(), traceID, cut.Logs, want)
 	require.Error(t, err, "latest received state is not evidence of producer completeness")
+}
+
+func TestAgentSpanIDs(t *testing.T) {
+	db, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
+	require.NoError(t, err)
+	defer db.Close()
+	agentAttrs, err := MarshalProtoJSONs([]*commonpb.KeyValue{{Key: telemetryattrs.AgentIDAttr, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "worker"}}}})
+	require.NoError(t, err)
+	_, err = db.AppendSpans([]Span{
+		{TraceID: "t", SpanID: "loop", Attributes: []byte("[]")},
+		{TraceID: "t", SpanID: "work", Attributes: []byte("[]")},
+		// The agent attributes may arrive on a later snapshot.
+		{TraceID: "t", SpanID: "loop", Attributes: agentAttrs},
+	})
+	require.NoError(t, err)
+	require.Equal(t, map[string]struct{}{"loop": {}}, db.AgentSpanIDs())
 }
 
 func TestArchiveCallPayload(t *testing.T) {

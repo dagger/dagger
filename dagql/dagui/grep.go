@@ -69,6 +69,19 @@ func (db *DB) GrepCalls(re *regexp.Regexp, max int) []string {
 
 type callTextRange struct{ start, end int }
 
+// CallSearchText is the full line GrepCalls matches a frame against.
+func CallSearchText(frame *callpbv1.Call) string {
+	return renderCallLine(frame).text
+}
+
+// opaqueObjectFields names input-object fields whose values are opaque
+// provider data -- an LLMContentBlockInput's thinking signature is a
+// kilobyte of base64 per block -- that no reader of a call line can use.
+// Lines leave them out entirely, for display and matching alike.
+var opaqueObjectFields = map[string]bool{
+	"signature": true,
+}
+
 type callSearchLine struct {
 	text    string
 	strings []callTextRange
@@ -198,10 +211,15 @@ func writeSearchLiteral(b *strings.Builder, lit *callpbv1.Literal, ranges *[]cal
 		b.WriteByte(']')
 	case *callpbv1.Literal_Object:
 		b.WriteByte('{')
-		for i, val := range v.Object.GetValues() {
-			if i > 0 {
+		first := true
+		for _, val := range v.Object.GetValues() {
+			if opaqueObjectFields[val.GetName()] {
+				continue
+			}
+			if !first {
 				b.WriteString(", ")
 			}
+			first = false
 			b.WriteString(val.GetName())
 			b.WriteString(": ")
 			writeSearchLiteral(b, val.GetValue(), ranges)
