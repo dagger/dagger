@@ -4738,9 +4738,18 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		defer close(prebuildDone)
 		prebuildErr = prebuildModuleRuntime(prebuildCtx, execSrc)
 	}()
+	// Namespacing the module's definition reads the core API's typedefs as
+	// the module's engine version sees them, which an engine builds once per
+	// version. They don't depend on the module's dependencies either.
+	coreTypeDefsDone := make(chan struct{})
+	go func() {
+		defer close(coreTypeDefsDone)
+		s.loadCoreTypeDefs(prebuildCtx, execSrc.Self().EngineVersion)
+	}()
 	defer func() {
 		cancelPrebuild()
 		<-prebuildDone
+		<-coreTypeDefsDone
 	}()
 	mod.Deps, mod.EntrypointDeps, err = s.loadDependencyModules(ctx, execSrc, defaultPathContextSrc)
 	if err != nil {
@@ -5052,6 +5061,21 @@ func (s *moduleSourceSchema) defaultSchemaBuilderForEngineVersion(
 		}
 	}
 	return core.NewSchemaBuilder(query, baseMods), nil
+}
+
+// loadCoreTypeDefs builds the core API's typedefs as engineVersion sees
+// them, unless the engine already has. A failure is left for the load that
+// needs them to report: they aren't kept, so that load builds them again.
+func (s *moduleSourceSchema) loadCoreTypeDefs(ctx context.Context, engineVersion string) {
+	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, engineVersion)
+	if err != nil {
+		return
+	}
+	for _, mod := range deps.Mods() {
+		if coreMod, ok := mod.(*CoreMod); ok {
+			_, _ = coreMod.TypeDefs(ctx, nil)
+		}
+	}
 }
 
 func (s *moduleSourceSchema) moduleSourceWithClient(
