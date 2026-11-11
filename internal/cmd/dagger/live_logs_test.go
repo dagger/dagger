@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -26,6 +28,7 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tracesource"
+	"github.com/dagger/dagger/util/cleanups"
 )
 
 type liveLogRow struct {
@@ -211,18 +214,18 @@ func TestLiveLogsUnknownSpansStayUnclaimed(t *testing.T) {
 	l := newLiveLogs(reader, "trace", out, true)
 	var mu sync.Mutex
 	requested := map[byte]bool{}
-	l.coverage = func(targets []idtui.LogTarget) []idtui.LogCoverage {
+	l.coverage = func(targets []idtui.LogTarget) []idtui.LogRoute {
 		mu.Lock()
 		defer mu.Unlock()
-		var got []idtui.LogCoverage
+		var got []idtui.LogRoute
 		for _, target := range targets {
 			switch span := target.Span.SpanID[7]; {
 			case requested[span] || span == 1:
-				got = append(got, idtui.LogCovered)
+				got = append(got, idtui.LogRoute{Coverage: idtui.LogCovered, Span: target.Span})
 			case span == 9:
-				got = append(got, idtui.LogUnknown)
+				got = append(got, idtui.LogRoute{Coverage: idtui.LogUnknown})
 			default:
-				got = append(got, idtui.LogUncovered)
+				got = append(got, idtui.LogRoute{Coverage: idtui.LogUncovered, Span: target.Span})
 			}
 		}
 		return got
@@ -390,16 +393,16 @@ func TestLiveLogsSkipEmptyBatches(t *testing.T) {
 		return out.Export(ctx, records)
 	}), false)
 	asked := 0
-	l.coverage = func(targets []idtui.LogTarget) []idtui.LogCoverage {
+	l.coverage = func(targets []idtui.LogTarget) []idtui.LogRoute {
 		asked++
-		coverage := make([]idtui.LogCoverage, len(targets))
+		routes := make([]idtui.LogRoute, len(targets))
 		for i, target := range targets {
-			coverage[i] = idtui.LogUncovered
+			routes[i] = idtui.LogRoute{Coverage: idtui.LogUncovered, Span: target.Span}
 			if target.Span == liveTestSpan(1) {
-				coverage[i] = idtui.LogCovered
+				routes[i].Coverage = idtui.LogCovered
 			}
 		}
-		return coverage
+		return routes
 	}
 	l.subscribe(idtui.LogRequest{Span: liveTestSpan(1)})
 	require.NoError(t, l.finish(t.Context()))
@@ -499,6 +502,250 @@ func (s *fakeLogStore) ReadLogs(ctx context.Context, _ string, q tracesource.Log
 		end = len(s.rows)
 		s.mu.Unlock()
 	}
+}
+
+// Queued exports retain claim lifetimes, not read numbers or the transient
+// released map. Exercise these transitions without timers or a running reader.
+func TestLiveLogsQueuedClaimLifetime(t *testing.T) {
+	for _, transition := range []string{"held", "unsubscribed", "dropped", "next read", "reclaimed", "retired"} {
+		t.Run(transition, func(t *testing.T) {
+			live := dagui.TraceID{TraceID: trace.TraceID{15: 1}}
+			root, victim, held := liveTestSpan(1), liveTestSpan(2), liveTestSpan(3)
+			start := time.Unix(100, 0)
+			fe := idtui.NewASCIIReporterWithDB(io.Discard, dagui.NewDB())
+			l := newLiveLogs(nil, live.String(), nil, true)
+			l.coverage = fe.LiveLogsCoverage
+			export := fe.SetLiveLogs(live, l.subscribe)
+			var queued []func() error
+			l.export = exporterFunc(func(ctx context.Context, records []sdklog.Record) error {
+				records = slices.Clone(records)
+				queued = append(queued, func() error { return export.Export(ctx, records) })
+				return nil
+			})
+			fe.ImportSnapshots([]dagui.SpanSnapshot{
+				{ID: root, TraceID: live, Name: "agent", StartTime: start, Final: true},
+				{ID: victim, TraceID: live, ParentID: root, Name: "victim", LLMRole: "assistant", Message: "received", CallDigest: "xxh3:call", Output: "xxh3:out", StartTime: start, Final: true},
+				{ID: held, TraceID: live, ParentID: root, Name: "held", LLMRole: "assistant", Message: "received", StartTime: start.Add(time.Second), Final: true},
+			})
+			fe.SetPrimary(root)
+			fe.RequestSurfacedLogs()
+			require.NoError(t, l.catchUp(t.Context()))
+			require.NoError(t, l.importLogs(t.Context(), liveLogRequest([]liveLogRow{
+				{span: 2, body: "original own\n"},
+				{span: 9, digest: "xxh3:out", body: "original digest\n"},
+				{span: 3, body: "unaffected\n"},
+			}), 0, l.beginRead()))
+			key := logOwner{span: victim.SpanID}
+			before := l.owned[key]
+			switch transition {
+			case "unsubscribed":
+				l.release(idtui.LogRelease{Spans: []dagui.SpanID{victim}})
+			case "dropped", "next read", "reclaimed":
+				l.release(idtui.LogRelease{Spans: []dagui.SpanID{victim}, Dropped: []dagui.SpanID{victim}})
+				if transition != "dropped" {
+					l.beginRead()
+					require.Empty(t, l.released, "a queued batch must not rely on read-scoped tombstones")
+				}
+				if transition == "reclaimed" {
+					l.subscribe(idtui.LogRequest{Span: victim, Digests: []string{"xxh3:out"}})
+					require.NoError(t, l.importLogs(t.Context(), liveLogRequest([]liveLogRow{
+						{span: 2, body: "fresh own\n"},
+						{span: 9, digest: "xxh3:out", body: "fresh digest\n"},
+					}), 0, l.beginRead()))
+					require.Equal(t, before.read, l.owned[key].read, "both claims use the follow's read number")
+					require.NotEqual(t, before.generation, l.owned[key].generation)
+					// The new lifetime can even render before the stale batch.
+					require.NoError(t, queued[1]())
+				}
+			case "retired":
+				l.idleSince[victim.String()] = start
+				l.retire(start.Add(l.grace))
+				require.NotEqual(t, before.read, l.owned[key].read)
+				require.Equal(t, before.generation, l.owned[key].generation)
+				// A gap read keeps the same retained text lifetime.
+				r := l.retired[victim.String()]
+				require.NoError(t, l.importLogs(t.Context(), liveLogRequest([]liveLogRow{
+					{span: 2, body: "gap own\n"},
+				}), r.read, l.beginRead()))
+			}
+			require.NoError(t, queued[0]())
+			if transition == "retired" {
+				require.NoError(t, queued[1]())
+			}
+			var rendered strings.Builder
+			require.NoError(t, fe.FinalRender(&rendered))
+			text := rendered.String()
+			require.Equal(t, 1, strings.Count(text, "unaffected"), text)
+			wantOriginal := 0
+			if transition == "held" || transition == "unsubscribed" || transition == "retired" {
+				wantOriginal = 1
+			}
+			require.Equal(t, wantOriginal, strings.Count(text, "original own"), text)
+			require.Equal(t, wantOriginal, strings.Count(text, "original digest"), text)
+			if transition == "reclaimed" {
+				require.Equal(t, 1, strings.Count(text, "fresh own"), text)
+				require.Equal(t, 1, strings.Count(text, "fresh digest"), text)
+			}
+			if transition == "retired" {
+				require.Equal(t, 1, strings.Count(text, "gap own"), text)
+			}
+		})
+	}
+}
+
+// TestLiveLogsQueuedExportAfterRealEviction drives the running headless
+// frontend's real cache and view changes. It pauses a selected follow batch
+// after ownership is claimed, but before its export is enqueued, while a
+// zoom hides enough conversation messages for the normal sweep to evict one.
+func TestLiveLogsQueuedExportAfterRealEviction(t *testing.T) {
+	t.Setenv("DAGGER_TUI_CONSOLE", "127.0.0.1:0")
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	live := dagui.TraceID{TraceID: trace.TraceID{15: 1}}
+	root, victim, zoom := liveTestSpan(1), liveTestSpan(2), liveTestSpan(41)
+	fe := idtui.NewWithDB(io.Discard, dagui.NewDB())
+	feCtx, stopFE := context.WithCancel(context.Background())
+	feDone, ready := make(chan struct{}), make(chan struct{})
+	var feErr error
+	go func() {
+		defer close(feDone)
+		feErr = fe.Run(feCtx, dagui.FrontendOpts{}, func(ctx context.Context) (cleanups.CleanupF, error) {
+			close(ready)
+			<-ctx.Done()
+			return nil, nil
+		})
+	}()
+	<-ready
+	lCtx, stopLogs := context.WithCancel(ctx)
+	logsDone := make(chan struct{})
+	unblock := make(chan struct{})
+	var unblockOnce sync.Once
+	t.Cleanup(func() {
+		unblockOnce.Do(func() { close(unblock) })
+		stopLogs()
+		<-logsDone
+		stopFE()
+		<-feDone
+	})
+
+	store := &fakeLogStore{}
+	out := &bodyCollector{}
+	reader := logReaderFunc(func(ctx context.Context, traceID string, q tracesource.LogQuery, cb func(context.Context, *collogspb.ExportLogsServiceRequest, string) error) error {
+		for _, span := range q.Spans {
+			if span.Descendants || len(span.Digests) != 0 {
+				return fmt.Errorf("unexpected non-own-only selection: %+v", span)
+			}
+		}
+		return store.ReadLogs(ctx, traceID, q, cb)
+	})
+	l := newLiveLogs(reader, live.String(), nil, true)
+	l.coverage = fe.LiveLogsCoverage
+	l.activity = fe.LiveLogsActivity
+	export := fe.SetLiveLogs(live, l.subscribe)
+	released := make(chan idtui.LogRelease, 10)
+	fe.SetLogRelease(live, func(r idtui.LogRelease) {
+		l.release(r)
+		if slices.Contains(r.Dropped, victim) {
+			select {
+			case released <- r:
+			default:
+			}
+		}
+	})
+	blocked, delivered := make(chan struct{}), make(chan struct{})
+	var blockOnce sync.Once
+	l.export = exporterFunc(func(ctx context.Context, records []sdklog.Record) error {
+		intercept := false
+		for _, record := range records {
+			if record.Body().AsString() == "intercepted prefix " {
+				blockOnce.Do(func() {
+					intercept = true
+					close(blocked)
+				})
+			}
+		}
+		if intercept {
+			<-unblock
+		}
+		if err := out.Export(ctx, records); err != nil {
+			return err
+		}
+		if err := export.Export(ctx, records); err != nil {
+			return err
+		}
+		if intercept {
+			// Queue the user's return immediately behind the stale export,
+			// before another sweep could discard that recreated terminal.
+			fe.ZoomToSpan(root)
+			fe.RequestSurfacedLogs()
+			close(delivered)
+		}
+		return nil
+	})
+	go func() { defer close(logsDone); l.run(lCtx) }()
+	start := time.Now().Add(-time.Minute)
+	snaps := []dagui.SpanSnapshot{{ID: root, TraceID: live, Name: "agent", StartTime: start, Final: true}}
+	for n := uint16(2); n <= 41; n++ {
+		snaps = append(snaps, dagui.SpanSnapshot{ID: liveTestSpan(n), TraceID: live, ParentID: root, Name: fmt.Sprintf("message %d", n), LLMRole: "assistant", Message: "received", StartTime: start.Add(time.Duration(n) * time.Millisecond), EndTime: start.Add(time.Second), Final: true})
+		store.add(liveLogRow{span: n, body: fmt.Sprintf("message %d initial\n", n)})
+	}
+	fe.ImportSnapshots(snaps)
+	fe.SetPrimary(root)
+	fe.ZoomToSpan(root)
+	fe.RequestSurfacedLogs()
+	require.Eventually(t, func() bool { return len(out.got()) == 40 }, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, fe.WaitForEventLoop(ctx))
+	require.Empty(t, released, "the shown conversation must stay pinned")
+
+	fe.ZoomToSpan(zoom)
+	fe.RequestSurfacedLogs()
+	// Let the real two-second shown grace expire before intercepting any
+	// export. Opening a new span then schedules an ordinary 500ms sweep.
+	time.Sleep(2500 * time.Millisecond)
+	other := liveTestSpan(42)
+	fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: other, TraceID: live, ParentID: root, Name: "other", StartTime: start.Add(2 * time.Second), HasLogs: true, Final: true}})
+	fe.ZoomToSpan(other)
+	fe.RequestSurfacedLogs()
+	store.add(liveLogRow{span: 2, body: "intercepted prefix "})
+	select {
+	case <-blocked:
+	case <-ctx.Done():
+		t.Fatal("follow did not reach export")
+	}
+	key := logOwner{span: victim.SpanID}
+	l.mu.Lock()
+	claim, owned := l.owned[key]
+	l.mu.Unlock()
+	require.True(t, owned, "the selected batch has claimed its pair before export")
+	require.Equal(t, victim, claim.target)
+	select {
+	case r := <-released:
+		require.Contains(t, r.Spans, victim, "actual frontend cache eviction must unsubscribe the victim")
+	case <-ctx.Done():
+		t.Fatal("normal cache sweep did not evict the hidden message")
+	}
+	l.mu.Lock()
+	_, owned = l.owned[key]
+	l.mu.Unlock()
+	require.False(t, owned, "the real frontend drop forgot the pair before its export")
+	unblockOnce.Do(func() { close(unblock) })
+	select {
+	case <-delivered:
+	case <-ctx.Done():
+		t.Fatal("stale export did not reach frontend")
+	}
+	require.Eventually(t, func() bool {
+		return strings.Count(strings.Join(out.got(), ""), "message 2 initial") == 2
+	}, 5*time.Second, 10*time.Millisecond, "returning to the conversation must re-read the evicted message")
+	require.NoError(t, fe.WaitForEventLoop(ctx))
+	stopLogs()
+	<-logsDone
+	stopFE()
+	<-feDone
+	require.NoError(t, feErr)
+	var rendered strings.Builder
+	require.NoError(t, fe.FinalRender(&rendered))
+	require.Equal(t, 1, strings.Count(rendered.String(), "intercepted prefix"), "a batch selected before actual eviction must not be appended after the terminal is dropped")
 }
 
 // fakeActivity is a frontend's view of which spans are active: every span,
@@ -995,7 +1242,7 @@ func (f *fakeExitFrontend) SetPrimaryOutput(records []sdklog.Record) {
 		f.primary = append(f.primary, rec.Body().AsString())
 	}
 }
-func (f *fakeExitFrontend) LiveLogsCoverage([]idtui.LogTarget) []idtui.LogCoverage { return nil }
+func (f *fakeExitFrontend) LiveLogsCoverage([]idtui.LogTarget) []idtui.LogRoute { return nil }
 func (f *fakeExitFrontend) LiveLogsActivity([]dagui.SpanID) []idtui.LogActivity { return nil }
 
 // TestFinishLiveLogsInterrupted: against a hung engine, an interrupt during
