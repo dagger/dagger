@@ -679,12 +679,10 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			return httpErr(err, http.StatusBadRequest)
 		}
 	}
-	// Once the session has ended nothing else holds its store, and reopening
-	// replays every row from disk. Keep it open across a burst of selected
-	// reads (along with its cached span topology); the idle hold never blocks
-	// archive removal, store GC or engine shutdown.
+	// Selected reads need indexes and benefit from reusing them across requests.
+	// Full replay reads rows in order and can avoid building those indexes.
 	openStore := srv.clientDBs.OpenForAppend
-	if spanSelection != nil || logSelection != nil {
+	if spanSelection != nil || logSelection != nil || logQuery != nil {
 		openStore = srv.clientDBs.OpenHeld
 	}
 	db, err := openStore(r.Context(), m.MainClientID)
