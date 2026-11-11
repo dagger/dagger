@@ -358,6 +358,32 @@ func TestCollectLRUUnderCap(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestCollectReportsWhatItMeasured(t *testing.T) {
+	t.Parallel()
+	s := openStore(t, t.TempDir(), nil)
+	use(t, s, Identity{Key: "written"}, true, "f", mib)
+	use(t, s, Identity{Key: "read"}, false, "", 0)
+	report, err := s.Collect(t.Context(), Policy{})
+	require.NoError(t, err)
+	require.Equal(t, 2, report.Measured, "volumes never measured are walked")
+
+	use(t, s, Identity{Key: "written"}, true, "g", mib)
+	use(t, s, Identity{Key: "read"}, false, "", 0)
+	report, err = s.Collect(t.Context(), Policy{})
+	require.NoError(t, err)
+	require.Empty(t, report.Removed)
+	require.Equal(t, 1, report.Measured, "only the volume written since its last measurement is walked")
+	require.GreaterOrEqual(t, report.MeasuredBytes, int64(2*mib))
+	require.GreaterOrEqual(t, report.MeasuredFiles, int64(3), "its root and both files")
+	require.Positive(t, report.MeasureTime)
+	require.GreaterOrEqual(t, report.UsedBytes, int64(2*mib))
+
+	report, err = s.Collect(t.Context(), Policy{})
+	require.NoError(t, err)
+	require.Zero(t, report.Measured, "a measured volume keeps its size until it is written again")
+	require.Zero(t, report.MeasuredBytes)
+}
+
 func TestCollectFreesSpaceBelowTheReserve(t *testing.T) {
 	clock := newFakeClock()
 	s := openStore(t, t.TempDir(), clock)
