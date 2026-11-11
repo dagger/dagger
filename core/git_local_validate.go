@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -137,6 +138,16 @@ func containedPath(root, p string) (string, error) {
 	return resolved, nil
 }
 
+// readContained reads the file at p, a path within root, if it and any link
+// it is reached through stay within root.
+func readContained(root, p string) ([]byte, error) {
+	resolved, err := containedPath(root, p)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(resolved)
+}
+
 // checkLayoutContained checks, without running Git, that the repository Git
 // would open at root, its common directory and the config files they include
 // are all within root. Git finds the repository at root/.git, a directory,
@@ -171,7 +182,7 @@ func checkLayoutContained(root string) error {
 		}
 	}
 	commonDir := gitDir
-	if data, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
+	if data, err := readContained(root, filepath.Join(gitDir, "commondir")); err == nil {
 		target := strings.TrimSpace(string(data))
 		if !filepath.IsAbs(target) {
 			target = filepath.Join(gitDir, target)
@@ -203,16 +214,15 @@ func checkConfigIncludes(root, config string, seen map[string]bool) error {
 		return nil
 	}
 	seen[config] = true
-	f, err := os.Open(config)
+	data, err := readContained(root, config)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	cfg := gitconfig.New()
-	if err := gitconfig.NewDecoder(f).Decode(cfg); err != nil {
+	if err := gitconfig.NewDecoder(bytes.NewReader(data)).Decode(cfg); err != nil {
 		return fmt.Errorf("git config %s: %w", config, err)
 	}
 	includes := cfg.Section("include").Options.GetAll("path")
