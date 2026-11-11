@@ -785,10 +785,11 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 
 	// The image's entries name their parts' blobs, which the image holds:
 	// the store reads them in place rather than copying each one in.
-	srv.localContentStore, err = blobstore.New(srv.contentStoreRootDir, blobstore.WithImageBlobs(distconsts.EngineContainerImageEntriesDir))
+	blobs, err := blobstore.New(srv.contentStoreRootDir, blobstore.WithImageBlobs(distconsts.EngineContainerImageEntriesDir))
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create content store: %w", err)
 	}
+	srv.localContentStore = blobs
 
 	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
 		srv.snapshotterName: srv.snapshotter,
@@ -821,6 +822,9 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		// files rather than the remote cache.
 		BuiltinContent: srv.builtinContentStore,
 		MetadataDB:     srv.containerdMetaDB,
+		// The image's blobs, which the store holds in place, take no disk
+		// a snapshot's release would free.
+		InPlaceContent: blobs.InPlace,
 	})
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create snapshot manager: %w", err)

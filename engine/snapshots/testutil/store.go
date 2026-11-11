@@ -56,6 +56,7 @@ type Store struct {
 	AfterAdd    func(context.Context, leases.Lease, leases.Resource)
 	AfterCreate func(leases.Lease)
 	root        string
+	rawContent  *blobstore.Store
 
 	// SharedMountLinger and MaxIdleSharedMounts, when set before the manager
 	// is (re)opened, bound its idle shared read-only mounts.
@@ -77,11 +78,19 @@ func NewStore(t testing.TB) *Store {
 	return newStore(t, t.TempDir(), "native", native.NewSnapshotter)
 }
 
-func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error)) *Store {
+// NewStoreWithImageBlobs is NewStore with a content store that holds the
+// blobs under dir in place, as the engine holds its image's.
+func NewStoreWithImageBlobs(t testing.TB, dir string) *Store {
+	t.Helper()
+	return newStore(t, t.TempDir(), "native", native.NewSnapshotter, blobstore.WithImageBlobs(dir))
+}
+
+func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error), contentOpts ...blobstore.Option) *Store {
 	t.Helper()
 	s := &Store{root: root, snapshotter: snapshotter}
-	rawContent, err := blobstore.New(filepath.Join(s.root, "content"))
+	rawContent, err := blobstore.New(filepath.Join(s.root, "content"), contentOpts...)
 	require.NoError(t, err)
+	s.rawContent = rawContent
 	rawSnapshots, err := newSnapshotter(filepath.Join(s.root, "snapshots"))
 	require.NoError(t, err)
 	db, err := bolt.Open(filepath.Join(s.root, "metadata.db"), 0600, nil)
@@ -122,6 +131,7 @@ func (s *Store) openManager(t testing.TB) {
 		MountPoolRoot:  filepath.Join(s.root, "mounts"),
 		BuiltinContent: s.Builtin,
 		MetadataDB:     observedTransactor{DB: s.DB, store: s},
+		InPlaceContent: s.rawContent.InPlace,
 		LocalMounter: func(ms []mount.Mount) bkcache.Mounter {
 			return &inPlaceMounter{store: s, mounts: ms}
 		},
