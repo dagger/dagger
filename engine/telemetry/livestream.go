@@ -30,6 +30,14 @@ const (
 	LiveFeatureLogPresence = "log-presence"
 	// LiveFeatureLogSearch: POST /v1/logs/search searches display text.
 	LiveFeatureLogSearch = "log-search"
+	// LiveFeatureFlush: POST LiveFlushPath is a barrier for the client's
+	// subscriptions. It flushes the session's telemetry into the client's
+	// store and answers with the store's high-water marks (LiveFlushResult):
+	// once the subscriptions have delivered through them, the client has
+	// everything stored for it up to the request.
+	LiveFeatureFlush = "flush"
+	// LiveFlushPath is the endpoint of LiveFeatureFlush.
+	LiveFlushPath = "/v1/telemetry/flush"
 	// LiveDisplayParam selects the log push's display text mode; its only
 	// non-default value is LiveDisplayPresence.
 	LiveDisplayParam    = "display"
@@ -41,6 +49,15 @@ const (
 	MaxLivePayloadSize = 64 << 20
 	maxLiveErrorSize   = 4 << 10
 )
+
+// LiveFlushResult answers POST LiveFlushPath: the cursors (row IDs) of the
+// last span and log record in the client's store after the flush. Its trace
+// and log subscriptions reach them once they have delivered everything up
+// to there, rows they leave out included.
+type LiveFlushResult struct {
+	Spans int64 `json:"spans"`
+	Logs  int64 `json:"logs"`
+}
 
 // LiveFrameKind distinguishes the frames a live telemetry stream carries.
 type LiveFrameKind uint8
