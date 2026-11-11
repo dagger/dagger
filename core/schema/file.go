@@ -599,4 +599,3 @@ func fileContentDigest(ctx context.Context, file *core.File) (digest.Digest, err
 	}
 	return hashutil.HashStrings(filePath, string(dgst)), nil
 }
-
