@@ -27,21 +27,18 @@ func TestPartWholeOperationWithoutAddressesRunsItsOperation(t *testing.T) {
 	b := newExecutionFixture(t)
 	original, _ := importTestContainer(t, actx, a, asrv, "/whole")
 	require.NoError(t, a.Evaluate(actx, original))
-	b.cache.EnableTransferFixtureParts()
+	var logs partSourceLogs
+	bctx := logs.into(b.ctx)
 	require.NoError(t, a.WithExportedValues(actx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
-		reply, err := b.cache.MergeValues(b.ctx, dagql.CloudCacheID, exported.Bundle)
+		reply, err := b.cache.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
 		require.NoError(t, err)
-		loaded, err := b.cache.LoadResultByResultID(b.ctx, "", b.srv, reply.Imported()[0].ResultID)
+		loaded, err := b.cache.LoadResultByResultID(bctx, "", b.srv, reply.Imported()[0].ResultID)
 		require.NoError(t, err)
 		result := loaded.(dagql.ObjectResult[*Container])
-		require.NoError(t, b.cache.Evaluate(b.ctx, result))
+		require.NoError(t, b.cache.Evaluate(bctx, result))
 		require.Equal(t, "/whole", result.Self().Config.WorkingDir)
 		require.False(t, dagql.HasPendingLazyComputation(result), "the container is computed")
-		report, err := b.cache.TransferFixtureSnapshot(b.ctx, "operation-execution", nil)
-		require.NoError(t, err)
-		for _, event := range report.Parts {
-			require.NotEqual(t, "lazy-enter", event.Kind, "no part is searched for and then computed for want of a source")
-		}
+		require.Empty(t, logs.computed(t), "no part is searched for and then computed for want of a source")
 		return nil
 	}))
 }
@@ -52,7 +49,6 @@ func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 	observed := &transferObservedSnapshots{SnapshotManager: bStore.Manager}
 	bStore.Manager = observed
 	bctx, b, bsrv := transferCache(t, bStore, "", "b")
-	b.EnableTransferFixtureParts()
 	platform := Platform{OS: "linux", Architecture: "amd64"}
 	parent := attachTransferObject(t, actx, a, asrv, "a", "parent", NewContainer(platform))
 	child := NewContainer(platform)
@@ -73,11 +69,6 @@ func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 		require.Equal(t, "/pending-image-config", ctr.Config.WorkingDir)
 		require.False(t, ctr.containerPartComputed(bctx, ctr.lazyOpForRouting(), ContainerPartFS), "the image's filesystem stays pending")
 		require.Empty(t, observed.opens)
-		report, err := b.TransferFixtureSnapshot(bctx, "b", nil)
-		require.NoError(t, err)
-		for _, event := range report.Parts {
-			require.NotEqual(t, "provider-read", event.Kind)
-		}
 		return nil
 	}))
 }

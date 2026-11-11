@@ -490,18 +490,8 @@ func (c *Cache) CommitReadyPart(ctx context.Context, p *PreparedReadyPart) (_ *R
 	}
 	defer func() {
 		rerr = errors.Join(rerr, p.release(ctx, outcome == PartInstalled))
-		if outcome == PartInstalled {
-			kind := "installed-ready"
-			if p.original != nil {
-				kind = "installed-lazy"
-			} else if p.source.readiness == PartDownloadable {
-				kind = "installed-chain"
-			}
-			if p.source.delegation != nil {
-				c.recordPartFixtureDelegation(p.receiver, p.permit.address, "installed-delegation", p.source.delegation)
-			} else {
-				c.recordPartFixture(p.receiver, p.permit.address, kind)
-			}
+		if outcome == PartInstalled && c.testPartInstalled != nil {
+			c.testPartInstalled()
 		}
 	}()
 	if err := context.Cause(ctx); err != nil {

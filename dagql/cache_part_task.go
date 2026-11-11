@@ -155,7 +155,6 @@ func (t *lazyTaskContinuation) finish(ctx context.Context, c *Cache, row *shared
 		}
 	}
 	if !t.synced {
-		c.recordPartFixture(row, PersistedPartAddress{}, "owner-sync")
 		stepCtx, step := BeginStep(ctx, "lazyBody.ownerSync")
 		err := c.syncTaskPartLeases(stepCtx, row, t.token)
 		step.End(err)

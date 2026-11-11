@@ -699,7 +699,6 @@ func (srv *Server) initRecursiveReadOnlyMounts(ctx context.Context) {
 }
 
 func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) error {
-	var bootReset core.RemoteCacheFixturePersistence
 	for attempt := 0; attempt < 2; attempt++ {
 		resetReason, err := srv.initLocalCacheStateOnce(ctx, cfg, ociCfg)
 		if srv.engineCache != nil {
@@ -715,10 +714,7 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 				// start resets as before.
 				return errors.Join(err, srv.closeLocalCacheStateForReset())
 			}
-			return srv.updateRemoteCacheFixturePersistence(func(report *core.RemoteCacheFixturePersistence) {
-				report.PersistenceResetReason = bootReset.PersistenceResetReason
-				report.LocalCacheResetReason = bootReset.LocalCacheResetReason
-			})
+			return nil
 		}
 		if attempt == 1 {
 			if err != nil {
@@ -729,10 +725,6 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 
 		if resetReason == localCacheStateResetBoltDBInitFailed {
 			srv.corruptDBReset = true
-		}
-		bootReset.LocalCacheResetReason = string(resetReason)
-		if srv.engineCache != nil {
-			bootReset.PersistenceResetReason = srv.engineCache.PersistenceResetReason()
 		}
 		slog.Warn("local cache state invalid; resetting worker and dagql persistence state", "reason", resetReason, "error", err)
 		if closeErr := srv.closeLocalCacheStateForReset(); closeErr != nil {
