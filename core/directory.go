@@ -2779,7 +2779,7 @@ func (dir *Directory) withDirectory(
 				if err != nil {
 					return err
 				}
-				return copier.Copy(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt, Boundary: srcBoundary}, srcDir, destDir, opts)
+				return copier.Copy(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt, Boundary: srcBoundary}, srcBoundary, destDir, opts)
 			}, mountRefAsReadOnly); err != nil {
 				return err
 			}
