@@ -142,11 +142,7 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress) (Part
 			continue
 		}
 		if part, ok := candidate.storedParts[key]; ok {
-			copied, err := clonePartOffers([]PersistedPartOffer{part})
-			if err != nil {
-				return PartAvailability{}, fmt.Errorf("available part: %w", err)
-			}
-			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), Part: copied[0]}, nil
+			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), Part: part.offer()}, nil
 		}
 	}
 	for _, candidate := range candidates {
@@ -191,7 +187,7 @@ func (c *Cache) StoredState() (StoredState, error) {
 	slices.Sort(state.Roots)
 	for id, res := range c.resultsByID {
 		for _, part := range res.storedPartsLocked() {
-			state.Parts[uint64(id)] = append(state.Parts[uint64(id)], part.Address)
+			state.Parts[uint64(id)] = append(state.Parts[uint64(id)], part.address())
 		}
 	}
 	return state, nil
@@ -227,8 +223,10 @@ func (c *Cache) LivePacks() ([]digest.Digest, error) {
 	live := map[digest.Digest]struct{}{}
 	for _, res := range c.resultsByID {
 		for _, part := range res.storedParts {
-			for _, pack := range part.Chain.Packs {
-				live[pack] = struct{}{}
+			for _, layer := range part.layers {
+				if layer.pack != "" {
+					live[layer.pack] = struct{}{}
+				}
 			}
 		}
 	}
@@ -248,9 +246,13 @@ func (c *Cache) LivePackMembers() (map[digest.Digest]digest.Digest, error) {
 	members := map[digest.Digest]digest.Digest{}
 	for _, res := range c.resultsByID {
 		for _, part := range res.storedParts {
-			for layer, pack := range part.Chain.Packs {
-				if current, ok := members[layer]; !ok || pack < current {
-					members[layer] = pack
+			for _, layer := range part.layers {
+				blob, pack := layer.layer.Descriptor.Digest, layer.pack
+				if pack == "" {
+					continue
+				}
+				if current, ok := members[blob]; !ok || pack < current {
+					members[blob] = pack
 				}
 			}
 		}

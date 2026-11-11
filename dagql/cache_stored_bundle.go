@@ -301,10 +301,10 @@ func storedClosureChildrenLocked(res *sharedResult) []sharedResultID {
 		children = append(children, dep)
 	}
 	for _, part := range res.storedParts {
-		for _, dep := range part.Owner.DependencyIDs {
+		for _, dep := range part.held.Owner.DependencyIDs {
 			children = append(children, sharedResultID(dep))
 		}
-		for _, service := range part.Value.Services {
+		for _, service := range part.held.Value.Services {
 			children = append(children, sharedResultID(service.ServiceResultID))
 		}
 	}
@@ -465,11 +465,7 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 	}
 	slices.Sort(keys)
 	for _, key := range keys {
-		copied, err := clonePartOffers([]PersistedPartOffer{res.storedParts[key]})
-		if err != nil {
-			return err
-		}
-		if err := build.addOutput(res, copied[0], res.id); err != nil {
+		if err := build.addOutput(res, res.storedParts[key].offer(), res.id); err != nil {
 			return err
 		}
 	}
@@ -534,7 +530,7 @@ func (c *Cache) storedPartDonorLocked(res *sharedResult, key string, now int64) 
 	if best == nil {
 		return nil, PersistedPartOffer{}
 	}
-	return best, best.storedParts[key]
+	return best, best.storedParts[key].offer()
 }
 
 // closureRowOfClassLocked maps a service entry to a row of the closure of

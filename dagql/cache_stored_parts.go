@@ -10,7 +10,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -81,9 +80,9 @@ func (c *Cache) SetStoredPart(ctx context.Context, number uint64, part Persisted
 		return false, nil
 	}
 	if res.storedParts == nil {
-		res.storedParts = make(map[string]PersistedPartOffer)
+		res.storedParts = make(map[string]storedPart)
 	}
-	res.storedParts[key] = copied[0]
+	res.storedParts[key] = c.storedLayers.part(copied[0])
 	// The Cloud serves no sessions, so there are no requirements to carry.
 	c.applyPartDependenciesLocked(ctx, res, named, nil)
 	return true, nil
@@ -115,11 +114,11 @@ func (c *Cache) storedPartDependenciesLocked(res *sharedResult, part PersistedPa
 
 // storedPartsLocked returns res's stored parts, sorted by part address key,
 // for its saved envelope. Requires egraphMu.
-func (res *sharedResult) storedPartsLocked() []PersistedPartOffer {
+func (res *sharedResult) storedPartsLocked() []storedPart {
 	if len(res.storedParts) == 0 {
 		return nil
 	}
-	parts := make([]PersistedPartOffer, 0, len(res.storedParts))
+	parts := make([]storedPart, 0, len(res.storedParts))
 	for _, key := range slices.Sorted(maps.Keys(res.storedParts)) {
 		parts = append(parts, res.storedParts[key])
 	}
@@ -130,20 +129,20 @@ func (res *sharedResult) storedPartsLocked() []PersistedPartOffer {
 // stored parts out of its saved envelope, onto the entry, and sets the size
 // of its record as merge measured it: the call frame's JSON and the envelope's
 // without them. Requires egraphMu for writing.
-func restoreStoredPartsLocked(res *sharedResult, env *PersistedResultEnvelope, callFrameJSON string, payload []byte) error {
+func (c *Cache) restoreStoredPartsLocked(res *sharedResult, env *PersistedResultEnvelope, callFrameJSON string, payload []byte) error {
 	res.storedRecordBytes = int64(len(callFrameJSON) + len(payload))
 	if len(env.StoredParts) == 0 {
 		return nil
 	}
 	parts := env.StoredParts
 	env.StoredParts = nil
-	res.storedParts = make(map[string]PersistedPartOffer, len(parts))
+	res.storedParts = make(map[string]storedPart, len(parts))
 	for _, part := range parts {
 		key, err := partAddressKey(part.Address)
 		if err != nil {
 			return err
 		}
-		res.storedParts[key] = part
+		res.storedParts[key] = c.storedLayers.part(part)
 	}
 	stripped, err := json.Marshal(env)
 	if err != nil {
@@ -168,9 +167,9 @@ func (c *Cache) DropStoredParts(blob digest.Digest) ([]StoredPart, error) {
 	if !c.blobBacked {
 		return nil, errors.New("drop stored parts: the cache has no blob store")
 	}
-	return c.dropStoredParts(func(part PersistedPartOffer) bool {
-		return slices.ContainsFunc(part.Chain.Layers, func(layer snapshots.ExportLayer) bool {
-			return layer.Descriptor.Digest == blob
+	return c.dropStoredParts(func(part storedPart) bool {
+		return slices.ContainsFunc(part.layers, func(layer *storedLayer) bool {
+			return layer.layer.Descriptor.Digest == blob
 		})
 	}), nil
 }
@@ -182,19 +181,16 @@ func (c *Cache) DropStoredPack(pack digest.Digest) ([]StoredPart, error) {
 	if !c.blobBacked {
 		return nil, errors.New("drop stored pack: the cache has no blob store")
 	}
-	return c.dropStoredParts(func(part PersistedPartOffer) bool {
-		for _, named := range part.Chain.Packs {
-			if named == pack {
-				return true
-			}
-		}
-		return false
+	return c.dropStoredParts(func(part storedPart) bool {
+		return slices.ContainsFunc(part.layers, func(layer *storedLayer) bool {
+			return layer.pack != "" && layer.pack == pack
+		})
 	}), nil
 }
 
 // dropStoredParts removes every stored part that drop selects, on every
 // entry, and returns them, sorted.
-func (c *Cache) dropStoredParts(drop func(PersistedPartOffer) bool) []StoredPart {
+func (c *Cache) dropStoredParts(drop func(storedPart) bool) []StoredPart {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	var dropped []StoredPart
@@ -204,7 +200,7 @@ func (c *Cache) dropStoredParts(drop func(PersistedPartOffer) bool) []StoredPart
 				continue
 			}
 			delete(res.storedParts, key)
-			dropped = append(dropped, StoredPart{Number: uint64(id), Address: part.Address})
+			dropped = append(dropped, StoredPart{Number: uint64(id), Address: part.address()})
 		}
 		if len(res.storedParts) == 0 {
 			res.storedParts = nil
