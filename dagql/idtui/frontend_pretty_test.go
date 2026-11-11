@@ -219,6 +219,81 @@ func TestSanitizeTerminalTitle(t *testing.T) {
 	require.Equal(t, "safename", sanitizeTerminalTitle("safe\x1b]2;injected\x07\nname"))
 }
 
+// TestLogRequestsRouteByTraceAndWaitForSpans: a resumed agent session renders
+// its archived trace beside its own live one. Requests for the archived
+// trace's spans go to its provider; a live span's are neither sent nor
+// latched. A span known only from a log record (a placeholder) is requested
+// once it arrives, with the roll-up decision its metadata carries.
+func TestLogRequestsRouteByTraceAndWaitForSpans(t *testing.T) {
+	archived := dagui.TraceID{TraceID: trace.TraceID{1}}
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	rollUp, liveSpan, early := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+
+	db := dagui.NewDB()
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 20))
+	got := map[dagui.SpanID]bool{}
+	fe.SetTraceLogProvider(archived, func(id dagui.SpanID, descendants bool) { got[id] = descendants })
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: liveSpan, TraceID: live, Name: "live", StartTime: start, Final: true},
+		{ID: rollUp, TraceID: archived, Name: "check", StartTime: start, EndTime: start.Add(time.Second), RollUpLogs: true, Final: true},
+	})
+	// The resumed session's own command span is the primary; its eager
+	// primary-output request must not reach the archive either.
+	fe.SetPrimary(liveSpan)
+	fe.tui.Step()
+
+	fe.requestLogs(rollUp)
+	fe.requestLogs(liveSpan)
+	require.Equal(t, map[dagui.SpanID]bool{rollUp: true}, got)
+	require.False(t, fe.requestedLogs[liveSpan], "a live span's request was latched")
+
+	// A metadata record ahead of its span makes a placeholder.
+	nameRecord := frontendTestLogRecord(early.SpanID, otellog.StringValue("early"),
+		otellog.String(telemetryattrs.LogRoleAttr, telemetryattrs.LogRoleSpanName))
+	require.NoError(t, fe.LogExporter().Export(context.Background(), []sdklog.Record{nameRecord}))
+	fe.tui.Step()
+	require.NotNil(t, db.Spans.Map[early])
+	fe.requestLogs(early)
+	require.NotContains(t, got, early, "a placeholder was requested")
+	require.False(t, fe.requestedLogs[early])
+
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: early, TraceID: archived, Name: "early", StartTime: start, EndTime: start.Add(time.Second), RollUpLogs: true, Final: true},
+	})
+	fe.tui.Step()
+	require.Equal(t, map[dagui.SpanID]bool{rollUp: true, early: true}, got, "the arrived span was not requested with its roll-up")
+}
+
+// TestShellTranscriptRequestsCollapsedCommandLogs: the shell transcript shows
+// a top-level command's output under its collapsed row, where no LogsView
+// mounts to ask for it, so a restored history's command requests it as it
+// renders.
+func TestShellTranscriptRequestsCollapsedCommandLogs(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	archived := dagui.TraceID{TraceID: trace.TraceID{1}}
+	rootID, commandID := prettyTestSpanID(1), prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: archived, Name: "root", StartTime: start, EndTime: start.Add(2 * time.Second), Final: true},
+		{ID: commandID, TraceID: archived, ParentID: rootID, Name: "command", StartTime: start, EndTime: start.Add(time.Second), Final: true},
+	})
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.ZoomedSpan = rootID
+	got := map[dagui.SpanID]bool{}
+	fe.traceLogProviders = map[dagui.TraceID]func(dagui.SpanID, bool){
+		archived: func(id dagui.SpanID, _ bool) { got[id] = true },
+	}
+	fe.recalculateViewLocked()
+	_ = fe.tui.RenderLines()
+	require.True(t, got[commandID], "the collapsed command's logs were not requested; got %v", got)
+}
+
 func renderDump(t *testing.T, id *call.ID, dump Dump) string {
 	t.Helper()
 	var buf strings.Builder
