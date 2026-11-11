@@ -1636,9 +1636,10 @@ func TestCompactEqClassesRefusesAndChangesNothing(t *testing.T) {
 	})
 }
 
-// A holding whose call span reports that the engine image ships its entry
-// keeps that, as it keeps executed evidence; another holding of the entry
-// doesn't take it.
+// A holding is from its engine's image while its latest call span says so:
+// another holding of the entry doesn't take it, and a later span that
+// doesn't say so, as an engine whose new image no longer ships the entry
+// reports, clears it.
 func TestRemoteHoldingFromTheImage(t *testing.T) {
 	t.Parallel()
 	cloud := newCloudCache(t)
@@ -1652,7 +1653,6 @@ func TestRemoteHoldingFromTheImage(t *testing.T) {
 	require.True(t, requireHolding(t, cloud, image).Image)
 	require.False(t, requireHolding(t, cloud, own).Image)
 
-	// A later call span of the holding that doesn't say so leaves it.
 	a.call(callRow{key: image, session: "s", holding: holdingOf("from-image")})
-	require.True(t, requireHolding(t, cloud, image).Image)
+	require.False(t, requireHolding(t, cloud, image).Image)
 }
