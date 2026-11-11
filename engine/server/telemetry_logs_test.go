@@ -203,6 +203,34 @@ func TestLiveLogQueryOneShotAndFollow(t *testing.T) {
 	require.EqualValues(t, 7, last.cursor)
 }
 
+func TestLiveLogQueryThrough(t *testing.T) {
+	f := newLogQueryFixture(t, "client")
+	f.append(t, "client",
+		[]clientdb.Span{logQuerySpanRow(lqRoot, ""), logQuerySpanRow(lqKid, lqRoot)},
+		logQueryRow(t, lqRoot, "root 1"),
+		logQueryRow(t, lqKid, "kid 1"),
+		logQueryRow(t, lqRoot, "root 2"),
+	)
+	ts := f.serve(t, "client")
+	read := func(q archive.LogQuery) ([]string, logFrame) {
+		resp := postLogQuery(t, ts, q)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, enginetel.LiveFrameHello, readLogFrame(t, resp.Body).kind)
+		return readLogBodies(t, resp.Body, 0)
+	}
+	spans := []archive.LogSpan{{SpanID: lqRoot, Descendants: true}}
+
+	bodies, last := read(archive.LogQuery{Spans: spans, Through: 2})
+	require.Equal(t, []string{"root 1", "kid 1"}, bodies, "a bounded one-shot stops at its bound")
+	require.Equal(t, enginetel.LiveFrameTerminal, last.kind)
+	require.EqualValues(t, 2, last.cursor)
+
+	bodies, last = read(archive.LogQuery{Spans: spans, Through: 100})
+	require.Equal(t, []string{"root 1", "kid 1", "root 2"}, bodies, "a bound past the end stops at the end")
+	require.EqualValues(t, 3, last.cursor)
+}
+
 func TestLiveLogQueryResumesAndValidates(t *testing.T) {
 	f := newLogQueryFixture(t, "client")
 	f.append(t, "client", []clientdb.Span{logQuerySpanRow(lqRoot, "")},

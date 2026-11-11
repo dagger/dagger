@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -107,6 +108,7 @@ func TestLogsPresenceNegotiation(t *testing.T) {
 		name                  string
 		ask, cloud, publishes bool
 		features              string
+		noIngest, nested      bool
 		wantPresence          bool
 	}{
 		{name: "asked and served", ask: true, features: "log-presence", wantPresence: true},
@@ -115,6 +117,10 @@ func TestLogsPresenceNegotiation(t *testing.T) {
 		{name: "engine publishes to cloud", ask: true, cloud: true, publishes: true, features: "log-presence", wantPresence: true},
 		// The client would forward logs to Cloud itself, which needs them whole.
 		{name: "engine did not confirm cloud", ask: true, cloud: true, features: "log-presence"},
+		// The store would lack the client's own display text, which the
+		// frontend then reads from it too.
+		{name: "engine does not store client telemetry", ask: true, features: "log-presence", noIngest: true},
+		{name: "nested client", ask: true, features: "log-presence", nested: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var logsQuery string
@@ -127,6 +133,9 @@ func TestLogsPresenceNegotiation(t *testing.T) {
 				}
 				if tc.publishes {
 					w.Header().Set(engine.CloudTelemetryPublisherHeader, engine.CloudTelemetryPublisherEngine)
+				}
+				if !tc.noIngest {
+					w.Header().Set(engine.ClientTelemetryIngestHeader, engine.ClientTelemetryIngestStore)
 				}
 				w.Header().Set("Content-Type", enginetel.LiveContentType)
 				_ = enginetel.WriteLiveHello(w, 0)
@@ -141,6 +150,9 @@ func TestLogsPresenceNegotiation(t *testing.T) {
 				},
 				telemetry: new(errgroup.Group),
 			}
+			if tc.nested {
+				c.nestedSessionPort = 1234
+			}
 			hc := &httpClient{inner: &http.Client{Transport: handlerTransport{handler}}}
 			require.NoError(t, c.exportTraces(t.Context(), hc))
 			require.NoError(t, c.exportLogs(t.Context(), hc))
@@ -153,6 +165,28 @@ func TestLogsPresenceNegotiation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWaitTelemetryIdle(t *testing.T) {
+	c := &Client{}
+	start := time.Now()
+	c.WaitTelemetryIdle(t.Context(), 50*time.Millisecond)
+	require.GreaterOrEqual(t, time.Since(start), 50*time.Millisecond)
+
+	// A batch arriving while it waits pushes the quiet period out.
+	start = time.Now()
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		c.telemetryFrameAt.Store(time.Now().UnixNano())
+	}()
+	c.WaitTelemetryIdle(t.Context(), 50*time.Millisecond)
+	require.GreaterOrEqual(t, time.Since(start), 80*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	start = time.Now()
+	c.WaitTelemetryIdle(ctx, time.Hour)
+	require.Less(t, time.Since(start), time.Second)
 }
 
 func TestSearchLogsClient(t *testing.T) {
