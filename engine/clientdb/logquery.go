@@ -2,6 +2,9 @@ package clientdb
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/engine/archive"
@@ -16,8 +19,9 @@ import (
 
 // LogQueryScope is a resolved archive.LogQuery: the spans whose own rows
 // match, and the dag.digest values whose rows match wherever they were
-// emitted. A live scope also follows spans that arrive after it was resolved;
-// it belongs to one reader and is not safe for concurrent use.
+// emitted. A live scope also follows spans that arrive after it was resolved.
+// A scope belongs to one reader, which keeps what it decided about each span
+// and digest across its reads; it is not safe for concurrent use.
 type LogQueryScope struct {
 	// everything matches every span (an unscoped search).
 	everything bool
@@ -29,7 +33,37 @@ type LogQueryScope struct {
 
 	// live scopes resolve against a growing store.
 	live *spanLookup
+
+	// What the scope decided, by the store's interned span and digest IDs
+	// (logLookup.spanIndex, digestIndex). Rows are matched by these, so a
+	// span or digest is looked up by name once, when its first row is read,
+	// not once per row. A span not placed yet is decided again only once the
+	// span index has changed (spanAt holds the generation it was decided at).
+	spans     []scopeMatch
+	spanAt    []uint64
+	digestsBy []scopeMatch
+	placement placementMemo
+
+	// oneShot holds the rows of the scope's current one-shot read (see
+	// ReadDisplayLogs).
+	oneShot *displayCandidates
 }
+
+// scopeMatch is a LogQueryScope's decision about one span or digest.
+type scopeMatch uint8
+
+const (
+	matchUnresolved scopeMatch = iota
+	// matchIn and matchOut are final: the tree only grows, and a fixed-cut
+	// or descendant-free scope never changes.
+	matchIn
+	matchOut
+	// matchOutAt: a live span not beneath the tree as of its generation.
+	matchOutAt
+	// matchUnplacedAt: a live span the store has no snapshot of as of its
+	// generation, so its place is unknown and it is left to the reader.
+	matchUnplacedAt
+)
 
 func newLogQueryScope(spans []archive.LogSpan) *LogQueryScope {
 	scope := &LogQueryScope{own: map[string]bool{}, tree: map[string]bool{}, digests: map[string]bool{}}
@@ -74,41 +108,84 @@ func (v *SpanView) LogQueryScope(spans []archive.LogSpan) *LogQueryScope {
 	return scope
 }
 
-// matcher returns the per-scan row predicate. Spans outside the tree are
-// decided once per scan only, since later spans and links may place them.
-func (q *LogQueryScope) matcher() func(idx *logLookup, m logMeta) bool {
-	undecided := map[uint32]bool{}
-	return func(idx *logLookup, m logMeta) bool {
-		if q.everything {
-			return true
+// match reports whether a row (its metadata, under idx's read lock) is in
+// scope. Spans outside the tree are placed as their rows are read, since
+// later spans and links may place them.
+func (q *LogQueryScope) match(idx *logLookup, m logMeta) bool {
+	if q.everything {
+		return true
+	}
+	if m.digest != 0 && len(q.digests) > 0 && q.digestIn(idx, m.digest) {
+		return true
+	}
+	return q.spanIn(idx, m.span)
+}
+
+func (q *LogQueryScope) digestIn(idx *logLookup, digest uint32) bool {
+	if int(digest) >= len(q.digestsBy) {
+		q.digestsBy = append(q.digestsBy, make([]scopeMatch, len(idx.digests)-len(q.digestsBy))...)
+	}
+	switch q.digestsBy[digest] {
+	case matchIn:
+		return true
+	case matchOut:
+		return false
+	case matchUnresolved:
+	}
+	ok := q.digests[idx.digests[digest]]
+	q.digestsBy[digest] = matchOut
+	if ok {
+		q.digestsBy[digest] = matchIn
+	}
+	return ok
+}
+
+func (q *LogQueryScope) spanIn(idx *logLookup, span uint32) bool {
+	if int(span) >= len(q.spans) {
+		grow := len(idx.spanIDs) - len(q.spans)
+		q.spans = append(q.spans, make([]scopeMatch, grow)...)
+		q.spanAt = append(q.spanAt, make([]uint64, grow)...)
+	}
+	switch state := q.spans[span]; state {
+	case matchIn:
+		return true
+	case matchOut:
+		return false
+	case matchOutAt, matchUnplacedAt:
+		if q.spanAt[span] == q.live.generation() {
+			return state == matchUnplacedAt
 		}
-		if m.digest != 0 && q.digests[idx.digests[m.digest]] {
-			return true
-		}
-		span := idx.spanIDs[m.span]
-		if q.own[span] || q.tree[span] {
-			return true
-		}
-		if q.live == nil || len(q.tree) == 0 {
-			return false
-		}
-		if ok, memo := undecided[m.span]; memo {
-			return ok
-		}
-		var ok bool
-		switch {
-		case !q.live.hasSpan(span):
-			// Its place is unknown yet: leave it to the reader.
-			ok = true
-		case q.live.beneath(span, q.tree):
-			// A span stored after the tree was resolved, or one whose parent
-			// or cause link arrived later. The tree only grows, so placing
-			// the span is permanent.
-			q.tree[span] = true
-			return true
-		}
-		undecided[m.span] = ok
-		return ok
+	}
+	return q.resolveSpan(span, idx.spanIDs[span])
+}
+
+// resolveSpan decides a span the scope has not decided yet, or whose place
+// may have changed since.
+func (q *LogQueryScope) resolveSpan(span uint32, id string) bool {
+	if q.own[id] || q.tree[id] {
+		q.spans[span] = matchIn
+		return true
+	}
+	if q.live == nil || len(q.tree) == 0 {
+		q.spans[span] = matchOut
+		return false
+	}
+	known, beneath, gen := q.live.place(id, q.tree, &q.placement)
+	switch {
+	case !known:
+		// Its place is unknown yet: leave it to the reader.
+		q.spans[span], q.spanAt[span] = matchUnplacedAt, gen
+		return true
+	case beneath:
+		// A span stored after the tree was resolved, or one whose parent
+		// or cause link arrived later. The tree only grows, so placing the
+		// span is permanent.
+		q.tree[id] = true
+		q.spans[span] = matchIn
+		return true
+	default:
+		q.spans[span], q.spanAt[span] = matchOutAt, gen
+		return false
 	}
 }
 
@@ -116,7 +193,6 @@ func (q *LogQueryScope) matcher() func(idx *logLookup, m logMeta) bool {
 // scope in (p.AfterID, p.ThroughID], scanning at most p.Limit rows. traceID
 // "" matches every trace. next advances across unmatched rows too.
 func (s *DB) SelectDisplayLogs(ctx context.Context, p SelectLogsRangeParams, traceID string, scope *LogQueryScope) ([]Log, int64, error) {
-	match := scope.matcher()
 	trace, traceKnown, traceResolved := uint32(0), false, traceID == ""
 	return s.scanLogs(ctx, p, func(idx *logLookup, _ int64, m logMeta) (bool, error) {
 		if !traceResolved {
@@ -126,8 +202,243 @@ func (s *DB) SelectDisplayLogs(ctx context.Context, p SelectLogsRangeParams, tra
 		if traceID != "" && (!traceKnown || m.trace != trace) {
 			return false, nil
 		}
-		return m.flags.display() && match(idx, m), nil
+		return m.flags.display() && scope.match(idx, m), nil
 	})
+}
+
+// displayIndexMaxShare bounds how much of a one-shot read's range
+// ReadDisplayLogs gathers from the row indexes: when the candidate rows are
+// more than 1/displayIndexMaxShare of the range (a roll-up of the root, a
+// digest that streamed all session), scanning the range costs less than
+// gathering, filtering and sorting them. 0 never scans. A variable for
+// tests.
+var displayIndexMaxShare int64 = 4
+
+// displayCandidates are the display rows of one one-shot read of a scope:
+// in (after, through], of one trace, ascending; or scan, when the read
+// scans instead. A live scope with a tree places spans as they arrive, so
+// its rows hold for the span index's generation gen only; unplaced are the
+// spans whose rows it holds although they have no snapshot.
+type displayCandidates struct {
+	after, through int64
+	traceID        string
+	scan           bool
+	rows           []int64
+	placing        bool
+	gen            uint64
+	arrivals       int
+	unplaced       []string
+}
+
+// ReadDisplayLogs is SelectDisplayLogs for a one-shot read of (p.AfterID,
+// p.ThroughID], one call per batch with p.ThroughID fixed: it reads the
+// same rows. Its first call gathers the rows from the row indexes (the
+// scope's spans and every span now beneath its tree, spans with no snapshot
+// yet when it has a tree, and its digests), and later calls page through
+// them, so a read costs what it returns rather than the size of the store,
+// and a batch holds at most p.Limit rows instead of covering p.Limit rows.
+// A live scope with a tree places the spans that arrive during the read and
+// merges their rows after its cursor, as the scan places them as it goes.
+// next is the last row the batch covers, matched or not: the end of the read
+// once no row is left. n is the batch's size in the units of p.Limit: the
+// rows returned, or the rows scanned when the read fell back to a scan (see
+// displayIndexMaxShare).
+func (s *DB) ReadDisplayLogs(ctx context.Context, p SelectLogsRangeParams, traceID string, scope *LogQueryScope) (rows []Log, next int64, n int, err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, p.AfterID, 0, err
+	}
+	if p.AfterID < 0 || p.ThroughID < p.AfterID || p.Limit <= 0 {
+		return nil, p.AfterID, 0, fmt.Errorf("invalid log range")
+	}
+	c := scope.oneShot
+	if c == nil || c.through != p.ThroughID || c.traceID != traceID || p.AfterID < c.after {
+		c, err = s.gatherDisplayCandidates(p.AfterID, p.ThroughID, traceID, scope)
+	} else if c.placing && !c.scan && c.gen != scope.live.generation() {
+		c, err = s.refreshDisplayCandidates(c, p.AfterID, scope)
+	}
+	if err != nil {
+		return nil, p.AfterID, 0, err
+	}
+	scope.oneShot = c
+	if c.scan {
+		rows, next, err := s.SelectDisplayLogs(ctx, p, traceID, scope)
+		return rows, next, int(next - p.AfterID), err
+	}
+	start, _ := slices.BinarySearch(c.rows, p.AfterID+1)
+	next = p.ThroughID
+	var ids []int64
+	var bytes int64
+	idx := s.logIdx
+	idx.mu.RLock()
+	for _, id := range c.rows[start:] {
+		size := idx.meta[id-1].size
+		// Bound retained bodies by bytes as well as rows, as scanLogs does.
+		if int64(len(ids)) == p.Limit || (len(ids) > 0 && size > selectedLogBatchBytes-bytes) {
+			next = id - 1
+			break
+		}
+		bytes += size
+		ids = append(ids, id)
+	}
+	idx.mu.RUnlock()
+	rows, err = s.SelectLogRows(ctx, ids)
+	if err != nil {
+		return nil, p.AfterID, 0, err
+	}
+	return rows, next, len(ids), nil
+}
+
+// gatherDisplayCandidates collects the display rows of scope in (after,
+// through] from the row indexes, or settles on a scan.
+func (s *DB) gatherDisplayCandidates(after, through int64, traceID string, q *LogQueryScope) (*displayCandidates, error) {
+	c := &displayCandidates{after: after, through: through, traceID: traceID}
+	if q.everything {
+		c.scan = true
+		return c, nil
+	}
+	if q.live != nil && len(q.tree) > 0 {
+		// Place every span beneath the tree now, as a scan would place each
+		// as it reads its rows, and keep the spans whose place is unknown.
+		// The generation is read first, so a span arriving meanwhile is
+		// placed by the next refresh at the latest.
+		c.placing, c.gen = true, q.live.generation()
+		c.arrivals, c.unplaced = q.live.closeBeneath(q.tree, s.logIdx.unplacedSpanIDs())
+	}
+	idx := s.logIdx
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if through > int64(len(idx.meta)) {
+		return nil, errors.New("log stream truncated before cut")
+	}
+	var lists [][]int64
+	for id := range q.own {
+		if !q.tree[id] {
+			lists = idx.spanRowsLocked(id, lists)
+		}
+	}
+	for id := range q.tree {
+		lists = idx.spanRowsLocked(id, lists)
+	}
+	for _, id := range c.unplaced {
+		lists = idx.spanRowsLocked(id, lists)
+	}
+	for d := range q.digests {
+		if digest, ok := idx.digestIndex[d]; ok && digest != 0 {
+			lists = append(lists, idx.displayByDigest[digest])
+		}
+	}
+	total := narrowRowLists(lists, after, through)
+	if displayIndexMaxShare > 0 && total*displayIndexMaxShare > through-after {
+		c.scan = true
+		return c, nil
+	}
+	c.rows = idx.displayRowsLocked(make([]int64, 0, total), lists, traceID)
+	// Of the unplaced spans, only those with rows to read matter later.
+	unplaced := c.unplaced
+	c.unplaced = nil
+	for _, id := range unplaced {
+		rows := idx.spanRowsLocked(id, nil)
+		if narrowRowLists(rows, after, through) > 0 {
+			c.unplaced = append(c.unplaced, id)
+		}
+	}
+	return c, nil
+}
+
+// refreshDisplayCandidates brings a live tree read's rows after its cursor
+// up to date with the span index, which has changed since they were
+// gathered: the rows of the spans that arrived beneath the tree since join
+// them. Spans arrive all session long, mostly elsewhere, so this costs the
+// arrivals and their rows, not the tree. Only an unplaced span with rows
+// left to read that gets its snapshot without joining the tree (so that the
+// scan would stop reading its rows) makes it gather again.
+func (s *DB) refreshDisplayCandidates(c *displayCandidates, after int64, q *LogQueryScope) (*displayCandidates, error) {
+	gen := q.live.generation()
+	placed, arrivals, unplaced := q.live.placeArrivals(q.tree, c.arrivals, &q.placement, c.unplaced)
+	if len(unplaced) < len(c.unplaced) {
+		for _, id := range c.unplaced {
+			if !q.tree[id] && !slices.Contains(unplaced, id) {
+				return s.gatherDisplayCandidates(after, c.through, c.traceID, q)
+			}
+		}
+	}
+	c.gen, c.arrivals, c.unplaced = gen, arrivals, unplaced
+	if len(placed) == 0 {
+		return c, nil
+	}
+	idx := s.logIdx
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	var lists [][]int64
+	for _, id := range placed {
+		lists = idx.spanRowsLocked(id, lists)
+	}
+	if narrowRowLists(lists, after, c.through) == 0 {
+		return c, nil
+	}
+	added := idx.displayRowsLocked(nil, lists, c.traceID)
+	if len(added) == 0 {
+		return c, nil
+	}
+	start, _ := slices.BinarySearch(c.rows, after+1)
+	c.rows, c.after = mergeRows(c.rows[start:], added), after
+	return c, nil
+}
+
+// mergeRows merges two ascending row lists into a new one, without
+// duplicates.
+func mergeRows(a, b []int64) []int64 {
+	rows := make([]int64, 0, len(a)+len(b))
+	for len(a) > 0 && len(b) > 0 {
+		switch {
+		case a[0] < b[0]:
+			rows, a = append(rows, a[0]), a[1:]
+		case b[0] < a[0]:
+			rows, b = append(rows, b[0]), b[1:]
+		default:
+			rows, a, b = append(rows, a[0]), a[1:], b[1:]
+		}
+	}
+	rows = append(rows, a...)
+	return append(rows, b...)
+}
+
+// narrowRowLists narrows each ascending row list to (after, through], and
+// returns how many rows they hold.
+func narrowRowLists(lists [][]int64, after, through int64) int64 {
+	var total int64
+	for i, rows := range lists {
+		lo, _ := slices.BinarySearch(rows, after+1)
+		hi, _ := slices.BinarySearch(rows, through+1)
+		lists[i] = rows[lo:hi]
+		total += int64(hi - lo)
+	}
+	return total
+}
+
+// displayRowsLocked appends the display rows of traceID ("" for any) in
+// lists to rows, ascending and without duplicates when rows starts empty.
+func (l *logLookup) displayRowsLocked(rows []int64, lists [][]int64, traceID string) []int64 {
+	trace, traceKnown := uint32(0), traceID == ""
+	if traceID != "" {
+		trace, traceKnown = l.traceIndex[traceID]
+	}
+	if !traceKnown {
+		return rows
+	}
+	for _, list := range lists {
+		for _, id := range list {
+			m := l.meta[id-1]
+			if m.flags.display() && (traceID == "" || m.trace == trace) {
+				rows = append(rows, id)
+			}
+		}
+	}
+	if len(lists) > 1 {
+		slices.Sort(rows)
+		rows = slices.Compact(rows)
+	}
+	return rows
 }
 
 // LogPresence announces that a span has display text without carrying it:
@@ -221,7 +532,7 @@ func (s *DB) SearchLogs(ctx context.Context, search archive.LogSearch, throughID
 	result := archive.LogSearchResult{Matches: []archive.LogMatch{}, Next: search.After}
 	var scanned int64
 	for result.Next < throughID {
-		rows, next, err := s.SelectDisplayLogs(ctx, SelectLogsRangeParams{AfterID: result.Next, ThroughID: throughID, Limit: 4096}, traceID, scope)
+		rows, next, _, err := s.ReadDisplayLogs(ctx, SelectLogsRangeParams{AfterID: result.Next, ThroughID: throughID, Limit: 4096}, traceID, scope)
 		if err != nil {
 			return result, err
 		}
