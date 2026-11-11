@@ -9,13 +9,14 @@ package dagql
 // The counts below say how much of the first execution a rebuild leaves beside
 // the second, so that a run's logs show how often the two are combined.
 
-// rebuildMixCountLimit bounds the walk over an entry's dependents: the count
-// reads "at least" past it.
+// rebuildMixCountLimit bounds the walk over an entry's dependents: the walk
+// visits at most this many entries, the entry itself and dependents this
+// engine computed included, and a count that stopped there reads "at least".
 const rebuildMixCountLimit = 4096
 
 // mergedDependentsLocked counts the merged entries that depend on row,
-// directly or through other entries, up to limit, and reports whether the
-// walk stopped at the limit. A merged entry was computed on another engine
+// directly or through other entries, visiting at most limit entries, and
+// reports whether the walk stopped there. A merged entry was computed on another engine
 // from row's first execution. Requires egraphMu at least for read.
 func (c *Cache) mergedDependentsLocked(row *sharedResult, limit int) (int, bool) {
 	if row == nil || row.depParents == nil {
