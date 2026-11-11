@@ -475,7 +475,9 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 				}},
 			},
 			dagql.Selector{
-				Field: strings.ToLower(typename),
+				// The address field for the type: "Secret" -> "secret",
+				// "GitRepository" -> "gitRepository".
+				Field: gqlFieldName(typename),
 			},
 		); err != nil {
 			return nil, ud.errorf(err, "resolve object (%q)", typename)
@@ -491,7 +493,7 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	}
 
 	if ud.IsList() {
-		// "Secret" -> "secret", "GitRef" -> "gitRef", etc (from the element type)
+		// The element type selects the address field (see resolveOne).
 		typename := ud.Arg.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self().ToType().Name()
 		elements := strings.Split(ud.UserInput, ",")
 		ids := make([]any, 0, len(elements))
@@ -505,7 +507,6 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		return ids, nil
 	}
 
-	// "Secret" -> "secret", "GitRef" -> "gitRef", etc
 	typename := ud.Arg.TypeDef.Self().ToType().Name()
 	return resolveOne(ud.UserInput, typename)
 }

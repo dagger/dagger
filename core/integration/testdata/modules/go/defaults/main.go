@@ -91,3 +91,13 @@ func (m *Defaults) LsText(ctx context.Context,
 func (m *Defaults) Capitalize(s string) string {
 	return strings.ToUpper(s)
 }
+
+// Return the given commit of a git repository
+func (m *Defaults) RepoCommit(ctx context.Context, repo *dagger.GitRepository, sha string) (string, error) {
+	return repo.Commit(sha).Commit(ctx)
+}
+
+// Return the commit of a git ref
+func (m *Defaults) RefCommit(ctx context.Context, ref *dagger.GitRef) (string, error) {
+	return ref.Commit(ctx)
+}

@@ -292,6 +292,41 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Defaults).Message(&parent, ctx, name)
+		case "RefCommit":
+			var parent Defaults
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var ref *dagger.GitRef
+			if inputArgs["ref"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ref"]), &ref)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ref", err))
+				}
+			}
+			return (*Defaults).RefCommit(&parent, ctx, ref)
+		case "RepoCommit":
+			var parent Defaults
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var repo *dagger.GitRepository
+			if inputArgs["repo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
+				}
+			}
+			var sha string
+			if inputArgs["sha"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["sha"]), &sha)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sha", err))
+				}
+			}
+			return (*Defaults).RepoCommit(&parent, ctx, repo, sha)
 		case "":
 			var parent Defaults
 			err = json.Unmarshal(parentJSON, &parent)

@@ -66,6 +66,32 @@ func (UserDefaultsSuite) TestRemoteDirectory(ctx context.Context, t *testctx.T) 
 	require.Contains(t, output, "package main")
 }
 
+// Object types whose names have several words, such as GitRepository,
+// resolve through camel-cased address fields (gitRepository).
+func (UserDefaultsSuite) TestRemoteGitRepository(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const sha = "4232918aa11c5347758ce657659e92f43610f0ff"
+	output, err := nestedDaggerContainer(t, c, "go", "defaults").
+		WithWorkdir("defaults").
+		WithNewFile(".env", `REPO_COMMIT_REPO=https://github.com/dagger/dagger-test-modules`).
+		WithExec([]string{"dagger", "call", "repo-commit", "--sha=" + sha}, nestedExec).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha, output)
+}
+
+func (UserDefaultsSuite) TestRemoteGitRef(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const sha = "4232918aa11c5347758ce657659e92f43610f0ff"
+	output, err := nestedDaggerContainer(t, c, "go", "defaults").
+		WithWorkdir("defaults").
+		WithNewFile(".env", `REF_COMMIT_REF=https://github.com/dagger/dagger-test-modules#`+sha).
+		WithExec([]string{"dagger", "call", "ref-commit"}, nestedExec).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha, output)
+}
+
 func (UserDefaultsSuite) TestLocalBlueprint(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := nestedDaggerContainer(t, c, "go", "defaults").
