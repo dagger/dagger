@@ -194,19 +194,6 @@ type TestSplit {
   }
 
   """
-  Package patterns covered by the package-test shard
-  """
-  pub packagePatterns: String! {
-    # Match the source tree used by engine-dev tests: workspace-only tools
-    # excluded from that tree must not become explicit package arguments.
-    go(ws: self.ws, source: engineDev(ws: self.ws).source, race: true, cgo: true).env.withExec([
-      "go", "list", "-race", "-f",
-      "{{if ne .ImportPath \"github.com/dagger/dagger/core/integration\"}}{{.ImportPath}}{{end}}",
-      "./...",
-    ]).stdout
-  }
-
-  """
   Package tests outside core/integration, with the engine fixtures preserved
   """
   pub testPackages: Void @check {
@@ -245,7 +232,8 @@ type TestSplit {
         "^TestWorkspaceModules$",
         "^TestWorkspaceSelection$",
       ],
-      pkg: self.packagePatterns,
+      # Every package of the engine's source with tests but core/integration
+      pkg: "./... !./core/integration",
       race: true,
       parallel: 4,
     )
@@ -258,7 +246,7 @@ type TestSplit {
   tests run on it
   """
   pub testFastbolt: Void @check {
-    go(ws: self.ws, source: engineDev(ws: self.ws).source, race: true, cgo: true).env
+    engineDev(ws: self.ws).goEnv(cgo: true)
       .withDirectory("hack/fastbolt-difftest", self.ws.directory("hack/fastbolt-difftest"))
       .withMountedTemp("/small", size: 1048576)
       .withEnvVariable("FASTBOLT_SMALL_FS", "/small")

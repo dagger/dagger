@@ -77,6 +77,35 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container {
 	return new(Container).WithGraphQLQuery(q)
 }
 
+// EngineDevGoEnvOpts contains options for EngineDev.GoEnv
+type EngineDevGoEnvOpts struct {
+	// The source to work in; the engine's source by default
+	Source *Directory
+	// Enable cgo
+	Cgo bool
+}
+
+// GoEnv is a Go environment for working on dagger/dagger: wolfi with the Go
+// toolchain, a C toolchain, and what the engine's tests use, with dagger/go's
+// Go caches, and source as its working directory. It is for running Go code
+// and the go command; dagger/dagger's own binaries and test binaries are
+// built with dagger/go's per-package build, not here.
+func (r *EngineDev) GoEnv(opts ...EngineDevGoEnvOpts) *Container {
+	q := r.query.Select("goEnv")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `cgo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cgo) {
+			q = q.Arg("cgo", opts[i].Cgo)
+		}
+	}
+
+	return new(Container).WithGraphQLQuery(q)
+}
+
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
 	Version string

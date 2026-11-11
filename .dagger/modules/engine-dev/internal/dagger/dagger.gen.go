@@ -25,6 +25,7 @@ type ContainerAsTarballOpts = core.ContainerAsTarballOpts
 type ContainerOpts = core.ContainerOpts
 type ContainerPublishOpts = core.ContainerPublishOpts
 type ContainerWithDirectoryOpts = core.ContainerWithDirectoryOpts
+type ContainerWithEnvVariableOpts = core.ContainerWithEnvVariableOpts
 type ContainerWithExecOpts = core.ContainerWithExecOpts
 type ContainerWithExposedPortOpts = core.ContainerWithExposedPortOpts
 type ContainerWithFileOpts = core.ContainerWithFileOpts

@@ -1,6 +1,0 @@
-name = "go"
-include = ["../../../go.mod", "../../../util/parallel/*.go", "../../../util/parallel/*.h", "../../../util/parallel/*.s", "../../../util/parallel/*.syso", "!../../../**/*_test.go", "**/*_test.go"]
-
-[entrypoint]
-  kind = "dang"
-  source = "./internal/dagger/entrypoint"

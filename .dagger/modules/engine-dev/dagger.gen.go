@@ -210,6 +210,27 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				}
 			}
 			return (*EngineDev).Container(&parent, ctx, platform, gpuSupport, version)
+		case "GoEnv":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *core.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			var cgo bool
+			if inputArgs["cgo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["cgo"]), &cgo)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cgo", err))
+				}
+			}
+			return (*EngineDev).GoEnv(&parent, source, cgo), nil
 		case "GraphqlSchema":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -223,7 +244,7 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return (*EngineDev).GraphqlSchema(&parent, version), nil
+			return (*EngineDev).GraphqlSchema(&parent, ctx, version)
 		case "ImageEntriesAfterPrune":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -265,14 +286,14 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*EngineDev).IntrospectionJSON(&parent), nil
+			return (*EngineDev).IntrospectionJSON(&parent, ctx)
 		case "IntrospectionTool":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*EngineDev).IntrospectionTool(&parent), nil
+			return (*EngineDev).IntrospectionTool(&parent, ctx)
 		case "LoadToDocker":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

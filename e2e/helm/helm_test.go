@@ -22,7 +22,6 @@
 //go:test:include ../../internal
 //go:test:include ../../sdk/go
 //go:test:include ../../.dagger/modules/cli-dev
-//go:test:include ../../.dagger/modules/go
 //go:test:include ../../util
 package helm
 

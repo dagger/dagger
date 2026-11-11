@@ -41,6 +41,7 @@ type functionSpec struct {
 var functions = []functionSpec{
 	{Name: "engineDev", Receiver: "EngineDev", FnName: "", Args: map[string]argumentSpec{"ws": {Required: false, Default: "", Encoding: "string"}, "subnetNumber": {Required: false, Default: "89", Encoding: "json"}, "clientDockerConfig": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "container", Receiver: "EngineDev", FnName: "Container", Args: map[string]argumentSpec{"platform": {Required: false, Default: "", Encoding: "string"}, "gpuSupport": {Required: false, Default: "", Encoding: "json"}, "version": {Required: false, Default: "", Encoding: "string"}}},
+	{Name: "goEnv", Receiver: "EngineDev", FnName: "GoEnv", Args: map[string]argumentSpec{"source": {Required: false, Default: "", Encoding: "string"}, "cgo": {Required: false, Default: "", Encoding: "json"}}},
 	{Name: "graphqlSchema", Receiver: "EngineDev", FnName: "GraphqlSchema", Args: map[string]argumentSpec{"version": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "imageEntriesAfterPrune", Receiver: "EngineDev", FnName: "ImageEntriesAfterPrune", Args: map[string]argumentSpec{}},
 	{Name: "incrementSubnet", Receiver: "EngineDev", FnName: "IncrementSubnet", Args: map[string]argumentSpec{}},
