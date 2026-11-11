@@ -180,6 +180,32 @@ func (s *DB) ControlRows(ctx context.Context, traceID string, through int64, wan
 	return rows, nil
 }
 
+// AgentControlRows returns the newest control record of every agent the store
+// has seen, across all of its traces, in append order. Unlike ControlRows it
+// verifies nothing and skips what it cannot read: it serves display (what
+// state an agent was last observed in), never restore.
+func (s *DB) AgentControlRows(ctx context.Context) ([]Log, error) {
+	idx := s.archiveIdx
+	idx.mu.RLock()
+	ids := make([]int64, 0, len(idx.agents))
+	for _, id := range idx.agents {
+		ids = append(ids, id)
+	}
+	idx.mu.RUnlock()
+	slices.Sort(ids)
+	rows := make([]Log, 0, len(ids))
+	for _, id := range ids {
+		row, ok, err := s.logs.readID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			rows = append(rows, row)
+		}
+	}
+	return rows, nil
+}
+
 // CallPayload returns a call-payload log row carrying digest's frame, as long
 // as it lies within the cut and belongs to traceID.
 //
