@@ -446,3 +446,50 @@ func TestImageBlobImportsInPlace(t *testing.T) {
 	copied := sizeOf(testutil.NewStore(t), chain.Provider)
 	require.Equal(t, copied-layer.Size, inPlace, "the snapshot's size leaves out the blob it holds in place")
 }
+
+// An engine restarted on the same state with an image that no longer holds a
+// blob it read in place forgets the blob's record, so a snapshot kept from
+// that blob still exports: its layer is made again instead of being read from
+// bytes that went with the old image.
+func TestLostImageBlobIsMadeAgain(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer := testutil.NewStore(t)
+	built, _ := producer.Build(t, nil, "a.txt", "shipped in the old image")
+	chain, err := built.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer chain.Release(context.Background())
+	layer := chain.Layers[0].Descriptor
+	blob, err := content.ReadBlob(ctx, chain.Provider, layer)
+	require.NoError(t, err)
+	image := t.TempDir()
+	name := filepath.Join(image, "blobs", layer.Digest.Algorithm().String(), layer.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+	require.NoError(t, os.WriteFile(name, blob, 0o444))
+
+	consumer := testutil.NewStoreWithImageBlobs(t, image)
+	imported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: unreadProvider{InfoReaderProvider: chain.Provider, t: t}})
+	require.NoError(t, err)
+	snapshotID := imported.SnapshotID()
+	const owner = "dagql/result/owner-1"
+	require.NoError(t, consumer.Manager.AttachLease(ctx, owner, snapshotID))
+	require.NoError(t, imported.Release(ctx))
+
+	// The engine restarts with an image that doesn't hold the blob.
+	require.NoError(t, os.Remove(name))
+	consumer.StartImage(t)
+	consumer.Reload(t)
+	require.False(t, blobPresent(t, consumer, layer.Digest), "the lost blob's record is gone")
+
+	kept, err := consumer.Manager.GetBySnapshotID(ctx, snapshotID, bkcache.NoUpdateLastUsed)
+	require.NoError(t, err)
+	defer kept.Release(context.Background())
+	exported, err := kept.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer exported.Release(context.Background())
+	require.NotEmpty(t, exported.Layers)
+	top := exported.Layers[len(exported.Layers)-1].Descriptor
+	data, err := content.ReadBlob(ctx, exported.Provider, top)
+	require.NoError(t, err, "the exported layer reads")
+	require.Equal(t, top.Digest, digest.FromBytes(data))
+}

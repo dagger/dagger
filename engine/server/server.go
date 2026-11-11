@@ -25,6 +25,7 @@ import (
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	ctdsnapshot "github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/sys"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
@@ -796,6 +797,12 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 	})
 	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to init metadata db: %w", err)
+	}
+
+	// Records of image blobs a previous image held in place, and this one
+	// doesn't, name bytes that are gone: drop them before anything reads them.
+	if err := blobs.ForgetLostImageBlobs(namespaces.WithNamespace(ctx, "dagger"), srv.containerdMetaDB.ContentStore()); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("failed to reconcile the image's blobs: %w", err)
 	}
 
 	srv.leaseManager = bkcache.NewLeaseManager(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")

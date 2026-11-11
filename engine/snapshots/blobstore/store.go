@@ -23,6 +23,10 @@
 // answers as it does for a blob it wrote, so containerd's metadata store
 // records it as shared content with no copy; it never removes one, and Walk
 // leaves them out, so containerd's collection never asks it to.
+//
+// containerd's records of those blobs outlive the image: an engine restarted
+// on the same state with another image would find a record whose bytes went
+// with the old one. ForgetLostImageBlobs removes such records at start.
 package blobstore
 
 import (
@@ -35,6 +39,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -103,6 +108,83 @@ func (s *Store) InPlace(dgst digest.Digest) bool {
 	}
 	_, err = os.Stat(s.imageBlobPath(dgst))
 	return err == nil
+}
+
+// imageBlobsFile records, under the store's root, the image blobs the store
+// held in place when it last started: one digest a line.
+const imageBlobsFile = "image-blobs"
+
+// ForgetLostImageBlobs removes from cs, containerd's metadata store over this
+// store, the records of the image blobs the store held in place when it last
+// started and holds no longer, then records the ones it holds now. A record
+// is the only thing that says a blob is present, so whatever needs a lost
+// blob makes it again, as for any blob that is gone. Call it at start, before
+// anything reads the store, with ctx in cs's namespace.
+func (s *Store) ForgetLostImageBlobs(ctx context.Context, cs content.Manager) error {
+	held, err := s.imageBlobs()
+	if err != nil {
+		return err
+	}
+	recorded, err := os.ReadFile(filepath.Join(s.root, imageBlobsFile))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if string(recorded) == strings.Join(held, "\n") {
+		return nil
+	}
+	now := make(map[string]bool, len(held))
+	for _, d := range held {
+		now[d] = true
+	}
+	for line := range strings.SplitSeq(string(recorded), "\n") {
+		dgst := digest.Digest(line)
+		if line == "" || now[line] || dgst.Validate() != nil {
+			continue
+		}
+		if p, _ := s.blobPath(dgst); p != "" {
+			if _, err := os.Stat(p); err == nil {
+				continue // the store wrote its own copy
+			}
+		}
+		if err := cs.Delete(ctx, dgst); err != nil && !errdefs.IsNotFound(err) {
+			return fmt.Errorf("forget lost image blob %s: %w", dgst, err)
+		}
+	}
+	tmp := filepath.Join(s.root, imageBlobsFile+".tmp")
+	if err := os.WriteFile(tmp, []byte(strings.Join(held, "\n")), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(s.root, imageBlobsFile))
+}
+
+// imageBlobs lists the digests of the image's blobs, sorted.
+func (s *Store) imageBlobs() ([]string, error) {
+	if s.image == "" {
+		return nil, nil
+	}
+	var out []string
+	dir := filepath.Join(s.image, "blobs")
+	algs, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, alg := range algs {
+		entries, err := os.ReadDir(filepath.Join(dir, alg.Name()))
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range entries {
+			dgst := digest.NewDigestFromEncoded(digest.Algorithm(alg.Name()), e.Name())
+			if dgst.Validate() == nil {
+				out = append(out, dgst.String())
+			}
+		}
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 // open opens dgst's blob, the store's own or else the image's.
