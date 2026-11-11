@@ -496,6 +496,9 @@ type cniNS struct {
 	canSample     bool
 	offsetSample  *resourcestypes.NetworkSample
 	prevSample    *resourcestypes.NetworkSample
+	// unmount unmounts the namespace's file, in place of unmountNetNS;
+	// tests only, whose files aren't mounted.
+	unmount func(string) error
 }
 
 func (ns *cniNS) Set(s *specs.Spec) error {
@@ -625,7 +628,11 @@ func (ns *cniNS) Sample() (*resourcestypes.NetworkSample, error) {
 func (ns *cniNS) release() error {
 	bklog.L.Tracef("releasing cni network namespace %s", ns.id)
 	err := ns.handle.Remove(context.TODO(), ns.id, ns.nativeID, ns.opts...)
-	if err1 := unmountNetNS(ns.nativeID); err1 != nil && err == nil {
+	unmount := unmountNetNS
+	if ns.unmount != nil {
+		unmount = ns.unmount
+	}
+	if err1 := unmount(ns.nativeID); err1 != nil && err == nil {
 		err = err1
 	}
 	if err != nil {
