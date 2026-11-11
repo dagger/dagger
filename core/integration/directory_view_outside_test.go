@@ -575,6 +575,10 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 			"linked config": {
 				links: map[string]string{"app/.git/config.worktree": "../../outside.config"},
 			},
+			"include through a linked directory": {
+				include: "down/../outside.config",
+				links:   map[string]string{"app/.git/down": ".."},
+			},
 		} {
 			dir := t.TempDir()
 			writeTree(t, dir, mergeFiles(tree.files, map[string]string{
