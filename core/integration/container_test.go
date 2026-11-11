@@ -4786,6 +4786,91 @@ func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
 		require.Error(t, err)
 		requireErrOut(t, err, "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 	})
+
+	// The cases below hold the base image's reference until something
+	// evaluates the container; imageRef must not depend on that.
+	t.Run("should throw error after an evaluated exec", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr, err := sdkcore.NewQuery(c).Container().
+			From(alpineImage).
+			WithExec([]string{"true"}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = ctr.ImageRef(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+	})
+
+	t.Run("should throw error after mounting a directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := sdkcore.NewQuery(c).Container().
+			From(alpineImage).
+			WithMountedDirectory("/mnt", sdkcore.NewQuery(c).Directory().WithNewFile("some-file", rand.Text()))
+
+		_, err := ctr.ImageRef(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+	})
+
+	t.Run("should throw error after an untagged import", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		tarball := sdkcore.NewQuery(c).Container().
+			From(alpineImage).
+			WithNewFile("/marker", rand.Text()).
+			AsTarball()
+		ctr := sdkcore.NewQuery(c).Container().
+			From(alpineImage).
+			Import(tarball)
+
+		_, err := ctr.ImageRef(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+	})
+}
+
+func (ContainerSuite) TestImageRefSharedDigest(ctx context.Context, t *testctx.T) {
+	// References that resolve to one image share one cached From result (see
+	// TestContainerCaching), so imageRef may name any of them, and always
+	// carries the image's digest.
+	c := connect(ctx, t)
+
+	suffix := strings.ToLower(rand.Text())
+	repo := registryHost + "/container-image-ref-shared-digest-" + suffix
+	otherRepo := registryHost + "/container-image-ref-shared-digest-other-" + suffix
+	tagA := repo + ":a"
+	tagB := repo + ":b"
+	tagC := otherRepo + ":c"
+	img := sdkcore.NewQuery(c).Container().
+		From(alpineImage).
+		WithNewFile("/marker", rand.Text())
+	var imgDigest string
+	for _, ref := range []string{tagA, tagB, tagC} {
+		pushed, err := img.Publish(ctx, ref)
+		require.NoError(t, err)
+		_, dgst, _ := strings.Cut(pushed, "@")
+		if imgDigest == "" {
+			imgDigest = dgst
+		}
+		require.Equal(t, imgDigest, dgst)
+	}
+	refs := []string{tagA + "@" + imgDigest, tagB + "@" + imgDigest, tagC + "@" + imgDigest}
+
+	ref, err := sdkcore.NewQuery(c).Container().From(tagA).ImageRef(ctx)
+	require.NoError(t, err)
+	require.Equal(t, tagA+"@"+imgDigest, ref)
+
+	for _, address := range []string{tagB, tagB + "@" + imgDigest, tagC} {
+		// This session, and a new one that never named A.
+		for _, client := range []*dagger.Client{c, connect(ctx, t)} {
+			ref, err := sdkcore.NewQuery(client).Container().From(address).ImageRef(ctx)
+			require.NoError(t, err, address)
+			require.Contains(t, refs, ref, address)
+		}
+	}
 }
 
 func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testctx.T) {

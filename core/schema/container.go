@@ -959,7 +959,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("imageRef", s.imageRef).
-			Doc(`The unique image reference which can only be retrieved immediately after the 'Container.From' call.`),
+			Doc(`The reference of the image this container was created from, pinned by digest (e.g., "docker.io/library/alpine:3.20@sha256:..."). Can only be retrieved immediately after the 'Container.From' call.`,
+				`References that resolve to the same image share one cached result, so the repository and tag may be those of any such reference. The digest always identifies this image.`),
 
 		dagql.NodeFunc("manifest", s.manifest).
 			View(AfterVersion("v1.0.0-0")).

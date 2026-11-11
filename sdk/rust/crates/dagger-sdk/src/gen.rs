@@ -5621,7 +5621,8 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+    /// The reference of the image this container was created from, pinned by digest (e.g., "docker.io/library/alpine:3.20@sha256:..."). Can only be retrieved immediately after the 'Container.From' call.
+    /// References that resolve to the same image share one cached result, so the repository and tag may be those of any such reference. The digest always identifies this image.
     pub async fn image_ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("imageRef");
         query.execute(self.graphql_client.clone()).await

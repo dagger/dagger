@@ -4232,7 +4232,9 @@ func (r *Container) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+// The reference of the image this container was created from, pinned by digest (e.g., "docker.io/library/alpine:3.20@sha256:..."). Can only be retrieved immediately after the 'Container.From' call.
+//
+// References that resolve to the same image share one cached result, so the repository and tag may be those of any such reference. The digest always identifies this image.
 func (r *Container) ImageRef(ctx context.Context) (string, error) {
 	if r.imageRef != nil {
 		return *r.imageRef, nil
