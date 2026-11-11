@@ -535,7 +535,11 @@ func TestLayerApplyReusesReadAheadChunks(t *testing.T) {
 	}
 	runtime.ReadMemStats(&after)
 	perApply := (after.TotalAlloc - before.TotalAlloc) / applies
-	require.Less(t, perApply, uint64(layerReadAheadChunk/4), "each apply allocated %d bytes", perApply)
+	// A chunk made per layer is a whole chunk per apply, on top of the
+	// apply's other allocations. Reused, it is a fraction: the race
+	// detector's pool drops a quarter of what is put back, so a run with it
+	// makes a new chunk for about a quarter of the applies.
+	require.Less(t, perApply, uint64(layerReadAheadChunk), "each apply allocated %d bytes", perApply)
 }
 
 func TestLayerApplyTarget(t *testing.T) {
