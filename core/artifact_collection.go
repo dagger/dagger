@@ -30,9 +30,13 @@ func (a *Artifact) dimensionName(identifier string) string {
 // displayNames maps each dimension to its display name. A name has one
 // meaning in AllDimensions, so entries share these names.
 func (a *Artifacts) displayNames() map[string]string {
-	names := make(map[string]string, len(a.AllDimensions))
-	for _, dim := range a.AllDimensions {
-		names[dim.Identifier] = a.AllDimensions.DisplayName(dim)
+	dimensions := artifact.Union(a.AllDimensions, artifact.Dimensions{{
+		Kind: "NAME", Identifier: artifact.NameDimension, Name: artifact.NameDimension,
+		QualifiedName: artifact.NameDimension, KeyName: "name",
+	}})
+	names := make(map[string]string, len(dimensions))
+	for _, dim := range dimensions {
+		names[dim.Identifier] = dimensions.DisplayName(dim)
 	}
 	return names
 }
@@ -155,10 +159,9 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 	bound := a.filter(func(*Artifact) bool { return true })
 	bound.Selector.Dimensions = nil
 	bound.Selector.DimensionAlternatives = nil
-	dims := a.AllDimensions
 	selected := a.DimensionDefinitions()
 	for _, filter := range a.Selector.Dimensions {
-		id, err := dims.Resolve(filter.Dimension)
+		id, err := a.ResolveDimension(filter.Dimension)
 		if err != nil {
 			return nil, err
 		}
@@ -167,14 +170,15 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 	for _, group := range a.Selector.DimensionAlternatives {
 		ids := []string{}
 		for _, name := range group {
-			id, err := dims.Resolve(name)
+			id, err := a.ResolveDimension(name)
 			if err != nil {
 				return nil, err
 			}
 			// Keep a name the selection has, or one a module that failed to
 			// load could have: SchemaSelection decides for each failure, as
 			// it does for a single name.
-			present := slices.ContainsFunc(selected, func(d *ArtifactDimension) bool { return d.Identifier == id }) ||
+			present := id == artifact.NameDimension && slices.ContainsFunc(a.Entries, func(entry *Artifact) bool { return entry.TypeName != "" }) ||
+				slices.ContainsFunc(selected, func(d *ArtifactDimension) bool { return d.Identifier == id }) ||
 				!a.exact && slices.ContainsFunc(a.Entries, func(entry *Artifact) bool { return entry.mayHaveDimension(id, nil) })
 			if present && !slices.Contains(ids, id) {
 				ids = append(ids, id)
@@ -234,6 +238,9 @@ func (a *Artifacts) resolveTypeKeys() {
 }
 
 func (a *Artifacts) ResolveDimension(name string) (string, error) {
+	if name == artifact.NameDimension {
+		return artifact.NameDimension, nil
+	}
 	return a.AllDimensions.Resolve(name)
 }
 
@@ -316,6 +323,7 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 			}
 			item.TypeName = itemNode.ObjectType().Name
 			item.Directives = nil
+			item.addressPlans = nil
 			item.DimensionKeys = nil
 			for _, key := range selected.DimensionKeys {
 				item.DimensionKeys = append(item.DimensionKeys, key)
@@ -377,7 +385,7 @@ func (a *Artifacts) ExpandDimensionKeys(ctx context.Context, name string) ([]str
 		var keys []string
 		for _, entry := range selected.Entries {
 			// A load failure the filter kept has no key of its own.
-			if !slices.ContainsFunc(entry.DimensionDefinitions(), func(d *ArtifactDimension) bool { return d.Identifier == dimension }) {
+			if !entry.hasDimension(dimension) {
 				continue
 			}
 			keys = append(keys, entry.StaticDimensionKey(dimension))
@@ -866,9 +874,8 @@ func (a *Artifacts) SchemaSelection() (*Artifacts, error) {
 		return nil, err
 	}
 	return bound.filter(func(item *Artifact) bool {
-		dims := item.DimensionDefinitions()
 		has := func(id string) bool {
-			return slices.ContainsFunc(dims, func(d *ArtifactDimension) bool { return d.Identifier == id })
+			return item.hasDimension(id)
 		}
 		for _, filter := range bound.Selector.Dimensions {
 			if filter.Keys != nil && len(filter.Keys) == 0 {
@@ -926,6 +933,10 @@ func artifactProjectedTypeName(node *ModTreeNode) string {
 func (a *Artifact) StaticDimensionKey(dimension string) string {
 	if dimension == artifact.ModuleDimension {
 		return a.ModuleName
+	}
+	if dimension == artifact.NameDimension {
+		coordinates := a.CanonicalCoordinates()
+		return coordinates[len(coordinates)-1].Key
 	}
 	return strings.Join(a.Path, "/")
 }

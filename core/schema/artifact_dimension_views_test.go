@@ -37,14 +37,14 @@ func TestArtifactDimensionViews(t *testing.T) {
 func TestArtifactDimensionSelectionMask(t *testing.T) {
 	ctx := context.Background()
 	selection := &core.Artifacts{Entries: []*core.Artifact{
-		{ModuleName: "app", TypeName: "Check", DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "module", Key: "app"}, {Dimension: "item", Key: "a"}}},
+		{ModuleName: "app", TypeName: "Check", DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "module", Key: "app"}, {Dimension: "/app/items", Key: "a"}}},
 		{ModuleName: "app", TypeName: "Check", DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "module", Key: "app"}}},
-	}, AllDimensions: artifact.Dimensions{{Identifier: "module"}, {Identifier: "item"}, {Identifier: "empty"}}}
+	}, AllDimensions: artifact.Dimensions{{Identifier: "module"}, {Identifier: "/app/items"}, {Identifier: "/app/empty"}, {Identifier: "type:Check", Kind: "TYPE"}}}
 	s := &artifactsSchema{}
 	expanded, err := expandArtifacts(ctx, selection)
 	require.NoError(t, err)
 	dimensions := expanded.Dimensions()
-	require.Equal(t, []string{"item"}, dimensions)
+	require.Equal(t, []string{"/app/items"}, dimensions)
 	items, err := s.items(ctx, selection, struct{}{})
 	require.NoError(t, err)
 	require.Len(t, items, 2)
@@ -56,15 +56,15 @@ func TestArtifactDimensionSelectionMask(t *testing.T) {
 		}
 		full, err := s.artifactDimensionKeys(ctx, item, artifactDimensionViewArgs{All: true})
 		require.NoError(t, err)
-		require.Equal(t, item.DimensionKeys, full)
+		require.Equal(t, item.CanonicalDimensionKeys(), full)
 	}
 	require.Len(t, items[0].DisplayDimensionKeys(false), 1)
 	require.Empty(t, items[1].DisplayDimensionKeys(false))
 	legacy, err := s.legacyDimensions(ctx, selection, struct{}{})
 	require.NoError(t, err)
-	require.Equal(t, []string{"item", "module", "type:Check"}, legacy)
+	require.Equal(t, []string{"/app/items", "module", "type:Check"}, legacy)
 	all := selection.FilterTypes([]string{}, false).SchemaDimensions()
-	require.Equal(t, []string{"empty", "item", "module"}, all)
+	require.Equal(t, []string{"/app/empty", "/app/items", "module", "name"}, all)
 	singleton := selection.FilterTypes([]string{}, false)
 	singleton.Entries = selection.Entries[:1]
 	one, err := s.one(ctx, singleton, struct{}{})
@@ -79,7 +79,7 @@ func TestArtifactDimensionSnapshot(t *testing.T) {
 	for _, initialRows := range []int{1, 2} {
 		t.Run(fmt.Sprint(initialRows), func(t *testing.T) {
 			ctx, srv := newNestingTestServer(t, call.View(artifactDimensionViewVersion))
-			selection := &core.Artifacts{AllDimensions: artifact.Dimensions{{Identifier: "item"}}}
+			selection := &core.Artifacts{AllDimensions: artifact.Dimensions{{Identifier: "/app/items"}}}
 			dagql.Fields[*core.Query]{dagql.Func("selection", func(context.Context, *core.Query, struct{}) (*core.Artifacts, error) { return selection, nil })}.Install(srv)
 			var discoveries atomic.Int32
 			dagql.Fields[*core.Artifacts]{dagql.Func("items", func(context.Context, *core.Artifacts, struct{}) ([]*core.Artifact, error) {
@@ -89,7 +89,7 @@ func TestArtifactDimensionSnapshot(t *testing.T) {
 				}
 				snapshot := &core.Artifacts{}
 				for i := range count {
-					snapshot.Entries = append(snapshot.Entries, &core.Artifact{Path: []string{"check"}, DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "item", Key: fmt.Sprint(i)}}})
+					snapshot.Entries = append(snapshot.Entries, &core.Artifact{Path: []string{"check"}, DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "/app/items", Key: fmt.Sprint(i)}}})
 				}
 				columns := snapshot.Dimensions()
 				rows := make([]*core.Artifact, 0, count)
@@ -124,5 +124,43 @@ func TestArtifactDimensionSnapshot(t *testing.T) {
 			}
 			require.EqualValues(t, 1, discoveries.Load())
 		})
+	}
+}
+
+func TestArtifactDimensionItemDisplaySourceIsLazy(t *testing.T) {
+	ctx, srv := newNestingTestServer(t, call.View(artifactDimensionViewVersion))
+	selection := &core.Artifacts{}
+	row := &core.Artifact{ModuleName: "app", TypeName: "AppItem", DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "/app/items", Key: "a"}}}
+	dagql.Fields[*core.Query]{dagql.Func("selection", func(context.Context, *core.Query, struct{}) (*core.Artifacts, error) {
+		return selection, nil
+	})}.Install(srv)
+	var discoveries atomic.Int32
+	dagql.Fields[*core.Artifacts]{
+		dagql.Func("items", func(context.Context, *core.Artifacts, struct{}) ([]*core.Artifact, error) {
+			discoveries.Add(1)
+			// The parent has an item and one child check. Only name varies;
+			// projecting its item must keep this exact parent's mask.
+			return []*core.Artifact{row, {
+				ModuleName: "app", TypeName: "Check", Path: []string{"check"},
+				DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "/app/items", Key: "a"}},
+			}}, nil
+		}),
+		dagql.NodeFunc("projectedItem", func(_ context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (*core.Artifact, error) {
+			return row.WithDimensionDisplaySource(parent), nil
+		}),
+	}.Install(srv)
+	var full dagql.Array[*core.ArtifactDimensionKey]
+	require.NoError(t, srv.Select(ctx, srv.Root(), &full,
+		dagql.Selector{Field: "selection"}, dagql.Selector{Field: "projectedItem"},
+		dagql.Selector{Field: "dimensionKeys", View: srv.View, Args: []dagql.NamedInput{{Name: "all", Value: dagql.Boolean(true)}}}))
+	require.Equal(t, row.CanonicalDimensionKeys(), []*core.ArtifactDimensionKey(full))
+	require.Zero(t, discoveries.Load(), "all:true must not discover descendants")
+	for range 2 {
+		var visible dagql.Array[*core.ArtifactDimensionKey]
+		require.NoError(t, srv.Select(ctx, srv.Root(), &visible,
+			dagql.Selector{Field: "selection"}, dagql.Selector{Field: "projectedItem"},
+			dagql.Selector{Field: "dimensionKeys", View: srv.View}))
+		require.Equal(t, []*core.ArtifactDimensionKey{{Dimension: "name", Key: "."}}, []*core.ArtifactDimensionKey(visible))
+		require.EqualValues(t, 1, discoveries.Load(), "default coordinates must reuse the parent's cached snapshot")
 	}
 }

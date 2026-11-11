@@ -13,6 +13,7 @@ var (
 	collectionDimension = artifactDimensionKinds.Register("COLLECTION")
 	moduleDimension     = artifactDimensionKinds.Register("MODULE")
 	typeDimension       = artifactDimensionKinds.Register("TYPE")
+	nameDimension       = artifactDimensionKinds.Register("NAME")
 )
 
 func (artifactDimensionKind) Type() *ast.Type {

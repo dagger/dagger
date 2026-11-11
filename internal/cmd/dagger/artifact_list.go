@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -46,6 +47,19 @@ func listedArtifactKeys(items []listedArtifact) []dagaddress.Pair {
 	return keys
 }
 
+// listedArtifactCoordinates retains every canonical value in a collapsed row.
+func listedArtifactCoordinates(items []listedArtifact) []struct{ Dimension, Key string } {
+	var coordinates []struct{ Dimension, Key string }
+	for _, item := range items {
+		for _, key := range item.Coordinates {
+			if !slices.Contains(coordinates, key) {
+				coordinates = append(coordinates, key)
+			}
+		}
+	}
+	return coordinates
+}
+
 func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, cmd *cobra.Command) (rerr error) {
 	// Some callers (e.g. agent listings) do not use withArtifactEngine.
 	if _, ok := ctx.Value(artifactPreparationKey{}).(*artifactPreparation); !ok {
@@ -55,21 +69,21 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 	defer func() { finishArtifactPreparation(ctx, rerr) }()
 	absolute, _ := cmd.Flags().GetBool("absolute")
 	all, _ := cmd.Flags().GetBool("all")
-	filtered, err := artifactListHasKeyFilters(cmd)
+	definitions, err := artifactDimensions(ctx, dag, selection)
+	if err != nil {
+		return err
+	}
+	filtered, err := artifactListHasKeyFilters(cmd, definitions)
 	if err != nil {
 		return err
 	}
 	var items []listedArtifact
 	if collectionType := cmd.Annotations[artifactListCollection]; collectionType != "" {
-		definitions, err := artifactDimensions(ctx, dag, selection)
-		if err != nil {
-			return err
-		}
 		for _, dimension := range definitions {
 			if dimension.CollectionType != collectionType {
 				continue
 			}
-			projected, err := readListedDimensionItems(ctx, dag, selection, dimension.Identifier, absolute, all || filtered)
+			projected, err := readListedDimensionItems(ctx, dag, selection, dimension.Identifier, absolute, true)
 			if err != nil {
 				return err
 			}
@@ -96,8 +110,9 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 	}
 	var output []listedArtifact
 	for _, group := range slices.Sorted(maps.Keys(groups)) {
-		for _, row := range artifactListRows(groups[group], all) {
+		for _, row := range artifactListRows(groups[group], all || filtered || cmd.Annotations[artifactListCollection] != "") {
 			item := row[0]
+			item.Coordinates = listedArtifactCoordinates(row)
 			item.DimensionKeys = nil
 			for _, key := range listedArtifactKeys(row) {
 				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{key.Dimension, key.Key})
@@ -165,6 +180,26 @@ func reportArtifactList(ctx context.Context, cmd *cobra.Command, output []listed
 }
 
 func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute bool, dimension string) ([]listedArtifact, error) {
+	if dimension == "" {
+		id, err := selection.ID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var response struct{ Node struct{ Listing string } }
+		err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
+          node(id:$id) { ... on Artifacts { listing:__listing(schema:true, absolute:$absolute, typeAssertion:true) } }
+        }`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
+		if err == nil {
+			var items []listedArtifact
+			if err := json.Unmarshal([]byte(response.Node.Listing), &items); err != nil {
+				return nil, err
+			}
+			return items, nil
+		}
+		if !isMissingArtifactListingField(err) && !(strings.Contains(err.Error(), "Unknown argument") && strings.Contains(err.Error(), "schema")) {
+			return nil, err
+		}
+	}
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err
@@ -209,15 +244,24 @@ func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection 
 }
 
 // Keep explicit input filters even if they include every current key.
-func artifactListHasKeyFilters(cmd *cobra.Command) (bool, error) {
+func artifactListHasKeyFilters(cmd *cobra.Command, definitions ...artifact.Dimensions) (bool, error) {
 	keys := artifactKeyFlags(cmd)
 	addresses, err := parseArtifactAddresses(cmd.Flags().Args())
 	if err != nil {
 		return false, err
 	}
 	for _, address := range addresses {
-		if slices.ContainsFunc(address.Query, func(p dagaddress.Pair) bool { return p.HasKey && !artifact.IsStaticDimension(p.Dimension) }) {
-			return true, nil
+		for _, pair := range address.Query {
+			dimension := pair.Dimension
+			if len(definitions) > 0 {
+				dimension, err = definitions[0].Resolve(dimension)
+				if err != nil {
+					return false, err
+				}
+			}
+			if pair.HasKey && !artifact.IsStaticDimension(dimension) {
+				return true, nil
+			}
 		}
 	}
 	return slices.ContainsFunc(keys, func(p dagaddress.Pair) bool { return p.HasKey && !artifact.IsStaticDimension(p.Dimension) }), nil

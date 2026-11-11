@@ -21759,6 +21759,8 @@ pub enum ArtifactDimensionKind {
     Collection,
     #[serde(rename = "MODULE")]
     Module,
+    #[serde(rename = "NAME")]
+    Name,
     #[serde(rename = "TYPE")]
     Type,
 }

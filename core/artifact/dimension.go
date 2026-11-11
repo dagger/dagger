@@ -8,10 +8,11 @@ import (
 )
 
 const ModuleDimension = flattening.ModuleDimension
+const NameDimension = flattening.NameDimension
 
 // IsStaticDimension identifies keys available without loading collections.
 func IsStaticDimension(identifier string) bool {
-	return flattening.IsStaticDimension(identifier)
+	return identifier == NameDimension || flattening.IsStaticDimension(identifier)
 }
 
 // Dimension describes a schema axis, independent of its runtime keys.

@@ -25146,6 +25146,8 @@ func (v ArtifactDimensionKind) Name() string {
 		return "MODULE"
 	case ArtifactDimensionKindType:
 		return "TYPE"
+	case ArtifactDimensionKindName:
+		return "NAME"
 	default:
 		return ""
 	}
@@ -25178,6 +25180,8 @@ func (v *ArtifactDimensionKind) UnmarshalJSON(dt []byte) error {
 		*v = ArtifactDimensionKindCollection
 	case "MODULE":
 		*v = ArtifactDimensionKindModule
+	case "NAME":
+		*v = ArtifactDimensionKindName
 	case "TYPE":
 		*v = ArtifactDimensionKindType
 	default:
@@ -25192,6 +25196,8 @@ const (
 	ArtifactDimensionKindModule ArtifactDimensionKind = "MODULE"
 
 	ArtifactDimensionKindType ArtifactDimensionKind = "TYPE"
+
+	ArtifactDimensionKindName ArtifactDimensionKind = "NAME"
 )
 
 // Sharing mode of the cache volume.
