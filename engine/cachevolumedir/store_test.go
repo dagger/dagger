@@ -3,12 +3,14 @@ package cachevolumedir
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -796,4 +798,82 @@ func TestUnmeasurableFailedRemovalCountsInFull(t *testing.T) {
 	_, used, err := s.Usage(t.Context())
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, used, int64(2*mib), "the removed volume still counts in full")
+}
+
+// blocksOf is the disk space path takes, as stat reports it.
+func blocksOf(t *testing.T, path string) int64 {
+	t.Helper()
+	var st syscall.Stat_t
+	require.NoError(t, syscall.Lstat(path, &st))
+	return st.Blocks * 512
+}
+
+func TestTreeWalkCountsEachInodeOnce(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "fs")
+	var want, entries int64
+	add := func(path string) {
+		want += blocksOf(t, path)
+		entries++
+	}
+	require.NoError(t, os.Mkdir(root, 0o755))
+	add(root)
+	// Wide, as a Go build cache is, and deep.
+	for i := range 64 {
+		sub := filepath.Join(root, fmt.Sprintf("%02x", i))
+		require.NoError(t, os.Mkdir(sub, 0o755))
+		add(sub)
+		for j := range 8 {
+			f := filepath.Join(sub, fmt.Sprintf("f%d", j))
+			writeFile(t, f, 4096*(j+1))
+			add(f)
+		}
+	}
+	deep := root
+	for i := range 12 {
+		deep = filepath.Join(deep, fmt.Sprintf("d%d", i))
+		require.NoError(t, os.Mkdir(deep, 0o755))
+		add(deep)
+	}
+	writeFile(t, filepath.Join(deep, "leaf"), mib)
+	add(filepath.Join(deep, "leaf"))
+	// Hard links in other subdirectories are entries, but take no more space.
+	for i := range 16 {
+		link := filepath.Join(root, fmt.Sprintf("%02x", 63-i), "link")
+		require.NoError(t, os.Link(filepath.Join(deep, "leaf"), link))
+		entries++
+	}
+	require.NoError(t, os.Symlink("leaf", filepath.Join(deep, "symlink")))
+	add(filepath.Join(deep, "symlink"))
+
+	size, files, err := treeWalk(t.Context(), root)
+	require.NoError(t, err)
+	require.Equal(t, want, size)
+	require.Equal(t, entries, files)
+
+	size, err = treeSize(t.Context(), root)
+	require.NoError(t, err)
+	require.Equal(t, want, size)
+}
+
+func TestTreeWalkOfAMissingTreeIsEmpty(t *testing.T) {
+	t.Parallel()
+	size, files, err := treeWalk(t.Context(), filepath.Join(t.TempDir(), "missing"))
+	require.NoError(t, err)
+	require.Zero(t, size)
+	require.Zero(t, files)
+}
+
+func TestTreeWalkStopsWhenCancelled(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for i := range 32 {
+		sub := filepath.Join(root, fmt.Sprintf("%02x", i))
+		require.NoError(t, os.Mkdir(sub, 0o755))
+		writeFile(t, filepath.Join(sub, "f"), 1)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, _, err := treeWalk(ctx, root)
+	require.ErrorIs(t, err, context.Canceled)
 }
