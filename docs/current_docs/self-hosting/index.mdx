@@ -157,13 +157,14 @@ To add engines for a check, add nodes to its pool. The DaemonSet starts an engin
 
 ### CI runners outside the cluster
 
-If the CI runners do not run in the cluster, deploy each engine as a StatefulSet with a persistent volume. A StatefulSet release has one engine. Create a values file, `checks.yaml`:
+If the CI runners do not run in the cluster, deploy the engines as a StatefulSet with persistent volumes. Create a values file, `checks.yaml`:
 
 ```yaml
 engine:
   kind: StatefulSet
   port: 1234
   statefulSet:
+    replicas: 1
     persistentVolumeClaim:
       enabled: true
       resources:
@@ -181,6 +182,8 @@ If a CI runner can use `kubectl` with permission to run `kubectl exec` in the `d
 ```shell
 DAGGER_ENGINE='kube-pod://checks-dagger-helm-engine-0?namespace=dagger' dagger check
 ```
+
+To run more engines in the release, raise `engine.statefulSet.replicas`, and set `engine.hostPath.runVolume.enabled` to `false` so that engines on the same node do not share a socket directory. The StatefulSet names the pods `checks-dagger-helm-engine-0`, `checks-dagger-helm-engine-1`, and so on, and creates a volume for each of them. Connect to a pod by name, as above. The `checks-dagger-helm` Service has no session affinity, so with more than one engine, do not connect through it.
 
 To put more than one engine behind one address, use a TCP load balancer with source IP affinity. A CLI session opens more than one connection to the engine, and all of them must go to the same engine. Without affinity, the session fails. On Kubernetes, give the engines of the group a shared label with the chart's `engine.labels` value. Then create a Service that selects this label and sets `sessionAffinity: ClientIP`. If the CI runners connect through NAT with one source IP, all their jobs go to one engine.
 
