@@ -135,10 +135,10 @@ func TestCacheUpdateDecodedPayloadBytesRespectsRevision(t *testing.T) {
 	assert.Equal(t, int64(100), c.resultPayloadBytes)
 
 	// A later payload change wins over a stale decode measurement.
-	c.updateDecodedPayloadBytes(res, NewString("stale"), 2)
+	c.updateDecodedPayloadBytes(t.Context(), res, NewString("stale"), 2)
 	assert.Equal(t, int64(100), c.resultPayloadBytes)
 
-	c.updateDecodedPayloadBytes(res, NewString(strings.Repeat("y", 98)), 3)
+	c.updateDecodedPayloadBytes(t.Context(), res, NewString(strings.Repeat("y", 98)), 3)
 	assert.Equal(t, int64(98), c.resultPayloadBytes)
 }
 

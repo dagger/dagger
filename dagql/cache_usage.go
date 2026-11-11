@@ -44,9 +44,9 @@ func (c *Cache) collectUsageMeasurementInputs(ctx context.Context, measure bool)
 		if err := ctx.Err(); err != nil {
 			return nil, errors.Join(err, snapshot.close(ctx))
 		}
-		c.egraphMu.Lock()
+		step := c.lockGraphAs(ctx, "dagql.usage.capture")
 		pending := snapshot.capturePendingLocked(ctx)
-		c.egraphMu.Unlock()
+		c.unlockGraphAs(step)
 		if len(pending) == 0 {
 			break
 		}
@@ -200,9 +200,9 @@ func (snapshot *cacheUsageSnapshot) close(ctx context.Context) error {
 	defer snapshot.op.finish(false)
 	ctx = context.WithoutCancel(ctx)
 	if !snapshot.released {
-		snapshot.cache.egraphMu.Lock()
+		step := snapshot.cache.lockGraphAs(ctx, "dagql.usage.release")
 		snapshot.releaseLocked(ctx)
-		snapshot.cache.egraphMu.Unlock()
+		snapshot.cache.unlockGraphAs(step)
 	}
 	err := errors.Join(snapshot.releaseErr, runOnReleaseFuncs(ctx, snapshot.callbacks))
 	if err != nil {

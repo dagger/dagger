@@ -273,3 +273,27 @@ func TestEnginePassesNameTheirHolder(t *testing.T) {
 	}
 }
 
+// TestPartAcquisitionAndDecodeNameTheirHolder: starting to manage a row's
+// part gate, as the first lazy evaluation of a value decoded from another
+// engine's record does, and sizing a decoded payload take the graph lock as
+// the op they run under.
+func TestPartAcquisitionAndDecodeNameTheirHolder(t *testing.T) {
+	ctx, c, srv := persistedListTestCache(t, "")
+	srv.InstallObject(NewClass(srv, ClassOpts[*inlineCaptureTestValue]{}))
+	value := &inlineCaptureTestValue{}
+	frame := persistCodecFrame("acquisition-holder", value)
+	res, err := c.GetOrInitCall(ctx, "acquisition-holder", noopTypeResolver{}, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(value, frame)
+	})
+	require.NoError(t, err)
+	row := res.cacheSharedResult()
+	c.egraphMu.Lock()
+	row.imported = true
+	c.egraphMu.Unlock()
+	takers := lockTakers(t, c)
+	opCtx, op := wcprof.BeginOp(wcprof.ContextWithProfiling(ctx), wcprof.OpKindLazy, "test.lazy", wcprof.OpOpts{})
+	defer op.End(wcprof.OutcomeOK)
+	require.True(t, c.usesPartAcquisition(opCtx, res, row), "a decoded value acquires its parts")
+	c.updateDecodedPayloadBytes(opCtx, row, NewString("decoded"), row.loadPayloadState().payloadRevision)
+	requireTakesNamed(t, takers(), op.ID(), "usesPartAcquisition", "updateDecodedPayloadBytes")
+}

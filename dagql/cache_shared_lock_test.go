@@ -158,7 +158,7 @@ func TestCachePartAcquisitionAnswersUnderReadLock(t *testing.T) {
 	row := res.cacheSharedResult()
 
 	runWhileEgraphReadLocked(t, c, func() error {
-		if c.usesPartAcquisition(res, row) {
+		if c.usesPartAcquisition(ctx, res, row) {
 			return fmt.Errorf("part acquisition for a result with no part state")
 		}
 		return nil
@@ -170,7 +170,7 @@ func TestCachePartAcquisitionAnswersUnderReadLock(t *testing.T) {
 	gate := row.partGate.loadOrCreate()
 	c.egraphMu.Unlock()
 	runWhileEgraphReadLocked(t, c, func() error {
-		if c.usesPartAcquisition(res, row) {
+		if c.usesPartAcquisition(ctx, res, row) {
 			return fmt.Errorf("part acquisition for an unmanaged gate with no part state")
 		}
 		return nil
@@ -183,7 +183,7 @@ func TestCachePartAcquisitionAnswersUnderReadLock(t *testing.T) {
 	gate.mu.Unlock()
 	c.egraphMu.Unlock()
 	runWhileEgraphReadLocked(t, c, func() error {
-		if !c.usesPartAcquisition(res, row) {
+		if !c.usesPartAcquisition(ctx, res, row) {
 			return fmt.Errorf("no part acquisition for a result whose gate is managed")
 		}
 		return nil
