@@ -22,6 +22,8 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/cmd/codegen/trace"
+	telemetry "github.com/dagger/otel-go"
 )
 
 const (
@@ -74,6 +76,23 @@ type GoGenerator struct {
 // so that they can expose those constructors to callers.
 var fullSchemaTemplates = map[string]bool{
 	"dag/dag.gen.go": true,
+}
+
+// generateCodeTraced is generateCode in a span of its own.
+func generateCodeTraced(
+	ctx context.Context,
+	cfg generator.Config,
+	schema *introspection.Schema,
+	schemaVersion string,
+	mfs *memfs.FS,
+	pkgInfo *PackageInfo,
+	pkg *packages.Package,
+	fset *token.FileSet,
+	pass int,
+) (rerr error) {
+	ctx, span := trace.Tracer().Start(ctx, "generate code")
+	defer telemetry.EndWithCause(span, &rerr)
+	return generateCode(ctx, cfg, schema, schemaVersion, mfs, pkgInfo, pkg, fset, pass)
 }
 
 func generateCode(
