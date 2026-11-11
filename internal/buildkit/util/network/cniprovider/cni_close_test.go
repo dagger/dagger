@@ -5,10 +5,13 @@ package cniprovider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	cni "github.com/containerd/go-cni"
 	"github.com/stretchr/testify/require"
@@ -73,4 +76,51 @@ func TestPoolCloseReportsWhatItTookDown(t *testing.T) {
 	require.ElementsMatch(t, []string{"a", "c"}, handle.removed)
 	require.FileExists(t, filepath.Join(dir, "b"), "a failed teardown keeps its file for the next start")
 	require.NoFileExists(t, filepath.Join(dir, "a"))
+}
+
+// slowCNI tears a namespace down in delay, counting the teardowns running at
+// once.
+type slowCNI struct {
+	fakeCNI
+	delay    time.Duration
+	inFlight atomic.Int64
+	most     atomic.Int64
+}
+
+func (s *slowCNI) Remove(ctx context.Context, id string, path string, opts ...cni.NamespaceOpts) error {
+	n := s.inFlight.Add(1)
+	defer s.inFlight.Add(-1)
+	for {
+		most := s.most.Load()
+		if n <= most || s.most.CompareAndSwap(most, n) {
+			break
+		}
+	}
+	time.Sleep(s.delay)
+	return s.fakeCNI.Remove(ctx, id, path, opts...)
+}
+
+func TestPoolCloseTearsNamespacesDownSideBySide(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	handle := &slowCNI{fakeCNI: fakeCNI{fail: map[string]bool{"ns-7": true}}, delay: 20 * time.Millisecond}
+	pool := &cniPool{targetSize: 128}
+	const n = 32
+	for i := range n {
+		ns := fakeNS(t, dir, fmt.Sprintf("ns-%d", i), handle)
+		ns.pool = pool
+		pool.available = append(pool.available, ns)
+		pool.actualSize++
+	}
+
+	report := pool.close()
+	require.Equal(t, n-1, report.Released)
+	require.Equal(t, 1, report.Failed)
+	require.Len(t, handle.removed, n-1)
+	require.Greater(t, handle.most.Load(), int64(1), "teardowns overlap")
+	require.LessOrEqual(t, handle.most.Load(), int64(poolCloseWorkers), "at most poolCloseWorkers at once")
+	require.FileExists(t, filepath.Join(dir, "ns-7"), "a failed teardown keeps its file for the next start")
+	require.NoFileExists(t, filepath.Join(dir, "ns-0"))
+	require.Empty(t, pool.available)
+	require.Zero(t, pool.actualSize)
 }
