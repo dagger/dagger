@@ -47,8 +47,6 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 func (r EngineDev) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Source             *dagger.Directory
-		VCSCommit          string
-		VCSDirty           bool
 		EngineConfig       []string
 		LogLevel           string
 		SubnetNumber       int
@@ -59,8 +57,6 @@ func (r EngineDev) MarshalJSON() ([]byte, error) {
 		Ws                 *dagger.Workspace
 	}
 	concrete.Source = r.Source
-	concrete.VCSCommit = r.VCSCommit
-	concrete.VCSDirty = r.VCSDirty
 	concrete.EngineConfig = r.EngineConfig
 	concrete.LogLevel = r.LogLevel
 	concrete.SubnetNumber = r.SubnetNumber
@@ -75,8 +71,6 @@ func (r EngineDev) MarshalJSON() ([]byte, error) {
 func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
 		Source             *dagger.Directory
-		VCSCommit          string
-		VCSDirty           bool
 		EngineConfig       []string
 		LogLevel           string
 		SubnetNumber       int
@@ -91,8 +85,6 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 		return err
 	}
 	r.Source = concrete.Source
-	r.VCSCommit = concrete.VCSCommit
-	r.VCSDirty = concrete.VCSDirty
 	r.EngineConfig = concrete.EngineConfig
 	r.LogLevel = concrete.LogLevel
 	r.SubnetNumber = concrete.SubnetNumber
@@ -853,7 +845,7 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg clientDockerConfig", err))
 				}
 			}
-			return New(ctx, ws, subnetNumber, clientDockerConfig), nil
+			return New(ws, subnetNumber, clientDockerConfig), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

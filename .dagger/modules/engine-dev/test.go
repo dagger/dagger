@@ -28,7 +28,8 @@ import (
 
 // List all core engine tests
 func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
-	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	// Unstamped: listing tests builds nothing.
+	builder, err := build.NewBuilder(ctx, dev.Source, "", "", false)
 	if err != nil {
 		return "", err
 	}
@@ -150,7 +151,8 @@ func (dev *EngineDev) TestModule(
 	// +optional
 	testVerbose bool,
 ) error {
-	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	// Unstamped: otelgotest is built from otel-go's source.
+	builder, err := build.NewBuilder(ctx, dev.Source, "", "", false)
 	if err != nil {
 		return err
 	}
@@ -403,11 +405,11 @@ func (dev *EngineDev) test(
 	// package's directory, several packages at once. Another module is built
 	// from its own directory, so its builds are keyed by its content alone,
 	// and unstamped: the stamped package is not in its binaries.
-	source, commit, dirty := dev.Source, dev.VCSCommit, dev.VCSDirty
-	moduleDir := testSourcePath
-	if opts.module != "" {
-		source, commit, dirty = opts.moduleSource, "", false
-		moduleDir = path.Join(testSourcePath, opts.module)
+	source, commit, dirty := opts.moduleSource, "", false
+	moduleDir := path.Join(testSourcePath, opts.module)
+	if opts.module == "" {
+		source, moduleDir = dev.Source, testSourcePath
+		commit, dirty = dev.vcs(ctx)
 	}
 	builder, err := build.NewBuilder(ctx, source, "", commit, dirty)
 	if err != nil {
@@ -758,7 +760,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 		return nil, err
 	}
 
-	devBinary := clidev.New(clidev.CliDevOpts{VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()
+	devBinary := clidev.New(clidev.CliDevOpts{Ws: dev.Ws}).Binary()
 	// This creates an engine.tar container file that can be used by the integration tests.
 	// In particular, it is used by core/integration/remotecache_test.go to create a
 	// dev engine that can be used to test remote caching.
@@ -806,7 +808,8 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 		return nil, err
 	}
 
-	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	// Unstamped: otelgotest is built from otel-go's source.
+	builder, err := build.NewBuilder(ctx, dev.Source, "", "", false)
 	if err != nil {
 		return nil, err
 	}

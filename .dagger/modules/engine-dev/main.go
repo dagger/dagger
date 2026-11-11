@@ -21,7 +21,6 @@ import (
 )
 
 func New(
-	ctx context.Context,
 	ws *dagger.Workspace,
 	// A configurable part of the IP subnet managed by the engine
 	// Change this to allow nested dagger engines
@@ -32,7 +31,6 @@ func New(
 	// +optional
 	clientDockerConfig *dagger.Secret,
 ) *EngineDev {
-	commit, dirty := vcsInfo(ctx, ws)
 	return &EngineDev{
 		Ws: ws,
 		Source: ws.Directory("/", dagger.WorkspaceDirectoryOpts{
@@ -65,8 +63,6 @@ func New(
 				"!.changes",
 			},
 		}),
-		VCSCommit:          commit,
-		VCSDirty:           dirty,
 		SubnetNumber:       subnetNumber,
 		ClientDockerConfig: clientDockerConfig,
 	}
@@ -92,15 +88,24 @@ func vcsInfo(ctx context.Context, ws *dagger.Workspace) (commit string, dirty bo
 	return commit, dirty
 }
 
+// vcs is the workspace's git commit and whether its tree has uncommitted
+// changes, which stamped builds carry. It is read when a build stamps it, not
+// when engine-dev is made: reading it brings the workspace's git checkout
+// into the engine, which a call that stamps nothing doesn't need.
+func (dev *EngineDev) vcs(ctx context.Context) (commit string, dirty bool) {
+	return vcsInfo(ctx, dev.Ws)
+}
+
+// builder builds the engine's source for version, stamped with the
+// workspace's git commit.
+func (dev *EngineDev) builder(ctx context.Context, version string) (*build.Builder, error) {
+	commit, dirty := dev.vcs(ctx)
+	return build.NewBuilder(ctx, dev.Source, version, commit, dirty)
+}
+
 // Creates a complete end-to-end build environment with CLI and engine for interactive testing
 type EngineDev struct {
 	Source *dagger.Directory
-
-	// Resolved VCS info stamped into built engine/CLI binaries. Stored as
-	// scalars (not the source Workspace) so EngineDev's methods stay
-	// content-addressed and their build results survive an engine restart.
-	VCSCommit string // +private
-	VCSDirty  bool   // +private
 
 	EngineConfig []string // +private
 	LogLevel     string   // +private
@@ -164,7 +169,7 @@ func (dev *EngineDev) Container(
 	// +optional
 	version string,
 ) (*dagger.Container, error) {
-	builder, err := build.NewBuilder(ctx, dev.Source, version, dev.VCSCommit, dev.VCSDirty)
+	builder, err := dev.builder(ctx, version)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +181,7 @@ func (dev *EngineDev) Container(
 	// stamps its CLI but not the engine, whose version is the source's: so
 	// every version's image of a platform gets its entries from one making,
 	// and a release's images reuse the entries its main images made.
-	native, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	native, err := dev.builder(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +240,7 @@ func (dev *EngineDev) engine(ctx context.Context, builder *build.Builder, platfo
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := clidev.New(clidev.CliDevOpts{Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary(clidev.CLIDevBinaryOpts{
+	cli := clidev.New(clidev.CliDevOpts{Version: version, Ws: dev.Ws}).Binary(clidev.CLIDevBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -381,7 +386,7 @@ func entriesExported(ctx context.Context, ran *dagger.Container, exporter []stri
 // its size, least recently used first, and makes them again.
 // +check
 func (dev *EngineDev) ImageEntriesAfterPrune(ctx context.Context) error {
-	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	builder, err := dev.builder(ctx, "")
 	if err != nil {
 		return err
 	}
@@ -493,7 +498,7 @@ func (dev *EngineDev) InstallClient(
 		WithServiceBinding("dagger-engine", service).
 		// FIXME: retrieve endpoint dynamically?
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliPath, clidev.New(clidev.CliDevOpts{Source: dev.cliDevSource(), VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()).
+		WithMountedFile(cliPath, clidev.New(clidev.CliDevOpts{Source: dev.cliDevSource(), Ws: dev.Ws}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
@@ -585,7 +590,7 @@ func (dev *EngineDev) introspectContainer(ctx context.Context) (*dagger.Containe
 
 // Build the `introspect` tool which introspects the engine API
 func (dev *EngineDev) IntrospectionTool(ctx context.Context) (*dagger.File, error) {
-	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	builder, err := dev.builder(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +601,8 @@ func (dev *EngineDev) IntrospectionTool(ctx context.Context) (*dagger.File, erro
 // through: a GOPACKAGESDRIVER that serves the export data of what they import
 // from dagger/go's archives, so the go command compiles none of it.
 func (dev *EngineDev) ExportDriver(ctx context.Context) (*dagger.File, error) {
-	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	// Unstamped: the driver doesn't read the commit.
+	builder, err := build.NewBuilder(ctx, dev.Source, "", "", false)
 	if err != nil {
 		return nil, err
 	}
