@@ -2,7 +2,6 @@ package daggercmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -181,23 +180,12 @@ func reportArtifactList(ctx context.Context, cmd *cobra.Command, output []listed
 
 func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute bool, dimension string) ([]listedArtifact, error) {
 	if dimension == "" {
-		id, err := selection.ID(ctx)
+		items, supported, err := readArtifactSchemaListing(ctx, dag, selection, absolute)
 		if err != nil {
 			return nil, err
 		}
-		var response struct{ Node struct{ Listing string } }
-		err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
-          node(id:$id) { ... on Artifacts { listing:__listing(schema:true, absolute:$absolute, typeAssertion:true) } }
-        }`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
-		if err == nil {
-			var items []listedArtifact
-			if err := json.Unmarshal([]byte(response.Node.Listing), &items); err != nil {
-				return nil, err
-			}
+		if supported {
 			return items, nil
-		}
-		if !isMissingArtifactListingField(err) && !(strings.Contains(err.Error(), "Unknown argument") && strings.Contains(err.Error(), "schema")) {
-			return nil, err
 		}
 	}
 	id, err := selection.ID(ctx)

@@ -193,7 +193,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	out, err = base.With(workspaceSelectionDaggerExec("check", "-l", "-f=cli", "dag://"+ref+":verify")).Stdout(ctx)
 	require.NoError(t, err)
 	// The provider's generate/stale check remains in the full workspace schema.
-	require.Equal(t, "dagger check -W "+ref+" --provider --check=verify\n", out)
+	require.Equal(t, "dagger check -W "+ref+" --provider --name=verify\n", out)
 	// The printed command must retain the remote workspace when copied.
 	_, err = base.WithExec([]string{"sh", "-c", out}).Sync(ctx)
 	require.NoError(t, err)
@@ -876,7 +876,7 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 		out, err := base.WithNewFile("/work/selected/provider/main.dang", source).
 			With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "broken", "broken", "-f=cli")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dagger list -W /work/selected --provider --container=broken   # A container that must not run.\n", out)
+		require.Equal(t, "dagger list -W /work/selected --provider --name=broken   # A container that must not run.\n", out)
 	})
 
 	for _, tc := range []struct {

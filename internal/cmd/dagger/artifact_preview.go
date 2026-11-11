@@ -96,7 +96,14 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 		}
 		dimensions = append(dimensions, entryDimensions[i]...)
 		addr := dagaddress.Address{Types: []string{cliName(e.Type)}, Query: []dagaddress.Pair{{Dimension: definitions.DisplayName(&artifact.Dimension{Identifier: "type:" + e.Type, Name: cliName(e.Type), QualifiedName: "artifact-" + cliName(e.Type)}), Key: strings.Join(e.Path, "/"), HasKey: true}}}
-		paths = append(paths, artifactListPath{URI: addr.String(), ModuleName: e.Module, Dimensions: dimensions})
+		path := artifactListPath{URI: addr.String(), ModuleName: e.Module, Dimensions: dimensions}
+		for _, coordinate := range artifactPreviewCoordinates(e, nil) {
+			path.Dimensions = append(path.Dimensions, coordinate.Dimension)
+			if coordinate.Dimension == flattening.NameDimension {
+				path.Name = coordinate.Key
+			}
+		}
+		paths = append(paths, path)
 	}
 	cmd, collection, remaining, err := artifactPreviewCommand(args, definitions, paths)
 	if err != nil {

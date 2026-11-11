@@ -41,3 +41,29 @@ func TestMissingArtifactListingFieldOnlyMatchesValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestMissingArtifactSchemaListingOnlyMatchesValidation(t *testing.T) {
+	const missing = `Unknown argument "schema" on field "Artifacts.__listing".`
+	response := func(message string, path ast.Path, code string) error {
+		return &graphql.HTTPError{StatusCode: 422, Response: graphql.Response{Errors: []*gqlerror.Error{{
+			Message: message, Path: path, Extensions: map[string]any{"code": code},
+		}}}}
+	}
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"schema validation", response(missing, nil, "GRAPHQL_VALIDATION_FAILED"), true},
+		{"older listing field", response(`Cannot query field "__listing" on type "Artifacts".`, nil, "GRAPHQL_VALIDATION_FAILED"), true},
+		{"resolver", response(missing, ast.Path{ast.PathName("node")}, "GRAPHQL_VALIDATION_FAILED"), false},
+		{"unclassified", response(missing, nil, ""), false},
+		{"other argument", response(`Unknown argument "other" on field "Artifacts.__listing".`, nil, "GRAPHQL_VALIDATION_FAILED"), false},
+		{"unstructured", errors.New(missing), false},
+		{"nil", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isMissingArtifactSchemaListing(tc.err))
+		})
+	}
+}

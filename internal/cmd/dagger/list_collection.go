@@ -63,11 +63,11 @@ func prepareArtifactOutputWithSchema(cmd *cobra.Command, items []listedArtifact,
 		return nil, err
 	}
 	if format == "cli" {
-		types := commandArtifactTypes(cmd)
-		if typ := cmd.Annotations[artifactListType]; typ != "" {
-			types = []string{typ}
-		}
+		types := artifactCLIOutputTypes(cmd, definitions)
 		omitArtifactCLITypeKeys(items, index, types)
+		if err := prepareCanonicalArtifactCLIPaths(items, paths, types); err != nil {
+			return nil, err
+		}
 	}
 
 	moduleFlags := artifactModuleFlagNames(cmd, definitions, paths)
@@ -80,7 +80,7 @@ func prepareArtifactOutputWithSchema(cmd *cobra.Command, items []listedArtifact,
 			if key.Dimension == artifact.ModuleDimension {
 				item.ModuleFlag = moduleFlags[key.Key]
 			}
-			if strings.HasPrefix(key.Dimension, "type:") {
+			if item.Coordinates == nil && strings.HasPrefix(key.Dimension, "type:") {
 				var ids []string
 				for _, filter := range filters {
 					ids = append(ids, filter.Dimension)
@@ -134,4 +134,20 @@ func itemDimensionFilters(item listedArtifact) []dagaddress.Pair {
 		filters = append(filters, dagaddress.Pair{Dimension: id})
 	}
 	return filters
+}
+
+func artifactCLIOutputTypes(cmd *cobra.Command, definitions artifact.Dimensions) []string {
+	if typ := cmd.Annotations[artifactListType]; typ != "" {
+		return []string{typ}
+	}
+	if collection := cmd.Annotations[artifactListCollection]; collection != "" {
+		var types []string
+		for _, definition := range definitions {
+			if definition.CollectionType == collection && definition.ItemType != "" && !slices.Contains(types, definition.ItemType) {
+				types = append(types, definition.ItemType)
+			}
+		}
+		return types
+	}
+	return commandArtifactTypes(cmd)
 }

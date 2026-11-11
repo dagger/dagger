@@ -43,7 +43,10 @@ func TestArtifactListFormats(t *testing.T) {
 		require.NotContains(t, out, "MODULE")
 	})
 	t.Run("cli emits executable commands with full selectors", func(t *testing.T) {
-		require.Equal(t, "dagger check --module=go --go-module=. --check=stale   # Check files\ndagger check --module=go --go-module=. --check=test    # Check files\n", render("cli", items))
+		out := render("cli", items)
+		require.Regexp(t, `(?m)^dagger check --module=go --go-module=\. --name=generate\.stale +# Check files$`, out)
+		require.Regexp(t, `(?m)^dagger check --module=go --go-module=\. --name=test +# Check files$`, out)
+		require.NotContains(t, out, "--check=")
 	})
 	t.Run("link retains identity", func(t *testing.T) {
 		require.Equal(t, items[0].URI+"\n"+items[1].URI+"\n", render("link", items))
@@ -68,7 +71,7 @@ func TestArtifactListFormats(t *testing.T) {
 		item := items[0]
 		item.URI = "dag+check://github.com/acme/ws@abc:go/modules/generate/stale?go-module=."
 		require.Contains(t, render("table", []listedArtifact{item}), "github.com/acme/ws@abc")
-		require.Equal(t, "dagger check -W github.com/acme/ws@abc --module=go --go-module=. --check=stale   # Check files\n", render("cli", []listedArtifact{item}))
+		require.Equal(t, "dagger check -W github.com/acme/ws@abc --module=go --go-module=. --name=generate.stale   # Check files\n", render("cli", []listedArtifact{item}))
 	})
 	t.Run("a long listing reaches stdout in a few writes", func(t *testing.T) {
 		var rows []listedArtifact

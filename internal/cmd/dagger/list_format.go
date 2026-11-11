@@ -306,9 +306,27 @@ func artifactCLIArguments(item listedArtifact, names map[string]string, options 
 		}
 		args = append(args, "-W", quoted)
 	}
+	if item.CLIPath != "" {
+		quoted, err := quoteArtifactArgument(item.CLIPath)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, quoted)
+	}
+	coordinates := item.DimensionKeys
+	modern := item.Coordinates != nil
+	if modern {
+		coordinates = item.Coordinates
+	}
+	terminal := func(id string) bool {
+		if modern {
+			return id == artifact.NameDimension
+		}
+		return strings.HasPrefix(id, "type:")
+	}
 	for _, typeKeys := range []bool{false, true} {
-		for _, key := range item.DimensionKeys {
-			if strings.HasPrefix(key.Dimension, "type:") != typeKeys {
+		for _, key := range coordinates {
+			if terminal(key.Dimension) != typeKeys {
 				continue
 			}
 			if typeKeys && (item.OmitCLITypeKey || item.CollectionItem && item.OmitTypeKey) {
@@ -323,11 +341,14 @@ func artifactCLIArguments(item listedArtifact, names map[string]string, options 
 				continue
 			}
 			name := names[key.Dimension]
+			if modern && key.Dimension == artifact.NameDimension {
+				name = "name"
+			}
 			if name == "" {
 				name = key.Dimension
 			}
 			value := key.Key
-			if display, ok := item.DisplayKeys[key.Dimension]; ok {
+			if display, ok := item.DisplayKeys[key.Dimension]; !modern && ok {
 				value = display
 			}
 			quoted, err := quoteArtifactArgument(value)

@@ -698,10 +698,10 @@ func (*Part) Verify() error { return nil }
 		require.NoError(t, err)
 		require.Equal(t, "dag+check://items/verify\n", out)
 	})
-	t.Run("type key distinguishes checks on the same item", func(ctx context.Context, t *testctx.T) {
+	t.Run("name distinguishes checks on the same item", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("check", "-l", "-a", "-f=cli", "items/verify", "--collections-items-item=a")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dagger check --collections --collections-items-item=a --check=items/verify\n", out)
+		require.Equal(t, "dagger check 'dag+check://items/verify?type:Check=/items/verify' --collections --collections-items-item=a --name=verify\n", out)
 	})
 	t.Run("keep correlated keys separate", func(ctx context.Context, t *testctx.T) {
 		addresses := []string{"items/parts/verify?collections-items-item=a&collections-items-part=x", "items/parts/verify?collections-items-item=b&collections-items-part="}
@@ -1236,10 +1236,10 @@ source = "dang"
 	require.Equal(t, "dag+check://test\n", out)
 	out, err = base.With(daggerExec("check", "-l", "--by-format", "--check=test", "-f=cli")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dagger check --by-format --check=test\n", out)
+	require.Equal(t, "dagger check --by-format --name=test\n", out)
 	out, err = base.With(daggerExec("list", "checks", "--playwright", "--check=test", "-f=cli")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dagger list checks --playwright --check=test\n", out)
+	require.Equal(t, "dagger list checks --playwright --name=test\n", out)
 	_, err = base.With(daggerExec(append([]string{"check"}, strings.Fields(collectionCLIArguments(t, out, "dagger list checks"))...)...)).Sync(ctx)
 	require.NoError(t, err)
 	out, err = base.With(daggerExec("check", "-l", "--go", "--playwright", "--generated=false", "-f=link")).Stdout(ctx)
