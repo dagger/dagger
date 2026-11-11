@@ -237,7 +237,7 @@ is-module = true
 
 [sdks.dang.scopes.".dagger/modules/go-client-dev"]
 is-module = true
-clients = ["./.dagger/modules/engine-dev", "./modules/git-releaser"]
+clients = ["./cmd/codegen", "./.dagger/modules/engine-dev", "./modules/git-releaser", "github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"]
 
 [sdks.dang.scopes.".dagger/modules/java-client-dev"]
 is-module = true

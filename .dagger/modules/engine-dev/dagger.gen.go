@@ -210,6 +210,13 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				}
 			}
 			return (*EngineDev).Container(&parent, ctx, platform, gpuSupport, version)
+		case "ExportDriver":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).ExportDriver(&parent, ctx)
 		case "GoEnv":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

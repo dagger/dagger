@@ -224,6 +224,19 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 	}, nil
 }
 
+// ExportDriver is golangci-lint's export driver: a GOPACKAGESDRIVER that
+// serves a program loading Go packages, such as codegen, the export data of
+// what they import from dagger/go's archives, so the go command compiles none
+// of it.
+func (build *Builder) ExportDriver() *dagger.File {
+	return goBinary(core.Git("https://github.com/dagger/golangci-lint").
+		Commit(consts.GolangciLintCommit).
+		Tree().
+		Directory("helpers/export-driver"), ".", build.platformSpec, golang.GoOpts{
+		Version: consts.GolangVersion,
+	})
+}
+
 func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	seedMod, libVersion, err := goModuleSeed(ctx, build.source)
 	if err != nil {
@@ -242,12 +255,7 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 
 	// golangci-lint's export driver serves codegen the export data of what a
 	// module imports from dagger/go's archives, so no Go build cache ships.
-	exportDriver := goBinary(core.Git("https://github.com/dagger/golangci-lint").
-		Commit(consts.GolangciLintCommit).
-		Tree().
-		Directory("helpers/export-driver"), ".", build.platformSpec, golang.GoOpts{
-		Version: consts.GolangVersion,
-	})
+	exportDriver := build.ExportDriver()
 
 	sdkCtrTarball := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.GolangImage).

@@ -11,6 +11,10 @@ import (
 
 type GoClientDev struct { // go-client-dev (../../:0:0)
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id            *ID
 	release       *Void
@@ -21,6 +25,9 @@ type GoClientDev struct { // go-client-dev (../../:0:0)
 func (r *GoClientDev) WithGraphQLQuery(q *querybuilder.Selection) *GoClientDev {
 	return &GoClientDev{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -48,7 +55,13 @@ func (r *GoClientDev) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -245,7 +258,8 @@ func (r *Query) GoClientDev(ws *Workspace, opts ...GoClientDevOpts) *GoClientDev
 	q = q.Arg("ws", ws)
 
 	return &GoClientDev{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 

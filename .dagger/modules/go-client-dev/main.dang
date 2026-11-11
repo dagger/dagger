@@ -70,15 +70,33 @@ type GoClientDev {
   Regenerate the Go SDK API
   """
   pub generate: Changeset! @generate {
-    # go generate computes the API schema with the introspect tool, from the
-    # engine's source (see sdk/go/generate.go): it needs that source, and no engine.
-    let src = engineDev(ws: self.ws).source
-    engineDev(ws: self.ws)
-      .goEnv(source: src)
-      .withWorkdir(sourcePath)
-      .withExec(["go", "generate", "-v", "."])
-      .withExec(["go", "mod", "tidy"])
-      .directory("../..") # pop back to repo root
+    # As the Go SDK's code generation runs: codegen, on the API schema the
+    # introspect tool computes from the engine's source without an engine,
+    # loading what sdk/go imports through the export driver from dagger/go's
+    # archives, so no go command compiles anything. Generating writes only Go
+    # files, never go.mod.
+    let engine = engineDev(ws: self.ws)
+    let src = engine.source
+    let sdk = src.directory(sourcePath).asWorkspace
+    let golang = go(version: "1.27")
+    let archives = golang
+      .module(ws: sdk, path: ".", findUp: false)
+      .archives(ws: sdk, dependencies: true, packages: ["."], noTests: true)
+    # A Go image: codegen lists sdk/go's module with the go command.
+    container
+      .from(golang.image(version: "1.27"))
+      .withFile("/usr/local/bin/codegen", codegen(ws: self.ws).binary)
+      .withFile("/usr/local/bin/export-driver", engine.exportDriver)
+      .withMountedFile("/schema.json", engine.introspectionJson)
+      .withMountedDirectory("/gobuild-archives", archives)
+      .withEnvVariable("GOPACKAGESDRIVER", "/usr/local/bin/export-driver")
+      .withEnvVariable("GOLANGCI_EXPORT_ARCHIVES", "/gobuild-archives")
+      .withEnvVariable("GOLANGCI_EXPORT_WORKDIR", "/tmp/export-driver")
+      .withEnvVariable("GOLANGCI_EXPORT_COMPILE", "never")
+      .withDirectory("/src", src)
+      .withWorkdir("/src")
+      .withExec(["codegen", "generate-library", "--lang", "go", "--introspection-json-path", "/schema.json", "--output", "./" + sourcePath])
+      .directory("/src")
       .changes(src)
   }
 
