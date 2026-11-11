@@ -1430,9 +1430,9 @@ func (c *Cache) sessionResultInstallSpanContexts(ctx context.Context, sessionID 
 		return nil
 	}
 
-	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	walk := c.readLockGraphAs(ctx, "dagql.installSpans.walk")
 	ancestorIDs := c.installAncestorIDsLocked(resultID)
-	c.egraphMu.RUnlock()
+	c.runlockGraphAs(walk)
 
 	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	defer c.sessionMu.Unlock()
