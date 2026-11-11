@@ -783,7 +783,9 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		}
 	}
 
-	srv.localContentStore, err = blobstore.New(srv.contentStoreRootDir)
+	// The image's entries name their parts' blobs, which the image holds:
+	// the store reads them in place rather than copying each one in.
+	srv.localContentStore, err = blobstore.New(srv.contentStoreRootDir, blobstore.WithImageBlobs(distconsts.EngineContainerImageEntriesDir))
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create content store: %w", err)
 	}
