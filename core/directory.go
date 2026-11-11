@@ -32,7 +32,6 @@ import (
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
 	"github.com/vektah/gqlparser/v2/ast"
-	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -3512,7 +3511,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, parent dagql.ObjectRes
 		if err != nil {
 			return err
 		}
-		modTime := time.Unix(int64(unix), 0)
+		modTime := time.Unix(int64(timestamp), 0)
 		return filepath.WalkDir(resolvedDir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
