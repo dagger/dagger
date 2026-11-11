@@ -2372,6 +2372,26 @@ func (c *Cache) unlockGraphAs(step Step) {
 	step.End(nil)
 }
 
+// readLockGraphAs takes the graph lock for reading as a profile step of its
+// own, name, for a reader that may hold it long, such as a walk of the
+// graph: a writer that waits behind readers names only the readers, and the
+// step's op spans this reader's wait and hold, which a recording's analysis
+// lines up with that writer's wait. runlockGraphAs releases the lock and
+// ends the step. When nothing records, the step is empty and costs a nil
+// check.
+func (c *Cache) readLockGraphAs(ctx context.Context, name string) Step {
+	ctx, step := BeginStep(ctx, name)
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	return step
+}
+
+// runlockGraphAs releases the graph lock readLockGraphAs took as step, and
+// ends the step.
+func (c *Cache) runlockGraphAs(step Step) {
+	c.egraphMu.RUnlock()
+	step.End(nil)
+}
+
 type Cache struct {
 	testTransferCopied       func(uint64)
 	testTransferPlanPrepared func(int) error

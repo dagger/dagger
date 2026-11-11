@@ -495,8 +495,8 @@ func (c *Cache) snapshotPruneStateCancelable(
 		step := c.lockGraphAs(ctx, "dagql.prune.snapshot")
 		defer c.unlockGraphAs(step)
 	} else {
-		c.egraphMu.RLock()
-		defer c.egraphMu.RUnlock()
+		step := c.readLockGraphAs(ctx, "dagql.prune.snapshot")
+		defer c.runlockGraphAs(step)
 	}
 	if c.blobBacked {
 		var blobs *storedBlobUsage

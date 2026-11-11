@@ -83,7 +83,7 @@ func (c *Cache) persistCurrentState(ctx context.Context) error {
 func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, error) {
 	var snapshot persistStateSnapshot
 
-	c.egraphMu.RLock()
+	step := c.readLockGraphAs(ctx, "dagql.persist.snapshot")
 	snapshot.nextResultID = c.nextSharedResultID
 	selectedResultIDs, persistedRootIDs := c.snapshotPersistedRootClosureLocked()
 
@@ -117,7 +117,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		resultDeps := make([]persistdb.MirrorResultDep, 0, len(depIDs))
 		for _, depID := range depIDs {
 			if _, selected := selectedResultIDs[depID]; !selected {
-				c.egraphMu.RUnlock()
+				c.runlockGraphAs(step)
 				return persistStateSnapshot{}, fmt.Errorf("persist result %d: dependency %d is outside persisted root closure", resultID, depID)
 			}
 			resultDeps = append(resultDeps, persistdb.MirrorResultDep{
@@ -147,7 +147,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 		offers, err := res.pendingOffersLocked()
 		if err != nil {
-			c.egraphMu.RUnlock()
+			c.runlockGraphAs(step)
 			return persistStateSnapshot{}, err
 		}
 		cloudKey, cloud := res.cloudHoldingLocked()
@@ -208,7 +208,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		addEqClassID(eqClassIDs, outputEqID)
 		inputProvenance := c.termInputProvenance[termID]
 		if len(inputProvenance) != len(term.inputEqIDs) {
-			c.egraphMu.RUnlock()
+			c.runlockGraphAs(step)
 			return persistStateSnapshot{}, fmt.Errorf("persist term %d: input provenance len %d does not match input eq IDs len %d", termID, len(inputProvenance), len(term.inputEqIDs))
 		}
 		inputEqIDs := make([]eqClassID, len(term.inputEqIDs))
@@ -306,7 +306,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		}
 	}
 
-	c.egraphMu.RUnlock()
+	c.runlockGraphAs(step)
 
 	if c.snapshotManager != nil {
 		rows := c.snapshotManager.PersistentMetadataRows()
