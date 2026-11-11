@@ -17,6 +17,12 @@
 // The layout is containerd's local store's (blobs/<algorithm>/<encoded>,
 // and ingest/<sha256 of the ref>/ holding the write's ref and data), so an
 // engine state written by that store reads the same.
+//
+// A store can also hold blobs it never wrote (WithImageBlobs): the engine
+// image's own, read in place from the image's directory. Asked for one, it
+// answers as it does for a blob it wrote, so containerd's metadata store
+// records it as shared content with no copy; it never removes one, and Walk
+// leaves them out, so containerd's collection never asks it to.
 package blobstore
 
 import (
@@ -42,6 +48,9 @@ import (
 // Store is a content.Store of blobs under root.
 type Store struct {
 	root string
+	// image, when set, is a directory of blobs in the same layout that the
+	// store reads in place and never writes.
+	image string
 
 	mu sync.Mutex
 	// writing holds the refs with an open writer.
@@ -50,12 +59,53 @@ type Store struct {
 
 var _ content.Store = (*Store)(nil)
 
+// Option configures a Store.
+type Option func(*Store)
+
+// WithImageBlobs makes the store hold the blobs under dir, in its own
+// layout, read in place: the engine image's blobs, which live as long as the
+// engine. The store never writes or removes them. A dir that doesn't exist
+// holds none.
+func WithImageBlobs(dir string) Option {
+	return func(s *Store) { s.image = dir }
+}
+
 // New returns the store under root, creating root when it doesn't exist.
-func New(root string) (*Store, error) {
+func New(root string, opts ...Option) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(root, "ingest"), 0o755); err != nil {
 		return nil, err
 	}
-	return &Store{root: root, writing: map[string]*writer{}}, nil
+	s := &Store{root: root, writing: map[string]*writer{}}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s, nil
+}
+
+// imageBlobPath is where the image directory would hold dgst, which
+// blobPath has validated; "" when the store has no image directory.
+func (s *Store) imageBlobPath(dgst digest.Digest) string {
+	if s.image == "" {
+		return ""
+	}
+	return filepath.Join(s.image, "blobs", dgst.Algorithm().String(), dgst.Encoded())
+}
+
+// open opens dgst's blob, the store's own or else the image's.
+func (s *Store) open(dgst digest.Digest) (*os.File, error) {
+	p, err := s.blobPath(dgst)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		if ip := s.imageBlobPath(dgst); ip != "" {
+			if imageFile, imageErr := os.Open(ip); imageErr == nil {
+				return imageFile, nil
+			}
+		}
+	}
+	return f, err
 }
 
 func (s *Store) blobPath(dgst digest.Digest) (string, error) {
@@ -77,6 +127,13 @@ func (s *Store) Info(_ context.Context, dgst digest.Digest) (content.Info, error
 		return content.Info{}, err
 	}
 	fi, err := os.Stat(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		if ip := s.imageBlobPath(dgst); ip != "" {
+			if imageInfo, imageErr := os.Stat(ip); imageErr == nil {
+				return blobInfo(dgst, imageInfo), nil
+			}
+		}
+	}
 	if err != nil {
 		return content.Info{}, notFound(err, "content %s", dgst)
 	}
@@ -92,8 +149,9 @@ func (s *Store) Update(context.Context, content.Info, ...string) (content.Info, 
 	return content.Info{}, fmt.Errorf("blob store labels: %w", errdefs.ErrNotImplemented)
 }
 
-// Walk calls fn for every blob. It takes no filters: containerd's metadata
-// store filters its own records and walks this store only to collect it.
+// Walk calls fn for every blob the store wrote, not the image's: containerd's
+// metadata store walks this store only to collect it. It takes no filters,
+// since that store filters its own records.
 func (s *Store) Walk(ctx context.Context, fn content.WalkFunc, filters ...string) error {
 	if len(filters) > 0 {
 		return fmt.Errorf("blob store walk filters: %w", errdefs.ErrNotImplemented)
@@ -137,7 +195,8 @@ func (s *Store) Walk(ctx context.Context, fn content.WalkFunc, filters ...string
 	return err
 }
 
-// Delete removes the blob.
+// Delete removes a blob the store wrote; the image's blobs are not its to
+// remove.
 func (s *Store) Delete(_ context.Context, dgst digest.Digest) error {
 	p, err := s.blobPath(dgst)
 	if err != nil {
@@ -152,11 +211,7 @@ func (s *Store) Delete(_ context.Context, dgst digest.Digest) error {
 // ReaderAt opens the blob desc names. It fails when the stored blob isn't
 // desc's size, as a host crash can leave it.
 func (s *Store) ReaderAt(_ context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
-	p, err := s.blobPath(desc.Digest)
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.Open(p)
+	f, err := s.open(desc.Digest)
 	if err != nil {
 		return nil, notFound(err, "content %s", desc.Digest)
 	}
