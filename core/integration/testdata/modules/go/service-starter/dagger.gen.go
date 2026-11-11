@@ -85,15 +85,21 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var s *core.Service
-			if inputArgs["s"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["s"]), &s)
+			var svc *core.Service
+			if inputArgs["svc"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["svc"]), &svc)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg s", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg svc", err))
 				}
 			}
-			(*Starter).Start(&parent, ctx, s)
-			return nil, nil
+			var cache *core.CacheVolume
+			if inputArgs["cache"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["cache"]), &cache)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cache", err))
+				}
+			}
+			return nil, (*Starter).Start(&parent, ctx, svc, cache)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

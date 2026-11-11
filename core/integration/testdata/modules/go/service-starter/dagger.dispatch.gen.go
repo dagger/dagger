@@ -40,7 +40,7 @@ type functionSpec struct {
 
 var functions = []functionSpec{
 	{Name: "starter", Receiver: "Starter", FnName: "", Args: map[string]argumentSpec{}},
-	{Name: "start", Receiver: "Starter", FnName: "Start", Args: map[string]argumentSpec{"s": {Required: false, Default: "", Encoding: "string"}}},
+	{Name: "start", Receiver: "Starter", FnName: "Start", Args: map[string]argumentSpec{"svc": {Required: false, Default: "", Encoding: "string"}, "cache": {Required: false, Default: "", Encoding: "string"}}},
 }
 
 func main() {
