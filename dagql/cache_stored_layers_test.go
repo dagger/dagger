@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 	"time"
+	"weak"
 
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
@@ -210,4 +211,30 @@ func TestStoredLayersForgetLayersNoPartNames(t *testing.T) {
 		runtime.GC()
 		return blobs() == 0
 	}, 10*time.Second, 10*time.Millisecond)
+}
+
+// A closed cache with stored parts is freed once nothing refers to it: the
+// layers it holds don't keep it alive. A cache without stored parts is the
+// control.
+func TestClosedCacheWithStoredPartsIsFreed(t *testing.T) {
+	t.Parallel()
+	freed := func(store bool) func() bool {
+		ctx := cacheTestContext(t.Context())
+		c, err := NewCache(ctx, "", nil, nil, WithBlobStore())
+		require.NoError(t, err)
+		if store {
+			res := storedPartTestPublish(t, ctx, c, "s", "freed-cache", &captureTestValue{text: "v"})
+			stored, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), storedLayersTestPart("snapshot", []snapshots.ExportLayer{storedLayersTestLayer("freed", "")}, nil), 0)
+			require.NoError(t, err)
+			require.True(t, stored)
+		}
+		require.NoError(t, c.CloseDiscardingPersistence())
+		cache := weak.Make(c)
+		return func() bool {
+			runtime.GC()
+			return cache.Value() == nil
+		}
+	}
+	require.Eventually(t, freed(false), 10*time.Second, 10*time.Millisecond, "a closed cache without stored parts is freed")
+	require.Eventually(t, freed(true), 10*time.Second, 10*time.Millisecond, "a closed cache with stored parts is freed")
 }
