@@ -558,7 +558,7 @@ func TestScaleOutTelemetryFollowsTheSession(t *testing.T) {
 	params = engineclient.Params{}
 	silent.scaleOutTelemetryParams(silentRoot, &params)
 	require.False(t, params.EngineCloudTelemetry)
-	require.Empty(t, params.CloudURL)
+	require.Equal(t, receiver.URL, params.CloudURL, "the client's Cloud URL is forwarded for the remote engine's other Cloud calls")
 	require.Equal(t, silentRoot.spanExporter, params.EngineTrace)
 	require.Nil(t, params.EngineTraceWithoutCloud)
 }
@@ -1189,9 +1189,10 @@ func TestUnansweredURLHoldsItsPort(t *testing.T) {
 // publish either, so the client keeps forwarding the session's telemetry.
 func TestUnreachableCloudURLLeavesTheClientForwarding(t *testing.T) {
 	t.Parallel()
+	cloudURL := unansweredURL(t)
 	sess, root := newCloudTestSession(t, &Server{}, &engine.ClientMetadata{
 		CloudAuth:               basicCloudAuth("dag_test_token"),
-		CloudURL:                unansweredURL(t),
+		CloudURL:                cloudURL,
 		CloudTelemetryPublisher: engine.CloudTelemetryPublisherEngine,
 	})
 	t.Cleanup(func() { require.NoError(t, sess.shutdownTelemetry(context.Background())) })
@@ -1204,7 +1205,7 @@ func TestUnreachableCloudURLLeavesTheClientForwarding(t *testing.T) {
 	var params engineclient.Params
 	sess.scaleOutTelemetryParams(root, &params)
 	require.False(t, params.EngineCloudTelemetry)
-	require.Empty(t, params.CloudURL)
+	require.Equal(t, cloudURL, params.CloudURL)
 	require.Nil(t, params.EngineTraceWithoutCloud)
 }
 

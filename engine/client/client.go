@@ -185,6 +185,9 @@ type Params struct {
 	// to Dagger Cloud itself, with CloudAuth, at CloudURL, instead of this
 	// client forwarding it. The engine refreshes an expiring OAuth token from
 	// CloudCredentialsPath on this client's host and writes it back there.
+	// CloudURL, the Cloud API this client is configured with, is sent either
+	// way, so the engine's other Cloud calls (the agent's module search) reach
+	// the same Cloud.
 	EngineCloudTelemetry bool
 	CloudURL             string
 	CloudCredentialsPath string
@@ -2092,9 +2095,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		md.PrimaryTraceID = c.primarySpan.TraceID().String()
 		md.PrimarySpanID = c.primarySpan.SpanID().String()
 	}
+	md.CloudURL = c.CloudURL
 	if c.EngineCloudTelemetry && c.CloudAuth != nil {
 		md.CloudTelemetryPublisher = engine.CloudTelemetryPublisherEngine
-		md.CloudURL = c.CloudURL
 		md.CredentialsPath = c.CloudCredentialsPath
 	}
 

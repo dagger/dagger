@@ -183,7 +183,8 @@ type ClientMetadata struct {
 	CloudAuth *auth.Cloud `json:"cloud_auth,omitempty"`
 
 	// If set, the Dagger Cloud API URL the client is configured with, so the
-	// engine publishes the session's telemetry to the same endpoint.
+	// engine publishes the session's telemetry to the same endpoint, and its
+	// other Cloud calls (the agent's module search) go there too.
 	CloudURL string `json:"cloud_url,omitempty"`
 
 	// Path to the Dagger Cloud credentials file on the client's filesystem.
