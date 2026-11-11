@@ -599,13 +599,13 @@ func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagge
   --github-host "github.test" \
   --github-ca-cert "/github-ca.pem" \
   --netlify-token=env://FAKE_NETLIFY_TOKEN \
-  --netlify-apiurl "http://mock:8080/netlify/api/v1" \
+  --netlify-api-url "http://mock:8080/netlify/api/v1" \
   --pypi-token=env://FAKE_PYPI_TOKEN \
   --pypi-url "http://mock:8080/pypi/legacy/" \
   --npm-token=env://FAKE_NPM_TOKEN \
   --npm-registry-url "http://verdaccio:4873" \
-  --hex-apikey=env://FAKE_HEX_API_KEY \
-  --hex-apiurl "http://mock:8080/hex/api" \
+  --hex-api-key=env://FAKE_HEX_API_KEY \
+  --hex-api-url "http://mock:8080/hex/api" \
   --cargo-registry-token=env://FAKE_CARGO_REGISTRY_TOKEN \
   --cargo-registry-index "sparse+http://mock:8080/cargo/" \
   --aws-access-key-id=env://AWS_ACCESS_KEY_ID \
