@@ -819,11 +819,11 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 	}
 	utilDirPath := "/dagger-dev"
 	tests := dev.GoEnv(dev.Source, false).
-		// Tests that compile parts of this repository in the dev engine seed
-		// its module cache from this one (withRepoGoModules in
-		// core/integration), so it holds the repository's dependencies, as it
-		// did when the tests were compiled here.
-		WithExec([]string{"go", "mod", "download"}).
+		// Tests that compile parts of this repository in the dev engine serve
+		// it the repository's dependencies from this directory, as a file://
+		// module proxy (withRepoGoModules in core/integration).
+		WithMountedDirectory(testGoModuleDownloadsPath, dev.goModuleDownloads()).
+		WithEnvVariable("_DAGGER_TESTS_GO_MODULE_DOWNLOADS", testGoModuleDownloadsPath).
 		WithFile("/usr/local/bin/otelgotest", otelgotest).
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
@@ -833,6 +833,33 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 		WithServiceBinding("registry", registrySvc)
 
 	return dev.InstallClient(ctx, tests, devEngineSvc)
+}
+
+// testGoModuleDownloadsPath is where the tests container mounts
+// goModuleDownloads.
+const testGoModuleDownloadsPath = "/go-module-downloads"
+
+// goModuleDownloads are the downloads of every module the source's root Go
+// module requires, laid out as the go command's module cache download
+// directory, which a file:// GOPROXY serves. They come from the root go.mod,
+// go.sum and the go.mod of each local replacement alone, in a container with
+// no cache volume, so the directory is the exec's own result, keyed by those
+// files, and holds the downloads on every engine that has the result.
+func (dev *EngineDev) goModuleDownloads() *dagger.Directory {
+	src := core.NewDirectory().
+		WithFile("go.mod", dev.Source.File("go.mod")).
+		WithFile("go.sum", dev.Source.File("go.sum"))
+	for _, replacement := range []string{"sdk/go", "engine/distconsts", "internal/fastbolt"} {
+		src = src.WithFile(path.Join(replacement, "go.mod"), dev.Source.File(path.Join(replacement, "go.mod")))
+	}
+	return core.NewContainer().
+		From(consts.GolangImage).
+		WithEnvVariable("GOMODCACHE", "/gomodcache").
+		WithEnvVariable("GOTOOLCHAIN", "local").
+		WithMountedDirectory("/src", src).
+		WithWorkdir("/src").
+		WithExec([]string{"go", "mod", "download"}).
+		Directory("/gomodcache/cache/download")
 }
 
 func registry() *dagger.Service {
