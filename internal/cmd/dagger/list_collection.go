@@ -38,14 +38,22 @@ func prepareArtifactOutput(ctx context.Context, dag *dagger.Client, cmd *cobra.C
 	if err != nil {
 		return nil, err
 	}
+	paths, err := readArtifactListPaths(ctx, dag, all)
+	if err != nil {
+		return nil, err
+	}
+	return prepareArtifactOutputWithSchema(cmd, items, definitions, paths)
+}
+
+func prepareArtifactOutputWithSchema(cmd *cobra.Command, items []listedArtifact, definitions artifact.Dimensions, paths []artifactListPath) (map[string]string, error) {
+	format, _ := cmd.Flags().GetString("format")
+	if len(items) == 0 || format == "link" {
+		return nil, nil
+	}
 	names := map[string]string{}
 	presence := map[string]string{}
 	for id, allocated := range artifactDimensionFlagNames(cmd, definitions) {
 		names[id], presence[id] = allocated.Key, allocated.Presence
-	}
-	paths, err := readArtifactListPaths(ctx, dag, all)
-	if err != nil {
-		return nil, err
 	}
 	index, err := newArtifactNameIndex(paths)
 	if err != nil {
