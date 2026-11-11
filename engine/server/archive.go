@@ -671,7 +671,23 @@ func (a archiveSignalReader) batch(ctx context.Context, signal string, cursor, h
 		}
 		return &coltracepb.ExportTraceServiceRequest{ResourceSpans: resourceSpans}, rows[len(rows)-1].ID, len(rows), nil
 	case "logs":
-		rows, scanned, err := a.db.SelectLogsRangeMatching(ctx, clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)}, a.traceID, a.logScope, a.logSelection, a.includeControl)
+		params := clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)}
+		var rows []clientdb.Log
+		var scanned int64
+		var err error
+		if a.logSelection == nil {
+			// Full archive replay opens the store without indexes. Read the
+			// stream directly; only selected reads use the metadata index.
+			rows, err = a.db.SelectLogsRange(ctx, params)
+			if err == nil {
+				if len(rows) == 0 {
+					return nil, 0, 0, errors.New("archive log stream truncated before cut")
+				}
+				scanned = rows[len(rows)-1].ID
+			}
+		} else {
+			rows, scanned, err = a.db.SelectLogsRangeMatching(ctx, params, a.traceID, a.logScope, a.logSelection, a.includeControl)
+		}
 		if err != nil {
 			return nil, 0, 0, err
 		}
