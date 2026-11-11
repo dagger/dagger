@@ -81,7 +81,7 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 // Build the export driver the Go SDK's code generation loads packages
 // through: a GOPACKAGESDRIVER that serves the export data of what they import
 // from dagger/go's archives, so the go command compiles none of it.
-func (r *EngineDev) ExportDriver() *File { // engine-dev (../../main.go:594:1)
+func (r *EngineDev) ExportDriver() *File { // engine-dev (../../main.go:598:1)
 	q := r.query.Select("exportDriver")
 
 	return new(File).WithGraphQLQuery(q)
@@ -252,7 +252,7 @@ func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../main.go:524
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../main.go:583:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../main.go:587:1)
 	q := r.query.Select("introspectionTool")
 
 	return new(File).WithGraphQLQuery(q)
@@ -316,17 +316,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../main.go:646:2)
+	Image string // engine-dev (../../main.go:650:2)
 
-	DryRun bool // engine-dev (../../main.go:651:2)
+	DryRun bool // engine-dev (../../main.go:655:2)
 
-	RegistryUsername string // engine-dev (../../main.go:654:2)
+	RegistryUsername string // engine-dev (../../main.go:658:2)
 
-	RegistryPassword *Secret // engine-dev (../../main.go:656:2)
+	RegistryPassword *Secret // engine-dev (../../main.go:660:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:641:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:645:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -354,7 +354,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:627:1)
+func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:631:1)
 	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)

@@ -85,7 +85,7 @@ type GoClientDev {
     # A Go image: codegen lists sdk/go's module with the go command.
     container
       .from(golang.image(version: "1.27"))
-      .withFile("/usr/local/bin/codegen", codegen(ws: self.ws).binary)
+      .withFile("/usr/local/bin/codegen", codegen.binary)
       .withFile("/usr/local/bin/export-driver", engine.exportDriver)
       .withMountedFile("/schema.json", engine.introspectionJson)
       .withMountedDirectory("/gobuild-archives", archives)

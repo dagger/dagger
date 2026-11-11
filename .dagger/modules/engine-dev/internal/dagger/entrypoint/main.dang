@@ -42,7 +42,7 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("ExportDriver", typeDef.withObject("File"))
             .withDescription("Build the export driver the Go SDK's code generation loads packages\nthrough: a GOPACKAGESDRIVER that serves the export data of what they import\nfrom dagger/go's archives, so the go command compiles none of it.")
-            .withSourceMap(sourceMap("main.go", 594, 1))
+            .withSourceMap(sourceMap("main.go", 598, 1))
         )
         .withFunction(
           function("GoEnv", typeDef.withObject("Container"))
@@ -82,7 +82,7 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("IntrospectionTool", typeDef.withObject("File"))
             .withDescription("Build the `introspect` tool which introspects the engine API")
-            .withSourceMap(sourceMap("main.go", 583, 1))
+            .withSourceMap(sourceMap("main.go", 587, 1))
         )
         .withFunction(
           function("LoadToDocker", typeDef.withObject("LoadedEngine"))
@@ -102,16 +102,16 @@ type Entrypoint implements ModuleEntrypoint {
           function("Publish", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Publish all engine images to a registry")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
-            .withSourceMap(sourceMap("main.go", 641, 1))
-            .withArg("image", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Image target to push to", defaultValue: ("\"ghcr.io/dagger/engine\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 646, 2))
-            .withArg("tag", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "List of tags to use", sourceMap: sourceMap("main.go", 648, 2))
-            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 651, 2))
-            .withArg("registryUsername", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true).withOptional(true), sourceMap: sourceMap("main.go", 654, 2))
-            .withArg("registryPassword", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 656, 2))
+            .withSourceMap(sourceMap("main.go", 645, 1))
+            .withArg("image", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Image target to push to", defaultValue: ("\"ghcr.io/dagger/engine\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 650, 2))
+            .withArg("tag", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "List of tags to use", sourceMap: sourceMap("main.go", 652, 2))
+            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 655, 2))
+            .withArg("registryUsername", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true).withOptional(true), sourceMap: sourceMap("main.go", 658, 2))
+            .withArg("registryPassword", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 660, 2))
         )
         .withFunction(
           function("ReleaseDryRun", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
-            .withSourceMap(sourceMap("main.go", 627, 1))
+            .withSourceMap(sourceMap("main.go", 631, 1))
             .withCheck
         )
         .withFunction(
