@@ -668,6 +668,54 @@ func TestInstallSpanLookupWalksClosureOwnersUpward(t *testing.T) {
 		[]trace.SpanContext{moduleSpanCtx})
 }
 
+// A result low in a large graph, such as a package the engine image ships
+// built, has thousands of ancestors, and every resume of it walks them. The
+// walk finds each ancestor once and allocates nothing per ancestor.
+func TestInstallAncestorWalkOverAWideGraph(t *testing.T) {
+	// Not parallel: AllocsPerRun counts the whole process's allocations.
+	ctx := t.Context()
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	// Layers of results, each depending on every result of the layer below:
+	// the root's ancestors are every other result, reached many times over.
+	const layers, width = 40, 50
+	root := &sharedResult{id: 1}
+	c.resultsByID[root.id] = root
+	below := []*sharedResult{root}
+	next := sharedResultID(2)
+	c.egraphMu.Lock()
+	for range layers {
+		var layer []*sharedResult
+		for range width {
+			res := &sharedResult{id: next}
+			next++
+			c.resultsByID[res.id] = res
+			for _, dep := range below {
+				assert.NilError(t, c.addExplicitDependencyLocked(ctx, res, dep, "test"))
+			}
+			layer = append(layer, res)
+		}
+		below = layer
+	}
+	c.egraphMu.Unlock()
+
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	ancestors := c.installAncestorIDsLocked(root.id)
+	assert.Equal(t, len(ancestors), layers*width)
+	slices.Sort(ancestors)
+	for i, id := range ancestors {
+		assert.Equal(t, id, sharedResultID(i+2))
+	}
+	// A second walk finds the same, so the first left no marks behind.
+	assert.Equal(t, len(c.installAncestorIDsLocked(root.id)), layers*width)
+
+	allocs := testing.AllocsPerRun(10, func() {
+		c.installAncestorIDsLocked(root.id)
+	})
+	// Only the returned slice grows: a dozen allocations for 2,000 ancestors.
+	assert.Assert(t, allocs <= 16, "a walk over %d ancestors allocated %v times", layers*width, allocs)
+}
+
 func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
 	t.Parallel()
 

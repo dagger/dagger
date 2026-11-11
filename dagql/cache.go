@@ -1272,36 +1272,71 @@ func (c *Cache) recordSessionResultInstallSpanLocked(ctx context.Context, sessio
 }
 
 // installAncestorIDsLocked returns the IDs of results that transitively
-// depend on rootID, found by walking direct dep edges upward via depParents.
-// rootID itself is excluded. Caller must hold egraphMu at least for read.
+// depend on rootID, found by walking direct dep edges upward via depParents,
+// nearest first. rootID itself is excluded. Caller must hold egraphMu at
+// least for read.
+//
+// A result low in a large graph, such as a package the engine image ships
+// built, has thousands of ancestors, and every resume of one walks them all,
+// so the walk allocates nothing per ancestor: it marks what it visited in a
+// pooled bitset, and its result is its own queue.
 func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID {
 	if rootID == 0 {
 		return nil
 	}
 	root := c.resultsByID[rootID]
-	if root == nil || root.depParents == nil || root.depParents.Empty() {
+	if root == nil || len(root.depParents) == 0 {
 		return nil
 	}
-	seen := map[sharedResultID]struct{}{rootID: {}}
-	queue := []sharedResultID{rootID}
+	marks := ancestorMarksPool.Get().(*ancestorMarks)
+	marks.visit(rootID)
 	var out []sharedResultID
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
-		res := c.resultsByID[id]
-		if res == nil || res.depParents == nil {
-			continue
-		}
-		for parentID := range res.depParents.Items() {
-			if _, ok := seen[parentID]; ok {
-				continue
-			}
-			seen[parentID] = struct{}{}
+	for parentID := range root.depParents {
+		if marks.visit(parentID) {
 			out = append(out, parentID)
-			queue = append(queue, parentID)
 		}
 	}
+	for i := 0; i < len(out); i++ {
+		res := c.resultsByID[out[i]]
+		if res == nil {
+			continue
+		}
+		for parentID := range res.depParents {
+			if marks.visit(parentID) {
+				out = append(out, parentID)
+			}
+		}
+	}
+	marks.unvisit(rootID)
+	for _, id := range out {
+		marks.unvisit(id)
+	}
+	ancestorMarksPool.Put(marks)
 	return out
+}
+
+// ancestorMarks is an ancestor walk's visited set: a bit per result number.
+// Result numbers are dense, so the bitset stays small; a walk clears the bits
+// it set before it returns the set to the pool.
+type ancestorMarks struct{ words []uint64 }
+
+var ancestorMarksPool = sync.Pool{New: func() any { return new(ancestorMarks) }}
+
+// visit marks id and reports whether it was unmarked.
+func (m *ancestorMarks) visit(id sharedResultID) bool {
+	word, bit := int(id/64), uint64(1)<<(id%64)
+	if word >= len(m.words) {
+		m.words = append(m.words, make([]uint64, word+1-len(m.words))...)
+	}
+	if m.words[word]&bit != 0 {
+		return false
+	}
+	m.words[word] |= bit
+	return true
+}
+
+func (m *ancestorMarks) unvisit(id sharedResultID) {
+	m.words[id/64] &^= uint64(1) << (id % 64)
 }
 
 // ResultInstallSpans returns install span contexts recorded for res in the
@@ -2879,8 +2914,9 @@ type sharedResult struct {
 	deps map[sharedResultID]struct{}
 	// depParents is the reverse index for direct deps. It lets install-span
 	// lookups walk dep edges upward on demand to find closure-owning installs
-	// (module API call returns) for the result being evaluated.
-	depParents *set.TreeSet[sharedResultID]
+	// (module API call returns) for the result being evaluated. Nothing reads
+	// it in order.
+	depParents map[sharedResultID]struct{}
 	// sessionResourceHandle is set when this result is itself an attached
 	// session-resource handle leaf. requiredSessionResources is the flattened
 	// transitive set of handle requirements for cache-hit validation.
@@ -4028,10 +4064,10 @@ func (c *Cache) addExplicitDependenciesLocked(
 		if err != nil {
 			return err
 		}
-		if !changed || res.depParents == nil {
+		if !changed {
 			continue
 		}
-		for ancestorID := range res.depParents.Items() {
+		for ancestorID := range res.depParents {
 			if ancestor := c.resultsByID[ancestorID]; ancestor != nil {
 				queue = append(queue, ancestor)
 			}
@@ -4046,9 +4082,9 @@ func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sh
 		return
 	}
 	if depRes.depParents == nil {
-		depRes.depParents = newSharedResultIDSet()
+		depRes.depParents = map[sharedResultID]struct{}{}
 	}
-	depRes.depParents.Insert(parentRes.id)
+	depRes.depParents[parentRes.id] = struct{}{}
 }
 
 func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID sharedResultID) {
@@ -4056,8 +4092,8 @@ func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID shared
 	if depRes == nil || depRes.depParents == nil {
 		return
 	}
-	depRes.depParents.Remove(parentID)
-	if depRes.depParents.Empty() {
+	delete(depRes.depParents, parentID)
+	if len(depRes.depParents) == 0 {
 		depRes.depParents = nil
 	}
 }
