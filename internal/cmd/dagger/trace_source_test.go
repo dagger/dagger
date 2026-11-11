@@ -191,3 +191,32 @@ func TestEngineTraceInsideSessionReadsCloud(t *testing.T) {
 	})
 	require.ErrorIs(t, err, refused)
 }
+
+func TestEngineTraceParamsSelectRunner(t *testing.T) {
+	oldEngine, oldRunner := engineFlag, RunnerHost
+	oldCloud, oldCloudEnv := cloudFlag, cloudEngineEnvSet
+	t.Cleanup(func() {
+		engineFlag, RunnerHost = oldEngine, oldRunner
+		cloudFlag, cloudEngineEnvSet = oldCloud, oldCloudEnv
+	})
+	cloudFlag, cloudEngineEnvSet = false, false
+	RunnerHost = "unix:///tmp/trace-test-engine.sock"
+	for _, tc := range []struct {
+		name, flag, env, want string
+	}{
+		{"runner fallback", "", "", RunnerHost},
+		{"environment", "", "tcp://env-engine:1234", "tcp://env-engine:1234"},
+		{"flag", "tcp://flag-engine:1234", "tcp://env-engine:1234", "tcp://flag-engine:1234"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engineFlag = tc.flag
+			t.Setenv(engineEnv, tc.env)
+			params, err := engineTraceParams(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, tc.want, params.RunnerHost)
+			require.False(t, params.LoadWorkspaceModules)
+			require.Nil(t, params.Workspace)
+			require.Empty(t, params.Module)
+		})
+	}
+}
