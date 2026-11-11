@@ -299,6 +299,71 @@ func (AgentRestoreSuite) TestEngineStoreTraceDisplay(ctx context.Context, t *tes
 	require.EqualValues(t, 0, cloudRequests.Load(), "lazy browsing must stay on its selected engine store")
 }
 
+// TestEngineStorePlainSessionTrace: a session that runs no agent is retained
+// by its trace too, so `dagger trace` reads it from the engine's telemetry
+// store without Cloud, while `dagger agent -r` never offers it.
+func (AgentRestoreSuite) TestEngineStorePlainSessionTrace(ctx context.Context, t *testctx.T) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	provider := sdktrace.NewTracerProvider()
+	defer provider.Shutdown(context.WithoutCancel(ctx))
+	sourceCtx, sourceSpan := provider.Tracer("plain-session-acceptance").Start(ctx, "source", trace.WithNewRoot())
+	defer sourceSpan.End()
+	traceID := sourceSpan.SpanContext().TraceID().String()
+	source, _ := connectWithTrace(sourceCtx, t)
+	// Assembled at run time, so only the exec's output carries the marker.
+	const marker = "PLAIN-SESSION-RETAINED-OUTPUT"
+	_, err := sdkcore.NewQuery(source).Container().From(alpineImage).
+		WithEnvVariable("PLAIN_SESSION_FIXTURE", rand.Text()).
+		WithExec([]string{"sh", "-c", "printf 'PLAIN-SESSION-%s\\n' RETAINED-OUTPUT"}).Sync(sourceCtx)
+	require.NoError(t, err)
+	require.NoError(t, source.Close())
+	sourceSpan.End()
+
+	readerCtx, readerSpan := provider.Tracer("plain-session-acceptance").Start(ctx, "reader", trace.WithNewRoot())
+	defer readerSpan.End()
+	reader, readerSink := connectWithTrace(readerCtx, t)
+	defer reader.Close()
+	client := archive.NewClient(readerSink.conn)
+	// Sealing finishes during asynchronous session removal.
+	var manifest archive.Manifest
+	require.Eventually(t, func() bool {
+		manifest, err = client.Inspect(readerCtx, traceID)
+		return err == nil
+	}, time.Minute, 100*time.Millisecond, "plain session was never retained")
+	require.True(t, manifest.TelemetryOnly)
+	require.Equal(t, archive.StateClosed, manifest.State)
+	require.Nil(t, listedArchive(readerCtx, t, client, traceID), "a plain session must not be offered for agent restore")
+	require.NoError(t, reader.Close())
+
+	var cloudRequests atomic.Int32
+	cloudTrap := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		cloudRequests.Add(1)
+		http.Error(w, "local display must not contact Cloud", http.StatusInternalServerError)
+	}))
+	defer cloudTrap.Close()
+	bin := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
+	require.NotEmpty(t, bin)
+	dump := filepath.Join(t.TempDir(), "trace.log")
+	cmd := exec.CommandContext(ctx, bin, "trace", traceID, "--log", "-o", dump)
+	cmd.Dir = t.TempDir()
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		switch key {
+		case "DAGGER_SESSION_PORT", "DAGGER_SESSION_TOKEN", "TRACEPARENT", "TRACESTATE", "DAGGER_TUI_CONSOLE", "DAGGER_PROGRESS", "DAGGER_CLOUD_TOKEN", "DAGGER_CLOUD_URL":
+			continue
+		}
+		cmd.Env = append(cmd.Env, entry)
+	}
+	cmd.Env = append(cmd.Env, "DAGGER_CLOUD_URL="+cloudTrap.URL, "DAGGER_CLOUD_TOKEN=")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	dumped, err := os.ReadFile(dump)
+	require.NoError(t, err)
+	require.Contains(t, string(dumped), marker)
+	require.EqualValues(t, 0, cloudRequests.Load(), "a retained plain session must be read from the engine store")
+}
+
 func displayLogBytes(batch *collogspb.ExportLogsServiceRequest) int {
 	var size int
 	for _, resource := range batch.ResourceLogs {

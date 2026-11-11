@@ -79,7 +79,8 @@ func OpenStore(ctx context.Context, client *archive.Client, traceID string) (*St
 // evaluated. Call only after source selection; a verification or import
 // failure must not fall back.
 func (a *Store) FetchBootstrap(ctx context.Context, sink cloud.TraceImportSink) error {
-	if a.unsealed {
+	if a.unsealed || a.manifest.TelemetryOnly {
+		// No bootstrap, or one with an empty agent roster.
 		return nil
 	}
 	reader, ok := a.reader.(interface {
