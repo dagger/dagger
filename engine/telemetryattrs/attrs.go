@@ -854,6 +854,11 @@ const (
 	CachePartSizesAttr = "dagger.io/cache.parts.sizes"
 	// CacheTypeAttr is the name of the entry's type, such as "Container".
 	CacheTypeAttr = "dagger.io/cache.type"
+	// CacheImageAttr is "true" when the engine image ships the entry: the
+	// image's merge gave it an image holding, so every engine built from the
+	// image has it and its parts, and the engine never exports them (the
+	// Cloud carries only what engines made); absent otherwise.
+	CacheImageAttr = "dagger.io/cache.image"
 	// CacheReplacementsAttr is the decimal-string count of the times the
 	// entry's value was replaced in place under the same result number, read
 	// with the state beside it: the parts, dependencies and expiry it names

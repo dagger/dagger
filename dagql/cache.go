@@ -1785,6 +1785,9 @@ func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge 
 		PartSizes:     sizes,
 		Replacements:  res.replacements,
 	}
+	if _, image := res.imageHoldingLocked(); image != nil {
+		state.Image = true
+	}
 	edge, found := c.persistedEdgesByResult[res.id]
 	pending := pendingEdge != nil && !pendingEdge.created
 	switch {

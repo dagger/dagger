@@ -457,6 +457,9 @@ func cacheStateAttrs(state dagql.CacheResultState) []attribute.KeyValue {
 	if state.Replacements != 0 {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheReplacementsAttr, strconv.FormatUint(state.Replacements, 10)))
 	}
+	if state.Image {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheImageAttr, "true"))
+	}
 	return attrs
 }
 

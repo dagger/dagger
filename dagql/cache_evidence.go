@@ -164,6 +164,8 @@ type CacheResultState struct {
 	// Replacements counts the replacements of the entry's value in place;
 	// the state above describes the current value.
 	Replacements uint64
+	// Image reports that the engine image ships the entry (FromImage).
+	Image bool
 }
 
 // ResultState reads res's state in the cache that decided this call, with the

@@ -194,3 +194,25 @@ func TestCloudOfferOfAnImageEntryIsLeftOut(t *testing.T) {
 		require.True(t, imageOfferLayers(&offer.record), "the image's offer stays")
 	}
 }
+
+// A call's span reports that the engine image ships its result: an entry the
+// image's merge gave an image holding reports it, and one the engine made
+// itself doesn't.
+func TestCacheResultStateImage(t *testing.T) {
+	t.Parallel()
+	bundle := mergeTestImageOffered(t, "root", imageTestLayerOffer(ImageBlobAddress))
+	ctx, b, srv := transferTestCache(t)
+	reply, err := b.MergeValues(ctx, ImageCacheID, bundle)
+	require.NoError(t, err)
+	b.egraphMu.RLock()
+	row := b.resultsByID[sharedResultID(reply.Imported()[0].ResultID)]
+	b.egraphMu.RUnlock()
+	state, ok := b.resultState(ctx, row, nil)
+	require.True(t, ok)
+	require.True(t, state.Image, "the image ships the entry")
+
+	own := persistedListTestResult(t, ctx, b, srv, "own", &transferTestValue{Text: "own"})
+	state, ok = b.resultState(ctx, own.cacheSharedResult(), nil)
+	require.True(t, ok)
+	require.False(t, state.Image, "the engine made the entry")
+}

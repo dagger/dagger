@@ -1635,3 +1635,24 @@ func TestCompactEqClassesRefusesAndChangesNothing(t *testing.T) {
 		require.Equal(t, before, testEqClassCheckStateOf(cloud))
 	})
 }
+
+// A holding whose call span reports that the engine image ships its entry
+// keeps that, as it keeps executed evidence; another holding of the entry
+// doesn't take it.
+func TestRemoteHoldingFromTheImage(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	image := HolderKey{Cache: "engine-a", Number: 1}
+	own := HolderKey{Cache: "engine-b", Number: 1}
+	desc := holdingOf("from-image")
+	desc.Image = true
+	a.call(callRow{key: image, session: "s", holding: desc})
+	a.call(callRow{key: own, session: "s", holding: holdingOf("from-image")})
+	require.True(t, requireHolding(t, cloud, image).Image)
+	require.False(t, requireHolding(t, cloud, own).Image)
+
+	// A later call span of the holding that doesn't say so leaves it.
+	a.call(callRow{key: image, session: "s", holding: holdingOf("from-image")})
+	require.True(t, requireHolding(t, cloud, image).Image)
+}
