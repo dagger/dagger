@@ -179,8 +179,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	for _, name := range qemuNames {
 		bins = append(bins, binAndPath{path: filepath.Join("/usr/local/bin", name), file: qemuDir.File(name)})
 	}
-	for name, bin := range build.cniPlugins() {
-		bins = append(bins, binAndPath{path: filepath.Join("/opt/cni/bin", name), file: bin})
+	for _, plugin := range build.cniPlugins() {
+		bins = append(bins, binAndPath{path: filepath.Join("/opt/cni/bin", plugin.name), file: plugin.file})
 	}
 
 	ctr := base.
@@ -478,11 +478,20 @@ func (build *Builder) sshfsBin() *dagger.File {
 		File("/src/build/sshfs")
 }
 
-// cniPlugins are the CNI plugin binaries, by name.
-func (build *Builder) cniPlugins() map[string]*dagger.File {
+// cniPlugin is a CNI plugin binary and the name the engine image installs it
+// under.
+type cniPlugin struct {
+	name string
+	file *dagger.File
+}
+
+// cniPlugins are the CNI plugin binaries, always in the same order: the engine
+// image adds them in this order, so its recipe, and every cached result built on
+// it, depends on the order.
+func (build *Builder) cniPlugins() []cniPlugin {
 	src := core.Git("github.com/containernetworking/plugins").Tag(consts.CniVersion).Tree()
 
-	bins := map[string]*dagger.File{}
+	var bins []cniPlugin
 	for _, pluginPath := range []string{
 		"plugins/main/bridge",
 		"plugins/main/loopback",
@@ -492,9 +501,12 @@ func (build *Builder) cniPlugins() map[string]*dagger.File {
 		// CNI plugins are third-party; VCS stamping is irrelevant here, so we
 		// don't thread any VCS info into their build. Go names a binary after
 		// its package's last path element.
-		bins[path.Base(pluginPath)] = goBinary(src, pluginPath, build.platformSpec, golang.GoOpts{
-			Version:    consts.GolangVersion,
-			BuildFlags: []string{"-ldflags=-s -w"},
+		bins = append(bins, cniPlugin{
+			name: path.Base(pluginPath),
+			file: goBinary(src, pluginPath, build.platformSpec, golang.GoOpts{
+				Version:    consts.GolangVersion,
+				BuildFlags: []string{"-ldflags=-s -w"},
+			}),
 		})
 	}
 	return bins
