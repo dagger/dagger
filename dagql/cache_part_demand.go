@@ -50,7 +50,7 @@ func transferShellLocked(res AnyResult, row *sharedResult) bool {
 	return !ok || shell.PartTransferShell()
 }
 
-func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
+func (c *Cache) usesPartAcquisition(ctx context.Context, res AnyResult, row *sharedResult) bool {
 	if _, ok := UnwrapAs[HasPartHost](res); !ok {
 		return false
 	}
@@ -62,7 +62,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if settled {
 		return uses
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	shell := transferShellLocked(res, row)
 	gate := row.partGate.gate.Load()

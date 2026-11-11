@@ -1613,7 +1613,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 		rerr       error
 		onReleases []OnReleaseFunc
 	)
-	c.egraphMu.Lock()
+	step := c.lockGraphAs(ctx, "dagql.releaseSession")
 	queue := make([]*sharedResult, 0, len(plan.resultIDs))
 	for resultID := range plan.resultIDs {
 		var err error
@@ -1623,7 +1623,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
-	c.egraphMu.Unlock()
+	c.unlockGraphAs(step)
 
 	rerr = errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
 	for callKey := range plan.arbitraryCallKeys {
@@ -1849,10 +1849,10 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 		onReleases []OnReleaseFunc
 		rerr       error
 	)
-	c.egraphMu.Lock()
+	step := c.lockGraphAs(ctx, "dagql.prune.removeEdge")
 	edge, found := c.persistedEdgesByResult[resultID]
 	if !found || edge.unpruneable {
-		c.egraphMu.Unlock()
+		c.unlockGraphAs(step)
 		return time.Time{}, false, 0, nil
 	}
 	delete(c.persistedEdgesByResult, resultID)
@@ -1875,7 +1875,7 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 		// The Cloud compacts its classes on collection, not in a prune.
 		c.eqClassRemoved = true
 	}
-	c.egraphMu.Unlock()
+	c.unlockGraphAs(step)
 	if c.testAfterRetentionDrop != nil {
 		c.testAfterRetentionDrop(resultID)
 	}
@@ -2352,6 +2352,25 @@ const (
 	resultDecodeLockIdent  = "dagql.result.decode"
 	resultPayloadLockIdent = "dagql.result.payload"
 )
+
+// lockGraphAs takes the graph lock for writing as a profile step of its
+// own, name, for a caller whose context may carry no op of its own, such as
+// a pass the engine starts by itself: a wait behind the hold names the step,
+// and the step's op spans the wait and the hold. unlockGraphAs releases the
+// lock and ends the step. When nothing records, the step is empty and costs
+// a nil check.
+func (c *Cache) lockGraphAs(ctx context.Context, name string) Step {
+	ctx, step := BeginStep(ctx, name)
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	return step
+}
+
+// unlockGraphAs releases the graph lock lockGraphAs took as step, and ends
+// the step.
+func (c *Cache) unlockGraphAs(step Step) {
+	c.egraphMu.Unlock()
+	step.End(nil)
+}
 
 type Cache struct {
 	testTransferCopied       func(uint64)
@@ -5107,7 +5126,7 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 // groups: the whole-result group for plain lazy values, the resolved
 // named groups for parts values. nil or empty parts means "everything".
 func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sharedResult, parts []PartKey) error {
-	if c.usesPartAcquisition(res, shared) {
+	if c.usesPartAcquisition(ctx, res, shared) {
 		return c.evaluateAcquiredParts(ctx, res, shared, parts)
 	}
 	shared.lazyMu.Lock()
@@ -6080,8 +6099,8 @@ func (c *Cache) measureAllResultSizes(ctx context.Context) (rerr error) {
 			rerr = errors.Join(rerr, err)
 		}
 	}()
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
+	step := c.lockGraphAs(ctx, "dagql.usage.publish")
+	defer c.unlockGraphAs(step)
 	snapshot.releaseLocked(context.WithoutCancel(ctx))
 	if err := ctx.Err(); err != nil {
 		return err

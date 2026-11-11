@@ -535,7 +535,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			installedRevision := res.payloadRevision
 			res.payloadMu.Unlock()
-			c.updateDecodedPayloadBytes(res, decoded.Unwrap(), installedRevision)
+			c.updateDecodedPayloadBytes(ctx, res, decoded.Unwrap(), installedRevision)
 			if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
 				return err
 			}
@@ -746,9 +746,9 @@ func persistedEnvelopeTypeNames(env PersistedResultEnvelope, names []persistedEn
 // updateDecodedPayloadBytes replaces an imported row's envelope size with
 // its decoded value's, unless the row's payload changed after revision.
 // Callers hold no cache locks: sizing may take the value's own lock.
-func (c *Cache) updateDecodedPayloadBytes(res *sharedResult, decoded Typed, revision uint64) {
+func (c *Cache) updateDecodedPayloadBytes(ctx context.Context, res *sharedResult, decoded Typed, revision uint64) {
 	n := cachePayloadBytes(decoded)
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	res.payloadMu.RLock()
 	current := res.payloadRevision == revision
@@ -1042,7 +1042,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			}
 			installedRevision := res.payloadRevision
 			res.payloadMu.Unlock()
-			c.updateDecodedPayloadBytes(res, decoded.Unwrap(), installedRevision)
+			c.updateDecodedPayloadBytes(ctx, res, decoded.Unwrap(), installedRevision)
 
 			resolver = decodeResolver
 		}

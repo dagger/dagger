@@ -69,9 +69,9 @@ func (c *Cache) persistCurrentState(ctx context.Context) error {
 	if err := c.applyPersistStateSnapshot(ctx, snapshot); err != nil {
 		return err
 	}
-	c.egraphMu.Lock()
+	step := c.lockGraphAs(ctx, "dagql.persist")
 	c.persistedResults = len(snapshot.results)
-	c.egraphMu.Unlock()
+	c.unlockGraphAs(step)
 	return nil
 }
 

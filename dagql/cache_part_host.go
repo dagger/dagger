@@ -45,7 +45,7 @@ func (host *PartHost) Evaluate(ctx context.Context, parts ...PartKey) error {
 	watch := partReselectWatch{loop: "PartHost.Evaluate"}
 	for {
 		watch.again(ctx, host.row, PersistedPartAddress{OutputPath: host.path})
-		if host.cache.usesPartAcquisition(value, host.row) {
+		if host.cache.usesPartAcquisition(ctx, value, host.row) {
 			err := host.cache.evaluateAcquiredScope(ctx, root, host.row, host.path, parts)
 			if partCanReselect(err) {
 				continue
