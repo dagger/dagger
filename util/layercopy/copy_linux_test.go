@@ -826,13 +826,13 @@ func TestCopyEntryMissingSourceAfterFilter(t *testing.T) {
 			unstated: true,
 		}
 		t.Run(tc.name+" unstated excluded", func(t *testing.T) {
-			matcher, err := newMatcher(dir, Filter{Only: map[string]struct{}{"keep.txt": {}}})
+			matcher, err := newMatcher(dir, "", Filter{Only: map[string]struct{}{"keep.txt": {}}})
 			require.NoError(t, err)
 			err = (&Copier{}).copyEntry(context.Background(), &source{}, matcher, ent, "/dst/x", CopyOptions{}, matchState{}, nil, resolvedParent{})
 			require.NoError(t, err)
 		})
 		t.Run(tc.name+" unstated included", func(t *testing.T) {
-			matcher, err := newMatcher(dir, Filter{Only: map[string]struct{}{ent.Rel: {}}})
+			matcher, err := newMatcher(dir, "", Filter{Only: map[string]struct{}{ent.Rel: {}}})
 			require.NoError(t, err)
 			err = (&Copier{}).copyEntry(context.Background(), &source{}, matcher, ent, "/dst/x", CopyOptions{}, matchState{}, nil, resolvedParent{})
 			require.ErrorIs(t, err, tc.wantErr)
