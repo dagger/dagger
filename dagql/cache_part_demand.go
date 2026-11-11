@@ -50,7 +50,7 @@ func transferShellLocked(res AnyResult, row *sharedResult) bool {
 	return !ok || shell.PartTransferShell()
 }
 
-func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
+func (c *Cache) usesPartAcquisition(ctx context.Context, res AnyResult, row *sharedResult) bool {
 	if _, ok := UnwrapAs[HasPartHost](res); !ok {
 		return false
 	}
@@ -75,7 +75,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 			lookup = l
 		}
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	shell := transferShellLocked(res, row)
 	equivalent := !shell && lookup.frame != nil && !row.hasPartOffersLocked() && c.hasEquivalentLocked(row, lookup)

@@ -146,12 +146,12 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		return report, err
 	}
 
-	c.egraphMu.Lock()
+	step := c.lockGraphAs(ctx, "dagql.prune.metadataEstimate")
 	report.BeforeCompaction = c.metadataPruneEstimateLocked()
 	report.AfterInitialCompaction = report.BeforeCompaction
 	report.AfterPrune = report.BeforeCompaction
 	if report.BeforeCompaction.EstimatedBytes <= maximumBytes {
-		c.egraphMu.Unlock()
+		c.unlockGraphAs(step)
 		return report, nil
 	}
 	report.Triggered = true
@@ -161,7 +161,7 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		report.AfterInitialCompaction = c.cacheMetadataEstimateLocked()
 		report.AfterPrune = report.AfterInitialCompaction
 	}
-	c.egraphMu.Unlock()
+	c.unlockGraphAs(step)
 
 	if report.AfterInitialCompaction.EstimatedBytes <= maximumBytes {
 		return report, nil
@@ -224,12 +224,12 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 		}
 	}
 
-	c.egraphMu.Lock()
+	step = c.lockGraphAs(ctx, "dagql.prune.metadataCompact")
 	if len(plan) > 0 && !c.blobBacked {
 		_, report.FinalCompactionOldClassSlots, report.FinalCompactionNewClassSlots = c.compactEqClassesLocked(true)
 	}
 	report.AfterPrune = c.metadataPruneEstimateLocked()
-	c.egraphMu.Unlock()
+	c.unlockGraphAs(step)
 
 	if report.RemovedPersistedRootCount > 0 && c.snapshotGC != nil {
 		report.SnapshotGCAttempted = true
@@ -448,13 +448,13 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	}
 
 	if compactedNeeded && !c.blobBacked {
-		c.egraphMu.Lock()
+		step := c.lockGraphAs(ctx, "dagql.prune.compact")
 		if compacted, oldSlots, newSlots := c.compactEqClassesLocked(false); compacted {
 			slog.Debug("dagql prune compacted eq classes",
 				"oldSlots", oldSlots,
 				"newSlots", newSlots)
 		}
-		c.egraphMu.Unlock()
+		c.unlockGraphAs(step)
 	}
 
 	if len(report.Entries) > 0 && c.snapshotGC != nil {
@@ -477,12 +477,12 @@ func (c *Cache) snapshotPruneStateCancelable(
 	directResultBytes int64,
 	checker *pruneCancellationChecker,
 ) (_ pruneSnapshot, rerr error) {
+	ctx := context.Background()
+	if checker != nil {
+		ctx = checker.ctx
+	}
 	var usage *cacheUsageSnapshot
 	if mode == pruneSnapshotDisk && !c.blobBacked {
-		ctx := context.Background()
-		if checker != nil {
-			ctx = checker.ctx
-		}
 		var err error
 		usage, err = c.collectUsageMeasurementInputs(ctx, false)
 		if err != nil {
@@ -495,8 +495,8 @@ func (c *Cache) snapshotPruneStateCancelable(
 		}()
 	}
 	if usage != nil {
-		c.egraphMu.Lock()
-		defer c.egraphMu.Unlock()
+		step := c.lockGraphAs(ctx, "dagql.prune.snapshot")
+		defer c.unlockGraphAs(step)
 	} else {
 		c.egraphMu.RLock()
 		defer c.egraphMu.RUnlock()
