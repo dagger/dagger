@@ -16,6 +16,7 @@ import (
 // persistedVisitorCoverageExempt, so a new family is covered when it is added.
 var persistedVisitorPayloadTypes = map[string]any{
 	"core.Check":                  persistedCheck{},
+	"core.Container":              persistedContainerPayload{},
 	"core.Directory":              persistedDirectoryPayload{},
 	"core.File":                   persistedFilePayload{},
 	"core.CacheVolume":            persistedCacheVolumePayload{},
@@ -59,7 +60,6 @@ var persistedVisitorPayloadTypes = map[string]any{
 // persistedVisitorCoverageExempt are the families with references that the
 // coverage test can't fill generically, each with why.
 var persistedVisitorCoverageExempt = map[string]string{
-	"core.Container":         "its payload is one of several forms, each with its own lazy operation payloads, which persisted_families_test.go's samples cover",
 	"core.CollectionTypeDef": "its whole payload is the one reference, a bare number, which its visitor walks",
 }
 
