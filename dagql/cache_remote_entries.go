@@ -114,6 +114,9 @@ type RemoteHolding struct {
 	// counts executed evidence: once the cache has dropped a value, only a
 	// computation after the drop may bring it back (holding.executed).
 	Executed bool
+	// Image reports that the engine image ships the entry: every engine built
+	// from the image has its parts, and none exports them (holding.image).
+	Image bool
 	// UsedAtUnixNano is when the span was recorded where the service read
 	// it, a use of the entry (0: unknown). The entry's last use never moves
 	// back.
@@ -302,6 +305,10 @@ type holding struct {
 	// copies from placement, and entries a cache only hit, are never
 	// flagged.
 	executed bool
+	// image marks a holding whose cache has the entry from its engine image:
+	// a call span reported it (RemoteHolding.Image). The engine never exports
+	// such an entry or its parts.
+	image bool
 }
 
 // hasUnexpiredHoldingLocked reports whether another cache holds a copy of res
@@ -459,6 +466,9 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 	}
 	if desc.Executed {
 		h.executed = true
+	}
+	if desc.Image {
+		h.image = true
 	}
 	touchSharedResultLastUsed(entry, desc.UsedAtUnixNano)
 	candidates, changed := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
@@ -1355,6 +1365,9 @@ type RemoteHoldingInfo struct {
 	// Executed reports that the holding's cache computed the entry since
 	// the cache last dropped the entry's value (RemoteHolding.Executed).
 	Executed bool
+	// Image reports that the holding's cache has the entry from its engine
+	// image (RemoteHolding.Image).
+	Image bool
 }
 
 // RemoteEntryInfo returns what the cache holds for the entry of one holding,
@@ -1535,6 +1548,7 @@ func holdingInfo(key HolderKey, h *holding) RemoteHoldingInfo {
 		Dependents:    h.dependents,
 		Replacements:  h.replacements,
 		Executed:      h.executed,
+		Image:         h.image,
 	}
 	if h.retention.retained {
 		info.RetentionExpiresAtUnix = h.retention.expiresAtUnix
