@@ -223,7 +223,7 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return (*EngineDev).GraphqlSchema(&parent, ctx, version)
+			return (*EngineDev).GraphqlSchema(&parent, version), nil
 		case "ImageEntriesAfterPrune":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -265,7 +265,7 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*EngineDev).IntrospectionJSON(&parent, ctx)
+			return (*EngineDev).IntrospectionJSON(&parent), nil
 		case "IntrospectionTool":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

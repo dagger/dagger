@@ -195,7 +195,9 @@ func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container
 }
 
 // Introspect the engine API schema, and return it as a json-encoded file.
-// This file is used by SDKs to generate clients.
+// This file is used by SDKs to generate clients. It is the engine's answer to
+// an introspection query from a client of its own version, computed
+// in-process by the introspect tool, so no engine is built or started.
 func (r *EngineDev) IntrospectionJSON() *File {
 	q := r.query.Select("introspectionJson")
 

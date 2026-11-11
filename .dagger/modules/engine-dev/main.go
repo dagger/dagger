@@ -16,7 +16,6 @@ import (
 	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
 	clidev "dagger/engine-dev/internal/dagger/clients/cli-dev"
-	"dagger/engine-dev/internal/dagger/clients/codegen"
 	gomod "dagger/engine-dev/internal/dagger/clients/go"
 	"dagger/engine-dev/internal/dagger/clients/wolfi"
 )
@@ -519,38 +518,33 @@ func withoutOuterSession(args ...string) []string {
 }
 
 // Introspect the engine API schema, and return it as a json-encoded file.
-// This file is used by SDKs to generate clients.
-func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
-	ctr, err := dev.InstallClient(ctx, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	introspectionJSON := ctr.
-		WithFile("/usr/local/bin/codegen", codegen.New(dev.Ws).Binary()).
-		WithExec(withoutOuterSession("codegen", "introspect", "-o", "/schema.json")).
-		File("/schema.json")
-	return introspectionJSON, nil
+// This file is used by SDKs to generate clients. It is the engine's answer to
+// an introspection query from a client of its own version, computed
+// in-process by the introspect tool, so no engine is built or started.
+func (dev *EngineDev) IntrospectionJSON() *dagger.File {
+	schemaPath := "schema.json"
+	return wolfi.New().Container().
+		WithFile("/usr/local/bin/introspect", dev.IntrospectionTool()).
+		WithExec(
+			[]string{"introspect", "introspect"},
+			dagger.ContainerWithExecOpts{RedirectStdout: schemaPath},
+		).
+		File(schemaPath)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
 func (dev *EngineDev) GraphqlSchema(
-	ctx context.Context,
 	// +optional
 	version string,
-) (*dagger.File, error) {
-	ctr, err := dev.InstallClient(ctx, nil, nil)
-	if err != nil {
-		return nil, err
-	}
+) *dagger.File {
 	schemaPath := "schema.graphqls"
-	schema := ctr.
+	return wolfi.New().Container().
 		WithFile("/usr/local/bin/introspect", dev.IntrospectionTool()).
 		WithExec(
 			[]string{"introspect", "--version=" + version, "schema"},
 			dagger.ContainerWithExecOpts{RedirectStdout: schemaPath},
 		).
 		File(schemaPath)
-	return schema, nil
 }
 
 // Build the `introspect` tool which introspects the engine API
