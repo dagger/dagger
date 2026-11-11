@@ -236,15 +236,15 @@ func checkConfigIncludes(root, config string, seen map[string]bool) error {
 		if !filepath.IsAbs(include) {
 			include = filepath.Join(filepath.Dir(config), include)
 		}
-		resolved, err := containedPath(root, include)
-		if errors.Is(err, os.ErrNotExist) {
+		if _, err := containedPath(root, include); errors.Is(err, os.ErrNotExist) {
 			// Git skips an include that doesn't exist.
 			continue
-		}
-		if err != nil {
+		} else if err != nil {
 			return err
 		}
-		if err := checkConfigIncludes(root, resolved, seen); err != nil {
+		// Git resolves the included file's own includes relative to the
+		// path it included it by, not where a link there leads.
+		if err := checkConfigIncludes(root, include, seen); err != nil {
 			return err
 		}
 	}
