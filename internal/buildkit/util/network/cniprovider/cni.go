@@ -259,15 +259,24 @@ func (pool *cniPool) close() poolCloseReport {
 	pool.closed = true
 	defer pool.mu.Unlock()
 	report := poolCloseReport{Peak: pool.peakSize}
-	for len(pool.available) > 0 {
-		if err := pool.available[0].release(); err != nil {
-			report.Failed++
-		} else {
-			report.Released++
-		}
-		pool.available = pool.available[1:]
-		pool.actualSize--
+	var released, failed atomic.Int64
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, poolCloseWorkers)
+	for _, ns := range pool.available {
+		slots <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-slots }()
+			if err := ns.release(); err != nil {
+				failed.Add(1)
+			} else {
+				released.Add(1)
+			}
+		})
 	}
+	wg.Wait()
+	pool.actualSize -= len(pool.available)
+	pool.available = nil
+	report.Released, report.Failed = int(released.Load()), int(failed.Load())
 	report.Took = time.Since(start)
 	return report
 }
