@@ -7,7 +7,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -231,26 +230,6 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	}
 	sdkCache := core.NewContainer().
 		From(consts.GolangImage).
-		With(build.goPlatformEnv).
-		// import xx
-		WithDirectory("/", core.NewContainer().From(consts.XxImage).Rootfs()).
-		// set envs read by xx
-		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
-		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
-		// pre-cache stdlib
-		WithExec([]string{"xx-go", "build", "std"}).
-		// pre-cache common deps
-		WithDirectory("/sdk", build.source.Directory("sdk/go")).
-		WithExec([]string{
-			"xx-go", "list",
-			"-C", "/sdk",
-			"-e",
-			"-export=true",
-			"-compiled=true",
-			"-deps=true",
-			"-test=false",
-			".",
-		}).
 		// pre-cache what module codegen downloads for a generated module (see
 		// goModuleSeed): the pinned SDK version, everything `go mod tidy`
 		// needs, and the version info `go get` reads
