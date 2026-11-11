@@ -109,9 +109,11 @@ type GoSdk {
   pub moduleRuntime(modSource: ModuleSource!, introspectionJson: File = null): Container! {
     let prepared = if (introspectionJson == null) {
       let source = committed(modSource)
-      withoutExportDriver(
-        withExportDriver(withoutAccess(source), archives(modSource, source.directory(contextPath)))
-          .withExec(["codegen", "prepare-go-runtime"]),
+      withoutAccess(
+        withoutExportDriver(
+          withExportDriver(source, archives(modSource, source.directory(contextPath)))
+            .withExec(["codegen", "prepare-go-runtime"]),
+        ),
       )
     } else {
       generated(modSource, introspectionJson!, prepare: true)
