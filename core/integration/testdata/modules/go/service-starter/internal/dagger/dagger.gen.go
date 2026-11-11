@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+type CacheVolume = core.CacheVolume
 type ID = core.ID
 type Node = core.Node
 type Service = core.Service
