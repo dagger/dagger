@@ -115,7 +115,9 @@ type RemoteHolding struct {
 	// computation after the drop may bring it back (holding.executed).
 	Executed bool
 	// Image reports that the engine image ships the entry: every engine built
-	// from the image has its parts, and none exports them (holding.image).
+	// from the image has its parts, and none exports them. The holding takes
+	// it from each call span, as an engine whose new image no longer ships
+	// the entry reports (holding.image).
 	Image bool
 	// UsedAtUnixNano is when the span was recorded where the service read
 	// it, a use of the entry (0: unknown). The entry's last use never moves
@@ -305,9 +307,9 @@ type holding struct {
 	// copies from placement, and entries a cache only hit, are never
 	// flagged.
 	executed bool
-	// image marks a holding whose cache has the entry from its engine image:
-	// a call span reported it (RemoteHolding.Image). The engine never exports
-	// such an entry or its parts.
+	// image marks a holding whose cache has the entry from its engine image,
+	// as its latest call span reported (RemoteHolding.Image). The engine
+	// never exports such an entry or its parts.
 	image bool
 }
 
@@ -467,9 +469,7 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 	if desc.Executed {
 		h.executed = true
 	}
-	if desc.Image {
-		h.image = true
-	}
+	h.image = desc.Image
 	touchSharedResultLastUsed(entry, desc.UsedAtUnixNano)
 	candidates, changed := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
 		Replacements:  desc.Replacements,
