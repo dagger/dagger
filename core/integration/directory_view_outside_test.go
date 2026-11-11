@@ -356,6 +356,22 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 		require.Equal(t, "3000", uid(ctx, t, app.Chown("main.txt", "app"), "main.txt"), "chown")
 	})
 
+	t.Run("file owner names", func(ctx context.Context, t *testctx.T) {
+		// Equal files whose snapshots define app differently each get their
+		// own snapshot's id.
+		nonce := rand.Text()
+		dirs := roots(map[string]string{"f": nonce}, nil, passwd("", "1000"), passwd("", "2000"))
+		for i, want := range []string{"1000", "2000"} {
+			f := host(dirs[i]).File("f").Chown("app")
+			out, err := core.NewQuery(c).Container().From(alpineImage).
+				WithMountedFile("/f", f).
+				WithExec([]string{"stat", "-c", "%u", "/f"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, want, strings.TrimSpace(out))
+		}
+	})
+
 	t.Run("ignore files", func(ctx context.Context, t *testctx.T) {
 		// The parents' ignore files don't apply to the subdirectory; its own
 		// do.
@@ -404,6 +420,27 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 			require.Equal(t, []string{"x.log", "y.tmp"}, searched(ctx, t, func() ([]core.SearchResult, error) {
 				return app.Search(ctx, nonce, core.DirectorySearchOpts{Literal: true, SkipIgnored: true})
 			}), "search")
+		}
+	})
+
+	t.Run("search", func(ctx context.Context, t *testctx.T) {
+		// Searching a path inside the subdirectory still applies the
+		// subdirectory's own ignore files, and a .git leading out of it
+		// brings in no exclude rules.
+		nonce := rand.Text()
+		dir := t.TempDir()
+		writeTree(t, dir, map[string]string{
+			"app/.ignore":       "*.log\n",
+			"app/sub/keep.txt":  nonce,
+			"app/sub/x.log":     nonce,
+			"meta/info/exclude": "*.txt\n",
+			"meta/HEAD":         "ref: refs/heads/main\n",
+		}, map[string]string{"app/.git": "../meta"})
+		app := host(dir).Directory("app")
+		for _, paths := range [][]string{nil, {"sub"}} {
+			require.Equal(t, []string{"sub/keep.txt"}, searched(ctx, t, func() ([]core.SearchResult, error) {
+				return app.Search(ctx, nonce, core.DirectorySearchOpts{Literal: true, SkipIgnored: true, Paths: paths})
+			}), "paths %v", paths)
 		}
 	})
 
@@ -478,13 +515,16 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 			require.NoError(t, os.Rename(filepath.Join(dir, "meta-src", ".git"), filepath.Join(dir, "meta")))
 			_, err := host(dir).Directory("app").AsGit().Head().CommitSHA(ctx)
 			require.Error(t, err, name)
+			_, err = host(dir).Directory("app").AsWorkspace().Git().Head().CommitSHA(ctx)
+			require.Error(t, err, name+" as a workspace")
 		}
 
 		// Nor is a config include leading out of it.
 		dir = t.TempDir()
 		writeTree(t, dir, map[string]string{
 			"app/main.txt":   nonce,
-			"outside.config": "[remote \"origin\"]\n\turl = https://example.com/outside\n",
+			// Malformed, so reading it at all would fail differently.
+			"outside.config": "[remote \"origin\"\n",
 		}, nil)
 		gitRepo(filepath.Join(dir, "app"), "include")
 		config, err := os.OpenFile(filepath.Join(dir, "app", ".git", "config"), os.O_APPEND|os.O_WRONLY, 0)
@@ -492,10 +532,8 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 		_, err = config.WriteString("[include]\n\tpath = ../../outside.config\n")
 		require.NoError(t, err)
 		require.NoError(t, config.Close())
-		remotes, err := host(dir).Directory("app").AsGit().Remotes(ctx)
-		if err == nil {
-			require.Empty(t, remotes, "a config include leading out of the subdirectory must not add its remotes")
-		}
+		_, err = host(dir).Directory("app").AsGit().Remotes(ctx)
+		require.ErrorContains(t, err, "outside the supplied directory", "a config include leading out of the subdirectory is rejected without being read")
 	})
 
 	t.Run("unreadable ignore file", func(ctx context.Context, t *testctx.T) {
