@@ -45,6 +45,7 @@ func (*Probe) Run() error { panic("check evaluated") }
 	base := goGitBase(t, c).
 		WithNewFile("/work/dagger.toml", "[modules.tools]\nsource = \"./tools\"\n").
 		WithNewFile("/work/tools/dagger.json", `{"name":"tools","engineVersion":"v1.0.0-beta.20","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("/work/tools/go.mod", "module dagger/tools\n\ngo 1.26.6\n").
 		WithNewFile("/work/tools/main.go", source).
 		WithWorkdir("/work")
 
@@ -119,14 +120,10 @@ func (*Probe) Run() error { panic("check evaluated") }
 			require.Equal(t, "dag+check://", path)
 			keys, err := url.ParseQuery(query)
 			require.NoError(t, err)
-			// The parent keys carry the route, so the type key is short.
-			require.Equal(t, "run", keys.Get("check"))
-			keys.Del("check")
-			var values []string
-			for _, keys := range keys {
-				values = append(values, keys...)
-			}
-			require.ElementsMatch(t, []string{"api", "first"}, values)
+			require.Equal(t, url.Values{
+				"tools-" + platform + "-module": {"api"},
+				"tools-" + platform + "-probe":  {"first"},
+			}, keys)
 			selected, err := base.With(daggerExec("check", "-la", "-f=link", link)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, links, selected)

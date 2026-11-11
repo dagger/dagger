@@ -188,7 +188,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 
 	out, err = base.With(workspaceSelectionDaggerExec("list", "-a", "-f=link", "dag://"+ref+":base")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag+container://?container=base\n", out)
+	require.Equal(t, "dag+container://?module=provider&type:Container=base\n", out)
 	out, err = base.With(workspaceSelectionDaggerExec("check", "-l", "-f=cli", "dag://"+ref+":verify")).Stdout(ctx)
 	require.NoError(t, err)
 	// The provider's generate/stale check remains in the full workspace schema.
@@ -198,7 +198,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	for _, typ := range []string{"Expertise", "expertise"} {
 		out, err := base.With(workspaceSelectionDaggerExec("-W", ref, "list", "-a", "-f=link", "--type", typ)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+expertise://?expertise=assistant\n", out)
+		require.Equal(t, "dag+expertise://\n", out)
 	}
 
 	for _, tc := range []struct {
@@ -222,7 +222,11 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 				var want []string
 				typ := map[string]string{"list": "container", "check": "check", "generate": "generator", "start": "service", "agent": "expertise", "shell": "container"}[tc.args[0]]
 				for _, path := range tc.paths {
-					address := strings.Replace(strings.TrimSuffix(uri, "?container=base")+"?"+typ+"="+path, "dag://", "dag+"+typ+"://", 1)
+					query := typ + "=" + path
+					if tc.args[1] == "-a" {
+						query = "module=provider&type:Container=" + path
+					}
+					address := strings.Replace(strings.TrimSuffix(uri, "?container=base")+"?"+query, "dag://", "dag+"+typ+"://", 1)
 					want = append(want, address)
 				}
 				require.Equal(t, strings.Join(want, "\n")+"\n", out)
@@ -865,15 +869,15 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 		{[]string{"list", "-a", "--type", "provider-docs"}, "dag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\ndag+provider-docs://?provider-docs=other-docs\ndag+provider-docs://?provider-docs=other-docs/again\n"},
 		{[]string{"list", "-a", "--type="}, ""},
 		{[]string{"list", "-a", "--type=", "--type=container"}, "dag+container://?container=base\ndag+container://?container=broken\ndag+container://?container=consumer/base\n"},
-		{[]string{"list", "-a", "consumer", "--type", "Container", "--type", "File"}, "dag+container://?container=consumer/base\ndag+file://?file=consumer/input\n"},
-		{[]string{"list", "-a", "consumer", "--type", "container", "--type", "File"}, "dag+container://?container=consumer/base\ndag+file://?file=consumer/input\n"},
-		{[]string{"list", "-a", "docs"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n"},
-		{[]string{"list", "-a", "dag://docs"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n"},
-		{[]string{"list", "-a", "provider/docs"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n"},
-		{[]string{"list", "-a", "provider:docs"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n"},
-		{[]string{"list", "-a", "**/source"}, "dag+directory://?directory=docs/source\ndag+directory://?directory=other-docs/source\n"},
-		{[]string{"list", "-a", "base", "consumer/base"}, "dag+container://?container=base\ndag+container://?container=consumer/base\n"},
-		{[]string{"list", "-a", "dag+container://consumer"}, "dag+container://?container=consumer/base\n"},
+		{[]string{"list", "-a", "consumer", "--type", "Container", "--type", "File"}, "dag+container://?module=consumer\ndag+file://?module=consumer\n"},
+		{[]string{"list", "-a", "consumer", "--type", "container", "--type", "File"}, "dag+container://?module=consumer\ndag+file://?module=consumer\n"},
+		{[]string{"list", "-a", "docs"}, "dag+directory://?module=provider&type:Directory=docs/source\ndag+provider-docs://?module=provider&type:ProviderDocs=docs\ndag+provider-docs://?module=provider&type:ProviderDocs=docs/again\n"},
+		{[]string{"list", "-a", "dag://docs"}, "dag+directory://?module=provider&type:Directory=docs/source\ndag+provider-docs://?module=provider&type:ProviderDocs=docs\ndag+provider-docs://?module=provider&type:ProviderDocs=docs/again\n"},
+		{[]string{"list", "-a", "provider/docs"}, "dag+directory://?module=provider&type:Directory=docs/source\ndag+provider-docs://?module=provider&type:ProviderDocs=docs\ndag+provider-docs://?module=provider&type:ProviderDocs=docs/again\n"},
+		{[]string{"list", "-a", "provider:docs"}, "dag+directory://?module=provider&type:Directory=docs/source\ndag+provider-docs://?module=provider&type:ProviderDocs=docs\ndag+provider-docs://?module=provider&type:ProviderDocs=docs/again\n"},
+		{[]string{"list", "-a", "**/source"}, "dag+directory://?module=provider&type:Directory=docs/source\ndag+directory://?module=provider&type:Directory=other-docs/source\n"},
+		{[]string{"list", "-a", "base", "consumer/base"}, "dag+container://?module=consumer\ndag+container://?module=provider&type:Container=base\n"},
+		{[]string{"list", "-a", "dag+container://consumer"}, "dag+container://?module=consumer\n"},
 		{[]string{"list", "-a", "dag://consumer?missing=anything"}, ""},
 		{[]string{"list", "-a", "dag://?go-module=sdk/go"}, ""},
 	} {
@@ -906,7 +910,7 @@ main = true
 }`)
 	out, err := reserved.With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "types", "-f=link")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag+directory://?directory=types\n", out)
+	require.Equal(t, "dag+directory://?module=provider\n", out)
 }
 
 func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T) {
@@ -920,7 +924,7 @@ func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T
 		{[]string{"list", "-a", "dag+container://docs", "dag+directory://consumer"}, "", true},
 		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer"}, "", true},
 		{[]string{"list", "-a", "dag://docs?missing=value", "consumer/base"}, "", true},
-		{[]string{"list", "-a", "docs", "docs/source"}, "dag+directory://?directory=docs/source\ndag+provider-docs://?provider-docs=docs\ndag+provider-docs://?provider-docs=docs/again\n", false},
+		{[]string{"list", "-a", "docs", "docs/source"}, "dag+directory://?module=provider&type:Directory=docs/source\ndag+provider-docs://?module=provider&type:ProviderDocs=docs\ndag+provider-docs://?module=provider&type:ProviderDocs=docs/again\n", false},
 		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "", true},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
@@ -991,7 +995,7 @@ func (ArtifactsSuite) TestResolution(ctx context.Context, t *testctx.T) {
 		{"dag://provider/needs-argument", "no artifact matches"},
 		{"dag://provider:missing", "no artifact matches"},
 		{"dag://broken", "artifact function was evaluated"},
-		{"dag+container://docs/source", "dag://?directory=docs/source is a Directory, not container"},
+		{"dag+container://docs/source", "no artifact matches"},
 		{"dag+directory://docs/source", "artifact is a Directory, not a Container"},
 		{"dag://**/source", "matches 2 artifacts:\ndag://?directory=docs/source\ndag://?directory=other-docs/source"},
 		{"dag://", "matches 13 artifacts:\n"},

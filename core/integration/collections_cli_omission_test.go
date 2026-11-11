@@ -30,10 +30,10 @@ func (*Item) Run() error { panic("check evaluated") }
 	for _, tc := range []struct {
 		name, extra string
 		omit        bool
-		// link's type key is short unless a sibling path shares its suffix.
-		link string
+		// typeKey is empty when the collection key identifies the only path.
+		typeKey string
 	}{
-		{"one check per item", "", true, "run"},
+		{"one check per item", "", true, ""},
 		{"hidden sibling check", `
 // +check
 func (*Item) Validate() error { panic("check evaluated") }
@@ -62,7 +62,11 @@ func (*Part) Run() error { panic("check evaluated") }
 				replay = append(replay, strings.Fields(out)...)
 				links, err := ctr.With(daggerExec(replay...)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "dag+check://?check="+tc.link+"&collections-items-item=a\n", links)
+				query := "collections-items-item=a"
+				if tc.typeKey != "" {
+					query = "check=" + tc.typeKey + "&" + query
+				}
+				require.Equal(t, "dag+check://?"+query+"\n", links)
 			}
 			// The same proof works from schema metadata alone. The collection
 			// constructor and both check functions must remain deferred.

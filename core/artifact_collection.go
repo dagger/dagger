@@ -53,6 +53,26 @@ func (a *Artifacts) NameEntries() {
 	for _, entry := range a.Entries {
 		entry.DimensionNames = dimensionNames(names, entry)
 		entry.TypeKeyName = a.typeKeyName(entry)
+		entry.links = a.linkPlans(entry)
+	}
+}
+
+func (a *Artifacts) linkPlans(entry *Artifact) *artifact.Links {
+	if entry.Workspace.Self() == nil || entry.LoadFailure != nil || entry.TypeName == "" {
+		return nil
+	}
+	path := artifact.Path{
+		Type:       "type:" + entry.TypeName,
+		Key:        strings.Join(entry.Path, "/"),
+		Module:     entry.ModuleName,
+		Dimensions: entry.projectedDimensions(),
+	}
+	cliName := func(name string) string {
+		return ArtifactTypeName(strings.TrimPrefix(name, "type:"))
+	}
+	return &artifact.Links{
+		Typed:   artifact.PlanLink(a.AllPaths, path, a.CompleteSchema, true, cliName),
+		Untyped: artifact.PlanLink(a.AllPaths, path, a.CompleteSchema, false, cliName),
 	}
 }
 
@@ -311,6 +331,7 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 				return nil, err
 			}
 			if !seen[id] {
+				item.links = a.linkPlans(&item)
 				items = append(items, item.Clone())
 				seen[id] = true
 			}
@@ -587,7 +608,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 		}
 		return bound, nil
 	}
-	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, AllDimensions: bound.AllDimensions, AllPaths: bound.AllPaths, CollectionRoots: bound.CollectionRoots}
+	result := &Artifacts{Entries: []*Artifact{}, Selector: bound.Selector, AllDimensions: bound.AllDimensions, AllPaths: bound.AllPaths, CompleteSchema: bound.CompleteSchema, CollectionRoots: bound.CollectionRoots}
 	names := bound.displayNames()
 	ctx = withArtifactReceivers(ctx)
 	// Each worker owns one slot; flatten only after all workers finish so

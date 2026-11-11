@@ -86,26 +86,16 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 	// Group by the full path. A projected type key can repeat across paths
 	// with different dimensions, so it only prints the group.
 	groups := map[string][]listedArtifact{}
-	prefixes := map[string]string{}
 	for _, item := range items {
 		addr, err := dagaddress.Parse(item.URI)
 		if err != nil {
 			return err
 		}
-		typeKey, ok := addr.TypeKey(addr.Types...)
-		addr.Query = nil
-		if ok {
-			addr.Query = []dagaddress.Pair{typeKey}
-		}
 		group := strings.Join(addr.Types, "+") + "\x00" + item.fullPath()
-		if _, ok := prefixes[group]; !ok {
-			prefixes[group] = addr.String()
-		}
 		groups[group] = append(groups[group], item)
 	}
 	var output []listedArtifact
 	for _, group := range slices.Sorted(maps.Keys(groups)) {
-		path := prefixes[group]
 		for _, row := range artifactListRows(groups[group], all) {
 			item := row[0]
 			item.DimensionKeys = nil
@@ -113,16 +103,11 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 				item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{key.Dimension, key.Key})
 			}
 			if len(row) > 1 {
-				addr, err := dagaddress.Parse(path)
+				uri, err := collapsedArtifactURI(item)
 				if err != nil {
 					return err
 				}
-				for _, key := range item.DimensionKeys {
-					if !artifact.IsStaticDimension(key.Dimension) {
-						addr.Query = append(addr.Query, dagaddress.Pair{Dimension: key.Dimension, Key: key.Key, HasKey: true})
-					}
-				}
-				item.URI = addr.String()
+				item.URI = uri
 			}
 			output = append(output, item)
 		}
@@ -136,6 +121,29 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 	}
 	collapsed := len(output) < len(items) || slices.ContainsFunc(output, func(item listedArtifact) bool { return len(item.Presence) > 0 })
 	return reportArtifactList(ctx, cmd, output, names, collapsed)
+}
+
+func collapsedArtifactURI(item listedArtifact) (string, error) {
+	addr, err := dagaddress.Parse(item.URI)
+	if err != nil {
+		return "", err
+	}
+	addr.Query = nil
+	// A collection alias in an item link can have the same name as the
+	// scheme type. Use the exact type path from the listing coordinates.
+	for _, key := range item.DimensionKeys {
+		if strings.HasPrefix(key.Dimension, "type:") {
+			addr.Path = ""
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: key.Dimension, Key: "/" + key.Key, HasKey: true})
+			break
+		}
+	}
+	for _, key := range item.DimensionKeys {
+		if !artifact.IsStaticDimension(key.Dimension) {
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: key.Dimension, Key: key.Key, HasKey: true})
+		}
+	}
+	return addr.String(), nil
 }
 
 // Report only prepared rows. Listing spans do not perform engine queries or

@@ -286,7 +286,7 @@ Artifact identity is the set of all dimension keys, including the static keys. T
 
 An address printed for people, such as a `dagger list` row, a check name, or an `Artifact.uri()` result, uses the smallest set of keys, in their shortest names, that selects that artifact in the addressed workspace. It must not depend on the source selection's visible columns. A schema or module change can alter this short form. A stored identifier, such as a Cloud check name or the address an engine sends a cloud engine, uses the full form: every key, and the full path in the type key.
 
-A projection shortens two keys:
+Apply these rules when the link retains a type key or names a legacy batch.
 
 - The type key is the shortest suffix of the path, on segment boundaries, that names one path among the loaded paths of that type with every collection dimension the address keys. Thus the up operation on each Docker Compose service is `?service=up&docker-compose-project=e2e&docker-compose-service=web`, and the batch operation on a project's services is `?service=batch/up&docker-compose-project=e2e`. Collection dimension names start with their module, so a short key with collection keys names the same path whichever modules are loaded.
 - A batch that runs every item of its collection omits that collection's item keys: `?check=test&go-package=internal/bundle` for one `go test` of a whole package, not one `go-test` key per test. A batch of selected items keeps their keys.
@@ -328,11 +328,17 @@ These operations use different reference sets:
 
 For example, a table of docs checks can hide `module=docs`. If another module has the same check name, the link can still need `module=docs` to select the right check. Copying the table's visible coordinates into a link is not sufficient.
 
-Several equally small pair sets can identify an artifact. Choose one with a fixed tie rule. Removing each pair once is not proof that the result has the fewest pairs.
+Use schema guarantees to choose the pairs. A collection key is unique within its collection instance. Keep the keys for each enclosing collection so the link stays valid as collections gain items.
+
+First minimize the number of pairs. When two sets have the same size, prefer the set that omits `module`, then the set that omits `name`. This gives collection dimensions priority. Use dimension identifier order for any remaining ties. In the current schema, the type dimension's path key supplies the field discriminator that `name` will supply in the new schema.
+
+The scheme selects the artifact type. Apply `+check` as a type filter before choosing the artifact. With `uri(typeAssertion: true)`, the scheme can replace the type constraint in the query. For a package and test with one check, a link can be `dag+check://?go-package=./app/foo&go-test=TestFoo`. If that test has several checks, keep the field discriminator.
 
 No new link API is needed. The `all` argument controls table metadata. It does not control `uri()`. The existing `absolute` option supplies the workspace address when the link must name its source workspace.
 
-The remaining link rule is under review: must uniqueness follow from the workspace schema, or may it depend on the currently discovered collection contents? A schema guarantee remains valid as collections gain items. A choice based on current contents can use fewer pairs, but new items can make the address ambiguous. This choice does not affect table column hiding.
+When discovery loads only part of the schema, prove uniqueness within a module. A collection dimension identifier names its module. For a static artifact, retain the module pair. Use exact dimension identifiers when the catalog cannot prove that an alias is unique.
+
+In the CLI, `dagger check --list --all --format=link` prints links for individual checks. The table and `--format=cli` read full row coordinates from metadata. They can show or use a coordinate that the link omits. A collapsed row represents a selection and retains its field path.
 
 #### Discovery and evaluation
 
