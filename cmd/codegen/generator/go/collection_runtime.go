@@ -72,6 +72,38 @@ func PrepareCollectionRuntime(dir string) error {
 	if len(collections) == 0 {
 		return nil
 	}
+	pkg, err := loadCollectionRuntime(dir, fset, files)
+	if err != nil {
+		return err
+	}
+	collectionTypes := map[types.Type]bool{}
+	for typ, name := range collections {
+		if pkg.TypesInfo.TypeOf(typ) == nil {
+			continue // Excluded by build constraints.
+		}
+		collectionTypes[pkg.TypesInfo.TypeOf(typ)] = true
+		for _, field := range typ.Fields.List {
+			for _, fieldName := range field.Names {
+				if fieldName.Name == collectionRuntimeBase {
+					return fmt.Errorf("collection %s uses reserved field %s", name, collectionRuntimeBase)
+				}
+			}
+		}
+		typ.Fields.List = append(typ.Fields.List, &ast.Field{
+			Names: []*ast.Ident{ast.NewIdent(collectionRuntimeBase)}, Type: ast.NewIdent("string"),
+		})
+	}
+	for _, file := range pkg.Syntax {
+		if err := writeCollectionRuntimeFile(fset, file, pkg.TypesInfo, collectionTypes); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// loadCollectionRuntime type-checks the runtime package in dir, whose own
+// files are files, through the Go SDK's export driver when it is configured.
+func loadCollectionRuntime(dir string, fset *token.FileSet, files map[string]*ast.File) (*packages.Package, error) {
 	cfg := &packages.Config{
 		Dir: dir, Fset: fset,
 		// NeedExportFile, as codegen's loadPackage asks for it: the Go SDK's
@@ -98,50 +130,28 @@ func PrepareCollectionRuntime(dir string) error {
 	}
 	driverLog, err := exportDriverLog(cfg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if driverLog != "" {
 		defer os.Remove(driverLog)
 	}
 	pkgs, err := packages.Load(cfg, ".")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if driverLog != "" {
 		if err := checkExportDriver(driverLog); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if len(pkgs) != 1 {
-		return fmt.Errorf("expected one runtime package, got %d", len(pkgs))
+		return nil, fmt.Errorf("expected one runtime package, got %d", len(pkgs))
 	}
 	pkg := pkgs[0]
 	if len(pkg.Errors) > 0 {
-		return fmt.Errorf("load collection runtime: %w", pkg.Errors[0])
+		return nil, fmt.Errorf("load collection runtime: %w", pkg.Errors[0])
 	}
-	collectionTypes := map[types.Type]bool{}
-	for typ, name := range collections {
-		if pkg.TypesInfo.TypeOf(typ) == nil {
-			continue // Excluded by build constraints.
-		}
-		collectionTypes[pkg.TypesInfo.TypeOf(typ)] = true
-		for _, field := range typ.Fields.List {
-			for _, fieldName := range field.Names {
-				if fieldName.Name == collectionRuntimeBase {
-					return fmt.Errorf("collection %s uses reserved field %s", name, collectionRuntimeBase)
-				}
-			}
-		}
-		typ.Fields.List = append(typ.Fields.List, &ast.Field{
-			Names: []*ast.Ident{ast.NewIdent(collectionRuntimeBase)}, Type: ast.NewIdent("string"),
-		})
-	}
-	for _, file := range pkg.Syntax {
-		if err := writeCollectionRuntimeFile(fset, file, pkg.TypesInfo, collectionTypes); err != nil {
-			return err
-		}
-	}
-	return nil
+	return pkg, nil
 }
 
 func writeCollectionRuntimeFile(fset *token.FileSet, file *ast.File, info *types.Info, collectionTypes map[types.Type]bool) error {
