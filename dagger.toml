@@ -297,7 +297,7 @@ targetVersion = "v1.0.0-beta.26"
 
 [sdks.go.scopes.".dagger/modules/engine-dev"]
 is-module = true
-clients = ["github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a", "./cmd/codegen", "./.dagger/modules/cli-dev", "./.dagger/modules/go", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04", "./.dagger/modules/engine-dev/notify"]
+clients = ["github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a", "./.dagger/modules/cli-dev", "./.dagger/modules/go", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04", "./.dagger/modules/engine-dev/notify"]
 
 [sdks.go.scopes.".dagger/modules/engine-dev".settings]
 dangEntrypoint = true
