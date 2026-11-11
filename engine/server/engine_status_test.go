@@ -207,6 +207,25 @@ func TestRemoteCacheReportsSessionClaims(t *testing.T) {
 	require.Empty(t, state.Claims, "a settled session isn't reported")
 }
 
+// The settle state reports when each session with a claim started, on the
+// engine's clock: the service counts the claim's run from it.
+func TestRemoteCacheReportsWhenEachClaimedSessionStarted(t *testing.T) {
+	t.Parallel()
+	rt := newRemoteSettleTest(time.Hour)
+	start := time.Date(2026, 11, 11, 13, 0, 0, 0, time.UTC)
+	now := start
+	rt.ledger.now = func() time.Time { return now }
+	rt.ledger.sessionStarted("sess-a", "a", "claim-a")
+	now = start.Add(5 * time.Second)
+	rt.ledger.sessionStarted("sess-b", "b", "claim-a")
+	now = start.Add(time.Minute)
+	state, _ := rt.ledger.settleState()
+	require.Equal(t, []protocol.SessionClaim{
+		{ID: "sess-a", Claim: "claim-a", Started: start},
+		{ID: "sess-b", Claim: "claim-a", Started: start.Add(5 * time.Second)},
+	}, state.Claims)
+}
+
 // Once the bound passes after the last session ended without the engine
 // settling, it gives up its remote-cache work: it reports timed out, pauses,
 // and a Settled after that settles nothing. A session that starts again
