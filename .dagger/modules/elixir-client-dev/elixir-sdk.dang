@@ -203,13 +203,16 @@ type ElixirClientDev {
   # golang.org/x/mod/semver's IsValid has it: vMAJOR, vMAJOR.MINOR, or
   # vMAJOR.MINOR.PATCH with an optional pre-release and build.
   let isSemver(version: String!): Boolean! {
-    let num = "(0|[1-9][0-9]*)"
-    let pre = "(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
-    let build = "[0-9A-Za-z-]+"
-    let pattern = "^v" + num + "(\\." + num + "(\\." + num
-      + "(-" + pre + "(\\." + pre + ")*)?"
-      + "(\\+" + build + "(\\." + build + ")*)?)?)?$"
-    version != "" and version.replaceMatches(pattern, with: "") == ""
+    let number = `(0|[1-9][0-9]*)`
+    let prereleaseIdentifier =
+      `([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*|0|[1-9][0-9]*)`
+    let prerelease =
+      `(-${prereleaseIdentifier}(\.${prereleaseIdentifier})*)?`
+    let buildIdentifier = `[0-9A-Za-z-]+`
+    let build = `(\+${buildIdentifier}(\.${buildIdentifier})*)?`
+    let pattern: Regexp! =
+      `^v${number}(\.${number}(\.${number}${prerelease}${build})?)?$`
+    version.containsMatch(pattern)
   }
 
   let versionFromTag(tag: String!): String! {
