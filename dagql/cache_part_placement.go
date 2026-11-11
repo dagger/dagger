@@ -25,7 +25,12 @@ func PlacePart(part PersistedPartOffer, place func(service uint64) (uint64, bool
 	if err != nil {
 		return PersistedPartOffer{}, false
 	}
-	placed := copied[0]
+	return placeOwnedPart(copied[0], place)
+}
+
+// placeOwnedPart is PlacePart for a part that is the caller's own copy,
+// which it changes and returns.
+func placeOwnedPart(placed PersistedPartOffer, place func(service uint64) (uint64, bool)) (PersistedPartOffer, bool) {
 	placed.Owner.DependencyIDs = nil
 	for i, binding := range placed.Value.Services {
 		mapped, ok := place(binding.ServiceResultID)
