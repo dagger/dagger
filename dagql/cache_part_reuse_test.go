@@ -41,11 +41,20 @@ func init() {
 	})
 }
 
-// partReuseTestReceiver returns an imported receiver whose snapshot part was
-// installed from a local donor and settled; an evaluation of that exact row,
-// as a step of a later build reads it; and a count of the part tasks that
-// have finished on the row. An evaluation that reuses the part runs none.
-func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) (context.Context, *Cache, *Server, AnyResult, func() error, func() int) {
+// partReuse is an imported receiver whose snapshot part was installed from a
+// local donor and settled, in cache c; evaluate evaluates that exact row, as
+// a step of a later build reads it; and tasks counts the part tasks that have
+// finished on the row. An evaluation that reuses the part runs none.
+type partReuse struct {
+	c        *Cache
+	receiver AnyResult
+	evaluate func() error
+	tasks    func() int
+}
+
+// partReuseTestReceiver returns a partReuse, with setup applied to its cache
+// first.
+func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) partReuse {
 	t.Helper()
 	ctx, c, srv, _ := shareTestCache(t)
 	for _, f := range setup {
@@ -89,7 +98,7 @@ func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) (context.Context
 	release()
 	require.Equal(t, 1, barrier.awaitPass(t))
 	require.True(t, shareTestHasLink(receiver, "local-snapshot"))
-	return ctx, c, srv, receiver, evaluate, func() int { return int(tasks.Load()) }
+	return partReuse{c: c, receiver: receiver, evaluate: evaluate, tasks: func() int { return int(tasks.Load()) }}
 }
 
 // testMovePayload moves res's payload revision, as a change to its payload
@@ -105,7 +114,8 @@ func testMovePayload(res *sharedResult) {
 // again.
 func TestAcquiredPartReuseRunsNoTask(t *testing.T) {
 	t.Parallel()
-	_, _, _, _, evaluate, tasks := partReuseTestReceiver(t)
+	p := partReuseTestReceiver(t)
+	evaluate, tasks := p.evaluate, p.tasks
 	// The first read after the installation settled finds the part complete
 	// and opens it.
 	require.NoError(t, evaluate())
@@ -136,7 +146,8 @@ func TestAcquiredPartReuseEndsWhenTheRowChanges(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, c, _, receiver, evaluate, tasks := partReuseTestReceiver(t)
+			p := partReuseTestReceiver(t)
+			c, receiver, evaluate, tasks := p.c, p.receiver, p.evaluate, p.tasks
 			require.NoError(t, evaluate())
 			before := tasks()
 			c.egraphMu.Lock()
@@ -158,7 +169,7 @@ func TestAcquiredPartReuseAfterItsOwnTaskMovesTheRow(t *testing.T) {
 	t.Parallel()
 	var target atomic.Pointer[sharedResult]
 	var moved atomic.Bool
-	_, _, _, receiver, evaluate, tasks := partReuseTestReceiver(t, func(c *Cache) {
+	p := partReuseTestReceiver(t, func(c *Cache) {
 		c.testAfterLazyEvalFinish = func(attempt *lazyEvalAttempt) {
 			row := target.Load()
 			if row == nil || attempt.token == nil || attempt.token.row != row ||
@@ -170,7 +181,8 @@ func TestAcquiredPartReuseAfterItsOwnTaskMovesTheRow(t *testing.T) {
 			}
 		}
 	})
-	row := receiver.cacheSharedResult()
+	evaluate, tasks := p.evaluate, p.tasks
+	row := p.receiver.cacheSharedResult()
 	// The row changes, so the next read acquires the part again; that
 	// acquisition's own task moves the row before it finishes.
 	testMovePayload(row)
