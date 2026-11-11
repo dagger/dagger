@@ -3419,15 +3419,16 @@ func (GitSuite) TestCaching(ctx context.Context, t *testctx.T) {
 	})
 }
 
-// A remote commit's tree without .git is made from its tree with .git, on one
-// checkout: a workspace and a module loaded from one commit used to check it
-// out twice. It must come out identical to a tree checked out without .git on
-// its own, which is the same checkout, normalized the same way, with .git
-// removed: every file, mode, symlink and time of the tree with .git but its
-// .git. (A container shows a mounted or copied tree's root with a time of its
-// own, so the root's time isn't compared here; the tree's is restored after
-// .git goes, as a checkout's is.)
-func (GitSuite) TestRemoteTreeWithoutGitDirSharesCheckout(ctx context.Context, t *testctx.T) {
+// A remote commit's tree without .git is made from its tree with .git, with
+// .git removed, so that a workspace and a module loaded from one commit share
+// one checkout (TestRemoteWorkspaceAndItsModuleShareCheckout). It must come
+// out identical to a tree checked out without .git on its own, which is the
+// same checkout, normalized the same way, with .git removed: every file,
+// mode, symlink and time of the tree with .git but its .git. (A container
+// shows a mounted or copied tree's root with a time of its own, so the root's
+// time isn't compared here; the tree's is restored after .git goes, as a
+// checkout's is.)
+func (GitSuite) TestRemoteTreeWithoutGitDirMatchesTreeWithGitDir(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	content := core.NewQuery(c).Directory().
@@ -3462,26 +3463,6 @@ func (GitSuite) TestRemoteTreeWithoutGitDirSharesCheckout(ctx context.Context, t
 	require.NoError(t, err)
 	_, err = withGitDir.Sync(ctx)
 	require.NoError(t, err)
-
-	ents, err := q.Engine().LocalCache().EntrySet().Entries(ctx)
-	require.NoError(t, err)
-	var checkouts []string
-	for _, ent := range ents {
-		recordType, err := ent.RecordType(ctx)
-		require.NoError(t, err)
-		if recordType != "source.git.checkout" {
-			continue
-		}
-		desc, err := ent.Description(ctx)
-		require.NoError(t, err)
-		// The repository's mirror, which every checkout fetches from, is a
-		// checkout entry of its own.
-		if desc == "_remoteGitMirror" {
-			continue
-		}
-		checkouts = append(checkouts, desc)
-	}
-	require.Len(t, checkouts, 1, "one checkout serves both trees: %v", checkouts)
 
 	// Each path's type, mode, modification time, size and symlink target,
 	// and each file's contents, below the tree's root. The root itself is
