@@ -911,7 +911,7 @@ func treeWalk(ctx context.Context, root string) (int64, int64, error) {
 		}
 		return 0, 0, err
 	}
-	w := &treeWalker{seen: map[treeInode]struct{}{}}
+	w := newTreeWalker()
 	w.count(info)
 	if !info.IsDir() {
 		return w.size.Load(), w.files.Load(), nil
@@ -925,16 +925,29 @@ func treeWalk(ctx context.Context, root string) (int64, int64, error) {
 
 type treeInode struct{ dev, ino uint64 }
 
+// treeWalkerShards splits the set of counted inodes, so the directories a
+// walk reads at once rarely wait on each other to record one.
+const treeWalkerShards = 64
+
 // treeWalker is one treeWalk's count, shared by the directories it reads at
 // once.
 type treeWalker struct {
 	size  atomic.Int64
 	files atomic.Int64
+	// seen holds every inode counted, so a hard link takes no more space,
+	// even if its link count changes during the walk.
+	seen [treeWalkerShards]struct {
+		mu     sync.Mutex
+		inodes map[treeInode]struct{}
+	}
+}
 
-	mu sync.Mutex
-	// seen holds the inodes that can be reached twice: directories, and
-	// files with more than one link.
-	seen map[treeInode]struct{}
+func newTreeWalker() *treeWalker {
+	w := &treeWalker{}
+	for i := range w.seen {
+		w.seen[i].inodes = map[treeInode]struct{}{}
+	}
+	return w
 }
 
 // count adds an entry, and the space it takes unless that inode was
@@ -946,15 +959,14 @@ func (w *treeWalker) count(info fs.FileInfo) {
 		w.size.Add(info.Size())
 		return
 	}
-	if info.IsDir() || st.Nlink > 1 {
-		key := treeInode{uint64(st.Dev), uint64(st.Ino)} //nolint:unconvert // types differ by platform
-		w.mu.Lock()
-		_, counted := w.seen[key]
-		w.seen[key] = struct{}{}
-		w.mu.Unlock()
-		if counted {
-			return
-		}
+	key := treeInode{uint64(st.Dev), uint64(st.Ino)} //nolint:unconvert // types differ by platform
+	shard := &w.seen[key.ino%treeWalkerShards]
+	shard.mu.Lock()
+	_, counted := shard.inodes[key]
+	shard.inodes[key] = struct{}{}
+	shard.mu.Unlock()
+	if counted {
+		return
 	}
 	w.size.Add(int64(st.Blocks) * 512) //nolint:unconvert // types differ by platform
 }
