@@ -483,19 +483,19 @@ func (c *cniProvider) newNS(ctx context.Context, hostname string) (*cniNS, error
 }
 
 type cniNS struct {
-	pool          *cniPool
-	provider      *cniProvider
-	hostname      string
-	ips           []net.IP
-	handle        cni.CNI
-	id            string
-	nativeID      string
-	opts          []cni.NamespaceOpts
-	lastUsed      time.Time
-	vethName      string
-	canSample     bool
-	offsetSample  *resourcestypes.NetworkSample
-	prevSample    *resourcestypes.NetworkSample
+	pool         *cniPool
+	provider     *cniProvider
+	hostname     string
+	ips          []net.IP
+	handle       cni.CNI
+	id           string
+	nativeID     string
+	opts         []cni.NamespaceOpts
+	lastUsed     time.Time
+	vethName     string
+	canSample    bool
+	offsetSample *resourcestypes.NetworkSample
+	prevSample   *resourcestypes.NetworkSample
 	// unmount unmounts the namespace's file, in place of unmountNetNS;
 	// tests only, whose files aren't mounted.
 	unmount func(string) error
