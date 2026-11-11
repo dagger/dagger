@@ -566,7 +566,26 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 			include string
 			files   map[string]string
 			links   map[string]string
+			setup   func(gitDir string)
 		}{
+			"include outside by Git's path syntax": {
+				include: "%(prefix)//etc/passwd",
+			},
+			"linked packed-refs read for a conditional include": {
+				files: map[string]string{"app/inside.config": ""},
+				setup: func(gitDir string) {
+					head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+					require.NoError(t, err)
+					ref := strings.TrimSpace(strings.TrimPrefix(string(head), "ref: "))
+					require.NoError(t, os.Remove(filepath.Join(gitDir, ref)))
+					require.NoError(t, os.Symlink("../../outside.config", filepath.Join(gitDir, "packed-refs")))
+					config, err := os.OpenFile(filepath.Join(gitDir, "config"), os.O_APPEND|os.O_WRONLY, 0)
+					require.NoError(t, err)
+					_, err = config.WriteString("[includeIf \"onbranch:" + strings.TrimPrefix(ref, "refs/heads/") + "\"]\n\tpath = ../inside.config\n")
+					require.NoError(t, err)
+					require.NoError(t, config.Close())
+				},
+			},
 			"nested include through a link": {
 				include: "../link",
 				files:   map[string]string{"app/configs/deep/included": "[include]\n\tpath = ../outside.config\n"},
@@ -593,6 +612,9 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 				_, err = config.WriteString("[include]\n\tpath = " + tree.include + "\n")
 				require.NoError(t, err)
 				require.NoError(t, config.Close())
+			}
+			if tree.setup != nil {
+				tree.setup(filepath.Join(dir, "app", ".git"))
 			}
 			_, err := host(dir).Directory("app").AsGit().Remotes(ctx)
 			require.ErrorContains(t, err, "self-contained", name)
