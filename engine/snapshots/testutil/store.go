@@ -97,6 +97,7 @@ func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root s
 	require.NoError(t, err)
 	s.DB = metadata.NewDB(db, rawContent, map[string]ctdsnapshots.Snapshotter{snapshotter: rawSnapshots})
 	require.NoError(t, s.DB.Init(context.Background()))
+	s.StartImage(t)
 	s.Leases = bkcache.NewLeaseManager(metadata.NewLeaseManager(s.DB), Namespace)
 	s.Content = containerdsnapshot.NewContentStore(s.DB.ContentStore(), Namespace)
 	s.Snapshots = containerdsnapshot.NewSnapshotter(snapshotter, s.DB.Snapshotter(snapshotter), Namespace)
@@ -163,6 +164,13 @@ func (s *Store) Reload(t testing.TB) {
 	require.NoError(t, s.Manager.Close())
 	s.openManager(t)
 	require.NoError(t, s.Manager.LoadPersistentMetadata(rows))
+}
+
+// StartImage does what an engine does with its image's blobs at start: it
+// forgets the records of those a previous image held and this one doesn't.
+func (s *Store) StartImage(t testing.TB) {
+	t.Helper()
+	require.NoError(t, s.rawContent.ForgetLostImageBlobs(namespaces.WithNamespace(context.Background(), Namespace), s.DB.ContentStore()))
 }
 
 func (s *Store) GC(t testing.TB) {
