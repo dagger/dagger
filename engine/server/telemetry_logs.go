@@ -218,7 +218,7 @@ func (ps *PubSub) FlushHandler(w http.ResponseWriter, r *http.Request, record *c
 			return nil
 		}
 	}
-	db, err := record.TelemetryDB(r.Context())
+	db, err := record.telemetryStore(r.Context())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("open client db: %v", err), http.StatusInternalServerError)
 		return nil
