@@ -186,7 +186,7 @@ func (fe *frontendPretty) renderMessageTests(ctx tuist.Context, span *dagui.Span
 		Logs:            fe.logs.Logs,
 		SummaryIndent:   2,
 		SummaryLogLines: -1,
-		TraceID:         fe.traceID,
+		TraceCommand:    fe.traceViewCommand(),
 	}
 	width := ctx.Width - outerIndent
 	if width <= 0 {
