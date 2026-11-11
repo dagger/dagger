@@ -19,6 +19,7 @@ func DimensionFlags(dimensions Dimensions, reserved map[string]bool, name func(s
 	dimensions = SelectorDimensions(dimensions, name)
 	reserved = cloneReserved(reserved)
 	reserved[ModuleDimension] = true
+	reserved[NameDimension] = true
 	names := map[string]FlagNames{}
 
 	type request struct {
@@ -38,8 +39,8 @@ func DimensionFlags(dimensions Dimensions, reserved map[string]bool, name func(s
 	// Collection keys have priority over type names.
 	for _, kind := range []string{"collection-key", "collection-presence", "type"} {
 		for _, d := range dims {
-			if d.Kind == "MODULE" {
-				names[d.Identifier] = FlagNames{Key: "module"}
+			if d.Kind == "MODULE" || d.Kind == "NAME" {
+				names[d.Identifier] = FlagNames{Key: d.Identifier}
 				continue
 			}
 			if (kind == "type") != (d.Kind == "TYPE") {
@@ -104,6 +105,7 @@ func ModuleFlags(modules []string, dimensions Dimensions, reserved map[string]bo
 	}
 	reserved = cloneReserved(reserved)
 	reserved[ModuleDimension] = true
+	reserved[NameDimension] = true
 	for _, names := range DimensionFlags(dimensions, reserved, name) {
 		reserved[names.Key], reserved[names.Presence] = true, true
 	}

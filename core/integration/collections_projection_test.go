@@ -57,7 +57,7 @@ func (*Probe) Run() error { panic("check evaluated") }
 		require.NoError(t, err)
 		got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts { filterTypes(types: ["Check"]) {
-    dimensionDefinitions { identifier name }
+    dimensionDefinitions { identifier name kind }
     pathDefinitions { uri dimensions }
   } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})
@@ -66,7 +66,7 @@ func (*Probe) Run() error { panic("check evaluated") }
 			Node struct {
 				Artifacts struct {
 					FilterTypes struct {
-						DimensionDefinitions []struct{ Identifier, Name string }
+						DimensionDefinitions []struct{ Identifier, Name, Kind string }
 						PathDefinitions      []struct {
 							URI        string
 							Dimensions []string
@@ -79,11 +79,15 @@ func (*Probe) Run() error { panic("check evaluated") }
 		selection := result.Node.Artifacts.FilterTypes
 		dimensions := map[string]string{}
 		for _, dimension := range selection.DimensionDefinitions {
+			if dimension.Identifier == "name" {
+				require.Equal(t, "NAME", dimension.Kind)
+			}
 			if dimension.Identifier != "module" && !strings.HasPrefix(dimension.Identifier, "type:") {
 				dimensions[dimension.Identifier] = dimension.Name
 			}
 		}
 		require.Equal(t, map[string]string{
+			"name":                         "name",
 			"/tools/linux/modules":         "tools-module",
 			"/tools/linux/modules/cases":   "tools-probe",
 			"/tools/windows/modules":       "tools-module",
@@ -99,7 +103,7 @@ func (*Probe) Run() error { panic("check evaluated") }
 			require.ElementsMatch(t, []string{"module", "/" + prefix, "/" + prefix + "/cases", "type:Check"}, paths["dag://?check="+prefix+"/cases/run"])
 			out, err := ctr.With(daggerExec("check", "-l", "--tools-"+platform+"-cases", "-f=link")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dag+check://?check="+prefix+"/cases/run\n", out)
+			require.Equal(t, "dag+check://"+prefix+"/cases/run\n", out)
 		}
 	})
 
@@ -111,13 +115,14 @@ func (*Probe) Run() error { panic("check evaluated") }
 			require.Contains(t, out, "--tools-"+platform+"-module=api")
 			require.Contains(t, out, "--tools-"+platform+"-probe=first")
 			selectors, _, _ := strings.Cut(out, "#")
-			replay := append([]string{"check", "-la", "-f=link"}, strings.Fields(selectors)...)
+			require.True(t, strings.HasPrefix(selectors, "dagger check "), selectors)
+			replay := append([]string{"check", "-la", "-f=link"}, strings.Fields(strings.TrimPrefix(selectors, "dagger check "))...)
 			links, err := base.With(daggerExec(replay...)).Stdout(ctx)
 			require.NoError(t, err)
 			link := strings.TrimSpace(links)
 			path, query, ok := strings.Cut(link, "?")
 			require.True(t, ok, link)
-			require.Equal(t, "dag+check://", path)
+			require.Equal(t, "dag+check://tools/"+platform+"/modules/cases/run", path)
 			keys, err := url.ParseQuery(query)
 			require.NoError(t, err)
 			require.Equal(t, url.Values{
@@ -126,7 +131,9 @@ func (*Probe) Run() error { panic("check evaluated") }
 			}, keys)
 			selected, err := base.With(daggerExec("check", "-la", "-f=link", link)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, links, selected)
+			// The explicit path narrows schema loading. Its fallback retains
+			// exact dimension identifiers instead of allocating local aliases.
+			require.Equal(t, "dag+check://tools/"+platform+"/modules/cases/run?/tools/"+platform+"/modules=api&/tools/"+platform+"/modules/cases=first\n", selected)
 		}
 	})
 }

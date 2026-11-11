@@ -18,6 +18,9 @@ import (
 
 type artifactPreviewEntry struct {
 	flattening.Artifact
+	// LocalPath preserves schema field spelling relative to the nearest collection.
+	// Older captures derive it from Path and Collections.
+	LocalPath   []string
 	Description string
 	Items       []struct {
 		Keys        []string
@@ -52,12 +55,34 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 			coordinates[i] = append(coordinates[i], row)
 		}
 	}
+	// Build link identity from every captured item before applying selectors.
+	var addressRows []artifact.AddressRow
+	for i, entry := range entries {
+		for _, row := range coordinates[i] {
+			addressRows = append(addressRows, artifact.AddressRow{Type: entry.Type, Coordinates: artifactPreviewCoordinates(entry, row.Coordinates)})
+		}
+	}
+	addressesIndex := artifact.NewAddressIndex(addressRows, true)
 	definitions := make(artifact.Dimensions, 0)
 	for _, d := range plan.Dimensions() {
 		definitions = append(definitions, (*artifact.Dimension)(d))
 	}
+	for _, d := range flattening.CanonicalDimensions("", nil) {
+		definitions = append(definitions, (*artifact.Dimension)(d))
+	}
+	canonicalDefinitions := make(artifact.Dimensions, 0, len(definitions))
+	module := ""
+	if slices.ContainsFunc(entries, func(entry artifactPreviewEntry) bool { return entry.Module != "" }) {
+		module = "workspace"
+	}
+	for _, definition := range flattening.CanonicalDimensions(module, plan.Dimensions()) {
+		canonicalDefinitions = append(canonicalDefinitions, (*artifact.Dimension)(definition))
+	}
+	linkNames := make(map[string]string, len(canonicalDefinitions))
+	for _, definition := range canonicalDefinitions {
+		linkNames[definition.Identifier] = canonicalDefinitions.DisplayName(definition)
+	}
 	var paths []artifactListPath
-	var fullPaths artifact.Paths
 	entryDimensions := make([][]string, len(entries))
 	for i, e := range entries {
 		var parent *flattening.Dimension
@@ -65,7 +90,6 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 			parent = c.Dimension(e.Module, parent, nil)
 			entryDimensions[i] = append(entryDimensions[i], parent.Identifier)
 		}
-		fullPaths = append(fullPaths, artifact.Path{Type: "type:" + e.Type, Key: strings.Join(e.Path, "/"), Module: e.Module, Dimensions: entryDimensions[i]})
 		dimensions := []string{}
 		for _, d := range flattening.ArtifactDimensions(e.Module, e.Type, nil) {
 			dimensions = append(dimensions, d.Identifier)
@@ -74,7 +98,6 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 		addr := dagaddress.Address{Types: []string{cliName(e.Type)}, Query: []dagaddress.Pair{{Dimension: definitions.DisplayName(&artifact.Dimension{Identifier: "type:" + e.Type, Name: cliName(e.Type), QualifiedName: "artifact-" + cliName(e.Type)}), Key: strings.Join(e.Path, "/"), HasKey: true}}}
 		paths = append(paths, artifactListPath{URI: addr.String(), ModuleName: e.Module, Dimensions: dimensions})
 	}
-	fullPaths = artifact.UnionPaths(fullPaths)
 	cmd, collection, remaining, err := artifactPreviewCommand(args, definitions, paths)
 	if err != nil {
 		return err
@@ -128,7 +151,7 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 		}
 	}
 	all, _ := cmd.Flags().GetBool("all")
-	expanded := all || slices.ContainsFunc(filters, func(p dagaddress.Pair) bool { return p.HasKey && !artifact.IsStaticDimension(p.Dimension) })
+	expanded := all || collection != "" || slices.ContainsFunc(filters, func(p dagaddress.Pair) bool { return p.HasKey && !artifact.IsStaticDimension(p.Dimension) })
 	index, err := newArtifactNameIndex(paths)
 	if err != nil {
 		return err
@@ -174,14 +197,17 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 				for _, key := range flat.Coordinates {
 					row.DimensionKeys = append(row.DimensionKeys, struct{ Dimension, Key string }{key.Dimension, key.Key})
 				}
-				row.URI = artifactPreviewLink(e.Artifact, flat, entryDimensions[i], fullPaths, definitions)
+				row.URI = artifactPreviewLink(e, flat, addressesIndex, linkNames)
+				setArtifactPreviewCoordinates(&row, e, flat.Coordinates)
 				itemRows = append(itemRows, row)
 			}
 		} else {
-			row := listedArtifact{URI: paths[i].URI, ModuleName: e.Module, Path: e.Path, Description: e.Description, CollectionItem: collection != "", Presence: entryDimensions[i]}
+			schemaURI := dagaddress.Address{Types: []string{cliName(e.Type)}, Path: strings.Join(e.Path, "/")}
+			row := listedArtifact{URI: schemaURI.String(), ModuleName: e.Module, Path: e.Path, Description: e.Description, CollectionItem: collection != "", Presence: entryDimensions[i]}
 			for _, key := range flattening.Coordinates(e.Module, e.Path, e.Type, nil) {
 				row.DimensionKeys = append(row.DimensionKeys, struct{ Dimension, Key string }{key.Dimension, key.Key})
 			}
+			setArtifactPreviewCoordinates(&row, e, nil)
 			itemRows = append(itemRows, row)
 		}
 		for _, row := range itemRows {
@@ -201,8 +227,9 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 	}
 	var rendered []listedArtifact
 	for _, key := range slices.Sorted(maps.Keys(groups)) {
-		for _, group := range artifactListRows(groups[key], all) {
+		for _, group := range artifactListRows(groups[key], expanded) {
 			row := group[0]
+			row.Coordinates = listedArtifactCoordinates(group)
 			row.DimensionKeys = nil
 			for _, key := range listedArtifactKeys(group) {
 				row.DimensionKeys = append(row.DimensionKeys, struct{ Dimension, Key string }{key.Dimension, key.Key})
@@ -227,6 +254,33 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 		_, err = fmt.Fprintln(diagnostics, "# Use --all to expand collections and list each item.")
 	}
 	return err
+}
+
+const artifactPreviewListCommand = "dagger.io/preview-list-command"
+
+func artifactPreviewCoordinates(entry artifactPreviewEntry, keys []flattening.Coordinate) []flattening.Coordinate {
+	local := entry.LocalPath
+	if local == nil {
+		local = slices.Clone(entry.Path)
+		if len(local) > 0 && local[0] == cliName(entry.Module) {
+			local = local[1:]
+		}
+		for _, collection := range entry.Collections {
+			if len(local) >= len(collection.Fields) {
+				local = local[len(collection.Fields):]
+			}
+		}
+	}
+	return flattening.CanonicalCoordinates(entry.Module, local, keys)
+}
+
+func setArtifactPreviewCoordinates(row *listedArtifact, entry artifactPreviewEntry, keys []flattening.Coordinate) {
+	for _, coordinate := range artifactPreviewCoordinates(entry, keys) {
+		row.Coordinates = append(row.Coordinates, struct{ Dimension, Key string }{coordinate.Dimension, coordinate.Key})
+		if coordinate.Dimension == flattening.NameDimension {
+			row.Name = coordinate.Key
+		}
+	}
 }
 
 func artifactPreviewCommand(args []string, definitions artifact.Dimensions, paths []artifactListPath) (*cobra.Command, string, []string, error) {
@@ -277,7 +331,7 @@ func artifactPreviewCommand(args []string, definitions artifact.Dimensions, path
 		if typ == "" {
 			return nil, "", nil, fmt.Errorf("unknown captured type or collection %q", remaining[0])
 		}
-		cmd.Annotations = map[string]string{}
+		cmd.Annotations = map[string]string{artifactPreviewListCommand: remaining[0]}
 		if collections[typ] {
 			collection = typ
 			cmd.Annotations[artifactListCollection] = typ
@@ -300,6 +354,9 @@ func artifactPreviewMatches(row listedArtifact, filters []dagaddress.Pair, index
 	for dimension, choices := range dimensions {
 		matched := false
 		for _, filter := range choices {
+			if dimension == flattening.NameDimension && (!filter.HasKey || row.Name == filter.Key) {
+				matched = true
+			}
 			for _, key := range row.DimensionKeys {
 				if key.Dimension != dimension {
 					continue
@@ -322,33 +379,25 @@ func artifactPreviewMatches(row listedArtifact, filters []dagaddress.Pair, index
 	return true
 }
 
-func artifactPreviewLink(a flattening.Artifact, row flattening.Row, dimensions []string, paths artifact.Paths, definitions artifact.Dimensions) string {
-	target := artifact.Path{Type: "type:" + a.Type, Module: a.Module, Key: strings.Join(a.Path, "/"), Dimensions: dimensions}
-	name := func(value string) string { return cliName(strings.TrimPrefix(value, "type:")) }
-	link := artifact.PlanLink(paths, target, true, true, name)
-	addr := dagaddress.Address{Types: []string{cliName(a.Type)}}
-	display := func(id string) string {
-		for _, d := range definitions {
-			if d.Identifier == id {
-				return definitions.DisplayName(d)
+func artifactPreviewLink(entry artifactPreviewEntry, row flattening.Row, index *artifact.AddressIndex, names map[string]string) string {
+	target := artifact.AddressRow{Type: entry.Type, Coordinates: artifactPreviewCoordinates(entry, row.Coordinates)}
+	keys, ok := index.Keys(target)
+	addr := dagaddress.Address{Types: []string{cliName(entry.Type)}}
+	if !ok {
+		addr.Path = strings.Join(entry.Path, "/")
+		keys = nil
+		for _, coordinate := range target.Coordinates {
+			if strings.HasPrefix(coordinate.Dimension, "/") {
+				keys = append(keys, coordinate)
 			}
 		}
-		return id
 	}
-	typeKey := row.TypeKey
-	if link != nil {
-		typeKey = link.TypeKey
-		if link.Module {
-			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: "module", Key: a.Module, HasKey: true})
+	for _, key := range keys {
+		name := names[key.Dimension]
+		if name == "" {
+			name = key.Dimension
 		}
-	}
-	if typeKey != "" {
-		addr.Query = append(addr.Query, dagaddress.Pair{Dimension: display(target.Type), Key: typeKey, HasKey: true})
-	}
-	for _, key := range row.Coordinates {
-		if !artifact.IsStaticDimension(key.Dimension) {
-			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: display(key.Dimension), Key: key.Key, HasKey: true})
-		}
+		addr.Query = append(addr.Query, dagaddress.Pair{Dimension: name, Key: key.Key, HasKey: true})
 	}
 	return addr.String()
 }

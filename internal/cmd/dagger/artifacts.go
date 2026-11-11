@@ -86,6 +86,13 @@ func registerArtifactDimensionHelp(cmd *cobra.Command, dimensions, selected arti
 		if dimension.Kind == "MODULE" {
 			continue
 		}
+		if dimension.Kind == "NAME" {
+			if cmd.Flag(allocated.Key) == nil {
+				cmd.Flags().StringArray(allocated.Key, nil, "Select artifacts by their full local field path `NAME`")
+				cmd.Flags().Lookup(allocated.Key).Annotations = map[string][]string{artifactDimensionFlag: {dimension.Identifier}}
+			}
+			continue
+		}
 		if cmd.Flag(allocated.Key) == nil {
 			key := cliName(dimension.KeyName)
 			if key == "" {
@@ -443,12 +450,14 @@ type listedArtifact struct {
 	ModuleFlag       string            `json:"-"`
 	OmitTypeKey      bool              `json:"-"`
 	OmitCLITypeKey   bool              `json:"-"`
-	Presence         []string          `json:"-"`
+	Presence         []string          `json:"presence,omitempty"`
 	DisplayKeys      map[string]string `json:"-"`
 	PresenceNames    map[string]string `json:"-"`
 	CollectionItem   bool              `json:"-"`
 	URI, Description string
 	ModuleName       string
+	Name             string
+	Coordinates      []struct{ Dimension, Key string }
 	Path             []string
 	DimensionKeys    []struct{ Dimension, Key string }
 }
@@ -588,18 +597,55 @@ func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection
 	if err != nil {
 		return nil, err
 	}
+	definitions, err := artifactDimensions(ctx, dag, selection)
+	if err != nil {
+		return nil, err
+	}
+	var itemType string
+	for _, definition := range definitions {
+		if definition.Identifier == dimension {
+			itemType = definition.ItemType
+			break
+		}
+	}
 	var response struct {
 		Node struct{ Items []listedArtifact }
 	}
-	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $dimension: String!, $absolute: Boolean!) {
+	query := `query($id: ID!, $dimension: String!, $absolute: Boolean!) {
   node(id: $id) { ... on Artifacts {
-    items: dimensionItems(dimension: $dimension) { uri(absolute: $absolute, typeAssertion: true) description dimensionKeys { dimension key } }
+    items: dimensionItems(dimension: $dimension) { uri(absolute: $absolute, typeAssertion: true) description moduleName path coordinates:dimensionKeys(all:true) { dimension key } }
   } }
- }`, Variables: map[string]any{"id": id, "dimension": dimension, "absolute": absolute}}, &dagger.Response{Data: &response})
-	for i := range response.Node.Items {
-		response.Node.Items[i].CollectionItem = true
+ }`
+	variables := map[string]any{"id": id, "dimension": dimension, "absolute": absolute}
+	err = dag.Do(ctx, &dagger.Request{Query: query, Variables: variables}, &dagger.Response{Data: &response})
+	if err != nil && strings.Contains(err.Error(), "Unknown argument") && strings.Contains(err.Error(), "all") {
+		query = strings.Replace(query, "dimensionKeys(all:true)", "dimensionKeys", 1)
+		err = dag.Do(ctx, &dagger.Request{Query: query, Variables: variables}, &dagger.Response{Data: &response})
 	}
-	return response.Node.Items, err
+	if err != nil {
+		return nil, err
+	}
+	for i := range response.Node.Items {
+		item := &response.Node.Items[i]
+		item.CollectionItem = true
+		legacy := slices.ContainsFunc(item.Coordinates, func(k struct{ Dimension, Key string }) bool { return strings.HasPrefix(k.Dimension, "type:") })
+		if legacy {
+			item.DimensionKeys = item.Coordinates
+			item.Coordinates = nil
+			continue
+		}
+		for _, coordinate := range item.Coordinates {
+			if coordinate.Dimension == "name" {
+				item.Name = coordinate.Key
+				continue
+			}
+			item.DimensionKeys = append(item.DimensionKeys, coordinate)
+		}
+		if itemType != "" {
+			item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{"type:" + itemType, strings.Join(item.Path, "/")})
+		}
+	}
+	return response.Node.Items, nil
 }
 
 func registerArtifactFilters(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, dimensions, selected artifact.Dimensions, all *core.Artifacts) error {
@@ -613,7 +659,7 @@ func registerArtifactFilters(ctx context.Context, dag *dagger.Client, cmd *cobra
 		types = append(types, typ)
 	}
 	for _, d := range dimensions {
-		if slices.Contains(types, d.ItemType) && !slices.ContainsFunc(selected, func(s *artifact.Dimension) bool { return s.Identifier == d.Identifier }) {
+		if (d.Identifier == artifact.NameDimension || slices.Contains(types, d.ItemType)) && !slices.ContainsFunc(selected, func(s *artifact.Dimension) bool { return s.Identifier == d.Identifier }) {
 			selected = append(selected, d)
 		}
 	}

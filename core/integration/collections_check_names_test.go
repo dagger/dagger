@@ -15,8 +15,8 @@ func (CollectionsSuite) TestGeneratorCheckNames(ctx context.Context, t *testctx.
 		name, receiver, linkFormat string
 		flags                      []string
 	}{
-		{"module", "Collections", "dag+check://?module=collections&type:Check=%s/stale\n", []string{"--collections"}},
-		{"collection", "Item", "dag+check://?check=%s/stale&collections-items-item=a\n", []string{"--collections", "--collections-items-item=a"}},
+		{"module", "Collections", "dag+check://%s/stale\n", []string{"--collections"}},
+		{"collection", "Item", "dag+check://?collections-items-item=a&name=%s.stale\n", []string{"--collections", "--collections-items-item=a"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			source := collectionGoSource + fmt.Sprintf(`
@@ -36,7 +36,7 @@ func (*%s) Clients() *dagger.Changeset { panic("generator evaluated") }
 			for i, generator := range []string{"clients", "docs"} {
 				printed, _, _ := strings.Cut(lines[i], "#")
 				want := append(append([]string{}, tc.flags...), "--check="+generator+"/stale")
-				require.Equal(t, want, strings.Fields(printed))
+				require.Equal(t, want, strings.Fields(collectionCLIArguments(t, strings.TrimSpace(printed)+"\n", "dagger check")))
 				for _, command := range [][]string{{"check", "-la", "-f=link"}, {"list", "checks", "-a", "-f=link"}} {
 					links, err := base.With(daggerExec(append(command, want...)...)).Stdout(ctx)
 					require.NoError(t, err)

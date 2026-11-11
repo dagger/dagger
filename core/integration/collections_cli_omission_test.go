@@ -58,15 +58,20 @@ func (*Part) Run() error { panic("check evaluated") }
 				require.NoError(t, err)
 				require.Contains(t, out, "--collections --collections-items-item=a")
 				require.Equal(t, !tc.omit, strings.Contains(out, "--check="), out)
+				if tc.typeKey != "" {
+					require.Contains(t, out, "--check="+tc.typeKey)
+				}
 				replay := append(append([]string{}, command...), "-a", "-f=link")
-				replay = append(replay, strings.Fields(out)...)
+				prefix := "dagger check"
+				if command[0] == "list" {
+					prefix = "dagger list checks"
+				}
+				replay = append(replay, strings.Fields(collectionCLIArguments(t, out, prefix))...)
 				links, err := ctr.With(daggerExec(replay...)).Stdout(ctx)
 				require.NoError(t, err)
-				query := "collections-items-item=a"
-				if tc.typeKey != "" {
-					query = "check=" + tc.typeKey + "&" + query
-				}
-				require.Equal(t, "dag+check://?"+query+"\n", links)
+				// Deferred prevents a complete runtime proof. Keep the path even
+				// when schema metadata can omit the CLI type selector.
+				require.Equal(t, "dag+check://items/run?collections-items-item=a\n", links)
 			}
 			// The same proof works from schema metadata alone. The collection
 			// constructor and both check functions must remain deferred.

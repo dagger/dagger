@@ -273,3 +273,20 @@ func TestAcceptsArtifactArgs(t *testing.T) {
 	require.False(t, acceptsArtifactArgs(cmd, []string{"--go", "-l", "-f=yaml"}))
 	require.False(t, cmd.Flags().Changed("all"), "checking a command line must not parse it into the command")
 }
+
+func TestArtifactNameHelp(t *testing.T) {
+	definitions := artifact.Dimensions{
+		{Identifier: "name", Kind: "NAME", Name: "name", QualifiedName: "name", KeyName: "name"},
+		{Identifier: "/tools/items", Kind: "COLLECTION", Name: "name", QualifiedName: "tools-items-name", ItemType: "Name", CollectionType: "Names"},
+	}
+	cmd := &cobra.Command{Use: "check"}
+	registerCommandArtifactFlags(cmd)
+	registerArtifactDimensionHelp(cmd, definitions, definitions)
+	require.NotNil(t, cmd.Flag("name"))
+	require.Equal(t, "Select artifacts by their full local field path `NAME`", cmd.Flag("name").Usage)
+	require.Regexp(t, `(?m)^\s+--name NAME\s+Select artifacts`, artifactCommandFlags(cmd))
+	require.NotContains(t, artifactCommandFlags(cmd), "stringArray")
+	require.NoError(t, cmd.ParseFlags([]string{"--name=generate.stale", "--name=test"}))
+	require.Equal(t, []dagaddress.Pair{{Dimension: "name", Key: "generate.stale", HasKey: true}, {Dimension: "name", Key: "test", HasKey: true}}, artifactKeyFlags(cmd))
+	require.Empty(t, artifactDimensionFlagNames(cmd, definitions)["name"].Presence)
+}

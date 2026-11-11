@@ -299,6 +299,10 @@ Alternatives in one filter use OR. Chained filters use AND. Unknown dimension na
 
 #### Table columns
 
+Canonical coordinates have three parts: `module`, the enclosing collection item keys, and `name`. `name` is the full dot-separated field path from the nearest collection item. Without a parent collection, it starts at the module's exposed root. Use the literal schema field names, such as `python310.unit`. Use `.` for the root itself. Ordinary object fields extend `name`; a collection item starts a new local root.
+
+Legacy type-path coordinates remain compatibility selectors. They are not canonical table columns.
+
 `Artifacts` is the table. `items` supplies its rows. Do not add a table wrapper.
 
 Flattening produces all workspace dimensions and each artifact's full coordinates. Filters must not change these dimensions or coordinates. Column hiding is a separate display rule.
@@ -310,6 +314,8 @@ Flattening produces all workspace dimensions and each artifact's full coordinate
 `Artifact.dimensionKeys()` returns the row's coordinates in the visible dimensions of its source `Artifacts` snapshot. Use exactly the dimension set that the parent's `dimensions()` returns. Do not compute visibility from that row alone. A missing coordinate has no entry.
 
 `Artifact.dimensionKeys(all: true)` returns all coordinates of that artifact. Keep these full coordinates internally, regardless of column hiding. Preserve the source snapshot's visible dimensions when an artifact is passed to another client or loaded by ID. An artifact with no source display context returns its full coordinates.
+
+`dimensionItems` retains its source selection for display pruning. Read that source snapshot only when default `dimensionKeys()` needs it. `dimensionKeys(all: true)` must not discover descendant collections only to choose visible columns. Retain this source context across persistence.
 
 The `all` argument applies only to that field. To render all columns, request `all: true` on both `Artifacts.dimensions` and `Artifact.dimensionKeys`.
 
@@ -328,17 +334,25 @@ These operations use different reference sets:
 
 For example, a table of docs checks can hide `module=docs`. If another module has the same check name, the link can still need `module=docs` to select the right check. Copying the table's visible coordinates into a link is not sufficient.
 
-Use schema guarantees to choose the pairs. A collection key is unique within its collection instance. Keep the keys for each enclosing collection so the link stays valid as collections gain items.
+Use the complete, unfiltered workspace snapshot to choose the pairs. A child collection key can be unique across its parent collections. Do not keep a parent key when the remaining pairs already identify the artifact. If the same child key occurs under two parents, keep another pair that separates them.
 
-First minimize the number of pairs. When two sets have the same size, prefer the set that omits `module`, then the set that omits `name`. This gives collection dimensions priority. Use dimension identifier order for any remaining ties. In the current schema, the type dimension's path key supplies the field discriminator that `name` will supply in the new schema.
+Find the smallest set of pairs. Among sets of the same size, prefer collection dimensions, starting with the deepest collection. Then prefer `name`, then `module`. Use dimension identifier order for any remaining tie. This keeps collection context when it is useful and removes it when it is redundant.
+
+For example, `dag+check://?golang-test=TestCloseAndReopen` is sufficient when that test names one Check in the full workspace. A package item can use `dag+golang-package://?golang-package=cmd/codegen` when that package key is unique across Go modules.
+
+Filtering must not change an artifact's link. Compute the proof against the source workspace with all selection filters cleared. The scheme supplies the type constraint. An untyped address needs a proof across all artifact types. Cache the unfiltered discovery snapshot. Never use the displayed rows as the address reference set.
+
+Present coordinates can match an artifact that has additional collection keys. If no set of present pairs selects only the target, use its full field path and required parent collection keys.
+
+A workspace content change can require a longer address. A relative link is resolved against the receiving workspace. An absolute link pins the source workspace commit. If the full snapshot is unavailable, retain the existing complete address.
 
 The scheme selects the artifact type. Apply `+check` as a type filter before choosing the artifact. With `uri(typeAssertion: true)`, the scheme can replace the type constraint in the query. For a package and test with one check, a link can be `dag+check://?go-package=./app/foo&go-test=TestFoo`. If that test has several checks, keep the field discriminator.
 
 No new link API is needed. The `all` argument controls table metadata. It does not control `uri()`. The existing `absolute` option supplies the workspace address when the link must name its source workspace.
 
-When discovery loads only part of the schema, prove uniqueness within a module. A collection dimension identifier names its module. For a static artifact, retain the module pair. Use exact dimension identifiers when the catalog cannot prove that an alias is unique.
+When discovery deliberately loads only part of the schema, keep the full field path. Do not load unrelated modules only to shorten links. Retain every parent collection key. Use exact dimension identifiers when the catalog cannot prove that an alias is unique. A failed unfiltered discovery also keeps a full address.
 
-In the CLI, `dagger check --list --all --format=link` prints links for individual checks. The table and `--format=cli` read full row coordinates from metadata. They can show or use a coordinate that the link omits. A collapsed row represents a selection and retains its field path.
+In the CLI, `dagger check --list --all --format=link` prints links for individual checks. Tables use canonical coordinates and the same display pruning rule as the API. They put collection columns first, then `module` and `name`, and always include the DAG link. `--format=cli` prints complete commands and retains the full selectors needed to replay the selection. `dagger list <collection>` lists individual items by default. A collapsed row represents a selection and retains its field path.
 
 #### Discovery and evaluation
 
