@@ -58,11 +58,16 @@ type GoClientDev {
   Regenerate the Go SDK API
   """
   pub generate: Changeset! @generate {
-    devContainer
+    # go generate computes the API schema with the introspect tool, from the
+    # engine's source (see sdk/go/generate.go): it needs that source, and no engine.
+    let src = engineDev(ws: self.ws).source
+    go(ws: self.ws, source: src)
+      .env
+      .withWorkdir(sourcePath)
       .withExec(["go", "generate", "-v", "."])
       .withExec(["go", "mod", "tidy"])
       .directory("../..") # pop back to repo root
-      .changes(workspaceDir)
+      .changes(src)
   }
 
   """
