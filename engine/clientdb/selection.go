@@ -224,8 +224,11 @@ type spanNode struct {
 	row                   int64
 	parent                string
 	priority, passthrough bool
-	causes                []string
-	hasLogs               bool
+	// agent marks an agent conversation span: the only priority spans a
+	// conversation view keeps.
+	agent   bool
+	causes  []string
+	hasLogs bool
 }
 
 // SpanViewAt returns the span view of traceID at cut, with sel applied. The
@@ -268,7 +271,7 @@ func (s *DB) buildSpanTopology(ctx context.Context, traceID string, cut HighWate
 			if err := UnmarshalProtoList(row.Attributes, &commonpb.KeyValue{}, &attrs); err != nil {
 				return nil, err
 			}
-			node.priority, node.passthrough = spanViewClass(attrs)
+			node.priority, node.agent, node.passthrough = spanViewClass(attrs)
 			node.priority = node.priority || row.StatusCode == int64(codes.Error)
 			v.nodes[row.SpanID] = node
 		}
@@ -404,17 +407,25 @@ func (c *spanTopologyCache) get(ctx context.Context, key spanTopologyKey, build 
 }
 
 // spanViewClass reads a span's view classification from its attributes:
-// whether it belongs to the priority view, and whether the UI renders its
-// children in its place.
+// whether it belongs to the priority view, whether it is an agent
+// conversation span, and whether the UI renders its children in its place.
 //
 // Priority matches Dagger Cloud's: checks, tests, revealed spans, and agent
 // conversation spans. The engine stamps gen_ai.agent.id on an agent's loop
 // span and each of its message spans, so a conversation is whole -- every
-// message's chain up to its loop -- without expanding down to it.
-func spanViewClass(attrs []*commonpb.KeyValue) (priority, passthrough bool) {
+// message's chain up to its loop -- without expanding down to it. Its tool
+// call spans carry it too; a conversation view keeps them as the messages'
+// children, not as conversation spans of their own, so what a tool call ran
+// loads as it is expanded.
+func spanViewClass(attrs []*commonpb.KeyValue) (priority, agent, passthrough bool) {
+	var tool bool
 	for _, a := range attrs {
 		switch a.GetKey() {
-		case telemetry.CheckNameAttr, string(semconv.TestCaseNameKey), string(semconv.TestSuiteNameKey), string(semconv.GenAIAgentIDKey):
+		case string(semconv.GenAIAgentIDKey):
+			priority, agent = true, true
+		case telemetry.LLMToolAttr:
+			tool = true
+		case telemetry.CheckNameAttr, string(semconv.TestCaseNameKey), string(semconv.TestSuiteNameKey):
 			priority = true
 		case telemetry.UIPassthroughAttr, telemetry.UIInternalAttr:
 			passthrough = passthrough || a.GetValue().GetBoolValue()
@@ -422,7 +433,7 @@ func spanViewClass(attrs []*commonpb.KeyValue) (priority, passthrough bool) {
 			priority = priority || a.GetValue().GetBoolValue()
 		}
 	}
-	return priority, passthrough
+	return priority, agent && !tool, passthrough
 }
 
 // selectSpans applies presentation selection only after the fixed-cut topology
@@ -464,7 +475,13 @@ func (v *SpanView) selectSpans(sel *archive.SpanSelection) {
 	if !sel.NoRoot {
 		for id, node := range v.nodes {
 			_, hasParent := v.nodes[node.parent]
-			if !hasParent || node.priority {
+			priority := node.priority
+			if sel.Conversation {
+				// Only the agents' conversations: their tool calls'
+				// checks, tests and failures load as they are expanded.
+				priority = node.agent
+			}
+			if !hasParent || priority {
 				ancestors(id)
 				visibleChildren(id, map[string]bool{})
 			}

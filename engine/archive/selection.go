@@ -14,10 +14,15 @@ import (
 // Unlike Cloud, archives are finite: no time-based follow/backfill is needed.
 type SpanSelection struct {
 	// Full bypasses priority filtering while retaining optional UI annotations.
-	Full      bool
-	NoRoot    bool
-	Listen    []string
-	DagUIView bool
+	Full   bool
+	NoRoot bool
+	Listen []string
+	// Conversation narrows the root view's priority spans to agent
+	// conversations (loop and message spans), leaving out checks, tests,
+	// revealed and failed spans. An engine that predates it ignores it and
+	// serves the broader priority view.
+	Conversation bool
+	DagUIView    bool
 }
 
 const (
@@ -54,6 +59,9 @@ func (s StreamOptions) SelectionQuery(signal string) (url.Values, error) {
 		for _, id := range s.Spans.Listen {
 			q.Add("listen", id)
 		}
+		if s.Spans.Conversation {
+			q.Set("conversation", "true")
+		}
 		if s.Spans.DagUIView {
 			q.Set("view", "dagui")
 		}
@@ -78,7 +86,7 @@ func ParseSelection(signal string, q url.Values) (*SpanSelection, *LogSelection,
 	var spans *SpanSelection
 	var logs *LogSelection
 	var err error
-	if q.Has("root") || q.Has("listen") || q.Has("view") || q.Has("full") {
+	if q.Has("root") || q.Has("listen") || q.Has("view") || q.Has("full") || q.Has("conversation") {
 		if signal != "traces" {
 			return nil, nil, fmt.Errorf("span selection requires traces")
 		}
@@ -136,7 +144,17 @@ func parseSpanSelection(q url.Values) (*SpanSelection, error) {
 	if full && (!root || len(q["listen"]) != 0) {
 		return nil, fmt.Errorf("full view cannot select roots or subtrees")
 	}
-	return &SpanSelection{Full: full, NoRoot: !root, Listen: q["listen"], DagUIView: q.Get("view") == "dagui"}, nil
+	conversation, err := selectionBool(q, "conversation", false)
+	if err != nil {
+		return nil, err
+	}
+	if conversation && (full || !root) {
+		return nil, fmt.Errorf("conversation view requires the priority roots")
+	}
+	return &SpanSelection{
+		Full: full, NoRoot: !root, Listen: q["listen"],
+		Conversation: conversation, DagUIView: q.Get("view") == "dagui",
+	}, nil
 }
 
 func parseLogSelection(q url.Values) (*LogSelection, error) {
