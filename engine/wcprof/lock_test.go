@@ -115,7 +115,7 @@ func TestOverlappingReadersHolderIsReaders(t *testing.T) {
 	var mu RWMutex
 	mu.RLock()
 	mu.RLock()
-	mu.RUnlock()
+	mu.RUnlock() //nolint:staticcheck // SA2001: a reader that leaves while another still holds the lock.
 	if w := lockWait(t, r, waiterCtx, &mu, mu.RUnlock); w.ResultID != HolderReaders {
 		t.Fatalf("wait %+v: want holder HolderReaders while a reader still holds the lock", w)
 	}
@@ -130,7 +130,7 @@ func TestLastReaderLeavingIsNotNamed(t *testing.T) {
 	var mu RWMutex
 	mu.RLock()
 	mu.RLock()
-	mu.RUnlock()
+	mu.RUnlock() //nolint:staticcheck // SA2001: a reader that leaves while another still holds the lock.
 	mu.RUnlock()
 	// The next taker holds the mutex but hasn't marked itself yet.
 	mu.RWMutex.Lock()
