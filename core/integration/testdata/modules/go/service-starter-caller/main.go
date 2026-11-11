@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"dagger/caller/internal/dagger"
 )
 
 type Caller struct{}
@@ -21,10 +19,13 @@ func (m *Caller) Run(ctx context.Context) (string, error) {
 		return "", err
 	}
 
+	// Each instance of the service counts itself before it listens, so a
+	// binding, which waits for the port, can't finish before an instance it
+	// started has counted itself.
 	svc := dag.Container().From("alpine").
 		WithMountedCache("/cache", cache).
-		WithExposedPort(8080, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
-		WithDefaultArgs([]string{"sh", "-c", "echo started >> /cache/svc.txt && while true; do wc -l /cache/svc.txt && sleep 5; done"}).
+		WithExposedPort(8080).
+		WithDefaultArgs([]string{"sh", "-c", "echo started >> /cache/svc.txt && exec nc -lk -p 8080"}).
 		AsService()
 
 	// A different module, so a different client, brings the service up
