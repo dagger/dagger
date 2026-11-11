@@ -143,7 +143,8 @@ func TestConsolePartialCheckpoint(t *testing.T) {
 	require.Len(t, msgs, 11)
 	require.Equal(t, "fix the lag", msgs[0].Content[0].Text, "crossed the checkout through its llm argument")
 	require.Equal(t, consoleGapRole, msgs[2].Role)
-	require.Contains(t, msgs[2].Content[0].Text, "skipped github.checkout (xxh3:d4)")
+	require.Contains(t, msgs[2].Content[0].Text, "module function github.checkout")
+	require.Contains(t, msgs[2].Content[0].Text, "changes it made are not decoded")
 	require.Equal(t, []string{msgs[2].Content[0].Text}, snap.Gaps)
 	for i, msg := range msgs {
 		require.Equal(t, i, msg.Index)
@@ -156,7 +157,7 @@ func TestConsolePartialCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, snap.Gaps, 2)
 	require.Equal(t, consoleGapRole, snap.Snapshot.Messages[0].Role)
-	require.Contains(t, snap.Gaps[0], "frame xxh3:d2 never reached this client")
+	require.Contains(t, snap.Gaps[0], "checkpoint frame xxh3:d2 is missing from the trace")
 	require.Equal(t, "Checking out main.", snap.Snapshot.Messages[1].Content[0].Text)
 
 	// Nothing recoverable is still an error.
