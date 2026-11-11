@@ -11259,9 +11259,9 @@ class GitRepository(Type):
             Identifier of the commit (e.g.,
             "b6315d8f2810962c601af73f86831f6866ea798b").
             May be abbreviated to an unambiguous hex prefix (4-40 characters),
-            which is expanded against locally available objects. Remote
-            repositories (resolved via ls-remote) can only expand prefixes of
-            already-fetched commits; use the full SHA otherwise.
+            which is expanded to the full SHA. A remote repository that has
+            not fetched the commit yet fetches the history of the refs it
+            advertises to find it.
         """
         _args = [
             Arg("id", id),
@@ -11364,10 +11364,10 @@ class GitRepository(Type):
             or a fully-qualified ref).
             Commit identifiers may be abbreviated: an unambiguous hex prefix
             (4-40 characters) of a commit SHA resolves like git rev-parse,
-            with named refs taking precedence. Abbreviated SHAs resolve
-            against locally available objects, so remote repositories
-            (resolved via ls-remote) can only expand prefixes of already-
-            fetched commits; use the full SHA or a named ref otherwise.
+            with named refs taking precedence, to the full SHA. A remote
+            repository that has not fetched the commit yet fetches the history
+            of the refs it advertises to find it, so only commits reachable
+            from those refs can be abbreviated.
             The name may be followed by git revision suffixes, applied left to
             right: `~N` follows first parents N times and `^N` selects the Nth
             parent (`~` and `^` mean 1, `^0` is the commit itself), e.g.

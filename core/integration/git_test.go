@@ -2027,24 +2027,60 @@ func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
-		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+rand.Text()))
-		repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: svc})
-
-		full, err := repo.Branch("main").CommitSHA(ctx)
+		// main: root - a - b; tag v1 and a pull request head reach commits
+		// no branch does; a deleted branch leaves one no ref reaches.
+		served := core.NewQuery(c).Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git", "git-daemon"}).
+			With(gitUserConfig).
+			WithWorkdir("/work").
+			WithExec([]string{"sh", "-c", `set -e
+git init -q -b main
+echo ` + rand.Text() + ` > f && git add f && git commit -qm root
+echo a > f && git commit -qam a
+echo b > f && git commit -qam b
+git checkout -q --orphan tagged && echo t > f && git add f && git commit -qm tagged && git tag v1
+git checkout -q --orphan pull && echo p > f && git add f && git commit -qm pull
+git checkout -q --orphan gone && echo g > f && git add f && git commit -qm gone
+git checkout -q main
+for r in main~1 v1 pull gone; do git rev-parse "$r"; done > /shas
+git clone -q --bare . /srv/repo.git
+git -C /srv/repo.git update-ref refs/pull/1/head pull
+git -C /srv/repo.git branch -D tagged pull gone
+`})
+		shas, err := served.File("/shas").Contents(ctx)
+		require.NoError(t, err)
+		var mainCommit, tagged, pull, gone string
+		_, err = fmt.Sscan(shas, &mainCommit, &tagged, &pull, &gone)
 		require.NoError(t, err)
 
-		// nothing fetched yet: ls-remote only advertises refs, so the prefix
-		// cannot be expanded
-		_, err = repo.Ref(full[:7]).CommitSHA(ctx)
-		require.Error(t, err)
-		requireErrOut(t, err, "already-fetched")
+		svc := served.
+			WithExposedPort(9418).
+			WithDefaultArgs([]string{"git", "daemon", "--export-all", "--base-path=/srv"}).
+			AsService()
+		host, err := svc.Hostname(ctx)
+		require.NoError(t, err)
+		repo := core.NewQuery(c).Git("git://"+host+"/repo.git", core.GitOpts{ExperimentalServiceHost: svc})
 
-		// once the commit's objects are fetched, the same prefix resolves
-		_, err = repo.Branch("main").Tree().Sync(ctx)
+		// Nothing is fetched yet, and the commit is no ref's tip: the
+		// remote's branches are fetched to expand the prefix.
+		resolved, err := repo.Ref(mainCommit[:7]).CommitSHA(ctx)
 		require.NoError(t, err)
-		resolved, err := repo.Ref(full[:7]).CommitSHA(ctx)
+		require.Equal(t, mainCommit, resolved)
+
+		// tags are fetched along with branches
+		sha, err := repo.Commit(tagged[:8]).SHA(ctx)
 		require.NoError(t, err)
-		require.Equal(t, full, resolved)
+		require.Equal(t, tagged, sha)
+
+		// then every other ref the remote advertises
+		resolved, err = repo.Ref(pull[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, pull, resolved)
+
+		// a commit no advertised ref reaches cannot be found by prefix
+		_, err = repo.Ref(gone[:10]).CommitSHA(ctx)
+		requireErrOut(t, err, "no commit matches short SHA")
 	})
 }
 
