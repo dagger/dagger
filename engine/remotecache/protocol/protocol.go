@@ -246,7 +246,9 @@ const (
 
 // Exported answers Export. Bundle is nil when no root survived. The engine
 // keeps the bundle's chains open under ExportID until Upload, or until the
-// connection ends.
+// connection ends. The bundle's records carry no offers of parts: an
+// engine's offers are the Cloud's own, and its parts go as the bundle's
+// outputs.
 type Exported struct {
 	ExportID string             `json:"exportID,omitempty"`
 	Bundle   *dagql.ValueBundle `json:"bundle,omitempty"`

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -160,7 +161,8 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 		}
 		logExport(req, skipped, values, time.Since(start), local, a.reportBusy(values.LeftOut, carried))
 		captureOp.End(wcprof.OutcomeOK)
-		err := consume(wcprof.ContextWithOpID(captureCtx, wcprof.CurrentOpID(ctx)), remotecache.Export{Bundle: &values.Bundle, Skipped: skipped, Blobs: newChainBlobs(values.Chains), Rows: values.Rows})
+		bundle := withoutOffers(values.Bundle)
+		err := consume(wcprof.ContextWithOpID(captureCtx, wcprof.CurrentOpID(ctx)), remotecache.Export{Bundle: &bundle, Skipped: skipped, Blobs: newChainBlobs(values.Chains), Rows: values.Rows})
 		releaseStart := time.Now()
 		// The chains release once: WithExportedValues returns this
 		// release's error from its own.
@@ -182,6 +184,22 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 	leftOut(left.Roots)
 	logExport(req, skipped, nil, time.Since(start), local, a.reportBusy(left.Roots, nil))
 	return consume(ctx, remotecache.Export{Skipped: skipped})
+}
+
+// withoutOffers is the bundle an export sends the Cloud: its records without
+// the offers of parts they carry, as a copy, leaving the capture's bundle as
+// it is. On an engine, a record's offers are the Cloud's own, which a merge
+// from the Cloud attached, and the Cloud drops every offer a bundle carries
+// when it merges it, since the upload decides what it stores. Each offer is
+// a chain of every layer from the base up, with a download address for each:
+// sent back, the offers of a few thousand imported rows put an export over
+// protocol.MaxMessageBytes.
+func withoutOffers(bundle dagql.ValueBundle) dagql.ValueBundle {
+	bundle.Values = slices.Clone(bundle.Values)
+	for i := range bundle.Values {
+		bundle.Values[i].Record.Envelope.PendingOffers = nil
+	}
+	return bundle
 }
 
 // maxSkippedMessageBytes bounds the message a busy or refused root's skip
