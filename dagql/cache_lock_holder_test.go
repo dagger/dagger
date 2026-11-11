@@ -318,7 +318,14 @@ func TestNamedReadersSpanTheirHold(t *testing.T) {
 		wcprof.WriteLock(waiterCtx, &c.egraphMu, egraphLockIdent)
 		close(locked)
 	}()
-	require.Eventually(t, func() bool { return !c.egraphMu.TryRLock() }, 10*time.Second, time.Millisecond, "the writer waits")
+	// A pending writer keeps new readers out; a probe that gets in leaves.
+	require.Eventually(t, func() bool {
+		if c.egraphMu.TryRLock() {
+			c.egraphMu.RUnlock()
+			return false
+		}
+		return true
+	}, 10*time.Second, time.Millisecond, "the writer waits")
 	c.runlockGraphAs(step)
 	<-locked
 	c.egraphMu.Unlock()

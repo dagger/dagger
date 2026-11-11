@@ -91,9 +91,9 @@ func (m *RWMutex) RUnlock() {
 // readerLeaving uncounts a reader about to release m, and makes the holder
 // unknown when it was the last. A count below zero, from a reader that took
 // m before any recorder was active, starts again from zero. A reader that
-// counts itself while the last one makes the holder unknown would be left
-// holding m as unknown, so the holder is the readers again whenever a
-// counted reader still holds m.
+// counts itself just as the last one leaves, seeing the holder still the
+// readers, holds m as unknown until the next reader marks it: unknown,
+// never wrong.
 func (m *RWMutex) readerLeaving() {
 	n := m.readers.Add(-1)
 	if n > 0 {
@@ -102,12 +102,8 @@ func (m *RWMutex) readerLeaving() {
 	if n < 0 {
 		m.readers.CompareAndSwap(n, 0)
 	}
-	if m.holder.Load() != HolderReaders {
-		return
-	}
-	m.set(HolderUnknown, 0)
-	if m.readers.Load() > 0 {
-		m.set(HolderReaders, 0)
+	if m.holder.Load() == HolderReaders {
+		m.set(HolderUnknown, 0)
 	}
 }
 
