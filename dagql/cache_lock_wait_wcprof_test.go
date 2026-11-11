@@ -175,8 +175,11 @@ func waitBlockedIn(t *testing.T, fn string) {
 }
 
 // A lazy evaluation's gathering of its install spans is a step of its own
-// under the evaluation's op, and the gathering's lock waits are under the
-// step, so a profile tells them apart from the evaluation's other set-up.
+// under the evaluation's op, and its walk under the graph lock is a step of
+// its own under that, dagql.installSpans.walk, with the walk's wait for the
+// lock under it: a profile tells them apart from the evaluation's other
+// set-up, and a writer waiting behind readers lines up with the walks that
+// read when it began.
 func TestLazyInstallSpansWaitForLocksWcprof(t *testing.T) {
 	wcprof.EnsureRecorder()
 	const sessionID = "lazy-install-spans-session"
@@ -229,5 +232,12 @@ func TestLazyInstallSpansWaitForLocksWcprof(t *testing.T) {
 		}
 	}
 	require.Len(t, steps, 1, "no lazy.installSpans step under the lazy op")
-	requireWaitUnder(t, header, events, steps, egraphLockIdent)
+	walks := map[uint64]bool{}
+	for _, ev := range events {
+		if ev.Type == "op" && header.Strings[ev.ClassID] == "dagql.installSpans.walk" && steps[ev.ParentID] {
+			walks[ev.OpID] = true
+		}
+	}
+	require.Len(t, walks, 1, "no dagql.installSpans.walk step under the gathering")
+	requireWaitUnder(t, header, events, walks, egraphLockIdent)
 }
