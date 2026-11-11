@@ -31,8 +31,8 @@ type GoClientDev {
   Build a container to run the go toolchain
   """
   pub devContainer: Container! {
-    let ctr = go(ws: self.ws, source: workspaceDir)
-      .env
+    let ctr = engineDev(ws: self.ws)
+      .goEnv(source: workspaceDir)
       .withWorkdir(sourcePath)
     # "sdk" is an arbitrary name for state persistence
     let engine = engineDev(ws: self.ws)
@@ -61,8 +61,8 @@ type GoClientDev {
     # go generate computes the API schema with the introspect tool, from the
     # engine's source (see sdk/go/generate.go): it needs that source, and no engine.
     let src = engineDev(ws: self.ws).source
-    go(ws: self.ws, source: src)
-      .env
+    engineDev(ws: self.ws)
+      .goEnv(source: src)
       .withWorkdir(sourcePath)
       .withExec(["go", "generate", "-v", "."])
       .withExec(["go", "mod", "tidy"])

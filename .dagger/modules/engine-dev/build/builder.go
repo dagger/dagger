@@ -3,20 +3,23 @@ package build
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger/core"
 	"github.com/containerd/platforms"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/engine/distconsts"
 
 	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
-	gomod "dagger/engine-dev/internal/dagger/clients/go"
+	golang "dagger/engine-dev/internal/dagger/clients/go"
 	"dagger/engine-dev/internal/dagger/clients/wolfi"
 )
 
@@ -40,8 +43,6 @@ type Builder struct {
 	gpuSupport bool
 
 	race bool
-
-	ws *dagger.Workspace
 }
 
 func NewBuilder(
@@ -50,7 +51,6 @@ func NewBuilder(
 	version string,
 	vcsCommit string,
 	vcsDirty bool,
-	ws *dagger.Workspace,
 ) (*Builder, error) {
 	return &Builder{
 		source:       source,
@@ -59,7 +59,6 @@ func NewBuilder(
 		platform:     dagger.Platform(platforms.DefaultString()),
 		platformSpec: platforms.Normalize(platforms.DefaultSpec()),
 		version:      version,
-		ws:           ws,
 	}, nil
 }
 
@@ -180,11 +179,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	for _, name := range qemuNames {
 		bins = append(bins, binAndPath{path: filepath.Join("/usr/local/bin", name), file: qemuDir.File(name)})
 	}
-	for _, bin := range build.cniPlugins() {
-		name, err := bin.Name(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get name of binary: %w", err)
-		}
+	for name, bin := range build.cniPlugins() {
 		bins = append(bins, binAndPath{path: filepath.Join("/opt/cni/bin", name), file: bin})
 	}
 
@@ -221,8 +216,14 @@ func (build *Builder) ImageEntriesBinary() *dagger.File {
 	return build.binary("./cmd/engine-image-entries", false)
 }
 
+// IntrospectBinary is cmd/introspect, which prints the engine API's schema
+// without running an engine.
+func (build *Builder) IntrospectBinary() *dagger.File {
+	return build.binary("./cmd/introspect", false)
+}
+
 func (build *Builder) engineBinary(race bool) *dagger.File {
-	return build.binaryWithSource("./cmd/engine", race, build.source)
+	return build.binary("./cmd/engine", race)
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
@@ -233,38 +234,156 @@ func (build *Builder) dialstdioBinary() *dagger.File {
 	return build.binary("./cmd/dialstdio", false)
 }
 
-//nolint:unparam
+// binary is pkg, a main package of the source, built for the builder's
+// platform with the source's VCS info stamped in.
 func (build *Builder) binary(pkg string, race bool) *dagger.File {
-	return build.binaryWithSource(pkg, race, build.source)
-}
-
-func (build *Builder) binaryWithSource(pkg string, race bool, source *dagger.Directory) *dagger.File {
-	return build.goWithSource(source, race).
-		Binary(pkg, gomod.GoBinaryOpts{
-			Platform:  build.platform,
-			NoSymbols: true,
-			NoDwarf:   true,
-		})
-}
-
-func (build *Builder) Go(race bool) *gomod.Go {
-	return build.goWithSource(build.source, race)
-}
-
-func (build *Builder) goWithSource(source *dagger.Directory, race bool) *gomod.Go {
-	return gomod.New(gomod.GoOpts{
-		Ws:        build.ws,
-		Source:    source,
-		VcsCommit: build.vcsCommit,
-		VcsDirty:  build.vcsDirty,
-		Race:      race,
-		Tags: []string{
+	opts := golang.GoOpts{
+		Version: consts.GolangVersion,
+		BuildFlags: []string{
 			// The engine uses the dockerfile2llb code from buildkit, which makes use of tags
 			// for enabling features at compile time:
-			"dfexcludepatterns", // to support COPY/ADD --exclude=...
-			"dfparents",         // to support COPY/ADD --parents
+			// dfexcludepatterns to support COPY/ADD --exclude=...,
+			// dfparents to support COPY/ADD --parents.
+			// A build flag rather than GOFLAGS, which would be in every
+			// package's exec and keep it from the CLI's and codegen's.
+			"-tags=dfexcludepatterns,dfparents",
+			ldflags([]string{"-s", "-w"}, build.VCSValues()),
 		},
-	})
+	}
+	if race {
+		opts = build.withRace(opts)
+	}
+	return goBinary(build.source, pkg, build.platformSpec, opts)
+}
+
+// TestBinary is the test binary of the package in dir, a directory of the
+// source's root Go module, built as go test -c builds it, with the source's
+// VCS info stamped in, by dagger/go's per-package build.
+func (build *Builder) TestBinary(dir string, race bool) *dagger.File {
+	opts := golang.GoOpts{Version: consts.GolangVersion}
+	if values := build.VCSValues(); len(values) > 0 {
+		opts.BuildFlags = []string{ldflags(nil, values)}
+	}
+	if race {
+		opts = build.withRace(opts)
+	}
+	ws := build.source.AsWorkspace()
+	return golang.New(opts).Module(ws, dir).Packages(ws).Get(dir).TestBinary(ws)
+}
+
+// Tests are the test function names of each package of the source's root Go
+// module that has any, by package directory. They are read from the source,
+// without a build.
+func (build *Builder) Tests(ctx context.Context) (map[string][]string, error) {
+	ws := build.source.AsWorkspace()
+	pkgs, err := golang.New(golang.GoOpts{Version: consts.GolangVersion}).
+		Module(ws, ".").
+		Packages(ws).
+		List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tests := map[string][]string{}
+	for _, pkg := range pkgs {
+		dir, err := pkg.Path(ctx)
+		if err != nil {
+			return nil, err
+		}
+		names, err := pkg.Tests().Keys(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(names) > 0 {
+			tests[dir] = names
+		}
+	}
+	return tests, nil
+}
+
+// Otelgotest is the runner the test binaries run under, built from otel-go's
+// source at the version the source's go.mod requires.
+func (build *Builder) Otelgotest(ctx context.Context) (*dagger.File, error) {
+	const otelGo = "github.com/dagger/otel-go"
+	contents, err := build.source.File("go.mod").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mod, err := modfile.ParseLax("go.mod", []byte(contents), nil)
+	if err != nil {
+		return nil, err
+	}
+	var version string
+	for _, req := range mod.Require {
+		if req.Mod.Path == otelGo {
+			version = req.Mod.Version
+		}
+	}
+	if version == "" {
+		return nil, fmt.Errorf("go.mod does not require %s", otelGo)
+	}
+	// The module's source as the Go module proxy serves it for that version,
+	// the same files go install would build.
+	src := core.NewContainer().
+		From(consts.AlpineImage).
+		WithMountedFile("/src.zip", core.HTTP("https://proxy.golang.org/"+otelGo+"/@v/"+version+".zip")).
+		WithExec([]string{"unzip", "-q", "/src.zip", "-d", "/out"}).
+		Directory("/out/" + otelGo + "@" + version)
+	return goBinary(src, "cmd/otelgotest", build.platformSpec, golang.GoOpts{
+		Version:    consts.GolangVersion,
+		BuildFlags: []string{"-ldflags=-s -w"},
+	}), nil
+}
+
+// VCSValues are the -X definitions that stamp the source's VCS info into a
+// binary, or none without a commit.
+func (build *Builder) VCSValues() []string {
+	if build.vcsCommit == "" {
+		return nil
+	}
+	return []string{
+		"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCS=git",
+		"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSRevision=" + build.vcsCommit,
+		"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSModified=" + strconv.FormatBool(build.vcsDirty),
+	}
+}
+
+// withRace builds with the race detector. It needs cgo, and a cgo binary
+// links the C library of the image it is built in, so it is built where it
+// runs: wolfi.
+func (build *Builder) withRace(opts golang.GoOpts) golang.GoOpts {
+	opts.Base = wolfi.New().
+		Container(wolfi.WolfiContainerOpts{
+			Packages: []string{"go-" + consts.GolangVersion, "build-base"},
+			Arch:     build.platformSpec.Architecture,
+		}).
+		WithEnvVariable("CGO_ENABLED", "1")
+	opts.BuildFlags = append(opts.BuildFlags, "-race")
+	return opts
+}
+
+// ldflags is one -ldflags build flag: the linker flags, then a -X for each
+// definition.
+func ldflags(flags []string, values []string) string {
+	for _, val := range values {
+		flags = append(flags, "-X '"+val+"'")
+	}
+	return "-ldflags=" + strings.Join(flags, " ")
+}
+
+// goBinary is pkg, a main package of source, built for platform by dagger/go's
+// per-package build: one cached exec per Go package, so a change rebuilds
+// only the packages it reaches. The source is the build's workspace, so the
+// build is keyed by its content and never by the caller's session.
+func goBinary(source *dagger.Directory, pkg string, platform ocispecs.Platform, opts golang.GoOpts) *dagger.File {
+	ws := source.AsWorkspace()
+	pkg = path.Clean(pkg)
+	return golang.New(opts).
+		Module(ws, pkg).
+		Packages(ws).
+		Get(pkg).
+		Platforms().
+		Get(platform.OS + "/" + platform.Architecture).
+		Binary(ws)
 }
 
 func (build *Builder) runtimeBin() *dagger.File {
@@ -359,25 +478,25 @@ func (build *Builder) sshfsBin() *dagger.File {
 		File("/src/build/sshfs")
 }
 
-func (build *Builder) cniPlugins() (bins []*dagger.File) {
+// cniPlugins are the CNI plugin binaries, by name.
+func (build *Builder) cniPlugins() map[string]*dagger.File {
 	src := core.Git("github.com/containernetworking/plugins").Tag(consts.CniVersion).Tree()
 
+	bins := map[string]*dagger.File{}
 	for _, pluginPath := range []string{
-		"./plugins/main/bridge",
-		"./plugins/main/loopback",
-		"./plugins/meta/firewall",
-		"./plugins/ipam/host-local",
+		"plugins/main/bridge",
+		"plugins/main/loopback",
+		"plugins/meta/firewall",
+		"plugins/ipam/host-local",
 	} {
 		// CNI plugins are third-party; VCS stamping is irrelevant here, so we
-		// don't thread any VCS info into their build.
-		bin := gomod.New(gomod.GoOpts{Source: src, Ws: build.ws}).Binary(pluginPath, gomod.GoBinaryOpts{
-			NoSymbols: true,
-			NoDwarf:   true,
-			Platform:  build.platform,
+		// don't thread any VCS info into their build. Go names a binary after
+		// its package's last path element.
+		bins[path.Base(pluginPath)] = goBinary(src, pluginPath, build.platformSpec, golang.GoOpts{
+			Version:    consts.GolangVersion,
+			BuildFlags: []string{"-ldflags=-s -w"},
 		})
-		bins = append(bins, bin)
 	}
-
 	return bins
 }
 

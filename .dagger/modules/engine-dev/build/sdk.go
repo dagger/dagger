@@ -19,6 +19,7 @@ import (
 
 	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
+	golang "dagger/engine-dev/internal/dagger/clients/go"
 	"dagger/engine-dev/internal/dagger/clients/wolfi"
 
 	"github.com/dagger/dagger/sdk/typescript/runtime/tsdistconsts"
@@ -241,17 +242,12 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 
 	// golangci-lint's export driver serves codegen the export data of what a
 	// module imports from dagger/go's archives, so no Go build cache ships.
-	exportDriver := core.NewContainer().
-		From(consts.GolangImage).
-		With(build.goPlatformEnv).
-		WithEnvVariable("CGO_ENABLED", "0").
-		WithDirectory("/src", core.Git("https://github.com/dagger/golangci-lint").
-			Commit(consts.GolangciLintCommit).
-			Tree().
-			Directory("helpers/export-driver")).
-		WithWorkdir("/src").
-		WithExec([]string{"go", "build", "-o", "/export-driver", "."}).
-		File("/export-driver")
+	exportDriver := goBinary(core.Git("https://github.com/dagger/golangci-lint").
+		Commit(consts.GolangciLintCommit).
+		Tree().
+		Directory("helpers/export-driver"), ".", build.platformSpec, golang.GoOpts{
+		Version: consts.GolangVersion,
+	})
 
 	sdkCtrTarball := core.NewContainer(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.GolangImage).

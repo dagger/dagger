@@ -15,13 +15,13 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type CacheVolume = core.CacheVolume
 type Changeset = core.Changeset
 type Check = core.Check
 type Container = core.Container
 type Directory = core.Directory
 type File = core.File
 type ID = core.ID
+type Module = core.Module
 type Node = core.Node
 type NodeClient = core.NodeClient
 type Platform = core.Platform
@@ -50,7 +50,7 @@ func Connect(connections ...*dagger.Client) *Client {
 	if len(connections) == 1 {
 		connection = connections[0]
 	}
-	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "/.dagger/modules/go", ""))
+	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e", "b0476af0f42568416ff2b876807a1748e666626e"))
 	return &Client{Query: &Query{query: q}}
 }
 

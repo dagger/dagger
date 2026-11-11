@@ -3,14 +3,24 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"path"
 	"path/filepath"
+	"regexp"
+	"runtime"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"dagger/engine-dev/build"
+	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
 	clidev "dagger/engine-dev/internal/dagger/clients/cli-dev"
-	gomod "dagger/engine-dev/internal/dagger/clients/go"
+	golang "dagger/engine-dev/internal/dagger/clients/go"
+	"dagger/engine-dev/internal/dagger/clients/wolfi"
 
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -18,7 +28,24 @@ import (
 
 // List all core engine tests
 func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
-	return gomod.New(gomod.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Tests(ctx)
+	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	if err != nil {
+		return "", err
+	}
+	tests, err := builder.Tests(ctx)
+	if err != nil {
+		return "", err
+	}
+	var names []string
+	for _, pkgTests := range tests {
+		for _, name := range pkgTests {
+			if strings.HasPrefix(name, "Test") {
+				names = append(names, name)
+			}
+		}
+	}
+	slices.Sort(names)
+	return strings.Join(names, "\n") + "\n", nil
 }
 
 // Run core engine tests
@@ -74,12 +101,11 @@ func (dev *EngineDev) Test(
 		}
 		dumpTimes[i] = duration
 	}
-	// FIXME: use the damn standard Go toolchain
-	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, false)
+	ctr, err := dev.testContainer(ctx, ebpfProgs, false)
 	if err != nil {
 		return err
 	}
-	_, err = dev.test(ctr, &testOpts{
+	_, err = dev.test(ctx, ctr, &testOpts{
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           pkg,
@@ -92,10 +118,8 @@ func (dev *EngineDev) Test(
 		envs:          envFile,
 		testVerbose:   testVerbose,
 		update:        update,
-		ldflagValues:  ldflagValues,
 		dumpAfter:     dumpTimes,
-	},
-	).Sync(ctx)
+	})
 	return err
 }
 
@@ -161,11 +185,11 @@ func (dev *EngineDev) TestProfile(
 	// +optional
 	ebpfProgs []string,
 ) (*TestProfileResult, error) {
-	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, true)
+	ctr, err := dev.testContainer(ctx, ebpfProgs, true)
 	if err != nil {
 		return nil, err
 	}
-	ran := dev.test(ctr.WithEnvVariable(benchTestsEnv, "1"), &testOpts{
+	ran, err := dev.test(ctx, ctr.WithEnvVariable(benchTestsEnv, "1"), &testOpts{
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           pkg,
@@ -176,20 +200,33 @@ func (dev *EngineDev) TestProfile(
 		count:         count,
 		envs:          envFile,
 		testVerbose:   testVerbose,
-		ldflagValues:  ldflagValues,
 		expectAny:     true,
 	})
-	exitCode, err := ran.ExitCode(ctx)
 	if err != nil {
 		return nil, err
 	}
-	output, err := ran.CombinedOutput(ctx)
-	if err != nil {
-		return nil, err
+	// The run's exit code is the first package's that failed, and its output
+	// every package's, in order.
+	var exitCode int
+	var outputs []string
+	for _, pkgRan := range ran {
+		code, err := pkgRan.ExitCode(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if exitCode == 0 {
+			exitCode = code
+		}
+		output, err := pkgRan.CombinedOutput(ctx)
+		if err != nil {
+			return nil, err
+		}
+		outputs = append(outputs, output)
 	}
+	output := strings.Join(outputs, "")
 	// The engine service was started explicitly by testContainer, so it is
 	// still the same engine (and recording) after the tests exit.
-	dump := ran.
+	dump := ran[0].
 		WithExec([]string{
 			"curl", "--fail", "--silent", "--show-error", "--max-time", "300",
 			"-o", "/tmp/wcprof.dump", wcprofDumpURL,
@@ -250,11 +287,11 @@ func (dev *EngineDev) TestTelemetry(
 	// Goldens compare a warmed cache with the following CLI invocation.
 	// Keep warmup results available after its session closes.
 	dev = dev.WithEngineConfig("worker.oci", "gc = false")
-	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs, false)
+	ctr, err := dev.testContainer(ctx, ebpfProgs, false)
 	if err != nil {
 		return nil, err
 	}
-	ran, err := dev.test(ctr, &testOpts{
+	ran, err := dev.test(ctx, ctr, &testOpts{
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           "./dagql/idtui/",
@@ -266,13 +303,11 @@ func (dev *EngineDev) TestTelemetry(
 		update:        update,
 		envs:          envFile,
 		testVerbose:   testVerbose,
-		ldflagValues:  ldflagValues,
-	},
-	).Sync(ctx)
+	})
 	if err != nil {
 		return nil, err
 	}
-	return ran.Directory(".").Changes(ctr.Directory(".")), nil
+	return ran[0].Directory(testSourcePath).Changes(ctr.Directory(testSourcePath)), nil
 }
 
 type testOpts struct {
@@ -289,7 +324,6 @@ type testOpts struct {
 	envs          *dagger.Secret
 	testVerbose   bool
 	bench         bool
-	ldflagValues  []string
 	dumpAfter     []time.Duration
 	// Don't fail the exec when the tests fail, so the caller can inspect
 	// the exit code and still use the container afterwards
@@ -297,12 +331,13 @@ type testOpts struct {
 }
 
 func (dev *EngineDev) test(
+	ctx context.Context,
 	// The test container to run the tests in
 	container *dagger.Container,
 	// Various test options
 	// FIXME merge this into chainable functions instead
 	opts *testOpts,
-) *dagger.Container {
+) ([]*dagger.Container, error) {
 	if opts.ebpf {
 		container = container.WithEnvVariable("DAGGER_TEST_EBPF", "1")
 	}
@@ -310,24 +345,41 @@ func (dev *EngineDev) test(
 		container = container.WithMountedSecret("/dagger.env", opts.envs)
 	}
 
-	cgoEnabledEnv := "0"
-	args := []string{
-		"otelgotest",
+	// The test binaries are built by dagger/go's per-package build, as go
+	// test -c builds them, and run as go test runs them: each from its
+	// package's directory, several packages at once.
+	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
+	if err != nil {
+		return nil, err
 	}
+	tests, err := builder.Tests(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dirs, err := testPackages(tests, strings.Fields(opts.pkg))
+	if err != nil {
+		return nil, err
+	}
+	cgoEnabledEnv := "0"
+	if opts.race {
+		cgoEnabledEnv = "1"
+	}
+
+	// The test binaries' own flags, as go test passes them
+	var flags []string
 
 	// allow verbose
 	if opts.testVerbose {
-		args = append(args, "-v")
+		flags = append(flags, "-test.v=true")
 	}
 
-	// All following are go test flags
 	if opts.failFast {
-		args = append(args, "-failfast")
+		flags = append(flags, "-test.failfast")
 	}
 
 	// Go will default parallel to number of CPUs, so only pass if set
 	if opts.parallel != 0 {
-		args = append(args, fmt.Sprintf("-parallel=%d", opts.parallel))
+		flags = append(flags, fmt.Sprintf("-test.parallel=%d", opts.parallel))
 	}
 
 	// Default timeout to 20m: Cloud cancels a job at thirty minutes, so a
@@ -335,48 +387,29 @@ func (dev *EngineDev) test(
 	if opts.timeout == "" {
 		opts.timeout = "20m"
 	}
-	args = append(args, fmt.Sprintf("-timeout=%s", opts.timeout))
-
-	if opts.race {
-		args = append(args, "-race")
-		cgoEnabledEnv = "1"
-	}
-	if len(opts.ldflagValues) > 0 {
-		args = append(args, "-ldflags", testLdflags(opts.ldflagValues))
-	}
+	flags = append(flags, fmt.Sprintf("-test.timeout=%s", opts.timeout))
 
 	// when bench is true, disable normal tests and select benchmarks based on runTestRegex instead
 	if opts.bench {
 		if opts.runTestRegex == "" {
 			opts.runTestRegex = "."
 		}
-		args = append(args, "-bench", opts.runTestRegex, "-run", "^$")
-		args = append(args, fmt.Sprintf("-benchtime=%dx", opts.count))
+		flags = append(flags, "-test.bench="+opts.runTestRegex, "-test.run=^$")
+		flags = append(flags, fmt.Sprintf("-test.benchtime=%dx", opts.count))
 	} else {
 		// Disable test caching, since these are integration tests
-		args = append(args, fmt.Sprintf("-count=%d", opts.count))
+		flags = append(flags, fmt.Sprintf("-test.count=%d", opts.count))
 		if opts.runTestRegex != "" {
-			args = append(args, "-run", opts.runTestRegex)
+			flags = append(flags, "-test.run="+opts.runTestRegex)
 		}
 	}
 
 	if opts.skipTestRegex != "" {
-		args = append(args, "-skip", opts.skipTestRegex)
+		flags = append(flags, "-test.skip="+opts.skipTestRegex)
 	}
-
-	args = append(args, strings.Fields(opts.pkg)...)
 
 	if opts.update {
-		args = append(args, "-update")
-	}
-
-	if len(opts.dumpAfter) > 0 {
-		watchArgs := []string{"sh", "-c", engineDumpWatchdog, "engine-dump-watchdog"}
-		for _, after := range opts.dumpAfter {
-			watchArgs = append(watchArgs, fmt.Sprintf("%.9f", after.Seconds()), after.String())
-		}
-		watchArgs = append(watchArgs, "--")
-		args = append(watchArgs, args...)
+		flags = append(flags, "-update")
 	}
 
 	execOpts := dagger.ContainerWithExecOpts{
@@ -387,9 +420,169 @@ func (dev *EngineDev) test(
 	if opts.expectAny {
 		execOpts.Expect = dagger.ReturnTypeAny
 	}
-	return container.
-		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-		WithExec(withoutOuterSession(args...), execOpts)
+	binaries := make([]*dagger.File, len(dirs))
+	runs := make([]*dagger.Container, len(dirs))
+	for i, dir := range dirs {
+		args := append([]string{"otelgotest", testBinaryPath}, flags...)
+		if len(opts.dumpAfter) > 0 {
+			watchArgs := []string{"sh", "-c", engineDumpWatchdog, "engine-dump-watchdog"}
+			for _, after := range opts.dumpAfter {
+				watchArgs = append(watchArgs, fmt.Sprintf("%.9f", after.Seconds()), after.String())
+			}
+			watchArgs = append(watchArgs, "--")
+			args = append(watchArgs, args...)
+		}
+		binaries[i] = builder.TestBinary(dir, opts.race)
+		runs[i] = container.
+			WithMountedFile(testBinaryPath, binaries[i]).
+			WithWorkdir(path.Join(testSourcePath, dir)).
+			WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
+			WithExec(withoutOuterSession(args...), execOpts)
+	}
+	return runTestPackages(ctx, binaries, runs, opts.failFast, opts.expectAny)
+}
+
+// runTestPackages runs each package's tests, runs, as soon as its test binary
+// is built, up to one package per CPU at a time, as go test runs packages.
+// With failFast, as with go test -failfast, no package starts after one has
+// failed. With expectAny, a package's tests failing is its nonzero exit code,
+// not an error. It returns the containers that ran, in order, and every error.
+func runTestPackages(ctx context.Context, binaries []*dagger.File, runs []*dagger.Container, failFast, expectAny bool) ([]*dagger.Container, error) {
+	slots := make(chan struct{}, runtime.NumCPU())
+	var failed atomic.Bool
+	ran := make([]*dagger.Container, len(runs))
+	errs := make([]error, len(runs))
+	var wg sync.WaitGroup
+	for i := range runs {
+		wg.Go(func() {
+			if _, err := binaries[i].Sync(ctx); err != nil {
+				errs[i] = err
+				failed.Store(true)
+				return
+			}
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			if failFast && failed.Load() {
+				return
+			}
+			ctr, err := runs[i].Sync(ctx)
+			if err != nil {
+				errs[i] = err
+				failed.Store(true)
+				return
+			}
+			ran[i] = ctr
+			if expectAny {
+				code, err := ctr.ExitCode(ctx)
+				if err != nil {
+					errs[i] = err
+				}
+				if err != nil || code != 0 {
+					failed.Store(true)
+				}
+			}
+		})
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(ran, func(ctr *dagger.Container) bool { return ctr == nil }), nil
+}
+
+// Where the test container has the source, and where a package's test binary
+// is mounted in it.
+const (
+	testSourcePath = "/app"
+	testBinaryPath = "/dagger-tests/pkg.test"
+)
+
+// testPackages are the directories of the source's root Go module whose tests
+// patterns select, in order. tests are the test names of every package that
+// has any, by directory. A pattern is a package or package pattern as go test
+// takes it, relative ("./dir", "./dir/...", "./.../dir") or by import path;
+// a pattern starting with "!" removes what it selects. A package that a
+// wildcard selects but that has no tests is left out, as go test leaves it
+// out; one named exactly must have tests.
+func testPackages(tests map[string][]string, patterns []string) ([]string, error) {
+	all := make([]string, 0, len(tests))
+	for dir := range tests {
+		all = append(all, dir)
+	}
+	slices.Sort(all)
+	match := func(pattern string) ([]string, error) {
+		pattern = modulePattern(pattern)
+		if !strings.Contains(pattern, "...") {
+			if _, ok := tests[pattern]; !ok {
+				return nil, fmt.Errorf("package %s has no tests", pattern)
+			}
+			return []string{pattern}, nil
+		}
+		matches := goPatternMatcher(pattern)
+		var dirs []string
+		for _, dir := range all {
+			if matches(dir) {
+				dirs = append(dirs, dir)
+			}
+		}
+		return dirs, nil
+	}
+	var selected []string
+	for _, pattern := range patterns {
+		if strings.HasPrefix(pattern, "!") {
+			continue
+		}
+		dirs, err := match(pattern)
+		if err != nil {
+			return nil, err
+		}
+		for _, dir := range dirs {
+			if !slices.Contains(selected, dir) {
+				selected = append(selected, dir)
+			}
+		}
+	}
+	for _, pattern := range patterns {
+		if excluded, ok := strings.CutPrefix(pattern, "!"); ok {
+			dirs, err := match(excluded)
+			if err != nil {
+				return nil, err
+			}
+			selected = slices.DeleteFunc(selected, func(dir string) bool { return slices.Contains(dirs, dir) })
+		}
+	}
+	if len(selected) == 0 {
+		return nil, fmt.Errorf("no tests in %s", strings.Join(patterns, " "))
+	}
+	return selected, nil
+}
+
+// modulePattern is a package pattern made relative to the root of the
+// source's root Go module, github.com/dagger/dagger: "." for the module's
+// root package, "dir" for a package below it.
+func modulePattern(pattern string) string {
+	const modulePath = "github.com/dagger/dagger"
+	if rest, ok := strings.CutPrefix(pattern, modulePath); ok && (rest == "" || strings.HasPrefix(rest, "/")) {
+		pattern = "." + rest
+	}
+	pattern = path.Clean(pattern)
+	if pattern != "." {
+		pattern = strings.TrimPrefix(pattern, "./")
+	}
+	return pattern
+}
+
+// goPatternMatcher reports whether a directory matches a package pattern as
+// the go command matches one (cmd/go's search.MatchPattern): "..." matches
+// any string, and a pattern ending in "/..." also matches the directory
+// before it.
+func goPatternMatcher(pattern string) func(string) bool {
+	re := regexp.QuoteMeta(pattern)
+	re = strings.ReplaceAll(re, `\.\.\.`, `.*`)
+	if prefix, ok := strings.CutSuffix(re, `/.*`); ok {
+		re = prefix + `(/.*)?`
+	}
+	return regexp.MustCompile(`^` + re + `$`).MatchString
 }
 
 // Use direct HTTP from the runner: asking the engine to execute a dump command
@@ -479,8 +672,7 @@ exit "$result"
 // Build an ephemeral test environment ready to run core engine tests.
 // With wcprof, the test engine records a wcprof wall-clock profile of all its
 // work from startup, readable at http://daggerengine:6060/debug/wcprof/dump.
-// (FIXME: do this more cleanly, and reuse the standard Go toolchain)
-func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcprof bool) (*dagger.Container, []string, error) {
+func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcprof bool) (*dagger.Container, error) {
 	devEngine, err := dev.
 		WithEBPFProgs(ebpfProgs).
 		WithEngineConfig(`registry."registry:5000"`, `http = true`).
@@ -493,7 +685,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 			"",    // version
 		)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// TODO: mitigation for https://github.com/dagger/dagger/issues/8031
@@ -502,7 +694,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 		WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GODEBUG", "goindex=0")
 	devEnginePlatform, err := devEngine.Platform(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	devBinary := clidev.New(clidev.CliDevOpts{VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws}).Binary()
@@ -550,20 +742,25 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 	// FIXME: just persist the dev engine into a field of the object... cleaner
 	devEngineSvc, err = devEngineSvc.Start(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	utilDirPath := "/dagger-dev"
-	goToolchain := gomod.New(gomod.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty, Ws: dev.Ws,
-		// Exercise real client-managed agents and encrypted key loading.
-		ExtraPackages: []string{"openssh-client", "curl"},
-	})
-	ldflagValues, err := goToolchain.Values(ctx)
+	builder, err := build.NewBuilder(ctx, dev.Source, "", dev.VCSCommit, dev.VCSDirty)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	tests := goToolchain.Env().
-		WithExec([]string{"go", "install", "github.com/dagger/otel-go/cmd/otelgotest"}).
+	otelgotest, err := builder.Otelgotest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	utilDirPath := "/dagger-dev"
+	tests := dev.GoEnv(dev.Source, false).
+		// Tests that compile parts of this repository in the dev engine seed
+		// its module cache from this one (withRepoGoModules in
+		// core/integration), so it holds the repository's dependencies, as it
+		// did when the tests were compiled here.
+		WithExec([]string{"go", "mod", "download"}).
+		WithFile("/usr/local/bin/otelgotest", otelgotest).
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_PLATFORM", string(devEnginePlatform)).
@@ -571,19 +768,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 		WithMountedCache("/run", engineRunVol).
 		WithServiceBinding("registry", registrySvc)
 
-	tests, err = dev.InstallClient(ctx, tests, devEngineSvc)
-	if err != nil {
-		return nil, nil, err
-	}
-	return tests, ldflagValues, nil
-}
-
-func testLdflags(values []string) string {
-	ldflags := make([]string, 0, len(values))
-	for _, val := range values {
-		ldflags = append(ldflags, "-X '"+val+"'")
-	}
-	return strings.Join(ldflags, " ")
+	return dev.InstallClient(ctx, tests, devEngineSvc)
 }
 
 func registry() *dagger.Service {
@@ -603,4 +788,54 @@ func privateRegistry() *dagger.Service {
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+}
+
+// GoEnv is a Go environment for working on dagger/dagger: wolfi with the Go
+// toolchain, a C toolchain, and what the engine's tests use, with dagger/go's
+// Go caches, and source as its working directory. It is for running Go code
+// and the go command; dagger/dagger's own binaries and test binaries are
+// built with dagger/go's per-package build, not here.
+func (dev *EngineDev) GoEnv(
+	// The source to work in; the engine's source by default
+	// +optional
+	source *dagger.Directory,
+	// Enable cgo
+	// +optional
+	cgo bool,
+) *dagger.Container {
+	if source == nil {
+		source = dev.Source
+	}
+	base := wolfi.New().
+		Container(wolfi.WolfiContainerOpts{Packages: []string{
+			"go-" + consts.GolangVersion,
+			"ca-certificates",
+			// a C toolchain, for cgo and the race detector
+			"build-base",
+			"git",
+			// protoc, at the version dagger/dagger's own protobuf code needs
+			"protobuf~35",
+			"protobuf-dev~35",
+			// the engine's tests exercise real client-managed agents and
+			// encrypted key loading
+			"openssh-client",
+			"curl",
+		}}).
+		WithEnvVariable("GOPATH", "/go").
+		WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true})
+	cgoEnabled := "0"
+	if cgo {
+		cgoEnabled = "1"
+	}
+	ws := source.AsWorkspace()
+	return golang.New(golang.GoOpts{Base: base}).
+		Module(ws, ".").
+		Base(ws).
+		// Go's module index keys imports by path, size and mtime, so normalized
+		// Git trees can alias across builds sharing GOCACHE. Keep the compiled
+		// artifact cache, but read imports from source (dagger/dagger#8031).
+		WithEnvVariable("GODEBUG", "${GODEBUG},goindex=0", dagger.ContainerWithEnvVariableOpts{Expand: true}).
+		WithEnvVariable("CGO_ENABLED", cgoEnabled).
+		WithMountedDirectory(testSourcePath, source).
+		WithWorkdir(testSourcePath)
 }

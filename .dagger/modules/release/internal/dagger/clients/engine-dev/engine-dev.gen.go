@@ -77,13 +77,46 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 	return new(Container).WithGraphQLQuery(q)
 }
 
+// EngineDevGoEnvOpts contains options for EngineDev.GoEnv
+type EngineDevGoEnvOpts struct {
+	//
+	// The source to work in; the engine's source by default
+	//
+	Source *Directory // engine-dev (../../test.go:801:2)
+	//
+	// Enable cgo
+	//
+	Cgo bool // engine-dev (../../test.go:804:2)
+}
+
+// GoEnv is a Go environment for working on dagger/dagger: wolfi with the Go
+// toolchain, a C toolchain, and what the engine's tests use, with dagger/go's
+// Go caches, and source as its working directory. It is for running Go code
+// and the go command; dagger/dagger's own binaries and test binaries are
+// built with dagger/go's per-package build, not here.
+func (r *EngineDev) GoEnv(opts ...EngineDevGoEnvOpts) *Container { // engine-dev (../../test.go:798:1)
+	q := r.query.Select("goEnv")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `cgo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cgo) {
+			q = q.Arg("cgo", opts[i].Cgo)
+		}
+	}
+
+	return new(Container).WithGraphQLQuery(q)
+}
+
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../main.go:538:2)
+	Version string // engine-dev (../../main.go:542:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:536:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../main.go:539:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -209,7 +242,7 @@ func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../main.go:524
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../main.go:551:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../main.go:583:1)
 	q := r.query.Select("introspectionTool")
 
 	return new(File).WithGraphQLQuery(q)
@@ -273,17 +306,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../main.go:600:2)
+	Image string // engine-dev (../../main.go:635:2)
 
-	DryRun bool // engine-dev (../../main.go:605:2)
+	DryRun bool // engine-dev (../../main.go:640:2)
 
-	RegistryUsername string // engine-dev (../../main.go:608:2)
+	RegistryUsername string // engine-dev (../../main.go:643:2)
 
-	RegistryPassword *Secret // engine-dev (../../main.go:610:2)
+	RegistryPassword *Secret // engine-dev (../../main.go:645:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:595:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../main.go:630:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -311,7 +344,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:581:1)
+func (r *EngineDev) ReleaseDryRun() *Check { // engine-dev (../../main.go:616:1)
 	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)
@@ -359,57 +392,57 @@ type EngineDevTestOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../test.go:30:2)
+	Run string // engine-dev (../../test.go:57:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../test.go:33:2)
+	Skip string // engine-dev (../../test.go:60:2)
 
 	// Default: "./..."
-	Pkg string // engine-dev (../../test.go:36:2)
+	Pkg string // engine-dev (../../test.go:63:2)
 	//
 	// Abort test run on first failure
 	//
-	FailFast bool // engine-dev (../../test.go:39:2)
+	FailFast bool // engine-dev (../../test.go:66:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // engine-dev (../../test.go:42:2)
+	Parallel int // engine-dev (../../test.go:69:2)
 	//
 	// How long before timing out the test run
 	//
-	Timeout string // engine-dev (../../test.go:45:2)
+	Timeout string // engine-dev (../../test.go:72:2)
 
-	Race bool // engine-dev (../../test.go:47:2)
+	Race bool // engine-dev (../../test.go:74:2)
 
 	// Default: 1
-	Count int // engine-dev (../../test.go:50:2)
+	Count int // engine-dev (../../test.go:77:2)
 
-	EnvFile *Secret // engine-dev (../../test.go:52:2)
+	EnvFile *Secret // engine-dev (../../test.go:79:2)
 	//
 	// Enable verbose output
 	//
-	TestVerbose bool // engine-dev (../../test.go:55:2)
+	TestVerbose bool // engine-dev (../../test.go:82:2)
 	//
 	// Update golden files
 	//
-	Update bool // engine-dev (../../test.go:58:2)
+	Update bool // engine-dev (../../test.go:85:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../test.go:61:2)
+	EbpfProgs []string // engine-dev (../../test.go:88:2)
 	//
 	// Enable privileged eBPF tests (Linux 6.15 or newer)
 	//
-	Ebpf bool // engine-dev (../../test.go:64:2)
+	Ebpf bool // engine-dev (../../test.go:91:2)
 	//
 	// Elapsed times after the test runner starts at which to dump engine goroutines
 	//
-	DumpAfter []string // engine-dev (../../test.go:67:2)
+	DumpAfter []string // engine-dev (../../test.go:94:2)
 }
 
 // Run core engine tests
-func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../test.go:26:1)
+func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../test.go:53:1)
 	if r.test != nil {
 		return nil
 	}
@@ -481,41 +514,41 @@ type EngineDevTestProfileOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../test.go:134:2)
+	Run string // engine-dev (../../test.go:158:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../test.go:137:2)
+	Skip string // engine-dev (../../test.go:161:2)
 
 	// Default: "./..."
-	Pkg string // engine-dev (../../test.go:140:2)
+	Pkg string // engine-dev (../../test.go:164:2)
 	//
 	// Abort test run on first failure
 	//
-	FailFast bool // engine-dev (../../test.go:143:2)
+	FailFast bool // engine-dev (../../test.go:167:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // engine-dev (../../test.go:146:2)
+	Parallel int // engine-dev (../../test.go:170:2)
 	//
 	// How long before timing out the test run
 	//
-	Timeout string // engine-dev (../../test.go:149:2)
+	Timeout string // engine-dev (../../test.go:173:2)
 
-	Race bool // engine-dev (../../test.go:151:2)
+	Race bool // engine-dev (../../test.go:175:2)
 
 	// Default: 1
-	Count int // engine-dev (../../test.go:154:2)
+	Count int // engine-dev (../../test.go:178:2)
 
-	EnvFile *Secret // engine-dev (../../test.go:156:2)
+	EnvFile *Secret // engine-dev (../../test.go:180:2)
 	//
 	// Enable verbose output
 	//
-	TestVerbose bool // engine-dev (../../test.go:159:2)
+	TestVerbose bool // engine-dev (../../test.go:183:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../test.go:162:2)
+	EbpfProgs []string // engine-dev (../../test.go:186:2)
 }
 
 // Run core engine tests against an engine recording a wcprof wall-clock
@@ -526,7 +559,7 @@ type EngineDevTestProfileOpts struct {
 // not the tests passed, so a failing run still yields a profile. Benchmark
 // tests gated on _DAGGER_BENCH are opted in, since profiling is what they are
 // for: select them with `run` like any other test.
-func (r *EngineDev) TestProfile(opts ...EngineDevTestProfileOpts) *EngineDevTestProfileResult { // engine-dev (../../test.go:130:1)
+func (r *EngineDev) TestProfile(opts ...EngineDevTestProfileOpts) *EngineDevTestProfileResult { // engine-dev (../../test.go:154:1)
 	q := r.query.Select("testProfile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument
@@ -586,36 +619,36 @@ type EngineDevTestTelemetryOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../test.go:226:2)
+	Run string // engine-dev (../../test.go:263:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../test.go:229:2)
+	Skip string // engine-dev (../../test.go:266:2)
 
-	Update bool // engine-dev (../../test.go:231:2)
+	Update bool // engine-dev (../../test.go:268:2)
 
-	FailFast bool // engine-dev (../../test.go:233:2)
+	FailFast bool // engine-dev (../../test.go:270:2)
 
-	Parallel int // engine-dev (../../test.go:235:2)
+	Parallel int // engine-dev (../../test.go:272:2)
 
-	Timeout string // engine-dev (../../test.go:237:2)
+	Timeout string // engine-dev (../../test.go:274:2)
 
-	Race bool // engine-dev (../../test.go:239:2)
+	Race bool // engine-dev (../../test.go:276:2)
 
 	// Default: 1
-	Count int // engine-dev (../../test.go:241:2)
+	Count int // engine-dev (../../test.go:278:2)
 
-	EnvFile *Secret // engine-dev (../../test.go:243:2)
+	EnvFile *Secret // engine-dev (../../test.go:280:2)
 
-	TestVerbose bool // engine-dev (../../test.go:245:2)
+	TestVerbose bool // engine-dev (../../test.go:282:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../test.go:248:2)
+	EbpfProgs []string // engine-dev (../../test.go:285:2)
 }
 
 // Run telemetry tests
-func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../test.go:222:1)
+func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../test.go:259:1)
 	q := r.query.Select("testTelemetry")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument
@@ -668,7 +701,7 @@ func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset
 }
 
 // List all core engine tests
-func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../test.go:20:1)
+func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../test.go:30:1)
 	if r.tests != nil {
 		return *r.tests, nil
 	}
@@ -883,7 +916,7 @@ func (r *EngineDevLoadedEngine) AsNode() Node {
 
 // The result of a profiled test run: the test engine's wcprof recording, and
 // how the tests went.
-type EngineDevTestProfileResult struct { // engine-dev (../../test.go:104:6)
+type EngineDevTestProfileResult struct { // engine-dev (../../test.go:128:6)
 	query *querybuilder.Selection
 	// refetchID is set when this object is built through a field marked
 	// @reevaluate: it fetches its ID on every use, so each use evaluates that
@@ -906,14 +939,14 @@ func (r *EngineDevTestProfileResult) WithGraphQLQuery(q *querybuilder.Selection)
 
 // The test engine's wcprof dump (engine/wcprof), covering every
 // session the tests opened
-func (r *EngineDevTestProfileResult) Dump() *File { // engine-dev (../../test.go:107:2)
+func (r *EngineDevTestProfileResult) Dump() *File { // engine-dev (../../test.go:131:2)
 	q := r.query.Select("dump")
 
 	return new(File).WithGraphQLQuery(q)
 }
 
 // The exit status of `go test`
-func (r *EngineDevTestProfileResult) ExitCode(ctx context.Context) (int, error) { // engine-dev (../../test.go:109:2)
+func (r *EngineDevTestProfileResult) ExitCode(ctx context.Context) (int, error) { // engine-dev (../../test.go:133:2)
 	if r.exitCode != nil {
 		return *r.exitCode, nil
 	}
@@ -981,7 +1014,7 @@ func (r *EngineDevTestProfileResult) UnmarshalJSON(bs []byte) error {
 }
 
 // The tail of the test output (stdout and stderr)
-func (r *EngineDevTestProfileResult) Output(ctx context.Context) (string, error) { // engine-dev (../../test.go:111:2)
+func (r *EngineDevTestProfileResult) Output(ctx context.Context) (string, error) { // engine-dev (../../test.go:135:2)
 	if r.output != nil {
 		return *r.output, nil
 	}
