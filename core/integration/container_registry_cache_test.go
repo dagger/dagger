@@ -48,7 +48,7 @@ func (ContainerSuite) TestFromTagCachesManifestMetadataAcrossSessions(ctx contex
 	runSession := func(expected string) {
 		nestedClient, err := dagger.Connect(ctx,
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 		require.NoError(t, err)
 		defer nestedClient.Close()

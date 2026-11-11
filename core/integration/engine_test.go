@@ -964,7 +964,7 @@ func (EngineSuite) TestMaxParallelism(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		nested := connect(ctx, t,
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 		return core.NewQuery(nested)
 	}

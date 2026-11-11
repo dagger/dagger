@@ -100,7 +100,7 @@ ln -s /outside /data/link
 	require.NoError(t, err)
 	nestedClient, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 	)
 	require.NoError(t, err)
 	clientClosed := false
@@ -112,7 +112,7 @@ ln -s /outside /data/link
 
 	secondClient, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 	)
 	require.NoError(t, err)
 	secondClientClosed := false
@@ -336,7 +336,7 @@ ln -s /outside /data/link
 	// teardown. The source must be immediately reusable by another session.
 	disconnectClient, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 	)
 	require.NoError(t, err)
 	disconnectClosed := false

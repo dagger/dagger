@@ -44,7 +44,7 @@ func (LocalCacheSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.
 	c2, err := dagger.Connect(
 		ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
@@ -106,7 +106,7 @@ func (LocalCacheSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *t
 			c2, err := dagger.Connect(
 				ctx,
 				dagger.WithRunnerHost(endpoint),
-				dagger.WithLogOutput(testutil.NewTWriter(t)),
+				dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 			)
 			require.NoError(t, err)
 			t.Cleanup(func() { c2.Close() })
@@ -220,7 +220,7 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 			c2, err := dagger.Connect(
 				ctx,
 				dagger.WithRunnerHost(endpoint),
-				dagger.WithLogOutput(testutil.NewTWriter(t)),
+				dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 			)
 			require.NoError(t, err)
 			t.Cleanup(func() { c2.Close() })
@@ -249,7 +249,7 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 			c3, err := dagger.Connect(
 				ctx,
 				dagger.WithRunnerHost(endpoint),
-				dagger.WithLogOutput(testutil.NewTWriter(t)),
+				dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 			)
 			require.NoError(t, err)
 			_, err = core.NewQuery(c3).Directory().WithNewFile("/tmp/foo", "foo").Sync(ctx)
@@ -280,7 +280,7 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 			c4, err := dagger.Connect(
 				ctx,
 				dagger.WithRunnerHost(endpoint),
-				dagger.WithLogOutput(testutil.NewTWriter(t)),
+				dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 			)
 			require.NoError(t, err)
 			for i := range tc.blocks {
@@ -421,7 +421,7 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 		client, err := dagger.Connect(
 			ctx,
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 		require.NoError(t, err)
 		return client
@@ -798,7 +798,7 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 		c2, err = dagger.Connect(
 			ctx,
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() { c2.Close() })
@@ -809,7 +809,7 @@ func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t 
 			c3, err := dagger.Connect(
 				ctx,
 				dagger.WithRunnerHost(endpoint),
-				dagger.WithLogOutput(testutil.NewTWriter(t)),
+				dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 			)
 			require.NoError(t, err)
 			_, err = core.NewQuery(c3).Container().From(alpineImage).WithExec([]string{
@@ -1009,7 +1009,7 @@ func (LocalCacheSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context,
 		c2, err := dagger.Connect(
 			ctx,
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 		require.NoError(t, err)
 		return c2
@@ -1086,7 +1086,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropZstdTarballLayerContent(ctx
 		client, err := dagger.Connect(
 			ctx,
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 		require.NoError(t, err)
 		return client
@@ -1177,7 +1177,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotDropPreparedContainerImageMetad
 		client, err := dagger.Connect(
 			ctx,
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 		require.NoError(t, err)
 		return client
@@ -1268,7 +1268,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService
 		return dagger.Connect(
 			ctx,
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		)
 	}
 
@@ -1311,7 +1311,7 @@ func (LocalCacheSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService
 	seedOuterPrunableCache := func(iter int) {
 		t.Helper()
 
-		seedClient, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t)))
+		seedClient, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 		require.NoError(t, err)
 		defer seedClient.Close()
 
@@ -1363,7 +1363,7 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 	cacheClient, err := dagger.Connect(
 		ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = cacheClient.Close() })
@@ -1395,7 +1395,7 @@ func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx co
 	seedClient, err := dagger.Connect(
 		ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 	)
 	require.NoError(t, err)
 	seedClientClosed := false
