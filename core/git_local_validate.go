@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	gitconfig "github.com/go-git/go-git/v5/plumbing/format/config"
 
@@ -25,11 +24,21 @@ func (repo *LocalGitRepository) ValidateSelfContained(ctx context.Context) error
 			return err
 		}
 		contained := func(p string) (string, error) {
-			return containedPath(root, p)
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(root, p)
+			}
+			resolved, err := filepath.EvalSymlinks(p)
+			if err != nil {
+				return "", err
+			}
+			rel, err := filepath.Rel(root, resolved)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return "", fmt.Errorf("git storage must be self-contained: path %q is outside the supplied directory", p)
+			}
+			return resolved, nil
 		}
 		// Git reads the repository's config, and every file it includes,
-		// as soon as it runs, so check what it would read from the layout
-		// alone first.
+		// as soon as it runs, so check what it would read first.
 		if err := checkLayoutContained(root); err != nil {
 			return err
 		}
@@ -94,7 +103,7 @@ func (repo *LocalGitRepository) ValidateSelfContained(ctx context.Context) error
 							continue
 						}
 						if !filepath.IsAbs(alternate) {
-							alternate = joinPath(filepath.Dir(filepath.Dir(p)), alternate)
+							alternate = filepath.Join(filepath.Dir(filepath.Dir(p)), alternate)
 						}
 						resolved, err := contained(alternate)
 						if err != nil {
@@ -111,180 +120,121 @@ func (repo *LocalGitRepository) ValidateSelfContained(ctx context.Context) error
 		if err := check(gitDir); err != nil {
 			return err
 		}
-		if err := check(commonDir); err != nil {
-			return err
-		}
-		return nil
+		return check(commonDir)
 	})
 }
 
-// containedPath resolves p, relative to root unless absolute, as the kernel
-// opens it, and returns the resolved path if it stays within root. Each
-// component is resolved in turn, so a ".." after a link climbs from where the
-// link leads, and a path that would leave root is rejected without anything
-// outside it being read.
-func containedPath(root, p string) (string, error) {
-	p = joinPath(root, p)
-	outside := fmt.Errorf("git storage must be self-contained: path %q is outside the supplied directory", p)
-	rel, ok := strings.CutPrefix(p, root+string(filepath.Separator))
-	if !ok {
-		if p == root {
-			return root, nil
-		}
-		return "", outside
-	}
-	resolved, leaves, err := openedPath(root, rel)
-	if err != nil {
-		return "", err
-	}
-	if leaves {
-		return "", outside
-	}
-	return resolved, nil
-}
-
-// openedPath resolves rel, a path relative to root, one component at a time
-// as the kernel opens it: a link is replaced by its target, and a ".." climbs
-// from wherever the components before it led. It reports whether resolving
-// it leaves root, by a ".." or an absolute link, before reading anything
-// outside root. A path whose components don't all exist doesn't exist.
-func openedPath(root, rel string) (string, bool, error) {
-	var resolved []string
-	rest := strings.Split(filepath.ToSlash(rel), "/")
-	links := 0
-	for len(rest) > 0 {
-		name := rest[0]
-		rest = rest[1:]
-		switch name {
-		case "", ".":
-			continue
-		case "..":
-			if len(resolved) == 0 {
-				return "", true, nil
-			}
-			resolved = resolved[:len(resolved)-1]
-			continue
-		}
-		resolved = append(resolved, name)
-		current := filepath.Join(root, filepath.Join(resolved...))
-		info, err := os.Lstat(current)
-		if errors.Is(err, syscall.ENOTDIR) {
-			err = os.ErrNotExist
-		}
-		if err != nil {
-			return "", false, err
-		}
-		if info.Mode()&os.ModeSymlink == 0 {
-			continue
-		}
-		// The kernel's limit on links followed in one lookup.
-		if links++; links > 40 {
-			return "", false, fmt.Errorf("resolving %s: %w", rel, syscall.ELOOP)
-		}
-		target, err := os.Readlink(current)
-		if err != nil {
-			return "", false, err
-		}
-		if filepath.IsAbs(target) {
-			return "", true, nil
-		}
-		resolved = resolved[:len(resolved)-1]
-		rest = append(strings.Split(filepath.ToSlash(target), "/"), rest...)
-	}
-	return filepath.Join(root, filepath.Join(resolved...)), false, nil
-}
-
-// joinPath joins p to dir unless p is absolute, keeping p's components as
-// they are: Git opens such paths as written, and cleaning ".." from them
-// would change where they lead when a component before it is a link.
-func joinPath(dir, p string) string {
-	if filepath.IsAbs(p) {
-		return p
-	}
-	return dir + string(filepath.Separator) + p
-}
-
-// parentPath is the directory part of p as written, without cleaning it.
-func parentPath(p string) string {
-	return p[:strings.LastIndex(p, string(filepath.Separator))]
-}
-
-// readContained reads the file at p, a path within root, if it and any link
-// it is reached through stay within root.
-func readContained(root, p string) ([]byte, error) {
-	resolved, err := containedPath(root, p)
-	if err != nil {
-		return nil, err
-	}
-	return os.ReadFile(resolved)
-}
-
-// checkLayoutContained checks, without running Git, that the repository Git
-// would open at root, its common directory and the config files they include
-// are all within root. Git finds the repository at root/.git, a directory,
-// a link or a file naming it, or at root itself when root is bare.
+// checkLayoutContained checks, without running Git, that the files Git
+// reads in the repository at root stay within root: the repository it finds
+// at root/.git, a directory, a link or a file naming it, or at root itself
+// when root is bare; its common directory; their config files and the files
+// those include; and the object stores they borrow from. Each is opened beneath root (see os.Root), so one
+// that a ".." or a link would lead out of root is rejected, and nothing
+// outside root is read.
 func checkLayoutContained(root string) error {
-	gitDir := root
-	dotGit := filepath.Join(root, ".git")
-	info, err := os.Lstat(dotGit)
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	gitDir := "."
+	info, err := r.Lstat(".git")
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
 		return err
 	case info.Mode().IsRegular():
-		data, err := os.ReadFile(dotGit)
+		data, err := r.ReadFile(".git")
 		if err != nil {
 			return err
 		}
 		target, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "gitdir:")
 		if !ok {
-			return fmt.Errorf("git storage: %s is not a gitdir file", dotGit)
+			return fmt.Errorf("git storage: .git is not a gitdir file")
 		}
-		target = strings.TrimSpace(target)
-		if gitDir, err = containedPath(root, target); err != nil {
+		if gitDir, err = beneath(root, ".", strings.TrimSpace(target)); err != nil {
 			return err
+		}
+		if _, err := r.Stat(gitDir); err != nil {
+			return selfContainedErr(gitDir, err)
 		}
 	default:
-		if gitDir, err = containedPath(root, dotGit); err != nil {
-			return err
+		if _, err := r.Stat(".git"); err != nil {
+			return selfContainedErr(".git", err)
 		}
+		gitDir = ".git"
 	}
 	commonDir := gitDir
-	if data, err := readContained(root, filepath.Join(gitDir, "commondir")); err == nil {
-		target := strings.TrimSpace(string(data))
-		if commonDir, err = containedPath(root, joinPath(gitDir, target)); err != nil {
+	data, err := r.ReadFile(gitDir + "/commondir")
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+	case err != nil:
+		return selfContainedErr(gitDir+"/commondir", err)
+	default:
+		if commonDir, err = beneath(root, gitDir, strings.TrimSpace(string(data))); err != nil {
 			return err
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
 	}
 	seen := map[string]bool{}
-	for _, config := range []string{
-		filepath.Join(gitDir, "config"),
-		filepath.Join(gitDir, "config.worktree"),
-		filepath.Join(commonDir, "config"),
-	} {
-		if err := checkConfigIncludes(root, config, seen); err != nil {
+	for _, config := range []string{gitDir + "/config", gitDir + "/config.worktree", commonDir + "/config"} {
+		if err := checkConfigIncludes(r, root, config, seen); err != nil {
+			return err
+		}
+	}
+	seen = map[string]bool{}
+	for _, objects := range []string{gitDir + "/objects", commonDir + "/objects"} {
+		if err := checkAlternates(r, root, objects, seen); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// checkConfigIncludes ensures that the Git config file at config, and the
-// files it includes, include no file outside root, reading only files within
-// root.
-func checkConfigIncludes(root, config string, seen map[string]bool) error {
-	if seen[config] {
+// checkAlternates checks that the object stores the object store at objects,
+// a path beneath root as Git opens it, borrows from stay within root.
+func checkAlternates(r *os.Root, root, objects string, seen map[string]bool) error {
+	if seen[objects] {
 		return nil
 	}
-	seen[config] = true
-	data, err := readContained(root, config)
+	seen[objects] = true
+	data, err := r.ReadFile(objects + "/info/alternates")
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
-		return err
+		return selfContainedErr(objects+"/info/alternates", err)
+	}
+	for _, alternate := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if alternate == "" {
+			continue
+		}
+		alternate, err := beneath(root, objects, alternate)
+		if err != nil {
+			return err
+		}
+		if _, err := r.Stat(alternate); err != nil {
+			return selfContainedErr(alternate, err)
+		}
+		if err := checkAlternates(r, root, alternate, seen); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkConfigIncludes checks that the Git config file at config, a path
+// beneath root as Git opens it, and the files it includes, stay within root.
+func checkConfigIncludes(r *os.Root, root, config string, seen map[string]bool) error {
+	if seen[config] {
+		return nil
+	}
+	seen[config] = true
+	data, err := r.ReadFile(config)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return selfContainedErr(config, err)
 	}
 	cfg := gitconfig.New()
 	if err := gitconfig.NewDecoder(bytes.NewReader(data)).Decode(cfg); err != nil {
@@ -295,21 +245,51 @@ func checkConfigIncludes(root, config string, seen map[string]bool) error {
 		includes = append(includes, sub.OptionAll("path")...)
 	}
 	for _, include := range includes {
-		if strings.HasPrefix(include, "~") {
-			return fmt.Errorf("git storage must be self-contained: config %q includes %q outside the supplied directory", config, include)
+		// Git resolves an include relative to the path it opened the
+		// including file by, as written.
+		include, err := beneath(root, parentDir(config), include)
+		if err != nil {
+			return err
 		}
-		include = joinPath(parentPath(config), include)
-		if _, err := containedPath(root, include); errors.Is(err, os.ErrNotExist) {
+		if _, err := r.Stat(include); errors.Is(err, os.ErrNotExist) {
 			// Git skips an include that doesn't exist.
 			continue
 		} else if err != nil {
-			return err
+			return selfContainedErr(include, err)
 		}
-		// Git resolves the included file's own includes relative to the
-		// path it included it by, not where a link there leads.
-		if err := checkConfigIncludes(root, include, seen); err != nil {
+		if err := checkConfigIncludes(r, root, include, seen); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// beneath returns p, a path Git reads relative to dir, a path beneath root,
+// as a path beneath root, without cleaning it: Git opens it as written. An
+// absolute p must be in root; one starting with "~" is in a home directory.
+func beneath(root, dir, p string) (string, error) {
+	switch {
+	case strings.HasPrefix(p, "~"):
+		return "", selfContainedErr(p, errors.New("a home directory is outside it"))
+	case filepath.IsAbs(p):
+		rel, ok := strings.CutPrefix(p, root+"/")
+		if !ok {
+			return "", selfContainedErr(p, errors.New("an absolute path outside it"))
+		}
+		return rel, nil
+	default:
+		return dir + "/" + p, nil
+	}
+}
+
+// parentDir is the directory part of p, a path as written.
+func parentDir(p string) string {
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[:i]
+	}
+	return "."
+}
+
+func selfContainedErr(p string, err error) error {
+	return fmt.Errorf("git storage must be self-contained: %q can't be read within the supplied directory: %w", p, err)
 }
