@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/remotecache"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
 	"github.com/opencontainers/go-digest"
@@ -112,4 +114,39 @@ func TestRemoteCacheAdapterExportRefusesImageEntries(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, calls)
+}
+
+// A prune never deletes what the engine's image ships: after a prune of
+// everything, a call of the image's root is a hit, with nothing recomputed,
+// while a result the engine made itself is gone.
+func TestPruneKeepsTheImagesEntries(t *testing.T) {
+	dir, _ := imageEntriesDir(t)
+	e := newAdapterTestEngine(t)
+	srv := &Server{engineCache: e.cache}
+	require.NoError(t, srv.mergeImageEntries(e.ctx, dir))
+	made := e.file(t, "made")
+	require.NoError(t, e.cache.Evaluate(e.ctx, made))
+	require.NoError(t, e.cache.ReleaseSession(e.ctx, "adapter"))
+
+	_, err := e.cache.Prune(e.ctx, []dagql.CachePrunePolicy{{All: true}})
+	require.NoError(t, err)
+
+	require.Equal(t, dagql.CacheOutcomeHit, callFile(t, e, "after-prune", "shipped").Outcome, "the image's root is still there")
+	require.NotEqual(t, dagql.CacheOutcomeHit, callFile(t, e, "after-prune", "made").Outcome, "the prune deleted what the engine made")
+}
+
+// callFile calls the file field name, as publishFile publishes it, in
+// session, and returns the call's cache decision.
+func callFile(t *testing.T, e *adapterTestEngine, session, name string) *dagql.CacheDecision {
+	t.Helper()
+	file := &core.File{File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Platform: adapterTestPlatform,
+		Lazy: &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: name + ".txt", Contents: []byte(name + " bytes"), Permissions: 0o644}}
+	file.SetPath("/pending")
+	call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: name, Type: dagql.NewResultCallType(file.Type())}
+	decision := dagql.NewCacheDecision()
+	_, err := e.cache.GetOrInitCall(e.ctx, session, e.srv, &dagql.CallRequest{ResultCall: call, IsPersistable: true, CacheEvidence: decision}, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewObjectResultForCall(file, e.srv, call)
+	})
+	require.NoError(t, err)
+	return decision
 }
