@@ -3957,6 +3957,9 @@ class Container(Type):
         the repository and tag may be those of any such reference. The digest
         always identifies this image.
 
+        After 'Container.import' with a tag, it returns that tag instead,
+        without a digest.
+
         Returns
         -------
         str
