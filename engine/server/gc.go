@@ -457,14 +457,6 @@ func (srv *Server) pruneLocalCacheLocked(ctx context.Context, reason localCacheG
 
 			report, err := srv.engineCache.Prune(ctx, prunePolicies)
 			srv.emitPruneEvent(report.DroppedEdges)
-			if len(report.Entries) > 0 {
-				rerr = errors.Join(rerr, srv.updateRemoteCacheFixturePersistence(func(diagnostics *core.RemoteCacheFixturePersistence) {
-					diagnostics.RemovedPersistedRootCount += len(report.Entries)
-					for _, entry := range report.Entries {
-						diagnostics.DiskPrunedResults = append(diagnostics.DiskPrunedResults, entry.ID)
-					}
-				}))
-			}
 			if err != nil {
 				bklog.G(ctx).Errorf("disk gc error: %+v", err)
 				rerr = errors.Join(rerr, fmt.Errorf("prune disk cache metadata: %w", err))
@@ -493,11 +485,6 @@ func (srv *Server) pruneLocalCacheLocked(ctx context.Context, reason localCacheG
 		srv.dagqlCacheTargetEstimatedBytes,
 	)
 	srv.emitPruneEvent(report.DroppedEdges)
-	if report.RemovedPersistedRootCount > 0 {
-		rerr = errors.Join(rerr, srv.updateRemoteCacheFixturePersistence(func(diagnostics *core.RemoteCacheFixturePersistence) {
-			diagnostics.RemovedPersistedRootCount += report.RemovedPersistedRootCount
-		}))
-	}
 	if err != nil {
 		bklog.G(ctx).Errorf("dagql metadata gc error: %+v", err)
 		return errors.Join(rerr, fmt.Errorf("prune dagql cache metadata: %w", err))

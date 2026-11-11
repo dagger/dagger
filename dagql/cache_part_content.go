@@ -44,8 +44,7 @@ const partContentIdleTimeout = 30 * time.Second
 var errPartContentIdle = errors.New("content read made no progress")
 
 // PartContentOverride replaces a source's availability and provider. Only
-// tests and the environment-gated transfer fixture set it; every other engine
-// leaves it nil.
+// tests set it; an engine leaves it nil.
 type PartContentOverride interface {
 	// Available is a pure address check; it must not request content.
 	Available(PersistedPartOffer, time.Time) bool
@@ -147,8 +146,8 @@ func (s *PartContentSource) Available(offer PersistedPartOffer, now time.Time) b
 func (s *PartContentSource) Provider(ctx context.Context, offer PersistedPartOffer, demand *PartDemandState) content.InfoReaderProvider {
 	// Provider returns an interface rather than an error, so marked
 	// construction returns a refusing provider. The check precedes the
-	// override lookup: a gated engine installs a fixture override, and a
-	// marked context must not reach the delegate that counts reads.
+	// override lookup: a marked context must not reach a test's override,
+	// which may count reads.
 	if engine.IsSnapshotSharePreparation(ctx) {
 		return refusingContentProvider{}
 	}
@@ -866,8 +865,7 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	defer c.partInstallEnded()
 	start := time.Now()
 	// The content-source boundary: refuse before the offer clone and before
-	// the fixture's provider-read counter, so the sentinel precedes any
-	// observable read.
+	// any provider read, so the sentinel precedes any observable read.
 	if err := engine.CheckSnapshotSharePreparation(ctx, "acquire chain content"); err != nil {
 		return err
 	}
@@ -886,9 +884,6 @@ func (c *Cache) installChainPart(ctx context.Context, receiver AnyResult, source
 	provider := c.PartContentSource().Provider(ctx, copied[0], demand)
 	if p, ok := provider.(*partContentProvider); ok {
 		p.stats = stats
-	}
-	if c.partFixture.Load() != nil {
-		provider = partFixtureProvider{InfoReaderProvider: provider, cache: c, row: receiver.cacheSharedResult(), address: source.target}
 	}
 	downloaded := &countingProvider{InfoReaderProvider: provider}
 	timing := partInstallTiming{layers: len(copied[0].Chain.Layers)}
@@ -1035,7 +1030,6 @@ func (c *Cache) settlePart(ctx context.Context, row *sharedResult, address Persi
 	}
 	queue, err := c.retireFinalPartOffersLocked(ctx, row, address)
 	if err == nil {
-		c.recordPartFixture(row, address, "settled")
 		state.phase = PartComplete
 		gate.outputs[key] = state
 		gate.revision++

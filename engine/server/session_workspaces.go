@@ -1681,7 +1681,6 @@ func isCoreRootField(field string) bool {
 		"__bundledDirectory",
 		"_clientFilesyncMirror",
 		"_httpState",
-		"_remoteCacheFixture",
 		"_remoteGitMirror",
 		"address",
 		"blob",

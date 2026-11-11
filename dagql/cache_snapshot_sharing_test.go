@@ -1633,14 +1633,19 @@ func TestSnapshotSharingCancelAfterPublicationDeliversReceipt(t *testing.T) {
 	partTestEquivalent(t, c, receiver, donor)
 	receiverHolds := shareTestHolds(c, receiver)
 
-	// Commit's last act, after every lock is released, is its fixture event.
-	// Holding the fixture's mutex parks the Body between publication and its
-	// receipt report.
-	fixture := new(partFixtureState)
-	fixture.mu.Lock()
-	release := sync.OnceFunc(fixture.mu.Unlock)
+	// Commit's last act, after every lock is released, is testPartInstalled.
+	// Parking there once the receiver is pinned holds the Body between
+	// publication and its receipt report.
+	var armed atomic.Bool
+	parked := make(chan struct{})
+	release := sync.OnceFunc(func() { close(parked) })
 	defer release()
-	manager.afterPin = func() { c.partFixture.Store(fixture) }
+	c.testPartInstalled = func() {
+		if armed.Load() {
+			<-parked
+		}
+	}
+	manager.afterPin = func() { armed.Store(true) }
 	published := make(chan struct{})
 	receiverValue.afterStoreUnlock = sync.OnceFunc(func() { close(published) })
 

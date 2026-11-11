@@ -125,22 +125,3 @@ func (b *countingBody) Read(p []byte) (int, error) {
 	b.read.Add(int64(n))
 	return n, err
 }
-
-// PackOf and OpenPack pass the fixture's provider's packs through; opening a
-// pack is a provider read.
-func (p partFixtureProvider) PackOf(blob digest.Digest) (digest.Digest, bool) {
-	packs, ok := p.InfoReaderProvider.(snapshots.PackProvider)
-	if !ok {
-		return "", false
-	}
-	return packs.PackOf(blob)
-}
-
-func (p partFixtureProvider) OpenPack(ctx context.Context, blob digest.Digest) (io.ReadCloser, error) {
-	packs, ok := p.InfoReaderProvider.(snapshots.PackProvider)
-	if !ok {
-		return nil, fmt.Errorf("blob %s is not in a pack", blob)
-	}
-	p.cache.recordPartFixture(p.row, p.address, "provider-read")
-	return packs.OpenPack(ctx, blob)
-}
