@@ -35,30 +35,38 @@ type DotnetClientDev {
   let originalWorkspace: Directory! = workspaceDir
 
   let baseContainer: Container! {
-    let ctr = container
+    container
       .from(dotnetSdkImage)
       .withWorkdir("/src")
+  }
 
-    ctr = engineDev(ws: self.ws).installClient(ctr)
+  """
+  The Dotnet SDK workspace mounted in a container without a Dagger engine,
+  with working directory set to the SDK source, for what doesn't run a
+  Dagger client.
+  """
+  let sdkContainer: Container! {
+    baseContainer
+      .withMountedDirectory(".", workspaceDir)
+      .withWorkdir(sourcePath)
   }
 
   ######################################
   #### ### #### Public API #### ### ####
   """
-  Return the Dotnet SDK workspace mounted in a dev container,
-  and working directory set to the SDK source.
+  Return the Dotnet SDK workspace mounted in a dev container, with a client
+  of a dev engine built from the workspace, and working directory set to the
+  SDK source.
   """
   pub devContainer: Container! {
-    baseContainer
-      .withMountedDirectory(".", workspaceDir)
-      .withWorkdir(sourcePath)
+    engineDev(ws: self.ws).installClient(sdkContainer)
   }
 
   """
   Lint the Dotnet SDK with Csharpier (https://csharpier.com)
   """
   pub csharpier: Void @check {
-    devContainer
+    sdkContainer
       .withExec(["dotnet", "tool", "restore"])
       .withExec(["dotnet", "csharpier", "--check", "."])
       .sync
@@ -84,7 +92,7 @@ type DotnetClientDev {
   Run source generator tests without compiling the generated SDK client.
   """
   pub sourceGeneratorTest: Void @check {
-    devContainer
+    sdkContainer
       .withExec([
         "dotnet",
         "test",
