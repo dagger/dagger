@@ -78,6 +78,25 @@ func (DirectorySuite) TestSubdirectoryViewHoldsOnlyItsFiles(ctx context.Context,
 		})
 	}
 
+	t.Run("git tree", func(ctx context.Context, t *testctx.T) {
+		// A subdirectory of a Git tree, which is cached by its content too,
+		// holds only its files: a link out of it reaches neither tree's
+		// other.txt.
+		nonce := rand.Text()
+		for _, other := range []string{"a", "b"} {
+			src := core.NewQuery(c).Directory().
+				WithNewFile("linked/marker.txt", nonce).
+				WithSymlink("../other.txt", "linked/link").
+				WithNewFile("other.txt", other)
+			gitDaemon, repoURL := gitService(ctx, t, c, src)
+			tree := core.NewQuery(c).Git(repoURL, core.GitOpts{ExperimentalServiceHost: gitDaemon}).Head().Tree()
+			_, err := tree.Sync(ctx)
+			require.NoError(t, err)
+			contents, err := tree.Directory("linked").File("link").Contents(ctx)
+			require.Error(t, err, "a link out of a Git tree's subdirectory must not reach the tree's file, got %q", contents)
+		}
+	})
+
 	t.Run("links within it", func(ctx context.Context, t *testctx.T) {
 		nonce := rand.Text()
 		links := map[string]string{"link": "nested/inner", "abs": "/main.txt"}
