@@ -23,6 +23,7 @@ import (
 func WithBlobStore() CacheOption {
 	return func(c *Cache) {
 		c.blobBacked = true
+		c.storedLayers = &storedLayers{}
 	}
 }
 
@@ -56,6 +57,9 @@ func (c *Cache) SetStoredPart(ctx context.Context, number uint64, part Persisted
 	if err != nil {
 		return false, fmt.Errorf("set stored part: %w", err)
 	}
+	// The part takes the cache's layers before the graph lock: a part that
+	// isn't stored leaves them to the collector.
+	stored := c.storedLayers.part(copied[0])
 	if err := context.Cause(ctx); err != nil {
 		return false, err
 	}
@@ -75,14 +79,14 @@ func (c *Cache) SetStoredPart(ctx context.Context, number uint64, part Persisted
 	if copyExpired && !c.resultExpiredAtLocked(res, now) {
 		return false, nil
 	}
-	named, ok := c.storedPartDependenciesLocked(res, copied[0])
+	named, ok := c.storedPartDependenciesLocked(res, stored.held)
 	if !ok {
 		return false, nil
 	}
 	if res.storedParts == nil {
 		res.storedParts = make(map[string]storedPart)
 	}
-	res.storedParts[key] = c.storedLayers.part(copied[0])
+	res.storedParts[key] = stored
 	// The Cloud serves no sessions, so there are no requirements to carry.
 	c.applyPartDependenciesLocked(ctx, res, named, nil)
 	return true, nil
