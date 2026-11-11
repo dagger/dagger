@@ -173,3 +173,47 @@ func BenchmarkDBIngestLive(b *testing.B) {
 		})
 	}
 }
+
+// startThenEnd returns the batches of a live session for the ended spans:
+// each span first as it starts, then, a batch later, as it ends, so every span
+// joins and then leaves the running spans of each of its ancestors.
+func startThenEnd(ended [][]sdktrace.ReadOnlySpan) [][]sdktrace.ReadOnlySpan {
+	var batches [][]sdktrace.ReadOnlySpan
+	var prev []sdktrace.ReadOnlySpan
+	for _, batch := range ended {
+		starts := make([]sdktrace.ReadOnlySpan, len(batch))
+		for i, span := range batch {
+			starts[i] = tracetest.SpanStub{
+				Name:        span.Name(),
+				SpanContext: span.SpanContext(),
+				Parent:      span.Parent(),
+				StartTime:   span.StartTime(),
+			}.Snapshot()
+		}
+		batches = append(batches, slices.Concat(prev, starts))
+		prev = batch
+	}
+	return append(batches, prev)
+}
+
+// BenchmarkDBIngestLiveStartEnd is BenchmarkDBIngestLive with each short span
+// delivered twice, as a live session receives it: once when it starts and
+// once when it ends.
+func BenchmarkDBIngestLiveStartEnd(b *testing.B) {
+	const n, depth = 20_000, 20
+	for _, width := range []int{100, 1_000, 5_000} {
+		running, ended := concurrentLiveTrace(n, width, depth)
+		batches := slices.Concat(running, startThenEnd(ended))
+		b.Run(fmt.Sprintf("running=%d", width), func(b *testing.B) {
+			ctx := context.Background()
+			for b.Loop() {
+				db := NewDB()
+				for _, batch := range batches {
+					if err := db.ExportSpans(ctx, batch); err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
+	}
+}
