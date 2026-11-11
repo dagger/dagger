@@ -438,10 +438,34 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 		}, map[string]string{"app/.git": "../meta"})
 		app := host(dir).Directory("app")
 		for _, paths := range [][]string{nil, {"sub"}} {
+			// .gitignore applies without a repository, as filtering does.
+			plain := core.NewQuery(c).Directory().
+				WithNewFile(".gitignore", "*.log\n").
+				WithNewFile("sub/keep.txt", nonce).
+				WithNewFile("sub/x.log", nonce)
+			require.Equal(t, []string{"sub/keep.txt"}, searched(ctx, t, func() ([]core.SearchResult, error) {
+				return plain.Search(ctx, nonce, core.DirectorySearchOpts{Literal: true, SkipIgnored: true, Paths: paths})
+			}), "gitignore without a repository, paths %v", paths)
+
 			require.Equal(t, []string{"sub/keep.txt"}, searched(ctx, t, func() ([]core.SearchResult, error) {
 				return app.Search(ctx, nonce, core.DirectorySearchOpts{Literal: true, SkipIgnored: true, Paths: paths})
 			}), "paths %v", paths)
 		}
+	})
+
+	t.Run("copy through a linked directory", func(ctx context.Context, t *testctx.T) {
+		// A subdirectory selected through a link is copied whole, with
+		// its own ignore rules.
+		nonce := rand.Text()
+		dir := t.TempDir()
+		writeTree(t, dir, map[string]string{
+			"app/main.txt":   nonce,
+			"app/x.log":      nonce,
+			"app/.gitignore": "*.log\n",
+		}, map[string]string{"alias": "app"})
+		alias := host(dir).Directory("alias")
+		require.Equal(t, []string{".gitignore", "main.txt", "x.log"}, entries(ctx, t, core.NewQuery(c).Directory().WithDirectory("/", alias)))
+		require.Equal(t, []string{".gitignore", "main.txt"}, entries(ctx, t, alias.Filter(core.DirectoryFilterOpts{Gitignore: true})))
 	})
 
 	t.Run("other files", func(ctx context.Context, t *testctx.T) {
@@ -534,6 +558,41 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 		require.NoError(t, config.Close())
 		_, err = host(dir).Directory("app").AsGit().Remotes(ctx)
 		require.ErrorContains(t, err, "outside the supplied directory", "a config include leading out of the subdirectory is rejected without being read")
+
+		// Git resolves an include in an included file relative to the path
+		// it was included by, not where a link there leads; and a config
+		// file that is itself a link out is rejected unread too.
+		for name, tree := range map[string]struct {
+			include string
+			files   map[string]string
+			links   map[string]string
+		}{
+			"nested include through a link": {
+				include: "../link",
+				files:   map[string]string{"app/configs/deep/included": "[include]\n\tpath = ../outside.config\n"},
+				links:   map[string]string{"app/link": "configs/deep/included"},
+			},
+			"linked config": {
+				links: map[string]string{"app/.git/config.worktree": "../../outside.config"},
+			},
+		} {
+			dir := t.TempDir()
+			writeTree(t, dir, mergeFiles(tree.files, map[string]string{
+				"app/main.txt":   nonce,
+				"outside.config": "[remote \"origin\"\n",
+			}), nil)
+			gitRepo(filepath.Join(dir, "app"), name)
+			writeTree(t, dir, nil, tree.links)
+			if tree.include != "" {
+				config, err := os.OpenFile(filepath.Join(dir, "app", ".git", "config"), os.O_APPEND|os.O_WRONLY, 0)
+				require.NoError(t, err)
+				_, err = config.WriteString("[include]\n\tpath = " + tree.include + "\n")
+				require.NoError(t, err)
+				require.NoError(t, config.Close())
+			}
+			_, err := host(dir).Directory("app").AsGit().Remotes(ctx)
+			require.ErrorContains(t, err, "outside the supplied directory", name)
+		}
 	})
 
 	t.Run("unreadable ignore file", func(ctx context.Context, t *testctx.T) {
