@@ -31,6 +31,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"os"
@@ -38,9 +39,11 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 )
 
@@ -893,47 +896,117 @@ func treeSize(ctx context.Context, root string) (int64, error) {
 	return size, err
 }
 
+// treeWalkers is how many directories a walk reads at once. A walk waits
+// on the kernel's directory reads and stats, one entry at a time, and a
+// volume such as a Go build cache spreads its entries over many
+// directories, so those are read side by side.
+const treeWalkers = 16
+
 // treeWalk is treeSize, also returning how many entries it counted.
 func treeWalk(ctx context.Context, root string) (int64, int64, error) {
-	type inode struct{ dev, ino uint64 }
-	seen := map[inode]struct{}{}
-	var size, files int64
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				// Changed while walking.
-				return nil
-			}
-			return err
+	info, err := os.Lstat(root)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, 0, nil
 		}
+		return 0, 0, err
+	}
+	w := &treeWalker{seen: map[treeInode]struct{}{}}
+	w.count(info)
+	if !info.IsDir() {
+		return w.size.Load(), w.files.Load(), nil
+	}
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(treeWalkers)
+	eg.Go(func() error { return w.walkDir(ctx, eg, root) })
+	err = eg.Wait()
+	return w.size.Load(), w.files.Load(), err
+}
+
+type treeInode struct{ dev, ino uint64 }
+
+// treeWalker is one treeWalk's count, shared by the directories it reads at
+// once.
+type treeWalker struct {
+	size  atomic.Int64
+	files atomic.Int64
+
+	mu sync.Mutex
+	// seen holds the inodes that can be reached twice: directories, and
+	// files with more than one link.
+	seen map[treeInode]struct{}
+}
+
+// count adds an entry, and the space it takes unless that inode was
+// counted already.
+func (w *treeWalker) count(info fs.FileInfo) {
+	w.files.Add(1)
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		w.size.Add(info.Size())
+		return
+	}
+	if info.IsDir() || st.Nlink > 1 {
+		key := treeInode{uint64(st.Dev), uint64(st.Ino)} //nolint:unconvert // types differ by platform
+		w.mu.Lock()
+		_, counted := w.seen[key]
+		w.seen[key] = struct{}{}
+		w.mu.Unlock()
+		if counted {
+			return
+		}
+	}
+	w.size.Add(int64(st.Blocks) * 512) //nolint:unconvert // types differ by platform
+}
+
+// walkDir counts dir's entries, and the trees of its subdirectories: in a
+// goroutine of eg's while one is free, here otherwise.
+func (w *treeWalker) walkDir(ctx context.Context, eg *errgroup.Group, dir string) error {
+	f, err := os.Open(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// Removed while walking.
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		info, err := d.Info()
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
+		ents, readErr := f.ReadDir(1024)
+		for _, ent := range ents {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-			return err
+			info, err := ent.Info()
+			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					continue
+				}
+				return err
+			}
+			w.count(info)
+			if !ent.IsDir() {
+				continue
+			}
+			sub := filepath.Join(dir, ent.Name())
+			if !eg.TryGo(func() error { return w.walkDir(ctx, eg, sub) }) {
+				if err := w.walkDir(ctx, eg, sub); err != nil {
+					return err
+				}
+			}
 		}
-		files++
-		st, ok := info.Sys().(*syscall.Stat_t)
-		if !ok {
-			size += info.Size()
+		switch {
+		case errors.Is(readErr, io.EOF):
 			return nil
-		}
-		key := inode{uint64(st.Dev), uint64(st.Ino)} //nolint:unconvert // types differ by platform
-		if _, ok := seen[key]; ok {
+		case errors.Is(readErr, fs.ErrNotExist):
 			return nil
+		case readErr != nil:
+			return readErr
 		}
-		seen[key] = struct{}{}
-		size += int64(st.Blocks) * 512 //nolint:unconvert // types differ by platform
-		return nil
-	})
-	if errors.Is(err, fs.ErrNotExist) {
-		return 0, 0, nil
 	}
-	return size, files, err
 }
 
 func removeContents(dir string) error {
