@@ -17,7 +17,7 @@ import (
 // the caller can fall back to the progress tree. It is the message analog of
 // checksReport.
 func (fe *frontendPretty) conversationReport(ctx tuist.Context, r *renderer, zoomed bool) []string {
-	if zoomed {
+	if zoomed || fe.reportHideConversation {
 		return nil
 	}
 	convLines := fe.renderConversationSection(ctx, r)

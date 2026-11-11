@@ -312,6 +312,9 @@ type frontendPretty struct {
 	// of every dagql call the call happened to make.
 	reportHideSpanTree bool
 
+	// reportHideConversation lets a caller replace the transcript with a summary.
+	reportHideConversation bool
+
 	// reportPrimary overrides the primary span for this render WITHOUT
 	// touching the shared DB. A report is scoped by pointing it at a root
 	// span; doing that by mutating db.PrimarySpan (as this used to) leaves
@@ -2335,6 +2338,9 @@ type ReportRenderOpts struct {
 	// and the target's own output. See frontendPretty.reportHideSpanTree.
 	HideSpanTree bool
 
+	// HideConversation omits the surfaced conversation, for callers rendering a summary.
+	HideConversation bool
+
 	// RerunSuggestion replaces the "RUN LOCALLY" section's heading and body,
 	// for a reader that has no `dagger` CLI to run. See
 	// dagui.FrontendOpts.RerunSuggestion; nil keeps the default CLI commands.
@@ -2377,6 +2383,7 @@ func (fe *frontendPretty) SetReportRenderOpts(opts ReportRenderOpts) {
 		fe.reportHideLogSpans = opts.HideLogSpans
 		fe.reportScopedSubtree = opts.ScopedSubtree
 		fe.reportHideSpanTree = opts.HideSpanTree
+		fe.reportHideConversation = opts.HideConversation
 		fe.reportPrimary = opts.Root
 		fe.renderVersion++
 		fe.Update()
@@ -4891,7 +4898,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 			}
 		}
 		fe.markLogsInView()
-		reqConversationLogs(fe.reportConversation())
+		if !fe.reportHideConversation {
+			reqConversationLogs(fe.reportConversation())
+		}
 
 		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
 		// renders once and can't wait for a fetch dispatched mid-render, so it
