@@ -1577,6 +1577,44 @@ func (file *File) AsEnvFile(ctx context.Context, self dagql.ObjectResult[*File],
 	}).WithContents(string(contents))
 }
 
+// ResolveFileOwner returns owner, a user and optional group by name or id,
+// as the numeric ids Chown of file sets, looking names up in the account
+// databases at the root of file's snapshot as Chown does. An owner given by
+// ids is returned as it is, with nothing read. A file's identity doesn't
+// cover those databases, so a chown of it must be identified by the ids.
+func ResolveFileOwner(ctx context.Context, file dagql.ObjectResult[*File], owner string) (string, error) {
+	user, group, hasGroup := strings.Cut(owner, ":")
+	if _, err := parseUID(user); err == nil {
+		if _, err := parseUID(group); !hasGroup || err == nil {
+			return owner, nil
+		}
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := cache.Evaluate(ctx, file); err != nil {
+		return "", err
+	}
+	snapshot, err := file.Self().Snapshot.GetOrEval(ctx, file.Result)
+	if err != nil {
+		return "", err
+	}
+	if snapshot == nil {
+		return "", fmt.Errorf("file chown: nil snapshot")
+	}
+	var ids string
+	err = MountRef(ctx, snapshot, func(root string, _ *mount.Mount) error {
+		ownership, err := resolveDirectoryOwner(root, owner)
+		if err != nil {
+			return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+		}
+		ids = fmt.Sprintf("%d:%d", ownership.UID, ownership.GID)
+		return nil
+	}, mountRefAsReadOnly)
+	return ids, err
+}
+
 func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], owner string) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {

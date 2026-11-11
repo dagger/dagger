@@ -132,7 +132,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
-		dagql.NodeFunc("chown", s.chown).
+		dagql.NodeFuncWithDynamicInputs("chown", s.chown, s.chownDynamicInputs).
 			IsPersistable().
 			Doc(`Change the owner of the file recursively.`).
 			Args(
@@ -433,6 +433,21 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 
 type fileChownArgs struct {
 	Owner string
+}
+
+// chownDynamicInputs identifies a chown by the numeric ids it sets: a name
+// is resolved in the file's snapshot, which the file's identity doesn't
+// cover, so equal files whose snapshots define it differently don't share a
+// result.
+func (s *fileSchema) chownDynamicInputs(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileChownArgs, req *dagql.CallRequest) error {
+	owner, err := core.ResolveFileOwner(ctx, parent, args.Owner)
+	if err != nil {
+		return err
+	}
+	if owner == args.Owner {
+		return nil
+	}
+	return req.SetArgInput(ctx, "owner", dagql.NewString(owner), false)
 }
 
 //nolint:dupl // symmetric with directorySchema.withTimestamps; each builds its own lazy object type
