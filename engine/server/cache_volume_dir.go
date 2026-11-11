@@ -144,6 +144,10 @@ func (srv *Server) collectCacheVolumeDir(ctx context.Context, all bool) (cachevo
 	}
 	if len(report.Removed) > 0 {
 		slog.Info("removed cache volumes from the cache volume directory", "count", len(report.Removed), "bytes", report.ReclaimedBytes)
+		for _, e := range report.Removed {
+			slog.Info("removed cache volume", "key", e.Identity.Key, "namespace", e.Identity.Namespace,
+				"bytes", e.SizeBytes, "lastUsed", e.LastUsedAt, "created", e.CreatedAt)
+		}
 	}
 	if err != nil {
 		return report, fmt.Errorf("collect cache volume directory: %w", err)
