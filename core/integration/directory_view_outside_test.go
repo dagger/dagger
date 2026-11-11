@@ -557,7 +557,7 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 		require.NoError(t, err)
 		require.NoError(t, config.Close())
 		_, err = host(dir).Directory("app").AsGit().Remotes(ctx)
-		require.ErrorContains(t, err, "outside the supplied directory", "a config include leading out of the subdirectory is rejected without being read")
+		require.ErrorContains(t, err, "self-contained", "a config include leading out of the subdirectory is rejected without being read")
 
 		// Git resolves an include in an included file relative to the path
 		// it was included by, not where a link there leads; and a config
@@ -595,7 +595,7 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 				require.NoError(t, config.Close())
 			}
 			_, err := host(dir).Directory("app").AsGit().Remotes(ctx)
-			require.ErrorContains(t, err, "outside the supplied directory", name)
+			require.ErrorContains(t, err, "self-contained", name)
 		}
 	})
 
