@@ -46,16 +46,14 @@ func (repo *LocalGitRepository) ValidateSelfContained(ctx context.Context) error
 		if err != nil {
 			return err
 		}
-		gitDir, err = contained(gitDir)
-		if err != nil {
+		if _, err := contained(gitDir); err != nil {
 			return err
 		}
 		common, err := git.Run(ctx, "rev-parse", "--git-common-dir")
 		if err != nil {
 			return err
 		}
-		commonDir, err := contained(strings.TrimSpace(string(common)))
-		if err != nil {
+		if _, err := contained(strings.TrimSpace(string(common))); err != nil {
 			return err
 		}
 		worktree, err := git.WorkTree(ctx)
@@ -67,60 +65,7 @@ func (repo *LocalGitRepository) ValidateSelfContained(ctx context.Context) error
 				return err
 			}
 		}
-		// Walk resolved metadata directories (including internal symlink targets)
-		// once, validating alternate object databases as part of the same traversal.
-		seen := map[string]bool{}
-		var check func(string) error
-		check = func(dir string) error {
-			if seen[dir] {
-				return nil
-			}
-			seen[dir] = true
-			return filepath.WalkDir(dir, func(p string, entry fs.DirEntry, walkErr error) error {
-				if walkErr != nil {
-					return walkErr
-				}
-				if entry.Type()&os.ModeSymlink != 0 {
-					resolved, err := contained(p)
-					if err != nil {
-						return err
-					}
-					info, err := os.Stat(resolved)
-					if err != nil {
-						return err
-					}
-					if info.IsDir() {
-						return check(resolved)
-					}
-				}
-				if entry.Name() == "alternates" && filepath.Base(filepath.Dir(p)) == "info" {
-					data, err := os.ReadFile(p)
-					if err != nil {
-						return err
-					}
-					for _, alternate := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-						if alternate == "" {
-							continue
-						}
-						if !filepath.IsAbs(alternate) {
-							alternate = filepath.Join(filepath.Dir(filepath.Dir(p)), alternate)
-						}
-						resolved, err := contained(alternate)
-						if err != nil {
-							return err
-						}
-						if err := check(resolved); err != nil {
-							return err
-						}
-					}
-				}
-				return nil
-			})
-		}
-		if err := check(gitDir); err != nil {
-			return err
-		}
-		return check(commonDir)
+		return nil
 	})
 }
 
@@ -128,7 +73,8 @@ func (repo *LocalGitRepository) ValidateSelfContained(ctx context.Context) error
 // reads in the repository at root stay within root: the repository it finds
 // at root/.git, a directory, a link or a file naming it, or at root itself
 // when root is bare; its common directory; their config files and the files
-// those include; and the object stores they borrow from. Each is opened beneath root (see os.Root), so one
+// those include; the object stores they borrow from; and every link in the
+// repository's metadata. Each is opened beneath root (see os.Root), so one
 // that a ".." or a link would lead out of root is rejected, and nothing
 // outside root is read.
 func checkLayoutContained(root string) error {
@@ -175,6 +121,16 @@ func checkLayoutContained(root string) error {
 			return err
 		}
 	}
+	if _, err := r.Stat(gitDir + "/HEAD"); errors.Is(err, os.ErrNotExist) {
+		// Not a repository: Git finds none here, and reads nothing more.
+		return nil
+	}
+	var walked []fs.FileInfo
+	for _, dir := range []string{gitDir, commonDir} {
+		if err := checkLinksContained(r, root, dir, &walked); err != nil {
+			return err
+		}
+	}
 	seen := map[string]bool{}
 	for _, config := range []string{gitDir + "/config", gitDir + "/config.worktree", commonDir + "/config"} {
 		if err := checkConfigIncludes(r, root, config, seen); err != nil {
@@ -188,6 +144,50 @@ func checkLayoutContained(root string) error {
 		}
 	}
 	return nil
+}
+
+// checkLinksContained checks that every link in the directory at dir, a
+// path beneath root, and in the directories its links lead to, stays within
+// root: Git reads refs, objects and other metadata through them.
+func checkLinksContained(r *os.Root, root, dir string, walked *[]fs.FileInfo) error {
+	info, err := r.Stat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return selfContainedErr(dir, err)
+	}
+	for _, other := range *walked {
+		if os.SameFile(other, info) {
+			return nil
+		}
+	}
+	*walked = append(*walked, info)
+	// dir stays within root, so its real path does too; walk it by that.
+	real, err := filepath.EvalSymlinks(filepath.Join(root, dir))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, real)
+	if err != nil {
+		return err
+	}
+	return fs.WalkDir(r.FS(), filepath.ToSlash(rel), func(p string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.Type()&fs.ModeSymlink == 0 {
+			return err
+		}
+		target, err := r.Stat(p)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return selfContainedErr(p, err)
+		}
+		if target.IsDir() {
+			return checkLinksContained(r, root, p, walked)
+		}
+		return nil
+	})
 }
 
 // checkAlternates checks that the object stores the object store at objects,
@@ -266,11 +266,12 @@ func checkConfigIncludes(r *os.Root, root, config string, seen map[string]bool) 
 
 // beneath returns p, a path Git reads relative to dir, a path beneath root,
 // as a path beneath root, without cleaning it: Git opens it as written. An
-// absolute p must be in root; one starting with "~" is in a home directory.
+// absolute p must be in root, and one Git expands, starting with "~" or
+// "%(prefix)", is outside it.
 func beneath(root, dir, p string) (string, error) {
 	switch {
-	case strings.HasPrefix(p, "~"):
-		return "", selfContainedErr(p, errors.New("a home directory is outside it"))
+	case strings.HasPrefix(p, "~"), strings.HasPrefix(p, "%("):
+		return "", selfContainedErr(p, errors.New("Git expands it to a path outside it"))
 	case filepath.IsAbs(p):
 		rel, ok := strings.CutPrefix(p, root+"/")
 		if !ok {
