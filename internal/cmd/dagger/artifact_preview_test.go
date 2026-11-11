@@ -37,7 +37,7 @@ func TestArtifactPreviewCanonicalTable(t *testing.T) {
 	require.Regexp(t, `(?m)^generate\.stale +dag\+check://`, table.String())
 	require.NotContains(t, table.String(), "GOLANG-MODULE")
 	require.NotContains(t, table.String(), "MODULE")
-	require.Contains(t, cli.String(), "dagger check --golang --golang-module=. --check=stale")
+	require.Contains(t, cli.String(), "dagger check --golang --golang-module=. --name=generate.stale")
 	selected := strings.Split(strings.TrimSpace(links.String()), "\n")
 	require.Len(t, selected, 2)
 	for _, link := range selected {

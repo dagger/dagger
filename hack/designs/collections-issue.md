@@ -352,7 +352,7 @@ No new link API is needed. The `all` argument controls table metadata. It does n
 
 When discovery deliberately loads only part of the schema, keep the full field path. Do not load unrelated modules only to shorten links. Retain every parent collection key. Use exact dimension identifiers when the catalog cannot prove that an alias is unique. A failed unfiltered discovery also keeps a full address.
 
-In the CLI, `dagger check --list --all --format=link` prints links for individual checks. Tables use canonical coordinates and the same display pruning rule as the API. They put collection columns first, then `module` and `name`, and always include the DAG link. `--format=cli` prints complete commands and retains the full selectors needed to replay the selection. `dagger list <collection>` lists individual items by default. A collapsed row represents a selection and retains its field path.
+In the CLI, `dagger check --list --all --format=link` prints links for individual checks. Tables use canonical coordinates and the same display pruning rule as the API. They put collection columns first, then `module` and `name`, and always include the DAG link. `--format=cli` prints complete commands. Use `--name` with the exact local field path, such as `--name=python310.unit`. Do not shorten that path to a suffix. Omit it only when the remaining selectors identify the schema path. If the same name occurs below a child collection, add an exact path selector. Older engines can retain their type-path selectors. `dagger list <collection>` lists individual items by default. A collapsed row represents a selection and retains its field path.
 
 #### Discovery and evaluation
 

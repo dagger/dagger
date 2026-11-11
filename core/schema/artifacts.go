@@ -459,6 +459,7 @@ func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args ar
 		URI           string                       `json:"uri"`
 		Description   string                       `json:"description"`
 		ModuleName    string                       `json:"moduleName"`
+		LoadError     string                       `json:"loadError,omitempty"`
 		Path          []string                     `json:"path"`
 		DimensionKeys []*core.ArtifactDimensionKey `json:"dimensionKeys"`
 		Name          string                       `json:"name"`
@@ -495,6 +496,9 @@ func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args ar
 			}
 		}
 		rows[i] = row{URI: uri, Description: item.Description(), ModuleName: item.ModuleName, Path: item.Path, DimensionKeys: keys}
+		if item.LoadFailure != nil {
+			rows[i].LoadError = item.LoadFailure.Message
+		}
 		if prune {
 			rows[i].Coordinates = item.CanonicalDimensionKeys()
 			rows[i].Name = item.StaticDimensionKey("name")
