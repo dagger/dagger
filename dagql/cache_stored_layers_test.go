@@ -2,7 +2,9 @@ package dagql
 
 import (
 	"fmt"
+	"maps"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 
@@ -87,4 +89,125 @@ func storedLayersTestLiveHeap() int64 {
 	runtime.GC()
 	runtime.ReadMemStats(&stats)
 	return int64(stats.HeapAlloc)
+}
+
+// Every reader of a stored part sees the offer it was stored with: parts
+// that share layers, a layer of the same blob described differently, a
+// layer in a pack, and a caller that changes the offer it was given. The
+// sweep's and the drops' answers are each part's own.
+func TestStoredPartOffersAreAsStored(t *testing.T) {
+	t.Parallel()
+	ctx, c := storedPartTestCache(t, WithBlobStore())
+	b1, b2 := storedLayersTestLayer("b1", "the base"), storedLayersTestLayer("b2", "the base's second layer")
+	b1Again := storedLayersTestLayer("b1", "the same blob, from another snapshot's history")
+	b1Again.Descriptor.URLs = []string{"https://mirror.example/b1"}
+	b1Again.Descriptor.Platform = &ocispecs.Platform{OS: "linux", Architecture: "arm64", OSFeatures: []string{"a"}}
+	packA, packB := testDigest("pack-a"), testDigest("pack-b")
+	clone := func(layers ...snapshots.ExportLayer) []snapshots.ExportLayer {
+		out := make([]snapshots.ExportLayer, len(layers))
+		for i, layer := range layers {
+			out[i] = cloneExportLayer(layer)
+		}
+		return out
+	}
+	want := map[string]PersistedPartOffer{
+		"one":   storedLayersTestPart("snapshot", clone(b1, b2, storedLayersTestLayer("t1", "")), map[digest.Digest]digest.Digest{b2.Descriptor.Digest: packA}),
+		"two":   storedLayersTestPart("snapshot", clone(b1, b2, storedLayersTestLayer("t2", "")), map[digest.Digest]digest.Digest{b2.Descriptor.Digest: packA}),
+		"three": storedLayersTestPart("snapshot", clone(b1Again, b2), map[digest.Digest]digest.Digest{b2.Descriptor.Digest: packB}),
+		"four":  storedLayersTestPart("snapshot", clone(b1, b2), nil),
+		"empty": storedLayersTestPart("snapshot", nil, nil),
+	}
+	numbers := map[string]uint64{}
+	for _, name := range slices.Sorted(maps.Keys(want)) {
+		res := storedPartTestPublish(t, ctx, c, "s", "as-stored-"+name, &captureTestValue{text: name})
+		numbers[name] = uint64(res.cacheSharedResult().id)
+		stored, err := c.SetStoredPart(ctx, numbers[name], want[name], 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	read := func(name string) PersistedPartOffer {
+		t.Helper()
+		av, err := c.AvailablePart(numbers[name], want[name].Address)
+		require.NoError(t, err)
+		require.Equal(t, PartStored, av.State)
+		return av.Part
+	}
+	for name, offer := range want {
+		require.Equal(t, offer, read(name), name)
+	}
+
+	// The parts share what they have in common, and nothing else.
+	c.egraphMu.RLock()
+	held := map[string][]*storedLayer{}
+	for name, number := range numbers {
+		key, err := partAddressKey(want[name].Address)
+		require.NoError(t, err)
+		held[name] = c.resultsByID[sharedResultID(number)].storedParts[key].layers
+	}
+	c.egraphMu.RUnlock()
+	require.Same(t, held["one"][0], held["two"][0], "one base layer")
+	require.Same(t, held["one"][1], held["two"][1], "one base layer in one pack")
+	require.Same(t, held["one"][0], held["four"][0])
+	require.NotSame(t, held["one"][0], held["three"][0], "the same blob, described otherwise")
+	require.NotSame(t, held["one"][1], held["three"][1], "the same layer in another pack")
+	require.NotSame(t, held["one"][1], held["four"][1], "the same layer in no pack")
+
+	// A caller's changes to its offer reach no part.
+	scribbled := read("one")
+	scribbled.Chain.Layers[0].Description = "changed"
+	scribbled.Chain.Layers[0].Descriptor.Annotations["containerd.io/uncompressed"] = "changed"
+	*scribbled.Chain.Layers[0].CreatedAt = time.Unix(0, 0)
+	scribbled.Chain.Packs[b2.Descriptor.Digest] = packB
+	threeRead := read("three")
+	threeRead.Chain.Layers[0].Descriptor.Platform.OSFeatures[0] = "changed"
+	threeRead.Chain.Layers[0].Descriptor.URLs[0] = "changed"
+	for name, offer := range want {
+		require.Equal(t, offer, read(name), name)
+	}
+
+	blobs, err := c.LiveBlobs()
+	require.NoError(t, err)
+	require.ElementsMatch(t, []digest.Digest{b1.Descriptor.Digest, b2.Descriptor.Digest, testDigest("t1"), testDigest("t2")}, blobs)
+	packs, err := c.LivePacks()
+	require.NoError(t, err)
+	require.Equal(t, slices.Sorted(slices.Values([]digest.Digest{packA, packB})), packs)
+	members, err := c.LivePackMembers()
+	require.NoError(t, err)
+	require.Equal(t, map[digest.Digest]digest.Digest{b2.Descriptor.Digest: min(packA, packB)}, members)
+
+	dropped, err := c.DropStoredPack(packB)
+	require.NoError(t, err)
+	require.Equal(t, []StoredPart{{Number: numbers["three"], Address: want["three"].Address}}, dropped)
+	dropped, err = c.DropStoredParts(testDigest("t2"))
+	require.NoError(t, err)
+	require.Equal(t, []StoredPart{{Number: numbers["two"], Address: want["two"].Address}}, dropped)
+	for _, name := range []string{"one", "four", "empty"} {
+		require.Equal(t, want[name], read(name), name)
+	}
+}
+
+// The cache holds a layer only while a stored part names it: once the
+// parts that named a layer are gone, the collector frees it, and the table
+// forgets it.
+func TestStoredLayersForgetLayersNoPartNames(t *testing.T) {
+	t.Parallel()
+	ctx, c := storedPartTestCache(t, WithBlobStore())
+	res := storedPartTestPublish(t, ctx, c, "s", "forgotten-layers", &captureTestValue{text: "v"})
+	number := uint64(res.cacheSharedResult().id)
+	stored, err := c.SetStoredPart(ctx, number, storedLayersTestPart("snapshot", []snapshots.ExportLayer{storedLayersTestLayer("forgotten", "")}, nil), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	blobs := func() int {
+		c.storedLayers.mu.Lock()
+		defer c.storedLayers.mu.Unlock()
+		return len(c.storedLayers.byBlob)
+	}
+	require.Equal(t, 1, blobs())
+
+	_, err = c.DropStoredParts(testDigest("forgotten"))
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		runtime.GC()
+		return blobs() == 0
+	}, 10*time.Second, 10*time.Millisecond)
 }
