@@ -100,7 +100,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 			return keptExpansion(ctx, func(ctx context.Context) (core.JSON, error) {
 				return s.listing(ctx, parent, args)
 			})
-		}).
+		}).View(core.AllVersion).
 			Doc("Internal listing metadata, serialized without per-item GraphQL object materialization.").
 			Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme.")), artifactsFromContent),
 		dagql.Func("one", s.one).View(BeforeVersion(artifactDimensionViewVersion)).Doc("Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line."),
@@ -128,7 +128,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("arguments", s.arguments).Doc("The arguments accepted by the artifact field."),
 		dagql.Func("description", s.description).Doc("The description of the field that supplies this artifact."),
 		dagql.Func("workspace", s.artifactWorkspace).Doc("The workspace this artifact was discovered in; its address is relative to it. Null for an artifact without a workspace, such as one of an LLM's bound tool objects (see LLM.artifacts)."),
-		dagql.Func("uri", s.artifactURI).
+		dagql.Func("uri", s.artifactURI).View(core.AllVersion).
 			Doc("The artifact's DAG address, such as dag://engine-dev/playground.").
 			Args(
 				dagql.Arg("absolute").Doc("Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address."),
@@ -411,21 +411,23 @@ func (*artifactsSchema) listing(ctx context.Context, parent *core.Artifacts, arg
 
 func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args artifactListingArgs) (core.JSON, error) {
 	type row struct {
-		URI         string   `json:"uri"`
-		Description string   `json:"description"`
-		ModuleName  string   `json:"moduleName"`
-		Path        []string `json:"path"`
+		URI           string                       `json:"uri"`
+		Description   string                       `json:"description"`
+		ModuleName    string                       `json:"moduleName"`
+		Path          []string                     `json:"path"`
+		DimensionKeys []*core.ArtifactDimensionKey `json:"dimensionKeys"`
 	}
+	prune := core.Supports(ctx, artifactDimensionViewVersion)
 	rows := make([]row, len(items))
 	for i, item := range items {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		uri, err := item.URI(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion, DimensionKeys: true})
+		uri, err := item.URI(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion, DimensionKeys: true, Prune: prune})
 		if err != nil {
 			return nil, err
 		}
-		rows[i] = row{URI: uri, Description: item.Description(), ModuleName: item.ModuleName, Path: item.Path}
+		rows[i] = row{URI: uri, Description: item.Description(), ModuleName: item.ModuleName, Path: item.Path, DimensionKeys: item.DimensionKeys}
 	}
 	data, err := json.Marshal(rows)
 	return core.JSON(data), err
@@ -486,7 +488,7 @@ func (*artifactsSchema) uri(_ context.Context, parent *core.Artifacts, _ struct{
 func expandArtifacts(ctx context.Context, parent *core.Artifacts) (*core.Artifacts, error) {
 	return parent.Expand(ctx)
 }
-func (*artifactsSchema) artifactURI(_ context.Context, parent *core.Artifact, args struct {
+func (*artifactsSchema) artifactURI(ctx context.Context, parent *core.Artifact, args struct {
 	Absolute      bool `default:"false"`
 	DimensionKeys bool `default:"true"`
 	TypeAssertion bool `default:"false"`
@@ -495,6 +497,7 @@ func (*artifactsSchema) artifactURI(_ context.Context, parent *core.Artifact, ar
 		Absolute:      args.Absolute,
 		DimensionKeys: args.DimensionKeys,
 		TypeAssertion: args.TypeAssertion,
+		Prune:         core.Supports(ctx, artifactDimensionViewVersion),
 	})
 }
 func (s *artifactsSchema) value(ctx context.Context, parent dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
@@ -878,7 +881,7 @@ func (inputs *artifactDiscoveryInputs) digest(ctx context.Context) (string, erro
 	if err != nil {
 		return "", err
 	}
-	parts := []string{artifactDiscoveryInput + "/v1", "config", string(cfg)}
+	parts := []string{artifactDiscoveryInput + "/v2", "config", string(cfg)}
 	mods := make([]string, 0, len(inputs.mods))
 	for _, mod := range inputs.mods {
 		var scoped dagql.ObjectResult[*core.Module]
@@ -998,6 +1001,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	}
 	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
 	result.AllPaths = (&core.Artifacts{Entries: loaded}).PathIndex()
+	result.CompleteSchema = include == nil && len(failures) == 0
 	result.SetCollectionRoots(loaded)
 	result.NameEntries()
 	skipped, err := workspaceSkippedPaths(ctx, result, mods, cfg)
