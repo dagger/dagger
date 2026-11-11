@@ -47,11 +47,11 @@ type PythonClientDevBuildOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-client-dev (../../main.go:312:2)
+	Version string // python-client-dev (../../main.go:314:2)
 }
 
 // Build the Python SDK client library package for distribution
-func (r *PythonClientDev) Build(opts ...PythonClientDevBuildOpts) *Container { // python-client-dev (../../main.go:309:1)
+func (r *PythonClientDev) Build(opts ...PythonClientDevBuildOpts) *Container { // python-client-dev (../../main.go:311:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -79,7 +79,7 @@ func (r *PythonClientDev) DevContainer() *Container { // python-client-dev (../.
 }
 
 // Preview the reference documentation
-func (r *PythonClientDev) Docs() *PythonClientDevDocs { // python-client-dev (../../main.go:350:1)
+func (r *PythonClientDev) Docs() *PythonClientDevDocs { // python-client-dev (../../main.go:352:1)
 	q := r.query.Select("docs")
 
 	return &PythonClientDevDocs{
@@ -208,10 +208,10 @@ type PythonClientDevProvisionOpts struct {
 	//
 	// _EXPERIMENTAL_DAGGER_RUNNER_HOST value
 	//
-	RunnerHost string // python-client-dev (../../main.go:362:2)
+	RunnerHost string // python-client-dev (../../main.go:364:2)
 }
 
-func (r *PythonClientDev) Provision(cliBin *File, opts ...PythonClientDevProvisionOpts) *Container { // python-client-dev (../../main.go:356:1)
+func (r *PythonClientDev) Provision(cliBin *File, opts ...PythonClientDevProvisionOpts) *Container { // python-client-dev (../../main.go:358:1)
 	assertNotNil("cliBin", cliBin)
 	q := r.query.Select("provision")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -232,15 +232,15 @@ type PythonClientDevPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-client-dev (../../main.go:326:2)
+	Version string // python-client-dev (../../main.go:328:2)
 	//
 	// The URL of the upload endpoint (empty means PyPI)
 	//
-	URL string // python-client-dev (../../main.go:329:2)
+	URL string // python-client-dev (../../main.go:331:2)
 }
 
 // Publish Python SDK client library to PyPI
-func (r *PythonClientDev) Publish(token *Secret, opts ...PythonClientDevPublishOpts) *Container { // python-client-dev (../../main.go:321:1)
+func (r *PythonClientDev) Publish(token *Secret, opts ...PythonClientDevPublishOpts) *Container { // python-client-dev (../../main.go:323:1)
 	assertNotNil("token", token)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -310,17 +310,17 @@ func (r *PythonClientDev) Python314() *PythonClientDevTestForPythonVersion { // 
 
 // PythonClientDevReleaseOpts contains options for PythonClientDev.Release
 type PythonClientDevReleaseOpts struct {
-	DryRun bool // python-client-dev (../../main.go:277:2)
+	DryRun bool // python-client-dev (../../main.go:279:2)
 
-	PypiRepo string // python-client-dev (../../main.go:280:2)
+	PypiRepo string // python-client-dev (../../main.go:282:2)
 
-	PypiURL string // python-client-dev (../../main.go:283:2)
+	PypiURL string // python-client-dev (../../main.go:285:2)
 
-	PypiToken *Secret // python-client-dev (../../main.go:286:2)
+	PypiToken *Secret // python-client-dev (../../main.go:288:2)
 }
 
 // Release the Python SDK
-func (r *PythonClientDev) Release(ctx context.Context, sourceTag string, opts ...PythonClientDevReleaseOpts) error { // python-client-dev (../../main.go:270:1)
+func (r *PythonClientDev) Release(ctx context.Context, sourceTag string, opts ...PythonClientDevReleaseOpts) error { // python-client-dev (../../main.go:272:1)
 	if r.release != nil {
 		return nil
 	}
@@ -349,7 +349,7 @@ func (r *PythonClientDev) Release(ctx context.Context, sourceTag string, opts ..
 }
 
 // Test the publishing process
-func (r *PythonClientDev) ReleaseDryRun() *Check { // python-client-dev (../../main.go:258:1)
+func (r *PythonClientDev) ReleaseDryRun() *Check { // python-client-dev (../../main.go:260:1)
 	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)
@@ -384,11 +384,11 @@ type PythonClientDevTestPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-client-dev (../../main.go:344:2)
+	Version string // python-client-dev (../../main.go:346:2)
 }
 
 // Test the publishing of the Python SDK client library to TestPyPI
-func (r *PythonClientDev) TestPublish(token *Secret, opts ...PythonClientDevTestPublishOpts) *Container { // python-client-dev (../../main.go:339:1)
+func (r *PythonClientDev) TestPublish(token *Secret, opts ...PythonClientDevTestPublishOpts) *Container { // python-client-dev (../../main.go:341:1)
 	assertNotNil("token", token)
 	q := r.query.Select("testPublish")
 	for i := len(opts) - 1; i >= 0; i-- {

@@ -210,14 +210,16 @@ func (t PythonClientDev) Python314() *TestForPythonVersion {
 // Regenerate the core Python client library
 // +generate
 func (t PythonClientDev) ClientLibrary(_ context.Context) (*dagger.Changeset, error) {
-	devContainer := t.DevContainer()
+	// Generating the client needs no engine: the introspection JSON is computed
+	// without one.
+	ctr := t.BaseContainer
 
 	// We don't control the input source, it's defined in wrapped native module
 	srcMountPath := "/src"
-	src := devContainer.Directory(srcMountPath)
+	src := ctr.Directory(srcMountPath)
 	// FIXME: workaround for Directory.changes() bug
 	src = core.NewDirectory().WithDirectory("", src)
-	genFile := devContainer.
+	genFile := ctr.
 		WithMountedFile("/schema.json", enginedev.New(t.Ws).IntrospectionJSON()).
 		WithWorkdir("codegen").
 		WithExec(uvRun(
@@ -231,7 +233,7 @@ func (t PythonClientDev) ClientLibrary(_ context.Context) (*dagger.Changeset, er
 		)).
 		File("gen.py")
 	genRelPath := "src/dagger/client/gen.py"
-	formattedGenFile := devContainer.
+	formattedGenFile := ctr.
 		WithFile(genRelPath, genFile).
 		WithExec(uvRun(
 			"ruff", "check", "--fix-only", genRelPath,
