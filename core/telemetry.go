@@ -74,6 +74,13 @@ func AroundFunc(
 		slog.WarnContext(ctx, "failed to derive call digest", "field", spanName, "err", err)
 		return ctx, dagql.NoopDone
 	}
+	// Past the calls telemetry hides above, this is the one rule for whether
+	// telemetry reports the call's cache decision: it arms the span's
+	// evidence below, and decides whether the call's miss asks the remote
+	// cache service, which learns calls only from what telemetry reports.
+	// A repeat of a call already reported in this session is reported too:
+	// the service knows it from its first span.
+	req.CacheReported = !req.ResultCall.ProfileSkip
 	var q *Query
 	var payloadKeys dagql.CallPayloadSeenKeyStore
 	if currentQuery, currentQueryErr := CurrentQuery(ctx); currentQueryErr == nil {
@@ -269,15 +276,15 @@ func callPayloadAttr(ctx context.Context, spanName string, frame *dagql.ResultCa
 }
 
 // initCacheEvidence arms the request's cache-evidence carrier
-// (dagql.CacheDecision) exactly when this call's span records and the call is
-// not ProfileSkip-classified — the same volume class the OTel profiling source
-// uses — so suppressed/deduplicated/introspection/profile-skipped calls record
-// nothing and dagql needs no filtering logic of its own (nil carrier ⇒ no-op).
+// (dagql.CacheDecision) exactly when this call's span records and telemetry
+// reports the call's cache decision (CacheReported, set by AroundFunc), so
+// suppressed/deduplicated/introspection/profile-skipped calls record nothing
+// and dagql needs no filtering logic of its own (nil carrier ⇒ no-op).
 func initCacheEvidence(span trace.Span, req *dagql.CallRequest) {
 	if span == nil || !span.IsRecording() {
 		return
 	}
-	if req == nil || req.ResultCall == nil || req.ResultCall.ProfileSkip {
+	if req == nil || req.ResultCall == nil || !req.CacheReported {
 		return
 	}
 	req.CacheEvidence = dagql.NewCacheDecision()

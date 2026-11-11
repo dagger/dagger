@@ -49,7 +49,7 @@ func TestRemoteLookupQueuesMisses(t *testing.T) {
 	frame := cacheTestIntCall("missed", extra)
 	run := func(frame *ResultCall, doNotCache bool) {
 		t.Helper()
-		_, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), DoNotCache: doNotCache}, func(context.Context) (AnyResult, error) {
+		_, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), DoNotCache: doNotCache, CacheReported: true}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(frame, 1), nil
 		})
 		require.NoError(t, err)
@@ -59,7 +59,7 @@ func TestRemoteLookupQueuesMisses(t *testing.T) {
 	require.Empty(t, queuedMisses(t, bridge), "nothing is queued while no connection serves lookups")
 
 	bridge.StartRemoteLookups()
-	req := &CallRequest{ResultCall: frame.clone(), CacheEvidence: NewCacheDecision()}
+	req := &CallRequest{ResultCall: frame.clone(), CacheEvidence: NewCacheDecision(), CacheReported: true}
 	_, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(frame, 1), nil
 	})
@@ -90,6 +90,39 @@ func TestRemoteLookupQueuesMisses(t *testing.T) {
 	require.Len(t, queuedMisses(t, bridge), 1)
 }
 
+// The service learns a call only from the cache decision telemetry reports
+// for it, so a miss asks it only about a call whose decision is reported: a
+// call telemetry leaves out, such as one building a module's type
+// definitions, queues nothing, with or without evidence armed for profiling.
+func TestRemoteLookupOnlyReportedCalls(t *testing.T) {
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	bridge.StartRemoteLookups()
+	miss := func(field string, reported bool, evidence *CacheDecision) *CallRequest {
+		t.Helper()
+		frame := cacheTestIntCall(field)
+		req := &CallRequest{ResultCall: frame.clone(), CacheReported: reported, CacheEvidence: evidence}
+		_, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(frame, 1), nil
+		})
+		require.NoError(t, err)
+		return req
+	}
+
+	miss("unreported", false, nil)
+	armed := miss("armed", false, NewCacheDecision())
+	require.Empty(t, queuedMisses(t, bridge), "a call telemetry doesn't report asks the service nothing")
+	require.Empty(t, armed.CacheEvidence.MissRemoteLookup, "its evidence records no lookup")
+
+	reported := miss("reported", true, NewCacheDecision())
+	misses := queuedMisses(t, bridge)
+	require.Len(t, misses, 1, "a reported call's miss is asked")
+	require.Equal(t, cacheTestCallDigest(cacheTestIntCall("reported")), misses[0].Recipe)
+	require.Equal(t, RemoteLookupQueued, reported.CacheEvidence.MissRemoteLookup)
+
+	miss("reported-unarmed", true, nil)
+	require.Len(t, queuedMisses(t, bridge), 1, "whether this engine's span records doesn't matter: another engine's may have")
+}
+
 // A miss names at most remoteLookupMaxExtras extra digests.
 func TestRemoteLookupBoundsExtras(t *testing.T) {
 	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
@@ -99,7 +132,7 @@ func TestRemoteLookupBoundsExtras(t *testing.T) {
 		extras = append(extras, call.ExtraDigest{Digest: digest.FromString(fmt.Sprint("extra", i)), Label: "extra"})
 	}
 	frame := cacheTestIntCall("extras", extras...)
-	_, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone()}, func(context.Context) (AnyResult, error) {
+	_, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), CacheReported: true}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(frame, 1), nil
 	})
 	require.NoError(t, err)
