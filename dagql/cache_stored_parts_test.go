@@ -32,7 +32,20 @@ func storedPartTestPublish(t *testing.T, ctx context.Context, c *Cache, session,
 func storedPartTestStored(c *Cache, res AnyResult) map[string]PersistedPartOffer {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	return c.resultsByID[res.cacheSharedResult().id].storedParts
+	return storedPartTestOffers(c.resultsByID[res.cacheSharedResult().id].storedParts)
+}
+
+// storedPartTestOffers returns the offers of an entry's stored parts, by
+// part address key, or nil if it has none.
+func storedPartTestOffers(parts map[string]storedPart) map[string]PersistedPartOffer {
+	if parts == nil {
+		return nil
+	}
+	offers := make(map[string]PersistedPartOffer, len(parts))
+	for key, part := range parts {
+		offers[key] = part.offer()
+	}
+	return offers
 }
 
 // Only a blob-backed cache stores parts. An engine's cache refuses them.

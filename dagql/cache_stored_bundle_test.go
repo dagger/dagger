@@ -513,7 +513,7 @@ func TestStoredBundleIsTheCallersCopy(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, string(want), string(got))
 	cloud.egraphMu.RLock()
-	kept := storedBundleTestEntry(cloud, r).storedParts
+	kept := storedPartTestOffers(storedBundleTestEntry(cloud, r).storedParts)
 	cloud.egraphMu.RUnlock()
 	key, err := partAddressKey(part.Address)
 	require.NoError(t, err)

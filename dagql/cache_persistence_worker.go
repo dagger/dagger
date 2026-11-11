@@ -595,7 +595,9 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 			encoding.Envelope.PersistDeclined = snapshot.persistDeclined
 			encoding.Envelope.BoundSession = snapshot.boundSession
 			encoding.Envelope.PendingOffers, rerr = clonePartOffers(snapshot.pendingOffers)
-			encoding.Envelope.StoredParts = snapshot.storedParts
+			for _, part := range snapshot.storedParts {
+				encoding.Envelope.StoredParts = append(encoding.Envelope.StoredParts, part.offer())
+			}
 		}
 	}()
 	if snapshot != nil && snapshot.persistedEnvelope != nil {
