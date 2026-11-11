@@ -1,6 +1,6 @@
 ---
 name: dang-dagger-modules
-description: Authoring Dagger modules in Dang — dagger.json setup, the main type & constructor, what becomes module API, self-calls (supported; annotate returns as Dagger.<Type>!), dependencies, enums/interfaces/scalars, directives (@check, @cache, @defaultPath, @agent), Workspace args, and caching pitfalls. Use when writing or reviewing a Dagger module implemented in Dang.
+description: Authoring Dagger modules in Dang — dagger-module.toml setup, the main type & constructor, what becomes module API, self-calls (supported; annotate returns as Dagger.<Type>!), dependencies, enums/interfaces/scalars, directives (@check, @cache, @defaultPath, @agent), Workspace args, and caching pitfalls. Use when writing or reviewing a Dagger module implemented in Dang.
 ---
 
 # Dagger Modules in Dang
@@ -33,29 +33,36 @@ as a **Dagger module SDK**.
 
 ## Module setup
 
-```json
-{
-  "name": "counter",
-  "engineVersion": "v0.21.5",
-  "sdk": { "source": "dang" }
-}
+```toml
+# dagger-module.toml
+name = "counter"
+engineVersion = "v1.0.0"
+
+[runtime]
+  source = "dang"
 ```
 
-- `"sdk": "dang"` (plain string) also works.
+- Create one with `dagger module init dang --name counter` after
+  `dagger module install dagger.io/sdk/dang`; the SDK writes
+  `engineVersion` during generation.
 - A `dang.toml` beside the module (between the source and module directories)
-  declares its versions, and wins over `dagger.json`: `[imports.Dagger] dagger
+  declares its versions, and wins over the module config: `[imports.Dagger] dagger
   = "vX.Y.Z"` is the engine version (API, naming), `dang = "X.Y"` the Dang
   language version.
 - Without `dang = ...`, `engineVersion` picks the Dang language: `< v0.21.5` is
   Dang 1.0 (where `.{ }` is GraphQL selection); `>= v0.21.5` is Dang 2 (`.{ }`
   is dot-block application, `.{{ }}` is selection). Don't bump an old module's
   `engineVersion` without checking its selection syntax, or pin `dang = "1.0"`.
-- Dependencies: `"dependencies": [{"name": "gochild", "source": "gochild"}]` —
-  deps may use any SDK (Go, Python, TypeScript, Dang) side by side.
-- `"disableDefaultFunctionCaching": true` turns off default function caching
-  module-wide (coarse alternative to per-function `@cache`).
-- Legacy `"sdk": {"experimental": {"SELF_CALLS": true}}` is obsolete: self-calls
-  graduated to a runtime-capability check and are always on for Dang.
+- Dependencies are `[[dependencies]]` tables (`name = "gochild"`,
+  `source = "./gochild"`), managed with `dagger module client add/rm/update`
+  from the module directory. Deps may use any SDK (Go, Python, TypeScript,
+  Dang) side by side.
+- `disableDefaultFunctionCaching = true` (top level) turns off default
+  function caching module-wide (coarse alternative to per-function `@cache`).
+- Legacy `dagger.json` modules (`"sdk": {"source": "dang"}` or `"sdk": "dang"`)
+  still load. Their `"sdk": {"experimental": {"SELF_CALLS": true}}` is
+  obsolete: self-calls graduated to a runtime-capability check and are always
+  on for Dang.
 
 ## Main type, constructor & API surface
 
@@ -75,7 +82,7 @@ type Greeter {
 
 - Without `new`, the uninitialized public fields form an implicit constructor
   in declaration order (positional construction works).
-- Constructor args become top-level flags: `dagger call --name alice greet`.
+- Constructor args become top-level flags: `dagger api call counter --name alice greet`.
   Arg names need not match field names; the body really executes.
 - Public is the default: bare typed declarations are exposed; `let` is
   private — including `let` *functions*, the idiom for internal helpers. The
@@ -173,7 +180,7 @@ type Test {
 ## Workspace args
 
 - A `Workspace!`-typed arg (bare or `Dagger.Workspace!`) is auto-filled by the
-  caller's workspace — no flag needed on `dagger call`; for agents it's filled
+  caller's workspace — no flag needed on `dagger api call`; for agents it's filled
   from the bound workspace and hidden from the model.
 - `let ws: Workspace!` as an uninitialized field is the standard pattern for
   holding it. Read with `ws.file(...)`, `ws.directory(path, exclude: [...])`.
@@ -186,7 +193,8 @@ type Test {
 - The engine memoizes function results by (object id, field, args) within a
   session. Side-effecting or live-reading functions **must** opt out:
   `@cache(policy: FunctionCachePolicy.Never)` (mixes a per-call nonce into the
-  call id). `@cache(ttl: 300)` sets a time-to-live instead.
+  call id). `@cache(ttl: "5m")` sets a time-to-live instead (a duration
+  string, valid only with the `Default` policy).
 - Even with `Never`, identical container execs still hit the exec cache — bust
   with a nonce: `.withEnvVariable("NONCE", Random.string)`.
 

@@ -87,7 +87,7 @@ engineVersion = "v{{ version }}"
 
 Setting `runtime.source` to `"dang"` tells Dagger to run this module with the Dang runtime. `engineVersion` declares the engine version the module requires. See [Engine version](#engine-version).
 
-The generated `main.dang` entry point is a working example of the things a module does. It has a private base container, a Check, a test environment that mounts workspace files and binds a service, a service that `dagger start` can start, and a generator that writes a test script:
+The generated `main.dang` entry point is a working example of the things a module does. It has a base container, a Check, a test environment that mounts workspace files and binds a service, a service that `dagger start` can start, and a generator that writes a test script:
 
 ````dang title=".dagger/modules/my-ci/main.dang"
 """
@@ -109,7 +109,7 @@ type MyCi {
   """
   Check this module.
   """
-  pub myCheck: Void @check {
+  myCheck: Void @check {
     if (chaosMode) {
       raise "chaos mode!"
     }
@@ -119,7 +119,7 @@ type MyCi {
   """
   Return a shell environment with test scripts and the backend service.
   """
-  pub myTestEnv(ws: Workspace!): Container! {
+  myTestEnv(ws: Workspace!): Container! {
     base
       .withWorkdir("/work")
       .withMountedDirectory(
@@ -134,14 +134,14 @@ type MyCi {
   Start a small web backend.
   """
   @up
-  pub myBackend: Service! {
+  myBackend: Service! {
     backend
   }
 
   """
   Generate an example backend test.
   """
-  pub myGenerate(ws: Workspace!): Changeset! @generate {
+  myGenerate(ws: Workspace!): Changeset! @generate {
     ws.withNewFile(
       "my-tests.sh",
       ```sh
@@ -190,16 +190,19 @@ A module created with `--path` is not installed. Call it by pointing `-m` at its
 
 Dang is small on purpose. The whole language fits in a short list:
 
-- **Types.** Declare one with `type Name { ... }`. The first type in a module is the primary type and its entry point.
-- **Public members.** Use `pub`. Private members use `let`. Only `pub` members are visible to callers.
-- **Functions.** A function is a type member that returns a value: `pub build: Container! { ... }`.
-- **Arguments.** They go in parentheses: `pub build(source: Directory!): Container! { ... }`.
+- **Types.** Declare one with `type Name { ... }` at the top level of a file. The type whose name matches the module name is the main type and its entry point.
+- **Visibility.** Members are public by default. `let` makes a member private to its type. Older modules mark public members with `pub`, which has no effect.
+- **Functions.** A function is a member with a body: `build: Container! { ... }`. The last expression in the body is the result, so there is no `return` for the normal result.
+- **Arguments.** They go in parentheses: `build(source: Directory!): Container! { ... }`. Callers pass them by name or position: `build(source: src)`.
+- **Zero-argument calls.** They take no parentheses, so a field and a function read the same: `container.from("alpine").stdout`.
 - **Non-null.** Mark it with `!`. Nullable is the default and has no marker.
-- **Directives.** They modify behavior: `@check`, `@generate`, `@cache`.
+- **Directives.** They mark functions for Dagger: `@check`, `@generate`, `@up`, `@cache`.
 - **Descriptions.** Put a triple-quoted string (`""" ... """`) above the thing it describes.
 - **Strings.** Double quotes process escapes, triple double quotes are raw, and backticks interpolate `${...}`. See [Strings](#strings).
+- **Blocks.** A trailing `{ x => ... }` passes a block to a function: ``paths.map { p => `${p}.bak` }``.
+- **Records.** Double braces build an anonymous record: `{{ name: "app", port: 8080 }}`.
 - **Comments.** Start them with `#`.
-- **Module metadata.** A triple-quoted docstring at the top of the file, above the primary `type`.
+- **Module metadata.** A triple-quoted docstring at the top of the file, above the main `type`.
 
 A minimal module is a type with at least one public function:
 
@@ -211,13 +214,13 @@ type MyCi {
   """
   Say hello.
   """
-  pub hello: String! {
+  hello: String! {
     "Hello from Dagger!"
   }
 }
 ```
 
-`pub` makes a member visible to callers. The docstring at the top of the file is the module's summary. `dagger api functions` and `dagger api call --help` show it. Per-member docstrings document individual functions and arguments.
+`hello` is public, so callers see it. The docstring at the top of the file is the module's summary. `dagger api functions` and `dagger api call --help` show it. Per-member docstrings document individual functions and arguments.
 
 Try it. An installed module is called by its install name, and the workspace's main module is called without one:
 
@@ -228,7 +231,7 @@ dagger api call my-ci hello
 
 ### Expressions and chaining
 
-Dang chains method calls on the Dagger API. Each function body is a single expression, and the function returns whatever that last expression evaluates to. The chain reads top to bottom:
+Dang chains method calls on the Dagger API. A function body is a sequence of expressions separated by newlines, and the function returns the value of the last one. The chain reads top to bottom:
 
 ```dang
 container
@@ -278,7 +281,7 @@ type MyCi {
   """
   A shell script that greets someone.
   """
-  pub script(name: String! = "world"): String! {
+  script(name: String! = "world"): String! {
     ```sh
     #!/bin/sh
     echo "hello ${name}"
@@ -305,14 +308,21 @@ Write it as `\${HOME}` or `$HOME`. When the text needs no interpolation at all, 
 
 ## Define objects and functions
 
-A module is a `type`. Functions are its `pub` members. The function body returns a value of the declared return type:
+A module is a `type`. Functions are its public members. The function body returns a value of the declared return type:
 
 ```dang
 """
 CI for my web application.
 """
 type MyCi {
-  pub build: Container! {
+  source: Directory!
+
+  new(ws: Workspace!) {
+    self.source = ws.directory("/")
+    self
+  }
+
+  build: Container! {
     container
       .from("node:20")
       .withDirectory("/app", source)
@@ -325,11 +335,11 @@ type MyCi {
 
 ### Private state with `let`
 
-`let` defines a private binding, such as internal state or a helper that callers cannot see. Dang evaluates it lazily and caches the result. Use `let` for shared setup that several functions reuse:
+`let` defines a private member, such as internal state or a helper function that callers cannot see. Use `let` for shared setup that several functions reuse:
 
 ```dang
 type Security {
-  pub source: Directory!
+  source: Directory!
 
   new(ws: Workspace!) {
     self.source = ws.directory("/")
@@ -347,7 +357,7 @@ type Security {
     .withWorkdir("/home/trivy")
 
   # Public: callable by users
-  pub scanSource: Void {
+  scanSource: Void {
     trivyBase
       .withMountedDirectory(".", source)
       .withExec(["trivy", "fs", "--exit-code=1", "--severity=CRITICAL,HIGH", "."])
@@ -359,20 +369,20 @@ type Security {
 
 ### Custom types
 
-Define additional `type`s to model what your module produces, for example to return several related values from one function:
+Define additional `type`s to model what your module produces, for example to return several related values from one function. Declare each one at the top level of a file, beside the main type. A type declared inside another type's body is not part of the module's API.
+
+A `type` is also its constructor. Its fields without a default are the constructor's arguments, in declaration order:
 
 ```dang
 type MyCi {
-  """
-  Build result containing the binary and metadata.
-  """
-  type BuildResult {
-    pub binary: File!
-    pub version: String!
-    pub platform: String!
+  source: Directory!
+
+  new(ws: Workspace!) {
+    self.source = ws.directory("/")
+    self
   }
 
-  pub build(platform: String! = "linux/amd64"): BuildResult! {
+  build(platform: String! = "linux/amd64"): BuildResult! {
     let bin = container
       .from("golang:1.22")
       .withDirectory("/app", source)
@@ -380,78 +390,83 @@ type MyCi {
       .withExec(["go", "build", "-o", "/out/app", "."])
       .file("/out/app")
 
-    BuildResult {
-      binary: bin,
-      version: "1.0.0",
-      platform: platform,
-    }
+    BuildResult(binary: bin, version: "1.0.0", platform: platform)
   }
+}
+
+"""
+Build result containing the binary and metadata.
+"""
+type BuildResult {
+  binary: File!
+  version: String!
+  platform: String!
 }
 ```
 
-Dagger prefixes custom type names in the API schema (for example `MyCiBuildResult`) to avoid conflicts when several modules load together. You reach a custom type by chaining from a function on the primary type.
+Dagger prefixes custom type names in the API schema (for example `MyCiBuildResult`) to avoid conflicts when several modules load together. Callers reach a custom type by chaining from a function on the main type.
 
 ### Enumerations
 
-Use `enum` to restrict an argument to a fixed set of values:
+Use `enum` to restrict an argument to a fixed set of values. Declare it at the top level of a file, like a custom type. An enum value is not a `String`, so convert it with a template string where a string is expected:
 
 ```dang
 type Security {
-  enum Severity {
-    UNKNOWN
-    LOW
-    MEDIUM
-    HIGH
-    CRITICAL
-  }
-
-  pub scan(ref: String!, severity: Severity!): String! {
+  scan(ref: String!, severity: Severity!): String! {
     container
       .from("aquasec/trivy:latest")
-      .withExec(["trivy", "image", "--severity", severity, ref])
+      .withExec(["trivy", "image", "--severity", `${severity}`, ref])
       .stdout
   }
 }
+
+enum Severity {
+  UNKNOWN
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
 ```
 
-An invalid value produces an error that lists the allowed choices:
+Compare enum values with `==`, as in `severity == Severity.CRITICAL`. An invalid value produces an error that lists the allowed choices:
 
 ```shell
 dagger api call security scan --ref=alpine:latest --severity=FOO
-# Error: value should be one of UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
+# ! invalid argument "FOO" for "--severity" flag: value should be one of UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
 ```
 
 ### Interfaces
 
-Interfaces let your module accept types from other modules without depending on them. Declare an `interface` at the top level of the file, not nested inside a `type`. List the `pub` members you need as signatures only, with no body:
+Interfaces let your module accept types from other modules without depending on them. Declare an `interface` at the top level of the file. List the members you need as signatures only, with no body:
 
 ```dang
 """
 Any object that can produce a container image.
 """
 interface Buildable {
-  pub build: Container!
+  build: Container!
 }
 
 type Deployer {
-  pub deploy(app: Buildable!, registry: String!): String! {
-    app.build.publish(registry + "/app:latest")
+  deploy(app: Buildable!, registry: String!): String! {
+    app.build.publish(`${registry}/app:latest`)
   }
 }
 ```
 
-A concrete type declares that it satisfies an interface with `implements`:
+A concrete type declares that it satisfies an interface with `implements`. It provides the interface's members. Dagger supplies the `id` field that every interface carries:
 
 ```dang
 type WebApp implements Buildable {
-  pub source: Directory!
+  source: Directory!
 
   new(ws: Workspace!) {
     self.source = ws.directory("/")
     self
   }
 
-  pub build: Container! {
+  build: Container! {
     container
       .from("node:20")
       .withDirectory("/app", source)
@@ -469,14 +484,21 @@ Functions accept typed arguments in parentheses. An argument with a default valu
 
 ```dang
 type MyCi {
-  pub build(
+  source: Directory!
+
+  new(ws: Workspace!) {
+    self.source = ws.directory("/")
+    self
+  }
+
+  build(
     """
     Node.js version to use.
     """
     nodeVersion: String! = "20",
   ): Container! {
     container
-      .from("node:" + nodeVersion)
+      .from(`node:${nodeVersion}`)
       .withDirectory("/app", source)
       .withWorkdir("/app")
       .withExec(["npm", "install"])
@@ -488,9 +510,9 @@ type MyCi {
 An argument can carry:
 
 - **Types.** `String!`, `Int!`, `Boolean!`, `Directory!`, `File!`, `Secret!`, `Container!`, custom types, enums, interfaces, and so on.
-- **Defaults.** `= "20"` makes the argument optional.
+- **Defaults.** `= "20"` makes the argument optional. Inside the body, a `String! = "20"` argument is still non-null, so it needs no null checks.
 - **Descriptions.** A triple-quoted string above the argument.
-- **Non-null markers.** `!` means required when there is no default. Without it the argument is nullable.
+- **Non-null markers.** `!` means required when there is no default. Without it the argument is nullable and optional: `config: File = null`.
 
 ```shell
 dagger api call my-ci build
@@ -501,9 +523,9 @@ Constructor arguments, which are members on the primary type set in `new(...)`, 
 
 ```dang
 type MyCi {
-  pub source: Directory!
-  pub nodeVersion: String!
-  pub registry: String!
+  source: Directory!
+  nodeVersion: String!
+  registry: String!
 
   new(
     ws: Workspace!,
@@ -516,8 +538,17 @@ type MyCi {
     self
   }
 
-  pub publish(tag: String!): String! {
-    build.publish(registry + "/myorg/myapp:" + tag)
+  build: Container! {
+    container
+      .from(`node:${nodeVersion}`)
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(["npm", "install"])
+      .withExec(["npm", "run", "build"])
+  }
+
+  publish(tag: String!): String! {
+    build.publish(`${registry}/myorg/myapp:${tag}`)
   }
 }
 ```
@@ -539,7 +570,7 @@ Dang exposes the full Dagger API directly. These are the types you will use most
 ### Containers
 
 ```dang
-pub build: Container! {
+build: Container! {
   container
     .from("node:20")
     .withDirectory("/app", source)
@@ -554,7 +585,7 @@ pub build: Container! {
 Functions can return `File!` or `Directory!`, and accept them as arguments. Reach into a container's filesystem with `.file(path)` or `.directory(path)`:
 
 ```dang
-pub binary: File! {
+binary: File! {
   build.file("/app/dist/server.js")
 }
 ```
@@ -564,7 +595,7 @@ pub binary: File! {
 Accept secrets as the `Secret` type, never as plain strings. Dagger scrubs secret values from all output streams, including crash reports:
 
 ```dang
-pub deploy(
+deploy(
   """
   API token for deployment.
   """
@@ -598,14 +629,14 @@ Start services for integration tests or dev environments. Services are content-a
 
 ```dang
 type MyCi {
-  pub source: Directory!
+  source: Directory!
 
   new(ws: Workspace!) {
     self.source = ws.directory("/")
     self
   }
 
-  let db: Service {
+  let db: Service! {
     container
       .from("postgres:16")
       .withEnvVariable("POSTGRES_PASSWORD", "test")
@@ -613,7 +644,7 @@ type MyCi {
       .asService
   }
 
-  pub integrationTest: Void @check {
+  integrationTest: Void @check {
     container
       .from("golang:1.22")
       .withDirectory("/app", source)
@@ -631,7 +662,7 @@ type MyCi {
 Use cache volumes for package manager caches and other persistent data that should survive across runs. `cacheVolume("name")` is keyed by name:
 
 ```dang
-pub build: Container! {
+build: Container! {
   container
     .from("node:20")
     .withDirectory("/app", source)
@@ -696,7 +727,7 @@ type MyCi {
   """
   Greet the team.
   """
-  pub greeting: String! {
+  greeting: String! {
     # 'hello' is the dependency module, called by its name
     hello.hello(greeting: "hi", name: "team")
   }
@@ -730,7 +761,7 @@ A module reads the surrounding project's files through a `Workspace` argument on
 ```dang
 type MyCi {
   """The source directory for the project."""
-  pub source: Directory!
+  source: Directory!
 
   new(ws: Workspace!) {
     self.source = ws.directory("/")
@@ -745,12 +776,32 @@ type MyCi {
 - `ws.file(path)` reads a single file.
 - `ws.findUp(name:, from:)` searches upward from a start path for a file or directory by name and returns a nullable path. Use it to locate a config file that may live in a parent directory.
 
+A private `let ws: Workspace!` field with no default is a constructor argument too, and Dagger fills it the same way. Use it to keep the workspace and read from it in each function:
+
+```dang
+type MyCi {
+  let ws: Workspace!
+
+  lint: Void @check {
+    container
+      .from("koalaman/shellcheck-alpine:stable")
+      .withMountedDirectory("/src", ws.directory("/scripts"))
+      .withWorkdir("/src")
+      .withExec(["sh", "-c", "shellcheck *.sh"])
+      .sync
+    null
+  }
+}
+```
+
+A function can also take its own `Workspace!` argument, as `myTestEnv` does in the generated module.
+
 Relative paths resolve from the workspace cwd, where the user invoked `dagger`. Absolute paths, which begin with `/`, resolve from the workspace root.
 
 ```dang
 type MyCi {
-  pub source: Directory!
-  pub config: File!
+  source: Directory!
+  config: File!
 
   new(ws: Workspace!) {
     # Absolute: from the workspace root
@@ -766,7 +817,7 @@ type MyCi {
 
 ```dang
 type MyCi {
-  pub source: Directory!
+  source: Directory!
 
   new(ws: Workspace!) {
     self.source = ws.directory("/", exclude: [
@@ -786,8 +837,8 @@ A complete example, modeled on [`dagger/eslint`](https://github.com/dagger/eslin
 ```dang
 type Eslint {
   """The source directory for the project."""
-  pub source: Directory!
-  pub baseImageAddress: String!
+  source: Directory!
+  baseImageAddress: String!
 
   new(
     ws: Workspace!,
@@ -798,7 +849,7 @@ type Eslint {
     self
   }
 
-  pub lint: Void @check {
+  lint: Void @check {
     nodejs(source, baseImageAddress).base.withExec(["npx", "eslint", "."]).sync
     null
   }
@@ -821,7 +872,7 @@ A check validates something without requiring arguments. Mark it with `@check` a
 
 ```dang
 type MyCi {
-  pub source: Directory!
+  source: Directory!
 
   new(ws: Workspace!) {
     self.source = ws.directory("/")
@@ -831,7 +882,7 @@ type MyCi {
   """
   Lint the code.
   """
-  pub lint: Void @check {
+  lint: Void @check {
     container
       .from("golangci/golangci-lint:latest")
       .withDirectory("/app", source)
@@ -848,7 +899,7 @@ type MyCi {
 A generator produces a [changeset](../../using/generating.mdx), a diff between the current source and freshly generated output. Mark it with `@generate`. `.changes(source)` computes the diff against the original source. `dagger generate` runs all generators and presents the combined changeset for review:
 
 ```dang
-pub generateProto: Changeset @generate {
+generateProto: Changeset! @generate {
   container
     .from("bufbuild/buf:latest")
     .withDirectory("/app", source)
@@ -866,7 +917,7 @@ pub generateProto: Changeset @generate {
 A service function returns a long-running `Service!`. `dagger start` starts every public function that returns `Service!` and takes no required arguments. Build the service from a container with `.asService`, and expose the ports it should listen on:
 
 ```dang
-pub web: Service! {
+web: Service! {
   container
     .from("nginx:alpine")
     .withExposedPort(80)
@@ -874,7 +925,7 @@ pub web: Service! {
 }
 ```
 
-A module can expose several services, and `dagger start` starts each one. This differs from the private `let db: Service { ... }` pattern shown under [Services](#services) above. A `let` service is internal plumbing, such as a database wired into a check with `withServiceBinding`. A `pub` service is a public entry point that users start directly.
+A module can expose several services, and `dagger start` starts each one. This differs from the private `let db: Service! { ... }` pattern shown under [Services](#services) above. A `let` service is internal plumbing, such as a database wired into a check with `withServiceBinding`. A public service is an entry point that users start directly.
 
 ### Caching directives
 
@@ -882,16 +933,16 @@ By default Dagger caches function results for up to 7 days, keyed by inputs (arg
 
 ```dang
 # Cache for 10 minutes (e.g. external data that changes)
-pub latestRelease: String! @cache(ttl: "10m") { ... }
+latestRelease: String! @cache(ttl: "10m") { ... }
 
 # Cache only for the current session
-pub sessionId: String! @cache(policy: "PerSession") { ... }
+sessionId: String! @cache(policy: FunctionCachePolicy.PerSession) { ... }
 
 # Never cache (always re-execute)
-pub currentTime: String! @cache(policy: "Never") { ... }
+currentTime: String! @cache(policy: FunctionCachePolicy.Never) { ... }
 ```
 
-The `policy` values are `Default`, `PerSession`, and `Never`. A function cache hit skips the function entirely. A miss runs it, but individual operations inside may still hit the layer cache. `@cache(policy: "Never")` forces the function to run every call but does not disable layer caching for the operations inside it.
+`policy` takes a `FunctionCachePolicy` value: `Default`, `PerSession`, or `Never`. `ttl` takes a duration string and applies only to the `Default` policy. A function cache hit skips the function entirely. A miss runs it, but individual operations inside may still hit the layer cache. `@cache(policy: FunctionCachePolicy.Never)` forces the function to run every call but does not disable layer caching for the operations inside it.
 
 ## Collections {#collections}
 
@@ -916,7 +967,7 @@ type Shellcheck {
   """
   Shell scripts in the workspace, keyed by path.
   """
-  pub scripts(ws: Workspace!): Scripts! {
+  scripts(ws: Workspace!): Scripts! {
     let source = ws.directory("/", include: ["**/*.sh"])
     Scripts(paths: source.glob("**/*.sh"), source: source)
   }
@@ -929,21 +980,21 @@ type Scripts @collection {
   """
   Script paths, relative to the workspace root.
   """
-  pub paths: [String!]! @keys
+  paths: [String!]! @keys
 
   let source: Directory!
 
   """
   The script at this path.
   """
-  pub script(path: String!): Script! @get {
+  script(path: String!): Script! @get {
     Script(path: path, source: source)
   }
 
   """
   Lint the selected scripts with one ShellCheck run.
   """
-  pub lint: Void @check {
+  lint: Void @check {
     container
       .from("koalaman/shellcheck-alpine:stable")
       .withMountedDirectory("/src", source)
@@ -961,14 +1012,14 @@ type Script {
   """
   Script path, relative to the workspace root.
   """
-  pub path: String!
+  path: String!
 
   let source: Directory!
 
   """
   Lint this script.
   """
-  pub lint: Void @check {
+  lint: Void @check {
     container
       .from("koalaman/shellcheck-alpine:stable")
       .withMountedDirectory("/src", source)
@@ -1009,12 +1060,12 @@ A batch function can tell whether the user narrowed the selection. Add a `Collec
 
 ```dang
 type Scripts @collection {
-  pub paths: [String!]! @keys
+  paths: [String!]! @keys
 
   """
   Scripts selected in or out since discovery.
   """
-  pub selection: CollectionDelta @delta
+  selection: CollectionDelta @delta
 }
 ```
 
@@ -1077,6 +1128,8 @@ They can then call its functions by its install name (`dagger api call <name> ..
 - **Module not found.** Check `dagger module list`. A module created with `--path` needs a separate `dagger module install <path>`, or use `-m <path>` for one command.
 - **SDK not found.** Install `dagger.io/sdk/dang`, then check `dagger sdk list`.
 - **Parser and type errors.** Dang reports these straight from the module source. Check the non-null markers (`!`), that the last expression in a function body matches the declared return type, and that every custom type and enum name you reference exists.
+- **A type or enum is missing from the API.** Only top-level declarations become module types. Move a `type`, `enum`, or `interface` out of another type's body to the top level of a file.
+- **`no common type between Severity! and String!`.** An enum value is not a string. Convert it with a template string, such as `` `${severity}` ``.
 - **`"NAME" not found` in a string, or a string that fails to parse.** A `${...}` in a backtick string is a Dang expression, and double quotes hold one line. See [Strings](#strings).
 - **A `Void` function must end in `null`.** A `Void` function usually calls `.sync` on a container or service to force evaluation, then returns `null` as its final expression.
 - **Changeset not written.** `dagger module init`, module client commands, and `dagger generate` present a [changeset](../../using/generating.mdx). Review and apply it to write the files, or pass `-y` to apply it without the prompt. A headless run fails with `interactive prompts are unavailable in report mode` until it does.
