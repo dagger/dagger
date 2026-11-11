@@ -10,6 +10,7 @@ import (
 
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
 )
@@ -97,4 +98,30 @@ func checkImageBlobs(root *os.Root, bundle dagql.ValueBundle) (int, int64, error
 		total += size
 	}
 	return len(sizes), total, nil
+}
+
+// builtinSDKDigestEnvNames name the variables whose content digests name the
+// built-in SDKs' files, directories the image's entries hold.
+var builtinSDKDigestEnvNames = []string{
+	distconsts.GoSDKDigestEnvName,
+	distconsts.PythonSDKDigestEnvName,
+	distconsts.TypescriptSDKDigestEnvName,
+}
+
+// checkImageDirectories fails unless the image's entries hold a directory
+// with each of these content digests: the engine finds the built-in SDKs'
+// files only there (Query.__bundledDirectory), so an image that names files
+// it doesn't ship fails its start rather than its first module load. A prune
+// never deletes them: it never deletes what the image ships. An empty digest
+// names nothing.
+func (srv *Server) checkImageDirectories(digests []string) error {
+	for _, dgst := range digests {
+		if dgst == "" {
+			continue
+		}
+		if _, err := srv.engineCache.ImageEntryByContent(digest.Digest(dgst), "Directory"); err != nil {
+			return fmt.Errorf("engine image entries: %w", err)
+		}
+	}
+	return nil
 }

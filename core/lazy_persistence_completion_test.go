@@ -42,10 +42,10 @@ func TestLazyPersistenceCompletedBodyGuards(t *testing.T) {
 }
 
 func TestLazyCompletedContainerPublicationExclusion(t *testing.T) {
-	op := &ContainerBuiltinLazy{LazyState: NewLazyState()}
+	op := &ContainerImportLazy{LazyState: NewLazyState()}
 	ctr := NewContainer(Platform{})
 	ctr.Lazy = op
-	require.NoError(t, op.LazyState.Evaluate(t.Context(), "builtin", nil))
+	require.NoError(t, op.LazyState.Evaluate(t.Context(), "import", nil))
 	// The state latch also excludes acquisition publication, even when no
 	// operation body can run again. Both readers and publication must keep it.
 	unlock, err := ctr.lockForPersistence(false)

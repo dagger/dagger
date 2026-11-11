@@ -43,7 +43,6 @@ type HTTPOpts = core.HTTPOpts
 type ID = core.ID
 
 const ImageLayerCompressionGzip = core.ImageLayerCompressionGzip
-const ImageLayerCompressionZstd = core.ImageLayerCompressionZstd
 const NetworkProtocolTcp = core.NetworkProtocolTcp
 
 type Node = core.Node

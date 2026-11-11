@@ -742,11 +742,12 @@ func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev {
 	}
 }
 
-// Build the engine with the cache entries its image ships, as a release
-// does. Making them starts a separate engine of the build and costs minutes,
-// while an engine that serves many clients, such as a test run's, builds the
-// same results once for its first client, and one that loads no Go module
-// never needs them; so an engine built for anything else goes without.
+// Build the engine with the Go builds its image's entries ship, as a release
+// does. Making them runs Go builds on a separate engine of the build and
+// costs minutes, while an engine that serves many clients, such as a test
+// run's, builds the same results once for its first client, and one that
+// loads no Go module never needs them; so an engine built for anything else
+// ships only the built-in SDKs' files in its entries.
 func (r *EngineDev) WithImageEntries() *EngineDev {
 	q := r.query.Select("withImageEntries")
 

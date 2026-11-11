@@ -1,16 +1,24 @@
 // Command engine-image-entries exports the cache entries an engine image
-// ships for Go module runtimes, on an engine of the image's own build: the
+// ships, on an engine of the image's own build, which the engine merges into
+// its cache at start.
+//
+// Every image ships the built-in SDKs' files, each -sdk name=path a
+// directory the engine finds by its content digest, and the Go toolchain
+// image the Go SDK's container starts from (core/sdk's goSDKContainer).
+// The digests go to -sdk-digests, by name, for the image to give the engine.
+//
+// With -seed, it also exports what Go module runtimes build with: the
 // builds of the standard library and of what every Go module's generated
 // code imports, as dagger/go builds them, with the module downloads and the
 // tools those builds read, dagger/go's gobuild binary, and what a fresh
 // engine would otherwise fetch to build with them: dagger/go's checkout, the
-// golang image the builds run in and the image gobuild runs in. The engine
-// merges them into its cache at start.
+// golang image the builds run in and the image gobuild runs in.
 //
-// It loads the built-in Go SDK module from -builtin-go-sdk, and dagger/go as
-// that module's dependency go, and fails unless -entrypoint-dagger-go, the
-// dagger/go go-sdk's generated modules depend on, names the same, so that
-// every result is the one their builds look up.
+// For those it loads the built-in Go SDK module from -builtin-go-sdk, and
+// dagger/go as that module's dependency go, and fails unless
+// -entrypoint-dagger-go, the dagger/go go-sdk's generated modules depend on,
+// names the same, so that every result is the one their builds look up; and
+// unless dagger/go builds in the Go SDK's image (distconsts.GoSDKGolangImage).
 // It takes what codegen's archives of each Go module in -seed read from the
 // cache (archiveBuilds of its root package, its dependencies alone, without
 // tests), at -go-version with the Go SDK's build flags
@@ -22,10 +30,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"dagger.io/dagger"
@@ -37,7 +47,7 @@ type withID struct {
 	ID string `json:"id"`
 }
 
-// seedFlags are the -seed flags, in order.
+// seedFlags are the -seed and -sdk flags, in order.
 type seedFlags []string
 
 func (s *seedFlags) String() string     { return strings.Join(*s, ",") }
@@ -46,6 +56,9 @@ func (s *seedFlags) Set(v string) error { *s = append(*s, v); return nil }
 func main() {
 	var seeds seedFlags
 	var entrypointSeeds seedFlags
+	var sdks seedFlags
+	flag.Var(&sdks, "sdk", "a built-in SDK's files, as name=path (repeatable)")
+	sdkDigests := flag.String("sdk-digests", "", "where to write the built-in SDKs' content digests, as JSON by name")
 	flag.Var(&seeds, "seed", "a Go module whose dependencies' builds to export, with the Go SDK's flags (repeatable)")
 	flag.Var(&entrypointSeeds, "entrypoint-seed", "a Go module whose dependencies' builds to export, with dagger/go's own flags, as go-sdk's entrypoints build (repeatable)")
 	builtinGoSDK := flag.String("builtin-go-sdk", "", "the built-in Go SDK module's directory, sdk/go/runtime")
@@ -54,11 +67,11 @@ func main() {
 	out := flag.String("out", "", "where to export the entries")
 	platform := flag.String("platform", "", "the platform of the engine image the entries are for (default: the engine's)")
 	flag.Parse()
-	if len(seeds) == 0 || *builtinGoSDK == "" || *goVersion == "" || *out == "" {
+	if len(sdks) == 0 || *sdkDigests == "" || *goVersion == "" || *out == "" || (len(seeds) > 0 && *builtinGoSDK == "") {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(context.Background(), seeds, entrypointSeeds, *builtinGoSDK, *entrypointDaggerGo, *goVersion, *platform, *out); err != nil {
+	if err := run(context.Background(), sdks, *sdkDigests, seeds, entrypointSeeds, *builtinGoSDK, *entrypointDaggerGo, *goVersion, *platform, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "engine-image-entries:", err)
 		os.Exit(1)
 	}
@@ -76,7 +89,7 @@ type daggerGoSource struct {
 	SourceRootSubpath string `json:"sourceRootSubpath"`
 }
 
-func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, entrypointDaggerGo, goVersion, platform, out string) error {
+func run(ctx context.Context, sdks []string, sdkDigests string, seeds, entrypointSeeds []string, builtinGoSDK, entrypointDaggerGo, goVersion, platform, out string) error {
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -86,11 +99,90 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, ent
 		return client.Do(ctx, &dagger.Request{Query: query, Variables: vars}, &dagger.Response{Data: data})
 	}
 
+	results, digests, err := sdkResults(do, sdks, platform)
+	if err != nil {
+		return err
+	}
+	if len(seeds) > 0 {
+		builds, err := goBuildResults(do, seeds, entrypointSeeds, builtinGoSDK, entrypointDaggerGo, goVersion, platform)
+		if err != nil {
+			return err
+		}
+		// The Go builds' golang image is the SDK's too: each result once.
+		for _, id := range builds {
+			if !slices.Contains(results, id) {
+				results = append(results, id)
+			}
+		}
+	}
+	if err := do(`query($results: [ID!]!, $out: String!) { _engineImageBundle(results: $results) { export(path: $out) } }`,
+		map[string]any{"results": results, "out": out}, nil); err != nil {
+		return fmt.Errorf("export the entries: %w", err)
+	}
+	raw, err := json.Marshal(digests)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(sdkDigests, raw, 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "engine-image-entries: exported %d results to %s; the built-in SDKs' files are %v\n", len(results), out, digests)
+	return nil
+}
+
+// sdkResults are the built-in SDKs' files, each -sdk name=path, keyed by
+// their content, and the Go toolchain image the Go SDK's container starts
+// from, for platform; with each SDK's content digest by name.
+func sdkResults(do func(string, map[string]any, any) error, sdks []string, platform string) ([]string, map[string]string, error) {
+	var results []string
+	digests := map[string]string{}
+	for _, sdk := range sdks {
+		name, path, ok := strings.Cut(sdk, "=")
+		if !ok || name == "" || path == "" {
+			return nil, nil, fmt.Errorf("-sdk %q: want name=path", sdk)
+		}
+		var files struct {
+			Host struct {
+				Directory struct {
+					ID     string `json:"id"`
+					Digest string `json:"digest"`
+				} `json:"directory"`
+			} `json:"host"`
+		}
+		// A host directory is keyed by its content: the digest it reports.
+		if err := do(`query($path: String!) { host { directory(path: $path) { id digest } } }`, map[string]any{"path": path}, &files); err != nil {
+			return nil, nil, fmt.Errorf("the %s SDK's files: %w", name, err)
+		}
+		dir := files.Host.Directory
+		results = append(results, dir.ID)
+		digests[name] = dir.Digest
+	}
+	// The Go SDK's container starts from the Go toolchain image (core/sdk's
+	// goSDKContainer), which an image without the Go builds ships too.
+	var golang struct {
+		Container struct {
+			From withID `json:"from"`
+		} `json:"container"`
+	}
+	if err := do(`query($ref: String!, $platform: Platform) { container(platform: $platform) { from(address: $ref) { id } } }`, map[string]any{"ref": distconsts.GoSDKGolangImage, "platform": optional(platform)}, &golang); err != nil {
+		return nil, nil, fmt.Errorf("image %s: %w", distconsts.GoSDKGolangImage, err)
+	}
+	results = append(results, golang.Container.From.ID)
+	if digests["go"] == "" {
+		return nil, nil, errors.New("no -sdk go: every image ships the Go SDK's files")
+	}
+	return results, digests, nil
+}
+
+// goBuildResults are what Go module runtimes build with, as this session's
+// IDs of them: what codegen's archives of each seed read, dagger/go's
+// checkout, gobuild's binary and image, and the golang image.
+func goBuildResults(do func(string, map[string]any, any) error, seeds, entrypointSeeds []string, builtinGoSDK, entrypointDaggerGo, goVersion, platform string) ([]string, error) {
 	// dagger/go is the Go SDK module's dependency go, as the engine loads it
 	// for the SDK, served with it.
 	vars := map[string]any{"builtinGoSDK": builtinGoSDK}
 	if err := do(`query($builtinGoSDK: String!) { `+fmt.Sprintf(builtinGoSDKModule, "asModule { serve(includeDependencies: true) }")+` }`, vars, nil); err != nil {
-		return fmt.Errorf("load the Go SDK module: %w", err)
+		return nil, fmt.Errorf("load the Go SDK module: %w", err)
 	}
 	// dagger/go's module source, whose checkout the module loads from, and
 	// its context directory; and gobuild's binary and the image its calls
@@ -124,7 +216,7 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, ent
 		vars["platform"] = platform
 	}
 	if err := do(`query(`+params+`) { `+fmt.Sprintf(builtinGoSDKModule, `dependencies { moduleName id cloneRef commit sourceRootSubpath contextDirectory { id } asModule { dependencies { name _prebuild`+platformArg+` { id } _runtimeImage`+platformArg+` { id } } } }`)+` }`, vars, &mod); err != nil {
-		return fmt.Errorf("dagger/go: %w", err)
+		return nil, fmt.Errorf("dagger/go: %w", err)
 	}
 	var daggerGo []string
 	var gobuild []string
@@ -133,7 +225,7 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, ent
 			continue
 		}
 		if err := samePin(do, dep.daggerGoSource, entrypointDaggerGo); err != nil {
-			return err
+			return nil, err
 		}
 		daggerGo = append(daggerGo, dep.ID, dep.ContextDirectory.ID)
 		for _, dep := range dep.AsModule.Dependencies {
@@ -143,10 +235,10 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, ent
 		}
 	}
 	if len(daggerGo) != 2 {
-		return errors.New("dagger/go: the Go SDK module has no dependency go")
+		return nil, errors.New("dagger/go: the Go SDK module has no dependency go")
 	}
 	if len(gobuild) != 2 {
-		return errors.New("gobuild: dagger/go's dependency gobuild declares no prebuild or runtimeImage member")
+		return nil, errors.New("gobuild: dagger/go's dependency gobuild declares no prebuild or runtimeImage member")
 	}
 	var goImage struct {
 		Go struct {
@@ -154,7 +246,12 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, ent
 		} `json:"go"`
 	}
 	if err := do(`query($version: String!) { go(version: $version) { image(version: $version) } }`, map[string]any{"version": goVersion}, &goImage); err != nil {
-		return fmt.Errorf("the golang image: %w", err)
+		return nil, fmt.Errorf("the golang image: %w", err)
+	}
+	// The Go SDK's container starts from the image dagger/go builds in, so
+	// the two share it.
+	if goImage.Go.Image != distconsts.GoSDKGolangImage {
+		return nil, fmt.Errorf("dagger/go builds Go %s in %s, and the Go SDK's container starts from %s (distconsts.GoSDKGolangImage): move them together", goVersion, goImage.Go.Image, distconsts.GoSDKGolangImage)
 	}
 	var golang struct {
 		Container struct {
@@ -162,7 +259,7 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, ent
 		} `json:"container"`
 	}
 	if err := do(`query($ref: String!, $platform: Platform) { container(platform: $platform) { from(address: $ref) { id } } }`, map[string]any{"ref": goImage.Go.Image, "platform": optional(platform)}, &golang); err != nil {
-		return fmt.Errorf("image %s: %w", goImage.Go.Image, err)
+		return nil, fmt.Errorf("image %s: %w", goImage.Go.Image, err)
 	}
 	// The seeds share what they import alike, such as the standard library,
 	// and the tools: each result once.
@@ -184,20 +281,13 @@ func run(ctx context.Context, seeds, entrypointSeeds []string, builtinGoSDK, ent
 		return nil
 	}
 	if err := exportSeeds(seeds, distconsts.GoSDKBuildFlags()); err != nil {
-		return err
+		return nil, err
 	}
 	// go-sdk's entrypoints build with dagger/go's own flags: they set none.
 	if err := exportSeeds(entrypointSeeds, nil); err != nil {
-		return err
+		return nil, err
 	}
-	results := append(append(append(ids, daggerGo...), gobuild...), golang.Container.From.ID)
-	if err := do(`query($results: [ID!]!, $out: String!) { _engineImageBundle(results: $results) { export(path: $out) } }`,
-		map[string]any{"results": results, "out": out}, nil); err != nil {
-		return fmt.Errorf("export the entries: %w", err)
-	}
-	fmt.Fprintf(os.Stderr, "engine-image-entries: exported %d results dagger/go's archive builds read (package builds, module downloads and tools), gobuild's binary and image, dagger/go's checkout and context, and the image %s to %s\n",
-		len(ids), goImage.Go.Image, out)
-	return nil
+	return append(append(append(ids, daggerGo...), gobuild...), golang.Container.From.ID), nil
 }
 
 // samePin fails unless go-sdk's entrypoints build with the dagger/go the

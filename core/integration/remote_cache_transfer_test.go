@@ -358,28 +358,9 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 			if cold {
 				// The module's cached definition travels in the bundle, so a cold
 				// engine loads the module without running its runtime. The later
-				// uncached function calls demand the SDK runtime, and with it its
-				// builtin FS. Its record holds no download address, so the cold
-				// engine runs the saved builtin itself, as it would restore one
-				// from local disk: the merged row then owns the snapshot it
-				// made, and none of it was downloaded.
-				builtinRan := 0
-				for _, row := range acquisition.Rows {
-					if row.Call == nil || row.Call.Field != "_builtinContainer" || !row.Imported {
-						continue
-					}
-					if len(row.SnapshotLinks) > 0 {
-						builtinRan++
-					}
-				}
-				require.Positive(t, builtinRan, "cold SDK builtin runs its saved builtin and owns what it made")
-				for _, event := range acquisition.Parts {
-					if event.Field == "_builtinContainer" {
-						require.NotContains(t, []string{"installed-chain", "provider-read"}, event.Kind, "cold SDK builtin FS isn't downloaded: %+v", event)
-					}
-				}
+				// uncached function calls demand the SDK runtime, whose files the
+				// engine image's entries hold.
 				assertColdPartDelegation(t, acquisition)
-				t.Logf("acquisition cold builtin rows that ran=%d", builtinRan)
 			}
 			scratchHandle := assertScratchAcquisition(t, acquisition, imported, cold, warmScratchRow)
 			entries, err := core.Ref[*core.Directory](core.NewQuery(b.client), core.ID(scratchHandle)).Entries(ctx)

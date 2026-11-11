@@ -12,9 +12,9 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
-	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/remotecache"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -149,4 +149,15 @@ func callFile(t *testing.T, e *adapterTestEngine, session, name string) *dagql.C
 	})
 	require.NoError(t, err)
 	return decision
+}
+
+// An image that names built-in SDK files its entries don't hold fails the
+// start.
+func TestCheckImageDirectories(t *testing.T) {
+	dir, _ := imageEntriesDir(t)
+	e := newAdapterTestEngine(t)
+	srv := &Server{engineCache: e.cache}
+	require.NoError(t, srv.mergeImageEntries(e.ctx, dir))
+	require.NoError(t, srv.checkImageDirectories([]string{""}))
+	require.ErrorIs(t, srv.checkImageDirectories([]string{digest.FromString("absent").String()}), dagql.ErrUnknownEntry)
 }

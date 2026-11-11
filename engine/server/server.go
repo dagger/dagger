@@ -139,7 +139,6 @@ type Server struct {
 	snapshotGarbage      *snapshotGarbage
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
-	builtinContentStore  content.Store
 
 	// cacheVolumeDir is the cache volume directory this engine owns, when
 	// cache volumes are directories (cacheVolumes.dir); nil otherwise.
@@ -348,13 +347,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	if err := srv.initStateLocations(cfg.CacheVolumes); err != nil {
 		return nil, err
-	}
-
-	// Opened before the local cache state: the snapshot manager takes the
-	// builtin store at construction, for chain imports of builtin layers.
-	srv.builtinContentStore, err = openBuiltinOCIStore()
-	if err != nil {
-		return nil, fmt.Errorf("failed to open builtin content store: %w", err)
 	}
 
 	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
@@ -598,6 +590,13 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := srv.mergeImageEntries(ctx, distconsts.EngineContainerImageEntriesDir); err != nil {
 		return nil, err
 	}
+	var sdkDigests []string
+	for _, name := range builtinSDKDigestEnvNames {
+		sdkDigests = append(sdkDigests, os.Getenv(name))
+	}
+	if err := srv.checkImageDirectories(sdkDigests); err != nil {
+		return nil, err
+	}
 	// A prune never deletes what the image ships, which it knows by the
 	// image's merge: one that planned before the merge could still delete it.
 	srv.startLocalCachePressureGCMonitor()
@@ -756,9 +755,6 @@ func (srv *Server) noteWipedCacheID(id string) {
 }
 
 func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) (localCacheStateResetReason, error) {
-	if srv.builtinContentStore == nil {
-		return localCacheStateResetNone, errors.New("builtin content store must be opened before the local cache state")
-	}
 	if err := srv.mkdirBaseDirs(); err != nil {
 		return localCacheStateResetNone, err
 	}
@@ -827,10 +823,7 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		},
 		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
 		MountPoolRoot: srv.buildkitMountPoolDir,
-		// Chain imports take a builtin image's layers from the engine's own
-		// files rather than the remote cache.
-		BuiltinContent: srv.builtinContentStore,
-		MetadataDB:     srv.containerdMetaDB,
+		MetadataDB:    srv.containerdMetaDB,
 		// The image's blobs, which the store holds in place, take no disk
 		// a snapshot's release would free.
 		InPlaceContent: blobs.InPlace,

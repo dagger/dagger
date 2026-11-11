@@ -1,9 +1,7 @@
 package core
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -12,14 +10,12 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
-	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/dagger/dagger/dagql"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/opencontainers/go-digest"
-	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
@@ -345,26 +341,12 @@ func TestPartMountReceiverRoles(t *testing.T) {
 	}))
 }
 
-func TestPartPrivateWholeBuiltin(t *testing.T) {
-	ctx, _, cache, srv, server := executionFixture(t)
-	packaged, err := local.NewStore(t.TempDir())
-	require.NoError(t, err)
-	server.builtin = packaged
-	configJSON := []byte(`{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]},"config":{"WorkingDir":"/private"}}`)
-	cfg := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageConfig, Digest: digest.FromBytes(configJSON), Size: int64(len(configJSON))}
-	require.NoError(t, content.WriteBlob(ctx, packaged, "config", bytes.NewReader(configJSON), cfg))
-	raw, err := json.Marshal(ocispec.Manifest{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispec.MediaTypeImageManifest, Config: cfg, Layers: []ocispec.Descriptor{}})
-	require.NoError(t, err)
-	manifest := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: digest.FromBytes(raw), Size: int64(len(raw))}
-	require.NoError(t, content.WriteBlob(ctx, packaged, "manifest", bytes.NewReader(raw), manifest))
-	platform := Platform{OS: "linux", Architecture: "amd64"}
-	ctr := NewContainer(platform)
-	originalLazy := &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: platform, ManifestDigest: manifest.Digest}
-	ctr.Lazy = originalLazy
-	original := attachTransferObject(t, ctx, cache, srv, "operation-execution", "_builtinContainer", ctr)
-	// The receiver is another cache's. Both have the builtin.
-	bctx, _, bcache, bsrv, bserver := executionFixture(t)
-	bserver.builtin = packaged
+func TestPartPrivateWholeImport(t *testing.T) {
+	ctx, _, cache, srv, _ := executionFixture(t)
+	original, originalLazy := importTestContainer(t, ctx, cache, srv, "/private")
+	ctr := original.Self()
+	// The receiver is another cache's, which runs the import's records.
+	bctx, _, bcache, bsrv, _ := executionFixture(t)
 	require.NoError(t, cache.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
 		importedReply, err := bcache.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
 		imported := importedReply.Imported()

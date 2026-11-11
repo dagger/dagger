@@ -212,7 +212,12 @@ type persistedEdge struct {
 // (DeclinePersistence). An older engine reading a newer store drops the mark
 // when it saves, and a declined value would then gain a retention edge from
 // its next persistable hit, so stores of another version are wiped on import.
-const cachePersistenceSchemaVersion = "23"
+//
+// 24: the engine image's built-in SDK container operation
+// (Query._builtinContainer) is gone: the built-in SDKs' files come through the
+// image's entries. Older stores holding its records cannot decode them, so
+// they are wiped on import.
+const cachePersistenceSchemaVersion = "24"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")

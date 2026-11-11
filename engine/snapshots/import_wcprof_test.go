@@ -13,11 +13,9 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/leases"
-	cerrdefs "github.com/containerd/errdefs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/engine/wcprof"
-	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
@@ -151,21 +149,14 @@ func TestImportChainProfiled(t *testing.T) {
 				}
 			} else {
 				// The upper layer's fetch links its blob to the import's lease,
-				// finds it missing, then looks in the builtin image store
-				// before it waits for the download: the read waits for that.
+				// finds it missing, then waits for the download: the read
+				// waits for that link.
 				fetching := make(chan struct{})
-				var linked atomic.Bool
 				var once sync.Once
-				consumer.WithBuiltin(t, builtinLookups(func(dgst digest.Digest) {
-					if dgst == upper.Digest && linked.Load() {
+				consumer.AfterAdd = func(_ context.Context, _ leases.Lease, r leases.Resource) {
+					if r.Type == "content" && r.ID == upper.Digest.String() {
 						once.Do(func() { close(fetching) })
 					}
-				}))
-				consumer.BeforeAdd = func(_ context.Context, _ leases.Lease, r leases.Resource) error {
-					if r.Type == "content" && r.ID == upper.Digest.String() {
-						linked.Store(true)
-					}
-					return nil
 				}
 				provider.BeforeRead = func(ctx context.Context, desc ocispecs.Descriptor) error {
 					if desc.Digest != upper.Digest {
@@ -336,19 +327,6 @@ func TestImportChainProfiledStoredMeanwhile(t *testing.T) {
 	require.Zero(t, byPhase[importPhase{"snapshot.import.fetch[present]", dgst}].Bytes, "nothing was moved")
 	require.Zero(t, provider.Reads.Load(), "nothing was read")
 	testutil.CheckFile(t, ref, "a.txt", "stored meanwhile")
-}
-
-// builtinLookups is a builtin image store that holds nothing, and reports
-// each digest looked up in it.
-type builtinLookups func(digest.Digest)
-
-func (b builtinLookups) Info(_ context.Context, dgst digest.Digest) (content.Info, error) {
-	b(dgst)
-	return content.Info{}, cerrdefs.ErrNotFound
-}
-
-func (b builtinLookups) ReaderAt(context.Context, ocispecs.Descriptor) (content.ReaderAt, error) {
-	return nil, cerrdefs.ErrNotFound
 }
 
 // A profiled chain import that waits for its layers' blobs to come in

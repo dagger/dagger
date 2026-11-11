@@ -162,8 +162,6 @@ func (s *currentTypeDefsTestServer) MCPSessions(context.Context) (*core.MCPSessi
 
 func (s *currentTypeDefsTestServer) OCIStore() content.Store { return nil }
 
-func (s *currentTypeDefsTestServer) BuiltinOCIStore() content.Store { return nil }
-
 func (s *currentTypeDefsTestServer) DNS() *oci.DNSConfig { return nil }
 
 func (s *currentTypeDefsTestServer) LeaseManager() *bkcache.LeaseManager { return nil }

@@ -4812,10 +4812,6 @@ func (srv *Server) OCIStore() content.Store {
 	return srv.contentStore
 }
 
-func (srv *Server) BuiltinOCIStore() content.Store {
-	return srv.builtinContentStore
-}
-
 // The dns configuration for the engine as a whole
 func (srv *Server) DNS() *oci.DNSConfig {
 	return srv.dns

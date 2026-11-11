@@ -225,20 +225,14 @@ func (cm *snapshotManager) fetchChainContent(ctx context.Context, desc ocispecs.
 }
 
 // fetchAhead starts downloading desc's blob for owner before its layer is
-// imported, unless it is in the content store or the builtin image store
-// already. Starting a download takes one of the engine's ahead slots; with
-// none free it starts nothing and reports full, and the caller tries again
-// later. The caller drops the returned hold, which may be nil, with
+// imported, unless it is in the content store already. Starting a download
+// takes one of the engine's ahead slots; with none free it starts nothing
+// and reports full, and the caller tries again later. The caller drops the returned hold, which may be nil, with
 // leaveFetch once the layer is imported. It reports whether it started a
 // download.
 func (cm *snapshotManager) fetchAhead(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, owner *ExportChain) (_ *contentFetch, started, full bool) {
 	if _, err := cm.ContentStore.Info(ctx, desc.Digest); err == nil {
 		return nil, false, false
-	}
-	if cm.builtinContent != nil {
-		if _, err := cm.builtinContent.Info(ctx, desc.Digest); err == nil {
-			return nil, false, false
-		}
 	}
 	slots := cm.aheadSlots()
 	if !slots.TryAcquire(1) {

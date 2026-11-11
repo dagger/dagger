@@ -1,7 +1,6 @@
 package snapshots_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -253,48 +252,6 @@ func TestDiffedBlobIsBoundToItsSnapshot(t *testing.T) {
 	store.GC(t)
 	require.False(t, snapshotPresent(t, store, snapshotID))
 	require.False(t, blobPresent(t, store, blob))
-}
-
-// A builtin image's blobs are held by one persistent lease with no
-// snapshot at all: written under a temporary lease, pinned, the temporary
-// lease deleted, they survive the collector and a second pin is a no-op;
-// the startup sweeps leave the lease alone; deleting it releases them.
-func TestBuiltinImageBlobsArePinned(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	store := testutil.NewStore(t)
-	tmp, err := store.Leases.Create(ctx, leases.WithRandomID())
-	require.NoError(t, err)
-	var descs []ocispecs.Descriptor
-	for _, data := range [][]byte{[]byte("builtin layer one"), []byte("builtin config")} {
-		desc := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayer, Digest: digest.FromBytes(data), Size: int64(len(data))}
-		require.NoError(t, content.WriteBlob(leases.WithLease(ctx, tmp.ID), store.Content, "write-"+desc.Digest.Encoded(), bytes.NewReader(data), desc))
-		descs = append(descs, desc)
-	}
-	const lease = "dagger/builtin-image/test"
-	require.NoError(t, store.Manager.PinContent(ctx, lease, descs))
-	require.NoError(t, store.Manager.PinContent(ctx, lease, descs), "pinning again is a no-op")
-	require.NoError(t, store.Leases.Delete(ctx, tmp))
-	store.GC(t)
-	for _, desc := range descs {
-		require.True(t, blobPresent(t, store, desc.Digest), "%s survives with only the builtin lease", desc.Digest)
-	}
-	pinned, _, contents := leaseResources(t, store, lease)
-	require.Equal(t, "true", pinned.Labels[bkcache.BuiltinImageLeaseLabel])
-	require.Len(t, contents, 2)
-
-	require.NoError(t, store.Manager.DeleteStaleDaggerOwnerLeases(ctx, nil))
-	require.NoError(t, bkcache.ReleaseTransferLeasesAfterRestart(ctx, store.Leases))
-	store.GC(t)
-	for _, desc := range descs {
-		require.True(t, blobPresent(t, store, desc.Digest), "%s survives the startup sweeps", desc.Digest)
-	}
-
-	require.NoError(t, store.Manager.RemoveLease(ctx, lease))
-	store.GC(t)
-	for _, desc := range descs {
-		require.False(t, blobPresent(t, store, desc.Digest), "%s is released with the lease", desc.Digest)
-	}
 }
 
 // A label update that fails leaves no reusable blob record behind: the
