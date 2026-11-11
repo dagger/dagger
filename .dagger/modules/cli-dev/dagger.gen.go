@@ -3,8 +3,6 @@
 package main
 
 import (
-	gomod "dagger/cli-dev/internal/dagger/clients/go"
-
 	core "dagger.io/dagger/core"
 
 	"context"
@@ -50,11 +48,15 @@ func (r CliDev) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Version string
 		Tag     string
-		Go      *gomod.Go
+		Source  *dagger.Directory
+		Base    *dagger.Container
+		Values  []string
 	}
 	concrete.Version = r.Version
 	concrete.Tag = r.Tag
-	concrete.Go = r.Go
+	concrete.Source = r.Source
+	concrete.Base = r.Base
+	concrete.Values = r.Values
 	return json.Marshal(&concrete)
 }
 
@@ -62,7 +64,9 @@ func (r *CliDev) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
 		Version string
 		Tag     string
-		Go      *gomod.Go
+		Source  *dagger.Directory
+		Base    *dagger.Container
+		Values  []string
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
@@ -70,7 +74,9 @@ func (r *CliDev) UnmarshalJSON(bs []byte) error {
 	}
 	r.Version = concrete.Version
 	r.Tag = concrete.Tag
-	r.Go = concrete.Go
+	r.Source = concrete.Source
+	r.Base = concrete.Base
+	r.Values = concrete.Values
 	return nil
 }
 
