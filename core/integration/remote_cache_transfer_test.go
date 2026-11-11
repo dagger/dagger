@@ -220,7 +220,7 @@ func runTransferSchemaRecovery(ctx context.Context, t *testctx.T, cold, defaultG
 		e.client, e.sink = connectWithTrace(ctx, t, engineconn.Config{
 			RunnerHost: e.endpoint,
 			Workdir:    checkout,
-			LogOutput:  testutil.NewTWriter(t),
+			LogOutput:  testutil.ClientLogOutput(t),
 		})
 		return e
 	}

@@ -50,7 +50,7 @@ func (LocalCacheSuite) TestConcurrentSessionsShareOneEntry(ctx context.Context, 
 
 	sessions := make([]*dagger.Client, 3)
 	for i := range sessions {
-		session, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		session, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = session.Close() })
 		sessions[i] = session

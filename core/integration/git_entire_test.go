@@ -87,7 +87,7 @@ func (GitEntireSuite) TestEntireRemote(ctx context.Context, t *testctx.T) {
 	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 	connectEngine := func() *dagger.Client {
-		client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 		require.NoError(t, err)
 		t.Cleanup(func() { client.Close() })
 		return client

@@ -52,7 +52,7 @@ func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func
 		e.tunnel = tunnel
 		e.endpoint, err = tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
-		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(e.endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(e.endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 		require.NoError(t, err)
 		return e
 	}
@@ -68,7 +68,7 @@ func onAnotherEngine(ctx context.Context, t *testctx.T, rebuild bool, build func
 		}
 	}()
 	connectA := func() *dagger.Client {
-		c, err := dagger.Connect(ctx, dagger.WithRunnerHost(a.endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		c, err := dagger.Connect(ctx, dagger.WithRunnerHost(a.endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 		require.NoError(t, err)
 		sessionsA = append(sessionsA, c)
 		return c

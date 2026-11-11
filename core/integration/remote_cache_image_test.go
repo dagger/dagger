@@ -36,7 +36,7 @@ func (RemoteCacheTransferSuite) TestTransferOntoImageEntry(ctx context.Context, 
 		require.NoError(t, err)
 		endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
-		client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(t.TempDir()), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(t.TempDir()), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, stopNestedEngine(ctx, &client, &upstream, &tunnel))

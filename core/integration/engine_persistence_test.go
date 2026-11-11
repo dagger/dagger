@@ -96,7 +96,7 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 
 		connectOpts := []dagger.ClientOpt{
 			dagger.WithRunnerHost(endpoint),
-			dagger.WithLogOutput(testutil.NewTWriter(t)),
+			dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 		}
 		connectOpts = append(connectOpts, clientOpts...)
 		engineClient, err := dagger.Connect(ctx, connectOpts...)
