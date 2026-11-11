@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"syscall"
 
 	containerdfs "github.com/containerd/continuity/fs"
 
@@ -100,6 +101,22 @@ func withIgnoreFilesConfined(base string, f func(string) error) error {
 		}
 	}
 	return f(base)
+}
+
+// withDirMountedAlone calls f with the directory at dir bind-mounted on a
+// fresh directory of its own, so that a program run there finds none of the
+// directories above dir.
+func withDirMountedAlone(dir string, f func(string) error) error {
+	alone, err := os.MkdirTemp("", "dagger-alone-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(alone)
+	if err := syscall.Mount(dir, alone, "", syscall.MS_BIND, ""); err != nil {
+		return fmt.Errorf("mount %s on its own: %w", dir, err)
+	}
+	defer syscall.Unmount(alone, syscall.MNT_DETACH)
+	return f(alone)
 }
 
 // linksLeavingDir returns the paths, relative to base, of the symlinks in the

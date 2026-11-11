@@ -2427,9 +2427,13 @@ func (dir *Directory) Search(ctx context.Context, self dagql.ObjectResult[*Direc
 			return err
 		}
 		if opts.SkipIgnored {
+			// ripgrep also applies ignore files in the directories above the
+			// one it searches, so search the directory mounted on its own.
 			return withIgnoreFilesConfined(resolvedDir, func(resolvedDir string) error {
-				results, err = searchIn(ctx, opts, verbose, resolvedDir, paths, globs)
-				return err
+				return withDirMountedAlone(resolvedDir, func(resolvedDir string) error {
+					results, err = searchIn(ctx, opts, verbose, resolvedDir, paths, globs)
+					return err
+				})
 			})
 		}
 		results, err = searchIn(ctx, opts, verbose, resolvedDir, paths, globs)

@@ -181,10 +181,10 @@ func (opts SearchOpts) RipgrepArgs() []string {
 		args = append(args, "--ignore-case")
 	}
 	if opts.SkipIgnored {
-		// Apply only the ignore files in the directory searched, whether or
-		// not a repository is around it, so what's searched depends on the
-		// directory's own files alone.
-		args = append(args, "--no-ignore-parent", "--no-require-git")
+		// Apply only the ignore files that are files of what's searched,
+		// not Git's exclude file, which a .git link or file can place
+		// anywhere, nor the engine's own global ignore file.
+		args = append(args, "--no-ignore-exclude", "--no-ignore-global")
 	} else {
 		args = append(args, "--no-ignore")
 	}
