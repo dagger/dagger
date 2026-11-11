@@ -40,7 +40,9 @@ func fakeNS(t *testing.T, dir, id string, handle cni.CNI) *cniNS {
 	t.Helper()
 	path := filepath.Join(dir, id)
 	require.NoError(t, os.WriteFile(path, nil, 0o600))
-	return &cniNS{id: id, nativeID: path, handle: handle}
+	// The file isn't a mount: unmounting it would need privileges the
+	// package's tests don't run with.
+	return &cniNS{id: id, nativeID: path, handle: handle, unmount: func(string) error { return nil }}
 }
 
 func TestPoolCloseReportsWhatItTookDown(t *testing.T) {
