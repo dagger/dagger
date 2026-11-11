@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  A module with the same name as one of its entrypoint's dependencies, such as
+  a Go module named `go`, builds and runs. Before, the entrypoint's call of
+  that dependency reached the module's own constructor, and the module failed
+  to build. An entrypoint now runs with the core API and its own dependencies
+  only.
+time: 2026-11-11T02:00:00Z
+custom:
+  Author: sipsma
+  PR: "15119"

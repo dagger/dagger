@@ -45,10 +45,10 @@ type Module struct {
 
 	// EntrypointDeps, when the module's manifest lists its dependencies as
 	// its entrypoint's own (ModuleSource.EntrypointOnlyDependencies), is the
-	// schema the entrypoint runs with: the core's and those dependencies.
-	// Deps then holds the core's alone, so the module's own code, its
-	// callers and its generated code don't see them. Nil otherwise, and when
-	// the entrypoint has no dependencies of its own.
+	// schema the entrypoint runs with: the core's and those dependencies,
+	// never the module the entrypoint builds, which could share a name with
+	// one of them. Deps then holds the core's alone, so the module's own
+	// code, its callers and its generated code don't see them. Nil otherwise.
 	EntrypointDeps *SchemaBuilder
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
@@ -1067,10 +1067,9 @@ func (mod *Module) AttachDependencyResults(
 		if !ok {
 			return nil, fmt.Errorf("attach module self dependency: expected attached module result, got %T", self)
 		}
+		// An entrypoint's own schema (EntrypointDeps) never holds the module:
+		// self-calls are the module's process's, through Deps.
 		mod.Deps = mod.Deps.WithSelf(NewUserMod(attachedSelf))
-		if mod.EntrypointDeps != nil {
-			mod.EntrypointDeps = mod.EntrypointDeps.WithSelf(NewUserMod(attachedSelf))
-		}
 	}
 	return owned, nil
 }
@@ -2383,8 +2382,8 @@ func (mod *Module) Patch(ctx context.Context) error {
 }
 
 // SDKDeps is the schema the module's SDK runs it with: its entrypoint's
-// (EntrypointDeps) when the entrypoint has dependencies of its own, and the
-// module's (Deps) otherwise.
+// (EntrypointDeps) when the manifest lists its dependencies as the
+// entrypoint's own, and the module's (Deps) otherwise.
 func (mod *Module) SDKDeps() *SchemaBuilder {
 	if mod.EntrypointDeps != nil {
 		return mod.EntrypointDeps

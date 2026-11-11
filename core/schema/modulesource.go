@@ -3825,7 +3825,8 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 	if clientMetadata.EagerRuntime {
 		if !mod.Runtime.Valid {
 			runtimeDeps := mod.SDKDeps()
-			if mod.IncludeSelfInDeps {
+			// An entrypoint's own schema never holds the module.
+			if mod.IncludeSelfInDeps && mod.EntrypointDeps == nil {
 				// This eager runtime path happens before the final asModule result exists,
 				// so we localize the self-call special case to just this runtime load by
 				// using a temporary attached synthetic self module. The final returned
@@ -4924,7 +4925,7 @@ func BuildLegacyAsModuleArgs(
 // schema they feed: the module's own (moduleDeps), or, when src lists them
 // as its entrypoint's own (ModuleSource.EntrypointOnlyDependencies), the
 // entrypoint's (entrypointDeps), leaving the module's own schema the core's
-// alone. entrypointDeps is nil when the entrypoint has none of its own.
+// alone.
 func (s *moduleSourceSchema) loadDependencyModules(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -5021,7 +5022,7 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 		mods[i] = core.NewUserMod(depMod)
 	}
 	deps := base.Append(mods...)
-	if src.Self().EntrypointOnlyDependencies && len(mods) > 0 {
+	if src.Self().EntrypointOnlyDependencies {
 		return base, deps, nil
 	}
 	return deps, nil, nil

@@ -1798,16 +1798,19 @@ func (srv *Server) initializeClientRuntime(
 
 		client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 		servedDeps := client.mod.Self().Deps
-		if client.clientMetadata.SDKEntrypoint {
+		servesSelf := len(client.mod.Self().ObjectDefs) > 0
+		if client.clientMetadata.SDKEntrypoint && client.mod.Self().EntrypointDeps != nil {
 			// The module's entrypoint is the one client its own dependencies
-			// feed (core.Module.EntrypointDeps).
-			servedDeps = client.mod.Self().SDKDeps()
+			// feed, and it is served exactly the schema it runs with
+			// (core.Module.EntrypointDeps), which never holds the module.
+			servedDeps = client.mod.Self().EntrypointDeps
+			servesSelf = false
 		}
 		servedMods := servedDeps.WithRoot(client.dagqlRoot)
 		if client.clientMetadata.ClientVersionDeclared {
 			servedMods = servedMods.WithCoreMod(coreMod)
 		}
-		if len(client.mod.Self().ObjectDefs) > 0 {
+		if servesSelf {
 			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
 		client.servedMods = servedMods.ClientOwned()

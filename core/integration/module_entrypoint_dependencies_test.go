@@ -157,3 +157,69 @@ source = "./entrypoint"
 	require.Contains(t, types, "Container", "the module's schema holds the core")
 	require.NotContains(t, types, "Dep", "the module's schema doesn't hold its entrypoint's dependency")
 }
+
+// A module may share its name with one of its entrypoint's dependencies, as
+// a Go module named go does with dagger/go, which its generated entrypoint
+// builds it with. The entrypoint's calls still reach the dependency, not the
+// module's own constructor of the same name.
+func (ModuleSuite) TestDangModuleEntrypointDependencySharesModuleName(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	out, err := goGitBase(t, c).
+		WithNewFile("dagger.toml", `[modules.dep]
+source = ".dagger/modules/dep"
+`).
+		WithNewFile(".dagger/modules/greeter/dagger-module.toml", `name = "dep"
+
+[runtime]
+source = "dang"
+`).
+		WithNewFile(".dagger/modules/greeter/main.dang", `type Dep {
+  pub greeting: String! {
+    "hello from dep"
+  }
+}
+`).
+		WithNewFile(".dagger/modules/dep/dagger-module.toml", `name = "dep"
+
+[[dependencies]]
+name = "dep"
+source = "../greeter"
+
+[entrypoint]
+kind = "dang"
+source = "./entrypoint"
+`).
+		// The module's own constructor takes an argument the entrypoint's
+		// call of the dependency doesn't pass.
+		WithNewFile(".dagger/modules/dep/entrypoint/main.dang", `type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Dep")
+        .withConstructor(function("", typeDef.withObject("Dep")).withArg("name", typeDef.withKind(TypeDefKind.STRING_KIND)))
+        .withFunction(function("Greet", typeDef.withKind(TypeDefKind.STRING_KIND))),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else if (fnName == "Greet") {
+      (JSON.encode(dep.greeting) :: JSON!)
+    } else {
+      raise "unknown function: " + fnName
+    }
+  }
+}
+`).
+		With(daggerCallAt("dep", "--name", "x", "greet")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from dep", strings.TrimSpace(out))
+}
