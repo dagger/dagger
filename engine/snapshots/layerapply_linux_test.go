@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -506,6 +507,35 @@ func TestLayerApplierApply(t *testing.T) {
 		_, _, err := applyBlob(t, tarOf(t, append([]tarEntry{tarHardlink("link", "missing")}, manyFiles()...)...))
 		require.Error(t, err)
 	})
+}
+
+// Applying a small layer allocates far less than a read-ahead chunk: the
+// chunks are reused across layers, as an engine applies thousands of small
+// uncompressed ones, the parts its image ships.
+func TestLayerApplyReusesReadAheadChunks(t *testing.T) {
+	ctx := context.Background()
+	layer := tarOf(t, tarDir("pkg", 0o755), tarFile("pkg/archive.a", strings.Repeat("x", 64<<10), 0o644))
+	store, err := local.NewStore(t.TempDir())
+	require.NoError(t, err)
+	desc := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayer, Digest: digest.FromBytes(layer), Size: int64(len(layer))}
+	require.NoError(t, content.WriteBlob(ctx, store, desc.Digest.String(), bytes.NewReader(layer), desc))
+	apply := func() {
+		root := t.TempDir()
+		applied, err := NewLayerApplier(store).Apply(ctx, desc, []mount.Mount{{Type: "bind", Source: root, Options: []string{"rbind", "rw"}}})
+		require.NoError(t, err)
+		require.Equal(t, desc.Digest, applied.Digest)
+	}
+	apply()
+
+	const applies = 30
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for range applies {
+		apply()
+	}
+	runtime.ReadMemStats(&after)
+	perApply := (after.TotalAlloc - before.TotalAlloc) / applies
+	require.Less(t, perApply, uint64(layerReadAheadChunk/4), "each apply allocated %d bytes", perApply)
 }
 
 func TestLayerApplyTarget(t *testing.T) {
