@@ -2769,7 +2769,13 @@ func (dir *Directory) withDirectory(
 			}
 		} else {
 			if err := MountRef(ctx, srcRef, func(srcRoot string, srcMnt *mount.Mount) error {
-				return copier.Copy(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt}, srcDir, destDir, opts)
+				// The source is a directory of its own: its ignore rules
+				// are read from it down (see layercopy.BoundedRootPath).
+				srcBoundary, err := viewBase(srcRoot, srcDir)
+				if err != nil {
+					return err
+				}
+				return copier.Copy(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt, Boundary: srcBoundary}, srcDir, destDir, opts)
 			}, mountRefAsReadOnly); err != nil {
 				return err
 			}
