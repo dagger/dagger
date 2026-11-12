@@ -54,6 +54,8 @@ type Store struct {
 	AfterCreate    func(leases.Lease)
 	root           string
 	rawContent     *blobstore.Store
+	// engineApplier makes the manager unpack with the engine's own applier.
+	engineApplier bool
 
 	// SharedMountLinger and MaxIdleSharedMounts, when set before the manager
 	// is (re)opened, bound its idle shared read-only mounts.
@@ -115,6 +117,9 @@ func (s *Store) openManager(t testing.TB) {
 	// diff's blob writes as it sees the manager's own.
 	observed := observedContent{Store: s.Content, owner: s}
 	applierFrom := func(provider content.Provider) diff.Applier {
+		if s.engineApplier {
+			return &observedApplier{Applier: bkcache.NewLayerApplier(provider), store: s}
+		}
 		if s.snapshotter == "overlayfs" {
 			return &observedApplier{Applier: apply.NewFileSystemApplier(provider), store: s}
 		}
@@ -152,6 +157,14 @@ func (s *Store) Reload(t testing.TB) {
 	require.NoError(t, s.Manager.Close())
 	s.openManager(t)
 	require.NoError(t, s.Manager.LoadPersistentMetadata(rows))
+}
+
+// UseEngineApplier reopens the manager unpacking layers with the engine's
+// own applier, keeping the persistent metadata.
+func (s *Store) UseEngineApplier(t testing.TB) {
+	t.Helper()
+	s.engineApplier = true
+	s.Reload(t)
 }
 
 // StartImage does what an engine does with its image's blobs at start: it

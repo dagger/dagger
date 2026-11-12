@@ -152,7 +152,8 @@ func (a *layerApplier) Apply(ctx context.Context, desc ocispecs.Descriptor, moun
 	}
 	defer layer.Close()
 
-	rc := startLayerReadAhead(layer)
+	trusted := trustedLayer(ctx)
+	rc := startLayerReadAhead(layer, !trusted)
 	defer rc.stop()
 	if err := applyLayerTar(ctx, target, rc); err != nil {
 		return ocispecs.Descriptor{}, err
@@ -173,11 +174,11 @@ func (a *layerApplier) Apply(ctx context.Context, desc ocispecs.Descriptor, moun
 			}
 		}
 	}
-	return ocispecs.Descriptor{
-		MediaType: ocispecs.MediaTypeImageLayer,
-		Size:      rc.n,
-		Digest:    rc.digester.Digest(),
-	}, nil
+	applied := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayer, Size: rc.n}
+	if !trusted {
+		applied.Digest = rc.digester.Digest()
+	}
+	return applied, nil
 }
 
 // layerReadAheadChunk and layerReadAheadChunks size the buffer between a
@@ -221,6 +222,9 @@ type layerReadAhead struct {
 	err  error
 	once sync.Once
 
+	// hash says whether to hash the stream: an apply of a layer the engine
+	// trusts (trustedLayer) doesn't.
+	hash bool
 	// Set by the reading goroutine; read once it has exited.
 	digester digest.Digester
 	n        int64
@@ -232,8 +236,9 @@ type layerReadAheadResult struct {
 	err error
 }
 
-func startLayerReadAhead(src io.Reader) *layerReadAhead {
+func startLayerReadAhead(src io.Reader, hash bool) *layerReadAhead {
 	ra := &layerReadAhead{
+		hash:     hash,
 		chunks:   make(chan layerReadAheadResult, layerReadAheadChunks),
 		free:     make(chan []byte, layerReadAheadChunks+1),
 		done:     make(chan struct{}),
@@ -265,7 +270,9 @@ func (ra *layerReadAhead) fill(src io.Reader) {
 			m, err = src.Read(buf[n:])
 			n += m
 		}
-		hash.Write(buf[:n])
+		if ra.hash {
+			hash.Write(buf[:n])
+		}
 		ra.n += int64(n)
 		select {
 		case ra.chunks <- layerReadAheadResult{buf: buf, n: n, err: err}:
