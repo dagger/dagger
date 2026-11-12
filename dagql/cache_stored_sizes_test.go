@@ -655,3 +655,73 @@ func TestStoredLowerHalfIsTheFirstHalfBelowTheRoot(t *testing.T) {
 	require.Equal(t, []uint64{cloudOf(chain[4])}, lower)
 	require.Equal(t, 7, carried, "the root and the six above the held rows")
 }
+
+// A root's lower half counts the records a bundle of the root carries, its
+// kept calls' inputs included, as the split of a merge refused as over the
+// message limit counts them from the bundle: a merge split before it was
+// built and refused after is then judged against the same count. Here inner
+// has a call kept on the receiver A, which its bundle carries.
+func TestStoredLowerHalfCountsWhatABundleOfTheRootCarries(t *testing.T) {
+	t.Parallel()
+	test := newReceiverCallTest(t)
+	built, err := test.cloud.StoredBundle(test.ctx, []uint64{test.number}, nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Calls, 1, "the bundle carries inner's call, and A for it")
+	_, carried, err := test.cloud.StoredLowerHalf(test.ctx, test.number, nil)
+	require.NoError(t, err)
+	require.Equal(t, len(built.Bundle.Values), carried)
+}
+
+// A blob that two parts hold in different packs has two download addresses,
+// each its pack's (or its own), and the message carries each part's that
+// isn't the bundle's own as an address of its chain (ShareChainLayers): the
+// price allows for every address the message carries.
+func TestStoredSizesAllowForEachAddressOfABlobInDifferentPacks(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	shared := storedLayersTestLayer("packs-shared", "in two packs")
+	for i, number := range []uint64{r, p} {
+		packs := map[digest.Digest]digest.Digest{}
+		if i == 0 {
+			packs[shared.Descriptor.Digest] = testDigest("packs-pack")
+		}
+		stored, err := cloud.SetStoredPart(ctx, number, storedLayersTestPart("snapshot", []snapshots.ExportLayer{shared}, packs), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	sizes, err := cloud.StoredSizes(ctx, []uint64{r}, nil)
+	require.NoError(t, err)
+	built, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Outputs, 2)
+	unsigned, err := ShareChainLayers(built.Bundle)
+	require.NoError(t, err)
+	outputs, err := json.Marshal(unsigned.Outputs)
+	require.NoError(t, err)
+	layers, err := json.Marshal(unsigned.Layers)
+	require.NoError(t, err)
+	// Signed as the service signs them: a packed layer's address is its
+	// pack's, an unpacked one's its own.
+	signed := built.Bundle
+	signed.Outputs = slices.Clone(signed.Outputs)
+	for i := range signed.Outputs {
+		chain := *signed.Outputs[i].Chain
+		chain.Addresses = map[digest.Digest]BlobAddress{}
+		for _, layer := range chain.Layers {
+			object := layer.Descriptor.Digest
+			if pack, ok := chain.Packs[object]; ok {
+				object = pack
+			}
+			chain.Addresses[layer.Descriptor.Digest] = BlobAddress{URL: "https://store.test/" + object.String()}
+		}
+		signed.Outputs[i].Chain = &chain
+	}
+	wire, err := ShareChainLayers(signed)
+	require.NoError(t, err)
+	addresses := len(wire.Addresses)
+	for _, out := range wire.Outputs {
+		addresses += len(out.Chain.Addresses)
+	}
+	require.Equal(t, 2, addresses, "the bundle's and one chain's own")
+	require.GreaterOrEqual(t, sizes[0].OutputBytes-int64(len(outputs)+len(layers)), int64(addresses)*storedBlobAddressAllowance)
+}
