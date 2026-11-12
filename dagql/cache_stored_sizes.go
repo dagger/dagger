@@ -37,8 +37,9 @@ type StoredSize struct {
 // recipe key to measure by: an xxh3 digest, as recipes are.
 var heldRowSizeDigest = digest.Digest("xxh3:0000000000000000")
 
-// StoredSizes measures what StoredBundle(roots, held) carries without
-// building it: for each root, in order, what its closure adds beyond the
+// StoredSizes measures what StoredBundle(roots, nowUnix, held) carries
+// without building it, judging held's holdings at nowUnix, the reader's
+// clock: for each root, in order, what its closure adds beyond the
 // closures of the roots before it, an entry held holds counted as its held
 // row. A root's closure includes the entries StoredBundle adds for the inputs
 // of its entries' kept calls, priced so that the sizes of the first roots
@@ -60,8 +61,8 @@ var heldRowSizeDigest = digest.Digest("xxh3:0000000000000000")
 // keeps each size under the lock again only for an entry whose value is
 // still the one read. A hold is the walk, or that check, alone. Only a
 // blob-backed cache answers.
-func (c *Cache) StoredSizes(ctx context.Context, roots []uint64, held *HeldBy) ([]StoredSize, error) {
-	return c.storedSizes(ctx, roots, held, true)
+func (c *Cache) StoredSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) ([]StoredSize, error) {
+	return c.storedSizes(ctx, roots, nowUnix, held, true)
 }
 
 // MeasuredStoredSizes answers as StoredSizes does without measuring anything:
@@ -69,8 +70,8 @@ func (c *Cache) StoredSizes(ctx context.Context, roots []uint64, held *HeldBy) (
 // yet measured is answered Unmeasured, with no records or bytes, and the
 // later roots are measured as if it weren't there. It normalizes and encodes
 // nothing: a held row's size is computed (heldRowSize).
-func (c *Cache) MeasuredStoredSizes(ctx context.Context, roots []uint64, held *HeldBy) ([]StoredSize, error) {
-	return c.storedSizes(ctx, roots, held, false)
+func (c *Cache) MeasuredStoredSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) ([]StoredSize, error) {
+	return c.storedSizes(ctx, roots, nowUnix, held, false)
 }
 
 // StoredSizeEncodes counts the values StoredSizes has measured: each first
@@ -80,7 +81,7 @@ func (c *Cache) StoredSizeEncodes() uint64 {
 	return c.storedSizeEncodes.Load()
 }
 
-func (c *Cache) storedSizes(ctx context.Context, roots []uint64, held *HeldBy, measure bool) ([]StoredSize, error) {
+func (c *Cache) storedSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy, measure bool) ([]StoredSize, error) {
 	if !c.blobBacked {
 		return nil, fmt.Errorf("stored sizes: the cache has no blob store")
 	}
@@ -91,7 +92,7 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, held *HeldBy, m
 		if err := context.Cause(ctx); err != nil {
 			return nil, err
 		}
-		size, closure, own, misses := c.walkStoredRoot(sharedResultID(number), held, seen, ordinary, outputs)
+		size, closure, own, misses := c.walkStoredRoot(sharedResultID(number), nowUnix, held, seen, ordinary, outputs)
 		if len(misses) > 0 && !measure {
 			sizes[i] = StoredSize{Unmeasured: true}
 			continue
@@ -158,20 +159,20 @@ func (c *Cache) storedSizesRLock() func() {
 // (ordinary), or the recipient (held), have its inputs, never for an input
 // another call adds. Otherwise its first stored alternative's inputs are
 // priced, which is the call a bundle that can't place it chooses too.
-func (c *Cache) walkStoredRoot(root sharedResultID, held *HeldBy, seen, ordinary map[sharedResultID]bool, outputs *storedOutputsSeen) (StoredSize, []sharedResultID, int, []storedSizeMiss) {
+func (c *Cache) walkStoredRoot(root sharedResultID, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, outputs *storedOutputsSeen) (StoredSize, []sharedResultID, int, []storedSizeMiss) {
 	defer c.storedSizesRLock()()
 	res := c.resultsByID[root]
 	if res == nil || res.noValueLocked() {
 		return StoredSize{}, nil, 0, nil
 	}
-	walk, own := c.storedRootWalkLocked(res, held, seen, ordinary, outputs)
+	walk, own := c.storedRootWalkLocked(res, nowUnix, held, seen, ordinary, outputs)
 	return walk.size, walk.closure, own, walk.misses
 }
 
 // storedRootWalkLocked is walkStoredRoot's walk of res, and how many of the
 // entries it reached, first, are res's ordinary closure. Requires egraphMu.
-func (c *Cache) storedRootWalkLocked(res *sharedResult, held *HeldBy, seen, ordinary map[sharedResultID]bool, outputs *storedOutputsSeen) (*storedSizeWalk, int) {
-	walk := &storedSizeWalk{c: c, held: held, seen: seen, visited: map[sharedResultID]bool{}, outputs: outputs}
+func (c *Cache) storedRootWalkLocked(res *sharedResult, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, outputs *storedOutputsSeen) (*storedSizeWalk, int) {
+	walk := &storedSizeWalk{c: c, held: held, now: nowUnix, seen: seen, visited: map[sharedResultID]bool{}, outputs: outputs}
 	walk.visit(res)
 	own := len(walk.closure)
 	mine := make(map[sharedResultID]bool, own)
@@ -185,7 +186,7 @@ func (c *Cache) storedRootWalkLocked(res *sharedResult, held *HeldBy, seen, ordi
 		}
 		for _, group := range c.keptCallTermsLocked(entry) {
 			_, add := c.placeableCallLocked(group, func(input *sharedResult) bool {
-				return ordinary[input.id] || mine[input.id] || held.heldLocked(input)
+				return ordinary[input.id] || mine[input.id] || held.heldLocked(input, nowUnix)
 			})
 			for _, input := range add {
 				walk.visit(input)
@@ -201,6 +202,7 @@ func (c *Cache) storedRootWalkLocked(res *sharedResult, held *HeldBy, seen, ordi
 type storedSizeWalk struct {
 	c       *Cache
 	held    *HeldBy
+	now     int64
 	seen    map[sharedResultID]bool
 	visited map[sharedResultID]bool
 	order   []*sharedResult
@@ -260,7 +262,7 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 	}
 	w.visited[res.id] = true
 	w.closure = append(w.closure, res.id)
-	if w.held.heldLocked(res) {
+	if w.held.heldLocked(res, w.now) {
 		w.size.Records++
 		w.size.Bytes += heldRowSizeLocked(res)
 		w.order = append(w.order, res)
@@ -456,7 +458,7 @@ const (
 // rows. It also returns how many records, but held rows, a bundle of root
 // carries, as that split counts them. A root the cache has no value for has
 // none.
-func (c *Cache) StoredLowerHalf(ctx context.Context, root uint64, held *HeldBy) ([]uint64, int, error) {
+func (c *Cache) StoredLowerHalf(ctx context.Context, root uint64, nowUnix int64, held *HeldBy) ([]uint64, int, error) {
 	if !c.blobBacked {
 		return nil, 0, fmt.Errorf("stored lower half: the cache has no blob store")
 	}
@@ -468,13 +470,13 @@ func (c *Cache) StoredLowerHalf(ctx context.Context, root uint64, held *HeldBy) 
 	if res == nil || res.noValueLocked() {
 		return nil, 0, nil
 	}
-	walk, _ := c.storedRootWalkLocked(res, held, map[sharedResultID]bool{}, map[sharedResultID]bool{},
+	walk, _ := c.storedRootWalkLocked(res, nowUnix, held, map[sharedResultID]bool{}, map[sharedResultID]bool{},
 		&storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}})
 	above := map[sharedResultID]bool{res.id: true}
 	var below []*sharedResult
 	carried := 0
 	for _, entry := range walk.order {
-		if held.heldLocked(entry) {
+		if held.heldLocked(entry, nowUnix) {
 			continue
 		}
 		carried++

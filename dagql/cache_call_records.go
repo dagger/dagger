@@ -114,7 +114,7 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 		}
 		for _, group := range c.keptCallTermsLocked(res) {
 			chosen, add := c.placeableCallLocked(group, func(entry *sharedResult) bool {
-				return build.ordinary[entry.id] || build.heldBy.heldLocked(entry)
+				return build.ordinary[entry.id] || build.heldBy.heldLocked(entry, build.now)
 			})
 			if chosen == nil {
 				build.unsendableCalls++

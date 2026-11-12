@@ -93,7 +93,7 @@ func exportedBytes(t *testing.T, bundle *dagql.ValueBundle) int {
 // Cloud holds of root's closure, whatever its numbers for it.
 func cloudRecords(t *testing.T, cloud *dagql.Cache, root uint64) []string {
 	t.Helper()
-	got, err := cloud.StoredBundle(t.Context(), []uint64{root}, nil)
+	got, err := cloud.StoredBundle(t.Context(), []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Empty(t, got.Gone)
 	require.Empty(t, got.NoValue)
@@ -168,7 +168,7 @@ func TestRemoteCacheAdapterReexportLeavesOutTheCloudsOffers(t *testing.T) {
 	held := cloudRecords(t, cloud, cloudRoot)
 
 	// A fresh engine imports the rows, each with its part's offer.
-	built, err := cloud.StoredBundle(t.Context(), []uint64{cloudRoot}, nil)
+	built, err := cloud.StoredBundle(t.Context(), []uint64{cloudRoot}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, built.Bundle.Outputs, reexportTestRows)
 	fresh := newAdapterTestEngine(t)
