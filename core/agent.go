@@ -14,7 +14,6 @@ import (
 
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/google/uuid"
-	"github.com/opencontainers/go-digest"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/codes"
@@ -2040,12 +2039,12 @@ func (rt *AgentRuntime) restoredBindingContext(ctx context.Context) context.Cont
 		slog.Warn("agent restore: cannot read restored tool bindings", "agent", rt.name, "error", err)
 		return ctx
 	}
-	recipes := make(map[digest.Digest]struct{}, len(bindings))
+	recipes := make(map[*call.ID]struct{}, len(bindings))
 	for _, binding := range bindings {
 		// Handle-form IDs name results held in this session, which loading
 		// does not re-evaluate; only recipes are rebuilt.
 		if binding.ID != nil && !binding.ID.IsHandle() {
-			recipes[binding.ID.Digest()] = struct{}{}
+			recipes[binding.ID] = struct{}{}
 		}
 	}
 	return withRestoredBindingRouting(ctx, restorer, recipes)
