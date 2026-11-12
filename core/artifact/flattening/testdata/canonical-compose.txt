@@ -1,0 +1,14 @@
+ID                                 NAME
+/docker/compose/projects           docker-compose-project
+/docker/compose/projects/services  docker-compose-service
+/docker/compose/projects/volumes   docker-compose-volume
+module                             module
+name                               name
+
+TYPE     docker-compose-project  docker-compose-service  docker-compose-volume  module  name
+Check    -                       -                       -                      docker  compose.check
+Service  e2e                     web                     -                      docker  .
+Service  e2e                     worker                  -                      docker  .
+Check    e2e                     web                     -                      docker  healthCheck.run
+Check    e2e                     worker                  -                      docker  healthCheck.run
+Service  e2e                     -                       -                      docker  services.all.up

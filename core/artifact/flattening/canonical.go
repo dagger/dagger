@@ -21,7 +21,7 @@ func CanonicalCoordinates(module string, localPath []string, collections []Coord
 		coordinates = append(coordinates, Coordinate{Dimension: ModuleDimension, Key: module})
 	}
 	for _, collection := range collections {
-		if collection.Dimension != NameDimension && !IsStaticDimension(collection.Dimension) {
+		if !IsStaticDimension(collection.Dimension) {
 			coordinates = append(coordinates, collection)
 		}
 	}

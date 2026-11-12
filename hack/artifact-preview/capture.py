@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert saved workspace metadata to input for artifact-preview."""
+"""Convert saved workspace metadata to CLI replay or native flattening input."""
 import argparse
 import json
 from pathlib import Path
@@ -100,11 +100,36 @@ class LocalPaths:
             raise ValueError(f'Collection route was not resolved: {dimensions}; found {active}')
         return local
 
+def format_entries(entries, output_format):
+    """Convert resolved CLI entries without changing their schema or keys."""
+    if output_format == 'cli':
+        return entries
+    if output_format != 'flattening':
+        raise ValueError(f'Unknown output format: {output_format}')
+    return [
+        {
+            'module': entry['Module'],
+            'type': entry['Type'],
+            'localPath': list(entry['LocalPath']),
+            'collections': [
+                {'fields': list(collection['Fields']),
+                 'type': collection['Type'],
+                 'itemType': collection['ItemType']}
+                for collection in entry['Collections']
+            ],
+            'items': [list(item['Keys']) for item in entry['Items']],
+        }
+        for entry in entries
+    ]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--schema', type=Path, required=True)
     parser.add_argument('--listing', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--format', choices=('cli', 'flattening'), default='cli',
+                        help='Output format. The default is CLI replay.')
     parser.add_argument('--sdk-module', action='append', default=[],
                         help='Installed SDK provider module with WorkspaceSDK.generate. Repeat as needed.')
     parser.add_argument('--types', nargs='+', help='Keep items of these types. Retain all schema paths.')
@@ -177,7 +202,7 @@ def main():
         if args.types is None or typ in args.types:
             entry['Items'].append({'Keys': [coordinates[d] for d in dimensions],
                                    'Description': description})
-    args.output.write_text(json.dumps(entries, separators=(',', ':')) + '\n')
+    args.output.write_text(json.dumps(format_entries(entries, args.format), separators=(',', ':')) + '\n')
     print(f'{len(entries)} schema paths; {sum(len(e["Items"]) for e in entries)} items')
 
 

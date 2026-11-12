@@ -1,221 +1,113 @@
 # Artifact flattening
 
-This package contains canonical and legacy flattening rules. It maps artifact schema
-paths and discovered collection keys to dimensions and coordinates. It also
-assigns selector names and CLI flag names.
+Run the canonical utility from the repository root:
 
-It does not load a workspace or evaluate an artifact. The engine and CLI supply
-schema metadata. The package uses the pure `engine/naming` library. It has no
-engine runtime, GraphQL, or CLI framework dependency.
+```sh
+go run ./core/artifact/flattening/cmd/flatten < core/artifact/flattening/testdata/canonical-compose.json
+go test ./core/artifact/flattening ./core/artifact/flattening/cmd/flatten
+```
 
-## Canonical coordinates
+These commands use native Go. They do not start an engine.
 
-`CanonicalCoordinates` maps a module name, a local field path, and discovered
-collection coordinates to one artifact's coordinates:
+The package maps schema fields and collection keys to dimensions and coordinates.
+A dimension is one column. A coordinate is the value in that column.
+`NewSchema` compiles the complete field list. `Schema.Coordinates` returns each
+row. The utility prints dimension identifiers and names, then each artifact type
+and its full coordinates.
+
+## Canonical input
+
+The input is one JSON array. Each entry embeds a `Field` and adds `items`:
+
+```json
+[
+  {
+    "module": "docs",
+    "type": "Check",
+    "localPath": ["references", "stale"],
+    "items": [[]]
+  }
+]
+```
+
+`module` is the configured module name. Omit it for a field with no module.
+`type` is required. `localPath` contains the literal schema field names relative
+to the nearest enclosing collection item. With no enclosing item, the local root
+is the module's exposed root. An empty local path names the root itself with `.`.
+Do not include a module prefix or synthetic `get` operations. The utility does
+not derive this path from a legacy `Artifact.Path`.
+
+`collections` lists the collection boundaries from parent to child.
+Each `Collection.fields` lists the fields since the previous collection item,
+or since the module root for the first boundary. For a Compose service:
+
+```json
+{
+  "module": "docker",
+  "type": "Check",
+  "localPath": ["healthCheck", "run"],
+  "collections": [
+    {"fields": ["compose", "projects"], "itemType": "DockerComposeProject"},
+    {"fields": ["services"], "itemType": "DockerComposeService"}
+  ],
+  "items": [["e2e", "web"], ["e2e", "worker"]]
+}
+```
+
+Each item supplies one key per collection boundary. `items: [[]]` supplies one
+row with no collection keys. An omitted or empty `items` list supplies no rows.
+Such a field still contributes dimensions. Use it for an empty collection.
 
 | Dimension | Coordinate |
 | --- | --- |
 | `module` | Configured module name, when present |
-| `/module/field/...` | Discovered collection item key |
-| `name` | Full local field path, separated by `.`, or `.` for the local root |
+| `/module/field/...` | Collection item key |
+| `name` | Full local path joined with `.`, or `.` for the local root |
 
-The local root is the nearest enclosing collection item. With no enclosing
-collection item, it is the module's exposed root. Callers must supply the path
-relative to that root. The path uses actual schema field names, including
-camelCase. It has no module prefix or synthetic `get` operations.
+The service item itself has `name=.`. Its check has `name=healthCheck.run`.
+A function on the services collection has only the project item boundary.
+For example, `name=services.all.up` has a project key and no service key.
+Ordinary object fields remain in the name. Thus `python310.unit` and
+`python310.slow` remain distinct. Artifact types do not add dimensions.
 
-For a service in a project, these inputs:
+A dash marks an absent coordinate. Empty keys, literal dashes, and control
+characters are quoted. Unknown JSON fields, trailing JSON, malformed rows, and
+duplicate coordinates for the same type cause an error before any output.
+Different types can have the same coordinates.
 
-```go
-CanonicalCoordinates("docker", []string{"healthCheck", "run"}, []Coordinate{
-    {Dimension: "/docker/compose/projects", Key: "e2e"},
-    {Dimension: "/docker/compose/projects/services", Key: "web"},
-})
-```
-
-give `module=docker`, both collection coordinates, and
-`name=healthCheck.run`. The service item itself has `name=.`. A function on the
-services collection uses the enclosing project item as its root. For example,
-its name can be `services.all.up`, with only the project collection coordinate.
-
-Every ordinary object field remains in the name. Thus `unit.check` and
-`slow.check` are distinct even when both return a Check. Artifact types do not
-add dimensions. Filtering artifacts cannot change their names. The function
-does not require a complete schema or choose a shorter suffix.
-
-`CanonicalDimensions` converts legacy dimension metadata to module, collection,
-and name metadata. Both helpers remove legacy type dimensions. Collection
-identifiers and aliases keep their existing rules.
-
-`ExampleCanonicalCoordinates` and `TestCanonicalLocalRoots` show complete
-inputs and expected output. Run the pure package tests with:
+To select an exact name while keeping the complete dimension table:
 
 ```sh
-go test ./core/artifact/flattening
+go run ./core/artifact/flattening/cmd/flatten -only healthCheck.run \
+  < core/artifact/flattening/testdata/canonical-compose.json
 ```
 
-## Legacy algorithm
+Selection occurs after all rows are computed and checked. It does not change
+dimension names or columns. Canonical output contains full names and coordinates.
+It has no flag allocation, links, or display pruning.
 
-`New`, `Plan.Flatten`, `Coordinates`, and `ArtifactDimensions` retain the legacy
-type-path algorithm for existing schema and selector compatibility. The
-following sections describe that algorithm.
+`testdata/canonical-compose.json` covers a static field, nested service items,
+a function on a collection, and an empty collection.
+`testdata/canonical-dagger.json` covers real `dagger/dagger` fields: docs
+`check` and `references.stale`, Python `python310.unit` and `python310.slow`,
+a Go package generator and its `generate.stale` check, and Go test items.
+The source is commit `7976c6f655aecf3d8de37326bfc09e01e666c98a`
+(November 6, 2026). The matching `.txt` files contain exact expected output.
 
-### Try it
+`CanonicalCoordinates` is the pure coordinate helper. It preserves supplied
+collection coordinates and assigns module and name coordinates. `NewSchema`
+adds schema validation, collection metadata, and row validation. This package
+has no engine runtime, GraphQL, or CLI framework dependency.
 
-From the repository root:
+## Compatibility
 
-```sh
-go run ./core/artifact/flattening/cmd/flatten < core/artifact/flattening/testdata/compose.json
-```
+`legacy.go` keeps the old type-path selector rules. `New`, `Plan.Flatten`,
+`Coordinates`, and `ArtifactDimensions` serve that compatibility path.
+New callers use `NewSchema`.
 
-The input lists schema paths. Each path can list example items. An item supplies
-one key per collection boundary, in parent-to-child order. A path with no items
-still contributes dimensions and naming conflicts. It represents an empty
-collection or a path that is outside the selected rows.
+The old utility input is available with `-legacy`. Its fixtures remain unchanged.
+See [legacy artifact selectors](LEGACY.md).
 
-To display one path while retaining the complete schema for naming:
-
-```sh
-go run ./core/artifact/flattening/cmd/flatten \
-  -only docker/compose/projects/services/up \
-  < core/artifact/flattening/testdata/compose.json
-```
-
-The first output table shows dimensions and their names. The second shows full
-coordinates for individual artifacts. These coordinates retain identity. Short
-names are separate from identity values.
-
-A dash marks an absent coordinate. Empty keys and control characters are quoted.
-Every flattened row requires an artifact type. A row with a repeated dimension
-returns an error instead of losing one of its coordinate values.
-
-Run the package tests without an engine:
-
-```sh
-go test ./core/artifact/flattening
-```
-
-`ExamplePlan` in `flattening_test.go` shows a complete input and expected
-output. Other tests show object fields, nested items, a module root collection,
-main module shorthand, conflicts, and reserved CLI names.
-
-`testdata/dagger-workspace.json` contains six paths and eight real Check rows
-from `dagger/dagger` commit `7976c6f655aecf3d8de37326bfc09e01e666c98a`
-(November 6, 2026). `dagger-workspace.txt` shows their complete coordinates,
-including distinct `unit` and `slow` fields.
-
-## Input boundary
-
-`Artifact.Path` is the public field path. A main module can omit its module
-prefix. `Artifact.Module` retains the configured module name.
-
-`Artifact.Collections` lists collection boundaries along that path. Each
-`Collection.Fields` lists the ordinary object fields since the previous
-collection item, or since the module root for the first collection. Synthetic
-`get` operations are omitted.
-
-For example, the route to a Compose service has two boundaries:
-
-| Boundary | Fields since previous boundary | Example key |
-| --- | --- | --- |
-| Project item | `compose`, `projects` | `e2e` |
-| Service item | `services` | `web` |
-
-A function on the services collection has only the project boundary. It does
-not have a service item coordinate. This distinction affects both its address
-and the paths considered when shortening its type key.
-
-Construct `Plan` from the complete schema. Then call `Flatten` for each
-selected artifact. Filtering rows must not construct a smaller schema.
-
-## Current rules
-
-### Dimensions and full coordinates
-
-| Kind | Identifier | Coordinate |
-| --- | --- | --- |
-| Module | `module` | Configured module name |
-| Collection item | `/module/field/...` | Discovered item key |
-| Artifact type | `type:TypeName` | Full public field path, separated by `/` |
-
-These three identifier forms are existing behavior. This extraction preserves
-them so that they can be reviewed separately from the implementation.
-
-A collection identifier starts at the module. Object fields extend that path.
-A nested collection extends its parent collection's identifier. Field and module
-names in collection identifiers use kebab case. The module coordinate retains
-its configured spelling.
-
-Collection dimensions occur in parent-to-child order in a row. A module
-coordinate precedes them. A type coordinate follows them. The workspace's column
-list is sorted by identifier.
-
-A module root can itself be a collection. Its identifier is `/module-name`.
-`module` and `/module` are distinct dimensions. An artifact without a workspace
-module has no module dimension.
-
-### Dimension names
-
-A collection's initial name comes from its item type. Candidate names add the
-module and enough parent fields to resolve conflicts.
-
-Parent collection fields can be omitted because their dimensions already supply
-context. Ordinary object fields remain available as qualifiers. If those names
-still conflict, parent collection names and the current collection field are
-added as further qualifiers.
-
-Resolution checks an exact identifier first. A qualified name has priority over
-another dimension's alias. A collection alias has priority over a type alias.
-An unknown name remains an unmatched selector. An ambiguous name returns an
-error.
-
-### Type coordinate display
-
-The full coordinate is always the field path. Without collection dimensions,
-its display also retains that full path.
-
-With collection dimensions, the display uses the shortest unique path suffix.
-Candidates come from the complete schema and must have every supplied collection
-dimension. They can have additional descendant dimensions. An empty collection
-still contributes its schema paths.
-
-If a full path is also another path's suffix, a leading `/` marks an exact path.
-A shortened key is valid only with the collection dimensions used to choose it.
-
-### CLI names
-
-CLI names are a separate allocation over the same dimension metadata. The CLI
-supplies reserved names from peer commands. Key flags have priority over
-collection presence flags. Both have priority over type flags.
-
-Allocation orders dimensions by path depth, then identifier. It tries the
-current candidate names before falling back to `dimension-...`. Presence
-fallbacks add `-all`. Number suffixes resolve remaining reserved-name conflicts.
-Names starting with `by-` are reserved for module selection.
-
-Six type selectors are always included: Check, Generator, Service, Container,
-Directory, and Expertise. Module aliases are allocated last. A module uses its
-kebab-case name if that name is free and unique. Otherwise it uses `by-NAME`.
-
-Flag allocation accepts a naming function. The CLI supplies its version-selected
-naming rules. A nil function uses the current artifact naming rules. Collection
-dimension creation also accepts a naming function. The CLI supplies its naming
-rules. Engine and offline input use current artifact naming rules. Artifact
-type names use current artifact naming rules.
-
-The CLI still owns argument parsing, URL formatting, and proofs that a displayed
-selector can be omitted. Those operations consume flattening metadata; they do
-not assign dimension identities.
-
-## Review boundary
-
-The legacy `Plan` preserves the extracted type-path algorithm. Changes to that
-heuristic are tracked in [#15125](https://github.com/dagger/dagger/issues/15125).
-The canonical helpers provide the module, collection, and name coordinates
-described above.
-
-One current limitation is recorded in `TestCollectionItemIsAnotherCollection`.
-If a collection item is itself a collection, there is no intervening field to
-extend the identifier. Both boundaries get the same dimension identifier. The
-coordinates contain two values for one column. This case needs a rule change
-before full identity coverage can be claimed for all collection shapes.
+A collection item that is itself a collection currently reuses its parent's
+dimension identifier. `NewSchema` rejects this input. A separate identity rule
+is needed before the component can accept this shape.
