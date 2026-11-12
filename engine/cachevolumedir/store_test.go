@@ -966,3 +966,56 @@ func TestFailedDeletionIsReported(t *testing.T) {
 		t.Fatal("a failed deletion wasn't reported")
 	}
 }
+
+func TestOpenReportsLeftoverDeletion(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	gone := filepath.Join(dir, "v1", "trash", "half-gone", "volume")
+	require.NoError(t, os.MkdirAll(filepath.Join(gone, "fs"), 0o755))
+	writeFile(t, filepath.Join(gone, "fs", "f"), 2*mib)
+	size := int64(2 * mib)
+	dt, err := json.Marshal(meta{Format: FormatVersion, ID: "half-gone", SizeBytes: &size})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(gone, "meta.json"), dt, 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1", "tmp", "half-made", "fs"), 0o755))
+
+	type found struct {
+		count      int
+		recorded   int64
+		unmeasured int
+	}
+	var leftovers []found
+	deleted := make(chan int, 1)
+	s, err := Open(dir, Options{
+		EngineVersion: "test",
+		OnLeftovers: func(count int, recorded int64, unmeasured int) {
+			leftovers = append(leftovers, found{count, recorded, unmeasured})
+		},
+		OnLeftoversDeleted: func(count int, took time.Duration) {
+			assert.Positive(t, took)
+			deleted <- count
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	require.Equal(t, []found{{2, 2 * mib, 1}}, leftovers, "Open reports what it found before it returns")
+	select {
+	case count := <-deleted:
+		require.Equal(t, 2, count)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the end of the leftovers' deletion wasn't reported")
+	}
+
+	// A directory with nothing left over reports nothing.
+	require.NoError(t, s.Close())
+	reported := false
+	again, err := Open(dir, Options{
+		EngineVersion:      "test",
+		OnLeftovers:        func(int, int64, int) { reported = true },
+		OnLeftoversDeleted: func(int, time.Duration) { reported = true },
+	})
+	require.NoError(t, err)
+	require.NoError(t, again.WaitRemovals(t.Context()))
+	require.NoError(t, again.Close())
+	require.False(t, reported)
+}

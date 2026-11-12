@@ -110,6 +110,13 @@ type Options struct {
 	// OnDeletionError, when set, is told of each background deletion that
 	// failed, as it fails: nothing waits for the deletions to report them.
 	OnDeletionError func(error)
+	// OnLeftovers, when set, is told what a previous owner left when Open
+	// finds it: how many trees, the bytes their volumes recorded, and how
+	// many recorded no size and are measured as they're deleted.
+	OnLeftovers func(count int, recordedBytes int64, unmeasured int)
+	// OnLeftoversDeleted, when set, is told when the background deletion of
+	// a previous owner's leftovers has ended, and how long it took.
+	OnLeftoversDeleted func(count int, took time.Duration)
 }
 
 // Store is an owned cache volume directory.
