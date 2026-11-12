@@ -58,14 +58,43 @@ func TestPlaceOffer(t *testing.T) {
 	part := testLiveOffer()
 	part.Value.Services = []TransferredServiceBinding{{ServiceResultID: service, Hostname: "db"}}
 	part.Owner.DependencyIDs = []uint64{service, 999}
-	placed, ok, err := cloud.PlaceOffer(HolderKey{"engine-e", 1}, part)
+	placed, ok, err := cloud.PlaceOffer(HolderKey{"engine-e", 1}, part, time.Now().Unix())
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, uint64(20), placed.Value.Services[0].ServiceResultID, "the lowest unexpired holding: 10 has expired")
 	require.Equal(t, []uint64{20}, placed.Owner.DependencyIDs, "exactly the mapped service")
 
 	part.Value.Services = append(part.Value.Services, TransferredServiceBinding{ServiceResultID: unheld, Hostname: "other"})
-	_, ok, err = cloud.PlaceOffer(HolderKey{"engine-e", 1}, part)
+	_, ok, err = cloud.PlaceOffer(HolderKey{"engine-e", 1}, part, time.Now().Unix())
 	require.NoError(t, err)
 	require.False(t, ok, "a service engine-e holds nothing of: not placed")
+}
+
+// PlaceOffer judges the receiver's holdings at the reader's clock, not its
+// own: a holding that expires an hour from the wall clock still serves the
+// service before that moment and no longer from it.
+func TestPlaceOfferAtTheReadersClock(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	withContent := func(field string, expires int64) RemoteHolding {
+		h := holdingOf(field)
+		h.ContentDigest = testDigest("service-content")
+		h.ExpiresAtUnix = expires
+		return h
+	}
+	service := placementTestEntry(t, cloud, HolderKey{"engine-e", 20}, withContent("service", 0))
+	placementTestEntry(t, cloud, HolderKey{"engine-e", 10}, withContent("service-expiring", expiresAt))
+
+	part := testLiveOffer()
+	part.Value.Services = []TransferredServiceBinding{{ServiceResultID: service, Hostname: "db"}}
+	part.Owner.DependencyIDs = []uint64{service}
+	placed, ok, err := cloud.PlaceOffer(HolderKey{"engine-e", 1}, part, expiresAt-1)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, uint64(10), placed.Value.Services[0].ServiceResultID, "10 hasn't expired at the reader's moment")
+	placed, ok, err = cloud.PlaceOffer(HolderKey{"engine-e", 1}, part, expiresAt)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, uint64(20), placed.Value.Services[0].ServiceResultID, "10 has expired at the reader's moment, though not by the wall clock")
 }
