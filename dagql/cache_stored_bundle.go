@@ -77,8 +77,10 @@ func (h *HeldBy) holdsLocked(res *sharedResult, nowUnix int64) bool {
 // walks the closure of the roots, over their dependencies and the entries
 // that the owners and services of their own stored parts name, and copies
 // every record: a replacement of a stored record, which takes the lock for
-// writing, never mixes into it. Records are relocated to ordinals, with the
-// entry's number as SenderNumber and its replacement count.
+// writing, never mixes into it. Each record goes as stored, naming itself
+// and its references by the Cloud's entry numbers, with the entry's number as
+// SenderNumber and its replacement count; the rest of the bundle names rows
+// by ordinal.
 //
 // Outputs follow section 5.1 point 3:
 //   - an entry's own stored parts travel with its record, expired or not, as
@@ -174,7 +176,7 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 	for _, res := range build.order {
 		if build.held[res.id] {
 			ordinal := build.ordinals[res.id]
-			build.bundle.Values = append(build.bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: PersistedRecord{ResultID: uint64(ordinal)}, ExpiresAtUnix: res.expiresAtUnix})
+			build.bundle.Values = append(build.bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: PersistedRecord{ResultID: uint64(res.id)}, ExpiresAtUnix: res.expiresAtUnix})
 			if frames == nil {
 				frames = map[TransferOrdinal]*ResultCall{}
 			}
@@ -315,39 +317,34 @@ func storedClosureChildrenLocked(res *sharedResult) []sharedResultID {
 }
 
 // storedBundleValueLocked copies res's stored record into the build,
-// normalized for transfer and relocated to ordinals. Requires egraphMu.
+// normalized for transfer, as stored. Requires egraphMu.
 func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedResult) error {
-	normalized, err := c.storedTransferRecordLocked(res)
+	kept, err := c.storedTransferLocked(res)
 	if err != nil {
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
-	// Relocation leaves what it doesn't rewrite shared with its input, and
-	// the bundle is its caller's to change.
-	normalized.Envelope, err = clonePersistedEnvelope(normalized.Envelope)
-	if err != nil {
+	// The record goes as stored, naming itself and its references by the
+	// Cloud's entry numbers, which the receiver maps (transferSenderNumbers):
+	// nothing in it is decoded or rewritten. The bundle is its caller's to
+	// change, so it carries a plain copy.
+	rec := kept.record
+	if rec.Envelope, err = clonePersistedEnvelope(rec.Envelope); err != nil {
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
-	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, ExpiresAtUnix: res.expiresAtUnix}
-	direct := make(map[uint64]bool, len(res.deps))
+	rec.Call = rec.Call.clone()
+	// The bundle is validated by shape (validateStoredBundle), so each
+	// reference is checked against the record's dependencies here, from what
+	// normalizing the record found it names (storedTransferRecord.refs).
+	for _, ref := range kept.refs {
+		if _, ok := res.deps[sharedResultID(ref)]; !ok {
+			return fmt.Errorf("stored bundle: entry %d: reference to %d is not a direct dependency", res.id, ref)
+		}
+	}
+	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: rec, ExpiresAtUnix: res.expiresAtUnix}
 	for dep := range res.deps {
-		ordinal := uint64(build.ordinals[dep])
-		value.DependencyIDs = append(value.DependencyIDs, ordinal)
-		direct[ordinal] = true
+		value.DependencyIDs = append(value.DependencyIDs, uint64(build.ordinals[dep]))
 	}
 	slices.Sort(value.DependencyIDs)
-	// The bundle is validated by shape (validateStoredBundle), so each
-	// reference is checked against the record's dependencies here, as it is
-	// relocated.
-	checkDirect := directTransferReferences(direct)
-	value.Record, err = VisitEncodedReferences(normalized, func(ref *PersistedRef) error {
-		if err := build.relocate(ref); err != nil {
-			return err
-		}
-		return checkDirect(ref)
-	})
-	if err != nil {
-		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
-	}
 	build.bundle.Values = append(build.bundle.Values, value)
 	return nil
 }
@@ -371,6 +368,9 @@ type storedTransferRecord struct {
 	envelope *PersistedResultEnvelope
 	call     *ResultCall
 	record   PersistedRecord
+	// refs are the entries the record's child and call references name,
+	// which a bundle checks against the entry's dependencies.
+	refs []uint64
 	// size is the entry's value's encoded size in a bundle, once StoredSizes
 	// has measured it (measureStoredValue), with what else it read.
 	size atomic.Pointer[storedValueSize]
@@ -396,14 +396,24 @@ type storedValueSize struct {
 // address while it is kept. The result is shared: callers copy what they
 // change. Requires egraphMu.
 func (c *Cache) storedTransferRecordLocked(res *sharedResult) (PersistedRecord, error) {
-	normalized, err := normalizeStoredTransfer(res, res.persistedEnvelope, res.loadResultCall())
+	kept, err := c.storedTransferLocked(res)
 	if err != nil {
 		return PersistedRecord{}, err
+	}
+	return kept.record, nil
+}
+
+// storedTransferLocked is storedTransferRecordLocked's kept record whole,
+// with the references it names. Requires egraphMu.
+func (c *Cache) storedTransferLocked(res *sharedResult) (*storedTransferRecord, error) {
+	normalized, err := normalizeStoredTransfer(res, res.persistedEnvelope, res.loadResultCall())
+	if err != nil {
+		return nil, err
 	}
 	if c.testStoredTransferNormalized != nil {
 		c.testStoredTransferNormalized()
 	}
-	return keepStoredTransfer(res, normalized).record, nil
+	return keepStoredTransfer(res, normalized), nil
 }
 
 // keepStoredTransfer keeps normalized as res's transfer record and returns
@@ -435,7 +445,7 @@ func normalizeStoredTransfer(res *sharedResult, env *PersistedResultEnvelope, ca
 	if kept := res.storedTransfer.Load(); kept != nil && kept.envelope == env && kept.call == call {
 		return kept, nil
 	}
-	rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: call})
+	rec, refs, err := normalizeTransferRecordRefs(PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: call})
 	if err != nil {
 		return nil, err
 	}
@@ -454,7 +464,7 @@ func normalizeStoredTransfer(res *sharedResult, env *PersistedResultEnvelope, ca
 			return nil, err
 		}
 	}
-	return &storedTransferRecord{envelope: env, call: call, record: rec}, nil
+	return &storedTransferRecord{envelope: env, call: call, record: rec, refs: refs}, nil
 }
 
 // storedBundleOutputsLocked adds res's outputs to the build: its own stored
