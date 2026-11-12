@@ -1,6 +1,8 @@
 package core
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/dagger/dagger/core/artifact"
@@ -31,7 +33,7 @@ func TestArtifactDirectNestedCollectionTypeColumns(t *testing.T) {
 	require.NoError(t, err)
 	want := []flattening.Coordinate{
 		{Dimension: "module", Key: "grid"}, {Dimension: "Rows", Key: "top"},
-		{Dimension: "Row", Key: "left"}, {Dimension: "name", Key: "."},
+		{Dimension: "Row", Key: "left"}, {Dimension: "name", Key: "rows"},
 	}
 	projected, err := schema.Coordinates(field, rowKey, columnKey)
 	require.NoError(t, err)
@@ -79,4 +81,26 @@ func TestArtifactURIRequiresAbsentDimensionProof(t *testing.T) {
 	uri, err = entry.URI(opts)
 	require.NoError(t, err)
 	require.Equal(t, "dag+check://", uri)
+}
+
+func TestArtifactSnapshotRejectsStaleProjectionMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name, version string
+	}{
+		{"old snapshot without version", ""},
+		{"unsupported future snapshot", fmt.Sprintf(`"Version":%d,`, artifactSnapshotVersion+1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The unknown node would fail decoding if the version check did
+			// not reject the snapshot before restoring its names and plans.
+			payload := json.RawMessage(fmt.Sprintf(`{%s"Entries":[{
+  "Node":12345,"ModuleName":"app","TypeName":"Check","Path":["app","tests","check"],
+  "DimensionNames":{"Tests":"old-label"},
+  "AddressPlans":{"Typed":{"Keys":[{"Dimension":"name","Key":"old-local-name"}]}}
+}]}`, tc.version))
+			decoded, err := decodeArtifacts(t.Context(), nil, payload)
+			require.ErrorContains(t, err, "unsupported artifact snapshot version")
+			require.Nil(t, decoded)
+		})
+	}
 }

@@ -15,6 +15,12 @@ const ArtifactTypeColumnsVersion = "v1.0.0-beta.26"
 func (a *Artifact) ProjectionField() flattening.Field {
 	field := flattening.Field{Module: a.ModuleName, Type: a.TypeName,
 		LocalPath: append([]string{}, a.LocalPath()...), Collections: []flattening.Collection{}}
+	if a.Node == nil {
+		field.LocalPath = append([]string{}, a.Path...)
+		if len(field.LocalPath) > 0 && a.ModuleName != "" && SameCLIName(field.LocalPath[0], a.ModuleName) {
+			field.LocalPath = field.LocalPath[1:]
+		}
+	}
 	for node := a.Node; node != nil; node = node.Parent {
 		if node.CollectionDimension == nil {
 			continue
@@ -87,9 +93,10 @@ func (a *Artifact) localPathWithoutNode() []string {
 	return slices.Clone(path)
 }
 
-// CanonicalCoordinates returns module, collection, and full local name values.
+// CanonicalCoordinates returns module, collection, and full field name values.
 // Legacy DimensionKeys remain unchanged for address and selector compatibility.
 func (a *Artifact) CanonicalCoordinates() []flattening.Coordinate {
+	fieldPath := a.ProjectionField().FieldPath()
 	collections := make([]flattening.Coordinate, 0, len(a.DimensionKeys))
 	for node := a.Node; node != nil; node = node.Parent {
 		if node.CollectionDimension != nil && node.CollectionKey != nil {
@@ -102,7 +109,7 @@ func (a *Artifact) CanonicalCoordinates() []flattening.Coordinate {
 	}
 	if len(collections) != 0 {
 		slices.Reverse(collections)
-		return flattening.CanonicalCoordinates(a.ModuleName, a.LocalPath(), collections)
+		return flattening.CanonicalCoordinates(a.ModuleName, fieldPath, collections)
 	}
 	// Older snapshots and synthetic artifacts can carry keys without item nodes.
 	definitions := a.DimensionDefinitions()
@@ -116,7 +123,7 @@ func (a *Artifact) CanonicalCoordinates() []flattening.Coordinate {
 		}
 		collections = append(collections, flattening.Coordinate{Dimension: identifier, Key: key.Key})
 	}
-	return flattening.CanonicalCoordinates(a.ModuleName, a.LocalPath(), collections)
+	return flattening.CanonicalCoordinates(a.ModuleName, fieldPath, collections)
 }
 
 func (a *Artifact) CanonicalDimensionKeys() []*ArtifactDimensionKey {

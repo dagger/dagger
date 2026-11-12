@@ -74,7 +74,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset; a module load failure fails with its load error. Does not apply command filters."),
 		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service; a module load failure fails with its load error. Does not apply command filters or start the services."),
 		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme."), dagql.Arg("dimension").Doc("Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.")),
-		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
+		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).View(AllVersion).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		dagql.Func("modules", s.modules).Doc("List the modules represented in this selection without evaluating artifact values."),
 		dagql.Func("types", s.types).Doc("List concrete type definitions represented in this selection, sorted by name with no duplicates."),
 		dagql.Func("filterDirectives", s.filterDirectives).Doc("Keep artifacts with any listed directive. Does not filter by type or workspace settings.").Args(dagql.Arg("directives"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
@@ -295,16 +295,34 @@ func (*artifactsSchema) dimensionDefinitions(ctx context.Context, parent *core.A
 	if core.Supports(ctx, artifactDimensionViewVersion) && len(definitions) > 0 {
 		legacy := definitions
 		module := ""
-		metadata := make(flattening.Dimensions, len(legacy))
-		for i, dimension := range legacy {
+		all := parent.AllDimensions
+		if all == nil {
+			all = legacy
+		}
+		metadata := make(flattening.Dimensions, len(all))
+		for i, dimension := range all {
 			metadata[i] = (*flattening.Dimension)(dimension)
 			if dimension.Identifier == artifact.ModuleDimension {
 				module = "workspace"
 			}
 		}
+		named, err := flattening.NameDimensions(flattening.CanonicalDimensions(module, metadata))
+		if err != nil {
+			return nil, err
+		}
+		selected := map[string]bool{}
+		for _, dimension := range legacy {
+			id := dimension.Identifier
+			if dimension.CollectionType != "" {
+				id = dimension.CollectionType
+			}
+			selected[id] = true
+		}
 		definitions = nil
-		for _, dimension := range flattening.CanonicalDimensions(module, metadata) {
-			definitions = append(definitions, (*core.ArtifactDimension)(dimension))
+		for _, dimension := range named {
+			if selected[dimension.Identifier] || dimension.Identifier == artifact.NameDimension {
+				definitions = append(definitions, (*core.ArtifactDimension)(dimension))
+			}
 		}
 		for _, dimension := range legacy {
 			if dimension.Kind == "TYPE" {
@@ -941,7 +959,7 @@ func (s *workspaceSchema) artifactsCacheKey(ctx context.Context, parent dagql.Ob
 	if err != nil {
 		return err
 	}
-	inputs, err := s.artifactDiscoveryInputs(ctx, parent, artifactModuleIncludes(workspaceIncludePatterns(args.Include)))
+	inputs, err := s.artifactDiscoveryInputs(ctx, parent, artifactSchemaIncludes(ctx, artifactModuleIncludes(workspaceIncludePatterns(args.Include))))
 	if err != nil {
 		return err
 	}
@@ -997,7 +1015,7 @@ func (inputs *artifactDiscoveryInputs) digest(ctx context.Context) (string, erro
 	if err != nil {
 		return "", err
 	}
-	parts := []string{artifactDiscoveryInput + "/v4", "config", string(cfg)}
+	parts := []string{artifactDiscoveryInput + "/v5", "config", string(cfg)}
 	mods := make([]string, 0, len(inputs.mods))
 	for _, mod := range inputs.mods {
 		var scoped dagql.ObjectResult[*core.Module]
@@ -1041,8 +1059,18 @@ func artifactModuleIncludes(include []string) []string {
 	return patterns
 }
 
+// artifactSchemaIncludes keeps modern column names independent of source
+// selection. Loading schema metadata does not evaluate collection items.
+func artifactSchemaIncludes(ctx context.Context, include []string) []string {
+	if core.Supports(ctx, artifactDimensionViewVersion) {
+		return nil
+	}
+	return include
+}
+
 // collectArtifacts discovers the workspace's static artifacts. Include
-// patterns narrow module loading and select each path and its children.
+// patterns select each path and its children. Modern views load all module
+// schemas first so column names remain stable across selections.
 func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], include []string) (*core.Artifacts, error) {
 	result := &core.Artifacts{Entries: []*core.Artifact{}}
 	if include != nil {
@@ -1056,7 +1084,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return nil, err
 	}
-	inputs, err := s.artifactDiscoveryInputs(ctx, parent, include)
+	inputs, err := s.artifactDiscoveryInputs(ctx, parent, artifactSchemaIncludes(ctx, include))
 	if err != nil {
 		return nil, err
 	}
@@ -1113,7 +1141,13 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	}
 	for _, entry := range loadFailureArtifacts(parent, cfg, mains, mods, failures) {
 		loaded = append(loaded, entry)
-		result.Entries = append(result.Entries, entry)
+		match, err := matchLoadFailureInclude(entry, include)
+		if err != nil {
+			return nil, err
+		}
+		if match {
+			result.Entries = append(result.Entries, entry)
+		}
 	}
 	if core.Supports(ctx, artifactDimensionViewVersion) {
 		fields := make([]flattening.Field, len(loaded))
@@ -1126,9 +1160,11 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	}
 	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
 	result.AllPaths = (&core.Artifacts{Entries: loaded}).PathIndex()
-	result.CompleteSchema = include == nil && len(failures) == 0
+	result.CompleteSchema = artifactSchemaIncludes(ctx, include) == nil && len(failures) == 0
 	result.SetCollectionRoots(loaded)
-	result.NameEntries()
+	if err := result.NameEntries(); err != nil {
+		return nil, err
+	}
 	skipped, err := workspaceSkippedPaths(ctx, result, mods, cfg)
 	if err != nil {
 		return nil, err
@@ -1141,6 +1177,28 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 		return nil, err
 	}
 	return result, nil
+}
+
+// matchLoadFailureInclude keeps an unavailable module only when it could
+// contain an included path. Core filtering retains main-module shorthand and
+// excludes known sibling module names without requiring the missing schema.
+func matchLoadFailureInclude(entry *core.Artifact, include []string) (bool, error) {
+	if len(include) == 0 {
+		return true, nil
+	}
+	selection := &core.Artifacts{Entries: []*core.Artifact{entry}}
+	for _, include := range include {
+		for _, pattern := range core.IncludePatterns(include) {
+			selected, err := selection.FilterPattern(pattern)
+			if err != nil {
+				return false, err
+			}
+			if len(selected.Entries) > 0 {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // loadFailureArtifacts stands each module that failed to load up as a

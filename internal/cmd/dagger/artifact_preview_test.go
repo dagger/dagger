@@ -34,10 +34,10 @@ func TestArtifactPreviewCanonicalTable(t *testing.T) {
 		require.NoError(t, PreviewArtifacts(strings.NewReader(input), pair.output, &diagnostics, []string{"check", "-l", "--golang-module=.", "-f=" + pair.format}))
 	}
 	require.Regexp(t, `(?m)^NAME +LINK$`, table.String())
-	require.Regexp(t, `(?m)^generate\.stale +dag\+check://`, table.String())
+	require.Regexp(t, `(?m)^modules\.generate\.stale +dag\+check://`, table.String())
 	require.NotContains(t, table.String(), "GOLANG-MODULE")
 	require.NotContains(t, table.String(), "MODULE")
-	require.Contains(t, cli.String(), "dagger check --golang --golang-module=. --name=generate.stale")
+	require.Contains(t, cli.String(), "dagger check --golang --golang-module=. --name=modules.generate.stale")
 	selected := strings.Split(strings.TrimSpace(links.String()), "\n")
 	require.Len(t, selected, 2)
 	for _, link := range selected {
@@ -131,7 +131,7 @@ func TestArtifactPreviewFilteredChecksKeepEachItem(t *testing.T) {
 			if format == "table" {
 				expectedLines++
 				require.Regexp(t, `(?m)^GOLANG-TEST +NAME +LINK$`, output.String())
-				require.Contains(t, output.String(), "generate.stale")
+				require.Contains(t, output.String(), "modules.packages.generate.stale")
 				require.NotContains(t, output.String(), "GOLANG-MODULE")
 				require.NotContains(t, output.String(), "GOLANG-PACKAGE")
 			}
@@ -221,4 +221,69 @@ func TestArtifactPreviewSharedPathNeedsAbsentDimension(t *testing.T) {
 		require.Equal(t, "dag+check://\n", output.String())
 		require.Empty(t, diagnostics.String())
 	})
+}
+
+func TestArtifactPreviewNamesPreserveDistinctSourceFields(t *testing.T) {
+	const input = `[
+ {"Module":"app","Path":["app","before","check"],"LocalPath":["check"],"Type":"Check","Collections":[{"Fields":["before"],"Type":"Tests","ItemType":"Test"}],"Items":[{"Keys":["unit"]}]},
+ {"Module":"app","Path":["app","after","check"],"LocalPath":["check"],"Type":"Check","Collections":[{"Fields":["after"],"Type":"Tests","ItemType":"Test"}],"Items":[{"Keys":["unit"]}]}
+ ]`
+	var links, table, diagnostics bytes.Buffer
+	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &links, &diagnostics, []string{"check", "-la", "-f=link"}))
+	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &table, &diagnostics, []string{"check", "-la"}))
+	require.Contains(t, table.String(), "before.check")
+	require.Contains(t, table.String(), "after.check")
+	rows := strings.Split(strings.TrimSpace(links.String()), "\n")
+	require.Len(t, rows, 2)
+	for _, link := range rows {
+		var replay, replayDiagnostics bytes.Buffer
+		require.NoError(t, PreviewArtifacts(strings.NewReader(input), &replay, &replayDiagnostics, []string{"check", "-la", "-f=link", link}))
+		require.Equal(t, link+"\n", replay.String())
+		require.Empty(t, replayDiagnostics.String())
+	}
+	for _, name := range []string{"before.check", "after.check"} {
+		var selected bytes.Buffer
+		require.NoError(t, PreviewArtifacts(strings.NewReader(input), &selected, &diagnostics, []string{"check", "-la", "-f=link", "--name=" + name}))
+		require.Equal(t, "dag+check://?name="+name+"\n", selected.String())
+	}
+	require.Empty(t, diagnostics.String())
+}
+
+func TestArtifactPreviewCollectionLabelsUseCompleteSchema(t *testing.T) {
+	const input = `[
+ {"Module":"app","Path":["app","packages","check"],"LocalPath":["check"],"Type":"Check","Collections":[{"Fields":["packages"],"Type":"Packages","ItemType":"Package"}],"Items":[{"Keys":["one"]},{"Keys":["two"]}]},
+ {"Module":"app","Path":["app","dependencies","check"],"LocalPath":["check"],"Type":"Check","Collections":[{"Fields":["dependencies"],"Type":"Dependencies","ItemType":"Package"}],"Items":[{"Keys":["three"]},{"Keys":["four"]}]}
+ ]`
+	var all, selected, diagnostics bytes.Buffer
+	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &all, &diagnostics, []string{"check", "-la"}))
+	require.Regexp(t, `(?m)^DEPENDENCIES +PACKAGES +NAME +LINK$`, all.String())
+	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &selected, &diagnostics, []string{"check", "-la", "--name=packages.check"}))
+	require.Regexp(t, `(?m)^PACKAGES +LINK$`, selected.String())
+	require.NotContains(t, selected.String(), "PACKAGE ")
+	var links bytes.Buffer
+	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &links, &diagnostics, []string{"check", "-l", "--packages=one", "-f=link"}))
+	require.Equal(t, "dag+check://?packages=one\n", links.String())
+	require.Empty(t, diagnostics.String())
+}
+
+func TestArtifactPreviewReservedFlagDoesNotRenameColumn(t *testing.T) {
+	field := flattening.Field{Module: "app", Type: "Check", LocalPath: []string{"check"}, Collections: []flattening.Collection{{Fields: []string{"items"}, Type: "Items", ItemType: "All"}}}
+	schema, err := flattening.NewSchema([]flattening.Field{field})
+	require.NoError(t, err)
+	for _, dimension := range schema.Dimensions() {
+		if dimension.Identifier == "Items" {
+			require.Equal(t, "all", dimension.Name)
+		}
+	}
+	const input = `[{"Module":"app","Path":["app","items","check"],"LocalPath":["check"],"Type":"Check","Collections":[{"Fields":["items"],"Type":"Items","ItemType":"All"}],"Items":[{"Keys":["one"]},{"Keys":["two"]}]}]`
+	var table, cli, diagnostics bytes.Buffer
+	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &table, &diagnostics, []string{"check", "-la"}))
+	require.Regexp(t, `(?m)^ALL +LINK$`, table.String())
+	require.NotContains(t, table.String(), "ITEMS")
+	require.Contains(t, table.String(), "?all=one")
+	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &cli, &diagnostics, []string{"check", "-la", "-f=cli"}))
+	require.Contains(t, cli.String(), "--items=one")
+	require.Contains(t, cli.String(), "--items=two")
+	require.NotContains(t, cli.String(), "--all=")
+	require.Empty(t, diagnostics.String())
 }

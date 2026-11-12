@@ -48,6 +48,10 @@ class LocalPaths:
         return pairs[0][1].split('/') if pairs[0][1] else []
 
     def resolve(self, path):
+        return self.resolve_projection(path)[0]
+
+    def resolve_projection(self, path):
+        """Resolve the tail and each collection chunk from literal object fields."""
         module = path['moduleName']
         fields = self.fields(path)
         offset = int(bool(fields) and comparable_name(fields[0]) == comparable_name(module))
@@ -68,6 +72,7 @@ class LocalPaths:
             boundaries[tuple(route[1:])] = definition
         active = []
         local = []
+        collections = []
         for index, segment in enumerate(relative):
             if current in self.ENGINE_FIELDS:
                 candidates = self.ENGINE_FIELDS[current]
@@ -93,12 +98,17 @@ class LocalPaths:
                 if current != boundary['collectionType']:
                     raise ValueError(f'{module}/{"/".join(relative[:index+1])}: '
                                      f'expected collection {boundary["collectionType"]}, found {current}')
+                collections.append({
+                    'Fields': local,
+                    'Type': boundary['collectionType'],
+                    'ItemType': boundary['itemType'],
+                })
                 active.append(boundary['identifier'])
                 current = boundary['itemType']
                 local = []
         if active != dimensions:
             raise ValueError(f'Collection route was not resolved: {dimensions}; found {active}')
-        return local
+        return local, collections
 
 def format_entries(entries, output_format):
     """Convert resolved CLI entries without changing their schema or keys."""
@@ -184,19 +194,7 @@ def capture_entries(metadata, listing, sdk_modules=(), selected_types=None):
             module = path['moduleName']
             fields = LocalPaths.fields(path)
             dimensions = [d for d in path['dimensions'] if d.startswith('/')]
-            collections = []
-            parent = '/' + module
-            for dimension in dimensions:
-                definition = definitions[dimension]
-                if not dimension.startswith(parent + '/'):
-                    raise ValueError(f'Invalid collection route: {dimension}')
-                collections.append({
-                    'Fields': dimension[len(parent) + 1:].split('/'),
-                    'Type': definition['collectionType'],
-                    'ItemType': definition['itemType'],
-                })
-                parent = dimension
-            local_path = local_paths.resolve(path)
+            local_path, collections = local_paths.resolve_projection(path)
         address = urlsplit(path['uri'])
         schemes[address.scheme] = typ
         entry = {'Module': module, 'Path': fields, 'Type': typ,

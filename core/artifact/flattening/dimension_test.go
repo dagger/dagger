@@ -125,3 +125,80 @@ func TestDimensionNamesInputOrder(t *testing.T) {
 	}
 	permute(0)
 }
+
+func TestNameDimensionsWholeSchema(t *testing.T) {
+	input := Dimensions{
+		(Collection{Type: "Packages", ItemType: "Package"}).CanonicalDimension(),
+		(Collection{Type: "Dependencies", ItemType: "Package"}).CanonicalDimension(),
+		(Collection{Type: "Tests", ItemType: "Test"}).CanonicalDimension(),
+	}
+	got, err := NameDimensions(input)
+	require.NoError(t, err)
+	require.Equal(t, Dimensions{
+		{Kind: "COLLECTION", Identifier: "Dependencies", CollectionType: "Dependencies", ItemType: "Package", Name: "dependencies", QualifiedName: "dependencies"},
+		{Kind: "COLLECTION", Identifier: "Packages", CollectionType: "Packages", ItemType: "Package", Name: "packages", QualifiedName: "packages"},
+		{Kind: "COLLECTION", Identifier: "Tests", CollectionType: "Tests", ItemType: "Test", Name: "test", QualifiedName: "tests"},
+	}, got)
+	require.Equal(t, "package", input[0].Name)
+	require.Equal(t, "package", input[1].Name)
+	again, err := NameDimensions(got)
+	require.NoError(t, err)
+	require.Equal(t, got, again)
+	reordered, err := NameDimensions(Dimensions{input[2], input[1], input[0]})
+	require.NoError(t, err)
+	require.Equal(t, got, reordered)
+	got[0].KeyName = "changed"
+	require.Empty(t, input[1].KeyName)
+	require.Empty(t, again[0].KeyName)
+}
+
+func TestNameDimensionsCascadingCollision(t *testing.T) {
+	got, err := NameDimensions(Dimensions{
+		(Collection{Type: "Packages", ItemType: "Package"}).CanonicalDimension(),
+		(Collection{Type: "Dependencies", ItemType: "Package"}).CanonicalDimension(),
+		(Collection{Type: "Groups", ItemType: "Packages"}).CanonicalDimension(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"dependencies", "groups", "packages"}, []string{got[0].Name, got[1].Name, got[2].Name})
+}
+
+func TestNameDimensionsStaticNames(t *testing.T) {
+	got, err := NameDimensions(Dimensions{
+		(Collection{Type: "Names", ItemType: "Name"}).CanonicalDimension(),
+		(Collection{Type: "Modules", ItemType: "Module"}).CanonicalDimension(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"modules", "names"}, []string{got[0].Name, got[1].Name})
+	for _, typ := range []string{"Name", "Module"} {
+		t.Run(typ, func(t *testing.T) {
+			_, err := NameDimensions(Dimensions{(Collection{Type: typ, ItemType: typ}).CanonicalDimension()})
+			require.ErrorContains(t, err, "conflicting dimension names")
+		})
+	}
+}
+
+func TestNameDimensionsRejectsUnresolvableTypeNames(t *testing.T) {
+	_, err := NameDimensions(Dimensions{
+		(Collection{Type: "HTTPTests", ItemType: "Test"}).CanonicalDimension(),
+		(Collection{Type: "HttpTests", ItemType: "Test"}).CanonicalDimension(),
+	})
+	require.ErrorContains(t, err, "conflicting dimension names")
+	require.ErrorContains(t, err, "http-tests")
+}
+
+func TestNameDimensionsRejectsAnotherColumnIdentifier(t *testing.T) {
+	_, err := NameDimensions(Dimensions{
+		(Collection{Type: "FooTests", ItemType: "Row"}).CanonicalDimension(),
+		(Collection{Type: "row", ItemType: "Cell"}).CanonicalDimension(),
+	})
+	require.ErrorContains(t, err, `dimension name "row" conflicts with collection identifier row`)
+}
+
+func TestNameDimensionsKeepsLegacyMetadata(t *testing.T) {
+	legacy := &Dimension{Kind: "COLLECTION", Identifier: "/app/tests", CollectionType: "Tests", ItemType: "Name", Name: "app-name", QualifiedName: "app-tests-name"}
+	got, err := NameDimensions(Dimensions{legacy})
+	require.NoError(t, err)
+	require.Equal(t, Dimensions{legacy}, got)
+	got[0].Name = "changed"
+	require.Equal(t, "app-name", legacy.Name)
+}

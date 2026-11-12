@@ -52,6 +52,68 @@ func Union(sets ...Dimensions) Dimensions {
 	return result
 }
 
+// NameDimensions labels the complete canonical column set. Collections use
+// their item type name until it conflicts with another column or a fixed name.
+// Every conflicting collection then uses its collection type name. Repeat for
+// new conflicts; fail when no further fallback is possible. Legacy dimensions
+// retain their names. The result owns its metadata and is sorted by identifier.
+func NameDimensions(dimensions Dimensions) (Dimensions, error) {
+	result := make(Dimensions, len(dimensions))
+	canonical := make([]bool, len(dimensions))
+	fallback := make([]bool, len(dimensions))
+	for i, dimension := range dimensions {
+		copy := *dimension
+		result[i] = &copy
+		canonical[i] = copy.Kind == "COLLECTION" && copy.CollectionType != "" && copy.Identifier == copy.CollectionType
+		if canonical[i] {
+			copy.Name = latestName(copy.ItemType)
+		}
+	}
+	for {
+		groups := map[string][]int{ModuleDimension: {-1}, NameDimension: {-1}}
+		for i, dimension := range result {
+			if canonical[i] {
+				groups[dimension.Name] = append(groups[dimension.Name], i)
+			}
+		}
+		conflicts := []string{}
+		changed := false
+		for _, name := range slices.Sorted(maps.Keys(groups)) {
+			group := groups[name]
+			if len(group) < 2 {
+				continue
+			}
+			conflicts = append(conflicts, name)
+			for _, i := range group {
+				if i >= 0 && !fallback[i] {
+					result[i].Name = latestName(result[i].CollectionType)
+					fallback[i] = true
+					changed = true
+				}
+			}
+		}
+		if len(conflicts) == 0 {
+			// Exact identifiers remain valid selectors. A label must not
+			// select another column through that identifier precedence.
+			for i, dimension := range result {
+				if !canonical[i] {
+					continue
+				}
+				for j, other := range result {
+					if canonical[j] && dimension.Identifier != other.Identifier && dimension.Name == other.Identifier {
+						return nil, fmt.Errorf("dimension name %q conflicts with collection identifier %s", dimension.Name, other.Identifier)
+					}
+				}
+			}
+			slices.SortFunc(result, func(a, b *Dimension) int { return strings.Compare(a.Identifier, b.Identifier) })
+			return result, nil
+		}
+		if !changed {
+			return nil, fmt.Errorf("conflicting dimension names after collection type fallback: %s", strings.Join(conflicts, ", "))
+		}
+	}
+}
+
 // Names lists selectors from shortest to most qualified. Collection boundaries
 // provide parent identity; their fields are needed in names only on a conflict.
 func (dims Dimensions) Names(dim *Dimension, wholeCollection bool) []string {

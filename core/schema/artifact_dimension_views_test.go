@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -162,5 +163,84 @@ func TestArtifactDimensionItemDisplaySourceIsLazy(t *testing.T) {
 			dagql.Selector{Field: "dimensionKeys", View: srv.View}))
 		require.Equal(t, []*core.ArtifactDimensionKey{{Dimension: "name", Key: "."}}, []*core.ArtifactDimensionKey(visible))
 		require.EqualValues(t, 1, discoveries.Load(), "default coordinates must reuse the parent's cached snapshot")
+	}
+}
+
+func TestArtifactDimensionDefinitionsUseGlobalLabels(t *testing.T) {
+	ctx, srv := newNestingTestServer(t, call.View(artifactDimensionViewVersion))
+	collection := func(typ, itemType string) *core.ArtifactDimension {
+		return &core.ArtifactDimension{
+			Identifier: typ, Kind: "COLLECTION", CollectionType: typ,
+			ItemType: itemType, Name: strings.ToLower(itemType), KeyName: "name",
+		}
+	}
+	packages := collection("Packages", "Package")
+	dependencies := collection("Dependencies", "Package")
+	tests := collection("Tests", "Test")
+	checks := collection("Checks", "Check")
+	selection := &core.Artifacts{
+		AllDimensions: artifact.Dimensions{
+			packages, dependencies, tests, checks,
+			{Identifier: "module", Kind: "MODULE", Name: "module"},
+			{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check"},
+		},
+	}
+	// Dependencies is absent from the selected entries. Its schema still
+	// determines the Packages label. Tests has no item-name conflict.
+	for _, dimension := range []*core.ArtifactDimension{packages, tests, checks} {
+		selection.Entries = append(selection.Entries, &core.Artifact{
+			ModuleName: "app", TypeName: "Check",
+			Node: &core.ModTreeNode{CollectionDimension: dimension},
+		})
+	}
+	dagql.Fields[*core.Query]{dagql.Func("selection", func(context.Context, *core.Query, struct{}) (*core.Artifacts, error) {
+		return selection, nil
+	})}.Install(srv)
+	var definitions dagql.Array[*core.ArtifactDimension]
+	require.NoError(t, srv.Select(ctx, srv.Root(), &definitions,
+		dagql.Selector{Field: "selection"}, dagql.Selector{Field: "dimensionDefinitions", View: srv.View}))
+	byID := map[string]*core.ArtifactDimension{}
+	for _, definition := range definitions {
+		byID[definition.Identifier] = definition
+	}
+	require.NotContains(t, byID, "Dependencies")
+	require.Contains(t, byID, "Packages")
+	require.Equal(t, "packages", byID["Packages"].Name)
+	require.Equal(t, "test", byID["Tests"].Name)
+	// Legacy TYPE selectors do not rename a canonical collection column.
+	require.Equal(t, "check", byID["Checks"].Name)
+	require.Equal(t, "COLLECTION", byID["Checks"].Kind)
+	require.Equal(t, "check", byID["type:Check"].Name)
+	require.Equal(t, "TYPE", byID["type:Check"].Kind)
+	require.Equal(t, "module", byID["module"].Name)
+	require.Equal(t, "name", byID["name"].Name)
+}
+
+func TestArtifactSchemaIncludesByView(t *testing.T) {
+	include := []string{"alpha", "beta/**"}
+	for _, tc := range []struct {
+		view   call.View
+		modern bool
+	}{
+		{call.View("v1.0.0-beta.25"), false},
+		{call.View(artifactDimensionViewVersion), true},
+	} {
+		t.Run(string(tc.view), func(t *testing.T) {
+			ctx, srv := newNestingTestServer(t, tc.view)
+			dagql.Fields[*core.Query]{dagql.Func("schemaIncludes", func(ctx context.Context, _ *core.Query, _ struct{}) (bool, error) {
+				got := artifactSchemaIncludes(ctx, include)
+				if tc.modern {
+					require.Nil(t, got)
+				} else {
+					require.Equal(t, include, got)
+				}
+				require.Nil(t, artifactSchemaIncludes(ctx, nil))
+				require.Equal(t, []string{"alpha", "beta/**"}, include)
+				return got == nil, nil
+			}).View(core.AllVersion)}.Install(srv)
+			var omitted dagql.Boolean
+			require.NoError(t, srv.Select(ctx, srv.Root(), &omitted, dagql.Selector{Field: "schemaIncludes", View: srv.View}))
+			require.Equal(t, tc.modern, bool(omitted))
+		})
 	}
 }

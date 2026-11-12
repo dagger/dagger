@@ -94,8 +94,8 @@ func (a *Artifact) mayHaveDimension(id string, keys []string) bool {
 	case id == artifact.ModuleDimension:
 		return keys == nil || moduleKeysMatch(keys, a.ModuleName)
 	case id == artifact.NameDimension:
-		// Local names contain no module prefix. An unknown module can
-		// contain an artifact at any nonempty selected local name.
+		// Name coordinates contain no module prefix. An unknown module can
+		// contain an artifact with any selected field name.
 		return true
 	case strings.HasPrefix(id, "type:"):
 		return paths()
