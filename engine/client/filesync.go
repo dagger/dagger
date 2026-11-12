@@ -113,14 +113,27 @@ func (s FilesyncSource) FindUp(ctx context.Context, req *filesync.FindUpRequest)
 	if err != nil {
 		return nil, fmt.Errorf("get full root path: %w", err)
 	}
-	remaining := make(map[string]struct{}, len(req.Names))
-	for _, name := range req.Names {
+	return findUp(start, req.Names, nil)
+}
+
+// findUp searches start and its parents for names. A non-nil searchable stops
+// the search at the first directory that it rejects, and a name whose path it
+// rejects is not found.
+func findUp(start string, names []string, searchable func(path string) bool) (*filesync.FindUpResponse, error) {
+	remaining := make(map[string]struct{}, len(names))
+	for _, name := range names {
 		remaining[name] = struct{}{}
 	}
 	found := make(map[string]string, len(remaining))
 	for dir := start; len(remaining) > 0; {
+		if searchable != nil && !searchable(dir) {
+			break
+		}
 		for name := range remaining {
 			p := filepath.Join(dir, name)
+			if searchable != nil && !searchable(p) {
+				continue
+			}
 			if _, err := fsutil.Stat(p); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					continue
@@ -754,11 +767,13 @@ func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *en
 	return results, nil
 }
 
+// searchWithGrep searches with the options that GNU grep and busybox grep
+// share. It does not report byte offsets, because busybox grep has no -b.
 func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOpts) (results []engine.LocalSearchResult, rerr error) {
 	var args []string
 	args = append(args, "-r") // recursive
 	args = append(args, "-n") // line numbers
-	args = append(args, "-b") // byte offset
+	args = append(args, "-H") // file names, also for a single file
 
 	if opts.Literal {
 		args = append(args, "-F") // fixed strings
@@ -780,6 +795,9 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 
 	args = append(args, "-e", opts.Pattern)
 
+	// grep reads options after operands too, so "--" keeps a path such as
+	// "-R" a file name.
+	args = append(args, "--")
 	if len(opts.Paths) > 0 {
 		args = append(args, opts.Paths...)
 	} else {
@@ -829,30 +847,26 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 			}
 		}
 	} else {
-		// Parse grep -rnb output: file:line:offset:content
+		// Parse grep -rnH output: file:line:content
 		scan := bufio.NewScanner(strings.NewReader(output))
 		for scan.Scan() {
 			line := scan.Text()
 			if line == "" {
 				continue
 			}
-			// Format: file:line:byte_offset:matched_line
-			parts := strings.SplitN(line, ":", 4)
-			if len(parts) < 4 {
+			parts := strings.SplitN(line, ":", 3)
+			if len(parts) < 3 {
 				continue
 			}
 			filePath := strings.TrimPrefix(filepath.ToSlash(parts[0]), "./")
 			lineNum := 0
 			fmt.Sscanf(parts[1], "%d", &lineNum)
-			byteOffset := 0
-			fmt.Sscanf(parts[2], "%d", &byteOffset)
-			matchedLine := parts[3]
+			matchedLine := parts[2]
 
 			results = append(results, engine.LocalSearchResult{
-				FilePath:       filePath,
-				LineNumber:     lineNum,
-				AbsoluteOffset: byteOffset,
-				MatchedLines:   matchedLine + "\n",
+				FilePath:     filePath,
+				LineNumber:   lineNum,
+				MatchedLines: matchedLine + "\n",
 			})
 			if opts.Limit != nil && len(results) >= *opts.Limit {
 				break

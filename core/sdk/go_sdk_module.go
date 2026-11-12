@@ -174,10 +174,11 @@ func goSDKConstructorArgs(ctx context.Context, root *core.Query, config map[stri
 	}
 	gitconfig, err := bk.GetGitConfig(ctx)
 	if err != nil {
-		if status.Code(err) != codes.PermissionDenied {
+		if code := status.Code(err); code != codes.PermissionDenied && code != codes.Unimplemented {
 			return nil, err
 		}
-		// An in-engine SDK client has no host attachables by design. Its module
+		// An in-engine SDK client has no host attachables by design, and a
+		// client with a host policy can leave out the Git service. Its module
 		// dependencies must still be buildable; they simply do not inherit the
 		// caller's ambient Git configuration.
 		gitconfig = nil

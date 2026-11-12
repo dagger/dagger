@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -387,7 +388,36 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	}
 	params.CloudAuth = ca
 
+	if err := applyHostPolicy(&params); err != nil {
+		return params, err
+	}
+
 	return params, nil
+}
+
+// cliHostPolicy is the host policy of the user config file. The CLI reads it
+// once, and does not start when the policy is not valid.
+var cliHostPolicy = sync.OnceValues(client.LoadHostPolicy)
+
+// applyHostPolicy sets the host policy of the user config file. The engine
+// reads some files of this host at session start; a policy that does not allow
+// them leaves them out, so that the session does not fail on them.
+func applyHostPolicy(params *client.Params) error {
+	policy, err := cliHostPolicy()
+	if err != nil {
+		return err
+	}
+	if policy == nil {
+		return nil
+	}
+	params.HostPolicy = policy
+	if !policy.AllowsRead(params.UserConfigPath) {
+		params.UserConfigPath = ""
+	}
+	if !policy.AllowsRead(params.CloudCredentialsPath) {
+		params.CloudCredentialsPath = ""
+	}
+	return nil
 }
 
 // primarySpanNamer applies span-name records the engine publishes for the
@@ -507,6 +537,21 @@ func withLazySessions(
 			return cleanupTelemetry(rerr)
 		})
 
+		// The callers ignore Close errors, so a host policy refusal is
+		// returned here: a session with a refusal failed.
+		var sessionsMu sync.Mutex
+		var sessions []*client.Client
+		defer func() {
+			sessionsMu.Lock()
+			defer sessionsMu.Unlock()
+			for _, sess := range sessions {
+				if err := sess.HostPolicyViolation(); err != nil {
+					rerr = errors.Join(rerr, err)
+					return
+				}
+			}
+		}()
+
 		connect := func(ctx context.Context) (*client.Client, func(), error) {
 			fp, err := engineConnectionParams(params)
 			if err != nil {
@@ -520,6 +565,9 @@ func withLazySessions(
 			if err != nil {
 				return nil, nil, err
 			}
+			sessionsMu.Lock()
+			sessions = append(sessions, sess)
+			sessionsMu.Unlock()
 			Frontend.SetClient(sess.Dagger())
 			return sess, func() { _ = sess.Close() }, nil
 		}

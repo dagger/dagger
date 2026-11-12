@@ -466,3 +466,40 @@ func TestOAuthTokenRefresherErrorScheduling(t *testing.T) {
 		t.Errorf("background transient refresh calls = %d, want at least 2", got)
 	}
 }
+
+// TestAssembleLLMConfigHostPolicy covers ./.env under a host policy. The CLI
+// reads .env itself, so it reads it only when the policy allows the read.
+func TestAssembleLLMConfigHostPolicy(t *testing.T) {
+	clearLLMEnv(t)
+	useTempLLMConfig(t, nil)
+	workdir, err := os.Getwd()
+	require.NoError(t, err)
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "env"), []byte("GEMINI_MODEL=gemini-outside\n"), 0o600))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "env"), filepath.Join(workdir, ".env")))
+
+	geminiModel := func(t *testing.T, policy *client.HostPolicy) string {
+		t.Helper()
+		orig := cliHostPolicy
+		t.Cleanup(func() { cliHostPolicy = orig })
+		cliHostPolicy = func() (*client.HostPolicy, error) { return policy, nil }
+		cfg, err := assembleLLMConfig()
+		require.NoError(t, err)
+		if cfg == nil || cfg.Providers["google"] == nil {
+			return ""
+		}
+		return cfg.Providers["google"].Model
+	}
+
+	t.Run("no policy", func(t *testing.T) {
+		require.Equal(t, "gemini-outside", geminiModel(t, nil))
+	})
+	t.Run("symlink out of the read paths", func(t *testing.T) {
+		policy := &client.HostPolicy{Version: 1, Files: client.HostPolicyFiles{Read: []string{workdir}}}
+		require.Empty(t, geminiModel(t, policy))
+	})
+	t.Run("target under a read path", func(t *testing.T) {
+		policy := &client.HostPolicy{Version: 1, Files: client.HostPolicyFiles{Read: []string{workdir, outside}}}
+		require.Equal(t, "gemini-outside", geminiModel(t, policy))
+	})
+}

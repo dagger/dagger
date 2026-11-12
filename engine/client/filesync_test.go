@@ -231,6 +231,52 @@ exit 2
 	})
 }
 
+// TestSearchHostPathWithGrep covers host search on a host without ripgrep. A
+// search path is a file name, even when it starts with "-", and the search
+// does not follow a symlink out of the search root.
+func TestSearchHostPathWithGrep(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the grep fallback is for Unix hosts")
+	}
+	grep, err := exec.LookPath("grep")
+	if err != nil {
+		t.Skip("grep not installed")
+	}
+	// A PATH with grep and no rg.
+	bin := t.TempDir()
+	require.NoError(t, os.Symlink(grep, filepath.Join(bin, "grep")))
+	t.Setenv("PATH", bin)
+
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("needle outside\n"), 0o600))
+
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, "-R"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "-R", "inside.txt"), []byte("needle inside\n"), 0o600))
+	require.NoError(t, os.Symlink(outside, filepath.Join(root, "link")))
+
+	for _, tc := range []struct {
+		name  string
+		paths []string
+	}{
+		{"whole root", nil},
+		{"path that looks like an option", []string{"-R"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			results, err := searchHostPath(context.Background(), root, &engine.LocalSearchOpts{
+				Pattern: "needle",
+				Paths:   tc.paths,
+			})
+			require.NoError(t, err)
+			var files []string
+			for _, r := range results {
+				files = append(files, r.FilePath)
+			}
+			require.Equal(t, []string{"-R/inside.txt"}, files)
+		})
+	}
+}
+
 // fileSendStream feeds a file stream export its chunks.
 type fileSendStream struct {
 	grpc.ServerStream
