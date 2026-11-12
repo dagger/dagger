@@ -320,8 +320,12 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 	}
 	// The engine trusts its own image's blobs, which the content store holds
 	// in place: their layers were checked when the image was pulled, and
-	// their sizes when the engine started. Their unpack hashes nothing.
-	trusted := cm.inPlaceContent != nil && cm.inPlaceContent(desc.Digest)
+	// their sizes when the engine started. An uncompressed one, whose diff ID
+	// is its own digest, unpacks unhashed. A layer that names such a blob but
+	// claims another diff ID is checked, so the snapshot is never recorded
+	// under a diff ID its content isn't.
+	expectedDiffID, diffIDErr := diffIDFromDescriptor(desc)
+	trusted := diffIDErr == nil && expectedDiffID == desc.Digest && cm.inPlaceContent != nil && cm.inPlaceContent(desc.Digest)
 	if trusted {
 		ctx = withTrustedLayer(ctx)
 	}

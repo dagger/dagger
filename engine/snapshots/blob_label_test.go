@@ -500,3 +500,31 @@ func (p changedProvider) ReaderAt(context.Context, ocispecs.Descriptor) (content
 type bytesReaderAt struct{ *bytes.Reader }
 
 func (bytesReaderAt) Close() error { return nil }
+
+// A layer that names one of the image's blobs but claims another diff ID is
+// checked like any other: unpacked unhashed, it would be recorded under a
+// diff ID its content isn't, and a later import of that diff ID would reuse
+// the wrong snapshot.
+func TestImageBlobUnderAnotherDiffIDIsChecked(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer := testutil.NewStore(t)
+	built, _ := producer.Build(t, nil, "a.txt", "shipped in the image")
+	chain, err := built.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer chain.Release(context.Background())
+	layer := chain.Layers[0].Descriptor
+	blob, err := content.ReadBlob(ctx, chain.Provider, layer)
+	require.NoError(t, err)
+	image := t.TempDir()
+	name := filepath.Join(image, "blobs", layer.Digest.Algorithm().String(), layer.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+	require.NoError(t, os.WriteFile(name, blob, 0o444))
+
+	claimed := chain.Layers[0]
+	claimed.Descriptor.Annotations = map[string]string{"containerd.io/uncompressed": digest.FromString("other content").String()}
+	store := testutil.NewStoreWithImageBlobs(t, image)
+	store.UseEngineApplier(t)
+	_, err = store.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: []bkcache.ExportLayer{claimed}, Provider: chain.Provider})
+	require.ErrorContains(t, err, "wrong diff id", "the claimed diff ID is checked")
+}
