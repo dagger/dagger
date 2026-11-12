@@ -87,7 +87,11 @@ Dang literals (a Dagger object as its lazy query, not its ID) in `toString`,
 interpolation and `print`. From vito/dang v2.5.0, interfaces declared in Dang
 are structural, so a `case` or `rescue` arm after an arm on such an interface
 may now be unreachable (an error), and a string holding `${` displays with the
-`$` escaped inside a collection.
+`$` escaped inside a collection. Because a Dagger object of an interface's
+shape satisfies it, a module can `raise` a `Dagger.Error!`: the function then
+fails with that Error, values and all, as with `FunctionCall.returnError`, and
+a rescued GraphQL error raised again as it was keeps its extensions (see
+`v2/errors.go`).
 
 The Dang tools (`DangEval`, `DangCheck`) parse a snippet in the workspace
 scope as `dang.CurrentVersion`, so their language moves with every bump; a
