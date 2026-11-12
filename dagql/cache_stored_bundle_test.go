@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
@@ -72,7 +73,7 @@ func TestStoredBundleCarriesTheClosureAndItsOwnParts(t *testing.T) {
 	cloud.egraphMu.RUnlock()
 	mergeTestExpire(cloud, storedBundleTestEntry(cloud, r))
 
-	got, err := cloud.StoredBundle(ctx, []uint64{r, 12345, holdingsOnly}, nil)
+	got, err := cloud.StoredBundle(ctx, []uint64{r, 12345, holdingsOnly}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Equal(t, []uint64{12345}, got.Gone)
 	require.Equal(t, []uint64{holdingsOnly}, got.NoValue)
@@ -119,16 +120,40 @@ func TestStoredBundleBorrowsFromAnUnexpiredMember(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, stored)
 
-	got, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, got.Bundle.Outputs, 1)
 	require.Equal(t, []uint64{member}, got.Donors, "the donor stores it")
 	require.Empty(t, got.Bundle.Outputs[0].Owner.DependencyIDs, "no services, no owner entries")
 
 	mergeTestExpire(cloud, storedBundleTestEntry(cloud, member))
-	got, err = cloud.StoredBundle(ctx, []uint64{r}, nil)
+	got, err = cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Empty(t, got.Bundle.Outputs, "an expired member lends nothing")
+}
+
+// A stored bundle judges a donor's expiry at the reader's clock, not its
+// own: a member whose value expires an hour from the wall clock lends its
+// part before that moment and not from it.
+func TestStoredBundleBorrowsAtTheReadersClock(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	member := storedBundleTestClassMember(t, ctx, cloud, r, "bundle-member")
+	stored, err := cloud.SetStoredPart(ctx, member, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	entry := storedBundleTestEntry(cloud, member)
+	cloud.egraphMu.Lock()
+	entry.expiresAtUnix = expiresAt
+	cloud.egraphMu.Unlock()
+
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, expiresAt-1, nil)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{member}, got.Donors, "the member hasn't expired at the reader's moment")
+	got, err = cloud.StoredBundle(ctx, []uint64{r}, expiresAt, nil)
+	require.NoError(t, err)
+	require.Empty(t, got.Bundle.Outputs, "the member has expired at the reader's moment, though not by the wall clock")
 }
 
 // A borrowed part's services are mapped to rows of the bundle's closure of
@@ -158,7 +183,7 @@ func TestStoredBundleBorrowsThroughThePlacementRule(t *testing.T) {
 		stored, err := cloud.SetStoredPart(ctx, member, part, 0)
 		require.NoError(t, err)
 		require.True(t, stored)
-		got, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+		got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 		require.NoError(t, err, tc.name)
 		if !tc.placed {
 			require.Empty(t, got.Bundle.Outputs, tc.name)
@@ -198,7 +223,7 @@ func TestStoredBundleNeverMixesAReplacement(t *testing.T) {
 			_, err := cloud.MergeValues(ctx, "cache-b", fresh)
 			require.NoError(t, err)
 		}()
-		got, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+		got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 		wg.Wait()
 		require.NoError(t, err)
 		var rootValue TransferredValue
@@ -228,7 +253,7 @@ func TestStoredBundleCarriesTheCurrentRecord(t *testing.T) {
 	ctx, cloud, r, _ := storedBundleTestCloud(t, "old")
 	rootRecord := func() PersistedRecord {
 		t.Helper()
-		got, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+		got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 		require.NoError(t, err)
 		for _, value := range got.Bundle.Values {
 			if value.SenderNumber == r {
@@ -265,7 +290,7 @@ func storedBundleTestKept(c *Cache, number uint64) bool {
 func TestStoredBundleRecordGoesWithThePrunedValue(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
-	_, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	_, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.True(t, storedBundleTestKept(cloud, r))
 	require.True(t, storedBundleTestKept(cloud, p))
@@ -276,7 +301,7 @@ func TestStoredBundleRecordGoesWithThePrunedValue(t *testing.T) {
 	require.Equal(t, 2, dropped)
 	require.False(t, storedBundleTestKept(cloud, r), "released with R's value")
 	require.False(t, storedBundleTestKept(cloud, p), "released with P's value")
-	got, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Equal(t, []uint64{r}, got.NoValue)
 
@@ -287,7 +312,7 @@ func TestStoredBundleRecordGoesWithThePrunedValue(t *testing.T) {
 	reply, err := cloud.MergeValues(ctx, "cache-b", exportTestBundle(t, actx, a, root))
 	require.NoError(t, err)
 	require.Equal(t, r, reply.Imported()[0].ResultID, "the same entry")
-	got, err = cloud.StoredBundle(ctx, []uint64{r}, nil)
+	got, err = cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	for _, value := range got.Bundle.Values {
 		if value.SenderNumber == r {
@@ -310,7 +335,7 @@ func TestStoredBundleAfterARestore(t *testing.T) {
 	stored, err := cloud.SetStoredPart(ctx, root, storedBenchPart(1), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
-	before, err := cloud.StoredBundle(ctx, []uint64{root}, nil)
+	before, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	want, err := json.Marshal(before)
 	require.NoError(t, err)
@@ -319,7 +344,7 @@ func TestStoredBundleAfterARestore(t *testing.T) {
 	ctx, cloud = storedPersistenceTestCloud(t, path)
 	defer func() { require.NoError(t, cloud.Close(ctx)) }()
 	require.False(t, storedBundleTestKept(cloud, root))
-	after, err := cloud.StoredBundle(ctx, []uint64{root}, nil)
+	after, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	got, err := json.Marshal(after)
 	require.NoError(t, err)
@@ -356,7 +381,7 @@ func TestStoredBundleRefusesAReferenceToAnIndirectEntry(t *testing.T) {
 	}
 	require.NotZero(t, r)
 	require.NotZero(t, leafNumber)
-	_, err = cloud.StoredBundle(ctx, []uint64{r}, nil)
+	_, err = cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 
 	// R's record now names the leaf, which only its dependency depends on.
@@ -368,7 +393,7 @@ func TestStoredBundleRefusesAReferenceToAnIndirectEntry(t *testing.T) {
 	env.ObjectJSON = payload
 	res.persistedEnvelope = &env
 	cloud.egraphMu.Unlock()
-	_, err = cloud.StoredBundle(ctx, []uint64{r}, nil)
+	_, err = cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.ErrorContains(t, err, "is not a direct dependency")
 }
 
@@ -418,7 +443,7 @@ func TestStoredBundleRefusesAPayloadItsCodecRefuses(t *testing.T) {
 	t.Parallel()
 	for text, refusal := range map[string]string{"invalid": "invalid payload", "unmapped": "unmapped payload", "unaddressed": "empty part"} {
 		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
-		_, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+		_, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 		require.NoError(t, err, text)
 		cloud.egraphMu.Lock()
 		res := cloud.resultsByID[sharedResultID(r)]
@@ -427,7 +452,7 @@ func TestStoredBundleRefusesAPayloadItsCodecRefuses(t *testing.T) {
 		env.ObjectJSON = json.RawMessage(`{"text":"` + text + `"}`)
 		res.persistedEnvelope = &env
 		cloud.egraphMu.Unlock()
-		_, err = cloud.StoredBundle(ctx, []uint64{r}, nil)
+		_, err = cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 		require.ErrorContains(t, err, refusal, text)
 	}
 }
@@ -500,14 +525,14 @@ func TestStoredBundleIsTheCallersCopy(t *testing.T) {
 	stored, err := cloud.SetStoredPart(ctx, r, part, 0)
 	require.NoError(t, err)
 	require.True(t, stored)
-	first, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	first, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, first.Bundle.Outputs, 1)
 	want, err := json.Marshal(first.Bundle)
 	require.NoError(t, err)
 
 	scribbleTestValue(reflect.ValueOf(&first.Bundle).Elem(), map[uintptr]bool{})
-	second, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	second, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	got, err := json.Marshal(second.Bundle)
 	require.NoError(t, err)
@@ -627,7 +652,7 @@ func TestStoredPartKeepsTheEntriesItNames(t *testing.T) {
 	_, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b"))
 	require.NoError(t, err)
 	require.NotNil(t, storedBundleTestEntry(cloud, service), "the service outlives its sender")
-	got, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	ordinals := map[uint64]TransferOrdinal{}
 	for _, value := range got.Bundle.Values {

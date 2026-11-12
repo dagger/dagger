@@ -86,9 +86,9 @@ func TestCacheHoldersIndexExact(t *testing.T) {
 
 // heldByHoldingsLocked is HeldBy's predicate on holdings as it was before
 // the index: every holding of the entry walked.
-func heldByHoldingsLocked(h *HeldBy, res *sharedResult) bool {
+func heldByHoldingsLocked(h *HeldBy, res *sharedResult, nowUnix int64) bool {
 	for key, held := range res.holders {
-		if key.Cache == h.Cache && (held.expiresAtUnix == 0 || held.expiresAtUnix > h.Now) {
+		if key.Cache == h.Cache && (held.expiresAtUnix == 0 || held.expiresAtUnix > nowUnix) {
 			return true
 		}
 	}
@@ -130,9 +130,9 @@ func TestHeldByHoldsLikeTheWalk(t *testing.T) {
 		{engineB, 1 << 40, true},
 		{"cache-none", 0, false},
 	} {
-		h := &HeldBy{Cache: tc.cache, Now: tc.now}
-		require.Equal(t, tc.held, h.holdsLocked(res), "%s at %d", tc.cache, tc.now)
-		require.Equal(t, heldByHoldingsLocked(h, res), h.holdsLocked(res), "%s at %d, as the walk", tc.cache, tc.now)
+		h := &HeldBy{Cache: tc.cache}
+		require.Equal(t, tc.held, h.holdsLocked(res, tc.now), "%s at %d", tc.cache, tc.now)
+		require.Equal(t, heldByHoldingsLocked(h, res, tc.now), h.holdsLocked(res, tc.now), "%s at %d, as the walk", tc.cache, tc.now)
 	}
 }
 
