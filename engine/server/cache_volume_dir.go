@@ -33,7 +33,12 @@ func (srv *Server) initCacheVolumeDir(cfg config.CacheVolumesConfig) error {
 	if err != nil {
 		return err
 	}
-	store, err := cachevolumedir.Open(dir, cachevolumedir.Options{EngineVersion: engine.Version})
+	store, err := cachevolumedir.Open(dir, cachevolumedir.Options{
+		EngineVersion: engine.Version,
+		OnDeletionError: func(err error) {
+			slog.Warn("cache volume deletion failed; what's left stays counted until the directory's next owner deletes it", "error", err)
+		},
+	})
 	if errors.Is(err, cachevolumedir.ErrOwned) {
 		slog.Warn("cache volume directory is in use by another engine; cache volumes are snapshots for this run", "dir", dir)
 		return nil
