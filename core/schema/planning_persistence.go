@@ -45,8 +45,10 @@ func artifactsFromContent(a dagql.ObjectResult[*core.Artifacts]) bool {
 // keptExpansion runs a resolver of a keptFromContent field that evaluates
 // the selection's collections to list their items. Its result stands for
 // those evaluations, so it is kept only as long as each of them would give
-// the same result: not past the session when one is cached per call,
+// the same result: only for its own session when one is cached per call,
 // session or client, and not past the earliest expiry of their results.
+// Another session, even one open at the same time, lists the items its own
+// evaluations return.
 func keptExpansion[R any](ctx context.Context, resolve func(context.Context) (R, error)) (R, error) {
 	scoped, scopes := dagql.WithCallScopes(ctx)
 	result, err := resolve(scoped)
@@ -54,8 +56,8 @@ func keptExpansion[R any](ctx context.Context, resolve func(context.Context) (R,
 		return result, err
 	}
 	if bound := scopes.SessionBound(); bound != "" {
-		slog.Debug("listing not kept past its session", "boundBy", bound)
-		dagql.DeclinePersistence(ctx)
+		slog.Debug("listing bound to its session", "boundBy", bound)
+		dagql.BindToSession(ctx)
 	}
 	dagql.ExpireBy(ctx, scopes.ExpiresAtUnix())
 	return result, nil
