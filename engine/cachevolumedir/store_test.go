@@ -943,3 +943,26 @@ func TestTreeWalkCountsAnInodeOnceWhenItsLinksChange(t *testing.T) {
 	require.Equal(t, blocksOf(t, b), w.size.Load(), "one inode's space, counted once")
 	require.Equal(t, int64(2), w.files.Load())
 }
+
+func TestFailedDeletionIsReported(t *testing.T) {
+	t.Parallel()
+	failed := make(chan error, 1)
+	s, err := Open(t.TempDir(), Options{
+		EngineVersion:   "test",
+		RemoveAll:       func(string) error { return errors.New("disk on fire") },
+		OnDeletionError: func(err error) { failed <- err },
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	use(t, s, Identity{Key: "k"}, true, "f", mib)
+	report, err := s.Collect(t.Context(), Policy{All: true})
+	require.NoError(t, err)
+	require.Len(t, report.Removed, 1)
+
+	select {
+	case err := <-failed:
+		require.ErrorContains(t, err, "disk on fire")
+	case <-time.After(10 * time.Second):
+		t.Fatal("a failed deletion wasn't reported")
+	}
+}
