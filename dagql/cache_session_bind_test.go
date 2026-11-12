@@ -82,3 +82,65 @@ func TestCacheBoundResultServedOnlyToItsSession(t *testing.T) {
 		assert.NilError(t, c.ReleaseSession(s.ctx, s.id))
 	}
 }
+
+// A bound value doesn't adopt another session's live entry of its recipe,
+// as an unbound value would (D1): B's call started before A's published, A's
+// unbound value became the recipe's entry, and B's bound value, published
+// after it, is still the one B gets, and hits afterwards.
+func TestCacheBoundResultDoesNotAdoptAnotherSessionsEntry(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	c, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	srv := cacheTestServer(t)
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "bound-beside-live-entry",
+	}
+	aCtx := currentEntryTestSession(baseCtx, c, "session-a")
+	bCtx := currentEntryTestSession(baseCtx, c, "session-b")
+
+	bStarted, bFinish := make(chan struct{}), make(chan struct{})
+	bDone := make(chan currentEntryTestOutcome, 1)
+	go func() {
+		res, err := c.GetOrInitCall(bCtx, "session-b", srv, &CallRequest{ResultCall: frame.clone(), IsPersistable: true}, func(ctx context.Context) (AnyResult, error) {
+			close(bStarted)
+			<-bFinish
+			BindToSession(ctx)
+			return NewResultForCall(&cacheTestObject{Value: 2}, frame.clone())
+		})
+		bDone <- currentEntryTestOutcome{res, err}
+	}()
+	<-bStarted
+
+	a, err := c.GetOrInitCall(aCtx, "session-a", srv, &CallRequest{ResultCall: frame.clone(), IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(&cacheTestObject{Value: 1}, frame.clone())
+	})
+	assert.NilError(t, err)
+	aID := a.cacheSharedResult().id
+	assert.Equal(t, aID, currentEntryTestIndexed(t, c, frame))
+
+	close(bFinish)
+	b := <-bDone
+	assert.NilError(t, b.err)
+	bID := b.res.cacheSharedResult().id
+	assert.Assert(t, bID != aID, "B must get its own bound value, not A's entry")
+	assert.Equal(t, 2, b.res.Unwrap().(*cacheTestObject).Value)
+	assert.Equal(t, aID, currentEntryTestIndexed(t, c, frame), "the index keeps naming A's entry")
+
+	again, err := c.GetOrInitCall(bCtx, "session-b", srv, &CallRequest{ResultCall: frame.clone(), IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		t.Fatal("session B must hit its own value")
+		return nil, nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, bID, again.cacheSharedResult().id)
+
+	for _, s := range []struct {
+		ctx context.Context
+		id  string
+	}{{aCtx, "session-a"}, {bCtx, "session-b"}} {
+		assert.NilError(t, c.ReleaseSession(s.ctx, s.id))
+	}
+}
