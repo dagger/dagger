@@ -307,10 +307,10 @@ func (r MergeReply) Imported() []ImportedValue {
 // entry keeps its provisional number, firstID + ordinal - 1.
 type valueMergePrep struct {
 	// from is the cache the bundle is from.
-	from    CacheID
-	bundle  ValueBundle
-	order   []uint64
-	index   map[uint64]*TransferredValue
+	from   CacheID
+	bundle ValueBundle
+	order  []uint64
+	index  map[uint64]*TransferredValue
 	// rows are the bundle's ordinals by sender number, which its records'
 	// own references name rows by, and senders the reverse
 	// (transferSenderNumbers).
