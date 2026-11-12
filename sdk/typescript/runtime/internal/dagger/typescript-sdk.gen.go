@@ -14,7 +14,7 @@ type TypescriptSDKOpts struct {
 	SDKSourceDir *Directory
 }
 
-func (r *Query) TypescriptSDK(opts ...TypescriptSDKOpts) *TypescriptSDK { // typescript-sdk (../../../../../:0:0)
+func (r *Query) TypescriptSDK(opts ...TypescriptSDKOpts) *TypescriptSDK { // typescript-sdk (../../:0:0)
 	q := r.query.Select("typescriptSdk")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sdkSourceDir` optional argument
@@ -24,12 +24,17 @@ func (r *Query) TypescriptSDK(opts ...TypescriptSDKOpts) *TypescriptSDK { // typ
 	}
 
 	return &TypescriptSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-type TypescriptSDK struct { // typescript-sdk (../../../../../:0:0)
+type TypescriptSDK struct { // typescript-sdk (../../:0:0)
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	id *ID
 }
@@ -37,6 +42,9 @@ type TypescriptSDK struct { // typescript-sdk (../../../../../:0:0)
 func (r *TypescriptSDK) WithGraphQLQuery(q *querybuilder.Selection) *TypescriptSDK {
 	return &TypescriptSDK{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -51,9 +59,7 @@ func (r *TypescriptSDK) Codegen(modSource *ModuleSource, introspectionJson *File
 	q = q.Arg("modSource", modSource)
 	q = q.Arg("introspectionJson", introspectionJson)
 
-	return &GeneratedCode{
-		query: q,
-	}
+	return new(GeneratedCode).WithGraphQLQuery(q)
 }
 
 // Returns a directory with a standalone generated client and any necessary configuration
@@ -66,9 +72,7 @@ func (r *TypescriptSDK) GenerateClient(modSource *ModuleSource, introspectionJso
 	q = q.Arg("introspectionJson", introspectionJson)
 	q = q.Arg("outputDir", outputDir)
 
-	return &Directory{
-		query: q,
-	}
+	return new(Directory).WithGraphQLQuery(q)
 }
 
 // A unique identifier for this TypescriptSdk.
@@ -81,7 +85,13 @@ func (r *TypescriptSDK) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -116,7 +126,7 @@ func (r *TypescriptSDK) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = TypescriptSDK{query: selectNode(dag.query, id, "TypescriptSdk")}
+	*r = TypescriptSDK{query: selectNode(Connect().QueryBuilder(), id, "TypescriptSdk")}
 	return nil
 }
 
@@ -147,9 +157,7 @@ func (r *TypescriptSDK) ModuleRuntime(modSource *ModuleSource, opts ...Typescrip
 	}
 	q = q.Arg("modSource", modSource)
 
-	return &Container{
-		query: q,
-	}
+	return new(Container).WithGraphQLQuery(q)
 }
 
 // Returns the list of files that are copied from the host when generating the client.
@@ -165,7 +173,5 @@ func (r *TypescriptSDK) RequiredClientGenerationFiles(ctx context.Context) ([]st
 func (r *TypescriptSDK) SdksourceDir() *Directory {
 	q := r.query.Select("sdksourceDir")
 
-	return &Directory{
-		query: q,
-	}
+	return new(Directory).WithGraphQLQuery(q)
 }
