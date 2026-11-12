@@ -15,6 +15,9 @@ import (
 type StoredSize struct {
 	Records int
 	Bytes   int64
+	// OutputBytes is what the root adds to a merge's message for its
+	// closure's outputs.
+	OutputBytes int64
 	// Unmeasured marks a root MeasuredStoredSizes didn't measure: its
 	// closure has a value no measure has sized yet.
 	Unmeasured bool
@@ -374,4 +377,17 @@ func decimalDigits(n uint64) int64 {
 		digits++
 	}
 	return digits
+}
+
+// storedBlobAddressAllowance is what a price allows for each blob's download
+// address, and storedOutputReferenceSlack for the digits of an output's
+// references.
+const (
+	storedBlobAddressAllowance = 2 << 10
+	storedOutputReferenceSlack = 64
+)
+
+// StoredLowerHalf returns the lower half of root's closure.
+func (c *Cache) StoredLowerHalf(ctx context.Context, root uint64, held *HeldBy) ([]uint64, int, error) {
+	return nil, 0, nil
 }

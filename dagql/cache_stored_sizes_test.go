@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -567,4 +569,88 @@ func TestStoredSizesKeepNoMeasureOfAnOlderState(t *testing.T) {
 	require.False(t, got[0].Unmeasured, "the size measured for the new dependencies stays")
 	require.Equal(t, 3, got[0].Records, "R, P and the part's owner")
 	require.Equal(t, encodes, cloud.StoredSizeEncodes())
+}
+
+// A root's price counts what its outputs add to a merge's message as the
+// wire carries them (ShareChainLayers): each stored part without its layers,
+// each layer the bundle lists once, and an allowance for each blob's
+// download address, which the bundle gets when it is sent. Before addresses,
+// that is never less than the bundle's outputs and layers encode to, and more
+// only by the digits of references.
+func TestStoredSizesPriceOutputsAsTheWireCarriesThem(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	base := []snapshots.ExportLayer{storedLayersTestLayer("price-base-0", "the base"), storedLayersTestLayer("price-base-1", "the base")}
+	for i, number := range []uint64{r, p} {
+		chain := append(slices.Clone(base), storedLayersTestLayer(fmt.Sprint("price-top-", i), "the part's own"))
+		packs := map[digest.Digest]digest.Digest{base[0].Descriptor.Digest: testDigest("price-pack")}
+		stored, err := cloud.SetStoredPart(ctx, number, storedLayersTestPart("snapshot", chain, packs), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	sizes, err := cloud.StoredSizes(ctx, []uint64{r}, nil)
+	require.NoError(t, err)
+	built, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	require.NoError(t, err)
+	require.Len(t, built.Bundle.Outputs, 2)
+	shared, err := ShareChainLayers(built.Bundle)
+	require.NoError(t, err)
+	outputs, err := json.Marshal(shared.Outputs)
+	require.NoError(t, err)
+	layers, err := json.Marshal(shared.Layers)
+	require.NoError(t, err)
+	carried := int64(len(outputs) + len(layers))
+	addresses := int64(4) * storedBlobAddressAllowance // two base layers and two tops
+	priced := sizes[0].OutputBytes - addresses
+	require.GreaterOrEqual(t, priced, carried, "never less than the wire carries")
+	require.LessOrEqual(t, priced, carried+2*storedOutputReferenceSlack, "more only by the digits of references")
+}
+
+// A root's lower half is what a merge over the message limit sends ahead of
+// it, as the service's split of a refused merge does: the entries that carry
+// the first half of the records below the root, those of them that no other
+// of them depends on; never the root, and never an entry the recipient holds.
+// It also says how many records, but held rows, the root's closure carries.
+func TestStoredLowerHalfIsTheFirstHalfBelowTheRoot(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	root := persistedListTestResult(t, actx, a, asrv, "half-root", &transferTestValue{Text: "root"})
+	var chain []AnyResult
+	for i := range 8 {
+		dep := persistedListTestResult(t, actx, a, asrv, fmt.Sprint("half-dep-", i), &transferTestValue{Text: fmt.Sprint("dep ", i)})
+		if i > 0 {
+			transferTestDependency(a, actx, dep, chain[i-1])
+		}
+		chain = append(chain, dep)
+	}
+	transferTestDependency(a, actx, root, chain[7])
+	bundle := exportTestBundle(t, actx, a, root)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	number := map[sharedResultID]uint64{}
+	for _, value := range reply.Values {
+		for _, sent := range bundle.Values {
+			if sent.Ordinal == value.Ordinal {
+				number[sharedResultID(sent.SenderNumber)] = value.Number
+			}
+		}
+	}
+	cloudOf := func(res AnyResult) uint64 { return number[res.cacheSharedResult().id] }
+
+	lower, carried, err := cloud.StoredLowerHalf(ctx, cloudOf(root), nil)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{cloudOf(chain[3])}, lower, "the top of the chain's lower four")
+	require.Equal(t, 9, carried)
+
+	// The recipient holds the chain's lowest two: what's below the root is
+	// the six above them, and their lower half the next three.
+	held := &HeldBy{Cache: "cache-b", Now: time.Now().Unix()}
+	for i, res := range chain[:2] {
+		heldTestHold(t, ctx, cloud, "cache-b", uint64(100+i), cloudOf(res), 0)
+	}
+	lower, carried, err = cloud.StoredLowerHalf(ctx, cloudOf(root), held)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{cloudOf(chain[4])}, lower)
+	require.Equal(t, 7, carried, "the root and the six above the held rows")
 }
