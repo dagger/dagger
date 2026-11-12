@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"gotest.tools/v3/assert"
+
+	"github.com/dagger/dagger/engine/snapshots/config"
 )
 
 // A result its call bound to its session (BindToSession) is served only to
@@ -185,36 +187,32 @@ func TestCacheBoundResultStaysBoundAcrossRestart(t *testing.T) {
 	assert.NilError(t, c.ReleaseSession(s2, "session-2"))
 }
 
-// A bound value sent to another cache stays bound there: no session of the
-// receiving cache is served it.
-func TestCacheBoundResultStaysBoundInAnotherCache(t *testing.T) {
+// A transfer leaves out a bound value and what is built on it: they are no
+// use to another cache, where their session doesn't exist.
+func TestCacheBoundResultIsNotTransferred(t *testing.T) {
 	t.Parallel()
 
+	ctx, c, srv := transferTestCache(t)
+	sa := currentEntryTestSession(ctx, c, "session-a")
 	frame := &ResultCall{Kind: ResultCallKindField, Field: "bound-transferred", Type: NewResultCallType((&transferTestValue{}).Type())}
-	var calls int
-	call := func(ctx context.Context, c *Cache, srv *Server, session string) AnyResult {
-		t.Helper()
-		res, err := c.GetOrInitCall(ctx, session, srv, &CallRequest{ResultCall: frame.clone(), IsPersistable: true}, func(ctx context.Context) (AnyResult, error) {
-			calls++
-			BindToSession(ctx)
-			return NewResultForCall(&transferTestValue{Text: "failed"}, frame.clone())
-		})
-		assert.NilError(t, err)
-		return res
-	}
-
-	actx, a, asrv := transferTestCache(t)
-	sa := currentEntryTestSession(actx, a, "session-a")
-	sent := call(sa, a, asrv, "session-a")
-	bundle := exportTestBundle(t, actx, a, sent)
-
-	bctx, b, bsrv := transferTestCache(t)
-	_, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	bound, err := c.GetOrInitCall(sa, "session-a", srv, &CallRequest{ResultCall: frame.clone(), IsPersistable: true}, func(ctx context.Context) (AnyResult, error) {
+		BindToSession(ctx)
+		return NewResultForCall(&transferTestValue{Text: "failed"}, frame.clone())
+	})
 	assert.NilError(t, err)
-	sb := currentEntryTestSession(bctx, b, "session-b")
-	got := call(sb, b, bsrv, "session-b")
-	assert.Assert(t, !got.HitCache(), "the receiving cache must not serve another cache's bound value")
-	assert.Equal(t, 2, calls)
-	assert.NilError(t, b.ReleaseSession(sb, "session-b"))
-	assert.NilError(t, a.ReleaseSession(sa, "session-a"))
+	wrapper := currentEntryTestPublish(t, sa, c, srv, "session-a", "bound-wrapper", String("wrapper"))
+	assert.NilError(t, c.AddExplicitDependency(sa, wrapper, bound, "bound-dependency"))
+	plain := persistedListTestResult(t, ctx, c, srv, "plain-root", &transferTestValue{Text: "plain"})
+
+	var leftOut []LeftOutRoot
+	var roots int
+	assert.NilError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{bound, wrapper, plain}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		leftOut, roots = values.LeftOut, len(values.Bundle.Roots)
+		return nil
+	}))
+	assert.Equal(t, 1, roots, "only the unbound root is sent")
+	assert.Equal(t, 2, len(leftOut))
+	assert.Equal(t, 0, leftOut[0].Index)
+	assert.Equal(t, 1, leftOut[1].Index)
+	assert.NilError(t, c.ReleaseSession(sa, "session-a"))
 }

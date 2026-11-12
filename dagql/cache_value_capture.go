@@ -209,6 +209,12 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		if frame == nil || frame.Type == nil || frame.Type.NamedType == "Query" {
 			return blocked(res.id, blockedRow{row: res.id, err: fmt.Errorf("transfer capture: row %d has no transferable frame", res.id)})
 		}
+		// A value bound to its session (BindToSession) is no use to another
+		// cache, where its session doesn't exist, and what is built on it
+		// shares its binding: the roots that reach it stay here.
+		if res.boundSession != "" {
+			return blocked(res.id, blockedRow{row: res.id, err: fmt.Errorf("transfer capture: row %d is bound to its session", res.id)})
+		}
 		if !carried[res.id] && known.knowsLocked(res) {
 			c.incrementIncomingOwnershipLocked(ctx, res)
 			row := &capturedTransferRow{shared: res, held: true, imported: res.imported, frame: frame, expiry: res.expiresAtUnix, replacements: res.replacements, transferRev: res.transferRevision, dependencyRev: res.dependencyOwnershipRevision, requiredRev: res.requiredSessionResourcesGen.Load()}
