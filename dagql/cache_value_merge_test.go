@@ -344,9 +344,9 @@ func mergeTestUnderLiveRoot(t *testing.T, bundle ValueBundle) ValueBundle {
 	dep.ExpiresAtUnix = time.Now().Add(-time.Hour).Unix()
 	root := TransferredValue{Ordinal: 2, SenderNumber: dep.SenderNumber + 1000, DependencyIDs: []uint64{1}}
 	root.Record = dep.Record
-	root.Record.ResultID = 2
+	root.Record.ResultID = root.SenderNumber
 	if root.Record.Envelope.ResultID != 0 {
-		root.Record.Envelope.ResultID = 2
+		root.Record.Envelope.ResultID = root.SenderNumber
 	}
 	root.Record.Envelope.PendingOffers = nil
 	call := dep.Record.Call.clone()
@@ -424,23 +424,20 @@ func TestMergeValuesReplacesAnExpiredCloudRecord(t *testing.T) {
 }
 
 // mergeTestThroughTheCloud merges an engine's export into a new Cloud cache,
-// and returns the bundle the Cloud sends on: the same records, named by the
-// Cloud's numbers.
+// and returns the bundle the Cloud sends on: the same records, as the Cloud
+// stores them.
 func mergeTestThroughTheCloud(t *testing.T, exported ValueBundle) (context.Context, *Cache, ValueBundle) {
 	t.Helper()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
 	stored, err := cloud.MergeValues(ctx, "cache-a", exported)
 	require.NoError(t, err)
-	sent := exported
-	sent.Values = append([]TransferredValue(nil), exported.Values...)
-	for i := range sent.Values {
-		for _, value := range stored.Values {
-			if value.Ordinal == sent.Values[i].Ordinal {
-				sent.Values[i].SenderNumber = value.Number
-			}
-		}
+	var roots []uint64
+	for _, root := range stored.Roots {
+		roots = append(roots, root.Number)
 	}
-	return ctx, cloud, sent
+	sent, err := cloud.StoredBundle(ctx, roots, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	return ctx, cloud, sent.Bundle
 }
 
 // mergeTestHolding returns cache's holding on the entry of key.

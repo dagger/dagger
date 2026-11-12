@@ -24,7 +24,7 @@ func engineHeldTestBundle(t *testing.T, c *Cache, bundle ValueBundle, held ...An
 			if row.SenderNumber != uint64(shared.id) {
 				continue
 			}
-			out.Values[i] = TransferredValue{Ordinal: row.Ordinal, SenderNumber: row.SenderNumber, SenderReplacements: row.SenderReplacements, Record: PersistedRecord{ResultID: uint64(row.Ordinal)}, ExpiresAtUnix: row.ExpiresAtUnix, Held: recipe}
+			out.Values[i] = TransferredValue{Ordinal: row.Ordinal, SenderNumber: row.SenderNumber, SenderReplacements: row.SenderReplacements, Record: PersistedRecord{ResultID: row.SenderNumber}, ExpiresAtUnix: row.ExpiresAtUnix, Held: recipe}
 			found = true
 		}
 		require.True(t, found, "the bundle carries entry %d", shared.id)
