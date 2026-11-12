@@ -290,10 +290,15 @@ func clonePartOffers(offers []PersistedPartOffer) ([]PersistedPartOffer, error) 
 	return cloned, nil
 }
 
-// clonePartOffer deep-copies offer: every nested map, slice and pointer,
-// including layer annotations, before reference relocation and the removal
-// of addresses can change the copy. It refuses an offer that can't be encoded
-// as its record is, which only a layer's creation time can make it.
+// clonePartOffer copies offer for a caller that may change the copy: every
+// nested map, slice and pointer of its address, value, owner and chain, so
+// that reference relocation and the removal of addresses can't reach the
+// original. The copy shares the chain's layers. An offered layer is never
+// written after it's built: not the layer, its descriptor's annotations,
+// URLs, data or platform, nor its creation time. The layers are most of an
+// offer, and every copy of every offer repeated them. It refuses an offer
+// that can't be encoded as its record is, which only a layer's creation time
+// can make it.
 func clonePartOffer(offer PersistedPartOffer) (PersistedPartOffer, error) {
 	offer.Address.OutputPath = slices.Clone(offer.Address.OutputPath)
 	offer.Value.Platform = clonePlatform(offer.Value.Platform)
@@ -301,21 +306,16 @@ func clonePartOffer(offer PersistedPartOffer) (PersistedPartOffer, error) {
 	for i := range offer.Value.Services {
 		offer.Value.Services[i].Aliases = slices.Clone(offer.Value.Services[i].Aliases)
 	}
-	offer.Chain.Layers = slices.Clone(offer.Chain.Layers)
-	for i := range offer.Chain.Layers {
-		layer := &offer.Chain.Layers[i]
-		layer.Descriptor.URLs = slices.Clone(layer.Descriptor.URLs)
-		layer.Descriptor.Annotations = maps.Clone(layer.Descriptor.Annotations)
-		layer.Descriptor.Data = slices.Clone(layer.Descriptor.Data)
-		layer.Descriptor.Platform = clonePlatform(layer.Descriptor.Platform)
+	for _, layer := range offer.Chain.Layers {
 		if layer.CreatedAt != nil {
 			if _, err := layer.CreatedAt.MarshalJSON(); err != nil {
 				return PersistedPartOffer{}, err
 			}
-			createdAt := *layer.CreatedAt
-			layer.CreatedAt = &createdAt
 		}
 	}
+	// Clipped, so that an append to the copy's layers can't write over the
+	// original's.
+	offer.Chain.Layers = slices.Clip(offer.Chain.Layers)
 	offer.Chain.Addresses = maps.Clone(offer.Chain.Addresses)
 	offer.Chain.Packs = maps.Clone(offer.Chain.Packs)
 	offer.Owner.DependencyIDs = slices.Clone(offer.Owner.DependencyIDs)
