@@ -34,6 +34,10 @@ type StoredBundleResult struct {
 	// call's input needs, the first root whose call needs it. StoredSizes
 	// prices each root with what travels with it.
 	RootOwners []int
+	// stored has, by ordinal, the declared parts of each value the bundle
+	// carries compressed, as held, which its check reads in place of the
+	// value's envelope (checkValueBundle).
+	stored map[uint64][]declaredPart
 }
 
 // HeldBy names the entries of a blob-backed cache whose values a recipient
@@ -121,7 +125,7 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, nowUnix int64,
 			return StoredBundleResult{}, fmt.Errorf("stored bundle: held entry %d recipe: %w", value.SenderNumber, err)
 		}
 	}
-	if err := validateStoredBundle(out.Bundle); err != nil {
+	if err := validateStoredBundle(out.Bundle, out.stored); err != nil {
 		return StoredBundleResult{}, fmt.Errorf("stored bundle: %w", err)
 	}
 	return out, nil
@@ -203,13 +207,13 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 			return StoredBundleResult{}, nil, err
 		}
 	}
-	out.Bundle, out.Donors = build.bundle, build.donors
+	out.Bundle, out.Donors, out.stored = build.bundle, build.donors, build.stored
 	out.CallInputs, out.UnsendableCalls = build.callInputs, build.unsendableCalls
 	for _, res := range rootEntries {
 		out.RootOwners = append(out.RootOwners, build.owners[res.id])
 	}
 	if frames == nil {
-		if err := validateStoredBundle(build.bundle); err != nil {
+		if err := validateStoredBundle(build.bundle, build.stored); err != nil {
 			return StoredBundleResult{}, nil, fmt.Errorf("stored bundle: %w", err)
 		}
 	}
@@ -243,6 +247,9 @@ type storedBundleBuild struct {
 	owners   map[sharedResultID]int
 	current  int
 	ordinary map[sharedResultID]bool
+	// stored has, by ordinal, the declared parts of each value the build
+	// carries compressed (addStoredValue).
+	stored map[uint64][]declaredPart
 }
 
 // relocate rewrites a reference to an entry of the closure to its ordinal.
@@ -319,6 +326,19 @@ func storedClosureChildrenLocked(res *sharedResult) []sharedResultID {
 // storedBundleValueLocked copies res's stored record into the build,
 // normalized for transfer, as stored. Requires egraphMu.
 func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedResult) error {
+	if body := res.stored; body != nil {
+		// A body goes as it is held, compressed, and the bundle's encoding
+		// writes it out (TransferredValue.MarshalJSON).
+		refs, parts, err := res.storedFactsLocked()
+		if err != nil {
+			return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
+		}
+		if build.stored == nil {
+			build.stored = map[uint64][]declaredPart{}
+		}
+		build.stored[uint64(build.ordinals[res.id])] = parts
+		return build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id), Call: res.loadResultCall().clone()}, body.envelope, refs)
+	}
 	kept, err := c.storedTransferLocked(res)
 	if err != nil {
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
@@ -332,15 +352,21 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
 	rec.Call = rec.Call.clone()
-	// The bundle is validated by shape (validateStoredBundle), so each
-	// reference is checked against the record's dependencies here, from what
-	// normalizing the record found it names (storedTransferRecord.refs).
-	for _, ref := range kept.refs {
+	return build.addStoredValue(res, rec, nil, kept.refs)
+}
+
+// addStoredValue adds res's record to the build, with its envelope
+// compressed in storedEnvelope when it is held so. The bundle is validated by
+// shape (validateStoredBundle), so each reference is checked against the
+// record's dependencies here, from what normalizing the record found it names
+// (refs). Requires egraphMu.
+func (build *storedBundleBuild) addStoredValue(res *sharedResult, rec PersistedRecord, storedEnvelope []byte, refs []uint64) error {
+	for _, ref := range refs {
 		if _, ok := res.deps[sharedResultID(ref)]; !ok {
 			return fmt.Errorf("stored bundle: entry %d: reference to %d is not a direct dependency", res.id, ref)
 		}
 	}
-	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: rec, ExpiresAtUnix: res.expiresAtUnix}
+	value := TransferredValue{Ordinal: build.ordinals[res.id], SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: rec, ExpiresAtUnix: res.expiresAtUnix, storedEnvelope: storedEnvelope}
 	for dep := range res.deps {
 		value.DependencyIDs = append(value.DependencyIDs, uint64(build.ordinals[dep]))
 	}
@@ -351,14 +377,14 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 
 // validateStoredBundle checks a stored bundle by its shape
 // (validateValueBundleShape): every check of the bundle as a whole, and of
-// each record without its payloads. The rest of a record's checks are made
-// as the bundle is built: its payloads are validated by their codecs and its
-// outputs mapped once for each of its versions, when it is normalized
-// (storedTransferRecordLocked), relocation rewrites only its references, and
-// each reference is checked against its dependencies as it is relocated
-// (storedBundleValueLocked).
-func validateStoredBundle(bundle ValueBundle) error {
-	_, err := validateValueBundleShape(bundle)
+// each record without its payloads, a record it carries compressed by its
+// call and declared parts (checkValueBundle's stored). The rest of a record's
+// checks are made as the bundle is built: its payloads are validated by
+// their codecs and its outputs mapped once for each of its versions, when it
+// is normalized (normalizeStoredTransfer) or compressed (newStoredBody), and
+// each reference is checked against its dependencies (addStoredValue).
+func validateStoredBundle(bundle ValueBundle, stored map[uint64][]declaredPart) error {
+	_, err := checkValueBundle(bundle, true, stored)
 	return err
 }
 
@@ -369,8 +395,10 @@ type storedTransferRecord struct {
 	call     *ResultCall
 	record   PersistedRecord
 	// refs are the entries the record's child and call references name,
-	// which a bundle checks against the entry's dependencies.
-	refs []uint64
+	// which a bundle checks against the entry's dependencies, and parts the
+	// parts it declares absent or pending.
+	refs  []uint64
+	parts []declaredPart
 	// size is the entry's value's encoded size in a bundle, once StoredSizes
 	// has measured it (measureStoredValue), with what else it read.
 	size atomic.Pointer[storedValueSize]
@@ -464,7 +492,11 @@ func normalizeStoredTransfer(res *sharedResult, env *PersistedResultEnvelope, ca
 			return nil, err
 		}
 	}
-	return &storedTransferRecord{envelope: env, call: call, record: rec, refs: refs}, nil
+	parts, err := declaredPartsOf(outputs)
+	if err != nil {
+		return nil, err
+	}
+	return &storedTransferRecord{envelope: env, call: call, record: rec, refs: refs, parts: parts}, nil
 }
 
 // storedBundleOutputsLocked adds res's outputs to the build: its own stored
@@ -481,13 +513,13 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 			return err
 		}
 	}
-	declared, err := mapTransferredOutputs(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()})
+	declared, err := res.declaredPartsLocked()
 	if err != nil {
 		return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
 	}
-	for _, output := range declared {
-		key, err := partAddressKey(output.Address)
-		if err != nil || output.State != "pending" {
+	for _, part := range declared {
+		key := part.key
+		if part.state != "pending" {
 			continue
 		}
 		if _, own := res.storedParts[key]; own {

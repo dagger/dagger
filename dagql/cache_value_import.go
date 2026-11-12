@@ -12,7 +12,7 @@ import (
 // validateValueBundle checks a bundle and every record's payload, and returns
 // its ordinals in dependency order.
 func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
-	return checkValueBundle(bundle, false)
+	return checkValueBundle(bundle, false, nil)
 }
 
 // validateValueBundleShape checks a bundle as validateValueBundle does, except
@@ -20,7 +20,7 @@ func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
 // and a payload is decoded only to find the parts the record's offers and
 // outputs name. The caller checks the payloads it uses.
 func validateValueBundleShape(bundle ValueBundle) ([]uint64, error) {
-	return checkValueBundle(bundle, true)
+	return checkValueBundle(bundle, true, nil)
 }
 
 // ResolveChainPrefixes gives each of the bundle's outputs that names a chain
@@ -91,8 +91,15 @@ func ResolveChainPrefixes(bundle *ValueBundle) error {
 	return nil
 }
 
+// checkValueBundle checks a bundle as validateValueBundle does, or, with
+// shapeOnly, as validateValueBundleShape does. stored has, for each row whose
+// record a blob-backed cache sends as it holds it, compressed, the parts the
+// record declares (storedBody.parts): its content was checked when its body
+// was made, and its references by the build, so the row is checked by its
+// dependencies and call, and its outputs against those parts.
+//
 //nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
-func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
+func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]declaredPart) ([]uint64, error) {
 	if bundle.Version != valueBundleVersion {
 		return nil, fmt.Errorf("unsupported value bundle version %d", bundle.Version)
 	}
@@ -138,6 +145,9 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if shapeOnly {
 			validate = validateTransferRecordShape
 		}
+		if _, ok := stored[id]; ok {
+			validate = validateStoredRecordShape
+		}
 		if err := validate(row.Record, senders.dependencies(row.DependencyIDs)); err != nil {
 			return nil, fmt.Errorf("row %d: %w", id, err)
 		}
@@ -164,9 +174,16 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if row.Held != "" || shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
 			continue
 		}
-		outputs, err := mapTransferredOutputs(row.Record)
-		if err != nil {
-			return nil, err
+		var outputs []CapturedCodecOutput
+		if parts, ok := stored[id]; ok {
+			for _, part := range parts {
+				outputs = append(outputs, part.output())
+			}
+		} else {
+			var err error
+			if outputs, err = mapTransferredOutputs(row.Record); err != nil {
+				return nil, err
+			}
 		}
 		addresses[id] = map[string]CapturedCodecOutput{}
 		for _, output := range outputs {
