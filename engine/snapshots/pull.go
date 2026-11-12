@@ -318,6 +318,13 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 	if apart {
 		mounts = upperOverlay(mounts)
 	}
+	// The engine trusts its own image's blobs, which the content store holds
+	// in place: their layers were checked when the image was pulled, and
+	// their sizes when the engine started. Their unpack hashes nothing.
+	trusted := cm.inPlaceContent != nil && cm.inPlaceContent(desc.Digest)
+	if trusted {
+		ctx = withTrustedLayer(ctx)
+	}
 	applyStart := clock.now()
 	// A chain layer applied apart is decompressed ahead of its apply, which
 	// then reads the layer's tar: the decompression and the file creation
@@ -364,7 +371,7 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 	// The snapshot is found again by diffID, so its content must be the
 	// diffID's, as containerd's unpacker also requires.
 	diffID, err := diffIDFromDescriptor(desc)
-	if err == nil && appliedDesc.Digest != diffID {
+	if err == nil && !trusted && appliedDesc.Digest != diffID {
 		err = errors.Errorf("wrong diff id %s calculated on extraction, expected %s", appliedDesc.Digest, diffID)
 	}
 	if err != nil {
@@ -378,6 +385,19 @@ func (cm *snapshotManager) applyLayer(ctx context.Context, mut MutableRef, desc 
 		unpack.Finish()
 	}
 	return unmount()
+}
+
+type trustedLayerKey struct{}
+
+// withTrustedLayer marks an apply of a layer whose blob the engine trusts
+// to be its diff ID's: the applier need not hash it, and reports no digest.
+func withTrustedLayer(ctx context.Context) context.Context {
+	return context.WithValue(ctx, trustedLayerKey{}, true)
+}
+
+func trustedLayer(ctx context.Context) bool {
+	trusted, _ := ctx.Value(trustedLayerKey{}).(bool)
+	return trusted
 }
 
 // upperOverlay turns the bind mount of a snapshot prepared with no parent

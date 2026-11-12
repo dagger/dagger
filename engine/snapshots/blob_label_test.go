@@ -1,6 +1,7 @@
 package snapshots_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -450,3 +451,52 @@ func TestLostImageBlobIsMadeAgain(t *testing.T) {
 	require.NoError(t, err, "the exported layer reads")
 	require.Equal(t, top.Digest, digest.FromBytes(data))
 }
+
+// The engine unpacks its own image's blobs without hashing them: their layers
+// were checked when the image was pulled. A blob whose bytes changed on disk
+// since, at the same size, therefore unpacks from the image, while the same
+// bytes from anywhere else are refused.
+func TestImageBlobsUnpackUnhashed(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer := testutil.NewStore(t)
+	built, _ := producer.Build(t, nil, "a.txt", "shipped in the image")
+	chain, err := built.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer chain.Release(context.Background())
+	layer := chain.Layers[0].Descriptor
+	blob, err := content.ReadBlob(ctx, chain.Provider, layer)
+	require.NoError(t, err)
+	changed := bytes.Replace(blob, []byte("shipped in the image"), []byte("shipped in the IMAGE"), 1)
+	require.NotEqual(t, blob, changed)
+	require.Len(t, changed, len(blob))
+	image := t.TempDir()
+	name := filepath.Join(image, "blobs", layer.Digest.Algorithm().String(), layer.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+	require.NoError(t, os.WriteFile(name, changed, 0o444))
+
+	fromImage := testutil.NewStoreWithImageBlobs(t, image)
+	fromImage.UseEngineApplier(t)
+	imported, err := fromImage.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: unreadProvider{InfoReaderProvider: chain.Provider, t: t}})
+	require.NoError(t, err, "the image's blob unpacks unhashed")
+	require.NoError(t, imported.Release(ctx))
+
+	elsewhere := testutil.NewStore(t)
+	elsewhere.UseEngineApplier(t)
+	_, err = elsewhere.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: changedProvider{InfoReaderProvider: chain.Provider, data: changed}})
+	require.Error(t, err, "the same bytes from a provider are refused")
+}
+
+// changedProvider serves data for any blob, at the blob's offered size.
+type changedProvider struct {
+	content.InfoReaderProvider
+	data []byte
+}
+
+func (p changedProvider) ReaderAt(context.Context, ocispecs.Descriptor) (content.ReaderAt, error) {
+	return bytesReaderAt{Reader: bytes.NewReader(p.data)}, nil
+}
+
+type bytesReaderAt struct{ *bytes.Reader }
+
+func (bytesReaderAt) Close() error { return nil }
