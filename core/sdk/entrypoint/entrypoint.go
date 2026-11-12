@@ -531,13 +531,18 @@ func validateConstructors(typeDefs []*core.TypeDef) error {
 	return nil
 }
 
-// ModuleFromTypeDefs builds a module from the types an entrypoint returned.
+// ModuleFromTypeDefs builds a module from the description and types an
+// entrypoint returned. An empty description leaves the module without one.
 func ModuleFromTypeDefs(
 	ctx context.Context,
 	dag *dagql.Server,
+	description string,
 	typeDefs dagql.ObjectResultArray[*core.TypeDef],
 ) (dagql.ObjectResult[*core.Module], error) {
 	selectors := []dagql.Selector{{Field: "module"}}
+	if description != "" {
+		selectors = append(selectors, dagql.Selector{Field: "withDescription", Args: []dagql.NamedInput{{Name: "description", Value: dagql.String(description)}}})
+	}
 	for i, typeDef := range typeDefs {
 		id, err := typeDef.ID()
 		if err != nil {
