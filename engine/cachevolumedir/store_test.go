@@ -2,6 +2,7 @@ package cachevolumedir
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -138,18 +139,61 @@ func TestOpenOwnership(t *testing.T) {
 	require.NoError(t, s2.Close())
 }
 
-func TestOpenRemovesDebris(t *testing.T) {
+func TestOpenDeletesLeftoversInTheBackground(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	for _, sub := range []string{"v1/tmp/half-made/fs", "v1/trash/half-gone/fs"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, sub), 0o755))
-		writeFile(t, filepath.Join(dir, sub, "f"), 10)
+	// A previous owner stopped while deleting a measured volume and while
+	// creating another.
+	gone := filepath.Join(dir, "v1", "trash", "half-gone", "volume")
+	require.NoError(t, os.MkdirAll(filepath.Join(gone, "fs"), 0o755))
+	writeFile(t, filepath.Join(gone, "fs", "f"), 2*mib)
+	size := int64(2 * mib)
+	dt, err := json.Marshal(meta{Format: FormatVersion, ID: "half-gone", SizeBytes: &size})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(gone, "meta.json"), dt, 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1", "tmp", "half-made", "fs"), 0o755))
+	writeFile(t, filepath.Join(dir, "v1", "tmp", "half-made", "fs", "f"), 10)
+
+	gate := make(chan struct{})
+	opened := make(chan *Store, 1)
+	go func() {
+		s, err := Open(dir, Options{EngineVersion: "test", RemoveAll: func(path string) error {
+			<-gate
+			return os.RemoveAll(path)
+		}})
+		assert.NoError(t, err)
+		opened <- s
+	}()
+	var s *Store
+	select {
+	case s = <-opened:
+	case <-time.After(10 * time.Second):
+		close(gate)
+		t.Fatal("Open waited for the previous owner's leftovers to be deleted")
 	}
-	openStore(t, dir, nil)
-	for _, sub := range []string{"v1/tmp", "v1/trash"} {
-		ents, err := os.ReadDir(filepath.Join(dir, sub))
-		require.NoError(t, err)
-		require.Empty(t, ents, sub)
-	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	ents, err := os.ReadDir(filepath.Join(dir, "v1", "tmp"))
+	require.NoError(t, err)
+	require.Empty(t, ents, "a volume the previous owner was creating moves to trash")
+	require.DirExists(t, gone, "leftovers are deleted in the background")
+
+	use(t, s, Identity{Key: "k"}, true, "f", mib)
+	_, used, err := s.Usage(t.Context())
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, used, int64(3*mib), "leftovers being deleted count as used")
+	report, err := s.Collect(t.Context(), Policy{MaxUsedSpace: mib + mib/2})
+	require.NoError(t, err)
+	require.Empty(t, report.Removed, "leftovers being deleted count as freed")
+
+	close(gate)
+	require.NoError(t, s.WaitRemovals(t.Context()))
+	ents, err = os.ReadDir(filepath.Join(dir, "v1", "trash"))
+	require.NoError(t, err)
+	require.Empty(t, ents)
+	_, used, err = s.Usage(t.Context())
+	require.NoError(t, err)
+	require.Less(t, used, int64(mib+mib/2))
 }
 
 func TestAcquireCreatesOnceAndReuses(t *testing.T) {
