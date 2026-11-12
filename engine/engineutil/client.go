@@ -617,6 +617,11 @@ func (c *Client) GitCheckoutState(ctx context.Context, checkoutPath string) (str
 // needed to reconstruct a standalone repository from it. A repository with no
 // commits yet (unborn HEAD) has an empty HeadSHA and no BundlePath. The caller
 // must call Close to release the owned bundle file.
+//
+// A pack RelativeToHaves leaves out every object reachable from the haves the
+// request named, and has no BundlePath when that leaves nothing; Refs then
+// lists the checkout's branch and tag refs, since the bundle may not carry
+// them all.
 type GitCheckoutPack struct {
 	HeadSHA           string
 	HeadRef           string
@@ -626,6 +631,8 @@ type GitCheckoutPack struct {
 	Remotes           []*git.CheckoutRemote
 	UpstreamRemote    string
 	HasRemoteMetadata bool
+	RelativeToHaves   bool
+	Refs              []*git.CheckoutRef
 }
 
 // Close releases the checkout bundle owned by pack.
@@ -639,9 +646,11 @@ func (pack *GitCheckoutPack) Close() error {
 }
 
 // PackGitCheckout asks the client to pack a local checkout's repository with
-// its own git. See GitCheckoutPack. A checkout that is not a git repository
-// reports gitutil.ErrGitNoRepo.
-func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStateDigest string) (_ *GitCheckoutPack, rerr error) {
+// its own git. See GitCheckoutPack. haves are the ref targets of a
+// reconstruction the caller already holds, which the pack may be relative to;
+// a client that predates them sends a complete pack. A checkout that is not a
+// git repository reports gitutil.ErrGitNoRepo.
+func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStateDigest string, haves []string) (_ *GitCheckoutPack, rerr error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -657,6 +666,7 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 	stream, err := git.NewGitClient(caller.Conn()).PackCheckout(ctx, &git.PackCheckoutRequest{
 		CheckoutPath:        checkoutPath,
 		ExpectedStateDigest: expectedStateDigest,
+		HaveShas:            haves,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open pack stream: %w", err)
@@ -704,6 +714,8 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 				Remotes:           msg.Metadata.Remotes,
 				UpstreamRemote:    msg.Metadata.UpstreamRemote,
 				HasRemoteMetadata: msg.Metadata.HasRemoteMetadata,
+				RelativeToHaves:   msg.Metadata.RelativeToHaves,
+				Refs:              msg.Metadata.Refs,
 			}
 		case *git.PackCheckoutResponse_Chunk:
 			if pack == nil {
@@ -729,7 +741,7 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 	if expectedStateDigest != "" && pack.StateDigest != expectedStateDigest {
 		return nil, fmt.Errorf("checkout pack state %s does not match expected %s: %w", pack.StateDigest, expectedStateDigest, ErrGitCheckoutStateChanged)
 	}
-	if pack.HeadSHA != "" && (spool == nil || spool.size == 0) {
+	if pack.HeadSHA != "" && !pack.RelativeToHaves && (spool == nil || spool.size == 0) {
 		return nil, fmt.Errorf("missing bundle for checkout at %s", pack.HeadSHA)
 	}
 	if spool != nil {

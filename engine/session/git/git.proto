@@ -116,6 +116,11 @@ message PackCheckoutRequest {
   // preceding CheckoutState response. A mismatch asks the engine to retry
   // under the checkout's new cache key.
   string expected_state_digest = 2;
+  // have_shas are the ref targets of a reconstruction the engine already
+  // holds for this checkout. The client leaves out of the bundle every object
+  // reachable from those it also has, and reports the checkout's complete
+  // refs in the metadata, so the engine can extend that reconstruction.
+  repeated string have_shas = 3;
 }
 
 // A captured checkout is an optional donor for precisely this commit. The
@@ -161,6 +166,17 @@ message PackCheckoutMetadata {
   string upstream_remote = 7;
   // Distinguishes a complete empty list from an older client's absent metadata.
   bool has_remote_metadata = 8;
+  // relative_to_haves reports that the bundle leaves out the objects
+  // reachable from the request's have_shas, which may leave nothing to send:
+  // then no bundle chunks follow. refs is then the checkout's complete list
+  // of branch and tag refs, which the bundle no longer carries.
+  bool relative_to_haves = 9;
+  repeated CheckoutRef refs = 10;
+}
+
+message CheckoutRef {
+  string name = 1;
+  string sha = 2;
 }
 
 // Remote routing only; never a credential grant or arbitrary host Git config.
