@@ -106,9 +106,11 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		return nil, fmt.Errorf("bundle has no roots")
 	}
 	rows := map[uint64]TransferredValue{}
+	senders := transferSenders(bundle)
+	sent := map[uint64]bool{}
 	for _, row := range bundle.Values {
 		id := uint64(row.Ordinal)
-		if id == 0 || id > uint64(len(bundle.Values)) || row.Record.ResultID != id {
+		if id == 0 || id > uint64(len(bundle.Values)) {
 			return nil, fmt.Errorf("invalid ordinal %d", id)
 		}
 		if _, exists := rows[id]; exists {
@@ -116,6 +118,14 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		}
 		if row.SenderNumber == 0 {
 			return nil, fmt.Errorf("row %d: no sender number", id)
+		}
+		if sent[row.SenderNumber] {
+			return nil, fmt.Errorf("row %d: duplicate sender number %d", id, row.SenderNumber)
+		}
+		sent[row.SenderNumber] = true
+		// A record names itself and its references by the sender's numbers.
+		if row.Record.ResultID != row.SenderNumber {
+			return nil, fmt.Errorf("row %d: record %d is not its sender number %d", id, row.Record.ResultID, row.SenderNumber)
 		}
 		if row.Held != "" {
 			if err := validateHeldRow(row); err != nil {
@@ -128,7 +138,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if shapeOnly {
 			validate = validateTransferRecordShape
 		}
-		if err := validate(row.Record, row.DependencyIDs); err != nil {
+		if err := validate(row.Record, senders.dependencies(row.DependencyIDs)); err != nil {
 			return nil, fmt.Errorf("row %d: %w", id, err)
 		}
 		rows[id] = row
@@ -347,4 +357,31 @@ type transferIdentityPlan struct {
 	recipe, self digest.Digest
 	inputs       []digest.Digest
 	provenance   []egraphInputProvenanceKind
+}
+
+// transferSenderNumbers maps a bundle's ordinals to its rows' sender numbers.
+// A transferred record names itself and every row it references by the
+// sender's entry numbers, as the sender stores it: everything else in the
+// bundle, the rows' dependencies, roots, outputs and calls, names rows by
+// ordinal.
+type transferSenderNumbers map[uint64]uint64
+
+// transferSenders returns the bundle's ordinals' sender numbers.
+func transferSenders(bundle ValueBundle) transferSenderNumbers {
+	senders := make(transferSenderNumbers, len(bundle.Values))
+	for _, row := range bundle.Values {
+		senders[uint64(row.Ordinal)] = row.SenderNumber
+	}
+	return senders
+}
+
+// dependencies returns a row's dependencies, ordinals, as the sender numbers
+// its record's references name them by; one no row has becomes 0, which
+// validation refuses.
+func (s transferSenderNumbers) dependencies(deps []uint64) []uint64 {
+	out := make([]uint64, len(deps))
+	for i, dep := range deps {
+		out[i] = s[dep]
+	}
+	return out
 }
