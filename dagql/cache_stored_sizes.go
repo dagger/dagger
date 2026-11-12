@@ -11,12 +11,20 @@ import (
 )
 
 // StoredSize is what a root adds to a stored bundle: its values, and the sum
-// of their encoded sizes, each as json.Marshal encodes a TransferredValue.
+// of their encoded sizes, each as json.Marshal encodes a TransferredValue;
+// and what its closure's outputs add to the message a merge of the bundle is
+// sent in.
 type StoredSize struct {
 	Records int
 	Bytes   int64
-	// OutputBytes is what the root adds to a merge's message for its
-	// closure's outputs.
+	// OutputBytes counts the outputs as the message carries them
+	// (ShareChainLayers): each of the closure's own stored parts without its
+	// layers (storedPartWire), each layer the bundle doesn't list yet
+	// (storedLayerWire), and storedBlobAddressAllowance for each blob whose
+	// download address it doesn't carry yet, which signing adds when the
+	// merge is sent. It is never less than the message carries for them, but
+	// for an address over the allowance. Parts a closure entry borrows from
+	// another entry of its class aren't counted: the merge carries them too.
 	OutputBytes int64
 	// Unmeasured marks a root MeasuredStoredSizes didn't measure: its
 	// closure has a value no measure has sized yet.
@@ -76,11 +84,12 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, held *HeldBy, m
 	}
 	sizes := make([]StoredSize, len(roots))
 	seen, ordinary := map[sharedResultID]bool{}, map[sharedResultID]bool{}
+	outputs := &storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]bool{}}
 	for i, number := range roots {
 		if err := context.Cause(ctx); err != nil {
 			return nil, err
 		}
-		size, closure, own, misses := c.walkStoredRoot(sharedResultID(number), held, seen, ordinary)
+		size, closure, own, misses := c.walkStoredRoot(sharedResultID(number), held, seen, ordinary, outputs)
 		if len(misses) > 0 && !measure {
 			sizes[i] = StoredSize{Unmeasured: true}
 			continue
@@ -147,13 +156,13 @@ func (c *Cache) storedSizesRLock() func() {
 // (ordinary), or the recipient (held), have its inputs, never for an input
 // another call adds. Otherwise its first stored alternative's inputs are
 // priced, which is the call a bundle that can't place it chooses too.
-func (c *Cache) walkStoredRoot(root sharedResultID, held *HeldBy, seen, ordinary map[sharedResultID]bool) (StoredSize, []sharedResultID, int, []storedSizeMiss) {
+func (c *Cache) walkStoredRoot(root sharedResultID, held *HeldBy, seen, ordinary map[sharedResultID]bool, outputs *storedOutputsSeen) (StoredSize, []sharedResultID, int, []storedSizeMiss) {
 	defer c.storedSizesRLock()()
 	res := c.resultsByID[root]
 	if res == nil || res.noValueLocked() {
 		return StoredSize{}, nil, 0, nil
 	}
-	walk := &storedSizeWalk{c: c, held: held, seen: seen, visited: map[sharedResultID]bool{}}
+	walk := &storedSizeWalk{c: c, held: held, seen: seen, visited: map[sharedResultID]bool{}, outputs: outputs}
 	walk.visit(res)
 	own := len(walk.closure)
 	mine := make(map[sharedResultID]bool, own)
@@ -189,6 +198,32 @@ type storedSizeWalk struct {
 	size    StoredSize
 	closure []sharedResultID
 	misses  []storedSizeMiss
+	outputs *storedOutputsSeen
+}
+
+// storedOutputsSeen are the layers and blobs a bundle's outputs list so far,
+// which a merge's message carries once (ShareChainLayers).
+type storedOutputsSeen struct {
+	layers map[*storedLayer]bool
+	blobs  map[digest.Digest]bool
+}
+
+// add counts what res's own stored parts add to the message (StoredSize's
+// OutputBytes). Requires egraphMu.
+func (w *storedSizeWalk) addOutputs(res *sharedResult) {
+	for _, part := range res.storedParts {
+		w.size.OutputBytes += part.wire
+		for _, layer := range part.layers {
+			if !w.outputs.layers[layer] {
+				w.outputs.layers[layer] = true
+				w.size.OutputBytes += layer.wire
+			}
+			if blob := layer.layer.Descriptor.Digest; !w.outputs.blobs[blob] {
+				w.outputs.blobs[blob] = true
+				w.size.OutputBytes += storedBlobAddressAllowance
+			}
+		}
+	}
 }
 
 // carries reports whether the bundle carries the entry: an earlier root's
@@ -221,6 +256,7 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 		}
 	}
 	w.size.Records++
+	w.addOutputs(res)
 	if bytes, ok := storedValueMeasuredLocked(res); ok {
 		w.size.Bytes += bytes
 	} else {
@@ -380,14 +416,62 @@ func decimalDigits(n uint64) int64 {
 }
 
 // storedBlobAddressAllowance is what a price allows for each blob's download
-// address, and storedOutputReferenceSlack for the digits of an output's
-// references.
+// address in a merge's message (BlobAddress), which signing adds: a presigned
+// URL and its expiry, which run to about 1.5 KiB with a session token.
+// storedOutputReferenceSlack bounds what a price counts for an output beyond
+// a bundle built without addresses: the renewal key signing adds, and its
+// references at storedWireReference's digits.
 const (
 	storedBlobAddressAllowance = 2 << 10
-	storedOutputReferenceSlack = 64
+	storedOutputReferenceSlack = 96
 )
 
-// StoredLowerHalf returns the lower half of root's closure.
+// StoredLowerHalf returns what goes ahead of a merge of root whose message
+// would be over the limit, as the service's split of a merge refused as over
+// it (its lowerHalf) chooses from the bundle: of the entries below root in its
+// own closure, as StoredBundle walks it, but the entries held holds, the
+// first half in that order, dependencies first, and of those the ones no other
+// of them depends on. Once the recipient holds them, a merge of root carries
+// that half as held rows. It also returns how many records, but held rows,
+// root's own closure carries. A root the cache has no value for has none.
 func (c *Cache) StoredLowerHalf(ctx context.Context, root uint64, held *HeldBy) ([]uint64, int, error) {
-	return nil, 0, nil
+	if !c.blobBacked {
+		return nil, 0, fmt.Errorf("stored lower half: the cache has no blob store")
+	}
+	if err := context.Cause(ctx); err != nil {
+		return nil, 0, err
+	}
+	defer c.storedSizesRLock()()
+	res := c.resultsByID[sharedResultID(root)]
+	if res == nil || res.noValueLocked() {
+		return nil, 0, nil
+	}
+	walk := &storedSizeWalk{c: c, held: held, seen: map[sharedResultID]bool{}, visited: map[sharedResultID]bool{},
+		outputs: &storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]bool{}}}
+	walk.visit(res)
+	var below []*sharedResult
+	carried := 0
+	for _, entry := range walk.order {
+		if held.heldLocked(entry) {
+			continue
+		}
+		carried++
+		if entry != res {
+			below = append(below, entry)
+		}
+	}
+	half := below[:(len(below)+1)/2]
+	under := map[sharedResultID]bool{}
+	for _, entry := range half {
+		for _, dep := range storedClosureChildrenLocked(entry) {
+			under[dep] = true
+		}
+	}
+	var lower []uint64
+	for _, entry := range half {
+		if !under[entry.id] {
+			lower = append(lower, uint64(entry.id))
+		}
+	}
+	return lower, carried, nil
 }
