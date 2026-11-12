@@ -683,6 +683,11 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 
 	for {
 		frame, err := frames.pop()
+		// The queue can hold a backlog the network delivered long ago: a
+		// canceled fetch stops feeding the sink now, not after the backlog.
+		if err == nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			// Check the watchdog before anything else: it closes the body,
 			// and what that surfaces as (a closed-body error, sometimes even
