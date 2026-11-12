@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/opencontainers/go-digest"
@@ -269,8 +270,14 @@ type ImageBundleWriter interface {
 // output's result, with its record and its closure's, and the output's part,
 // whose blobs the image holds (ImageBlobAddress). An engine built from the image merges the
 // bundle at start (MergeValues from imageCacheID). Every result must be
-// captured: a result left out fails the export. It is built for the image's
-// build, and nothing in the engine's runtime calls it.
+// captured. The engine it runs on may be busy with other work: a capture
+// there, such as the remote cache's, can hold a row of the closure for a
+// moment, and a capture never waits for a row (WithExportedValues). So when
+// a result's closure reaches a row that's busy now, the export lets go of
+// the capture, waits, and captures again, until every result is captured or
+// ctx ends. A result refused for any other reason, or one whose row stays
+// busy until a later evaluation (BusyBookkeeping), fails the export. It is
+// built for the image's build, and nothing in the engine's runtime calls it.
 func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOutput, cfg config.RefConfig, w ImageBundleWriter) error {
 	if len(outputs) == 0 {
 		return errors.New("export image bundle: no results")
@@ -286,57 +293,94 @@ func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOu
 		seen[res] = true
 		results = append(results, output.Result)
 	}
-	selection := ValueSelection{Roots: results, Outputs: outputs}
-	return c.WithExportedValues(ctx, selection, cfg, func(ctx context.Context, values *ExportedValues) error {
-		if len(values.LeftOut) > 0 {
-			left := values.LeftOut[0]
-			return fmt.Errorf("export image bundle: %d of %d results left out, the first (row %d): %w", len(values.LeftOut), len(results), left.Row, left.Err)
-		}
-		bundle := values.Bundle
-		address := func(addresses map[digest.Digest]BlobAddress, layers []snapshots.ExportLayer) map[digest.Digest]BlobAddress {
-			if addresses == nil {
-				addresses = map[digest.Digest]BlobAddress{}
-			}
-			for _, layer := range layers {
-				addresses[layer.Descriptor.Digest] = ImageBlobAddress(layer.Descriptor.Digest)
-			}
-			return addresses
-		}
-		if len(bundle.Layers) > 0 {
-			bundle.Addresses = address(bundle.Addresses, bundle.Layers)
-		}
-		for i := range bundle.Outputs {
-			if chain := bundle.Outputs[i].Chain; chain != nil && len(chain.Layers) > 0 {
-				chain.Addresses = address(chain.Addresses, chain.Layers)
-			}
-		}
-		if err := w.WriteBundle(ctx, bundle); err != nil {
+	selection := ValueSelection{Roots: results, Outputs: outputs, EveryRoot: true}
+	for pause := imageBundleBusyPause; ; pause = min(2*pause, maxImageBundleBusyPause) {
+		err := c.WithExportedValues(ctx, selection, cfg, func(ctx context.Context, values *ExportedValues) error {
+			return writeImageBundle(ctx, values, w)
+		})
+		var left *RootsLeftOutError
+		if !errors.As(err, &left) {
 			return err
 		}
-		written := map[digest.Digest]bool{}
-		for _, entry := range values.Chains.Entries {
-			for _, layer := range entry.Layers {
-				d := layer.Descriptor.Digest
-				if written[d] {
-					continue
-				}
-				written[d] = true
-				if err := d.Validate(); err != nil {
-					return err
-				}
-				r, err := entry.Provider.ReaderAt(ctx, layer.Descriptor)
-				if err != nil {
-					return fmt.Errorf("export image bundle: blob %s: %w", d, err)
-				}
-				err = w.WriteBlob(ctx, d, r)
-				if closeErr := r.Close(); err == nil {
-					err = closeErr
-				}
-				if err != nil {
-					return fmt.Errorf("export image bundle: blob %s: %w", d, err)
-				}
+		first := left.Roots[0]
+		err = fmt.Errorf("export image bundle: %d of %d results left out, the first (row %d): %w", len(left.Roots), len(results), first.Row, first.Err)
+		if !busyForNow(left.Roots) {
+			return err
+		}
+		slog.Info("export image bundle: results busy, capturing again", "left_out", len(left.Roots), "results", len(results), "row", first.Row, "kind", first.Kind, "pause", pause)
+		select {
+		case <-ctx.Done():
+			return errors.Join(context.Cause(ctx), err)
+		case <-time.After(pause):
+		}
+	}
+}
+
+// The export's first pause after a busy capture, and its longest: a busy
+// row is mostly another capture's, held for well under a second.
+const (
+	imageBundleBusyPause    = 10 * time.Millisecond
+	maxImageBundleBusyPause = time.Second
+)
+
+// busyForNow reports whether every root left out is busy with something
+// that ends on its own.
+func busyForNow(roots []LeftOutRoot) bool {
+	for _, root := range roots {
+		if !errors.Is(root.Err, ErrPersistStateNotReady) || root.Kind == BusyBookkeeping {
+			return false
+		}
+	}
+	return true
+}
+
+// writeImageBundle writes an image's bundle from values, every root
+// captured, and then each blob its outputs' chains name, once each.
+func writeImageBundle(ctx context.Context, values *ExportedValues, w ImageBundleWriter) error {
+	bundle := values.Bundle
+	address := func(addresses map[digest.Digest]BlobAddress, layers []snapshots.ExportLayer) map[digest.Digest]BlobAddress {
+		if addresses == nil {
+			addresses = map[digest.Digest]BlobAddress{}
+		}
+		for _, layer := range layers {
+			addresses[layer.Descriptor.Digest] = ImageBlobAddress(layer.Descriptor.Digest)
+		}
+		return addresses
+	}
+	if len(bundle.Layers) > 0 {
+		bundle.Addresses = address(bundle.Addresses, bundle.Layers)
+	}
+	for i := range bundle.Outputs {
+		if chain := bundle.Outputs[i].Chain; chain != nil && len(chain.Layers) > 0 {
+			chain.Addresses = address(chain.Addresses, chain.Layers)
+		}
+	}
+	if err := w.WriteBundle(ctx, bundle); err != nil {
+		return err
+	}
+	written := map[digest.Digest]bool{}
+	for _, entry := range values.Chains.Entries {
+		for _, layer := range entry.Layers {
+			d := layer.Descriptor.Digest
+			if written[d] {
+				continue
+			}
+			written[d] = true
+			if err := d.Validate(); err != nil {
+				return err
+			}
+			r, err := entry.Provider.ReaderAt(ctx, layer.Descriptor)
+			if err != nil {
+				return fmt.Errorf("export image bundle: blob %s: %w", d, err)
+			}
+			err = w.WriteBlob(ctx, d, r)
+			if closeErr := r.Close(); err == nil {
+				err = closeErr
+			}
+			if err != nil {
+				return fmt.Errorf("export image bundle: blob %s: %w", d, err)
 			}
 		}
-		return nil
-	})
+	}
+	return nil
 }
