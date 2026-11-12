@@ -37,7 +37,10 @@ is the module's exposed root. An empty local path names the root itself with `.`
 Do not include a module prefix or synthetic `get` operations. The utility does
 not derive this path from a legacy `Artifact.Path`.
 
-`collections` lists the collection boundaries from parent to child.
+`collections` lists the collection boundaries from parent to child. Each entry
+requires its exact schema `type` and `itemType`. One collection type defines one
+column, with its item type name in kebab case. Reusing a type at another field
+does not add a column. Field routes do not define column identity.
 Each `Collection.fields` lists the fields since the previous collection item,
 or since the module root for the first boundary. For a Compose service:
 
@@ -47,8 +50,8 @@ or since the module root for the first boundary. For a Compose service:
   "type": "Check",
   "localPath": ["healthCheck", "run"],
   "collections": [
-    {"fields": ["compose", "projects"], "itemType": "DockerComposeProject"},
-    {"fields": ["services"], "itemType": "DockerComposeService"}
+    {"fields": ["compose", "projects"], "type": "DockerComposeProjects", "itemType": "DockerComposeProject"},
+    {"fields": ["services"], "type": "DockerComposeServices", "itemType": "DockerComposeService"}
   ],
   "items": [["e2e", "web"], ["e2e", "worker"]]
 }
@@ -61,7 +64,7 @@ Such a field still contributes dimensions. Use it for an empty collection.
 | Dimension | Coordinate |
 | --- | --- |
 | `module` | Configured module name, when present |
-| `/module/field/...` | Collection item key |
+| Exact collection type name | Collection item key |
 | `name` | Full local path joined with `.`, or `.` for the local root |
 
 The service item itself has `name=.`. Its check has `name=healthCheck.run`.
@@ -108,6 +111,7 @@ New callers use `NewSchema`.
 The old utility input is available with `-legacy`. Its fixtures remain unchanged.
 See [legacy artifact selectors](LEGACY.md).
 
-A collection item that is itself a collection currently reuses its parent's
-dimension identifier. `NewSchema` rejects this input. A separate identity rule
-is needed before the component can accept this shape.
+Directly nested distinct collection types have separate columns. For example,
+`Rows.get -> Row.get -> Cell` has a `Rows` column named `row` and a `Row`
+column named `cell`. Repeating the same type on one ancestry is rejected,
+because one scalar cell cannot hold two keys for that type.

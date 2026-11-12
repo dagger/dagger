@@ -54,18 +54,58 @@ The native format keeps all schema fields. It uses the same resolved schema name
 and collection keys as CLI replay. `--types` selects items in both formats.
 Empty collections remain in the schema.
 
-The schema response must contain `currentWorkspace.artifacts.dimensionDefinitions`
-and `pathDefinitions`, plus `modules` with each object's field names and return
-types. The listing response must contain `currentWorkspace.artifacts.__listing`.
-The converter resolves `LocalPath` from these exact schema field names. It fails
-if a name is missing or ambiguous. It also checks each observed path, type, and
-collection route. `--types Check Generator Container GolangPackage` retains
-items of those types and keeps all schema paths.
+Capture schema metadata with this query. Save the response as `schema.json`:
 
-For an installed SDK provider, add `--sdk-module MODULE`. Repeat this option for
-more providers. This selects the engine's `WorkspaceSDK.generate` field at that
-module's root. Ordinary provider fields still use captured object metadata.
-The converter also handles the engine's injected `Generator.stale` field.
+```graphql
+{
+  currentWorkspace {
+    artifacts {
+      dimensionDefinitions {
+        identifier
+        kind
+        name
+        collectionType
+        itemType
+      }
+      __listing(schema: true, typeAssertion: true)
+    }
+  }
+}
+```
+
+Capture observed items in a separate response, saved as `listing.json`:
+
+```graphql
+{
+  currentWorkspace {
+    artifacts {
+      __listing(typeAssertion: true)
+    }
+  }
+}
+```
+
+Schema listing rows include `projection`: the engine's exact field metadata.
+The converter uses its module, type, local path, and collection boundaries.
+Collection identifiers are exact schema type names. Collection names remain
+human-readable aliases. The converter uses raw `dimensionKeys` from observed
+rows. It does not reconstruct collection routes or keys from those aliases.
+The source `path` supplies the CLI path. A path-form URI is the fallback.
+
+The converter also accepts older captures with `pathDefinitions` and `modules`
+containing each object's field names and return types. For those captures, it
+resolves `LocalPath` from exact schema field names and checks each collection
+route. Missing or ambiguous names cause an error. Modern collection type IDs
+require schema projection metadata. Missing projection metadata causes an error.
+
+`--types Check Generator Container GolangPackage` retains items of those types
+and keeps all schema fields, including empty collections.
+
+For an older capture with an installed SDK provider, add `--sdk-module MODULE`.
+Repeat this option for more providers. This selects the engine's
+`WorkspaceSDK.generate` field at that module's root. Ordinary provider fields
+still use captured object metadata. The old capture adapter also handles the
+engine's injected `Generator.stale` field.
 
 On macOS, the CLI imports Linux code. Build a Linux binary and run it in Docker:
 

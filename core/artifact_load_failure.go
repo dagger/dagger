@@ -19,8 +19,10 @@ import (
 //
 // Whether a module could hold something follows from how discovery names
 // artifacts: paths start with the module's address name (a main's may
-// omit it), collection dimension identifiers start with /<module>/ and their
-// names with <module>-, and a type dimension's key is an artifact path.
+// omit it). Legacy collection selectors contain module prefixes. Canonical
+// collection type identifiers can be shared by several module fields, so an
+// unavailable schema cannot prove that those columns are absent. Legacy type
+// selector keys remain artifact paths.
 
 // failedModule is the address name of the module whose load failure a is: the
 // first segment of its path. Empty for any other artifact.
@@ -100,6 +102,10 @@ func (a *Artifact) mayHaveDimension(id string, keys []string) bool {
 	case strings.HasPrefix(id, "/"):
 		owner, _, _ := strings.Cut(strings.TrimPrefix(id, "/"), "/")
 		return slices.Contains(modules, owner)
+	case len(id) > 0 && id[0] >= 'A' && id[0] <= 'Z':
+		// Exact schema type IDs can be shared across module fields. A failed
+		// module can expose that collection; its schema cannot rule it out.
+		return true
 	case namedByModule(id):
 		// An unknown name of one of the module's collections.
 		return true

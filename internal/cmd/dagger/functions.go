@@ -832,7 +832,7 @@ func (fc *FuncCommand) addCollectionFunctionCommands(
 	reserved map[string]bool,
 ) error {
 	if parentFn.commandPath == nil {
-		return nil
+		parentFn.commandPath = &functionCommandPath{}
 	}
 	for _, typeDef := range []*modTypeDef{collection.KeyType, collection.ValueType} {
 		if typeDef != nil {
@@ -872,11 +872,11 @@ func (fc *FuncCommand) addCollectionFunctionCommands(
 }
 
 func collectionCommandDimension(path *functionCommandPath, collectionType *modTypeDef, collection *modCollection) (*artifact.Dimension, error) {
-	if path == nil || path.Module == "" || collectionType == nil || collection.ValueType == nil || collection.KeyType == nil {
+	if collectionType == nil || collection.ValueType == nil || collection.KeyType == nil {
 		return nil, errors.New("collection command is missing selector metadata")
 	}
-	c := flattening.Collection{Fields: path.Fields, Type: collectionType.Name(), ItemType: collection.ValueType.Name(), KeyName: "key"}
-	return (*artifact.Dimension)(c.Dimension(path.Module, nil, cliName)), nil
+	c := flattening.Collection{Type: collectionType.Name(), ItemType: collection.ValueType.Name(), KeyName: "key"}
+	return (*artifact.Dimension)(c.CanonicalDimension()), nil
 }
 
 // makeSubCmd creates a sub-command for a function definition.

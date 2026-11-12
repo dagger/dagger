@@ -145,13 +145,13 @@ func TestArtifactPreviewFilteredChecksKeepEachItem(t *testing.T) {
 
 func TestArtifactPreviewLinkFallback(t *testing.T) {
 	entry := artifactPreviewEntry{Artifact: flattening.Artifact{Module: "app", Path: []string{"app", "items", "verify"}, Type: "Check"}, LocalPath: []string{"verify"}}
-	coordinates := []flattening.Coordinate{{Dimension: "module", Key: "app"}, {Dimension: "/app/items", Key: "a"}, {Dimension: "name", Key: "verify"}}
+	coordinates := []flattening.Coordinate{{Dimension: "module", Key: "app"}, {Dimension: "AppItems", Key: "a"}, {Dimension: "name", Key: "verify"}}
 	target := artifact.AddressRow{Type: "Check", Coordinates: coordinates}
 	for _, index := range []*artifact.AddressIndex{
 		artifact.NewAddressIndex([]artifact.AddressRow{target}, false),
 		artifact.NewAddressIndex([]artifact.AddressRow{target, target}, true),
 	} {
-		require.Equal(t, "dag+check://app/items/verify?item=a", artifactPreviewLink(entry, coordinates, index, map[string]string{"/app/items": "item"}))
+		require.Equal(t, "dag+check://app/items/verify?item=a", artifactPreviewLink(entry, coordinates, index, map[string]string{"AppItems": "item"}))
 	}
 }
 
@@ -172,4 +172,53 @@ func TestArtifactPreviewPreservesLiteralFieldNames(t *testing.T) {
 	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, []string{"check", "-la", "--name=healthCheck.run", "-f=link"}))
 	require.Equal(t, "dag+check://?name=healthCheck.run\n", output.String())
 	require.Empty(t, diagnostics.String())
+}
+
+func TestArtifactPreviewExactCollectionTypeSelector(t *testing.T) {
+	const input = `[{"Module":"golang","Path":["golang","modules","test"],"LocalPath":["test"],"Type":"Check","Collections":[{"Fields":["modules"],"Type":"GolangModules","ItemType":"GolangModule"}],"Items":[{"Keys":["."]},{"Keys":["sdk"]}]}]`
+	var output, diagnostics bytes.Buffer
+	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, []string{"check", "-l", "-f=link", "dag://?GolangModules=sdk"}))
+	require.Equal(t, "dag+check://?golang-module=sdk\n", output.String())
+	require.Empty(t, diagnostics.String())
+}
+
+func TestArtifactPreviewMatchesCanonicalCollectionKeys(t *testing.T) {
+	row := listedArtifact{Name: "test"}
+	row.Coordinates = append(row.Coordinates, struct{ Dimension, Key string }{"GolangModules", "sdk"})
+	row.DimensionKeys = append(row.DimensionKeys,
+		struct{ Dimension, Key string }{"/golang/modules", "old"},
+		struct{ Dimension, Key string }{"type:Check", "golang/modules/test"})
+	require.True(t, artifactPreviewMatches(row, []dagaddress.Pair{{Dimension: "GolangModules", Key: "sdk", HasKey: true}}, nil))
+	require.False(t, artifactPreviewMatches(row, []dagaddress.Pair{{Dimension: "/golang/modules", Key: "old", HasKey: true}}, nil))
+	require.True(t, artifactPreviewMatches(row, []dagaddress.Pair{{Dimension: "type:Check", Key: "golang/modules/test", HasKey: true}}, nil))
+	row.Presence = []string{"GolangModules"}
+	require.True(t, artifactPreviewMatches(row, []dagaddress.Pair{{Dimension: "GolangModules"}}, nil))
+}
+
+func TestArtifactPreviewSharedPathNeedsAbsentDimension(t *testing.T) {
+	const input = `[
+ {"Module":"grid","Path":["grid","rows","check"],"LocalPath":["check"],"Type":"Check","Collections":[{"Fields":["rows"],"Type":"Rows","ItemType":"Row"}],"Items":[{"Keys":["top"]}]},
+ {"Module":"grid","Path":["grid","rows","check"],"LocalPath":["check"],"Type":"Check","Collections":[{"Fields":["rows"],"Type":"Rows","ItemType":"Row"},{"Fields":[],"Type":"Row","ItemType":"Cell"}],"Items":[{"Keys":["top","left"]}]}
+ ]`
+	t.Run("unsafe parent fails before output", func(t *testing.T) {
+		var output, diagnostics bytes.Buffer
+		err := PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, []string{"check", "-la", "-f=link"})
+		require.ErrorContains(t, err, "absent-dimension")
+		require.Empty(t, output.String())
+	})
+	t.Run("child filter excludes unsafe parent", func(t *testing.T) {
+		var output, diagnostics bytes.Buffer
+		err := PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, []string{"check", "-la", "-f=link", "--cell=left"})
+		require.NoError(t, err)
+		require.Equal(t, "dag+check://?cell=left\n", output.String())
+		require.Empty(t, diagnostics.String())
+	})
+	t.Run("empty child permits a proven type-only parent link", func(t *testing.T) {
+		capture := strings.Replace(input, `"Items":[{"Keys":["top","left"]}]`, `"Items":[]`, 1)
+		var output, diagnostics bytes.Buffer
+		err := PreviewArtifacts(strings.NewReader(capture), &output, &diagnostics, []string{"check", "-la", "-f=link"})
+		require.NoError(t, err)
+		require.Equal(t, "dag+check://\n", output.String())
+		require.Empty(t, diagnostics.String())
+	})
 }

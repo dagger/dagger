@@ -14,8 +14,8 @@ func TestAddressMinimumKeys(t *testing.T) {
 		return flattening.Coordinate{Dimension: dimension, Key: key}
 	}
 	module := c("module", "go")
-	parent := c("/go/packages", "api")
-	child := c("/go/packages/tests", "unit")
+	parent := c("GoPackages", "api")
+	child := c("GoTests", "unit")
 	name := c(flattening.NameDimension, "run")
 	row := func(coordinates ...flattening.Coordinate) AddressRow {
 		return AddressRow{Type: "Check", Coordinates: coordinates}
@@ -154,7 +154,7 @@ func TestAddressIndexCopiesSnapshot(t *testing.T) {
 func TestAddressTypeConstraint(t *testing.T) {
 	coordinates := []flattening.Coordinate{
 		{Dimension: flattening.ModuleDimension, Key: "go"},
-		{Dimension: "/go/packages", Key: "api"},
+		{Dimension: "GoPackages", Key: "api"},
 		{Dimension: flattening.NameDimension, Key: "run"},
 	}
 	check := AddressRow{Type: "Check", Coordinates: coordinates}

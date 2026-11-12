@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/artifact"
+	"github.com/dagger/dagger/core/artifact/flattening"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
@@ -292,7 +293,24 @@ func (*artifactsSchema) dimensionDefinitions(ctx context.Context, parent *core.A
 	}
 	definitions := parent.DimensionDefinitions()
 	if core.Supports(ctx, artifactDimensionViewVersion) && len(definitions) > 0 {
-		definitions = append(definitions, &core.ArtifactDimension{Kind: "NAME", Identifier: "name", Name: "name", QualifiedName: "name", KeyName: "name"})
+		legacy := definitions
+		module := ""
+		metadata := make(flattening.Dimensions, len(legacy))
+		for i, dimension := range legacy {
+			metadata[i] = (*flattening.Dimension)(dimension)
+			if dimension.Identifier == artifact.ModuleDimension {
+				module = "workspace"
+			}
+		}
+		definitions = nil
+		for _, dimension := range flattening.CanonicalDimensions(module, metadata) {
+			definitions = append(definitions, (*core.ArtifactDimension)(dimension))
+		}
+		for _, dimension := range legacy {
+			if dimension.Kind == "TYPE" {
+				definitions = append(definitions, dimension)
+			}
+		}
 	}
 	return definitions, nil
 }
@@ -322,7 +340,7 @@ func (*artifactsSchema) pathDefinitions(_ context.Context, parent *core.Artifact
 }
 
 // artifactDimensionViewVersion is the first table presentation API view.
-const artifactDimensionViewVersion = "v1.0.0-beta.26"
+const artifactDimensionViewVersion = core.ArtifactTypeColumnsVersion
 
 type artifactDimensionViewArgs struct {
 	All bool `default:"false"`
@@ -465,6 +483,7 @@ func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args ar
 		Name          string                       `json:"name"`
 		Coordinates   []*core.ArtifactDimensionKey `json:"coordinates,omitempty"`
 		Presence      []string                     `json:"presence,omitempty"`
+		Projection    *flattening.Field            `json:"projection,omitempty"`
 	}
 	prune := core.Supports(ctx, artifactDimensionViewVersion)
 	rows := make([]row, len(items))
@@ -504,9 +523,17 @@ func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args ar
 			rows[i].Name = item.StaticDimensionKey("name")
 		}
 		if args.Schema {
+			if prune {
+				field := item.ProjectionField()
+				rows[i].Projection = &field
+			}
 			for _, d := range item.DimensionDefinitions() {
 				if !artifact.IsStaticDimension(d.Identifier) {
-					rows[i].Presence = append(rows[i].Presence, d.Identifier)
+					identifier := d.Identifier
+					if prune && d.CollectionType != "" {
+						identifier = d.CollectionType
+					}
+					rows[i].Presence = append(rows[i].Presence, identifier)
 				}
 			}
 		}
@@ -970,7 +997,7 @@ func (inputs *artifactDiscoveryInputs) digest(ctx context.Context) (string, erro
 	if err != nil {
 		return "", err
 	}
-	parts := []string{artifactDiscoveryInput + "/v3", "config", string(cfg)}
+	parts := []string{artifactDiscoveryInput + "/v4", "config", string(cfg)}
 	mods := make([]string, 0, len(inputs.mods))
 	for _, mod := range inputs.mods {
 		var scoped dagql.ObjectResult[*core.Module]
@@ -1087,6 +1114,15 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	for _, entry := range loadFailureArtifacts(parent, cfg, mains, mods, failures) {
 		loaded = append(loaded, entry)
 		result.Entries = append(result.Entries, entry)
+	}
+	if core.Supports(ctx, artifactDimensionViewVersion) {
+		fields := make([]flattening.Field, len(loaded))
+		for i, entry := range loaded {
+			fields[i] = entry.ProjectionField()
+		}
+		if _, err := flattening.NewSchema(fields); err != nil {
+			return nil, fmt.Errorf("flatten workspace schema: %w", err)
+		}
 	}
 	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
 	result.AllPaths = (&core.Artifacts{Entries: loaded}).PathIndex()

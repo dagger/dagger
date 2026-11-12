@@ -58,6 +58,12 @@ func (dims Dimensions) Names(dim *Dimension, wholeCollection bool) []string {
 	if IsStaticDimension(dim.Identifier) {
 		return []string{dim.Name, dim.QualifiedName}
 	}
+	if dim.CollectionType != "" && dim.Identifier == dim.CollectionType {
+		if wholeCollection {
+			return []string{dim.QualifiedName}
+		}
+		return []string{dim.Name, dim.QualifiedName}
+	}
 	path := strings.Split(strings.TrimPrefix(dim.Identifier, "/"), "/")
 	module := path[0]
 	item := strings.TrimPrefix(dim.Name, module+"-")
@@ -107,6 +113,18 @@ func (dims Dimensions) Resolve(name string) (string, error) {
 		if dim.Identifier == name {
 			return name, nil
 		}
+	}
+	var canonical []string
+	for _, dim := range dims {
+		if dim.Kind == "COLLECTION" && dim.Identifier == dim.CollectionType && dim.Name == name {
+			canonical = append(canonical, dim.Identifier)
+		}
+	}
+	if len(canonical) == 1 {
+		return canonical[0], nil
+	}
+	if len(canonical) > 1 {
+		return "", fmt.Errorf("ambiguous dimension %q: use %s", name, strings.Join(canonical, " or "))
 	}
 	var matches, types []string
 	qualified := slices.ContainsFunc(dims, func(d *Dimension) bool { return d.QualifiedName == name })

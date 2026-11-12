@@ -18,14 +18,14 @@ func ExampleLocalFieldPath() {
 	}
 	path := flattening.LocalFieldPath(route)
 	coordinates := flattening.CanonicalCoordinates("app", path, []flattening.Coordinate{
-		{Dimension: "/app/packages", Key: "sdk"},
+		{Dimension: "AppPackages", Key: "sdk"},
 	})
 	for _, coordinate := range coordinates {
 		fmt.Printf("%s = %s\n", coordinate.Dimension, coordinate.Key)
 	}
 	// Output:
 	// module = app
-	// /app/packages = sdk
+	// AppPackages = sdk
 	// name = buildOptions.container
 }
 

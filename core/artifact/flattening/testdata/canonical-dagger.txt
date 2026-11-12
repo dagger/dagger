@@ -1,9 +1,9 @@
-ID                              NAME
-/golang/modules                 golang-module
-/golang/modules/packages        golang-package
-/golang/modules/packages/tests  golang-test
-module                          module
-name                            name
+ID              NAME
+GolangModules   golang-module
+GolangPackages  golang-package
+GolangTests     golang-test
+module          module
+name            name
 
 TYPE       golang-module  golang-package            golang-test       module         name
 Check      -              -                         -                 docs           check

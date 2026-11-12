@@ -10,7 +10,8 @@ import (
 )
 
 // AddressRow is one artifact in the workspace snapshot. Type is the URI's
-// concrete type constraint. Coordinates contains its complete canonical keys.
+// concrete type constraint. Coordinates contains its complete canonical keys,
+// with collection ancestors ordered from parent to child.
 type AddressRow struct {
 	Type        string
 	Coordinates []flattening.Coordinate
@@ -82,7 +83,7 @@ func NewAddressIndex(rows []AddressRow, complete bool) *AddressIndex {
 
 // Keys returns the fewest coordinate pairs that identify exactly target in its
 // type. Ties prefer collections, with deeper collections first, then the type
-// name and finally the module. Returned pairs retain target's canonical order.
+// field name and finally the module. Returned pairs retain canonical order.
 // A true result with no pairs means the type alone identifies the artifact.
 // A false result means the snapshot is incomplete, target is missing, or its
 // full coordinates do not identify exactly one artifact.
@@ -98,6 +99,12 @@ func (index *AddressIndex) Keys(target AddressRow) ([]flattening.Coordinate, boo
 	group := index.types[target.Type]
 	if group == nil {
 		return nil, false
+	}
+	depth := make(map[string]int, len(target.Coordinates))
+	for i, coordinate := range target.Coordinates {
+		if !flattening.IsStaticDimension(coordinate.Dimension) {
+			depth[coordinate.Dimension] = i
+		}
 	}
 	coordinates, valid := addressCoordinates(target.Coordinates)
 	if !valid {
@@ -124,9 +131,9 @@ func (index *AddressIndex) Keys(target AddressRow) ([]flattening.Coordinate, boo
 		if difference := priority(a.Dimension) - priority(b.Dimension); difference != 0 {
 			return difference
 		}
-		// Canonical collection identifiers contain the complete parent path.
+		// Canonical coordinates list collection ancestors from parent to child.
 		if priority(a.Dimension) == 0 {
-			if difference := strings.Count(b.Dimension, "/") - strings.Count(a.Dimension, "/"); difference != 0 {
+			if difference := depth[b.Dimension] - depth[a.Dimension]; difference != 0 {
 				return difference
 			}
 		}

@@ -1,6 +1,9 @@
 package artifact
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // Link selects a schema path in an address. Every collection boundary
 // still needs its item key. A module or type key can narrow the path further.
@@ -13,6 +16,34 @@ type Link struct {
 // Links holds the schema proof with and without the scheme's type constraint.
 type Links struct {
 	Typed, Untyped *Link
+	CompleteSchema bool `json:",omitempty"`
+	// PathNeedsAbsence marks a same-type descendant that a positive path
+	// selector cannot exclude when no runtime coordinate proof is available.
+	PathNeedsAbsence bool `json:",omitempty"`
+}
+
+// PathNeedsAbsentDimension reports whether the typed public path also names
+// a deeper collection level. Legacy route aliases are not additional columns.
+func PathNeedsAbsentDimension(paths Paths, target Path) bool {
+	canonical := func(dimension string) bool {
+		return !IsStaticDimension(dimension) && !strings.Contains(dimension, "/")
+	}
+	for _, candidate := range paths {
+		if candidate.Module != target.Module || candidate.Type != target.Type || candidate.Key != target.Key {
+			continue
+		}
+		if slices.ContainsFunc(target.Dimensions, func(dimension string) bool {
+			return canonical(dimension) && !slices.Contains(candidate.Dimensions, dimension)
+		}) {
+			continue
+		}
+		if slices.ContainsFunc(candidate.Dimensions, func(dimension string) bool {
+			return canonical(dimension) && !slices.Contains(target.Dimensions, dimension)
+		}) {
+			return true
+		}
+	}
+	return false
 }
 
 // PlanLink chooses the fewest extra pairs that identify target's schema path.

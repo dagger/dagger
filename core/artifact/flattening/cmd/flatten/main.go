@@ -138,7 +138,7 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	w := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tNAME")
 	for _, dimension := range dimensions {
-		fmt.Fprintf(w, "%s\t%s\n", visible(dimension.Identifier), visible(dimensions.DisplayName(dimension)))
+		fmt.Fprintf(w, "%s\t%s\n", visible(dimension.Identifier), visible(dimension.Name))
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -146,7 +146,7 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	fmt.Fprintln(w)
 	header := []string{"TYPE"}
 	for _, dimension := range dimensions {
-		header = append(header, visible(dimensions.DisplayName(dimension)))
+		header = append(header, visible(dimension.Name))
 	}
 	fmt.Fprintln(w, strings.Join(header, "\t"))
 	for _, row := range rows {

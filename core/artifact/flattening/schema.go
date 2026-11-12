@@ -31,23 +31,15 @@ type schemaField struct {
 	collections []string
 }
 
-// NewSchema compiles canonical dimensions from all artifact fields. It rejects
-// collection routes whose current naming rules lose their distinct identities.
+// NewSchema compiles canonical dimensions from all artifact fields. Collection
+// types define columns; field routes do not change their identities.
 func NewSchema(fields []Field) (*Schema, error) {
 	schema := &Schema{fields: make(map[string]schemaField)}
 	byID := make(map[string]*Dimension)
-	routes := make(map[string]string)
 	for _, field := range fields {
-		compiled, dimensions, literalRoutes, err := compileField(field)
+		compiled, dimensions, err := compileField(field)
 		if err != nil {
 			return nil, err
-		}
-		for i, dimension := range dimensions {
-			id := dimension.Identifier
-			if route, exists := routes[id]; exists && route != literalRoutes[i] {
-				return nil, fmt.Errorf("distinct collection routes share dimension %s", id)
-			}
-			routes[id] = literalRoutes[i]
 		}
 		for _, dimension := range CanonicalDimensions(field.Module, dimensions) {
 			id := dimension.Identifier
@@ -99,42 +91,52 @@ func (s *Schema) Coordinates(field Field, keys ...string) ([]Coordinate, error) 
 	return CanonicalCoordinates(known.module, known.localPath, collections), nil
 }
 
-func compileField(field Field) (schemaField, Dimensions, []string, error) {
+func compileField(field Field) (schemaField, Dimensions, error) {
 	if field.Type == "" {
-		return schemaField{}, nil, nil, fmt.Errorf("field has no artifact type")
+		return schemaField{}, nil, fmt.Errorf("field has no artifact type")
 	}
 	if err := validateFieldSegments(field.LocalPath); err != nil {
-		return schemaField{}, nil, nil, err
-	}
-	if len(field.Collections) != 0 && field.Module == "" {
-		return schemaField{}, nil, nil, fmt.Errorf("collection fields need a module namespace")
+		return schemaField{}, nil, err
 	}
 	compiled := schemaField{module: field.Module, localPath: slices.Clone(field.LocalPath)}
 	var dimensions Dimensions
-	var routes []string
-	var literalFields [][]string
-	var parent *Dimension
 	for _, collection := range field.Collections {
+		if collection.Type == "" {
+			return schemaField{}, nil, fmt.Errorf("collection has no schema type")
+		}
+		if IsStaticDimension(collection.Type) || !schemaTypeIdentifier(collection.Type) {
+			return schemaField{}, nil, fmt.Errorf("collection type %q must be a non-reserved schema type identifier", collection.Type)
+		}
 		if collection.ItemType == "" {
-			return schemaField{}, nil, nil, fmt.Errorf("collection has no item type")
+			return schemaField{}, nil, fmt.Errorf("collection has no item type")
 		}
 		if err := validateFieldSegments(collection.Fields); err != nil {
-			return schemaField{}, nil, nil, err
+			return schemaField{}, nil, err
 		}
-		dimension := collection.Dimension(field.Module, parent, nil)
+		dimension := collection.CanonicalDimension()
 		if slices.Contains(compiled.collections, dimension.Identifier) {
-			return schemaField{}, nil, nil, fmt.Errorf("field has repeated dimension %s: collection items that are collections are unsupported", dimension.Identifier)
+			return schemaField{}, nil, fmt.Errorf("field has repeated collection type %s: one column cannot hold two ancestor keys", dimension.Identifier)
 		}
 		compiled.collections = append(compiled.collections, dimension.Identifier)
 		dimensions = append(dimensions, dimension)
-		literalFields = append(literalFields, append([]string{}, collection.Fields...))
-		routes = append(routes, schemaKey(struct {
-			Module string
-			Fields [][]string
-		}{field.Module, literalFields}))
-		parent = dimension
 	}
-	return compiled, dimensions, routes, nil
+	return compiled, dimensions, nil
+}
+
+// schemaTypeIdentifier accepts the literal GraphQL name syntax. It does not
+// normalize names or treat paths and legacy dimension IDs as schema types.
+func schemaTypeIdentifier(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		char := name[i]
+		if char == '_' || char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || i > 0 && char >= '0' && char <= '9' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func validateFieldSegments(fields []string) error {
@@ -149,14 +151,18 @@ func validateFieldSegments(fields []string) error {
 // fieldIdentity uses literal boundaries, not normalized dimension names.
 // Lookup and display metadata are excluded from field identity.
 func fieldIdentity(field Field) string {
-	collections := make([][]string, len(field.Collections))
+	type boundary struct {
+		Type   string
+		Fields []string
+	}
+	collections := make([]boundary, len(field.Collections))
 	for i, collection := range field.Collections {
-		collections[i] = append([]string{}, collection.Fields...)
+		collections[i] = boundary{collection.Type, append([]string{}, collection.Fields...)}
 	}
 	return schemaKey(struct {
 		Module, Type string
 		LocalPath    []string
-		Collections  [][]string
+		Collections  []boundary
 	}{field.Module, field.Type, append([]string{}, field.LocalPath...), collections})
 }
 

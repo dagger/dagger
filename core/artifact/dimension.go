@@ -19,7 +19,7 @@ func IsStaticDimension(identifier string) bool {
 type Dimension struct {
 	Kind           string
 	CollectionType string
-	Identifier     string `field:"true" doc:"Stable identifier: collection schema path, type:TypeName for an artifact type, or module."`
+	Identifier     string `field:"true" doc:"Collection schema type name, module, name, or a legacy selector identifier."`
 	Name           string `field:"true" doc:"Short name used to select this dimension."`
 	QualifiedName  string `field:"true" doc:"Qualified name used when the short name is ambiguous."`
 	ItemType       string `field:"true" doc:"The collection item or artifact type name, or empty for the module dimension."`

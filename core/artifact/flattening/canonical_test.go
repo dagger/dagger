@@ -10,22 +10,22 @@ import (
 
 func ExampleCanonicalCoordinates() {
 	collections := []flattening.Coordinate{
-		{Dimension: "/docker/compose/projects", Key: "e2e"},
-		{Dimension: "/docker/compose/projects/services", Key: "web"},
+		{Dimension: "DockerComposeProjects", Key: "e2e"},
+		{Dimension: "DockerComposeServices", Key: "web"},
 	}
 	for _, coordinate := range flattening.CanonicalCoordinates("docker", []string{"healthCheck", "run"}, collections) {
 		fmt.Printf("%s = %s\n", coordinate.Dimension, coordinate.Key)
 	}
 	// Output:
 	// module = docker
-	// /docker/compose/projects = e2e
-	// /docker/compose/projects/services = web
+	// DockerComposeProjects = e2e
+	// DockerComposeServices = web
 	// name = healthCheck.run
 }
 
 func TestCanonicalLocalRoots(t *testing.T) {
-	project := flattening.Coordinate{Dimension: "/docker/compose/projects", Key: "e2e"}
-	service := flattening.Coordinate{Dimension: "/docker/compose/projects/services", Key: "web"}
+	project := flattening.Coordinate{Dimension: "DockerComposeProjects", Key: "e2e"}
+	service := flattening.Coordinate{Dimension: "DockerComposeServices", Key: "web"}
 	for _, tc := range []struct {
 		name        string
 		module      string
@@ -54,8 +54,8 @@ func TestCanonicalLocalRoots(t *testing.T) {
 			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, project, {Dimension: "name", Key: "services.all.up"}},
 		},
 		{
-			name: "module root is collection", module: "matrix", collections: []flattening.Coordinate{{Dimension: "/matrix", Key: "one"}}, localPath: []string{"check"},
-			want: []flattening.Coordinate{{Dimension: "module", Key: "matrix"}, {Dimension: "/matrix", Key: "one"}, {Dimension: "name", Key: "check"}},
+			name: "module root is collection", module: "matrix", collections: []flattening.Coordinate{{Dimension: "Rows", Key: "one"}}, localPath: []string{"check"},
+			want: []flattening.Coordinate{{Dimension: "module", Key: "matrix"}, {Dimension: "Rows", Key: "one"}, {Dimension: "name", Key: "check"}},
 		},
 		{
 			name: "no workspace module", localPath: []string{"bound", "container"},
@@ -86,22 +86,22 @@ func TestCanonicalSameTypeFieldsAndSelection(t *testing.T) {
 	}
 }
 
-func TestCanonicalReplacesLegacyCoordinates(t *testing.T) {
-	legacy := []flattening.Coordinate{
+func TestCanonicalReplacesStaticCoordinates(t *testing.T) {
+	input := []flattening.Coordinate{
 		{Dimension: "module", Key: "old"},
-		{Dimension: "/tests/cases", Key: "TestConnect"},
+		{Dimension: "TestsCases", Key: "TestConnect"},
 		{Dimension: "type:Case", Key: "tests/cases"},
 		{Dimension: "type:Check", Key: "tests/cases/check"},
 		{Dimension: "name", Key: "old"},
 	}
-	got := flattening.CanonicalCoordinates("tests", []string{"check"}, legacy)
+	got := flattening.CanonicalCoordinates("tests", []string{"check"}, input)
 	require.Equal(t, []flattening.Coordinate{
 		{Dimension: "module", Key: "tests"},
-		{Dimension: "/tests/cases", Key: "TestConnect"},
+		{Dimension: "TestsCases", Key: "TestConnect"},
 		{Dimension: "name", Key: "check"},
 	}, got)
 	got[1].Key = "changed"
-	require.Equal(t, "TestConnect", legacy[1].Key)
+	require.Equal(t, "TestConnect", input[1].Key)
 }
 
 func TestCanonicalDimensions(t *testing.T) {
@@ -109,11 +109,11 @@ func TestCanonicalDimensions(t *testing.T) {
 		Kind: "COLLECTION", Identifier: "/tests/cases", Name: "tests-case", QualifiedName: "tests-cases-case",
 		CollectionType: "TestsCases", ItemType: "TestsCase", KeyName: "testName", KeyDescription: "Test to run",
 	}
-	legacy := flattening.ArtifactDimensions("tests", "Check", flattening.Dimensions{collection})
+	legacy := flattening.ArtifactDimensions("tests", "Check", flattening.Dimensions{collection, {Kind: "COLLECTION", Identifier: "/other/route", CollectionType: "TestsCases", ItemType: "TestsCase"}})
 	got := flattening.CanonicalDimensions("tests", legacy)
 	require.Equal(t, flattening.Dimensions{
 		{Kind: "MODULE", Identifier: "module", Name: "module", QualifiedName: "module", KeyName: "name"},
-		collection,
+		{Kind: "COLLECTION", Identifier: "TestsCases", CollectionType: "TestsCases", ItemType: "TestsCase", Name: "tests-case", QualifiedName: "tests-cases", KeyName: "testName", KeyDescription: "Test to run"},
 		{Kind: "NAME", Identifier: "name", Name: "name", QualifiedName: "name", KeyName: "name"},
 	}, got)
 	require.Len(t, flattening.CanonicalDimensions("", nil), 1)
@@ -124,8 +124,8 @@ func TestCanonicalDimensions(t *testing.T) {
 	require.Equal(t, flattening.NameDimension, resolved)
 }
 
-func TestCanonicalCollectionIdentifiersAreOpaque(t *testing.T) {
+func TestCanonicalCollectionIdentifiersAreExactSchemaTypes(t *testing.T) {
 	require.Equal(t, []flattening.Coordinate{
-		{Dimension: "module", Key: "tests"}, {Dimension: "case", Key: "TestConnect"}, {Dimension: "name", Key: "check"},
-	}, flattening.CanonicalCoordinates("tests", []string{"check"}, []flattening.Coordinate{{Dimension: "case", Key: "TestConnect"}}))
+		{Dimension: "module", Key: "tests"}, {Dimension: "TestsCases", Key: "TestConnect"}, {Dimension: "name", Key: "check"},
+	}, flattening.CanonicalCoordinates("tests", []string{"check"}, []flattening.Coordinate{{Dimension: "TestsCases", Key: "TestConnect"}}))
 }

@@ -86,7 +86,7 @@ func TestCanonicalRejectsInvalidInputBeforeOutput(t *testing.T) {
 }
 
 func TestCanonicalKeyDisplay(t *testing.T) {
-	input := `[{"module":"app","type":"Check","collections":[{"fields":["tests"],"itemType":"Test"}],"items":[[""],["-"],["a\tb"],["a\nb"],["a\u0000b"],["a\u007fb"]]},{"module":"app","type":"Service","items":[[]]}]`
+	input := `[{"module":"app","type":"Check","collections":[{"fields":["tests"],"type":"Tests","itemType":"Test"}],"items":[[""],["-"],["a\tb"],["a\nb"],["a\u0000b"],["a\u007fb"]]},{"module":"app","type":"Service","items":[[]]}]`
 	var out bytes.Buffer
 	if err := run(nil, strings.NewReader(input), &out); err != nil {
 		t.Fatal(err)
@@ -105,5 +105,22 @@ func TestCanonicalTypesCanShareCoordinates(t *testing.T) {
 	var out bytes.Buffer
 	if err := run(nil, strings.NewReader(`[{"type":"Check","items":[[]]},{"type":"Service","items":[[]]}]`), &out); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCanonicalCollectionTypeUnifiesRoutes(t *testing.T) {
+	const input = `[
+ {"module":"app","type":"Check","localPath":["unit"],"collections":[{"fields":["primary"],"type":"AppPackages","itemType":"AppPackage"}],"items":[["one"]]},
+ {"module":"app","type":"Check","localPath":["slow"],"collections":[{"fields":["secondary"],"type":"AppPackages","itemType":"AppPackage"}],"items":[["two"]]}
+ ]`
+	var out bytes.Buffer
+	if err := run(nil, strings.NewReader(input), &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out.String(), "AppPackages") != 1 {
+		t.Fatalf("routes did not share one collection type column:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "/app/") || !strings.Contains(out.String(), "unit") || !strings.Contains(out.String(), "slow") {
+		t.Fatalf("output changed type coordinates or local names:\n%s", out.String())
 	}
 }

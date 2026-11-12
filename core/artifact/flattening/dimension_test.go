@@ -25,6 +25,19 @@ func TestStaticDimensionNames(t *testing.T) {
 	require.Equal(t, "name-name", identifier, "an unknown selector must not alias the name dimension")
 }
 
+func TestCanonicalItemNamesPrecedeCollectionAliases(t *testing.T) {
+	rows := (Collection{Type: "Rows", ItemType: "Row"}).CanonicalDimension()
+	cells := (Collection{Type: "Row", ItemType: "Cell"}).CanonicalDimension()
+	dimensions := Dimensions{rows, cells}
+	for _, tc := range []struct{ name, identifier string }{{"row", "Rows"}, {"cell", "Row"}, {"Rows", "Rows"}, {"Row", "Row"}} {
+		identifier, err := dimensions.Resolve(tc.name)
+		require.NoError(t, err)
+		require.Equal(t, tc.identifier, identifier)
+	}
+	require.Equal(t, "row", dimensions.DisplayName(rows))
+	require.Equal(t, "cell", dimensions.DisplayName(cells))
+}
+
 func TestDimensionNames(t *testing.T) {
 	dims := Dimensions{
 		{Identifier: "golang/modules", Name: "go-module", QualifiedName: "golang-modules"},
