@@ -503,17 +503,26 @@ func reconstructGitDirIncremental(ctx context.Context, root string, pack *engine
 	if err != nil {
 		return err
 	}
-	var updates strings.Builder
+	// Deletions go first, in their own transaction: one transaction cannot
+	// delete a ref and create another that its name contains or extends
+	// (topic, topic/sub).
+	var deletes, updates strings.Builder
 	for _, name := range strings.Fields(have) {
 		if _, ok := want[name]; !ok {
-			updates.WriteString("delete " + name + "\n")
+			deletes.WriteString("delete " + name + "\n")
 		}
 	}
 	for _, ref := range pack.Refs {
 		updates.WriteString("update " + ref.Name + " " + ref.Sha + "\n")
 	}
+	git := gitutil.NewGitCLI(gitutil.WithDir(root))
+	if deletes.Len() > 0 {
+		if _, err := git.RunWithStdin(ctx, strings.NewReader(deletes.String()), "update-ref", "--stdin"); err != nil {
+			return fmt.Errorf("delete checkout refs: %w", err)
+		}
+	}
 	// update-ref refuses a ref to an object the repository does not have.
-	if _, err := gitutil.NewGitCLI(gitutil.WithDir(root)).RunWithStdin(ctx, strings.NewReader(updates.String()), "update-ref", "--stdin"); err != nil {
+	if _, err := git.RunWithStdin(ctx, strings.NewReader(updates.String()), "update-ref", "--stdin"); err != nil {
 		return fmt.Errorf("set checkout refs: %w", err)
 	}
 	if err := finishCanonicalGitHead(ctx, root, pack); err != nil {
