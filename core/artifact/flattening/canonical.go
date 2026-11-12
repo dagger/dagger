@@ -2,20 +2,20 @@ package flattening
 
 import "strings"
 
-// NameDimension identifies the full field path within an artifact's local root.
+// NameDimension identifies the full ordinary field path from the module root.
 const NameDimension = "name"
 
 // CanonicalCoordinates assigns module, collection, and name coordinates.
-// localPath contains actual schema field names relative to the nearest
-// enclosing collection item, or to the module's exposed root if there is no
-// enclosing item. It excludes the module prefix and synthetic get operations.
+// fieldPath contains every ordinary schema field from the exposed module root,
+// including collection fields. It excludes the module prefix and synthetic get
+// operations. Field.FieldPath builds this path from nearest-item input metadata.
 // An empty path names the root itself with ".". Field spelling is preserved.
 //
 // Collection coordinates keep their order and values. Existing module, name,
 // and legacy type coordinates are replaced. Collection identifiers must already
 // be exact schema collection type names. No artifact type or selected schema is
 // needed: neither can change an artifact's canonical coordinates.
-func CanonicalCoordinates(module string, localPath []string, collections []Coordinate) []Coordinate {
+func CanonicalCoordinates(module string, fieldPath []string, collections []Coordinate) []Coordinate {
 	coordinates := make([]Coordinate, 0, len(collections)+2)
 	if module != "" {
 		coordinates = append(coordinates, Coordinate{Dimension: ModuleDimension, Key: module})
@@ -25,8 +25,8 @@ func CanonicalCoordinates(module string, localPath []string, collections []Coord
 			coordinates = append(coordinates, collection)
 		}
 	}
-	name := strings.Join(localPath, ".")
-	if len(localPath) == 0 {
+	name := strings.Join(fieldPath, ".")
+	if len(fieldPath) == 0 {
 		name = "."
 	}
 	return append(coordinates, Coordinate{Dimension: NameDimension, Key: name})

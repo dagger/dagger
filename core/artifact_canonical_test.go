@@ -39,7 +39,7 @@ func TestArtifactCanonicalLocalPath(t *testing.T) {
 	// not depend on this shorthand, or on the current CLI field spelling.
 	module.WorkspaceMain = true
 	entry := &Artifact{ModuleName: "docker", Node: check, Path: check.CommandCLIPath(), TypeName: "Check"}
-	require.Equal(t, "healthCheck.run", entry.StaticDimensionKey("name"))
+	require.Equal(t, "compose.projects.services.healthCheck.run", entry.StaticDimensionKey("name"))
 	bound := &Artifact{Node: &ModTreeNode{Name: "boundAlias"}, Path: []string{"bound-alias"}, TypeName: "Check"}
 	require.Empty(t, bound.LocalPath())
 }
@@ -66,7 +66,7 @@ func TestArtifactCanonicalPathWithoutNode(t *testing.T) {
 		require.Equal(t, []string{"healthCheck", "run"}, entry.LocalPath())
 		require.Equal(t, []*ArtifactDimensionKey{
 			{Dimension: "module", Key: "app"}, {Dimension: "/app/projects", Key: "e2e"},
-			{Dimension: "/app/projects/services", Key: "web"}, {Dimension: "name", Key: "healthCheck.run"},
+			{Dimension: "/app/projects/services", Key: "web"}, {Dimension: "name", Key: "projects.services.healthCheck.run"},
 		}, entry.CanonicalDimensionKeys())
 	}
 }
@@ -116,7 +116,7 @@ func TestArtifactCollectionNameAliasReservesStaticName(t *testing.T) {
 	}}
 	all := &Artifacts{Entries: []*Artifact{entry}}
 	all.AllDimensions = all.DimensionDefinitions()
-	all.NameEntries()
+	require.NoError(t, all.NameEntries())
 	require.Equal(t, "app-name", entry.dimensionName(dimension.Identifier))
 	resolved, err := all.ResolveDimension(entry.dimensionName(dimension.Identifier))
 	require.NoError(t, err)
@@ -124,4 +124,46 @@ func TestArtifactCollectionNameAliasReservesStaticName(t *testing.T) {
 	resolved, err = all.ResolveDimension("name")
 	require.NoError(t, err)
 	require.Equal(t, artifact.NameDimension, resolved)
+}
+
+func TestArtifactNameEntriesUsesCompleteSchema(t *testing.T) {
+	module := &ModTreeNode{Name: "app", Parent: &ModTreeNode{}}
+	entry := func(field, collectionType, itemType string) *Artifact {
+		dimension := (*ArtifactDimension)((flattening.Collection{Type: collectionType, ItemType: itemType}).CanonicalDimension())
+		collection := &ModTreeNode{Name: field, Parent: module}
+		item := &ModTreeNode{Name: "get", Parent: collection, CollectionDimension: dimension}
+		return &Artifact{ModuleName: "app", TypeName: "Check", Path: []string{"app", field, "check"}, Node: &ModTreeNode{Name: "check", Parent: item}}
+	}
+	packages := entry("packages", "Packages", "Package")
+	dependencies := entry("dependencies", "Dependencies", "Package")
+	tests := entry("tests", "Tests", "Test")
+	all := &Artifacts{Entries: []*Artifact{packages, dependencies, tests}}
+	all.AllDimensions = all.DimensionDefinitions()
+	original := all.AllDimensions
+	selected, err := all.FilterPath([]string{"app", "packages", "check"}).SchemaSelection()
+	require.NoError(t, err)
+	require.Len(t, selected.Entries, 1)
+	require.NoError(t, selected.NameEntries())
+	require.Equal(t, "packages", selected.Entries[0].dimensionName("Packages"))
+	labels := map[string]string{}
+	for _, dimension := range selected.AllDimensions {
+		if dimension.Kind == "COLLECTION" {
+			labels[dimension.Identifier] = dimension.Name
+		}
+	}
+	require.Equal(t, map[string]string{"Packages": "packages", "Dependencies": "dependencies", "Tests": "test"}, labels)
+	require.Equal(t, "package", packages.Node.Parent.CollectionDimension.Name)
+	for _, dimension := range original {
+		if dimension.Identifier == "Dependencies" {
+			require.Equal(t, "package", dimension.Name)
+		}
+	}
+	require.NoError(t, selected.NameEntries())
+	require.Equal(t, "packages", selected.Entries[0].dimensionName("Packages"))
+}
+
+func TestArtifactNameEntriesRejectsUnresolvedColumnName(t *testing.T) {
+	dimension := (*ArtifactDimension)((flattening.Collection{Type: "Name", ItemType: "Name"}).CanonicalDimension())
+	all := &Artifacts{AllDimensions: artifact.Dimensions{dimension}}
+	require.ErrorContains(t, all.NameEntries(), "conflicting dimension names")
 }

@@ -8,7 +8,7 @@ import (
 )
 
 func TestCanonicalFixtures(t *testing.T) {
-	for _, name := range []string{"canonical-compose", "canonical-dagger"} {
+	for _, name := range []string{"canonical-compose", "canonical-dagger", "canonical-columns"} {
 		t.Run(name, func(t *testing.T) {
 			input, err := os.ReadFile("../../testdata/" + name + ".json")
 			if err != nil {
@@ -38,7 +38,7 @@ func TestCanonicalSelectionKeepsSchema(t *testing.T) {
 	if err := run(nil, bytes.NewReader(input), &all); err != nil {
 		t.Fatal(err)
 	}
-	if err := run([]string{"-only", "healthCheck.run"}, bytes.NewReader(input), &selected); err != nil {
+	if err := run([]string{"-only", "compose.projects.services.healthCheck.run"}, bytes.NewReader(input), &selected); err != nil {
 		t.Fatal(err)
 	}
 	parts := strings.SplitN(all.String(), "\n\n", 2)
@@ -52,7 +52,7 @@ func TestCanonicalSelectionKeepsSchema(t *testing.T) {
 		t.Fatalf("selection changed columns or row count:\n%s", selected.String())
 	}
 	for _, row := range selectedLines[1:3] {
-		if !strings.HasSuffix(row, "healthCheck.run") {
+		if !strings.HasSuffix(row, "compose.projects.services.healthCheck.run") {
 			t.Fatalf("selection kept another name: %s", row)
 		}
 	}
@@ -122,5 +122,17 @@ func TestCanonicalCollectionTypeUnifiesRoutes(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "/app/") || !strings.Contains(out.String(), "unit") || !strings.Contains(out.String(), "slow") {
 		t.Fatalf("output changed type coordinates or local names:\n%s", out.String())
+	}
+}
+
+func TestCanonicalReservedFlagDoesNotRenameColumn(t *testing.T) {
+	const input = `[{"module":"app","type":"Check","localPath":["check"],"collections":[{"fields":["items"],"type":"Items","itemType":"All"}],"items":[["one"],["two"]]}]`
+	var out bytes.Buffer
+	if err := run(nil, strings.NewReader(input), &out); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.SplitN(out.String(), "\n\n", 2)[1], "\n")
+	if strings.Join(strings.Fields(lines[0]), " ") != "TYPE all module name" {
+		t.Fatalf("reserved flag changed canonical column name:\n%s", out.String())
 	}
 }

@@ -10,9 +10,9 @@ Check      -              -                         -                 docs      
 Check      -              -                         -                 docs           references.stale
 Check      -              -                         -                 python-client  python310.unit
 Check      -              -                         -                 python-client  python310.slow
-Generator  .              cmd/codegen               -                 golang         generate
-Generator  .              cmd/codegen/generator/go  -                 golang         generate
-Check      .              cmd/codegen               -                 golang         generate.stale
-Check      .              cmd/codegen/generator/go  -                 golang         generate.stale
-Check      e2e/helm       e2e/helm                  TestCustomProbes  golang         test
-Check      e2e/helm       e2e/helm                  TestInstallK3S    golang         test
+Generator  .              cmd/codegen               -                 golang         modules.packages.generate
+Generator  .              cmd/codegen/generator/go  -                 golang         modules.packages.generate
+Check      .              cmd/codegen               -                 golang         modules.packages.generate.stale
+Check      .              cmd/codegen/generator/go  -                 golang         modules.packages.generate.stale
+Check      e2e/helm       e2e/helm                  TestCustomProbes  golang         modules.packages.tests.test
+Check      e2e/helm       e2e/helm                  TestInstallK3S    golang         modules.packages.tests.test

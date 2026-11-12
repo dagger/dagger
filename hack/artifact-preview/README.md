@@ -21,6 +21,18 @@ values are rejected. The utility does not derive schema names from CLI paths.
 `Description` holds the field description. Each entry in `Items` has `Keys`:
 one observed key per collection boundary. An item can also have `Description`.
 
+Canonical output names contain the full field path from the module root.
+The converter keeps `LocalPath` relative to its enclosing collection item.
+The schema compiler joins each collection's `Fields` with `LocalPath` to form
+the output name. For example, a collection at `before` with local path `check`
+has the name `before.check`. No synthetic `get` operation is added.
+
+Collection labels use the item type name. If two collection types share that
+name, both labels use their collection type names. For example, collection
+types `Packages` and `Dependencies`, both with item type `Package`, use labels
+`packages` and `dependencies`. Labels are assigned from the complete schema.
+A row filter cannot change them. An unresolved label conflict causes an error.
+
 This capture format differs from the native input for
 `core/artifact/flattening/cmd/flatten`. That input uses `flattening.Field`:
 `module`, `type`, `localPath`, and `collections`, plus example `items` as arrays
