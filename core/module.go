@@ -1109,8 +1109,10 @@ type persistedModulePayload struct {
 	RuntimeResultID               uint64                          `json:"runtimeResultID,omitempty"`
 	DefinitionResultID            uint64                          `json:"definitionResultID,omitempty"`
 	DepModuleResultIDs            []uint64                        `json:"depModuleResultIDs,omitempty"`
+	DepsCoreView                  call.View                       `json:"depsCoreView,omitempty"`
 	HasEntrypointDeps             bool                            `json:"hasEntrypointDeps,omitempty"`
 	EntrypointDepModuleResultIDs  []uint64                        `json:"entrypointDepModuleResultIDs,omitempty"`
+	EntrypointDepsCoreView        call.View                       `json:"entrypointDepsCoreView,omitempty"`
 	IncludeSelfInDeps             bool                            `json:"includeSelfInDeps,omitempty"`
 	NameField                     string                          `json:"nameField,omitempty"`
 	OriginalName                  string                          `json:"originalName,omitempty"`
@@ -1184,6 +1186,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, enc *dagql.Persist
 			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.DepModuleResultIDs = ids
+		persisted.DepsCoreView, _ = mod.Deps.CoreView()
 	}
 	if mod.EntrypointDeps != nil {
 		ids, err := encodeDeps(mod.EntrypointDeps, "entrypoint dependency")
@@ -1192,6 +1195,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, enc *dagql.Persist
 		}
 		persisted.HasEntrypointDeps = true
 		persisted.EntrypointDepModuleResultIDs = ids
+		persisted.EntrypointDepsCoreView, _ = mod.EntrypointDeps.CoreView()
 	}
 
 	persisted.NameField = mod.NameField
@@ -1265,8 +1269,10 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	}
 	// Under a sharing preparation marker this returns a fresh builder from
 	// the registered core descriptors instead of asking the engine root for
-	// a client's defaults; every other caller keeps Query.DefaultDeps.
-	deps, err := persistedDecodeDefaultDeps(ctx, dec, query)
+	// a client's defaults; every other caller keeps Query.DefaultDeps. Either
+	// way the core module is served at the view the Module was built with,
+	// which its source's engine version chose, not the decoding client's.
+	deps, err := persistedDecodeDefaultDeps(ctx, dec, query, persisted.DepsCoreView)
 	if err != nil {
 		return nil, fmt.Errorf("decode persisted module default deps: %w", err)
 	}
@@ -1280,7 +1286,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 	}
 	var entrypointDeps *SchemaBuilder
 	if persisted.HasEntrypointDeps {
-		entrypointDeps, err = persistedDecodeDefaultDeps(ctx, dec, query)
+		entrypointDeps, err = persistedDecodeDefaultDeps(ctx, dec, query, persisted.EntrypointDepsCoreView)
 		if err != nil {
 			return nil, fmt.Errorf("decode persisted module default deps: %w", err)
 		}

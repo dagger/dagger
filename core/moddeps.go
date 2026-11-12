@@ -112,6 +112,44 @@ func (b *SchemaBuilder) WithCoreMod(mod Mod) *SchemaBuilder {
 	return cp
 }
 
+// viewedCoreMod is the core module (core/schema.CoreMod), which can be served
+// at any view of the core schema.
+type viewedCoreMod interface {
+	Mod
+	WithView(call.View) Mod
+}
+
+// CoreView is the view b serves the core module at. It reports false when b
+// has no core module.
+func (b *SchemaBuilder) CoreView() (call.View, bool) {
+	if b == nil {
+		return "", false
+	}
+	for _, entry := range b.entries {
+		if entry.mod.Name() == ModuleName {
+			return entry.mod.View()
+		}
+	}
+	return "", false
+}
+
+// WithCoreView returns a copy of b that serves the core module at view.
+func (b *SchemaBuilder) WithCoreView(view call.View) (*SchemaBuilder, error) {
+	cp := b.Clone()
+	for i, entry := range cp.entries {
+		if entry.mod.Name() != ModuleName {
+			continue
+		}
+		viewed, ok := entry.mod.(viewedCoreMod)
+		if !ok {
+			return nil, fmt.Errorf("core module %T cannot be served at view %q", entry.mod, view)
+		}
+		cp.entries[i].mod = viewed.WithView(view)
+		return cp, nil
+	}
+	return nil, fmt.Errorf("no core module to serve at view %q", view)
+}
+
 func (b *SchemaBuilder) Prepend(mods ...Mod) *SchemaBuilder {
 	extra := make([]modDepEntry, len(mods))
 	for i, m := range mods {

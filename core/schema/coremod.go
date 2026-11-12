@@ -225,7 +225,7 @@ func (m *CoreMod) SchemaASTCacheKey() string {
 	return fmt.Sprintf("%p:%s", m.base, m.view)
 }
 
-func (m *CoreMod) WithView(view call.View) *CoreMod {
+func (m *CoreMod) WithView(view call.View) core.Mod {
 	return &CoreMod{
 		base: m.base,
 		view: view,

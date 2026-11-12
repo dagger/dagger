@@ -224,7 +224,12 @@ type persistedEdge struct {
 // (DeclinePersistence). An older engine reading a newer store drops the mark
 // when it saves, and a declined value would then gain a retention edge from
 // its next persistable hit, so stores of another version are wiped on import.
-const cachePersistenceSchemaVersion = "23"
+//
+// 24: a Module records the core view its dependencies were built with, which
+// its source's engine version chose. Older stores rebuilt them at the view of
+// whichever client loaded the Module, so a module could be served another
+// view than it declares; they are wiped on import.
+const cachePersistenceSchemaVersion = "24"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
