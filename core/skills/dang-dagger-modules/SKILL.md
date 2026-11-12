@@ -53,6 +53,10 @@ as a **Dagger module SDK**.
   non-null type its arm binds (`c: Cat! =>`, `e: Error! =>` in `rescue`).
   Don't bump an old module's `engineVersion` without checking its syntax
   (`dang migrate` rewrites it), or pin `dang = "X.Y"`.
+- The dang-language skill describes the newest Dang, 2.5, which no
+  `engineVersion` picks yet: a double-quoted string interpolates (`"${a}"`)
+  only under `dang = "2.5"`. Up to Dang 2.4 it is literal text, with no error;
+  interpolate in a backtick template there (`` `${a}` ``).
 - Dependencies: `"dependencies": [{"name": "gochild", "source": "gochild"}]` —
   deps may use any SDK (Go, Python, TypeScript, Dang) side by side.
 - `"disableDefaultFunctionCaching": true` turns off default function caching
