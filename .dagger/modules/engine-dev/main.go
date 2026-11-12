@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -284,7 +285,7 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	}
 	const out = "/entries"
 	const sdkDigests = "/sdk-digests.json"
-	ran := client.WithExec(append(exporter, "-out", out, "-sdk-digests", sdkDigests), dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny})
+	ran := client.WithExec(append(exporter, "-out", out, "-sdk-digests", sdkDigests))
 	if err := entriesExported(ctx, ran, exporter); err != nil {
 		return nil, nil, err
 	}
@@ -394,21 +395,17 @@ func (dev *EngineDev) seedEngineClient(ctx context.Context, builder *build.Build
 }
 
 // entriesExported is nil when ran, an exec that makes an image's entries
-// with exporter, exited 0, and otherwise says why it didn't, such as dagger/go
+// with exporter, succeeded, and otherwise says why it didn't, such as dagger/go
 // unreachable at the Go SDK module's dependency, rather than only its exit code.
+// ran expects success: a run that fails is an error, which isn't cached, so a
+// later build runs the exporter again rather than being served the failure.
 func entriesExported(ctx context.Context, ran *dagger.Container, exporter []string) error {
-	exitCode, err := ran.ExitCode(ctx)
-	if err != nil {
-		return err
+	_, err := ran.Sync(ctx)
+	var execErr *dagger.ExecError
+	if errors.As(err, &execErr) {
+		return fmt.Errorf("make the engine image's entries, with %s (exit code %d):\n%s", strings.Join(exporter, " "), execErr.ExitCode, tailLines(execErr.Stdout+"\n"+execErr.Stderr, 40))
 	}
-	if exitCode != 0 {
-		output, err := ran.CombinedOutput(ctx)
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("make the engine image's entries, with %s (exit code %d):\n%s", strings.Join(exporter, " "), exitCode, tailLines(output, 40))
-	}
-	return nil
+	return err
 }
 
 // The entries an engine image ships can be made again on the state an
@@ -438,7 +435,7 @@ half=$((size / 2 / 1048576))MB
 echo "pruning the cache of $size bytes to $half"
 echo "{ engine { localCache { prune(maxUsedSpace: \"$half\", targetSpace: \"$half\") } } }" | dagger query
 "$@" -out /entries -sdk-digests /sdk-digests.json
-`, "sh"}, exporter...)...), dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny})
+`, "sh"}, exporter...)...))
 	return entriesExported(ctx, ran, exporter)
 }
 
