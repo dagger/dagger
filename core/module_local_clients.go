@@ -26,17 +26,13 @@ func CheckModuleServes(ctx context.Context, dag *dagql.Server, src *ModuleSource
 	if !moduleServesListedClientsOnly(src) || target == scope {
 		return nil
 	}
-	reader, err := moduleTreeReader(ctx, dag, src)
+	clientsOf, err := moduleClientLister(ctx, dag, src)
 	if err != nil {
 		return err
 	}
-	var clients []string
-	configDir := "."
-	if reader != nil {
-		clients, configDir, err = workspace.DeclaredLocalClients(ctx, scope, reader)
-		if err != nil {
-			return err
-		}
+	clients, configDir, err := clientsOf(scope)
+	if err != nil {
+		return err
 	}
 	if slices.Contains(clients, target) {
 		return nil
@@ -79,12 +75,46 @@ func moduleServesListedClientsOnly(src *ModuleSource) bool {
 	}
 }
 
-// moduleClientClosure returns the local clients the config governing the
-// module at scope declares, and theirs in turn, each read from the config
-// governing it, as sorted paths relative to the root of the tree.
-func moduleClientClosure(ctx context.Context, scope string, read workspace.TreeFileReader) ([]string, error) {
+// clientLister returns the local clients the config governing the module at
+// moduleDir declares, and that config's directory, both relative to the root
+// of the tree.
+type clientLister func(moduleDir string) (clients []string, configDir string, _ error)
+
+// moduleClientLister lists clients as declared for src's tree. A local module
+// loaded through a workspace takes them from the workspace's config, which
+// the session parsed when it loaded the workspace: reading the workspace's
+// files is refused to a client that neither owns the workspace nor descends
+// from its owner, which a call's key can be computed in. Any other module
+// reads the config governing each module from its tree.
+func moduleClientLister(ctx context.Context, dag *dagql.Server, src *ModuleSource) (clientLister, error) {
+	if src.Kind == ModuleSourceKindLocal && src.Local != nil && src.Workspace.Self() != nil {
+		ws := src.Workspace.Self()
+		configDir := "."
+		if ws.ConfigFile != "" {
+			configDir = path.Dir(filepath.ToSlash(ws.ConfigFile))
+		}
+		return func(moduleDir string) ([]string, string, error) {
+			return ws.ModuleClients(moduleDir), configDir, nil
+		}, nil
+	}
+	reader, err := moduleTreeReader(ctx, dag, src)
+	if err != nil {
+		return nil, err
+	}
+	if reader == nil {
+		return func(string) ([]string, string, error) { return nil, ".", nil }, nil
+	}
+	return func(moduleDir string) ([]string, string, error) {
+		return workspace.DeclaredLocalClients(ctx, moduleDir, reader)
+	}, nil
+}
+
+// moduleClientClosure returns the clients clientsOf lists for the module at
+// scope, and theirs in turn, as sorted paths relative to the root of the
+// tree.
+func moduleClientClosure(scope string, clientsOf clientLister) ([]string, error) {
 	targets := map[string]bool{}
-	pending, _, err := workspace.DeclaredLocalClients(ctx, scope, read)
+	pending, _, err := clientsOf(scope)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +125,7 @@ func moduleClientClosure(ctx context.Context, scope string, read workspace.TreeF
 			continue
 		}
 		targets[target] = true
-		clients, _, err := workspace.DeclaredLocalClients(ctx, target, read)
+		clients, _, err := clientsOf(target)
 		if err != nil {
 			return nil, err
 		}

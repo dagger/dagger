@@ -919,11 +919,11 @@ func (fn *ModuleFunction) declaredClientsDigest(ctx context.Context) (string, er
 	if err != nil {
 		return "", err
 	}
-	reader, err := moduleTreeReader(ctx, dag, src)
-	if err != nil || reader == nil {
+	clientsOf, err := moduleClientLister(ctx, dag, src)
+	if err != nil {
 		return "", err
 	}
-	targets, err := moduleClientClosure(ctx, path.Clean(src.SourceRootSubpath), reader)
+	targets, err := moduleClientClosure(path.Clean(src.SourceRootSubpath), clientsOf)
 	if err != nil {
 		return "", err
 	}
