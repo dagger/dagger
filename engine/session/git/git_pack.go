@@ -162,37 +162,9 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 	if err != nil {
 		return sendErr(PACK_FAILED, err.Error())
 	}
-	// Each command reading revisions from stdin gets its own reader.
-	exclude := func() io.Reader { return nil }
-	if len(haves) > 0 {
-		revs := "^" + strings.Join(haves, "\n^") + "\n"
-		exclude = func() io.Reader { return strings.NewReader(revs) }
-	}
-	hasBundle := true
-	if len(haves) > 0 {
-		// git refuses to create an empty bundle, so ask first whether the
-		// refs reach anything the engine lacks.
-		missing, err := runHostGitBytes(ctx, checkout, nil, exclude(), "rev-list", "--objects", "--branches", "--tags", "HEAD", "--stdin")
-		if err != nil {
-			return sendErr(PACK_FAILED, err.Error())
-		}
-		hasBundle = len(bytes.TrimSpace(missing)) > 0
-	}
-	if hasBundle {
-		args := []string{"bundle", "create", bundlePath, "--branches", "--tags", "HEAD"}
-		if len(haves) > 0 {
-			args = append(args, "--stdin")
-		}
-		if _, err := runHostGitBytes(ctx, checkout, nil, exclude(), args...); err != nil {
-			return sendErr(PACK_FAILED, err.Error())
-		}
-		bundleInfo, err := os.Stat(bundlePath)
-		if err != nil {
-			return sendErr(PACK_FAILED, fmt.Sprintf("stat checkout bundle: %v", err))
-		}
-		if bundleInfo.Size() > MaxGitPackBytes {
-			return sendErr(PACK_FAILED, fmt.Sprintf("checkout bundle size %d exceeds limit %d", bundleInfo.Size(), MaxGitPackBytes))
-		}
+	hasBundle, err := writeCheckoutBundle(ctx, checkout, bundlePath, haves)
+	if err != nil {
+		return sendErr(PACK_FAILED, err.Error())
 	}
 	latest, err := collectCheckoutState(ctx, checkout)
 	if err != nil {
@@ -252,6 +224,42 @@ func (s GitAttachable) PackCheckout(req *PackCheckoutRequest, srv Git_PackChecko
 		}
 	}
 	return nil
+}
+
+// writeCheckoutBundle bundles the checkout's HEAD, branches and tags at
+// bundlePath, leaving out what haves reach. It reports false, writing nothing,
+// when the refs reach nothing beyond haves: git refuses to create an empty
+// bundle.
+func writeCheckoutBundle(ctx context.Context, checkout, bundlePath string, haves []string) (bool, error) {
+	// Each command reading revisions from stdin gets its own reader.
+	exclude := func() io.Reader { return nil }
+	if len(haves) > 0 {
+		revs := "^" + strings.Join(haves, "\n^") + "\n"
+		exclude = func() io.Reader { return strings.NewReader(revs) }
+		// Ask first whether the refs reach anything the engine lacks.
+		missing, err := runHostGitBytes(ctx, checkout, nil, exclude(), "rev-list", "--objects", "--branches", "--tags", "HEAD", "--stdin")
+		if err != nil {
+			return false, err
+		}
+		if len(bytes.TrimSpace(missing)) == 0 {
+			return false, nil
+		}
+	}
+	args := []string{"bundle", "create", bundlePath, "--branches", "--tags", "HEAD"}
+	if len(haves) > 0 {
+		args = append(args, "--stdin")
+	}
+	if _, err := runHostGitBytes(ctx, checkout, nil, exclude(), args...); err != nil {
+		return false, err
+	}
+	bundleInfo, err := os.Stat(bundlePath)
+	if err != nil {
+		return false, fmt.Errorf("stat checkout bundle: %w", err)
+	}
+	if bundleInfo.Size() > MaxGitPackBytes {
+		return false, fmt.Errorf("checkout bundle size %d exceeds limit %d", bundleInfo.Size(), MaxGitPackBytes)
+	}
+	return true, nil
 }
 
 // checkoutState is the raw material of a checkout's state digest and pack
