@@ -268,6 +268,13 @@ func (state *HTTPState) Resolve(
 		state.snapshot = snapshot
 	}
 
+	// A checksum pins the content, so a snapshot that already holds it
+	// needs no revalidation against the origin.
+	if expectedChecksum != "" && state.snapshot != nil && state.ContentDigest == expectedChecksum {
+		identity = "unchanged:" + state.ContentDigest.String()
+		return state.fileResult(ctx, query, name, permissions)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, state.URL, nil)
 	if err != nil {
 		return nil, err
