@@ -1,3 +1,3 @@
 module go.etcd.io/bbolt
 
-go 1.25.0
+go 1.27
