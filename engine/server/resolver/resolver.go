@@ -308,7 +308,14 @@ func (r *Resolver) ResolveImageDigest(
 	if err != nil {
 		return "", "", fmt.Errorf("create registry resolve network recorder: %w", err)
 	}
-	resolvedRef, rootDesc, err := r.remoteResolver(opts.Network, opts.RegistryTransport, network).Resolve(ctx, ref)
+	resolver := r.remoteResolver(opts.Network, opts.RegistryTransport, network)
+	var resolvedRef string
+	var rootDesc ocispecs.Descriptor
+	err = retryResolve(ctx, ref, func(ctx context.Context) error {
+		var err error
+		resolvedRef, rootDesc, err = resolver.Resolve(ctx, ref)
+		return err
+	})
 	if err != nil {
 		return "", "", err
 	}
@@ -409,13 +416,8 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		manifest = metadata.manifest
 	} else {
 		provider := contentutil.FromFetcher(fetcher)
-		// Reading the platform manifest is a blob fetch too, so it's retried
-		// after a network error, as the layers are.
-		err := retryResolve(leaseCtx, resolvedRef, func(ctx context.Context) error {
-			var err error
-			manifestDesc, manifest, err = resolveManifestDescriptor(ctx, provider, rootDesc, platformMatcher, true)
-			return err
-		})
+		var err error
+		manifestDesc, manifest, err = resolveManifestDescriptor(leaseCtx, provider, rootDesc, platformMatcher, true)
 		if err != nil {
 			return nil, err
 		}
