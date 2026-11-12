@@ -126,14 +126,20 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 
 	// We retrieve the SDK because if it's set, that means the module is implementing
 	// logic and is not just for a standalone client.
-	cfg.sdk, err = modSource.SDK().Source(ctx)
+	sdk, err := modSource.SDK(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config sdk: %w", err)
 	}
+	if sdk != nil {
+		cfg.sdk, err = sdk.Source(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("could not load module config sdk: %w", err)
+		}
 
-	cfg.debug, err = modSource.SDK().Debug(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not load module config sdk debug: %w", err)
+		cfg.debug, err = sdk.Debug(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("could not load module config sdk debug: %w", err)
+		}
 	}
 
 	// If a first init, there will be no directory, so we ignore the error here.
@@ -235,9 +241,15 @@ func analyzeClientConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 
 	// We retrieve the SDK because if it's set, that means the module is implementing
 	// logic and is not just for a standalone client.
-	cfg.sdk, err = modSource.SDK().Source(ctx)
+	sdk, err := modSource.SDK(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config sdk: %w", err)
+	}
+	if sdk != nil {
+		cfg.sdk, err = sdk.Source(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("could not load module config sdk: %w", err)
+		}
 	}
 
 	// We are using the module path as source here since the client configuration should
