@@ -38,6 +38,13 @@ func (srv *Server) initCacheVolumeDir(cfg config.CacheVolumesConfig) error {
 		OnDeletionError: func(err error) {
 			slog.Warn("cache volume deletion failed; what's left stays counted until the directory's next owner deletes it", "error", err)
 		},
+		OnLeftovers: func(count int, recordedBytes int64, unmeasured int) {
+			slog.Info("deleting a previous engine's leftover cache volumes in the background",
+				"count", count, "recordedBytes", recordedBytes, "unmeasured", unmeasured)
+		},
+		OnLeftoversDeleted: func(count int, took time.Duration) {
+			slog.Info("deleted a previous engine's leftover cache volumes", "count", count, "duration", took)
+		},
 	})
 	if errors.Is(err, cachevolumedir.ErrOwned) {
 		slog.Warn("cache volume directory is in use by another engine; cache volumes are snapshots for this run", "dir", dir)
