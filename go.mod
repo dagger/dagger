@@ -1,11 +1,6 @@
 module github.com/dagger/dagger
 
-go 1.26.6
-
-require (
-	dagger.io/dagger v0.21.9
-	github.com/dagger/dagger/engine/distconsts v0.21.9
-)
+go 1.27
 
 replace (
 	dagger.io/dagger => ./sdk/go
@@ -17,6 +12,7 @@ require (
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.5
 	cloud.google.com/go/secretmanager v1.16.0
+	dagger.io/dagger v0.21.9
 	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.94
 	github.com/BurntSushi/toml v1.6.0
@@ -63,6 +59,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creachadair/tomledit v0.0.29
 	github.com/creack/pty v1.1.24
+	github.com/dagger/dagger/engine/distconsts v0.21.9
 	github.com/dagger/otel-go v1.43.1-0.20261102220336-aa07da582c21
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/dagger/testctx v0.1.2
@@ -301,6 +298,7 @@ require (
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
 	github.com/matryer/moq v0.6.0 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/mattn/goveralls v0.0.12 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
