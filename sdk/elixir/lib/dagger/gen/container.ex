@@ -1277,8 +1277,11 @@ defmodule Dagger.Container do
   @doc """
   Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
   """
-  @spec with_mounted_temp(t(), String.t(), [{:size, integer() | nil}, {:expand, boolean() | nil}]) ::
-          Dagger.Container.t()
+  @spec with_mounted_temp(t(), String.t(), [
+          {:size, integer() | nil},
+          {:expand, boolean() | nil},
+          {:disk, boolean() | nil}
+        ]) :: Dagger.Container.t()
   def with_mounted_temp(%__MODULE__{} = container, path, optional_args \\ []) do
     query_builder =
       container.query_builder
@@ -1286,6 +1289,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("size", optional_args[:size])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
+      |> QB.maybe_put_arg("disk", optional_args[:disk])
 
     %Dagger.Container{
       query_builder: query_builder,

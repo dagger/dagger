@@ -2044,6 +2044,42 @@ func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, output, "size=4k")
 	})
+
+	t.Run("on disk", func(ctx context.Context, t *testctx.T) {
+		output, err := output([]sdkcore.ContainerWithMountedTempOpts{
+			{Disk: true},
+		})
+
+		require.NoError(t, err)
+		require.Contains(t, output, " /mnt/tmp ")
+		require.NotContains(t, output, "tmpfs")
+	})
+
+	t.Run("on disk, empty for each process", func(ctx context.Context, t *testctx.T) {
+		ctr := sdkcore.NewQuery(c).Container().
+			From(alpineImage).
+			WithMountedTemp("/mnt/tmp", sdkcore.ContainerWithMountedTempOpts{Disk: true})
+
+		first, err := ctr.
+			WithExec([]string{"sh", "-c", "ls -A /mnt/tmp; stat -c %A /mnt/tmp; echo first > /mnt/tmp/file"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "drwxrwxrwt\n", first)
+
+		second, err := ctr.
+			WithExec([]string{"sh", "-c", "echo first > /mnt/tmp/file"}).
+			WithExec([]string{"ls", "-A", "/mnt/tmp"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, second)
+	})
+
+	t.Run("on disk, with a size", func(ctx context.Context, t *testctx.T) {
+		_, err := output([]sdkcore.ContainerWithMountedTempOpts{
+			{Disk: true, Size: 4000},
+		})
+		requireErrOut(t, err, "size applies only to a temporary directory in memory")
+	})
 }
 
 func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {

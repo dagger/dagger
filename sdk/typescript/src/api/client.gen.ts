@@ -1463,6 +1463,11 @@ export type ContainerWithMountedTempOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+
+  /**
+   * Keep the temporary directory on the engine's disk instead of in memory, for contents too large for memory. Each process gets an empty directory of its own, removed once the process ends. It can't be combined with size.
+   */
+  disk?: boolean
 }
 
 export type ContainerWithMountedVolumeOpts = {
@@ -8091,6 +8096,7 @@ export class Container extends BaseClient {
    * @param path Location of the temporary directory (e.g., "/tmp/temp_dir").
    * @param opts.size Size of the temporary directory in bytes.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.disk Keep the temporary directory on the engine's disk instead of in memory, for contents too large for memory. Each process gets an empty directory of its own, removed once the process ends. It can't be combined with size.
    */
   withMountedTemp = (
     path: string,

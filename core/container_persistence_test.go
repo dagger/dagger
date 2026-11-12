@@ -667,6 +667,7 @@ func TestContainerPersistedDetachedFileAndDirectoryPaths(t *testing.T) {
 		{Target: "/tmp", TmpfsSource: &TmpfsMountSource{}},
 		{Target: "/file", FileSource: fileSource},
 		{Target: "/dir", DirectorySource: dirSource},
+		{Target: "/scratch", TmpfsSource: &TmpfsMountSource{Disk: true}},
 	}
 	encoded, err := original.EncodePersistedObject(ctx, dagql.NewPersistEncodeContext(cache, 0, nil))
 	require.NoError(t, err)
@@ -686,6 +687,8 @@ func TestContainerPersistedDetachedFileAndDirectoryPaths(t *testing.T) {
 	require.NoError(t, err)
 	restored, ok := dagql.UnwrapAs[*Container](res)
 	require.True(t, ok)
+	require.False(t, restored.Mounts[0].TmpfsSource.Disk)
+	require.True(t, restored.Mounts[3].TmpfsSource.Disk, "a disk temp mount stays on disk")
 	require.ElementsMatch(t, []string{"root", "file", "dir"}, restored.CacheUsageIdentities())
 	manager.snapshotSizes = map[string]int64{"root": 10, "file": 20, "dir": 30}
 	for id, want := range manager.snapshotSizes {

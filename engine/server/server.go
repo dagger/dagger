@@ -354,6 +354,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.startEngineEvents()
 
+	moveDiskTempMountsToTrash(srv.rootDir)
 	// Sweep any worker state moved aside by a cache reset — this startup's or
 	// an interrupted sweep from a previous one — in the background.
 	srv.startLocalCacheTrashSweeper()

@@ -1543,6 +1543,13 @@ type Container implements Exportable & Node & Syncer {
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
+
+    """
+    Keep the temporary directory on the engine's disk instead of in memory, for
+    contents too large for memory. Each process gets an empty directory of its
+    own, removed once the process ends. It can't be combined with size.
+    """
+    disk: Boolean = false
   ): Container!
 
   """

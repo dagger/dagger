@@ -472,6 +472,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("size").Doc(`Size of the temporary directory in bytes.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+				dagql.Arg("disk").Doc(`Keep the temporary directory on the engine's disk instead of in memory, `+
+					`for contents too large for memory. Each process gets an empty directory of its own, removed once the process ends. `+
+					`It can't be combined with size.`).View(AfterVersion("v1.0.0-beta.28")),
 			),
 
 		dagql.NodeFuncWithDynamicInputs("withMountedCache", s.withMountedCache, s.withMountedCacheDynamicInputs).
@@ -3425,9 +3428,13 @@ type containerWithMountedTempArgs struct {
 	Path   string
 	Size   dagql.Optional[dagql.Int]
 	Expand bool `default:"false"`
+	Disk   bool `default:"false"`
 }
 
 func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedTempArgs) (*core.Container, error) {
+	if args.Disk && args.Size.Valid {
+		return nil, fmt.Errorf("withMountedTemp: size applies only to a temporary directory in memory, not with disk")
+	}
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return nil, err
 	}
@@ -3446,11 +3453,13 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.Obje
 		Parent:    parent,
 		Target:    target,
 		Size:      args.Size.Value.Int(),
+		Disk:      args.Disk,
 	}
 	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
 		Target: target,
 		TmpfsSource: &core.TmpfsMountSource{
 			Size: args.Size.Value.Int(),
+			Disk: args.Disk,
 		},
 	})
 	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
