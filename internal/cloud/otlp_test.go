@@ -456,6 +456,40 @@ func TestSlowSinkIsNotAStall(t *testing.T) {
 	require.Equal(t, 2, payloads)
 }
 
+// TestCancelStopsTheBacklog: a fetch canceled while the sink is behind
+// returns the cancellation at once, rather than feeding the sink everything
+// already queued and reporting success.
+func TestCancelStopsTheBacklog(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(framedHandler(func(fw *otlpstream.FrameWriter, flush func()) {
+		for i := range 3 {
+			_ = fw.WriteData([]byte(fmt.Sprintf("payload-%d", i+1)))
+		}
+		_ = fw.WriteTerminal()
+		flush()
+	}))
+	t.Cleanup(srv.Close)
+
+	c := testOTLPClient(t, srv, 0)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var payloads int
+	err := c.consumeStream(ctx, otlpTraces, "canceled-trace", nil, func([]byte) error {
+		payloads++
+		if payloads == 1 {
+			// The whole stream is queued by now; cancel while the sink is
+			// still on its first payload.
+			time.Sleep(200 * time.Millisecond)
+			cancel()
+		}
+		return nil
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 1, payloads, "the queued payloads must not reach the sink after cancellation")
+}
+
 func TestStallWatchdogCountsHeartbeatsAsProgress(t *testing.T) {
 	t.Parallel()
 
