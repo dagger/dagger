@@ -131,9 +131,13 @@ func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Ch
 	if err != nil {
 		return dagql.ObjectResult[*core.Check]{}, err
 	}
-	// A failed check is run again by the next request (see sync), so it
-	// isn't kept past its session. A run that is never reused isn't either.
-	if !result.Passed || dagql.CurrentCall(ctx).SessionBound() {
+	// A failed check runs again in every other session, even one open at
+	// the same time. In this one, requests that joined the run share it, and
+	// a later request runs it again (see sync). A run that is never reused
+	// isn't kept either.
+	if !result.Passed {
+		dagql.BindToSession(ctx)
+	} else if dagql.CurrentCall(ctx).SessionBound() {
 		dagql.DeclinePersistence(ctx)
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
