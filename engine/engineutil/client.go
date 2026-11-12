@@ -694,28 +694,9 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 			if pack != nil {
 				return nil, fmt.Errorf("received more than one pack metadata message")
 			}
-			if errInfo := msg.Metadata.GetError(); errInfo != nil {
-				switch errInfo.Type {
-				case git.NOT_A_REPO:
-					return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
-				case git.NOT_FOUND:
-					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitPackUnsupported)
-				case git.CHECKOUT_STATE_MISMATCH:
-					return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitCheckoutStateChanged)
-				default:
-					return nil, errors.New(errInfo.Message)
-				}
-			}
-			pack = &GitCheckoutPack{
-				HeadSHA:           msg.Metadata.HeadSha,
-				HeadRef:           msg.Metadata.HeadRef,
-				ObjectFormat:      msg.Metadata.ObjectFormat,
-				StateDigest:       msg.Metadata.StateDigest,
-				Remotes:           msg.Metadata.Remotes,
-				UpstreamRemote:    msg.Metadata.UpstreamRemote,
-				HasRemoteMetadata: msg.Metadata.HasRemoteMetadata,
-				RelativeToHaves:   msg.Metadata.RelativeToHaves,
-				Refs:              msg.Metadata.Refs,
+			pack, err = gitCheckoutPackFromMetadata(msg.Metadata)
+			if err != nil {
+				return nil, err
 			}
 		case *git.PackCheckoutResponse_Chunk:
 			if pack == nil {
@@ -751,6 +732,34 @@ func (c *Client) PackGitCheckout(ctx context.Context, checkoutPath, expectedStat
 		}
 	}
 	return pack, nil
+}
+
+// gitCheckoutPackFromMetadata is the pack a client's metadata message
+// describes, or the error it reports.
+func gitCheckoutPackFromMetadata(md *git.PackCheckoutMetadata) (*GitCheckoutPack, error) {
+	if errInfo := md.GetError(); errInfo != nil {
+		switch errInfo.Type {
+		case git.NOT_A_REPO:
+			return nil, fmt.Errorf("%s: %w", errInfo.Message, gitutil.ErrGitNoRepo)
+		case git.NOT_FOUND:
+			return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitPackUnsupported)
+		case git.CHECKOUT_STATE_MISMATCH:
+			return nil, fmt.Errorf("%s: %w", errInfo.Message, ErrGitCheckoutStateChanged)
+		default:
+			return nil, errors.New(errInfo.Message)
+		}
+	}
+	return &GitCheckoutPack{
+		HeadSHA:           md.HeadSha,
+		HeadRef:           md.HeadRef,
+		ObjectFormat:      md.ObjectFormat,
+		StateDigest:       md.StateDigest,
+		Remotes:           md.Remotes,
+		UpstreamRemote:    md.UpstreamRemote,
+		HasRemoteMetadata: md.HasRemoteMetadata,
+		RelativeToHaves:   md.RelativeToHaves,
+		Refs:              md.Refs,
+	}, nil
 }
 
 // GitUncommittedPack is a checkout's git-visible working-tree delta relative to
