@@ -155,15 +155,17 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return fmt.Errorf("import result %d call_frame_json: %w", resultID, decoded.frameErr)
 			}
 
-			// The decline mark and the session binding go back onto the
-			// entry, not into the envelope a record of it is captured from.
-			persistDeclined, boundSession := env.PersistDeclined, env.BoundSession
-			env.PersistDeclined, env.BoundSession = false, ""
+			// The decline mark goes back onto the entry, not into the
+			// envelope a record of it is captured from. The session binding
+			// goes onto the entry and stays in the envelope, which a record
+			// sent from the restored entry carries.
+			persistDeclined := env.PersistDeclined
+			env.PersistDeclined = false
 			res := &sharedResult{
 				id:                    resultID,
 				imported:              env.Imported,
 				persistDeclined:       persistDeclined,
-				boundSession:          boundSession,
+				boundSession:          env.BoundSession,
 				isObject:              env.Kind == persistedResultKindObject,
 				sessionResourceHandle: env.SessionResourceHandle,
 				expiresAtUnix:         row.ExpiresAtUnix,
