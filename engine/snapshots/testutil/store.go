@@ -18,9 +18,9 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	ctdsnapshots "github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
-	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/containerd/containerd/v2/plugins/snapshots/native"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/blobstore"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
@@ -80,7 +80,7 @@ func NewStore(t testing.TB) *Store {
 func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error)) *Store {
 	t.Helper()
 	s := &Store{root: root, snapshotter: snapshotter}
-	rawContent, err := local.NewStore(filepath.Join(s.root, "content"))
+	rawContent, err := blobstore.New(filepath.Join(s.root, "content"))
 	require.NoError(t, err)
 	rawSnapshots, err := newSnapshotter(filepath.Join(s.root, "snapshots"))
 	require.NoError(t, err)

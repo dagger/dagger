@@ -20,14 +20,15 @@ func TestDirectoryResolveBrokenSymlinksSchema(t *testing.T) {
 	srv := &currentTypeDefsTestServer{}
 	base, err := NewCoreSchemaBase(ctx, srv)
 	require.NoError(t, err)
-	for _, version := range []string{"v0.21.6", "v1.0.0"} {
+	for _, version := range []string{"v0.21.6", "v1.0.0-beta.25", "v1.0.0-beta.26", "v1.0.0"} {
 		view := call.View(engine.APIViewVersion(version))
 		dag, err := base.Fork(ctx, core.NewRoot(srv), view)
 		require.NoError(t, err)
 		schema := dag.SchemaForView(view)
+		require.Equal(t, version == "v1.0.0-beta.26" || version == "v1.0.0", schema.Types["Directory"].Fields.ForName("withPlatform") != nil, version)
 		for _, typ := range []string{"Directory", "Container"} {
 			arg := schema.Types[typ].Fields.ForName("directory").Arguments.ForName("resolveBrokenSymlinks")
-			if version == "v0.21.6" {
+			if version == "v0.21.6" || version == "v1.0.0-beta.25" {
 				require.Nil(t, arg, typ)
 			} else {
 				require.NotNil(t, arg, typ)

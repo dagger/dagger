@@ -348,7 +348,7 @@ func TestExportWithNoSurvivingRoot(t *testing.T) {
 // An export holds its chains until the service's upload, uploads what it
 // asks for, answers with what succeeded and failed, and then releases them.
 func TestExportUpload(t *testing.T) {
-	d1, d2 := digest.FromString("one"), digest.FromString("two")
+	d1, d2 := digest.FromString("first"), digest.FromString("second")
 	released := make(chan struct{})
 	adapter := newFakeAdapter()
 	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
@@ -388,11 +388,59 @@ func TestExportUpload(t *testing.T) {
 	<-released
 }
 
+// A stored blob whose bytes aren't the ones its digest names, as a host
+// crash can leave one, fails its upload, alone or in a pack, and the PUT
+// never receives its last byte, so nothing is stored under the digest.
+func TestUploadRefusesBytesThatDontMatchTheDigest(t *testing.T) {
+	right, member := digest.FromString("right"), digest.FromString("member")
+	good := digest.FromString("good")
+	data := blobs{right: "wrong", member: "memb3r", good: "good"}
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: data})
+	}
+	s, conn := testSession(t, adapter)
+	var received sync.Map
+	s.cfg.put = func(_ context.Context, address string, body io.Reader, _ int64) error {
+		got, err := io.ReadAll(body)
+		received.Store(address, string(got))
+		return err
+	}
+	members := []pack.Member{{Digest: good, Size: 4}, {Digest: member, Size: 6}}
+	id, err := pack.ID(members)
+	require.NoError(t, err)
+	up := protocol.UploadPack{Pack: id, Members: members, URL: "put-pack"}
+
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	exported := decode[protocol.Exported](t, conn.next(t))
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{
+		ExportID: exported.ExportID,
+		URLs:     map[digest.Digest]string{right: "put-right"},
+		Packs:    []protocol.UploadPack{up},
+	}))
+	uploaded := decode[protocol.Uploaded](t, conn.next(t))
+	require.Empty(t, uploaded.Done)
+	var failed []digest.Digest
+	for _, f := range uploaded.Failed {
+		failed = append(failed, f.Digest)
+	}
+	require.ElementsMatch(t, []digest.Digest{right, id}, failed)
+
+	got, ok := received.Load("put-right")
+	require.True(t, ok)
+	require.Equal(t, "", got, "the PUT gets none of the blob's last read")
+	header, err := pack.Header(members)
+	require.NoError(t, err)
+	got, ok = received.Load("put-pack")
+	require.True(t, ok)
+	require.Equal(t, string(header)+"good", got, "the PUT stops before the member's last read")
+}
+
 // An upload cut off, as when the engine gives up its remote-cache work,
 // still answers with what arrived: the blob uploaded is done, and the one
 // cut off in its PUT fails with the cut's cause.
 func TestCutUploadAnswersWithWhatArrived(t *testing.T) {
-	d1, d2 := digest.FromString("one"), digest.FromString("two")
+	d1, d2 := digest.FromString("first"), digest.FromString("second")
 	errCut := errors.New("the engine gave up")
 	cut := make(chan struct{})
 	adapter := newFakeAdapter()
@@ -435,7 +483,7 @@ func TestCutUploadAnswersWithWhatArrived(t *testing.T) {
 // never PUT fails with the cut's cause, and one cut off in its PUT with its
 // PUT's error.
 func TestCutUploadAnswersForBlobsWaitingForASlot(t *testing.T) {
-	d1, d2 := digest.FromString("one"), digest.FromString("two")
+	d1, d2 := digest.FromString("first"), digest.FromString("second")
 	errCut := errors.New("the engine gave up")
 	errPut := errors.New("the PUT was cut off")
 	cut := make(chan struct{})
@@ -568,7 +616,8 @@ func TestUploadConcurrencyIsPerEngine(t *testing.T) {
 	for root := uint64(1); root <= ExportsInFlight; root++ {
 		b := blobs{}
 		for i := range perExport {
-			b[digest.FromString(fmt.Sprintf("%d-%d", root, i))] = "data"
+			v := fmt.Sprintf("%d-%d", root, i)
+			b[digest.FromString(v)] = v
 		}
 		exportBlobs[root] = b
 	}
@@ -763,7 +812,7 @@ func TestUploadLoggedQueued(t *testing.T) {
 	urls := map[digest.Digest]string{}
 	for i := range UploadConcurrency + 2 {
 		dgst := digest.FromString(fmt.Sprint(i))
-		data[dgst] = "data"
+		data[dgst] = fmt.Sprint(i)
 		urls[dgst] = "put-" + dgst.String()
 	}
 	s, conn, logs, exportID := uploadSession(t, data)
@@ -835,7 +884,7 @@ func TestUploadLoggedFailure(t *testing.T) {
 // service's upload after the bundle is sent; the chains are held over both
 // and the upload.
 func TestExportEndedLogged(t *testing.T) {
-	d1, d2 := digest.FromString("one"), digest.FromString("two")
+	d1, d2 := digest.FromString("first"), digest.FromString("second")
 	exportOf := func(data blobs) func(context.Context, protocol.Export, func(context.Context, Export) error) error {
 		return func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
 			return consume(ctx, Export{Bundle: testBundle(), Blobs: data})

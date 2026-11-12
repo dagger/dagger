@@ -400,9 +400,6 @@ func ensureCloudCheckFeatures(cmd *cobra.Command, client *cloudapi.Client, provi
 	if provider == cloudCheckEntire {
 		features = append(features, featureCloudEntireForge)
 	}
-	if provider == cloudCheckGitLab {
-		features = append(features, cloudFeature("CLOUD_GITLAB"))
-	}
 	if orgName == "" {
 		return nil
 	}

@@ -237,7 +237,7 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 		goMod = new(modfile.File)
 
 		goMod.AddModuleStmt(modname)
-		goMod.AddGoStmt(goVersion)
+		goMod.AddGoStmt(newGoModVersion)
 
 		needsRegen = true
 	}

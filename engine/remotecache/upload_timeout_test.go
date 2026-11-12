@@ -142,7 +142,7 @@ func TestSlowUploadIsNotCutOff(t *testing.T) {
 // A stalled upload fails and frees its slot: with a single slot, the next
 // upload runs.
 func TestStalledUploadFreesItsSlot(t *testing.T) {
-	stalled, good := digest.FromString("stalled"), digest.FromString("good")
+	stalled, good := digest.FromString("stalled blob"), digest.FromString("good blob")
 	adapter := newFakeAdapter()
 	adapter.export = func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
 		return consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{stalled: "stalled blob", good: "good blob"}})

@@ -104,8 +104,9 @@ func BenchmarkDBIngest(b *testing.B) {
 // concurrentLiveTrace builds the updates a live run delivers: width spans
 // that keep running, such as the tests of a large go test run, beneath a
 // chain of depth shared ancestors, and n short spans beneath them that arrive
-// once, already ended, as most spans do.
-func concurrentLiveTrace(n, width, depth int) [][]sdktrace.ReadOnlySpan {
+// once, already ended, as most spans do. It returns the batches that start the
+// running spans and their ancestors, then the batches of ended spans.
+func concurrentLiveTrace(n, width, depth int) (running, ended [][]sdktrace.ReadOnlySpan) {
 	traceID := trace.TraceID{2}
 	spanID := func(i int) trace.SpanID {
 		var id trace.SpanID
@@ -134,12 +135,11 @@ func concurrentLiveTrace(n, width, depth int) [][]sdktrace.ReadOnlySpan {
 		}
 		return s.Snapshot()
 	}
-	var batches [][]sdktrace.ReadOnlySpan
 	for i := range depth {
-		batches = append(batches, []sdktrace.ReadOnlySpan{stub(i, i-1, false)})
+		running = append(running, []sdktrace.ReadOnlySpan{stub(i, i-1, false)})
 	}
 	for i := depth; i < depth+width; i++ {
-		batches = append(batches, []sdktrace.ReadOnlySpan{stub(i, depth-1, false)})
+		running = append(running, []sdktrace.ReadOnlySpan{stub(i, depth-1, false)})
 	}
 	const batch = 64
 	for i := 0; i < n; i += batch {
@@ -148,9 +148,9 @@ func concurrentLiveTrace(n, width, depth int) [][]sdktrace.ReadOnlySpan {
 			id := depth + width + j
 			spans = append(spans, stub(id, depth+j%width, true))
 		}
-		batches = append(batches, spans)
+		ended = append(ended, spans)
 	}
-	return batches
+	return running, ended
 }
 
 // BenchmarkDBIngestLive feeds a live run through the ingestion path in
@@ -158,7 +158,8 @@ func concurrentLiveTrace(n, width, depth int) [][]sdktrace.ReadOnlySpan {
 func BenchmarkDBIngestLive(b *testing.B) {
 	const n, depth = 20_000, 20
 	for _, width := range []int{100, 1_000, 5_000} {
-		batches := concurrentLiveTrace(n, width, depth)
+		running, ended := concurrentLiveTrace(n, width, depth)
+		batches := slices.Concat(running, ended)
 		b.Run(fmt.Sprintf("running=%d", width), func(b *testing.B) {
 			ctx := context.Background()
 			for b.Loop() {

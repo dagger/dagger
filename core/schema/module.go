@@ -430,12 +430,14 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module object scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
 
 		dagql.NodeFunc("_prebuild", s.modulePrebuild).
+			View(AfterVersion("v1.0.0-beta.26")).
 			Doc(`The file every call of the module builds on, such as its compiled binary, when its SDK declares one: the same result its calls build.`).
 			Args(
 				dagql.Arg("platform").Doc(`The platform of the engine whose calls build on it, when not this engine's, such as an engine image's of another platform.`),
 			),
 
 		dagql.NodeFunc("_runtimeImage", s.moduleRuntimeImage).
+			View(AfterVersion("v1.0.0-beta.26")).
 			Doc(`The image every call of the module runs its process in, when its SDK declares one: the same result its calls start from.`).
 			Args(
 				dagql.Arg("platform").Doc(`The platform of the engine whose calls start from it, when not this engine's, such as an engine image's of another platform.`),
@@ -458,7 +460,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The name of the module being executed in`),
 
 		dagql.FuncWithDynamicInputs("naming", s.currentModuleNaming, s.currentModuleNamingCacheKey).
-			View(AfterVersion(identifierVersion)).
+			View(AfterVersion("v1.0.0-beta.26")).
 			Experimental(identifierExperimental).
 			Doc(`The names the engine gives this module's own declarations: the same as its source's ModuleSource.naming, for module runtimes, which have no ModuleSource.`,
 				`It answers for the module under its own name (ModuleSource.moduleName), by the naming rules of the version the module is named by. A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.`),

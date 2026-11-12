@@ -23,7 +23,8 @@ func TestCloudChecksOnGitLab(t *testing.T) {
 		{name: "does not treat a parent group as the subgroup source", sources: `{"gitlabOrganizationSources":[{"id":"gitlab:42","instanceURL":"https://gitlab.com","namespacePath":"Team"}]}`, wantError: "/example/integrations/gitlab"},
 		{name: "namespace spelling is preserved", sources: `{"gitlabOrganizationSources":[{"id":"gitlab:42","instanceURL":"https://gitlab.com","namespacePath":"team/subgroup"}]}`, wantError: "/example/integrations/gitlab"},
 		{name: "does not select a repository the API marks ineligible", sources: sources, repositories: `{"sourceRepositories":[{"repository":"` + repo + `","eligible":false}]}`, wantError: "already enabled through another Cloud source or organization"},
-		{name: "organization pilot is required", features: featuresActive, wantError: "CLOUD_GITLAB is not enabled"},
+		{name: "normal checks entitlement is still required", features: strings.Replace(featuresActive, `"CLOUD_CHECKS","status":"ACTIVE"`, `"CLOUD_CHECKS","status":"UNUSED"`, 1), wantError: "CLOUD_CHECKS is not enabled"},
+		{name: "an API access refusal cannot enable checks", sources: sources, repositories: `{"errors":[{"message":"set up GitLab access for this source before enabling checks"}]}`, wantError: "set up GitLab access for this source before enabling checks"},
 		{name: "a missing repository opens Cloud settings", sources: sources, repositories: `{"sourceRepositories":[]}`, wantError: "/example/integrations/gitlab"},
 		{name: "reports an API authorization rejection", sources: sources, repositories: `{"sourceRepositories":[{"repository":"` + repo + `","eligible":true}]}`, writeError: `{"errors":[{"message":"only organization admins can configure GitLab"}]}`, wantError: "only organization admins"},
 	} {
@@ -38,7 +39,7 @@ func TestCloudChecksOnGitLab(t *testing.T) {
 					if tc.features != "" {
 						return tc.features
 					}
-					return strings.Replace(featuresActive, `"features":[`, `"features":[{"name":"CLOUD_GITLAB","status":"ACTIVE"},`, 1)
+					return featuresActive
 				case "GetGitLabOrganizationSources":
 					require.Equal(t, "org", variables["org"])
 					return tc.sources

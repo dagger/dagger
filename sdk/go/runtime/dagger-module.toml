@@ -11,4 +11,4 @@ engineVersion = "v1.0.0-beta.24"
 
 [[dependencies]]
   name = "go"
-  source = "github.com/dagger/go@f8c4b0b2574ca3b0eaeabe730d04dc25af3cbfa4"
+  source = "github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"

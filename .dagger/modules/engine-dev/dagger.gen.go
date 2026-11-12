@@ -54,7 +54,7 @@ func (r EngineDev) MarshalJSON() ([]byte, error) {
 		SubnetNumber       int
 		EBPFProgs          []string
 		Race               bool
-		NoImageEntries     bool
+		ImageEntries       bool
 		ClientDockerConfig *dagger.Secret
 		Ws                 *dagger.Workspace
 	}
@@ -66,7 +66,7 @@ func (r EngineDev) MarshalJSON() ([]byte, error) {
 	concrete.SubnetNumber = r.SubnetNumber
 	concrete.EBPFProgs = r.EBPFProgs
 	concrete.Race = r.Race
-	concrete.NoImageEntries = r.NoImageEntries
+	concrete.ImageEntries = r.ImageEntries
 	concrete.ClientDockerConfig = r.ClientDockerConfig
 	concrete.Ws = r.Ws
 	return json.Marshal(&concrete)
@@ -82,7 +82,7 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 		SubnetNumber       int
 		EBPFProgs          []string
 		Race               bool
-		NoImageEntries     bool
+		ImageEntries       bool
 		ClientDockerConfig *dagger.Secret
 		Ws                 *dagger.Workspace
 	}
@@ -98,7 +98,7 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	r.SubnetNumber = concrete.SubnetNumber
 	r.EBPFProgs = concrete.EBPFProgs
 	r.Race = concrete.Race
-	r.NoImageEntries = concrete.NoImageEntries
+	r.ImageEntries = concrete.ImageEntries
 	r.ClientDockerConfig = concrete.ClientDockerConfig
 	r.Ws = concrete.Ws
 	return nil
@@ -714,6 +714,13 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				}
 			}
 			return (*EngineDev).WithEngineConfig(&parent, key, value), nil
+		case "WithImageEntries":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*EngineDev).WithImageEntries(&parent), nil
 		case "WithLogLevel":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -735,13 +742,6 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*EngineDev).WithRace(&parent), nil
-		case "WithoutImageEntries":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*EngineDev).WithoutImageEntries(&parent), nil
 		case "":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,6 +21,8 @@ import (
 type gitRevisionFixture struct {
 	ctx    context.Context
 	srv    *dagql.Server
+	cache  *dagql.Cache
+	schema *gitSchema
 	repo   *core.GitRepository
 	parent dagql.ObjectResult[*core.GitRepository]
 	walks  []gitRevisionWalk
@@ -37,11 +41,12 @@ func newGitRevisionFixture(t *testing.T, remote *gitutil.Remote, walked string, 
 	ctx, srv, cache, _ := resolverOutputFixture(t)
 	srv.View = workspaceLockingVersion
 	srv.InstallObject(dagql.NewClass[*core.GitRef](srv))
-	f := &gitRevisionFixture{ctx: ctx, srv: srv}
+	f := &gitRevisionFixture{ctx: ctx, srv: srv, cache: cache}
 	s := &gitSchema{walkRevision: func(_ context.Context, _ *core.GitRepository, base *gitutil.Ref, rev gitutil.Revision) (string, error) {
 		f.walks = append(f.walks, gitRevisionWalk{base: base, rev: rev})
 		return walked, walkErr
 	}}
+	f.schema = s
 	dagql.Fields[*core.GitRepository]{
 		dagql.NodeFunc("__resolvedRef", s.resolvedRef).View(AllVersion).IsPersistable(),
 		dagql.NodeFunc("ref", s.revision).View(AllVersion),
@@ -209,5 +214,133 @@ func TestGitRefRevisionErrors(t *testing.T) {
 		f := newGitRevisionFixture(t, remote, "", errors.New(`resolve "HEAD~9": HEAD~8 is a root commit`))
 		_, err := f.ref(withWorkspaceLookupLockOverride(f.ctx, workspace.NewLock()), "HEAD~9")
 		require.ErrorContains(t, err, `resolve "HEAD~9": HEAD~8 is a root commit`)
+	})
+}
+
+// stubShortSHA makes the fixture expand prefixes of full, and count it.
+func (f *gitRevisionFixture) stubShortSHA(full string, calls *int) {
+	f.schema.shortSHA = func(_ context.Context, _ *core.GitRepository, prefix string) (string, error) {
+		*calls++
+		if strings.HasPrefix(full, prefix) {
+			return full, nil
+		}
+		return "", fmt.Errorf("%w: %q", gitutil.ErrShortSHANotFound, prefix)
+	}
+}
+
+// recordedRefName returns the name argument of the call result was
+// recorded as, which replaying its recipe resolves again.
+func recordedRefName(t *testing.T, f *gitRevisionFixture, result dagql.AnyResult, field string) string {
+	t.Helper()
+	record, err := f.cache.CapturePersistedRecord(f.ctx, result)
+	require.NoError(t, err)
+	require.Equal(t, field, record.Call.Field)
+	require.EqualValues(t, f.srv.View, record.Call.View, "recorded in the caller's view")
+	for _, arg := range record.Call.Args {
+		if arg.Name == "name" || arg.Name == "id" {
+			return arg.Value.StringValue
+		}
+	}
+	t.Fatalf("recorded %s call has no name argument", field)
+	return ""
+}
+
+// An abbreviated SHA resolves to a commit for good, so the result records the
+// full SHA: replaying it must not depend on the commits the engine happened to
+// have fetched when it was first resolved.
+func TestGitRefShortSHARecordsFullSHA(t *testing.T) {
+	head := strings.Repeat("3", 40)
+	full := "00dc3801b40963aedc3439ba8d636600f0873987"
+	walked := strings.Repeat("4", 40)
+	remote := &gitutil.Remote{
+		Refs:    []*gitutil.Ref{{Name: "HEAD", SHA: head}, {Name: "refs/heads/main", SHA: head}},
+		Symrefs: map[string]string{"HEAD": "refs/heads/main"},
+	}
+
+	t.Run("ref", func(t *testing.T) {
+		f := newGitRevisionFixture(t, remote, "", errors.New("must not walk"))
+		var calls int
+		f.stubShortSHA(full, &calls)
+		ref, err := f.ref(withWorkspaceLookupLockOverride(f.ctx, workspace.NewLock()), full[:12])
+		require.NoError(t, err)
+		require.Equal(t, full, ref.Self().Ref.SHA)
+		require.Equal(t, full, ref.Self().Ref.Name)
+		require.Equal(t, 1, calls)
+		require.Equal(t, full, recordedRefName(t, f, ref, "ref"))
+	})
+
+	t.Run("revision", func(t *testing.T) {
+		f := newGitRevisionFixture(t, remote, walked, nil)
+		var calls int
+		f.stubShortSHA(full, &calls)
+		ref, err := f.ref(withWorkspaceLookupLockOverride(f.ctx, workspace.NewLock()), full[:7]+"~2")
+		require.NoError(t, err)
+		require.Equal(t, walked, ref.Self().Ref.SHA)
+		require.Len(t, f.walks, 1)
+		require.Equal(t, full, f.walks[0].base.SHA)
+		require.Equal(t, walked, recordedRefName(t, f, ref, "ref"), "a revision of an abbreviated SHA records the walked commit")
+	})
+
+	t.Run("revision of a named ref", func(t *testing.T) {
+		f := newGitRevisionFixture(t, remote, walked, nil)
+		ref, err := f.ref(withWorkspaceLookupLockOverride(f.ctx, workspace.NewLock()), "main~2")
+		require.NoError(t, err)
+		require.Equal(t, "main~2", recordedRefName(t, f, ref, "ref"), "a revision of a moving ref stays an expression")
+	})
+
+	t.Run("named ref wins", func(t *testing.T) {
+		branch := &gitutil.Remote{
+			Refs:    append(slices.Clone(remote.Refs), &gitutil.Ref{Name: "refs/heads/" + full[:7], SHA: head}),
+			Symrefs: remote.Symrefs,
+		}
+		f := newGitRevisionFixture(t, branch, "", errors.New("must not walk"))
+		var calls int
+		f.stubShortSHA(full, &calls)
+		ref, err := f.ref(withWorkspaceLookupLockOverride(f.ctx, workspace.NewLock()), full[:7])
+		require.NoError(t, err)
+		require.Equal(t, head, ref.Self().Ref.SHA)
+		require.Zero(t, calls, "a ref named like a prefix is not expanded")
+	})
+
+	t.Run("commit", func(t *testing.T) {
+		f := newGitRevisionFixture(t, nil, "", errors.New("must not walk"))
+		f.srv.InstallObject(dagql.NewClass[*core.GitCommit](f.srv))
+		dagql.Fields[*core.GitRepository]{
+			dagql.NodeFunc("commit", f.schema.commit).View(AllVersion),
+		}.Install(f.srv)
+		var calls int
+		f.stubShortSHA(full, &calls)
+		var commit dagql.ObjectResult[*core.GitCommit]
+		require.NoError(t, f.srv.Select(f.ctx, f.parent, &commit, dagql.Selector{
+			Field: "commit",
+			View:  f.srv.View,
+			Args:  []dagql.NamedInput{{Name: "id", Value: dagql.String(full[:9])}},
+		}))
+		require.Equal(t, full, commit.Self().Ref.SHA)
+		require.Equal(t, 1, calls)
+		require.Equal(t, full, recordedRefName(t, f, commit, "commit"))
+
+		// the same result as selecting the full SHA directly
+		var direct dagql.ObjectResult[*core.GitCommit]
+		require.NoError(t, f.srv.Select(f.ctx, f.parent, &direct, dagql.Selector{
+			Field: "commit",
+			View:  f.srv.View,
+			Args:  []dagql.NamedInput{{Name: "id", Value: dagql.String(full)}},
+		}))
+		viaPrefix, err := f.cache.CapturePersistedRecord(f.ctx, commit)
+		require.NoError(t, err)
+		viaFull, err := f.cache.CapturePersistedRecord(f.ctx, direct)
+		require.NoError(t, err)
+		require.Equal(t, viaFull.ResultID, viaPrefix.ResultID)
+	})
+
+	t.Run("pinned commit", func(t *testing.T) {
+		f := newGitRevisionFixture(t, remote, "", errors.New("must not walk"))
+		var calls int
+		f.stubShortSHA(full, &calls)
+		ref, err := f.ref(f.ctx, full[:7], dagql.NamedInput{Name: "commit", Value: dagql.String(full)})
+		require.NoError(t, err)
+		require.Equal(t, full, ref.Self().Ref.SHA)
+		require.Zero(t, calls, "a prefix pinned to its commit is not expanded")
 	})
 }

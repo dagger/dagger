@@ -30,9 +30,9 @@ type TestSplit {
   """
   let devEngine(imageEntries: Boolean! = false): EngineDev! {
     if (imageEntries) {
-      engineDev(ws: self.ws)
+      engineDev(ws: self.ws).withImageEntries
     } else {
-      engineDev(ws: self.ws).withoutImageEntries
+      engineDev(ws: self.ws)
     }
   }
 
@@ -79,8 +79,9 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
     parallel: Int,
+    imageEntries: Boolean! = false,
   ): Void {
-    devEngine.test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    devEngine(imageEntries: imageEntries).test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   """
@@ -148,6 +149,9 @@ type TestSplit {
       ],
       race: true,
       parallel: 16,
+      # Some of its tests load Go modules in fresh nested engines made from
+      # this one, or in sessions of their own on it.
+      imageEntries: true,
     )
   }
 
@@ -331,7 +335,9 @@ type TestSplit {
   Test CLI Engine
   """
   pub testCliEngine: Void @check {
-    testCliEngineSpecific(["TestCLI", "TestEngine"])
+    # TestDagqlCacheEntriesNoLeak loads Go modules in a fresh nested engine
+    # made from this one.
+    testCliEngineSpecific(["TestCLI", "TestEngine"], imageEntries: true)
   }
 
   """
@@ -353,7 +359,9 @@ type TestSplit {
   Test Container
   """
   pub testContainer: Void @check {
-    testSpecific(["TestContainer", "TestDockerfile"])
+    # Some of its tests load Go modules in fresh nested engines made from this
+    # one.
+    testSpecific(["TestContainer", "TestDockerfile"], imageEntries: true)
   }
 
   """
@@ -391,7 +399,9 @@ type TestSplit {
   This suite starts multiple engines and runs separately from the base shard.
   """
   pub testModuleDefinitions: Void @check {
-    testSpecific(["^TestModuleDefinitionSuite$"], race: true)
+    # TestCachedAcrossClients loads Go modules in fresh nested engines made
+    # from this one.
+    testSpecific(["^TestModuleDefinitionSuite$"], race: true, imageEntries: true)
   }
 
   """

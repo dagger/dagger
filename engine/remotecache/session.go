@@ -738,7 +738,7 @@ func (s *session) uploadPack(ctx context.Context, blobs BlobSource, up protocol.
 		if n != m.Size {
 			return 0, fmt.Errorf("pack member %s has %d bytes, the pack says %d", m.Digest, n, m.Size)
 		}
-		body.parts = append(body.parts, io.LimitReader(r, n))
+		body.parts = append(body.parts, newVerifiedBlob(r, m.Digest, n))
 	}
 	body.reader = io.MultiReader(body.parts...)
 	if err := s.cfg.put(ctx, up.URL, body, size); err != nil {
@@ -814,7 +814,40 @@ func (s *session) uploadBlob(ctx context.Context, blobs BlobSource, dgst digest.
 		return 0, err
 	}
 	defer body.Close()
-	return size, s.cfg.put(ctx, address, body, size)
+	return size, s.cfg.put(ctx, address, newVerifiedBlob(body, dgst, size), size)
+}
+
+// verifiedBlob reads a blob of size bytes for upload, and fails the read
+// that would deliver its last bytes when what it read is not the blob its
+// digest names: the PUT then fails, and never stores other bytes under the
+// digest. The engine writes its blobs without syncing, so a host crash can
+// leave a stored blob short or wrong.
+type verifiedBlob struct {
+	r        io.Reader
+	dgst     digest.Digest
+	verifier digest.Verifier
+	left     int64
+	checked  bool
+}
+
+func newVerifiedBlob(r io.Reader, dgst digest.Digest, size int64) *verifiedBlob {
+	return &verifiedBlob{r: io.LimitReader(r, size), dgst: dgst, verifier: dgst.Verifier(), left: size}
+}
+
+func (b *verifiedBlob) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	_, _ = b.verifier.Write(p[:n])
+	b.left -= int64(n)
+	if b.left == 0 && !b.checked {
+		b.checked = true
+		if !b.verifier.Verified() {
+			return 0, fmt.Errorf("blob %s: the stored bytes don't match its digest", b.dgst)
+		}
+	}
+	if errors.Is(err, io.EOF) && b.left > 0 {
+		return n, fmt.Errorf("blob %s: %w", b.dgst, io.ErrUnexpectedEOF)
+	}
+	return n, err
 }
 
 // logUpload logs one blob's upload. It never logs the address, which carries

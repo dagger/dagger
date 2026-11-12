@@ -73,7 +73,7 @@ func TestReevaluateDirectiveGatedByView(t *testing.T) {
 	}
 }
 
-// File.sync's keyByContent is in views from v1.0.0-beta.24, the version
+// File.sync's keyByContent is in views from v1.0.0-beta.26, the version
 // gobuild's generated entrypoint declares for its calls.
 func TestFileSyncKeyByContentView(t *testing.T) {
 	ctx := context.Background()
@@ -92,8 +92,8 @@ func TestFileSyncKeyByContentView(t *testing.T) {
 		engineVersion string
 		has           bool
 	}{
-		{engineVersion: "v1.0.0-beta.22", has: false},
-		{engineVersion: "v1.0.0-beta.24", has: true},
+		{engineVersion: "v1.0.0-beta.25", has: false},
+		{engineVersion: "v1.0.0-beta.26", has: true},
 	} {
 		view := call.View(engine.ModuleAPIViewVersion(tc.engineVersion))
 		dag, err := coreSchemaBase.Fork(ctx, root, view)

@@ -12,12 +12,11 @@ import (
 // large list argument costs far more than computing it.
 const moduleNamingDoNotCache = "Naming is pure and much cheaper than caching a result with a large list argument."
 
-// installModuleNaming installs ModuleSource.naming and ModuleNaming. Like the
-// identifier API, they're served on every v1 view (identifierVersion): SDK
-// modules that call them declare pre-cut versions, and the answer depends on
-// the version the module is named by, not the caller's view.
+// installModuleNaming installs ModuleSource.naming and ModuleNaming. The
+// answer depends on the version the module is named by, not the caller's
+// view.
 func (s *moduleSourceSchema) installModuleNaming(dag *dagql.Server) {
-	view := AfterVersion(identifierVersion)
+	view := AfterVersion("v1.0.0-beta.26")
 
 	dag.InstallObject(dagql.NewClass[*core.ModuleNaming](dag).View(view))
 

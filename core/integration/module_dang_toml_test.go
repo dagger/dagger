@@ -300,8 +300,8 @@ type HttpClient {
 // A Dang SDK module is parsed as the Dang version its dang.toml declares.
 // Without one, a module whose engineVersion predates Dang 2
 // (engine.MinimumDangV2ModuleVersion) is Dang 1.0, where `.{ }` is selection,
-// and a later one is the current Dang, where it is `.{{ }}`. The engine
-// version a dang.toml declares picks that default too.
+// and a later one is Dang 2, where it is `.{{ }}`. The engine version a
+// dang.toml declares picks that default too.
 func (DangSuite) TestDangTomlDangVersion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	legacy := dangSelection("{", "}")
@@ -422,4 +422,97 @@ type Tiny {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"tiny":{"total":5,"rescue":1}}`, out)
 	})
+}
+
+// dangTypePattern is a Dang module whose rescue clause has the type pattern
+// pattern, `e: Error` before Dang 2.4 and `e: Error!` from Dang 2.4 on.
+func dangTypePattern(pattern string) string {
+	return `type Tiny {
+  pub size: Int! {
+    (Dagger.directory.withNewFile("hello.txt", "some text").file("hello.txt").size) rescue {
+      ` + pattern + ` => 0
+    }
+  }
+}
+`
+}
+
+// A Dang SDK module that declares no Dang version is pinned to the one the
+// engines of its engineVersion evaluated it as: Dang 2.1 before
+// v1.0.0-beta.28, where a type pattern may leave out the `!`, and Dang 2.4
+// from it on, where it must not. v1.0.0-beta.27 is the last version before
+// the cut.
+//
+// An engine caps a module's view, and so its default Dang version, at its own
+// version, so the modules run on a nested dev engine that reports
+// v1.0.0-beta.28, as an engine of that release will.
+func (DangSuite) TestDangTomlTypePatternVersion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const before, from = "v1.0.0-beta.27", "v1.0.0-beta.28"
+	bare := dangTypePattern("e: Error")
+	banged := dangTypePattern("e: Error!")
+	onEngine := withDevEngineVersion(ctx, t, c, from)
+	call := func(ctr *core.Container) *core.Container {
+		return ctr.WithExec([]string{"dagger", "call", "-m", "tiny", "size"}, core.ContainerWithExecOpts{
+			DisableDaggerInDagger: true,
+		})
+	}
+
+	for _, tc := range []struct {
+		name     string
+		manifest string
+		source   string
+		files    map[string]string
+	}{
+		{name: "before Dang 2.4, bare", manifest: before, source: bare},
+		{name: "before Dang 2.4, bare, dang.toml without keys", manifest: before, source: bare, files: map[string]string{"dang.toml": ""}},
+		{name: "before Dang 2.4, banged", manifest: before, source: banged},
+		{name: "Dang 2.4, banged", manifest: from, source: banged},
+		{name: "Dang 2.4, banged, dang.toml without keys", manifest: from, source: banged, files: map[string]string{"dang.toml": ""}},
+		{name: "Dang 2.4 engine declares Dang 2.1, bare", manifest: from, source: bare, files: map[string]string{"dang.toml": "dang = \"2.1\"\n"}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			out, err := dangTomlModule(t, c, tc.manifest, tc.source, tc.files).
+				With(onEngine).
+				With(call).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "9", strings.TrimSpace(out))
+		})
+	}
+
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+	}{
+		{name: "Dang 2.4, bare"},
+		{name: "Dang 2.4, bare, dang.toml without keys", files: map[string]string{"dang.toml": ""}},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			_, err := dangTomlModule(t, c, from, bare, tc.files).
+				With(onEngine).
+				With(call).
+				Sync(ctx)
+			requireErrOut(t, err, "write `e: Error! =>`")
+		})
+	}
+}
+
+// withDevEngineVersion points a container's dagger CLI at a nested dev engine
+// that reports version, as futureClient does. Its execs must disable nesting
+// (DisableDaggerInDagger) to reach that engine.
+func withDevEngineVersion(ctx context.Context, t *testctx.T, c *dagger.Client, version string) core.WithContainerFunc {
+	t.Helper()
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *core.Container) *core.Container {
+		return ctr.WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", version)
+	}))
+	endpoint, err := devEngine.Endpoint(ctx, core.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	require.NoError(t, err)
+	return func(ctr *core.Container) *core.Container {
+		return ctr.
+			WithServiceBinding("dev-engine", devEngine).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", version)
+	}
 }
