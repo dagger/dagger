@@ -3,13 +3,14 @@ package dagql
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -152,7 +153,7 @@ func TestCloudRestoreKeepsEveryRecord(t *testing.T) {
 	kinds := func(bundle ValueBundle) []string {
 		var out []string
 		for _, value := range bundle.Values {
-			out = append(out, value.Record.Envelope.Kind)
+			out = append(out, sentRecord(t, value).Envelope.Kind)
 		}
 		slices.Sort(out)
 		return out
@@ -165,7 +166,7 @@ func TestCloudRestoreKeepsEveryRecord(t *testing.T) {
 	after, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err, "every record of the closure is still stored")
 	require.Equal(t, kinds(before.Bundle), kinds(after.Bundle))
-	require.Equal(t, before.Bundle.Values, after.Bundle.Values)
+	require.JSONEq(t, string(mustTransferJSON(t, before.Bundle.Values)), string(mustTransferJSON(t, after.Bundle.Values)))
 
 	bctx, b, _ := transferTestCache(t)
 	reply, err := b.MergeValues(bctx, cloudCacheID, after.Bundle)
@@ -272,7 +273,7 @@ func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
 	t.Parallel()
 	const (
 		roots    = 3000
-		pad      = 4096
+		pad      = 6144
 		saves    = 5
 		walBound = 1 << 20
 	)
@@ -281,7 +282,13 @@ func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
 	actx, a, asrv := transferTestCache(t)
 	var results []AnyResult
 	for i := range roots {
-		value := &transferTestValue{Text: fmt.Sprintf("%d-%s", i, strings.Repeat("x", pad))}
+		// Random padding, which the Cloud's compression of its records
+		// can't shrink.
+		random := make([]byte, pad*3/4)
+		for j := range random {
+			random[j] = byte(rand.New(rand.NewPCG(uint64(i), uint64(j))).Uint32())
+		}
+		value := &transferTestValue{Text: fmt.Sprintf("%d-%s", i, base64.StdEncoding.EncodeToString(random))}
 		results = append(results, persistedListTestResult(t, actx, a, asrv, fmt.Sprintf("wal-root-%d", i), value))
 	}
 	require.Len(t, storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, results...)), roots)

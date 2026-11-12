@@ -121,9 +121,11 @@ func (c *Cache) storedSizes(ctx context.Context, roots []uint64, nowUnix int64, 
 // storedSizeMiss is a value StoredSizes measures after releasing egraphMu:
 // its entry, and the value state the walk read under the lock.
 type storedSizeMiss struct {
-	res                *sharedResult
-	env                *PersistedResultEnvelope
-	call               *ResultCall
+	res  *sharedResult
+	env  *PersistedResultEnvelope
+	body *storedBody
+	call *ResultCall
+	// The value state its size depends on.
 	deps               []uint64
 	dependencyRevision uint64
 	replacements       uint64
@@ -290,11 +292,16 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 // dependencies, replacement count and expiry are the ones measured. Requires
 // egraphMu.
 func storedValueMeasuredLocked(res *sharedResult) (int64, bool) {
-	kept := res.storedTransfer.Load()
-	if kept == nil || kept.envelope != res.persistedEnvelope || kept.call != res.loadResultCall() {
-		return 0, false
+	var size *storedValueSize
+	if body := res.stored; body != nil {
+		size = body.size.Load()
+	} else {
+		kept := res.storedTransfer.Load()
+		if kept == nil || kept.envelope != res.persistedEnvelope || kept.call != res.loadResultCall() {
+			return 0, false
+		}
+		size = kept.size.Load()
 	}
-	size := kept.size.Load()
 	if size == nil || size.dependencyRevision != res.dependencyOwnershipRevision || size.replacements != res.replacements || size.expiresAtUnix != res.expiresAtUnix {
 		return 0, false
 	}
@@ -304,7 +311,7 @@ func storedValueMeasuredLocked(res *sharedResult) (int64, bool) {
 // storedSizeMissLocked reads the value state of res that its size depends on.
 // Requires egraphMu.
 func storedSizeMissLocked(res *sharedResult) storedSizeMiss {
-	miss := storedSizeMiss{res: res, env: res.persistedEnvelope, call: res.loadResultCall(), dependencyRevision: res.dependencyOwnershipRevision, replacements: res.replacements, expiresAtUnix: res.expiresAtUnix}
+	miss := storedSizeMiss{res: res, env: res.persistedEnvelope, body: res.stored, call: res.loadResultCall(), dependencyRevision: res.dependencyOwnershipRevision, replacements: res.replacements, expiresAtUnix: res.expiresAtUnix}
 	for dep := range res.deps {
 		miss.deps = append(miss.deps, uint64(dep))
 	}
@@ -328,13 +335,27 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 	if c.testStoredSizeMeasure != nil {
 		c.testStoredSizeMeasure()
 	}
-	kept, err := normalizeStoredTransfer(miss.res, miss.env, miss.call)
-	if err != nil {
-		return storedSizeMeasure{}, err
-	}
-	bytes, err := encodedSize(TransferredValue{Ordinal: TransferOrdinal(miss.res.id), SenderNumber: uint64(miss.res.id), SenderReplacements: miss.replacements, Record: kept.record, DependencyIDs: miss.deps, ExpiresAtUnix: miss.expiresAtUnix})
-	if err != nil {
-		return storedSizeMeasure{}, err
+	value := TransferredValue{Ordinal: TransferOrdinal(miss.res.id), SenderNumber: uint64(miss.res.id), SenderReplacements: miss.replacements, DependencyIDs: miss.deps, ExpiresAtUnix: miss.expiresAtUnix}
+	var kept *storedTransferRecord
+	var bytes int64
+	if miss.body != nil {
+		// A body's value is measured with an empty envelope in its place,
+		// and its envelope's own length added: nothing is decompressed.
+		value.Record = PersistedRecord{ResultID: uint64(miss.res.id), Call: miss.call}
+		empty, err := encodedSize(value)
+		if err != nil {
+			return storedSizeMeasure{}, err
+		}
+		bytes = empty - emptyEnvelopeBytes + miss.body.envelopeBytes
+	} else {
+		var err error
+		if kept, err = normalizeStoredTransfer(miss.res, miss.env, miss.call); err != nil {
+			return storedSizeMeasure{}, err
+		}
+		value.Record = kept.record
+		if bytes, err = encodedSize(value); err != nil {
+			return storedSizeMeasure{}, err
+		}
 	}
 	c.storedSizeEncodes.Add(1)
 	return storedSizeMeasure{miss: miss, kept: kept, size: &storedValueSize{dependencyRevision: miss.dependencyRevision, replacements: miss.replacements, expiresAtUnix: miss.expiresAtUnix, bytes: bytes}}, nil
@@ -354,12 +375,26 @@ func (c *Cache) publishStoredSizes(measured []storedSizeMeasure) {
 	defer c.storedSizesRLock()()
 	for _, m := range measured {
 		res, miss := m.miss.res, m.miss
-		if res.persistedEnvelope != miss.env || res.loadResultCall() != miss.call || res.dependencyOwnershipRevision != miss.dependencyRevision || res.replacements != miss.replacements || res.expiresAtUnix != miss.expiresAtUnix {
+		if res.persistedEnvelope != miss.env || res.stored != miss.body || res.loadResultCall() != miss.call || res.dependencyOwnershipRevision != miss.dependencyRevision || res.replacements != miss.replacements || res.expiresAtUnix != miss.expiresAtUnix {
+			continue
+		}
+		if miss.body != nil {
+			miss.body.size.Store(m.size)
 			continue
 		}
 		keepStoredTransfer(res, m.kept).size.Store(m.size)
 	}
 }
+
+// emptyEnvelopeBytes is the length of an empty envelope's encoding, which a
+// body's measure replaces with its envelope's.
+var emptyEnvelopeBytes = func() int64 {
+	raw, err := json.Marshal(PersistedResultEnvelope{})
+	if err != nil {
+		panic(err)
+	}
+	return int64(len(raw))
+}()
 
 // sizeCounter is an io.Writer that counts what is written to it.
 type sizeCounter int64
