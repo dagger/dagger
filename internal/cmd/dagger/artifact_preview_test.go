@@ -13,7 +13,7 @@ import (
 )
 
 func TestArtifactPreviewFlagsAreIndependent(t *testing.T) {
-	const input = `[{"Module":"app","Path":["app","verify"],"Type":"Check","Collections":[],"Items":[{"Keys":[]}]}]`
+	const input = `[{"Module":"app","Path":["app","verify"],"LocalPath":["verify"],"Type":"Check","Collections":[],"Items":[{"Keys":[]}]}]`
 	var links, table, diagnostics bytes.Buffer
 	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &links, &diagnostics, []string{"check", "-la", "-f=link"}))
 	require.Equal(t, "dag+check://\n", links.String())
@@ -52,7 +52,7 @@ func TestArtifactPreviewCanonicalTable(t *testing.T) {
 }
 
 func TestArtifactPreviewCollectionListsItems(t *testing.T) {
-	const input = `[{"Module":"golang","Path":["golang","modules"],"Type":"GolangModule","Collections":[{"Fields":["modules"],"Type":"GolangModules","ItemType":"GolangModule"}],"Items":[{"Keys":["."]},{"Keys":["sdk"]}]}]`
+	const input = `[{"Module":"golang","Path":["golang","modules"],"LocalPath":[],"Type":"GolangModule","Collections":[{"Fields":["modules"],"Type":"GolangModules","ItemType":"GolangModule"}],"Items":[{"Keys":["."]},{"Keys":["sdk"]}]}]`
 	var table, links, cli, diagnostics bytes.Buffer
 	for _, pair := range []struct {
 		format string
@@ -145,12 +145,31 @@ func TestArtifactPreviewFilteredChecksKeepEachItem(t *testing.T) {
 
 func TestArtifactPreviewLinkFallback(t *testing.T) {
 	entry := artifactPreviewEntry{Artifact: flattening.Artifact{Module: "app", Path: []string{"app", "items", "verify"}, Type: "Check"}, LocalPath: []string{"verify"}}
-	row := flattening.Row{Coordinates: []flattening.Coordinate{{Dimension: "/app/items", Key: "a"}}}
-	target := artifact.AddressRow{Type: "Check", Coordinates: artifactPreviewCoordinates(entry, row.Coordinates)}
+	coordinates := []flattening.Coordinate{{Dimension: "module", Key: "app"}, {Dimension: "/app/items", Key: "a"}, {Dimension: "name", Key: "verify"}}
+	target := artifact.AddressRow{Type: "Check", Coordinates: coordinates}
 	for _, index := range []*artifact.AddressIndex{
 		artifact.NewAddressIndex([]artifact.AddressRow{target}, false),
 		artifact.NewAddressIndex([]artifact.AddressRow{target, target}, true),
 	} {
-		require.Equal(t, "dag+check://app/items/verify?item=a", artifactPreviewLink(entry, row, index, map[string]string{"/app/items": "item"}))
+		require.Equal(t, "dag+check://app/items/verify?item=a", artifactPreviewLink(entry, coordinates, index, map[string]string{"/app/items": "item"}))
 	}
+}
+
+func TestArtifactPreviewRequiresLocalPath(t *testing.T) {
+	const input = `[{"Module":"app","Path":["app","verify"],"Type":"Check","Items":[{"Keys":[]}]}]`
+	var output, diagnostics bytes.Buffer
+	err := PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, []string{"check", "-la"})
+	require.ErrorContains(t, err, "needs an explicit LocalPath")
+	require.Empty(t, output.String())
+}
+
+func TestArtifactPreviewPreservesLiteralFieldNames(t *testing.T) {
+	const input = `[
+ {"Module":"app","Path":["app","health-check","run"],"LocalPath":["healthCheck","run"],"Type":"Check","Items":[{"Keys":[]}]},
+ {"Module":"app","Path":["app","check"],"LocalPath":["check"],"Type":"Check","Items":[{"Keys":[]}]}
+ ]`
+	var output, diagnostics bytes.Buffer
+	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, []string{"check", "-la", "--name=healthCheck.run", "-f=link"}))
+	require.Equal(t, "dag+check://?name=healthCheck.run\n", output.String())
+	require.Empty(t, diagnostics.String())
 }

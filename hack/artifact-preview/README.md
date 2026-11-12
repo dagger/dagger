@@ -13,18 +13,24 @@ go run ./hack/artifact-preview input.json list containers
 go run ./hack/artifact-preview input.json list golang-packages -a -f=cli
 ```
 
-The input is an array of schema paths. Each entry has `Module`, `Path`, `Type`,
-and `Collections`, as in `core/artifact/flattening/cmd/flatten`. `Description`
-holds the field description. Each entry in `Items` has `Keys`: one observed key
-per collection boundary. An item can also have `Description`. Use `LocalPath`
-to preserve exact schema field spelling. This path starts at the nearest
-collection item or module root.
-Without `LocalPath`, the utility derives it from `Path` and `Collections`.
+The CLI capture format is an array of schema paths. Each entry has `Module`,
+`Path`, `Type`, `Collections`, and `LocalPath`. `Path` holds the CLI field path.
+`LocalPath` holds literal schema field names from the nearest collection item
+or exposed module root. Use `[]` for that root. Missing or null `LocalPath`
+values are rejected. The utility does not derive schema names from CLI paths.
+`Description` holds the field description. Each entry in `Items` has `Keys`:
+one observed key per collection boundary. An item can also have `Description`.
+
+This capture format differs from the native input for
+`core/artifact/flattening/cmd/flatten`. That input uses `flattening.Field`:
+`module`, `type`, `localPath`, and `collections`, plus example `items` as arrays
+of keys. It has no CLI `Path` or item description.
 
 Keep the full schema, including paths with no items. Include every observed
 item of each selected type. Link pruning uses this complete item set. Filters
-apply after the flattening plan and address index are built. The utility supports list formats, module filters,
-collection filters, and one path or DAG link. It rejects execution options.
+apply after the canonical schema and address index are built. The utility
+supports list formats, module filters, collection filters, and one path or DAG
+link. It rejects execution options.
 Workspace command policies are outside this replay. Use items captured after
 those policies when they change the selected set.
 
@@ -34,6 +40,19 @@ Convert saved API responses:
 python3 hack/artifact-preview/capture.py \
   --schema schema.json --listing listing.json --output input.json
 ```
+
+CLI replay is the default output format. To use the native flattening utility:
+
+```sh
+python3 hack/artifact-preview/capture.py \
+  --schema schema.json --listing listing.json \
+  --format flattening --output flattening.json && \
+go run ./core/artifact/flattening/cmd/flatten < flattening.json
+```
+
+The native format keeps all schema fields. It uses the same resolved schema names
+and collection keys as CLI replay. `--types` selects items in both formats.
+Empty collections remain in the schema.
 
 The schema response must contain `currentWorkspace.artifacts.dimensionDefinitions`
 and `pathDefinitions`, plus `modules` with each object's field names and return

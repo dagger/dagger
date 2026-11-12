@@ -12,12 +12,12 @@ const ModuleDimension = "module"
 
 // IsStaticDimension identifies keys available without loading collections.
 func IsStaticDimension(identifier string) bool {
-	return identifier == ModuleDimension || strings.HasPrefix(identifier, "type:")
+	return identifier == ModuleDimension || identifier == NameDimension || strings.HasPrefix(identifier, "type:")
 }
 
 // Dimension describes a schema axis, independent of its runtime keys.
 type Dimension struct {
-	// Kind is MODULE, COLLECTION, or TYPE.
+	// Kind is MODULE, NAME, COLLECTION, or legacy TYPE.
 	Kind string
 	// CollectionType is the collection object type, not its item type.
 	CollectionType string
@@ -25,7 +25,8 @@ type Dimension struct {
 	Identifier    string
 	Name          string
 	QualifiedName string
-	// ItemType is the collection item or artifact type. Modules have none.
+	// ItemType is the collection item or legacy artifact type. Static module
+	// and name dimensions have none.
 	ItemType string
 	// KeyName and KeyDescription describe the authored lookup argument.
 	// Static dimensions use "name" and an empty description.
