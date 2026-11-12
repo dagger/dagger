@@ -859,9 +859,14 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) (bool
 	}
 
 	var reqs *set.TreeSet[SessionResourceHandle]
-	if res.sessionResourceHandle != "" {
-		reqs = set.NewTreeSet(compareSessionResourceHandles)
-		reqs.Insert(res.sessionResourceHandle)
+	for _, handle := range []SessionResourceHandle{res.sessionResourceHandle, res.boundSession} {
+		if handle == "" {
+			continue
+		}
+		if reqs == nil {
+			reqs = set.NewTreeSet(compareSessionResourceHandles)
+		}
+		reqs.Insert(handle)
 	}
 	for depID := range res.deps {
 		dep := c.resultsByID[depID]
@@ -936,6 +941,33 @@ func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientI
 	}
 	bindings.byClientID[clientID] = value
 	bindings.latestClientID = clientID
+	c.addSessionHandleLocked(sessionID, handle)
+	c.sessionMu.Unlock()
+
+	return nil
+}
+
+// boundSessionHandle returns the handle that only sessionID holds, which
+// requires a result bound to the session (BindToSession), and records that
+// the session holds it. Session release drops it with the session's other
+// handles, so no lookup is served the session's bound results after that.
+func (c *Cache) boundSessionHandle(sessionID string) (SessionResourceHandle, error) {
+	if sessionID == "" {
+		return "", errors.New("empty session ID")
+	}
+	handle := SessionResourceHandle("dagql.session:" + sessionID)
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		return "", fmt.Errorf("%w: %q", ErrCacheSessionReleased, sessionID)
+	}
+	c.addSessionHandleLocked(sessionID, handle)
+	return handle, nil
+}
+
+// addSessionHandleLocked records that sessionID holds handle. Requires
+// sessionMu.
+func (c *Cache) addSessionHandleLocked(sessionID string, handle SessionResourceHandle) {
 	if c.sessionHandlesBySession == nil {
 		c.sessionHandlesBySession = make(map[string]*set.TreeSet[SessionResourceHandle])
 	}
@@ -949,9 +981,6 @@ func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientI
 		next.Insert(handle)
 		c.sessionHandlesBySession[sessionID] = next
 	}
-	c.sessionMu.Unlock()
-
-	return nil
 }
 
 func (c *Cache) SetVolatileVars(_ context.Context, sessionID, k, v string) error {
@@ -2881,6 +2910,12 @@ type sharedResult struct {
 	// lookups walk dep edges upward on demand to find closure-owning installs
 	// (module API call returns) for the result being evaluated.
 	depParents *set.TreeSet[sharedResultID]
+	// boundSession is the handle that only the session that computed the
+	// result holds, when its call bound the result to its session
+	// (BindToSession). It is a requirement like a session-resource handle.
+	// Set before the entry is indexed, and with the value when a replacement
+	// in place installs another.
+	boundSession SessionResourceHandle
 	// sessionResourceHandle is set when this result is itself an attached
 	// session-resource handle leaf. requiredSessionResources is the flattened
 	// transitive set of handle requirements for cache-hit validation.
@@ -7165,6 +7200,13 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(oc.res), oc.res.onRelease)
 		// Set before the result is indexed, so every hit sees it.
 		oc.res.persistDeclined = oc.persistDecline.isDeclined()
+		if oc.persistDecline.isBound() {
+			handle, err := c.boundSessionHandle(sessionID)
+			if err != nil {
+				return fmt.Errorf("bind result to session: %w", err)
+			}
+			oc.res.boundSession = handle
+		}
 	}
 	requestForIndex := req
 	if oc.res.createdAtUnixNano == 0 {
