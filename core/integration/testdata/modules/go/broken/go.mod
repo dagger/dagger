@@ -1,6 +1,6 @@
 module broken
 
-go 1.25.0
+go 1.27
 
 require (
 	dagger.io/dagger v0.19.11

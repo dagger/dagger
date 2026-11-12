@@ -1,6 +1,6 @@
 module dagger/broken
 
-go 1.23.0
+go 1.27
 
 replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.0.0-20240518090000-14441aefdf88
 

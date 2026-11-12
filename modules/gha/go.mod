@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/modules/gha
 
-go 1.26.1
+go 1.27
 
 require (
 	dario.cat/mergo v1.0.1

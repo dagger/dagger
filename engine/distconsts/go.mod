@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/engine/distconsts
 
-go 1.22
+go 1.27
 
 // This package is a separate module to avoid weird dependency issues.
 //

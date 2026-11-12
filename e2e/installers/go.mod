@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/e2e/installers
 
-go 1.26.1
+go 1.27
 
 require (
 	dagger.io/dagger v0.21.9
