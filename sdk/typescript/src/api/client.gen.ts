@@ -8570,6 +8570,28 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
+   * The Git ref of the module's source: the resolved commit of a Git source, or the HEAD of the repository that contains a local source. Null for a Directory source, or a local source outside a Git repository.
+   *
+   * Its asRepository pins HEAD to that commit. For a local source, the repository holds the whole checkout, including files the module does not load, so asRepository.uncommitted lists the uncommitted changes of the whole checkout.
+   *
+   * For a Git source loaded from a private remote, asRepository and tree are read without the credentials of the client that loaded the module and may fail to authenticate; commitSha needs none.
+   *
+   * A local repository is read when this field is first selected for a module load, not when the module loads: a file changed in between can differ from the module's contextDirectory.
+   *
+   * A function result cached across sessions is not recomputed when the repository changes: use the PER_SESSION or NEVER cache policy for a function that returns what it reads from this field.
+   */
+  gitRef = async (): Promise<GitRef | null> => {
+    const ctx = this._ctx.select("gitRef").select("id")
+
+    const response: Awaited<string | null> = await ctx.execute()
+
+    if (response === null) {
+      return null
+    }
+    return new GitRef(ctx.copy().selectNode(response, "GitRef"))
+  }
+
+  /**
    * The name of the module being executed in
    */
   name = async (): Promise<string> => {

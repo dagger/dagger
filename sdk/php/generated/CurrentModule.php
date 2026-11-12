@@ -52,6 +52,28 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The Git ref of the module's source: the resolved commit of a Git source, or the HEAD of the repository that contains a local source. Null for a Directory source, or a local source outside a Git repository.
+     *
+     * Its asRepository pins HEAD to that commit. For a local source, the repository holds the whole checkout, including files the module does not load, so asRepository.uncommitted lists the uncommitted changes of the whole checkout.
+     *
+     * For a Git source loaded from a private remote, asRepository and tree are read without the credentials of the client that loaded the module and may fail to authenticate; commitSha needs none.
+     *
+     * A local repository is read when this field is first selected for a module load, not when the module loads: a file changed in between can differ from the module's contextDirectory.
+     *
+     * A function result cached across sessions is not recomputed when the repository changes: use the PER_SESSION or NEVER cache policy for a function that returns what it reads from this field.
+     */
+    public function gitRef(): ?GitRef
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('gitRef');
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\GitRef::class, new \Dagger\Id((string)$id), 'GitRef');
+    }
+
+    /**
      * The name of the module being executed in
      */
     public function name(): string
