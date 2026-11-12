@@ -3691,7 +3691,10 @@ func (DirectorySuite) TestDirectoryResolveBrokenSymlinksMounts(ctx context.Conte
 		mounted := dag.Directory().WithSymlink("../value", "link")
 		ctr := dag.Container().WithRootfs(root).WithMountedDirectory("/alias", mounted)
 		for _, out := range []*sdkcore.Directory{
-			ctr.Directory("/alias", opts), ctr.Directory("/", opts).Directory("alias"),
+			ctr.Directory("/alias", opts),
+			// A subdirectory reaches only its own files, so the link needs
+			// repairing when it is selected too.
+			ctr.Directory("/", opts).Directory("alias", sdkcore.DirectoryDirectoryOpts{ResolveBrokenSymlinks: true}),
 		} {
 			content, err := out.File("link").Contents(ctx)
 			require.NoError(t, err)
