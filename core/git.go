@@ -141,9 +141,9 @@ type GitRepositoryBackend interface {
 	Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error)
 
 	// ResolveShortSHA expands an abbreviated commit SHA (a 4-40 character hex
-	// prefix) to the full SHA of the single matching commit, using only
-	// locally available objects. Backends that merely proxy a remote cannot
-	// expand prefixes of commits that were never fetched.
+	// prefix) to the full SHA of the single matching commit, like `git
+	// rev-parse`. Locally available objects answer first; a remote backend
+	// fetches the history of the refs its remote advertises when they don't.
 	ResolveShortSHA(ctx context.Context, prefix string) (string, error)
 
 	// Dirty returns a Directory representing the repository in it's current state.
@@ -429,11 +429,11 @@ func (repo *GitRepository) LoadRemote(ctx context.Context) (*gitutil.Remote, err
 }
 
 // ResolveShortSHA expands an abbreviated commit SHA the way `git rev-parse`
-// does, using the repository's locally available objects. Workspace-backed
-// and other engine-side repositories carry their whole object database, so
-// any commit's prefix resolves. A remote repository is resolved via
-// ls-remote, which only advertises refs: its prefixes can only be expanded
-// against commits that have already been fetched into the engine's mirror.
+// does. Workspace-backed and other engine-side repositories carry their whole
+// object database, so any commit's prefix resolves. A remote repository
+// expands it against the commits its engine mirror already fetched, and
+// otherwise fetches the history of the refs the remote advertises to find it
+// (see RemoteGitRepository.ResolveShortSHA).
 func (repo *GitRepository) ResolveShortSHA(ctx context.Context, prefix string) (string, error) {
 	return repo.Backend.ResolveShortSHA(ctx, prefix)
 }
@@ -1434,8 +1434,7 @@ const (
 	// gitCheckoutInheritedObjects: the object database was not written by
 	// this checkout (see cowGitCheckout). Its files keep their timestamps,
 	// since changing them would copy every inherited pack up into a new
-	// snapshot layer, and the worktree is written once, in parallel (see
-	// gitCheckoutOnce).
+	// snapshot layer.
 	gitCheckoutInheritedObjects
 	// gitCheckoutInheritedWorktree: the objects and the worktree are
 	// inherited, the worktree already holding exactly ref's tree with
@@ -1648,8 +1647,6 @@ func gitFollowedTags(ctx context.Context, dest *gitutil.GitCLI, candidates []git
 // cloneURL is only used in error messages. After fetchGitCheckout (or
 // copyGitCheckout) the checkout owns its objects, so this may run after a
 // borrowed mirror has been released.
-//
-//nolint:gocyclo // one sequence of checkout steps, each skipped per inheritance mode; splitting hides their order
 func finishGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,
@@ -1664,32 +1661,14 @@ func finishGitCheckout(
 	if err != nil {
 		return fmt.Errorf("could not find git dir: %w", err)
 	}
-	switch {
-	case reuse == gitCheckoutInheritedWorktree:
+	switch reuse {
+	case gitCheckoutInheritedWorktree:
 		if err := gitCheckoutRefs(ctx, checkoutGit, ref); err != nil {
 			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
 		}
-	case reuse == gitCheckoutInheritedObjects:
+	default:
 		if err := gitCheckoutOnce(ctx, checkoutGit, ref); err != nil {
 			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
-		}
-	case ref.Name == "":
-		_, err = checkoutGit.Run(ctx, "checkout", ref.SHA)
-		if err != nil {
-			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
-		}
-	default:
-		_, err = checkoutGit.Run(ctx, "update-ref", ref.Name, ref.SHA)
-		if err != nil {
-			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
-		}
-		_, err = checkoutGit.Run(ctx, "checkout", strings.TrimPrefix(ref.Name, "refs/heads/"))
-		if err != nil {
-			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
-		}
-		_, err = checkoutGit.Run(ctx, "reset", "--hard", ref.SHA)
-		if err != nil {
-			return fmt.Errorf("failed to reset ref: %w", err)
 		}
 	}
 	for _, remote := range remotes {
@@ -1817,14 +1796,14 @@ func normalizeGitCheckoutTimes(ctx context.Context, checkoutDir, skip string) (r
 // checkouts each spawn their own workers.
 const gitCheckoutWorkers = 4
 
-// gitCheckoutOnce leaves the same HEAD, refs, index and worktree as the
-// checkout and reset --hard of finishGitCheckout, but writes the worktree
-// only once, with parallel workers. The reset only matters when the checkout
-// finds HEAD already on the branch (the unborn default branch), where it
-// switches nothing and leaves the worktree empty; otherwise it rewrites, or
-// re-reads, every file just checked out. checkout -f populates the worktree
-// in both cases. The reset's one other trace is ORIG_HEAD, its previous HEAD:
-// already ref.SHA.
+// gitCheckoutOnce leaves the same HEAD, refs, index and worktree as a
+// checkout of ref followed by reset --hard to its commit, but writes the
+// worktree only once, with parallel workers. The reset only matters when
+// the checkout finds HEAD already on the branch (the unborn default branch),
+// where it switches nothing and leaves the worktree empty; otherwise it
+// rewrites, or re-reads, every file just checked out. checkout -f populates
+// the worktree in both cases. The reset's one other trace is ORIG_HEAD, its
+// previous HEAD: already ref.SHA.
 func gitCheckoutOnce(ctx context.Context, checkoutGit *gitutil.GitCLI, ref *gitutil.Ref) error {
 	git := checkoutGit.New(gitutil.WithArgs("-c", fmt.Sprintf("checkout.workers=%d", gitCheckoutWorkers)))
 	if ref.Name == "" {
@@ -2362,6 +2341,9 @@ func (lazy *DirectoryGitTreeLazy) Evaluate(ctx context.Context, dir *Directory) 
 		input := lazy.Ref.Self()
 		if input == nil || input.Ref == nil || input.Ref.SHA == "" {
 			return nil, fmt.Errorf("DirectoryGitTreeLazy: missing Ref SHA")
+		}
+		if _, remote := input.Repo.Self().Backend.(*RemoteGitRepository); remote && lazy.DiscardGitDir && !lazy.KeepGitDir && !input.Repo.Self().DiscardGitDir {
+			return nil, remoteTreeWithoutGitDir(ctx, srv, dir, lazy.Ref, lazy.Depth)
 		}
 		return gitRefTreeInto(ctx, dir, input, srv, lazy.DiscardGitDir, lazy.KeepGitDir, lazy.Depth, lazy.IncludeTags)
 	})

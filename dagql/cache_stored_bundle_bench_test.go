@@ -155,7 +155,7 @@ func storedBenchPart(seed uint64) PersistedPartOffer {
 // storedBenchCloud returns a blob-backed cache holding the pool, and the
 // batch's roots by number. The pool is exported from an engine's cache and
 // merged, as the service receives it.
-func storedBenchCloud(b *testing.B) (context.Context, *Cache, []uint64) {
+func storedBenchCloud(b testing.TB) (context.Context, *Cache, []uint64) {
 	b.Helper()
 	actx := cacheTestContext(context.Background())
 	a, err := NewCache(actx, filepath.Join(b.TempDir(), "a.db"), nil, nil)
@@ -231,7 +231,7 @@ func storedBenchClosure(b *testing.B, c *Cache, batch []uint64) ([]*sharedResult
 	b.Helper()
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	build := &storedBundleBuild{now: time.Now().Unix(), ordinals: map[sharedResultID]TransferOrdinal{}}
+	build := &storedBundleBuild{now: time.Now().Unix(), ordinals: map[sharedResultID]TransferOrdinal{}, owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}}
 	visiting := map[sharedResultID]bool{}
 	for _, number := range batch {
 		require.NoError(b, c.storedBundleVisitLocked(build, c.resultsByID[sharedResultID(number)], visiting))
@@ -263,7 +263,7 @@ func BenchmarkStoredBundle(b *testing.B) {
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	_, err := cloud.StoredBundle(ctx, batch)
+	_, err := cloud.StoredBundle(ctx, batch, nil)
 	require.NoError(b, err)
 	runtime.GC()
 	runtime.ReadMemStats(&after)
@@ -274,7 +274,7 @@ func BenchmarkStoredBundle(b *testing.B) {
 	for range b.N {
 		storedBenchSettle(b)
 		var err error
-		got, err = cloud.StoredBundle(ctx, batch)
+		got, err = cloud.StoredBundle(ctx, batch, nil)
 		require.NoError(b, err)
 	}
 	b.StopTimer()
@@ -422,7 +422,7 @@ func BenchmarkStoredBundlePartCopies(b *testing.B) {
 // largest part of a build and keeps it from fitting.
 func BenchmarkStoredBundleValidation(b *testing.B) {
 	ctx, cloud, batch := storedBenchCloud(b)
-	got, err := cloud.StoredBundle(ctx, batch)
+	got, err := cloud.StoredBundle(ctx, batch, nil)
 	require.NoError(b, err)
 	bundle := got.Bundle
 	var validating, full, encoding time.Duration

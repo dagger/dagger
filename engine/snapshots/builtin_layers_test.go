@@ -9,6 +9,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/plugins/content/local"
+	cerrdefs "github.com/containerd/errdefs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
@@ -167,8 +168,8 @@ func TestChainImportRefusesBuiltinLayersOfAnotherSize(t *testing.T) {
 			imported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: layers, Provider: provider})
 			require.Equal(t, []digest.Digest{chain.Layers[0].Descriptor.Digest}, read[:1], "the mismatched layer was asked of the provider first")
 			if !tc.imports {
-				require.Error(t, err, "a larger size is a short read on the provider path")
-				require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+				require.Error(t, err, "a larger size is refused on the provider path")
+				require.True(t, cerrdefs.IsDataLoss(err), "the provider's store holds the blob at another size: %v", err)
 				require.Equal(t, 1, len(read), "the import stopped at that layer")
 				all, err := consumer.Leases.List(ctx, "id=="+bkcache.BuiltinLayersLeaseID)
 				require.NoError(t, err)

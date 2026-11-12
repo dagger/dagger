@@ -7,17 +7,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/remotecache/pack"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
 )
 
@@ -28,6 +32,9 @@ import (
 type recordingConn struct {
 	sent   chan protocol.Envelope
 	closed atomic.Bool
+	// afterWrite, when set before the session is driven, runs after each
+	// message is recorded, in the writer's goroutine.
+	afterWrite func(protocol.Envelope)
 }
 
 func newRecordingConn() *recordingConn {
@@ -45,6 +52,9 @@ func (c *recordingConn) Write(_ context.Context, data []byte) error {
 		return err
 	}
 	c.sent <- env
+	if c.afterWrite != nil {
+		c.afterWrite(env)
+	}
 	return nil
 }
 
@@ -110,22 +120,87 @@ type fakeAdapter struct {
 	offer    func(context.Context, protocol.Offer) (protocol.Offered, error)
 	renewals chan *dagql.RenewalRequest
 	replies  chan dagql.RenewalReply
+	// known is the known set the last export was given, and mergeKnown the
+	// one the last merge was.
+	known      atomic.Pointer[dagql.KnownRows]
+	mergeKnown atomic.Pointer[dagql.KnownRows]
+	// misses are what TakeLookupMisses returns, and lookups receive true on
+	// StartLookups and false on StopLookups.
+	misses    chan []dagql.RemoteMiss
+	lookups   chan bool
+	takeLimit atomic.Int64
+	mergeIDs  chan uint64
+	// settle is what SettleState returns, settleCh closes when setSettle
+	// changes it, and settled receives the Settled calls.
+	settleMu sync.Mutex
+	settle   SettleState
+	settleCh chan struct{}
+	settled  chan settledCall
+}
+
+type settledCall struct {
+	period   uint64
+	sessions []protocol.SettleSession
 }
 
 func newFakeAdapter() *fakeAdapter {
 	return &fakeAdapter{
 		renewals: make(chan *dagql.RenewalRequest, 8),
 		replies:  make(chan dagql.RenewalReply, 8),
+		misses:   make(chan []dagql.RemoteMiss, 8),
+		lookups:  make(chan bool, 8),
+		mergeIDs: make(chan uint64, 64),
+		settled:  make(chan settledCall, 8),
 	}
+}
+
+func (a *fakeAdapter) SettleState() (SettleState, <-chan struct{}) {
+	a.settleMu.Lock()
+	defer a.settleMu.Unlock()
+	if a.settleCh == nil {
+		a.settleCh = make(chan struct{})
+	}
+	state := a.settle
+	state.Sessions = slices.Clone(state.Sessions)
+	return state, a.settleCh
+}
+
+// setSettle changes what SettleState returns.
+func (a *fakeAdapter) setSettle(state SettleState) {
+	a.settleMu.Lock()
+	defer a.settleMu.Unlock()
+	a.settle = state
+	if a.settleCh != nil {
+		close(a.settleCh)
+		a.settleCh = nil
+	}
+}
+
+// Settled records the call and, as the server's ledger does, marks the
+// period settled with the sessions covered.
+func (a *fakeAdapter) Settled(period uint64, sessions []protocol.SettleSession) {
+	a.settleMu.Lock()
+	if a.settle.Period == period {
+		a.settle.Settled, a.settle.Sessions = true, nil
+		if a.settleCh != nil {
+			close(a.settleCh)
+			a.settleCh = nil
+		}
+	}
+	a.settleMu.Unlock()
+	a.settled <- settledCall{period: period, sessions: sessions}
 }
 
 func (a *fakeAdapter) CacheIdentity() (string, uint64) { return "cache-1", 3 }
 
-func (a *fakeAdapter) Export(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+func (a *fakeAdapter) Export(ctx context.Context, req protocol.Export, known *dagql.KnownRows, consume func(context.Context, Export) error) error {
+	a.known.Store(known)
 	return a.export(ctx, req, consume)
 }
 
-func (a *fakeAdapter) Merge(ctx context.Context, req protocol.Merge) (protocol.Merged, error) {
+func (a *fakeAdapter) Merge(ctx context.Context, id uint64, req protocol.Merge, known *dagql.KnownRows) (protocol.Merged, error) {
+	a.mergeKnown.Store(known)
+	a.mergeIDs <- id
 	return a.merge(ctx, req)
 }
 
@@ -145,6 +220,19 @@ func (a *fakeAdapter) TakeRenewalRequest(ctx context.Context) (*dagql.RenewalReq
 func (a *fakeAdapter) ReplyRenewal(reply dagql.RenewalReply) dagql.RenewalReplyDisposition {
 	a.replies <- reply
 	return dagql.RenewalReplyAccepted
+}
+
+func (a *fakeAdapter) StartLookups() { a.lookups <- true }
+func (a *fakeAdapter) StopLookups()  { a.lookups <- false }
+
+func (a *fakeAdapter) TakeLookupMisses(ctx context.Context, limit int, _ time.Duration) ([]dagql.RemoteMiss, uint64, error) {
+	a.takeLimit.Store(int64(limit))
+	select {
+	case misses := <-a.misses:
+		return misses, 1, nil
+	case <-ctx.Done():
+		return nil, 0, context.Cause(ctx)
+	}
 }
 
 type blobs map[digest.Digest]string
@@ -201,8 +289,8 @@ func TestBackoff(t *testing.T) {
 	require.InDelta(t, float64(2400*time.Millisecond), float64(b.next(0.99999)), float64(time.Millisecond))
 }
 
-// The engine's first message says hello with its identity, numbered 1; the
-// session is served once the service welcomes it.
+// The engine's first message says hello with its identity and that it merges
+// held rows, numbered 1; the session is served once the service welcomes it.
 func TestHello(t *testing.T) {
 	adapter := newFakeAdapter()
 	adapter.renewals <- renewalRequest(time.Minute)
@@ -260,7 +348,7 @@ func TestExportWithNoSurvivingRoot(t *testing.T) {
 // An export holds its chains until the service's upload, uploads what it
 // asks for, answers with what succeeded and failed, and then releases them.
 func TestExportUpload(t *testing.T) {
-	d1, d2 := digest.FromString("one"), digest.FromString("two")
+	d1, d2 := digest.FromString("first"), digest.FromString("second")
 	released := make(chan struct{})
 	adapter := newFakeAdapter()
 	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
@@ -300,6 +388,223 @@ func TestExportUpload(t *testing.T) {
 	<-released
 }
 
+// A stored blob whose bytes aren't the ones its digest names, as a host
+// crash can leave one, fails its upload, alone or in a pack, and the PUT
+// never receives its last byte, so nothing is stored under the digest.
+func TestUploadRefusesBytesThatDontMatchTheDigest(t *testing.T) {
+	right, member := digest.FromString("right"), digest.FromString("member")
+	good := digest.FromString("good")
+	data := blobs{right: "wrong", member: "memb3r", good: "good"}
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: data})
+	}
+	s, conn := testSession(t, adapter)
+	var received sync.Map
+	s.cfg.put = func(_ context.Context, address string, body io.Reader, _ int64) error {
+		got, err := io.ReadAll(body)
+		received.Store(address, string(got))
+		return err
+	}
+	members := []pack.Member{{Digest: good, Size: 4}, {Digest: member, Size: 6}}
+	id, err := pack.ID(members)
+	require.NoError(t, err)
+	up := protocol.UploadPack{Pack: id, Members: members, URL: "put-pack"}
+
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	exported := decode[protocol.Exported](t, conn.next(t))
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{
+		ExportID: exported.ExportID,
+		URLs:     map[digest.Digest]string{right: "put-right"},
+		Packs:    []protocol.UploadPack{up},
+	}))
+	uploaded := decode[protocol.Uploaded](t, conn.next(t))
+	require.Empty(t, uploaded.Done)
+	var failed []digest.Digest
+	for _, f := range uploaded.Failed {
+		failed = append(failed, f.Digest)
+	}
+	require.ElementsMatch(t, []digest.Digest{right, id}, failed)
+
+	got, ok := received.Load("put-right")
+	require.True(t, ok)
+	require.Equal(t, "", got, "the PUT gets none of the blob's last read")
+	header, err := pack.Header(members)
+	require.NoError(t, err)
+	got, ok = received.Load("put-pack")
+	require.True(t, ok)
+	require.Equal(t, string(header)+"good", got, "the PUT stops before the member's last read")
+}
+
+// An upload cut off, as when the engine gives up its remote-cache work,
+// still answers with what arrived: the blob uploaded is done, and the one
+// cut off in its PUT fails with the cut's cause.
+func TestCutUploadAnswersWithWhatArrived(t *testing.T) {
+	d1, d2 := digest.FromString("first"), digest.FromString("second")
+	errCut := errors.New("the engine gave up")
+	cut := make(chan struct{})
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		ctx, cancel := context.WithCancelCause(ctx)
+		go func() {
+			<-cut
+			cancel(errCut)
+		}()
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{d1: "first", d2: "second"}})
+	}
+	s, conn := testSession(t, adapter)
+	put, putting := make(chan struct{}), make(chan struct{})
+	s.cfg.put = func(ctx context.Context, address string, body io.Reader, size int64) error {
+		if address == "put-1" {
+			close(put)
+			return nil
+		}
+		close(putting)
+		<-ctx.Done()
+		return context.Cause(ctx)
+	}
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	exported := decode[protocol.Exported](t, conn.next(t))
+
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exported.ExportID, URLs: map[digest.Digest]string{d1: "put-1", d2: "put-2"}}))
+	<-put
+	<-putting
+	close(cut)
+	reply := conn.next(t)
+	require.Equal(t, protocol.TypeUploaded, reply.Type)
+	require.Equal(t, uint64(8), reply.Re)
+	uploaded := decode[protocol.Uploaded](t, reply)
+	require.Equal(t, []digest.Digest{d1}, uploaded.Done)
+	require.Len(t, uploaded.Failed, 1)
+	require.Equal(t, d2, uploaded.Failed[0].Digest)
+}
+
+// An upload cut off while a blob waits for a slot answers too: a blob
+// never PUT fails with the cut's cause, and one cut off in its PUT with its
+// PUT's error.
+func TestCutUploadAnswersForBlobsWaitingForASlot(t *testing.T) {
+	d1, d2 := digest.FromString("first"), digest.FromString("second")
+	errCut := errors.New("the engine gave up")
+	errPut := errors.New("the PUT was cut off")
+	cut := make(chan struct{})
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		ctx, cancel := context.WithCancelCause(ctx)
+		go func() {
+			<-cut
+			cancel(errCut)
+		}()
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{d1: "first", d2: "second"}})
+	}
+	s, conn := testSession(t, adapter)
+	putting := make(chan string, 2)
+	s.cfg.put = func(ctx context.Context, address string, body io.Reader, size int64) error {
+		putting <- address
+		<-ctx.Done()
+		return errPut
+	}
+	// Every slot but one is taken, as by other exports' PUTs: the first
+	// blob PUTs, and the second waits.
+	for range UploadConcurrency - 1 {
+		s.uploadSlots <- struct{}{}
+	}
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	exported := decode[protocol.Exported](t, conn.next(t))
+
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exported.ExportID, URLs: map[digest.Digest]string{d1: "put-1", d2: "put-2"}}))
+	put := <-putting
+	close(cut)
+	reply := conn.next(t)
+	require.Equal(t, protocol.TypeUploaded, reply.Type)
+	require.Equal(t, uint64(8), reply.Re)
+	uploaded := decode[protocol.Uploaded](t, reply)
+	require.Empty(t, uploaded.Done)
+	require.Len(t, uploaded.Failed, 2)
+	put1, waited := d1, d2
+	if put == "put-2" {
+		put1, waited = d2, d1
+	}
+	failed := map[digest.Digest]string{}
+	for _, f := range uploaded.Failed {
+		failed[f.Digest] = f.Message
+	}
+	require.Contains(t, failed[put1], errPut.Error())
+	select {
+	case <-putting:
+		// The first PUT's slot freed as the cut came, and the waiting
+		// blob took it: its PUT, cut off too, failed.
+		require.Contains(t, failed[waited], errPut.Error())
+	default:
+		require.Equal(t, errCut.Error(), failed[waited])
+	}
+}
+
+// A pack is uploaded as one PUT of its header and its members, and answered
+// done or failed whole: a pack whose members don't make its ID, or one of
+// whose members the chains lack or hold at another size, fails without
+// being stored.
+func TestExportUploadPack(t *testing.T) {
+	d1, d2, d3 := digest.FromString("first"), digest.FromString("second"), digest.FromString("third")
+	data := blobs{d1: "first", d2: "second", d3: "third"}
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: data})
+	}
+	s, conn := testSession(t, adapter)
+	var puts, attempts sync.Map
+	s.cfg.put = func(_ context.Context, address string, body io.Reader, size int64) error {
+		attempts.Store(address, true)
+		got, err := io.ReadAll(body)
+		if err != nil {
+			return err
+		}
+		require.Equal(t, int64(len(got)), size)
+		puts.Store(address, string(got))
+		return nil
+	}
+	packOf := func(members ...pack.Member) protocol.UploadPack {
+		id, err := pack.ID(members)
+		require.NoError(t, err)
+		return protocol.UploadPack{Pack: id, Members: members}
+	}
+	good := packOf(pack.Member{Digest: d1, Size: 5}, pack.Member{Digest: d2, Size: 6})
+	good.URL = "put-pack"
+	wrongID := packOf(pack.Member{Digest: d1, Size: 5}, pack.Member{Digest: d3, Size: 5})
+	wrongID.Pack, wrongID.URL = digest.FromString("not this pack"), "put-wrong-id"
+	missing := packOf(pack.Member{Digest: d3, Size: 5}, pack.Member{Digest: digest.FromString("gone"), Size: 4})
+	missing.URL = "put-missing"
+	resized := packOf(pack.Member{Digest: d2, Size: 7}, pack.Member{Digest: d3, Size: 5})
+	resized.URL = "put-resized"
+
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	exported := decode[protocol.Exported](t, conn.next(t))
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{
+		ExportID: exported.ExportID,
+		URLs:     map[digest.Digest]string{d3: "put-3"},
+		Packs:    []protocol.UploadPack{good, wrongID, missing, resized},
+	}))
+	uploaded := decode[protocol.Uploaded](t, conn.next(t))
+	require.ElementsMatch(t, []digest.Digest{d3, good.Pack}, uploaded.Done)
+	var failed []digest.Digest
+	for _, f := range uploaded.Failed {
+		failed = append(failed, f.Digest)
+	}
+	require.ElementsMatch(t, []digest.Digest{wrongID.Pack, missing.Pack, resized.Pack}, failed)
+
+	header, err := pack.Header(good.Members)
+	require.NoError(t, err)
+	got, ok := puts.Load("put-pack")
+	require.True(t, ok)
+	require.Equal(t, string(header)+"first"+"second", got)
+	for _, address := range []string{"put-wrong-id", "put-missing", "put-resized"} {
+		_, ok = attempts.Load(address)
+		require.False(t, ok, "%s: a pack that can't be uploaded whole is never PUT", address)
+	}
+	got, ok = puts.Load("put-3")
+	require.True(t, ok)
+	require.Equal(t, "third", got)
+}
+
 // At most UploadConcurrency PUTs run at once across all the exports, not
 // per export, so exports do not starve the engine's own pulls; the queued
 // ones proceed as slots open.
@@ -311,7 +616,8 @@ func TestUploadConcurrencyIsPerEngine(t *testing.T) {
 	for root := uint64(1); root <= ExportsInFlight; root++ {
 		b := blobs{}
 		for i := range perExport {
-			b[digest.FromString(fmt.Sprintf("%d-%d", root, i))] = "data"
+			v := fmt.Sprintf("%d-%d", root, i)
+			b[digest.FromString(v)] = v
 		}
 		exportBlobs[root] = b
 	}
@@ -350,7 +656,7 @@ func TestUploadConcurrencyIsPerEngine(t *testing.T) {
 	}
 	var exportIDs []string
 	for root := uint64(1); root <= ExportsInFlight; root++ {
-		s.dispatch(request(t, root, protocol.TypeExport, protocol.Export{Roots: []uint64{root}}))
+		s.dispatch(request(t, root, protocol.TypeExport, outputsExport(root)))
 		exportIDs = append(exportIDs, decode[protocol.Exported](t, conn.next(t)).ExportID)
 	}
 	for i, exportID := range exportIDs {
@@ -373,6 +679,394 @@ func TestUploadConcurrencyIsPerEngine(t *testing.T) {
 		require.Equal(t, protocol.TypeUploaded, reply.Type)
 		require.Len(t, decode[protocol.Uploaded](t, reply).Done, perExport)
 	}
+}
+
+// uploadLogs captures a session's JSON log lines.
+type uploadLogs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *uploadLogs) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *uploadLogs) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
+
+// lines returns the decoded lines with msg.
+func (l *uploadLogs) lines(t *testing.T, msg string) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	dec := json.NewDecoder(strings.NewReader(l.String()))
+	dec.UseNumber()
+	for dec.More() {
+		var line map[string]any
+		require.NoError(t, dec.Decode(&line))
+		if line["msg"] == msg {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func logDuration(t *testing.T, line map[string]any, key string) time.Duration {
+	t.Helper()
+	n, ok := line[key].(json.Number)
+	require.True(t, ok, "%s is a JSON number: %v", key, line[key])
+	v, err := n.Int64()
+	require.NoError(t, err)
+	return time.Duration(v)
+}
+
+// loggedSession is a session whose JSON log is captured.
+func loggedSession(t *testing.T, adapter Adapter) (*session, *recordingConn, *uploadLogs) {
+	t.Helper()
+	s, conn := testSession(t, adapter)
+	logs := &uploadLogs{}
+	s.cfg.Logger = slog.New(slog.NewJSONHandler(logs, nil))
+	return s, conn, logs
+}
+
+// waitLines waits for n lines with msg, and returns them.
+func (l *uploadLogs) waitLines(t *testing.T, msg string, n int) []map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		lines := l.lines(t, msg)
+		if len(lines) >= n {
+			require.Len(t, lines, n)
+			return lines
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("got %d %q lines, want %d", len(lines), msg, n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// uploadSession is a session whose JSON log is captured, with one export of
+// data held for upload. It returns the export's ID.
+func uploadSession(t *testing.T, data blobs) (*session, *recordingConn, *uploadLogs, string) {
+	t.Helper()
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		return consume(ctx, Export{Bundle: testBundle(), Blobs: data})
+	}
+	s, conn, logs := loggedSession(t, adapter)
+	s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+	exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+	require.NotEmpty(t, exportID)
+	return s, conn, logs, exportID
+}
+
+// Each uploaded blob is logged once, at info level, with its export, digest
+// and size, how long it queued for a slot and how long its upload took.
+func TestUploadLogged(t *testing.T) {
+	data := blobs{}
+	urls := map[digest.Digest]string{}
+	for i := range 3 {
+		value := strings.Repeat("x", i+1)
+		dgst := digest.FromString(value)
+		data[dgst] = value
+		urls[dgst] = "put-" + dgst.String()
+	}
+	s, conn, logs, exportID := uploadSession(t, data)
+	s.cfg.put = func(_ context.Context, _ string, body io.Reader, _ int64) error {
+		_, err := io.Copy(io.Discard, body)
+		return err
+	}
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: urls}))
+	require.Len(t, decode[protocol.Uploaded](t, conn.next(t)).Done, len(data))
+	lines := logs.lines(t, "remote cache blob uploaded")
+	require.Len(t, lines, len(data))
+	seen := map[digest.Digest]bool{}
+	for _, line := range lines {
+		require.Equal(t, "INFO", line["level"])
+		require.Equal(t, exportID, line["export"])
+		dgst := digest.Digest(line["digest"].(string))
+		value, ok := data[dgst]
+		require.True(t, ok, "a requested digest: %s", dgst)
+		require.False(t, seen[dgst], "one line per blob")
+		seen[dgst] = true
+		require.Equal(t, json.Number(fmt.Sprint(len(value))), line["bytes"])
+		require.Equal(t, "ok", line["outcome"])
+		require.GreaterOrEqual(t, logDuration(t, line, "queued"), time.Duration(0))
+		require.GreaterOrEqual(t, logDuration(t, line, "duration"), time.Duration(0))
+		require.NotContains(t, line, "error")
+	}
+}
+
+// A blob that waits for an upload slot logs the wait: with every slot held,
+// the blobs past UploadConcurrency queue until the held uploads end, and the
+// others do not. The bounds are the observed intervals: a free slot is taken
+// before the slots fill, and a held one after the release.
+func TestUploadLoggedQueued(t *testing.T) {
+	const hold = 200 * time.Millisecond
+	data := blobs{}
+	urls := map[digest.Digest]string{}
+	for i := range UploadConcurrency + 2 {
+		dgst := digest.FromString(fmt.Sprint(i))
+		data[dgst] = fmt.Sprint(i)
+		urls[dgst] = "put-" + dgst.String()
+	}
+	s, conn, logs, exportID := uploadSession(t, data)
+	var (
+		running     atomic.Int64
+		release     = make(chan struct{})
+		reached     = make(chan struct{})
+		once        sync.Once
+		releaseOnce sync.Once
+	)
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseAll)
+	s.cfg.put = func(context.Context, string, io.Reader, int64) error {
+		if running.Add(1) == UploadConcurrency {
+			once.Do(func() { close(reached) })
+		}
+		<-release
+		return nil
+	}
+	dispatched := time.Now()
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: urls}))
+	select {
+	case <-reached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the uploads never filled the slots")
+	}
+	filled := time.Since(dispatched)
+	time.Sleep(hold)
+	releaseAll()
+	require.Len(t, decode[protocol.Uploaded](t, conn.next(t)).Done, len(data))
+	lines := logs.lines(t, "remote cache blob uploaded")
+	require.Len(t, lines, len(data))
+	var queued []time.Duration
+	for _, line := range lines {
+		queued = append(queued, logDuration(t, line, "queued"))
+	}
+	slices.Sort(queued)
+	for _, q := range queued[:UploadConcurrency] {
+		require.LessOrEqual(t, q, filled, "a free slot is taken before the slots fill")
+	}
+	for _, q := range queued[UploadConcurrency:] {
+		require.GreaterOrEqual(t, q, hold, "the extra blobs waited for the held slots")
+	}
+}
+
+// A failed upload is logged at warn level with its error, which never names
+// the signed address.
+func TestUploadLoggedFailure(t *testing.T) {
+	dgst := digest.FromString("one")
+	s, conn, logs, exportID := uploadSession(t, blobs{dgst: "one"})
+	s.cfg.put = httpPut(&http.Client{Transport: failingTransport{}}, time.Minute)
+	address := "https://blobs.example/put?X-Amz-Signature=secret"
+	s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{dgst: address}}))
+	require.Len(t, decode[protocol.Uploaded](t, conn.next(t)).Failed, 1)
+	lines := logs.lines(t, "remote cache blob uploaded")
+	require.Len(t, lines, 1)
+	line := lines[0]
+	require.Equal(t, "WARN", line["level"])
+	require.Equal(t, "error", line["outcome"])
+	require.Equal(t, dgst.String(), line["digest"])
+	require.Equal(t, json.Number("3"), line["bytes"])
+	require.Contains(t, line["error"], "connection refused")
+	require.NotContains(t, logs.String(), "X-Amz-Signature=secret")
+	require.NotContains(t, logs.String(), "blobs.example")
+}
+
+// Each export logs one line when its chains are released: what it waited
+// for, what it uploaded and how it ended. The waits are a slot, then the
+// service's upload after the bundle is sent; the chains are held over both
+// and the upload.
+func TestExportEndedLogged(t *testing.T) {
+	d1, d2 := digest.FromString("first"), digest.FromString("second")
+	exportOf := func(data blobs) func(context.Context, protocol.Export, func(context.Context, Export) error) error {
+		return func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
+			return consume(ctx, Export{Bundle: testBundle(), Blobs: data})
+		}
+	}
+	okPut := func(_ context.Context, _ string, body io.Reader, _ int64) error {
+		_, err := io.Copy(io.Discard, body)
+		return err
+	}
+	t.Run("uploaded", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			const wait = 200 * time.Millisecond
+			adapter := newFakeAdapter()
+			adapter.export = exportOf(blobs{d1: "first", d2: "second"})
+			s, conn, logs := loggedSession(t, adapter)
+			s.cfg.put = okPut
+			requested := time.Now()
+			s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12, 13}}))
+			exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+			// Once the session waits for the upload, the wait has started.
+			synctest.Wait()
+			time.Sleep(wait)
+			s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{d1: "put-1", d2: "put-2"}}))
+			require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+			answered := time.Since(requested)
+			line := logs.waitLines(t, "remote cache export ended", 1)[0]
+			require.Equal(t, "INFO", line["level"])
+			require.Equal(t, "uploaded", line["outcome"])
+			require.Equal(t, exportID, line["export"])
+			require.Equal(t, json.Number("2"), line["roots"])
+			require.Equal(t, json.Number("2"), line["blobs"])
+			require.Equal(t, json.Number("0"), line["failed"])
+			require.Equal(t, json.Number(fmt.Sprint(len("first")+len("second"))), line["bytes"])
+			require.GreaterOrEqual(t, logDuration(t, line, "slot_wait"), time.Duration(0))
+			require.GreaterOrEqual(t, logDuration(t, line, "upload_wait"), wait)
+			require.LessOrEqual(t, logDuration(t, line, "upload_wait"), answered)
+			require.GreaterOrEqual(t, logDuration(t, line, "held"), logDuration(t, line, "upload_wait")+logDuration(t, line, "upload"))
+			require.NotContains(t, line, "error")
+		})
+	})
+	t.Run("no bundle", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		adapter.export = func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
+			return consume(ctx, Export{Skipped: []protocol.SkippedRoot{{Number: 12, Reason: protocol.SkipGone}}})
+		}
+		s, conn, logs := loggedSession(t, adapter)
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		require.Empty(t, decode[protocol.Exported](t, conn.next(t)).ExportID)
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "no_bundle", line["outcome"])
+		require.Equal(t, "", line["export"])
+		require.Zero(t, logDuration(t, line, "upload_wait"))
+		require.Equal(t, json.Number("0"), line["blobs"])
+	})
+	t.Run("empty", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		adapter.export = exportOf(blobs{d1: "first"})
+		s, conn, logs := loggedSession(t, adapter)
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+		s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{}}))
+		require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "empty", line["outcome"], "the service asked for no blobs")
+		require.Equal(t, json.Number("0"), line["blobs"])
+	})
+	t.Run("connection dropped", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		adapter.export = exportOf(blobs{})
+		s, conn, logs := loggedSession(t, adapter)
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+		s.cancel(errors.New("connection dropped"))
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "INFO", line["level"])
+		require.Equal(t, "canceled", line["outcome"])
+		require.Equal(t, exportID, line["export"])
+		require.Equal(t, "connection dropped", line["error"])
+	})
+	t.Run("uploaded, then the session ended", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		adapter.export = func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
+			err := consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{d1: "first"}})
+			// The chains are released after the session ends.
+			<-ctx.Done()
+			return err
+		}
+		s, conn, logs := loggedSession(t, adapter)
+		s.cfg.put = okPut
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+		s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{d1: "put-1"}}))
+		require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+		s.cancel(errors.New("session ended"))
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "uploaded", line["outcome"], "an export that succeeded is not canceled by a later end")
+		require.NotContains(t, line, "error")
+	})
+	t.Run("uploaded, then the session ended at once", func(t *testing.T) {
+		// The session ends as the upload is answered, before the export
+		// has returned: it still uploaded.
+		adapter := newFakeAdapter()
+		adapter.export = func(ctx context.Context, _ protocol.Export, consume func(context.Context, Export) error) error {
+			err := consume(ctx, Export{Bundle: testBundle(), Blobs: blobs{d1: "first"}})
+			<-ctx.Done()
+			return err
+		}
+		s, conn, logs := loggedSession(t, adapter)
+		s.cfg.put = okPut
+		conn.afterWrite = func(env protocol.Envelope) {
+			if env.Type == protocol.TypeUploaded {
+				s.cancel(errors.New("session ended"))
+			}
+		}
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+		s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{d1: "put-1"}}))
+		require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "uploaded", line["outcome"], "an export whose upload was answered is not canceled by an end that follows at once")
+		require.NotContains(t, line, "error")
+	})
+	t.Run("failed put", func(t *testing.T) {
+		adapter := newFakeAdapter()
+		adapter.export = exportOf(blobs{d1: "first"})
+		s, conn, logs := loggedSession(t, adapter)
+		s.cfg.put = httpPut(&http.Client{Transport: failingTransport{}}, time.Minute)
+		s.dispatch(request(t, 7, protocol.TypeExport, protocol.Export{Roots: []uint64{12}}))
+		exportID := decode[protocol.Exported](t, conn.next(t)).ExportID
+		s.dispatch(request(t, 8, protocol.TypeUpload, protocol.Upload{ExportID: exportID, URLs: map[digest.Digest]string{d1: "https://blobs.example/put?X-Amz-Signature=secret"}}))
+		require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+		line := logs.waitLines(t, "remote cache export ended", 1)[0]
+		require.Equal(t, "uploaded", line["outcome"], "a blob's failure is counted, not the export's")
+		require.Equal(t, json.Number("1"), line["blobs"])
+		require.Equal(t, json.Number("1"), line["failed"])
+		require.Equal(t, json.Number("0"), line["bytes"])
+		require.NotContains(t, logs.String(), "X-Amz-Signature=secret")
+		require.NotContains(t, logs.String(), "blobs.example")
+	})
+}
+
+// An export that waits for a slot logs the wait. The exports that find a
+// free slot take it before the slots fill.
+func TestExportEndedLoggedSlotWait(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const hold = 200 * time.Millisecond
+		entered := make(chan struct{}, 8)
+		finish := make(chan struct{})
+		adapter := newFakeAdapter()
+		adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+			entered <- struct{}{}
+			<-finish
+			return consume(ctx, Export{Skipped: []protocol.SkippedRoot{{Number: req.Roots[0], Reason: protocol.SkipGone}}})
+		}
+		s, conn, logs := loggedSession(t, adapter)
+		dispatched := time.Now()
+		for i := range ExportsInFlight + 1 {
+			s.dispatch(request(t, uint64(i+1), protocol.TypeExport, outputsExport(uint64(i+1))))
+		}
+		for range ExportsInFlight {
+			<-entered
+		}
+		filled := time.Since(dispatched)
+		// Once the fifth handler waits for a slot, its wait has started.
+		synctest.Wait()
+		time.Sleep(hold)
+		close(finish)
+		<-entered
+		for range ExportsInFlight + 1 {
+			require.Equal(t, protocol.TypeExported, conn.next(t).Type)
+		}
+		lines := logs.waitLines(t, "remote cache export ended", ExportsInFlight+1)
+		var waits []time.Duration
+		for _, line := range lines {
+			waits = append(waits, logDuration(t, line, "slot_wait"))
+		}
+		slices.Sort(waits)
+		for _, w := range waits[:ExportsInFlight] {
+			require.LessOrEqual(t, w, filled, "a free slot is taken before the slots fill")
+		}
+		require.GreaterOrEqual(t, waits[ExportsInFlight], hold, "the fifth export waited for a slot")
+	})
 }
 
 // An exported reply over the message limit is not sent: the export is
@@ -429,7 +1123,7 @@ func TestExportsInFlight(t *testing.T) {
 	}
 	s, conn := testSession(t, adapter)
 	for i := range ExportsInFlight + 1 {
-		s.dispatch(request(t, uint64(i+1), protocol.TypeExport, protocol.Export{Roots: []uint64{uint64(i + 1)}}))
+		s.dispatch(request(t, uint64(i+1), protocol.TypeExport, outputsExport(uint64(i+1))))
 	}
 	for range ExportsInFlight {
 		<-entered
@@ -444,6 +1138,160 @@ func TestExportsInFlight(t *testing.T) {
 	for range ExportsInFlight + 1 {
 		require.Equal(t, protocol.TypeExported, conn.next(t).Type)
 	}
+}
+
+// outputsExport asks for root and one of its outputs.
+func outputsExport(root uint64) protocol.Export {
+	return protocol.Export{Roots: []uint64{root}, Outputs: []protocol.ExportOutput{{Number: root}}}
+}
+
+// An export that selects no outputs doesn't wait for the slots the exports
+// that select outputs hold; while they hold them all, at most
+// RecordsExportsInFlight such exports run at once.
+func TestRecordsExportHasItsOwnSlots(t *testing.T) {
+	entered := make(chan uint64, 8)
+	finish := make(chan struct{})
+	release := sync.OnceFunc(func() { close(finish) })
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		entered <- req.Roots[0]
+		if len(req.Outputs) > 0 || req.Roots[0] == 20 {
+			<-finish
+		}
+		return consume(ctx, Export{Skipped: []protocol.SkippedRoot{{Number: req.Roots[0], Reason: protocol.SkipGone}}})
+	}
+	s, conn := testSession(t, adapter)
+	// Release the held exports however the test ends, before the session's
+	// cleanup waits for them.
+	t.Cleanup(release)
+	for i := range ExportsInFlight {
+		s.dispatch(request(t, uint64(i+1), protocol.TypeExport, outputsExport(uint64(i+1))))
+	}
+	for range ExportsInFlight {
+		<-entered
+	}
+	// Every slot for exports that select outputs is held: one that selects
+	// none still runs.
+	s.dispatch(request(t, 10, protocol.TypeExport, protocol.Export{Roots: []uint64{10}}))
+	select {
+	case root := <-entered:
+		require.Equal(t, uint64(10), root)
+	case <-time.After(10 * time.Second):
+		t.Fatal("an export that selects no outputs waited for the other exports' slots")
+	}
+	require.Equal(t, uint64(10), decode[protocol.Exported](t, conn.next(t)).Skipped[0].Number)
+
+	// One that holds its slot makes the next that selects none wait.
+	s.dispatch(request(t, 20, protocol.TypeExport, protocol.Export{Roots: []uint64{20}}))
+	require.Equal(t, uint64(20), <-entered)
+	s.dispatch(request(t, 21, protocol.TypeExport, protocol.Export{Roots: []uint64{21}}))
+	select {
+	case root := <-entered:
+		t.Fatalf("export %d ran beyond RecordsExportsInFlight", root)
+	case <-time.After(50 * time.Millisecond):
+	}
+	release()
+	require.Equal(t, uint64(21), <-entered)
+	for range ExportsInFlight + 2 {
+		require.Equal(t, protocol.TypeExported, conn.next(t).Type)
+	}
+}
+
+// With its own slots taken, an export that selects no outputs takes a free
+// slot of the exports that select outputs, within the protocol's bounds:
+// the engine runs at once as many exports as those bounds allow.
+func TestRecordsExportTakesAFreeSlot(t *testing.T) {
+	const slots = RecordsExportsInFlight + ExportsInFlight
+	entered := make(chan uint64, slots+1)
+	finish := make(chan struct{})
+	release := sync.OnceFunc(func() { close(finish) })
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		entered <- req.Roots[0]
+		<-finish
+		return consume(ctx, Export{Skipped: []protocol.SkippedRoot{{Number: req.Roots[0], Reason: protocol.SkipGone}}})
+	}
+	s, conn := testSession(t, adapter)
+	t.Cleanup(release)
+	for i := range slots {
+		s.dispatch(request(t, uint64(i+1), protocol.TypeExport, protocol.Export{Roots: []uint64{uint64(i + 1)}}))
+	}
+	for range slots {
+		select {
+		case <-entered:
+		case <-time.After(10 * time.Second):
+			t.Fatal("an export that selects no outputs waited with a slot free")
+		}
+	}
+	// Every slot is held: the next export waits, whatever it selects.
+	s.dispatch(request(t, slots+1, protocol.TypeExport, outputsExport(slots+1)))
+	select {
+	case root := <-entered:
+		t.Fatalf("export %d ran beyond the engine's slots", root)
+	case <-time.After(50 * time.Millisecond):
+	}
+	release()
+	require.Equal(t, uint64(slots+1), <-entered)
+	for range slots + 1 {
+		require.Equal(t, protocol.TypeExported, conn.next(t).Type)
+	}
+}
+
+// The engine runs at once every export the protocol's bounds allow, whatever
+// order they end in: at most ExportsInFlight that select outputs, and
+// RecordsExportsInFlight more that select none.
+func TestExportSlotsKeepTheProtocolBounds(t *testing.T) {
+	entered := make(chan uint64, 8)
+	var mu sync.Mutex
+	finish := map[uint64]chan struct{}{}
+	held := func(root uint64) chan struct{} {
+		mu.Lock()
+		defer mu.Unlock()
+		if finish[root] == nil {
+			finish[root] = make(chan struct{})
+		}
+		return finish[root]
+	}
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		entered <- req.Roots[0]
+		<-held(req.Roots[0])
+		return consume(ctx, Export{Skipped: []protocol.SkippedRoot{{Number: req.Roots[0], Reason: protocol.SkipGone}}})
+	}
+	s, conn := testSession(t, adapter)
+	t.Cleanup(func() {
+		for root := uint64(1); root <= 6; root++ {
+			select {
+			case <-held(root):
+			default:
+				close(held(root))
+			}
+		}
+	})
+	enter := func(root uint64) {
+		t.Helper()
+		select {
+		case got := <-entered:
+			require.Equal(t, root, got)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("export %d waited for a free slot", root)
+		}
+	}
+	// Records only, on one of the ExportsInFlight slots; three that select
+	// outputs; records only, on the slot for records.
+	s.dispatch(request(t, 1, protocol.TypeExport, protocol.Export{Roots: []uint64{1}}))
+	enter(1)
+	for root := uint64(2); root <= 4; root++ {
+		s.dispatch(request(t, root, protocol.TypeExport, outputsExport(root)))
+		enter(root)
+	}
+	s.dispatch(request(t, 5, protocol.TypeExport, protocol.Export{Roots: []uint64{5}}))
+	enter(5)
+	// The first ends: the service sends another that selects outputs.
+	close(held(1))
+	require.Equal(t, uint64(1), decode[protocol.Exported](t, conn.next(t)).Skipped[0].Number)
+	s.dispatch(request(t, 6, protocol.TypeExport, outputsExport(6)))
+	enter(6)
 }
 
 // A merge is answered merged, or with an error reply when it fails.
@@ -505,6 +1353,7 @@ func renewalRequest(deadline time.Duration) *dagql.RenewalRequest {
 		Chain:      digest.FromString("chain"),
 		RenewalKey: "12/fs",
 		NeededBlob: digest.FromString("blob"),
+		Packs:      map[digest.Digest]digest.Digest{digest.FromString("blob"): digest.FromString("pack")},
 		Deadline:   time.Now().Add(deadline),
 		Done:       make(chan struct{}),
 	}
@@ -565,7 +1414,7 @@ func TestRenewal(t *testing.T) {
 			adapter.renewals <- req
 			renew := conn.next(t)
 			require.Equal(t, protocol.TypeRenew, renew.Type)
-			require.Equal(t, protocol.Renew{RenewalKey: "12/fs", NeededBlob: req.NeededBlob}, decode[protocol.Renew](t, renew))
+			require.Equal(t, protocol.Renew{RenewalKey: "12/fs", NeededBlob: req.NeededBlob, Packs: req.Packs}, decode[protocol.Renew](t, renew))
 			if env := tc.answer(t, renew); env != nil {
 				s.dispatch(*env)
 			}
@@ -743,4 +1592,152 @@ func TestHTTPPutHidesTheAddress(t *testing.T) {
 	err := put(t.Context(), "https://blobs.example/put?X-Amz-Signature=secret", bytes.NewReader(nil), 0)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "secret")
+}
+
+// lookupSession is a session that serves lookups, with its lookup loop
+// started.
+func lookupSession(t *testing.T, adapter *fakeAdapter) (*session, *recordingConn) {
+	t.Helper()
+	conn := newRecordingConn()
+	return lookupSessionOn(t, adapter, conn), conn
+}
+
+func lookupSessionOn(t *testing.T, adapter *fakeAdapter, conn wsConn) *session {
+	t.Helper()
+	cfg := newSettings(Config{Lookups: true})
+	s := newSession(t.Context(), conn, adapter, cfg)
+	t.Cleanup(s.close)
+	s.go_(s.lookups)
+	require.True(t, within(t, adapter.lookups), "the session starts lookups")
+	return s
+}
+
+func within[T any](t *testing.T, ch <-chan T) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting")
+		panic("unreachable")
+	}
+}
+
+func lookupMisses(n int) []dagql.RemoteMiss {
+	misses := make([]dagql.RemoteMiss, n)
+	for i := range misses {
+		misses[i] = dagql.RemoteMiss{Recipe: digest.FromString(fmt.Sprint("recipe", i)), Field: "withExec"}
+	}
+	misses[0].Extra = []digest.Digest{digest.FromString("extra")}
+	return misses
+}
+
+// answerLookup answers the next lookup the engine sends.
+func answerLookup(t *testing.T, s *session, conn *recordingConn, answer protocol.LookedUp) protocol.Lookup {
+	t.Helper()
+	env := conn.next(t)
+	require.Equal(t, protocol.TypeLookup, env.Type)
+	reply, err := protocol.NewEnvelope(900+env.ID, env.ID, protocol.TypeLookedUp, answer)
+	require.NoError(t, err)
+	s.dispatch(reply)
+	return decode[protocol.Lookup](t, env)
+}
+
+// The engine sends its cache's misses as a lookup, by recipe, extra digests
+// and field, at most LookupMisses at once, and stops lookups when its
+// session ends.
+func TestLookup(t *testing.T) {
+	adapter := newFakeAdapter()
+	s, conn := lookupSession(t, adapter)
+	misses := lookupMisses(6)
+	adapter.misses <- misses
+	sent := answerLookup(t, s, conn, protocol.LookedUp{Misses: []protocol.LookedUpMiss{
+		{Status: protocol.LookupMerging, Merge: 40, Parts: protocol.LookupPartsComplete},
+		{Status: protocol.LookupInFlight, Merge: 38, Parts: protocol.LookupPartsPartial},
+		{Status: protocol.LookupMerging, Merge: 41, Parts: protocol.LookupPartsNone},
+		{Status: protocol.LookupDeferred},
+		{Status: protocol.LookupNotStored},
+		{Status: protocol.LookupUnknown},
+	}})
+	require.Equal(t, int64(protocol.LookupMisses), adapter.takeLimit.Load())
+	require.Len(t, sent.Misses, 6)
+	require.Equal(t, protocol.LookupMiss{Recipe: misses[0].Recipe, Extra: misses[0].Extra, Field: "withExec"}, sent.Misses[0])
+	require.Equal(t, misses[5].Recipe, sent.Misses[5].Recipe)
+
+	s.close()
+	require.False(t, within(t, adapter.lookups), "the session stops lookups when it ends")
+}
+
+// liveConn is a recordingConn that writes no message whose context has
+// ended.
+type liveConn struct {
+	*recordingConn
+}
+
+func (c liveConn) Write(ctx context.Context, data []byte) error {
+	if err := context.Cause(ctx); err != nil {
+		return err
+	}
+	return c.recordingConn.Write(ctx, data)
+}
+
+// A lookup the service answers with an error has failed, and the next miss
+// is asked all the same; an engine with lookups off sends none.
+func TestLookupAnsweredWithAnError(t *testing.T) {
+	adapter := newFakeAdapter()
+	conn := liveConn{newRecordingConn()}
+	s := lookupSessionOn(t, adapter, conn)
+	adapter.misses <- lookupMisses(1)
+	env := conn.next(t)
+	require.Equal(t, protocol.TypeLookup, env.Type)
+	// The lookup holds its slot until it has handled its answer, and the
+	// loop holds another while it waits for the next miss.
+	require.Eventually(t, func() bool { return len(s.lookupSlots) == 2 }, 10*time.Second, time.Millisecond)
+	s.dispatch(protocol.Envelope{ID: 3, Re: env.ID, Type: protocol.TypeError, Body: json.RawMessage(`{"message": "too large"}`)})
+	require.Eventually(t, func() bool { return len(s.lookupSlots) < 2 }, 10*time.Second, time.Millisecond, "the lookup handles its error")
+	adapter.misses <- lookupMisses(1)
+	require.Equal(t, protocol.TypeLookup, conn.next(t).Type, "the next miss is asked")
+	require.NoError(t, s.ctx.Err(), "the connection survives")
+
+	off := newFakeAdapter()
+	s, _ = testSession(t, off)
+	s.lookups()
+	select {
+	case <-off.lookups:
+		t.Fatal("an engine with lookups off started them")
+	default:
+	}
+}
+
+// A merge read from the connection reaches the adapter whole, with its
+// envelope's ID: one whose body comes last, as the service writes it, which
+// the session decodes in one pass, and one whose body comes first, which it
+// reads with json.Unmarshal and decodes as it handles the merge.
+func TestMergeReadFromTheConnection(t *testing.T) {
+	for _, bodyFirst := range []bool{false, true} {
+		t.Run(fmt.Sprint("bodyFirst=", bodyFirst), func(t *testing.T) {
+			adapter := newFakeAdapter()
+			got := make(chan protocol.Merge, 1)
+			adapter.merge = func(_ context.Context, req protocol.Merge) (protocol.Merged, error) {
+				got <- req
+				return protocol.Merged{Generation: 3}, nil
+			}
+			conn := newServiceConn()
+			s := newSession(t.Context(), conn, adapter, newSettings(Config{}))
+			t.Cleanup(s.close)
+			s.go_(s.read)
+			sent := protocol.Merge{Bundle: *testBundle(), Lookup: 5}
+			env := request(t, 21, protocol.TypeMerge, sent)
+			if bodyFirst {
+				conn.inbound <- fmt.Appendf(nil, `{"body":%s,"id":%d,"type":%q}`, env.Body, env.ID, env.Type)
+			} else {
+				conn.send(t, env)
+			}
+			require.Equal(t, sent, within(t, got))
+			require.Equal(t, uint64(21), within(t, adapter.mergeIDs))
+			reply := conn.next(t)
+			require.Equal(t, protocol.TypeMerged, reply.Type)
+			require.Equal(t, uint64(21), reply.Re)
+		})
+	}
 }

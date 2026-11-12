@@ -30,6 +30,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		termInputRows           []persistdb.MirrorTermInput
 		resultOutputEqClassRows []persistdb.MirrorResultOutputEqClass
 		persistedEdgeRows       []persistdb.MirrorPersistedEdge
+		resultCallRows          []persistdb.MirrorResultCall
 		resultDepRows           []persistdb.MirrorResultDep
 		resultSnapshotRows      []persistdb.MirrorResultSnapshotLink
 		snapshotContentRows     []persistdb.MirrorSnapshotContentLink
@@ -47,6 +48,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	listMirrorRows(lists, listCtx, "term_inputs", &termInputRows, c.pdb.ListMirrorTermInputs)
 	listMirrorRows(lists, listCtx, "result_output_eq_classes", &resultOutputEqClassRows, c.pdb.ListMirrorResultOutputEqClasses)
 	listMirrorRows(lists, listCtx, "persisted_edges", &persistedEdgeRows, c.pdb.ListMirrorPersistedEdges)
+	listMirrorRows(lists, listCtx, "result_calls", &resultCallRows, c.pdb.ListMirrorResultCalls)
 	listMirrorRows(lists, listCtx, "result_deps", &resultDepRows, c.pdb.ListMirrorResultDeps)
 	listMirrorRows(lists, listCtx, "result_snapshot_links", &resultSnapshotRows, c.pdb.ListMirrorResultSnapshotLinks)
 	listMirrorRows(lists, listCtx, "snapshot_content_links", &snapshotContentRows, c.pdb.ListMirrorSnapshotContentLinks)
@@ -204,6 +206,21 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			c.putResultLocked(res)
 			c.traceImportResultLoaded(ctx, importRunID, resultID, row.CallFrameJSON)
+		}
+
+		for _, row := range resultCallRows {
+			res := c.resultsByID[sharedResultID(row.ResultID)]
+			if res == nil {
+				return fmt.Errorf("import result_call %d: missing result", row.ResultID)
+			}
+			kept, err := decodeKeptCall(row.Call, digest.Digest(row.RequestDigest))
+			if err != nil {
+				return fmt.Errorf("import result_call %d: %w", row.ResultID, err)
+			}
+			if res.calls == nil {
+				res.calls = make(map[digest.Digest]*keptCall)
+			}
+			res.calls[kept.id.recipe] = kept
 		}
 
 		for _, row := range persistedEdgeRows {
@@ -484,7 +501,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			continue
 		}
 		decodeCtx := ContextWithCall(ctx, call)
-		decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(state.snapshotOwnerLinks), Imported: state.imported, Host: c.partHostFor(res)})
+		decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(state.snapshotOwnerLinks), Imported: state.imported, ArmRecipe: c.decodeArmsRecipe(res, state.imported), Host: c.partHostFor(res)})
 		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), call, *state.persistedEnvelope); err == nil && decoded != nil {
 			res.payloadMu.Lock()
 			if res.hasValue || res.persistedEnvelope == nil || res.payloadRevision != state.payloadRevision {
@@ -775,6 +792,21 @@ func collectDecodedDependencyResults(decoded AnyResult, deps *[]AnyResult) {
 	}
 }
 
+// decodeArmsRecipe reports whether a row's value decodes with its recipe armed
+// (copiedDecodeRoles.ArmRecipe): its record came from another engine, and the
+// row holds no download address for any of its parts. Such a value then
+// evaluates as a value restored from local persistence does. An address that
+// arrives later moves the row to part acquisition at its next demand
+// (usesPartAcquisition), for the parts it hasn't computed.
+func (c *Cache) decodeArmsRecipe(res *sharedResult, imported bool) bool {
+	if !imported {
+		return false
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return !res.hasPartOffersLocked()
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver TypeResolver, hit AnyResult) (AnyResult, error) {
 	if resolver == nil {
@@ -950,7 +982,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			if state.snapshotLinkIntent != nil {
 				roles = state.snapshotLinkIntent.Links
 			}
-			decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(roles), Imported: state.imported, Host: c.partHostFor(res)})
+			decodeCtx = context.WithValue(decodeCtx, copiedDecodeRolesKey{}, &copiedDecodeRoles{ResultID: uint64(res.id), Links: cloneSnapshotRefLinks(roles), Imported: state.imported, ArmRecipe: c.decodeArmsRecipe(res, state.imported), Host: c.partHostFor(res)})
 			decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
 			if err != nil {
 				c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)

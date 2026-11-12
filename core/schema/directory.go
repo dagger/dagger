@@ -152,6 +152,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves a directory at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
+				dagql.Arg("resolveBrokenSymlinks").Doc(`Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.`).View(AfterVersion("v1.0.0-beta.26")),
 			),
 		dagql.NodeFunc("withDirectory", s.withDirectoryContentHashed).
 			IsPersistable().
@@ -263,6 +264,12 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`A socket to use for SSH authentication during the build`,
 					`(e.g., for Dockerfile RUN --mount=type=ssh instructions).`,
 					`Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.`),
+			),
+		dagql.NodeFuncWithDynamicInputs("withPlatform", s.withPlatform, withPlatformDynamicInputs[*core.Directory]).
+			View(AfterVersion("v1.0.0-beta.26")).
+			Doc(withPlatformDoc("directory")...).
+			Args(
+				dagql.Arg("platform").Doc(`The platform the directory's contents are for (e.g., "linux/arm64").`),
 			),
 		dagql.NodeFunc("withTimestamps", s.withTimestamps).
 			IsPersistable().
@@ -463,7 +470,8 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 }
 
 type subdirectoryArgs struct {
-	Path string
+	ResolveBrokenSymlinks bool `default:"false"`
+	Path                  string
 }
 
 func (s *directorySchema) subdirectory(
@@ -479,7 +487,7 @@ func (s *directorySchema) subdirectory(
 	if err != nil {
 		return res, err
 	}
-	dir, err := parent.Self().Subdirectory(ctx, parent, args.Path)
+	dir, err := parent.Self().Subdirectory(ctx, parent, args.Path, args.ResolveBrokenSymlinks)
 	if err != nil {
 		return res, err
 	}
@@ -996,6 +1004,39 @@ func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[
 	return filtered, nil
 }
 
+// withPlatform is a directory of its parent's contents, declared: its own
+// result, whose call carries the declaration's identity to every engine the
+// result goes to, such as in the entries an engine image ships. The contents
+// are copied into a directory of their own: a directory read from a
+// command's container sits on that container's filesystem, the platform it
+// ran on's, which an engine of the declared platform has no use for.
+func (s *directorySchema) withPlatform(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPlatformArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	var scratch dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, srv.Root(), &scratch, dagql.Selector{Field: "directory"}); err != nil {
+		return inst, err
+	}
+	dir := &core.Directory{
+		Platform: args.Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryWithDirectoryLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    scratch,
+			DestDir:   "/",
+			Source:    parent,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	if scratchDir, ok := scratch.Self().Dir.Peek(); ok {
+		dir.SetPath(scratchDir)
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
 type dirWithTimestampsArgs struct {
 	Timestamp int
 }
@@ -1171,8 +1212,12 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	// Do not evaluate a lazy parent: it can run container commands. Such a
 	// file has no content digest, so its cache key is its recipe. A pending
 	// Git checkout runs none, and its tree is content-identified once it is
-	// checked out.
-	if dagql.HasPendingLazyComputation(parent) && !core.DefersContentDigest(parent.Self()) {
+	// checked out. A parent merged from another engine's record of an
+	// operation that completed there is no lazy parent: it was evaluated where
+	// it ran, and its sync here leaves its content to its reader. The file is
+	// read from it, downloaded or computed, and keyed by its content, as it
+	// was there.
+	if dagql.HasPendingLazyComputation(parent) && !core.DefersContentDigest(parent.Self()) && !dagql.CompletedElsewhere(parent) {
 		return fileResult, nil
 	}
 
@@ -1182,24 +1227,10 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 	}
 
-	snapshot, ok := fileResult.Self().Snapshot.Peek()
-	if !ok {
-		return inst, fmt.Errorf("file snapshot not set after detached evaluation")
-	}
-	filePath, ok := fileResult.Self().File.Peek()
-	if !ok {
-		return inst, fmt.Errorf("file path not set after detached evaluation")
-	}
-
-	dgst, err := core.GetContentHashFromFile(ctx, snapshot, filePath)
+	dgst, err := fileContentDigest(ctx, fileResult.Self())
 	if err != nil {
 		return inst, err
 	}
-
-	dgst = hashutil.HashStrings(
-		filePath,
-		string(dgst),
-	)
 
 	return fileResult.WithContentDigest(ctx, dgst)
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	dangv2 "github.com/dagger/dagger/core/sdk/dang/v2"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
@@ -317,6 +318,13 @@ func versionMutationSource(t *testing.T, caching *bool) (context.Context, *modul
 }
 
 func TestDangSourceVersionMutations(t *testing.T) {
+	// Run as the engine of Dang24ModuleVersion: an earlier engine caps a
+	// module's view, and so its default Dang version, at its own. Not
+	// parallel, as it sets engine.Version.
+	oldVersion := engine.Version
+	engine.Version = dangv2.Dang24ModuleVersion
+	t.Cleanup(func() { engine.Version = oldVersion })
+
 	ctx, s, original := versionMutationSource(t, nil)
 	require.Equal(t, "v0.19.0", original.EngineVersion)
 	require.Equal(t, "1.0", original.DangVersion)
@@ -346,7 +354,7 @@ func TestDangSourceVersionMutations(t *testing.T) {
 	require.Equal(t, "v0.19.0", original.EngineVersion, "mutators do not modify the receiver")
 
 	// Equal-valued overrides still carry provenance and survive later changes.
-	for _, override := range []string{"v0.19.0", engine.IdentifierCasingVersion} {
+	for _, override := range []string{"v0.19.0", "v1.0.0-beta.27", dangv2.Dang24ModuleVersion} {
 		for _, path := range []string{"b", "none", "default"} {
 			t.Run(override+"/"+path, func(t *testing.T) {
 				before, err := s.moduleSourceWithEngineVersion(ctx, original, struct{ Version string }{override})
@@ -366,8 +374,11 @@ func TestDangSourceVersionMutations(t *testing.T) {
 					require.Equal(t, "2.0", before.DangVersion, "declared grammar survives API override")
 				} else if override == "v0.19.0" {
 					require.Equal(t, "1.0", before.DangVersion)
-				} else {
+				} else if override == "v1.0.0-beta.27" {
+					// The last version before Dang24ModuleVersion.
 					require.Equal(t, "2.1", before.DangVersion, "grammar default follows final API version")
+				} else {
+					require.Equal(t, "2.4", before.DangVersion, "grammar default follows final API version")
 				}
 			})
 		}
@@ -376,6 +387,17 @@ func TestDangSourceVersionMutations(t *testing.T) {
 
 func TestDangSDKVersionMutations(t *testing.T) {
 	ctx, s, original := versionMutationSource(t, nil)
+	// The Go SDK is a module the engine image carries, which this server
+	// can't load. The test needs only an SDK that isn't Dang's. Not parallel:
+	// it replaces the package's SDK loader.
+	loadSDK := loadModuleSourceSDK
+	loadModuleSourceSDK = func(ctx context.Context, query *core.Query, cfg *core.SDKConfig, src *core.ModuleSource) (core.SDK, error) {
+		if cfg.Source == "go" {
+			return &prebuildTestSDK{}, nil
+		}
+		return loadSDK(ctx, query, cfg, src)
+	}
+	t.Cleanup(func() { loadModuleSourceSDK = loadSDK })
 	for _, sdk := range []string{"go", ""} {
 		for _, override := range []string{"", engine.IdentifierCasingVersion} {
 			t.Run(sdk+"/"+override, func(t *testing.T) {
@@ -529,4 +551,33 @@ func TestDangVersionConfigProvenance(t *testing.T) {
 			require.Equal(t, engine.IdentifierCasingVersion, fresh.EngineVersion)
 		})
 	}
+}
+
+// A rewritten version 2 manifest keeps an include it declares, which replaces
+// sources, and drops a fat manifest's, like the fat manifest's other pre-v2
+// fields, so the rewrite never turns that include into a replacement.
+func TestBuildModuleConfigKeepsOnlyADeclaredInclude(t *testing.T) {
+	entrypoint := &modules.ModuleEntrypointConfig{Kind: modules.ModuleEntrypointKindDang, Source: "./entrypoint"}
+	s := &moduleSourceSchema{}
+
+	declared, err := s.buildModuleConfig(&core.ModuleSource{
+		ModuleOriginalName: "tiny",
+		Entrypoint:         entrypoint,
+		IncludePaths:       []string{},
+		IncludeDeclared:    true,
+	})
+	require.NoError(t, err)
+	out, err := modules.MarshalModuleConfigForFilename(declared, modules.Filename)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "include = []")
+
+	fat, err := s.buildModuleConfig(&core.ModuleSource{
+		ModuleOriginalName: "tiny",
+		Entrypoint:         entrypoint,
+		IncludePaths:       []string{"../shared/*.txt"},
+	})
+	require.NoError(t, err)
+	out, err = modules.MarshalModuleConfigForFilename(fat, modules.Filename)
+	require.NoError(t, err)
+	require.NotContains(t, string(out), "include")
 }

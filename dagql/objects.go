@@ -581,7 +581,7 @@ type preselectResult struct {
 
 // sortCallArgsToSchema sorts the arguments to match the schema definition order.
 func (r ObjectResult[T]) sortCallArgsToSchema(fieldSpec *FieldSpec, view call.View, args []*ResultCallArg) {
-	inputs := fieldSpec.Args.Inputs(view)
+	inputs := fieldSpec.Args.inputs(view)
 	sort.Slice(args, func(i, j int) bool {
 		iIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
 			return input.Name == args[i].Name
@@ -597,7 +597,7 @@ func (r ObjectResult[T]) sortCallArgsToSchema(fieldSpec *FieldSpec, view call.Vi
 // replaced, and defaults. The selector inputs still in scoped were scoped
 // already: scoping loads every object argument again.
 func scopeDynamicInputs(ctx context.Context, srv *Server, scope ResultScope, spec *FieldSpec, view call.View, inputArgs map[string]Input, req *CallRequest, scoped map[string]*ResultCallArg) error {
-	for _, argSpec := range spec.Args.Inputs(view) {
+	for _, argSpec := range spec.Args.inputs(view) {
 		input, ok := inputArgs[argSpec.Name]
 		if !ok {
 			continue
@@ -623,7 +623,7 @@ func scopeDynamicInputs(ctx context.Context, srv *Server, scope ResultScope, spe
 func prepareSelectorInputs(ctx context.Context, srv *Server, spec *FieldSpec, view call.View, selectorArgs []NamedInput) (map[string]Input, []*ResultCallArg, error) {
 	inputArgs := make(map[string]Input, len(selectorArgs))
 	frameArgs := make([]*ResultCallArg, 0, len(selectorArgs))
-	for _, argSpec := range spec.Args.Inputs(view) {
+	for _, argSpec := range spec.Args.inputs(view) {
 		// just be n^2 since the overhead of a map is likely more expensive
 		// for the expected low value of n
 		var namedInput NamedInput
@@ -669,7 +669,7 @@ func prepareSelectorInputs(ctx context.Context, srv *Server, spec *FieldSpec, vi
 // putVolatileInputs copies the volatile arguments' values from prepared into
 // inputs, which were rebuilt from a call that doesn't hold them.
 func putVolatileInputs(spec *FieldSpec, view call.View, prepared, inputs map[string]Input) {
-	for _, argSpec := range spec.Args.Inputs(view) {
+	for _, argSpec := range spec.Args.inputs(view) {
 		if input, ok := prepared[argSpec.Name]; ok && argSpec.Volatile {
 			inputs[argSpec.Name] = input
 		}
@@ -1421,20 +1421,32 @@ type InputSpecs struct {
 	// It should not be accessed directly (hence private), but should instead
 	// be accessed through a specific dagql view.
 	raw []InputSpec
+
+	// views holds the inputs each view sees, worked out on first use: every
+	// call of a field reads its arguments' specs several times. raw doesn't
+	// change once views is set; Add, the one way to extend raw, starts a new
+	// one.
+	views *inputSpecViews
+}
+
+type inputSpecViews struct {
+	byView sync.Map // call.View -> []InputSpec
 }
 
 func NewInputSpecs(specs ...InputSpec) InputSpecs {
 	return InputSpecs{
-		raw: specs,
+		raw:   specs,
+		views: &inputSpecViews{},
 	}
 }
 
 func (specs *InputSpecs) Add(target ...InputSpec) {
 	specs.raw = append(specs.raw, target...)
+	specs.views = &inputSpecViews{}
 }
 
 func (specs InputSpecs) HasRequired(view call.View) bool {
-	for _, input := range specs.Inputs(view) {
+	for _, input := range specs.inputs(view) {
 		if input.Default == nil && input.Type.Type().NonNull {
 			return true
 		}
@@ -1457,7 +1469,26 @@ func (specs InputSpecs) Input(name string, view call.View) (InputSpec, bool) {
 	return InputSpec{}, false
 }
 
-func (specs InputSpecs) Inputs(view call.View) (args []InputSpec) {
+// Inputs returns the inputs visible in view, in order, the last-defined spec
+// of a name taking precedence. The caller owns the returned slice.
+func (specs InputSpecs) Inputs(view call.View) []InputSpec {
+	return slices.Clone(specs.inputs(view))
+}
+
+// inputs is Inputs without the copy: callers only read the result, which is
+// shared by every call of the field in view.
+func (specs InputSpecs) inputs(view call.View) []InputSpec {
+	if specs.views == nil {
+		return specs.visibleInputs(view)
+	}
+	if args, ok := specs.views.byView.Load(view); ok {
+		return args.([]InputSpec)
+	}
+	args, _ := specs.views.byView.LoadOrStore(view, specs.visibleInputs(view))
+	return args.([]InputSpec)
+}
+
+func (specs InputSpecs) visibleInputs(view call.View) (args []InputSpec) {
 	// This function is currently in the hot path, so we optimize duplicate checks by only using
 	// a map when the number of args is above a certain threshold, using slice iteration otherwise.
 	// The previous implementation that only used a map was a genuine bottleneck since most of the
@@ -1506,7 +1537,7 @@ func (specs InputSpecs) Inputs(view call.View) (args []InputSpec) {
 
 func (specs InputSpecs) InputsFromResultCallArgs(ctx context.Context, args []*ResultCallArg, view call.View) (map[string]Input, error) {
 	inputs := make(map[string]Input, len(args))
-	for _, argSpec := range specs.Inputs(view) {
+	for _, argSpec := range specs.inputs(view) {
 		var requestArg *ResultCallArg
 		for _, arg := range args {
 			if arg != nil && arg.Name == argSpec.Name {
@@ -1539,7 +1570,7 @@ func (specs InputSpecs) InputsFromResultCallArgs(ctx context.Context, args []*Re
 }
 
 func (specs InputSpecs) ArgumentDefinitions(view call.View) []*ast.ArgumentDefinition {
-	args := specs.Inputs(view)
+	args := specs.inputs(view)
 	defs := make([]*ast.ArgumentDefinition, 0, len(args))
 
 	for _, arg := range args {
@@ -1807,7 +1838,7 @@ func (field Field[T]) Args(args ...Argument) Field[T] {
 		newArgs = append(newArgs, origArg)
 	}
 
-	field.Spec.Args = InputSpecs{newArgs}
+	field.Spec.Args = NewInputSpecs(newArgs...)
 	return field
 }
 
@@ -1978,7 +2009,7 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 		}
 		specs[i] = spec
 	}
-	return InputSpecs{specs}, nil
+	return NewInputSpecs(specs...), nil
 }
 
 func deprecationDescription(reason string) string {

@@ -41,14 +41,44 @@ func NewCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 // exporters' own default.
 const CloudExportTimeout = 10 * time.Second
 
-func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshFn func(context.Context) (*oauth2.Token, error), cloudURL string, requestTimeout time.Duration) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, error) {
+// NewCloudSpanExporter builds one more Cloud span exporter like
+// NewCloudExporters', a writer of its own: its exports don't wait on the
+// other span exporter's, which serializes its own (SpanHeartbeater).
+func NewCloudSpanExporter(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshFn func(context.Context) (*oauth2.Token, error), cloudURL string) (sdktrace.SpanExporter, error) {
+	cloud, err := newCloudExportConfig(cloudAuth, tokenRefreshFn, cloudURL, CloudExportTimeout)
+	if err != nil {
+		return nil, err
+	}
+	return cloud.spanExporter(ctx)
+}
+
+// cloudExportConfig is what the Cloud exporters of one credential share.
+type cloudExportConfig struct {
+	endpoint   *url.URL
+	headers    map[string]string
+	httpClient func(*exportSequencer) *http.Client
+}
+
+func (cloud cloudExportConfig) spanExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
+	sequencer := newExportSequencer()
+	exp, err := otlptracehttp.New(ctx,
+		otlptracehttp.WithEndpointURL(cloud.endpoint.JoinPath("v1", "traces").String()),
+		otlptracehttp.WithHeaders(cloud.headers),
+		otlptracehttp.WithHTTPClient(cloud.httpClient(sequencer)))
+	if err != nil {
+		return nil, fmt.Errorf("configure cloud tracing: %w", err)
+	}
+	return NewSpanHeartbeater(&sequencedSpanExporter{sequencer: sequencer, exporter: exp}), nil
+}
+
+func newCloudExportConfig(cloudAuth *auth.Cloud, tokenRefreshFn func(context.Context) (*oauth2.Token, error), cloudURL string, requestTimeout time.Duration) (cloudExportConfig, error) {
 	if cloudAuth == nil || cloudAuth.Token == nil {
-		return nil, nil, nil, fmt.Errorf("no cloud auth provided")
+		return cloudExportConfig{}, fmt.Errorf("no cloud auth provided")
 	}
 
 	cloudEndpoint, err := url.Parse(ResolveCloudURL(cloudURL))
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("bad cloud URL: %w", err)
+		return cloudExportConfig{}, fmt.Errorf("bad cloud URL: %w", err)
 	}
 
 	headers := map[string]string{}
@@ -69,17 +99,22 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 		}
 		return client
 	}
+	return cloudExportConfig{endpoint: cloudEndpoint, headers: headers, httpClient: httpClient}, nil
+}
 
-	spanSequencer := newExportSequencer()
+func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshFn func(context.Context) (*oauth2.Token, error), cloudURL string, requestTimeout time.Duration) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, error) {
+	cloud, err := newCloudExportConfig(cloudAuth, tokenRefreshFn, cloudURL, requestTimeout)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	cloudEndpoint, headers, httpClient := cloud.endpoint, cloud.headers, cloud.httpClient
+
 	logSequencer := newExportSequencer()
 	metricSequencer := newExportSequencer()
 
-	spanExporter, err := otlptracehttp.New(ctx,
-		otlptracehttp.WithEndpointURL(cloudEndpoint.JoinPath("v1", "traces").String()),
-		otlptracehttp.WithHeaders(headers),
-		otlptracehttp.WithHTTPClient(httpClient(spanSequencer)))
+	spanExporter, err := cloud.spanExporter(ctx)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("configure cloud tracing: %w", err)
+		return nil, nil, nil, err
 	}
 	logExporter, err := otlploghttp.New(ctx,
 		otlploghttp.WithEndpointURL(cloudEndpoint.JoinPath("v1", "logs").String()),
@@ -96,7 +131,7 @@ func newCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 		return nil, nil, nil, fmt.Errorf("configure cloud metrics: %w", err)
 	}
 
-	return NewSpanHeartbeater(&sequencedSpanExporter{sequencer: spanSequencer, exporter: spanExporter}),
+	return spanExporter,
 		&sequencedLogExporter{sequencer: logSequencer, exporter: logExporter},
 		&sequencedMetricExporter{sequencer: metricSequencer, exporter: metricExporter},
 		nil

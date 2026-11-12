@@ -428,6 +428,20 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.NodeFunc("_implementationScoped", s.moduleImplementationScoped).
 			Doc(`The module object scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
+
+		dagql.NodeFunc("_prebuild", s.modulePrebuild).
+			View(AfterVersion("v1.0.0-beta.26")).
+			Doc(`The file every call of the module builds on, such as its compiled binary, when its SDK declares one: the same result its calls build.`).
+			Args(
+				dagql.Arg("platform").Doc(`The platform of the engine whose calls build on it, when not this engine's, such as an engine image's of another platform.`),
+			),
+
+		dagql.NodeFunc("_runtimeImage", s.moduleRuntimeImage).
+			View(AfterVersion("v1.0.0-beta.26")).
+			Doc(`The image every call of the module runs its process in, when its SDK declares one: the same result its calls start from.`).
+			Args(
+				dagql.Arg("platform").Doc(`The platform of the engine whose calls start from it, when not this engine's, such as an engine image's of another platform.`),
+			),
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -446,7 +460,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The name of the module being executed in`),
 
 		dagql.FuncWithDynamicInputs("naming", s.currentModuleNaming, s.currentModuleNamingCacheKey).
-			View(AfterVersion(identifierVersion)).
+			View(AfterVersion("v1.0.0-beta.26")).
 			Experimental(identifierExperimental).
 			Doc(`The names the engine gives this module's own declarations: the same as its source's ModuleSource.naming, for module runtimes, which have no ModuleSource.`,
 				`It answers for the module under its own name (ModuleSource.moduleName), by the naming rules of the version the module is named by. A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.`),
@@ -2309,13 +2323,7 @@ func (s *moduleSchema) serveModule(ctx context.Context, self *core.Query, args s
 
 	var src dagql.ObjectResult[*core.ModuleSource]
 	if kind == core.ModuleSourceKindGit {
-		sel := workspaceClientModuleSourceSelector(args.Address)
-		if args.RefPin != "" {
-			sel.Args = append(sel.Args, dagql.NamedInput{Name: "refPin", Value: dagql.String(args.RefPin)})
-		}
-		if gitutil.IsCommitSHA(args.RefPin) {
-			sel.Args = append(sel.Args, dagql.NamedInput{Name: "pinOverridesVersion", Value: dagql.Boolean(true)})
-		}
+		sel := gitClientModuleSourceSelector(args.Address, args.RefPin)
 		caller, callerErr := self.Server.ModuleParent(ctx)
 		if callerErr != nil && !errors.Is(callerErr, core.ErrNoCurrentModule) {
 			return void, fmt.Errorf("serve module %q: %w", args.Address, callerErr)
@@ -2368,6 +2376,19 @@ func (s *moduleSchema) serveModule(ctx context.Context, self *core.Query, args s
 		return void, fmt.Errorf("serve module %q: %w", args.Address, err)
 	}
 	return void, self.ServeModule(ctx, mod, false, false)
+}
+
+// gitClientModuleSourceSelector selects the module source that a generated
+// client for the git module address, pinned to refPin, is served.
+func gitClientModuleSourceSelector(address, refPin string) dagql.Selector {
+	sel := workspaceClientModuleSourceSelector(address)
+	if refPin != "" {
+		sel.Args = append(sel.Args, dagql.NamedInput{Name: "refPin", Value: dagql.String(refPin)})
+	}
+	if gitutil.IsCommitSHA(refPin) {
+		sel.Args = append(sel.Args, dagql.NamedInput{Name: "pinOverridesVersion", Value: dagql.Boolean(true)})
+	}
+	return sel
 }
 
 type currentTypeDefsArgs struct {
@@ -3321,6 +3342,72 @@ func optString(v *string) dagql.Optional[dagql.String] {
 	return dagql.Opt(dagql.String(*v))
 }
 
+type modulePrebuildArgs struct {
+	Platform dagql.Optional[core.Platform]
+}
+
+func (s *moduleSchema) modulePrebuild(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+	args modulePrebuildArgs,
+) (dagql.Nullable[dagql.ObjectResult[*core.File]], error) {
+	none := dagql.Null[dagql.ObjectResult[*core.File]]()
+	if !mod.Self().Source.Valid {
+		return none, nil
+	}
+	prebuilder, ok := modulePrebuilder(mod.Self().Source.Value.Self())
+	if !ok {
+		return none, nil
+	}
+	var platform *core.Platform
+	if args.Platform.Valid {
+		platform = &args.Platform.Value
+	}
+	file, ok, err := prebuilder.PrebuildFile(ctx, mod, platform)
+	if err != nil || !ok {
+		return none, err
+	}
+	return dagql.NonNull(file), nil
+}
+
+func (s *moduleSchema) moduleRuntimeImage(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+	args modulePrebuildArgs,
+) (dagql.Nullable[dagql.ObjectResult[*core.Container]], error) {
+	none := dagql.Null[dagql.ObjectResult[*core.Container]]()
+	if !mod.Self().Source.Valid {
+		return none, nil
+	}
+	prebuilder, ok := modulePrebuilder(mod.Self().Source.Value.Self())
+	if !ok {
+		return none, nil
+	}
+	var platform *core.Platform
+	if args.Platform.Valid {
+		platform = &args.Platform.Value
+	}
+	image, ok, err := prebuilder.RuntimeImage(ctx, mod, platform)
+	if err != nil || !ok {
+		return none, err
+	}
+	return dagql.NonNull(image), nil
+}
+
+// modulePrebuilder is src's SDK runtime, when it declares a file that every
+// call of the module builds on (core.ModulePrebuilder).
+func modulePrebuilder(src *core.ModuleSource) (core.ModulePrebuilder, bool) {
+	if src == nil || src.SDKImpl == nil {
+		return nil, false
+	}
+	runtimeImpl, ok := src.SDKImpl.AsRuntime()
+	if !ok {
+		return nil, false
+	}
+	prebuilder, ok := runtimeImpl.(core.ModulePrebuilder)
+	return prebuilder, ok
+}
+
 func (s *moduleSchema) moduleImplementationScoped(
 	ctx context.Context,
 	parentMod dagql.ObjectResult[*core.Module],
@@ -3342,6 +3429,29 @@ func (s *moduleSchema) moduleImplementationScoped(
 	// its own files do not cover; its commit covers the whole tree.
 	if src.Kind == core.ModuleSourceKindGit && src.Git != nil {
 		scopedDigestInputs = append(scopedDigestInputs, "gitCommit:"+src.Git.Commit)
+		// Loaded through a workspace, it serves from the workspace's tree, which
+		// can carry edits or mounts on top of the commit; the workspace's
+		// content identity covers them. Any overlay counts as an edit, even one
+		// that changes nothing; a workspace without one keeps the commit's key.
+		if ws := src.Workspace.Self(); ws != nil {
+			_, edited := ws.OverlayChanges()
+			if _, mounted := ws.MountsDir(); edited || mounted {
+				identity, ok, err := ws.ContentIdentity(ctx)
+				if err != nil {
+					return inst, fmt.Errorf("failed to get git module workspace identity: %w", err)
+				}
+				if ok {
+					scopedDigestInputs = append(scopedDigestInputs, "workspace:"+identity.String())
+				}
+			}
+		}
+	}
+	// A module served from a git workspace module's tree resolves contextual
+	// git to that module's repository, at a commit its own files do not cover.
+	if src.Kind == core.ModuleSourceKindDir && src.DirSrc != nil {
+		if repo := src.DirSrc.OriginGit.Self(); repo != nil && repo.Remote != nil && repo.Remote.Head != nil {
+			scopedDigestInputs = append(scopedDigestInputs, "originGitCommit:"+repo.Remote.Head.SHA)
+		}
 	}
 	// The origin namespaces the module's cache volumes, so the same files
 	// served from two origins must not share the execs that create them.

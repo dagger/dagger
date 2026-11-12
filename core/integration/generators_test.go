@@ -24,6 +24,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/containerd/continuity/fs"
+	"github.com/creack/pty"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
@@ -34,6 +35,46 @@ type GeneratorsSuite struct{}
 
 func TestGenerators(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(GeneratorsSuite{})
+}
+
+func (GeneratorsSuite) TestGenerateWithRootModuleFlagTTY(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	modDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "dagger-module.toml"), []byte(`name = "writer"
+engineVersion = "v1.0.0-beta.20"
+[runtime]
+source = "dang"
+`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "main.dang"), []byte(`type Writer {
+  pub write(ws: Workspace!): Changeset! @generate {
+    let before = ws.directory(".")
+    before.withNewFile("generated.txt", "generated\n").changes(before)
+  }
+}
+`), 0o644))
+
+	console, err := newTUIConsole(t, 30*time.Second)
+	require.NoError(t, err)
+	defer console.Close()
+	tty := console.Tty()
+	require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 24, Cols: 120}))
+	cmd := hostDaggerCommandRaw(ctx, t, workdir, "--workspace", workdir, "-m", modDir, "generate", "-y")
+	cmd.Env = append(cmd.Env, "DAGGER_PROGRESS=tty")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
+	require.NoError(t, cmd.Start())
+	go console.ExpectEOF()
+
+	// The broken CLI finishes discovery, then waits forever in a second Run
+	// on the same frontend. Bound the process rather than the output reader:
+	// the TUI can keep redrawing while the command makes no progress.
+	timedOut := time.AfterFunc(30*time.Second, func() { _ = cmd.Process.Kill() })
+	err = cmd.Wait()
+	require.True(t, timedOut.Stop(), "generate hung after filter discovery")
+	require.NoError(t, err)
+	contents, err := os.ReadFile(filepath.Join(workdir, "generated.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "generated\n", string(contents))
 }
 
 func generatorsTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
@@ -1317,10 +1358,11 @@ func (GeneratorsSuite) TestWorkspaceGenerateReportsLoadFailureDetail(ctx context
 
 	requireSkipDetail := func(t *testctx.T, out string) {
 		t.Helper()
-		// The compile error is the reason broken-build was skipped: the go
-		// build output follows the load error.
+		// The compile error is the reason broken-build was skipped: the
+		// compiler's output follows the load error, with the exit code of the
+		// compile, which the Go SDK runs per package.
 		require.Contains(t, out, "modules/broken-build")
-		require.Contains(t, out, "exit code: 1")
+		require.Contains(t, out, "exit code: 2")
 		require.Contains(t, out, "undefined: intentionallyUndefinedSymbol")
 		// Missing generated files: skipped, without the misleading hint.
 		require.Contains(t, out, "modules/ungenerated")

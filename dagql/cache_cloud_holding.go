@@ -24,6 +24,54 @@ func (res *sharedResult) cloudHoldingLocked() (HolderKey, *holding) {
 	return HolderKey{}, nil
 }
 
+// imageHoldingLocked returns res's image holding and its key, if it has one:
+// the engine image ships res, and the holding carries the image's offers of
+// its parts. Requires egraphMu.
+func (res *sharedResult) imageHoldingLocked() (HolderKey, *holding) {
+	for key, h := range res.holders {
+		if key.Cache == imageCacheID {
+			return key, h
+		}
+	}
+	return HolderKey{}, nil
+}
+
+// offerHoldingLocked returns the holding whose offers supply res's parts: its
+// image holding, whose content is on the engine's own disk, or else its Cloud
+// holding. Requires egraphMu.
+func (res *sharedResult) offerHoldingLocked() (HolderKey, *holding) {
+	if key, h := res.imageHoldingLocked(); h != nil {
+		return key, h
+	}
+	return res.cloudHoldingLocked()
+}
+
+// noteImageCopyLocked records that the engine image ships res, as the image's
+// bundle numbers it. The image holding stores a record, which doesn't expire.
+// Requires egraphMu.
+func (res *sharedResult) noteImageCopyLocked(number uint64) {
+	key, h := res.imageHoldingLocked()
+	if h == nil {
+		h = &holding{}
+	} else if key.Number != number {
+		delete(res.holders, key)
+	}
+	if res.holders == nil {
+		res.holders = make(map[HolderKey]*holding)
+	}
+	res.holders[HolderKey{Cache: imageCacheID, Number: number}] = h
+}
+
+// noteSenderCopyLocked records res's counterpart in the cache a merge is
+// from: the Cloud's, or the engine image's. Requires egraphMu.
+func (res *sharedResult) noteSenderCopyLocked(from CacheID, number uint64, stored bool, expiresAtUnix int64) {
+	if from == imageCacheID {
+		res.noteImageCopyLocked(number)
+		return
+	}
+	res.noteCloudCopyLocked(number, stored, expiresAtUnix)
+}
+
 // noteCloudCopyLocked records res's Cloud counterpart as the latest message
 // about it names it: the Cloud entry number, whether that entry stores a
 // record, and the record's expiry (0 for none). The one Cloud holding takes
@@ -49,21 +97,22 @@ func (res *sharedResult) noteCloudCopyLocked(number uint64, stored bool, expires
 	h.expiresAtUnix = expiresAtUnix
 }
 
-// partOfferLocked returns the Cloud's offer of res's part at key, or nil.
-// Requires egraphMu.
+// partOfferLocked returns the offer of res's part at key, the image's or the
+// Cloud's (offerHoldingLocked), or nil. Requires egraphMu.
 func (res *sharedResult) partOfferLocked(key string) *partOffer {
-	_, h := res.cloudHoldingLocked()
+	_, h := res.offerHoldingLocked()
 	if h == nil {
 		return nil
 	}
 	return h.parts[key].offer
 }
 
-// partOffersLocked yields the Cloud's offers of res's parts by part address
-// key. A caller may retire the offer it is given. Requires egraphMu.
+// partOffersLocked yields the offers of res's parts by part address key, the
+// image's or the Cloud's (offerHoldingLocked). A caller may retire the offer
+// it is given. Requires egraphMu.
 func (res *sharedResult) partOffersLocked() iter.Seq2[string, *partOffer] {
 	return func(yield func(string, *partOffer) bool) {
-		_, h := res.cloudHoldingLocked()
+		_, h := res.offerHoldingLocked()
 		if h == nil {
 			return
 		}
@@ -75,7 +124,8 @@ func (res *sharedResult) partOffersLocked() iter.Seq2[string, *partOffer] {
 	}
 }
 
-// hasPartOffersLocked reports whether the Cloud offers res any part.
+// hasPartOffersLocked reports whether the image or the Cloud offers res any
+// part.
 // Requires egraphMu.
 func (res *sharedResult) hasPartOffersLocked() bool {
 	for range res.partOffersLocked() {

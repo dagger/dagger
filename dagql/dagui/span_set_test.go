@@ -2,9 +2,11 @@ package dagui
 
 import (
 	"encoding/binary"
+	"math"
 	"testing"
 	"time"
 
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -131,5 +133,46 @@ func TestSpanSetStableForEqualStarts(t *testing.T) {
 	got := set.Spans()
 	if len(got) != 3 || got[0] != first || got[1] != second || got[2] != third {
 		t.Fatalf("order = %v", got)
+	}
+}
+
+// Most spans arrive once, already ended, and each tries to leave the
+// RunningSpans of every ancestor it never joined. That must not cost a scan
+// of those sets, or a run with many spans running at once ingests each span
+// in time proportional to how many are running, and the CLI falls behind the
+// engine's telemetry until its shutdown deadline drops the end of the run.
+func TestIngestCostDoesNotGrowWithRunningSpans(t *testing.T) {
+	const n, depth = 5_000, 20
+	type liveRun struct{ running, ended [][]sdktrace.ReadOnlySpan }
+	export := func(db *DB, batches [][]sdktrace.ReadOnlySpan) {
+		for _, batch := range batches {
+			if err := db.ExportSpans(t.Context(), batch); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// ingest times only the ended spans: starting the running spans costs
+	// time in proportion to how many there are, and isn't what's measured.
+	ingest := func(run liveRun) time.Duration {
+		db := NewDB()
+		export(db, run.running)
+		start := time.Now()
+		export(db, run.ended)
+		return time.Since(start)
+	}
+	var few, many liveRun
+	few.running, few.ended = concurrentLiveTrace(n, 100, depth)
+	many.running, many.ended = concurrentLiveTrace(n, 5_000, depth)
+	// Alternate the two, so that other work on a shared machine slows both
+	// alike, and keep the fastest of each.
+	fastFew, fastMany := time.Duration(math.MaxInt64), time.Duration(math.MaxInt64)
+	for range 5 {
+		fastFew = min(fastFew, ingest(few))
+		fastMany = min(fastMany, ingest(many))
+	}
+	// Scanning made this about 14x, and 47x with the race detector; without
+	// the scan it's about 1.1x, and under 2x on a busy machine.
+	if ratio := float64(fastMany) / float64(fastFew); ratio > 5 {
+		t.Fatalf("ingesting %d ended spans took %s with 100 spans running and %s with 5000 (%.1fx)", n, fastFew, fastMany, ratio)
 	}
 }

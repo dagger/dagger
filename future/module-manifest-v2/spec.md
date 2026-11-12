@@ -85,8 +85,9 @@ A version 2 read ignores the previous fields rather than rejecting them.
 This rule disappears once version 2 covers dependencies. The engine keeps it in
 `core/modules/config_fat_manifest.go`, which names the steps to remove it.
 
-A version 2 manifest accepts `name` and `entrypoint` and nothing else, so a
-`manifestVersion` key is rejected as an unsupported key. An earlier draft of
+A version 2 manifest accepts `name`, `include`, `entrypoint` and an
+entrypoint's `dependencies`, and nothing else, so a `manifestVersion` key is
+rejected as an unsupported key. An earlier draft of
 this design required that key, but no released engine ever read or wrote it,
 so no manifest in the wild carries it.
 
@@ -151,6 +152,36 @@ filesystem. Use a scheme when the value must be unambiguous.
 
 The manifest name is the module name. The entrypoint cannot replace it.
 
+### Files outside the module directory
+
+`include` lists the files outside the module directory that the module builds
+from, as patterns relative to the module directory. A pattern that starts with
+`!` excludes what the patterns before it include:
+
+```toml
+name = "engine-dev"
+include = ["../../../go.mod", "../../../util/parallel/*.go", "!../../../util/parallel/*_test.go"]
+```
+
+The engine loads these files with the module's own files when the module
+loads, as it loads a legacy module's `include`. They are part of
+`contextDirectory` and of the module digest, so they reach the cache key of
+every function call and of `types`. A pattern can't leave the context root.
+A directory module without `sources` keeps the whole directory its caller
+passed, which holds the included files already. A fixed list belongs here
+rather than in `sources`, which the engine has to run before it can know the
+list.
+
+A manifest that declares `include`, even as an empty list, replaces the
+entrypoint's `sources` member: the engine does not run `sources`, and a
+directory module keeps its own and included files of the directory, as
+`sources` would. An engine that predates `include` ignores the key and runs
+`sources`, so a module that carries both loads on either engine, with the same
+files when both list them. One difference remains: a Git or directory module's
+included files keep files that `.gitignore` ignores, which a `sources` read
+with `gitignore: true` drops. A fat manifest's `include` belongs to the pre-v2
+format too, so it does not replace `sources`.
+
 ## Module entrypoint
 
 Each entrypoint provides this interface to the engine:
@@ -198,7 +229,7 @@ workspace boundary can be above the module directory. Thus, the entrypoint can
 read a file such as `go.mod` above the module directory. A file that the
 entrypoint reads from the workspace is not part of the module digest, so a
 function result with the default cache policy does not follow a change to it.
-Return such files from `sources` instead.
+List such files in the manifest's `include`, or return them from `sources`.
 
 ### Module sources
 
@@ -225,7 +256,8 @@ interface ModuleEntrypoint {
 ```
 
 The engine calls `sources` while it loads the module source, before anything
-reads the module digest. The module context becomes the returned directory
+reads the module digest, unless the manifest declares `include` (see
+[Files outside the module directory](#files-outside-the-module-directory)). The module context becomes the returned directory
 plus the module's own files: its manifest, its source directory and its
 `include` paths, as the engine loads them without the member. When the
 returned directory and the module's own files hold the same path, the module's
@@ -310,9 +342,10 @@ it. The workspace cannot replace these fields: a Git or directory module is not
 in the workspace, and the module digest does not cover workspace files.
 
 For a local or Git module, `contextDirectory` holds the manifest, the module
-directory and the files that `sources` returns, at their paths from the context
-root. A local module context applies `.gitignore`. A directory module source
-without `sources` keeps the whole directory that its caller passed.
+directory, the files the manifest includes and the files that `sources`
+returns, at their paths from the context root. A local module context applies
+`.gitignore`. A directory module source without `sources` keeps the whole
+directory that its caller passed.
 
 ### Type rules
 

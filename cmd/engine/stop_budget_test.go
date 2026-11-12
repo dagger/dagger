@@ -200,6 +200,26 @@ func TestStopBudget(t *testing.T) {
 		require.Equal(t, time.Unix(1050, 0), deadline, "after the budget: no time at all")
 	})
 
+	t.Run("with the state discarded, a flush fits in what the exports leave", func(t *testing.T) {
+		flushDeadline := func(t *testing.T, js string) time.Time {
+			t.Helper()
+			cfg, err := config.Load(strings.NewReader(js))
+			require.NoError(t, err)
+			now := time.Unix(1000, 0)
+			b := newStopBudget(func() time.Time { return now })
+			b.setTimeout(50 * time.Second)
+			b.setFlushTimeout(stopFlushTimeoutSetting(cfg))
+			b.start()
+			ctx, cancel := b.flushContext(context.Background())
+			defer cancel()
+			deadline, ok := ctx.Deadline()
+			require.True(t, ok)
+			return deadline
+		}
+		require.Equal(t, time.Unix(1010, 0), flushDeadline(t, `{"state":{"discarded":true}}`))
+		require.Equal(t, time.Unix(1030, 0), flushDeadline(t, `{}`), "kept state: the flush timeout")
+	})
+
 	t.Run("a stop that starts without a signal starts the budget itself", func(t *testing.T) {
 		now := time.Unix(1000, 0)
 		b := newStopBudget(func() time.Time { return now })

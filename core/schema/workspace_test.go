@@ -516,7 +516,7 @@ func checkpointHostHistoryOutcome(t *testing.T, ctx context.Context, register fu
 	for _, ended := range recorder.Ended() {
 		for _, kv := range ended.Attributes() {
 			if strings.HasPrefix(string(kv.Key), "git.history.donor_") {
-				attrs[string(kv.Key)] = kv.Value.Emit()
+				attrs[string(kv.Key)] = kv.Value.String()
 			}
 		}
 	}
@@ -673,7 +673,75 @@ func TestWorkspaceMountedPath(t *testing.T) {
 		empty := &core.Workspace{}
 		require.False(t, empty.MountedPath("anything"))
 		require.False(t, empty.HasMountsUnder("."))
+		require.False(t, empty.IsMountPoint("anything"))
 	})
+
+	t.Run("mount points", func(t *testing.T) {
+		require.True(t, ws.IsMountPoint("deps/vendored"))
+		require.True(t, ws.IsMountPoint(".refs/notes.txt"))
+		require.False(t, ws.IsMountPoint("deps/vendored/lib"))
+		require.False(t, ws.IsMountPoint("deps"))
+		require.NoError(t, guardMountPointRemoval(ws, "deps/vendored/lib"))
+		require.ErrorContains(t, guardMountPointRemoval(ws, "deps/vendored"), "use withoutMount")
+	})
+
+	t.Run("swapping the mounts tree keeps mount points", func(t *testing.T) {
+		swapped := ws.WithMountsDir(dagql.ObjectResult[*core.Directory]{})
+		require.Equal(t, ws.MountPoints(), swapped.MountPoints())
+	})
+}
+
+// TestSplitPatchAtMounts covers how Workspace.withPatchFile divides a patch
+// between the overlay and the mounts tree.
+func TestSplitPatchAtMounts(t *testing.T) {
+	ws := (&core.Workspace{}).
+		WithMounted(dagql.ObjectResult[*core.Directory]{}, ".refs/notes.txt").
+		WithMounted(dagql.ObjectResult[*core.Directory]{}, "deps/vendored")
+	section := func(old, new string, cp bool) core.PatchSection {
+		return core.PatchSection{
+			PatchFilePaths: core.PatchFilePaths{Old: old, New: new, Copy: cp},
+			Patch:          []byte("diff --git a/" + old + " b/" + new + "\n"),
+		}
+	}
+
+	root, mounted, err := splitPatchAtMounts(ws, []core.PatchSection{
+		section("src/main.go", "src/main.go", false),
+		section("deps/vendored/lib.go", "deps/vendored/lib.go", false),
+		section("", "deps/vendored/new.go", false),
+		section(".refs/notes.txt", ".refs/notes.txt", false),
+		section("deps/vendored/a.go", "deps/vendored/b.go", false),
+		section("deps/other.go", "", false),
+	})
+	require.NoError(t, err)
+	paths := func(sections []workspacePatchSection) (out []string) {
+		for _, s := range sections {
+			out = append(out, s.oldPath+">"+s.newPath)
+		}
+		return out
+	}
+	require.Equal(t, []string{"src/main.go>src/main.go", "deps/other.go>"}, paths(root))
+	require.Equal(t, []string{
+		"deps/vendored/lib.go>deps/vendored/lib.go",
+		">deps/vendored/new.go",
+		".refs/notes.txt>.refs/notes.txt",
+		"deps/vendored/a.go>deps/vendored/b.go",
+	}, paths(mounted))
+
+	for name, tc := range map[string]struct {
+		section core.PatchSection
+		err     string
+	}{
+		"rename out of a mount":    {section("deps/vendored/a.go", "src/a.go", false), "across a workspace mount boundary"},
+		"copy into a mount":        {section("src/a.go", "deps/vendored/a.go", true), "across a workspace mount boundary"},
+		"delete a file mount":      {section(".refs/notes.txt", "", false), "is a mount point"},
+		"rename a mount point":     {section("deps/vendored", "deps/vendored/x", false), "is a mount point"},
+		"names the workspace root": {section("", ".", false), "patch names the workspace root"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := splitPatchAtMounts(ws, []core.PatchSection{tc.section})
+			require.ErrorContains(t, err, tc.err)
+		})
+	}
 }
 
 // TestInitialWorkspaceConfigOmitsCheckGenerated verifies the default dagger.toml
@@ -693,29 +761,28 @@ func TestInitialWorkspaceConfigOmitsCheckGenerated(t *testing.T) {
 }
 
 func TestMatchWorkspaceInclude(t *testing.T) {
-	ctx := context.Background()
 	node := modTreeNode("go", "lint")
 
 	t.Run("empty include matches everything", func(t *testing.T) {
-		match, err := matchWorkspaceInclude(ctx, node, nil)
+		match, err := matchWorkspaceInclude(node, nil)
 		require.NoError(t, err)
 		require.True(t, match)
 	})
 
 	t.Run("module-prefixed pattern matches", func(t *testing.T) {
-		match, err := matchWorkspaceInclude(ctx, node, []string{"go:lint"})
+		match, err := matchWorkspaceInclude(node, []string{"go:lint"})
 		require.NoError(t, err)
 		require.True(t, match)
 	})
 
 	t.Run("wildcard module pattern matches", func(t *testing.T) {
-		match, err := matchWorkspaceInclude(ctx, node, []string{"go:**"})
+		match, err := matchWorkspaceInclude(node, []string{"go:**"})
 		require.NoError(t, err)
 		require.True(t, match)
 	})
 
 	t.Run("other module does not match", func(t *testing.T) {
-		match, err := matchWorkspaceInclude(ctx, node, []string{"helm:**"})
+		match, err := matchWorkspaceInclude(node, []string{"helm:**"})
 		require.NoError(t, err)
 		require.False(t, match)
 	})
@@ -729,7 +796,6 @@ func TestCurrentArtifactOverlayNarrowing(t *testing.T) {
 }
 
 func TestMatchWorkspaceIncludeCurrentSpelling(t *testing.T) {
-	ctx := t.Context()
 	mod, err := dagql.NewResultForCall(&core.Module{SourceOverrides: &core.SourceOverrides{EngineVersion: "v1.0.0-beta.20"}}, &dagql.ResultCall{})
 	require.NoError(t, err)
 	node := modTreeNode("e2e-tests", "k8SCluster", "e2ETest")
@@ -744,12 +810,12 @@ func TestMatchWorkspaceIncludeCurrentSpelling(t *testing.T) {
 		{"{e2e-tests,other}:k8s-cluster", true},
 		{"e-2-e-tests:k-8-s-cluster:e-2-e-test", false},
 	} {
-		match, err := matchWorkspaceInclude(ctx, node, []string{tc.pattern})
+		match, err := matchWorkspaceInclude(node, []string{tc.pattern})
 		require.NoError(t, err)
 		require.Equal(t, tc.want, match, tc.pattern)
 	}
 	node.Parent.Parent.WorkspaceMain = true
-	match, err := matchWorkspaceInclude(ctx, node, []string{"k8s-cluster:e2e-test"})
+	match, err := matchWorkspaceInclude(node, []string{"k8s-cluster:e2e-test"})
 	require.NoError(t, err)
 	require.True(t, match)
 	require.Equal(t, "e2ETest", node.Name, "include matching does not rename GraphQL fields")
@@ -793,7 +859,6 @@ func TestWorkspaceConfigWithCompatFallback(t *testing.T) {
 }
 
 func TestArtifactNodesByInclude(t *testing.T) {
-	ctx := context.Background()
 	for _, test := range []struct {
 		name    string
 		main    bool
@@ -813,7 +878,7 @@ func TestArtifactNodesByInclude(t *testing.T) {
 			matched := 0
 			for _, node := range nodes {
 				node.Parent.WorkspaceMain = test.main
-				match, err := matchWorkspaceInclude(ctx, node, test.include)
+				match, err := matchWorkspaceInclude(node, test.include)
 				require.NoError(t, err)
 				if match {
 					matched++
@@ -826,7 +891,6 @@ func TestArtifactNodesByInclude(t *testing.T) {
 
 // A generator selector also includes its stale check.
 func TestGenerateCheckPatterns(t *testing.T) {
-	ctx := context.Background()
 	for _, test := range []struct {
 		name     string
 		main     bool
@@ -850,7 +914,7 @@ func TestGenerateCheckPatterns(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			node := modTreeNode("alpha-sdk", "generate", "stale")
 			node.Parent.Parent.WorkspaceMain = test.main
-			match, err := matchWorkspaceInclude(ctx, node, test.patterns)
+			match, err := matchWorkspaceInclude(node, test.patterns)
 			require.NoError(t, err)
 			require.Equal(t, test.included, match)
 		})

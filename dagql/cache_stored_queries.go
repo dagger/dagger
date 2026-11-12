@@ -30,6 +30,47 @@ func (c *Cache) EquivalentEntries(dig string) []uint64 {
 	return numbers
 }
 
+// TermEntries returns the numbers of the entries a call's term matches, as
+// the structural lookup matches it: its self digest over its inputs'
+// classes. They are the entries of the matching terms' output classes,
+// sorted, read under one hold, as EquivalentEntries names a class's. It is
+// nil when an input has no class or no term matches.
+func (c *Cache) TermEntries(self digest.Digest, inputs []digest.Digest) []uint64 {
+	if self == "" {
+		return nil
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	ids, missing := c.termInputClassesLocked(inputs)
+	if missing >= 0 {
+		return nil
+	}
+	termSet := c.egraphTermsByTermDigest[calcEgraphTermDigest(self, ids)]
+	if termSet == nil {
+		return nil
+	}
+	seen := map[eqClassID]struct{}{}
+	var numbers []uint64
+	for termID := range termSet.Items() {
+		term := c.egraphTerms[termID]
+		if term == nil {
+			continue
+		}
+		root := c.eqClassRootLocked(term.outputEqID)
+		if _, ok := seen[root]; ok || root == 0 {
+			continue
+		}
+		seen[root] = struct{}{}
+		for id := range c.outputEqClassResults[root] {
+			if c.resultsByID[id] != nil {
+				numbers = append(numbers, uint64(id))
+			}
+		}
+	}
+	slices.Sort(numbers)
+	return slices.Compact(numbers)
+}
+
 // PartAvailabilityState is what a blob-backed cache has of an entry's part.
 type PartAvailabilityState uint8
 
@@ -172,6 +213,49 @@ func (c *Cache) LiveBlobs() ([]digest.Digest, error) {
 		}
 	}
 	return slices.Sorted(maps.Keys(live)), nil
+}
+
+// LivePacks returns every pack a stored part's chain names, in the pool or
+// not, sorted: the packs a sweep of the blob store keeps. Only a blob-backed
+// cache answers.
+func (c *Cache) LivePacks() ([]digest.Digest, error) {
+	if !c.blobBacked {
+		return nil, fmt.Errorf("live packs: the cache has no blob store")
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	live := map[digest.Digest]struct{}{}
+	for _, res := range c.resultsByID {
+		for _, part := range res.storedParts {
+			for _, pack := range part.Chain.Packs {
+				live[pack] = struct{}{}
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(live)), nil
+}
+
+// LivePackMembers maps every layer a stored part's chain stores in a pack,
+// in the pool or not, to that pack: the members the service knows to be
+// present through their packs. A layer that stored parts name in more than
+// one pack maps to the lowest pack ID. Only a blob-backed cache answers.
+func (c *Cache) LivePackMembers() (map[digest.Digest]digest.Digest, error) {
+	if !c.blobBacked {
+		return nil, fmt.Errorf("live pack members: the cache has no blob store")
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	members := map[digest.Digest]digest.Digest{}
+	for _, res := range c.resultsByID {
+		for _, part := range res.storedParts {
+			for layer, pack := range part.Chain.Packs {
+				if current, ok := members[layer]; !ok || pack < current {
+					members[layer] = pack
+				}
+			}
+		}
+	}
+	return members, nil
 }
 
 // BlobCacheUsage is what a blob-backed cache holds, as its limits count it.

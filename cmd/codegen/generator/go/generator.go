@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/format"
 	"go/token"
+	"go/version"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -42,7 +43,25 @@ const (
 	internalDaggerCoreDir = "internal/dagger/core"
 )
 
+// goVersion is the Go release codegen is built with: an existing go.mod
+// that asks for a newer one is refused.
 var goVersion = strings.TrimPrefix(runtime.Version(), "go")
+
+// newGoModVersion is the go line of a go.mod codegen creates: goVersion's
+// language version at patch 0. The patch release codegen happens to be
+// built with says nothing about the toolchain that builds the module, which
+// may be an earlier patch of the same release; a go line naming the patch
+// would make that toolchain refuse the module.
+var newGoModVersion = goModVersion(runtime.Version())
+
+func goModVersion(goRelease string) string {
+	lang := version.Lang(goRelease)
+	if lang == "" {
+		// a development build has no language version: keep the release
+		return strings.TrimPrefix(goRelease, "go")
+	}
+	return strings.TrimPrefix(lang, "go") + ".0"
+}
 
 type GoGenerator struct {
 	Config generator.Config

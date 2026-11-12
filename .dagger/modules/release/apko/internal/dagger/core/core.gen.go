@@ -14779,3 +14779,19 @@ func Load[T Loadable[T]](ctx context.Context, root *Query, id ID) (T, error) {
 
 	return zero.WithGraphQLQuery(selectNode(root.query, id, expectedType)), nil
 }
+
+// LoadedNode is the constraint for objects Loaded can build: every generated
+// object client type with an ID.
+type LoadedNode[T any] interface {
+	Loadable[T]
+	withLoadedID(*querybuilder.Selection, ID) T
+}
+
+// Loaded returns the object whose ID is id, as Ref does, knowing that ID:
+// passing it as an argument passes id as it is, without asking the engine for
+// it again. id is one the engine returned, such as each ID a list field
+// returns: a handle to a result the engine already evaluated.
+func Loaded[T LoadedNode[T]](root *Query, id ID) T {
+	var zero T
+	return zero.withLoadedID(selectNode(root.query, id, zero.XXX_GraphQLType()), id)
+}

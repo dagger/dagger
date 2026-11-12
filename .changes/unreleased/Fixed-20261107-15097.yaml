@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  `--oci-max-parallelism` and the `max-parallelism` engine option limit how
+  many execs run at once again. Since v0.21.0 the engine accepted the setting
+  but ignored it. An exec stops counting toward the limit once its command
+  calls the Dagger API, so module function calls and nested `dagger` CLIs no
+  longer deadlock an engine with a low limit.
+time: 2026-11-07T00:00:00Z
+custom:
+  Author: sipsma
+  PR: 15097

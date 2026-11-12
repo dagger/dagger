@@ -331,6 +331,10 @@ type SpanSnapshot struct {
 	RollUpLogs   bool `json:",omitempty"`
 	RollUpSpans  bool `json:",omitempty"`
 
+	// FunctionPlumbing marks the work that runs a module function call
+	// without being its body (telemetryattrs.UIFunctionPlumbingAttr).
+	FunctionPlumbing bool `json:",omitempty"`
+
 	// Check status (see CheckName)
 	CheckPassed bool `json:",omitempty"`
 
@@ -366,6 +370,10 @@ type SpanSnapshot struct {
 	// CheckGenerator is the address of the generator a stale staleness check
 	// covers: running it fixes the check. Empty when the generator failed.
 	CheckGenerator string `json:",omitempty"`
+
+	// CheckCollectionGroup marks the check that groups a collection's item
+	// checks. It isn't a re-runnable unit itself: its items are.
+	CheckCollectionGroup bool `json:",omitempty"`
 
 	// Generator name
 	GeneratorName string `json:",omitempty"`
@@ -555,6 +563,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.UIEncapsulateAttr:
 		snapshot.Encapsulate = val.(bool)
 
+	case telemetryattrs.UIFunctionPlumbingAttr:
+		snapshot.FunctionPlumbing = val.(bool)
+
 	case telemetry.UIEncapsulatedAttr:
 		snapshot.Encapsulated = val.(bool)
 
@@ -591,6 +602,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.CheckGeneratorAttr:
 		snapshot.CheckGenerator = val.(string)
+
+	case telemetryattrs.CheckCollectionGroupAttr:
+		snapshot.CheckCollectionGroup = val.(bool)
 
 	case telemetry.GeneratorNameAttr:
 		snapshot.GeneratorName = val.(string)

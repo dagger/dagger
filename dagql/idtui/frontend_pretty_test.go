@@ -1700,6 +1700,144 @@ func TestRerunSuggestionHookReplacesRunLocally(t *testing.T) {
 	}
 }
 
+// A collection grouped under one check, as the CLI reports it: two failed
+// items and one passing item beneath the group.
+const (
+	collectionGroup      = "packages/tests/verify"
+	collectionBarItem    = "dag://?check=verify&view-package=left&view-case=Bar"
+	collectionBazItem    = "dag://?check=verify&view-package=right&view-case=Baz"
+	collectionPassedItem = "dag://?check=verify&view-package=left&view-case=Foo"
+)
+
+// collectionCheckSpans returns the group (span 1) and its items (spans 2-4),
+// with the group beneath parent.
+func collectionCheckSpans(parent dagui.SpanID) []dagui.SpanSnapshot {
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	failed := sdktrace.Status{Code: codes.Error}
+	groupID := prettyTestSpanID(1)
+	spans := []dagui.SpanSnapshot{{
+		ID: groupID, TraceID: prettyTestTraceID(), Name: collectionGroup, ParentID: parent,
+		StartTime: start, EndTime: end, Status: failed, Final: true,
+		CheckName: collectionGroup, CheckCollectionGroup: true,
+	}}
+	for i, item := range []string{collectionBarItem, collectionBazItem, collectionPassedItem} {
+		status := failed
+		if item == collectionPassedItem {
+			status = sdktrace.Status{Code: codes.Ok}
+		}
+		spans = append(spans, dagui.SpanSnapshot{
+			ID: prettyTestSpanID(byte(i + 2)), TraceID: prettyTestTraceID(), Name: item, ParentID: groupID,
+			StartTime: start, EndTime: end, Status: status, Final: true,
+			CheckName: item, CheckPassed: item == collectionPassedItem,
+		})
+	}
+	return spans
+}
+
+// TestChecksHeaderCountsCollectionItems covers the top CHECKS tally: a
+// collection group counts as the items that ran, as it did before items were
+// grouped, rather than as one check.
+func TestChecksHeaderCountsCollectionItems(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(10)
+	start := time.Unix(100, 0)
+	spans := append([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "dagger check", StartTime: start, EndTime: start.Add(3 * time.Second), Final: true},
+		{
+			ID: prettyTestSpanID(11), TraceID: prettyTestTraceID(), Name: "lint", ParentID: rootID,
+			StartTime: start, EndTime: start.Add(time.Second), Final: true,
+			CheckName: "lint", CheckPassed: true,
+		},
+	}, collectionCheckSpans(rootID)...)
+	db := dagui.NewDB()
+	db.ImportSnapshots(spans)
+	db.SetPrimarySpan(rootID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.checksReport(tuist.Context{Width: 120}, r, false)
+	if len(lines) == 0 {
+		t.Fatal("checksReport returned no lines")
+	}
+	// The group's two failed items, plus lint and the passing item.
+	if !strings.HasPrefix(lines[0], "CHECKS") || !strings.Contains(lines[0], "2 failed") || !strings.Contains(lines[0], "2 passed") {
+		t.Fatalf("top CHECKS header = %q, want the items counted (2 failed, 2 passed)\n%s", lines[0], strings.Join(lines, "\n"))
+	}
+}
+
+// TestRerunSectionNamesFailedCollectionItems covers a collection grouped under
+// one check: running the group would rerun every item, so each failed item
+// gets its own local command, while the native CI re-run keeps the group.
+func TestRerunSectionNamesFailedCollectionItems(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	const (
+		group  = collectionGroup
+		bar    = collectionBarItem
+		baz    = collectionBazItem
+		passed = collectionPassedItem
+	)
+	groupID := prettyTestSpanID(1)
+	db := dagui.NewDB()
+	db.ImportSnapshots(collectionCheckSpans(dagui.SpanID{}))
+	db.SetPrimarySpan(groupID)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+	fe.ciMeta = &ciContext{commit: "abc123", isNativeCI: true}
+	localSection := func(lines []string) string {
+		i := indexOfLine(lines, "RUN LOCALLY")
+		if i < 0 {
+			t.Fatalf("missing RUN LOCALLY section:\n%s", strings.Join(lines, "\n"))
+		}
+		return strings.Join(lines[i:], "\n")
+	}
+
+	lines := fe.renderRerunSection(nil)
+	joined := strings.Join(lines, "\n")
+	local := localSection(lines)
+	for _, item := range []string{bar, baz} {
+		if !strings.Contains(local, fmt.Sprintf("dagger check %q", item)) {
+			t.Fatalf("missing local command for failed item %s:\n%s", item, joined)
+		}
+	}
+	if strings.Contains(local, fmt.Sprintf("dagger check %q", group)) || strings.Contains(local, passed) {
+		t.Fatalf("local commands should name only the failed items:\n%s", joined)
+	}
+	if !strings.Contains(joined, fmt.Sprintf("dagger cloud checks rerun --commit abc123 --check %q", group)) ||
+		strings.Count(joined, "dagger cloud checks rerun") != 1 {
+		t.Fatalf("CI re-run should target the collection group once:\n%s", joined)
+	}
+
+	// Zoomed to one failed item, only that item is suggested locally, and the
+	// CI re-run still targets its group.
+	for _, zoom := range []struct {
+		id   dagui.SpanID
+		want []string
+	}{
+		{prettyTestSpanID(3), []string{baz}},
+		{groupID, []string{bar, baz}},
+	} {
+		fe.ZoomedSpan = zoom.id
+		fe.recalculateViewLocked()
+		lines = fe.renderRerunSection(db.Spans.Map[zoom.id])
+		joined = strings.Join(lines, "\n")
+		local = localSection(lines)
+		if got := strings.Count(local, "dagger check "); got != len(zoom.want) {
+			t.Fatalf("zoomed to %s: want %d local commands, got %d:\n%s", zoom.id, len(zoom.want), got, joined)
+		}
+		for _, item := range zoom.want {
+			if !strings.Contains(local, fmt.Sprintf("dagger check %q", item)) {
+				t.Fatalf("zoomed to %s: missing local command for %s:\n%s", zoom.id, item, joined)
+			}
+		}
+		if !strings.Contains(joined, fmt.Sprintf("dagger cloud checks rerun --commit abc123 --check %q", group)) ||
+			strings.Count(joined, "dagger cloud checks rerun") != 1 {
+			t.Fatalf("zoomed to %s: CI re-run should target the collection group once:\n%s", zoom.id, joined)
+		}
+	}
+}
+
 func TestOutermostSurfacedCheckRollsUpNestedName(t *testing.T) {
 	db := rerunReportDB(t)
 	fe := NewWithDB(io.Discard, db)

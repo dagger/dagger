@@ -1,0 +1,11 @@
+kind: Changed
+body: |
+  The embedded Dang is now 2.4 (vito/dang v2.4.1). Modules with no `dang`
+  version get it from `engineVersion` v1.0.0-beta.28 on; older ones keep 2.1.
+  Pin `dang = "2.1"` in `dang.toml`, or run `dang migrate`. At every version,
+  values print as Dang literals and objects as lazy queries (select `.id`), and
+  bare `JSON` is Dang's scalar (Dagger's is `Dagger.JSON`). See the [release notes](https://danglang.org/releases/v2.4.1.html).
+time: 2026-11-10T04:30:00Z
+custom:
+  Author: vito
+  PR: "15128"

@@ -458,8 +458,6 @@ const (
 	moduleLoadKindExtra   moduleLoadKind = "extra"
 )
 
-const maxParallelModuleResolves = 8
-
 // loadWorkspaceConfig parses the workspace config and returns the keys the file
 // spells out alongside it. Merging an included config needs that presence information,
 // and re-reading the file to compute it later would be a second host round trip.
@@ -1277,14 +1275,27 @@ func (srv *Server) resolveModuleLoadBatch(
 	resolvedLoads := make([]resolvedModuleLoad, len(loads))
 	resolveErrs := make([]error, len(loads))
 
+	// Every load in the batch reads the session's Git workspace through one
+	// result of it. A module source is then one call however many loads reach
+	// it, a dependency they share most of all, so concurrent loads join it
+	// rather than each loading it again.
+	var gitWS dagql.ObjectResult[*core.Workspace]
+	var gitWSErr error
+	if slices.ContainsFunc(loads, func(load moduleLoadRequest) bool { return load.mod.InGitWorkspace }) {
+		gitWS, gitWSErr = sessionGitWorkspace(ctx, client.dag)
+	}
+
 	jobs := parallel.New().
-		WithContextualTracer(true).
-		WithLimit(moduleLoadParallelism(len(loads)))
+		WithContextualTracer(true)
 	for i, load := range loads {
 		i := i
 		load := load
+		if load.mod.InGitWorkspace && gitWSErr != nil {
+			resolveErrs[i] = fmt.Errorf("resolving module source %q: %w", load.mod.Ref, gitWSErr)
+			continue
+		}
 		jobs = jobs.WithJob(moduleLoadJobName(load), func(ctx context.Context) error {
-			resolved, err := srv.resolveModuleLoad(ctx, client.dag, load)
+			resolved, err := srv.resolveModuleLoad(ctx, client.dag, gitWS, load)
 			if err != nil {
 				resolveErrs[i] = err
 				return nil //nolint:nilerr // errors collected for deterministic ordering
@@ -1725,9 +1736,10 @@ func isCoreRootField(field string) bool {
 func (srv *Server) resolveModuleLoad(
 	ctx context.Context,
 	dag *dagql.Server,
+	gitWS dagql.ObjectResult[*core.Workspace],
 	load moduleLoadRequest,
 ) (resolvedModuleLoad, error) {
-	primary, err := srv.resolveModule(ctx, dag, load.mod)
+	primary, err := srv.resolveModule(ctx, dag, gitWS, load.mod)
 	if err != nil {
 		return resolvedModuleLoad{}, err
 	}
@@ -1761,7 +1773,7 @@ func (srv *Server) resolveModuleLoad(
 		if err != nil {
 			return resolvedModuleLoad{}, err
 		}
-		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, toolchainSrc, pending)
+		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, gitWS, toolchainSrc, pending)
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving toolchain module: %w", err)
 		}
@@ -1776,7 +1788,7 @@ func (srv *Server) resolveModuleLoad(
 		if err != nil {
 			return resolvedModuleLoad{}, err
 		}
-		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, src.Self().Blueprint, pending)
+		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, gitWS, src.Self().Blueprint, pending)
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving blueprint module: %w", err)
 		}
@@ -1852,16 +1864,6 @@ func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModu
 		})
 	}
 	return loads
-}
-
-func moduleLoadParallelism(moduleCount int) int {
-	if moduleCount <= 1 {
-		return 1
-	}
-	if moduleCount > maxParallelModuleResolves {
-		return maxParallelModuleResolves
-	}
-	return moduleCount
 }
 
 func moduleProgressName(mod pendingModule) string {
@@ -2141,12 +2143,13 @@ func resolvedModuleLoadIdentity(mod dagql.ObjectResult[*core.Module]) string {
 func (srv *Server) resolveModule(
 	ctx context.Context,
 	dag *dagql.Server,
+	gitWS dagql.ObjectResult[*core.Workspace],
 	mod pendingModule,
 ) (dagql.ObjectResult[*core.Module], error) {
 	var src dagql.ObjectResult[*core.ModuleSource]
 	if mod.InGitWorkspace && mod.WorkspaceDir != "" {
 		var err error
-		src, err = gitWorkspaceModuleSource(ctx, dag, mod.WorkspaceDir, false)
+		src, err = gitWorkspaceModuleSource(ctx, dag, gitWS, mod.WorkspaceDir, false)
 		if err != nil {
 			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 		}
@@ -2188,7 +2191,7 @@ func (srv *Server) resolveModule(
 		}
 	}
 
-	return srv.resolveModuleSourceAsModule(ctx, dag, src, mod)
+	return srv.resolveModuleSourceAsModule(ctx, dag, gitWS, src, mod)
 }
 
 // pendingRelatedModule adapts a related module of a primary module into the
@@ -2255,6 +2258,7 @@ func pendingRelatedModule(
 func (srv *Server) resolveModuleSourceAsModule(
 	ctx context.Context,
 	dag *dagql.Server,
+	gitWS dagql.ObjectResult[*core.Workspace],
 	src dagql.ObjectResult[*core.ModuleSource],
 	mod pendingModule,
 ) (dagql.ObjectResult[*core.Module], error) {
@@ -2272,7 +2276,7 @@ func (srv *Server) resolveModuleSourceAsModule(
 
 	var contextSource dagql.Optional[core.ModuleSourceID]
 	if mod.InGitWorkspace && mod.DefaultPathContextWorkspaceDir != "" {
-		contextSrc, err := gitWorkspaceModuleSource(ctx, dag, mod.DefaultPathContextWorkspaceDir, true)
+		contextSrc, err := gitWorkspaceModuleSource(ctx, dag, gitWS, mod.DefaultPathContextWorkspaceDir, true)
 		if err != nil {
 			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving +defaultPath context of %q: %w", mod.Ref, err)
 		}
@@ -2303,21 +2307,28 @@ func (srv *Server) resolveModuleSourceAsModule(
 	return resolved, nil
 }
 
-// gitWorkspaceModuleSource loads the module source at dir, a
-// workspace-root-relative path, through the session's Git workspace.
-func gitWorkspaceModuleSource(
-	ctx context.Context,
-	dag *dagql.Server,
-	dir string,
-	allowNotExists bool,
-) (dagql.ObjectResult[*core.ModuleSource], error) {
+// sessionGitWorkspace returns the session's own Git workspace, which its
+// workspace modules load from.
+func sessionGitWorkspace(ctx context.Context, dag *dagql.Server) (dagql.ObjectResult[*core.Workspace], error) {
 	// currentWorkspace prefers a workspace an enclosing call bound into the
 	// context; the session's modules load from the session's own.
 	ctx = core.WorkspaceToContext(ctx, dagql.ObjectResult[*core.Workspace]{})
 	var ws dagql.ObjectResult[*core.Workspace]
 	if err := dag.Select(ctx, dag.Root(), &ws, dagql.Selector{Field: "currentWorkspace"}); err != nil {
-		return dagql.ObjectResult[*core.ModuleSource]{}, fmt.Errorf("load current workspace: %w", err)
+		return ws, fmt.Errorf("load current workspace: %w", err)
 	}
+	return ws, nil
+}
+
+// gitWorkspaceModuleSource loads the module source at dir, a
+// workspace-root-relative path, through ws, the session's Git workspace.
+func gitWorkspaceModuleSource(
+	ctx context.Context,
+	dag *dagql.Server,
+	ws dagql.ObjectResult[*core.Workspace],
+	dir string,
+	allowNotExists bool,
+) (dagql.ObjectResult[*core.ModuleSource], error) {
 	args := []dagql.NamedInput{
 		{Name: "path", Value: dagql.String(filepath.ToSlash(filepath.Join("/", dir)))},
 	}

@@ -1,0 +1,312 @@
+package dagql
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path"
+	"strings"
+
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+)
+
+// The engine image's entries carry their parts' layers as files in the image:
+// an image directory holds the bundle and, under blobs/<algorithm>/<encoded>,
+// each layer's blob. An offer of the image names a blob by imageBlobScheme
+// and its digest, never by a path, and the content source reads it from the
+// image directory it was given, through a root that confines every read to
+// that directory.
+
+// imageBlobScheme is the scheme of the addresses of an image's offers.
+const imageBlobScheme = "dagger-image"
+
+// ImageBlobAddress is the address an image's offer gives the blob d.
+func ImageBlobAddress(d digest.Digest) BlobAddress {
+	return BlobAddress{URL: imageBlobPrefix + d.String()}
+}
+
+// ImageBlobPath is where an image directory holds the blob d.
+func ImageBlobPath(d digest.Digest) string {
+	return path.Join("blobs", d.Algorithm().String(), d.Encoded())
+}
+
+const imageBlobPrefix = imageBlobScheme + ":"
+
+func isImageBlobAddress(address BlobAddress) bool {
+	return strings.HasPrefix(address.URL, imageBlobPrefix)
+}
+
+// imageOfferLayers reports whether every layer of offer is addressed in the
+// engine's image, at its own digest. Such an offer is the image's, and nothing
+// else's is. It allocates nothing: Available calls it on every ranking.
+func imageOfferLayers(offer *PersistedPartOffer) bool {
+	if len(offer.Chain.Layers) == 0 {
+		return false
+	}
+	for _, layer := range offer.Chain.Layers {
+		d := layer.Descriptor.Digest
+		address, ok := offer.Chain.Addresses[d]
+		if !ok || !isImageBlobAddress(address) || address.URL[len(imageBlobPrefix):] != string(d) {
+			return false
+		}
+	}
+	return true
+}
+
+// checkSenderAddresses refuses a bundle whose addresses don't belong to its
+// sender: the engine image's bundle addresses every blob in the image, and a
+// bundle from the Cloud addresses none there.
+func checkSenderAddresses(from CacheID, bundle ValueBundle) error {
+	check := func(address BlobAddress) error {
+		image := isImageBlobAddress(address)
+		switch {
+		case from == imageCacheID && !image:
+			return fmt.Errorf("merge values: the image's bundle addresses a blob outside the image: %q", address.URL)
+		case from != imageCacheID && image:
+			return fmt.Errorf("merge values: a bundle from %q addresses a blob in the engine image", from)
+		}
+		return nil
+	}
+	checkChain := func(chain *OfferedChain) error {
+		if chain == nil {
+			return nil
+		}
+		if from == imageCacheID && chain.RenewalKey != "" {
+			return errors.New("merge values: the image's bundle has a renewal key")
+		}
+		for _, address := range chain.Addresses {
+			if err := check(address); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, address := range bundle.Addresses {
+		if err := check(address); err != nil {
+			return err
+		}
+	}
+	for _, output := range bundle.Outputs {
+		if err := checkChain(output.Chain); err != nil {
+			return err
+		}
+	}
+	for _, value := range bundle.Values {
+		for i := range value.Record.Envelope.PendingOffers {
+			if err := checkChain(&value.Record.Envelope.PendingOffers[i].Chain); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// SetImageContent gives the cache's content source the engine image's
+// directory, which supplies the parts the image's offers name. It is set once,
+// at start, before the image's bundle merges.
+func (c *Cache) SetImageContent(dir string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fmt.Errorf("engine image content: %w", err)
+	}
+	if !c.partContentSource.image.CompareAndSwap(nil, root) {
+		root.Close()
+		return errors.New("engine image content is already set")
+	}
+	return nil
+}
+
+func (s *PartContentSource) imageRoot() *os.Root {
+	if s == nil {
+		return nil
+	}
+	return s.image.Load()
+}
+
+// imageAvailable reports whether the image supplies offer: it is the image's,
+// and the cache has the image's directory. It reads no blob.
+func (s *PartContentSource) imageAvailable(offer *PersistedPartOffer) bool {
+	return imageOfferLayers(offer) && s.imageRoot() != nil
+}
+
+// imagePartProvider reads an image offer's blobs from the image directory.
+type imagePartProvider struct {
+	root   *os.Root
+	layers []imageLayer
+}
+
+// imageLayer is one layer an image offer names: its blob and size.
+type imageLayer struct {
+	Digest digest.Digest
+	Size   int64
+}
+
+func newImagePartProvider(root *os.Root, offer PersistedPartOffer) *imagePartProvider {
+	p := &imagePartProvider{root: root}
+	for _, layer := range offer.Chain.Layers {
+		p.layers = append(p.layers, imageLayer{Digest: layer.Descriptor.Digest, Size: layer.Descriptor.Size})
+	}
+	return p
+}
+
+func (p *imagePartProvider) layer(d digest.Digest) (imageLayer, bool) {
+	for _, layer := range p.layers {
+		if layer.Digest == d {
+			return layer, true
+		}
+	}
+	return imageLayer{}, false
+}
+
+func (p *imagePartProvider) Info(_ context.Context, d digest.Digest) (content.Info, error) {
+	layer, ok := p.layer(d)
+	if !ok {
+		return content.Info{}, fmt.Errorf("image blob %s is outside the offered chain", d)
+	}
+	return content.Info{Digest: d, Size: layer.Size}, nil
+}
+
+func (p *imagePartProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	if err := context.Cause(ctx); err != nil {
+		return nil, err
+	}
+	layer, ok := p.layer(desc.Digest)
+	switch {
+	case !ok:
+		return nil, fmt.Errorf("image blob %s is outside the offered chain", desc.Digest)
+	case layer.Size != desc.Size:
+		return nil, fmt.Errorf("image blob %s: size %d, offered %d", desc.Digest, desc.Size, layer.Size)
+	}
+	if err := desc.Digest.Validate(); err != nil {
+		return nil, err
+	}
+	file, err := p.root.Open(ImageBlobPath(desc.Digest))
+	if err != nil {
+		return nil, fmt.Errorf("image blob %s: %w", desc.Digest, err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+	if info.Size() != desc.Size {
+		file.Close()
+		return nil, fmt.Errorf("image blob %s: the image holds %d bytes, offered %d", desc.Digest, info.Size(), desc.Size)
+	}
+	return imageBlobReader{File: file, size: info.Size()}, nil
+}
+
+type imageBlobReader struct {
+	*os.File
+	size int64
+}
+
+func (r imageBlobReader) Size() int64 { return r.size }
+
+// ErrFromImage refuses to export an entry the engine image ships: every engine
+// built from the image has it, so the Cloud carries only what engines made.
+var ErrFromImage = errors.New("the engine image ships this entry")
+
+// FromImage reports whether the engine image ships result: the image's merge
+// gave its entry an image holding.
+func (c *Cache) FromImage(result AnyResult) bool {
+	if result == nil {
+		return false
+	}
+	res := result.cacheSharedResult()
+	if res == nil {
+		return false
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	_, image := res.imageHoldingLocked()
+	return image != nil
+}
+
+// ImageBundleWriter receives an engine image's bundle as ExportImageBundle
+// makes it: the bundle, then each blob its offers name, once each, by digest.
+type ImageBundleWriter interface {
+	WriteBundle(context.Context, ValueBundle) error
+	WriteBlob(ctx context.Context, d digest.Digest, r content.ReaderAt) error
+}
+
+// ExportImageBundle exports results for an engine image to ship: each
+// output's result, with its record and its closure's, and the output's part,
+// whose blobs the image holds (ImageBlobAddress). An engine built from the image merges the
+// bundle at start (MergeValues from imageCacheID). Every result must be
+// captured: a result left out fails the export. It is built for the image's
+// build, and nothing in the engine's runtime calls it.
+func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOutput, cfg config.RefConfig, w ImageBundleWriter) error {
+	if len(outputs) == 0 {
+		return errors.New("export image bundle: no results")
+	}
+	// Each result is one root, though several of its parts are outputs.
+	var results []AnyResult
+	seen := map[*sharedResult]bool{}
+	for _, output := range outputs {
+		res := output.Result.cacheSharedResult()
+		if res == nil || seen[res] {
+			continue
+		}
+		seen[res] = true
+		results = append(results, output.Result)
+	}
+	selection := ValueSelection{Roots: results, Outputs: outputs}
+	return c.WithExportedValues(ctx, selection, cfg, func(ctx context.Context, values *ExportedValues) error {
+		if len(values.LeftOut) > 0 {
+			left := values.LeftOut[0]
+			return fmt.Errorf("export image bundle: %d of %d results left out, the first (row %d): %w", len(values.LeftOut), len(results), left.Row, left.Err)
+		}
+		bundle := values.Bundle
+		address := func(addresses map[digest.Digest]BlobAddress, layers []snapshots.ExportLayer) map[digest.Digest]BlobAddress {
+			if addresses == nil {
+				addresses = map[digest.Digest]BlobAddress{}
+			}
+			for _, layer := range layers {
+				addresses[layer.Descriptor.Digest] = ImageBlobAddress(layer.Descriptor.Digest)
+			}
+			return addresses
+		}
+		if len(bundle.Layers) > 0 {
+			bundle.Addresses = address(bundle.Addresses, bundle.Layers)
+		}
+		for i := range bundle.Outputs {
+			if chain := bundle.Outputs[i].Chain; chain != nil && len(chain.Layers) > 0 {
+				chain.Addresses = address(chain.Addresses, chain.Layers)
+			}
+		}
+		if err := w.WriteBundle(ctx, bundle); err != nil {
+			return err
+		}
+		written := map[digest.Digest]bool{}
+		for _, entry := range values.Chains.Entries {
+			for _, layer := range entry.Layers {
+				d := layer.Descriptor.Digest
+				if written[d] {
+					continue
+				}
+				written[d] = true
+				if err := d.Validate(); err != nil {
+					return err
+				}
+				r, err := entry.Provider.ReaderAt(ctx, layer.Descriptor)
+				if err != nil {
+					return fmt.Errorf("export image bundle: blob %s: %w", d, err)
+				}
+				err = w.WriteBlob(ctx, d, r)
+				if closeErr := r.Close(); err == nil {
+					err = closeErr
+				}
+				if err != nil {
+					return fmt.Errorf("export image bundle: blob %s: %w", d, err)
+				}
+			}
+		}
+		return nil
+	})
+}

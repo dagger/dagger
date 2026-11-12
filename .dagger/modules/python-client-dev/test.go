@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"dagger/python-client-dev/internal/dagger"
+	"dagger/python-client-dev/internal/dagger/clients/pytest"
 )
 
 type TestForPythonVersion struct {
@@ -34,7 +35,7 @@ func (t *TestForPythonVersion) Run(
 	// Arguments to pass to pytest
 	args []string,
 ) error {
-	return dag.Pytest(ws, dagger.PytestOpts{
+	return pytest.New(ws, pytest.PytestOpts{
 		Container:  t.Container.WithEnvVariable("UV_PYTHON", t.Version),
 		SourcePath: "sdk/python",
 		Args:       args,

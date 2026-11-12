@@ -10,9 +10,19 @@ import (
 	"time"
 
 	"dagger.io/dagger/core"
+	"github.com/dagger/dagger/engine/distconsts"
 
 	"dagger.io/dagger"
 )
+
+// withoutImageEntries starts a suite engine without the cache entries the
+// engine image ships, which every engine merges at start. The suite tests
+// the transfer between engines' own caches. The image is a sender of its
+// own, whose entries change with what the image carries and would land
+// in the rows the suite inspects.
+func withoutImageEntries(ctr *core.Container) *core.Container {
+	return ctr.WithoutDirectory(distconsts.EngineContainerImageEntriesDir)
+}
 
 // Give a clean shutdown time to write its persistence checkpoint under load.
 // Each step gets this full bound, independent of earlier steps and of test

@@ -149,19 +149,23 @@ func withEngineAction(
 		ctx = context.WithValue(ctx, llmModelConfigKey{}, llmModelConfigReader(sess.LLMModelConfig))
 		return run(ctx, sess)
 	}
-	if open := takeOpenSession(ctx); open != nil {
-		return open.run(ctx, action, params, fn)
-	}
 	params, err := engineClientParams(params)
 	if err != nil {
 		return err
 	}
+	if open := takeOpenSession(ctx); open != nil {
+		return open.run(ctx, action, params, fn)
+	}
+	var collectorSpans *enginetel.SpanQueueCounts
+	// After the frontend has given the terminal back.
+	defer func() { reportCollectorSpanDrops(os.Stderr, collectorSpans) }()
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
 
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
-		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
+		ctx, cleanupTelemetry, spans := initEngineTelemetry(ctx)
+		collectorSpans = spans
 		if action != "" {
 			var span trace.Span
 			ctx, span = Tracer().Start(ctx, action, telemetry.Encapsulate())
@@ -214,6 +218,31 @@ func engineClientParams(params client.Params) (client.Params, error) {
 	if sessionWorkspace != "" && params.Workspace == nil {
 		params.Workspace = &sessionWorkspace
 	}
+	return engineConnectionParams(params)
+}
+
+// Resolve connection options before comparing sessions. Telemetry callbacks and
+// other per-run values are attached separately by finalizeEngineParams.
+func engineConnectionParams(params client.Params) (client.Params, error) {
+	if debugFlag {
+		params.LogLevel = slog.LevelDebug
+	}
+	if selectedEngine() != "" || params.RunnerHost == "" {
+		params.RunnerHost = configuredRunnerHost()
+	}
+	if RunnerImageLoader != "" {
+		backend, err := imageload.GetBackend(RunnerImageLoader)
+		if err != nil {
+			return params, err
+		}
+		params.ImageLoaderBackend = backend
+	}
+	params.AllowedLLMModules = slices.Clone(allowedLLMModules)
+	params.Profile = profileFlag
+	if len(profileEBPFFlag) > 0 && !profileFlag {
+		return params, errors.New("--profile-ebpf needs --profile")
+	}
+	params.ProfileEBPF = slices.Clone(profileEBPFFlag)
 	return params, nil
 }
 
@@ -223,8 +252,8 @@ type openSessionKey struct{}
 // kept for the command's own engine call (see artifactDiscovery). The frontend
 // and telemetry of that session are already running.
 type openSession struct {
-	// params are the ones the session connected with, as the command passes
-	// them to withEngine.
+	// params include the resolved workspace and module selection, before
+	// finalizeEngineParams adds telemetry and other run-scoped values.
 	params client.Params
 	client *client.Client
 	// stdout and stderr are the session's span stdio, where the command's
@@ -267,11 +296,7 @@ func (open *openSession) run(ctx context.Context, action string, params client.P
 	if reflect.DeepEqual(params, open.params) {
 		return fn(ctx, open.client)
 	}
-	params, err := engineClientParams(params)
-	if err != nil {
-		return err
-	}
-	params, err = finalizeEngineParams(ctx, params)
+	params, err := finalizeEngineParams(ctx, params)
 	if err != nil {
 		return err
 	}
@@ -288,31 +313,7 @@ func (open *openSession) run(ctx context.Context, action string, params client.P
 // frontend and telemetry being set up. Must be called inside Frontend.Run,
 // after initEngineTelemetry. Shared by withEngine and withSetupSessions.
 func finalizeEngineParams(ctx context.Context, params client.Params) (client.Params, error) {
-	if debugFlag {
-		params.LogLevel = slog.LevelDebug
-	}
-
-	if selectedEngine() != "" || params.RunnerHost == "" {
-		params.RunnerHost = configuredRunnerHost()
-	}
-
-	if RunnerImageLoader != "" {
-		backend, err := imageload.GetBackend(RunnerImageLoader)
-		if err != nil {
-			return params, err
-		}
-		params.ImageLoaderBackend = backend
-	}
-
-	params.AllowedLLMModules = allowedLLMModules
-
 	params.GitRemote, params.WorkspacePath = cloudWorkspace(ctx, params.Workspace)
-
-	params.Profile = profileFlag
-	if len(profileEBPFFlag) > 0 && !profileFlag {
-		return params, errors.New("--profile-ebpf needs --profile")
-	}
-	params.ProfileEBPF = profileEBPFFlag
 
 	params.CloudURLCallback = func(ctx context.Context, url string, msg string, logged bool) {
 		Frontend.SetCloudURL(ctx, url, msg, logged)
@@ -323,30 +324,43 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 		}
 	}
 
+	spans, logs, metrics := telemetry.SpanProcessors, telemetry.LogProcessors, telemetry.MetricExporters
+	if client.NestedSession() {
+		// The engine already delivers a nested client's telemetry to the
+		// client's parent, and the collector exporters configured from
+		// OTEL_EXPORTER_OTLP_* lead to that same parent (the exec's or the
+		// parent CLI's telemetry proxy). Forwarding the engine's telemetry to
+		// them too would deliver every log record twice.
+		spans = withoutRange(spans, cliCollectorTelemetry.spans)
+		logs = withoutRange(logs, cliCollectorTelemetry.logs)
+		metrics = withoutRange(metrics, cliCollectorTelemetry.metrics)
+	}
 	params.EngineTrace = telemetry.SpanForwarder{
-		Processors: telemetry.SpanProcessors,
+		Processors: spans,
 	}
 	// The engine names the session (Query.setSessionTitle) with a span-name
 	// record on our primary span; apply it to the live span too, so the span
 	// we export carries the title like the frontend shows it.
 	namer := primarySpanNamer{span: trace.SpanFromContext(ctx)}
 	params.EngineLogs = telemetry.LogForwarder{
-		Processors: append(slices.Clone(telemetry.LogProcessors), namer),
+		Processors: append(slices.Clone(logs), namer),
 	}
-	params.EngineMetrics = telemetry.MetricExporters
+	params.EngineMetrics = metrics
 	if cloud := cliCloudTelemetry; cloud.configured() {
 		// Ask the engine to publish the session's telemetry to Cloud itself,
-		// and have what it would send us forwarded everywhere else.
+		// and have what it would send us forwarded everywhere else. The Cloud
+		// exporters come before the collector's, so their indexes hold with
+		// or without them.
 		params.EngineCloudTelemetry = true
 		params.CloudURL = os.Getenv("DAGGER_CLOUD_URL")
 		params.CloudCredentialsPath = auth.CredentialsFile()
 		params.EngineTraceWithoutCloud = telemetry.SpanForwarder{
-			Processors: withoutIndex(telemetry.SpanProcessors, cloud.spans),
+			Processors: withoutIndex(spans, cloud.spans),
 		}
 		params.EngineLogsWithoutCloud = telemetry.LogForwarder{
-			Processors: append(withoutIndex(telemetry.LogProcessors, cloud.logs), namer),
+			Processors: append(withoutIndex(logs, cloud.logs), namer),
 		}
-		params.EngineMetricsWithoutCloud = withoutIndex(telemetry.MetricExporters, cloud.metrics)
+		params.EngineMetricsWithoutCloud = withoutIndex(metrics, cloud.metrics)
 	}
 
 	params.WithTerminal = withTerminal
@@ -470,6 +484,9 @@ func withLazySessions(
 	if sessionWorkspace != "" && params.Workspace == nil {
 		params.Workspace = &sessionWorkspace
 	}
+	var collectorSpans *enginetel.SpanQueueCounts
+	// After the frontend has given the terminal back.
+	defer func() { reportCollectorSpanDrops(os.Stderr, collectorSpans) }()
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
 		if before != nil {
@@ -478,7 +495,8 @@ func withLazySessions(
 
 		// Telemetry deliberately starts after the untraced setup phase (Cloud
 		// login), so credentials established there apply to the whole trace.
-		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
+		ctx, cleanupTelemetry, spans := initEngineTelemetry(ctx)
+		collectorSpans = spans
 		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 			if opts.Debug {
 				slog.Error("failed to emit telemetry", "error", err)
@@ -490,7 +508,11 @@ func withLazySessions(
 		})
 
 		connect := func(ctx context.Context) (*client.Client, func(), error) {
-			fp, err := finalizeEngineParams(ctx, params)
+			fp, err := engineConnectionParams(params)
+			if err != nil {
+				return nil, nil, err
+			}
+			fp, err = finalizeEngineParams(ctx, fp)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -548,7 +570,7 @@ func applyWorkspaceClientParams(params *client.Params) error {
 }
 
 // skipSharedTelemetryExporters, when set, makes engineTelemetryConfig leave out
-// the process-wide OTLP exporter singletons (Dagger Cloud + the OTEL_* "Detect"
+// the process-wide OTLP exporter singletons (Dagger Cloud + the OTEL_*
 // exporters). It is toggled by preparation sessions;
 // see engineTelemetryConfig for why.
 var skipSharedTelemetryExporters bool
@@ -557,17 +579,29 @@ var skipSharedTelemetryExporters bool
 //
 // Internal plumbing sessions (see skipSharedTelemetryExporters) opt out of the
 // process-wide OTLP exporter singletons — the Dagger Cloud exporters and the
-// OTEL_* "Detect" exporters. Those singletons are sync.Once-cached and get shut
+// OTEL_* exporters to the user's own collector. Those singletons are sync.Once-cached and get shut
 // down by telemetry.Close(); a pre-command session that wired them up and then
 // tore them down would leave them dead for the real command that runs next in
 // the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
 // telemetry warnings (e.g. the preflight session for a dynamic SDK command).
 // Preparation sessions use only their own frontend exporters.
-func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes) {
-	return engineTelemetryConfigWithCloud(ctx, enginetel.ConfiguredCloudExporters)
+func engineTelemetryConfig(ctx context.Context) (telemetry.Config, cloudTelemetryIndexes, collectorTelemetryRanges, *enginetel.SpanQueueCounts) {
+	return engineTelemetryConfigWithExporters(ctx, enginetel.ConfiguredCloudExporters, configuredCollectorExporters)
 }
 
 type configuredCloudExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool)
+
+// configuredCollectorExportersFunc returns the exporters to the user's own
+// collector, each nil when its OTEL_EXPORTER_OTLP_* variables don't configure
+// it.
+type configuredCollectorExportersFunc func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter)
+
+func configuredCollectorExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+	spans, _ := telemetry.ConfiguredSpanExporter(ctx)
+	logs, _ := telemetry.ConfiguredLogExporter(ctx)
+	metrics, _ := telemetry.ConfiguredMetricExporter(ctx)
+	return spans, logs, metrics
+}
 
 // cloudTelemetryIndexes locates the CLI's Dagger Cloud exporters in the
 // pipeline telemetry.Init builds: the span processor's index in the
@@ -590,6 +624,41 @@ var noCloudTelemetry = cloudTelemetryIndexes{spans: -1, logs: -1, metrics: -1}
 // forwarded without them when the engine publishes it to Cloud itself.
 var cliCloudTelemetry = noCloudTelemetry
 
+// indexRange is the half-open range [from, to) of a slice's indexes.
+type indexRange struct {
+	from, to int
+}
+
+// shift returns r moved n indexes later.
+func (r indexRange) shift(n int) indexRange {
+	return indexRange{r.from + n, r.to + n}
+}
+
+// collectorTelemetryRanges locates the CLI's exporters to the user's own
+// collector in the pipeline telemetry.Init builds: their range of the
+// telemetry.SpanProcessors Init sets, and of the entries Init appends, in
+// Config order, to telemetry.LogProcessors and telemetry.MetricExporters.
+// A range is empty when the collector has no exporter of that kind.
+type collectorTelemetryRanges struct {
+	spans, logs, metrics indexRange
+}
+
+// cliCollectorTelemetry is where initEngineTelemetry found the collector
+// exporters in the global telemetry slices, so that a nested client can
+// forward the engine's telemetry without them.
+var cliCollectorTelemetry collectorTelemetryRanges
+
+// withoutRange returns a copy of all without its elements in r.
+func withoutRange[T any](all []T, r indexRange) []T {
+	out := make([]T, 0, len(all))
+	for j, v := range all {
+		if j < r.from || j >= r.to {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // withoutIndex returns a copy of all without its i-th element.
 func withoutIndex[T any](all []T, i int) []T {
 	out := make([]T, 0, len(all))
@@ -601,12 +670,16 @@ func withoutIndex[T any](all []T, i int) []T {
 	return out
 }
 
-func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc) (telemetry.Config, cloudTelemetryIndexes) {
+// engineTelemetryConfigWithExporters also returns where the exporters to the
+// user's own collector sit in the Config, and the counts of the spans queued
+// for that collector, or nil when there is none.
+func engineTelemetryConfigWithExporters(ctx context.Context, configuredCloudExporters configuredCloudExportersFunc, configuredCollectorExporters configuredCollectorExportersFunc) (telemetry.Config, cloudTelemetryIndexes, collectorTelemetryRanges, *enginetel.SpanQueueCounts) {
 	cfg := telemetry.Config{
-		Detect:   !skipSharedTelemetryExporters,
 		Resource: Resource(ctx),
 	}
 	cloud := noCloudTelemetry
+	var collector collectorTelemetryRanges
+	var collectorSpans *enginetel.SpanQueueCounts
 	if !frontendTelemetryDisabled(ctx) {
 		cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, Frontend.MetricExporter())
 	}
@@ -637,20 +710,48 @@ func engineTelemetryConfigWithCloud(ctx context.Context, configuredCloudExporter
 		// space instead, like its logs below.
 		cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewBlockingLiveSpanProcessor(Frontend.SpanExporter()))
 	}
-	return cfg, cloud
+	if !skipSharedTelemetryExporters {
+		// The user's own collector. telemetry.Init's Detect would give its
+		// spans the default 2048-slot BSP, which drops a burst of the engine
+		// spans the CLI forwards; give them a large queue, like Cloud's.
+		spans, logs, metrics := configuredCollectorExporters(ctx)
+		collector.spans.from = len(cfg.SpanProcessors)
+		collector.logs.from = len(cfg.LiveLogExporters)
+		collector.metrics.from = len(cfg.LiveMetricExporters)
+		if spans != nil {
+			collectorSpans = new(enginetel.SpanQueueCounts)
+			cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewCollectorSpanProcessor(spans, telemetry.LiveTracesEnabled, collectorSpans))
+		}
+		if logs != nil {
+			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
+		}
+		if metrics != nil {
+			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
+		}
+		collector.spans.to = len(cfg.SpanProcessors)
+		collector.logs.to = len(cfg.LiveLogExporters)
+		collector.metrics.to = len(cfg.LiveMetricExporters)
+	}
+	return cfg, cloud, collector, collectorSpans
 }
 
-func initEngineTelemetry(ctx context.Context) (context.Context, func(error) error) {
-	cfg, cloud := engineTelemetryConfig(ctx)
+// initEngineTelemetry also returns the counts of the spans queued for the
+// user's own collector, or nil when there is none; they are final once the
+// returned cleanup has run.
+func initEngineTelemetry(ctx context.Context) (context.Context, func(error) error, *enginetel.SpanQueueCounts) {
+	cfg, cloud, collector, collectorSpans := engineTelemetryConfig(ctx)
 	// Init replaces telemetry.SpanProcessors but appends to LogProcessors and
 	// MetricExporters, which may hold an earlier Init's entries.
 	if cloud.configured() {
 		cloud.logs += len(telemetry.LogProcessors)
 		cloud.metrics += len(telemetry.MetricExporters)
 	}
+	collector.logs = collector.logs.shift(len(telemetry.LogProcessors))
+	collector.metrics = collector.metrics.shift(len(telemetry.MetricExporters))
 	firstLogProcessor := len(telemetry.LogProcessors)
 	ctx = telemetry.Init(ctx, cfg)
 	cliCloudTelemetry = cloud
+	cliCollectorTelemetry = collector
 
 	// Install the frontend separately: telemetry.Init wraps LiveLogExporters
 	// in dropping batch processors. Command stdio and forwarded engine logs
@@ -756,6 +857,22 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error) erro
 			cancel()
 		}
 		return drainErr
+	}, collectorSpans
+}
+
+// reportCollectorSpanDrops tells the user how many spans never reached their
+// own collector's exporter, once telemetry.Close has shut its processor down:
+// those dropped when its queue was full, and any still queued when the
+// shutdown ran out of time. Callers write it to stderr after the frontend has
+// exited, so the TUI can't clear it, and a session without a frontend still
+// shows it.
+func reportCollectorSpanDrops(w io.Writer, counts *enginetel.SpanQueueCounts) {
+	if counts == nil {
+		return
+	}
+	if dropped := counts.Dropped(); dropped > 0 {
+		fmt.Fprintf(w, "WARNING: %d of %d spans were not sent to the OpenTelemetry collector configured by OTEL_EXPORTER_OTLP_*: its queue was full, or exiting timed out\n",
+			dropped, counts.Queued())
 	}
 }
 

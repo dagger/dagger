@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,30 @@ type consoleTraceInspector struct {
 	mu       sync.Mutex
 	db       *dagui.DB
 	traceID  string
+	// fetch downloads a trace's full payloads into db; nil fetches from Cloud.
+	fetch func(ctx context.Context, traceID string, db *dagui.DB) error
+
+	// knownHeads remembers each agent's head as /salvage and /head found it,
+	// by agent handle, for /heads.
+	headsMu    sync.Mutex
+	knownHeads map[string]consoleHead
+}
+
+func fetchCloudTrace(ctx context.Context, traceID string, db *dagui.DB) error {
+	credentials, err := auth.GetCloudAuth(ctx)
+	if err != nil {
+		return err
+	}
+	client, err := cloud.NewOTLPClient(ctx, credentials)
+	if err != nil {
+		return err
+	}
+	if err := client.FetchTrace(ctx, traceID, enginetel.NewTraceImporter(enginetel.TraceImportSinks{
+		Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter(),
+	})); err != nil {
+		return fmt.Errorf("fetch extraction payloads for trace %s: %w", traceID, err)
+	}
+	return nil
 }
 
 func (i *consoleTraceInspector) recordedDB(ctx context.Context) (*dagui.DB, error) {
@@ -41,70 +66,226 @@ func (i *consoleTraceInspector) recordedDB(ctx context.Context) (*dagui.DB, erro
 	}
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
-	credentials, err := auth.GetCloudAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	client, err := cloud.NewOTLPClient(ctx, credentials)
-	if err != nil {
-		return nil, err
+	fetch := i.fetch
+	if fetch == nil {
+		fetch = fetchCloudTrace
 	}
 	db := dagui.NewDB()
-	if err := client.FetchTrace(ctx, traceID, enginetel.NewTraceImporter(enginetel.TraceImportSinks{
-		Spans: db, Logs: db.LogExporter(), Metrics: db.MetricExporter(),
-	})); err != nil {
+	if err := fetch(ctx, traceID, db); err != nil {
 		// Never advertise a partially downloaded roster as complete. A later
 		// request may retry; don't cache failed downloads.
-		return nil, fmt.Errorf("fetch extraction payloads for trace %s: %w", traceID, err)
+		return nil, err
 	}
 	db.Agents() // Initialize the projection before publishing the immutable DB.
 	i.db, i.traceID = db, traceID
 	return db, nil
 }
 
-func (i *consoleTraceInspector) agents(w http.ResponseWriter, r *http.Request) {
-	db, err := i.recordedDB(r.Context())
+// consoleAgentSource is where agent rosters and transcripts are read from for
+// one request: the recorded trace's full payloads, the engine's runtime
+// snapshots, or (as a fallback) the telemetry the frontend has already
+// ingested while rendering.
+type consoleAgentSource struct {
+	agents  []consoleAgent
+	read    consoleSnapshotReader
+	source  string // recorded-trace, loaded-telemetry, or "" for live rosters
+	warning string
+	// db is the recorded trace's immutable DB, when the source is one.
+	db *dagui.DB
+}
+
+func (i *consoleTraceInspector) agentSource(ctx context.Context) consoleAgentSource {
+	fe := i.frontend
+	db, err := i.recordedDB(ctx)
+	if err == nil && db != nil {
+		agents := consoleAgentsFromDB(db)
+		return consoleAgentSource{
+			agents: agents,
+			source: "recorded-trace",
+			db:     db,
+			read: func(_ context.Context, handle, _ string) (consoleAgentSnapshot, error) {
+				for _, agent := range agents {
+					if agent.ID == handle {
+						return decodeCheckpointWithFallback(db, agent)
+					}
+				}
+				return consoleAgentSnapshot{}, fmt.Errorf("agent %q not in recorded trace", handle)
+			},
+		}
+	}
+	fe.consoleMu.Lock()
+	if fe.tui != nil {
+		fe.tui.Step()
+	}
+	agents := fe.consoleAgents()
+	dag := fe.dag
+	fe.consoleMu.Unlock()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		// The full download failed (e.g. one oversized payload the server
+		// refuses to stream), but rendering already ingested the trace
+		// incrementally. Serve what that has, marked as such.
+		return consoleAgentSource{
+			agents:  agents,
+			source:  "loaded-telemetry",
+			read:    fe.readLoadedSnapshot,
+			warning: err.Error(),
+		}
+	}
+	var runtime consoleSnapshotReader
+	if dag != nil {
+		runtime = func(ctx context.Context, handle, name string) (consoleAgentSnapshot, error) {
+			return readConsoleAgentSnapshot(ctx, dag, handle, name)
+		}
+	}
+	return consoleAgentSource{agents: agents, read: withLoadedFallback(runtime, fe.readLoadedSnapshot)}
+}
+
+func (i *consoleTraceInspector) agents(w http.ResponseWriter, r *http.Request) {
+	src := i.agentSource(r.Context())
+	if r.URL.Query().Get("format") != "json" && src.source != "" {
+		header := "Recorded trace: states are historical observations, not live runtimes. No agents have been restored or started."
+		if src.source == "loaded-telemetry" {
+			header = "Loaded telemetry: the full trace download failed; transcripts are decoded best-effort. Warning: " + src.warning
+		}
+		consoleText(w, renderConsoleAgents(src.agents, src.source == "recorded-trace", r.URL.Query().Get("all") == "true", header))
 		return
 	}
-	if db == nil {
-		i.frontend.consoleAgentsHandler(w, r)
-		return
-	}
-	agents := consoleAgentsFromDB(db)
-	if r.URL.Query().Get("format") == "json" {
+	switch src.source {
+	case "recorded-trace":
 		consoleJSON(w, struct {
 			Agents          []consoleAgent `json:"agents"`
 			LoadedSpansOnly bool           `json:"loadedSpansOnly"`
 			Source          string         `json:"source"`
 			Note            string         `json:"note"`
-		}{agents, false, "recorded-trace", "States are historical observations, not live runtimes. No agents have been restored or started."})
-		return
+		}{src.agents, false, src.source, "States are historical observations, not live runtimes. No agents have been restored or started."})
+	case "loaded-telemetry":
+		consoleJSON(w, struct {
+			Agents          []consoleAgent `json:"agents"`
+			LoadedSpansOnly bool           `json:"loadedSpansOnly"`
+			Source          string         `json:"source"`
+			Warning         string         `json:"warning"`
+			Note            string         `json:"note"`
+		}{src.agents, true, src.source, src.warning, "The full trace download failed, so this roster comes from the telemetry already loaded for rendering. Transcripts are decoded best-effort from it."})
+	default:
+		i.frontend.consoleAgentsHandler(w, r)
 	}
-	consoleText(w, renderConsoleAgents(agents, true, r.URL.Query().Get("all") == "true",
-		"Recorded trace: states are historical observations, not live runtimes. No agents have been restored or started."))
 }
 
 func (i *consoleTraceInspector) transcript(w http.ResponseWriter, r *http.Request) {
-	db, err := i.recordedDB(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
+	src := i.agentSource(r.Context())
+	serveConsoleTranscript(w, r, src.agents, src.withWarning())
+}
+
+// withWarning attaches the source's warning to every snapshot it reads.
+func (src consoleAgentSource) withWarning() consoleSnapshotReader {
+	if src.warning == "" || src.read == nil {
+		return src.read
 	}
-	if db == nil {
-		i.frontend.consoleTranscriptHandler(w, r)
-		return
-	}
-	agents := consoleAgentsFromDB(db)
-	serveConsoleTranscript(w, r, agents, func(_ context.Context, handle, _ string) (consoleAgentSnapshot, error) {
-		for _, agent := range agents {
-			if agent.ID == handle {
-				return decodeConsoleCheckpoint(db, agent)
-			}
+	return func(ctx context.Context, handle, name string) (consoleAgentSnapshot, error) {
+		snap, err := src.read(ctx, handle, name)
+		if err != nil {
+			return snap, fmt.Errorf("%w (after: %s)", err, src.warning)
 		}
-		return consoleAgentSnapshot{}, fmt.Errorf("agent %q not in recorded trace", handle)
-	})
+		if snap.Warning == "" {
+			snap.Warning = src.warning
+		}
+		return snap, nil
+	}
+}
+
+// readLoadedSnapshot decodes an agent's checkpoint, best-effort, from the call
+// payloads this frontend has already ingested while rendering.
+func (fe *frontendPretty) readLoadedSnapshot(_ context.Context, handle, _ string) (consoleAgentSnapshot, error) {
+	fe.consoleMu.Lock()
+	defer fe.consoleMu.Unlock()
+	for _, agent := range fe.consoleAgents() {
+		if agent.ID == handle {
+			return decodeLoadedCheckpoint(fe.db, agent)
+		}
+	}
+	return consoleAgentSnapshot{}, fmt.Errorf("agent %q not in loaded telemetry", handle)
+}
+
+// withLoadedFallback reads the engine's runtime snapshot, falling back to the
+// loaded telemetry when there is no engine, the read fails, or it comes back
+// empty -- as it does for an agent whose restore failed. The fallback is only
+// taken when it recovers messages; otherwise the runtime outcome stands.
+func withLoadedFallback(runtime, loaded consoleSnapshotReader) consoleSnapshotReader {
+	return func(ctx context.Context, handle, name string) (consoleAgentSnapshot, error) {
+		if runtime == nil {
+			snap, err := loaded(ctx, handle, name)
+			if err != nil {
+				return snap, fmt.Errorf("no engine session to read a runtime snapshot from, and %w", err)
+			}
+			return snap, nil
+		}
+		snap, err := runtime(ctx, handle, name)
+		if err == nil && len(snap.Snapshot.Messages) > 0 {
+			return snap, nil
+		}
+		fallback, fallbackErr := loaded(ctx, handle, name)
+		if fallbackErr != nil {
+			return snap, err
+		}
+		if err != nil {
+			fallback.Warning = "engine snapshot unavailable (" + err.Error() + "); decoded from loaded telemetry instead"
+		} else {
+			fallback.Warning = "engine snapshot has no messages (e.g. a failed restore); decoded from loaded telemetry instead"
+		}
+		return fallback, nil
+	}
+}
+
+// decodeCheckpointWithFallback decodes a recorded checkpoint with explicit gaps,
+// falling back to inferred telemetry when no checkpoint was recorded.
+func decodeCheckpointWithFallback(db *dagui.DB, agent consoleAgent) (consoleAgentSnapshot, error) {
+	snap, err := decodeConsoleCheckpoint(db, agent)
+	if err == nil {
+		return snap, nil
+	}
+	partial, partialErr := decodeLoadedCheckpoint(db, agent)
+	if partialErr != nil {
+		return snap, err
+	}
+	partial.Source = snap.Source
+	if partial.Source == "" {
+		partial.Source = "recorded-checkpoint"
+	}
+	partial.Warning = "recorded checkpoint unavailable (" + err.Error() + "); decoded best-effort instead"
+	return partial, nil
+}
+
+// decodeLoadedCheckpoint is the best-effort decode: it never refuses a
+// transcript, but reports what it could not read as GAP messages, and fails
+// only when it recovers no message at all.
+func decodeLoadedCheckpoint(db *dagui.DB, agent consoleAgent) (consoleAgentSnapshot, error) {
+	inferred := false
+	if agent.SnapshotDigest == "" {
+		agent.SnapshotDigest = inferCheckpointDigest(db, agent.ID)
+		inferred = agent.SnapshotDigest != ""
+	}
+	snap, err := decodeConsoleCheckpoint(db, agent)
+	if err != nil {
+		return snap, err
+	}
+	for _, message := range snap.Snapshot.Messages {
+		if message.Role != consoleGapRole {
+			snap.Source = "loaded-telemetry"
+			if inferred {
+				// Messages after the newest traced call (e.g. a final reply)
+				// may be missing, so this is a trailing gap.
+				text := "no control record named the agent's checkpoint; inferred " + agent.SnapshotDigest +
+					" from its longest traced conversation, so later messages may be missing"
+				snap.Gaps = append(snap.Gaps, text)
+				snap.Snapshot.Messages = append(snap.Snapshot.Messages, consoleTranscriptMessage{
+					Index: len(snap.Snapshot.Messages), Role: consoleGapRole,
+					Content: []consoleTranscriptBlock{{Kind: consoleGapRole, Text: text}},
+				})
+			}
+			return snap, nil
+		}
+	}
+	return snap, fmt.Errorf("no messages recoverable from loaded telemetry: %s", strings.Join(snap.Gaps, "; "))
 }
 
 // consoleCheckpointConfig names core LLM selectors that configure a
@@ -507,4 +688,182 @@ func consoleLiteralValue(literal *callpbv1.Literal, lenient bool) (any, error) {
 		}
 	}
 	return nil, fmt.Errorf("expected recorded literal data, got %T", literal.GetValue())
+}
+
+const consoleGapRole = "GAP"
+
+var consoleMessageSelectors = []string{"withPrompt", "withSystemPrompt", "withContent", "withResponse", "withToolResult"}
+
+// isConsoleSpineSelector reports whether the decoder knows frame as a core
+// LLM message or configuration selector.
+func isConsoleSpineSelector(frame *callpbv1.Call) bool {
+	if frame.Module != nil {
+		return false
+	}
+	return frame.Field == "llm" ||
+		slices.Contains(consoleMessageSelectors, frame.Field) ||
+		consoleCheckpointConfig[frame.Field] ||
+		frame.Field == "compose" || frame.Field == "__withContributionOwner" ||
+		frame.Field == "__withoutComposition" || frame.Field == "withoutSystemPrompts"
+}
+
+// nextSpineDigest is the frame before frame in its conversation: its
+// receiver, or, best-effort, the LLM-valued argument of a step that isn't
+// message data and whose receiver isn't the conversation.
+func nextSpineDigest(db *dagui.DB, frame *callpbv1.Call, partial bool) string {
+	next := frame.ReceiverDigest
+	if partial && !isConsoleSpineSelector(frame) && !isLLMFrame(db, next) {
+		if llm := llmArgument(db, frame); llm != "" {
+			next = llm
+		}
+	}
+	return next
+}
+
+// inferCheckpointDigest finds an agent's conversation tip when no control
+// record named it (the records ride the log stream, which a trace may not
+// have loaded): among the core LLM message calls traced under the agent's own
+// loop spans -- not its nested agents' -- the one with the longest spine.
+// Length, not recency, so a side chain such as a session-title prompt never
+// wins over the conversation it branched from.
+func inferCheckpointDigest(db *dagui.DB, agentID string) string {
+	var node *dagui.AgentNode
+	for _, candidate := range db.Agents() {
+		if candidate.ID == agentID {
+			node = candidate
+			break
+		}
+	}
+	if node == nil {
+		return ""
+	}
+	var best string
+	bestLen := 0
+	seen := map[string]bool{}
+	var walk func(*dagui.Span)
+	walk = func(span *dagui.Span) {
+		for _, child := range span.ChildSpans.Spans() {
+			if child.Agent && child.AgentID != "" && child.AgentID != agentID {
+				continue
+			}
+			if dig := child.CallDigest; dig != "" && !seen[dig] {
+				seen[dig] = true
+				if frame := db.Calls[dig]; frame != nil && frame.Module == nil &&
+					frame.GetType().GetNamedType() == "LLM" && slices.Contains(consoleMessageSelectors, frame.Field) {
+					if n := spineLength(db, dig); n > bestLen {
+						best, bestLen = dig, n
+					}
+				}
+			}
+			walk(child)
+		}
+	}
+	for _, span := range node.Spans {
+		walk(span)
+	}
+	if best == "" {
+		return ""
+	}
+	return extendCheckpointDigest(db, best)
+}
+
+// continuesConversation reports whether frame is a step of the conversation
+// its predecessor (nextSpineDigest) belongs to: a known message or
+// configuration selector, or a step that returns the conversation from its
+// LLM argument (as checkout does). Anything else on an LLM receiver -- e.g.
+// withoutMessageHistory, which a session title branches off with -- starts a
+// different conversation.
+func continuesConversation(db *dagui.DB, frame *callpbv1.Call) bool {
+	if frame.GetType().GetNamedType() != "LLM" {
+		return false
+	}
+	if isConsoleSpineSelector(frame) {
+		return true
+	}
+	return !isLLMFrame(db, frame.ReceiverDigest) && llmArgument(db, frame) != ""
+}
+
+// extendCheckpointDigest follows a conversation forward from tip through the
+// ingested calls: the furthest call that continues it. Spans load lazily, but
+// call payloads may already be in, so the newest traced span is not
+// necessarily the newest step.
+func extendCheckpointDigest(db *dagui.DB, tip string) string {
+	// distance[d] is how many steps d is past tip, or -1 if it never reaches it.
+	distance := map[string]int{tip: 0}
+	resolve := func(start string) int {
+		var path []string
+		dig := start
+		result := -1
+		for {
+			if d, ok := distance[dig]; ok {
+				result = d
+				break
+			}
+			frame := db.Calls[dig]
+			if frame == nil || !continuesConversation(db, frame) {
+				break
+			}
+			distance[dig] = -1 // guards against cycles while walking
+			path = append(path, dig)
+			dig = nextSpineDigest(db, frame, true)
+		}
+		for i := len(path) - 1; i >= 0; i-- {
+			if result >= 0 {
+				result++
+			}
+			distance[path[i]] = result
+		}
+		return result
+	}
+	best, bestDistance := tip, 0
+	digests := make([]string, 0, len(db.Calls))
+	for dig := range db.Calls {
+		digests = append(digests, dig)
+	}
+	slices.Sort(digests) // deterministic ties
+	for _, dig := range digests {
+		if d := resolve(dig); d > bestDistance {
+			best, bestDistance = dig, d
+		}
+	}
+	return best
+}
+
+// spineLength counts the steps of digest's conversation that are traced
+// back from it, stopping where another conversation branched off.
+func spineLength(db *dagui.DB, digest string) int {
+	seen := map[string]bool{}
+	for digest != "" && !seen[digest] {
+		frame := db.Calls[digest]
+		if frame == nil || !continuesConversation(db, frame) {
+			break
+		}
+		seen[digest] = true
+		digest = nextSpineDigest(db, frame, true)
+	}
+	return len(seen)
+}
+
+func isLLMFrame(db *dagui.DB, digest string) bool {
+	frame := db.Calls[digest]
+	return frame != nil && frame.GetType().GetNamedType() == "LLM"
+}
+
+// llmArgument returns the digest of frame's LLM-valued argument, preferring
+// one named llm, when it is present in db.
+func llmArgument(db *dagui.DB, frame *callpbv1.Call) string {
+	var found string
+	for _, arg := range frame.Args {
+		dig := arg.GetValue().GetCallDigest()
+		if dig == "" || !isLLMFrame(db, dig) {
+			continue
+		}
+		if arg.Name == "llm" {
+			return dig
+		}
+		if found == "" {
+			found = dig
+		}
+	}
+	return found
 }

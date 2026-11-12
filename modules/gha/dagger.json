@@ -7,7 +7,7 @@
   "dependencies": [
     {
       "name": "wolfi",
-      "source": "dagger.io/linux/wolfi@main"
+      "source": "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04"
     }
   ],
   "codegen": {

@@ -1458,13 +1458,21 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 		},
 	}
 
-	for memberName, val := range enumMod.Values {
-		if _, ok := val.(dang.EnumValue); !ok {
-			continue
+	// Register the members in the order the module declares them, which Dang
+	// keeps in the enum's values list. enumMod.Values is a map, so ranging over
+	// it would give a different order on every load.
+	members, ok := enumMod.Values["values"].(dang.ListValue)
+	if !ok {
+		return res, fmt.Errorf("enum %s has no values list", name)
+	}
+	for _, member := range members.Elements {
+		enumVal, ok := member.(dang.EnumValue)
+		if !ok {
+			return res, fmt.Errorf("enum %s: unexpected member %T", name, member)
 		}
 		sels = append(sels, dagql.Selector{
 			Field: "withEnumMember",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(memberName)}},
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(enumVal.Val)}},
 		})
 	}
 
@@ -1500,6 +1508,11 @@ func dangDeclaredType(val *dang.Object) (*dang.Type, bool) {
 func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, mod *dang.Type, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
+	// A module's imports are file-local: evaluate the methods' directive
+	// arguments in the scope of the file declaring the interface, so they
+	// can name its imports.
+	directiveScope := dang.DeclarationScope(env, name)
+
 	sels := []dagql.Selector{
 		{Field: "typeDef"},
 		{
@@ -1515,7 +1528,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 		}
 		switch x := fieldType.(type) {
 		case *hm.FunctionType:
-			fnDef, err := createFunction(ctx, srv, mod, fieldName, x, env, localTypes)
+			fnDef, err := createFunction(ctx, srv, mod, fieldName, x, directiveScope, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create method %s for interface %s: %w", fieldName, name, err)
 			}

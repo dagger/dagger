@@ -46,6 +46,10 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			WithInput(engineDefaultPlatformInput).
 			IsPersistable().
 			Doc("Retrieves a container builtin to the engine."),
+
+		dagql.NodeFunc("_engineImageBundle", s.engineImageBundle).
+			View(AfterVersion("v1.0.0-beta.26")).
+			Doc("The entries of results, exported for an engine image to ship: a directory's or file's snapshot, a container's image config and filesystem, and a Git module source's checkout. Returns the bundle an engine built from the image merges at start, and its blobs. Called by the engine image's build."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
@@ -665,11 +669,15 @@ func (s *hostSchema) findUp(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return i, fmt.Errorf("failed to get engine client: %w", err)
 	}
-	cwd, err := bk.AbsPath(ctx, ".")
-	if err != nil {
-		return i, fmt.Errorf("failed to get cwd: %w", err)
+	cwd, foundPaths, err := bk.FindUpCallerHostPaths(ctx, ".", []string{args.Name})
+	foundPath, found := foundPaths[args.Name]
+	if errors.Is(err, engineutil.ErrFindUpUnsupported) {
+		cwd, err = bk.AbsPath(ctx, ".")
+		if err != nil {
+			return i, fmt.Errorf("failed to get cwd: %w", err)
+		}
+		foundPath, found, err = host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
 	}
-	foundPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
 	if err != nil {
 		return i, fmt.Errorf("failed to find %s: %w", args.Name, err)
 	}

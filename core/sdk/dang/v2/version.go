@@ -33,6 +33,21 @@ const ConfigFilename = "dang.toml"
 // meaning with every engine release.
 const DefaultEntrypointEngineVersion = "v1.0.0-beta.25"
 
+// DefaultEntrypointDangVersion is the Dang version of a Dang module entrypoint
+// whose dang.toml declares no Dang version, or that has no dang.toml at all:
+// Dang 2.1, as engines before Dang 2.4 evaluated them. It is pinned and must
+// NOT follow dang.CurrentVersion, for the same reason as
+// DefaultEntrypointEngineVersion.
+var DefaultEntrypointDangVersion = dang.Version2_1
+
+// Dang24ModuleVersion is the first engine version whose Dang SDK modules
+// default to Dang 2.4 (dang.Version2_4), the first Dang version this engine
+// embeds that requires `!` on type patterns. Modules written for an earlier
+// engine keep Dang 2.1, which that engine evaluated them as. Until a release
+// ships Dang 2.4, if the release it names ships without it, move it to a
+// later one.
+const Dang24ModuleVersion = "v1.0.0-beta.28"
+
 // Versions are the versions a Dang module is written against.
 type Versions struct {
 	// Engine is the Dagger engine version: the module's engineVersion, which
@@ -57,7 +72,7 @@ func (v Versions) DangString() string {
 func DefaultEntrypointVersions() Versions {
 	return Versions{
 		Engine: DefaultEntrypointEngineVersion,
-		Dang:   dang.DefaultVersion,
+		Dang:   DefaultEntrypointDangVersion,
 	}
 }
 
@@ -68,9 +83,9 @@ func DefaultEntrypointVersions() Versions {
 // A Dagger import's `dagger = "vX.Y.Z"` is the engine version. Without one
 // (no dang.toml, no Dagger import, or `dagger = true`), the engine version is
 // DefaultEntrypointEngineVersion. `dang = "X.Y"` is the Dang version. Without
-// one, the Dang version is dang.DefaultVersion, as Dang reads a dang.toml
-// without the key; an entrypoint without a dang.toml gets the same, so that
-// it does not follow dang.CurrentVersion forward either.
+// one (or without a dang.toml), the Dang version is
+// DefaultEntrypointDangVersion, whatever the engine version, so that it does
+// not follow dang.CurrentVersion forward.
 //
 // A declared engine version must be one this engine can serve, checked as a
 // dagger.json engineVersion is: not older than engine.MinimumModuleVersion,
@@ -88,19 +103,27 @@ func ResolveEntrypointVersions(ctx context.Context, configPath string, data []by
 // is not a manifest v2 entrypoint) at engine version engineVersion when no
 // dang.toml declares one.
 //
-// Modules written for an engine before engine.MinimumDangV2ModuleVersion were
-// evaluated with the Dang v1 line, so their source is Dang 1.0
-// (dang.Version1_0). Later modules are not pinned: the zero Version, which
-// leaves the version to Dang, i.e. dang.CurrentVersion without a dang.toml
-// and dang.DefaultVersion with one that declares none, as they always were.
+// It is the Dang version the engines of that version evaluated such a module
+// as, and it is pinned: a module that declares no Dang version keeps meaning
+// what it meant, whatever Dang version a later engine embeds.
+//
+//   - Before engine.MinimumDangV2ModuleVersion: Dang 1.0 (dang.Version1_0),
+//     the language of the Dang v1 line.
+//   - Before Dang24ModuleVersion: Dang 2.1 (dang.Version2_1).
+//   - From Dang24ModuleVersion on: Dang 2.4 (dang.Version2_4).
+//
+// A new Dang language version that changes the meaning of existing source
+// adds a cut here, at the first engine version that embeds it.
 func DefaultModuleDangVersion(engineVersion string) dang.Version {
-	if engine.CheckVersionCompatibility(
-		engine.BaseVersion(engine.NormalizeVersion(engineVersion)),
-		engine.MinimumDangV2ModuleVersion,
-	) {
-		return dang.Version{}
+	engineVersion = engine.NormalizeVersion(engineVersion)
+	switch {
+	case !engine.CheckVersionCompatibility(engine.BaseVersion(engineVersion), engine.MinimumDangV2ModuleVersion):
+		return dang.Version1_0
+	case !engine.APIVersionAtLeast(engineVersion, Dang24ModuleVersion):
+		return dang.Version2_1
+	default:
+		return dang.Version2_4
 	}
-	return dang.Version1_0
 }
 
 // DefaultModuleVersions are the versions of a Dang SDK module at engine
@@ -120,8 +143,7 @@ func DefaultModuleVersions(engineVersion string) Versions {
 // version, whatever the manifest says. Without one (no dang.toml, no Dagger
 // import, or `dagger = true`) the engine version is the manifest's, as the
 // Dang CLI reads `dagger = true`. `dang = "X.Y"` is the Dang version; without
-// one, it is DefaultModuleDangVersion of the resulting engine version, or the
-// version Dang picks for the source on its own.
+// one, it is DefaultModuleDangVersion of the resulting engine version.
 //
 // A declared engine version must be one this engine can serve, as an
 // engineVersion must.
@@ -139,8 +161,7 @@ func ResolveModuleVersionsWithOverride(ctx context.Context, configPath string, d
 
 // resolveVersions resolves the versions in data (nil: no dang.toml) with
 // defaultEngine as the engine version when none is declared, and
-// defaultDang(engine version) as the Dang version when none is declared (the
-// zero Version: Dang's own default).
+// defaultDang(engine version) as the Dang version when none is declared.
 func resolveVersions(
 	ctx context.Context,
 	configPath string,
@@ -155,11 +176,6 @@ func resolveVersions(
 			versions.Engine = override
 		}
 		versions.Dang = defaultDang(versions.Engine)
-		if versions.Dang.IsZero() {
-			// No dang.toml governs the source, so Dang parses it as its
-			// current version.
-			versions.Dang = dang.CurrentVersion
-		}
 		return versions, nil
 	}
 
@@ -220,10 +236,7 @@ func resolveVersions(
 	if override != "" {
 		versions.Engine = override
 	}
-	pin := defaultDang(versions.Engine)
-	if !pin.IsZero() {
-		ctx = dang.ContextWithVersion(ctx, pin)
-	}
+	ctx = dang.ContextWithVersion(ctx, defaultDang(versions.Engine))
 	versions.Dang = dang.VersionForConfig(ctx, &cfg)
 	versions.DangDeclared = !cfg.Dang.IsZero()
 	return versions, nil
@@ -279,10 +292,10 @@ func contextWithEntrypointVersion(ctx context.Context, version string) (context.
 }
 
 // parseEntrypointDangVersion parses an entrypoint's Dang version as
-// ModuleSource.DangVersion holds it; empty is dang.DefaultVersion.
+// ModuleSource.DangVersion holds it; empty is DefaultEntrypointDangVersion.
 func parseEntrypointDangVersion(version string) (dang.Version, error) {
 	if version == "" {
-		return dang.DefaultVersion, nil
+		return DefaultEntrypointDangVersion, nil
 	}
 	v, err := dang.ParseVersion(version)
 	if err != nil {

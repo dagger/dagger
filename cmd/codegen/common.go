@@ -36,9 +36,9 @@ func getGlobalConfig(ctx context.Context, alwaysConnect bool) (generator.Config,
 		Bundle:    bundle,
 	}
 
-	// If a module source ID is provided or no introspection JSON is provided, we will query
-	// the engine so we can create a connection here.
-	if moduleSourceID != "" || introspectionJSONPath == "" || alwaysConnect {
+	// If no introspection JSON is provided, we will query the engine so we can
+	// create a connection here.
+	if introspectionJSONPath == "" || alwaysConnect {
 		dag, err := dagger.Connect(ctx)
 		if err != nil {
 			return generator.Config{}, fmt.Errorf("failed to connect to engine: %w", err)

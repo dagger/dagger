@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -369,6 +370,29 @@ type RuntimePrebuilder interface {
 }
 
 /*
+ModulePrebuilder is an interface that a Runtime may implement when every call
+of its module builds on one file, such as the module's compiled binary, that
+can be built as soon as the module is loaded. Loading the module doesn't need
+the file, so it can be built ahead of the module's first call, and a call then
+finds it built or joins its build. The image the calls run their process in
+is the other result every call starts from, which RuntimeImage returns.
+*/
+type ModulePrebuilder interface {
+	// PrebuildFile returns that file for the loaded module, not yet built, or
+	// false when the module has none. It is the same result the module's
+	// calls build on, or, with a platform, the same result the calls of an
+	// engine of that platform build on, such as an engine image of another
+	// platform ships.
+	PrebuildFile(context.Context, dagql.ObjectResult[*Module], *Platform) (dagql.ObjectResult[*File], bool, error)
+
+	// RuntimeImage returns the image every call of the loaded module runs
+	// its process in, not yet pulled, or false when the module declares
+	// none. It is the same result the module's calls start from, or, with a
+	// platform, the one the calls of an engine of that platform start from.
+	RuntimeImage(context.Context, dagql.ObjectResult[*Module], *Platform) (dagql.ObjectResult[*Container], bool, error)
+}
+
+/*
 ModuleTypes is an interface that a SDK may implement to expose type definitions of the module.
 
 This interface MUST be implemented to support self calls.
@@ -402,6 +426,17 @@ type ModuleTypes interface {
 		*Module,
 	) (dagql.ObjectResult[*Module], error)
 }
+
+// ModuleTypesForSource is a ModuleTypes that reports the types of some module
+// sources and not others, and can tell which before it's asked.
+type ModuleTypesForSource interface {
+	ReportsModuleTypes(context.Context, dagql.ObjectResult[*ModuleSource]) (bool, error)
+}
+
+// ErrModuleTypesNeedRuntime is what a ModuleTypes returns when it can't report
+// this module's types itself: the engine then asks the module's runtime for
+// them, as for an SDK without ModuleTypes.
+var ErrModuleTypesNeedRuntime = errors.New("module types need the module's runtime")
 
 /*
 	  SDK aggregates all the interfaces that a SDK may implement.

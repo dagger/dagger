@@ -2567,6 +2567,12 @@ type FunctionCall struct {
 	// function body inside the entrypoint's plumbing.
 	processSpan trace.SpanContext
 
+	// engineWork marks a call made as the engine's own work (WithEngineWork),
+	// such as an SDK building a module's runtime. It is carried engine-side
+	// only like processSpan: the calls its module makes are the engine's own
+	// work too, and their telemetry is internal.
+	engineWork bool
+
 	// plumbingSpan holds the work that runs this call without being its body,
 	// carried engine-side only like processSpan. A module entrypoint sets it
 	// to its own span, so that its module process's dependency loading lands
@@ -2663,6 +2669,12 @@ func (fnCall *FunctionCall) CallerAgent() (dagql.ObjectResult[*Agent], bool) {
 // SetCallerAgent stamps the agent whose turn dispatched this function call.
 func (fnCall *FunctionCall) SetCallerAgent(agent dagql.ObjectResult[*Agent]) {
 	fnCall.callerAgent = agent
+}
+
+// EngineWork reports whether the call was made as the engine's own work
+// (see FunctionCall.engineWork).
+func (fnCall *FunctionCall) EngineWork() bool {
+	return fnCall != nil && fnCall.engineWork
 }
 
 // ParentTyped returns the receiver object the function was called on (with its

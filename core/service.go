@@ -847,6 +847,11 @@ func (svc *Service) startContainer(
 		}
 	}
 
+	moduleContext, err := query.ProcessModuleContext(ctx, svc.ModuleContext)
+	if err != nil {
+		return err
+	}
+
 	exited := make(chan struct{})
 	// Route the service's stdio logs to the installing API call's row by
 	// passing its span context as the executor cause context. setupOTel uses
@@ -872,13 +877,14 @@ func (svc *Service) startContainer(
 				Resize: resize,
 				Signal: signal,
 			},
+			nil,
 			started,
 			logTargetCtx,
 			execMD,
 			clientMetadata.SessionID,
 			clientMetadata.ClientID,
 			nestedClientMetadata,
-			svc.ModuleContext,
+			moduleContext,
 			nil,
 		)
 		runErr <- err

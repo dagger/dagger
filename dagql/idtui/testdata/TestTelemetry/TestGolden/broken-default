@@ -1,0 +1,10 @@
+Expected stderr:
+
+✔ connect X.Xs
+✘ load workspace: . X.Xs ERROR
+┇ loading type definitions › load extra module: ./viztest/broken-dep/broken › ModuleSource.asModule › module SDK: load runtime ›
+✘ withExec sh /gobuild/build.sh dagger/broken (disableDaggerInDagger: true, noInit: true) X.Xs ERROR
+./main.go:6:6: undefined: ctx
+! exit code: 2
+
+Setup tracing by running "dagger cloud signup". To hide set DAGGER_NO_NAG=1
