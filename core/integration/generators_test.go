@@ -812,7 +812,8 @@ source = "dang"
 		require.NoError(t, err, out)
 		require.Contains(t, out, "Initialize a new module for development with an SDK")
 		require.Contains(t, out, "dagger module init SDK [flags]")
-		require.Contains(t, out, "AVAILABLE SDKs")
+		require.Contains(t, out, "INSTALLED SDKs")
+		require.Contains(t, out, "OFFICIAL SDKs AVAILABLE TO INSTALL")
 		require.NotContains(t, out, "AVAILABLE COMMANDS")
 		require.Contains(t, out, "go")
 		require.NotContains(t, out, "EXAMPLES")
@@ -831,14 +832,16 @@ source = "dang"
 			With(daggerNonNestedExec("module", "init", "--help")).
 			CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "NO AVAILABLE SDKs. In doubt, try 'dagger mod install github.com/dagger/dang-sdk'")
+		require.Contains(t, out, "No SDK is installed in this workspace.")
+		require.Contains(t, out, "OFFICIAL SDKs AVAILABLE TO INSTALL")
 		require.NotContains(t, out, "AVAILABLE COMMANDS")
 	})
 
 	t.Run("lists SDK sources", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerNonNestedExec("sdk", "list")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `(?m)^SDK\s+SOURCE\s*$`, out)
+		require.Regexp(t, `(?m)^SDK\s+SOURCE\s+STATUS\s*$`, out)
+		require.Contains(t, out, "available to install")
 		require.Contains(t, out, ".dagger/modules/module-max-lifecycle")
 	})
 
@@ -883,7 +886,7 @@ name = "project"
 			With(daggerNonNestedExecFail("module", "init", "missing", "-y")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `unknown command "missing" for "dagger module init"`)
+		require.Contains(t, out, `SDK "missing" is neither installed nor a known official SDK`)
 	})
 
 	t.Run("infers name and path", func(ctx context.Context, t *testctx.T) {

@@ -1773,7 +1773,15 @@ Initialize a new module for development with an SDK
 
 ### Synopsis
 
-Initialize a new module for development with an SDK
+Initialize a new module for development with an SDK.
+
+Select an installed SDK by its registered name. SDK addresses (values containing
+/ or @) are not accepted; install the SDK first with dagger module install.
+Use --install-sdk to install a known official SDK and initialize together, as
+one changeset. Use --no-apply to preview it or -y/--auto-apply to apply it.
+
+The built-in Dang runtime can run existing Dang modules. Creating a new Dang
+module requires installing the Dang SDK.
 
 ```
 dagger module init SDK [flags]
@@ -1783,6 +1791,7 @@ dagger module init SDK [flags]
 
 ```
       --install       Install the module (default: install when --path is omitted)
+      --install-sdk   Install a known official SDK if needed and initialize in one changeset
       --main          Install and select the module as the workspace main (default: select when --path and --name are omitted)
   -n, --name string   Module name (inferred when omitted)
       --no-apply      Show generated changes without applying them
@@ -2174,12 +2183,12 @@ dagger sdk
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
-* [dagger sdk list](#dagger-sdk-list)	 - List known SDKs
+* [dagger sdk list](#dagger-sdk-list)	 - List installed SDKs and official SDKs available to install
 * [dagger sdk scope](#dagger-sdk-scope)	 - Inspect and configure SDK scopes
 
 ## dagger sdk list
 
-List known SDKs
+List installed SDKs and official SDKs available to install
 
 ```
 dagger sdk list [flags]

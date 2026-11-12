@@ -28,6 +28,7 @@ var (
 	moduleInitMain        bool
 	moduleInitEntrypoint  bool
 	moduleInitNoApply     bool
+	moduleInitInstallSDK  bool
 	moduleClientAddSDK    string
 	moduleClientRemoveSDK string
 	moduleClientScopeSDK  string
@@ -40,11 +41,20 @@ var (
 var moduleInitCmd = &cobra.Command{
 	Use:   "init SDK [flags]",
 	Short: "Initialize a new module for development with an SDK",
-	Long:  "Initialize a new module for development with an SDK",
-	Args:  cobra.NoArgs,
+	Long: `Initialize a new module for development with an SDK.
+
+Select an installed SDK by its registered name. SDK addresses (values containing
+/ or @) are not accepted; install the SDK first with dagger module install.
+Use --install-sdk to install a known official SDK and initialize together, as
+one changeset. Use --no-apply to preview it or -y/--auto-apply to apply it.
+
+The built-in Dang runtime can run existing Dang modules. Creating a new Dang
+module requires installing the Dang SDK.`,
+	Args: cobra.NoArgs,
 	Annotations: map[string]string{
-		availableSubcommandsTitleAnnotation: "AVAILABLE SDKs",
-		noAvailableSubcommandsAnnotation:    "NO AVAILABLE SDKs. In doubt, try 'dagger mod install github.com/dagger/dang-sdk'",
+		availableSubcommandsTitleAnnotation: "INSTALLED SDKs",
+		noAvailableSubcommandsAnnotation:    "No SDK is installed in this workspace.",
+		availableSDKsAnnotation:             "",
 	},
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
@@ -134,6 +144,7 @@ func init() {
 	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitEntrypoint, "entrypoint", false, "Deprecated alias for --main")
 	_ = moduleInitCmd.PersistentFlags().MarkDeprecated("entrypoint", "use --main instead")
 	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitNoApply, "no-apply", false, "Show generated changes without applying them")
+	moduleInitCmd.PersistentFlags().BoolVar(&moduleInitInstallSDK, "install-sdk", false, "Install a known official SDK if needed and initialize in one changeset")
 	moduleClientAddCmd.Flags().StringVar(&moduleClientAddSDK, "sdk", "", "Select an installed `SDK` (default: deepest scope)")
 	moduleClientRemoveCmd.Flags().StringVar(&moduleClientRemoveSDK, "sdk", "", "Select an installed `SDK` (default: deepest matching scope)")
 	moduleClientScopeCmd.Flags().StringVar(&moduleClientScopeSDK, "sdk", "", "SDK module to query")
@@ -153,6 +164,10 @@ func init() {
 }
 
 func runSDKModuleInit(cmd *cobra.Command, sdk string) error {
+	return runSDKModuleInitWithInstall(cmd, sdk, nil)
+}
+
+func runSDKModuleInitWithInstall(cmd *cobra.Command, sdk string, installSDK *officialSDK) error {
 	if workspaceEnv != "" {
 		return fmt.Errorf("module init does not support --env; SDK scopes live in the base workspace config")
 	}
@@ -165,7 +180,11 @@ func runSDKModuleInit(cmd *cobra.Command, sdk string) error {
 	if err != nil {
 		return err
 	}
-	settings, err := sdkModuleSettingsJSON(cmd, sdk)
+	settingsSDK := sdk
+	if installSDK != nil {
+		settingsSDK = cmd.Name()
+	}
+	settings, err := sdkModuleSettingsJSON(cmd, settingsSDK)
 	if err != nil {
 		return err
 	}
@@ -173,19 +192,33 @@ func runSDKModuleInit(cmd *cobra.Command, sdk string) error {
 	if err != nil {
 		return err
 	}
-	return mutateSDKModuleWorkspaceWithDisposition(cmd, `
+	query := `
 query ModuleInit($sdk: String!, $name: String, $path: String, $settings: JSON, $install: Boolean, $main: Boolean) {
   currentWorkspace {
     result: withInitModule(sdk: $sdk, name: $name, path: $path, settings: $settings, install: $install, main: $main) { id }
   }
-}`, map[string]any{
+}`
+	variables := map[string]any{
 		"sdk":      sdk,
 		"name":     moduleInitName,
 		"path":     moduleInitPath,
 		"settings": core.JSON(settings),
 		"install":  install,
 		"main":     main,
-	}, disposition, false, func(ctx context.Context, current *core.Workspace) error {
+	}
+	if installSDK != nil {
+		query = `
+query ModuleInit($sdk: String!, $ref: String!, $provider: String!, $name: String, $path: String, $settings: JSON, $install: Boolean, $main: Boolean) {
+  currentWorkspace {
+    result: withSdk(ref: $ref, name: $provider, asSdkName: $sdk) {
+      initialized: withInitModule(sdk: $sdk, name: $name, path: $path, settings: $settings, install: $install, main: $main) { id }
+    }
+  }
+}`
+		variables["ref"] = installSDK.Repo
+		variables["provider"] = installSDK.InstallName
+	}
+	return mutateSDKModuleWorkspaceWithDisposition(cmd, query, variables, disposition, false, func(ctx context.Context, current *core.Workspace) error {
 		name, err := moduleInitResultName(ctx, current)
 		if err != nil {
 			return err
@@ -390,12 +423,18 @@ func mutateSDKModuleWorkspaceWithDisposition(
 		var result struct {
 			CurrentWorkspace struct {
 				Result struct {
-					ID core.ID
+					ID          core.ID
+					Initialized struct {
+						ID core.ID
+					}
 				}
 			}
 		}
 		if err := dag.Do(ctx, &dagger.Request{Query: query, Variables: variables}, &dagger.Response{Data: &result}); err != nil {
 			return err
+		}
+		if result.CurrentWorkspace.Result.Initialized.ID != "" {
+			result.CurrentWorkspace.Result.ID = result.CurrentWorkspace.Result.Initialized.ID
 		}
 		if result.CurrentWorkspace.Result.ID == "" {
 			return fmt.Errorf("SDK-module workspace operation returned no workspace")
