@@ -109,7 +109,9 @@ func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, wor
 	}
 	result.SetCollectionRoots(result.CollectionRoots)
 	slices.SortStableFunc(result.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
-	result.NameEntries()
+	if err := result.NameEntries(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

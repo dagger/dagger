@@ -16,7 +16,7 @@ Users need to list the keys, select an item, and run checks or generators on a s
 
 A **collection** is a dynamic set of objects with unique keys. Its type defines the keys and item lookup. Each collection value contains its own set of keys.
 
-A **dimension** is a column in the flattened workspace. Each collection type defines exactly one collection column. Its name comes from the collection item type. All occurrences of that collection type share the column.
+A **dimension** is a column in the flattened workspace. Each collection type defines exactly one collection column. All occurrences of that collection type share the column. Its name uses the item type, with a collection type fallback for name conflicts.
 
 Authors declare collections. The engine supplies a standard collection API and maps collection types to columns.
 
@@ -163,7 +163,7 @@ When both lists are empty, a batch function can use an operation for the full or
 
 ### 3. Project collections into dimensions
 
-A collection type creates one column. The column identifier is its exact schema type name. The column name is its item type name in kebab case. Its coordinate is the selected item key.
+A collection type creates one column. The column identifier is its exact schema type name. The default column name is its item type name in kebab case. Its coordinate is the selected item key.
 
 ```graphql
 type Go { modules: GoModules! }
@@ -190,9 +190,9 @@ Build the complete column set from the schema before selecting rows. Empty colle
 | Identifier | Coordinate |
 | -- | -- |
 | `module` | Configured module name, when present |
-| `name` | Full local field path, or `.` for the local root |
+| `name` | Full field path from the exposed module root, or `.` for that root |
 
-The local root is the nearest collection item, or the exposed module root. Keep literal schema field names. Artifact types do not add columns. Legacy `type:<TypeName>` keys remain compatibility selectors.
+Keep literal schema field names. Include ordinary collection field names. Omit the module prefix and synthetic `get` operations. For example, a test can have `name=modules.packages.tests.test`. Artifact types do not add columns. Legacy `type:<TypeName>` keys remain compatibility selectors.
 
 #### Dimension names
 
@@ -200,13 +200,13 @@ Collection type identity and column names come only from schema type metadata. T
 
 Two different collection types can return the same item type. For example, `Packages` and `Dependencies` can both return `Package`. Their columns stay distinct because their identifiers are different collection types. Do not merge them.
 
-Column-name options, awaiting a decision:
+Use item type names by default. For every name conflict, switch all affected columns to their collection type names. The example gives `packages` and `dependencies`. An unrelated `Tests -> Test` column stays `test`.
 
-1. **Item names, with a collection-type fallback (recommended).** Use the item type name by default. For every conflicting name, use the collection type name instead. The example gives `packages` and `dependencies`; an unrelated `Tests -> Test` column stays `test`. If the fallback still conflicts, report an error. Do not add field qualifiers or numeric suffixes.
-2. **Always use collection type names.** The example gives `packages` and `dependencies`; `Tests -> Test` gives `tests`.
-3. **Keep item names and reject conflicts.** Use `package` and `test` for unambiguous types. Reject the example because two columns would be named `package`.
+A fallback can conflict with another column. Apply the same rule to that column. Report an error if a conflict remains after every affected column uses its collection type name. Reserve `module` and `name`, even in a workspace with no module coordinate. Do not add field qualifiers or numeric suffixes.
 
-These are naming policies only. Every collection type still defines exactly one column. Names are computed from the complete schema before filtering.
+Compute names from the complete workspace schema before filtering, including source filters. Empty collections contribute columns. Legacy type selectors and CLI flags do not change column names. A reserved CLI flag can use another flag name while the API column keeps its name.
+
+Exact column identifiers remain valid selectors. Reject a column name that equals another collection's identifier. This can occur with lower-case schema type names.
 
 #### Artifact API
 
@@ -260,7 +260,7 @@ Requesting `dimensionKeys(all: true)` for a test container gives its full coordi
     {"dimension": "module", "key": "go"},
     {"dimension": "GoModules", "key": "sdk/go"},
     {"dimension": "GoTests", "key": "TestConnect"},
-    {"dimension": "name", "key": "container"}
+    {"dimension": "name", "key": "modules.tests.container"}
   ]
 }
 ```
@@ -273,7 +273,7 @@ dag+container://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect
 
 Legacy type-path query selectors remain accepted. They are not columns in the canonical projection.
 
-Collection selection inserts `get(key: ...)` calls. `get` and the keys are not path segments. The engine enumerates item objects and their children. It also retains the collection object at its own path, without a key for that collection. Thus `go/modules` is a `GoModules` artifact; adding a `Go.modules` key at the same path selects a `GoModule` artifact. For legacy modules, `batch` is an explicit path on the collection object, not a child of each item.
+Collection selection inserts `get(key: ...)` calls. `get` and the keys are not path segments. The engine enumerates item objects and their children. It also retains the collection object at its own path, without a key for that collection. Thus `go/modules` is a `GoModules` artifact; adding a `GoModules` key at the same path selects a `GoModule` artifact. For legacy modules, `batch` is an explicit path on the collection object, not a child of each item.
 
 #### Artifact identity
 
@@ -281,10 +281,7 @@ Source artifact identity includes its type, complete source path, and collection
 
 Different fields can expose the same collection type with the same key. They share the collection column. Other dimensions must distinguish their artifacts; do not split the collection column or silently merge source artifacts.
 
-The current local-root `name` rule is insufficient for `before: Tests` and `after: Tests` when both contain `unit.check`: module, test key, and local name all match. Name-scope options, awaiting a decision:
-
-1. **Use the full field path in `name` (recommended).** Start at the exposed module root. Include ordinary collection field names but omit `get` operations. The names become `before.check` and `after.check`. A package test can have `name=modules.packages.tests.test`. The module root itself is `.`. This replaces the current nearest-item rule.
-2. **Keep the local name and add a field-context column.** Keep `name=check` and add `field=before` or `field=after`. This preserves local names but adds a dimension.
+For `before: Tests` and `after: Tests`, both collections can contain key `unit`. They share one `test` column. Their checks differ by `name=before.check` and `name=after.check`. A name relative to the nearest item would lose that distinction. The full module-root field path preserves it without another column.
 
 An artifact can also differ from another by an absent collection coordinate. A check on a `Row` collection and a check on its `Cell` can share the public path `rows/check`. The parent has no cell coordinate. The current URI grammar has only positive dimension predicates, so the public-path fallback can select both. Do not present that fallback as a unique address. Without a runtime uniqueness proof, `uri()` now returns an explicit error for this case. The CLI preview does the same before printing output. A child-only selection still works. Adding an absence selector remains separate API work.
 
@@ -305,7 +302,7 @@ Alternatives in one filter use OR. Chained filters use AND. Unknown dimension na
 
 #### Table columns
 
-Canonical coordinates have three parts: `module`, the enclosing collection item keys, and `name`. `name` is the full dot-separated field path from the nearest collection item. Without a parent collection, it starts at the module's exposed root. Use the literal schema field names, such as `python310.unit`. Use `.` for the root itself. Ordinary object fields extend `name`; a collection item starts a new local root.
+Canonical coordinates have three parts: `module`, the enclosing collection item keys, and `name`. Use the full dot-separated path from the exposed module root for `name`. Keep literal schema field names, including collection fields. Examples: `python310.unit` and `modules.packages.tests.test`. Use `.` for the module root itself.
 
 Legacy type-path coordinates remain compatibility selectors. They are not canonical table columns.
 
@@ -356,9 +353,9 @@ The scheme selects the artifact type. Apply `+check` as a type filter before cho
 
 No new link API is needed. The `all` argument controls table metadata. It does not control `uri()`. The existing `absolute` option supplies the workspace address when the link must name its source workspace.
 
-When discovery deliberately loads only part of the schema, keep the full field path. Do not load unrelated modules only to shorten links. Retain every parent collection key. Use exact dimension identifiers when the catalog cannot prove that an alias is unique. A failed unfiltered discovery also keeps a full address.
+Load schema metadata across modules to compute column names. Enumerate items for selected rows or a complete address proof. If the schema is incomplete, keep the full field path and every parent collection key. Use exact dimension identifiers when the catalog cannot prove that an alias is unique. A failed unfiltered discovery also keeps a full address.
 
-In the CLI, `dagger check --list --all --format=link` prints links for individual checks. Tables use canonical coordinates and the same display pruning rule as the API. They put collection columns first, then `module` and `name`, and always include the DAG link. `--format=cli` prints complete commands. Use `--name` with the exact local field path, such as `--name=python310.unit`. Do not shorten that path to a suffix. Omit it only when the remaining selectors identify the schema path. If the same name occurs below a child collection, add an exact path selector. Older engines can retain their type-path selectors. `dagger list <collection>` lists individual items by default. A collapsed row represents a selection and retains its field path.
+In the CLI, `dagger check --list --all --format=link` prints links for individual checks. Tables use canonical coordinates and the same display pruning rule as the API. They put collection columns first, then `module` and `name`, and always include the DAG link. `--format=cli` prints complete commands. Use `--name` with the full module-root field path, such as `--name=python310.unit`. Do not shorten that path to a suffix. Omit it only when the remaining selectors identify the schema path. If the same name occurs below a child collection, add an exact path selector. Older engines can retain their type-path selectors. `dagger list <collection>` lists individual items by default. A collapsed row represents a selection and retains its field path.
 
 #### Discovery and evaluation
 

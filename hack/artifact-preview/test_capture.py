@@ -199,5 +199,40 @@ class ModernCaptureTest(unittest.TestCase):
         ], capture_entries(captured, listing))
 
 
+class LegacyCollectionSpellingTest(unittest.TestCase):
+    @staticmethod
+    def capture():
+        target = path('app/my-tests/health-check/run', 'Check', ['/app/my-tests'])
+        captured = metadata([target], {
+            'App': [field('myTests', 'AppTests')],
+            'AppTest': [field('healthCheck', 'Health')],
+            'Health': [field('run', 'Check')],
+        }, [{'identifier': '/app/my-tests', 'kind': 'COLLECTION', 'name': 'test',
+             'collectionType': 'AppTests', 'itemType': 'AppTest'}])
+        listing = [{'uri': 'dag://?test=unit', 'moduleName': 'app',
+                    'path': ['app', 'my-tests', 'health-check', 'run']}]
+        return captured, listing
+
+    def test_collection_and_tail_use_literal_schema_fields(self):
+        captured, listing = self.capture()
+        before = copy.deepcopy(captured)
+        entries = capture_entries(captured, listing)
+        self.assertEqual([
+            {'module': 'app', 'type': 'Check', 'localPath': ['healthCheck', 'run'],
+             'collections': [{'fields': ['myTests'], 'type': 'AppTests',
+                              'itemType': 'AppTest'}], 'items': [['unit']]},
+        ], format_entries(entries, 'flattening'))
+        ordinary_fields = (entries[0]['Collections'][0]['Fields']
+                           + entries[0]['LocalPath'])
+        self.assertEqual('myTests.healthCheck.run', '.'.join(ordinary_fields))
+        self.assertEqual(before, captured)
+
+    def test_missing_collection_field_metadata_is_rejected(self):
+        captured, listing = self.capture()
+        captured['modules'][0]['objects'][0]['asObject']['fields'] = []
+        with self.assertRaisesRegex(ValueError, 'Object App: expected one schema name'):
+            capture_entries(captured, listing)
+
+
 if __name__ == '__main__':
     unittest.main()

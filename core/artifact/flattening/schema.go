@@ -9,13 +9,24 @@ import (
 
 // Field describes one artifact field, including fields in empty collections.
 // LocalPath contains literal schema field names after the nearest collection
-// item, or after the exposed module root. An empty path names that root.
+// item, or after the exposed module root. An empty path selects that root.
+// The final name uses FieldPath, which includes enclosing collection fields.
 // Collections lists collection boundaries in parent-to-child order.
 type Field struct {
 	Module      string       `json:"module"`
 	Type        string       `json:"type"`
 	LocalPath   []string     `json:"localPath"`
 	Collections []Collection `json:"collections"`
+}
+
+// FieldPath returns every ordinary schema field from the exposed module root.
+// Collection lookups add keys, not field names. The caller owns the result.
+func (f Field) FieldPath() []string {
+	var path []string
+	for _, collection := range f.Collections {
+		path = append(path, collection.Fields...)
+	}
+	return append(path, f.LocalPath...)
 }
 
 // Schema holds the complete field metadata before callers select rows.
@@ -27,7 +38,7 @@ type Schema struct {
 
 type schemaField struct {
 	module      string
-	localPath   []string
+	fieldPath   []string
 	collections []string
 }
 
@@ -53,9 +64,11 @@ func NewSchema(fields []Field) (*Schema, error) {
 	for _, dimension := range byID {
 		schema.dimensions = append(schema.dimensions, dimension)
 	}
-	slices.SortFunc(schema.dimensions, func(a, b *Dimension) int {
-		return strings.Compare(a.Identifier, b.Identifier)
-	})
+	var err error
+	schema.dimensions, err = NameDimensions(schema.dimensions)
+	if err != nil {
+		return nil, err
+	}
 	return schema, nil
 }
 
@@ -74,8 +87,8 @@ func (s *Schema) Dimensions() Dimensions {
 // Empty keys are valid. The result does not depend on the selected fields.
 func (s *Schema) Coordinates(field Field, keys ...string) ([]Coordinate, error) {
 	known, exists := s.fields[fieldIdentity(field)]
-	name := strings.Join(field.LocalPath, ".")
-	if len(field.LocalPath) == 0 {
+	name := strings.Join(field.FieldPath(), ".")
+	if name == "" {
 		name = "."
 	}
 	if !exists {
@@ -88,7 +101,7 @@ func (s *Schema) Coordinates(field Field, keys ...string) ([]Coordinate, error) 
 	for i, key := range keys {
 		collections[i] = Coordinate{Dimension: known.collections[i], Key: key}
 	}
-	return CanonicalCoordinates(known.module, known.localPath, collections), nil
+	return CanonicalCoordinates(known.module, known.fieldPath, collections), nil
 }
 
 func compileField(field Field) (schemaField, Dimensions, error) {
@@ -98,7 +111,7 @@ func compileField(field Field) (schemaField, Dimensions, error) {
 	if err := validateFieldSegments(field.LocalPath); err != nil {
 		return schemaField{}, nil, err
 	}
-	compiled := schemaField{module: field.Module, localPath: slices.Clone(field.LocalPath)}
+	compiled := schemaField{module: field.Module, fieldPath: field.FieldPath()}
 	var dimensions Dimensions
 	for _, collection := range field.Collections {
 		if collection.Type == "" {

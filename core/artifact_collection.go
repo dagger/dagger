@@ -52,13 +52,30 @@ func dimensionNames(names map[string]string, a *Artifact) map[string]string {
 
 // NameEntries sets the display names and short type key that each entry's
 // address uses.
-func (a *Artifacts) NameEntries() {
+func (a *Artifacts) NameEntries() error {
+	metadata := a.AllDimensions
+	if metadata == nil {
+		metadata = a.DimensionDefinitions()
+	}
+	input := make(flattening.Dimensions, len(metadata))
+	for i, dimension := range metadata {
+		input[i] = (*flattening.Dimension)(dimension)
+	}
+	named, err := flattening.NameDimensions(input)
+	if err != nil {
+		return err
+	}
+	a.AllDimensions = make(artifact.Dimensions, len(named))
+	for i, dimension := range named {
+		a.AllDimensions[i] = (*ArtifactDimension)(dimension)
+	}
 	names := a.displayNames()
 	for _, entry := range a.Entries {
 		entry.DimensionNames = dimensionNames(names, entry)
 		entry.TypeKeyName = a.typeKeyName(entry)
 		entry.links = a.linkPlans(entry)
 	}
+	return nil
 }
 
 func (a *Artifacts) linkPlans(entry *Artifact) *artifact.Links {

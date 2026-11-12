@@ -13,23 +13,23 @@ func ExampleCanonicalCoordinates() {
 		{Dimension: "DockerComposeProjects", Key: "e2e"},
 		{Dimension: "DockerComposeServices", Key: "web"},
 	}
-	for _, coordinate := range flattening.CanonicalCoordinates("docker", []string{"healthCheck", "run"}, collections) {
+	for _, coordinate := range flattening.CanonicalCoordinates("docker", []string{"compose", "projects", "services", "healthCheck", "run"}, collections) {
 		fmt.Printf("%s = %s\n", coordinate.Dimension, coordinate.Key)
 	}
 	// Output:
 	// module = docker
 	// DockerComposeProjects = e2e
 	// DockerComposeServices = web
-	// name = healthCheck.run
+	// name = compose.projects.services.healthCheck.run
 }
 
-func TestCanonicalLocalRoots(t *testing.T) {
+func TestCanonicalFullFieldPaths(t *testing.T) {
 	project := flattening.Coordinate{Dimension: "DockerComposeProjects", Key: "e2e"}
 	service := flattening.Coordinate{Dimension: "DockerComposeServices", Key: "web"}
 	for _, tc := range []struct {
 		name        string
 		module      string
-		localPath   []string
+		fieldPath   []string
 		collections []flattening.Coordinate
 		want        []flattening.Coordinate
 	}{
@@ -38,32 +38,32 @@ func TestCanonicalLocalRoots(t *testing.T) {
 			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, {Dimension: "name", Key: "."}},
 		},
 		{
-			name: "full path from exposed module root", module: "docker", localPath: []string{"compose", "allServices", "up"},
+			name: "full path from exposed module root", module: "docker", fieldPath: []string{"compose", "allServices", "up"},
 			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, {Dimension: "name", Key: "compose.allServices.up"}},
 		},
 		{
-			name: "nested collection item", module: "docker", collections: []flattening.Coordinate{project, service},
-			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, project, service, {Dimension: "name", Key: "."}},
+			name: "nested collection item", module: "docker", fieldPath: []string{"compose", "projects", "services"}, collections: []flattening.Coordinate{project, service},
+			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, project, service, {Dimension: "name", Key: "compose.projects.services"}},
 		},
 		{
-			name: "full path from nearest item", module: "docker", collections: []flattening.Coordinate{project, service}, localPath: []string{"healthCheck", "run"},
-			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, project, service, {Dimension: "name", Key: "healthCheck.run"}},
+			name: "full path through nearest item", module: "docker", collections: []flattening.Coordinate{project, service}, fieldPath: []string{"compose", "projects", "services", "healthCheck", "run"},
+			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, project, service, {Dimension: "name", Key: "compose.projects.services.healthCheck.run"}},
 		},
 		{
-			name: "function on collection uses enclosing item", module: "docker", collections: []flattening.Coordinate{project}, localPath: []string{"services", "all", "up"},
-			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, project, {Dimension: "name", Key: "services.all.up"}},
+			name: "function on collection retains all ordinary fields", module: "docker", collections: []flattening.Coordinate{project}, fieldPath: []string{"compose", "projects", "services", "all", "up"},
+			want: []flattening.Coordinate{{Dimension: "module", Key: "docker"}, project, {Dimension: "name", Key: "compose.projects.services.all.up"}},
 		},
 		{
-			name: "module root is collection", module: "matrix", collections: []flattening.Coordinate{{Dimension: "Rows", Key: "one"}}, localPath: []string{"check"},
+			name: "module root is collection", module: "matrix", collections: []flattening.Coordinate{{Dimension: "Rows", Key: "one"}}, fieldPath: []string{"check"},
 			want: []flattening.Coordinate{{Dimension: "module", Key: "matrix"}, {Dimension: "Rows", Key: "one"}, {Dimension: "name", Key: "check"}},
 		},
 		{
-			name: "no workspace module", localPath: []string{"bound", "container"},
+			name: "no workspace module", fieldPath: []string{"bound", "container"},
 			want: []flattening.Coordinate{{Dimension: "name", Key: "bound.container"}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, flattening.CanonicalCoordinates(tc.module, tc.localPath, tc.collections))
+			require.Equal(t, tc.want, flattening.CanonicalCoordinates(tc.module, tc.fieldPath, tc.collections))
 		})
 	}
 }
@@ -94,11 +94,11 @@ func TestCanonicalReplacesStaticCoordinates(t *testing.T) {
 		{Dimension: "type:Check", Key: "tests/cases/check"},
 		{Dimension: "name", Key: "old"},
 	}
-	got := flattening.CanonicalCoordinates("tests", []string{"check"}, input)
+	got := flattening.CanonicalCoordinates("tests", []string{"cases", "check"}, input)
 	require.Equal(t, []flattening.Coordinate{
 		{Dimension: "module", Key: "tests"},
 		{Dimension: "TestsCases", Key: "TestConnect"},
-		{Dimension: "name", Key: "check"},
+		{Dimension: "name", Key: "cases.check"},
 	}, got)
 	got[1].Key = "changed"
 	require.Equal(t, "TestConnect", input[1].Key)

@@ -1187,7 +1187,13 @@ type persistedArtifact struct {
 	ContextWorkspace uint64                 `json:",omitempty"`
 	View             *persistedArtifactView `json:",omitempty"`
 }
+
+// Names and address plans depend on the flattening rules. Reject older
+// snapshots instead of reusing coordinates or aliases from another rule set.
+const artifactSnapshotVersion = 1
+
 type persistedArtifacts struct {
+	Version         int
 	Tree            persistedModTree
 	Entries         []persistedArtifact
 	CollectionRoots []persistedArtifact
@@ -1199,7 +1205,7 @@ type persistedArtifacts struct {
 
 func encodeArtifacts(enc *dagql.PersistEncodeContext, entries, roots []*Artifact, selector ArtifactSelector, allDimensions artifact.Dimensions, allPaths artifact.Paths, completeSchema bool) (dagql.PersistedObjectEncoding, error) {
 	tree := newPersistedModTreeEncoder(enc)
-	payload := persistedArtifacts{Selector: selector, AllDimensions: allDimensions, AllPaths: allPaths, CompleteSchema: completeSchema}
+	payload := persistedArtifacts{Version: artifactSnapshotVersion, Selector: selector, AllDimensions: allDimensions, AllPaths: allPaths, CompleteSchema: completeSchema}
 	for i, group := range [][]*Artifact{entries, roots} {
 		for _, a := range group {
 			p := persistedArtifact{ModuleName: a.ModuleName, LoadFailure: a.LoadFailure, Path: a.Path, DimensionKeys: a.DimensionKeys, TypeName: a.TypeName, TypeKeyName: a.TypeKeyName, Directives: a.Directives}
@@ -1248,6 +1254,9 @@ func decodeArtifacts(ctx context.Context, dec *dagql.PersistDecodeContext, raw j
 	var payload persistedArtifacts
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, err
+	}
+	if payload.Version != artifactSnapshotVersion {
+		return nil, fmt.Errorf("unsupported artifact snapshot version %d", payload.Version)
 	}
 	nodes, err := decodePersistedModTree(ctx, dec, payload.Tree)
 	if err != nil {
