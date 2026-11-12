@@ -750,16 +750,31 @@ func (c *Cache) sessionStillSatisfiesResourceRequirements(ctx context.Context, s
 	return c.sessionSatisfiesResourceRequirementsLocked(sessionID, res)
 }
 
+// selectLookupCandidateForSessionLocked returns the first candidate the
+// session may use, or one bound to the session (BindToSession) when there is
+// one: that value is the session's own outcome, which an entry another
+// session made doesn't stand for. A bound candidate the session may use is
+// bound to that session, since only it holds the handle.
 func (c *Cache) selectLookupCandidateForSessionLocked(sessionID string, candidates *set.TreeSet[*sharedResult]) *sharedResult {
 	if candidates == nil {
 		return nil
 	}
+	var first *sharedResult
 	for res := range candidates.Items() {
-		if c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) && servableLocked(res) {
+		if first != nil && res.boundSession == "" {
+			continue
+		}
+		if !c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) || !servableLocked(res) {
+			continue
+		}
+		if res.boundSession != "" {
 			return res
 		}
+		if first == nil {
+			first = res
+		}
 	}
-	return nil
+	return first
 }
 
 // servableLocked reports whether a lookup may return res: not while a part of
