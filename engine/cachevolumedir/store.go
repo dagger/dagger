@@ -811,11 +811,17 @@ func (s *Store) startDeletionLocked(trash string, size int64, what string) {
 				err = errors.Join(err, fmt.Errorf("measure what survived: %w", measureErr))
 			}
 		}
+		if err != nil {
+			err = fmt.Errorf("remove %s: %w", what, err)
+			if s.opts.OnDeletionError != nil {
+				s.opts.OnDeletionError(err)
+			}
+		}
 		s.mu.Lock()
 		s.pendingBytes -= size
 		s.stuckBytes += survived
 		if err != nil {
-			s.removalErr = errors.Join(s.removalErr, fmt.Errorf("remove %s: %w", what, err))
+			s.removalErr = errors.Join(s.removalErr, err)
 		}
 		s.mu.Unlock()
 	}()
