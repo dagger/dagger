@@ -57,7 +57,7 @@ func TestMergeValuesKeptRecordChecksItsShape(t *testing.T) {
 	bctx, b, bsrv := transferTestCache(t)
 	persistedListTestResult(t, bctx, b, bsrv, "root", &transferTestValue{Text: "local"})
 	row := &bundle.Values[0]
-	row.Record.Call.Receiver = &ResultCallRef{ResultID: uint64(row.Ordinal)}
+	row.Record.Call.Receiver = &ResultCallRef{ResultID: row.SenderNumber}
 	_, err := b.MergeValues(bctx, cloudCacheID, bundle)
 	require.ErrorContains(t, err, "not a direct dependency")
 }
@@ -119,7 +119,7 @@ func TestMergeValuesRefusesUndeclaredCallReferenceBeforeIdentity(t *testing.T) {
 	bundle, _ := mergeTestSource(t, "self-call", "value")
 	require.Len(t, bundle.Values, 1)
 	row := &bundle.Values[0]
-	row.Record.Call.Receiver = &ResultCallRef{ResultID: uint64(row.Ordinal)}
+	row.Record.Call.Receiver = &ResultCallRef{ResultID: row.SenderNumber}
 	ctx, cache, _ := transferTestCache(t)
 	_, err := cache.MergeValues(ctx, cloudCacheID, bundle)
 	require.ErrorContains(t, err, "not a direct dependency")

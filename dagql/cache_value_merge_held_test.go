@@ -170,7 +170,7 @@ func TestStoredBundleCarriesAHeldEntryAsAHeldRow(t *testing.T) {
 	recipe, err := entry.loadResultCall().deriveRecipeDigest(cloud)
 	require.NoError(t, err)
 	require.Equal(t, recipe, held.Held, "the held row names the entry's recipe")
-	require.Equal(t, PersistedRecord{ResultID: uint64(held.Ordinal)}, held.Record, "no record")
+	require.Equal(t, PersistedRecord{ResultID: held.SenderNumber}, held.Record, "no record")
 	require.Empty(t, held.DependencyIDs)
 	require.Equal(t, []uint64{uint64(held.Ordinal)}, heldTestRow(t, got.Bundle, r).DependencyIDs, "R depends on the held row")
 
@@ -366,7 +366,9 @@ func TestMergeHeldRowRefusesARecordOfTheSameRecipe(t *testing.T) {
 	require.NoError(t, err)
 	ordinal := TransferOrdinal(len(full.Bundle.Values) + 1)
 	bundle := full.Bundle
-	bundle.Values = append(bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: p, Record: PersistedRecord{ResultID: uint64(ordinal)}, Held: recipe})
+	// A number of its own: a sender names each of its entries once.
+	number := p + 1<<20
+	bundle.Values = append(bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: number, Record: PersistedRecord{ResultID: number}, Held: recipe})
 	bundle.Roots = append(bundle.Roots, TransferredRoot{Ordinal: ordinal})
 
 	entries := heldTestEntries(b)
