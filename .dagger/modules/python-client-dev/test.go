@@ -37,7 +37,11 @@ func (t *TestForPythonVersion) Run(
 ) error {
 	ctr := pytest.New(ws, pytest.PytestOpts{SourcePath: "sdk/python"}).
 		InstallPytestOtel(
-			t.Container.WithEnvVariable("UV_PYTHON", t.Version),
+			// Make the venv for this Python version before the plugin goes in:
+			// otherwise `uv run` replaces the venv, and the plugin with it.
+			t.Container.
+				WithEnvVariable("UV_PYTHON", t.Version).
+				WithExec(uv("sync")),
 			pytest.PytestInstallPytestOtelOpts{
 				Runner:    pytest.PytestRunnerUv,
 				EnvTarget: pytest.PytestEnvTargetVenv,
