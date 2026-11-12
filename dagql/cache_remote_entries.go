@@ -1037,14 +1037,25 @@ func (c *Cache) CompactEqClasses(ctx context.Context) (oldSlots, newSlots int, r
 // holding's unit on its entry, appending to entries those left to collect.
 // Requires egraphMu for writing.
 func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, entries []*sharedResult) ([]HolderKey, []*sharedResult, error) {
+	// A Go map keeps its memory when its last key is deleted, so each map
+	// left empty goes: a stored entry outlives every holding of it.
 	delete(entry.holders, key)
+	if len(entry.holders) == 0 {
+		entry.holders = nil
+	}
 	if numbers := entry.cacheHolders[key.Cache]; numbers != nil {
 		delete(numbers, key.Number)
 		if len(numbers) == 0 {
 			delete(entry.cacheHolders, key.Cache)
 		}
 	}
+	if len(entry.cacheHolders) == 0 {
+		entry.cacheHolders = nil
+	}
 	delete(c.holderEntries, key)
+	if len(c.holderEntries) == 0 {
+		c.holderEntries = nil
+	}
 	state.holdings--
 	var deps []HolderKey
 	for number := range h.deps {
