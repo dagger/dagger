@@ -576,7 +576,8 @@ func TestStoredSizesKeepNoMeasureOfAnOlderState(t *testing.T) {
 // each layer the bundle lists once, and an allowance for each blob's
 // download address, which the bundle gets when it is sent. Before addresses,
 // that is never less than the bundle's outputs and layers encode to, and more
-// only by the digits of references.
+// only by each output's renewal key, which signing adds too, and the digits
+// of its references.
 func TestStoredSizesPriceOutputsAsTheWireCarriesThem(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
@@ -603,7 +604,7 @@ func TestStoredSizesPriceOutputsAsTheWireCarriesThem(t *testing.T) {
 	addresses := int64(4) * storedBlobAddressAllowance // two base layers and two tops
 	priced := sizes[0].OutputBytes - addresses
 	require.GreaterOrEqual(t, priced, carried, "never less than the wire carries")
-	require.LessOrEqual(t, priced, carried+2*storedOutputReferenceSlack, "more only by the digits of references")
+	require.LessOrEqual(t, priced, carried+2*storedOutputReferenceSlack, "more only by renewal keys and the digits of references")
 }
 
 // A root's lower half is what a merge over the message limit sends ahead of

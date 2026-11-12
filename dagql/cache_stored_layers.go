@@ -1,8 +1,11 @@
 package dagql
 
 import (
+	"encoding/json"
+	"fmt"
 	"reflect"
 	"runtime"
+	"slices"
 	"sync"
 	"weak"
 
@@ -24,6 +27,9 @@ import (
 type storedPart struct {
 	held   PersistedPartOffer
 	layers []*storedLayer
+	// wire is what the part's output adds to a merge's message, but its
+	// layers' own entries (storedPartWire).
+	wire int64
 }
 
 // storedLayer is a layer of a stored part's chain, and the pack the chain
@@ -31,6 +37,9 @@ type storedPart struct {
 type storedLayer struct {
 	layer snapshots.ExportLayer
 	pack  digest.Digest
+	// wire is the layer's entry in a merge's list of layers
+	// (ShareChainLayers), with its separator.
+	wire int64
 }
 
 // offer returns the part's offer, its chain's layers and packs back in it:
@@ -77,14 +86,71 @@ type storedLayers struct {
 // each layer keeps its own.
 func (t *storedLayers) part(offer PersistedPartOffer) storedPart {
 	if len(offer.Chain.Layers) == 0 {
-		return storedPart{held: offer}
+		return storedPart{held: offer, wire: storedPartWire(offer, nil)}
 	}
 	layers := make([]*storedLayer, len(offer.Chain.Layers))
 	for i, layer := range offer.Chain.Layers {
-		layers[i] = t.layer(storedLayer{layer: layer, pack: offer.Chain.Packs[layer.Descriptor.Digest]})
+		layers[i] = t.layer(storedLayer{layer: layer, pack: offer.Chain.Packs[layer.Descriptor.Digest], wire: storedLayerWire(layer)})
 	}
 	offer.Chain.Layers, offer.Chain.Packs = nil, nil
-	return storedPart{held: offer, layers: layers}
+	return storedPart{held: offer, layers: layers, wire: storedPartWire(offer, layers)}
+}
+
+// storedWireReference stands for each reference a part's output makes in a
+// merge's message: its ordinal, its owner's and services' rows and its places
+// in the bundle's layers. A bundle's references are smaller: no merge
+// carries a million records or layers.
+const storedWireReference = 999_999
+
+// storedPartWire is the encoded size of the output that offer, held without
+// its layers, becomes in a merge's message (ShareChainLayers), with its
+// separator: its chain with its packs and a renewal key but neither its
+// layers nor their addresses, which the bundle lists once for every output,
+// and a reference for each layer. Its references count storedWireReference's
+// digits, so the size is never less than a message carries for the output.
+// A part that doesn't encode counts nothing: no merge can carry it either.
+func storedPartWire(offer PersistedPartOffer, layers []*storedLayer) int64 {
+	chain := offer.Chain
+	chain.Layers, chain.Addresses = nil, nil
+	for _, layer := range layers {
+		if layer.pack != "" {
+			if chain.Packs == nil {
+				chain.Packs = map[digest.Digest]digest.Digest{}
+			}
+			chain.Packs[layer.layer.Descriptor.Digest] = layer.pack
+		}
+	}
+	key, _ := partAddressKey(offer.Address)
+	chain.RenewalKey = fmt.Sprintf("%d/%s", uint64(1<<64-1), key)
+	refs := make([]int, len(layers))
+	for i := range refs {
+		refs[i] = storedWireReference
+	}
+	owner := offer.Owner
+	owner.DependencyIDs = make([]uint64, len(offer.Owner.DependencyIDs))
+	for i := range owner.DependencyIDs {
+		owner.DependencyIDs[i] = storedWireReference
+	}
+	value := offer.Value
+	value.Services = slices.Clone(offer.Value.Services)
+	for i := range value.Services {
+		value.Services[i].ServiceResultID = storedWireReference
+	}
+	data, err := json.Marshal(TransferredOutput{Ordinal: storedWireReference, Address: offer.Address, State: "completed", Value: &value, Chain: &chain, Owner: &owner, Layers: refs})
+	if err != nil {
+		return 0
+	}
+	return int64(len(data)) + 1
+}
+
+// storedLayerWire is the layer's entry in a merge's list of layers, with its
+// separator, or 0 if it doesn't encode.
+func storedLayerWire(layer snapshots.ExportLayer) int64 {
+	data, err := json.Marshal(layer)
+	if err != nil {
+		return 0
+	}
+	return int64(len(data)) + 1
 }
 
 // layer returns the table's layer equal to want, adding want if it has none.
