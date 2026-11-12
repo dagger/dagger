@@ -77,6 +77,18 @@ type CachePrunePolicy struct {
 	// evaluate MinFreeSpace. When unset, MinFreeSpace behaves as if free space
 	// were zero.
 	CurrentFreeSpace int64
+
+	// OvershootAllowance, when positive, keeps a prune from freeing far more
+	// than it needs. Candidates still go oldest first, but one whose removal
+	// would take what the prune has freed past the bytes it needs plus this
+	// allowance is passed over, and the next is tried instead: removing one
+	// result can release a closure that most of the cache shares. If passing
+	// over can't free what the policy requires (the bytes over its maximum or
+	// reserved space, or under its minimum free space), the prune runs plain
+	// oldest first, so nothing is ever left unprunable. Zero is plain oldest
+	// first. PruneMetadataEstimate takes the same allowance through
+	// WithOvershootAllowance.
+	OvershootAllowance int64
 }
 
 type CachePruneReport struct {

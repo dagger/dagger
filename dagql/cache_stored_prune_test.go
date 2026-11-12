@@ -280,6 +280,72 @@ func TestPruneDropsTheLeastRecentlyUsedRootsToTheTarget(t *testing.T) {
 	}
 }
 
+// pruneTestBigNewestPool is ten equal stored roots, used a minute apart and
+// placed on an engine, with the size of one root's value.
+func pruneTestBigNewestPool(t *testing.T) (context.Context, *Cache, []uint64, CacheMetadataEstimate, int64) {
+	t.Helper()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	start := time.Now().Add(-time.Hour)
+	var roots []uint64
+	for i := range 10 {
+		root := storedPruneTestRoot(t, ctx, cloud, fmt.Sprintf("big-newest-root-%02d", i))
+		storedPruneTestUse(cloud, root, start.Add(time.Duration(i)*time.Minute))
+		roots = append(roots, root)
+	}
+	storedPruneTestPlace(t, ctx, cloud, roots)
+	cloud.egraphMu.RLock()
+	before := cloud.poolEstimateLocked()
+	perRoot := cloud.resultsByID[sharedResultID(roots[0])].storedValueBytes()
+	cloud.egraphMu.RUnlock()
+	require.Equal(t, 10, before.ResultCount)
+	return ctx, cloud, roots, before, perRoot
+}
+
+// With an overshoot allowance, a prune whose target can only be reached by
+// dropping a root bigger than what is left to free passes over it: here the
+// target is half of one root, so the nine older roots can't reach it and the
+// newest would empty the pool. It drops the nine and keeps the newest, under
+// the maximum. One pass on a service's pool went from 237.9 MB to 0.5 MB
+// against a 96 MiB target without it.
+func TestPruneWithOvershootAllowanceKeepsARootThatWouldFreeTooMuch(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, roots, before, perRoot := pruneTestBigNewestPool(t)
+	maximum, target := before.EstimatedBytes-1, perRoot/2
+	report, err := cloud.PruneMetadataEstimate(ctx, maximum, target, WithOvershootAllowance(target/10))
+	require.NoError(t, err)
+	require.True(t, report.Triggered)
+	require.Equal(t, 9, report.RemovedPersistedRootCount)
+	require.Equal(t, 1, report.AfterPrune.ResultCount, "the pool is not emptied")
+	require.LessOrEqual(t, report.AfterPrune.EstimatedBytes, maximum)
+	for i, root := range roots {
+		require.Equal(t, i == 9, storedPruneTestEntryState(cloud, root).value, "root %d: only the newest stays", i)
+	}
+}
+
+// Without an allowance, as every engine prunes, the same pool goes oldest
+// first to its target, the newest root too.
+func TestPruneWithoutOvershootAllowanceIsOldestFirst(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, _, before, perRoot := pruneTestBigNewestPool(t)
+	report, err := cloud.PruneMetadataEstimate(ctx, before.EstimatedBytes-1, perRoot/2)
+	require.NoError(t, err)
+	require.Equal(t, 10, report.RemovedPersistedRootCount)
+	require.Zero(t, report.AfterPrune.ResultCount)
+}
+
+// When passing over a root can't bring the pool under its maximum, the prune
+// is plain oldest first, so nothing is left unprunable: here the maximum is
+// half of one root, which only dropping every root reaches.
+func TestPruneWithOvershootAllowanceFallsBackWhenItCannotReachTheMaximum(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, _, _, perRoot := pruneTestBigNewestPool(t)
+	maximum, target := perRoot/2, perRoot/4
+	report, err := cloud.PruneMetadataEstimate(ctx, maximum, target, WithOvershootAllowance(target/10))
+	require.NoError(t, err)
+	require.Equal(t, 10, report.RemovedPersistedRootCount)
+	require.LessOrEqual(t, report.AfterPrune.EstimatedBytes, maximum)
+}
+
 // The disk stage counts the distinct blobs the pool's stored parts name, each
 // once however many values share it, and frees a blob only when its last
 // value goes. Expired roots go first.
@@ -314,6 +380,46 @@ func TestPruneCountsSharedBlobsOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(130), report.ReclaimedBytes, "the last value frees the base too")
 	require.Zero(t, cloud.snapshotPruneState(pruneSnapshotDisk, 0).usedBytes)
+}
+
+// A disk prune's policy takes the same overshoot allowance: the newer root
+// would release the shared base as well as its own layer, more than the
+// prune needs plus the allowance, so it is passed over and only the older
+// root's own layer goes. Without the allowance both go.
+func TestPruneDiskPolicyWithOvershootAllowance(t *testing.T) {
+	t.Parallel()
+	for _, allowance := range []int64{0, 5} {
+		t.Run(fmt.Sprintf("allowance %d", allowance), func(t *testing.T) {
+			t.Parallel()
+			ctx, cloud := storedPartTestCache(t, WithBlobStore())
+			older := storedPruneTestRoot(t, ctx, cloud, "blob-allowance-older")
+			newer := storedPruneTestRoot(t, ctx, cloud, "blob-allowance-newer")
+			storedPruneTestUse(cloud, older, time.Now().Add(-2*time.Hour))
+			storedPruneTestUse(cloud, newer, time.Now().Add(-time.Hour))
+			for number, layers := range map[uint64]map[string]int64{
+				older: {"base": 100, "older-top": 50},
+				newer: {"base": 100, "newer-top": 30},
+			} {
+				stored, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", layers), 0)
+				require.NoError(t, err)
+				require.True(t, stored)
+			}
+			storedPruneTestPlace(t, ctx, cloud, []uint64{older, newer})
+			require.Equal(t, int64(180), cloud.snapshotPruneState(pruneSnapshotDisk, 0).usedBytes)
+
+			// The prune needs 170 bytes to reach its target and must free 1 to
+			// get under its maximum.
+			_, err := cloud.Prune(ctx, []CachePrunePolicy{{MaxUsedSpace: 179, TargetSpace: 10, OvershootAllowance: allowance}})
+			require.NoError(t, err)
+			if allowance == 0 {
+				require.Zero(t, cloud.snapshotPruneState(pruneSnapshotDisk, 0).usedBytes)
+				return
+			}
+			require.Equal(t, int64(130), cloud.snapshotPruneState(pruneSnapshotDisk, 0).usedBytes)
+			require.False(t, storedPruneTestEntryState(cloud, older).value)
+			require.True(t, storedPruneTestEntryState(cloud, newer).value)
+		})
+	}
 }
 
 // An expired root goes before a less recently used one.
