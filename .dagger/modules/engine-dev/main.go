@@ -198,9 +198,20 @@ func (dev *EngineDev) Container(
 	if err != nil {
 		return nil, err
 	}
+	// The engine and its CLI build while the entries are made: making them
+	// waits for the exporter, and nothing in the engine waits for them.
+	var engineBuilt errgroup.Group
+	engineBuilt.Go(func() error {
+		_, err := ctr.Sync(ctx)
+		return err
+	})
 	entries, digests, err := dev.imageEntries(ctx, native, builder.Platform(), sdks, dev.ImageEntries)
+	builtErr := engineBuilt.Wait()
 	if err != nil {
 		return nil, fmt.Errorf("engine image entries: %w", err)
+	}
+	if builtErr != nil {
+		return nil, builtErr
 	}
 	ctr = ctr.WithDirectory(distconsts.EngineContainerImageEntriesDir, entries)
 	for _, sdk := range sdks {
