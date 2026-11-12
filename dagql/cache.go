@@ -7451,6 +7451,14 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			break
 		}
 		if !cur.noValueLocked() && !c.resultExpiredAtLocked(cur, now.Unix()) && servableLocked(cur) {
+			// A value bound to its session is that session's own outcome,
+			// which another session's live entry doesn't stand for: it
+			// registers beside the entry, not indexed, and its session hits
+			// it from then on.
+			if oc.res.boundSession != "" {
+				unindexed = true
+				break
+			}
 			if cur.attachmentState() == resultAttachmentOpen {
 				cur.attachDepsMu.Lock()
 				waitCh, holder := cur.attachDepsWaitCh, cur.attachHolder
