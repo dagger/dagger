@@ -692,10 +692,13 @@ type execMountState struct {
 	SourceRef bkcache.Ref
 
 	TmpfsOpt *pb.TmpfsOpt
-	Secret   *execSecretMountConfig
-	SSH      *execSSHMountConfig
-	Volume   *execVolumeMountConfig
-	Files    *execFilesMountConfig
+	// TmpfsDisk keeps the temp mount in a directory on the engine's disk
+	// instead of a tmpfs.
+	TmpfsDisk bool
+	Secret    *execSecretMountConfig
+	SSH       *execSSHMountConfig
+	Volume    *execVolumeMountConfig
+	Files     *execFilesMountConfig
 	// CacheDir is the pinned directory of a directory-backed cache volume.
 	CacheDir string
 
@@ -934,7 +937,14 @@ func prepareMounts(
 				}
 
 			case pb.MountType_TMPFS:
-				mountable = execTmpFSMountable(state.TmpfsOpt)
+				if state.TmpfsDisk {
+					mountable, err = prepareExecDiskTempMount(ctx)
+					if err != nil {
+						return err
+					}
+				} else {
+					mountable = execTmpFSMountable(state.TmpfsOpt)
+				}
 
 			case pb.MountType_SECRET:
 				mountable, err = prepareExecSecretMount(ctx, state.Secret)
@@ -1110,6 +1120,7 @@ func prepareMounts(
 			mountState.TmpfsOpt = &pb.TmpfsOpt{
 				Size_: int64(ctrMount.TmpfsSource.Size),
 			}
+			mountState.TmpfsDisk = ctrMount.TmpfsSource.Disk
 
 		default:
 			return materialized, fmt.Errorf("mount %d has no source", i)
@@ -1799,7 +1810,14 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 					}
 
 				case pb.MountType_TMPFS:
-					mountable = execTmpFSMountable(state.TmpfsOpt)
+					if state.TmpfsDisk {
+						mountable, err = prepareExecDiskTempMount(ctx)
+						if err != nil {
+							return err
+						}
+					} else {
+						mountable = execTmpFSMountable(state.TmpfsOpt)
+					}
 
 				case pb.MountType_SECRET:
 					mountable, err = prepareExecSecretMount(ctx, state.Secret)
@@ -1979,6 +1997,7 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				mountState.TmpfsOpt = &pb.TmpfsOpt{
 					Size_: int64(ctrMount.TmpfsSource.Size),
 				}
+				mountState.TmpfsDisk = ctrMount.TmpfsSource.Disk
 
 			default:
 				return failPrepare(fmt.Errorf("mount %d has no source", i))
