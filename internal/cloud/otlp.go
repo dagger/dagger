@@ -588,7 +588,7 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 
 	slog.Debug("connecting to cloud OTLP stream", "url", endpoint, "kind", kind)
 
-	resp, err := c.openStream(ctx, kind, endpoint) //nolint:bodyclose // Closed by the defer below; the watchdog also closes stalled bodies.
+	resp, err := c.openStream(ctx, kind, endpoint)
 	if err != nil {
 		return err
 	}
@@ -623,18 +623,7 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 	// pass 30 seconds, and Cloud ended the stream partway. The queue holds
 	// what the sink has not consumed yet, at most the whole stream.
 	body := newProgressBody(resp.Body)
-	frames := newFrameQueue()
-	readerDone := make(chan struct{})
-	go func() {
-		defer close(readerDone)
-		for {
-			frame, err := otlpstream.ReadFrame(body)
-			frames.push(frame, err)
-			if err != nil || frame.Kind != otlpstream.FrameData {
-				return
-			}
-		}
-	}()
+	frames, readerDone := readFrames(body)
 	defer func() {
 		// The sink side can stop first (a sink error, a bad frame): closing
 		// the body unblocks the reader, so it never outlives the fetch.
@@ -748,6 +737,25 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 			}
 		}
 	}
+}
+
+// readFrames reads frames from body into a queue on its own goroutine, until
+// a read error or a non-data frame, which it queues last. The returned channel
+// closes when it stops.
+func readFrames(body io.Reader) (*frameQueue, <-chan struct{}) {
+	frames := newFrameQueue()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			frame, err := otlpstream.ReadFrame(body)
+			frames.push(frame, err)
+			if err != nil || frame.Kind != otlpstream.FrameData {
+				return
+			}
+		}
+	}()
+	return frames, done
 }
 
 // frameQueue is the unbounded FIFO between a stream's network reader and its
