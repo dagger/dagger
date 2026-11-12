@@ -294,12 +294,19 @@ func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOu
 		results = append(results, output.Result)
 	}
 	selection := ValueSelection{Roots: results, Outputs: outputs, EveryRoot: true}
+	// Each wait is logged, and so is the capture after them: the log is
+	// where this export meeting another capture shows.
+	var waits int
+	var waitStart time.Time
 	for pause := imageBundleBusyPause; ; pause = min(2*pause, maxImageBundleBusyPause) {
 		err := c.WithExportedValues(ctx, selection, cfg, func(ctx context.Context, values *ExportedValues) error {
 			return writeImageBundle(ctx, values, w)
 		})
 		left := leftOutOnly(err)
 		if left == nil {
+			if err == nil && waits > 0 {
+				slog.Info("export image bundle: every result captured after waiting for busy ones", "results", len(results), "waits", waits, "waited", time.Since(waitStart))
+			}
 			return err
 		}
 		first := left.Roots[0]
@@ -307,7 +314,11 @@ func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOu
 		if !busyForNow(left.Roots) {
 			return err
 		}
-		slog.Info("export image bundle: results busy, capturing again", "left_out", len(left.Roots), "results", len(results), "row", first.Row, "kind", first.Kind, "pause", pause)
+		if waits == 0 {
+			waitStart = time.Now()
+		}
+		waits++
+		slog.Info("export image bundle: results busy, capturing again", "left_out", len(left.Roots), "results", len(results), "row", first.Row, "kind", first.Kind, "error", first.Err, "pause", pause)
 		select {
 		case <-ctx.Done():
 			return errors.Join(context.Cause(ctx), err)
