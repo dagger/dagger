@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,7 +19,9 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
+	"github.com/dagger/dagger/internal/buildkit/util/resolver/retryhandler"
 	"github.com/distribution/reference"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -119,7 +122,12 @@ func (r *Resolver) ensureImageConfigMetadata(
 		return nil, nil
 	})
 
-	fetchHandler := remotes.FetchHandler(r.contentStore, fetcher)
+	// A registry can drop a connection partway through a blob, and containerd
+	// only reconnects on an unexpected EOF, so retry the blob's fetch, as a
+	// pull does.
+	fetchHandler := retryhandler.New(remotes.FetchHandler(r.contentStore, fetcher), func(msg []byte) {
+		bklog.G(ctx).Warnf("resolving %s: %s", resolvedRef, bytes.TrimSpace(msg))
+	})
 	fetchMetadata := images.HandlerFunc(func(ctx context.Context, desc ocispecs.Descriptor) ([]ocispecs.Descriptor, error) {
 		if images.IsLayerType(desc.MediaType) {
 			return nil, images.ErrSkipDesc

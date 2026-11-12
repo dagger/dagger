@@ -246,11 +246,17 @@ func (r *Resolver) ResolveImageConfig(
 		}
 
 		provider := contentutil.FromFetcher(fetcher)
-		configDesc, err := images.Config(ctx, provider, rootDesc, platformMatcher)
-		if err != nil {
-			return nil, err
-		}
-		configBytes, err := content.ReadBlob(ctx, provider, configDesc)
+		var configBytes []byte
+		// Reading the platform manifest and the config are blob fetches too, so
+		// they're retried after a network error as well.
+		err = retryResolve(ctx, ref, func(ctx context.Context) error {
+			configDesc, err := images.Config(ctx, provider, rootDesc, platformMatcher)
+			if err != nil {
+				return err
+			}
+			configBytes, err = content.ReadBlob(ctx, provider, configDesc)
+			return err
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -403,8 +409,13 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		manifest = metadata.manifest
 	} else {
 		provider := contentutil.FromFetcher(fetcher)
-		var err error
-		manifestDesc, manifest, err = resolveManifestDescriptor(leaseCtx, provider, rootDesc, platformMatcher, true)
+		// Reading the platform manifest is a blob fetch too, so it's retried
+		// after a network error, as the layers are.
+		err := retryResolve(leaseCtx, resolvedRef, func(ctx context.Context) error {
+			var err error
+			manifestDesc, manifest, err = resolveManifestDescriptor(ctx, provider, rootDesc, platformMatcher, true)
+			return err
+		})
 		if err != nil {
 			return nil, err
 		}
