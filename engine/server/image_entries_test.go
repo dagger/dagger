@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/core"
@@ -160,4 +161,71 @@ func TestCheckImageDirectories(t *testing.T) {
 	require.NoError(t, srv.mergeImageEntries(e.ctx, dir))
 	require.NoError(t, srv.checkImageDirectories([]string{""}))
 	require.ErrorIs(t, srv.checkImageDirectories([]string{digest.FromString("absent").String()}), dagql.ErrUnknownEntry)
+}
+
+// An engine image's entries are made on an engine busy with other work, whose
+// own captures, such as the remote cache's, can hold a result the export
+// needs. The export waits for a result that's busy now and exports every
+// result once it's free, as on an idle engine. A result it refuses fails the
+// export at once, and a wait ends with the export's context.
+func TestExportImageBundleWaitsForBusyResults(t *testing.T) {
+	export := func(e *adapterTestEngine, ctx context.Context, dir string, results ...dagql.AnyResult) <-chan error {
+		var outputs []dagql.SelectedValueOutput
+		for _, res := range results {
+			outputs = append(outputs, dagql.SelectedValueOutput{Result: res, Address: snapshotPart})
+		}
+		exported := make(chan error, 1)
+		go func() { exported <- e.cache.ExportImageBundle(ctx, outputs, exportRefConfig, testImageDir{dir}) }()
+		return exported
+	}
+	t.Run("busy", func(t *testing.T) {
+		e := newAdapterTestEngine(t)
+		ready := e.file(t, "ready")
+		require.NoError(t, e.cache.Evaluate(e.ctx, ready))
+		busy := e.busyFile(t, "busy")
+		dir := t.TempDir()
+		exported := export(e, e.ctx, dir, ready, busy)
+		// Give the export time to find the result busy before its body ends.
+		time.Sleep(200 * time.Millisecond)
+		e.bodies.unpause()
+		require.NoError(t, exportErr(t, exported))
+		raw, err := os.ReadFile(filepath.Join(dir, schema.EngineImageBundleFile))
+		require.NoError(t, err)
+		var bundle dagql.ValueBundle
+		require.NoError(t, json.Unmarshal(raw, &bundle))
+		require.ElementsMatch(t, []uint64{entryNumber(t, ready), entryNumber(t, busy)}, bundleRoots(&bundle), "every result is exported")
+		require.Len(t, bundle.Outputs, 2)
+	})
+	t.Run("refused", func(t *testing.T) {
+		e := newAdapterTestEngine(t)
+		ready := e.file(t, "ready")
+		require.NoError(t, e.cache.Evaluate(e.ctx, ready))
+		refused := e.refusedFile(t, "refused")
+		err := exportErr(t, export(e, e.ctx, t.TempDir(), ready, refused))
+		require.ErrorContains(t, err, "export image bundle: 1 of 2 results left out")
+		require.NotErrorIs(t, err, dagql.ErrPersistStateNotReady)
+	})
+	t.Run("canceled", func(t *testing.T) {
+		e := newAdapterTestEngine(t)
+		busy := e.busyFile(t, "busy")
+		ctx, cancel := context.WithCancel(e.ctx)
+		exported := export(e, ctx, t.TempDir(), busy)
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+		err := exportErr(t, exported)
+		require.ErrorIs(t, err, context.Canceled)
+		require.ErrorIs(t, err, dagql.ErrPersistStateNotReady, "the error names the busy result")
+	})
+}
+
+// exportErr is the error an export sends on exported, within 10 seconds.
+func exportErr(t *testing.T, exported <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-exported:
+		return err
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the export")
+		return nil
+	}
 }
