@@ -79,6 +79,10 @@ func (l *Loader) loadBuiltinGoSDK(
 // container's own calls need no entry: a call's API view is part of its key,
 // and the engine that made the entries can give its client another view.
 func goSDKContainer(ctx context.Context, dag *dagql.Server) (dagql.ObjectResult[*core.Container], error) {
+	// These calls run in the calling client's session, which shows a call
+	// once: unhidden, they would take the line of a module's own identical
+	// call, such as its container().
+	ctx = dagql.WithSkip(ctx)
 	var base dagql.ObjectResult[*core.Container]
 	var files dagql.ObjectResult[*core.Directory]
 	if err := dag.Select(ctx, dag.Root(), &files, goSDKFiles()); err != nil {
