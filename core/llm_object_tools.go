@@ -12,7 +12,9 @@ import (
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -194,7 +196,7 @@ func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName s
 		return nil, false, nil
 	}
 
-	obj, err := srv.Load(ctx, toLoad)
+	obj, err := srv.Load(restoredBindingLoadContext(ctx, toLoad), toLoad)
 	if err != nil {
 		return nil, true, fmt.Errorf("load bound object of type %q: %w", typeName, err)
 	}
@@ -221,6 +223,54 @@ func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName s
 		return obj, true, nil
 	}
 	return obj, true, nil
+}
+
+type restoredBindingRoutingKey struct{}
+
+// restoredBindingRouting names the client that restored an agent, and the
+// recipes of the bindings it restored the agent with.
+type restoredBindingRouting struct {
+	metadata *engine.ClientMetadata
+	recipes  map[digest.Digest]struct{}
+}
+
+// withRestoredBindingRouting routes host access while loading any of recipes
+// as a bound tool object to the client described by metadata: the client that
+// restored the agent holding them.
+//
+// A bound object is loaded lazily, by recipe, in whatever client drives the
+// agent's loop — for a staff worker, the module client of the staff call that
+// woke it, which has no host. In the session that composed the binding, the
+// recipe was already evaluated where its host inputs were read (by the chief,
+// or by composition routed to the main client), so the load is a cache hit.
+// A restored session has evaluated none of it, so the load re-executes host
+// reads such as Query.secret(uri:) in that host-less client, minting a secret
+// nothing can read. The restoring client vouches for exactly the recipes it
+// restored, as it does for its own agents' bindings, so their loads are routed
+// to it. Like a Workspace owner's routing, this replaces only client metadata,
+// not the held ClientScope that is the execution authority.
+func withRestoredBindingRouting(ctx context.Context, metadata *engine.ClientMetadata, recipes map[digest.Digest]struct{}) context.Context {
+	if metadata == nil || len(recipes) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, restoredBindingRoutingKey{}, restoredBindingRouting{
+		metadata: metadata,
+		recipes:  recipes,
+	})
+}
+
+// restoredBindingLoadContext returns the context to load a lazily bound
+// object's recipe in: routed to the restoring client if the recipe is one it
+// restored (see withRestoredBindingRouting), else ctx unchanged.
+func restoredBindingLoadContext(ctx context.Context, id *call.ID) context.Context {
+	routing, ok := ctx.Value(restoredBindingRoutingKey{}).(restoredBindingRouting)
+	if !ok || id == nil || id.IsHandle() {
+		return ctx
+	}
+	if _, restored := routing.recipes[id.Digest()]; !restored {
+		return ctx
+	}
+	return engine.ContextWithClientMetadata(ctx, routing.metadata)
 }
 
 // rebindBoundTool replaces the object for typeName's binding with newObj — the
