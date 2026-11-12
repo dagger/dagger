@@ -67,9 +67,25 @@ func WithNestedClientServer(
 			query.ServeHTTPToNestedClient(resp, req, transport, nestedClientMetadata, parentClientID, inertAttachables, moduleContext, fnCall)
 		}),
 	}
+	fnCtx := context.WithValue(ctx, nestedClientScopeKey{}, func(ctx context.Context) (context.Context, func(), error) {
+		return query.NestedClientScope(ctx, transport, nestedClientMetadata)
+	})
 	// Give the invocation its own connection pool rather than sharing the
 	// process-wide http.DefaultTransport, so serveNestedClient can drain it.
-	return serveNestedClient(ctx, httpSrv, http.DefaultTransport.(*http.Transport).Clone(), fn)
+	return serveNestedClient(fnCtx, httpSrv, http.DefaultTransport.(*http.Transport).Clone(), fn)
+}
+
+type nestedClientScopeKey struct{}
+
+// NestedClientScope returns ctx holding a scope of the nested client whose
+// server WithNestedClientServer runs for ctx, and the release of that scope,
+// so work outside the client's requests can register its children.
+func NestedClientScope(ctx context.Context) (context.Context, func(), error) {
+	acquire, ok := ctx.Value(nestedClientScopeKey{}).(func(context.Context) (context.Context, func(), error))
+	if !ok {
+		return nil, nil, errors.New("no nested client server for this context")
+	}
+	return acquire(ctx)
 }
 
 // serveNestedClient serves httpSrv on a loopback listener, calls fn with a

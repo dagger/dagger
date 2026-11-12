@@ -62,6 +62,10 @@ type Server interface {
 	// client scope before the proxy begins serving.
 	RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error)
 
+	// Return a context holding a scope of the nested client that the
+	// transport owns, and the release of that scope.
+	NestedClientScope(context.Context, *engine.NestedClientTransport, *engine.ClientMetadata) (context.Context, func(), error)
+
 	// Handle an HTTP request from a registered nested Dagger client. When
 	// inertAttachables is true, host session attachable access is denied rather
 	// than inherited from the parent or awaited on the synthetic client.
