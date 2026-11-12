@@ -155,20 +155,16 @@ func (srv *Server) collectCacheVolumeDir(ctx context.Context, all bool) (cachevo
 	return report, nil
 }
 
-// collectCacheVolumeDirAtShutdown collects the directory and waits for the
-// removals to finish, so that what the next engine receives is what was
-// accounted. Both stop when ctx ends, leaving the directory consistent.
+// collectCacheVolumeDirAtShutdown collects the directory within its
+// capacity before the engine gives it up. The volumes it removes move to
+// trash at once, and their deletion runs in the background without the stop
+// waiting for it: what's left when the engine exits, the directory's next
+// owner deletes in the background, counted as space being freed until then.
 func (srv *Server) collectCacheVolumeDirAtShutdown(ctx context.Context) error {
 	if srv.cacheVolumeDir == nil {
 		return nil
 	}
 	_, err := srv.collectCacheVolumeDir(ctx, false)
-	waitStart := time.Now()
-	waitErr := srv.cacheVolumeDir.WaitRemovals(ctx)
-	slog.Info("waited for cache volume removals", "duration", time.Since(waitStart), "error", waitErr)
-	if waitErr != nil {
-		err = errors.Join(err, fmt.Errorf("wait for cache volume removals: %w", waitErr))
-	}
 	return err
 }
 

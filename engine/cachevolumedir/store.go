@@ -208,12 +208,13 @@ func Open(dir string, opts Options) (*Store, error) {
 		}
 	}
 	// This process owns the directory now, so anything in tmp/ or trash/ was
-	// left by a previous owner that stopped mid-way.
-	for _, sub := range []string{"tmp", "trash"} {
-		if err := removeContents(filepath.Join(s.formDir, sub)); err != nil {
-			s.Close()
-			return nil, fmt.Errorf("remove leftover cache volumes in %s: %w", sub, err)
-		}
+	// left by a previous owner that stopped mid-way: volumes it was creating,
+	// and deletions it didn't wait for. They're deleted in the background,
+	// counted as space being freed until they're gone, so the engine doesn't
+	// wait for them before it serves anything.
+	if err := s.deleteLeftovers(); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("delete leftover cache volumes: %w", err)
 	}
 	return s, nil
 }
@@ -233,8 +234,8 @@ var ErrClosed = errors.New("cache volume directory is closed")
 // still in progress, it keeps ownership and returns ErrPinned: another owner
 // could otherwise collect a volume that is still in use, or sweep one being
 // created. The ownership lock then lasts until the process exits. Once
-// closed, Acquire fails with ErrClosed. Removals in progress keep running
-// until they finish.
+// closed, Acquire fails with ErrClosed. Deletions in progress keep running
+// until they finish or the process exits; the next owner deletes what's left.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -766,12 +767,31 @@ func (s *Store) remove(e Entry) (bool, error) {
 		return false, fmt.Errorf("remove cache volume %s: %w", e.ID, err)
 	}
 	delete(s.pins, e.ID)
-	s.pendingBytes += e.SizeBytes
-	s.removals.Add(1)
+	s.startDeletionLocked(trash, e.SizeBytes, "cache volume "+e.ID)
 	s.mu.Unlock()
+	return true, nil
+}
 
+// startDeletionLocked deletes trash, a tree moved into trash/, in the
+// background, counting size as pending until it's gone. A negative size is
+// unknown: the deletion measures the tree first. s.mu must be held.
+func (s *Store) startDeletionLocked(trash string, size int64, what string) {
+	if size > 0 {
+		s.pendingBytes += size
+	}
+	s.removals.Add(1)
 	go func() {
 		defer s.removals.Done()
+		if size < 0 {
+			measured, err := s.trashSize(context.Background(), trash)
+			size = max(measured, 0)
+			if err != nil {
+				size = 0
+			}
+			s.mu.Lock()
+			s.pendingBytes += size
+			s.mu.Unlock()
+		}
 		if s.beforeRemove != nil {
 			s.beforeRemove()
 		}
@@ -779,28 +799,75 @@ func (s *Store) remove(e Entry) (bool, error) {
 		var survived int64
 		if err != nil {
 			// What survived still takes space: count it as stuck until a
-			// later owner's open removes it. If it can't be measured,
+			// later owner's open deletes it. If it can't be measured,
 			// assume nothing was freed.
 			measured, measureErr := s.trashSize(context.Background(), trash)
-			survived = min(max(measured, 0), e.SizeBytes)
+			survived = min(max(measured, 0), size)
 			if measureErr != nil {
-				survived = e.SizeBytes
+				survived = size
 				err = errors.Join(err, fmt.Errorf("measure what survived: %w", measureErr))
 			}
 		}
 		s.mu.Lock()
-		s.pendingBytes -= e.SizeBytes
+		s.pendingBytes -= size
 		s.stuckBytes += survived
 		if err != nil {
-			s.removalErr = errors.Join(s.removalErr, fmt.Errorf("remove cache volume %s: %w", e.ID, err))
+			s.removalErr = errors.Join(s.removalErr, fmt.Errorf("remove %s: %w", what, err))
 		}
 		s.mu.Unlock()
 	}()
-	return true, nil
 }
 
-// WaitRemovals waits until every removal Collect started has finished, or ctx
-// ends. It reports the removals that failed since it last reported.
+// deleteLeftovers deletes, in the background, what a previous owner left in
+// tmp/ and trash/. Volumes it was creating move to trash/ first, so tmp/
+// holds only this owner's.
+func (s *Store) deleteLeftovers() error {
+	tmpDir := filepath.Join(s.formDir, "tmp")
+	trashDir := filepath.Join(s.formDir, "trash")
+	tmps, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return err
+	}
+	for _, ent := range tmps {
+		trash, err := os.MkdirTemp(trashDir, "")
+		if err != nil {
+			return err
+		}
+		if err := os.Rename(filepath.Join(tmpDir, ent.Name()), filepath.Join(trash, "volume")); err != nil {
+			return err
+		}
+	}
+	ents, err := os.ReadDir(trashDir)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ent := range ents {
+		trash := filepath.Join(trashDir, ent.Name())
+		s.startDeletionLocked(trash, leftoverSize(trash), "leftover "+ent.Name())
+	}
+	return nil
+}
+
+// leftoverSize is the recorded size of the volume a leftover in trash/
+// holds, if it was measured since it was last written, or -1 if it's
+// unknown.
+func leftoverSize(trash string) int64 {
+	vol := filepath.Join(trash, "volume")
+	if _, err := os.Stat(filepath.Join(vol, dirtyName)); err == nil {
+		return -1
+	}
+	m, err := readMeta(filepath.Join(vol, metaName))
+	if err != nil || m.SizeBytes == nil {
+		return -1
+	}
+	return *m.SizeBytes
+}
+
+// WaitRemovals waits until every deletion in progress has finished, those
+// Collect started and a previous owner's leftovers alike, or ctx ends. It
+// reports the deletions that failed since it last reported.
 func (s *Store) WaitRemovals(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
@@ -1025,19 +1092,6 @@ func (w *treeWalker) walkDir(ctx context.Context, eg *errgroup.Group, dir string
 			return readErr
 		}
 	}
-}
-
-func removeContents(dir string) error {
-	ents, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	for _, ent := range ents {
-		if err := os.RemoveAll(filepath.Join(dir, ent.Name())); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // keyedMutex is a mutex per key.
