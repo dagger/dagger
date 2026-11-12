@@ -332,6 +332,20 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 		require.Equal(t, "2", runs(ctx, t, remoteRef, "fail"))
 	})
 
+	t.Run("a failing check runs again in a session open beside the one that ran it", func(ctx context.Context, t *testctx.T) {
+		remoteRef := checkCachingRemote(ctx, t, c)
+		// This client joins the test's own session, which stays open.
+		_, err := ctr.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			WithExec([]string{"dagger", "--progress=report", "check", "-W", remoteRef, "fail"}, core.ContainerWithExecOpts{
+				Expect: core.ReturnTypeFailure,
+			}).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeFailure, "check", "-W", remoteRef, "fail")
+		require.Equal(t, "2", runs(ctx, t, remoteRef, "fail"))
+	})
+
 	t.Run("a passing check is reused in the next session", func(ctx context.Context, t *testctx.T) {
 		remoteRef := checkCachingRemote(ctx, t, c)
 		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef, "pass")
