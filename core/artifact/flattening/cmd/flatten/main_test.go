@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestFixtures(t *testing.T) {
+func TestLegacyFixtures(t *testing.T) {
 	for _, name := range []string{"compose", "dagger-workspace"} {
 		t.Run(name, func(t *testing.T) {
 			input, err := os.ReadFile("../../testdata/" + name + ".json")
@@ -19,7 +19,7 @@ func TestFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			var out bytes.Buffer
-			if err := run(nil, bytes.NewReader(input), &out); err != nil {
+			if err := run([]string{"-legacy"}, bytes.NewReader(input), &out); err != nil {
 				t.Fatal(err)
 			}
 			if out.String() != string(want) {
@@ -29,17 +29,17 @@ func TestFixtures(t *testing.T) {
 	}
 }
 
-func TestComposeSelection(t *testing.T) {
+func TestLegacyComposeSelection(t *testing.T) {
 	input, err := os.ReadFile("../../testdata/compose.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := run(nil, bytes.NewReader(input), &out); err != nil {
+	if err := run([]string{"-legacy"}, bytes.NewReader(input), &out); err != nil {
 		t.Fatal(err)
 	}
 	var selected bytes.Buffer
-	if err := run([]string{"-only", "docker/compose/projects/services/up"}, bytes.NewReader(input), &selected); err != nil {
+	if err := run([]string{"-legacy", "-only", "docker/compose/projects/services/up"}, bytes.NewReader(input), &selected); err != nil {
 		t.Fatal(err)
 	}
 	// Filtering rows must keep the complete column definition table.
@@ -56,7 +56,7 @@ func TestComposeSelection(t *testing.T) {
 	}
 }
 
-func TestInvalidInputs(t *testing.T) {
+func TestLegacyInvalidInputs(t *testing.T) {
 	for _, tc := range []struct{ name, input, want string }{
 		{"unknown field", `[{"typo":"Check"}]`, `unknown field "typo"`},
 		{"extra JSON", `[] []`, `expected one JSON array`},
@@ -65,7 +65,7 @@ func TestInvalidInputs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			err := run(nil, strings.NewReader(tc.input), &out)
+			err := run([]string{"-legacy"}, strings.NewReader(tc.input), &out)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("want error containing %q, got %v", tc.want, err)
 			}
@@ -76,10 +76,10 @@ func TestInvalidInputs(t *testing.T) {
 	}
 }
 
-func TestEmptyAndControlCharacterKeys(t *testing.T) {
+func TestLegacyEmptyAndControlCharacterKeys(t *testing.T) {
 	input := `[{"module":"app","path":["tests"],"type":"Check","collections":[{"fields":["tests"],"itemType":"Test"}],"items":[[""],["-"],["a\tb"]]}]`
 	var out bytes.Buffer
-	if err := run(nil, strings.NewReader(input), &out); err != nil {
+	if err := run([]string{"-legacy"}, strings.NewReader(input), &out); err != nil {
 		t.Fatal(err)
 	}
 	for _, value := range []string{`""`, `"-"`, `"a\tb"`} {

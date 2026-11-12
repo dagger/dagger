@@ -9,13 +9,35 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"unicode"
 
 	"github.com/dagger/dagger/core/artifact/flattening"
 )
 
-type inputArtifact struct {
-	flattening.Artifact
-	Items [][]string `json:"items"`
+type inputField struct {
+	flattening.Field
+	Items []itemKeys `json:"items"`
+}
+
+// itemKeys rejects JSON null keys, which encoding/json otherwise reads as "".
+type itemKeys []string
+
+func (keys *itemKeys) UnmarshalJSON(data []byte) error {
+	var values []*string
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	if values == nil {
+		return fmt.Errorf("expected an array of collection keys")
+	}
+	*keys = make(itemKeys, len(values))
+	for i, value := range values {
+		if value == nil {
+			return fmt.Errorf("collection key %d must be a string", i)
+		}
+		(*keys)[i] = *value
+	}
+	return nil
 }
 
 func main() {
@@ -28,7 +50,8 @@ func main() {
 func run(args []string, input io.Reader, output io.Writer) error {
 	flags := flag.NewFlagSet("flatten", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	only := flags.String("only", "", "Show rows with this exact slash-joined artifact path")
+	only := flags.String("only", "", "Show rows with this exact name coordinate")
+	legacy := flags.Bool("legacy", false, "Use legacy type-path input and output")
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -38,7 +61,14 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
-	var entries []inputArtifact
+	if *legacy {
+		legacyArgs := []string{}
+		if *only != "" {
+			legacyArgs = append(legacyArgs, "-only", *only)
+		}
+		return runLegacy(legacyArgs, input, output)
+	}
+	var entries []inputField
 	decoder := json.NewDecoder(input)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&entries); err != nil {
@@ -51,67 +81,84 @@ func run(args []string, input io.Reader, output io.Writer) error {
 		}
 		return fmt.Errorf("expected one JSON array")
 	}
-	schema := make([]flattening.Artifact, len(entries))
-	for i, entry := range entries {
-		schema[i] = entry.Artifact
+	if entries == nil {
+		return fmt.Errorf("expected one JSON array")
 	}
-	p := flattening.New(schema)
-	dimensions := p.Dimensions()
-	names := p.Names()
-	flagNames := flattening.DimensionFlags(dimensions, nil, nil)
+	fields := make([]flattening.Field, len(entries))
+	for i, entry := range entries {
+		fields[i] = entry.Field
+	}
+	schema, err := flattening.NewSchema(fields)
+	if err != nil {
+		return err
+	}
+	dimensions := schema.Dimensions()
 	var rows [][]string
-	for _, entry := range entries {
-		path := strings.Join(entry.Path, "/")
-		if *only != "" && path != *only {
-			continue
-		}
-		for _, keys := range entry.Items {
-			row, err := p.Flatten(entry.Artifact, keys...)
+	seen := map[string]bool{}
+	for i, entry := range entries {
+		for j, keys := range entry.Items {
+			if keys == nil {
+				return fmt.Errorf("field %d item %d: expected an array of collection keys", i, j)
+			}
+			coordinates, err := schema.Coordinates(entry.Field, keys...)
+			if err != nil {
+				return fmt.Errorf("field %d item %d: %w", i, j, err)
+			}
+			cells := make(map[string]string, len(coordinates))
+			for _, coordinate := range coordinates {
+				if _, exists := cells[coordinate.Dimension]; exists {
+					return fmt.Errorf("field %d item %d: repeated dimension %s", i, j, coordinate.Dimension)
+				}
+				cells[coordinate.Dimension] = coordinate.Key
+			}
+			values := []string{visible(entry.Type)}
+			identity := []any{entry.Type}
+			for _, dimension := range dimensions {
+				value, exists := cells[dimension.Identifier]
+				identity = append(identity, exists, value)
+				if exists {
+					values = append(values, visible(value))
+				} else {
+					values = append(values, "-")
+				}
+			}
+			encoded, err := json.Marshal(identity)
 			if err != nil {
 				return err
 			}
-			coordinates := make(map[string]string, len(row.Coordinates))
-			for _, coordinate := range row.Coordinates {
-				if _, exists := coordinates[coordinate.Dimension]; exists {
-					return fmt.Errorf("artifact %s has repeated dimension %s", path, coordinate.Dimension)
-				}
-				coordinates[coordinate.Dimension] = coordinate.Key
+			if seen[string(encoded)] {
+				return fmt.Errorf("field %d item %d: duplicate typed coordinates", i, j)
 			}
-			values := []string{path}
-			for _, dimension := range dimensions {
-				value, exists := coordinates[dimension.Identifier]
-				if !exists {
-					values = append(values, "-")
-				} else if value == "" || value == "-" || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\t\r\n") {
-					values = append(values, strconv.Quote(value))
-				} else {
-					values = append(values, value)
-				}
+			seen[string(encoded)] = true
+			if *only == "" || cells[flattening.NameDimension] == *only {
+				rows = append(rows, values)
 			}
-			rows = append(rows, values)
 		}
 	}
 	w := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tDISPLAY NAME\tKEY FLAG\tPRESENCE FLAG")
+	fmt.Fprintln(w, "ID\tNAME")
 	for _, dimension := range dimensions {
-		id := dimension.Identifier
-		if flagNames[id].Presence == "" {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", id, names[id], flagNames[id].Key)
-		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", id, names[id], flagNames[id].Key, flagNames[id].Presence)
-		}
+		fmt.Fprintf(w, "%s\t%s\n", visible(dimension.Identifier), visible(dimensions.DisplayName(dimension)))
 	}
 	if err := w.Flush(); err != nil {
 		return err
 	}
 	fmt.Fprintln(w)
-	header := []string{"PATH"}
+	header := []string{"TYPE"}
 	for _, dimension := range dimensions {
-		header = append(header, dimension.Identifier)
+		header = append(header, visible(dimensions.DisplayName(dimension)))
 	}
 	fmt.Fprintln(w, strings.Join(header, "\t"))
 	for _, row := range rows {
 		fmt.Fprintln(w, strings.Join(row, "\t"))
 	}
 	return w.Flush()
+}
+
+// visible distinguishes empty and control keys from absent coordinates.
+func visible(value string) string {
+	if value == "" || value == "-" || strings.TrimSpace(value) != value || strings.ContainsFunc(value, unicode.IsControl) {
+		return strconv.Quote(value)
+	}
+	return value
 }

@@ -1,7 +1,8 @@
 """Check schema field spelling and collection boundaries in saved captures."""
+import copy
 import unittest
 
-from capture import LocalPaths
+from capture import LocalPaths, format_entries
 
 
 def field(name, returns):
@@ -61,6 +62,46 @@ class LocalPathsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Module app'):
             LocalPaths(captured).resolve(target)
         self.assertEqual(['generate'], LocalPaths(captured, ['app']).resolve(target))
+
+
+class OutputFormatTest(unittest.TestCase):
+    def test_native_input_preserves_roots_keys_and_empty_collections(self):
+        captured = [
+            {'Module': 'app', 'Path': ['app', 'items'], 'Type': 'AppItem',
+             'LocalPath': [], 'Description': 'Item root',
+             'Collections': [{'Fields': ['items'], 'Type': 'AppItems',
+                              'ItemType': 'AppItem'}],
+             'Items': [{'Keys': [''], 'Description': 'Empty key'}]},
+            {'Module': 'app', 'Path': ['app', 'items', 'health-check'],
+             'Type': 'Check', 'LocalPath': ['healthCheck'], 'Description': '',
+             'Collections': [{'Fields': ['items'], 'Type': 'AppItems',
+                              'ItemType': 'AppItem'}], 'Items': []},
+            {'Module': 'app', 'Path': ['app'], 'Type': 'Container',
+             'LocalPath': [], 'Description': 'Root', 'Collections': [],
+             'Items': [{'Keys': [], 'Description': 'Root'}]},
+        ]
+        before = copy.deepcopy(captured)
+        native = format_entries(captured, 'flattening')
+        self.assertEqual([
+            {'module': 'app', 'type': 'AppItem', 'localPath': [],
+             'collections': [{'fields': ['items'], 'type': 'AppItems',
+                              'itemType': 'AppItem'}], 'items': [['']]},
+            {'module': 'app', 'type': 'Check', 'localPath': ['healthCheck'],
+             'collections': [{'fields': ['items'], 'type': 'AppItems',
+                              'itemType': 'AppItem'}], 'items': []},
+            {'module': 'app', 'type': 'Container', 'localPath': [],
+             'collections': [], 'items': [[]]},
+        ], native)
+        self.assertEqual(before, captured)
+        # The result owns its lists. Later edits cannot change the capture.
+        native[0]['collections'][0]['fields'].append('changed')
+        native[0]['items'][0].append('changed')
+        native[1]['localPath'].append('changed')
+        self.assertEqual(before, captured)
+
+    def test_cli_format_preserves_capture(self):
+        captured = [{'Module': 'app', 'Items': []}]
+        self.assertEqual(captured, format_entries(captured, 'cli'))
 
 
 if __name__ == '__main__':

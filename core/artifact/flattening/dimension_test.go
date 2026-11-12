@@ -6,6 +6,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestStaticDimensionNames(t *testing.T) {
+	for _, identifier := range []string{ModuleDimension, NameDimension, "type:Check"} {
+		require.True(t, IsStaticDimension(identifier), identifier)
+	}
+	require.False(t, IsStaticDimension("/app/names"))
+
+	dimensions := CanonicalDimensions("app", nil)
+	for _, dimension := range dimensions {
+		for _, wholeCollection := range []bool{false, true} {
+			for _, alias := range dimensions.Names(dimension, wholeCollection) {
+				require.Equal(t, dimension.Identifier, alias)
+			}
+		}
+	}
+	identifier, err := dimensions.Resolve("name-name")
+	require.NoError(t, err)
+	require.Equal(t, "name-name", identifier, "an unknown selector must not alias the name dimension")
+}
+
 func TestDimensionNames(t *testing.T) {
 	dims := Dimensions{
 		{Identifier: "golang/modules", Name: "go-module", QualifiedName: "golang-modules"},
