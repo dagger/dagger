@@ -3,7 +3,6 @@ package dagql
 import (
 	"fmt"
 	"slices"
-	"time"
 )
 
 // The placement rule applies wherever a part is placed on an entry other
@@ -48,17 +47,16 @@ func placeOwnedPart(placed PersistedPartOffer, place func(service uint64) (uint6
 // PlaceOffer places a part stored on the Cloud for an offer to the engine
 // cache of receiver. Each service entry is mapped to that cache's entry for
 // it: one of the cache's unexpired holdings on an entry of the service
-// entry's class, which includes its recipe's, the lowest number first. An
-// expired holding is an entry the engine no longer serves. The mapping reads
-// the classes under one hold. It reports false when a service can't be
-// mapped: the part is not placed.
-func (c *Cache) PlaceOffer(receiver HolderKey, part PersistedPartOffer) (PersistedPartOffer, bool, error) {
+// entry's class, which includes its recipe's, the lowest number first. A
+// holding expired at nowUnix, the reader's clock, is an entry the engine no
+// longer serves. The mapping reads the classes under one hold. It reports
+// false when a service can't be mapped: the part is not placed.
+func (c *Cache) PlaceOffer(receiver HolderKey, part PersistedPartOffer, nowUnix int64) (PersistedPartOffer, bool, error) {
 	if receiver.Cache == "" || senderCache(receiver.Cache) {
 		return PersistedPartOffer{}, false, fmt.Errorf("place offer: %q is not an engine cache", receiver.Cache)
 	}
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	now := time.Now().Unix()
 	placed, ok := PlacePart(part, func(service uint64) (uint64, bool) {
 		res := c.resultsByID[sharedResultID(service)]
 		if res == nil {
@@ -72,7 +70,7 @@ func (c *Cache) PlaceOffer(receiver HolderKey, part PersistedPartOffer) (Persist
 					continue
 				}
 				for key, h := range member.holders {
-					if key.Cache != receiver.Cache || h.expiresAtUnix != 0 && h.expiresAtUnix <= now {
+					if key.Cache != receiver.Cache || h.expiresAtUnix != 0 && h.expiresAtUnix <= nowUnix {
 						continue
 					}
 					if best == 0 || key.Number < best {
