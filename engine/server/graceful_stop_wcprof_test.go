@@ -105,8 +105,9 @@ func TestGracefulStopRecordsWhetherTheExportsWereCut(t *testing.T) {
 			close(release)
 		}
 		exported := slowExport(t, srv, release)
-		srv.remoteCacheAdapter.stopReserve = time.Second
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		// the drain gets a second; the later phases keep the engine's reserve,
+		// which they may need under load
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second+remoteCacheStopReserve)
 		defer cancel()
 		require.NoError(t, srv.GracefulStop(ctx))
 		<-exported
