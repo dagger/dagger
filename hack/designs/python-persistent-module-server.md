@@ -147,6 +147,40 @@ The engine half has five parts; options 1 and 2 reuse all but part 5's kill.
    context and gives up when that context ends (`core/services.go:799-831`).
    Session teardown stops every server (`core/services.go:852`, `session.go:1348`).
 
+**Wire protocol.** S1 and S3 implement exactly this.
+
+1. The server listens on 127.0.0.1:8737 in its own network namespace. The
+   `serve` container's default arguments are `["python", "-m", "dagger.mod",
+   "serve"]`. The container exposes no port, so Services runs no health check.
+   The server listens only after it imports the module and sets up telemetry.
+   The engine dials every ~5 ms until a connect succeeds. A successful connect
+   moves the key from Starting to Idle.
+2. Each call uses one TCP connection. The engine connects, writes one call
+   frame, and reads frames until a result frame or a failure frame. The server
+   then closes the connection. The server accepts one connection at a time.
+3. A frame is 1 ASCII byte of kind, a 4-byte big-endian payload length, and
+   the payload.
+   - `C`, engine to server: UTF-8 JSON `{"request": {...}, "clientID": "...",
+     "traceparent": "00-..."}`. `request` has the keys and values of the JSON
+     that `call` writes to stdin today: `receiverType`, `receiverValue`,
+     `fnName`, `fnArgs`. The engine encodes it, so the bytes can differ from
+     Dang's `JSON.encode`; the server parses it. `clientID` is the pre-bound
+     client ID. `traceparent` is the call's process span.
+   - `O` and `E`, server to engine: raw bytes of file descriptor 1 and 2, in
+     chunks of any size.
+   - `R`, server to engine: the result JSON, the bytes `call` writes to
+     `/dagger/result.json` today.
+   - `X`, server to engine: the call failed. The payload is a UTF-8 message.
+     The log and traceback already went out as `E` frames. The engine fails
+     the call as it fails a non-zero exit.
+4. On every API request of a call, the server sends
+   `X-Dagger-Client-Metadata: base64(JSON {"client_id": "<clientID>"})`. The
+   pre-bound entry supplies the rest of the client metadata. The `serve`
+   container keeps `DAGGER_CLIENT_VERSION` in its environment.
+5. The call digest and cancellation are not on the wire. The SDK does not read
+   `DAGGER_MODULE_CALL_DIGEST`, and the engine kills the server to cancel a
+   call.
+
 The options differ in the SDK loop and in what they isolate:
 
 1. **Concurrent server.** One process runs calls concurrently as anyio tasks.
