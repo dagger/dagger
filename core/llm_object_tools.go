@@ -14,7 +14,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/gitutil"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -228,10 +227,13 @@ func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName s
 type restoredBindingRoutingKey struct{}
 
 // restoredBindingRouting names the client that restored an agent, and the
-// recipes of the bindings it restored the agent with.
+// recipes of the bindings it restored the agent with: the very IDs the
+// restored conversation holds, compared by identity. A digest would not do:
+// an ID's digest is whatever its encoding claims, so an ID built elsewhere
+// could carry a restored recipe's digest over different calls.
 type restoredBindingRouting struct {
 	metadata *engine.ClientMetadata
-	recipes  map[digest.Digest]struct{}
+	recipes  map[*call.ID]struct{}
 }
 
 // withRestoredBindingRouting routes host access while loading any of recipes
@@ -249,7 +251,7 @@ type restoredBindingRouting struct {
 // restored, as it does for its own agents' bindings, so their loads are routed
 // to it. Like a Workspace owner's routing, this replaces only client metadata,
 // not the held ClientScope that is the execution authority.
-func withRestoredBindingRouting(ctx context.Context, metadata *engine.ClientMetadata, recipes map[digest.Digest]struct{}) context.Context {
+func withRestoredBindingRouting(ctx context.Context, metadata *engine.ClientMetadata, recipes map[*call.ID]struct{}) context.Context {
 	if metadata == nil || len(recipes) == 0 {
 		return ctx
 	}
@@ -264,10 +266,10 @@ func withRestoredBindingRouting(ctx context.Context, metadata *engine.ClientMeta
 // restored (see withRestoredBindingRouting), else ctx unchanged.
 func restoredBindingLoadContext(ctx context.Context, id *call.ID) context.Context {
 	routing, ok := ctx.Value(restoredBindingRoutingKey{}).(restoredBindingRouting)
-	if !ok || id == nil || id.IsHandle() {
+	if !ok || id == nil {
 		return ctx
 	}
-	if _, restored := routing.recipes[id.Digest()]; !restored {
+	if _, restored := routing.recipes[id]; !restored {
 		return ctx
 	}
 	return engine.ContextWithClientMetadata(ctx, routing.metadata)
