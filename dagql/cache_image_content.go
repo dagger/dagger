@@ -298,8 +298,8 @@ func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOu
 		err := c.WithExportedValues(ctx, selection, cfg, func(ctx context.Context, values *ExportedValues) error {
 			return writeImageBundle(ctx, values, w)
 		})
-		var left *RootsLeftOutError
-		if !errors.As(err, &left) {
+		left := leftOutOnly(err)
+		if left == nil {
 			return err
 		}
 		first := left.Roots[0]
@@ -323,12 +323,37 @@ const (
 	maxImageBundleBusyPause = time.Second
 )
 
+// leftOutOnly is the RootsLeftOutError err is when it is nothing more, such
+// as joined with the capture's release error: nil otherwise.
+func leftOutOnly(err error) *RootsLeftOutError {
+	for {
+		switch e := err.(type) {
+		case *RootsLeftOutError:
+			return e
+		case interface{ Unwrap() []error }:
+			errs := e.Unwrap()
+			if len(errs) != 1 {
+				return nil
+			}
+			err = errs[0]
+		default:
+			return nil
+		}
+	}
+}
+
 // busyForNow reports whether every root left out is busy with something
-// that ends on its own.
+// that ends on its own: no busy row it reaches waits for a later
+// evaluation.
 func busyForNow(roots []LeftOutRoot) bool {
 	for _, root := range roots {
 		if !errors.Is(root.Err, ErrPersistStateNotReady) || root.Kind == BusyBookkeeping {
 			return false
+		}
+		for _, busy := range root.Busy {
+			if busy.Kind == BusyBookkeeping {
+				return false
+			}
 		}
 	}
 	return true

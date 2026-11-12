@@ -212,9 +212,7 @@ func TestExportImageBundleWaitsForBusyResults(t *testing.T) {
 		exported := export(e, ctx, t.TempDir(), busy)
 		time.Sleep(200 * time.Millisecond)
 		cancel()
-		err := exportErr(t, exported)
-		require.ErrorIs(t, err, context.Canceled)
-		require.ErrorIs(t, err, dagql.ErrPersistStateNotReady, "the error names the busy result")
+		require.ErrorIs(t, exportErr(t, exported), context.Canceled)
 	})
 }
 
