@@ -18,7 +18,9 @@ type restoredFinalOffer struct {
 func (c *Cache) restoredFinalOffersLocked() ([]restoredFinalOffer, error) {
 	rows := make([]*sharedResult, 0, len(c.resultsByID))
 	for _, row := range c.resultsByID {
-		if row.persistedEnvelope != nil {
+		// A record a blob-backed cache holds compressed has no offers: the
+		// Cloud drops every offer a merge carries.
+		if row.persistedEnvelope != nil && row.stored == nil {
 			rows = append(rows, row)
 		}
 	}
