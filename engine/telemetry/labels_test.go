@@ -3,6 +3,7 @@ package telemetry_test
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -90,6 +91,65 @@ func TestLoadGitLabels(t *testing.T) {
 		t.Run(example.Name, func(t *testing.T) {
 			labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(example.Repo)
 			require.Subset(t, labels.AsMap(), example.Labels)
+		})
+	}
+}
+
+func TestLoadGitLabelsWorktreeConfig(t *testing.T) {
+	repo := setupRepo(t)
+	run(t, "git", "-C", repo, "config", "extensions.worktreeConfig", "true")
+	run(t, "git", "-C", repo, "tag", "v1")
+	worktree := filepath.Join(t.TempDir(), "worktree")
+	run(t, "git", "-C", repo, "worktree", "add", "-b", "feature", worktree)
+	run(t, "git", "-C", worktree, "commit", "--allow-empty", "-m", "feature commit")
+
+	for _, checkout := range []struct {
+		name, path, branch, title string
+	}{
+		{"main", repo, "main", "init"},
+		{"linked", worktree, "feature", "feature commit"},
+	} {
+		t.Run(checkout.name, func(t *testing.T) {
+			configPath := filepath.Join(repo, ".git", "config")
+			before, err := os.ReadFile(configPath)
+			require.NoError(t, err)
+			// Discover the repository from a subdirectory as normal CLI calls do.
+			subdir := filepath.Join(checkout.path, "subdir")
+			require.NoError(t, os.Mkdir(subdir, 0o755))
+			labels := telemetry.NewLabels(nil, mapEnv{}, nil).WithGitLabels(subdir).AsMap()
+			require.Equal(t, run(t, "git", "-C", checkout.path, "rev-parse", "HEAD"), labels["dagger.io/git.ref"])
+			require.Subset(t, labels, map[string]string{
+				"dagger.io/git.remote":          "example.com",
+				"dagger.io/git.branch":          checkout.branch,
+				"dagger.io/git.title":           checkout.title,
+				"dagger.io/git.author.name":     "Test User",
+				"dagger.io/git.author.email":    "test@example.com",
+				"dagger.io/git.committer.name":  "Test User",
+				"dagger.io/git.committer.email": "test@example.com",
+			})
+			if checkout.name == "main" {
+				require.Equal(t, "v1", labels["dagger.io/git.tag"])
+			}
+			after, err := os.ReadFile(configPath)
+			require.NoError(t, err)
+			require.Equal(t, before, after, "label collection must not change repository configuration")
+		})
+	}
+}
+
+func TestLoadGitLabelsExtensionValidation(t *testing.T) {
+	for _, format := range []string{"0", "1"} {
+		t.Run(format, func(t *testing.T) {
+			repo := setupRepo(t)
+			run(t, "git", "-C", repo, "config", "extensions.worktreeConfig", "true")
+			run(t, "git", "-C", repo, "config", "core.repositoryformatversion", format)
+			labels := telemetry.NewLabels(nil, mapEnv{}, nil).WithGitLabels(repo)
+			require.Equal(t, "init", labels.AsMap()["dagger.io/git.title"])
+
+			// Ignoring worktreeConfig must not bypass checks on other extensions.
+			run(t, "git", "-C", repo, "config", "extensions.unsupported", "true")
+			labels = telemetry.NewLabels(nil, mapEnv{}, nil).WithGitLabels(repo)
+			require.Empty(t, labels.AsMap())
 		})
 	}
 }
