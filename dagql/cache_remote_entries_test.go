@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -1655,4 +1656,60 @@ func TestRemoteHoldingFromTheImage(t *testing.T) {
 
 	a.call(callRow{key: image, session: "s", holding: holdingOf("from-image")})
 	require.False(t, requireHolding(t, cloud, image).Image)
+}
+
+// A stored entry outlives the holdings engines had of it, and once the last
+// one goes it holds nothing for them: attaching a holding to every stored
+// entry and then releasing them all leaves the live heap where it was. An
+// entry's holding maps take about 600 bytes, which a Go map keeps after its
+// last key is deleted.
+//
+// Not parallel: it measures the process's live heap, which other tests
+// running beside it would change.
+func TestStoredEntryHoldsNothingForHoldingsGone(t *testing.T) {
+	const entries = 2000
+	actx, a, asrv := transferTestCache(t)
+	roots := make([]AnyResult, entries)
+	for i := range roots {
+		roots[i] = persistedListTestResult(t, actx, a, asrv, fmt.Sprintf("held-then-gone-%d", i), &transferTestValue{Text: strconv.Itoa(i)})
+	}
+	// The store as the service starts with it: saved, and restored with no
+	// engine holding anything.
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	reply, err := cloud.MergeValues(ctx, "cache-a", exportTestBundle(t, actx, a, roots...))
+	require.NoError(t, err)
+	require.Len(t, reply.Imported(), entries)
+	require.NoError(t, cloud.Close(ctx))
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	keys, recipes := cloudIndexes(cloud)
+	require.Empty(t, keys, "a restored store holds no engine's holdings")
+	require.Len(t, recipes, entries, "each stored entry is indexed by its recipe")
+
+	engine := CacheID("cache-x")
+	before := storedLayersTestLiveHeap()
+	applier := newCloudApplier(t, cloud)
+	for i, recipe := range recipes {
+		applier.call(callRow{key: HolderKey{engine, uint64(i + 1)}, session: "s", holding: RemoteHolding{Recipe: recipe, Request: recipe, Field: "held", TypeName: "Transfer"}})
+	}
+	require.Empty(t, applier.collect())
+	cloud.egraphMu.RLock()
+	for i := range recipes {
+		entry, h := cloud.holdingLocked(HolderKey{engine, uint64(i + 1)})
+		require.NotNil(t, h)
+		require.True(t, entry.hasOwnValueLocked(), "the holding sits on its stored entry")
+	}
+	cloud.egraphMu.RUnlock()
+
+	applier.candidates = append(applier.candidates, cloud.ReleaseRemoteCache(ctx, engine)...)
+	require.Len(t, applier.collect(), entries)
+	keys, after := cloudIndexes(cloud)
+	require.Empty(t, keys)
+	require.Equal(t, recipes, after, "every stored entry stays")
+	left := storedLayersTestLiveHeap() - before
+
+	perEntry := float64(left) / entries
+	t.Logf("after every holding of %d stored entries went, the live heap was %d bytes from where it stood, %.0f bytes an entry", entries, left, perEntry)
+	require.Less(t, perEntry, 64.0, "after every holding of %d stored entries went, the live heap was %d bytes above where it stood before they came, %.0f bytes an entry", entries, left, perEntry)
 }
