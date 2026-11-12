@@ -422,6 +422,38 @@ func TestPruneDiskPolicyWithOvershootAllowance(t *testing.T) {
 	}
 }
 
+// A root passed over leaves no trace in what the prune counts next: the
+// older root would free its own 200 bytes, more than the 100 the prune needs
+// plus the allowance, so it is passed over and keeps holding the shared
+// base; the newer root then frees only its own 50 bytes, which is enough to
+// get under the maximum. Were the older root's release still counted, the
+// newer root would seem to free the base too, be passed over as well, and
+// the prune would fall back to removing the older root.
+func TestPruneWithOvershootAllowancePassesOverWithoutATrace(t *testing.T) {
+	t.Parallel()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	older := storedPruneTestRoot(t, ctx, cloud, "blob-pass-over-older")
+	newer := storedPruneTestRoot(t, ctx, cloud, "blob-pass-over-newer")
+	storedPruneTestUse(cloud, older, time.Now().Add(-2*time.Hour))
+	storedPruneTestUse(cloud, newer, time.Now().Add(-time.Hour))
+	for number, layers := range map[uint64]map[string]int64{
+		older: {"base": 100, "older-top": 200},
+		newer: {"base": 100, "newer-top": 50},
+	} {
+		stored, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", layers), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+	}
+	storedPruneTestPlace(t, ctx, cloud, []uint64{older, newer})
+	require.Equal(t, int64(350), cloud.snapshotPruneState(pruneSnapshotDisk, 0).usedBytes)
+
+	_, err := cloud.Prune(ctx, []CachePrunePolicy{{MaxUsedSpace: 300, TargetSpace: 250, OvershootAllowance: 10}})
+	require.NoError(t, err)
+	require.Equal(t, int64(300), cloud.snapshotPruneState(pruneSnapshotDisk, 0).usedBytes)
+	require.True(t, storedPruneTestEntryState(cloud, older).value)
+	require.False(t, storedPruneTestEntryState(cloud, newer).value)
+}
+
 // An expired root goes before a less recently used one.
 func TestPruneDropsExpiredRootsFirst(t *testing.T) {
 	t.Parallel()
