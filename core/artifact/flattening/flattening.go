@@ -20,7 +20,7 @@ type Collection struct {
 	KeyDescription string
 }
 
-// Dimension retains the current path-based collection identity. Parent is the
+// Dimension retains the legacy path-based collection identity. Parent is the
 // preceding collection boundary. Ordinary object fields extend its path.
 // A nil name function uses current artifact spelling.
 func (c Collection) Dimension(module string, parent *Dimension, name func(string) string) *Dimension {
@@ -48,6 +48,16 @@ func (c Collection) Dimension(module string, parent *Dimension, name func(string
 	return &Dimension{Kind: "COLLECTION", CollectionType: c.Type, Identifier: id,
 		Name: itemName, QualifiedName: strings.Join(append(qualified, item), "-"), ItemType: c.ItemType,
 		KeyName: c.KeyName, KeyDescription: c.KeyDescription}
+}
+
+// CanonicalDimension identifies a collection by its exact schema type name.
+// Type and ItemType must come from schema metadata, not from a field route.
+func (c Collection) CanonicalDimension() *Dimension {
+	return &Dimension{
+		Kind: "COLLECTION", Identifier: c.Type, CollectionType: c.Type,
+		Name: latestName(c.ItemType), QualifiedName: latestName(c.Type),
+		ItemType: c.ItemType, KeyName: c.KeyName, KeyDescription: c.KeyDescription,
+	}
 }
 
 // Coordinate is one dimension's value for an artifact. Collection values are

@@ -8,6 +8,28 @@ import (
 	"github.com/dagger/dagger/core/artifact/flattening"
 )
 
+// ArtifactTypeColumnsVersion is the first API view with collection type columns.
+const ArtifactTypeColumnsVersion = "v1.0.0-beta.26"
+
+// ProjectionField translates schema nodes without deriving identity from a route.
+func (a *Artifact) ProjectionField() flattening.Field {
+	field := flattening.Field{Module: a.ModuleName, Type: a.TypeName,
+		LocalPath: append([]string{}, a.LocalPath()...), Collections: []flattening.Collection{}}
+	for node := a.Node; node != nil; node = node.Parent {
+		if node.CollectionDimension == nil {
+			continue
+		}
+		dimension := node.CollectionDimension
+		parent := &Artifact{ModuleName: a.ModuleName, Node: node.Parent}
+		field.Collections = append(field.Collections, flattening.Collection{
+			Fields: append([]string{}, parent.LocalPath()...), Type: dimension.CollectionType, ItemType: dimension.ItemType,
+			KeyName: dimension.KeyName, KeyDescription: dimension.KeyDescription,
+		})
+	}
+	slices.Reverse(field.Collections)
+	return field
+}
+
 // LocalPath is the literal schema field path from the nearest collection item,
 // or from the exposed module root. It excludes synthetic collection lookups.
 // An empty path identifies the root itself.
@@ -69,8 +91,30 @@ func (a *Artifact) localPathWithoutNode() []string {
 // Legacy DimensionKeys remain unchanged for address and selector compatibility.
 func (a *Artifact) CanonicalCoordinates() []flattening.Coordinate {
 	collections := make([]flattening.Coordinate, 0, len(a.DimensionKeys))
+	for node := a.Node; node != nil; node = node.Parent {
+		if node.CollectionDimension != nil && node.CollectionKey != nil {
+			identifier := node.CollectionDimension.CollectionType
+			if identifier == "" {
+				identifier = node.CollectionDimension.Identifier
+			}
+			collections = append(collections, flattening.Coordinate{Dimension: identifier, Key: *node.CollectionKey})
+		}
+	}
+	if len(collections) != 0 {
+		slices.Reverse(collections)
+		return flattening.CanonicalCoordinates(a.ModuleName, a.LocalPath(), collections)
+	}
+	// Older snapshots and synthetic artifacts can carry keys without item nodes.
+	definitions := a.DimensionDefinitions()
 	for _, key := range a.DimensionKeys {
-		collections = append(collections, flattening.Coordinate{Dimension: key.Dimension, Key: key.Key})
+		identifier := key.Dimension
+		for _, dimension := range definitions {
+			if dimension.Identifier == identifier && dimension.CollectionType != "" {
+				identifier = dimension.CollectionType
+				break
+			}
+		}
+		collections = append(collections, flattening.Coordinate{Dimension: identifier, Key: key.Key})
 	}
 	return flattening.CanonicalCoordinates(a.ModuleName, a.LocalPath(), collections)
 }
@@ -88,5 +132,5 @@ func (a *Artifact) hasDimension(identifier string) bool {
 	if identifier == artifact.NameDimension {
 		return a.TypeName != ""
 	}
-	return slices.ContainsFunc(a.DimensionDefinitions(), func(d *ArtifactDimension) bool { return d.Identifier == identifier })
+	return slices.ContainsFunc(a.DimensionDefinitions(), func(d *ArtifactDimension) bool { return d.Identifier == identifier || d.CollectionType == identifier })
 }

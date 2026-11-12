@@ -1,8 +1,9 @@
 """Check schema field spelling and collection boundaries in saved captures."""
 import copy
+import json
 import unittest
 
-from capture import LocalPaths, format_entries
+from capture import LocalPaths, capture_entries, format_entries
 
 
 def field(name, returns):
@@ -102,6 +103,100 @@ class OutputFormatTest(unittest.TestCase):
     def test_cli_format_preserves_capture(self):
         captured = [{'Module': 'app', 'Items': []}]
         self.assertEqual(captured, format_entries(captured, 'cli'))
+
+
+class ModernCaptureTest(unittest.TestCase):
+    @staticmethod
+    def schema():
+        return {
+            'dimensionDefinitions': [
+                {'identifier': 'AppItems', 'kind': 'COLLECTION', 'name': 'app-item'},
+                {'identifier': 'NestedItems', 'kind': 'COLLECTION', 'name': 'nested-item'},
+                {'identifier': 'name', 'kind': 'NAME', 'name': 'name'},
+            ],
+            '__listing': [
+                {'uri': 'dag+check://app/items/health-check',
+                 'path': ['app', 'items', 'health-check'], 'moduleName': 'app',
+                 'projection': {'module': 'app', 'type': 'Check',
+                                'localPath': ['healthCheck'], 'collections': [
+                                    {'Fields': ['items'], 'Type': 'AppItems',
+                                     'ItemType': 'AppItem', 'KeyName': 'name',
+                                     'KeyDescription': 'Item name'}]}},
+                {'uri': 'dag+container://app/items', 'moduleName': 'app',
+                 'projection': {'module': 'app', 'type': 'Container',
+                                'localPath': [], 'collections': [
+                                    {'Fields': ['items'], 'Type': 'AppItems',
+                                     'ItemType': 'AppItem'},
+                                    {'Fields': [], 'Type': 'NestedItems',
+                                     'ItemType': 'NestedItem'}]}},
+            ],
+        }
+
+    def test_type_ids_use_exact_projection_and_raw_keys(self):
+        metadata = self.schema()
+        before = copy.deepcopy(metadata)
+        listing = [{'uri': 'dag+check://?app-item=wrong', 'moduleName': 'app',
+                    'path': ['app', 'items', 'health-check'],
+                    'dimensionKeys': [{'dimension': 'AppItems', 'key': ''},
+                                      {'dimension': 'name', 'key': 'healthCheck'}]}]
+        entries = capture_entries(metadata, listing)
+        self.assertEqual([
+            {'module': 'app', 'type': 'Check', 'localPath': ['healthCheck'],
+             'collections': [{'fields': ['items'], 'type': 'AppItems',
+                              'itemType': 'AppItem', 'keyName': 'name',
+                              'keyDescription': 'Item name'}], 'items': [['']]},
+            {'module': 'app', 'type': 'Container', 'localPath': [],
+             'collections': [{'fields': ['items'], 'type': 'AppItems',
+                              'itemType': 'AppItem'},
+                             {'fields': [], 'type': 'NestedItems',
+                              'itemType': 'NestedItem'}], 'items': []},
+        ], format_entries(entries, 'flattening'))
+        self.assertEqual(['app', 'items'], entries[1]['Path'])
+        self.assertEqual(before, metadata)
+        # The same projection works on pathDefinitions-based schema captures.
+        metadata['pathDefinitions'] = metadata.pop('__listing')
+        self.assertEqual(entries, capture_entries(metadata, listing))
+
+    def test_direct_nested_collections_keep_key_order_and_empty_root(self):
+        metadata = self.schema()
+        metadata['__listing'] = json.dumps(metadata['__listing'])
+        listing = [{'uri': 'dag+container://app/items', 'moduleName': 'app',
+                    'dimensionKeys': [{'dimension': 'NestedItems', 'key': ''},
+                                      {'dimension': 'AppItems', 'key': 'outer'}]}]
+        entries = capture_entries(metadata, listing, selected_types=['Container'])
+        self.assertEqual([], entries[0]['Items'])
+        self.assertEqual([{'Keys': ['outer', ''], 'Description': ''}], entries[1]['Items'])
+        self.assertEqual([], entries[1]['LocalPath'])
+        self.assertEqual([], entries[1]['Collections'][1]['Fields'])
+
+    def test_modern_ids_require_projection_metadata(self):
+        metadata = self.schema()
+        del metadata['__listing'][0]['projection']
+        with self.assertRaisesRegex(ValueError, 'require schema projection metadata'):
+            capture_entries(metadata, [])
+
+    def test_modern_listing_requires_exact_coordinates(self):
+        listing = [{'uri': 'dag+check://?app-item=x', 'moduleName': 'app',
+                    'path': ['app', 'items', 'health-check']}]
+        with self.assertRaisesRegex(ValueError, 'require dimensionKeys or coordinates'):
+            capture_entries(self.schema(), listing)
+
+    def test_old_capture_keeps_object_lookup_and_uri_alias_keys(self):
+        target = path('app/items/health-check', 'Check', ['/app/items'])
+        captured = metadata([target], {
+            'App': [field('items', 'AppItems')],
+            'AppItem': [field('healthCheck', 'Check')],
+        }, [{'identifier': '/app/items', 'kind': 'COLLECTION', 'name': 'app-item',
+             'collectionType': 'AppItems', 'itemType': 'AppItem'}])
+        listing = [{'uri': 'dag://?app-item=', 'moduleName': 'app',
+                    'path': ['app', 'items', 'health-check']}]
+        self.assertEqual([
+            {'Module': 'app', 'Path': ['app', 'items', 'health-check'],
+             'Type': 'Check', 'LocalPath': ['healthCheck'],
+             'Collections': [{'Fields': ['items'], 'Type': 'AppItems',
+                              'ItemType': 'AppItem'}], 'Description': '',
+             'Items': [{'Keys': [''], 'Description': ''}]},
+        ], capture_entries(captured, listing))
 
 
 if __name__ == '__main__':

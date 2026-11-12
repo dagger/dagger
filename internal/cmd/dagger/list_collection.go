@@ -55,6 +55,13 @@ func prepareArtifactOutputWithSchema(cmd *cobra.Command, items []listedArtifact,
 	for id, allocated := range artifactDimensionFlagNames(cmd, definitions) {
 		names[id], presence[id] = allocated.Key, allocated.Presence
 	}
+	if format != "cli" {
+		for _, dimension := range definitions {
+			if dimension.Kind == "COLLECTION" && dimension.Identifier == dimension.CollectionType {
+				names[dimension.Identifier] = dimension.Name
+			}
+		}
+	}
 	index, err := newArtifactNameIndex(paths)
 	if err != nil {
 		return nil, err
