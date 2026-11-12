@@ -12,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -700,9 +701,18 @@ func TestStoredSizesAllowForEachAddressOfABlobInDifferentPacks(t *testing.T) {
 	require.NoError(t, err)
 	layers, err := json.Marshal(unsigned.Layers)
 	require.NoError(t, err)
-	// Signed as the service signs them: a packed layer's address is its
-	// pack's, an unpacked one's its own.
-	signed := built.Bundle
+	addresses := storedSizesTestAddresses(t, built.Bundle)
+	require.Equal(t, 2, addresses, "the bundle's and one chain's own")
+	require.GreaterOrEqual(t, sizes[0].OutputBytes-int64(len(outputs)+len(layers)), int64(addresses)*storedBlobAddressAllowance)
+}
+
+// storedSizesTestAddresses counts the download addresses a merge's message
+// carries for the bundle once signed as the service signs it, a packed
+// layer's address its pack's and an unpacked one's its own, and its chains'
+// layers shared (ShareChainLayers): the bundle's, and its chains' own.
+func storedSizesTestAddresses(t *testing.T, bundle ValueBundle) int {
+	t.Helper()
+	signed := bundle
 	signed.Outputs = slices.Clone(signed.Outputs)
 	for i := range signed.Outputs {
 		chain := *signed.Outputs[i].Chain
@@ -722,6 +732,31 @@ func TestStoredSizesAllowForEachAddressOfABlobInDifferentPacks(t *testing.T) {
 	for _, out := range wire.Outputs {
 		addresses += len(out.Chain.Addresses)
 	}
-	require.Equal(t, 2, addresses, "the bundle's and one chain's own")
-	require.GreaterOrEqual(t, sizes[0].OutputBytes-int64(len(outputs)+len(layers)), int64(addresses)*storedBlobAddressAllowance)
+	return addresses
+}
+
+// The address a bundle shares for a blob is the first its outputs name, in
+// the bundle's order, each entry's parts by key (storedBundleOutputsLocked):
+// the price follows that order. Here one entry's parts a and b name a blob in
+// packs A and B, and the next entry's part c names it in B: the bundle shares
+// A's address and carries B's on b and on c, three in all, whichever order
+// the entry keeps its parts in.
+func TestStoredSizesAllowForAddressesInTheBundlesPartOrder(t *testing.T) {
+	t.Parallel()
+	blob := testDigest("order-blob")
+	in := func(part, pack string) storedPart {
+		return storedPart{
+			held:   PersistedPartOffer{Address: PersistedPartAddress{Part: PartKey(part)}},
+			layers: []*storedLayer{{layer: snapshots.ExportLayer{Descriptor: ocispecs.Descriptor{Digest: blob}}, pack: testDigest(pack)}},
+		}
+	}
+	first := &sharedResult{storedParts: map[string]storedPart{"a": in("a", "pack-a"), "b": in("b", "pack-b")}}
+	next := &sharedResult{storedParts: map[string]storedPart{"c": in("c", "pack-b")}}
+	// A map's order differs from one walk to the next: walk it many times.
+	for range 50 {
+		walk := &storedSizeWalk{outputs: &storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}}
+		walk.addOutputs(first)
+		walk.addOutputs(next)
+		require.Equal(t, int64(3)*storedBlobAddressAllowance, walk.size.OutputBytes, "A's address shared, B's on b and on c")
+	}
 }
