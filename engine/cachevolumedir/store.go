@@ -107,6 +107,9 @@ type Options struct {
 	// RemoveAll deletes a removed volume's tree; os.RemoveAll when nil.
 	// Tests replace it to hold a deletion.
 	RemoveAll func(string) error
+	// OnDeletionError, when set, is told of each background deletion that
+	// failed, as it fails: nothing waits for the deletions to report them.
+	OnDeletionError func(error)
 }
 
 // Store is an owned cache volume directory.
