@@ -84,7 +84,12 @@ type is Dang's builtin JSON-text scalar, not Dagger's `JSON` scalar, which is
 `Dagger.JSON` (convert between them with a cast). The module entrypoint
 contract keeps bare `JSON`, as released engines declare it. Values display as
 Dang literals (a Dagger object as its lazy query, not its ID) in `toString`,
-interpolation and `print`.
+interpolation and `print`. From vito/dang 496a3b6 (Dang 2.5), an interface
+declared in Dang is satisfied by any type of its shape, a Dagger object
+included, so a module can `raise` a `Dagger.Error!`: the function then fails
+with that Error, values and all, as with `FunctionCall.returnError`, and a
+rescued GraphQL error raised again as it was keeps its extensions (see
+`v2/errors.go`).
 
 A new Dang major that breaks the v2 line's compatibility would need its own
 package again; prefer a language version gate upstream.

@@ -81,7 +81,7 @@ func (r *runtime) eval(
 
 		result, err := callDangFunction(ctx, env, fnCall, module)
 		if err != nil {
-			return nil, err
+			return nil, returnRaisedError(ctx, fnCall, err)
 		}
 
 		if flushErr := query.Server.FlushSessionTelemetry(ctx); flushErr != nil {
