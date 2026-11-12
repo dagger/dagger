@@ -454,6 +454,19 @@ func validateStoredOwnership(res *sharedResult) error {
 		}
 	}
 	env.PendingOffers = nil
+	if res.stored != nil {
+		// A record held compressed names what its body's facts say.
+		refs, _, err := res.storedFactsLocked()
+		if err != nil {
+			return fmt.Errorf("result %d: %w", res.id, err)
+		}
+		for _, ref := range refs {
+			if _, ok := res.deps[sharedResultID(ref)]; !ok {
+				return fmt.Errorf("result %d: reference to %d is not a direct dependency", res.id, ref)
+			}
+		}
+		return nil
+	}
 	_, err := VisitEncodedReferences(PersistedRecord{ResultID: uint64(res.id), Envelope: env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}, func(ref *PersistedRef) error {
 		if ref.RecipeID != nil {
 			return nil
