@@ -34,15 +34,15 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("Container", typeDef.withObject("Container"))
             .withDescription("Build the engine container")
-            .withSourceMap(sourceMap("main.go", 164, 1))
-            .withArg("platform", typeDef.withScalar("Platform").withOptional(true), sourceMap: sourceMap("main.go", 168, 2))
-            .withArg("gpuSupport", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 170, 2))
-            .withArg("version", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), sourceMap: sourceMap("main.go", 172, 2))
+            .withSourceMap(sourceMap("main.go", 163, 1))
+            .withArg("platform", typeDef.withScalar("Platform").withOptional(true), sourceMap: sourceMap("main.go", 167, 2))
+            .withArg("gpuSupport", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 169, 2))
+            .withArg("version", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), sourceMap: sourceMap("main.go", 171, 2))
         )
         .withFunction(
           function("ExportDriver", typeDef.withObject("File"))
             .withDescription("Build the export driver the Go SDK's code generation loads packages\nthrough: a GOPACKAGESDRIVER that serves the export data of what they import\nfrom dagger/go's archives, so the go command compiles none of it.")
-            .withSourceMap(sourceMap("main.go", 644, 1))
+            .withSourceMap(sourceMap("main.go", 634, 1))
         )
         .withFunction(
           function("GoEnv", typeDef.withObject("Container"))
@@ -54,13 +54,13 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("GraphqlSchema", typeDef.withObject("File"))
             .withDescription("Introspect the engine API schema, and return it as a graphql schema")
-            .withSourceMap(sourceMap("main.go", 585, 1))
-            .withArg("version", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), sourceMap: sourceMap("main.go", 588, 2))
+            .withSourceMap(sourceMap("main.go", 575, 1))
+            .withArg("version", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), sourceMap: sourceMap("main.go", 578, 2))
         )
         .withFunction(
           function("ImageEntriesAfterPrune", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("The entries an engine image ships can be made again on the state an\nearlier making left after a prune cut part of it, as a later release's\nmaking does: an engine of this build makes them, prunes its cache to half\nits size, least recently used first, and makes them again.")
-            .withSourceMap(sourceMap("main.go", 425, 1))
+            .withSourceMap(sourceMap("main.go", 419, 1))
             .withCheck
         )
         .withFunction(
@@ -70,19 +70,19 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("InstallClient", typeDef.withObject("Container"))
             .withDescription("Configure the given client container so that it can connect to the given engine service")
-            .withSourceMap(sourceMap("main.go", 507, 1))
-            .withArg("client", typeDef.withObject("Container").withOptional(true), description: "The client container to configure", sourceMap: sourceMap("main.go", 511, 2))
-            .withArg("service", typeDef.withObject("Service").withOptional(true), description: "The engine service to bind", sourceMap: sourceMap("main.go", 514, 2))
+            .withSourceMap(sourceMap("main.go", 497, 1))
+            .withArg("client", typeDef.withObject("Container").withOptional(true), description: "The client container to configure", sourceMap: sourceMap("main.go", 501, 2))
+            .withArg("service", typeDef.withObject("Service").withOptional(true), description: "The engine service to bind", sourceMap: sourceMap("main.go", 504, 2))
         )
         .withFunction(
           function("IntrospectionJSON", typeDef.withObject("File"))
             .withDescription("Introspect the engine API schema, and return it as a json-encoded file.\nThis file is used by SDKs to generate clients. It is the engine's answer to\nan introspection query from a client of its own version, computed\nin-process by the introspect tool, so no engine is built or started.")
-            .withSourceMap(sourceMap("main.go", 570, 1))
+            .withSourceMap(sourceMap("main.go", 560, 1))
         )
         .withFunction(
           function("IntrospectionTool", typeDef.withObject("File"))
             .withDescription("Build the `introspect` tool which introspects the engine API")
-            .withSourceMap(sourceMap("main.go", 633, 1))
+            .withSourceMap(sourceMap("main.go", 623, 1))
         )
         .withFunction(
           function("LoadToDocker", typeDef.withObject("LoadedEngine"))
@@ -102,26 +102,26 @@ type Entrypoint implements ModuleEntrypoint {
           function("Publish", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Publish all engine images to a registry")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
-            .withSourceMap(sourceMap("main.go", 692, 1))
-            .withArg("image", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Image target to push to", defaultValue: ("\"ghcr.io/dagger/engine\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 697, 2))
-            .withArg("tag", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "List of tags to use", sourceMap: sourceMap("main.go", 699, 2))
-            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 702, 2))
-            .withArg("registryUsername", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true).withOptional(true), sourceMap: sourceMap("main.go", 705, 2))
-            .withArg("registryPassword", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 707, 2))
+            .withSourceMap(sourceMap("main.go", 682, 1))
+            .withArg("image", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Image target to push to", defaultValue: ("\"ghcr.io/dagger/engine\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 687, 2))
+            .withArg("tag", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "List of tags to use", sourceMap: sourceMap("main.go", 689, 2))
+            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 692, 2))
+            .withArg("registryUsername", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true).withOptional(true), sourceMap: sourceMap("main.go", 695, 2))
+            .withArg("registryPassword", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 697, 2))
         )
         .withFunction(
           function("ReleaseDryRun", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
-            .withSourceMap(sourceMap("main.go", 678, 1))
+            .withSourceMap(sourceMap("main.go", 668, 1))
             .withCheck
         )
         .withFunction(
           function("Service", typeDef.withObject("Service"))
             .withDescription("Create a test engine service")
-            .withSourceMap(sourceMap("main.go", 456, 1))
-            .withArg("name", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 458, 2))
-            .withArg("gpuSupport", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 460, 2))
-            .withArg("sharedCache", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 462, 2))
-            .withArg("metrics", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 464, 2))
+            .withSourceMap(sourceMap("main.go", 446, 1))
+            .withArg("name", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 448, 2))
+            .withArg("gpuSupport", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 450, 2))
+            .withArg("sharedCache", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 452, 2))
+            .withArg("metrics", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 454, 2))
         )
         .withFunction(
           function("Test", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
@@ -208,8 +208,8 @@ type Entrypoint implements ModuleEntrypoint {
         )
         .withFunction(
           function("WithImageEntries", typeDef.withObject("EngineDev"))
-            .withDescription("Build the engine with the Go builds its image's entries ship, as a release\ndoes. Making them runs Go builds on a separate engine of the build and\ncosts minutes, while an engine that serves many clients, such as a test\nrun's, builds the same results once for its first client, and one that\nloads no Go module never needs them; so an engine built for anything else\nships only the built-in SDKs' files in its entries.")
-            .withSourceMap(sourceMap("main.go", 158, 1))
+            .withDescription("Build the engine with the Go builds its image's entries ship, as a release\ndoes. They are calls on the engine the build runs on, so a build whose Go\nbuilds' inputs haven't changed finds them already made and only exports\nthem. An engine built without ships only the built-in SDKs' files in its\nentries.")
+            .withSourceMap(sourceMap("main.go", 157, 1))
         )
         .withFunction(
           function("WithLogLevel", typeDef.withObject("EngineDev"))
