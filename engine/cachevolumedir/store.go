@@ -777,21 +777,25 @@ func (s *Store) remove(e Entry) (bool, error) {
 		return false, fmt.Errorf("remove cache volume %s: %w", e.ID, err)
 	}
 	delete(s.pins, e.ID)
-	s.startDeletionLocked(trash, e.SizeBytes, "cache volume "+e.ID)
+	s.startDeletionLocked(trash, e.SizeBytes, "cache volume "+e.ID, nil)
 	s.mu.Unlock()
 	return true, nil
 }
 
 // startDeletionLocked deletes trash, a tree moved into trash/, in the
-// background, counting size as pending until it's gone. A negative size is
-// unknown: the deletion measures the tree first. s.mu must be held.
-func (s *Store) startDeletionLocked(trash string, size int64, what string) {
+// background, counting size as pending until it's gone, then calls done if
+// set. A negative size is unknown: the deletion measures the tree first.
+// s.mu must be held.
+func (s *Store) startDeletionLocked(trash string, size int64, what string, done func()) {
 	if size > 0 {
 		s.pendingBytes += size
 	}
 	s.removals.Add(1)
 	go func() {
 		defer s.removals.Done()
+		if done != nil {
+			defer done()
+		}
 		if size < 0 {
 			measured, err := s.trashSize(context.Background(), trash)
 			size = max(measured, 0)
@@ -857,12 +861,37 @@ func (s *Store) deleteLeftovers() error {
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, ent := range ents {
-		trash := filepath.Join(trashDir, ent.Name())
-		s.startDeletionLocked(trash, leftoverSize(trash), "leftover "+ent.Name())
+	if len(ents) == 0 {
+		return nil
 	}
+	sizes := make([]int64, len(ents))
+	var recorded int64
+	var unmeasured int
+	for i, ent := range ents {
+		sizes[i] = leftoverSize(filepath.Join(trashDir, ent.Name()))
+		if sizes[i] < 0 {
+			unmeasured++
+		} else {
+			recorded += sizes[i]
+		}
+	}
+	if s.opts.OnLeftovers != nil {
+		s.opts.OnLeftovers(len(ents), recorded, unmeasured)
+	}
+	start := time.Now()
+	var deleted sync.WaitGroup
+	deleted.Add(len(ents))
+	s.mu.Lock()
+	for i, ent := range ents {
+		s.startDeletionLocked(filepath.Join(trashDir, ent.Name()), sizes[i], "leftover "+ent.Name(), deleted.Done)
+	}
+	s.mu.Unlock()
+	go func() {
+		deleted.Wait()
+		if s.opts.OnLeftoversDeleted != nil {
+			s.opts.OnLeftoversDeleted(len(ents), time.Since(start))
+		}
+	}()
 	return nil
 }
 
