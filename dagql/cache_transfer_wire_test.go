@@ -3,6 +3,7 @@ package dagql
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/dagger/dagger/engine/snapshots"
@@ -16,7 +17,8 @@ import (
 // resolves as it was: every chain with its own layers and its layers'
 // addresses, and the packs it names, a chain that carried no address with
 // none, and an address of a blob none of a chain's layers is kept on that
-// chain.
+// chain. Chains given the same listed layer share it, as copies of an offer
+// do: an offered layer is never written after it's built.
 func TestValueBundleWireListsLayersOnce(t *testing.T) {
 	layer := func(name string) snapshots.ExportLayer {
 		return snapshots.ExportLayer{
@@ -81,6 +83,10 @@ func TestValueBundleWireListsLayersOnce(t *testing.T) {
 	require.Equal(t, bundle.Outputs, decoded.Outputs)
 	require.Equal(t, bundle.Roots, decoded.Roots)
 	require.Len(t, decoded.Values, len(bundle.Values))
+
+	first, second := decoded.Outputs[0].Chain, decoded.Outputs[1].Chain
+	require.Equal(t, reflect.ValueOf(first.Layers[0].Descriptor.Annotations).Pointer(), reflect.ValueOf(second.Layers[0].Descriptor.Annotations).Pointer(), "a base layer is listed once and shared")
+	require.NotEqual(t, reflect.ValueOf(first.Addresses).Pointer(), reflect.ValueOf(second.Addresses).Pointer(), "each chain has its own addresses")
 }
 
 // A bundle of version 5, from before a merge listed its layers once, is

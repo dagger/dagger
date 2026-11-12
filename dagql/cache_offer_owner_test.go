@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -46,18 +47,20 @@ func TestValueTransferOfferCopyFailure(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// A copied offer equals the original and shares none of its maps, slices or
-// pointers, whatever fields its types gain: StoredBundle relocates the copy of
-// a stored part and removes its addresses and renewal key, and neither may
-// reach the part.
-func TestClonePartOffersShareNothing(t *testing.T) {
+// A copied offer equals the original and shares its chain's layers and
+// nothing else, whatever fields its types gain: StoredBundle relocates the
+// copy of a stored part and removes its addresses and renewal key, and
+// neither may reach the part. An offered layer is never written after it's
+// built, so copies share the layers, which are most of an offer.
+func TestClonePartOffersShareOnlyLayers(t *testing.T) {
 	var offer PersistedPartOffer
 	fillCloneTestValue(reflect.ValueOf(&offer).Elem())
 	require.NotEmpty(t, offer.Chain.Layers[0].Descriptor.Annotations)
 	copied, err := clonePartOffers([]PersistedPartOffer{offer})
 	require.NoError(t, err)
 	require.Equal(t, offer, copied[0])
-	requireNothingShared(t, reflect.ValueOf(offer), reflect.ValueOf(copied[0]), "offer")
+	require.Equal(t, reflect.ValueOf(offer.Chain.Layers).Pointer(), reflect.ValueOf(copied[0].Chain.Layers).Pointer(), "the layers are shared")
+	requireNothingShared(t, reflect.ValueOf(offer), reflect.ValueOf(copied[0]), "offer", "offer.Chain.Layers")
 }
 
 // fillCloneTestValue sets every exported field v reaches to a value that
@@ -98,20 +101,24 @@ func fillCloneTestValue(v reflect.Value) {
 }
 
 // requireNothingShared fails if a and b share a map, a slice's elements or a
-// pointer's target through their exported fields.
-func requireNothingShared(t *testing.T, a, b reflect.Value, path string) {
+// pointer's target through their exported fields, apart from the paths named
+// as shared.
+func requireNothingShared(t *testing.T, a, b reflect.Value, path string, shared ...string) {
 	t.Helper()
+	if slices.Contains(shared, path) {
+		return
+	}
 	switch a.Kind() {
 	case reflect.Pointer:
 		if a.IsNil() {
 			return
 		}
 		require.NotEqual(t, a.Pointer(), b.Pointer(), "%s is shared", path)
-		requireNothingShared(t, a.Elem(), b.Elem(), path)
+		requireNothingShared(t, a.Elem(), b.Elem(), path, shared...)
 	case reflect.Struct:
 		for i := range a.NumField() {
 			if field := a.Type().Field(i); field.IsExported() {
-				requireNothingShared(t, a.Field(i), b.Field(i), path+"."+field.Name)
+				requireNothingShared(t, a.Field(i), b.Field(i), path+"."+field.Name, shared...)
 			}
 		}
 	case reflect.Slice:
@@ -120,7 +127,7 @@ func requireNothingShared(t *testing.T, a, b reflect.Value, path string) {
 		}
 		require.NotEqual(t, a.Pointer(), b.Pointer(), "%s is shared", path)
 		for i := range a.Len() {
-			requireNothingShared(t, a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i))
+			requireNothingShared(t, a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i), shared...)
 		}
 	case reflect.Map:
 		if a.Len() == 0 {
@@ -128,7 +135,7 @@ func requireNothingShared(t *testing.T, a, b reflect.Value, path string) {
 		}
 		require.NotEqual(t, a.Pointer(), b.Pointer(), "%s is shared", path)
 		for _, key := range a.MapKeys() {
-			requireNothingShared(t, a.MapIndex(key), b.MapIndex(key), fmt.Sprintf("%s[%v]", path, key))
+			requireNothingShared(t, a.MapIndex(key), b.MapIndex(key), fmt.Sprintf("%s[%v]", path, key), shared...)
 		}
 	}
 }
