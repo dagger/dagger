@@ -139,3 +139,41 @@ func TestSnapshotRelativePathPrefixingAParent(t *testing.T) {
 		require.NoError(t, releaseOp(context.Background()))
 	}
 }
+
+// A directory read at a relative path takes that path as an include pattern,
+// so a "*" in the directory's name also takes in its siblings that match, such
+// as "p*x" beside "p*". Those siblings must not count toward the directory's
+// content hash: matching the relative path by its text hashed "p*x" as "x".
+func TestSnapshotRelativePathWithGlobIgnoresMatchingSibling(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	root := t.TempDir()
+	relPath := "p*"
+	require.NoError(t, os.Mkdir(filepath.Join(root, relPath), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, relPath, "file.txt"), []byte("content"), 0o600))
+
+	store := testutil.NewStore(t)
+	syncer := NewFileSyncer(FileSyncerOpt{CacheAccessor: store.Manager})
+	mirror := NewMirrorSharedState(t.TempDir())
+	conn := serveFilesync(t, client.FilesyncSource{})
+
+	snapshotDigest := func() string {
+		t.Helper()
+		ctx, releaseOp, err := bkcache.WithLazyLease(ctx, store.Leases, bkcache.MakeTemporary)
+		require.NoError(t, err)
+		defer releaseOp(context.Background())
+		// as host.go reads a directory at a path relative to the synced root
+		ref, dgst, err := syncer.Snapshot(ctx, mirror, conn, root, SnapshotOpts{
+			IncludePatterns: []string{"!*", relPath},
+			RelativePath:    relPath,
+		})
+		require.NoError(t, err)
+		require.NoError(t, ref.Release(context.Background()))
+		return dgst.String()
+	}
+
+	want := snapshotDigest()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "p*x"), []byte("sibling"), 0o600))
+	require.Equal(t, want, snapshotDigest())
+}
