@@ -1920,13 +1920,9 @@ func (c *Cache) mergedCompletePartKeysLocked(commit *valueMergeCommit, res *shar
 	return commit.prep.completeParts[row.ordinal]
 }
 
-// recordCompletePartKeys returns the part keys record proves complete: the
+// memoRecordCompletePartKeys returns the part keys record proves complete: the
 // part probe's LocalComplete over it, sorted, or none if the record doesn't
 // describe its parts.
-func recordCompletePartKeys(record PersistedRecord) []string {
-	return memoRecordCompletePartKeys(record, nil)
-}
-
 func memoRecordCompletePartKeys(record PersistedRecord, memos payloadMemos) []string {
 	probes, err := describeMemoPartRecord(record, memos)
 	if err != nil {
