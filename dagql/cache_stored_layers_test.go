@@ -128,7 +128,7 @@ func TestStoredPartOffersAreAsStored(t *testing.T) {
 	}
 	read := func(name string) PersistedPartOffer {
 		t.Helper()
-		av, err := c.AvailablePart(numbers[name], want[name].Address)
+		av, err := c.AvailablePart(numbers[name], want[name].Address, time.Now().Unix())
 		require.NoError(t, err)
 		require.Equal(t, PartStored, av.State)
 		return av.Part

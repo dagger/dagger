@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"time"
 
 	"github.com/opencontainers/go-digest"
 )
@@ -95,7 +94,9 @@ type PartAvailability struct {
 }
 
 // AvailablePart reports what the cache has of a part of the entry numbered
-// number, read under one hold with the clock:
+// number at nowUnix, the reader's clock, read under one hold. A reader that
+// judges other facts of the cache by its own clock asks at that same moment,
+// so its answers agree with each other:
 //   - stored: the entry, while its value has not expired, or else an
 //     unexpired entry of its class, has the part in its blob store: a stored
 //     part is available only while the value it belongs to is;
@@ -107,7 +108,7 @@ type PartAvailability struct {
 //
 // Among the class's other entries, the lowest number answers first. Part is
 // a copy of the stored part. Only a blob-backed cache answers.
-func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress) (PartAvailability, error) {
+func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress, nowUnix int64) (PartAvailability, error) {
 	if !c.blobBacked {
 		return PartAvailability{}, fmt.Errorf("available part: the cache has no blob store")
 	}
@@ -117,7 +118,6 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress) (Part
 	}
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	now := time.Now().Unix()
 	res := c.resultsByID[sharedResultID(number)]
 	if res == nil {
 		return PartAvailability{}, fmt.Errorf("available part of %d: %w", number, ErrUnknownEntry)
@@ -127,7 +127,7 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress) (Part
 	for root := range c.outputEqClassRootsLocked(res.id) {
 		for id := range c.outputEqClassResults[root] {
 			other := c.resultsByID[id]
-			if other == nil || other == res || other.noValueLocked() || c.resultExpiredAtLocked(other, now) {
+			if other == nil || other == res || other.noValueLocked() || c.resultExpiredAtLocked(other, nowUnix) {
 				continue
 			}
 			others = append(others, id)
@@ -138,7 +138,7 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress) (Part
 		candidates = append(candidates, c.resultsByID[id])
 	}
 	for _, candidate := range candidates {
-		if candidate == res && c.resultExpiredAtLocked(res, now) {
+		if candidate == res && c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
 		if part, ok := candidate.storedParts[key]; ok {

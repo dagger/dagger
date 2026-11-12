@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
@@ -108,7 +109,7 @@ func TestAvailablePartStored(t *testing.T) {
 		stored, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
-		got, err := cloud.AvailablePart(first, address)
+		got, err := cloud.AvailablePart(first, address, time.Now().Unix())
 		require.NoError(t, err)
 		require.Equal(t, PartStored, got.State)
 		require.Equal(t, first, got.Donor)
@@ -121,7 +122,7 @@ func TestAvailablePartStored(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, stored)
 		expire(cloud, first)
-		got, err := cloud.AvailablePart(first, address)
+		got, err := cloud.AvailablePart(first, address, time.Now().Unix())
 		require.NoError(t, err)
 		require.Equal(t, PartUnavailable, got.State, "a stored part lasts only while its value does")
 	})
@@ -131,21 +132,80 @@ func TestAvailablePartStored(t *testing.T) {
 		stored, err := cloud.SetStoredPart(ctx, second, testLiveOffer(), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
-		got, err := cloud.AvailablePart(first, address)
+		got, err := cloud.AvailablePart(first, address, time.Now().Unix())
 		require.NoError(t, err)
 		require.Equal(t, PartStored, got.State)
 		require.Equal(t, second, got.Donor, "the donor is named")
 
 		expire(cloud, second)
-		got, err = cloud.AvailablePart(first, address)
+		got, err = cloud.AvailablePart(first, address, time.Now().Unix())
 		require.NoError(t, err)
 		require.Equal(t, PartUnavailable, got.State, "an expired member's part is not available")
 	})
 	t.Run("an unknown entry", func(t *testing.T) {
 		t.Parallel()
 		_, cloud, _, _ := storedQueriesTestClass(t)
-		_, err := cloud.AvailablePart(12345, address)
+		_, err := cloud.AvailablePart(12345, address, time.Now().Unix())
 		require.ErrorIs(t, err, ErrUnknownEntry)
+	})
+}
+
+// AvailablePart answers at the reader's clock, not its own: a reader that
+// judged an entry's expiry at one moment and asks of its parts later, or that
+// replays a recorded run, is told what the cache held at its moment. Each
+// value here expires an hour from the wall clock, so only the reader's clock
+// can have passed it.
+func TestAvailablePartAtTheReadersClock(t *testing.T) {
+	t.Parallel()
+	address := PersistedPartAddress{Part: "snapshot"}
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	expireAt := func(c *Cache, number uint64) {
+		c.egraphMu.Lock()
+		c.resultsByID[sharedResultID(number)].expiresAtUnix = expiresAt
+		c.egraphMu.Unlock()
+	}
+	t.Run("its own part", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, first, _ := storedQueriesTestClass(t)
+		stored, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		expireAt(cloud, first)
+		got, err := cloud.AvailablePart(first, address, expiresAt-1)
+		require.NoError(t, err)
+		require.Equal(t, PartStored, got.State, "the value hasn't expired at the reader's moment")
+		got, err = cloud.AvailablePart(first, address, expiresAt)
+		require.NoError(t, err)
+		require.Equal(t, PartUnavailable, got.State, "the value has expired at the reader's moment, though not by the wall clock")
+	})
+	t.Run("a class member's part", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, first, second := storedQueriesTestClass(t)
+		stored, err := cloud.SetStoredPart(ctx, second, testLiveOffer(), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		expireAt(cloud, second)
+		got, err := cloud.AvailablePart(first, address, expiresAt-1)
+		require.NoError(t, err)
+		require.Equal(t, PartStored, got.State)
+		require.Equal(t, second, got.Donor)
+		got, err = cloud.AvailablePart(first, address, expiresAt)
+		require.NoError(t, err)
+		require.Equal(t, PartUnavailable, got.State, "the donor has expired at the reader's moment")
+	})
+	t.Run("a value expired by the wall clock", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, first, _ := storedQueriesTestClass(t)
+		stored, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		past := time.Now().Add(-time.Hour)
+		cloud.egraphMu.Lock()
+		cloud.resultsByID[sharedResultID(first)].expiresAtUnix = past.Unix()
+		cloud.egraphMu.Unlock()
+		got, err := cloud.AvailablePart(first, address, past.Add(-time.Minute).Unix())
+		require.NoError(t, err)
+		require.Equal(t, PartStored, got.State, "a replay's reader, before the expiry, is told the part was there")
 	})
 }
 
@@ -207,7 +267,7 @@ func bundleSenderNumberForTest(t *testing.T, cloud *Cache, number uint64) uint64
 func TestAvailablePartCopiesAndNeedsABlobStore(t *testing.T) {
 	t.Parallel()
 	_, c, _ := transferTestCache(t)
-	_, err := c.AvailablePart(1, PersistedPartAddress{Part: "snapshot"})
+	_, err := c.AvailablePart(1, PersistedPartAddress{Part: "snapshot"}, time.Now().Unix())
 	require.ErrorContains(t, err, "no blob store")
 
 	ctx, cloud, first, second := storedQueriesTestClass(t)
@@ -217,11 +277,11 @@ func TestAvailablePartCopiesAndNeedsABlobStore(t *testing.T) {
 	stored, err := cloud.SetStoredPart(ctx, first, part, 0)
 	require.NoError(t, err)
 	require.True(t, stored)
-	got, err := cloud.AvailablePart(first, PersistedPartAddress{Part: "snapshot"})
+	got, err := cloud.AvailablePart(first, PersistedPartAddress{Part: "snapshot"}, time.Now().Unix())
 	require.NoError(t, err)
 	got.Part.Value.Services[0].Hostname = "changed"
 	got.Part.Owner.DependencyIDs[0] = 0
-	again, err := cloud.AvailablePart(first, PersistedPartAddress{Part: "snapshot"})
+	again, err := cloud.AvailablePart(first, PersistedPartAddress{Part: "snapshot"}, time.Now().Unix())
 	require.NoError(t, err)
 	require.Equal(t, "svc", again.Part.Value.Services[0].Hostname, "the stored part is unchanged")
 	require.Equal(t, []uint64{second}, again.Part.Owner.DependencyIDs)
