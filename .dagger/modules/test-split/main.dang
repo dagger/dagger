@@ -20,15 +20,12 @@ type TestSplit {
   let ws: Workspace!
 
   """
-  The dev engine tests run against. Making the cache entries the engine image
-  ships starts a separate engine and takes minutes, before the first test; a
-  shard's one dev engine builds the same results for its first Go module
-  instead. So it ships them only for the shards that need them: tests that
-  check them, and shards whose Go modules the engine would otherwise build
-  from scratch many times over, in fresh nested engines or in many tests
-  loading Go modules at once.
+  The dev engine tests run against, with the Go builds its image's entries
+  ship, as a release's: every engine a test starts from it is as warm as a
+  user's. A shard that loads no Go module goes without them: they only make
+  its image larger.
   """
-  let devEngine(imageEntries: Boolean! = false): EngineDev! {
+  let devEngine(imageEntries: Boolean! = true): EngineDev! {
     if (imageEntries) {
       engineDev(ws: self.ws).withImageEntries
     } else {
@@ -51,9 +48,9 @@ type TestSplit {
     """
     ebpf: Boolean,
     """
-    Run against an engine with the cache entries its image ships
+    Run against an engine with the Go builds its image's entries ship
     """
-    imageEntries: Boolean! = false,
+    imageEntries: Boolean! = true,
   ): Void {
     devEngine(imageEntries: imageEntries).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
@@ -63,7 +60,7 @@ type TestSplit {
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
     race: Boolean,
-    imageEntries: Boolean! = false,
+    imageEntries: Boolean! = true,
   ): Void {
     devEngine(imageEntries: imageEntries)
       .withEngineConfig("worker.oci", [
@@ -79,7 +76,7 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
     parallel: Int,
-    imageEntries: Boolean! = false,
+    imageEntries: Boolean! = true,
   ): Void {
     devEngine(imageEntries: imageEntries).test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
@@ -149,9 +146,6 @@ type TestSplit {
       ],
       race: true,
       parallel: 16,
-      # Some of its tests load Go modules in fresh nested engines made from
-      # this one, or in sessions of their own on it.
-      imageEntries: true,
     )
   }
 
@@ -188,8 +182,6 @@ type TestSplit {
       ],
       race: true,
       parallel: 16,
-      # The remote cache transfer suite checks the engine image's entries.
-      imageEntries: true,
     )
   }
 
@@ -236,6 +228,8 @@ type TestSplit {
       pkg: "./... !./core/integration",
       race: true,
       parallel: 4,
+      # It loads no Go module.
+      imageEntries: false,
     )
   }
 
@@ -292,7 +286,8 @@ type TestSplit {
   Test Provision
   """
   pub testProvision: Void @check {
-    testSpecific(["TestProvision"])
+    # It loads no Go module.
+    testSpecific(["TestProvision"], imageEntries: false)
   }
 
   """
@@ -312,9 +307,8 @@ type TestSplit {
   Test Call and Shell
   """
   pub testCallAndShell: Void @check {
-    # Many of their tests load Go modules at once.
-    testSpecific(["^TestCall$", "^TestShell$"], imageEntries: true)
-    testSpecific(["^TestDaggerCMD$"], pkg: "./internal/cmd/dagger", imageEntries: true)
+    testSpecific(["^TestCall$", "^TestShell$"])
+    testSpecific(["^TestDaggerCMD$"], pkg: "./internal/cmd/dagger")
 
     null
   }
@@ -323,41 +317,36 @@ type TestSplit {
   Test CLI Engine
   """
   pub testCliEngine: Void @check {
-    # TestDagqlCacheEntriesNoLeak loads Go modules in a fresh nested engine
-    # made from this one.
-    testCliEngineSpecific(["TestCLI", "TestEngine"], imageEntries: true)
+    testCliEngineSpecific(["TestCLI", "TestEngine"])
   }
 
   """
   Test cache persistence
   """
   pub testCachePersistence: Void @check {
-    # Its tests load Go modules in fresh nested engines made from this one.
-    testCliEngineSpecific(["TestCachePersistence"], imageEntries: true)
+    testCliEngineSpecific(["TestCachePersistence"])
   }
 
   """
   Test local cache
   """
   pub testLocalCache: Void @check {
-    testCliEngineSpecific(["TestLocalCache"])
+    # It loads no Go module.
+    testCliEngineSpecific(["TestLocalCache"], imageEntries: false)
   }
 
   """
   Test Container
   """
   pub testContainer: Void @check {
-    # Some of its tests load Go modules in fresh nested engines made from this
-    # one.
-    testSpecific(["TestContainer", "TestDockerfile"], imageEntries: true)
+    testSpecific(["TestContainer", "TestDockerfile"])
   }
 
   """
   Test Interface
   """
   pub testInterface: Void @check {
-    # Its tests all load Go modules at once.
-    testSpecific(["TestInterface"], imageEntries: true)
+    testSpecific(["TestInterface"])
   }
 
   """
@@ -371,8 +360,7 @@ type TestSplit {
   Test Module Runtimes
   """
   pub testModuleRuntimes: Void @check {
-    # Many of its tests load Go modules at once.
-    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"], imageEntries: true)
+    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
   }
 
   """
@@ -387,9 +375,7 @@ type TestSplit {
   This suite starts multiple engines and runs separately from the base shard.
   """
   pub testModuleDefinitions: Void @check {
-    # TestCachedAcrossClients loads Go modules in fresh nested engines made
-    # from this one.
-    testSpecific(["^TestModuleDefinitionSuite$"], race: true, imageEntries: true)
+    testSpecific(["^TestModuleDefinitionSuite$"], race: true)
   }
 
   """
@@ -405,7 +391,7 @@ type TestSplit {
   directories need privileges, in a privileged test container
   """
   pub testEbpf: Void @check {
-    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$", "^TestImportChainOverlayTree$"], pkg: "./engine/ebpf/nettracer ./engine/snapshots", ebpf: true)
+    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$", "^TestImportChainOverlayTree$"], pkg: "./engine/ebpf/nettracer ./engine/snapshots", ebpf: true, imageEntries: false)
   }
 
   """
@@ -413,6 +399,6 @@ type TestSplit {
   test container
   """
   pub testEbpfExecSched: Void @check {
-    testSpecific(["^TestExecSched$"], pkg: "./engine/ebpf/execsched", ebpf: true)
+    testSpecific(["^TestExecSched$"], pkg: "./engine/ebpf/execsched", ebpf: true, imageEntries: false)
   }
 }
