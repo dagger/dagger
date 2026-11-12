@@ -611,11 +611,11 @@ func TestAvailablePartAbsentFromAStoredRecord(t *testing.T) {
 				}
 			}
 			require.NotZero(t, number)
-			got, err := cloud.AvailablePart(number, dagql.PersistedPartAddress{Part: ContainerPartExecMeta})
+			got, err := cloud.AvailablePart(number, dagql.PersistedPartAddress{Part: ContainerPartExecMeta}, time.Now().Unix())
 			require.NoError(t, err)
 			require.Equal(t, dagql.PartAbsent, got.State)
 			require.Equal(t, number, got.Donor)
-			fs, err := cloud.AvailablePart(number, dagql.PersistedPartAddress{Part: ContainerPartFS})
+			fs, err := cloud.AvailablePart(number, dagql.PersistedPartAddress{Part: ContainerPartFS}, time.Now().Unix())
 			require.NoError(t, err)
 			require.Equal(t, dagql.PartUnavailable, fs.State, "the fs has bytes, and none are stored")
 		})
