@@ -1,6 +1,6 @@
 module typescript-sdk
 
-go 1.26.1
+go 1.27
 
 require (
 	dagger.io/dagger v1.0.0-beta.26
