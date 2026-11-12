@@ -370,14 +370,12 @@ func TestWorkspaceExportCompositionSkipsReconstruction(t *testing.T) {
 					}),
 				}.Install(srv)
 				dagql.Fields[*core.Host]{dagql.Func("__gitDir", func(_ context.Context, _ *core.Host, args struct {
-					Path          string
-					StateDigest   string
-					ValidateState bool
+					Path        string
+					StateDigest string
 				}) (*core.Directory, error) {
 					hostPacks++
 					require.Equal(t, "/caller/destination", args.Path)
 					require.Equal(t, "captured-state", args.StateDigest)
-					require.True(t, args.ValidateState)
 					return nil, stop
 				})}.Install(srv)
 				captured := &core.Workspace{}

@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -40,13 +42,14 @@ var ErrNoGitContext = errors.New("module context has no git checkout")
 // carries. ctx must carry the owning client's metadata (it routes both the
 // session RPCs and the Host.__gitDir selection).
 //
-// cacheKey keys the reconstruction. Empty means "key it to the checkout's live
-// ref state" (a fresh reconstruction whenever the refs move): the right choice
-// for a module context, resolved fresh per load. A caller that wants the
-// reconstruction pinned to a session's cached view of the checkout -- so a
-// checkout that advances mid-session is not silently re-read -- passes a stable
-// token instead (an unsynced workspace uses a fixed session-local token). The token only selects a cache entry; the pack itself is
-// always taken from the live checkout when a new entry is computed.
+// The reconstruction is keyed by the checkout's ref state and the client's
+// host (see Host.__gitDir), so it is shared by every session that reads that
+// state. cacheKey selects which state: empty means the checkout's live state,
+// read fresh per call, the right choice for a module context, resolved fresh
+// per load. A caller that wants a session's view of the checkout to stay put
+// -- so a checkout that advances mid-session is not silently re-read -- passes
+// a stable token instead (an unsynced workspace uses a fixed session-local
+// token): the first call under that token pins the live state it reads.
 //
 // A checkout that is not a git repository reports ErrNoGitContext with the
 // tree unchanged. A client that cannot pack checkouts (predates the RPCs, or
@@ -60,58 +63,38 @@ func MaterializeHostGitCheckout(
 	hostPath string,
 	cacheKey string,
 ) (dagql.ObjectResult[*Directory], error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return tree, err
-	}
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return tree, fmt.Errorf("buildkit: %w", err)
-	}
-
-	const maxStateAttempts = 3
-	var gitDir dagql.ObjectResult[*Directory]
-	for attempt := 0; attempt < maxStateAttempts; attempt++ {
-		state, err := bk.GitCheckoutState(ctx, hostPath)
-		switch {
-		case errors.Is(err, gitutil.ErrGitNoRepo):
-			return tree, ErrNoGitContext
-		case errors.Is(err, engineutil.ErrGitPackUnsupported):
-			return tree, nil
-		case err != nil:
-			return tree, fmt.Errorf("git checkout state for %q: %w", hostPath, err)
-		}
-
-		// The live ref-state digest keys the reconstruction unless the caller
-		// pinned it to a stable token of its own. Only a live digest is also an
-		// expected pack state; a session-pinned workspace accepts whichever
-		// stable state is first materialized in its cache slot.
-		stateDigest := state
-		validateState := true
-		if cacheKey != "" {
-			stateDigest = cacheKey
-			validateState = false
-		}
-
-		err = dag.Select(ctx, dag.Root(), &gitDir,
+	var (
+		gitDir dagql.ObjectResult[*Directory]
+		err    error
+	)
+	if cacheKey == "" {
+		gitDir, _, err = SelectHostGitDir(ctx, dag, hostPath)
+	} else {
+		// The session's slot pins the state it first read; the
+		// reconstruction itself is shared by every session that reads that
+		// state of this client's checkout.
+		var pinned dagql.String
+		err = dag.Select(ctx, dag.Root(), &pinned,
+			dagql.Selector{Field: "host"},
 			dagql.Selector{
-				Field: "host",
-			},
-			dagql.Selector{
-				Field: "__gitDir",
+				Field: "__gitCheckoutPin",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(hostPath)},
-					{Name: "stateDigest", Value: dagql.String(stateDigest)},
-					{Name: "validateState", Value: dagql.Boolean(validateState)},
+					{Name: "token", Value: dagql.String(cacheKey)},
 				},
 			},
 		)
 		if err == nil {
-			break
+			gitDir, err = selectHostGitDirAt(ctx, dag, hostPath, pinned.String())
 		}
-		if !errors.Is(err, engineutil.ErrGitCheckoutStateChanged) || attempt == maxStateAttempts-1 {
-			return tree, fmt.Errorf("materialize git dir for %q: %w", hostPath, err)
-		}
+	}
+	switch {
+	case errors.Is(err, gitutil.ErrGitNoRepo):
+		return tree, ErrNoGitContext
+	case errors.Is(err, engineutil.ErrGitPackUnsupported):
+		return tree, nil
+	case err != nil:
+		return tree, fmt.Errorf("materialize git dir for %q: %w", hostPath, err)
 	}
 	gitDirID, err := gitDir.ID()
 	if err != nil {
@@ -152,6 +135,151 @@ func MaterializeHostGitCheckout(
 	return composed, nil
 }
 
+// SelectHostGitDir selects the canonical .git directory for the live state of
+// the client checkout at hostPath, and returns that state's digest. A checkout
+// whose refs move while it is packed is read again.
+func SelectHostGitDir(ctx context.Context, dag *dagql.Server, hostPath string) (dagql.ObjectResult[*Directory], string, error) {
+	var gitDir dagql.ObjectResult[*Directory]
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return gitDir, "", err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return gitDir, "", fmt.Errorf("buildkit: %w", err)
+	}
+	const maxStateAttempts = 3
+	for attempt := 0; ; attempt++ {
+		state, err := bk.GitCheckoutState(ctx, hostPath)
+		if err != nil {
+			return gitDir, "", fmt.Errorf("git checkout state for %q: %w", hostPath, err)
+		}
+		gitDir, err = selectHostGitDirAt(ctx, dag, hostPath, state)
+		if err == nil {
+			return gitDir, state, nil
+		}
+		if !errors.Is(err, engineutil.ErrGitCheckoutStateChanged) || attempt == maxStateAttempts-1 {
+			return gitDir, "", err
+		}
+	}
+}
+
+func selectHostGitDirAt(ctx context.Context, dag *dagql.Server, hostPath, stateDigest string) (dagql.ObjectResult[*Directory], error) {
+	var gitDir dagql.ObjectResult[*Directory]
+	err := dag.Select(ctx, dag.Root(), &gitDir,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "__gitDir",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(hostPath)},
+				{Name: "stateDigest", Value: dagql.String(stateDigest)},
+			},
+		},
+	)
+	return gitDir, err
+}
+
+// hostGitCheckouts remembers, per engine, the ref state of the last
+// reconstruction made for each client checkout, so the next state of that
+// checkout can be built from it. It is a hint, not an owner: the
+// reconstruction lives in the dagql cache and may have been pruned since,
+// which costs one refused pack request.
+var hostGitCheckouts sync.Map // hostGitCheckoutKey -> state digest
+
+type hostGitCheckoutKey struct {
+	manager bkcache.SnapshotManager
+	owner   string
+	path    string
+}
+
+// HostGitCheckoutOwner names whose checkout a client's host path is: the
+// client's host when the client has a stable identity, so that every
+// invocation from one host shares reconstructions of its checkouts, and
+// otherwise the client alone. Clients started inside the engine get a fresh
+// stable identity, so they never share the host's.
+func HostGitCheckoutOwner(md *engine.ClientMetadata) string {
+	if md.ClientStableID != "" {
+		return "host:" + md.ClientStableID
+	}
+	return "client:" + md.ClientID
+}
+
+func hostGitCheckoutKeyFor(ctx context.Context, hostPath string) (hostGitCheckoutKey, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return hostGitCheckoutKey{}, err
+	}
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return hostGitCheckoutKey{}, err
+	}
+	return hostGitCheckoutKey{manager: query.SnapshotManager(), owner: HostGitCheckoutOwner(md), path: hostPath}, nil
+}
+
+// HostGitCheckoutBase returns the reconstruction of the checkout at hostPath
+// last made on this engine, if it is for another state than stateDigest and
+// still cached, with the objects its refs and HEAD point at. A checkout pack
+// relative to those builds on it (see MaterializeGitCheckoutPack). The
+// returned directory must stay held while its snapshot is used.
+func HostGitCheckoutBase(ctx context.Context, dag *dagql.Server, hostPath, stateDigest string) (base dagql.ObjectResult[*Directory], snapshot bkcache.ImmutableRef, haves []string, _ error) {
+	key, err := hostGitCheckoutKeyFor(ctx, hostPath)
+	if err != nil {
+		return base, nil, nil, err
+	}
+	last, ok := hostGitCheckouts.Load(key)
+	if !ok || last.(string) == stateDigest {
+		return base, nil, nil, nil
+	}
+	base, err = selectHostGitDirAt(ctx, dag, hostPath, last.(string))
+	if err != nil {
+		if ctx.Err() != nil {
+			return base, nil, nil, ctx.Err()
+		}
+		// No longer cached, and the checkout has left that state, so the
+		// client refused to pack it again: build from scratch.
+		hostGitCheckouts.CompareAndDelete(key, last)
+		return dagql.ObjectResult[*Directory]{}, nil, nil, nil
+	}
+	snapshot, err = base.Self().Snapshot.GetOrEval(ctx, base.Result)
+	if err != nil {
+		return base, nil, nil, fmt.Errorf("get git checkout base snapshot: %w", err)
+	}
+	err = MountRef(ctx, snapshot, func(root string, m *mount.Mount) error {
+		if err := checkNativeSnapshotDepth(m); err != nil {
+			return err
+		}
+		refs, err := runGitEnv(ctx, root, "for-each-ref", "--format=%(objectname)")
+		if err != nil {
+			return err
+		}
+		haves = strings.Fields(refs)
+		if head, err := runGitEnv(ctx, root, "rev-parse", "-q", "--verify", "HEAD"); err == nil {
+			haves = append(haves, strings.TrimSpace(head))
+		}
+		return nil
+	})
+	if nativeCommitFallback(err) {
+		// Each state of a checkout adds a layer; past the limit, start over.
+		return dagql.ObjectResult[*Directory]{}, nil, nil, nil
+	}
+	if err != nil {
+		return base, nil, nil, fmt.Errorf("read git checkout base refs: %w", err)
+	}
+	slices.Sort(haves)
+	return base, snapshot, slices.Compact(haves), nil
+}
+
+// RecordHostGitCheckout notes that the checkout at hostPath was last
+// reconstructed at stateDigest. See HostGitCheckoutBase.
+func RecordHostGitCheckout(ctx context.Context, hostPath, stateDigest string) error {
+	key, err := hostGitCheckoutKeyFor(ctx, hostPath)
+	if err != nil {
+		return err
+	}
+	hostGitCheckouts.Store(key, stateDigest)
+	return nil
+}
+
 // MaterializeGitCheckoutPack reconstructs a canonical git directory from a
 // client checkout pack: init, fetch the bundle's refs, set HEAD (symbolic or
 // detached), rebuild the index from HEAD, pack refs, and strip everything
@@ -166,14 +294,27 @@ func MaterializeHostGitCheckout(
 //
 // A pack with no HeadSHA (a repository with no commits yet) reconstructs an
 // empty repository on the same unborn branch.
-func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckoutPack, originURL string) (_ *Directory, rerr error) {
+//
+// A pack relative to the ref targets of an earlier reconstruction is applied
+// to a copy-on-write child of base, that reconstruction's snapshot, so only
+// what the checkout gained since is fetched.
+func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckoutPack, originURL string, base bkcache.ImmutableRef) (_ *Directory, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 	cache := query.SnapshotManager()
 
-	bkref, err := cache.New(ctx, nil,
+	reconstruct := reconstructGitDir
+	if pack.RelativeToHaves {
+		if base == nil {
+			return nil, fmt.Errorf("checkout pack is relative to a reconstruction that was not given")
+		}
+		reconstruct = reconstructGitDirIncremental
+	} else {
+		base = nil
+	}
+	bkref, err := cache.New(ctx, base,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("git checkout pack repository"))
 	if err != nil {
@@ -186,7 +327,7 @@ func MaterializeGitCheckoutPack(ctx context.Context, pack *engineutil.GitCheckou
 	}()
 
 	err = MountRef(ctx, bkref, func(root string, _ *mount.Mount) error {
-		return reconstructGitDir(ctx, root, pack, originURL)
+		return reconstruct(ctx, root, pack, originURL)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct git dir: %w", err)
@@ -302,20 +443,8 @@ func MaterializeGitUncommittedPack(ctx context.Context, tree dagql.ObjectResult[
 }
 
 func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitCheckoutPack, originURL string) error {
-	initArgs := []string{"init", "-q", "--initial-branch=main"}
-	if pack.ObjectFormat != "" && pack.ObjectFormat != "sha1" {
-		initArgs = append(initArgs, "--object-format="+pack.ObjectFormat)
-	}
-	if _, err := runGitEnv(ctx, root, initArgs...); err != nil {
+	if err := initCanonicalGitDir(ctx, root, pack); err != nil {
 		return err
-	}
-
-	// Point HEAD where the checkout's HEAD points. For an unborn branch this
-	// is all there is to reconstruct.
-	if pack.HeadRef != "" {
-		if _, err := runGitEnv(ctx, root, "symbolic-ref", "HEAD", pack.HeadRef); err != nil {
-			return err
-		}
 	}
 
 	if pack.HeadSHA != "" {
@@ -336,34 +465,114 @@ func reconstructGitDir(ctx context.Context, root string, pack *engineutil.GitChe
 		if err := fetchGitBundleRefspecs(ctx, root, pack.BundlePath, []string{"+refs/*:refs/*", "HEAD"}); err != nil {
 			return fmt.Errorf("fetch checkout pack: %w", err)
 		}
+		if err := finishCanonicalGitHead(ctx, root, pack); err != nil {
+			return err
+		}
+	}
+	return finishCanonicalGitDir(ctx, root, pack, originURL)
+}
 
-		switch {
-		case pack.HeadRef != "":
-			// The symbolic HEAD normally lands with the fetched branches; a
-			// HEAD outside refs/heads (which --branches does not pack) is
-			// created at the packed HEAD commit.
-			if _, err := runGitEnv(ctx, root, "rev-parse", "-q", "--verify", pack.HeadRef); err != nil {
-				if _, err := runGitEnv(ctx, root, "update-ref", pack.HeadRef, pack.HeadSHA); err != nil {
-					return err
-				}
-			}
-		default:
-			// Detached HEAD.
-			if _, err := runGitEnv(ctx, root, "update-ref", "--no-deref", "HEAD", pack.HeadSHA); err != nil {
+// reconstructGitDirIncremental brings a copy of an earlier reconstruction of
+// the same checkout to pack's state. The pack holds only the objects the
+// earlier reconstruction lacks, and pack.Refs every branch and tag; refs are
+// set to exactly those, and the configuration is written afresh.
+func reconstructGitDirIncremental(ctx context.Context, root string, pack *engineutil.GitCheckoutPack, originURL string) error {
+	if pack.HeadSHA == "" {
+		return fmt.Errorf("relative checkout pack has no HEAD")
+	}
+	// The earlier state's remotes and selection live in the config.
+	if err := os.Remove(filepath.Join(root, ".git", "config")); err != nil {
+		return fmt.Errorf("reset reconstructed git config: %w", err)
+	}
+	if err := initCanonicalGitDir(ctx, root, pack); err != nil {
+		return err
+	}
+	if pack.BundlePath != "" {
+		// Unbundling checks that the bundle's prerequisites are present and
+		// indexes its objects, without touching any ref.
+		if _, err := runGitEnv(ctx, root, "bundle", "unbundle", pack.BundlePath); err != nil {
+			return fmt.Errorf("unbundle checkout pack: %w", err)
+		}
+	}
+
+	want := make(map[string]string, len(pack.Refs))
+	for _, ref := range pack.Refs {
+		want[ref.Name] = ref.Sha
+	}
+	have, err := runGitEnv(ctx, root, "for-each-ref", "--format=%(refname)")
+	if err != nil {
+		return err
+	}
+	var updates strings.Builder
+	for _, name := range strings.Fields(have) {
+		if _, ok := want[name]; !ok {
+			updates.WriteString("delete " + name + "\n")
+		}
+	}
+	for _, ref := range pack.Refs {
+		updates.WriteString("update " + ref.Name + " " + ref.Sha + "\n")
+	}
+	// update-ref refuses a ref to an object the repository does not have.
+	if _, err := gitutil.NewGitCLI(gitutil.WithDir(root)).RunWithStdin(ctx, strings.NewReader(updates.String()), "update-ref", "--stdin"); err != nil {
+		return fmt.Errorf("set checkout refs: %w", err)
+	}
+	if err := finishCanonicalGitHead(ctx, root, pack); err != nil {
+		return err
+	}
+	return finishCanonicalGitDir(ctx, root, pack, originURL)
+}
+
+func initCanonicalGitDir(ctx context.Context, root string, pack *engineutil.GitCheckoutPack) error {
+	initArgs := []string{"init", "-q", "--initial-branch=main"}
+	if pack.ObjectFormat != "" && pack.ObjectFormat != "sha1" {
+		initArgs = append(initArgs, "--object-format="+pack.ObjectFormat)
+	}
+	if _, err := runGitEnv(ctx, root, initArgs...); err != nil {
+		return err
+	}
+
+	// Point HEAD where the checkout's HEAD points. For an unborn branch this
+	// is all there is to reconstruct.
+	if pack.HeadRef != "" {
+		if _, err := runGitEnv(ctx, root, "symbolic-ref", "HEAD", pack.HeadRef); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// finishCanonicalGitHead points HEAD at the packed commit, once its objects
+// and the checkout's refs are in place, and rebuilds the derived state.
+func finishCanonicalGitHead(ctx context.Context, root string, pack *engineutil.GitCheckoutPack) error {
+	switch {
+	case pack.HeadRef != "":
+		// The symbolic HEAD normally lands with the fetched branches; a
+		// HEAD outside refs/heads (which --branches does not pack) is
+		// created at the packed HEAD commit.
+		if _, err := runGitEnv(ctx, root, "rev-parse", "-q", "--verify", pack.HeadRef); err != nil {
+			if _, err := runGitEnv(ctx, root, "update-ref", pack.HeadRef, pack.HeadSHA); err != nil {
 				return err
 			}
 		}
-
-		// The index is derived state; rebuild it from HEAD with stat data
-		// zeroed so identical ref states reconstruct identical bytes.
-		if _, err := runGitEnv(ctx, root, "read-tree", "HEAD"); err != nil {
-			return err
-		}
-		if _, err := runGitEnv(ctx, root, "pack-refs", "--all"); err != nil {
+	default:
+		// Detached HEAD.
+		if _, err := runGitEnv(ctx, root, "update-ref", "--no-deref", "HEAD", pack.HeadSHA); err != nil {
 			return err
 		}
 	}
 
+	// The index is derived state; rebuild it from HEAD with stat data
+	// zeroed so identical ref states reconstruct identical bytes.
+	if _, err := runGitEnv(ctx, root, "read-tree", "HEAD"); err != nil {
+		return err
+	}
+	if _, err := runGitEnv(ctx, root, "pack-refs", "--all"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func finishCanonicalGitDir(ctx context.Context, root string, pack *engineutil.GitCheckoutPack, originURL string) error {
 	// Preserve named routing and captured selection for consumers mounting
 	// Workspace.git.directory. Older clients supply only an origin URL.
 	if pack.HasRemoteMetadata {
