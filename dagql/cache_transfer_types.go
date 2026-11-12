@@ -71,15 +71,21 @@ type TransferredValue struct {
 	// SenderReplacements is the entry's replacement count in the sending
 	// cache, read with the record: it orders the value state the record
 	// describes.
-	SenderReplacements uint64          `json:"senderReplacements,omitempty"`
-	Record             PersistedRecord `json:"record"`
-	DependencyIDs      []uint64        `json:"dependencyIDs,omitempty"`
-	ExpiresAtUnix      int64           `json:"expiresAtUnix,omitempty"`
+	SenderReplacements uint64 `json:"senderReplacements,omitempty"`
+	// Record is the record as its sender holds it: it names itself, by
+	// ResultID, and every row it references by the sender's entry numbers,
+	// which the receiver maps through the bundle's SenderNumbers. Everything
+	// else in the bundle names rows by ordinal, as do the offers a record
+	// carries.
+	Record        PersistedRecord `json:"record"`
+	DependencyIDs []uint64        `json:"dependencyIDs,omitempty"`
+	ExpiresAtUnix int64           `json:"expiresAtUnix,omitempty"`
 	// Held, when set, makes this a held row: the recipient's own value of
 	// this recipe stands for the row, which carries no record. Its Record is
-	// empty but for ResultID. SenderNumber, SenderReplacements and
-	// ExpiresAtUnix still describe the sending entry, and other rows
-	// reference the row by its ordinal. A held row stands for its closure,
+	// empty but for ResultID, its SenderNumber. SenderNumber,
+	// SenderReplacements and ExpiresAtUnix still describe the sending entry,
+	// and other rows' records reference the row by its SenderNumber, their
+	// DependencyIDs by its ordinal. A held row stands for its closure,
 	// but its DependencyIDs can name rows below it that the bundle carries,
 	// which then go with it, and an output can sit on it; the recipient
 	// checks such an output against its own copy of the row. The Cloud sends
@@ -143,7 +149,7 @@ type ImportedValue struct {
 	ResultID uint64
 }
 
-const valueBundleVersion = 7
+const valueBundleVersion = 8
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.

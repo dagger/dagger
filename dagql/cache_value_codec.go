@@ -148,14 +148,22 @@ func mapTransferredOutputs(rec PersistedRecord) ([]CapturedCodecOutput, error) {
 	return outputs, err
 }
 func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
+	rec, _, err := normalizeTransferRecordRefs(rec)
+	return rec, err
+}
+
+// normalizeTransferRecordRefs is normalizeTransferRecord, and returns too
+// the entries the record's child and call references name, sorted and once
+// each, which its last walk finds.
+func normalizeTransferRecordRefs(rec PersistedRecord) (PersistedRecord, []uint64, error) {
 	var err error
 	rec.Envelope, err = clonePersistedEnvelope(rec.Envelope)
 	if err != nil {
-		return PersistedRecord{}, err
+		return PersistedRecord{}, nil, err
 	}
 	rec.Call = rec.Call.clone()
 	if err := walkTransferCalls(rec.Call, func(frame *ResultCall) error { frame.ExtraDigests = transferExtras(frame.ExtraDigests); return nil }, func(ref *ResultCallRef) error { ref.shared = nil; return nil }); err != nil {
-		return PersistedRecord{}, err
+		return PersistedRecord{}, nil, err
 	}
 	if err := walkTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if family.Transfer == nil {
@@ -167,17 +175,26 @@ func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
 		normalized, err := family.Transfer.NormalizeForeign(v)
 		return normalized.JSON, err
 	}); err != nil {
-		return PersistedRecord{}, err
+		return PersistedRecord{}, nil, err
 	}
 	rec.SnapshotLinks = nil
-	return VisitEncodedReferences(rec, func(ref *PersistedRef) error {
+	var refs []uint64
+	rec, err = VisitEncodedReferences(rec, func(ref *PersistedRef) error {
 		if ref.RecipeID != nil {
 			copied, err := ref.RecipeID.FilterTransferDigests()
 			ref.RecipeID = copied
 			return err
 		}
+		if ref.ResultID != 0 && (ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall) {
+			refs = append(refs, ref.ResultID)
+		}
 		return nil
 	})
+	if err != nil {
+		return PersistedRecord{}, nil, err
+	}
+	slices.Sort(refs)
+	return rec, slices.Compact(refs), nil
 }
 
 // validateTransferRecord checks a transferred record against its direct
