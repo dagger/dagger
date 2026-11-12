@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"sync/atomic"
-	"time"
 )
 
 // StoredBundleResult is StoredBundle's answer.
@@ -40,34 +39,33 @@ type StoredBundleResult struct {
 // HeldBy names the entries of a blob-backed cache whose values a recipient
 // engine cache already holds, for StoredBundle to carry as held rows and
 // StoredSizes to price as such. An entry is held when it has a holding of
-// Cache that hasn't expired at Now (Unix seconds), and isn't in Not, by
+// Cache that hasn't expired at the read's clock, and isn't in Not, by
 // number: the values the recipient answered stale. Only an entry with a call
 // frame can be held: its recipe names it to the recipient.
 type HeldBy struct {
 	Cache CacheID
-	Now   int64
 	Not   map[uint64]bool
 }
 
-// heldLocked reports whether the recipient holds res. A nil HeldBy holds
-// nothing. Requires egraphMu.
-func (h *HeldBy) heldLocked(res *sharedResult) bool {
+// heldLocked reports whether the recipient holds res at nowUnix. A nil
+// HeldBy holds nothing. Requires egraphMu.
+func (h *HeldBy) heldLocked(res *sharedResult, nowUnix int64) bool {
 	if h == nil || res.loadResultCall() == nil {
 		return false
 	}
 	if h.Not[uint64(res.id)] {
 		return false
 	}
-	return h.holdsLocked(res)
+	return h.holdsLocked(res, nowUnix)
 }
 
 // holdsLocked reports whether res has a holding of h.Cache that hasn't
-// expired at h.Now: among its holdings of that cache only (cacheHolders),
+// expired at nowUnix: among its holdings of that cache only (cacheHolders),
 // each judged by its own expiry. Requires egraphMu.
-func (h *HeldBy) holdsLocked(res *sharedResult) bool {
+func (h *HeldBy) holdsLocked(res *sharedResult, nowUnix int64) bool {
 	for number := range res.cacheHolders[h.Cache] {
 		held := res.holders[HolderKey{Cache: h.Cache, Number: number}]
-		if held != nil && (held.expiresAtUnix == 0 || held.expiresAtUnix > h.Now) {
+		if held != nil && (held.expiresAtUnix == 0 || held.expiresAtUnix > nowUnix) {
 			return true
 		}
 	}
@@ -95,7 +93,11 @@ func (h *HeldBy) holdsLocked(res *sharedResult) bool {
 // below it walked. Each held row's recipe is derived from the entry's call
 // frame after egraphMu is released: a replacement keeps the recipe, and
 // deriving can read the cache. A nil held is a bundle with no held rows.
-func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, held *HeldBy) (StoredBundleResult, error) {
+//
+// Expiry, of a donor of its class and of a holding of held's cache, is
+// judged at nowUnix, the reader's clock, so a bundle agrees with what its
+// reader judged of the cache at that moment.
+func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) (StoredBundleResult, error) {
 	var out StoredBundleResult
 	if !c.blobBacked {
 		return out, fmt.Errorf("stored bundle: the cache has no blob store")
@@ -103,7 +105,7 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, held *HeldBy) 
 	if err := context.Cause(ctx); err != nil {
 		return out, err
 	}
-	out, frames, err := c.storedBundle(roots, held)
+	out, frames, err := c.storedBundle(roots, nowUnix, held)
 	if err != nil || len(frames) == 0 {
 		return out, err
 	}
@@ -126,7 +128,7 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, held *HeldBy) 
 // storedBundle builds StoredBundle's answer in one hold of egraphMu.RLock,
 // with held rows' recipes left empty, and returns the call frame of each held
 // row by ordinal. A bundle without held rows is validated here.
-func (c *Cache) storedBundle(roots []uint64, held *HeldBy) (StoredBundleResult, map[TransferOrdinal]*ResultCall, error) {
+func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (StoredBundleResult, map[TransferOrdinal]*ResultCall, error) {
 	var out StoredBundleResult
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
@@ -148,7 +150,7 @@ func (c *Cache) storedBundle(roots []uint64, held *HeldBy) (StoredBundleResult, 
 	if len(rootEntries) == 0 {
 		return out, nil, nil
 	}
-	build := &storedBundleBuild{now: time.Now().Unix(), ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, held: map[sharedResultID]bool{},
+	build := &storedBundleBuild{now: nowUnix, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, held: map[sharedResultID]bool{},
 		owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}, rootSeen: seenRoot}
 	build.bundle.Version = valueBundleVersion
 	visiting := map[sharedResultID]bool{}
@@ -265,7 +267,7 @@ func (c *Cache) storedBundleVisitLocked(build *storedBundleBuild, res *sharedRes
 	if visiting[res.id] {
 		return fmt.Errorf("stored bundle: dependency cycle through entry %d", res.id)
 	}
-	if build.heldBy.heldLocked(res) {
+	if build.heldBy.heldLocked(res, build.now) {
 		build.held[res.id] = true
 		build.order = append(build.order, res)
 		build.ordinals[res.id] = TransferOrdinal(len(build.order))
