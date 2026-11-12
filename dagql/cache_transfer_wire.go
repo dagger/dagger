@@ -73,8 +73,10 @@ func ShareChainLayers(bundle ValueBundle) (ValueBundle, error) {
 }
 
 // resolveSharedLayers gives each output that names its chain's layers in
-// the bundle's Layers (ShareChainLayers) its chain's layers, each a copy of
-// its own, and the bundle's addresses of their blobs where the chain has
+// the bundle's Layers (ShareChainLayers) its chain's layers, which chains
+// naming the same listed layer share, as copies of an offer do
+// (clonePartOffer: an offered layer is never written), and the bundle's
+// addresses of their blobs where the chain has
 // none of its own, in place; then the bundle's Layers and Addresses are
 // cleared. A chain that carried no address for one of its layers gets the
 // bundle's address for that blob, if another chain carried one: an address
@@ -95,7 +97,7 @@ func resolveSharedLayers(bundle *ValueBundle) error {
 			if place < 0 || place >= len(bundle.Layers) {
 				return fmt.Errorf("output %d names layer %d of %d", out.Ordinal, place, len(bundle.Layers))
 			}
-			layer := cloneExportLayer(bundle.Layers[place])
+			layer := bundle.Layers[place]
 			chain.Layers = append(chain.Layers, layer)
 			blob := layer.Descriptor.Digest
 			if address, ok := bundle.Addresses[blob]; ok {
@@ -114,8 +116,7 @@ func resolveSharedLayers(bundle *ValueBundle) error {
 	return nil
 }
 
-// cloneExportLayer copies a layer and what its descriptor refers to, so that
-// chains given the same listed layer don't share it.
+// cloneExportLayer copies a layer and what its descriptor refers to.
 func cloneExportLayer(layer snapshots.ExportLayer) snapshots.ExportLayer {
 	layer.Descriptor.Annotations = maps.Clone(layer.Descriptor.Annotations)
 	layer.Descriptor.URLs = slices.Clone(layer.Descriptor.URLs)
