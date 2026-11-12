@@ -158,6 +158,11 @@ func TestReconstructGitDirIncrementalMatchesFull(t *testing.T) {
 	git(host, "branch", "topic", "v1")
 	base = step("refs only", base)
 
+	// A branch replaced by one under its name.
+	git(host, "branch", "-D", "topic")
+	git(host, "branch", "topic/sub", "v1")
+	base = step("namespace", base)
+
 	// A detached HEAD on a new commit.
 	git(host, "checkout", "-q", "--detach")
 	commit("c.txt", "three")
