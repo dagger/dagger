@@ -432,7 +432,7 @@ func BenchmarkStoredBundleValidation(b *testing.B) {
 	for range b.N {
 		storedBenchSettle(b)
 		start := time.Now()
-		if err := validateStoredBundle(bundle); err != nil {
+		if err := validateStoredBundle(bundle, got.stored); err != nil {
 			b.Fatal(err)
 		}
 		validating += time.Since(start)

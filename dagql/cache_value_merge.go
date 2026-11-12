@@ -208,7 +208,16 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		}
 		reply, finish := c.commitValueMergeLocked(ctx, commit)
 		reply.Committed, reply.CommitHold = true, time.Since(locked)
+		var stored []*sharedResult
+		if c.blobBacked {
+			for _, row := range commit.rows {
+				if row.action.installs() {
+					stored = append(stored, row.res)
+				}
+			}
+		}
 		c.egraphMu.Unlock()
+		c.queueStoredBodies(stored)
 		// A recording engine records the commit's hold of the graph lock as
 		// an op of the merge's.
 		wcprof.RecordOpAt(ctx, wcprof.OpKindRemoteCache, "remotecache.merge.commit", wcprof.OpOpts{}, locked, locked.Add(reply.CommitHold), wcprof.OutcomeOK)
@@ -844,6 +853,15 @@ func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
 		out.Values = make([]TransferredValue, len(in.Values))
 	}
 	for i, value := range in.Values {
+		if value.storedEnvelope != nil {
+			// A stored envelope is decoded as the bundle's encoding would
+			// have carried it.
+			rec, err := (&storedBody{envelope: value.storedEnvelope, call: value.Record.Call}).record(value.Record.ResultID)
+			if err != nil {
+				return ValueBundle{}, err
+			}
+			value.Record.Envelope, value.storedEnvelope = rec.Envelope, nil
+		}
 		env, err := clonePersistedEnvelope(value.Record.Envelope)
 		if err != nil {
 			return ValueBundle{}, err
@@ -1196,7 +1214,7 @@ func (c *Cache) entryHasPartsLocked(res *sharedResult, outputs []TransferredOutp
 	if res.noValueLocked() {
 		return false
 	}
-	rec, err := c.storedTransferRecordLocked(res)
+	rec, err := c.storedRecordLocked(res)
 	if err != nil {
 		return false
 	}
@@ -1762,6 +1780,8 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 	res.hasValue = false
 	res.self = nil
 	res.persistedEnvelope = &rec.Envelope
+	// The body worker compresses it after the merge (queueStoredBodies).
+	res.stored = nil
 	res.payloadRevision++
 	c.setResultPayloadBytesLocked(res, persistedEnvelopePayloadBytes(&rec.Envelope))
 	if res.createdAtUnixNano == 0 {
@@ -2002,6 +2022,7 @@ func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, qu
 		res.storedTransfer.Store(nil)
 		res.payloadMu.Lock()
 		res.persistedEnvelope = nil
+		res.stored = nil
 		res.hasValue = false
 		res.payloadRevision++
 		res.payloadMu.Unlock()

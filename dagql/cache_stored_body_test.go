@@ -50,8 +50,12 @@ func storedBodyTestExport(t *testing.T) ValueBundle {
 	return bundle
 }
 
-// storedBodyTestHeap is the live heap after collecting.
+// storedBodyTestHeap is the live heap after collecting, with the body codec
+// made: its buffers are the process's, not a record's.
 func storedBodyTestHeap() int64 {
+	if enc, _, err := storedBodyCodec(); err == nil {
+		enc.EncodeAll([]byte("{}"), nil)
+	}
 	runtime.GC()
 	runtime.GC()
 	var stats runtime.MemStats
@@ -83,6 +87,19 @@ func storedBodyTestUse(t *testing.T, ctx context.Context, cloud *Cache, roots []
 	return got.Bundle
 }
 
+// storedTestRecordLocked is the cache's record of res whole: decoded from its
+// body, on a blob-backed cache that holds it compressed, or as the entry
+// holds it. Requires egraphMu.
+func storedTestRecordLocked(t *testing.T, res *sharedResult) PersistedRecord {
+	t.Helper()
+	if res.stored != nil {
+		rec, err := res.stored.record(uint64(res.id))
+		require.NoError(t, err)
+		return rec
+	}
+	return PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()}
+}
+
 // requireHeldCompressed checks that the Cloud holds its stored records in
 // less memory than three quarters of their encoded size: a record's body,
 // held as its encoding or decoded, would take at least that alone.
@@ -100,7 +117,7 @@ func requireHeldCompressed(t *testing.T, cloud *Cache, heap int64) {
 
 // The Cloud holds each record it stores compressed: once it has priced and
 // sent them, as a live service has, its records take less memory than their
-// encodings would.
+// encodings would, within a few seconds of the merge that stored them.
 //
 // It measures the heap, so it runs alone.
 func TestCloudHoldsStoredRecordsCompressed(t *testing.T) {
@@ -113,7 +130,12 @@ func TestCloudHoldsStoredRecordsCompressed(t *testing.T) {
 	roots := storedPersistenceTestMerge(t, ctx, cloud, bundle)
 	require.Len(t, roots, storedBodyTestRecords)
 	storedBodyTestUse(t, ctx, cloud, roots)
-	heap := storedBodyTestHeap() - before
+	encoded := storedBodyTestRecordBytes(cloud)
+	var heap int64
+	require.Eventually(t, func() bool {
+		heap = storedBodyTestHeap() - before
+		return heap/storedBodyTestRecords < encoded*3/4
+	}, 10*time.Second, 100*time.Millisecond, "the Cloud's records come to take less than three quarters of their encoded size")
 	runtime.KeepAlive(bundle)
 	requireHeldCompressed(t, cloud, heap)
 }

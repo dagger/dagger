@@ -24,7 +24,7 @@ func storedRecordsInTransferForm(t *testing.T, cloud *Cache) int {
 		if res.persistedEnvelope == nil {
 			continue
 		}
-		stored := PersistedRecord{ResultID: uint64(id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()}
+		stored := storedTestRecordLocked(t, res)
 		stored.Envelope.PendingOffers = nil
 		normalized, err := normalizeTransferRecord(stored)
 		require.NoError(t, err, "entry %d", id)
@@ -71,12 +71,20 @@ func sendAsStoredTestEngine(t *testing.T) (context.Context, *Cache, AnyResult, A
 }
 
 // sentChild is the entry number a transferTestValue record names as its
-// child.
-func sentChild(t *testing.T, rec PersistedRecord) uint64 {
+// child, as the bundle's encoding carries it.
+func sentChild(t *testing.T, sent TransferredValue) uint64 {
 	t.Helper()
 	var value transferTestValue
-	require.NoError(t, json.Unmarshal(rec.Envelope.ObjectJSON, &value))
+	require.NoError(t, json.Unmarshal(sentRecord(t, sent).Envelope.ObjectJSON, &value))
 	return value.Child
+}
+
+// sentRecord is a bundle value's record as the bundle's encoding carries it.
+func sentRecord(t *testing.T, value TransferredValue) PersistedRecord {
+	t.Helper()
+	var decoded TransferredValue
+	require.NoError(t, json.Unmarshal(mustTransferJSON(t, value), &decoded))
+	return decoded.Record
 }
 
 // requireNamesItself checks that a sent record names itself by its sender
@@ -100,7 +108,7 @@ func TestExportSendsRecordsAsTheEngineHoldsThem(t *testing.T) {
 	for _, value := range bundle.Values {
 		requireNamesItself(t, value)
 		if value.SenderNumber == rowNumber(r) {
-			require.Equal(t, rowNumber(p), sentChild(t, value.Record), "R names P by P's entry number")
+			require.Equal(t, rowNumber(p), sentChild(t, value), "R names P by P's entry number")
 		}
 	}
 }
@@ -138,9 +146,9 @@ func TestStoredBundleSendsRecordsAsStored(t *testing.T) {
 	require.Len(t, got.Bundle.Values, 2)
 	for _, value := range got.Bundle.Values {
 		requireNamesItself(t, value)
-		require.JSONEq(t, string(mustTransferJSON(t, storedTestTransferRecord(t, cloud, value.SenderNumber))), string(mustTransferJSON(t, value.Record)), "entry %d goes as stored", value.SenderNumber)
+		require.JSONEq(t, string(mustTransferJSON(t, storedTestTransferRecord(t, cloud, value.SenderNumber))), string(mustTransferJSON(t, sentRecord(t, value))), "entry %d goes as stored", value.SenderNumber)
 		if value.SenderNumber == rCloud {
-			require.Equal(t, pCloud, sentChild(t, value.Record), "R names P by the Cloud's number")
+			require.Equal(t, pCloud, sentChild(t, value), "R names P by the Cloud's number")
 		}
 	}
 }
@@ -152,7 +160,7 @@ func storedTestTransferRecord(t *testing.T, cloud *Cache, number uint64) Persist
 	cloud.egraphMu.RLock()
 	res := cloud.resultsByID[sharedResultID(number)]
 	require.NotNil(t, res)
-	stored := PersistedRecord{ResultID: number, Envelope: *res.persistedEnvelope, Call: res.loadResultCall()}
+	stored := storedTestRecordLocked(t, res)
 	cloud.egraphMu.RUnlock()
 	rec, err := normalizeTransferRecord(stored)
 	require.NoError(t, err)

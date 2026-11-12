@@ -173,6 +173,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			hasValue:              payload.hasValue,
 			sessionResourceHandle: res.sessionResourceHandle,
 			persistedEnvelope:     payload.persistedEnvelope,
+			stored:                payload.stored,
 			snapshotOwnerLinks:    payload.snapshotOwnerLinks,
 			row: persistdb.MirrorResult{
 				ID:                        int64(resultID),
@@ -346,31 +347,53 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			}
 		}
 
-		encoding, err := c.persistResultEnvelope(ctx, resultSnapshot)
-		switch {
-		case errors.Is(err, ErrPersistStateNotReady):
-			return persistStateSnapshot{}, err
-		case err != nil:
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d envelope: %w", resultSnapshot.resultID, err)
-		}
-		payload, err := json.Marshal(encoding.Envelope)
-		if err != nil {
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d payload JSON: %w", resultSnapshot.resultID, err)
-		}
-		if resultSnapshot.frame != nil {
-			callFrameJSON, err := json.Marshal(resultSnapshot.frame)
-			if err != nil {
-				return persistStateSnapshot{}, fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
-			}
-			resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
-		}
-		resultSnapshot.row.SelfPayload = payload
-		resultSnapshot.resultSnapshotLinks, err = resultSnapshotLinkRows(resultSnapshot.resultID, encoding.SnapshotLinks)
-		if err != nil {
+		if err := c.encodePersistedResultRow(ctx, resultSnapshot); err != nil {
 			return persistStateSnapshot{}, err
 		}
 	}
 	return snapshot, nil
+}
+
+// encodePersistedResultRow encodes one entry's saved row from its snapshot:
+// its self payload, its call frame and its snapshot links. It reads only the
+// snapshot, so a save calls it for each row it writes, whichever rows those
+// are. A blob-backed cache's stored record is saved as it is held
+// (encodeStoredRow).
+func (c *Cache) encodePersistedResultRow(ctx context.Context, resultSnapshot *persistResultSnapshot) error {
+	encoding, err := c.persistResultEnvelope(ctx, resultSnapshot)
+	switch {
+	case errors.Is(err, ErrPersistStateNotReady):
+		return err
+	case err != nil:
+		return fmt.Errorf("persist result %d envelope: %w", resultSnapshot.resultID, err)
+	}
+	var payload []byte
+	if c.blobBacked && resultSnapshot.persistedEnvelope != nil {
+		body := resultSnapshot.stored
+		if body == nil {
+			// A record the body worker hasn't compressed yet is
+			// compressed here, as the worker would.
+			if body, err = newStoredBody(&sharedResult{id: resultSnapshot.resultID}, resultSnapshot.persistedEnvelope, resultSnapshot.frame); err != nil {
+				return fmt.Errorf("persist result %d stored record: %w", resultSnapshot.resultID, err)
+			}
+		}
+		payload, err = encodeStoredRow(&encoding.Envelope, body)
+	} else {
+		payload, err = json.Marshal(encoding.Envelope)
+	}
+	if err != nil {
+		return fmt.Errorf("persist result %d payload: %w", resultSnapshot.resultID, err)
+	}
+	if resultSnapshot.frame != nil {
+		callFrameJSON, err := json.Marshal(resultSnapshot.frame)
+		if err != nil {
+			return fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
+		}
+		resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
+	}
+	resultSnapshot.row.SelfPayload = payload
+	resultSnapshot.resultSnapshotLinks, err = resultSnapshotLinkRows(resultSnapshot.resultID, encoding.SnapshotLinks)
+	return err
 }
 
 // snapshotPersistedRootClosureLocked returns every clean result reachable from

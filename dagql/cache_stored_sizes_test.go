@@ -398,7 +398,13 @@ func TestStoredSizesMeasureAgainAfterAPartAddsADependency(t *testing.T) {
 	miss := storedSizeMissLocked(entry)
 	cloud.egraphMu.RUnlock()
 	require.True(t, ok, "R's size is kept for its current state")
-	entry.storedTransfer.Load().size.Store(nil)
+	cloud.egraphMu.RLock()
+	if entry.stored != nil {
+		entry.stored.size.Store(nil)
+	} else {
+		entry.storedTransfer.Load().size.Store(nil)
+	}
+	cloud.egraphMu.RUnlock()
 	fresh, err := cloud.measureStoredValue(miss)
 	require.NoError(t, err)
 	require.Equal(t, fresh.size.bytes, kept, "the kept size is R's with its new dependency")

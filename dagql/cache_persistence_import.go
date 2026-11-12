@@ -43,7 +43,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	// The tables are independent reads of a store nothing else writes yet, so
 	// they are listed concurrently, each on its own connection.
 	lists, listCtx := errgroup.WithContext(ctx)
-	listImportedResultRows(lists, listCtx, &resultRows, c.pdb.EachMirrorResult)
+	listImportedResultRows(lists, listCtx, &resultRows, c.blobBacked, c.pdb.EachMirrorResult)
 	listMirrorRows(lists, listCtx, "eq_classes", &eqClassRows, c.pdb.ListMirrorEqClasses)
 	listMirrorRows(lists, listCtx, "eq_class_digests", &eqClassDigestRows, c.pdb.ListMirrorEqClassDigests)
 	listMirrorRows(lists, listCtx, "terms", &termRows, c.pdb.ListMirrorTerms)
@@ -200,6 +200,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				// bundles, and takes back its stored parts.
 				if err := c.restoreStoredPartsLocked(res, env, row.callFrameBytes, row.payloadBytes); err != nil {
 					return fmt.Errorf("import result %d stored parts: %w", resultID, err)
+				}
+				if body := row.body; body != nil {
+					// As merge measured it: the call and the envelope
+					// encoded.
+					res.storedRecordBytes = int64(row.callFrameBytes) + body.envelopeBytes
+					c.setStoredBodyLocked(res, env, body)
 				}
 			} else if env.Kind == persistedResultKindNull {
 				// An attached absent value keeps its row identity, recorded
@@ -681,20 +687,28 @@ type importedResultRow struct {
 	envErr         error
 	frame          *ResultCall
 	frameErr       error
+	// body is, on a blob-backed cache, the row's stored record as it was
+	// held, whose envelope env is without its value (decodeStoredRow).
+	body *storedBody
 }
 
-// decode decodes the row's self payload and call frame, and drops their raw
-// bytes. Decoding reads only the row.
-func (row *importedResultRow) decode() {
+// decode decodes the row's call frame and self payload, and drops their raw
+// bytes. Decoding reads only the row. A blob-backed cache's stored record is
+// taken back as it was held, its value not decoded.
+func (row *importedResultRow) decode(blobBacked bool) {
 	row.payloadBytes = len(row.SelfPayload)
 	row.callFrameBytes = len(row.CallFrameJSON)
-	if len(row.SelfPayload) > 0 {
-		row.env = new(PersistedResultEnvelope)
-		row.envErr = json.Unmarshal(row.SelfPayload, row.env)
-	}
 	if row.CallFrameJSON != "" {
 		row.frame = &ResultCall{}
 		row.frameErr = json.Unmarshal([]byte(row.CallFrameJSON), row.frame)
+	}
+	switch {
+	case len(row.SelfPayload) == 0:
+	case blobBacked && isStoredRow(row.SelfPayload):
+		row.env, row.body, row.envErr = decodeStoredRow(row.SelfPayload, row.frame)
+	default:
+		row.env = new(PersistedResultEnvelope)
+		row.envErr = json.Unmarshal(row.SelfPayload, row.env)
 	}
 	row.SelfPayload = nil
 	row.CallFrameJSON = ""
@@ -706,7 +720,7 @@ func (row *importedResultRow) decode() {
 // decoded, so a restore never holds the whole table's bytes beside their
 // decoded form. The import loop checks the rows in order, so the error it
 // reports is the one of the first invalid row.
-func listImportedResultRows(lists *errgroup.Group, ctx context.Context, dst *[]importedResultRow, each func(context.Context, func(persistdb.MirrorResult) error) error) {
+func listImportedResultRows(lists *errgroup.Group, ctx context.Context, dst *[]importedResultRow, blobBacked bool, each func(context.Context, func(persistdb.MirrorResult) error) error) {
 	lists.Go(func() error {
 		pending := make(chan []importedResultRow, runtime.GOMAXPROCS(0))
 		var decoders sync.WaitGroup
@@ -714,7 +728,7 @@ func listImportedResultRows(lists *errgroup.Group, ctx context.Context, dst *[]i
 			decoders.Go(func() {
 				for batch := range pending {
 					for i := range batch {
-						batch[i].decode()
+						batch[i].decode(blobBacked)
 					}
 				}
 			})

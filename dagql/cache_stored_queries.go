@@ -162,12 +162,12 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress, nowUn
 		if candidate.persistedEnvelope == nil {
 			continue
 		}
-		outputs, err := mapTransferredOutputs(PersistedRecord{ResultID: uint64(candidate.id), Envelope: *candidate.persistedEnvelope, Call: candidate.loadResultCall()})
+		declared, err := candidate.declaredPartsLocked()
 		if err != nil {
 			continue
 		}
-		for _, output := range outputs {
-			if outputKey, _ := partAddressKey(output.Address); outputKey == key && output.State == "absent" {
+		for _, part := range declared {
+			if part.key == key && part.state == "absent" {
 				return PartAvailability{State: PartAbsent, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, nil
 			}
 		}

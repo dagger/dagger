@@ -237,6 +237,21 @@ type persistedEdge struct {
 // view than it declares; they are wiped on import.
 const cachePersistenceSchemaVersion = "24"
 
+// blobBackedStoreFormat names the format a blob-backed cache saves its stored
+// records in (encodeStoredRow), on top of the schema: it saves in a format of
+// its own, so an engine's store keeps its version when only the Cloud's
+// format changes.
+const blobBackedStoreFormat = "compressed-records-1"
+
+// persistenceSchemaVersion is the schema version the cache saves under, and
+// restores only from.
+func (c *Cache) persistenceSchemaVersion() string {
+	if c.blobBacked {
+		return cachePersistenceSchemaVersion + "+" + blobBackedStoreFormat
+	}
+	return cachePersistenceSchemaVersion
+}
+
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
 
@@ -534,6 +549,9 @@ func NewCache(
 		if err := c.reconcileEmptyOwnerLeases(ctx); err != nil {
 			return nil, err
 		}
+		if c.blobBacked {
+			c.startStoredBodyWorker()
+		}
 		return c, nil
 	}
 
@@ -551,10 +569,10 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("read schema_version metadata: %w", err)
 	}
-	if found && schemaVersionVal != cachePersistenceSchemaVersion {
+	if found && schemaVersionVal != c.persistenceSchemaVersion() {
 		c.persistenceResetReason = CachePersistenceResetSchemaMismatch
-		c.tracePersistStoreWipedSchemaMismatch(ctx, cachePersistenceSchemaVersion, schemaVersionVal)
-		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", cachePersistenceSchemaVersion, "actual", schemaVersionVal)
+		c.tracePersistStoreWipedSchemaMismatch(ctx, c.persistenceSchemaVersion(), schemaVersionVal)
+		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", c.persistenceSchemaVersion(), "actual", schemaVersionVal)
 		c.readWipedCacheID(ctx)
 		if err := c.reopenWiped(ctx, dbPath, "close db before schema-version wipe", "wipe schema-mismatched persistence db"); err != nil {
 			return nil, err
@@ -618,7 +636,7 @@ func NewCache(
 		}
 	}
 
-	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, cachePersistenceSchemaVersion); err != nil {
+	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, c.persistenceSchemaVersion()); err != nil {
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
 			return nil, errors.Join(fmt.Errorf("set persistence schema version: %w", err), closeErr)
 		}
@@ -639,6 +657,9 @@ func NewCache(
 	c.egraphMu.Lock()
 	c.clearChangesLocked()
 	c.egraphMu.Unlock()
+	if c.blobBacked {
+		c.startStoredBodyWorker()
+	}
 	return c, nil
 }
 
@@ -2492,6 +2513,13 @@ type Cache struct {
 	testStoredSizeMeasure        func()
 	testStoredSizesHold          func(time.Duration)
 	testStoredTransferNormalized func()
+	// testStoredBodies runs after the body worker installs a batch, with the
+	// number of entries it read.
+	testStoredBodies func(int)
+
+	// storedBodies is a blob-backed cache's body worker, which compresses
+	// the records merges store (cache_stored_body.go).
+	storedBodies *storedBodyWorker
 
 	// storedSizeEncodes counts StoredSizes' first measurements of values.
 	storedSizeEncodes atomic.Uint64
@@ -2947,7 +2975,12 @@ type sharedResult struct {
 	// which StoredBundle keeps (storedTransferRecordLocked) and dropping or
 	// replacing the value releases. Builds hold egraphMu for reading, so it is set
 	// atomically.
-	storedTransfer              atomic.Pointer[storedTransferRecord]
+	storedTransfer atomic.Pointer[storedTransferRecord]
+	// stored is, on a blob-backed cache, the entry's stored record held
+	// compressed (cache_stored_body.go), once its body is made: its
+	// persistedEnvelope then has only the envelope's small fields. Guarded
+	// by egraphMu, and set under payloadMu too.
+	stored                      *storedBody
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.
@@ -3209,6 +3242,7 @@ type sharedResultPayloadState struct {
 	hasValue           bool
 	objClass           objectClassRef
 	persistedEnvelope  *PersistedResultEnvelope
+	stored             *storedBody
 	snapshotOwnerLinks []PersistedSnapshotRefLink
 	createdAtUnixNano  int64
 	lastUsedAtUnixNano int64
@@ -3290,6 +3324,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		hasValue:           res.hasValue,
 		objClass:           res.objClass,
 		persistedEnvelope:  res.persistedEnvelope,
+		stored:             res.stored,
 		snapshotOwnerLinks: cloneSnapshotRefLinks(res.snapshotOwnerLinks),
 		createdAtUnixNano:  res.createdAtUnixNano,
 		lastUsedAtUnixNano: res.lastUsedAtUnixNano,
@@ -5863,6 +5898,7 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 		)
 		c.closeRemoteCacheBridge()
 		c.closePartPrefetch()
+		c.closeStoredBodies()
 		// After the bridge detach, which is what sets closing: an enqueue
 		// either finished its E section before this step, and is dropped
 		// here, or fails admission. Placed before it, an enqueue in between
@@ -5918,6 +5954,7 @@ func (c *Cache) CloseDiscardingPersistence() error {
 	c.closeOnce.Do(func() {
 		c.closeRemoteCacheBridge()
 		c.closePartPrefetch()
+		c.closeStoredBodies()
 		// The discard path is the boot reset, before sharing is enabled:
 		// this closes admission and has nothing to drain.
 		c.closeSnapshotSharing()

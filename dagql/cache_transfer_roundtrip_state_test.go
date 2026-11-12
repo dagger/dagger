@@ -94,7 +94,7 @@ func roundTripRecords(t *testing.T, c *Cache, numbers map[uint64]uint64) map[uin
 	defer c.egraphMu.RUnlock()
 	out := map[uint64]string{}
 	for id, res := range c.resultsByID {
-		rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()})
+		rec, err := normalizeTransferRecord(storedTestRecordLocked(t, res))
 		require.NoError(t, err)
 		rec.Envelope.PendingOffers, rec.Envelope.StoredParts = nil, nil
 		if numbers != nil {
@@ -143,7 +143,7 @@ func roundTripStateLines(t *testing.T, name string, c *Cache) []string {
 		slices.Sort(deps)
 		recipe, err := res.loadResultCall().deriveRecipeDigest(c)
 		require.NoError(t, err)
-		lines = append(lines, fmt.Sprintf("STATE %s entry %d deps=%v recipe=%s envelope=%s parts=%s replacements=%d", name, id, deps, recipe, hash(res.persistedEnvelope), hash(storedPartTestOffers(res.storedParts)), res.replacements))
+		lines = append(lines, fmt.Sprintf("STATE %s entry %d deps=%v recipe=%s envelope=%s parts=%s replacements=%d", name, id, deps, recipe, hash(storedTestRecordLocked(t, res).Envelope), hash(storedPartTestOffers(res.storedParts)), res.replacements))
 	}
 	c.egraphMu.RUnlock()
 

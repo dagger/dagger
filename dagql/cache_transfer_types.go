@@ -92,7 +92,40 @@ type TransferredValue struct {
 	// held rows to an engine (StoredBundle's HeldBy), with no dependencies
 	// and no outputs, and an engine sends them to the Cloud in an export.
 	Held digest.Digest `json:"held,omitempty"`
+
+	// storedEnvelope is, in a bundle a blob-backed cache built, the record's
+	// envelope as the cache holds it, compressed (storedBody), in place of
+	// Record.Envelope: the bundle's encoding writes it out, and a merge of
+	// the bundle in the same process decodes it (cloneValueBundle).
+	storedEnvelope []byte
 }
+
+// MarshalJSON encodes the value as its fields say, with a stored envelope
+// written out as it is held, decompressed but not decoded.
+func (v TransferredValue) MarshalJSON() ([]byte, error) {
+	type plain TransferredValue
+	if v.storedEnvelope == nil {
+		return json.Marshal(plain(v))
+	}
+	raw, err := (&storedBody{envelope: v.storedEnvelope}).envelopeJSON()
+	if err != nil {
+		return nil, err
+	}
+	// The outer Record, less nested, is the one encoded.
+	return json.Marshal(struct {
+		plain
+		Record storedRecordJSON `json:"record"`
+	}{plain(v), storedRecordJSON{ResultID: v.Record.ResultID, Envelope: raw, Call: v.Record.Call, SnapshotLinks: v.Record.SnapshotLinks}})
+}
+
+// storedRecordJSON is a PersistedRecord with its envelope as encoded JSON.
+type storedRecordJSON struct {
+	ResultID      uint64                     `json:"resultID"`
+	Envelope      json.RawMessage            `json:"envelope"`
+	Call          *ResultCall                `json:"call"`
+	SnapshotLinks []PersistedSnapshotRefLink `json:"snapshotLinks,omitempty"`
+}
+
 type TransferredRoot struct {
 	Ordinal       TransferOrdinal `json:"ordinal"`
 	ExpiresAtUnix int64           `json:"expiresAtUnix,omitempty"`

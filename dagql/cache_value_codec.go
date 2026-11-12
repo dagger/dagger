@@ -254,6 +254,21 @@ func validateTransferRecordShape(rec PersistedRecord, deps []uint64) error {
 	return visitResultCallReferences(rec.Call, nil, directTransferReferences(direct))
 }
 
+// validateStoredRecordShape checks a record a blob-backed cache sends as it
+// holds it, compressed: its call, its dependencies, and its call's
+// references against them. Its envelope was checked when it was compressed
+// (newStoredBody).
+func validateStoredRecordShape(rec PersistedRecord, deps []uint64) error {
+	if rec.ResultID == 0 || rec.Call == nil || rec.Call.Type == nil || rec.Call.Type.NamedType == "Query" {
+		return fmt.Errorf("missing transferable result call")
+	}
+	direct, err := validateTransferDependencies(rec, deps)
+	if err != nil {
+		return err
+	}
+	return visitResultCallReferences(rec.Call, nil, directTransferReferences(direct))
+}
+
 // validateTransferRecordHeader checks a transferred record's identity, call,
 // envelope and storage links.
 func validateTransferRecordHeader(rec PersistedRecord) error {
