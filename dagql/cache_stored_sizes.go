@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -220,10 +221,13 @@ type storedOutputsSeen struct {
 	blobs  map[digest.Digest]digest.Digest
 }
 
-// add counts what res's own stored parts add to the message (StoredSize's
-// OutputBytes). Requires egraphMu.
+// addOutputs counts what res's own stored parts add to the message
+// (StoredSize's OutputBytes), in the order a bundle adds them, by key
+// (storedBundleOutputsLocked): which of a blob's addresses the message
+// shares depends on it. Requires egraphMu.
 func (w *storedSizeWalk) addOutputs(res *sharedResult) {
-	for _, part := range res.storedParts {
+	for _, key := range slices.Sorted(maps.Keys(res.storedParts)) {
+		part := res.storedParts[key]
 		w.size.OutputBytes += part.wire
 		for _, layer := range part.layers {
 			if !w.outputs.layers[layer] {
