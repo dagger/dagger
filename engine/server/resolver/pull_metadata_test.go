@@ -291,6 +291,14 @@ type testPullRegistry struct {
 	// through its body; layerResets counts the resets sent.
 	resetNextLayerGET atomic.Bool
 	layerResets       atomic.Int32
+	// resetNextConfigGET and resetNextManifestGET do the same to the next GET
+	// of the image config or of the platform manifest under an index, and
+	// count those GETs and resets.
+	resetNextConfigGET   atomic.Bool
+	configGETs           atomic.Int32
+	configResets         atomic.Int32
+	resetNextManifestGET atomic.Bool
+	manifestResets       atomic.Int32
 }
 
 func (registry *testPullRegistry) manifestRequests() int32 {
@@ -322,11 +330,26 @@ func (registry *testPullRegistry) handler(image *testPullImage) http.Handler {
 			case "latest", image.root.Digest.String():
 				serveTestRegistryManifest(w, r, image.root, image.rootBytes)
 			case image.manifest.Digest.String():
+				if r.Method == http.MethodGet && registry.resetNextManifestGET.CompareAndSwap(true, false) {
+					if resetTestRegistryResponse(w, image.manifest, image.manifestBytes) {
+						registry.manifestResets.Add(1)
+					}
+					return
+				}
 				serveTestRegistryManifest(w, r, image.manifest, image.manifestBytes)
 			default:
 				http.NotFound(w, r)
 			}
 		case r.URL.Path == "/v2/test/image/blobs/"+image.config.Digest.String():
+			if r.Method == http.MethodGet {
+				registry.configGETs.Add(1)
+				if registry.resetNextConfigGET.CompareAndSwap(true, false) {
+					if resetTestRegistryResponse(w, image.config, image.configBytes) {
+						registry.configResets.Add(1)
+					}
+					return
+				}
+			}
 			serveTestRegistryDescriptor(w, r, image.config, image.configBytes)
 		case r.URL.Path == "/v2/test/image/blobs/"+image.layer.Digest.String():
 			if r.Method == http.MethodGet {
@@ -434,6 +457,50 @@ func TestPullRetriesLayerAfterConnectionReset(t *testing.T) {
 	actual, err := content.ReadBlob(ctx, s.store, s.image.layer)
 	require.NoError(t, err)
 	require.Equal(t, s.image.layerBytes, actual)
+}
+
+// A registry that resets the connection partway through the image's config,
+// as mcr.microsoft.com sometimes does after the root resolved, does not fail
+// resolving the image: the config is fetched again, whichever way the
+// resolve reads it.
+func TestResolveRetriesConfigAfterConnectionReset(t *testing.T) {
+	for _, mode := range []ResolveMode{ResolveModeDefault, ResolveModeForcePull} {
+		t.Run(fmt.Sprintf("mode=%d", mode), func(t *testing.T) {
+			platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
+			image := newTestPullImage(t, true, platform)
+			registry, rslvr := newTestPullResolver(t, image)
+			registry.resetNextConfigGET.Store(true)
+
+			_, resolvedDigest, configBytes, err := rslvr.ResolveImageConfig(t.Context(), registry.host+"/test/image:latest", ResolveImageConfigOpts{
+				Platform:    &platform,
+				ResolveMode: mode,
+			})
+			require.NoError(t, err)
+			require.Equal(t, image.root.Digest, resolvedDigest)
+			require.JSONEq(t, string(image.configBytes), string(configBytes))
+			require.Equal(t, int32(1), registry.configResets.Load(), "the first config GET was reset partway through")
+			require.Equal(t, int32(2), registry.configGETs.Load(), "the config was fetched again")
+		})
+	}
+}
+
+// A force pull reads the platform manifest under an index straight from the
+// registry; a reset partway through it doesn't fail the pull either.
+func TestForcePullRetriesManifestAfterConnectionReset(t *testing.T) {
+	ctx := t.Context()
+	platform := ocispecs.Platform{OS: "linux", Architecture: "amd64"}
+	image := newTestPullImage(t, true, platform)
+	registry, rslvr := newTestPullResolver(t, image)
+	registry.resetNextManifestGET.Store(true)
+
+	pulled, err := rslvr.Pull(ctx, registry.host+"/test/image:latest", PullOpts{
+		Platform:    platform,
+		ResolveMode: ResolveModeForcePull,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pulled.Release(context.WithoutCancel(ctx))) })
+	require.Equal(t, int32(1), registry.manifestResets.Load(), "the first platform manifest GET was reset partway through")
+	require.Len(t, pulled.Layers, 1)
 }
 
 // A registry whose TLS handshake times out on the manifest request, as
