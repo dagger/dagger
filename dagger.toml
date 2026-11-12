@@ -402,6 +402,17 @@ unifiedClients = true
 daggerGo = true
 targetVersion = "v1.0.0-beta.26"
 
+[sdks.go.scopes."sdk/python/runtime"]
+is-module = true
+name = "python-sdk"
+
+[sdks.go.scopes."sdk/python/runtime".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+targetVersion = "v1.0.0-beta.26"
+globalClient = true
+
 [sdks.go.scopes."modules/git-releaser"]
 is-module = true
 clients = ["github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a"]

@@ -14,8 +14,12 @@ import (
 // The server interacts directly with the ModuleRuntime and Codegen functions.
 // The others were built to be composable and chainable to facilitate the
 // creation of extension modules (custom SDKs that depend on this one).
-type PythonSDK struct { // python-sdk (../../../../../:0:0)
+type PythonSDK struct { // python-sdk (../../:0:0)
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	addDirectory   *Void
 	addFile        *Void
@@ -50,6 +54,9 @@ func (r *PythonSDK) With(f WithPythonSDKFunc) *PythonSDK {
 func (r *PythonSDK) WithGraphQLQuery(q *querybuilder.Selection) *PythonSDK {
 	return &PythonSDK{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -112,9 +119,7 @@ func (r *PythonSDK) Codegen(modSource *ModuleSource, introspectionJson *File) *G
 	q = q.Arg("modSource", modSource)
 	q = q.Arg("introspectionJson", introspectionJson)
 
-	return &GeneratedCode{
-		query: q,
-	}
+	return new(GeneratedCode).WithGraphQLQuery(q)
 }
 
 // PythonSDKCommonOpts contains options for PythonSDK.Common
@@ -135,7 +140,8 @@ func (r *PythonSDK) Common(modSource *ModuleSource, opts ...PythonSDKCommonOpts)
 	q = q.Arg("modSource", modSource)
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -143,9 +149,7 @@ func (r *PythonSDK) Common(modSource *ModuleSource, opts ...PythonSDKCommonOpts)
 func (r *PythonSDK) Container() *Container {
 	q := r.query.Select("container")
 
-	return &Container{
-		query: q,
-	}
+	return new(Container).WithGraphQLQuery(q)
 }
 
 // ContextDir is a copy of the context directory from the module source
@@ -158,9 +162,7 @@ func (r *PythonSDK) Container() *Container {
 func (r *PythonSDK) ContextDir() *Directory {
 	q := r.query.Select("contextDir")
 
-	return &Directory{
-		query: q,
-	}
+	return new(Directory).WithGraphQLQuery(q)
 }
 
 // ContextDirPath is a unique host path for the module being loaded
@@ -212,9 +214,7 @@ func (r *PythonSDK) GetFile(name string) *File {
 	q := r.query.Select("getFile")
 	q = q.Arg("name", name)
 
-	return &File{
-		query: q,
-	}
+	return new(File).WithGraphQLQuery(q)
 }
 
 // A unique identifier for this PythonSdk.
@@ -227,7 +227,13 @@ func (r *PythonSDK) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -262,7 +268,7 @@ func (r *PythonSDK) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = PythonSDK{query: selectNode(dag.query, id, "PythonSdk")}
+	*r = PythonSDK{query: selectNode(Connect().QueryBuilder(), id, "PythonSdk")}
 	return nil
 }
 
@@ -301,7 +307,8 @@ func (r *PythonSDK) Load(modSource *ModuleSource) *PythonSDK {
 	q = q.Arg("modSource", modSource)
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -335,9 +342,7 @@ func (r *PythonSDK) ModName(ctx context.Context) (string, error) {
 func (r *PythonSDK) ModSource() *ModuleSource {
 	q := r.query.Select("modSource")
 
-	return &ModuleSource{
-		query: q,
-	}
+	return new(ModuleSource).WithGraphQLQuery(q)
 }
 
 // PythonSDKModuleRuntimeOpts contains options for PythonSDK.ModuleRuntime
@@ -357,9 +362,7 @@ func (r *PythonSDK) ModuleRuntime(modSource *ModuleSource, opts ...PythonSDKModu
 	}
 	q = q.Arg("modSource", modSource)
 
-	return &Container{
-		query: q,
-	}
+	return new(Container).WithGraphQLQuery(q)
 }
 
 // The normalized python import package name (in the filesystem)
@@ -392,9 +395,7 @@ func (r *PythonSDK) ProjectName(ctx context.Context) (string, error) {
 func (r *PythonSDK) SDKSourceDir() *Directory {
 	q := r.query.Select("sdkSourceDir")
 
-	return &Directory{
-		query: q,
-	}
+	return new(Directory).WithGraphQLQuery(q)
 }
 
 // We could use modSource.Directory("") but we'll need to use the
@@ -404,9 +405,7 @@ func (r *PythonSDK) SDKSourceDir() *Directory {
 func (r *PythonSDK) Source() *Directory {
 	q := r.query.Select("source")
 
-	return &Directory{
-		query: q,
-	}
+	return new(Directory).WithGraphQLQuery(q)
 }
 
 // Relative path from the context directory to the source directory
@@ -494,7 +493,8 @@ func (r *PythonSDK) WithBase() *PythonSDK {
 	q := r.query.Select("withBase")
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -506,7 +506,8 @@ func (r *PythonSDK) WithBaseImage(ref string) *PythonSDK {
 	q = q.Arg("ref", ref)
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -522,7 +523,8 @@ func (r *PythonSDK) WithContainer(ctr *Container) *PythonSDK {
 	q = q.Arg("ctr", ctr)
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -531,7 +533,8 @@ func (r *PythonSDK) WithInstall() *PythonSDK {
 	q := r.query.Select("withInstall")
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -545,7 +548,8 @@ func (r *PythonSDK) WithSDK(introspectionJson *File) *PythonSDK {
 	q = q.Arg("introspectionJson", introspectionJson)
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -554,7 +558,8 @@ func (r *PythonSDK) WithSource() *PythonSDK {
 	q := r.query.Select("withSource")
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -569,7 +574,8 @@ func (r *PythonSDK) WithTemplate() *PythonSDK {
 	q := r.query.Select("withTemplate")
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -578,7 +584,8 @@ func (r *PythonSDK) WithUpdates() *PythonSDK {
 	q := r.query.Select("withUpdates")
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -587,7 +594,8 @@ func (r *PythonSDK) WithUv() *PythonSDK {
 	q := r.query.Select("withUv")
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -599,7 +607,8 @@ func (r *PythonSDK) WithUvVersion(version string) *PythonSDK {
 	q = q.Arg("version", version)
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -610,7 +619,8 @@ func (r *PythonSDK) WithoutUserConfig() *PythonSDK {
 	q := r.query.Select("withoutUserConfig")
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -619,7 +629,8 @@ func (r *PythonSDK) WithoutUv() *PythonSDK {
 	q := r.query.Select("withoutUv")
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
@@ -629,7 +640,7 @@ type PythonSDKOpts struct {
 	SDKSourceDir *Directory
 }
 
-func (r *Query) PythonSDK(opts ...PythonSDKOpts) *PythonSDK { // python-sdk (../../../../../:0:0)
+func (r *Query) PythonSDK(opts ...PythonSDKOpts) *PythonSDK { // python-sdk (../../:0:0)
 	q := r.query.Select("pythonSdk")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sdkSourceDir` optional argument
@@ -639,6 +650,7 @@ func (r *Query) PythonSDK(opts ...PythonSDKOpts) *PythonSDK { // python-sdk (../
 	}
 
 	return &PythonSDK{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
