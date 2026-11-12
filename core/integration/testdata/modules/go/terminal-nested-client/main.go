@@ -9,7 +9,7 @@ import (
 func New(ctx context.Context, nestedSrc *dagger.Directory) *Test {
 	return &Test{
 		Ctr: dag.Container().
-			From("golang:1.26-alpine").
+			From("golang:1.27-alpine").
 			WithMountedDirectory("/src", nestedSrc).
 			WithWorkdir("/src").
 			WithDefaultTerminalCmd([]string{"go", "run", "."}),

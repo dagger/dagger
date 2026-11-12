@@ -86,7 +86,7 @@ func weHaveToGoDeeper(ctx context.Context, q *core.Query, depth int, mode string
 	args = append(args, mirrorURL)
 
 	out, err := q.Container().
-		From("golang:1.26-alpine").
+		From("golang:1.27-alpine").
 		WithMountedCache("/go/pkg/mod", q.CacheVolume("go-mod")).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", q.CacheVolume("go-build")).
