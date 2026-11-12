@@ -357,6 +357,13 @@ targetVersion = "v1.0.0-beta.26"
 is-module = true
 clients = ["./.dagger/modules/release/registry-config"]
 
+[sdks.go.scopes.".dagger/modules/release/apko".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+targetVersion = "v1.0.0-beta.26"
+globalClient = true
+
 [sdks.go.scopes.".dagger/modules/release/gh"]
 is-module = true
 clients = ["./.dagger/modules/release/apko"]

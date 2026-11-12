@@ -1,13 +1,10 @@
 name = "apko"
-engineVersion = "v0.21.9"
-include = ["!../.direnv", "!../.devenv", "!../go.work", "!../go.work.sum"]
+include = []
 
-[runtime]
-  source = "go"
+[entrypoint]
+  kind = "dang"
+  source = "./internal/dagger/entrypoint"
 
 [[dependencies]]
-  name = "registry-config"
-  source = "../registry-config"
-
-[codegen]
-  automaticGitignore = false
+  name = "go"
+  source = "github.com/dagger/go@b0476af0f42568416ff2b876807a1748e666626e"
