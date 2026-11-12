@@ -104,6 +104,9 @@ type Options struct {
 	EngineVersion string
 	// Now is the clock; time.Now when nil.
 	Now func() time.Time
+	// RemoveAll deletes a removed volume's tree; os.RemoveAll when nil.
+	// Tests replace it to hold a deletion.
+	RemoveAll func(string) error
 }
 
 // Store is an owned cache volume directory.
@@ -171,6 +174,9 @@ func Open(dir string, opts Options) (*Store, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	if opts.RemoveAll == nil {
+		opts.RemoveAll = os.RemoveAll
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create cache volume directory: %w", err)
 	}
@@ -191,7 +197,7 @@ func Open(dir string, opts Options) (*Store, error) {
 		opts:       opts,
 		lock:       lock,
 		pins:       map[string]*pinState{},
-		removeAll:  os.RemoveAll,
+		removeAll:  opts.RemoveAll,
 		trashSize:  treeSize,
 		collecting: make(chan struct{}, 1),
 	}
