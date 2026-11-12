@@ -212,7 +212,9 @@ func TestCacheBoundResultIsNotTransferred(t *testing.T) {
 	}))
 	assert.Equal(t, 1, roots, "only the unbound root is sent")
 	assert.Equal(t, 2, len(leftOut))
-	assert.Equal(t, 0, leftOut[0].Index)
-	assert.Equal(t, 1, leftOut[1].Index)
+	for i, root := range leftOut {
+		assert.Equal(t, i, root.Index)
+		assert.Equal(t, BusyKind(""), root.Kind, "a bound value is refused, not busy")
+	}
 	assert.NilError(t, c.ReleaseSession(sa, "session-a"))
 }
