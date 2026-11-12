@@ -294,18 +294,20 @@ func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOu
 		results = append(results, output.Result)
 	}
 	selection := ValueSelection{Roots: results, Outputs: outputs, EveryRoot: true}
-	// Each wait is logged, and so is the capture after them: the log is
-	// where this export meeting another capture shows.
+	// Each wait is logged, and so is the capture after them, with the time
+	// from the first busy capture to the one that captured every result:
+	// the log is where this export meeting another capture shows.
 	var waits int
 	var waitStart time.Time
 	for pause := imageBundleBusyPause; ; pause = min(2*pause, maxImageBundleBusyPause) {
+		passStart := time.Now()
 		err := c.WithExportedValues(ctx, selection, cfg, func(ctx context.Context, values *ExportedValues) error {
 			return writeImageBundle(ctx, values, w)
 		})
 		left := leftOutOnly(err)
 		if left == nil {
 			if err == nil && waits > 0 {
-				slog.Info("export image bundle: every result captured after waiting for busy ones", "results", len(results), "waits", waits, "waited", time.Since(waitStart))
+				slog.Info("export image bundle: every result captured after waiting for busy ones", "results", len(results), "waits", waits, "waited", passStart.Sub(waitStart))
 			}
 			return err
 		}
