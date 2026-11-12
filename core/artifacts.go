@@ -143,7 +143,11 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 	var keys []dagaddress.Pair
 	var dimensions []string
 	if opts.DimensionKeys {
-		for _, key := range a.DimensionKeys {
+		coordinates := a.DimensionKeys
+		if opts.Prune {
+			coordinates = a.CanonicalDimensionKeys()
+		}
+		for _, key := range coordinates {
 			if artifact.IsStaticDimension(key.Dimension) {
 				continue
 			}
@@ -169,7 +173,13 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 		}
 		keys = nil
 	case opts.Prune && !opts.Full:
+		if a.links != nil && a.links.PathNeedsAbsence {
+			return "", fmt.Errorf("cannot address %s: its path can also select a child collection level; an absent-dimension selector is required", path)
+		}
 		addr.Path = path
+		if !opts.TypeAssertion && a.TypeName != "" && (link == nil || link.TypeKey != "") {
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: "type:" + a.TypeName, Key: "/" + path, HasKey: true})
+		}
 		if link != nil && link.ExactDimensions {
 			for i := range keys {
 				keys[i].Dimension = dimensions[i]
@@ -802,6 +812,8 @@ func (a *Artifacts) SchemaDimensions() []string {
 	names := map[string]struct{}{}
 	for _, dim := range dims {
 		switch {
+		case dim.Kind == "COLLECTION" && dim.CollectionType != "":
+			names[dim.CollectionType] = struct{}{}
 		case dim.Identifier == artifact.ModuleDimension, strings.HasPrefix(dim.Identifier, "/"):
 			names[dim.Identifier] = struct{}{}
 		case dim.Identifier == artifact.NameDimension, strings.HasPrefix(dim.Identifier, "type:"):

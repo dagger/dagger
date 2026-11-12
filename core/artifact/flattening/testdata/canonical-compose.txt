@@ -1,9 +1,9 @@
-ID                                 NAME
-/docker/compose/projects           docker-compose-project
-/docker/compose/projects/services  docker-compose-service
-/docker/compose/projects/volumes   docker-compose-volume
-module                             module
-name                               name
+ID                     NAME
+DockerComposeProjects  docker-compose-project
+DockerComposeServices  docker-compose-service
+DockerComposeVolumes   docker-compose-volume
+module                 module
+name                   name
 
 TYPE     docker-compose-project  docker-compose-service  docker-compose-volume  module  name
 Check    -                       -                       -                      docker  compose.check

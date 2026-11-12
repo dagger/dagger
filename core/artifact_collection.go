@@ -74,9 +74,18 @@ func (a *Artifacts) linkPlans(entry *Artifact) *artifact.Links {
 	cliName := func(name string) string {
 		return ArtifactTypeName(strings.TrimPrefix(name, "type:"))
 	}
+	canonicalPath := path
+	canonicalPath.Dimensions = nil
+	for _, dimension := range entry.DimensionDefinitions() {
+		if dimension.CollectionType != "" {
+			canonicalPath.Dimensions = append(canonicalPath.Dimensions, dimension.CollectionType)
+		}
+	}
 	return &artifact.Links{
-		Typed:   artifact.PlanLink(a.AllPaths, path, a.CompleteSchema, true, cliName),
-		Untyped: artifact.PlanLink(a.AllPaths, path, a.CompleteSchema, false, cliName),
+		Typed:            artifact.PlanLink(a.AllPaths, path, a.CompleteSchema, true, cliName),
+		Untyped:          artifact.PlanLink(a.AllPaths, path, a.CompleteSchema, false, cliName),
+		PathNeedsAbsence: artifact.PathNeedsAbsentDimension(a.AllPaths, canonicalPath),
+		CompleteSchema:   a.CompleteSchema,
 	}
 }
 
@@ -108,6 +117,9 @@ func (a *Artifacts) PathIndex() artifact.Paths {
 		for _, dim := range entry.DimensionDefinitions() {
 			if !artifact.IsStaticDimension(dim.Identifier) {
 				path.Dimensions = append(path.Dimensions, dim.Identifier)
+				if dim.CollectionType != "" && dim.CollectionType != dim.Identifier {
+					path.Dimensions = append(path.Dimensions, dim.CollectionType)
+				}
 			}
 		}
 		paths = append(paths, path)
@@ -152,6 +164,11 @@ func (a *Artifacts) DimensionDefinitions() artifact.Dimensions {
 	return artifact.Union(sets...)
 }
 
+// dimensionMatches accepts canonical type IDs and explicit legacy route IDs.
+func dimensionMatches(dimension *ArtifactDimension, identifier string) bool {
+	return dimension != nil && (dimension.Identifier == identifier || dimension.CollectionType != "" && dimension.CollectionType == identifier)
+}
+
 // BindDimensions resolves names against AllDimensions. This is delayed until a
 // result is requested, so filter order cannot bind an alias to a dimension
 // that happened to have matching runtime keys.
@@ -178,7 +195,7 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 			// load could have: SchemaSelection decides for each failure, as
 			// it does for a single name.
 			present := id == artifact.NameDimension && slices.ContainsFunc(a.Entries, func(entry *Artifact) bool { return entry.TypeName != "" }) ||
-				slices.ContainsFunc(selected, func(d *ArtifactDimension) bool { return d.Identifier == id }) ||
+				slices.ContainsFunc(selected, func(d *ArtifactDimension) bool { return dimensionMatches(d, id) }) ||
 				!a.exact && slices.ContainsFunc(a.Entries, func(entry *Artifact) bool { return entry.mayHaveDimension(id, nil) })
 			if present && !slices.Contains(ids, id) {
 				ids = append(ids, id)
@@ -253,12 +270,14 @@ func (a *Artifacts) matchesDimensionFilters(dims []*ArtifactDimension) bool {
 		if filter.Keys != nil && len(filter.Keys) == 0 {
 			return false
 		}
-		if !slices.ContainsFunc(dims, func(d *ArtifactDimension) bool { return d.Identifier == filter.Dimension }) {
+		if !slices.ContainsFunc(dims, func(d *ArtifactDimension) bool { return dimensionMatches(d, filter.Dimension) }) {
 			return false
 		}
 	}
 	for _, group := range a.Selector.DimensionAlternatives {
-		if !slices.ContainsFunc(dims, func(d *ArtifactDimension) bool { return slices.Contains(group, d.Identifier) }) {
+		if !slices.ContainsFunc(dims, func(d *ArtifactDimension) bool {
+			return slices.Contains(group, d.Identifier) || d.CollectionType != "" && slices.Contains(group, d.CollectionType)
+		}) {
 			return false
 		}
 	}
@@ -281,7 +300,7 @@ func (a *Artifacts) ForDimensionKeys(dimension string) *Artifacts {
 				continue
 			}
 			if !slices.Equal(ancestor.Path, candidate.Path[:len(ancestor.Path)]) || !a.matchesDimensionFilters(parentDims) ||
-				!slices.ContainsFunc(parentDims, func(d *ArtifactDimension) bool { return d.Identifier == dimension }) {
+				!slices.ContainsFunc(parentDims, func(d *ArtifactDimension) bool { return dimensionMatches(d, dimension) }) {
 				continue
 			}
 			if slices.EqualFunc(parentDims, childDims[:len(parentDims)], func(a, b *ArtifactDimension) bool { return a.Identifier == b.Identifier }) {
@@ -303,7 +322,7 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 	names := a.displayNames()
 	for _, selected := range a.Entries {
 		for node := selected.Node; node != nil; node = node.Parent {
-			if node.CollectionDimension == nil || node.CollectionDimension.Identifier != dimension {
+			if node.CollectionDimension == nil || !dimensionMatches(node.CollectionDimension, dimension) {
 				continue
 			}
 			members, err := node.Parent.ObjectType().CollectionMembers()
@@ -325,10 +344,19 @@ func (a *Artifacts) DimensionItems(dimension string) ([]*Artifact, error) {
 			item.Directives = nil
 			item.addressPlans = nil
 			item.DimensionKeys = nil
-			for _, key := range selected.DimensionKeys {
-				item.DimensionKeys = append(item.DimensionKeys, key)
-				if key.Dimension == dimension {
-					break
+			for ancestor := &itemNode; ancestor != nil; ancestor = ancestor.Parent {
+				if ancestor.CollectionDimension != nil && ancestor.CollectionKey != nil {
+					item.DimensionKeys = append(item.DimensionKeys, &ArtifactDimensionKey{Dimension: ancestor.CollectionDimension.Identifier, Key: *ancestor.CollectionKey})
+				}
+			}
+			slices.Reverse(item.DimensionKeys)
+			if len(item.DimensionKeys) == 0 {
+				// Compatibility for snapshots that carry keys without item nodes.
+				for _, key := range selected.DimensionKeys {
+					item.DimensionKeys = append(item.DimensionKeys, key)
+					if key.Dimension == dimension || key.Dimension == node.CollectionDimension.Identifier {
+						break
+					}
 				}
 			}
 			item.setStaticDimensions()
@@ -425,7 +453,7 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 	rootsCtx := withArtifactReceivers(discoveryCtx)
 	for _, root := range roots {
 		if !slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
-			return filter.Dimension == root.Node.CollectionDimension.Identifier
+			return dimensionMatches(root.Node.CollectionDimension, filter.Dimension)
 		}) {
 			continue
 		}
@@ -625,7 +653,7 @@ func (a *Artifacts) expand(ctx context.Context, collectionKeys artifactCollectio
 	group, ctx := errgroup.WithContext(ctx)
 	for i, template := range bound.Entries {
 		// An exact collection path without its dimension selects the collection.
-		if template.Node != nil && template.Node.CollectionDimension != nil && bound.hasExactPath(template.Path) && !bound.selectsDimension(template.Node.CollectionDimension.Identifier) {
+		if template.Node != nil && template.Node.CollectionDimension != nil && bound.hasExactPath(template.Path) && !bound.selectsDimension(template.Node.CollectionDimension.Identifier) && !bound.selectsDimension(template.Node.CollectionDimension.CollectionType) {
 			continue
 		}
 		group.Go(func() error {
@@ -698,7 +726,7 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 	var expanded []*ModTreeNode
 	if node.CollectionDimension == nil || node.CollectionKey != nil {
 		if node.CollectionDimension != nil && slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
-			return filter.Dimension == node.CollectionDimension.Identifier && filter.Keys != nil && !slices.Contains(filter.Keys, *node.CollectionKey)
+			return dimensionMatches(node.CollectionDimension, filter.Dimension) && filter.Keys != nil && !slices.Contains(filter.Keys, *node.CollectionKey)
 		}) {
 			return nil, nil
 		}
@@ -737,7 +765,7 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 			for _, key := range keys {
 				keep := true
 				for _, filter := range filters {
-					if filter.Dimension == node.CollectionDimension.Identifier && filter.Keys != nil && !slices.Contains(filter.Keys, key.text) {
+					if dimensionMatches(node.CollectionDimension, filter.Dimension) && filter.Keys != nil && !slices.Contains(filter.Keys, key.text) {
 						keep = false
 					}
 				}
@@ -811,7 +839,16 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 			KeyName:        members.Get.Args[0].Self().Name,
 			KeyDescription: members.Get.Args[0].Self().Description,
 		}
-		dim := (*ArtifactDimension)(collection.Dimension(node.Module.Self().Name(), parentDimension, nil))
+		dimension := collection.Dimension(node.Module.Self().Name(), parentDimension, nil)
+		if Supports(ctx, ArtifactTypeColumnsVersion) {
+			dimension = collection.CanonicalDimension()
+			for ancestor := node; ancestor != nil; ancestor = ancestor.Parent {
+				if ancestor.CollectionDimension != nil && ancestor.CollectionDimension.CollectionType == collection.Type {
+					return fmt.Errorf("collection type %s repeats on one artifact route", collection.Type)
+				}
+			}
+		}
+		dim := (*ArtifactDimension)(dimension)
 		item := &ModTreeNode{Parent: node, Name: "get", Type: members.Get.ReturnType, Description: members.Get.Description,
 			Module: node.Module, OriginalModule: node.OriginalModule, DagqlServer: node.DagqlServer, CollectionDimension: dim, types: node.types}
 		if err := walkArtifactNodes(ctx, item, visit, visiting); err != nil {

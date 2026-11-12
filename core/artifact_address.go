@@ -22,7 +22,10 @@ func (a *Artifact) addressRow(typed bool) artifact.AddressRow {
 // AddressIdentity identifies an artifact within its source workspace. It does
 // not depend on a selection or the shorter spelling of a link.
 func (a *Artifact) AddressIdentity() string {
-	data, _ := json.Marshal(a.addressRow(true))
+	data, _ := json.Marshal(struct {
+		Path []string
+		Row  artifact.AddressRow
+	}{a.Path, a.addressRow(true)})
 	return string(data)
 }
 
@@ -80,5 +83,5 @@ func (a *Artifact) WithAddressPlan(source *Artifact) *Artifact {
 
 // A deliberately narrow schema must not load unrelated modules for shorter links.
 func (a *Artifact) HasCompleteAddressSchema() bool {
-	return a.links != nil && a.links.Typed != nil && !a.links.Typed.ExactDimensions
+	return a.links != nil && (a.links.CompleteSchema || a.links.Typed != nil && !a.links.Typed.ExactDimensions)
 }

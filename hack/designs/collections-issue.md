@@ -16,9 +16,9 @@ Users need to list the keys, select an item, and run checks or generators on a s
 
 A **collection** is a dynamic set of objects with unique keys. Its type defines the keys and item lookup. Each collection value contains its own set of keys.
 
-A **dimension** is a named axis for selecting artifacts by key. The engine derives dimensions from fields that expose collections in the workspace schema. One collection type can supply several dimensions.
+A **dimension** is a column in the flattened workspace. Each collection type defines exactly one collection column. Its name comes from the collection item type. All occurrences of that collection type share the column.
 
-Authors declare collections. The engine supplies a standard collection API and projects collection fields into a flat list of dimensions.
+Authors declare collections. The engine supplies a standard collection API and maps collection types to columns.
 
 ### 1. Declare a collection
 
@@ -163,55 +163,50 @@ When both lists are empty, a batch function can use an operation for the full or
 
 ### 3. Project collections into dimensions
 
-A collection field creates a dimension. Its item keys become the keys for that dimension. Reusing the same schema field reuses its dimension. Different fields create different dimensions, even if they return the same collection value.
-
-For example:
-
-In module `go`, the author writes `Module` and `Test`. The schema namespaces them:
+A collection type creates one column. The column identifier is its exact schema type name. The column name is its item type name in kebab case. Its coordinate is the selected item key.
 
 ```graphql
 type Go { modules: GoModules! }
 type GoModule { tests: GoTests! }
-type GoTest { container: Container! }
+type GoModules { get(key: String!): GoModule! }
+type GoTests { get(key: String!): GoTest! }
 ```
 
-This schema has two dimensions:
+| Collection type | Column identifier | Column name |
+| -- | -- | -- |
+| `GoModules` | `GoModules` | `go-module` |
+| `GoTests` | `GoTests` | `go-test` |
 
-| Collection field | Identifier | Short name | Qualified name |
-| -- | -- | -- | -- |
-| `Go.modules` | `/go/modules` | `go-module` | `go-modules-module` |
-| `GoModule.tests` | `/go/modules/tests` | `go-test` | `go-modules-tests-test` |
+A second field that returns `GoModules` uses the same `go-module` column. Field paths do not create or identify collection columns. A module coordinate is not needed to construct a collection identifier: schema type names already identify the types.
 
-All collection values returned by `GoModule.tests` share one dimension. A list of test keys combines their keys. Selecting a parent module narrows that list.
+An item can itself be a collection. For `Rows.get -> Row.get -> Cell`, the columns are `Rows` (named `row`) and `Row` (named `cell`). No field is needed between those boundaries. The input lists both boundaries in parent-to-child order.
+
+A route that repeats the same collection type is rejected: one scalar cell cannot hold two different keys for that type. Do not create a second column or silently replace a key.
+
+Build the complete column set from the schema before selecting rows. Empty collections still contribute columns. Fields such as `get`, `list`, and `subset` do not create columns.
 
 #### Static dimensions
 
-Each artifact also has two static dimensions. The engine knows their keys without loading collections:
+| Identifier | Coordinate |
+| -- | -- |
+| `module` | Configured module name, when present |
+| `name` | Full local field path, or `.` for the local root |
 
-| Identifier | Short name | Key |
-| -- | -- | -- |
-| `module` | `module` | The installed module name |
-| `type:<TypeName>` | The type in CLI case, such as `container` | The full artifact path, such as `go/modules/tests/container` |
-
-The qualified name of a type dimension is `artifact-` plus the short name, such as `artifact-container`.
-
-The type dimension key holds the path. Thus the dimension keys alone identify an artifact. See [Artifact identity](#artifact-identity).
+The local root is the nearest collection item, or the exposed module root. Keep literal schema field names. Artifact types do not add columns. Legacy `type:<TypeName>` keys remain compatibility selectors.
 
 #### Dimension names
 
-Each dimension has a stable identifier: the schema path of its collection field, starting with the module name. A nested collection starts from its parent dimension's identifier. For example, in module `go`, `Go.modules` has the identifier `/go/modules`, and `GoModule.tests` has `/go/modules/tests`. Adding another collection field does not change an identifier. Renaming a field on its path does.
+Collection type identity and column names come only from schema type metadata. They do not depend on a field route, current selection, or observed keys. Selectors can use the exact collection type identifier. Existing legacy path identifiers stay in the compatibility layer.
 
-The short name comes from the item type's namespaced schema name, in CLI case. The namespace keeps short names unique across modules. For example, in module `go`, the type `Module` is `GoModule` in the schema and gives `go-module`. The qualified name combines the identifier's fields and the item name: `/go/modules` with item `GoModule` gives `go-modules-module`. Do not choose a primary dimension when names conflict.
+Two different collection types can return the same item type. For example, `Packages` and `Dependencies` can both return `Package`. Their columns stay distinct because their identifiers are different collection types. Do not merge them.
 
-Resolve short and qualified names against the dimensions of every loaded module, not only those on the selected paths. Path filters, key filters, and runtime key values do not affect name resolution. A name has one meaning in a workspace. Resolve names when reading or running the selection, so filter order does not matter.
+Column-name options, awaiting a decision:
 
-For example, the path `go/modules/tests/container` crosses `Go.modules` and `GoModule.tests`. It accepts `go-module` and `go-test`.
+1. **Item names, with a collection-type fallback (recommended).** Use the item type name by default. For every conflicting name, use the collection type name instead. The example gives `packages` and `dependencies`; an unrelated `Tests -> Test` column stays `test`. If the fallback still conflicts, report an error. Do not add field qualifiers or numeric suffixes.
+2. **Always use collection type names.** The example gives `packages` and `dependencies`; `Tests -> Test` gives `tests`.
+3. **Keep item names and reject conflicts.** Use `package` and `test` for unambiguous types. Reject the example because two columns would be named `package`.
 
-Suppose the module adds `GoApp.dependencies`, which also returns `GoModules`. Then `go-module` is ambiguous, with or without a path filter. Use the qualified name `go-modules-module` or `go-app-dependencies-module`. Qualified names are also accepted when the short name is unique. If a name matches several dimensions, reject it and report their exact identifiers. This rule also applies when one dimension's short name matches another's qualified name. Accept exact identifiers in every place that accepts a dimension name. Identifiers are case-sensitive.
-
-Artifact metadata uses stable identifiers. A complete artifact address uses the short name if it is unique in the workspace. Otherwise, use the qualified name. If that name also conflicts, use the exact identifier. Stored filters over multiple paths use exact identifiers. Adding a field cannot change the meaning of a name. It can make a short name ambiguous, which is an error, never a different match.
-
-Build the dimension list from the module schema before adding the standard collection operations. Operations such as `subset` do not create new dimensions. Empty collections still have dimensions in the schema.
+These are naming policies only. Every collection type still defines exactly one column. Names are computed from the complete schema before filtering.
 
 #### Artifact API
 
@@ -256,31 +251,42 @@ The key name and description come from the argument of the author's `@get` funct
 
 Command lists such as `check -l`, `up -l`, and `shell -l` use these paths by default. They show one hint when dimensions are present: `Use --all to list each key combination.` With `--all` or an explicit key filter, they enumerate runtime items. `list -a` always enumerates runtime items.
 
-The container for one test has this address:
+Requesting `dimensionKeys(all: true)` for a test container gives its full coordinates:
 
 ```json
 {
   "path": ["go", "modules", "tests", "container"],
   "dimensionKeys": [
     {"dimension": "module", "key": "go"},
-    {"dimension": "/go/modules", "key": "sdk/go"},
-    {"dimension": "/go/modules/tests", "key": "TestConnect"},
-    {"dimension": "type:Container", "key": "go/modules/tests/container"}
+    {"dimension": "GoModules", "key": "sdk/go"},
+    {"dimension": "GoTests", "key": "TestConnect"},
+    {"dimension": "name", "key": "container"}
   ]
 }
 ```
 
-The Artifacts `uri()` formatter prints the type dimension key, then the collection dimension keys. It prints no path. With collection keys, it prints the shortest type key that names the path (see [Projections](#projections)):
+`uri()` separately chooses the smallest key set that identifies the artifact. If the full catalog is unavailable, a complete path form can retain both collection keys:
 
 ```text
-dag://?container=container&go-module=sdk/go&go-test=TestConnect
+dag+container://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect
 ```
 
-Collection selection inserts `get(key: ...)` calls. `get` and the keys are not path segments. The engine enumerates item objects and their children. It also retains the collection object at its own path, without a key for that collection. Thus `go/modules` is a `GoModules` artifact; adding a `Go.modules` key at the same path selects a `GoModule` artifact. `batch` is an explicit path on the collection object, not a child of each item.
+Legacy type-path query selectors remain accepted. They are not columns in the canonical projection.
+
+Collection selection inserts `get(key: ...)` calls. `get` and the keys are not path segments. The engine enumerates item objects and their children. It also retains the collection object at its own path, without a key for that collection. Thus `go/modules` is a `GoModules` artifact; adding a `Go.modules` key at the same path selects a `GoModule` artifact. For legacy modules, `batch` is an explicit path on the collection object, not a child of each item.
 
 #### Artifact identity
 
-Artifact identity is the set of all dimension keys, including the static keys. The type dimension key is the full path, so the path adds no information.
+Source artifact identity includes its type, complete source path, and collection lookup keys. Projected columns use collection types, not source paths.
+
+Different fields can expose the same collection type with the same key. They share the collection column. Other dimensions must distinguish their artifacts; do not split the collection column or silently merge source artifacts.
+
+The current local-root `name` rule is insufficient for `before: Tests` and `after: Tests` when both contain `unit.check`: module, test key, and local name all match. Name-scope options, awaiting a decision:
+
+1. **Use the full field path in `name` (recommended).** Start at the exposed module root. Include ordinary collection field names but omit `get` operations. The names become `before.check` and `after.check`. A package test can have `name=modules.packages.tests.test`. The module root itself is `.`. This replaces the current nearest-item rule.
+2. **Keep the local name and add a field-context column.** Keep `name=check` and add `field=before` or `field=after`. This preserves local names but adds a dimension.
+
+An artifact can also differ from another by an absent collection coordinate. A check on a `Row` collection and a check on its `Cell` can share the public path `rows/check`. The parent has no cell coordinate. The current URI grammar has only positive dimension predicates, so the public-path fallback can select both. Do not present that fallback as a unique address. Without a runtime uniqueness proof, `uri()` now returns an explicit error for this case. The CLI preview does the same before printing output. A child-only selection still works. Adding an absence selector remains separate API work.
 
 #### Projections
 
@@ -336,7 +342,7 @@ For example, a table of docs checks can hide `module=docs`. If another module ha
 
 Use the complete, unfiltered workspace snapshot to choose the pairs. A child collection key can be unique across its parent collections. Do not keep a parent key when the remaining pairs already identify the artifact. If the same child key occurs under two parents, keep another pair that separates them.
 
-Find the smallest set of pairs. Among sets of the same size, prefer collection dimensions, starting with the deepest collection. Then prefer `name`, then `module`. Use dimension identifier order for any remaining tie. This keeps collection context when it is useful and removes it when it is redundant.
+Find the smallest set of pairs. Among sets of the same size, prefer collection dimensions, starting with the deepest collection. Read depth from the parent-to-child coordinate order, never from identifier text. Then prefer `name`, then `module`. Use dimension identifier order for any remaining tie. This keeps collection context when it is useful and removes it when it is redundant.
 
 For example, `dag+check://?golang-test=TestCloseAndReopen` is sufficient when that test names one Check in the full workspace. A package item can use `dag+golang-package://?golang-package=cmd/codegen` when that package key is unique across Go modules.
 
@@ -482,7 +488,7 @@ Verify:
 
 - Collection validation, typed keys, author order, empty subsets, and rejection of unknown or duplicate subset keys.
 - Delta naming and overrides, unchanged selections, chained subsets, and key text conversion.
-- Nested and empty collections, one collection type or value exposed through several dimensions, and one field reused across parent items.
+- Nested and empty collections, one collection type exposed through several fields sharing one column, and directly nested distinct collection types.
 - Short, qualified, and exact names select the same dimension. Name conflicts and filter order do not change the selected dimension.
 - Adding unrelated fields does not change complete addresses. Equal objects at different keys retain distinct addresses.
 - Discovery does not evaluate leaf values or excluded parent items.

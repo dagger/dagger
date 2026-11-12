@@ -42,28 +42,27 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 	}
 	fields := make([]flattening.Field, len(entries))
 	legacySchema := make([]flattening.Artifact, len(entries))
+	addressPaths := make(artifact.Paths, len(entries))
 	for i, e := range entries {
 		if e.LocalPath == nil {
 			return fmt.Errorf("artifact %s needs an explicit LocalPath; use [] for a root", strings.Join(e.Path, "/"))
 		}
 		fields[i] = flattening.Field{Module: e.Module, Type: e.Type, LocalPath: e.LocalPath, Collections: e.Collections}
 		legacySchema[i] = e.Artifact
+		addressPaths[i] = artifact.Path{Module: e.Module, Type: "type:" + e.Type, Key: strings.Join(e.Path, "/")}
+		for _, collection := range e.Collections {
+			addressPaths[i].Dimensions = append(addressPaths[i].Dimensions, collection.Type)
+		}
 	}
 	schema, err := flattening.NewSchema(fields)
 	if err != nil {
 		return err
 	}
-	// Legacy rows supply compatibility selector metadata only.
+	// The legacy plan supplies artifact type selectors only.
 	plan := flattening.New(legacySchema)
-	legacyRows := make([][]flattening.Row, len(entries))
 	coordinates := make([][][]flattening.Coordinate, len(entries))
 	for i, entry := range entries {
 		for _, item := range entry.Items {
-			row, err := plan.Flatten(entry.Artifact, item.Keys...)
-			if err != nil {
-				return err
-			}
-			legacyRows[i] = append(legacyRows[i], row)
 			canonical, err := schema.Coordinates(fields[i], item.Keys...)
 			if err != nil {
 				return err
@@ -81,14 +80,14 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 	addressesIndex := artifact.NewAddressIndex(addressRows, true)
 	definitions := make(artifact.Dimensions, 0)
 	for _, d := range plan.Dimensions() {
-		definitions = append(definitions, (*artifact.Dimension)(d))
-	}
-	for _, d := range flattening.CanonicalDimensions("", nil) {
-		definitions = append(definitions, (*artifact.Dimension)(d))
+		if d.Kind == "TYPE" {
+			definitions = append(definitions, (*artifact.Dimension)(d))
+		}
 	}
 	canonicalDefinitions := make(artifact.Dimensions, 0)
 	for _, definition := range schema.Dimensions() {
 		canonicalDefinitions = append(canonicalDefinitions, (*artifact.Dimension)(definition))
+		definitions = append(definitions, (*artifact.Dimension)(definition))
 	}
 	linkNames := make(map[string]string, len(canonicalDefinitions))
 	for _, definition := range canonicalDefinitions {
@@ -97,10 +96,8 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 	var paths []artifactListPath
 	entryDimensions := make([][]string, len(entries))
 	for i, e := range entries {
-		var parent *flattening.Dimension
 		for _, c := range e.Collections {
-			parent = c.Dimension(e.Module, parent, nil)
-			entryDimensions[i] = append(entryDimensions[i], parent.Identifier)
+			entryDimensions[i] = append(entryDimensions[i], c.Type)
 		}
 		dimensions := []string{}
 		for _, d := range flattening.ArtifactDimensions(e.Module, e.Type, nil) {
@@ -208,12 +205,11 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 		itemRows := []listedArtifact{}
 		if expanded {
 			for j, observed := range e.Items {
-				flat := legacyRows[i][j]
 				row := listedArtifact{ModuleName: e.Module, Path: e.Path, Description: e.Description, CollectionItem: collection != ""}
 				if observed.Description != "" {
 					row.Description = observed.Description
 				}
-				for _, key := range flat.Coordinates {
+				for _, key := range flattening.Coordinates(e.Module, e.Path, e.Type, coordinates[i][j]) {
 					row.DimensionKeys = append(row.DimensionKeys, struct{ Dimension, Key string }{key.Dimension, key.Key})
 				}
 				row.URI = artifactPreviewLink(e, coordinates[i][j], addressesIndex, linkNames)
@@ -231,6 +227,15 @@ func PreviewArtifacts(input io.Reader, output, diagnostics io.Writer, args []str
 		}
 		for _, row := range itemRows {
 			if artifactPreviewMatches(row, filters, index) {
+				if expanded {
+					coordinates := make([]flattening.Coordinate, len(row.Coordinates))
+					for j, coordinate := range row.Coordinates {
+						coordinates[j] = flattening.Coordinate{Dimension: coordinate.Dimension, Key: coordinate.Key}
+					}
+					if _, proven := addressesIndex.Keys(artifact.AddressRow{Type: e.Type, Coordinates: coordinates}); !proven && artifact.PathNeedsAbsentDimension(addressPaths, addressPaths[i]) {
+						return fmt.Errorf("cannot address %s: an absent-dimension selector is required", strings.Join(e.Path, "/"))
+					}
+				}
 				rows = append(rows, row)
 			}
 		}
@@ -360,7 +365,11 @@ func artifactPreviewMatches(row listedArtifact, filters []dagaddress.Pair, index
 			if dimension == flattening.NameDimension && (!filter.HasKey || row.Name == filter.Key) {
 				matched = true
 			}
-			for _, key := range row.DimensionKeys {
+			keys := row.Coordinates
+			if artifact.IsStaticDimension(dimension) && dimension != flattening.NameDimension {
+				keys = row.DimensionKeys
+			}
+			for _, key := range keys {
 				if key.Dimension != dimension {
 					continue
 				}
@@ -390,7 +399,7 @@ func artifactPreviewLink(entry artifactPreviewEntry, coordinates []flattening.Co
 		addr.Path = strings.Join(entry.Path, "/")
 		keys = nil
 		for _, coordinate := range target.Coordinates {
-			if strings.HasPrefix(coordinate.Dimension, "/") {
+			if !artifact.IsStaticDimension(coordinate.Dimension) {
 				keys = append(keys, coordinate)
 			}
 		}
