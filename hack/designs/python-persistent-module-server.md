@@ -26,8 +26,6 @@ Python module calls another, costs 1,417 ms and pays the Python cost twice.
 | Dispatch and result write | 10.8 | step 2 |
 
 Step 2 timed subprocesses, not spans, so the last six rows add up to ~367 ms.
-The item text's ~295 ms start and ~110 ms hand-off overlap; this design uses
-the split above.
 
 A warm process removes the interpreter start, the imports and the telemetry
 setup: about 262 ms per call. Dispatching without an exec removes about 29 ms
@@ -85,15 +83,13 @@ What the exec binds per process, and so what blocks reuse:
   parent decides where dependency loading shows (`session.go:3069-3076`) and
   which host the process reaches (`session.go:4237-4257`).
 - One trace parent and one log target: the call's process span
-  (`core/container_exec.go:2336-2340`, `engine/engineutil/executor_spec.go:1127-1136`),
-  which also receives stdout and stderr since #15117 (`0e6fbb99a3`,
-  `executor_spec.go:1034-1054`).
+  (`core/container_exec.go:2336-2340`), which also receives stdout and stderr
+  since #15117 (`0e6fbb99a3`, `engine/engineutil/executor_spec.go:1034-1054`).
 - One module context: the starting client's own copy of the module
   (`core/schema_module_candidates.go:78-89`).
 
 The exec's proxy serves several clients by a client ID header (`executor_spec.go:1551-1599`),
-but only clients it registers itself, under the exec's fixed parent (`:1609-1615`).
-It serves every request with the exec's fixed parent and module context (`:1431`).
+but only under the exec's fixed parent and module context (`:1431,1609-1615`).
 
 **Compile rerun after a source edit.** The stdlib compile exec in `base()`
 (`python-sdk:runtime/build.dang:140-155`) runs on the base image alone, yet it
@@ -105,8 +101,10 @@ which carries the module's content digest (`:1865-1866`), as the internal
 does so with nesting on, the default from view `v1.0.0-0` (`core/schema/util.go:25`;
 the client declares `engine.Version`, `shared.go:153`). So the execs of
 `base()`, `dependencies()` and `install()` are keyed on the module source. A
-module server needs this same identity. S1's first step confirms it with a
-trace; this design ran none.
+module server needs this same identity. S1 confirmed it with a trace on Python
+SDK `v1.8.0`, which has no compile exec yet (python-sdk#87 is after it): after
+a source edit, the `dependencies()` exec ran again with the same receiver and
+arguments, and only its `moduleContext` changed.
 
 ## 3. Options
 
@@ -116,8 +114,9 @@ The engine half has five parts; options 1 and 2 reuse all but part 5's kill.
    under its own lock, and holds the server's single binding until session
    end. A call never starts the service itself: a second start returns the
    running instance and ignores its IO (`core/services.go:1255-1282`), and the
-   last detach stops it (`:912-956`). The table marks each key Starting or
-   Busy, so the busy decision needs no message to the server.
+   last detach stops it (`:912-956`). The table keeps one busy flag per key,
+   set while the server starts and while it runs a call, so the busy decision
+   needs no message to the server.
 2. **Channel.** The server listens on a loopback port in its own network
    namespace. The engine dials it there with `engineutil.RunInNetNS` on the
    service's container ID, as the port health check does (`core/service.go:910,1087`,
@@ -126,35 +125,34 @@ The engine half has five parts; options 1 and 2 reuse all but part 5's kill.
    is logged on its own span (`core/service.go:817-820,855-863`).
 3. **Per-call client.** The dispatcher registers a fresh client ID under call
    N's entrypoint client. That needs the client's held scope
-   (`client_scope.go:94-103`), which today only its own requests carry, so
-   `WithNestedClientServer` must hand the dispatcher one. Host access comes
-   either from the server's bootstrap attachables, which need the same parents
-   and secret token (`client_scope.go:326-331`), or from the entrypoint
-   client's inert ones (`hostFromParent`, `:274`). `hostFromParent` makes the
-   client's telemetry readable (`:243-245`), so each per-call client keeps a
-   telemetry store (`engine/server/session.go:769-775`).
+   (`client_scope.go:94-103`), which only its own requests carried. Owning the
+   client's transport is the authority: `Server.NestedClientScope` acquires a
+   scope from it, and `WithNestedClientServer` passes that to the dispatcher
+   through the context. The per-call client registers with its own attachables
+   ID and is served with inert attachables, as an in-engine SDK client is, so
+   it reaches no host and keeps no telemetry store; its telemetry still reaches
+   its ancestors.
 4. **Proxy pre-binding.** `nestedClientTransportManager` gains pre-bound client
    IDs, each with its transport, parent and module context.
    `transportForRequest` looks there first, and the handler serves the entry's
    parent and module context in place of the exec's (`executor_spec.go:1426-1431,1505-1599`).
    The dispatcher binds the ID before the call, then unbinds it and closes the
-   transport. The table reaches the manager through a new handle from
-   `setupNestedClient` (`:1307-1452`). #15117 owns this file, so its
-   owner must agree to the change before S1. `setupOTel` stays untouched.
-5. **Output and stop.** The engine writes the call's output frames to the
-   call's process span. A cancelled call kills the server with `Services.Stop`
-   and `kill`, under `context.WithoutCancel`: `Stop` reads the session from its
-   context and gives up when that context ends (`core/services.go:799-831`).
-   Session teardown stops every server (`core/services.go:852`, `session.go:1348`).
+   transport. It reaches the manager through `engineutil.Client.BindNestedClient`,
+   by the service's container ID. `setupOTel` stays untouched.
+5. **Output and stop.** The engine streams the call's output frames to the
+   call's process span and keeps the last 100 KiB of each stream for a
+   failure's error, as an exec error does. A cancelled call kills the server
+   with `Services.StopRunning` and `kill`, under `context.WithoutCancel`, from
+   before the request goes out. Session teardown stops every server
+   (`core/services.go:852`, `session.go:1348`).
 
 **Wire protocol.** S1 and S3 implement exactly this.
 
-1. The server listens on 127.0.0.1:8737 in its own network namespace. The
-   `serve` container's default arguments are `["python", "-m", "dagger.mod",
-   "serve"]`. The container exposes no port, so Services runs no health check.
-   The server listens only after it imports the module and sets up telemetry.
-   The engine dials every ~5 ms until a connect succeeds. A successful connect
-   moves the key from Starting to Idle.
+1. The server listens on 127.0.0.1:8737 in its own network namespace, after it
+   imports the module and sets up telemetry. The `serve` container's default
+   arguments are `["python", "-m", "dagger.mod", "serve"]`; it exposes no port,
+   so Services runs no health check. The engine dials every ~5 ms until a
+   connect succeeds, and the first call uses that connection.
 2. Each call uses one TCP connection. The engine connects, writes one call
    frame, and reads frames until a result frame or a failure frame. The server
    then closes the connection. The server accepts one connection at a time.
@@ -172,7 +170,9 @@ The engine half has five parts; options 1 and 2 reuse all but part 5's kill.
      `/dagger/result.json` today.
    - `X`, server to engine: the call failed. The payload is a UTF-8 message.
      The log and traceback already went out as `E` frames. The engine fails
-     the call as it fails a non-zero exit.
+     the call as it fails a non-zero exit, with exit code 1, since the frame
+     carries no exit status.
+   - An `R` or `X` payload is at most 128 MB, the limit of `File.contents`.
 4. On every API request of a call, the server sends
    `X-Dagger-Client-Metadata: base64(JSON {"client_id": "<clientID>"})`. The
    pre-bound entry supplies the rest of the client metadata. The `serve`
@@ -187,7 +187,7 @@ The options differ in the SDK loop and in what they isolate:
 2. **Fork server.** A single-threaded parent imports once and forks a child per
    call, which sets up telemetry, runs the call and exits.
 3. **Serial server.** One process runs one call at a time. A call that finds
-   the key Starting or Busy runs `call` at once.
+   the key busy runs `call` at once.
 
 | | 1 Concurrent | 2 Fork | 3 Serial |
 |---|---|---|---|
@@ -197,12 +197,10 @@ The options differ in the SDK loop and in what they isolate:
 | Inner self-call A→A | ~90 ms | ~95-135 ms | 374 ms (exec) |
 | First call in a session | ~today | ~today | ~today |
 | Idle memory per module (unmeasured) | 60-100 MB | 60-100 MB parent | 60-100 MB |
-| Production lines, engine + SDK (provisional) | 450-600+ + 350-450 | 450-600+ + 300-400 | 450-600 + 200-250 |
 
 Options 1 and 2 also need per-call cancellation, which the "+" leaves unsized:
 a service stop signals the whole process (`core/service.go:965-1005`), so one
-call needs its own cancel message. Test lines come on top: ~250 for the engine
-and 120-200 for the SDK. A warm call is 374 − 262 − 29 ms plus an unmeasured
+call needs its own cancel message. A warm call is 374 − 262 − 29 ms plus an unmeasured
 ~5 ms per-call cost. Option 2 adds a fork (2-5 ms) and a child telemetry setup
 (0-40 ms). The nested estimate removes about 290 ms twice from 1,417 ms.
 
@@ -226,21 +224,18 @@ session memoizes dependency loads (`_session.py:407-430`).
 - 3: at call start, the serve loop sets the JSON client-metadata header the
   proxy reads (`executor_spec.go:1558-1567`). At call end, it closes the default
   session, which drops the memo and the connection (`_session.py:380-386`), but
-  keeps the `Session` object that user globals may hold.
-- 1: the binding must live in a context variable per task.
-- 2: each child binds its session after the fork.
+  keeps the `Session` object that user globals may hold. Option 1 needs the
+  binding in a context variable per task; option 2 binds it in each child.
 
 **Concurrency, nested calls, cancellation.**
 
 - 1: tasks share one event loop and sync functions run in worker threads
-  (`python-sdk:sdk/src/dagger/mod/_utils.py:27`). A stuck sync function stops
-  only when the process dies, with every call in it.
-- 2: concurrent and nested calls get their own child. Killing only a
-  cancelled child needs a per-call cancel message (section 3).
+  (`python-sdk:sdk/src/dagger/mod/_utils.py:27`); a stuck one stops only with
+  the process. 2: each call gets a child, killed alone only by a cancel message.
 - 3: a one-at-a-time server deadlocks if a call waits for it while it waits
-  for that call, as a self-call does. The table never waits: Starting or Busy
-  sends the call to `call`. Cancelling kills the server; the next call starts
-  a new one.
+  for that call, as a self-call does. The table never waits: a busy key sends
+  the call to `call`. Cancelling kills the server; the next call starts a new
+  one.
 
 **Process identity and cache.**
 
@@ -255,13 +250,20 @@ session memoizes dependency loads (`_session.py:407-430`).
 - Loss: after a pruned result, a served default-cached or per-session call
   runs the function again where today the exec answers from cache
   (`entrypoint.go:198-209`). Never and TTL calls lose nothing (`:210-215`).
+- A module installed in the workspace and also loaded as a dependency gets two
+  servers per session. The workspace loads its modules with a name override
+  (`session_workspaces.go:2349`), which enters `AsModuleVariantDigest` and so
+  the implementation-scoped key; a dependency loads without one. Today's exec
+  cache splits the same way. A later fix belongs in `AsModuleVariantDigest`,
+  not in the table.
 
 **Starting client.** The server's own client is a child of the client that
 starts it (`core/service.go:840-852`), and requests without a pre-bound ID go
-to it, so the serve loop makes none outside a call. The first call's
-entrypoint client closes after the call (`shared.go:60`), so the starting
-client must outlive the server; the session's main client is the candidate.
-The service leases its starter's scope (`core/services.go:1293-1303`).
+to it, so the serve loop makes none outside a call. The server starts under
+the client that calls the function, not under its entrypoint client, which
+closes after the call (`shared.go:60`). The service leases its starter's scope
+(`core/services.go:1293-1303`), so a dependent module's process client still
+holds the server after its own call ends.
 
 **Telemetry and stdout per call, after #15117.**
 
@@ -272,24 +274,25 @@ The service leases its starter's scope (`core/services.go:1293-1303`).
   root store should get them (S4 checks); a nested caller's own store does not.
 - 2 and 3: the SDK points file descriptors 1 and 2 at a pipe per call, which
   also captures subprocesses, and sends the output as frames. The engine
-  writes them to the call's process span, the span #15117 chose.
-- 1: only `sys.stdout` and `sys.stderr` can follow a context variable.
+  writes them to the call's process span, the span #15117 chose. In option 1,
+  only `sys.stdout` and `sys.stderr` can follow a context variable.
 - Output outside any call lands on the server's span, under the first call.
 
 **Fallback to today's exec.** An engine that does not know `serve` keeps
 calling `call` (unverified on `v1.0.0-beta.25`), as with the optional
 `prebuild` and `runtimeImage` members (`entrypoint.go:231-249,450-471`). A
-Starting or Busy key, a failed start, or a request that never reached the
-server (dial or send failed) sends that call to `call`. The table watches
-`RunningService.Wait` (`core/service.go:1085`) and forgets a key whose server
-exited, as Services drops it (`core/services.go:1189-1200`). A server that dies
-during a call fails that call, as a failed exec does, with no retry.
+busy key, a failed start, or a request that never reached the server (bind,
+dial or send failed) sends that call to `call`, with a warning in the engine
+log. The table watches `RunningService.Wait` (`core/service.go:1085`) and
+forgets a key whose server exited, as Services drops it
+(`core/services.go:1189-1200`). A server that dies during a call fails that
+call, as a failed exec does, with no retry.
 
 ## 5. Recommendation
 
 Build the smallest prototype of option 3: one warm server per session and
 module, opt-in through a `serve` entrypoint member, held by Services through
-the server table. A Starting or Busy key sends the call to `call` at once.
+the server table. A busy key sends the call to `call` at once.
 Servers stop at session end. A cancelled call kills its server.
 
 - It removes about 285 of the 340 ms between Python and Go for each
@@ -306,7 +309,7 @@ sequenceDiagram
     participant S as python -m dagger.mod serve
     F->>E: runtime.Call(fnCall)
     E->>T: acquire (session, scoped module, serve digest)
-    alt Starting or Busy
+    alt busy
         T-->>E: busy
         E->>E: call member, today's exec
     else absent or Idle
@@ -326,15 +329,11 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Starting: first call of the key in the session
-    Starting --> Idle: channel answers
-    Starting --> [*]: start error, the call falls back
-    Idle --> Busy: call dispatched
-    Busy --> Idle: result or error sent
-    Busy --> Killed: cancel or crash
-    Killed --> [*]: next call starts a new server
+    [*] --> Busy: first call of the key starts the server
+    Busy --> Idle: result or failure frame, or a running server's failed bind
+    Busy --> [*]: start error, cancel, crash or session end
+    Idle --> Busy: next call
     Idle --> [*]: session end, or exit (key forgotten)
-    Busy --> [*]: session end
 ```
 
 What this leaves out, until S4 has numbers:
@@ -345,54 +344,26 @@ What this leaves out, until S4 has numbers:
 - Span delivery to a nested caller's own store, which needs `setupOTel`
   (#15117's code) or spans sent over the channel.
 - Concurrent calls and self-calls of one module, which keep today's cost,
-  per-call filesystem and memory isolation, and reuse across sessions.
-- The ~65 ms of entrypoint plumbing, which keeps a warm Python call above Go.
+  per-call isolation, reuse across sessions, and the ~65 ms of plumbing.
 
-## 6. Decisions for Yves
+## 6. Decisions
 
-1. **(a)** Which option should the prototype build? **Recommendation:** option
-   3. It keeps most of the gain with the smallest SDK loop.
-   - ( ) Option 1: concurrent server
-   - ( ) Option 2: fork server
-   - ( ) Option 3: serial server with busy fallback
-2. **(b)** Should serving be opt-in per module or the default for every Python
-   module? **Recommendation:** opt-in until S4, because shared state is new.
-   - ( ) Opt-in per module: the SDK emits `serve` only when the module asks
-   - ( ) Default: the SDK emits `serve` for every Python module
-3. **(c)** Which isolation contract do served calls get? **Recommendation:**
-   documented shared state; a fresh filesystem per call rules out options 1 and 3.
-   - ( ) Fresh filesystem and process state per call, as today
-   - ( ) Documented shared state within one session and module
-   - ( ) Shared state, but one server per calling module, so callers never share
-4. **(d)** Where does the server process live? **Recommendation:** Services,
-   through the server table, as the MCP client does (`core/mcpclient.go:109-139`).
-   - ( ) Services-backed process with a server table
-   - ( ) New engine registry beside the entrypoint members
-5. **(e)** Which idle and memory limits apply? **Recommendation:** session end
-   only in the prototype; S4's RSS numbers set the rest.
-   - ( ) Session end only
-   - ( ) Session end, or 5 minutes idle
-   - ( ) Session end, 5 minutes idle, and at most 8 servers per session
+Yves chose option 3, opt-in per module through a `serve` member, documented
+shared state within one session and module, a Services-backed process with a
+server table, and session end as the only limit.
 
 ## 7. Prototype slices
 
-Each slice waits for Yves's approval of this design. S1 also waits for the
-#15117 owner's agreement on the proxy change. No slice touches
-`core/schema/workspace_sdk_generator.go`. S1 includes the plan's S2.
+No slice touches `core/schema/workspace_sdk_generator.go`.
 
-**S1, dagger/dagger: the engine half.** 450-600 production lines and about
-250 test lines, provisional.
+**S1, dagger/dagger: the engine half.** It traces the compile rerun (section
+2), reads an optional `serve` member in `entrypointRuntime.Call`, a container
+whose default arguments start the server, and builds the five parts of
+section 3. A Go fixture server in `core/integration/testdata/module-server`
+speaks the protocol, so S1 does not wait for S3.
 
-1. Confirm the compile-rerun mechanism with one trace: the compile exec's
-   `moduleContext` argument changes after a source edit.
-2. Read an optional `serve` member, as `evalEntrypointMember` reads `prebuild`
-   (`entrypoint.go:288-384`): a container whose default arguments start the server.
-3. Build the five parts of section 3.
-4. Test with a Go fixture server in `core/integration/testdata` that speaks
-   the protocol, so S1 does not wait for S3.
-
-**S3, dagger/python-sdk: the serve loop.** 200-250 production lines and
-120-200 test lines, provisional. `python -m dagger.mod serve` imports once and
+**S3, dagger/python-sdk: the serve loop.** About 213 net production lines, 204
+test lines and 20 README lines. `python -m dagger.mod serve` imports once and
 listens on the loopback port. Per call, it binds the session as in section 4,
 sets the OTel context, points file descriptors 1 and 2 at framed pipes, and
 restores `os.environ` and the working directory. `ClientSession` builds its
@@ -401,12 +372,10 @@ adds a header hook for the client-metadata header. `MAIN_TEMPLATE` gains the
 `serve` member for opted-in modules, with released API only. First check: a
 `v1.0.0-beta.25` engine loads such a module and still uses `call`.
 
-**S4: measurement**, as in section 8.
-
-Checks use one dedicated engine built from the branch (GC cap about 20 GB), at
-most 2 runs per slice. S1: `go test ./core/sdk/dang/v2 ./engine/server
-./engine/engineutil` on the new tests, then `engine-dev test --pkg ./core/integration` with
-`--run='TestModule/(<new serve tests>|TestModuleEntrypoint(ProcessServesModule|StdoutLogs|CallCachePolicies|SpanTree)|TestModuleFunctionProcessHasNoModule)'`.
+**S4: measurement**, as in section 8. Checks use one dedicated engine built
+from the branch (GC cap about 20 GB), at most 2 runs per slice. S1: its unit
+tests in `./core/sdk/dang/v2 ./engine/server ./engine/engineutil`, then
+`engine-dev test --pkg ./core/integration --run='^TestModule$/^(TestModuleEntrypoint(Serve|ProcessServesModule|StdoutLogs|CallCachePolicies|SpanTree)|TestModuleFunctionProcessHasNoModule)$'`.
 S3: `uv run pytest sdk/tests/mod`, then the e2e `runtime-call-check`.
 
 ## 8. Measurement plan
@@ -426,9 +395,6 @@ S3: `uv run pytest sdk/tests/mod`, then the e2e `runtime-call-check`.
 
 ## 9. Unverified claims
 
-- Numbers: the ~65 ms split, the ~29 ms exec setup, the per-call cost, option
-  2's fork and child telemetry cost, the idle RSS, the Go fixture's call path.
-- Engine: a scope for the entrypoint client outside its requests, children of
-  a closed client, the per-call client's host access, and starting servers
-  under the session's main client.
-- `v1.0.0-beta.25` ignoring `serve`, and the compile rerun until S1's trace.
+- Numbers: the ~65 ms split, the ~29 ms exec setup, the per-call cost, and
+  option 2's fork and child telemetry cost.
+- `v1.0.0-beta.25` ignoring `serve`; the compile exec's rerun (not released).
