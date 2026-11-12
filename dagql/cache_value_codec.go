@@ -92,6 +92,32 @@ func walkTransferCalls(frame *ResultCall, visit func(*ResultCall) error, refVisi
 
 // walkTransferPayloads visits declared envelopes, never arbitrary JSON fields.
 func walkTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, links []PersistedSnapshotRefLink, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
+	return walkMemoTransferPayloads(env, frame, links, nil, visit)
+}
+
+// payloadMemos are one record's payload decodes, by payload path, shared by
+// the steps of a pass that each walk the record's payloads and that visits
+// the record's references itself (PersistedPayloadVisit.ReferencesVisitedApart).
+type payloadMemos map[string]*PayloadMemo
+
+func (memos payloadMemos) visit(v PersistedPayloadVisit) PersistedPayloadVisit {
+	if memos == nil {
+		return v
+	}
+	key := v.Path.String()
+	memo := memos[key]
+	if memo == nil {
+		memo = &PayloadMemo{}
+		memos[key] = memo
+	}
+	v.Memo = memo
+	v.ReferencesVisitedApart = true
+	return v
+}
+
+// walkMemoTransferPayloads is walkTransferPayloads with each payload's visit
+// carrying its memo from memos.
+func walkMemoTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, links []PersistedSnapshotRefLink, memos payloadMemos, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
 	scopes, err := partitionSnapshotLinks(*env, links)
 	if err != nil {
 		return err
@@ -101,20 +127,20 @@ func walkTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, links
 	if err != nil {
 		return err
 	}
-	if err := walkScopedTransferPayloads(&next, frame, scopes, nil, visit); err != nil {
+	if err := walkScopedTransferPayloads(&next, frame, scopes, nil, memos, visit); err != nil {
 		return err
 	}
 	*env = next
 	return nil
 }
-func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
+func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall, scopes *snapshotLinkScopes, path PersistedRefPath, memos payloadMemos, visit func(PersistedObjectFamily, PersistedPayloadVisit) (json.RawMessage, error)) error {
 	switch env.Kind {
 	case persistedResultKindObject:
 		family, ok := PersistedObjectFamilyByName(env.ObjectCodec)
 		if !ok {
 			return fmt.Errorf("unknown object codec %q at %s", env.ObjectCodec, path)
 		}
-		raw, err := visit(family, PersistedPayloadVisit{Version: env.Version, Call: frame, Path: path, Payload: env.ObjectJSON, SnapshotLinks: scopes.project(path)})
+		raw, err := visit(family, memos.visit(PersistedPayloadVisit{Version: env.Version, Call: frame, Path: path, Payload: env.ObjectJSON, SnapshotLinks: scopes.project(path)}))
 		if err != nil {
 			return fmt.Errorf("codec %s at %s: %w", family.Name, path, err)
 		}
@@ -125,7 +151,7 @@ func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall,
 			if frame != nil {
 				childCall = persistedListItemCall(frame, i+1)
 			}
-			if err := walkScopedTransferPayloads(&env.Items[i], childCall, scopes, path.Field("items").Index(i), visit); err != nil {
+			if err := walkScopedTransferPayloads(&env.Items[i], childCall, scopes, path.Field("items").Index(i), memos, visit); err != nil {
 				return err
 			}
 		}
@@ -134,8 +160,12 @@ func walkScopedTransferPayloads(env *PersistedResultEnvelope, frame *ResultCall,
 }
 
 func mapTransferredOutputs(rec PersistedRecord) ([]CapturedCodecOutput, error) {
+	return mapMemoTransferredOutputs(rec, nil)
+}
+
+func mapMemoTransferredOutputs(rec PersistedRecord, memos payloadMemos) ([]CapturedCodecOutput, error) {
 	var outputs []CapturedCodecOutput
-	err := walkTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	err := walkMemoTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if family.Transfer != nil {
 			mapped, err := family.Transfer.MapSnapshotParts(v)
 			if err != nil {
@@ -197,10 +227,17 @@ func validateTransferRecord(rec PersistedRecord, deps []uint64) error {
 // the references outside its offers, and returns its direct dependencies, for
 // a caller that visits those references itself.
 func validateTransferRecordContent(rec PersistedRecord, deps []uint64) (map[uint64]bool, error) {
+	return validateMemoTransferRecordContent(rec, deps, nil)
+}
+
+// validateMemoTransferRecordContent is validateTransferRecordContent for a
+// pass that shares payload decodes in memos and visits the record's
+// references itself.
+func validateMemoTransferRecordContent(rec PersistedRecord, deps []uint64, memos payloadMemos) (map[uint64]bool, error) {
 	if err := validateTransferRecordHeader(rec); err != nil {
 		return nil, err
 	}
-	if err := validateTransferPayloads(rec); err != nil {
+	if err := validateMemoTransferPayloads(rec, memos); err != nil {
 		return nil, err
 	}
 	return validateTransferDependencies(rec, deps)
@@ -209,7 +246,11 @@ func validateTransferRecordContent(rec PersistedRecord, deps []uint64) (map[uint
 // validateTransferPayloads checks each payload of a transferred record by
 // its codec.
 func validateTransferPayloads(rec PersistedRecord) error {
-	return walkTransferPayloads(&rec.Envelope, rec.Call, nil, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+	return validateMemoTransferPayloads(rec, nil)
+}
+
+func validateMemoTransferPayloads(rec PersistedRecord, memos payloadMemos) error {
+	return walkMemoTransferPayloads(&rec.Envelope, rec.Call, nil, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if family.Transfer != nil {
 			if err := family.Transfer.ValidateForeign(v); err != nil {
 				return nil, err

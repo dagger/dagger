@@ -171,3 +171,26 @@ func TestLazyOperationTransferState(t *testing.T) {
 		require.Error(t, foreignFamilyCodec("Directory").ValidateForeign(dagql.PersistedPayloadVisit{Payload: json.RawMessage(invalid)}))
 	}
 }
+
+// A visit's memo carries the codec's decode between the steps that read the
+// same payload: validation decodes it once and keeps the decode, and part
+// mapping reuses it rather than decoding the bytes again.
+func TestForeignCodecReusesItsMemo(t *testing.T) {
+	codec := foreignFamilyCodec("Directory")
+	native := dagql.PersistedPayloadVisit{Payload: json.RawMessage(`{"form":"snapshot","dir":"/src","platform":"linux/amd64"}`)}
+	foreign, err := codec.NormalizeForeign(native)
+	require.NoError(t, err)
+	memo := &dagql.PayloadMemo{}
+	v := dagql.PersistedPayloadVisit{Payload: foreign.JSON, Memo: memo}
+	require.NoError(t, codec.ValidateForeign(v))
+	decoded, ok := memo.Value.(*partPayload)
+	require.True(t, ok, "validation keeps its decode in the memo")
+	require.Equal(t, "/src", decoded.directory.Dir)
+
+	// Bytes the memo doesn't describe show which one part mapping read.
+	v.Payload = json.RawMessage(`{"form":"transfer_pending","dir":"/other","platform":"linux/amd64","valueKnown":true}`)
+	outputs, err := codec.MapSnapshotParts(v)
+	require.NoError(t, err)
+	require.Len(t, outputs, 1)
+	require.Equal(t, "/src", outputs[0].Value.Path, "part mapping reused the memo's decode")
+}

@@ -110,11 +110,22 @@ func (transferTestCodec) VisitPersistedReferences(v PersistedPayloadVisit, visit
 func (transferTestCodec) NormalizeForeign(v PersistedPayloadVisit) (ForeignPayload, error) {
 	return ForeignPayload{JSON: slices.Clone(v.Payload)}, nil
 }
+
+// transferTestCodecSteps, when set, sees each payload visit the codec's
+// ValidateForeign and MapSnapshotParts get, by step.
+var transferTestCodecSteps atomic.Pointer[func(step string, v PersistedPayloadVisit)]
+
 func (transferTestCodec) ValidateForeign(v PersistedPayloadVisit) error {
+	if steps := transferTestCodecSteps.Load(); steps != nil {
+		(*steps)("validate", v)
+	}
 	_, err := (transferTestCodec{}).VisitPersistedReferences(v, func(*PersistedRef) error { return nil })
 	return err
 }
 func (transferTestCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, error) {
+	if steps := transferTestCodecSteps.Load(); steps != nil {
+		(*steps)("map", v)
+	}
 	return []CapturedCodecOutput{{Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, State: "pending", Value: &SnapshotValue{Kind: "directory"}}}, nil
 }
 func init() {
