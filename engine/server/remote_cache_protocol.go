@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"runtime"
 	"slices"
 	"strconv"
 	"time"
@@ -48,6 +49,31 @@ var exportRefConfig = config.RefConfig{
 		Workers: exportLayerWorkers,
 		Gate:    semaphore.NewWeighted(max(exportLayerWorkers, remotecache.ExportsInFlight)),
 	},
+}
+
+// idleExportRefConfig is exportRefConfig for an export the service asks for
+// while no session is live, as an engine's last exports after its last
+// session ends: nothing else runs then, and the engine stops 20 s after that
+// session, so its layers build on all its cores, one each at once, through a
+// gate of their own. On a ten-check stack a stopping engine's last export
+// built 113 layers, 23.2 s of diffs, 4 at once in 8.5 s; on the simulator a
+// stopping engine used 3 to 4 of its 16 cores while its last export built.
+// The blobs are the same: only how many build at once differs.
+var idleExportRefConfig = config.RefConfig{
+	Compression: exportRefConfig.Compression,
+	Builds: config.LayerBuilds{
+		Workers: runtime.NumCPU(),
+		Gate:    semaphore.NewWeighted(int64(runtime.NumCPU())),
+	},
+}
+
+// exportConfig is how an export asked for now builds its layers:
+// idleExportRefConfig while no session is live, exportRefConfig otherwise.
+func (a *RemoteCacheAdapter) exportConfig() config.RefConfig {
+	if a.ledger != nil && a.ledger.idle() {
+		return idleExportRefConfig
+	}
+	return exportRefConfig
 }
 
 // CacheIdentity returns the engine cache's identity and generation, which the
@@ -153,7 +179,7 @@ func (a *RemoteCacheAdapter) Export(ctx context.Context, req protocol.Export, kn
 	captureCtx, captureOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.capture", wcprof.OpOpts{})
 	captured := false
 	var chainsReleased time.Time
-	err := a.cache.WithExportedValues(captureCtx, selection, exportRefConfig, func(captureCtx context.Context, values *dagql.ExportedValues) error {
+	err := a.cache.WithExportedValues(captureCtx, selection, a.exportConfig(), func(captureCtx context.Context, values *dagql.ExportedValues) error {
 		captured = true
 		leftOut(values.LeftOut)
 		carried := make([]uint64, len(values.Bundle.Values))

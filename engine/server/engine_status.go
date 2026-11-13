@@ -211,6 +211,13 @@ func (l *sessionLedger) sessionEnded(sessionID, clientID, claimID string, marker
 	l.ended[key] = l.clock()
 }
 
+// idle reports whether no session is live on the engine.
+func (l *sessionLedger) idle() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.sessions == 0
+}
+
 // attachRemote gives the ledger the remote cache's settle state, for an
 // integration whose exports in progress exports counts, and that pause and
 // resume give up and take up again. The ledger calls all three with its lock
