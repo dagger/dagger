@@ -30,6 +30,12 @@ import (
 //     prompt), and it gives focus back once answered or left with esc. The
 //     tool call row itself keeps its usual keys, so enter there still zooms
 //     rather than answering.
+//   - Once on an approval, its keys answer it straight away: there is no
+//     second "enter the prompt" step. Stepping onto it is already deliberate
+//     (it is its own stop, visibly focused), the default answer is Deny, and
+//     granting takes a choice and a confirm (or y/s/f). Nav keys that mean
+//     something else on a row (h/l, enter, n) steer the approval instead;
+//     j/k and esc still leave it.
 //   - The agent it blocks is cued on the roster, so the user knows there is
 //     something to navigate to.
 //
@@ -164,13 +170,14 @@ func (fe *frontendPretty) finishApproval(a *pendingApproval, decision prompt.App
 // else to the row it sits under.
 func (fe *frontendPretty) restoreApprovalFocus(a *pendingApproval) {
 	a.armed = false
+	if a.followOutput {
+		// The jump only borrowed the cursor: resume following output, or the
+		// agent's next lines would be cropped below the approval's row.
+		a.followOutput = false
+		fe.goEnd()
+	}
 	if a.returnToInput && fe.textInput != nil {
 		a.returnToInput = false
-		if a.followOutput {
-			// The jump only borrowed the cursor: resume following output,
-			// or the agent's next lines would be cropped below it.
-			fe.goEnd()
-		}
 		fe.enterInsertMode()
 		return
 	}
@@ -384,10 +391,12 @@ func (fe *frontendPretty) disarmApprovals(cursor dagui.SpanID, includeFloating b
 			if a.anchor != cursor {
 				a.armed = false
 				a.returnToInput = false
+				a.followOutput = false
 			}
 		} else if includeFloating {
 			a.armed = false
 			a.returnToInput = false
+			a.followOutput = false
 		}
 	}
 }
@@ -450,15 +459,14 @@ func (fe *frontendPretty) stepApproval(delta int) bool {
 // focusApproval puts the cursor on an approval and gives it keyboard focus.
 // fromInput records that the user came from the prompt, to return there.
 func (fe *frontendPretty) focusApproval(a *pendingApproval, fromInput bool) {
-	followOutput := fromInput && fe.autoFocus
 	fe.autoFocus = false
 	for _, other := range fe.approvals {
 		other.armed = false
 		other.returnToInput = false
+		other.followOutput = false
 	}
 	a.armed = true
 	a.returnToInput = fromInput
-	a.followOutput = followOutput
 	if a.anchor.IsValid() {
 		if row := fe.rows.BySpan[a.anchor]; row != nil {
 			fe.focus(row)
@@ -504,19 +512,33 @@ func (fe *frontendPretty) jumpToApproval() bool {
 			next = fe.approvals[(i+1)%len(fe.approvals)]
 		}
 		// Moving between approvals keeps the original way back.
-		if cur.returnToInput {
-			fromInput, followOutput = true, cur.followOutput
-		}
+		fromInput = fromInput || cur.returnToInput
+		followOutput = followOutput || cur.followOutput
 	}
-	if !next.anchor.IsValid() && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
-		// The rows may be zoomed away from the requesting call: unzoom to
-		// give it a row to sit under.
+	if !next.anchor.IsValid() && fe.zoomedAwayFrom(next) {
+		// The rows are zoomed away from the requesting call: unzoom to give
+		// it a row to sit under. Zoomed into its own call, it already shows
+		// in the zoomed view, so the user's view is kept.
 		fe.ZoomedSpan = fe.db.PrimarySpan
 		fe.renderVersion++
 		fe.recalculateViewLocked()
 	}
 	fe.focusApproval(next, fromInput)
-	next.followOutput = fromInput && followOutput
+	next.followOutput = followOutput
+	return true
+}
+
+// zoomedAwayFrom reports whether the view is zoomed into a subtree that does
+// not contain the approval's requesting call.
+func (fe *frontendPretty) zoomedAwayFrom(a *pendingApproval) bool {
+	if !fe.ZoomedSpan.IsValid() || fe.ZoomedSpan == fe.db.PrimarySpan {
+		return false
+	}
+	for s := fe.approvalSpan(a.req); s != nil; s = s.ParentSpan {
+		if s.ID == fe.ZoomedSpan {
+			return false
+		}
+	}
 	return true
 }
 
@@ -685,11 +707,9 @@ func (fe *frontendPretty) approvalLines(a *pendingApproval, focused bool, width 
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
 	req := a.req
 
-	// Everything shown is the engine's own display text, but it can carry
-	// remote URLs and refs: strip escape sequences so none reach the terminal.
-	clean := func(s string) string {
-		return strings.TrimSpace(ansi.Strip(s))
-	}
+	// Every field arrives as literal display text the engine already escaped
+	// (prompt.ApprovalRequest), so it renders as-is: escaping or stripping it
+	// again would mangle what the engine chose to show.
 
 	accent := termenv.ANSIYellow
 	if req.GetDanger() {
@@ -706,14 +726,14 @@ func (fe *frontendPretty) approvalLines(a *pendingApproval, focused bool, width 
 
 	// Who is asking.
 	header := out.String(IconApproval+" approval needed").Foreground(accent).Bold().String()
-	if who := approvalRequester(req, clean); who != "" {
+	if who := approvalRequester(req); who != "" {
 		header += out.String(" · " + who).Faint().String()
 	}
 	add(header)
 
 	// What for. The question is literal text; a destructive one carries its
 	// danger in red, the way the yes/no fallback flags a force-push.
-	question := clean(req.GetPrompt())
+	question := req.GetPrompt()
 	style := func(s string) string {
 		return out.String(s).Foreground(termenv.ANSIYellow).Bold().String()
 	}
@@ -737,7 +757,7 @@ func (fe *frontendPretty) approvalLines(a *pendingApproval, focused bool, width 
 	default:
 		add(style(question))
 	}
-	if subject := clean(req.GetSubject()); subject != "" && !strings.Contains(question, subject) {
+	if subject := req.GetSubject(); subject != "" && !strings.Contains(question, subject) {
 		add(out.String("subject: ").Faint().String() + subject)
 	}
 
@@ -784,25 +804,27 @@ func (fe *frontendPretty) approvalUnfocusedHint(a *pendingApproval) string {
 	return "press " + jump + " to answer"
 }
 
-// approvalRequester renders who is asking: agent, module and function.
-func approvalRequester(req *prompt.ApprovalRequest, clean func(string) string) string {
+// approvalRequester renders who is asking: agent, module and function. The
+// fields arrive already escaped, and agent_handle (the engine's raw id) is
+// only matched on, never shown.
+func approvalRequester(req *prompt.ApprovalRequest) string {
 	r := req.GetRequester()
 	if r == nil {
 		return ""
 	}
 	var parts []string
-	if name := clean(r.GetAgentName()); name != "" {
+	if name := r.GetAgentName(); name != "" {
 		parts = append(parts, "agent "+name)
 	}
-	if mod := clean(r.GetModule()); mod != "" {
-		if ref := clean(r.GetModuleRef()); ref != "" && ref != mod {
+	if mod := r.GetModule(); mod != "" {
+		if ref := r.GetModuleRef(); ref != "" && ref != mod {
 			mod += " (" + ref + ")"
 		}
 		parts = append(parts, "module "+mod)
-	} else if ref := clean(r.GetModuleRef()); ref != "" {
+	} else if ref := r.GetModuleRef(); ref != "" {
 		parts = append(parts, "module "+ref)
 	}
-	if fn := clean(r.GetFunction()); fn != "" {
+	if fn := r.GetFunction(); fn != "" {
 		parts = append(parts, fn)
 	}
 	return strings.Join(parts, " · ")

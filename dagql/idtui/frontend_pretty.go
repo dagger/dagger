@@ -6363,8 +6363,10 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
 	}
-	// An approval holds focus only while the cursor is on its row.
-	fe.disarmApprovals(newSpan, false)
+	// An approval holds focus only while the cursor is on it: one under
+	// another row loses it, and so does a floating one once the cursor moves
+	// at all (a search jump, say).
+	fe.disarmApprovals(newSpan, oldSpan != newSpan)
 	if moveKeyboard {
 		fe.focusNavigationTarget()
 	}
