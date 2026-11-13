@@ -47,6 +47,12 @@ type PersistedResultEnvelope struct {
 	// carries it: restore takes it back onto the entry, and no record sent
 	// to another cache carries it.
 	PersistDeclined bool `json:"persistDeclined,omitempty"`
+	// BoundSession is the handle of the session the entry's value is bound
+	// to (sharedResult.boundSession). Restore puts it back on the entry, and
+	// any record of the entry carries it, so that no later session is served
+	// the value, after a restart or in a cache a record reaches. A transfer
+	// leaves bound values out (holdTransferClosure).
+	BoundSession SessionResourceHandle `json:"boundSession,omitempty"`
 	// StoredParts are a blob-backed cache's stored parts of the value, which
 	// only its saved envelope carries: in memory they stay on the entry, so
 	// no record sent to an engine carries them.

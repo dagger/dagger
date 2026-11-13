@@ -553,7 +553,7 @@ func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, hel
 			deps[sharedResultID(prep.firstID+dep-1)] = struct{}{}
 		}
 		prep.records[id] = rec
-		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle}
+		res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, isObject: rec.Envelope.Kind == persistedResultKindObject, persistedEnvelope: &rec.Envelope, deps: deps, expiresAtUnix: row.ExpiresAtUnix, sessionResourceHandle: rec.Envelope.SessionResourceHandle, boundSession: rec.Envelope.BoundSession}
 		res.storeResultCall(rec.Call)
 		if !c.blobBacked {
 			// The private offers attach to the sender's holding, as they will
@@ -1724,6 +1724,7 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 	res.storedRecordBytes = row.recordBytes
 	res.expiresAtUnix = row.value.ExpiresAtUnix
 	res.sessionResourceHandle = rec.Envelope.SessionResourceHandle
+	res.boundSession = rec.Envelope.BoundSession
 	res.description = row.plan.row.description
 	res.recordType = row.plan.row.recordType
 	res.storeResultCall(rec.Call)

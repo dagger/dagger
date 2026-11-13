@@ -151,6 +151,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.persistDeclined = fresh.persistDeclined
 	cur.inlineBorrow = fresh.inlineBorrow
 	cur.sessionResourceHandle = fresh.sessionResourceHandle
+	cur.boundSession = fresh.boundSession
 	cur.requiredSessionResources = fresh.requiredSessionResources
 	cur.expiresAtUnix = 0
 	cur.recordType = fresh.recordType

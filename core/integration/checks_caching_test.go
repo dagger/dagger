@@ -332,6 +332,20 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 		require.Equal(t, "2", runs(ctx, t, remoteRef, "fail"))
 	})
 
+	t.Run("a failing check runs again in a session open beside the one that ran it", func(ctx context.Context, t *testctx.T) {
+		remoteRef := checkCachingRemote(ctx, t, c)
+		// This client joins the test's own session, which stays open.
+		_, err := ctr.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			WithExec([]string{"dagger", "--progress=report", "check", "-W", remoteRef, "fail"}, core.ContainerWithExecOpts{
+				Expect: core.ReturnTypeFailure,
+			}).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeFailure, "check", "-W", remoteRef, "fail")
+		require.Equal(t, "2", runs(ctx, t, remoteRef, "fail"))
+	})
+
 	t.Run("a passing check is reused in the next session", func(ctx context.Context, t *testctx.T) {
 		remoteRef := checkCachingRemote(ctx, t, c)
 		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef, "pass")
@@ -415,5 +429,15 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Len(t, strings.Fields(out), 2, "each session must check the item its producer returned then")
+	})
+
+	// A listing of a producer cached per session belongs to its session,
+	// even while that session is still open: another session checks the
+	// items its own producer returns.
+	t.Run("items of a collection cached per session are not planned from an open session's listing", func(ctx context.Context, t *testctx.T) {
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(c, "session"))
+		// This client joins the test's own session, which stays open.
+		workspaceIdentityExec(ctx, t, ctr, false, "check", "-W", remoteRef)
+		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef)
 	})
 }
