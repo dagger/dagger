@@ -42,7 +42,7 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("ExportDriver", typeDef.withObject("File"))
             .withDescription("Build the export driver the Go SDK's code generation loads packages\nthrough: a GOPACKAGESDRIVER that serves the export data of what they import\nfrom dagger/go's archives, so the go command compiles none of it.")
-            .withSourceMap(sourceMap("main.go", 642, 1))
+            .withSourceMap(sourceMap("main.go", 674, 1))
         )
         .withFunction(
           function("GoEnv", typeDef.withObject("Container"))
@@ -54,13 +54,13 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("GraphqlSchema", typeDef.withObject("File"))
             .withDescription("Introspect the engine API schema, and return it as a graphql schema")
-            .withSourceMap(sourceMap("main.go", 583, 1))
-            .withArg("version", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), sourceMap: sourceMap("main.go", 586, 2))
+            .withSourceMap(sourceMap("main.go", 615, 1))
+            .withArg("version", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), sourceMap: sourceMap("main.go", 618, 2))
         )
         .withFunction(
           function("ImageEntriesAfterPrune", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("The entries an engine image ships can be made again on the state an\nearlier making left after a prune cut part of it, as a later release's\nmaking does: an engine of this build makes them, prunes its cache to half\nits size, least recently used first, and makes them again.")
-            .withSourceMap(sourceMap("main.go", 427, 1))
+            .withSourceMap(sourceMap("main.go", 455, 1))
             .withCheck
         )
         .withFunction(
@@ -70,19 +70,19 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("InstallClient", typeDef.withObject("Container"))
             .withDescription("Configure the given client container so that it can connect to the given engine service")
-            .withSourceMap(sourceMap("main.go", 505, 1))
-            .withArg("client", typeDef.withObject("Container").withOptional(true), description: "The client container to configure", sourceMap: sourceMap("main.go", 509, 2))
-            .withArg("service", typeDef.withObject("Service").withOptional(true), description: "The engine service to bind", sourceMap: sourceMap("main.go", 512, 2))
+            .withSourceMap(sourceMap("main.go", 537, 1))
+            .withArg("client", typeDef.withObject("Container").withOptional(true), description: "The client container to configure", sourceMap: sourceMap("main.go", 541, 2))
+            .withArg("service", typeDef.withObject("Service").withOptional(true), description: "The engine service to bind", sourceMap: sourceMap("main.go", 544, 2))
         )
         .withFunction(
           function("IntrospectionJSON", typeDef.withObject("File"))
             .withDescription("Introspect the engine API schema, and return it as a json-encoded file.\nThis file is used by SDKs to generate clients. It is the engine's answer to\nan introspection query from a client of its own version, computed\nin-process by the introspect tool, so no engine is built or started.")
-            .withSourceMap(sourceMap("main.go", 568, 1))
+            .withSourceMap(sourceMap("main.go", 600, 1))
         )
         .withFunction(
           function("IntrospectionTool", typeDef.withObject("File"))
             .withDescription("Build the `introspect` tool which introspects the engine API")
-            .withSourceMap(sourceMap("main.go", 631, 1))
+            .withSourceMap(sourceMap("main.go", 663, 1))
         )
         .withFunction(
           function("LoadToDocker", typeDef.withObject("LoadedEngine"))
@@ -102,26 +102,26 @@ type Entrypoint implements ModuleEntrypoint {
           function("Publish", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Publish all engine images to a registry")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
-            .withSourceMap(sourceMap("main.go", 690, 1))
-            .withArg("image", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Image target to push to", defaultValue: ("\"ghcr.io/dagger/engine\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 695, 2))
-            .withArg("tag", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "List of tags to use", sourceMap: sourceMap("main.go", 697, 2))
-            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 700, 2))
-            .withArg("registryUsername", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true).withOptional(true), sourceMap: sourceMap("main.go", 703, 2))
-            .withArg("registryPassword", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 705, 2))
+            .withSourceMap(sourceMap("main.go", 722, 1))
+            .withArg("image", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Image target to push to", defaultValue: ("\"ghcr.io/dagger/engine\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 727, 2))
+            .withArg("tag", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "List of tags to use", sourceMap: sourceMap("main.go", 729, 2))
+            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 732, 2))
+            .withArg("registryUsername", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true).withOptional(true), sourceMap: sourceMap("main.go", 735, 2))
+            .withArg("registryPassword", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 737, 2))
         )
         .withFunction(
           function("ReleaseDryRun", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
-            .withSourceMap(sourceMap("main.go", 676, 1))
+            .withSourceMap(sourceMap("main.go", 708, 1))
             .withCheck
         )
         .withFunction(
           function("Service", typeDef.withObject("Service"))
             .withDescription("Create a test engine service")
-            .withSourceMap(sourceMap("main.go", 454, 1))
-            .withArg("name", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 456, 2))
-            .withArg("gpuSupport", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 458, 2))
-            .withArg("sharedCache", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 460, 2))
-            .withArg("metrics", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 462, 2))
+            .withSourceMap(sourceMap("main.go", 486, 1))
+            .withArg("name", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 488, 2))
+            .withArg("gpuSupport", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 490, 2))
+            .withArg("sharedCache", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 492, 2))
+            .withArg("metrics", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 494, 2))
         )
         .withFunction(
           function("Test", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
