@@ -3185,7 +3185,11 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 	}
 	srcHash := "empty"
 	if srcSnapshot != nil {
-		dgst, err := core.GetContentHashFromFile(ctx, srcSnapshot, path.Join(srcRoot, args.SourcePath))
+		srcPath, err := core.DockerfileCompatMountSourcePath(ctx, srcSnapshot, srcRoot, args.SourcePath)
+		if err != nil {
+			return inst, fmt.Errorf("failed to content hash dockerfile bind mount at %q: %w", args.SourcePath, err)
+		}
+		dgst, err := core.GetContentHashFromFile(ctx, srcSnapshot, srcPath)
 		if err != nil {
 			return inst, fmt.Errorf("failed to content hash dockerfile bind mount at %q: %w", args.SourcePath, err)
 		}

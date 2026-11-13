@@ -732,15 +732,14 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"file2.txt"}, entries)
 
-		topLevelDir := d.Directory("..")
-
-		entries, err = topLevelDir.Entries(ctx)
-		require.NoError(t, err)
-		require.Equal(t, []string{"subdir/"}, entries)
-
-		s, err := topLevelDir.File("subdir/file2.txt").Contents(ctx)
+		s, err := d.File("file2.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, s, "content2")
+
+		// The subdirectory is its own root: ".." stays in it.
+		entries, err = d.Directory("..").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"file2.txt"}, entries)
 	})
 
 	t.Run("test changes are restricted to subdir", func(ctx context.Context, t *testctx.T) {
@@ -782,10 +781,11 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"file2.txt"}, entries)
 
-		// make sure ignored.txt didn't show up in the parent dir
+		// The subdirectory is its own root: ".." stays in it, and
+		// ignored.txt from the old directory's parent didn't show up.
 		entries, err = d.Directory("..").Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"new-dir/"}, entries)
+		require.Equal(t, []string{"file2.txt"}, entries)
 	})
 }
 
@@ -1377,9 +1377,10 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*core.Director
 		require.NoError(t, err)
 		require.Contains(t, entries, "new-empty/")
 
+		// The subdirectory is its own root: ".." stays in it.
 		parentEntries, err := resultDir.Directory("..").Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"subdir/"}, parentEntries)
+		require.Equal(t, []string{"new-empty/"}, parentEntries)
 	})
 
 	t.Run("file replaced by empty directory", func(ctx context.Context, t *testctx.T) {

@@ -164,7 +164,7 @@ func EntrypointSources(
 	module := dangModule{name: src.ModuleName, originalName: src.ModuleOriginalName, namer: src.Namer()}
 
 	_, err = dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, true, nil, dagql.ObjectResult[*core.Module]{}, func(ctx context.Context, client graphql.Client) ([]byte, error) {
-		return nil, entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
+		return nil, entryDir.Self().MountConfined(ctx, entryDir, func(dir string) error {
 			ctx, err := ContextWithDangVersion(ctx, src.DangVersion)
 			if err != nil {
 				return err

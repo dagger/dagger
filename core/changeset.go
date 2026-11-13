@@ -1943,7 +1943,13 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 	// the view incoherent (git add sees names it cannot stat). So no Mount is
 	// passed here, unlike Directory.WithChanges, which never reads back
 	// through the mount before committing.
-	copier, err := layercopy.NewCopier(layercopy.Mount{Root: ws.root})
+	// Changes apply within the base directory (see
+	// layercopy.BoundedRootPath).
+	boundary, err := viewBase(ws.root, ws.dir)
+	if err != nil {
+		return err
+	}
+	copier, err := layercopy.NewCopier(layercopy.Mount{Root: ws.root, Boundary: boundary})
 	if err != nil {
 		return err
 	}
@@ -1967,7 +1973,7 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 		},
 	}
 	if content.localDiff != "" {
-		if err := copier.Copy(ctx, layercopy.Mount{Root: content.localDiff}, "/", ws.dir, copyOpts); err != nil {
+		if err := copier.Copy(ctx, layercopy.Mount{Root: content.localDiff}, "/", boundary, copyOpts); err != nil {
 			return fmt.Errorf("copy changed paths: %w", err)
 		}
 	} else if content.diff.Self() != nil {
@@ -1987,7 +1993,7 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 				return copier.Copy(ctx,
 					layercopy.Mount{Root: srcRoot, Mount: srcMnt},
 					diffPath,
-					ws.dir,
+					boundary,
 					copyOpts,
 				)
 			}, mountRefAsReadOnly)
@@ -1997,7 +2003,7 @@ func (ws *gitMergeWorkspace) applyContent(ctx context.Context, content *changese
 		}
 	}
 
-	if err := mkdirChangesetAddedDirs(ctx, copier, ws.dir, paths); err != nil {
+	if err := mkdirChangesetAddedDirs(ctx, copier, boundary, paths); err != nil {
 		return err
 	}
 	return ws.touchAppliedPaths(paths)
@@ -2015,7 +2021,7 @@ func (ws *gitMergeWorkspace) touchAppliedPaths(paths *ChangesetPaths) error {
 			// Directories are untracked by git; only file stat data matters.
 			continue
 		}
-		full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, p))
+		full, err := ResolveInDirWithoutFinalSymlink(ws.root, ws.dir, p)
 		if err != nil {
 			return err
 		}
@@ -2087,7 +2093,7 @@ func (ws *gitMergeWorkspace) restorePrunedDirs(baseDirs []mergeDir, contents ...
 		if _, ok := removed[dir.path]; ok {
 			continue
 		}
-		full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, dir.path))
+		full, err := ResolveInDirWithoutFinalSymlink(ws.root, ws.dir, dir.path)
 		if err != nil {
 			return err
 		}
@@ -2128,7 +2134,7 @@ func (ws *gitMergeWorkspace) verifyMergedPaths(contents ...*changesetContent) er
 			if strings.HasSuffix(p, "/") {
 				continue
 			}
-			full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, p))
+			full, err := ResolveInDirWithoutFinalSymlink(ws.root, ws.dir, p)
 			if err != nil {
 				return err
 			}
@@ -2850,7 +2856,7 @@ func (ws *gitMergeWorkspace) verifyBranchContentLanded(ctx context.Context, cont
 			// re-adds beneath it; only file removals are checkable here.
 			continue
 		}
-		full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, p))
+		full, err := ResolveInDirWithoutFinalSymlink(ws.root, ws.dir, p)
 		if err != nil {
 			return err
 		}
@@ -2883,7 +2889,7 @@ func (ws *gitMergeWorkspace) verifyBranchContentLanded(ctx context.Context, cont
 // bytes for regular files, the target for symlinks, nil if the path does not
 // exist.
 func (ws *gitMergeWorkspace) readWorktreePath(p string) ([]byte, error) {
-	full, err := RootPathWithoutFinalSymlink(ws.root, path.Join(ws.dir, p))
+	full, err := ResolveInDirWithoutFinalSymlink(ws.root, ws.dir, p)
 	if err != nil {
 		return nil, err
 	}

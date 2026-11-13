@@ -9,7 +9,6 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/dagger/dagger/util/fsxutil"
 )
 
@@ -39,11 +38,10 @@ func (dir *Directory) GitIgnoredPaths(ctx context.Context, self dagql.ObjectResu
 		if err != nil {
 			return err
 		}
-		fsys, err := fsutil.NewFS(resolvedDir)
+		matcher, err := fsxutil.NewGitIgnoreMatcherInRoot(resolvedDir)
 		if err != nil {
 			return fmt.Errorf("open directory for gitignore matching: %w", err)
 		}
-		matcher := fsxutil.NewGitIgnoreMatcher(fsys)
 		for _, p := range paths {
 			isDir := strings.HasSuffix(p, "/")
 			match, err := matcher.Matches(strings.TrimSuffix(p, "/"), isDir)

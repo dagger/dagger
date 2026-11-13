@@ -3666,7 +3666,12 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			if !ok || mountedSnapshot == nil {
 				return fmt.Errorf("container directory lazy: missing mounted directory snapshot for %s", mnt.Target)
 			}
-			finalDir := path.Join(mountedDirPath, subpath)
+			// The path resolves within the mounted Directory, as it does
+			// through the Directory itself (see viewSubpath).
+			finalDir, err := viewSubpath(ctx, mountedSnapshot, mountedDirPath, subpath)
+			if err != nil {
+				return RestoreErrPath(err, lazy.Path)
+			}
 			if err := MountRef(ctx, mountedSnapshot, func(root string, _ *mount.Mount) error {
 				resolvedPath, err := containerdfs.RootPath(root, finalDir)
 				if err != nil {
@@ -3812,7 +3817,12 @@ func (lazy *ContainerFileLazy) Evaluate(ctx context.Context, file *File) error {
 			if !ok || mountedSnapshot == nil {
 				return fmt.Errorf("container file lazy: missing mounted directory snapshot for %s", mnt.Target)
 			}
-			finalFile := path.Join(mountedDirPath, subpath)
+			// The path resolves within the mounted Directory, as it does
+			// through the Directory itself (see viewSubpath).
+			finalFile, err := viewSubpath(ctx, mountedSnapshot, mountedDirPath, subpath)
+			if err != nil {
+				return RestoreErrPath(err, lazy.Path)
+			}
 			if err := MountRef(ctx, mountedSnapshot, func(root string, _ *mount.Mount) error {
 				resolvedPath, err := containerdfs.RootPath(root, finalFile)
 				if err != nil {
@@ -5861,7 +5871,7 @@ func (container *Container) Build(
 	}
 	var dockerfileBytes []byte
 	err = MountRef(ctx, dockerfileRef, func(root string, _ *mount.Mount) error {
-		resolvedDockerfilePath, err := containerdfs.RootPath(root, path.Join(dockerfileSelector, dockerfilePath))
+		resolvedDockerfilePath, err := ResolveInDir(root, dockerfileSelector, dockerfilePath)
 		if err != nil {
 			return err
 		}
@@ -6090,7 +6100,7 @@ func (container *Container) WithDirectory(
 		return nil, err
 	}
 	container.recordPartDiagnostic("writerBody", "")
-	if err := dir.withDirectory(ctx, targetParent, mntSubpath, src, filter, resolvedOwner, nil, container.directoryCommitObserver()); err != nil {
+	if err := dir.withDirectory(ctx, targetParent, mntSubpath, src, "", filter, resolvedOwner, nil, container.directoryCommitObserver()); err != nil {
 		return nil, err
 	}
 	container.ImageRef = ""
@@ -6553,6 +6563,15 @@ func dockerfileCompatMountSourcePathHasDirHint(sourcePath string) bool {
 	return strings.HasSuffix(sourcePath, "/") || strings.HasSuffix(sourcePath, "/.")
 }
 
+// DockerfileCompatMountSourcePath returns where sourcePath, the source of a
+// Dockerfile bind mount out of the build context at contextDir of snapshot,
+// is in the snapshot. It resolves within the context, as selecting a file or
+// directory of it does (see viewSubpath), so the mount and its content hash
+// read only the context's files.
+func DockerfileCompatMountSourcePath(ctx context.Context, snapshot bkcache.ImmutableRef, contextDir, sourcePath string) (string, error) {
+	return viewSubpath(ctx, snapshot, contextDir, sourcePath)
+}
+
 //nolint:dupl // symmetric with detachedFileAtSourcePath; sharing hides Directory vs File specifics
 func detachedDirectoryAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Directory], sourcePath string) (*Directory, error) {
 	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
@@ -6582,7 +6601,11 @@ func detachedDirectoryAtSourcePath(ctx context.Context, source dagql.ObjectResul
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}
-	dir.SetPath(path.Join(sourceDirPath, sourcePath))
+	dirPath, err := DockerfileCompatMountSourcePath(ctx, sourceSnapshot, sourceDirPath, sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	dir.SetPath(dirPath)
 	dir.SetSnapshot(reopened)
 	return dir, nil
 }
@@ -6616,7 +6639,11 @@ func detachedFileAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Di
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}
-	file.SetPath(path.Join(sourceDirPath, sourcePath))
+	filePath, err := DockerfileCompatMountSourcePath(ctx, sourceSnapshot, sourceDirPath, sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	file.SetPath(filePath)
 	file.SetSnapshot(reopened)
 	return file, nil
 }

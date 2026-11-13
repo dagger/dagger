@@ -1162,6 +1162,26 @@ func (s *workspaceSchema) resolveRootfsFromDirectory(
 	gitignore bool,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	_ = ws
+	if gitignore && resolvedPath != "." && resolvedPath != "" {
+		// A workspace's .gitignore files apply from its root, as Git applies
+		// them, so copy the subpath out of the root rather than out of a
+		// subdirectory, which applies only its own.
+		rootID, err := root.ID()
+		if err != nil {
+			return inst, fmt.Errorf("workspace directory %q: get filtered source id: %w", resolvedPath, err)
+		}
+		withDirArgs := append(workspaceFilterWithDirectoryArgs(rootID, filter, gitignore),
+			dagql.NamedInput{Name: "sourcePath", Value: dagql.NewString(resolvedPath)})
+		var read dagql.ObjectResult[*core.Directory]
+		err = srv.Select(ctx, srv.Root(), &read,
+			dagql.Selector{Field: "directory"},
+			dagql.Selector{Field: "withDirectory", Args: withDirArgs},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("workspace directory %q (filtering): %w", resolvedPath, err)
+		}
+		return contentKeyedFilteredRead(ctx, resolvedPath, read)
+	}
 	ctxDir := root
 	if resolvedPath != "." && resolvedPath != "" {
 		err := srv.Select(ctx, ctxDir, &ctxDir,

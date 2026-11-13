@@ -354,9 +354,12 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		c := connect(ctx, t)
 		stateKey := "imported-hash-restart-" + rand.Text()
 		dir := t.TempDir()
+		// Each projection is named src, under a different parent: a
+		// directory's name is part of its identity, so only equal files under
+		// the same name are the same input.
 		for _, name := range []string{"before", "warm", "after"} {
-			require.NoError(t, os.Mkdir(filepath.Join(dir, name), 0o755))
-			require.NoError(t, os.WriteFile(filepath.Join(dir, name, "source.txt"), []byte("unchanged source"), 0o644))
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, name, "src"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, name, "src", "source.txt"), []byte("unchanged source"), 0o644))
 		}
 		clientOpts := []dagger.ClientOpt{dagger.WithWorkdir(dir)}
 		// The random output reveals whether the command executed again.
@@ -373,12 +376,12 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.NoError(t, err)
 		hostID, err := hostA.ID(ctx)
 		require.NoError(t, err)
-		beforeSource := hostA.Directory("before")
+		beforeSource := hostA.Directory("before/src")
 		beforeDigest, err := beforeSource.Digest(ctx)
 		require.NoError(t, err)
 		beforeToken, err := action(a, beforeSource)
 		require.NoError(t, err)
-		warmToken, err := action(a, hostA.Directory("warm"))
+		warmToken, err := action(a, hostA.Directory("warm/src"))
 		require.NoError(t, err)
 		require.Equal(t, beforeToken, warmToken, "identical source projections should reuse the executed action")
 		stopEngine(ctx, t, upA, tunnelA, a)
@@ -389,13 +392,13 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		// Read the restored result by its handle. A fresh host import would
 		// recreate the XXH3 records and hide their loss across the restart.
 		restored := core.Ref[*core.Directory](core.NewQuery(b), hostID)
-		originalToken, err := action(b, restored.Directory("before"))
+		originalToken, err := action(b, restored.Directory("before/src"))
 		require.NoError(t, err)
 		require.Equal(t, beforeToken, originalToken, "the original action result must survive restart")
 
 		// This projection was never requested before the restart. Its bytes
 		// match the old source, so both its digest and action should match.
-		afterSource := restored.Directory("after")
+		afterSource := restored.Directory("after/src")
 		afterDigest, err := afterSource.Digest(ctx)
 		require.NoError(t, err)
 		afterToken, err := action(b, afterSource)

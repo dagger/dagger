@@ -5642,14 +5642,15 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		c1 := connect(ctx, t)
 		c2 := connect(ctx, t)
 
-		// write /tmpdir/a/f and /tmpdir/b/f
+		// write /tmpdir/a/src/f and /tmpdir/b/src/f: a directory's name is
+		// part of its identity, so both subdirectories are named src
 		tmpDir := t.TempDir()
-		const subdirA = "a"
-		const subdirB = "b"
+		const subdirA = "a/src"
+		const subdirB = "b/src"
 		const subfileName = "f"
-		require.NoError(t, os.Mkdir(filepath.Join(tmpDir, subdirA), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, subdirA), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirA, subfileName), []byte("1"), 0o644))
-		require.NoError(t, os.Mkdir(filepath.Join(tmpDir, subdirB), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, subdirB), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirB, subfileName), []byte("1"), 0o644))
 
 		runCtrs := func(c *dagger.Client, dir *sdkcore.Directory, subdir string) string {
@@ -5663,28 +5664,28 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		}
 
 		hostDir1 := sdkcore.NewQuery(c1).Host().Directory(tmpDir)
-		// run an exec that has /tmpdir/a/f included
+		// run an exec that has /tmpdir/a/src/f included
 		output1a := runCtrs(c1, hostDir1, subdirA)
-		// run an exec that has /tmpdir/b/f included
+		// run an exec that has /tmpdir/b/src/f included
 		output1b := runCtrs(c1, hostDir1, subdirB)
 
 		// these should be cached execs, since f is the same in both a and b
 		require.Equal(t, output1a, output1b)
 
-		// change /tmpdir/b/f
+		// change /tmpdir/b/src/f
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirB, subfileName), []byte("2"), 0o644))
 
 		hostDir2 := sdkcore.NewQuery(c2).Host().Directory(tmpDir)
-		// run an exec that has /tmpdir/a/f included
+		// run an exec that has /tmpdir/a/src/f included
 		output2a := runCtrs(c2, hostDir2, subdirA)
-		// run an exec that has /tmpdir/b/f included
+		// run an exec that has /tmpdir/b/src/f included
 		output2b := runCtrs(c2, hostDir2, subdirB)
 		// sanity check: those should be different execs, *not* cached because f changed between a and b
 		require.NotEqual(t, output2a, output2b)
 
-		// we only changed /tmpdir/b/f, so the execs that included /tmpdir/a/f should be cached across clients
+		// we only changed /tmpdir/b/src/f, so the execs that included /tmpdir/a/src/f should be cached across clients
 		require.Equal(t, output1a, output2a)
-		// and the execs that included /tmpdir/b/f should not be cached across clients since we modified that file
+		// and the execs that included /tmpdir/b/src/f should not be cached across clients since we modified that file
 		require.NotEqual(t, output1b, output2b)
 	})
 }
