@@ -387,6 +387,22 @@ func approvalPrompt(question string, r approvalRequester) string {
 // grants for a whole remote are their own kind (git-push-remote), keyed by
 // the remote alone.
 func approvalPersistentKey(kind string, module dagql.ObjectResult[*core.Module], subject string) string {
+	identity := foreverModuleIdentity(module)
+	if identity == "" {
+		return ""
+	}
+	return "approval:v2:" + strings.Join([]string{
+		strconv.Quote(kind),
+		strconv.Quote(identity),
+		strconv.Quote(subject),
+	}, ":")
+}
+
+// foreverModuleIdentity is how a module is named in what its owner's client
+// remembers beyond the session (see approvalPersistentKey): its git source
+// without its pin, and its name; "" for a module not loaded from git, or no
+// module, which nothing is remembered for.
+func foreverModuleIdentity(module dagql.ObjectResult[*core.Module]) string {
 	mod := module.Self()
 	if mod == nil {
 		return ""
@@ -399,9 +415,5 @@ func approvalPersistentKey(kind string, module dagql.ObjectResult[*core.Module],
 	if ref == "" {
 		return ""
 	}
-	return "approval:v2:" + strings.Join([]string{
-		strconv.Quote(kind),
-		strconv.Quote(ref + "|" + canonicalWorkspaceModuleName(mod.Name())),
-		strconv.Quote(subject),
-	}, ":")
+	return ref + "|" + canonicalWorkspaceModuleName(mod.Name())
 }
