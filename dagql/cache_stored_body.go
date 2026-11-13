@@ -734,7 +734,13 @@ func (c *Cache) queueTaughtContentLocked(res *sharedResult) {
 	carried := res.frameContentKnown && res.frameContent == res.taughtContent
 	res.resultCallMu.RUnlock()
 	if carried {
+		res.taughtPending = nil
 		return
+	}
+	if len(res.taughtPending) == 0 {
+		// The digests pending went to a frame since replaced: the new frame
+		// takes the last one.
+		res.taughtPending = []digest.Digest{res.taughtContent}
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -761,25 +767,30 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 	start := time.Now()
 	for _, res := range entries {
 		c.egraphMu.RLock()
-		content, live := res.taughtContent, c.resultsByID[res.id] == res
+		pending, live := slices.Clone(res.taughtPending), c.resultsByID[res.id] == res
 		c.egraphMu.RUnlock()
-		if !live || content == "" {
+		if !live || len(pending) == 0 {
 			continue
 		}
-		res.resultCallMu.RLock()
-		carried := res.frameContentKnown && res.frameContent == content
-		res.resultCallMu.RUnlock()
-		if carried {
-			continue
+		applied := 0
+		for _, content := range pending {
+			rewrote, err := c.teachContentDigest(ctx, res, content, nil, true)
+			if err != nil {
+				slog.Warn("dagql cache: giving an entry's frame its taught content digest", "entry", res.id, "err", err)
+				break
+			}
+			applied++
+			if rewrote {
+				rewritten++
+			}
 		}
-		rewrote, err := c.teachContentDigest(ctx, res, content, nil, true)
-		if err != nil {
-			slog.Warn("dagql cache: giving an entry's frame its taught content digest", "entry", res.id, "err", err)
-			continue
+		c.egraphMu.Lock()
+		// Digests taught while these were applied stay pending, queued by
+		// their own teach.
+		if applied <= len(res.taughtPending) && slices.Equal(res.taughtPending[:applied], pending[:applied]) {
+			res.taughtPending = slices.Clone(res.taughtPending[applied:])
 		}
-		if rewrote {
-			rewritten++
-		}
+		c.egraphMu.Unlock()
 	}
 	c.taughtContentRewrites.Add(uint64(rewritten))
 	c.taughtContentNanos.Add(int64(time.Since(start)))
@@ -803,13 +814,19 @@ func (c *Cache) closeStoredBodies() {
 		return
 	}
 	w.mu.Lock()
+	content := w.content
 	if !w.closed {
 		w.closed = true
-		w.pending = nil
+		w.pending, w.content = nil, nil
 		close(w.wake)
 	}
 	w.mu.Unlock()
 	<-w.done
+	// A save keeps no taught digest a frame hasn't taken (taughtPending is
+	// not saved), so the frames take theirs before the cache closes.
+	if len(content) > 0 {
+		c.applyTaughtContent(content)
+	}
 }
 
 // storeBodies compresses each entry's record, as it stands when read, and
