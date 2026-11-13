@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/stretchr/testify/require"
@@ -205,6 +207,26 @@ func TestGitReadApprovalRejectsRemote(t *testing.T) {
 		}
 	}
 	require.Empty(t, s.questions.asked(), "reject before prompting")
+}
+
+func TestGitReadApprovalInertClient(t *testing.T) {
+	// An in-engine SDK client serving no module (an agent's DangEval) has no
+	// credentials of its own: it reads with its owner's, once approved.
+	questions := &approvalPromptServer{decide: func(*prompt.ApprovalRequest) prompt.ApprovalDecision {
+		return prompt.APPROVAL_ALLOW_SESSION
+	}}
+	s := newApprovalTestSession(t, func(srv *grpc.Server) { prompt.RegisterPromptServer(srv, questions) })
+	eval := s.client("eval", dagql.ObjectResult[*core.Module]{}, nil, "owner")
+	eval.inertAttachables = true
+	const remote = "https://example.com/repo"
+	ctx := core.AgentToContext(s.ctx(eval), testAgent(t, "agent-1", "worker"))
+	for range 2 {
+		md, err := s.srv.AuthorizeGitRead(ctx, remote)
+		require.NoError(t, err)
+		require.Equal(t, s.owner.clientMetadata, md)
+	}
+	require.Equal(t, []string{"Allow an agent to read " + remote + ` with your Git credentials (requested by agent "worker")?`},
+		questions.prompts())
 }
 
 func TestGitReadPromptEscapes(t *testing.T) {

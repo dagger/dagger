@@ -40,11 +40,12 @@ func secretApproval(uri string) approvalSpec {
 // resolveClientAttachableCaller) could only ever be denied, and still is when
 // no agent is involved: a module function reads no host secret it was not
 // passed. When it runs on behalf of an agent, though, the secret is the
-// owner's to grant: the trusted caller before the first module boundary (see
-// gitPushOwner) is asked, naming the agent, module and function that asks
-// (see requestApproval), and on approval the secret is read from the owner's
-// host, once (see Query.secret). A denial, or an owner that cannot prompt,
-// fails the call.
+// owner's to grant: the trusted caller before the first module or inert
+// boundary (see gitPushOwner; an agent's snippet evaluated without a module
+// asks the client that started it) is asked, naming the agent, module and
+// function that asks (see requestApproval), and on approval the secret is
+// read from the owner's host, once (see Query.secret). A denial, or an owner
+// that cannot prompt, fails the call.
 //
 // The agent only scopes the request, it does not vouch for it: any host-less
 // module can run an agent of its own (spawn a worker over its tools) and so
