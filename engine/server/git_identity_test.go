@@ -87,19 +87,29 @@ func TestGitIdentityApprovalOwnerBoundary(t *testing.T) {
 	require.Len(t, questions.asked(), 1)
 	req := questions.asked()[0]
 	require.Equal(t, approvalKindGitIdentity, req.Kind)
-	require.Empty(t, req.Subject)
+	require.Equal(t, "Personal <personal@example.com>", req.Subject)
 	require.False(t, req.Danger)
 	require.Equal(t, `Allow using your Git identity "Personal <personal@example.com>" (requested by module "staff", function "Staff.commit")?`, req.Prompt)
-	require.Equal(t, `approval:v1:"git-identity":"https://github.com/org/staff|staff":"":""`, req.PersistentKey)
+	require.Equal(t, `approval:v1:"git-identity":"https://github.com/org/staff|staff":"":"Personal <personal@example.com>"`, req.PersistentKey)
+
+	// The grant is for the identity the owner saw: once they change it, the
+	// module asks again.
+	config.entries = identityEntries("user.name", "Work", "user.email", "work@example.com")
+	identity, err = s.srv.AuthorizeGitIdentity(s.ctx(commit))
+	require.NoError(t, err)
+	require.Equal(t, core.GitIdentity{Name: "Work", Email: "work@example.com"}, identity)
+	require.Len(t, questions.asked(), 2)
+	require.Equal(t, "Work <work@example.com>", questions.asked()[1].Subject)
+	config.entries = identityEntries("user.name", "Personal", "user.email", "personal@example.com")
 
 	// An agent in the owner's own conversation asks too, as itself.
 	ctx := core.AgentToContext(s.ctx(s.owner), testAgent(t, "agent-1", "worker"))
 	identity, err = s.srv.AuthorizeGitIdentity(ctx)
 	require.NoError(t, err)
 	require.Equal(t, want, identity)
-	require.Len(t, questions.asked(), 2)
-	require.Equal(t, `Allow using your Git identity "Personal <personal@example.com>" (requested by agent "worker")?`, questions.asked()[1].Prompt)
-	require.Empty(t, questions.asked()[1].PersistentKey, "an agent's name alone is not an identity to remember")
+	require.Len(t, questions.asked(), 3)
+	require.Equal(t, `Allow using your Git identity "Personal <personal@example.com>" (requested by agent "worker")?`, questions.asked()[2].Prompt)
+	require.Empty(t, questions.asked()[2].PersistentKey, "an agent's name alone is not an identity to remember")
 }
 
 func TestGitIdentityApprovalDenied(t *testing.T) {
@@ -212,15 +222,15 @@ func TestGitIdentityApprovalConfigError(t *testing.T) {
 
 func TestGitIdentityApprovalPrompt(t *testing.T) {
 	for _, tc := range []struct {
-		identity core.GitIdentity
-		want     string
+		identity      core.GitIdentity
+		want, subject string
 	}{
-		{core.GitIdentity{Name: "Personal", Email: "personal@example.com"}, `Allow using your Git identity "Personal <personal@example.com>"`},
-		{core.GitIdentity{Name: "Personal"}, `Allow using your Git identity "Personal"`},
-		{core.GitIdentity{Email: "personal@example.com"}, `Allow using your Git identity "<personal@example.com>"`},
-		{core.GitIdentity{Name: "Evil\u202e\x1b[31m \"quoted\"", Email: "e@x"}, `Allow using your Git identity "Evil\u202e\x1b[31m \"quoted\" <e@x>"`},
+		{core.GitIdentity{Name: "Personal", Email: "personal@example.com"}, `Allow using your Git identity "Personal <personal@example.com>"`, `Personal <personal@example.com>`},
+		{core.GitIdentity{Name: "Personal"}, `Allow using your Git identity "Personal"`, `Personal`},
+		{core.GitIdentity{Email: "personal@example.com"}, `Allow using your Git identity "<personal@example.com>"`, `<personal@example.com>`},
+		{core.GitIdentity{Name: "Evil\u202e\x1b[31m \"quoted\"", Email: "e@x"}, `Allow using your Git identity "Evil\u202e\x1b[31m \"quoted\" <e@x>"`, `Evil\u202e\x1b[31m \"quoted\" <e@x>`},
 	} {
 		spec := gitIdentityApproval(tc.identity)
-		require.Equal(t, approvalSpec{Kind: approvalKindGitIdentity, Question: tc.want}, spec)
+		require.Equal(t, approvalSpec{Kind: approvalKindGitIdentity, Subject: tc.subject, Question: tc.want}, spec)
 	}
 }
