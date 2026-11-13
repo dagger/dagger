@@ -1,7 +1,0 @@
-{
-  "name": "hoster",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  }
-}

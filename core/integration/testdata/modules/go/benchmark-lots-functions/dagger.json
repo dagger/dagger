@@ -1,7 +1,0 @@
-{
-  "name": "potato-sack",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  }
-}

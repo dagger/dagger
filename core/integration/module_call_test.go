@@ -623,18 +623,30 @@ ENV PLATFORM=${OS}/${ARCH}
 		out, err := modGen.With(daggerCallAt(".", "mod-src", "--mod-src", ".", "context-directory", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, strings.Join([]string{
+			".dagger-generated.json",
 			".git/",
-			"dagger.json",
+			"dagger-module.toml",
+			"dagger.dispatch.gen.go",
+			"dagger.gen.go",
 			"foo.txt",
+			"go.mod",
+			"go.sum",
+			"internal/",
 			"main.go",
 		}, "\n"), strings.TrimSpace(out))
 
 		out, err = modGen.With(daggerCallAt(".", "mod", "--module", ".", "source", "context-directory", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, strings.Join([]string{
+			".dagger-generated.json",
 			".git/",
-			"dagger.json",
+			"dagger-module.toml",
+			"dagger.dispatch.gen.go",
+			"dagger.gen.go",
 			"foo.txt",
+			"go.mod",
+			"go.sum",
+			"internal/",
 			"main.go",
 		}, "\n"), strings.TrimSpace(out))
 	})
