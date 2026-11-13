@@ -12,8 +12,9 @@ import (
 
 // requireHeldEntryMatches checks that RemoteHoldingInfo reports, for every
 // key given and every holding the cache has, what RemoteEntryInfo reports for
-// that holding and its entry, and that the two report the same absence. It
-// returns the descriptions by key.
+// that holding and its entry, and that the two report the same absence; and
+// that HolderEntry, on the cache and in a hold of its writes, reports the
+// same entry number and absence. It returns the descriptions by key.
 func requireHeldEntryMatches(t *testing.T, cloud *Cache, step string, keys []HolderKey) map[HolderKey]RemoteHeldEntry {
 	t.Helper()
 	held, _ := cloudIndexes(cloud)
@@ -25,6 +26,14 @@ func requireHeldEntryMatches(t *testing.T, cloud *Cache, step string, keys []Hol
 		info, ok := cloud.RemoteEntryInfo(key)
 		got, gotOK := cloud.RemoteHoldingInfo(key)
 		require.Equal(t, ok, gotOK, "%s: %v exists in both reads or neither", step, key)
+		number, numberOK := cloud.HolderEntry(key)
+		hold := cloud.HoldRemoteWrites()
+		heldNumber, heldOK := hold.HolderEntry(key)
+		require.NoError(t, hold.Release(t.Context()))
+		require.Equal(t, ok, numberOK, "%s: HolderEntry finds %v as the others do", step, key)
+		require.Equal(t, ok, heldOK, "%s: HolderEntry in a hold finds %v as the others do", step, key)
+		require.Equal(t, got.Number, number, "%s: HolderEntry's entry for %v", step, key)
+		require.Equal(t, got.Number, heldNumber, "%s: HolderEntry's entry for %v in a hold", step, key)
 		if !ok {
 			require.Equal(t, RemoteHeldEntry{}, got, "%s: %v", step, key)
 			continue
