@@ -72,6 +72,9 @@ func (c *Cache) holdRowForCapture(ctx context.Context, shared *sharedResult, cap
 	if err := context.Cause(ctx); err != nil {
 		return nil, err
 	}
+	if c.testCaptureWriteLock != nil {
+		c.testCaptureWriteLock()
+	}
 	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if shared.id == 0 || c.resultsByID[shared.id] != shared {
 		c.egraphMu.Unlock()
@@ -95,6 +98,9 @@ func (c *Cache) holdRowForCapture(ctx context.Context, shared *sharedResult, cap
 	c.egraphMu.Unlock()
 	defer func() {
 		cleanupCtx := context.WithoutCancel(ctx)
+		if c.testCaptureWriteLock != nil {
+			c.testCaptureWriteLock()
+		}
 		wcprof.WriteLock(cleanupCtx, &c.egraphMu, egraphLockIdent)
 		queue, decErr := c.decrementIncomingOwnershipLocked(cleanupCtx, shared, nil)
 		releases, collectErr := c.collectUnownedResultsLocked(cleanupCtx, queue)
