@@ -365,6 +365,11 @@ type frontendPretty struct {
 	approvals    []*pendingApproval
 	approvalSeq  uint64
 	approvalsGen uint64
+	// progressWindow is the [start, end) range of the last rendered progress
+	// lines that is on screen, and progressTopGaps the gaps between its top
+	// trees: together they tell whether an approval's row scrolled away.
+	progressWindow  [2]int
+	progressTopGaps []int
 
 	// track whether we've already spawned the run function
 	spawned bool
@@ -655,6 +660,9 @@ type SpanTreeView struct {
 	selfLineCount   int   // lines from self content (before children)
 	childGapCounts  []int // gap line count before each child
 	childLineCounts []int // total line count from each child's RenderChild
+	// approvalLines records where each inline approval's first line sits,
+	// relative to this tree's first line.
+	approvalLines map[*pendingApproval]int
 }
 
 var _ tuist.Component = (*SpanTreeView)(nil)
@@ -744,7 +752,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 
 		// A pending approval this row's call is blocked on sits right
 		// beneath it, where the user navigates to answer it.
-		if approvals := s.renderInlineApprovals(ctx, r, row); len(approvals) > 0 {
+		if approvals := s.renderInlineApprovals(ctx, r, row, s.selfLineCount); len(approvals) > 0 {
 			s.selfLineCount += len(approvals)
 			ctx.Lines(approvals...)
 		}
@@ -3556,8 +3564,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		// switch between. A single-agent roster remains a state display.
 		bnds = append(bnds, fe.promptAgentBindings()...)
 		if len(fe.approvals) > 0 {
-			bnds = append(bnds, key.NewBinding(key.WithKeys(approvalJumpKey),
-				key.WithHelp("alt+a", "answer approval")))
+			// First, so a truncated keymap still names it.
+			bnds = append([]key.Binding{key.NewBinding(key.WithKeys(approvalJumpKey),
+				key.WithHelp("alt+a", "answer approval"))}, bnds...)
 		}
 		if fe.acceptsPromptImages() {
 			bnds = append(bnds, key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste image")))
@@ -3634,9 +3643,12 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("N"),
 			key.WithHelp("N", "prev"),
 			KeyEnabled(fe.searchQuery != "")),
-		key.NewBinding(key.WithKeys(approvalNavKey),
-			key.WithHelp(approvalNavKey, "answer approval"),
-			KeyEnabled(len(fe.approvals) > 0)),
+	}
+	if len(fe.approvals) > 0 {
+		// First, so a truncated keymap still says how to reach a blocked
+		// agent's approval.
+		binds = append([]key.Binding{key.NewBinding(key.WithKeys(approvalNavKey, approvalJumpKey),
+			key.WithHelp(approvalNavKey, "answer approval"))}, binds...)
 	}
 	// Roster focus uses unmodified keys because nav mode is the one place they
 	// are free, and is shown only once there is more than one agent to switch.
@@ -3837,16 +3849,28 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// Approvals with no row to sit under yet render right below the rows,
 	// ahead of the chrome, so cropping never hides them.
 	floating := fe.renderFloatingApprovals(ctx)
-	progressLines := fe.renderProgressLines(r, ctx, reserved+len(zoomHeader)+chromeReserve+len(floating))
+	progressReserve := reserved + len(zoomHeader) + chromeReserve + len(floating)
+	progressLines := fe.renderProgressLines(r, ctx, progressReserve)
+	// An approval whose row the window left off screen gets a one-line cue
+	// in the same place, so nothing blocked goes unseen. The cues take room
+	// from the rows, so render them again around it.
+	if cues := fe.renderApprovalCues(); len(cues) > 0 {
+		progressLines = fe.renderProgressLines(r, ctx, progressReserve+len(cues)+1)
+	}
+	approvalLines := fe.renderApprovalCues()
+	if len(approvalLines) > 0 && len(floating) > 0 {
+		approvalLines = append(approvalLines, "")
+	}
+	approvalLines = append(approvalLines, floating...)
 	var body []string
 	if len(progressLines) > 0 {
 		body = append(body, progressLines...)
-		if len(chrome) > 0 || len(floating) > 0 {
+		if len(chrome) > 0 || len(approvalLines) > 0 {
 			body = append(body, "") // separate tree from logs/tests
 		}
 	}
-	body = append(body, floating...)
-	if len(floating) > 0 && len(chrome) > 0 {
+	body = append(body, approvalLines...)
+	if len(approvalLines) > 0 && len(chrome) > 0 {
 		body = append(body, "")
 	}
 	// The keymap supplies its own leading gap; content sections only need
@@ -6016,6 +6040,7 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 // components and returns the output as lines. Truncates below the focused
 // item so it stays onscreen.
 func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, chromeHeight int) []string {
+	fe.progressTopGaps = nil
 	if fe.rowsView == nil {
 		return nil
 	}
@@ -6048,6 +6073,11 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 	if len(allLines) == 0 {
 		return nil
 	}
+	// Until a crop below says otherwise, every line is on screen. The window
+	// is what lets an approval whose row scrolled away be cued (see
+	// offscreenApprovals).
+	fe.progressTopGaps = topGapCounts
+	fe.progressWindow = [2]int{0, len(allLines)}
 
 	// Find the focused line by walking up from the focused node.
 	focusLine := -1
@@ -6089,8 +6119,14 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 				// here, since the focus sits more than a viewport above the end.
 				end := flowingCropEnd(fe, focusLine, max(viewportHeight-1, 1), len(allLines))
 				below := len(allLines) - end
+				fe.progressWindow = [2]int{max(0, end-(viewportHeight-1)), end}
 				return append(allLines[:end:end], fe.cropHintLine(below))
 			}
+		}
+		if h := ctx.ScreenHeight(); h > 0 {
+			// Tuist shows the bottom of the flowing output; the rest has
+			// scrolled into the terminal's scrollback.
+			fe.progressWindow[0] = max(0, len(allLines)-max(h-chromeHeight, 1))
 		}
 		return allLines
 	}
@@ -6118,6 +6154,7 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		focusHeight = focused.selfLineCount
 	}
 	end := cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
+	fe.progressWindow = [2]int{max(0, end-viewportHeight), end}
 	return allLines[max(0, end-viewportHeight):end]
 }
 
@@ -6219,7 +6256,13 @@ func (s *SpanTreeView) totalLineCount() int {
 // through the entire tree (O(nodes)), it walks up from the focused
 // SpanTreeView to the root, accumulating offsets (O(depth × siblings)).
 func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
-	focused, ok := fe.spanTrees[fe.FocusedSpan]
+	return fe.findSpanLine(fe.FocusedSpan, topGapCounts)
+}
+
+// findSpanLine returns the line offset of a rendered span's tree within the
+// rendered progress output, or -1 if not found.
+func (fe *frontendPretty) findSpanLine(spanID dagui.SpanID, topGapCounts []int) int {
+	focused, ok := fe.spanTrees[spanID]
 	if !ok {
 		return -1
 	}
