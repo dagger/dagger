@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"fmt"
 	"io"
 	"math/rand"
 	"testing"
 
+	ctdcompression "github.com/containerd/containerd/v2/pkg/archive/compression"
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 
@@ -86,29 +86,14 @@ func TestZstdLayerNamesTheSizeOfALayerThatFitsTheWindow(t *testing.T) {
 	}
 }
 
-func TestZstdLayerLargerThanTheWindowStillRoundTrips(t *testing.T) {
-	data := layerBytes(zstdSizedLimit + 1<<20)
-	blob := compressLayer(t, data)
-
-	var h zstd.Header
-	require.NoError(t, h.Decode(blob))
-	require.False(t, h.HasFCS)
-	require.Equal(t, data, decompressLayer(t, blob))
-}
-
-// A framed writer cuts a layer larger than the window into frames of
-// zstdFrameSize, the last one shorter, each compressed on its own as
-// EncodeAll compresses it: its blob depends on its bytes alone, never on
-// the machine's cores or on how the frames were scheduled, and every frame
-// names its size. Run at several -cpu values, it shows the same bytes at
-// each. A layer that fits the window is what an unframed writer writes.
-func TestZstdFramedLayerLargerThanTheWindowIsFramesOfAFixedSize(t *testing.T) {
-	framed := New(Zstd).SetFramed(true)
-	small := layerBytes(zstdSizedLimit)
-	require.Equal(t, compressLayer(t, small), compressLayerAs(t, framed, small))
-
+// A layer larger than the window is cut into frames of zstdFrameSize, the
+// last one shorter, each compressed on its own as EncodeAll compresses it:
+// its blob depends on its bytes alone, never on the machine's cores or on
+// how the frames were scheduled, and every frame names its size. Run at
+// several -cpu values, it shows the same bytes at each.
+func TestZstdLayerLargerThanTheWindowIsFramesOfAFixedSize(t *testing.T) {
 	data := layerBytes(3*zstdFrameSize + 123)
-	blob := compressLayerAs(t, framed, data)
+	blob := compressLayer(t, data)
 
 	enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault))
 	require.NoError(t, err)
@@ -125,13 +110,20 @@ func TestZstdFramedLayerLargerThanTheWindowIsFramesOfAFixedSize(t *testing.T) {
 	require.True(t, h.HasFCS)
 	require.EqualValues(t, zstdFrameSize, h.FrameContentSize)
 	require.Equal(t, data, decompressLayer(t, blob))
-	// The engine's layer imports read it as they read any zstd layer.
-	r, err := compressutil.DecompressStream(bytes.NewReader(blob))
-	require.NoError(t, err)
-	imported, err := io.ReadAll(r)
-	require.NoError(t, err)
-	require.NoError(t, r.Close())
-	require.Equal(t, data, imported)
+	// The engine's layer imports read it as they read any zstd layer, and
+	// so does containerd's decompression, which containerd's unpacking and
+	// engines before compressutil read layers with.
+	for name, decompress := range map[string]func(io.Reader) (io.ReadCloser, error){
+		"compressutil": func(r io.Reader) (io.ReadCloser, error) { return compressutil.DecompressStream(r) },
+		"containerd":   func(r io.Reader) (io.ReadCloser, error) { return ctdcompression.DecompressStream(r) },
+	} {
+		r, err := decompress(bytes.NewReader(blob))
+		require.NoError(t, err, name)
+		imported, err := io.ReadAll(r)
+		require.NoError(t, err, name)
+		require.NoError(t, r.Close(), name)
+		require.Equal(t, data, imported, name)
+	}
 }
 
 // Framing is zstd's alone: a gzip layer larger than zstd's window is one
@@ -152,13 +144,8 @@ func TestGzipAndUncompressedLayersAreNotFramed(t *testing.T) {
 }
 
 func BenchmarkZstdLayer(b *testing.B) {
-	for _, comp := range []Config{New(Zstd), New(Zstd).SetFramed(true)} {
-		b.Run(fmt.Sprintf("framed=%v", comp.Framed), func(b *testing.B) { benchmarkZstdLayer(b, comp) })
-	}
-}
-
-func benchmarkZstdLayer(b *testing.B, comp Config) {
 	data := layerBytes(256 << 20)
+	comp := New(Zstd)
 	compress, _ := comp.Type.Compress(context.Background(), comp)
 	b.SetBytes(int64(len(data)))
 	b.ReportAllocs()

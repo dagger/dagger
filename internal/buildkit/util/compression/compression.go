@@ -57,11 +57,6 @@ type Config struct {
 	Type  Type
 	Force bool
 	Level *int
-	// Framed writes a zstd layer larger than zstd's usual window as frames
-	// of a fixed size, compressed at once (zstdLayerWriter): its blob
-	// depends on its bytes alone, and builds on several cores. Any other
-	// zstd layer is one stream.
-	Framed bool
 }
 
 func New(t Type) Config {
@@ -72,11 +67,6 @@ func New(t Type) Config {
 
 func (c Config) SetForce(v bool) Config {
 	c.Force = v
-	return c
-}
-
-func (c Config) SetFramed(v bool) Config {
-	c.Framed = v
 	return c
 }
 
