@@ -112,6 +112,45 @@ func TestRowsSetTheLastUse(t *testing.T) {
 // DropStoredParts removes every stored part whose chain names the blob, on
 // every entry, and nothing else: the entries' other parts, values and
 // dependencies stay.
+// The service reads BlobCacheUsage for every status request and metrics
+// scrape, outside its work lock, so the read is in pieces (readInPieces): it
+// lets egraphMu go every readPieceSteps values of the pool, and a writer
+// waiting for the lock waits for one piece, not a walk of the whole pool.
+// With no write during it, it counts what one hold would.
+func TestBlobCacheUsageGivesUpTheLockBetweenValues(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedPartServiceTestCloud(t)
+	p := storedPartTestDeps(cloud, r)[0]
+	for _, stored := range []struct {
+		number uint64
+		part   PersistedPartOffer
+	}{
+		{r, storedPruneTestPart("snapshot", map[string]int64{"shared": 100, "r-top": 10})},
+		{p, storedPruneTestPart("snapshot", map[string]int64{"shared": 100})},
+	} {
+		ok, _, err := cloud.SetStoredPart(ctx, stored.number, stored.part, 0)
+		require.NoError(t, err)
+		require.True(t, ok)
+	}
+	whole, err := cloud.BlobCacheUsage()
+	require.NoError(t, err)
+	require.Equal(t, 2, whole.PoolValues, "R and P")
+	require.Equal(t, 2, whole.PoolBlobs)
+	require.Equal(t, int64(110), whole.PoolBlobBytes, "the shared blob once, and R's own")
+
+	cloud.readPieceSize = 1
+	var yields int
+	cloud.testReadPieceYielded = func() {
+		yields++
+		require.True(t, cloud.egraphMu.TryLock(), "the lock is free between two pieces")
+		cloud.egraphMu.Unlock()
+	}
+	pieces, err := cloud.BlobCacheUsage()
+	require.NoError(t, err)
+	require.Positive(t, yields, "the read let the lock go")
+	require.Equal(t, whole, pieces)
+}
+
 func TestDropStoredParts(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
