@@ -150,15 +150,22 @@ func (p PromptAttachable) PromptApproval(ctx context.Context, req *ApprovalReque
 	if req.GetPrompt() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid input: Prompt required")
 	}
+	// Legacy keys only count alongside a key of today's: without one, the
+	// engine offers no forever grant, so none may answer.
 	if key := req.GetPersistentKey(); key != "" {
-		promptMutex.Lock()
-		allowed, err := p.persistence.contains(key)
-		promptMutex.Unlock()
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "Failed to check remembered approvals: %v", err)
-		}
-		if allowed {
-			return &ApprovalResponse{Decision: APPROVAL_ALLOW_FOREVER}, nil
+		for _, key := range append([]string{key}, req.GetLegacyPersistentKeys()...) {
+			if key == "" {
+				continue
+			}
+			promptMutex.Lock()
+			allowed, err := p.persistence.contains(key)
+			promptMutex.Unlock()
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "Failed to check remembered approvals: %v", err)
+			}
+			if allowed {
+				return &ApprovalResponse{Decision: APPROVAL_ALLOW_FOREVER}, nil
+			}
 		}
 	}
 	if p.promptHandler == nil {
@@ -320,4 +327,8 @@ func (p PromptProxy) PromptSelect(ctx context.Context, req *SelectRequest) (*Sel
 
 func (p PromptProxy) PromptApproval(ctx context.Context, req *ApprovalRequest) (*ApprovalResponse, error) {
 	return p.client.PromptApproval(grpcutil.IncomingToOutgoingContext(ctx), req)
+}
+
+func (p PromptProxy) PromptAsk(ctx context.Context, req *AskRequest) (*AskResponse, error) {
+	return p.client.PromptAsk(grpcutil.IncomingToOutgoingContext(ctx), req)
 }
