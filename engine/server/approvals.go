@@ -322,9 +322,10 @@ func approvalPrompt(question string, r approvalRequester) string {
 //     URL and subpath, or a local path) and its name, so an update of the
 //     same module keeps the grant, while another source does not.
 //
-// A module without a source (none that a user loads) and a request with
-// neither an agent nor a module are not identified well enough to remember,
-// so they are only offered up to a session grant.
+// A request without a module, or from a module without a source the engine
+// can name (e.g. one built from a directory), is not identified well enough
+// to remember: an agent's name alone is a label, not an identity. It is only
+// offered up to a session grant.
 //
 // Every field is quoted, so no value can spell another's separator. Bump the
 // version when the identity changes, so old grants are asked again rather
@@ -333,17 +334,19 @@ func approvalPrompt(question string, r approvalRequester) string {
 // This identity is a policy choice still open to change (e.g. dropping the
 // agent name, or widening a push grant to a whole remote).
 func approvalPersistentKey(kind string, r approvalRequester, subject string) string {
-	var module string
-	if mod := r.module.Self(); mod != nil {
-		src := mod.GetSource()
-		if src == nil {
-			return ""
-		}
-		module = canonicalModuleReference(src) + "|" + canonicalWorkspaceModuleName(mod.Name())
-	}
-	if module == "" && r.agentName == "" {
+	mod := r.module.Self()
+	if mod == nil {
 		return ""
 	}
+	src := mod.GetSource()
+	if src == nil {
+		return ""
+	}
+	ref := canonicalModuleReference(src)
+	if ref == "" {
+		return ""
+	}
+	module := ref + "|" + canonicalWorkspaceModuleName(mod.Name())
 	return "approval:v1:" + strings.Join([]string{
 		strconv.Quote(kind),
 		strconv.Quote(module),
