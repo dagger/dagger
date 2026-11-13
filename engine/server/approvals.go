@@ -331,13 +331,15 @@ func approvalPrompt(question string, r approvalRequester) string {
 //   - the kind and the exact subject, as for a session grant;
 //   - the agent's name, a label the spawning code chooses (empty without an
 //     agent);
-//   - the module's source without its pin (its canonical reference: a git
-//     URL and subpath, or a local path) and its name, so an update of the
-//     same module keeps the grant, while another source does not.
+//   - the module's git source without its pin (its clone URL and subpath)
+//     and its name, so an update of the same module keeps the grant, while
+//     another source does not.
 //
-// A request without a module, or from a module without a source the engine
-// can name (e.g. one built from a directory), is not identified well enough
-// to remember: an agent's name alone is a label, not an identity. It is only
+// Only modules loaded from git are identified well enough to remember. A
+// local module is only a path, which any module loaded from the same path
+// (another checkout, or a foreign module put there) would share; a module
+// built from a directory has no source the engine can name; and without a
+// module, an agent's name alone is a label, not an identity. Those are only
 // offered up to a session grant.
 //
 // Every field is quoted, so no value can spell another's separator. Bump the
@@ -352,7 +354,7 @@ func approvalPersistentKey(kind string, r approvalRequester, subject string) str
 		return ""
 	}
 	src := mod.GetSource()
-	if src == nil {
+	if src == nil || src.Kind != core.ModuleSourceKindGit {
 		return ""
 	}
 	ref := canonicalModuleReference(src)

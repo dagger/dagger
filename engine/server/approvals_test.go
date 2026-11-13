@@ -319,6 +319,14 @@ func TestApprovalPersistentKey(t *testing.T) {
 	dir := &core.Module{NameField: "staff", Source: dagql.NonNull(sessionTestModuleSource(t, &core.ModuleSource{Kind: core.ModuleSourceKindDir}))}
 	require.Empty(t, approvalPersistentKey("k", approvalRequester{agentName: "a", module: sessionTestModuleOf(t, dir)}, "s"),
 		"a module built from a directory has no source the engine can name")
+	local := &core.Module{NameField: "staff", Source: dagql.NonNull(sessionTestModuleSource(t, &core.ModuleSource{
+		Kind:              core.ModuleSourceKindLocal,
+		Local:             &core.LocalModuleSource{ContextDirectoryPath: "/work/staff"},
+		SourceRootSubpath: ".",
+	}))}
+	require.Equal(t, "/work/staff", canonicalModuleReference(local.Source.Value.Self()))
+	require.Empty(t, approvalPersistentKey("k", approvalRequester{agentName: "a", module: sessionTestModuleOf(t, local)}, "s"),
+		"a local module is only a path, which another module can be loaded from")
 }
 
 func sessionTestModuleSource(t *testing.T, src *core.ModuleSource) dagql.ObjectResult[*core.ModuleSource] {
