@@ -54,13 +54,18 @@ type StoredBundleResult struct {
 
 // HeldBy names the entries of a blob-backed cache whose values a recipient
 // engine cache already holds, for StoredBundle to carry as held rows and
-// StoredSizes to price as such. An entry is held when it has a holding of
-// Cache that hasn't expired at the read's clock, and isn't in Not, by
-// number: the values the recipient answered stale. Only an entry with a call
-// frame can be held: its recipe names it to the recipient.
+// StoredSizes to price as such. An entry is held when it isn't in Not, by
+// number: the values the recipient answered stale; and it has a holding of
+// Cache that hasn't expired at the read's clock, or Also names it and its
+// value hasn't expired then: an entry the recipient holds with no holding
+// yet, such as a record of a file of the cache's bundles it merged. Only an
+// entry with a call frame can be held: its recipe names it to the
+// recipient. Also is called under the cache's lock, from builds that may
+// run at once, so it reads only what doesn't change under it.
 type HeldBy struct {
 	Cache CacheID
 	Not   map[uint64]bool
+	Also  func(number uint64) bool
 }
 
 // heldLocked reports whether the recipient holds res at nowUnix. A nil
@@ -71,6 +76,9 @@ func (h *HeldBy) heldLocked(res *sharedResult, nowUnix int64) bool {
 	}
 	if h.Not[uint64(res.id)] {
 		return false
+	}
+	if h.Also != nil && h.Also(uint64(res.id)) && (res.expiresAtUnix == 0 || res.expiresAtUnix > nowUnix) {
+		return true
 	}
 	return h.holdsLocked(res, nowUnix)
 }
