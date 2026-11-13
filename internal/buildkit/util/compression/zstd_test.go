@@ -2,6 +2,7 @@ package compression
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -131,6 +132,23 @@ func TestZstdFramedLayerLargerThanTheWindowIsFramesOfAFixedSize(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, r.Close())
 	require.Equal(t, data, imported)
+}
+
+// Framing is zstd's alone: a gzip layer larger than zstd's window is one
+// gzip stream, as the gzip package writes it, and an uncompressed one is its
+// bytes.
+func TestGzipAndUncompressedLayersAreNotFramed(t *testing.T) {
+	for _, size := range []int{zstdSizedLimit + 1, 3*zstdFrameSize + 123} {
+		data := layerBytes(size)
+		var want bytes.Buffer
+		zw, err := gzip.NewWriterLevel(&want, gzip.DefaultCompression)
+		require.NoError(t, err)
+		_, err = zw.Write(data)
+		require.NoError(t, err)
+		require.NoError(t, zw.Close())
+		require.Equal(t, want.Bytes(), compressLayerAs(t, New(Gzip), data), "gzip, size %d", size)
+		require.Equal(t, data, compressLayerAs(t, New(Uncompressed), data), "uncompressed, size %d", size)
+	}
 }
 
 func BenchmarkZstdLayer(b *testing.B) {
