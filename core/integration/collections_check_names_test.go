@@ -12,11 +12,11 @@ import (
 func (CollectionsSuite) TestGeneratorCheckNames(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {
-		name, receiver, linkFormat string
-		flags                      []string
+		name, receiver, linkFormat, fieldPrefix, scope string
+		flags                                          []string
 	}{
-		{"module", "Collections", "dag+check://?name=%s.stale\n", []string{"--collections"}},
-		{"collection", "Item", "dag+check://?collections-items-item=a&name=%s.stale\n", []string{"--collections", "--collections-items-item=a"}},
+		{"module", "Collections", "dag+check://?name=%s.stale\n", "", "", []string{"--collections"}},
+		{"collection", "Item", "dag+check://?collections-item=a&name=%s.stale\n", "items.", "items/**", []string{"--collections", "--collections-item=a"}},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			source := collectionGoSource + fmt.Sprintf(`
@@ -29,18 +29,21 @@ func (*%s) Clients() *dagger.Changeset { panic("generator evaluated") }
 				WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).
 				WithWorkdir("/work")
 			args := append([]string{"check", "-la", "-f=cli", "--check=stale"}, tc.flags...)
+			if tc.scope != "" {
+				args = append(args, tc.scope)
+			}
 			out, err := base.With(daggerExec(args...)).Stdout(ctx)
 			require.NoError(t, err)
 			lines := strings.Split(strings.TrimSpace(out), "\n")
 			require.Len(t, lines, 2)
 			for i, generator := range []string{"clients", "docs"} {
 				printed, _, _ := strings.Cut(lines[i], "#")
-				want := append(append([]string{}, tc.flags...), "--name="+generator+".stale")
+				want := append(append([]string{}, tc.flags...), "--name="+tc.fieldPrefix+generator+".stale")
 				require.Equal(t, want, strings.Fields(collectionCLIArguments(t, strings.TrimSpace(printed)+"\n", "dagger check")))
 				for _, command := range [][]string{{"check", "-la", "-f=link"}, {"list", "checks", "-a", "-f=link"}} {
 					links, err := base.With(daggerExec(append(command, want...)...)).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, fmt.Sprintf(tc.linkFormat, generator), links)
+					require.Equal(t, fmt.Sprintf(tc.linkFormat, tc.fieldPrefix+generator), links)
 				}
 			}
 		})

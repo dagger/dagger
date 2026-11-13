@@ -87,53 +87,64 @@ func (*Probe) Run() error { panic("check evaluated") }
 			}
 		}
 		require.Equal(t, map[string]string{
-			"name":                         "name",
-			"/tools/linux/modules":         "tools-module",
-			"/tools/linux/modules/cases":   "tools-probe",
-			"/tools/windows/modules":       "tools-module",
-			"/tools/windows/modules/cases": "tools-probe",
+			"name":         "name",
+			"ToolsModules": "tools-module",
+			"ToolsCases":   "tools-probe",
 		}, dimensions)
-		paths := map[string][]string{}
+		require.Len(t, selection.PathDefinitions, 4)
 		for _, path := range selection.PathDefinitions {
-			paths[path.URI] = path.Dimensions
+			require.Contains(t, path.Dimensions, "ToolsModules")
+			for _, dimension := range path.Dimensions {
+				require.False(t, strings.HasPrefix(dimension, "/"), dimension)
+			}
 		}
 		for _, platform := range []string{"linux", "windows"} {
-			prefix := "tools/" + platform + "/modules"
-			require.ElementsMatch(t, []string{"module", "/" + prefix, "type:Check"}, paths["dag://?check="+prefix+"/verify"])
-			require.ElementsMatch(t, []string{"module", "/" + prefix, "/" + prefix + "/cases", "type:Check"}, paths["dag://?check="+prefix+"/cases/run"])
-			out, err := ctr.With(daggerExec("check", "-l", "--tools-"+platform+"-cases", "-f=link")).Stdout(ctx)
+			out, err := ctr.With(daggerExec("check", "-l", "--name="+platform+".modules.cases.run", "-f=link")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dag+check://"+prefix+"/cases/run\n", out)
+			require.NotEmpty(t, strings.TrimSpace(out))
+			// Listing a schema path cannot read collection keys or check values.
+			replay, err := ctr.With(daggerExec("check", "-l", strings.TrimSpace(out), "-f=link")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, out, replay)
 		}
 	})
 
 	t.Run("nested selectors preserve the route and parent key", func(ctx context.Context, t *testctx.T) {
 		for _, platform := range []string{"linux", "windows"} {
+			name := platform + ".modules.cases.run"
 			out, err := base.With(daggerExec("check", "-la", "-f=cli",
-				"--tools-"+platform+"-module=api", "--tools-"+platform+"-probe=first")).Stdout(ctx)
+				"--tools-module=api", "--tools-probe=first", "--name="+name)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Contains(t, out, "--tools-"+platform+"-module=api")
-			require.Contains(t, out, "--tools-"+platform+"-probe=first")
+			require.Contains(t, out, "--tools-module=api")
+			require.Contains(t, out, "--tools-probe=first")
+			require.Contains(t, out, "--name="+name)
 			selectors, _, _ := strings.Cut(out, "#")
 			require.True(t, strings.HasPrefix(selectors, "dagger check "), selectors)
 			replay := append([]string{"check", "-la", "-f=link"}, strings.Fields(strings.TrimPrefix(selectors, "dagger check "))...)
 			links, err := base.With(daggerExec(replay...)).Stdout(ctx)
 			require.NoError(t, err)
 			link := strings.TrimSpace(links)
-			path, query, ok := strings.Cut(link, "?")
-			require.True(t, ok, link)
-			require.Equal(t, "dag+check://tools/"+platform+"/modules/cases/run", path)
-			keys, err := url.ParseQuery(query)
+			require.Len(t, strings.Split(link, "\n"), 1)
+			address, err := url.Parse(link)
 			require.NoError(t, err)
-			require.Equal(t, url.Values{
-				"tools-" + platform + "-module": {"api"},
-				"tools-" + platform + "-probe":  {"first"},
-			}, keys)
+			require.Equal(t, "dag+check", address.Scheme)
 			selected, err := base.With(daggerExec("check", "-la", "-f=link", link)).Stdout(ctx)
 			require.NoError(t, err)
-			// The explicit path narrows schema loading. Its fallback retains
-			// exact dimension identifiers instead of allocating local aliases.
-			require.Equal(t, "dag+check://tools/"+platform+"/modules/cases/run?/tools/"+platform+"/modules=api&/tools/"+platform+"/modules/cases=first\n", selected)
+			require.Equal(t, links, selected)
+			// Replay the address through a fresh API selection. Shared collection
+			// types must preserve the platform route in the full name coordinate.
+			metadata, err := base.With(daggerQueryAt("core", `{
+    currentWorkspace { artifacts { filterUri(uri: %q) { one {
+     dimensionKeys(all: true) { dimension key }
+    } } } }
+   }`, link)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterUri":{"one":{"dimensionKeys":[
+    {"dimension":"module","key":"tools"},
+    {"dimension":"ToolsModules","key":"api"},
+    {"dimension":"ToolsCases","key":"first"},
+    {"dimension":"name","key":"`+name+`"}
+   ]}}}}}`, metadata)
 		}
 	})
 }

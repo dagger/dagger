@@ -149,9 +149,17 @@ func (ArtifactsSuite) TestURI(ctx context.Context, t *testctx.T) {
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"artifacts":{
-  "container":{"one":{"uri":"dag://?module=provider&name=base","typed":"dag+container://?module=provider&name=base","pathOnly":"dag://base"}},
+  "container":{"one":{"uri":"dag://?module=provider&name=base","typed":"dag+container://?module=provider&name=base","pathOnly":"dag://base?type:Container=/base"}},
   "docs":{"one":{"typed":"dag+provider-docs://?name=docs.again"}}
 }}}`, string(*got))
+	// The path-only address retains the type guard when copied.
+	replayed, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
+  node(id: $ws) { ... on Workspace { artifacts {
+    filterUri(uri: "dag://base?type:Container=/base") { one { uri } }
+  } } }
+}`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"node":{"artifacts":{"filterUri":{"one":{"uri":"dag://?module=provider&name=base"}}}}}`, string(*replayed))
 	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts { filterPath(path: ["base"]) { one { uri(absolute: true) } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
@@ -189,7 +197,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 
 	out, err = base.With(workspaceSelectionDaggerExec("list", "-a", "-f=link", "dag://"+ref+":base")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag+container://base\n", out)
+	require.Equal(t, "dag+container://?module=provider&name=base\n", out)
 	out, err = base.With(workspaceSelectionDaggerExec("check", "-l", "-f=cli", "dag://"+ref+":verify")).Stdout(ctx)
 	require.NoError(t, err)
 	// The provider's generate/stale check remains in the full workspace schema.
@@ -206,14 +214,15 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		args  []string
 		links []string
+		paths [][]string
 	}{
-		{[]string{"list", "-a", "-f=link", "base"}, []string{"dag+container://base"}},
-		{[]string{"check", "-l", "-f=link", "verify"}, []string{"dag+check://verify"}},
-		{[]string{"generate", "-l", "-f=link", "generate"}, []string{"dag+generator://generate"}},
-		{[]string{"start", "-l", "-f=link", "web"}, []string{"dag+service://web"}},
-		{[]string{"agent", "-l", "-f=link", "assistant"}, []string{"dag+expertise://assistant"}},
-		{[]string{"shell", "-l", "-f=link", "base"}, []string{"dag+container://base"}},
-		{[]string{"list", "containers", "-f=link"}, []string{"dag+container://base", "dag+container://broken", "dag+container://consumer/base"}},
+		{[]string{"list", "-a", "-f=link", "base"}, []string{"dag+container://?module=provider&name=base"}, [][]string{{"base"}}},
+		{[]string{"check", "-l", "-f=link", "verify"}, []string{"dag+check://verify"}, [][]string{{"verify"}}},
+		{[]string{"generate", "-l", "-f=link", "generate"}, []string{"dag+generator://generate"}, [][]string{{"generate"}}},
+		{[]string{"start", "-l", "-f=link", "web"}, []string{"dag+service://web"}, [][]string{{"web"}}},
+		{[]string{"agent", "-l", "-f=link", "assistant"}, []string{"dag+expertise://assistant"}, [][]string{{"assistant"}}},
+		{[]string{"shell", "-l", "-f=link", "base"}, []string{"dag+container://base"}, [][]string{{"base"}}},
+		{[]string{"list", "containers", "-f=link"}, []string{"dag+container://?module=consumer", "dag+container://?module=provider&name=base", "dag+container://?name=broken"}, [][]string{{"consumer", "base"}, {"base"}, {"broken"}}},
 	} {
 		for _, flag := range []string{"--absolute", "--abs"} {
 			t.Run(strings.Join(tc.args, " ")+" "+flag, func(ctx context.Context, t *testctx.T) {
@@ -231,6 +240,16 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 					want = append(want, address.String())
 				}
 				require.Equal(t, strings.Join(want, "\n")+"\n", out)
+				// Every copied absolute link must resolve to one artifact.
+				for i, link := range want {
+					replayed, err := base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace {
+  artifacts { filterUri(uri: %q) { one { path } } }
+} }`, link), "-W", ref, "-m", "core")).Stdout(ctx)
+					require.NoError(t, err, link)
+					path, err := json.Marshal(tc.paths[i])
+					require.NoError(t, err)
+					require.JSONEq(t, fmt.Sprintf(`{"currentWorkspace":{"artifacts":{"filterUri":{"one":{"path":%s}}}}}`, path), replayed)
+				}
 			})
 		}
 	}
@@ -367,23 +386,23 @@ func (ArtifactsSuite) TestFilterURIUnderFailedModule(ctx context.Context, t *tes
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": wsID}})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"node":{"artifacts":{
-  "path":{"items":[{"uri":"dag://staff/load"}]},
-  "glob":{"uri":"dag://**?type:Expertise=staff/worker","items":[{"uri":"dag://staff/load"}]},
-  "braces":{"items":[{"uri":"dag://staff/load"}]},
-  "typeKey":{"items":[{"uri":"dag://staff/load"}]},
-  "typed":{"items":[{"uri":"dag://staff/load"}]},
-  "item":{"items":[{"uri":"dag://staff/load"}]},
-  "keyOnly":{"items":[{"uri":"dag://staff/load"}]},
-  "snakeCase":{"items":[{"uri":"dag://my-mod/load"}]},
-  "moduleKey":{"items":[{"uri":"dag://my-mod/load"}]},
+  "path":{"items":[{"uri":"dag://staff/load?type:Check=/staff/load"}]},
+  "glob":{"uri":"dag://**?type:Expertise=staff/worker","items":[{"uri":"dag://staff/load?type:Check=/staff/load"}]},
+  "braces":{"items":[{"uri":"dag://staff/load?type:Check=/staff/load"}]},
+  "typeKey":{"items":[{"uri":"dag://staff/load?type:Check=/staff/load"}]},
+  "typed":{"items":[{"uri":"dag://staff/load?type:Check=/staff/load"}]},
+  "item":{"items":[{"uri":"dag://staff/load?type:Check=/staff/load"}]},
+  "keyOnly":{"items":[{"uri":"dag://staff/load?type:Check=/staff/load"}]},
+  "snakeCase":{"items":[{"uri":"dag://my-mod/load?type:Check=/my-mod/load"}]},
+  "moduleKey":{"items":[{"uri":"dag://my-mod/load?type:Check=/my-mod/load"}]},
   "otherModule":{"items":[]},
   "otherKey":{"items":[]},
   "emptyChain":{"filterUri":{"uri":"dag://{}","items":[]}},
-  "loaded":{"items":[{"uri":"dag://good/helper"}]},
+  "loaded":{"items":[{"uri":"dag://good/helper?module=good"}]},
   "missing":{"items":[],"asExpertise":[]},
-  "withoutModule":{"items":[{"uri":"dag://good/helper"},{"uri":"dag://my-mod/load"}]},
-  "withoutModuleKey":{"items":[{"uri":"dag://good/helper"},{"uri":"dag://staff/load"}]},
-  "withoutOne":{"items":[{"uri":"dag://good/helper"},{"uri":"dag://my-mod/load"},{"uri":"dag://staff/load"}]}
+  "withoutModule":{"items":[{"uri":"dag://good/helper?module=good"},{"uri":"dag://my-mod/load?type:Check=/my-mod/load"}]},
+  "withoutModuleKey":{"items":[{"uri":"dag://good/helper?module=good"},{"uri":"dag://staff/load?type:Check=/staff/load"}]},
+  "withoutOne":{"items":[{"uri":"dag://good/helper?module=good"},{"uri":"dag://my-mod/load?type:Check=/my-mod/load"},{"uri":"dag://staff/load?type:Check=/staff/load"}]}
 }}}`, string(*got))
 	// Converting the selection reports the load failure.
 	_, err = testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
@@ -415,8 +434,8 @@ func (ArtifactsSuite) TestFilterURIUnderFailedModule(ctx context.Context, t *tes
 	// Narrowing module loading does not make another module's address look
 	// like a shorthand path.
 	require.JSONEq(t, `{"node":{"artifacts":{
-  "shorthand":{"items":[{"uri":"dag://staff/load"}]},
-  "other":{"items":[{"uri":"dag://good/helper"}]}
+  "shorthand":{"items":[{"uri":"dag://staff/load?type:Check=/staff/load"}]},
+  "other":{"items":[{"uri":"dag://good/helper?module=good"}]}
 },"narrowed":{"other":{"items":[]}}}}`, string(*got))
 }
 
@@ -446,7 +465,7 @@ func (ArtifactsSuite) TestArtifactWorkspace(ctx context.Context, t *testctx.T) {
 		// A bound tool object's artifact has no workspace of its own.
 		require.JSONEq(t, `{"node":{"artifacts":{
   "docs":{"one":{"workspace":{"file":{"contents":"`+marker+`"}}}},
-  "bound":{"one":{"value":{"filterUri":{"one":{"uri":"dag://binder/docs","workspace":null}}}}}
+  "bound":{"one":{"value":{"filterUri":{"one":{"uri":"dag://binder/docs?type:Directory=/binder/docs","workspace":null}}}}}
 }}}`, string(*got))
 	}
 }
@@ -790,7 +809,7 @@ func (ArtifactsSuite) TestHelpProgress(ctx context.Context, t *testctx.T) {
 		result := base.With(daggerExec("-v", "list", "containers", "--by-provider", "-f=link"))
 		out, err := result.Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "dag+container://base")
+		require.Contains(t, out, "dag+container://?module=provider&name=base")
 		progress, err := result.Stderr(ctx)
 		require.NoError(t, err)
 		require.Contains(t, progress, "Load available types")
@@ -889,15 +908,15 @@ func (ArtifactsSuite) TestArtifactsCLI(ctx context.Context, t *testctx.T) {
 		{[]string{"list", "-a", "--type", "provider-docs"}, "dag+provider-docs://?name=docs\ndag+provider-docs://?name=docs.again\ndag+provider-docs://?name=otherDocs\ndag+provider-docs://?name=otherDocs.again\n"},
 		{[]string{"list", "-a", "--type="}, ""},
 		{[]string{"list", "-a", "--type=", "--type=container"}, "dag+container://?module=consumer\ndag+container://?module=provider&name=base\ndag+container://?name=broken\n"},
-		{[]string{"list", "-a", "consumer", "--type", "Container", "--type", "File"}, "dag+container://consumer/base\ndag+file://consumer/input\n"},
-		{[]string{"list", "-a", "consumer", "--type", "container", "--type", "File"}, "dag+container://consumer/base\ndag+file://consumer/input\n"},
-		{[]string{"list", "-a", "docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
-		{[]string{"list", "-a", "dag://docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
-		{[]string{"list", "-a", "provider/docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
-		{[]string{"list", "-a", "provider:docs"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n"},
-		{[]string{"list", "-a", "**/source"}, "dag+directory://docs/source\ndag+directory://other-docs/source\n"},
-		{[]string{"list", "-a", "base", "consumer/base"}, "dag+container://base\ndag+container://consumer/base\n"},
-		{[]string{"list", "-a", "dag+container://consumer"}, "dag+container://consumer/base\n"},
+		{[]string{"list", "-a", "consumer", "--type", "Container", "--type", "File"}, "dag+container://?module=consumer\ndag+file://?name=input\n"},
+		{[]string{"list", "-a", "consumer", "--type", "container", "--type", "File"}, "dag+container://?module=consumer\ndag+file://?name=input\n"},
+		{[]string{"list", "-a", "docs"}, "dag+directory://?name=docs.source\ndag+provider-docs://?name=docs\ndag+provider-docs://?name=docs.again\n"},
+		{[]string{"list", "-a", "dag://docs"}, "dag+directory://?name=docs.source\ndag+provider-docs://?name=docs\ndag+provider-docs://?name=docs.again\n"},
+		{[]string{"list", "-a", "provider/docs"}, "dag+directory://?name=docs.source\ndag+provider-docs://?name=docs\ndag+provider-docs://?name=docs.again\n"},
+		{[]string{"list", "-a", "provider:docs"}, "dag+directory://?name=docs.source\ndag+provider-docs://?name=docs\ndag+provider-docs://?name=docs.again\n"},
+		{[]string{"list", "-a", "**/source"}, "dag+directory://?name=docs.source\ndag+directory://?name=otherDocs.source\n"},
+		{[]string{"list", "-a", "base", "consumer/base"}, "dag+container://?module=consumer\ndag+container://?module=provider&name=base\n"},
+		{[]string{"list", "-a", "dag+container://consumer"}, "dag+container://?module=consumer\n"},
 		{[]string{"list", "-a", "dag://consumer?missing=anything"}, ""},
 		{[]string{"list", "-a", "dag://?go-module=sdk/go"}, ""},
 	} {
@@ -930,7 +949,15 @@ main = true
 }`)
 	out, err := reserved.With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "types", "-f=link")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "dag+directory://types\n", out)
+	require.Equal(t, "dag+directory://\n", out)
+	// The copied type-only link still identifies the field named types.
+	out, err = reserved.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
+  artifacts { filterUri(uri: "dag+directory://") { one { dimensionKeys(all: true) { dimension key } } } }
+} }`, "-W", "/work/selected", "-m", "core")).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"currentWorkspace":{"artifacts":{"filterUri":{"one":{"dimensionKeys":[
+  {"dimension":"module","key":"provider"},{"dimension":"name","key":"types"}
+]}}}}}`, out)
 }
 
 func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T) {
@@ -944,7 +971,7 @@ func (ArtifactsSuite) TestCLIAddressSelections(ctx context.Context, t *testctx.T
 		{[]string{"list", "-a", "dag+container://docs", "dag+directory://consumer"}, "", true},
 		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer"}, "", true},
 		{[]string{"list", "-a", "dag://docs?missing=value", "consumer/base"}, "", true},
-		{[]string{"list", "-a", "docs", "docs/source"}, "dag+directory://docs/source\ndag+provider-docs://docs\ndag+provider-docs://docs/again\n", false},
+		{[]string{"list", "-a", "docs", "docs/source"}, "dag+directory://?name=docs.source\ndag+provider-docs://?name=docs\ndag+provider-docs://?name=docs.again\n", false},
 		{[]string{"list", "-a", "dag+directory://docs", "dag+container://consumer", "--type", "Directory"}, "", true},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
@@ -974,7 +1001,7 @@ source = "./does-not-exist"
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "provider/docs", "--type", "Directory"}, "dag+directory://provider/docs/source\n"},
+		{[]string{"list", "-a", "provider/docs", "--type", "Directory"}, "dag+directory://provider/docs/source?module=provider\n"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"-W", "/work/selected"}, tc.args...)
