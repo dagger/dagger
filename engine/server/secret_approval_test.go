@@ -89,25 +89,25 @@ func TestSecretApprovalOnlyForAgents(t *testing.T) {
 	// when it reads, as before.
 	md, err := s.srv.AuthorizeSecret(s.ctx(s.module), call)
 	require.NoError(t, err)
-	require.Equal(t, "module", md.ClientID)
+	require.Nil(t, md, "the caller reads its own secret")
 
 	// A module client with a host of its own (its runtime container's) reads
 	// from it, agent or not.
 	other := s.client("container-module", sessionTestModuleResult(t, "other"), nil, "owner")
 	md, err = s.srv.AuthorizeSecret(core.AgentToContext(s.ctx(other), s.worker), call)
 	require.NoError(t, err)
-	require.Equal(t, "container-module", md.ClientID)
+	require.Nil(t, md)
 
 	// The owner reads its own secrets, in its agents' tools too.
 	md, err = s.srv.AuthorizeSecret(core.AgentToContext(s.ctx(s.owner), s.worker), call)
 	require.NoError(t, err)
-	require.Equal(t, "owner", md.ClientID)
+	require.Nil(t, md)
 
-	// Workspace routing reads as the workspace's owner.
+	// Workspace routing reads as the workspace's owner, its own secret.
 	routed := engine.ContextWithClientMetadata(s.agentCtx(), s.owner.clientMetadata)
 	md, err = s.srv.AuthorizeSecret(routed, "env://ROUTED")
 	require.NoError(t, err)
-	require.Equal(t, "owner", md.ClientID)
+	require.Nil(t, md)
 
 	require.Empty(t, s.questions.asked())
 }

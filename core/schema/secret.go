@@ -90,19 +90,32 @@ func (s *secretSchema) secret(
 	// reads the plaintext right away (below) to derive the handle, so this is
 	// where an agent-driven module asking for the owner's host secret is
 	// approved or denied (see Server.AuthorizeSecret).
-	source, err := parent.Self().AuthorizeSecret(ctx, args.URI)
+	owner, err := parent.Self().AuthorizeSecret(ctx, args.URI)
 	if err != nil {
 		return dagql.ObjectResult[*core.Secret]{}, err
 	}
 
-	concreteVal := &core.Secret{
-		URIVal:         args.URI,
-		SourceClientID: source.ClientID,
-	}
+	var concreteVal *core.Secret
 	var handle dagql.SessionResourceHandle
-	if args.CacheKey.Valid {
+	switch {
+	case owner != nil:
+		// An approved read of the owner's host: read it once, now, and hold
+		// the value, so the one approval does not let every later use read
+		// the owner's host again (for cmd://, run its command again). The
+		// handle comes from the value whatever cacheKey says: a cache key
+		// would give a mint that was never approved the same handle, and with
+		// it the cache entries of everything this secret was used in.
+		plaintext, err := (&core.Secret{URIVal: args.URI, SourceClientID: owner.ClientID}).Plaintext(ctx)
+		if err != nil {
+			return dagql.ObjectResult[*core.Secret]{}, fmt.Errorf("read secret %q: %w", args.URI, err)
+		}
+		concreteVal = &core.Secret{URIVal: args.URI, PlaintextVal: plaintext, PlaintextHeld: true}
+		handle = core.SecretHandleFromPlaintext(parent.Self().SecretSalt(), plaintext)
+	case args.CacheKey.Valid:
+		concreteVal = &core.Secret{URIVal: args.URI, SourceClientID: clientMetadata.ClientID}
 		handle = core.SecretHandleFromCacheKey(string(args.CacheKey.Value))
-	} else {
+	default:
+		concreteVal = &core.Secret{URIVal: args.URI, SourceClientID: clientMetadata.ClientID}
 		plaintext, err := concreteVal.Plaintext(ctx)
 		if err != nil {
 			slog.Warn("failed to get secret plaintext, falling back to random cache key", "uri", args.URI, "error", err)
