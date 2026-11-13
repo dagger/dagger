@@ -285,45 +285,74 @@ type BlobCacheUsage struct {
 	PoolBlobs     int
 	PoolBlobBytes int64
 	// Entries, Terms, ClassSlots and Holdings are the counts the service's
-	// memory estimate weighs, and RecordBytes the bytes of every stored
-	// record, in the pool or not.
-	Entries     int
-	Terms       int
-	ClassSlots  int
-	Holdings    int
-	RecordBytes int64
+	// memory estimate weighs.
+	Entries    int
+	Terms      int
+	ClassSlots int
+	Holdings   int
 }
 
-// BlobCacheUsage measures the cache, read under one hold. Only a blob-backed
-// cache answers.
+// BlobCacheUsage measures the cache. Only a blob-backed cache answers.
+//
+// The service reads it for every status request and metrics scrape, outside
+// its work lock, so the pool's walk is a read in pieces (readInPieces): it
+// lets egraphMu go every readPieceSteps values and takes it again, so a
+// writer waiting for the lock waits for one piece, not a walk of the whole
+// pool. A value is read whole within one piece, by its number. A write that
+// lands between two pieces is seen by the rest of the walk, so the figures
+// are of every value as the cache held it when the walk reached it, not of
+// the pool at one moment; with no write during it, the walk counts what one
+// hold would. The counts beside the pool's are read at the walk's start.
 func (c *Cache) BlobCacheUsage() (BlobCacheUsage, error) {
 	if !c.blobBacked {
 		return BlobCacheUsage{}, fmt.Errorf("blob cache usage: the cache has no blob store")
 	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	hold := c.readInPieces()
+	defer hold.done()
 	usage := BlobCacheUsage{
 		Entries:    len(c.resultsByID),
 		Terms:      len(c.egraphTerms),
 		ClassSlots: c.eqClassSlotsLocked(),
 		Holdings:   len(c.holderEntries),
 	}
-	// Only the pool's values name the blobs it counts, so this walks the
-	// pool, not every entry as a prune's membership count must.
+	// The pool as storedPoolLocked walks it, from the stored roots through
+	// each value's dependencies; only the pool's values name the blobs it
+	// counts, each counted once.
+	stack := make([]sharedResultID, 0, len(c.persistedEdgesByResult))
+	for id := range c.persistedEdgesByResult {
+		stack = append(stack, id)
+	}
+	visited := map[sharedResultID]struct{}{}
 	poolBlobs := map[digest.Digest]struct{}{}
-	for _, res := range c.storedPoolLocked() {
+	for len(stack) > 0 {
+		id := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if _, seen := visited[id]; seen {
+			continue
+		}
+		visited[id] = struct{}{}
+		hold.step()
+		res := c.resultsByID[id]
+		if res == nil || !res.hasOwnValueLocked() {
+			continue
+		}
 		usage.PoolValues++
 		usage.PoolBytes += res.storedValueBytes()
-		for blob, size := range res.storedBlobsLocked() {
-			if _, counted := poolBlobs[blob]; !counted {
-				poolBlobs[blob] = struct{}{}
-				usage.PoolBlobBytes += size
+		for _, part := range res.storedParts {
+			for _, layer := range part.layers {
+				blob := layer.layer.Descriptor.Digest
+				if _, counted := poolBlobs[blob]; !counted {
+					poolBlobs[blob] = struct{}{}
+					usage.PoolBlobBytes += layer.layer.Descriptor.Size
+				}
+			}
+		}
+		for dep := range res.deps {
+			if _, seen := visited[dep]; !seen {
+				stack = append(stack, dep)
 			}
 		}
 	}
 	usage.PoolBlobs = len(poolBlobs)
-	for _, res := range c.resultsByID {
-		usage.RecordBytes += res.storedRecordBytes
-	}
 	return usage, nil
 }

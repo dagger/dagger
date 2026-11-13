@@ -300,7 +300,6 @@ func TestStoredQueries(t *testing.T) {
 		Terms:         len(cloud.egraphTerms),
 		ClassSlots:    cloud.eqClassSlotsLocked(),
 		Holdings:      len(cloud.holderEntries),
-		RecordBytes:   recordBytes(r) + recordBytes(p) + recordBytes(service),
 	}
 	cloud.egraphMu.RUnlock()
 	require.Equal(t, want, usage)
