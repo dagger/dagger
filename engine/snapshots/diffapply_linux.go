@@ -474,6 +474,8 @@ type differ struct {
 
 	upperBindSource  string
 	upperOverlayDirs []string
+	// overlayDirs memoizes overlayDirLayers.
+	overlayDirs map[string][]string
 
 	upperdir string
 	// layers, when lower and upper are overlay snapshots of one lineage
@@ -493,9 +495,10 @@ type differ struct {
 
 func differFor(lowerMntable, upperMntable MountableRef, comparison fsdiff.Comparison) (_ *differ, rerr error) {
 	d := &differ{
-		visited:    make(map[string]struct{}),
-		inodes:     make(map[inode]string),
-		comparison: comparison,
+		visited:     make(map[string]struct{}),
+		inodes:      make(map[inode]string),
+		overlayDirs: make(map[string][]string),
+		comparison:  comparison,
 	}
 	defer func() {
 		if rerr != nil {
@@ -659,12 +662,13 @@ func (d *differ) mergedViewChange(ctx context.Context, handle func(context.Conte
 					return errors.Wrap(err, "failed to stat underlying file from bind mount")
 				}
 			case !srcfi.IsDir() && len(d.upperOverlayDirs) > 0:
-				for i := range d.upperOverlayDirs {
-					dir := d.upperOverlayDirs[len(d.upperOverlayDirs)-1-i]
-					path, err := safeJoin(dir, c.subPath)
-					if err != nil {
-						return errors.Wrapf(err, "failed to join %s and %s", dir, c.subPath)
-					}
+				dir, base := filepath.Split(c.subPath)
+				dirLayers, err := d.overlayDirLayers(filepath.Clean(dir))
+				if err != nil {
+					return err
+				}
+				for _, dirLayer := range dirLayers {
+					path := filepath.Join(dirLayer, base)
 					if stat, err := os.Lstat(path); err == nil {
 						c.srcPath = path
 						srcfi = stat
@@ -756,6 +760,42 @@ func (d *differ) overlayChanges(ctx context.Context, handle func(context.Context
 
 		return handle(ctx, c)
 	}, d.upperdir, d.upperRoot, d.lowerRoot, d.comparison)
+}
+
+// overlayDirLayers returns the directory subPath of the upper view in each of
+// its overlay layers that holds it as a directory, topmost first: a file of the
+// view is in the first of them that has it. A directory is looked up only in
+// its parent's layers, once, so a file of a deep chain costs a lookup in the
+// few layers its directory is in, not in every layer.
+func (d *differ) overlayDirLayers(subPath string) ([]string, error) {
+	if layers, ok := d.overlayDirs[subPath]; ok {
+		return layers, nil
+	}
+	var layers []string
+	if subPath == "/" {
+		layers = make([]string, 0, len(d.upperOverlayDirs))
+		for i := range d.upperOverlayDirs {
+			layers = append(layers, d.upperOverlayDirs[len(d.upperOverlayDirs)-1-i])
+		}
+	} else {
+		parentLayers, err := d.overlayDirLayers(filepath.Dir(subPath))
+		if err != nil {
+			return nil, err
+		}
+		base := filepath.Base(subPath)
+		for _, parentLayer := range parentLayers {
+			path := filepath.Join(parentLayer, base)
+			if stat, err := os.Lstat(path); err == nil {
+				if stat.IsDir() {
+					layers = append(layers, path)
+				}
+			} else if !errors.Is(err, unix.ENOENT) {
+				return nil, errors.Wrap(err, "failed to lstat when finding overlay layers of directory")
+			}
+		}
+	}
+	d.overlayDirs[subPath] = layers
+	return layers, nil
 }
 
 func (d *differ) checkParent(ctx context.Context, subPath string, handle func(context.Context, *change) error) error {
