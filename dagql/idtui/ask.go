@@ -369,6 +369,13 @@ func (fe *frontendPretty) askLines(a *pendingApproval, focused bool, width int) 
 			if i == 0 {
 				prefix = bold(CaretRightFilled) + " "
 			}
+			// Show the end of a line too long for the width, where the
+			// typing (and the cursor) is, rather than cropping it off.
+			if width > 0 {
+				if excess := ansi.StringWidth(l) + 3 - width; excess > 0 {
+					l = ansi.TruncateLeft(l, excess+1, "…")
+				}
+			}
 			lines = append(lines, prefix+l)
 		}
 		lines[len(lines)-1] += cursor

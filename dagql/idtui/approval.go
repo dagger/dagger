@@ -748,6 +748,11 @@ func (fe *frontendPretty) approvalCueLine(a *pendingApproval, arrow string) stri
 	}
 	if who == "" {
 		who = "an agent"
+		if a.ask != nil {
+			// An ask may come from no agent at all (the engine asking
+			// the CLI's own user, e.g. about a workspace checkpoint).
+			who = notifyTitle
+		}
 	}
 	jump := approvalNavKey
 	if fe.shell != nil {

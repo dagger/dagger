@@ -7,6 +7,7 @@ import (
 	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -300,6 +301,28 @@ func TestAskOffscreenCue(t *testing.T) {
 	fe := approvalTestFrontend(t)
 	a, _ := startAsk(t, fe, t.Context(), testAsk(approvalPushID, &prompt.AskBoolean{}))
 	require.Contains(t, ansiStrip(fe.approvalCueLine(a, "↑")), "chief is waiting for an answer ↑")
+
+	// Without an agent or module, the engine itself asks.
+	req := testAsk(approvalPush2ID, &prompt.AskBoolean{})
+	req.Requester = nil
+	b, _ := startAsk(t, fe, t.Context(), req)
+	require.Contains(t, ansiStrip(fe.approvalCueLine(b, "↑")), "Dagger is waiting for an answer ↑")
+}
+
+func TestAskLongInputShowsItsEnd(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	a, _ := startAsk(t, fe, t.Context(), testAsk(approvalPushID, &prompt.AskText{}))
+	pressKeys(fe, "k", "k")
+	require.True(t, fe.tui.IsFocused(a.view))
+	typeText(fe, strings.Repeat("abcdef", 40)+"ENDMARK")
+	lines := fe.askLines(a, true, 60)
+	input := lines[lineIndex(t, lines, "ENDMARK")]
+	require.Contains(t, ansiStrip(input), "▶ …")
+	require.LessOrEqual(t, ansiWidth(input), 60, "the input fits the width")
+	require.True(t, strings.HasSuffix(strings.TrimRight(ansiStrip(input), " "), "ENDMARK"),
+		"the end of the input, where the typing is, stays in view")
 }
 
 func ansiStrip(s string) string { return frameText([]string{s}) }
+
+func ansiWidth(s string) int { return ansi.StringWidth(s) }
