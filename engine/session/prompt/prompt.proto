@@ -99,6 +99,10 @@ message ApprovalRequest {
     // the operation is destructive (e.g. a force-push); frontends should
     // highlight it
     bool danger = 8;
+    // the bare question, without who asks (e.g. "Allow push to <remote> @
+    // <ref>?"), as literal text: frontends that render the requester
+    // themselves show this instead of prompt, which also names who asks
+    string question = 9;
 }
 
 enum ApprovalDecision {
