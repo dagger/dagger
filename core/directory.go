@@ -463,6 +463,7 @@ type DirectoryWithDirectoryLazy struct {
 	Parent      dagql.ObjectResult[*Directory]
 	DestDir     string
 	Source      dagql.ObjectResult[*Directory]
+	SourcePath  string
 	Filter      CopyFilter
 	Owner       string
 	Permissions *int
@@ -614,6 +615,7 @@ type persistedDirectoryWithDirectoryLazy struct {
 	ParentResultID   uint64     `json:"parentResultID"`
 	DestDir          string     `json:"destDir"`
 	SourceResultID   uint64     `json:"sourceResultID"`
+	SourcePath       string     `json:"sourcePath,omitempty"`
 	Filter           CopyFilter `json:"filter"`
 	Owner            string     `json:"owner,omitempty"`
 	Permissions      *int       `json:"permissions,omitempty"`
@@ -891,6 +893,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 			Parent:           parent,
 			DestDir:          persisted.DestDir,
 			Source:           source,
+			SourcePath:       persisted.SourcePath,
 			Filter:           persisted.Filter,
 			Owner:            persisted.Owner,
 			Permissions:      persisted.Permissions,
@@ -1083,7 +1086,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dec *dagql.PersistDecodeC
 
 func (lazy *DirectoryWithDirectoryLazy) Evaluate(ctx context.Context, dir *Directory) error {
 	return dir.evaluateLazy(ctx, &lazy.LazyState, "Directory.withDirectory", func(ctx context.Context) error {
-		if err := dir.WithDirectory(ctx, lazy.Parent, lazy.DestDir, lazy.Source, lazy.Filter, lazy.Owner, lazy.Permissions); err != nil {
+		if err := dir.withDirectory(ctx, lazy.Parent, lazy.DestDir, lazy.Source, lazy.SourcePath, lazy.Filter, lazy.Owner, lazy.Permissions, nil); err != nil {
 			return err
 		}
 		if lazy.DeclaredPlatform == nil {
@@ -1134,6 +1137,7 @@ func (lazy *DirectoryWithDirectoryLazy) EncodePersisted(ctx context.Context, enc
 		ParentResultID:   parentID,
 		DestDir:          lazy.DestDir,
 		SourceResultID:   sourceID,
+		SourcePath:       lazy.SourcePath,
 		Filter:           lazy.Filter,
 		Owner:            lazy.Owner,
 		Permissions:      lazy.Permissions,
@@ -2701,14 +2705,18 @@ func (dir *Directory) WithDirectory(
 	owner string,
 	permissions *int,
 ) error {
-	return dir.withDirectory(ctx, parent, destDir, src, filter, owner, permissions, nil)
+	return dir.withDirectory(ctx, parent, destDir, src, "", filter, owner, permissions, nil)
 }
 
+// withDirectory copies src into dir at destDir, or, if srcPath is set, the
+// directory at srcPath within src, resolved within src, which stays the copy's
+// boundary: its gitignore rules apply from src's root.
 func (dir *Directory) withDirectory(
 	ctx context.Context,
 	parent dagql.ObjectResult[*Directory],
 	destDir string,
 	src dagql.ObjectResult[*Directory],
+	srcPath string,
 	filter CopyFilter,
 	owner string,
 	permissions *int,
@@ -2805,7 +2813,7 @@ func (dir *Directory) withDirectory(
 				if err != nil {
 					return err
 				}
-				return copier.Copy(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt, Boundary: srcBoundary}, srcBoundary, destDir, opts)
+				return copier.Copy(ctx, layercopy.Mount{Root: srcRoot, Mount: srcMnt, Boundary: srcBoundary}, path.Join(srcBoundary, path.Join("/", srcPath)), destDir, opts)
 			}, mountRefAsReadOnly); err != nil {
 				return err
 			}

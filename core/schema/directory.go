@@ -533,7 +533,15 @@ type WithDirectoryArgs struct {
 	core.CopyFilter
 }
 
-func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+// directoryWithDirectoryArgs adds to withDirectory's arguments the path within
+// the source to copy, for the engine's own reads of a path within a directory
+// whose rules, such as its .gitignore files, apply from its root.
+type directoryWithDirectoryArgs struct {
+	WithDirectoryArgs
+	SourcePath string `internal:"true" default:""`
+}
+
+func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args directoryWithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
@@ -557,6 +565,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 			Parent:      parent,
 			DestDir:     args.Path,
 			Source:      srcDir,
+			SourcePath:  args.SourcePath,
 			Filter:      args.CopyFilter,
 			Owner:       args.Owner,
 			Permissions: perms,
@@ -572,7 +581,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return res, err
 	}
-	return withDirectoryContentDigest(ctx, res, parent, srcDir, args, perms)
+	return withDirectoryContentDigest(ctx, res, parent, srcDir, args.WithDirectoryArgs, args.SourcePath, perms)
 }
 
 // withDirectoryContentDigest keys a copy of one content-keyed directory into
@@ -589,6 +598,7 @@ func withDirectoryContentDigest(
 	parent dagql.ObjectResult[*core.Directory],
 	src dagql.ObjectResult[*core.Directory],
 	args WithDirectoryArgs,
+	sourcePath string,
 	perms *int,
 ) (dagql.ObjectResult[*core.Directory], error) {
 	parentCall, err := parent.ResultCall()
@@ -620,6 +630,9 @@ func withDirectoryContentDigest(
 	in = append(in, strconv.Itoa(len(args.Exclude)))
 	in = append(in, args.Exclude...)
 	in = append(in, string(srcDgst))
+	if sourcePath != "" {
+		in = append(in, "sourcePath", sourcePath)
+	}
 	return res.WithContentDigest(ctx, hashutil.HashStrings(in...))
 }
 
