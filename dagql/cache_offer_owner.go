@@ -107,9 +107,17 @@ func (c *Cache) releaseOfferOwnerLocked(ctx context.Context, owner *offerOwner) 
 	return queue, rerr
 }
 
+// partAddressKey is a part address's key: its JSON encoding. Every call row
+// keys its parts, so the common address, a part of the value itself under a
+// name of plain characters, is written out directly, as json.Marshal writes
+// it: the encoder and the path's check cost a call row more than the rest of
+// its parts' handling.
 func partAddressKey(address PersistedPartAddress) (string, error) {
 	if address.Part == "" {
 		return "", fmt.Errorf("part address: empty part")
+	}
+	if len(address.OutputPath) == 0 && plainJSONString(string(address.Part)) {
+		return `{"part":"` + string(address.Part) + `"}`, nil
 	}
 	if _, err := canonicalPath(address.OutputPath); err != nil {
 		return "", err
@@ -483,4 +491,19 @@ func validateStoredOwnership(res *sharedResult) error {
 		return fmt.Errorf("result %d: %w", res.id, err)
 	}
 	return nil
+}
+
+// plainJSONString reports whether json.Marshal writes s between its quotes as
+// it is: printable ASCII with nothing it escapes, neither a quote nor a
+// backslash, nor <, > and &, which it escapes for HTML.
+func plainJSONString(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch b := s[i]; {
+		case b < 0x20 || b >= 0x7f:
+			return false
+		case b == '"' || b == '\\' || b == '<' || b == '>' || b == '&':
+			return false
+		}
+	}
+	return true
 }
