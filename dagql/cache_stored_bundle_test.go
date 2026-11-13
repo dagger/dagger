@@ -21,12 +21,22 @@ import (
 // into a new Cloud cache, and returns the Cloud's numbers for R and P.
 func storedBundleTestCloud(t *testing.T, text string) (context.Context, *Cache, uint64, uint64) {
 	t.Helper()
+	return storedBundleTestCloudIn(t, text, false)
+}
+
+// storedBundleTestCloudIn is storedBundleTestCloud, with whole a Cloud whose
+// body worker is stopped before the merge, so that its records stay whole.
+func storedBundleTestCloudIn(t *testing.T, text string, whole bool) (context.Context, *Cache, uint64, uint64) {
+	t.Helper()
 	actx, a, asrv := transferTestCache(t)
 	r := persistedListTestResult(t, actx, a, asrv, "bundle-root", &transferTestValue{Text: text})
 	p := persistedListTestResult(t, actx, a, asrv, "bundle-dep", &transferTestValue{Text: "dep"})
 	transferTestDependency(a, actx, r, p)
 	bundle := exportTestBundle(t, actx, a, r)
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	if whole {
+		storedTestHoldWhole(cloud)
+	}
 	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
 	require.NoError(t, err)
 	var rNumber, pNumber uint64
@@ -253,12 +263,10 @@ func TestStoredBundleCarriesTheCurrentRecord(t *testing.T) {
 	for _, compressed := range []bool{false, true} {
 		t.Run(storedTestState(compressed), func(t *testing.T) {
 			t.Parallel()
-			ctx, cloud, r, _ := storedBundleTestCloud(t, "old")
+			ctx, cloud, r, _ := storedBundleTestCloudIn(t, "old", !compressed)
 			settle := func() {
 				if compressed {
 					storedTestCompress(cloud)
-				} else {
-					storedTestHoldWhole(cloud)
 				}
 			}
 			settle()
@@ -316,11 +324,9 @@ func TestStoredBundleRecordGoesWithThePrunedValue(t *testing.T) {
 	for _, compressed := range []bool{false, true} {
 		t.Run(storedTestState(compressed), func(t *testing.T) {
 			t.Parallel()
-			ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+			ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", !compressed)
 			if compressed {
 				storedTestCompress(cloud)
-			} else {
-				storedTestHoldWhole(cloud)
 			}
 			_, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 			require.NoError(t, err)
