@@ -180,6 +180,22 @@ func TestApprovalRequest(t *testing.T) {
 		"forever is keyed by the agent's name and the module's source without its pin")
 }
 
+func TestApprovalRequesterEscaped(t *testing.T) {
+	r := approvalRequester{
+		agentName:   "worker\x1b[31m",
+		agentHandle: "agent-1",
+		module:      sessionTestModuleResultWithGitSource(t, "staff\u202e", "https://github.com/org/st\u202eaff", testStaffPin),
+		function:    "Staff.gh\x00",
+	}
+	require.Equal(t, &prompt.ApprovalRequester{
+		AgentName:   `worker\x1b[31m`,
+		AgentHandle: "agent-1",
+		Module:      `staff\u202e`,
+		ModuleRef:   `https://github.com/org/st\u202eaff@` + testStaffPin,
+		Function:    `Staff.gh\x00`,
+	}, r.proto(), "names chosen by modules and spawners arrive as literal text")
+}
+
 func TestApprovalGrantScope(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
