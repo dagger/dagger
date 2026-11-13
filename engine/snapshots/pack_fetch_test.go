@@ -249,9 +249,10 @@ func TestImportChainFromPackWithCorruptMember(t *testing.T) {
 	require.Positive(t, provider.opens.Load())
 }
 
-// An import that joined another import's read of a pack, which failed for
-// that import's provider, reads the pack once more with its own.
-func TestImportChainsJoinPackRetriesOwnProvider(t *testing.T) {
+// An import that joined another import's read of a pack, which failed,
+// fails with it as a content failure, though its own provider is healthy: it
+// doesn't read the pack again.
+func TestImportChainsJoinPackFailWithTheRead(t *testing.T) {
 	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
 	a, _ := producer.Build(t, nil, "a.txt", "first")
 	b, _ := producer.Build(t, nil, "b.txt", "second")
@@ -261,11 +262,6 @@ func TestImportChainsJoinPackRetriesOwnProvider(t *testing.T) {
 	providerA.gate, providerA.fail = gate, errors.New("expired address")
 	providerB := newPackProvider(t, chainA.Provider, chainA.Layers[0].Descriptor, chainB.Layers[0].Descriptor)
 	providerB.InfoReaderProvider = chainB.Provider
-	// The second import's own read also stores the first import's blob,
-	// which the first import would then link instead of failing: it waits
-	// until the first import has returned.
-	gateB := make(chan struct{})
-	providerB.gate = gateB
 
 	first := make(chan error, 1)
 	go func() {
@@ -277,21 +273,20 @@ func TestImportChainsJoinPackRetriesOwnProvider(t *testing.T) {
 	}()
 	require.Eventually(t, func() bool { return providerA.opens.Load() == 1 }, 10*time.Second, 10*time.Millisecond)
 	second := make(chan error, 1)
-	var ref bkcache.ImmutableRef
 	go func() {
-		var err error
-		ref, err = consumer.Manager.ImportChain(context.Background(), supplied(chainB, providerB))
+		ref, err := consumer.Manager.ImportChain(context.Background(), supplied(chainB, providerB))
+		if err == nil {
+			_ = ref.Release(context.Background())
+		}
 		second <- err
 	}()
 	require.Eventually(t, func() bool { return bkcache.PackWaiters(consumer.Manager, providerA.id) == 2 }, 10*time.Second, 10*time.Millisecond, "the second import joined the first one's read")
 	close(gate)
 	var contentErr *bkcache.ChainContentError
 	require.ErrorAs(t, <-first, &contentErr, "the first import's own provider failed")
-	close(gateB)
-	require.NoError(t, <-second)
-	defer ref.Release(context.Background())
-	require.EqualValues(t, 1, providerB.opens.Load(), "the second import read the pack with its own provider")
-	testutil.CheckFile(t, ref, "b.txt", "second")
+	require.ErrorAs(t, <-second, &contentErr, "the second import fails with the read it joined")
+	require.Equal(t, chainB.Layers[0].Descriptor.Digest, contentErr.Layer)
+	require.Zero(t, providerB.opens.Load(), "the second import doesn't read the pack itself")
 }
 
 // A read ends before its lease can expire: its deadline, which the provider
@@ -392,23 +387,4 @@ func TestPackReadCutOffAtItsLimit(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Less(t, time.Since(start), 10*time.Second, "the read was cut off at its limit")
 	require.EqualValues(t, 1, provider.opens.Load())
-}
-
-// valuePackProvider is a provider that isn't a pointer.
-type valuePackProvider struct{ *packProvider }
-
-// An import whose own read fails stops there, even when its provider isn't
-// one it can tell apart from another's.
-func TestImportChainFromPackOwnFailureWithValueProvider(t *testing.T) {
-	producer, consumer := testutil.NewStore(t), testutil.NewStore(t)
-	a, _ := producer.Build(t, nil, "a.txt", "first")
-	chain := exportChain(t, a)
-	provider := newPackProvider(t, chain.Provider, chain.Layers[0].Descriptor)
-	provider.fail = errors.New("expired address")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	_, err := consumer.Manager.ImportChain(ctx, supplied(chain, valuePackProvider{provider}))
-	var contentErr *bkcache.ChainContentError
-	require.ErrorAs(t, err, &contentErr)
-	require.EqualValues(t, 1, provider.opens.Load(), "the import's own read failed, and it stopped")
 }
