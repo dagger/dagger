@@ -176,8 +176,8 @@ func TestApprovalRequest(t *testing.T) {
 	}, req.Requester)
 	require.Equal(t, traceID.String(), req.TraceId)
 	require.Equal(t, spanID.String(), req.SpanId)
-	require.Equal(t, `approval:v1:"test-push":"https://github.com/org/staff|staff":"worker":"remote @ ref"`, req.PersistentKey,
-		"forever is keyed by the agent's name and the module's source without its pin")
+	require.Equal(t, `approval:v2:"test-push":"https://github.com/org/staff|staff":"remote @ ref"`, req.PersistentKey,
+		"forever is keyed by the module's source without its pin, not by the agent")
 }
 
 func TestApprovalRequesterEscaped(t *testing.T) {
@@ -324,19 +324,18 @@ func TestApprovalGrantRequester(t *testing.T) {
 func TestApprovalPersistentKey(t *testing.T) {
 	staff := sessionTestModuleResultWithGitSource(t, "staff", "https://github.com/org/staff", testStaffPin)
 	repinned := sessionTestModuleResultWithGitSource(t, "staff", "https://github.com/org/staff", "2222222222222222222222222222222222222222")
-	key := approvalPersistentKey("k", approvalRequester{agentName: "a", agentHandle: "h1", module: staff, function: "Staff.f"}, "s")
-	require.Equal(t, key, approvalPersistentKey("k", approvalRequester{agentName: "a", agentHandle: "h2", module: repinned}, "s"),
-		"neither handle, pin nor function is part of a forever grant")
+	key := approvalPersistentKey("k", staff, "s")
+	require.Equal(t, `approval:v2:"k":"https://github.com/org/staff|staff":"s"`, key)
+	require.Equal(t, key, approvalPersistentKey("k", repinned, "s"), "an update of the module keeps its forever grant")
 	// Quoting keeps each field's separators its own.
 	require.NotEqual(t,
-		approvalPersistentKey("k", approvalRequester{agentName: `a":"b`, module: staff}, "s"),
-		approvalPersistentKey("k", approvalRequester{agentName: "a", module: staff}, `b":"s`))
-	require.Empty(t, approvalPersistentKey("k", approvalRequester{agentName: "a", agentHandle: "h"}, "s"),
-		"an agent's name alone is not an identity")
-	require.Empty(t, approvalPersistentKey("k", approvalRequester{agentName: "a", module: sessionTestModuleResult(t, "nosource")}, "s"),
+		approvalPersistentKey(`k":"https://github.com/org/staff|staff`, staff, "s"),
+		approvalPersistentKey("k", staff, `https://github.com/org/staff|staff":"s`))
+	require.Empty(t, approvalPersistentKey("k", dagql.ObjectResult[*core.Module]{}, "s"), "nothing to remember without a module")
+	require.Empty(t, approvalPersistentKey("k", sessionTestModuleResult(t, "nosource"), "s"),
 		"a module without a source is not identifiable")
 	dir := &core.Module{NameField: "staff", Source: dagql.NonNull(sessionTestModuleSource(t, &core.ModuleSource{Kind: core.ModuleSourceKindDir}))}
-	require.Empty(t, approvalPersistentKey("k", approvalRequester{agentName: "a", module: sessionTestModuleOf(t, dir)}, "s"),
+	require.Empty(t, approvalPersistentKey("k", sessionTestModuleOf(t, dir), "s"),
 		"a module built from a directory has no source the engine can name")
 	local := &core.Module{NameField: "staff", Source: dagql.NonNull(sessionTestModuleSource(t, &core.ModuleSource{
 		Kind:              core.ModuleSourceKindLocal,
@@ -344,7 +343,7 @@ func TestApprovalPersistentKey(t *testing.T) {
 		SourceRootSubpath: ".",
 	}))}
 	require.Equal(t, "/work/staff", canonicalModuleReference(local.Source.Value.Self()))
-	require.Empty(t, approvalPersistentKey("k", approvalRequester{agentName: "a", module: sessionTestModuleOf(t, local)}, "s"),
+	require.Empty(t, approvalPersistentKey("k", sessionTestModuleOf(t, local), "s"),
 		"a local module is only a path, which another module can be loaded from")
 }
 

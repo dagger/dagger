@@ -107,7 +107,7 @@ func TestGitReadApprovalOwnerBoundary(t *testing.T) {
 		Module:    "staff",
 		ModuleRef: "https://github.com/org/staff@1111111111111111111111111111111111111111",
 	}, req.Requester)
-	require.Equal(t, `approval:v1:"git-read":"https://github.com/org/staff|staff":"":"`+allowed+`"`, req.PersistentKey,
+	require.Equal(t, `approval:v2:"git-read":"https://github.com/org/staff|staff":"`+allowed+`"`, req.PersistentKey,
 		"the owner's client may remember a forever grant for the module, whatever its pin")
 
 	// A denial holds only for that attempt: saying no to course-correct must
