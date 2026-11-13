@@ -15,11 +15,11 @@ import (
 //
 // A push to a remote's default branch, or to any ref that is not a branch,
 // asks about that exact ref every time (gitPushApproval), as it is what
-// deploys, releases or otherwise matters downstream. Pushes to any other
-// branch, e.g. a pull request's, are routine development: those only need
-// the remote to be approved once (gitPushRemoteApproval), unless it is the
-// remote the owner's own workspace was checked out from, which is approved
-// already.
+// deploys, releases or otherwise matters downstream; so does any force-push
+// (see gitForcePushToOtherBranchesAsks). Plain pushes to any other branch,
+// e.g. a pull request's, are routine development: those only need the remote
+// to be approved once (gitPushRemoteApproval), unless it is the remote the
+// owner's own workspace was checked out from, which is approved already.
 //
 // The remote grant cannot be dropped: approving a push also lets it use the
 // owner's credentials (its Git credential helper for HTTPS, its SSH agent for
@@ -43,26 +43,28 @@ func gitPushRemoteApproval(remote string, remoteDefault gitRemoteDefault) approv
 		// The remote chose this name: literal text, like the subject.
 		excluded = append([]string{literalText(branch)}, excluded...)
 	}
-	pushes := "pushes and force-pushes"
+	pushes, action := "pushes and force-pushes", "Push and force-push"
 	if gitForcePushToOtherBranchesAsks {
-		pushes = "pushes"
+		pushes, action = "pushes", "Push"
 	}
+	branches := " branches other than " + strings.Join(excluded[:len(excluded)-1], ", ") + " and " + excluded[len(excluded)-1]
 	return approvalSpec{
 		Kind:    approvalKindGitPushRemote,
 		Subject: subject,
 		// Grants are keyed by the subject, not the question: an answer holds
 		// whatever the remote later reports as its default branch.
-		Question: "Allow " + pushes + " to " + subject + " branches other than " +
-			strings.Join(excluded[:len(excluded)-1], ", ") + " and " + excluded[len(excluded)-1],
+		Question: "Allow " + pushes + " to " + subject + branches,
+		Action:   action + " to " + subject + branches,
 	}
 }
 
 // gitForcePushToOtherBranchesAsks is whether a force-push to a branch that
 // is not the remote's default asks about that exact ref, as a force-push to
-// the default branch does. It does not: rebasing a pull request's branch is
-// as routine as pushing to it, so it only needs the remote grant. Flip it to
-// ask about every force-push.
-const gitForcePushToOtherBranchesAsks = false
+// the default branch does. It does: a force-push rewrites history others may
+// have built on, so even on a pull request's branch it is asked about each
+// time, and, being destructive, never allowed forever (see gitPushApproval).
+// Plain pushes to those branches still only need the remote grant.
+const gitForcePushToOtherBranchesAsks = true
 
 // gitWellKnownDefaultBranches are asked about whatever the remote's HEAD
 // says, so that a misdetected or unknown default branch never skips asking
