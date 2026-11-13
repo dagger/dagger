@@ -150,7 +150,8 @@ type RemoteHoldingUpdate struct {
 // EquivalentHolders reads it, whatever renumbering the classes had in between.
 //
 // On a blob-backed cache, Holdings and Entries are what a reader that keeps
-// its answers asks again (cache_change_marks.go), sorted:
+// its answers asks again (cache_change_marks.go), sorted, holdings by number
+// and then cache:
 //   - Holdings: every holding whose description (RemoteHoldingInfo's
 //     Holding) may differ after the operation, those it created or removed
 //     included;
@@ -418,6 +419,7 @@ func (c *Cache) indexRecipeLocked(recipe digest.Digest, res *sharedResult) {
 	}
 	c.entriesByRecipe[recipe] = res.id
 	res.recipeKeys = append(res.recipeKeys, recipe)
+	c.markEntryLocked(res.id)
 }
 
 // unindexRecipesLocked removes the recipe keys that still name res. Requires
@@ -479,13 +481,18 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 			c.indexRecipeLocked(desc.Request, entry)
 		}
 	}
-	if desc.TypeName != "" {
+	if desc.TypeName != "" && desc.TypeName != h.typeName {
 		h.typeName = desc.TypeName
+		c.markHoldingLocked(key)
 	}
-	if desc.Executed {
+	if desc.Executed && !h.executed {
 		h.executed = true
+		c.markHoldingLocked(key)
 	}
-	h.image = desc.Image
+	if h.image != desc.Image {
+		h.image = desc.Image
+		c.markHoldingLocked(key)
+	}
 	touchSharedResultLastUsed(entry, desc.UsedAtUnixNano)
 	candidates, changed := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{
 		Replacements:  desc.Replacements,
@@ -526,6 +533,8 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 		entry.holders = make(map[HolderKey]*holding)
 	}
 	entry.holders[key] = h
+	c.markHoldingLocked(key)
+	c.markEntryLocked(entry.id)
 	if entry.cacheHolders == nil {
 		entry.cacheHolders = make(map[CacheID]map[uint64]struct{})
 	}
@@ -547,6 +556,7 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 				parentHolding.deps = make(map[uint64]struct{})
 			}
 			parentHolding.deps[key.Number] = struct{}{}
+			c.markHoldingLocked(HolderKey{Cache: key.Cache, Number: parent})
 			h.dependents++
 		}
 	}
@@ -635,7 +645,11 @@ func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueB
 		if h == nil {
 			continue
 		}
+		before := h.retention
 		h.retention.observe(root.Retained, root.RetentionExpiresAtUnix, at)
+		if h.retention.retained != before.retained || h.retention.expiresAtUnix != before.expiresAtUnix {
+			c.markHoldingLocked(key)
+		}
 		if !h.retention.retained {
 			change.Candidates = append(change.Candidates, key)
 		}
@@ -761,6 +775,7 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 			depKey := HolderKey{Cache: key.Cache, Number: number}
 			if _, dep := c.holdingLocked(depKey); dep != nil {
 				dep.dependents--
+				c.markHoldingLocked(depKey)
 				candidates = append(candidates, depKey)
 			}
 		}
@@ -779,14 +794,19 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 		h.expiresAtUnix = expires
 		changed = true
 	}
-	if obs.ContentDigest != "" {
+	described := changed
+	if obs.ContentDigest != "" && obs.ContentDigest != h.contentDigest {
 		h.contentDigest = obs.ContentDigest
+		described = true
 	}
 	if advanceHeldParts(h, offered, heldPartOffered) {
 		changed = true
 	}
 	if advanceHeldParts(h, parts, heldPartComplete) {
 		changed = true
+	}
+	if described || changed {
+		c.markHoldingLocked(key)
 	}
 	c.addHoldingDepsLocked(state, key, h, obs.Deps)
 	return candidates, changed
@@ -807,7 +827,10 @@ func (c *Cache) AddRemoteHold(ctx context.Context, key HolderKey, session string
 	if h.sessions == nil {
 		h.sessions = make(map[string]struct{})
 	}
-	h.sessions[session] = struct{}{}
+	if _, held := h.sessions[session]; !held {
+		h.sessions[session] = struct{}{}
+		c.markHoldingLocked(key)
+	}
 	state := c.remoteCacheLocked(key.Cache)
 	held := state.sessions[session]
 	if held == nil {
@@ -838,7 +861,10 @@ func (c *Cache) releaseRemoteSessionLocked(cache CacheID, session string, candid
 	for number := range state.sessions[session] {
 		key := HolderKey{Cache: cache, Number: number}
 		if _, h := c.holdingLocked(key); h != nil {
-			delete(h.sessions, session)
+			if _, held := h.sessions[session]; held {
+				delete(h.sessions, session)
+				c.markHoldingLocked(key)
+			}
 			candidates = append(candidates, key)
 		}
 	}
@@ -857,7 +883,11 @@ func (c *Cache) ObserveRemoteRetention(ctx context.Context, key HolderKey, obs R
 	if h == nil {
 		return change, fmt.Errorf("observe remote retention: %w: %s/%d", ErrUnknownHolding, key.Cache, key.Number)
 	}
+	before := h.retention
 	h.retention.observe(obs.Retained, obs.ExpiresAtUnix, obsTime{generation: obs.Generation, engineTime: obs.EngineTimeUnixNano})
+	if h.retention.retained != before.retained || h.retention.expiresAtUnix != before.expiresAtUnix {
+		c.markHoldingLocked(key)
+	}
 	if !h.retention.retained {
 		change.Candidates = []HolderKey{key}
 	}
@@ -894,6 +924,9 @@ func (c *Cache) ReleaseRemoteCache(ctx context.Context, cache CacheID) (change R
 			continue
 		}
 		h := c.resultsByID[id].holders[key]
+		if len(h.sessions) > 0 || h.retention.retained {
+			c.markHoldingLocked(key)
+		}
 		h.sessions = nil
 		h.retention = retentionRegister{}
 		change.Candidates = append(change.Candidates, key)
@@ -1062,6 +1095,8 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 	// A Go map keeps its memory when its last key is deleted, so each map
 	// left empty goes: a stored entry outlives every holding of it.
 	delete(entry.holders, key)
+	c.markHoldingLocked(key)
+	c.markEntryLocked(entry.id)
 	if len(entry.holders) == 0 {
 		entry.holders = nil
 	}
@@ -1084,6 +1119,7 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 		depKey := HolderKey{Cache: key.Cache, Number: number}
 		if _, dep := c.holdingLocked(depKey); dep != nil {
 			dep.dependents--
+			c.markHoldingLocked(depKey)
 			deps = append(deps, depKey)
 		}
 	}
@@ -1133,6 +1169,7 @@ func (c *Cache) CollectRemoteHolding(ctx context.Context, key HolderKey) (Remote
 				parent.unknownDeps = make(map[uint64]struct{})
 			}
 			parent.unknownDeps[key.Number] = struct{}{}
+			c.markHoldingLocked(parentKey)
 			parents := state.unknownDependents[key.Number]
 			if parents == nil {
 				parents = make(map[uint64]struct{})
@@ -1213,12 +1250,15 @@ func (c *Cache) addHoldingDepsLocked(state *remoteCacheState, key HolderKey, h *
 			}
 			h.deps[number] = struct{}{}
 			dep.dependents++
+			c.markHoldingLocked(key)
+			c.markHoldingLocked(HolderKey{Cache: key.Cache, Number: number})
 			continue
 		}
 		if h.unknownDeps == nil {
 			h.unknownDeps = make(map[uint64]struct{})
 		}
 		h.unknownDeps[number] = struct{}{}
+		c.markHoldingLocked(key)
 		parents := state.unknownDependents[number]
 		if parents == nil {
 			parents = make(map[uint64]struct{})
