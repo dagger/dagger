@@ -33,6 +33,9 @@ type approvalSpec struct {
 	Question string
 	// Danger marks a destructive operation, e.g. a force-push.
 	Danger bool
+	// NoForever withholds the forever grant: the owner can allow the request
+	// at most for the session, e.g. running a command on the owner's host.
+	NoForever bool
 }
 
 // approvalKey is what a session grant covers: one owner letting one agent,
@@ -142,13 +145,15 @@ func (srv *Server) requestApproval(ctx context.Context, client, owner *clientRun
 		subject: spec.Subject,
 	}
 	req := &prompt.ApprovalRequest{
-		Kind:          spec.Kind,
-		Prompt:        approvalPrompt(spec.Question, requester),
-		Question:      spec.Question + "?",
-		Subject:       spec.Subject,
-		Requester:     requester.proto(),
-		PersistentKey: approvalPersistentKey(spec.Kind, requester, spec.Subject),
-		Danger:        spec.Danger,
+		Kind:      spec.Kind,
+		Prompt:    approvalPrompt(spec.Question, requester),
+		Question:  spec.Question + "?",
+		Subject:   spec.Subject,
+		Requester: requester.proto(),
+		Danger:    spec.Danger,
+	}
+	if !spec.NoForever {
+		req.PersistentKey = approvalPersistentKey(spec.Kind, requester, spec.Subject)
 	}
 	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
 		req.TraceId = sc.TraceID().String()

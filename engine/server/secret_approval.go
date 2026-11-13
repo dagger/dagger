@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
@@ -13,14 +14,22 @@ const approvalKindSecret = "secret"
 
 // secretApproval asks the owner to let an agent's module read a secret from
 // the owner's host. The URI is shown verbatim, escaped for terminals
-// (including bidi/control characters): a cmd:// URI runs a command on the
-// owner's host, which the owner must see to decide.
+// (including bidi/control characters). A cmd:// URI runs its command on the
+// owner's host, so the question says so, naming the command, the request is
+// marked dangerous, and it can be allowed at most for the session: a forever
+// grant would let the module run that command on every later run unasked.
 func secretApproval(uri string) approvalSpec {
-	return approvalSpec{
+	spec := approvalSpec{
 		Kind:     approvalKindSecret,
 		Subject:  literalText(uri),
 		Question: "Allow reading secret " + strconv.QuoteToASCII(uri),
 	}
+	if command, ok := strings.CutPrefix(uri, "cmd://"); ok {
+		spec.Question = "Allow running " + strconv.QuoteToASCII(command) + " on your machine to read a secret"
+		spec.Danger = true
+		spec.NoForever = true
+	}
+	return spec
 }
 
 // AuthorizeSecret returns the trusted owner whose host Query.secret(uri:)
