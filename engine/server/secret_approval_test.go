@@ -47,7 +47,7 @@ func allowSecret(decision prompt.ApprovalDecision) func(*prompt.ApprovalRequest)
 
 func TestSecretApprovalAgentDrivenModule(t *testing.T) {
 	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_SESSION))
-	const uri = "cmd://gh auth token"
+	const uri = "file:///home/me/.token"
 	for range 2 {
 		md, err := s.srv.AuthorizeSecret(s.agentCtx(), uri)
 		require.NoError(t, err)
@@ -57,8 +57,27 @@ func TestSecretApprovalAgentDrivenModule(t *testing.T) {
 	req := s.questions.asked()[0]
 	require.Equal(t, approvalKindSecret, req.Kind)
 	require.Equal(t, uri, req.Subject)
-	require.Equal(t, `Allow reading secret "cmd://gh auth token" (requested by agent "worker", module "staff", function "Staff.gh")?`, req.Prompt)
+	require.Equal(t, `Allow reading secret "file:///home/me/.token" (requested by agent "worker", module "staff", function "Staff.gh")?`, req.Prompt)
 	require.False(t, req.Danger)
+	require.NotEmpty(t, req.PersistentKey, "reading a secret can be allowed forever")
+}
+
+func TestSecretApprovalCommand(t *testing.T) {
+	// The owner answers forever, which a command is never offered: it is
+	// allowed for the session.
+	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_FOREVER))
+	const uri = "cmd://gh auth token"
+	for range 2 {
+		md, err := s.srv.AuthorizeSecret(s.agentCtx(), uri)
+		require.NoError(t, err)
+		require.Equal(t, "owner", md.ClientID)
+	}
+	require.Len(t, s.questions.asked(), 1)
+	req := s.questions.asked()[0]
+	require.Equal(t, uri, req.Subject)
+	require.Equal(t, `Allow running "gh auth token" on your machine to read a secret (requested by agent "worker", module "staff", function "Staff.gh")?`, req.Prompt)
+	require.True(t, req.Danger, "running a command on the owner's host is dangerous")
+	require.Empty(t, req.PersistentKey, "running a command is never allowed forever")
 }
 
 func TestSecretApprovalDenied(t *testing.T) {
@@ -112,22 +131,27 @@ func TestSecretApprovalOnlyForAgents(t *testing.T) {
 	require.Empty(t, s.questions.asked())
 }
 
-func TestSecretApprovalPerAgent(t *testing.T) {
+func TestSecretApprovalPerModule(t *testing.T) {
 	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_SESSION))
 	const uri = "file:///home/me/.token"
 	_, err := s.srv.AuthorizeSecret(s.agentCtx(), uri)
 	require.NoError(t, err)
-	// Another agent the same module drives, or another secret, asks again.
+	// Grants are scoped to the module: another agent it drives shares one.
 	otherAgent := core.AgentToContext(s.ctx(s.module), testAgent(t, "agent-2", "worker"))
 	_, err = s.srv.AuthorizeSecret(otherAgent, uri)
 	require.NoError(t, err)
+	require.Len(t, s.questions.asked(), 1)
+	// Another secret asks again.
 	_, err = s.srv.AuthorizeSecret(s.agentCtx(), "file:///home/me/.other")
 	require.NoError(t, err)
-	require.Len(t, s.questions.asked(), 3)
+	require.Len(t, s.questions.asked(), 2)
 }
 
 func TestSecretApprovalPrompt(t *testing.T) {
-	spec := secretApproval("cmd://echo \u202e\x1b[31m")
+	spec := secretApproval("file:///x\u202e\x1b[31m")
+	require.Equal(t, `file:///x\u202e\x1b[31m`, spec.Subject)
+	require.Equal(t, `Allow reading secret "file:///x\u202e\x1b[31m"`, spec.Question)
+	spec = secretApproval("cmd://echo \u202e\x1b[31m")
 	require.Equal(t, `cmd://echo \u202e\x1b[31m`, spec.Subject)
-	require.Equal(t, `Allow reading secret "cmd://echo \u202e\x1b[31m"`, spec.Question)
+	require.Equal(t, `Allow running "echo \u202e\x1b[31m" on your machine to read a secret`, spec.Question)
 }
