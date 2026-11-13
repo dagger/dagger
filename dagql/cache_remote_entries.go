@@ -1833,6 +1833,49 @@ func (c *Cache) CacheHoldings(cache CacheID, numbers []uint64) []RemoteHeldEntry
 	return out
 }
 
+// EntryHeld is an entry's own facts, as RemoteEntryInfo reports them, and the
+// keys of its first holdings, without describing any holding.
+type EntryHeld struct {
+	Number              uint64
+	Stored              bool
+	StoredExpiresAtUnix int64
+	// Keys are the keys of the entry's first holdings, as many as asked, in
+	// RemoteEntryInfo.Holdings' order.
+	Keys []HolderKey
+}
+
+// EntriesHeld returns, for each of numbers the cache has an entry for, in
+// their order, the entry's facts and the keys of its first limit holdings
+// (none for limit 0), read under one hold. A number the cache has no entry
+// for is skipped: a caller matches the results by Number. Unlike EntryInfo,
+// it describes no holding, digest or term, so its cost grows with the
+// entries, and with their holders only when it lists their keys.
+func (c *Cache) EntriesHeld(numbers []uint64, limit int) []EntryHeld {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	out := make([]EntryHeld, 0, len(numbers))
+	for _, number := range numbers {
+		entry := c.resultsByID[sharedResultID(number)]
+		if entry == nil {
+			continue
+		}
+		held := EntryHeld{Number: uint64(entry.id)}
+		if !entry.noValueLocked() {
+			held.Stored, held.StoredExpiresAtUnix = true, entry.expiresAtUnix
+		}
+		if limit > 0 && len(entry.holders) > 0 {
+			keys := make([]HolderKey, 0, len(entry.holders))
+			for key := range entry.holders {
+				keys = append(keys, key)
+			}
+			slices.SortFunc(keys, compareHolderKeys)
+			held.Keys = slices.Clone(keys[:min(limit, len(keys))])
+		}
+		out = append(out, held)
+	}
+	return out
+}
+
 // entryFactsLocked returns entry's number, whether it stores a record and
 // that record's expiry, and its recipes, sorted. Requires egraphMu.
 func entryFactsLocked(entry *sharedResult) (number uint64, stored bool, storedExpiresAtUnix int64, recipes []digest.Digest) {
