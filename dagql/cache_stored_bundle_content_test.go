@@ -3,7 +3,9 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,40 +19,78 @@ func storedContentTestWait(t *testing.T, cloud *Cache, number uint64, content di
 	t.Helper()
 	require.Eventually(t, func() bool {
 		cloud.egraphMu.RLock()
-		frame := storedBundleTestEntry(cloud, number).entryFrameLocked()
+		var frame entryFrame
+		if res := cloud.resultsByID[sharedResultID(number)]; res != nil {
+			frame = res.entryFrameLocked()
+		}
 		cloud.egraphMu.RUnlock()
 		decoded, err := frame.decode()
 		return err == nil && decoded != nil && decoded.ContentDigest() == content
 	}, 5*time.Second, 5*time.Millisecond, "the Cloud gives the entry's frame its taught content digest")
 }
 
-// storedContentTestSend has engine A compute R and export it to a Cloud, and
-// the Cloud learn R's content digest before the export (A teaches it, so R's
-// frame carries it) or after (from A's later span, as the service reads a
-// lazy span or a call span that reports it). It returns the record the Cloud
-// sends a fresh engine for R, as JSON, and whether that engine, whose own
-// result S of another recipe has the same content, holds R and S in one class.
-func storedContentTestSend(t *testing.T, after bool) (string, bool) {
+// storedContentTestHold holds the Cloud's body worker once it has given the
+// frames of its first batch their taught content digests, until release.
+// blocked is closed once the worker is held.
+func storedContentTestHold(t *testing.T, cloud *Cache) (blocked chan struct{}, release func()) {
 	t.Helper()
-	content := testDigest("content-of-x")
+	blocked, released := make(chan struct{}), make(chan struct{})
+	var held, freed sync.Once
+	release = func() { freed.Do(func() { close(released) }) }
+	t.Cleanup(release)
+	cloud.testTaughtContent = func(int) {
+		held.Do(func() {
+			close(blocked)
+			<-released
+		})
+	}
+	return blocked, release
+}
+
+// storedContentTestTeach has the Cloud learn, from engine cache-a's span,
+// the content digest of a's entry number.
+func storedContentTestTeach(t *testing.T, ctx context.Context, cloud *Cache, number uint64, content digest.Digest) {
+	t.Helper()
+	_, _, err := cloud.UpdateRemoteHolding(ctx, HolderKey{Cache: "cache-a", Number: number}, RemoteHoldingUpdate{ContentDigest: content})
+	require.NoError(t, err)
+}
+
+// storedContentTestSend has engine A compute R and export it to a Cloud, and
+// the Cloud learn R's content digests, in order, before the export (A teaches
+// them, so R's frame carries them) or after (from A's later spans, as the
+// service reads a lazy span or a call span that reports one; all but the
+// first while the Cloud's body worker is busy). It returns the record the
+// Cloud sends a fresh engine for R, as JSON, and whether that engine, whose
+// own result S of another recipe has R's last content, holds R and S in one
+// class.
+func storedContentTestSend(t *testing.T, after bool, contents ...digest.Digest) (string, bool) {
+	t.Helper()
+	content := contents[len(contents)-1]
 	actx, a, asrv := transferTestCache(t)
 	r := persistedListTestResult(t, actx, a, asrv, "content-root", &transferTestValue{Text: "x"})
 	if !after {
-		require.NoError(t, a.TeachContentDigest(actx, r, content))
+		for _, content := range contents {
+			require.NoError(t, a.TeachContentDigest(actx, r, content))
+		}
 	}
 	a.egraphMu.RLock()
 	recipe := r.cacheSharedResult().recipeKeys[0]
 	aNumber := uint64(r.cacheSharedResult().id)
 	a.egraphMu.RUnlock()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	blocked, release := storedContentTestHold(t, cloud)
 	reply, err := cloud.MergeValues(ctx, "cache-a", exportTestBundle(t, actx, a, r))
 	require.NoError(t, err)
 	imported := reply.Imported()
 	require.Len(t, imported, 1)
 	cloudNumber := imported[0].ResultID
 	if after {
-		_, _, err := cloud.UpdateRemoteHolding(ctx, HolderKey{Cache: "cache-a", Number: aNumber}, RemoteHoldingUpdate{ContentDigest: content})
-		require.NoError(t, err)
+		storedContentTestTeach(t, ctx, cloud, aNumber, contents[0])
+		<-blocked
+		for _, content := range contents[1:] {
+			storedContentTestTeach(t, ctx, cloud, aNumber, content)
+		}
+		release()
 		storedContentTestWait(t, cloud, cloudNumber, content)
 	} else {
 		queued, _, _ := cloud.TaughtContentStats()
@@ -90,11 +130,87 @@ func storedContentTestSend(t *testing.T, after bool) (string, bool) {
 // the Cloud's record in its class, as one engine that computed both does.
 func TestStoredBundleCarriesAContentDigestLearnedAfterTheRecord(t *testing.T) {
 	t.Parallel()
-	before, beforeJoined := storedContentTestSend(t, false)
-	after, afterJoined := storedContentTestSend(t, true)
+	content := testDigest("content-of-x")
+	before, beforeJoined := storedContentTestSend(t, false, content)
+	after, afterJoined := storedContentTestSend(t, true, content)
 	require.True(t, beforeJoined, "taught before the export, R and S are one class on B")
 	require.True(t, afterJoined, "learned after the export, R and S are one class on B, as on the Cloud")
 	require.JSONEq(t, before, after, "the fresh engine gets the frame it gets when R's frame carried the digest at the export")
+}
+
+// Content digests the Cloud learns for an entry one after another, the later
+// ones while its body worker is busy, go on the entry's frame in that order,
+// as a run of TeachContentDigest calls puts them on an engine's: a digest
+// replaced by a later one is still on the frame the Cloud sends, as
+// replaced-content.
+func TestStoredBundleCarriesContentDigestsLearnedInTurn(t *testing.T) {
+	t.Parallel()
+	contents := []digest.Digest{testDigest("content-first"), testDigest("content-second"), testDigest("content-third")}
+	before, beforeJoined := storedContentTestSend(t, false, contents...)
+	after, afterJoined := storedContentTestSend(t, true, contents...)
+	require.True(t, beforeJoined)
+	require.True(t, afterJoined)
+	require.JSONEq(t, before, after, "the fresh engine gets the frame the engine's own run of teaches left")
+}
+
+// An entry whose record is replaced, once expired, by a new record from an
+// engine keeps the content digest a span taught it: the new record's frame
+// takes it too.
+func TestStoredBundleKeepsATaughtContentDigestAcrossAReplacement(t *testing.T) {
+	t.Parallel()
+	content := testDigest("content-of-replaced")
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, "replaced-root", &transferTestValue{Text: "x"})
+	a.egraphMu.RLock()
+	aNumber := uint64(r.cacheSharedResult().id)
+	a.egraphMu.RUnlock()
+	bundle := exportTestBundle(t, actx, a, r)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	number := storedPersistenceTestMerge(t, ctx, cloud, bundle)[0]
+	storedContentTestTeach(t, ctx, cloud, aNumber, content)
+	storedContentTestWait(t, cloud, number, content)
+
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, number))
+	second, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.Equal(t, number, second.Imported()[0].ResultID)
+	require.Equal(t, uint64(1), second.Values[0].Replacements, "the expired record was replaced")
+	storedContentTestWait(t, cloud, number, content)
+}
+
+// A content digest the Cloud learned for an entry, still waiting for the
+// body worker when the Cloud closes, is on the entry's frame after a restore:
+// the save keeps frames, not the digests waiting for them.
+func TestCloudSaveKeepsAContentDigestTaughtAsItCloses(t *testing.T) {
+	t.Parallel()
+	first, last := testDigest("content-before-close"), testDigest("content-at-close")
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	blocked, release := storedContentTestHold(t, cloud)
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, "closing-root", &transferTestValue{Text: "x"})
+	a.egraphMu.RLock()
+	aNumber := uint64(r.cacheSharedResult().id)
+	a.egraphMu.RUnlock()
+	number := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
+	storedContentTestTeach(t, ctx, cloud, aNumber, first)
+	<-blocked
+	storedContentTestTeach(t, ctx, cloud, aNumber, last)
+
+	closed := make(chan error, 1)
+	go func() { closed <- cloud.Close(ctx) }()
+	require.Eventually(t, func() bool {
+		w := cloud.storedBodies
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		return w.closed
+	}, 5*time.Second, 5*time.Millisecond, "the Cloud stops its body worker")
+	release()
+	require.NoError(t, <-closed)
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, last, storedTestFrame(t, cloud, storedBundleTestEntry(cloud, number)).ContentDigest())
 }
 
 // lateContentReceiverFrame is receiverTestFrame without its content digest:
@@ -132,7 +248,7 @@ func TestCallRecordHitsOverAReceiverWhoseContentTheCloudLearnedLater(t *testing.
 	numbers := storedPersistenceTestMerge(t, cloudCtx, cloud, exportTestBundle(t, ctx, producer, test.inner, receiver))
 	require.Len(t, numbers, 2)
 	for _, number := range numbers {
-		if storedBundleTestEntry(cloud, number).loadResultCall().Field == "receiver" {
+		if storedTestFrame(t, cloud, storedBundleTestEntry(cloud, number)).Field == "receiver" {
 			test.receiverNumber = number
 		} else {
 			test.number = number
