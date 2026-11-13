@@ -769,3 +769,51 @@ func TestSetStoredPartRefusesWhatItCannotDependOn(t *testing.T) {
 		require.Equal(t, deps, storedPartTestDeps(cloud, tc.entry), tc.name)
 	}
 }
+
+// A root a merge is told to leave unretained gets no retention edge: the
+// Cloud doesn't count it among its stored roots, and its value lives, as
+// on an engine, only through what holds it: here its sender's holding,
+// until that engine's cache is released. A root merged as usual is a
+// stored root, and outlives its sender's holding.
+func TestMergeLeavesAnUnretainedRootWithoutAnEdge(t *testing.T) {
+	t.Parallel()
+	for _, unretained := range []bool{false, true} {
+		t.Run(fmt.Sprint("unretained=", unretained), func(t *testing.T) {
+			t.Parallel()
+			actx, a, asrv := transferTestCache(t)
+			r := persistedListTestResult(t, actx, a, asrv, "unretained-root", &transferTestValue{Text: "root"})
+			p := persistedListTestResult(t, actx, a, asrv, "unretained-dep", &transferTestValue{Text: "dep"})
+			transferTestDependency(a, actx, r, p)
+			bundle := exportTestBundle(t, actx, a, r)
+			ctx, cloud := storedPartTestCache(t, WithBlobStore())
+			prepared, err := cloud.PrepareValueMerge(ctx, "cache-a", bundle)
+			require.NoError(t, err)
+			if unretained {
+				prepared.Unretained(bundle.Roots[0].Ordinal)
+			}
+			reply, err := cloud.CommitValueMerge(ctx, prepared)
+			require.NoError(t, err)
+			require.Len(t, reply.Roots, 1)
+			number := reply.Roots[0].Number
+			require.NotZero(t, number)
+			require.Equal(t, !unretained, reply.Roots[0].Retained)
+
+			state, err := cloud.StoredState()
+			require.NoError(t, err)
+			if unretained {
+				require.Empty(t, state.Roots, "no stored root")
+			} else {
+				require.Equal(t, []uint64{number}, state.Roots)
+			}
+			info, ok := cloud.EntryInfo(number)
+			require.True(t, ok)
+			require.True(t, info.Stored, "its record is stored")
+
+			collect := cloud.ReleaseRemoteCache(ctx, "cache-a")
+			_, _, err = cloud.CollectRemoteHoldings(ctx, collect.Candidates)
+			require.NoError(t, err)
+			_, ok = cloud.EntryInfo(number)
+			require.Equal(t, !unretained, ok, "an unretained root lives only through what holds it")
+		})
+	}
+}
