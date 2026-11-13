@@ -201,8 +201,8 @@ type partRangeReader struct {
 	workers int
 	window  int
 	// slots holds one per chunk claimed and not yet read, engine-wide.
-	slots   *semaphore.Weighted
-	wg      sync.WaitGroup
+	slots *semaphore.Weighted
+	wg    sync.WaitGroup
 
 	// readMu serializes reads; it is never held while waiting on mu's state
 	// to change.
