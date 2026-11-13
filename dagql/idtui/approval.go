@@ -186,6 +186,19 @@ func (fe *frontendPretty) restoreApprovalFocus(a *pendingApproval) {
 	fe.refreshKeymap()
 }
 
+// leaveApproval runs when focus leaves an approval without answering it by a
+// route other than esc (tab or i to the prompt, say): the cursor resumes
+// following output if the jump interrupted that, and the approval is
+// disarmed so it cannot take focus back.
+func (fe *frontendPretty) leaveApproval(a *pendingApproval) {
+	a.armed = false
+	a.returnToInput = false
+	if a.followOutput {
+		a.followOutput = false
+		fe.goEnd()
+	}
+}
+
 // repairFocus recovers when a focus scope restores to nothing, or to an
 // approval answered (or canceled) while something else held focus on top of
 // it: navigation takes focus again rather than leaving keys unrouted.
@@ -737,6 +750,22 @@ func (v *ApprovalView) SetFocused(_ tuist.Context, focused bool) {
 	if v.focused != focused {
 		v.focused = focused
 		v.Update()
+	}
+	if !focused && v.fe.tui != nil {
+		// Focus is moving away; once it lands, clean up if it left for the
+		// prompt or the rows. A form or search opened over the approval
+		// returns to it, so it keeps its place.
+		fe, a := v.fe, v.approval
+		fe.dispatch(func() {
+			if a.finished || !a.armed || fe.tui.IsFocused(v) {
+				return
+			}
+			if fe.inputFocused() || fe.navigationFocused() {
+				fe.leaveApproval(a)
+				fe.refreshKeymap()
+				fe.Update()
+			}
+		})
 	}
 }
 
