@@ -527,6 +527,7 @@ type persistedDirModuleSourcePayload struct {
 	OriginalSourceRootSubpath  string  `json:"originalSourceRootSubpath,omitempty"`
 	OriginRoot                 *string `json:"originRoot,omitempty"`
 	OriginHostPath             string  `json:"originHostPath,omitempty"`
+	ContextNarrowed            bool    `json:"contextNarrowed,omitempty"`
 	OriginalContextDirResultID uint64  `json:"originalContextDirResultID,omitempty"`
 	OriginGitResultID          uint64  `json:"originGitResultID,omitempty"`
 }
@@ -1018,6 +1019,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, enc *dagql.P
 			OriginalSourceRootSubpath: src.DirSrc.OriginalSourceRootSubpath,
 			OriginRoot:                src.DirSrc.OriginRoot,
 			OriginHostPath:            src.DirSrc.OriginHostPath,
+			ContextNarrowed:           src.DirSrc.ContextNarrowed,
 		}
 		if src.DirSrc.OriginalContextDir.Self() != nil {
 			originalContextDirID, err := encodePersistedObjectRef(enc, src.DirSrc.OriginalContextDir, "module source dir original context dir")
@@ -1133,6 +1135,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dec *dagql.Persi
 			OriginalSourceRootSubpath: persisted.DirSrc.OriginalSourceRootSubpath,
 			OriginRoot:                persisted.DirSrc.OriginRoot,
 			OriginHostPath:            persisted.DirSrc.OriginHostPath,
+			ContextNarrowed:           persisted.DirSrc.ContextNarrowed,
 		}
 		if persisted.DirSrc.OriginalContextDirResultID != 0 {
 			originalContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.DirSrc.OriginalContextDirResultID, "module source dir original context directory")
@@ -2370,6 +2373,11 @@ type DirModuleSource struct {
 	// loaded the directory from its own tree, which is the directory's own
 	// contextual git: the tree of a git workspace carries no .git.
 	OriginGit dagql.ObjectResult[*GitRepository]
+	// ContextNarrowed is set when the module's entrypoint sources, or the
+	// include that replaces them, narrowed its context, the whole directory,
+	// to the module's own files and what sources returned or include lists.
+	// Its key then no longer covers the directory it serves modules from.
+	ContextNarrowed bool
 }
 
 // OriginSymbolic is the identity of a directory module source in the tree a

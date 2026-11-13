@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -902,8 +902,9 @@ func (fn *ModuleFunction) declaredGitClientsDigest(ctx context.Context) (string,
 	return hashutil.HashStrings(append([]string{declaredGitClientsInput}, slices.Compact(keys)...)...).String(), nil
 }
 
-// declaredClientsDigest digests the local clients the current workspace
-// declares for the function's module, and theirs in turn. It is empty when
+// declaredClientsDigest digests the local clients the config governing the
+// function's module declares for it, and theirs in turn, for a module that
+// may serve only those (see moduleServesListedClientsOnly). It is empty when
 // there are none.
 func (fn *ModuleFunction) declaredClientsDigest(ctx context.Context) (string, error) {
 	mod := fn.mod.Self()
@@ -911,75 +912,106 @@ func (fn *ModuleFunction) declaredClientsDigest(ctx context.Context) (string, er
 		return "", nil
 	}
 	src := mod.Source.Value.Self()
-	if src.Kind != ModuleSourceKindLocal || src.Local == nil {
+	if !moduleServesListedClientsOnly(src) {
 		return "", nil
 	}
-
-	var ws *Workspace
-	if bound, ok := WorkspaceFromContext(ctx); ok {
-		ws = bound.Self()
-	} else {
-		query, err := CurrentQuery(ctx)
-		if err != nil {
-			return "", err
-		}
-		ws, err = query.Server.CurrentWorkspace(ctx)
-		if errors.Is(err, ErrNoCurrentWorkspace) {
-			return "", nil
-		}
-		if err != nil {
-			return "", err
-		}
-	}
-	if ws.HostPath() == "" {
-		return "", nil
-	}
-	modulePath, err := filepath.Rel(ws.HostPath(), filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath))
-	if err != nil {
-		return "", err
-	}
-
-	targets := map[string]bool{}
-	pending := slices.Clone(ws.ModuleClients(filepath.ToSlash(modulePath)))
-	for len(pending) > 0 {
-		target := pending[0]
-		pending = pending[1:]
-		if targets[target] {
-			continue
-		}
-		targets[target] = true
-		pending = append(pending, ws.ModuleClients(target)...)
-	}
-	if len(targets) == 0 {
-		return "", nil
-	}
-
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", err
 	}
-	var wsRes dagql.ObjectResult[*Workspace]
-	if err := dag.Select(ctx, dag.Root(), &wsRes, dagql.Selector{Field: "currentWorkspace"}); err != nil {
+	clientsOf, err := moduleClientLister(ctx, dag, src)
+	if err != nil {
 		return "", err
 	}
+	targets, err := moduleClientClosure(path.Clean(src.SourceRootSubpath), clientsOf)
+	if err != nil {
+		return "", err
+	}
+	if len(targets) == 0 {
+		return "", nil
+	}
+	if src.Kind == ModuleSourceKindLocal {
+		return localDeclaredClientsDigest(ctx, dag, src, targets)
+	}
+	return dirDeclaredClientsDigest(ctx, dag, src, targets)
+}
+
+// localDeclaredClientsDigest digests a local module's clients as the calling
+// client's workspace loads them, or from the module's host without one.
+func localDeclaredClientsDigest(ctx context.Context, dag *dagql.Server, src *ModuleSource, targets []string) (string, error) {
+	ws, wsRes, err := localModuleWorkspace(ctx)
+	if err != nil {
+		return "", err
+	}
+	if ws != nil && wsRes.Self() == nil {
+		if err := dag.Select(ctx, dag.Root(), &wsRes, dagql.Selector{Field: "currentWorkspace"}); err != nil {
+			return "", err
+		}
+	}
 	inputs := []string{declaredClientsInput}
-	for _, target := range slices.Sorted(maps.Keys(targets)) {
-		var targetDigest string
-		if err := dag.Select(ctx, wsRes, &targetDigest,
-			dagql.Selector{
+	for _, target := range targets {
+		parent := dag.Root()
+		sel := dagql.Selector{
+			Field: "moduleSource",
+			Args:  []dagql.NamedInput{{Name: "refString", Value: dagql.String(filepath.Join(src.Local.ContextDirectoryPath, filepath.FromSlash(target)))}},
+		}
+		if ws != nil {
+			wsPath, ok := localClientWorkspacePath(ws, src, target)
+			if !ok {
+				inputs = append(inputs, target, "outside the workspace")
+				continue
+			}
+			parent = wsRes
+			sel = dagql.Selector{
 				Field: "moduleSource",
-				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/" + target)}},
-			},
-			dagql.Selector{Field: "digest"},
-		); err != nil {
-			// A target that does not resolve must not fail calls that never
-			// serve it. Its error stands in for its digest: a call that serves
-			// it fails uncached, and one that keeps the error sees it change.
-			targetDigest = "unresolved:" + StripErrorOrigins(err.Error())
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/" + wsPath)}},
+			}
+		}
+		var targetDigest string
+		if err := dag.Select(ctx, parent, &targetDigest, sel, dagql.Selector{Field: "digest"}); err != nil {
+			targetDigest = unresolvedClientDigest(err)
 		}
 		inputs = append(inputs, target, targetDigest)
 	}
 	return hashutil.HashStrings(inputs...).String(), nil
+}
+
+// dirDeclaredClientsDigest digests a directory module's clients as serving
+// loads them from its tree, so the digest and the serve share the load.
+func dirDeclaredClientsDigest(ctx context.Context, dag *dagql.Server, src *ModuleSource, targets []string) (string, error) {
+	inputs := []string{declaredClientsInput}
+	for _, target := range targets {
+		args := []dagql.NamedInput{{Name: "sourceRootPath", Value: dagql.String(target)}}
+		if src.DirSrc.OriginRoot != nil {
+			args = append(args, dagql.NamedInput{Name: "originRoot", Value: dagql.Opt(dagql.String(*src.DirSrc.OriginRoot))})
+		}
+		if src.DirSrc.OriginHostPath != "" {
+			args = append(args, dagql.NamedInput{Name: "originHostPath", Value: dagql.String(src.DirSrc.OriginHostPath)})
+		}
+		if src.DirSrc.OriginGit.Self() != nil {
+			repoID, err := src.DirSrc.OriginGit.ID()
+			if err != nil {
+				return "", err
+			}
+			args = append(args, dagql.NamedInput{Name: "originGit", Value: dagql.Opt(dagql.NewID[*GitRepository](repoID))})
+		}
+		var targetDigest string
+		if err := dag.Select(ctx, src.DirSrc.OriginalContextDir, &targetDigest,
+			dagql.Selector{Field: "asModuleSource", Args: args},
+			dagql.Selector{Field: "digest"},
+		); err != nil {
+			targetDigest = unresolvedClientDigest(err)
+		}
+		inputs = append(inputs, target, targetDigest)
+	}
+	return hashutil.HashStrings(inputs...).String(), nil
+}
+
+// unresolvedClientDigest stands in for the digest of a declared client that
+// does not resolve. It must not fail calls that never serve it: a call that
+// serves it fails uncached, and one that keeps the error sees it change.
+func unresolvedClientDigest(err error) string {
+	return "unresolved:" + StripErrorOrigins(err.Error())
 }
 
 // runtimeLessSDK is implemented by SDKs that call a module without loading a
