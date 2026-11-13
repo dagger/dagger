@@ -23,28 +23,30 @@ func secretApproval(uri string) approvalSpec {
 	}
 }
 
-// AuthorizeSecret returns the client whose session attachables
-// Query.secret(uri:) reads its secret through.
+// AuthorizeSecret returns the trusted owner whose host Query.secret(uri:)
+// reads its secret from, or nil when the calling client reads it through its
+// own attachables, as it always did.
 //
-// Ordinarily that is the calling client itself, as it always was. A client
-// without a host of its own (an in-engine SDK client, see
+// A client without a host of its own (an in-engine SDK client, see
 // resolveClientAttachableCaller) could only ever be denied, and still is when
 // no agent is involved: a module function reads no host secret it was not
 // passed. When it runs on behalf of an agent, though, the secret is the
 // owner's to grant: the trusted caller before the first module boundary (see
 // gitPushOwner) is asked, naming the agent, module and function that asks
-// (see requestApproval), and on approval the secret is read through the
-// owner's host. A denial, or an owner that cannot prompt, fails the call.
+// (see requestApproval), and on approval the secret is read from the owner's
+// host, once (see Query.secret). A denial, or an owner that cannot prompt,
+// fails the call.
+//
+// The agent only scopes the request, it does not vouch for it: any host-less
+// module can run an agent of its own (spawn a worker over its tools) and so
+// ask the owner for any URI. The prompt names that module, and the agent and
+// function, so the owner sees who asks.
 //
 // Secrets the owner declared itself never get here: workspace settings and
 // workspace artifacts (e.g. a module constructor's `cmd://gh auth token`
 // setting) are resolved with the owner's own client metadata, so they read
 // through the owner as before.
 func (srv *Server) AuthorizeSecret(ctx context.Context, uri string) (*engine.ClientMetadata, error) {
-	md, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
 	// The client whose metadata the call runs with, validated against the
 	// held scope: a workspace owner's routing reads as that owner.
 	client, err := srv.workspaceRuntimeFromContext(ctx)
@@ -52,17 +54,17 @@ func (srv *Server) AuthorizeSecret(ctx context.Context, uri string) (*engine.Cli
 		// Not a client this gate can place: read as the caller, exactly as
 		// without the gate. The gate only ever widens a host-less client's
 		// access, never narrows anyone's.
-		return md, nil
+		return nil, nil //nolint:nilerr // see above
 	}
 	sess := client.daggerSession
 	sess.scopeMu.Lock()
 	inert := client.inertAttachables
 	sess.scopeMu.Unlock()
 	if !inert {
-		return md, nil
+		return nil, nil
 	}
 	if _, ok := core.CallerAgent(ctx); !ok {
-		return md, nil
+		return nil, nil
 	}
 	quoted := strconv.QuoteToASCII(uri)
 	owner, _, err := gitPushOwner(client)
