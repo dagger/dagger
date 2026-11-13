@@ -167,6 +167,8 @@ func TestApprovalRequest(t *testing.T) {
 	require.True(t, req.Danger)
 	require.Equal(t, `Allow push to remote @ ref (requested by agent "worker", module "staff", function "Staff.gh")?`, req.Prompt,
 		"the module driving a nested client asks, running its function")
+	require.Equal(t, `Allow push to remote @ ref?`, req.Question,
+		"frontends that render the requester get the question without it")
 	require.Equal(t, &prompt.ApprovalRequester{
 		AgentName:   "worker",
 		AgentHandle: "agent-1",

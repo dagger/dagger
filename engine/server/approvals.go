@@ -144,6 +144,7 @@ func (srv *Server) requestApproval(ctx context.Context, client, owner *clientRun
 	req := &prompt.ApprovalRequest{
 		Kind:      spec.Kind,
 		Prompt:    approvalPrompt(spec.Question, requester),
+		Question:  spec.Question + "?",
 		Subject:   spec.Subject,
 		Requester: requester.proto(),
 		Danger:    spec.Danger,
