@@ -90,7 +90,7 @@ func TestGitIdentityApprovalOwnerBoundary(t *testing.T) {
 	require.Equal(t, "Personal <personal@example.com>", req.Subject)
 	require.False(t, req.Danger)
 	require.Equal(t, `Allow using your Git identity "Personal <personal@example.com>" (requested by module "staff", function "Staff.commit")?`, req.Prompt)
-	require.Equal(t, `approval:v1:"git-identity":"https://github.com/org/staff|staff":"":"Personal <personal@example.com>"`, req.PersistentKey)
+	require.Equal(t, `approval:v2:"git-identity":"https://github.com/org/staff|staff":"Personal <personal@example.com>"`, req.PersistentKey)
 
 	// The grant is for the identity the owner saw: once they change it, the
 	// module asks again.
