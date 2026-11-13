@@ -279,8 +279,9 @@ func (w *storedSizeWalk) carries(id sharedResultID) bool {
 // does: a held row alone, with nothing below it, and an entry with no
 // stored record not at all. With a hold, an entry is read by its number
 // once the walk holds the lock for it (readPieces.step), as the pointer it
-// was reached by may be from before a piece let the lock go, and read again
-// after its dependencies if a piece of theirs let it go. Requires
+// was reached by may be from before a piece let the lock go; its reading
+// after its dependencies is a step too, and reads it again if a piece let
+// the lock go since. Requires
 // egraphMu.
 func (w *storedSizeWalk) visit(res *sharedResult) {
 	if w.carries(res.id) {
@@ -308,6 +309,11 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 		if child := w.c.resultsByID[id]; child != nil {
 			w.visit(child)
 		}
+	}
+	// The entry's own reading, after its dependencies, is a step of its own:
+	// a chain deeper than a piece reads its entries on the way back up.
+	if w.hold != nil {
+		w.hold.step()
 	}
 	if w.hold.yields() != yields {
 		if res = w.c.resultsByID[res.id]; res == nil || res.noValueLocked() || res.persistedEnvelope == nil {
