@@ -4,68 +4,40 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/session/git"
-	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/util/gitutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type gitPushApprovalKey struct {
-	owner, remote, ref string
-	force              bool
-}
+const (
+	approvalKindGitPush      = "git-push"
+	approvalKindGitForcePush = "git-force-push"
+)
 
-type gitApproval struct {
-	done    chan struct{}
-	allowed bool
-	err     error
-}
-
-// gitApprovals remembers an owner's answers to one kind of Git approval prompt,
-// keyed by what was approved. It lives only in daggerSession, never in a
-// result, recipe, or client prompt key. Only grants are remembered: a "no" is
-// often a course correction, so a later attempt asks again. Concurrent
-// requests still share the one prompt in flight.
-type gitApprovals[K comparable] struct {
-	mu        sync.Mutex
-	decisions map[K]*gitApproval
-}
-
-type gitPushApprovals = gitApprovals[gitPushApprovalKey]
-
-func (a *gitApprovals[K]) check(ctx context.Context, key K, ask func(context.Context) (bool, error)) (bool, error) {
-	a.mu.Lock()
-	if decision, ok := a.decisions[key]; ok {
-		a.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return false, ctx.Err()
-		case <-decision.done:
-			return decision.allowed, decision.err
-		}
+// gitPushApproval is the approval a delegated push needs: one exact ref of one
+// resolved destination, force or not. The ref passed check-ref-format (no
+// spaces), so the subject's " @ " separates the two unambiguously.
+func gitPushApproval(remote, ref string, force bool) approvalSpec {
+	// The TUI highlights a leading "Allow force-push" in red, so keep the
+	// wording in sync with dagql/idtui's forcePushPromptPrefix. Literal text,
+	// escaped for terminals (including bidi/control characters), not Markdown.
+	// Neither credentials nor module-supplied prose belong here.
+	subject := literalText(remote) + " @ " + literalText(ref)
+	spec := approvalSpec{
+		Kind:     approvalKindGitPush,
+		Subject:  subject,
+		Question: "Allow push to " + subject,
 	}
-	decision := &gitApproval{done: make(chan struct{})}
-	if a.decisions == nil {
-		a.decisions = make(map[K]*gitApproval)
+	if force {
+		spec.Kind = approvalKindGitForcePush
+		spec.Question = "Allow force-push to " + subject
+		spec.Danger = true
 	}
-	a.decisions[key] = decision
-	a.mu.Unlock()
-	decision.allowed, decision.err = ask(ctx)
-	a.mu.Lock()
-	// A canceled or unavailable prompt is not a user decision, and a denial
-	// holds only for the requests already waiting on it.
-	if decision.err != nil || !decision.allowed {
-		delete(a.decisions, key)
-	}
-	close(decision.done)
-	a.mu.Unlock()
-	return decision.allowed, decision.err
+	return spec
 }
 
 //nolint:gocyclo // keep owner routing, destination validation, and approval in one auditable flow
@@ -132,35 +104,7 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 	if !delegated && !core.IsAgentToolCall(ctx) {
 		return authorized()
 	}
-	key := gitPushApprovalKey{owner: owner.clientID, remote: remote, ref: ref, force: force}
-	allowed, err := client.daggerSession.gitPushApprovals.check(ctx, key, func(ctx context.Context) (bool, error) {
-		conn, available, err := srv.SpecificClientAttachableConn(ctx, owner.clientID, core.SpecificClientAttachableConnOpts{IfAvailable: true})
-		if err != nil {
-			return false, err
-		}
-		if !available {
-			return false, fmt.Errorf("owning client is not available to approve the push")
-		}
-		// The TUI highlights a leading "Allow force-push" in red, so keep the
-		// wording in sync with dagql/idtui's forcePushPromptPrefix.
-		action := "push"
-		if force {
-			action = "force-push"
-		}
-		// Literal text, escaped for terminals (including bidi/control characters),
-		// not Markdown. Neither credentials nor module-supplied prose belong here.
-		literal := func(s string) string {
-			quoted := strconv.QuoteToASCII(s)
-			return quoted[1 : len(quoted)-1]
-		}
-		response, err := prompt.NewPromptClient(conn).PromptBool(ctx, &prompt.BoolRequest{
-			Prompt: fmt.Sprintf("Allow %s to %s @ %s?", action, literal(remote), literal(ref)),
-		})
-		if err != nil {
-			return false, err
-		}
-		return response.Response, nil
-	})
+	allowed, err := srv.requestApproval(ctx, client, owner, gitPushApproval(remote, ref, force))
 	if err != nil {
 		return nil, fmt.Errorf("git push requires approval: %w", err)
 	}
