@@ -17,7 +17,7 @@ import (
 //
 // The holder calls nothing else of the cache until Release: the cache's own
 // methods wait for the hold. Only the Cloud uses it, to apply a read of its
-// engines' telemetry.
+// engines' telemetry and a step's merged replies.
 type RemoteWrites struct {
 	c *Cache
 	// releases are what the hold's collections released, run once the hold
@@ -90,6 +90,15 @@ func (w *RemoteWrites) CollectRemoteHoldings(ctx context.Context, candidates []H
 	w.releases = append(w.releases, releases...)
 	slices.SortFunc(collected, compareHolderKeys)
 	return collected, change, err
+}
+
+// ApplyMergedReply is Cache.ApplyMergedReply, in the hold.
+func (w *RemoteWrites) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueBundle, reply MergeReply) (RemoteChange, error) {
+	cloudEntries, targets, err := prepareMergedReply(cache, sent, reply)
+	if err != nil {
+		return RemoteChange{}, err
+	}
+	return w.c.applyMergedReplyLocked(ctx, cache, cloudEntries, targets, reply), nil
 }
 
 // RemoteHoldingInfo is Cache.RemoteHoldingInfo, in the hold.
