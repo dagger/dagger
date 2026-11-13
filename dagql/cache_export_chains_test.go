@@ -81,6 +81,10 @@ type exportChainTestManager struct {
 	*fakeSnapshotManager
 	want int
 	wait time.Duration
+	// chains, when set, are the chains the snapshots export, by snapshot;
+	// a snapshot it doesn't name exports an empty chain. Its builds don't
+	// wait.
+	chains map[string]*snapshots.ExportChain
 
 	mu       sync.Mutex
 	building int
@@ -133,6 +137,12 @@ func (r *exportChainTestRef) Mount(context.Context, bool) (snapshots.MountableRe
 	panic("an export's chains don't mount here")
 }
 func (r *exportChainTestRef) ExportChain(ctx context.Context, _ config.RefConfig) (*snapshots.ExportChain, error) {
+	if r.manager.chains != nil {
+		if chain, ok := r.manager.chains[r.id]; ok {
+			return chain, nil
+		}
+		return &snapshots.ExportChain{}, nil
+	}
 	return r.manager.build(ctx)
 }
 func (r *exportChainTestRef) ExportFileChain(ctx context.Context, _ config.RefConfig, _ string) (*snapshots.ExportChain, error) {
@@ -173,4 +183,72 @@ func TestExportBuildsFileChainsTogether(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, entries)
 	require.Equal(t, 3, mgr.peak, "chains building at once")
+}
+
+// The capture's last step does its work once per row, however many of the
+// closure's parts the bundle carries. Of a closure of rows each built on the
+// one before, each with a complete part, the selected chain walked every
+// other row's snapshot. Those rows' parts go as prefixes of the selected
+// chain, each owned by the row below them all that needs a session
+// resource. Only those rows' parts are routed, and each row's owners are
+// named once.
+func TestExportLastStepOncePerRow(t *testing.T) {
+	t.Parallel()
+	const n = 40
+	top := fmt.Sprintf("s%d", n-1)
+	chain := &snapshots.ExportChain{Layers: make([]snapshots.ExportLayer, n), Prefixes: map[string]int{top: n}}
+	for i := 0; i < n-1; i += 2 {
+		chain.Prefixes[fmt.Sprintf("s%d", i)] = i + 1
+	}
+	mgr := &exportChainTestManager{fakeSnapshotManager: &fakeSnapshotManager{}, chains: map[string]*snapshots.ExportChain{top: chain}}
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), mgr, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
+	srv.InstallObject(NewClass(srv, ClassOpts[*exportChainTestValue]{}))
+	ctx = srvToContext(ContextWithCache(ctx, c), srv)
+
+	rows := make([]AnyResult, n)
+	for i := range rows {
+		rows[i] = persistedListTestResult(t, ctx, c, srv, fmt.Sprintf("row%d", i), &exportChainTestValue{SnapshotID: fmt.Sprintf("s%d", i)})
+		if i > 0 {
+			transferTestDependency(c, ctx, rows[i], rows[i-1])
+		}
+	}
+	c.egraphMu.Lock()
+	rows[0].cacheSharedResult().sessionResourceHandle = "socket"
+	c.egraphMu.Unlock()
+
+	var routes, walks int
+	c.testPartRouted = func(uint64) { routes++ }
+	c.testOwnerWalked = func(uint64) { walks++ }
+	var bundle ValueBundle
+	var sources []ImportedValue
+	err = c.WithExportedValues(ctx, ValueSelection{
+		Roots:   []AnyResult{rows[n-1]},
+		Outputs: []SelectedValueOutput{{Result: rows[n-1], Address: PersistedPartAddress{Part: "snapshot"}}},
+	}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle, sources = values.Bundle, values.Sources
+		return nil
+	})
+	require.NoError(t, err)
+
+	ordinalOf := map[uint64]TransferOrdinal{}
+	for _, source := range sources {
+		ordinalOf[source.ResultID] = source.Ordinal
+	}
+	socket := uint64(ordinalOf[uint64(rows[0].cacheSharedResult().id)])
+	carried := map[TransferOrdinal]bool{}
+	for _, output := range bundle.Outputs {
+		carried[output.Ordinal] = true
+		require.NotNil(t, output.Owner, "output of %d", output.Ordinal)
+		require.Equal(t, []uint64{socket}, output.Owner.DependencyIDs, "owners of %d", output.Ordinal)
+	}
+	for i, row := range rows {
+		ordinal := ordinalOf[uint64(row.cacheSharedResult().id)]
+		require.Equal(t, i%2 == 0 || i == n-1, carried[ordinal], "row %d carried", i)
+	}
+	require.Equal(t, n/2, routes, "parts routed")
+	require.LessOrEqual(t, walks, n, "rows walked to name owners")
 }

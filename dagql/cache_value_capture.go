@@ -1254,34 +1254,41 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		return err
 	}
 	defer func() { rerr = errors.Join(rerr, chains.Release(ctx)) }()
+	// sessionRows are the rows below each row, itself included, that carry
+	// a session resource handle, sorted: each row's once, from its
+	// dependencies'.
+	sessionRows := map[sharedResultID][]uint64{}
+	var rowsNeedingSessions func(*capturedTransferRow) []uint64
+	rowsNeedingSessions = func(row *capturedTransferRow) []uint64 {
+		if ids, ok := sessionRows[row.shared.id]; ok {
+			return ids
+		}
+		if hook := capture.cache.testOwnerWalked; hook != nil {
+			hook(uint64(row.shared.id))
+		}
+		var ids []uint64
+		if row.shared.sessionResourceHandle != "" {
+			ids = append(ids, uint64(row.shared.id))
+		}
+		for _, dep := range row.deps {
+			ids = append(ids, rowsNeedingSessions(capture.rows[sharedResultID(dep)])...)
+		}
+		slices.Sort(ids)
+		ids = slices.Compact(ids)
+		sessionRows[row.shared.id] = ids
+		return ids
+	}
 	// withOwner gives an output with a chain the owner of its offer: the
 	// services it binds and the session resources its row's closure needs,
 	// relocated to ordinals.
 	withOwner := func(row *capturedTransferRow, output *TransferredOutput) error {
 		owner := PersistedOfferOwner{}
-		owned := map[uint64]bool{}
 		for _, service := range output.Value.Services {
-			owned[service.ServiceResultID] = true
+			owner.DependencyIDs = append(owner.DependencyIDs, service.ServiceResultID)
 		}
-		visited := map[sharedResultID]bool{}
-		var ownWalk func(*capturedTransferRow)
-		ownWalk = func(row *capturedTransferRow) {
-			if visited[row.shared.id] {
-				return
-			}
-			visited[row.shared.id] = true
-			if row.shared.sessionResourceHandle != "" {
-				owned[uint64(row.shared.id)] = true
-			}
-			for _, dep := range row.deps {
-				ownWalk(capture.rows[sharedResultID(dep)])
-			}
-		}
-		ownWalk(row)
-		for id := range owned {
-			owner.DependencyIDs = append(owner.DependencyIDs, id)
-		}
+		owner.DependencyIDs = append(owner.DependencyIDs, rowsNeedingSessions(row)...)
 		slices.Sort(owner.DependencyIDs)
+		owner.DependencyIDs = slices.Compact(owner.DependencyIDs)
 		offer := PersistedPartOffer{Address: output.Address, Value: *output.Value, Owner: owner}
 		if err := visitPersistedPartOffer(&offer, nil, relocate); err != nil {
 			return err
@@ -1299,8 +1306,23 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	}
 	selected := map[string]bool{}
 	// carriedBy names, for each of the chains, the bundle's output that
-	// carries it, if one does: a prefix of the chain names it.
+	// carries it, if one does: a prefix of the chain names it. entryOf is
+	// the first chain of each selected output, by ordinal and part, and
+	// prefixesOf the chains that walked each snapshot, in their order.
 	carriedBy := make([]*ChainPrefix, len(chains.Entries))
+	entryOf := map[string]int{}
+	prefixesOf := map[string][]int{}
+	for i, entry := range chains.Entries {
+		entryKey, _ := partAddressKey(entry.Address)
+		if _, ok := entryOf[fmt.Sprintf("%d:%s", entry.Ordinal, entryKey)]; !ok {
+			entryOf[fmt.Sprintf("%d:%s", entry.Ordinal, entryKey)] = i
+		}
+		for snapshotID, n := range chains.chains[i].Prefixes {
+			if n > 0 {
+				prefixesOf[snapshotID] = append(prefixesOf[snapshotID], i)
+			}
+		}
+	}
 	for _, sel := range capture.outputs {
 		row, out, err := selectedCapturedOutput(capture, sel)
 		if err != nil {
@@ -1312,13 +1334,9 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 			continue
 		}
 		output := TransferredOutput{Ordinal: row.ordinal, Address: out.Address, State: out.State, Value: out.Value}
-		for i, entry := range chains.Entries {
-			entryKey, _ := partAddressKey(entry.Address)
-			if entry.Ordinal == row.ordinal && entryKey == key {
-				output.Chain = &OfferedChain{Layers: entry.Layers}
-				carriedBy[i] = &ChainPrefix{Ordinal: row.ordinal, Address: out.Address}
-				break
-			}
+		if i, ok := entryOf[fmt.Sprintf("%d:%s", row.ordinal, key)]; ok {
+			output.Chain = &OfferedChain{Layers: chains.Entries[i].Layers}
+			carriedBy[i] = &ChainPrefix{Ordinal: row.ordinal, Address: out.Address}
 		}
 		if output.Chain != nil {
 			if err := withOwner(row, &output); err != nil {
@@ -1357,30 +1375,33 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	}
 	for _, row := range capture.order {
 		for _, out := range row.outputs {
-			key, _ := partAddressKey(out.Address)
-			if out.State != "completed" || out.SnapshotID == "" || out.Value == nil || selected[fmt.Sprintf("%d:%s", row.ordinal, key)] || hasOffer(row, key) {
+			// Only a snapshot a selected chain walked is a prefix: most of
+			// the closure's parts are no chain's.
+			walked := prefixesOf[out.SnapshotID]
+			if out.State != "completed" || out.SnapshotID == "" || out.Value == nil || len(walked) == 0 {
 				continue
+			}
+			key, _ := partAddressKey(out.Address)
+			if selected[fmt.Sprintf("%d:%s", row.ordinal, key)] || hasOffer(row, key) {
+				continue
+			}
+			if hook := capture.cache.testPartRouted; hook != nil {
+				hook(uint64(row.shared.id))
 			}
 			if route, err := routePartRecord(row.record, out.Address); err == nil && prefixServedByDelegation(route, capture.rows, offered) {
 				continue
 			}
 			var layers []snapshots.ExportLayer
 			var prefix *ChainPrefix
-			for i, entry := range chains.Entries {
+			for _, i := range walked {
 				n := chains.chains[i].Prefixes[out.SnapshotID]
-				if n == 0 {
-					continue
-				}
 				if carriedBy[i] != nil {
 					prefix = &ChainPrefix{Ordinal: carriedBy[i].Ordinal, Address: carriedBy[i].Address, Layers: n}
 					break
 				}
 				if layers == nil {
-					layers = entry.Layers[:n]
+					layers = chains.Entries[i].Layers[:n]
 				}
-			}
-			if prefix == nil && layers == nil {
-				continue
 			}
 			output := TransferredOutput{Ordinal: row.ordinal, Address: out.Address, State: out.State, Value: out.Value, Prefix: prefix}
 			if prefix == nil {
