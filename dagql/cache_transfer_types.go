@@ -114,10 +114,21 @@ func (v TransferredValue) MarshalJSON() ([]byte, error) {
 	if v.storedEnvelope == nil {
 		return json.Marshal(plain(v))
 	}
+	stored, err := v.storedJSON()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(stored)
+}
+
+// storedJSON is a value with a stored envelope as its JSON writes it: the
+// envelope and call frame as the cache holds them, decompressed, not
+// decoded.
+func (v TransferredValue) storedJSON() (storedValueJSON, error) {
 	body := &storedBody{envelope: v.storedEnvelope, frame: v.storedCall, frameBytes: v.storedCallBytes}
 	raw, err := body.envelopeJSON()
 	if err != nil {
-		return nil, err
+		return storedValueJSON{}, err
 	}
 	var call json.RawMessage
 	if v.storedCall != nil {
@@ -126,9 +137,9 @@ func (v TransferredValue) MarshalJSON() ([]byte, error) {
 		call, err = json.Marshal(v.Record.Call)
 	}
 	if err != nil {
-		return nil, err
+		return storedValueJSON{}, err
 	}
-	return json.Marshal(storedValueJSON{
+	return storedValueJSON{
 		Ordinal:            v.Ordinal,
 		SenderNumber:       v.SenderNumber,
 		SenderReplacements: v.SenderReplacements,
@@ -136,7 +147,7 @@ func (v TransferredValue) MarshalJSON() ([]byte, error) {
 		DependencyIDs:      v.DependencyIDs,
 		ExpiresAtUnix:      v.ExpiresAtUnix,
 		Held:               v.Held,
-	})
+	}, nil
 }
 
 // storedValueJSON is TransferredValue's encoding, field for field, with its

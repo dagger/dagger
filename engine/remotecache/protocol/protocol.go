@@ -121,6 +121,26 @@ func NewEnvelope(id, re uint64, typ Type, body any) (Envelope, error) {
 	return Envelope{ID: id, Re: re, Type: typ, Body: raw}, nil
 }
 
+// EncodeEnvelope returns the message an envelope of body is, the bytes
+// json.Marshal gives for NewEnvelope's envelope, in one encoding: NewEnvelope
+// encodes the body into its own bytes, and encoding the envelope checks and
+// copies them again.
+func EncodeEnvelope(id, re uint64, typ Type, body any) ([]byte, error) {
+	data, err := json.Marshal(outgoing{ID: id, Re: re, Type: typ, Body: body})
+	if err != nil {
+		return nil, fmt.Errorf("encode %s body: %w", typ, err)
+	}
+	return data, nil
+}
+
+// outgoing is an Envelope whose body is encoded with it.
+type outgoing struct {
+	ID   uint64 `json:"id"`
+	Re   uint64 `json:"re,omitempty"`
+	Type Type   `json:"type"`
+	Body any    `json:"body"`
+}
+
 // Decode decodes the envelope's body into v.
 func (e Envelope) Decode(v any) error {
 	if err := json.Unmarshal(e.Body, v); err != nil {
