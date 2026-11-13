@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"net/http"
@@ -117,30 +118,24 @@ func TestPartRangeReadsWholeObjectFallback(t *testing.T) {
 	require.Zero(t, transport.open.Load(), "every response is closed")
 }
 
-// A chunk whose response breaks off is requested again, up to the retry
-// bound; past it, the read fails as a content failure.
-func TestPartRangeReadsRetryChunk(t *testing.T) {
-	t.Run("transient", func(t *testing.T) {
-		transport, source, offer, data, stats := rangeTestReader(t, 40<<20, nil)
-		transport.fault("https://blobs.invalid/blob", contentTestFault{truncateFirst: 2, stallAfter: -1})
-		reader, size := openRangeTest(t, source, offer, nil, stats)
-		got, err := readRangeTest(t, reader, size)
-		require.NoError(t, err)
-		require.True(t, got == data)
-		require.NoError(t, reader.Close())
-		require.Equal(t, 7, transport.total(), "five chunks and two retries")
-	})
-	t.Run("persistent", func(t *testing.T) {
-		transport, source, offer, _, stats := rangeTestReader(t, 40<<20, nil)
-		transport.fault("https://blobs.invalid/blob", contentTestFault{truncate: true, stallAfter: -1})
-		reader, size := openRangeTest(t, source, offer, nil, stats)
-		_, err := readRangeTest(t, reader, size)
-		var contentErr *snapshots.ChainContentError
-		require.ErrorAs(t, err, &contentErr)
-		require.Equal(t, "copy", contentErr.Stage)
-		require.NoError(t, reader.Close())
-		require.Zero(t, transport.open.Load())
-	})
+// A chunk whose response breaks off fails the read at once, as a content
+// failure: no chunk is requested again.
+func TestPartRangeReadsChunkFailureFailsRead(t *testing.T) {
+	transport, source, offer, _, stats := rangeTestReader(t, 40<<20, nil)
+	transport.fault("https://blobs.invalid/blob", contentTestFault{truncateFirst: 1, stallAfter: -1})
+	reader, size := openRangeTest(t, source, offer, nil, stats)
+	_, err := readRangeTest(t, reader, size)
+	var contentErr *snapshots.ChainContentError
+	require.ErrorAs(t, err, &contentErr)
+	require.Equal(t, "copy", contentErr.Stage)
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	require.NoError(t, reader.Close())
+	require.Zero(t, transport.open.Load(), "every response is closed")
+	transport.mu.Lock()
+	ranges := slices.Clone(transport.ranges)
+	transport.mu.Unlock()
+	slices.Sort(ranges)
+	require.Equal(t, slices.Compact(slices.Clone(ranges)), ranges, "no range is requested twice")
 }
 
 // Chunks refused with a retry status renew the address once for the demand,
@@ -438,4 +433,44 @@ func TestOfferInstallLogsRanges(t *testing.T) {
 			requireFieldOrder(t, line.raw, []string{"import", "streams", "range", "statuses", "ahead", "joined", "commit"})
 		})
 	}
+}
+
+// A chunk whose request fails with a network error fails the install: the
+// source is dropped for the demand and, with no other source, the engine
+// runs the part's operation itself. The failed chunk isn't requested again.
+func TestPartRangeChunkFailureRunsTheWork(t *testing.T) {
+	chain := newChainFixture(t, "range-chunk-failure")
+	f := newExhaustionFixture(t, chain)
+	f.cache.partContentSource.ranges.minBlob = 1
+	f.cache.partContentSource.ranges.chunk = 256
+	url := "https://fixed.invalid/range-chunk-failure/1"
+	require.Greater(t, len(chain.blobs[1]), 2*256, "the upper layer is read in several chunks")
+	f.transport.fault(url, contentTestFault{truncateFirst: 1, stallAfter: -1})
+	f.attach(t, f.receiver, exhaustionOffer(chain, "", true))
+
+	require.ErrorIs(t, f.run(), errRenewalFallbackRan)
+	require.EqualValues(t, 1, f.operation.runs.Load(), "the engine runs the work itself")
+	require.False(t, f.installed())
+	f.requireOneLinePerAttempt(t)
+	lines := f.logs.lines(t, "remote cache part without a source")
+	require.Len(t, lines, 1)
+	require.Equal(t, "download_failed", lines[0].fields["reason"])
+
+	f.transport.mu.Lock()
+	var ranges []string
+	for i, u := range f.transport.urls {
+		if u == url {
+			ranges = append(ranges, f.transport.ranges[i])
+		}
+	}
+	f.transport.mu.Unlock()
+	require.NotEmpty(t, ranges)
+	for _, spec := range ranges {
+		var start, end int
+		_, err := fmt.Sscanf(spec, "bytes=%d-%d", &start, &end)
+		require.NoError(t, err)
+		require.LessOrEqual(t, end-start+1, 256, "the layer is read in chunks")
+	}
+	slices.Sort(ranges)
+	require.Equal(t, slices.Compact(slices.Clone(ranges)), ranges, "no chunk is requested twice")
 }
