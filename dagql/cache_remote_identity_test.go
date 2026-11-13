@@ -220,6 +220,19 @@ func egraphFactsForTest(c *Cache) string {
 	line("indexedDigests", c.resultIndexedDigests)
 	line("broadlyIndexed", c.broadlyIndexedResults)
 	line("nextTerm", c.nextEgraphTermID)
+	// The content digests each entry was taught, which its frame takes.
+	taught := make(map[sharedResultID]string, len(c.resultsByID))
+	for id, res := range c.resultsByID {
+		if len(res.taught) > 0 || res.taughtGiven != 0 || res.taughtFrom.ok() {
+			taught[id] = fmt.Sprint(res.taught, res.taughtGiven, res.taughtFrom.ok())
+		}
+	}
+	line("taught", taught)
+	if w := c.storedBodies; w != nil {
+		w.mu.Lock()
+		line("taughtQueued", len(w.content))
+		w.mu.Unlock()
+	}
 	// What the cache's writes have marked for its reader and its save since
 	// the last write handed them back.
 	if c.changes != nil {
