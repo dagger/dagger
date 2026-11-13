@@ -1402,6 +1402,17 @@ func advanceHeldParts(h *holding, keys []string, state heldPartState) bool {
 // identity the cache already holds, as a repeat hit does locally: then
 // nothing would change, and nothing is done. Requires egraphMu for writing.
 func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, entry *sharedResult, field string, recipe, request, content digest.Digest, term *RemoteTerm) {
+	// The entry's own frame takes its content digest, as the engine's did
+	// when it was taught it, whether or not the e-graph learns anything: a
+	// record sent from the Cloud then carries it, and a fresh engine joins
+	// its class as the engine that computed it does. A digest taught again
+	// after another is the frame's content again, as on the engine.
+	if content != "" && entry != nil && entry.id != 0 {
+		if n := len(entry.taught); n == 0 || entry.taught[n-1] != content {
+			entry.taught = append(entry.taught, content)
+		}
+		c.queueTaughtContentLocked(entry)
+	}
 	if c.remoteIdentityTeachesNothingLocked(entry, recipe, request, content, term) {
 		return
 	}
@@ -1516,16 +1527,6 @@ func (c *Cache) writeRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 		return
 	}
 	c.addResultOutputEqClassLocked(entry.id, outputEqID)
-	if content != "" {
-		// The entry's own frame takes its content digest, as the engine's
-		// did when it was taught it: a record sent from the Cloud then
-		// carries it, and a fresh engine joins its class as the engine that
-		// computed it does.
-		if n := len(entry.taught); n == 0 || entry.taught[n-1] != content {
-			entry.taught = append(entry.taught, content)
-		}
-		c.queueTaughtContentLocked(entry)
-	}
 	if len(extras) > 0 {
 		outputEqID = c.findEqClassLocked(outputEqID)
 		classExtras := c.eqClassExtraDigests[outputEqID]
