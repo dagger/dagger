@@ -64,8 +64,7 @@ type SdlDiff {
       .packages(ws: src)
       .get(key: ".")
       .binary(ws: src)
-    container.from("alpine:3.23")
-      .withExec(["apk", "add", "--no-cache", "git", "ca-certificates"])
+    wolfi.container(packages: ["git", "ca-certificates"])
       .withFile("/usr/local/bin/sdl-diff", binary)
   }
 }
