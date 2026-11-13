@@ -257,4 +257,18 @@ func TestPromptApprovalLegacyKeys(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(data), "approval:v2:llm:new")
 	require.False(t, strings.Contains(string(data), "allow_llm:github.com/c/d"))
+
+	// A plain frontend's yes where a yes was always remembered forever still
+	// is, under today's key.
+	plain := &boolHandler{answer: true}
+	req = &ApprovalRequest{
+		Kind: "llm", Prompt: "Allow LLM access?", PersistentKey: "approval:v2:llm:plain",
+		LegacyPersistentKeys: []string{"allow_llm:github.com/e/f"},
+	}
+	res, err = NewPromptAttachable(plain).PromptApproval(t.Context(), req)
+	require.NoError(t, err)
+	require.Equal(t, APPROVAL_ALLOW_FOREVER, res.Decision)
+	data, err = os.ReadFile(promptConfirmationsFile)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "approval:v2:llm:plain")
 }
