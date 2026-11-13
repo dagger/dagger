@@ -9,7 +9,7 @@ import (
 )
 
 // ArtifactTypeColumnsVersion is the first API view with collection type columns.
-const ArtifactTypeColumnsVersion = "v1.0.0-beta.26"
+const ArtifactTypeColumnsVersion = "v1.0.0-beta.28"
 
 // ProjectionField translates schema nodes without deriving identity from a route.
 func (a *Artifact) ProjectionField() flattening.Field {
