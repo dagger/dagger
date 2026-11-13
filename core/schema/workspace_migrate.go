@@ -1202,11 +1202,8 @@ func (s *workspaceSchema) workspaceMigrationLegacyLockMoves(
 		}
 		data, err = workspaceMigrationFilterLegacyLockData(data)
 		if err != nil {
-			if versionErr := workspace.FutureLockfileVersionError(err); versionErr != nil {
-				return nil, versionErr
-			}
-			if conflictErr := workspace.LockfileMergeConflictError(err); conflictErr != nil {
-				return nil, conflictErr
+			if invalidErr := workspace.InvalidLockfileError(sourcePath, err); invalidErr != nil {
+				return nil, invalidErr
 			}
 			slog.WarnContext(ctx, "invalid legacy workspace lockfile; deleting it", "path", sourcePath, "error", err)
 			data = nil

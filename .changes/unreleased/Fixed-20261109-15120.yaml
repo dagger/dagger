@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  A malformed `dagger.lock` now fails the command with an error naming the file
+  and the bad line, and the file is left unchanged. Previously it was replaced,
+  losing every pin it held.
+time: 2026-11-09T20:53:19Z
+custom:
+  Author: sipsma
+  PR: "15120"

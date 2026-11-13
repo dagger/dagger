@@ -3764,11 +3764,8 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 
 	lock, err := workspace.ParseLock(data)
 	if err != nil {
-		if versionErr := workspace.FutureLockfileVersionError(err); versionErr != nil {
-			return nil, versionErr
-		}
-		if conflictErr := workspace.LockfileMergeConflictError(err); conflictErr != nil {
-			return nil, conflictErr
+		if invalidErr := workspace.InvalidLockfileError(readPath, err); invalidErr != nil {
+			return nil, invalidErr
 		}
 		console(ctx, "Warning: resetting invalid workspace lockfile.")
 		slog.WarnContext(ctx, "invalid workspace lockfile; using an empty lock", "path", readPath, "error", err)
