@@ -77,8 +77,11 @@ func (LLMSuite) TestAgentSecretApproval(ctx context.Context, t *testctx.T) {
 
 	t.Run("the owner approves or denies each read", func(ctx context.Context, t *testctx.T) {
 		// Answering the prompt takes a terminal, so run the CLI on the host
-		// under a PTY. The worker reads twice: the first read is denied, and
-		// the denial must not stick.
+		// under a PTY. The plain frontend asks a yes/no question on the
+		// terminal (the approval fallback, where yes allows for the session);
+		// the pretty TUI renders approvals inline, with keys of its own. The
+		// worker reads twice: the first read is denied, and the denial must
+		// not stick.
 		const prompt = "does the token match, approved?"
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
@@ -89,28 +92,41 @@ func (LLMSuite) TestAgentSecretApproval(ctx context.Context, t *testctx.T) {
 		defer console.Close()
 		tty := console.Tty()
 		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
-		cmd := hostDaggerCommand(ctx, t, workdir, "-c",
+		cmd := hostDaggerCommand(ctx, t, workdir, "--progress=plain", "-c",
 			fmt.Sprintf(`keeper | delegate --model="%s" --prompt=%q`, recording(prompt, "secretMatches", readToken, 2), prompt))
 		cmd.Env = append(cmd.Env, "KEEPER_TOKEN="+token)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
 		require.NoError(t, cmd.Start())
+		// The expect timeouts only bound silence, and the CLI keeps printing
+		// while a prompt it never shows waits: bound the whole exchange, so a
+		// prompt that is missed or never answered fails rather than hangs.
+		exchange, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		defer cancel()
+		stop := context.AfterFunc(exchange, func() {
+			_ = cmd.Process.Kill()
+			console.Close()
+		})
+		defer stop()
+		expectString := func(s string) {
+			t.Helper()
+			_, err := console.ExpectString(s)
+			require.NoError(t, err, "waiting for %q (deadline: %v)", s, exchange.Err())
+		}
 
-		// The TUI redraws a prompt while it is open, so wait for each answer
-		// to land before expecting the next prompt.
+		// The plain frontend asks on the terminal at once, while it prints
+		// spans (the first read's denial among them) as they end: expect the
+		// questions in order, and the denial in the output afterwards.
 		for _, answer := range []string{"n", "y"} {
-			_, err = console.ExpectString(`Allow reading secret "env://KEEPER_TOKEN" (requested by agent "keeper-worker", module "keeper"`)
-			require.NoError(t, err)
+			expectString(`Allow reading secret "env://KEEPER_TOKEN" (requested by agent "keeper-worker", module "keeper"`)
 			_, err = console.SendLine(answer)
 			require.NoError(t, err)
-			if answer == "n" {
-				_, err = console.ExpectString(`reading secret "env://KEEPER_TOKEN" was denied by the owning client`)
-				require.NoError(t, err)
-			}
 		}
-		_, err = console.ExpectString("secret matches")
-		require.NoError(t, err)
+		expectString("secret matches")
 		go console.ExpectEOF()
 		require.NoError(t, cmd.Wait())
+		require.NoError(t, exchange.Err(), "the exchange ran out of time")
+		stop()
+		require.Contains(t, console.output.String(), `reading secret "env://KEEPER_TOKEN" was denied by the owning client`)
 
 		// The approved call's result is derived from the owner's secret,
 		// while its cache key only names its arguments: the same call
