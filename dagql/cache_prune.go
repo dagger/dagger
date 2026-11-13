@@ -383,6 +383,28 @@ func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	return report, err
 }
 
+// logPrunedResult logs an entry a prune removed: its call's label, as the
+// snapshot read its frame, and the frame's recipe digest and arguments.
+func (c *Cache) logPrunedResult(planEntry prunePlanEntry, snapRes pruneSnapshotResult, label string) {
+	digest := ""
+	args := []string(nil)
+	if frame, err := snapRes.frame.decode(); err == nil && frame != nil {
+		callFrame := frame.clone()
+		if dig, err := callFrame.deriveRecipeDigest(c); err == nil {
+			digest = dig.String()
+		}
+		args = pruneLogCallArgs(callFrame.Args)
+	}
+	slog.Info("dagql pruned result",
+		"resultID", planEntry.candidate.resultID,
+		"call", label,
+		"digest", digest,
+		"args", args,
+		"description", snapRes.entry.Description,
+		"measuredSizeBytes", snapRes.entry.SizeBytes,
+		"reclaimedBytes", planEntry.reclaimBytes)
+}
+
 // prune is Prune's run.
 func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePruneReport, error) {
 	report := CachePruneReport{}
@@ -478,23 +500,7 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			policyApplied++
 			label := labels[planEntry.candidate.resultID]
 			if ok {
-				digest := ""
-				args := []string(nil)
-				if frame, err := snapRes.frame.decode(); err == nil && frame != nil {
-					callFrame := frame.clone()
-					if dig, err := callFrame.deriveRecipeDigest(c); err == nil {
-						digest = dig.String()
-					}
-					args = pruneLogCallArgs(callFrame.Args)
-				}
-				slog.Info("dagql pruned result",
-					"resultID", planEntry.candidate.resultID,
-					"call", label,
-					"digest", digest,
-					"args", args,
-					"description", snapRes.entry.Description,
-					"measuredSizeBytes", snapRes.entry.SizeBytes,
-					"reclaimedBytes", planEntry.reclaimBytes)
+				c.logPrunedResult(planEntry, snapRes, label)
 			}
 			selectedEntry := planEntry.candidate.entry
 			selectedEntry.DagqlCall = label
