@@ -379,6 +379,46 @@ func TestCloudRestoreKeepsAnEarlierTaughtDigestWhenALaterOneIsTaught(t *testing.
 		call.ExtraDigest{Digest: first, Label: call.ExtraDigestLabelReplacedContent}, "the digest taught before the restore")
 }
 
+// A prune that drops an entry's value while the body worker is giving its
+// frame a taught digest, between the teach and the worker recording it,
+// leaves the entry with nothing given: the worker's record is of the frame
+// the prune took. The entry, queued again by a second teach meanwhile, is
+// read by the worker's next pass with nothing taught, and a digest a span
+// teaches later reaches the frame of the record that fills the entry again.
+func TestStoredBundleTakesADigestTaughtAfterAPruneDuringTheWorker(t *testing.T) {
+	t.Parallel()
+	first, second, later := testDigest("content-first"), testDigest("content-second"), testDigest("content-after-the-prune")
+	bundle, aNumber := storedContentTestRoot(t, "pruned-during-worker-root")
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	number := storedPersistenceTestMerge(t, ctx, cloud, bundle)[0]
+	given, released := make(chan struct{}), make(chan struct{})
+	var held, freed sync.Once
+	release := func() { freed.Do(func() { close(released) }) }
+	t.Cleanup(release)
+	cloud.testTaughtContentGiven = func() {
+		held.Do(func() {
+			close(given)
+			<-released
+		})
+	}
+	var passes atomic.Int64
+	cloud.testTaughtContent = func(int) { passes.Add(1) }
+	storedContentTestTeach(t, ctx, cloud, aNumber, first)
+	<-given
+	storedContentTestTeach(t, ctx, cloud, aNumber, second)
+	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(number))
+	require.NoError(t, err)
+	require.True(t, removed)
+	release()
+	require.Eventually(t, func() bool { return passes.Load() >= 2 }, 5*time.Second, 5*time.Millisecond,
+		"the worker's next pass reads the entry the second teach queued")
+
+	require.Equal(t, []uint64{number}, storedPersistenceTestMerge(t, ctx, cloud, bundle), "the pruned entry takes the record again")
+	storedContentTestTeach(t, ctx, cloud, aNumber, later)
+	storedContentTestWait(t, cloud, number, later)
+	require.NotContains(t, storedContentTestFrameDigests(t, cloud, number), first, "the digest given the frame the prune took")
+}
+
 // A restored entry whose record a prune drops while an engine's holding keeps
 // the entry gives up the content digest taught before the restore with the
 // value, as an entry that was never saved does
