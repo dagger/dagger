@@ -1658,6 +1658,160 @@ daggerGo = true
 globalClient = true
 targetVersion = "v1.0.0-beta.27"
 
+[sdks.go.scopes."core/integration/testdata/modules/go/agent-hirer"]
+is-module = true
+name = "hirer"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/agent-hirer".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/agent-poker"]
+is-module = true
+name = "poker"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/agent-poker".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/agent-skiller"]
+is-module = true
+name = "skiller"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/agent-skiller".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cacert-terminal"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cacert-terminal".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-volume"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-volume".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-context-directory-default"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-context-directory-default".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-contextual-private"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-contextual-private".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-dockerbuild-socket"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-dockerbuild-socket".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-private-git-arg"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-private-git-arg".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-secret-uri-container"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-secret-uri-container".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-socket"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-socket".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/path-default-path-no-cache"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/path-default-path-no-cache".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/shell-secret-uri"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/shell-secret-uri".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/unicode-path"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/unicode-path".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
 [sdks.dang.scopes.".dagger/modules/dev"]
 clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/cli-dev"]
 is-module = true
