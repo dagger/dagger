@@ -107,6 +107,8 @@ type Server struct {
 	// cloudReach remembers whether this engine reaches the Cloud URLs clients
 	// hand it, so each session need not probe.
 	cloudReach cloudReachability
+	// gitRemoteHead overrides core.GitRemoteHead when set, for tests.
+	gitRemoteHead func(ctx context.Context, remote string) (string, error)
 
 	//
 	// state directory/db paths
