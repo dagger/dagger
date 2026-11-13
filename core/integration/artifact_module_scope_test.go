@@ -56,7 +56,7 @@ source = "dang"
 	for _, selector := range [][]string{
 		{"dag://?module=good"},
 		{"--module=good"},
-		// Module flags come from discovery, and so do their checks' flags.
+		// Module flags and their check flags come from discovery.
 		{"--good"},
 		{"--good", "--check=verify"},
 		{"--module=good", "--check=verify"},
@@ -64,7 +64,7 @@ source = "dang"
 		{"--good", "-l"},
 		{"--good", "--check=verify", "-l", "--all"},
 	} {
-		t.Run(strings.Join(selector, " ")+" avoids loading unrelated modules", func(ctx context.Context, t *testctx.T) {
+		t.Run(strings.Join(selector, " ")+" excludes unrelated module failures", func(ctx context.Context, t *testctx.T) {
 			args := append([]string{"check"}, selector...)
 			args = append(args, "--generated=false", "--progress=report", "-vv")
 			out, err := base.With(daggerExec(args...)).CombinedOutput(ctx)
