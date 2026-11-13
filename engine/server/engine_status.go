@@ -87,7 +87,11 @@ type sessionLedger struct {
 	now      func() time.Time
 	live     map[clientClaim]int
 	sessions int
-	ended    map[clientClaim]time.Time
+	// tearingDown are the live sessions whose teardown has begun
+	// (sessionTearingDown): their clients are gone, and they only stop
+	// their services and flush before they end.
+	tearingDown map[string]struct{}
+	ended       map[clientClaim]time.Time
 	// claims are the sessions that started under a claim, by session ID,
 	// with when each started, which the remote cache's settle state reports
 	// (settleState): live ones, and, with the remote cache, ended ones until
@@ -185,6 +189,7 @@ func (l *sessionLedger) sessionEnded(sessionID, clientID, claimID string, marker
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	key := clientClaim{clientID, claimID}
+	delete(l.tearingDown, sessionID)
 	if l.live[key] == 0 {
 		return
 	}
@@ -211,11 +216,24 @@ func (l *sessionLedger) sessionEnded(sessionID, clientID, claimID string, marker
 	l.ended[key] = l.clock()
 }
 
-// idle reports whether no session is live on the engine.
+// idle reports whether no session runs work on the engine: none is live,
+// or every live one is tearing down.
 func (l *sessionLedger) idle() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.sessions == 0
+	return l.sessions <= len(l.tearingDown)
+}
+
+// sessionTearingDown records that a live session's teardown has begun: it
+// still counts as live, for the remote cache's settle and bound, until
+// sessionEnded, but runs no check's work any more, only its cleanup (idle).
+func (l *sessionLedger) sessionTearingDown(sessionID string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.tearingDown == nil {
+		l.tearingDown = map[string]struct{}{}
+	}
+	l.tearingDown[sessionID] = struct{}{}
 }
 
 // attachRemote gives the ledger the remote cache's settle state, for an
