@@ -3538,6 +3538,9 @@ type ongoingCall struct {
 	ttlSeconds     int64
 	// expiryLimit is the resolver's ExpireBy, in sharedWorkCtx.
 	expiryLimit             *expiryLimit
+	// borrowed is the resolver's RequireSessionResourcesOf, in
+	// sharedWorkCtx.
+	borrowed                *borrowedResults
 	initCompletedResultOnce sync.Once
 	handoffHoldActive       bool
 	initCompletedResultErr  error
@@ -6668,6 +6671,8 @@ func (c *Cache) getOrInitCallInner(
 	sharedWorkCtx = context.WithValue(sharedWorkCtx, persistDeclineKey{}, decline)
 	expiry := &expiryLimit{}
 	sharedWorkCtx = context.WithValue(sharedWorkCtx, expiryLimitKey{}, expiry)
+	borrowed := &borrowedResults{}
+	sharedWorkCtx = context.WithValue(sharedWorkCtx, borrowedResultsKey{}, borrowed)
 	sharedWorkCtx = withoutCallScopes(sharedWorkCtx)
 	oc := &ongoingCall{
 		callConcurrencyKeys:     callConcKeys,
@@ -6679,6 +6684,7 @@ func (c *Cache) getOrInitCallInner(
 		sharedWorkCtx:           sharedWorkCtx,
 		persistDecline:          decline,
 		expiryLimit:             expiry,
+		borrowed:                borrowed,
 		releaseOperationLeaseFn: releaseOperationLease,
 		profOpID:                execOp.ID(),
 		// snapshot the target's skip decision for the OTel wait condition (oc.res is not
@@ -7665,6 +7671,13 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.rememberDependencyEdgeLocked(oc.res, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
+	}
+	// In the critical section that indexes the call's key, so no lookup by
+	// it is served the result before it requires what the resolver borrowed.
+	if borrowed := oc.borrowed.load(); len(borrowed) > 0 {
+		if err := c.requireBorrowedSessionResourcesLocked(ctx, oc.res, borrowed); err != nil {
+			return failPartialPublication(err)
+		}
 	}
 	if _, err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
 		return failPartialPublication(err)
