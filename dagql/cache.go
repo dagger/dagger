@@ -3101,17 +3101,17 @@ type sharedResult struct {
 	// resultCallMu.
 	frameContent      digest.Digest
 	frameContentKnown bool
-	// taughtContent is, on a blob-backed cache, the content digest a
-	// holding's span last taught the entry (teachRemoteIdentityLocked). The
-	// entry's frame takes it as TeachContentDigest would have left the
-	// engine's (queueTaughtContentLocked). Requires egraphMu.
-	taughtContent digest.Digest
-	// taughtPending are the content digests spans taught the entry that its
-	// frame hasn't taken yet, in the order they were taught: the body worker
-	// gives them to the frame in that order, as TeachContentDigest would, so
-	// one replaced by a later one is kept as replaced-content. Requires
-	// egraphMu.
-	taughtPending []digest.Digest
+	// taught are, on a blob-backed cache, the content digests holdings'
+	// spans taught the entry (teachRemoteIdentityLocked), in the order they
+	// were taught, the last its current one. The entry's frame takes them in
+	// that order, as a run of TeachContentDigest calls leaves an engine's,
+	// so one replaced by a later one is kept as replaced-content
+	// (queueTaughtContentLocked). taughtGiven is how many of them the
+	// current frame has taken, and taughtFrame counts the frames a
+	// replacement installed, which have taken none. Requires egraphMu.
+	taught      []digest.Digest
+	taughtGiven int
+	taughtFrame uint64
 	// payloadMu guards lazy payload publication for imported persisted hits and
 	// prune-accounting timestamps that can change after initial publication.
 	payloadMu sync.RWMutex

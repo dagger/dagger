@@ -1836,8 +1836,10 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			old, more, err := c.replaceResultValueInPlaceLocked(ctx, row.res, fresh, row.value.ExpiresAtUnix)
 			queue = append(queue, more...)
 			errs = errors.Join(errs, err)
-			// The entry took the fresh record's frame: a content digest a
-			// span taught it before goes on that frame too.
+			// The entry took the fresh record's frame: the content digests
+			// spans taught it before go on that frame too.
+			row.res.taughtGiven = 0
+			row.res.taughtFrame++
 			c.queueTaughtContentLocked(row.res)
 			row.res.expiresAtUnix = row.value.ExpiresAtUnix
 			// The old value's release runs after the lock; until it has,
