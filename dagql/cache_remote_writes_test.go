@@ -17,6 +17,7 @@ type remoteWriteOps interface {
 	UpdateRemoteHolding(context.Context, HolderKey, RemoteHoldingUpdate) (RemoteChange, bool, error)
 	AddRemoteHold(context.Context, HolderKey, string) (RemoteChange, error)
 	ObserveRemoteRetention(context.Context, HolderKey, RetentionObservation) (RemoteChange, error)
+	ApplyMergedReply(context.Context, CacheID, ValueBundle, MergeReply) (RemoteChange, error)
 	ReleaseRemoteSession(context.Context, CacheID, string) RemoteChange
 	ReleaseRemoteCache(context.Context, CacheID) RemoteChange
 	CollectRemoteHoldings(context.Context, []HolderKey) ([]HolderKey, RemoteChange, error)
@@ -34,7 +35,8 @@ var (
 // returns what each answered, in order: holdings attached on their own
 // entries and on one another's recipes, joined by content digest and by
 // term, a dependency named before its holding, holds and their sessions'
-// ends, retention set and dropped, a replaced value's dropped dependency,
+// ends, retention set and dropped, merged replies landing and replacing,
+// a replaced value's dropped dependency,
 // a whole engine cache released, collections, refused operations, and the
 // reads between them.
 func remoteWritesScript(t *testing.T, ctx context.Context, ops remoteWriteOps) []string {
@@ -101,8 +103,30 @@ func remoteWritesScript(t *testing.T, ctx context.Context, ops remoteWriteOps) [
 	retain(HolderKey{b, 6}, RetentionObservation{Generation: 1, EngineTimeUnixNano: 20})
 	retain(HolderKey{a, 9}, RetentionObservation{Retained: true})
 
+	// Merged replies: the Cloud's entries of cache-a's holdings 1 and 2
+	// land on new holdings of cache-c, 2 over 1, with a part, 2 retained;
+	// then again at a higher count, which drops 2's dependency and its
+	// retention; and two refused, onto a sender's cache and with an
+	// ordinal that wasn't sent.
+	c := CacheID("cache-c")
+	merge := func(name string, cache CacheID, sent ValueBundle, reply MergeReply) {
+		change, err := ops.ApplyMergedReply(ctx, cache, sent, reply)
+		note(name, change, err)
+	}
+	e1, _ := ops.RemoteHoldingInfo(HolderKey{a, 1})
+	e2, _ := ops.RemoteHoldingInfo(HolderKey{a, 2})
+	sent := ValueBundle{Values: []TransferredValue{{Ordinal: 1, SenderNumber: e1.Number}, {Ordinal: 2, SenderNumber: e2.Number}}}
+	merge("merge into cache-c", c, sent, MergeReply{Generation: 1, EngineTimeUnixNano: 30,
+		Values: []MergedValue{{Ordinal: 1, Number: 1}, {Ordinal: 2, Number: 2, Deps: []uint64{1}, Parts: []PersistedPartAddress{{Part: "snapshot"}}}},
+		Roots:  []MergedRoot{{Ordinal: 2, Number: 2, Retained: true}}})
+	merge("merge into cache-c again", c, sent, MergeReply{Generation: 1, EngineTimeUnixNano: 40,
+		Values: []MergedValue{{Ordinal: 2, Number: 2, Replacements: 1}},
+		Roots:  []MergedRoot{{Ordinal: 2, Number: 2}}})
+	merge("merge into a sender's cache", "cloud", sent, MergeReply{Values: []MergedValue{{Ordinal: 1, Number: 1}}})
+	merge("merge of an ordinal not sent", c, sent, MergeReply{Values: []MergedValue{{Ordinal: 9, Number: 3}}})
+
 	read := func(name string) {
-		for _, key := range []HolderKey{{a, 1}, {a, 2}, {a, 3}, {a, 4}, {b, 1}, {b, 5}, {b, 6}} {
+		for _, key := range []HolderKey{{a, 1}, {a, 2}, {a, 3}, {a, 4}, {b, 1}, {b, 5}, {b, 6}, {c, 1}, {c, 2}} {
 			held, ok := ops.RemoteHoldingInfo(key)
 			note(fmt.Sprintf("%s info %v", name, key), held, ok)
 			note(fmt.Sprintf("%s closure %v", name, key), ops.HolderClosure(key))
