@@ -52,6 +52,20 @@ func TestPartPrefetchCountsReleasedUnread(t *testing.T) {
 	require.Zero(t, counts.Held)
 }
 
+// The bytes still held when prefetching closes are released unread.
+func TestPartPrefetchCountsReleasedAtClose(t *testing.T) {
+	f := newPrefetchFixture(t, true, nil)
+	f.runJob(t)
+	size := chainBytes(f.chain)
+	f.cache.closePartPrefetch()
+
+	counts := f.cache.PartPrefetchCounts()
+	require.Equal(t, size, counts.Fetched)
+	require.Equal(t, size, counts.Unread)
+	require.Zero(t, counts.Used)
+	require.Zero(t, counts.Held)
+}
+
 // A job a full lane drops is counted by its outcome, and fetches nothing.
 func TestPartPrefetchCountsDroppedJobs(t *testing.T) {
 	held := newChainFixture(t, "held")
