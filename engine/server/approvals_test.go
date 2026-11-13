@@ -156,7 +156,7 @@ func TestApprovalRequest(t *testing.T) {
 	spanID := trace.SpanID{4, 5, 6}
 	ctx := trace.ContextWithSpanContext(s.ctx(nested), trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID}))
 	ctx = core.AgentToContext(ctx, testAgent(t, "agent-1", "worker"))
-	allowed, err := s.request(ctx, nested, approvalSpec{Kind: "test-push", Subject: "remote @ ref", Question: "Allow push to remote @ ref", Danger: true})
+	allowed, err := s.request(ctx, nested, approvalSpec{Kind: "test-push", Subject: "remote @ ref", Question: "Allow push to remote @ ref", Action: "Push to remote @ ref", Danger: true})
 	require.NoError(t, err)
 	require.True(t, allowed)
 
@@ -167,8 +167,8 @@ func TestApprovalRequest(t *testing.T) {
 	require.True(t, req.Danger)
 	require.Equal(t, `Allow push to remote @ ref (requested by agent "worker", module "staff", function "Staff.gh")?`, req.Prompt,
 		"the module driving a nested client asks, running its function")
-	require.Equal(t, `Allow push to remote @ ref?`, req.Question,
-		"frontends that render the requester get the question without it")
+	require.Equal(t, `Push to remote @ ref?`, req.Question,
+		"frontends that render the requester get the bare action without it")
 	require.Equal(t, &prompt.ApprovalRequester{
 		AgentName:   "worker",
 		AgentHandle: "agent-1",

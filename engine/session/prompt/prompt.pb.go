@@ -547,8 +547,9 @@ type ApprovalRequest struct {
 	// the operation is destructive (e.g. a force-push); frontends should
 	// highlight it
 	Danger bool `protobuf:"varint,8,opt,name=danger,proto3" json:"danger,omitempty"`
-	// the bare question, without who asks (e.g. "Allow push to <remote> @
-	// <ref>?"), as literal text: frontends that render the requester
+	// the bare question, without who asks, stating the action itself rather
+	// than asking for permission (e.g. "Push to <remote> @ <ref>?"), as
+	// literal text: frontends that render the requester and the grant choices
 	// themselves show this instead of prompt, which also names who asks
 	Question string `protobuf:"bytes,9,opt,name=question,proto3" json:"question,omitempty"`
 }

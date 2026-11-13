@@ -75,7 +75,7 @@ func approvalTestFrontend(t *testing.T) *frontendPretty {
 }
 
 // pushQuestion is how a pushApproval's question line reads.
-const pushQuestion = "◆ Allow push to origin @ main?"
+const pushQuestion = "◆ Push to origin @ main?"
 
 // pushApproval is a git push request shaped like the engine's: the bare
 // question for frontends that show the requester themselves, and the full
@@ -84,7 +84,7 @@ func pushApproval(spanID dagui.SpanID, persistentKey string) *prompt.ApprovalReq
 	return &prompt.ApprovalRequest{
 		Kind:     "git-push",
 		Prompt:   `Allow push to origin @ main (requested by agent "chief", module "contributor", function "Contributor.push")?`,
-		Question: "Allow push to origin @ main?",
+		Question: "Push to origin @ main?",
 		Subject:  "origin @ main",
 		Requester: &prompt.ApprovalRequester{
 			AgentName:   "chief",
@@ -172,7 +172,7 @@ func TestApprovalAttachesUnderToolCall(t *testing.T) {
 
 	frame := fe.tui.Step()
 	tool := lineIndex(t, frame, "Push")
-	header := lineIndex(t, frame, "◆ Allow push to origin @ main?")
+	header := lineIndex(t, frame, pushQuestion)
 	require.Less(t, tool, header, "the approval sits beneath its tool call")
 	require.Less(t, header, lineIndex(t, frame, "Publish"), "and before the next row")
 	require.Contains(t, frame[header+1], "contributor · ↓ to answer",
@@ -187,10 +187,11 @@ func TestApprovalAttachesUnderToolCall(t *testing.T) {
 	pressKeys(fe, "k", "k")
 	require.True(t, fe.tui.IsFocused(a.view))
 	frame = fe.tui.Step()
-	header = lineIndex(t, frame, "◆ Allow push to origin @ main?")
+	header = lineIndex(t, frame, pushQuestion)
 	require.Contains(t, frame[header+1], "contributor · Contributor.push")
 	require.Contains(t, frame[header+3], "y  Allow once")
-	require.Contains(t, frame[header+4], "s  Allow for this session")
+	require.Contains(t, frame[header+4], "s  Allow for this session only",
+		"the session grant says it ends with the session")
 	require.Contains(t, frame[header+5], "▶ n  Deny", "Deny is selected by default")
 	require.Contains(t, frame[header+6], "↑↓ choose · enter confirm · esc leave")
 
@@ -260,7 +261,7 @@ func TestApprovalTakesFocusOnNavigation(t *testing.T) {
 	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused(),
 		"focus returns to the row the approval sat under")
 	require.Empty(t, fe.approvals)
-	require.NotContains(t, frameText(fe.tui.Step()), "Allow push to origin")
+	require.NotContains(t, frameText(fe.tui.Step()), pushQuestion)
 }
 
 // The tool call row keeps its own keys: enter there zooms, as everywhere,
@@ -344,19 +345,20 @@ func TestApprovalDangerHighlighted(t *testing.T) {
 	req := pushApproval(approvalPushID, "")
 	req.Kind = "git-force-push"
 	req.Prompt = `Allow force-push to origin @ main (requested by agent "chief", module "contributor", function "Contributor.push")?`
-	req.Question = "Allow force-push to origin @ main?"
+	req.Question = "Force-push to origin @ main?"
 	req.Danger = true
 	a, _ := startApproval(t, fe, t.Context(), req)
 	lines := fe.approvalLines(a, false, 120)
 	var question string
 	for _, line := range lines {
-		if strings.Contains(ansi.Strip(line), "force-push") {
+		if strings.Contains(ansi.Strip(line), "Force-push to origin @ main?") {
 			question = line
 		}
 	}
 	require.NotEmpty(t, question)
 	require.Contains(t, question, "\x1b[", "the question is styled")
 	require.Contains(t, question, "31", "the destructive phrase is red")
+	require.NotContains(t, ansi.Strip(question), "Allow", "the bare question states the action")
 }
 
 func TestApprovalCancellation(t *testing.T) {
@@ -549,7 +551,7 @@ func TestApprovalOffscreenIsCued(t *testing.T) {
 
 	frame := frameText(fe.tui.Step())
 	require.Contains(t, frame, "step29", "the newest output stays on screen")
-	require.NotContains(t, frame, "Allow push to origin", "the approval itself scrolled away")
+	require.NotContains(t, frame, pushQuestion, "the approval itself scrolled away")
 	require.Contains(t, frame, "◆ chief is waiting for approval ↑ · a to go there",
 		"a cue names the waiting agent, outside the conversation")
 	require.Contains(t, frame, "a answer approval", "the keymap names the jump key")

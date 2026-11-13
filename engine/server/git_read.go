@@ -80,6 +80,7 @@ func gitReadApproval(remote string) approvalSpec {
 		Kind:     approvalKindGitRead,
 		Subject:  literalText(remote),
 		Question: gitReadPromptPrefix + literalText(remote) + " with your Git credentials",
+		Action:   "Read " + literalText(remote) + " with your Git credentials",
 	}
 }
 
