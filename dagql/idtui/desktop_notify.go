@@ -12,6 +12,7 @@ import (
 	"github.com/vito/tuist"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 )
 
 // Desktop notifications: the TUI asks the terminal emulator to raise an OS
@@ -40,7 +41,9 @@ import (
 // Focus: the TUI turns on focus reporting (DECSET 1004) and stays quiet
 // while the terminal is known to be focused. Until a terminal reports focus
 // either way it is assumed unfocused, so terminals without focus reporting
-// still notify; any keypress, click or paste counts as focus.
+// (tmux without `focus-events on`, screen, ...) always notify. Once it has
+// reported, a keypress, click or paste also counts as focus, which covers a
+// focus-in a terminal does not report on its own.
 const notifyEnvVar = "DAGGER_TUI_NOTIFY"
 
 // notifyTitle titles every notification: the body says what happened.
@@ -295,13 +298,16 @@ type desktopNotifier struct {
 
 	focus   terminalFocus
 	started time.Time
+	// reportsFocus is set by the first focus report: only then does input
+	// count as focus, since nothing would ever report the blur that follows.
+	reportsFocus bool
 
 	seq      int
 	lastText string
 	lastAt   time.Time
 
 	// agentStates is each agent's state as last seen, for spotting turn ends.
-	agentStates map[string]string
+	agentStates map[agentcontrol.Key]string
 }
 
 // newDesktopNotifier returns nil when the environment disables
@@ -317,7 +323,7 @@ func newDesktopNotifier(getenv func(string) string, write func(string)) *desktop
 		write:       write,
 		now:         time.Now,
 		started:     time.Now(),
-		agentStates: map[string]string{},
+		agentStates: map[agentcontrol.Key]string{},
 	}
 }
 
@@ -390,23 +396,25 @@ func withDesktopNotifications(term tuist.Terminal, realTerminal bool) (tuist.Ter
 }
 
 // handleTerminalFocus tracks the terminal's focus from its focus reports,
-// and from input, which only a focused terminal receives. Runs on Tuist's
-// event loop ahead of input dispatch; focus reports are consumed.
+// and, once the terminal has shown it reports focus, from input, which only a
+// focused terminal receives. Runs on Tuist's event loop ahead of input
+// dispatch; focus reports are consumed.
 func (fe *frontendPretty) handleTerminalFocus(_ tuist.Context, ev uv.Event) bool {
+	n := fe.notifier
 	switch ev.(type) {
 	case uv.FocusEvent:
-		if fe.notifier != nil {
-			fe.notifier.focus = focusIn
+		if n != nil {
+			n.focus, n.reportsFocus = focusIn, true
 		}
 		return true
 	case uv.BlurEvent:
-		if fe.notifier != nil {
-			fe.notifier.focus = focusOut
+		if n != nil {
+			n.focus, n.reportsFocus = focusOut, true
 		}
 		return true
 	case uv.KeyPressEvent, uv.MouseClickEvent, uv.PasteEvent:
-		if fe.notifier != nil {
-			fe.notifier.focus = focusIn
+		if n != nil && n.reportsFocus {
+			n.focus = focusIn
 		}
 	}
 	return false
@@ -479,7 +487,10 @@ func (fe *frontendPretty) sendNotification(when notifyWhen, title, body string) 
 // notifyAgentTurns notifies when an agent the user is following finishes its
 // turn: its state leaves RUNNING (or WAITING_INPUT) for IDLE or FAILED. Called
 // with each new roster; an agent's first sighting only records its state, so
-// a restored or replayed roster stays quiet.
+// a restored or replayed roster stays quiet. States are keyed by the control
+// record's full key (session, trace, incarnation, handle): an agent restored
+// into a new session under the same handle is a first sighting, not a
+// RUNNING agent from the imported trace going IDLE.
 //
 // Followed agents are the focused one and root agents (no parent: the main
 // conversation). Staff workers going idle are left out unless focused: their
@@ -494,18 +505,19 @@ func (fe *frontendPretty) notifyAgentTurns(agents []*dagui.AgentNode) {
 	states := fe.notifier.agentStates
 	focused := fe.focusedAgentID()
 	for _, agent := range agents {
-		if agent.ID == "" {
-			continue
+		if agent.ID == "" || agent.Control == nil {
+			continue // no control record, no lifecycle state
 		}
-		prev, seen := states[agent.ID]
+		key := agent.Control.Key
+		prev, seen := states[key]
 		if prev == agent.State {
 			continue
 		}
-		states[agent.ID] = agent.State
+		states[key] = agent.State
 		if !seen || (prev != "RUNNING" && prev != "WAITING_INPUT") {
 			continue
 		}
-		root := agent.Control == nil || agent.Control.Parent == ""
+		root := agent.Control.Parent == ""
 		if !root && agent.ID != focused {
 			continue
 		}
@@ -524,9 +536,10 @@ func (fe *frontendPretty) notifyAgentTurns(agents []*dagui.AgentNode) {
 
 // notifyRunDone notifies when a long non-interactive command (a `dagger
 // call`, `dagger check`, ...) finishes while the user has switched away.
-// Interactive sessions end when the user exits them, so they never notify.
+// Interactive sessions end when the user exits them, so they never notify:
+// ranShell, since fe.shell is already cleared once the shell has stopped.
 func (fe *frontendPretty) notifyRunDone(err error) {
-	if !fe.notificationsEnabled() || fe.shell != nil || fe.interrupted {
+	if !fe.notificationsEnabled() || fe.ranShell || fe.interrupted {
 		return
 	}
 	elapsed := fe.notifier.now().Sub(fe.notifier.started)
