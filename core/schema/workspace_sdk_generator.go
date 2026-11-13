@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -262,7 +263,9 @@ func runSDKModuleGeneratorGraph(
 	// A scope reads its own files and the modules it generates clients for, so
 	// it generates from the workspace with only its local dependencies'
 	// changes applied, and scopes that do not depend on each other generate at
-	// once.
+	// once, up to one per CPU: a scope's generation builds and runs code, and
+	// a workspace can have hundreds of scopes.
+	slots := make(chan struct{}, runtime.NumCPU())
 	generations := make(map[string]*sdkModuleScopeGeneration, len(plan.ordered))
 	for _, node := range plan.ordered {
 		generations[node.key] = &sdkModuleScopeGeneration{done: make(chan struct{})}
@@ -290,6 +293,8 @@ func runSDKModuleGeneratorGraph(
 					return
 				}
 			}
+			slots <- struct{}{}
+			defer func() { <-slots }()
 			generation.changes, generation.err = s.generateSDKModuleGraphScope(ctx, input, staged, node)
 		}()
 	}
