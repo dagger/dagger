@@ -71,6 +71,8 @@ const (
 	TypeSettled  Type = "settled"
 	TypeClaims   Type = "claims"
 	TypeClaimed  Type = "claimed"
+	TypeRestore  Type = "restore"
+	TypeRestored Type = "restored"
 	TypeError    Type = "error"
 )
 
@@ -98,6 +100,8 @@ func ReplyType(request Type) (Type, bool) {
 		return TypeSettled, true
 	case TypeClaims:
 		return TypeClaimed, true
+	case TypeRestore:
+		return TypeRestored, true
 	}
 	return "", false
 }
@@ -166,6 +170,9 @@ type Hello struct {
 	// it for nothing until an Open with a later period.
 	Period  uint64 `json:"period"`
 	Settled bool   `json:"settled,omitempty"`
+	// Restored are the set files (Restore) this engine process merged
+	// whole, by digest: the service doesn't offer them again.
+	Restored []digest.Digest `json:"restored,omitempty"`
 }
 
 // Welcome is the service's reply to Hello.
@@ -568,3 +575,81 @@ const (
 	LookupPartsPartial  LookupParts = "partial"
 	LookupPartsNone     LookupParts = "none"
 )
+
+// Restore asks the engine to fetch published files of its claims' sets and
+// merge their parts (SetFile), each through the path a Merge takes. The
+// engine merges one file at a time, each file's parts in the file's order:
+// a head before any whole it hasn't started, and otherwise in the order the
+// restores arrived, so a set's head, sent first, is merged before its whole. A restore can come at any time after Welcome. Nothing in
+// a restore fails it: a file that can't be fetched, read or merged is
+// reported in Restored, and leaves the engine as it was without it, but for
+// the parts that merged.
+type Restore struct {
+	Sets []RestoreSet `json:"sets"`
+}
+
+// RestoreSet is one claim's set: its head, its whole, or both. Check names
+// the set's check, for logs only.
+type RestoreSet struct {
+	Check string   `json:"check"`
+	Head  *SetFile `json:"head,omitempty"`
+	Whole *SetFile `json:"whole,omitempty"`
+}
+
+// SetFile is one published file of a set: the digest and size of its bytes,
+// which name it in Restored and Hello, its download address, and the
+// download addresses of the blobs and packs its parts name (AddressTable).
+type SetFile struct {
+	Digest  digest.Digest     `json:"digest"`
+	Size    int64             `json:"size"`
+	Address dagql.BlobAddress `json:"address"`
+	Table   AddressTable      `json:"table"`
+}
+
+// Restored answers Restore once every file it named is done, one item per
+// file, as the restore named them, heads first. Generation and EngineTime are
+// the engine cache's start count and clock when it answers, as Merged has
+// them.
+type Restored struct {
+	Generation uint64         `json:"generation"`
+	EngineTime int64          `json:"engineTime"`
+	Files      []RestoredFile `json:"files"`
+}
+
+// RestoredFile is what the engine did with one file: Complete when every
+// part merged, Already when this engine process had merged it whole and did
+// nothing. Parts counts the parts that merged, Records the records they
+// carried, and Rows what their merges did with them. FirstCommit is the
+// engine's clock, in Unix nanoseconds, when its first part committed, and
+// Error is what stopped it, if anything did.
+type RestoredFile struct {
+	Digest      digest.Digest `json:"digest"`
+	Complete    bool          `json:"complete,omitempty"`
+	Already     bool          `json:"already,omitempty"`
+	Parts       int           `json:"parts"`
+	Records     int           `json:"records"`
+	Rows        RowCounts     `json:"rows"`
+	FirstCommit int64         `json:"firstCommit,omitempty"`
+	Error       string        `json:"error,omitempty"`
+}
+
+// RowCounts counts merged records by what their merge did with each
+// (dagql.MergeRowCounts).
+type RowCounts struct {
+	Held     int `json:"held,omitempty"`
+	Kept     int `json:"kept,omitempty"`
+	Created  int `json:"created,omitempty"`
+	Stored   int `json:"stored,omitempty"`
+	Replaced int `json:"replaced,omitempty"`
+	Retired  int `json:"retired,omitempty"`
+}
+
+// AddressTable is a set file's download addresses: one for each blob and
+// pack its parts' outputs name, by the layer's digest or the pack's ID. A
+// set file carries none of its own, so that only the table is signed again
+// as addresses expire. One the store couldn't sign is left out: a read of
+// its layer renews it, by its chain's renewal key.
+type AddressTable struct {
+	Blobs map[digest.Digest]dagql.BlobAddress `json:"blobs,omitempty"`
+	Packs map[digest.Digest]dagql.BlobAddress `json:"packs,omitempty"`
+}
