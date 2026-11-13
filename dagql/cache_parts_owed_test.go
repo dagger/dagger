@@ -112,3 +112,24 @@ func TestOwedPartsDroppedWhenTheRecordCantBeDescribed(t *testing.T) {
 	require.Equal(t, 0, c.reportOwedParts(ctx))
 	requireNoReport(t, reports)
 }
+
+// An entry that owes again while a pass reads it, as when a later span of it,
+// or of the value that replaced it, also reported only its settled parts,
+// still owes once that pass has reported: the pass served only the owing it
+// read.
+func TestOwedPartsOwedAgainDuringAPassStillOwe(t *testing.T) {
+	t.Parallel()
+	value := &describedPartValue{done: true}
+	ctx, c, row, reports := ownedPartsCache(t, value, fmt.Errorf("%w: busy", ErrPersistStateNotReady))
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	_, ok := c.resultState(ctx, row, nil)
+	require.True(t, ok)
+	value.fail = nil
+	c.testOwedPartsRead = func(read *sharedResult) {
+		c.testOwedPartsRead = nil
+		c.owePartsReport(read)
+	}
+	require.Equal(t, 1, c.reportOwedParts(ctx), "owed again during the pass: still owes")
+	require.Len(t, <-reports, 1, "the pass reported what it read")
+	require.Equal(t, 0, c.reportOwedParts(ctx))
+}

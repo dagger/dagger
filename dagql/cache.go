@@ -2666,6 +2666,9 @@ type Cache struct {
 	// owedParts are the entries whose span reported only their settled
 	// parts, each owing a report of its complete parts; see owedPartReports.
 	owedParts owedPartReports
+	// testOwedPartsRead, when set, runs after a pass of owed reports has read
+	// an entry's parts, before the pass ends.
+	testOwedPartsRead func(*sharedResult)
 	// partPreparation is the engine's registered preparation-context
 	// callback, nil on a cache that cannot reconstruct persisted services.
 	partPreparation PartPreparationContext
@@ -6001,6 +6004,10 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 			"hasSQLDB", c.sqlDB != nil,
 			"hasPersistDB", c.pdb != nil,
 		)
+		// First: the bridge detach sets closing, which refuses every read of
+		// a record. The engine's sessions are gone by now, so their
+		// evaluations no longer hold records.
+		c.closeOwedPartReports(ctx)
 		c.closeRemoteCacheBridge()
 		c.closePartPrefetch()
 		c.closeStoredBodies()
@@ -6010,10 +6017,6 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 		// could strand a counted operation with no worker.
 		c.closeSnapshotSharing()
 		c.partReads.flush()
-		// Before quiescence, which refuses every read of a record: the
-		// engine's sessions are gone by now, so their evaluations no longer
-		// hold records.
-		c.closeOwedPartReports(ctx)
 		if err := c.waitForQuiescence(ctx); err != nil {
 			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
