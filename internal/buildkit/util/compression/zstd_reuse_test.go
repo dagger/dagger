@@ -163,21 +163,34 @@ func zstdLayerAllocated(t *testing.T, comp Config, data []byte, runs int) int64 
 // An engine exporting layers to the remote cache compresses thousands of
 // them in a check. A layer's compression allocates a small part of its own
 // size: the encoders, their history and the frames' buffers are kept from
-// one layer to the next, not made again for each.
+// one layer to the next, not made again for each. Before they were, a
+// 64 KB layer allocated 2.5 MB, a 3 MB layer 37 MB, and a 33 MB layer 64 MB,
+// or 260 MB framed. Under the race detector, which CI runs this package
+// with, a sync.Pool drops a quarter of what it's given at random, so the
+// limits there are looser, and a 64 KB layer's isn't measured: its share of
+// a dropped 8 MB buffer is as much as the encoder it saves.
 func TestZstdLayerAllocatesLittleOnceWarm(t *testing.T) {
-	if raceEnabled {
-		t.Skip("the race detector drops sync.Pool items at random")
-	}
-	for _, comp := range []Config{New(Zstd), New(Zstd).SetFramed(true)} {
-		for _, c := range []struct {
-			size, most int
-		}{
-			{64 << 10, 512 << 10},
-			{3 << 20, 4 << 20},
-			{33 << 20, 32 << 20},
-		} {
-			got := zstdLayerAllocated(t, comp, layerBytes(c.size), 20)
-			require.Less(t, got, int64(c.most), "framed=%v: a %d-byte layer allocated %d bytes", comp.Framed, c.size, got)
+	for _, c := range []struct {
+		framed         bool
+		size           int
+		most, mostRace int
+	}{
+		{false, 64 << 10, 64 << 10, 0},
+		{true, 64 << 10, 64 << 10, 0},
+		{false, 3 << 20, 1 << 20, 18 << 20},
+		{true, 3 << 20, 1 << 20, 18 << 20},
+		{false, 33 << 20, 16 << 20, 32 << 20},
+		{true, 33 << 20, 16 << 20, 130 << 20},
+	} {
+		most := c.most
+		if raceEnabled {
+			most = c.mostRace
 		}
+		if most == 0 {
+			continue
+		}
+		comp := New(Zstd).SetFramed(c.framed)
+		got := zstdLayerAllocated(t, comp, layerBytes(c.size), 20)
+		require.Less(t, got, int64(most), "framed=%v: a %d-byte layer allocated %d bytes", c.framed, c.size, got)
 	}
 }
