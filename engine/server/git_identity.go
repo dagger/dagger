@@ -22,16 +22,17 @@ const gitIdentityPromptPrefix = "Allow using your Git identity "
 // user.email at its working directory), to attribute a commit made without an
 // explicit author.
 //
-// The owner is the trusted caller before the first module boundary, as for
-// push: module clients hold no host attachables of their own, and a module
-// cannot regain its owner's by spawning a nested client. A direct call from
-// that owner shares its identity as before. When an agent asks (a tool in the
-// owner's own conversation, or a module function an agent called) or a module
-// does, the identity is the owner's to share: the engine reads it first, so
-// the prompt can show exactly what is shared, and only returns it once the
-// owner approves (see requestApproval). A grant is the agent's and module's,
-// across its functions, for that identity (see gitIdentityApproval), once,
-// for the session or forever.
+// The owner is the trusted caller before the first module or inert boundary,
+// as for push (see gitPushOwner): module and in-engine SDK clients hold no
+// host attachables of their own, and a module cannot regain its owner's by
+// spawning a nested client. A direct call from that owner shares its identity
+// as before. When an agent asks (a tool in the owner's own conversation, or a
+// module function an agent called) or a module does, the identity is the
+// owner's to share: the engine reads it first, so the prompt can show exactly
+// what is shared, and only returns it once the owner approves (see
+// requestApproval). A grant is the agent's and module's, across its
+// functions, for that identity (see gitIdentityApproval), once, for the
+// session or forever.
 //
 // A client serving its own attachables below a module boundary (a dagger CLI
 // in a container a module runs) has its own Git config, the module's to set:
