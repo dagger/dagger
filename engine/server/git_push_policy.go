@@ -190,11 +190,45 @@ func (srv *Server) gitRemoteDefault(ctx context.Context, owner *clientRuntime, r
 	})
 }
 
-// ownerOrigins remembers, for a session, the origin remotes of the owners'
-// workspace checkouts (see Server.gitPushToOwnerOrigin).
+// ownerOrigins remembers, for a session, the URLs the origin remotes of the
+// owners' workspace checkouts push to (see Server.gitPushToOwnerOrigin).
 type ownerOrigins struct {
 	mu      sync.Mutex
 	origins map[gitPushPolicyKey][]*gitutil.GitURL
+}
+
+// checkoutOrigins remembers the origin URL of each local Git workspace
+// checkout as the session first loaded it, keyed by the loading client and
+// the checkout's root ("" when it has none, or it could not be read).
+//
+// Exports write the agents' and modules' work into the owner's checkout, and
+// nothing keeps them out of .git (Workspace.export writes a .git/config or a
+// hook as readily as any file), so the checkout's config as read later in the
+// session may be a module's. As the session first loads the workspace, before
+// any of its modules or agents run, it is still the owner's.
+type checkoutOrigins struct {
+	mu      sync.Mutex
+	origins map[gitPushPolicyKey]string
+}
+
+// record remembers read's origin for key, unless one is already remembered:
+// a later load (e.g. after an export) must not replace it.
+func (c *checkoutOrigins) record(key gitPushPolicyKey, read func() string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.origins[key]; ok {
+		return
+	}
+	if c.origins == nil {
+		c.origins = make(map[gitPushPolicyKey]string)
+	}
+	c.origins[key] = read()
+}
+
+func (c *checkoutOrigins) get(key gitPushPolicyKey) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.origins[key]
 }
 
 // gitPushToOwnerOrigin is whether remote is the repository the owner's own
@@ -202,12 +236,14 @@ type ownerOrigins struct {
 // the owner's URL rewrites resolve it for a push. The owner pushes there with
 // these credentials anyway, so routine pushes there need no remote grant.
 //
-// The origin is read from the owner's client, in the checkout the engine
-// detected as the owner's workspace (never a path a module chose), and
-// compared as a repository (gitutil.SameRepository: host and path, whatever
-// the transport). Anything that does not work out, e.g. a workspace that is
-// not a local Git checkout, a client that cannot read its config, or a
-// checkout without an origin, is simply not the origin.
+// The origin is the one the checkout the engine detected as the owner's
+// workspace (never a path a module chose) had when the session first loaded
+// it (see checkoutOrigins), resolved through the owner's own (global) Git
+// config only, as push routing is: a rewrite in the checkout's config may be
+// a module's too. It is compared as a repository (gitutil.SameRepository:
+// host and path, whatever the transport). Anything that does not work out,
+// e.g. a workspace that is not a local Git checkout, a checkout without an
+// origin, or a client that cannot read its config, is simply not the origin.
 func (srv *Server) gitPushToOwnerOrigin(ctx context.Context, owner *clientRuntime, remote string) bool {
 	destination, err := gitutil.ParseURL(remote)
 	if err != nil {
@@ -219,14 +255,18 @@ func (srv *Server) gitPushToOwnerOrigin(ctx context.Context, owner *clientRuntim
 	if ws == nil || ws.HostPath() == "" {
 		return false
 	}
-	for _, origin := range srv.ownerOrigins(ctx, owner, ws.HostPath()) {
+	origin := owner.daggerSession.checkoutOrigins.get(gitPushPolicyKey{owner: ws.ClientID, remote: ws.HostPath()})
+	if origin == "" {
+		return false
+	}
+	for _, url := range srv.ownerOrigins(ctx, owner, origin) {
 		// SameRepository ignores the transport: never let a module downgrade
 		// the owner's origin to a plaintext one, which would send the owner's
 		// credentials unencrypted.
-		if gitPlaintextTransport(destination.Scheme) && destination.Scheme != origin.Scheme {
+		if gitPlaintextTransport(destination.Scheme) && destination.Scheme != url.Scheme {
 			continue
 		}
-		if gitutil.SameRepository(origin, destination) {
+		if gitutil.SameRepository(url, destination) {
 			return true
 		}
 	}
@@ -237,12 +277,12 @@ func gitPlaintextTransport(scheme string) bool {
 	return scheme != gitutil.HTTPSProtocol && scheme != gitutil.SSHProtocol && scheme != gitutil.EntireProtocol
 }
 
-// ownerOrigins returns the URLs of the origin remote of the owner's checkout
-// at root, as configured and as resolved for a push, read from the owner's
-// client once per session.
-func (srv *Server) ownerOrigins(ctx context.Context, owner *clientRuntime, root string) []*gitutil.GitURL {
+// ownerOrigins returns the URLs origin is pushed to by owner: origin itself,
+// and as the owner's URL rewrites resolve it for a push, read from the
+// owner's client once per session.
+func (srv *Server) ownerOrigins(ctx context.Context, owner *clientRuntime, origin string) []*gitutil.GitURL {
 	cache := &owner.daggerSession.ownerOrigins
-	key := gitPushPolicyKey{owner: owner.clientID, remote: root}
+	key := gitPushPolicyKey{owner: owner.clientID, remote: origin}
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 	if origins, ok := cache.origins[key]; ok {
@@ -254,21 +294,15 @@ func (srv *Server) ownerOrigins(ctx context.Context, owner *clientRuntime, root 
 	if err != nil || !available {
 		return nil
 	}
-	response, err := git.NewGitClient(conn).GetConfig(ctx, &git.GitConfigRequest{CheckoutPath: root})
+	response, err := git.NewGitClient(conn).GetConfig(ctx, &git.GitConfigRequest{})
 	if err != nil || response.GetConfig() == nil {
 		// Not remembered: the client may answer next time.
 		return nil
 	}
-	entries := response.GetConfig().GetEntries()
 	var origins []*gitutil.GitURL
-	for _, entry := range entries {
-		if !strings.EqualFold(entry.GetKey(), "remote.origin.url") {
-			continue
-		}
-		for _, url := range []string{entry.GetValue(), git.ResolvePushURL(entry.GetValue(), entries)} {
-			if parsed, err := gitutil.ParseURL(url); err == nil && parsed.Host != "" {
-				origins = append(origins, parsed)
-			}
+	for _, url := range []string{origin, git.ResolvePushURL(origin, response.GetConfig().GetEntries())} {
+		if parsed, err := gitutil.ParseURL(url); err == nil && parsed.Host != "" {
+			origins = append(origins, parsed)
 		}
 	}
 	if cache.origins == nil {
