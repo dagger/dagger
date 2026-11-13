@@ -102,13 +102,16 @@ func (c *Cache) completePartKeysAndSizes(ctx context.Context, row *sharedResult)
 
 // spanPartKeysAndSizes is completePartKeysAndSizes for a span, which reports
 // the parts as the entry's complete parts. A read that could only return the
-// settled subset leaves the entry owing a report of its complete parts
+// settled subset leaves the entry owing a report of the parts it left out
 // (owePartsReport), so the remote cache isn't left believing that subset is
-// all the engine holds.
+// all the engine holds; one that read the record reports them all, and
+// settles what the entry owed.
 func (c *Cache) spanPartKeysAndSizes(ctx context.Context, row *sharedResult) ([]string, []int64) {
 	keys, sizes, err := c.completeParts(ctx, row, c.completePartSizeReader())
 	if err != nil {
-		c.owePartsReport(row)
+		c.owePartsReport(row, keys)
+	} else {
+		c.settleOwedPartsReport(row)
 	}
 	return keys, sizes
 }

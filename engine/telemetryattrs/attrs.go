@@ -1098,12 +1098,14 @@ type EngineRetentionDrop struct {
 }
 
 // EngineShareEvent is the body of an engine.share event: every part one
-// snapshot-sharing pass completed.
+// snapshot-sharing pass completed, or the complete parts an entry's spans
+// left out, which the engine reports once it can read the entry's record.
 type EngineShareEvent struct {
 	Parts []EngineSharedPart `json:"parts"`
 }
 
-// EngineSharedPart is one part a snapshot-sharing pass completed.
+// EngineSharedPart is one complete part of an entry that no span reported:
+// one a snapshot-sharing pass completed, or one an entry's spans left out.
 type EngineSharedPart struct {
 	// ResultID is the entry's result number.
 	ResultID uint64 `json:"resultId"`
@@ -1114,6 +1116,9 @@ type EngineSharedPart struct {
 	// Replacements is the entry's replacement count (CacheReplacementsAttr),
 	// when not 0: the part and the dependencies are its current value's.
 	Replacements uint64 `json:"replacements,omitempty"`
+	// RawSize is the part's raw size, as CachePartSizesAttr gives a span's,
+	// when the engine read it; absent when it didn't.
+	RawSize *int64 `json:"rawSize,omitempty"`
 }
 
 // EngineReadEvent is the body of an engine.read event: the parts of entries

@@ -1264,12 +1264,16 @@ type SnapshotSharedPart struct {
 	Part         string
 	Deps         []uint64
 	Replacements uint64
+	// RawSize is the part's raw size, as a span reports it
+	// (CachePartSizesAttr), when the engine read it: nil when it didn't.
+	RawSize *int64
 }
 
 // WithSnapshotShareReport makes the cache report, after each snapshot-sharing
-// pass that completed parts, the parts it completed. Sharing runs outside any
-// session, so no span reports them. report runs on the sharing worker with no
-// cache lock held, and must not block.
+// pass that completed parts, the parts it completed, and the complete parts
+// entries' spans left out (owedPartReports). Sharing runs outside any
+// session, so no span reports them. report runs on the sharing worker, or the
+// owed reports' worker, with no cache lock held, and must not block.
 func WithSnapshotShareReport(report func([]SnapshotSharedPart)) CacheOption {
 	return func(c *Cache) {
 		c.shareReport = report
