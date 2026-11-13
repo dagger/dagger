@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -102,16 +103,30 @@ func (srv *Server) AuthorizeGitIdentity(ctx context.Context) (core.GitIdentity, 
 		// Nobody decided, so nothing is shared, as for a denial. Frontends
 		// that cannot prompt do not all say so the same way (a report-mode
 		// CLI fails the prompt outright), and a commit must not fail on it.
-		err = fmt.Errorf("%w: %w", core.ErrGitIdentityNotShared, err)
+		err = gitIdentityNotShared(ctx, client, err)
 		identity = core.GitIdentity{}
 	} else if !allowed {
-		err = fmt.Errorf("%w: denied", core.ErrGitIdentityNotShared)
+		err = gitIdentityNotShared(ctx, client, errors.New("denied"))
 		identity = core.GitIdentity{}
 	}
 	if memo != "" {
 		client.gitIdentityDecisions.Store(memo, gitIdentityDecision{identity: identity, err: err})
 	}
 	return identity, err
+}
+
+// gitIdentityNotShared is the error for an identity the owner did not share
+// with client, naming who asked as the engine resolves them (see
+// resolveApprovalRequester), so the commit can be attributed to them instead.
+func gitIdentityNotShared(ctx context.Context, client *clientRuntime, reason error) error {
+	err := &core.GitIdentityNotSharedError{Reason: reason}
+	if requester, rerr := resolveApprovalRequester(ctx, client); rerr == nil {
+		err.Agent = requester.agentName
+		if mod := requester.module.Self(); mod != nil {
+			err.Module = mod.Name()
+		}
+	}
+	return err
 }
 
 type gitIdentityDecision struct {
@@ -199,6 +214,7 @@ func gitIdentityApproval(identity core.GitIdentity) approvalSpec {
 		Kind:     approvalKindGitIdentity,
 		Subject:  literalText(shown),
 		Question: gitIdentityPromptPrefix + strconv.QuoteToASCII(shown),
+		Action:   "Share your Git identity " + strconv.QuoteToASCII(shown),
 	}
 }
 

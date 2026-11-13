@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -90,6 +91,7 @@ func TestGitIdentityApprovalOwnerBoundary(t *testing.T) {
 	require.Equal(t, "Personal <personal@example.com>", req.Subject)
 	require.False(t, req.Danger)
 	require.Equal(t, `Allow using your Git identity "Personal <personal@example.com>" (requested by module "staff", function "Staff.commit")?`, req.Prompt)
+	require.Equal(t, `Share your Git identity "Personal <personal@example.com>"?`, req.Question)
 	require.Equal(t, `approval:v2:"git-identity":"https://github.com/org/staff|staff":"Personal <personal@example.com>"`, req.PersistentKey)
 
 	// The grant is for the identity the owner saw: once they change it, the
@@ -121,8 +123,20 @@ func TestGitIdentityApprovalDenied(t *testing.T) {
 		identity, err := s.srv.AuthorizeGitIdentity(s.ctx(module))
 		require.ErrorIs(t, err, core.ErrGitIdentityNotShared)
 		require.Zero(t, identity, "a denied identity is never handed over")
+		var notShared *core.GitIdentityNotSharedError
+		require.ErrorAs(t, err, &notShared)
+		require.Equal(t, "committer", notShared.Module, "the error names who asked, to attribute the commit to")
+		require.Empty(t, notShared.Agent)
 	}
 	require.Len(t, questions.asked(), 2, "a denial is not remembered")
+
+	// An agent driving the module is named too.
+	identity, err := s.srv.AuthorizeGitIdentity(core.AgentToContext(s.ctx(module), testAgent(t, "agent-1", "worker")))
+	require.Zero(t, identity)
+	var notShared *core.GitIdentityNotSharedError
+	require.ErrorAs(t, err, &notShared)
+	require.Equal(t, &core.GitIdentityNotSharedError{Agent: "worker", Module: "committer", Reason: notShared.Reason}, notShared)
+	require.EqualError(t, err, "git identity not shared by the owning client: denied")
 }
 
 // withCommitCall is ctx evaluating Workspace.withCommit with message.
@@ -299,6 +313,9 @@ func TestGitIdentityApprovalPrompt(t *testing.T) {
 		{core.GitIdentity{Name: "Evil\u202e\x1b[31m \"quoted\"", Email: "e@x"}, `Allow using your Git identity "Evil\u202e\x1b[31m \"quoted\" <e@x>"`, `Evil\u202e\x1b[31m \"quoted\" <e@x>`},
 	} {
 		spec := gitIdentityApproval(tc.identity)
-		require.Equal(t, approvalSpec{Kind: approvalKindGitIdentity, Subject: tc.subject, Question: tc.want}, spec)
+		require.Equal(t, approvalSpec{
+			Kind: approvalKindGitIdentity, Subject: tc.subject, Question: tc.want,
+			Action: "Share your Git identity" + strings.TrimPrefix(tc.want, "Allow using your Git identity"),
+		}, spec)
 	}
 }
