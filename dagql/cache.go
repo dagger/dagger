@@ -2583,12 +2583,17 @@ type Cache struct {
 	// taught digests found already on the frame, taughtContentNanos the
 	// time the rewrites took (applyTaughtContent), and
 	// taughtContentBundlesWaiting the bundle builds that found an entry not
-	// yet recorded as taking all its taught digests (TaughtContentStats).
+	// yet recorded as taking all its taught digests, taughtContentDropped
+	// the entries whose taught digests a drop took (dropValueLocked), and
+	// taughtContentRefilled those of them a record filled again
+	// (TaughtContentStats).
 	taughtContentQueued         atomic.Uint64
 	taughtContentRewrites       atomic.Uint64
 	taughtContentCarried        atomic.Uint64
 	taughtContentNanos          atomic.Int64
 	taughtContentBundlesWaiting atomic.Uint64
+	taughtContentDropped        atomic.Uint64
+	taughtContentRefilled       atomic.Uint64
 
 	offerOwners      map[offerOwnerID]*offerOwner
 	nextOfferOwnerID offerOwnerID
@@ -3126,6 +3131,9 @@ type sharedResult struct {
 	// content digests, in order, as the entry's taught ones, which a
 	// restored entry doesn't keep (its frame does). Requires egraphMu.
 	taughtFrom entryFrame
+	// taughtDropped marks an entry whose taught digests a drop took, until a
+	// record fills it again (taughtContentRefilled). Requires egraphMu.
+	taughtDropped bool
 	// payloadMu guards lazy payload publication for imported persisted hits and
 	// prune-accounting timestamps that can change after initial publication.
 	payloadMu sync.RWMutex

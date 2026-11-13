@@ -2060,7 +2060,13 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 	res.recordType = row.plan.row.recordType
 	res.storeResultCall(rec.Call)
 	// The record's frame has taken none of the content digests spans taught
-	// the entry before it arrived (a pruned entry's, say): they go on it too.
+	// the entry before it arrived (an entry known only through holdings,
+	// say): they go on it too. A prune took those taught for the value it
+	// dropped (dropValueLocked).
+	if res.taughtDropped {
+		res.taughtDropped = false
+		c.taughtContentRefilled.Add(1)
+	}
 	res.taughtGiven = 0
 	res.taughtFrame++
 	c.queueTaughtContentLocked(res)

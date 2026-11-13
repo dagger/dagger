@@ -872,6 +872,12 @@ type TaughtContentStats struct {
 	BundlesWaiting uint64
 	// Took is the time the rewrites took.
 	Took time.Duration
+	// Dropped are the entries whose taught digests a prune took with their
+	// value, and Refilled those of them a record filled again: each a
+	// frame that, until runs are named, gives up the digests taught before
+	// the prune, since the record may be another run's.
+	Dropped  uint64
+	Refilled uint64
 }
 
 // TaughtContentStats reports what giving frames their taught content digests
@@ -883,6 +889,8 @@ func (c *Cache) TaughtContentStats() TaughtContentStats {
 		Carried:        c.taughtContentCarried.Load(),
 		BundlesWaiting: c.taughtContentBundlesWaiting.Load(),
 		Took:           time.Duration(c.taughtContentNanos.Load()),
+		Dropped:        c.taughtContentDropped.Load(),
+		Refilled:       c.taughtContentRefilled.Load(),
 	}
 }
 
