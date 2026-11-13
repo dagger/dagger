@@ -42,8 +42,15 @@ func (c *Cache) captureRowRecord(ctx context.Context, shared *sharedResult) (Per
 // refused, as captureRowRecord holds and refuses it, but objects that
 // describe their own parts aren't encoded.
 func (c *Cache) describeRowParts(ctx context.Context, shared *sharedResult) ([]string, *capturedRowRevision, error) {
+	return c.describeRowPartsHeld(ctx, shared, func(capture captureFunc) (*capturedRowRevision, error) {
+		return c.holdRowForCapture(ctx, shared, capture)
+	})
+}
+
+// describeRowPartsHeld is describeRowParts with the row held by hold.
+func (c *Cache) describeRowPartsHeld(ctx context.Context, shared *sharedResult, hold captureHold) ([]string, *capturedRowRevision, error) {
 	var keys []string
-	version, err := c.holdRowForCapture(ctx, shared, func(imported bool, offers []PersistedPartOffer, version *capturedRowRevision) error {
+	version, err := hold(func(imported bool, offers []PersistedPartOffer, version *capturedRowRevision) error {
 		shared.lazyMu.Lock()
 		defer shared.lazyMu.Unlock()
 		if err := lazyEvaluationInFlightLocked(shared); err != nil {
@@ -59,6 +66,14 @@ func (c *Cache) describeRowParts(ctx context.Context, shared *sharedResult) ([]s
 	return keys, version, err
 }
 
+// captureFunc captures a held row's record, or what it needs of it: it is
+// given what the hold read of the row and the revision to record.
+type captureFunc func(imported bool, offers []PersistedPartOffer, version *capturedRowRevision) error
+
+// captureHold runs a capture with its row held (holdRowForCapture,
+// heldCaptureRow.run), and returns the revision it checked.
+type captureHold func(capture captureFunc) (*capturedRowRevision, error)
+
 // holdRowForCapture runs capture with the row held as capturing its record
 // requires: under a cache operation, registered, attached, and owned until
 // capture returns. It then checks the revision capture recorded, and returns
@@ -69,53 +84,113 @@ func (c *Cache) holdRowForCapture(ctx context.Context, shared *sharedResult, cap
 		return nil, err
 	}
 	defer op.finish(false)
-	if err := context.Cause(ctx); err != nil {
-		return nil, err
-	}
-	if c.testCaptureWriteLock != nil {
-		c.testCaptureWriteLock()
-	}
-	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
-	if shared.id == 0 || c.resultsByID[shared.id] != shared {
-		c.egraphMu.Unlock()
-		return nil, fmt.Errorf("capture persisted record: result %d is not registered in this cache", shared.id)
-	}
-	switch shared.attachmentState() {
-	case resultAttachmentOpen:
-		c.egraphMu.Unlock()
-		return nil, fmt.Errorf("%w: result %d dependency attachment", ErrPersistStateNotReady, shared.id)
-	case resultAttachmentFailed:
-		c.egraphMu.Unlock()
-		return nil, fmt.Errorf("capture persisted record: result %d dependency attachment failed", shared.id)
-	}
-	offers, err := shared.pendingOffersLocked()
-	if err != nil {
-		c.egraphMu.Unlock()
-		return nil, err
-	}
-	imported := shared.imported
-	c.incrementIncomingOwnershipLocked(ctx, shared)
-	c.egraphMu.Unlock()
+	held, release := c.holdRowsForCapture(ctx, []*sharedResult{shared})
 	defer func() {
-		cleanupCtx := context.WithoutCancel(ctx)
-		if c.testCaptureWriteLock != nil {
-			c.testCaptureWriteLock()
-		}
-		wcprof.WriteLock(cleanupCtx, &c.egraphMu, egraphLockIdent)
-		queue, decErr := c.decrementIncomingOwnershipLocked(cleanupCtx, shared, nil)
-		releases, collectErr := c.collectUnownedResultsLocked(cleanupCtx, queue)
-		c.egraphMu.Unlock()
-		rerr = errors.Join(rerr, decErr, collectErr, runOnReleaseFuncs(cleanupCtx, releases))
+		rerr = errors.Join(rerr, release())
 	}()
+	return held[0].run(capture)
+}
 
+// capturePieceRows is how many rows holdRowsForCapture takes, or lets go, in
+// one hold of egraphMu for writing: a count, not a time, so that a hold is
+// the same on every machine. Taking a row checks it and counts one owner,
+// microseconds; a piece is under a millisecond.
+const capturePieceRows = 256
+
+// heldCaptureRow is a row holdRowsForCapture took for a capture: what its
+// hold read of it, or why it refused it.
+type heldCaptureRow struct {
+	row      *sharedResult
+	imported bool
+	offers   []PersistedPartOffer
+	err      error
+}
+
+// run runs capture with the row held, as holdRowForCapture does, and checks
+// the revision it recorded.
+func (h heldCaptureRow) run(capture captureFunc) (*capturedRowRevision, error) {
+	if h.err != nil {
+		return nil, h.err
+	}
 	version := new(capturedRowRevision)
-	if err := capture(imported, offers, version); err != nil {
+	if err := capture(h.imported, h.offers, version); err != nil {
 		return nil, err
 	}
-	if err := version.check(shared); err != nil {
+	if err := version.check(h.row); err != nil {
 		return nil, err
 	}
 	return version, nil
+}
+
+// holdRowsForCapture holds rows as capturing their records requires,
+// registered, attached, and owned, each as holdRowForCapture holds one, in
+// holds of egraphMu for writing of capturePieceRows rows each: a writer
+// waits for egraphMu's readers, and a merge's commit captures thousands of
+// targets, which took two holds each. It returns each row's hold, in the
+// order given, and release, which lets them go in the same pieces, collects
+// what that leaves unowned, and returns any error doing so. The caller holds
+// a cache operation until release returns.
+func (c *Cache) holdRowsForCapture(ctx context.Context, rows []*sharedResult) ([]heldCaptureRow, func() error) {
+	held := make([]heldCaptureRow, len(rows))
+	if err := context.Cause(ctx); err != nil {
+		for i, row := range rows {
+			held[i] = heldCaptureRow{row: row, err: err}
+		}
+		return held, func() error { return nil }
+	}
+	var owned []*sharedResult
+	for start := 0; start < len(rows); start += capturePieceRows {
+		if c.testCaptureWriteLock != nil {
+			c.testCaptureWriteLock()
+		}
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+		for i := start; i < min(start+capturePieceRows, len(rows)); i++ {
+			shared := rows[i]
+			held[i].row = shared
+			if shared.id == 0 || c.resultsByID[shared.id] != shared {
+				held[i].err = fmt.Errorf("capture persisted record: result %d is not registered in this cache", shared.id)
+				continue
+			}
+			switch shared.attachmentState() {
+			case resultAttachmentOpen:
+				held[i].err = fmt.Errorf("%w: result %d dependency attachment", ErrPersistStateNotReady, shared.id)
+				continue
+			case resultAttachmentFailed:
+				held[i].err = fmt.Errorf("capture persisted record: result %d dependency attachment failed", shared.id)
+				continue
+			}
+			offers, err := shared.pendingOffersLocked()
+			if err != nil {
+				held[i].err = err
+				continue
+			}
+			held[i].imported, held[i].offers = shared.imported, offers
+			c.incrementIncomingOwnershipLocked(ctx, shared)
+			owned = append(owned, shared)
+		}
+		c.egraphMu.Unlock()
+	}
+	release := func() error {
+		cleanupCtx := context.WithoutCancel(ctx)
+		var errs []error
+		for start := 0; start < len(owned); start += capturePieceRows {
+			if c.testCaptureWriteLock != nil {
+				c.testCaptureWriteLock()
+			}
+			wcprof.WriteLock(cleanupCtx, &c.egraphMu, egraphLockIdent)
+			var queue []*sharedResult
+			for _, shared := range owned[start:min(start+capturePieceRows, len(owned))] {
+				var decErr error
+				queue, decErr = c.decrementIncomingOwnershipLocked(cleanupCtx, shared, queue)
+				errs = append(errs, decErr)
+			}
+			releases, collectErr := c.collectUnownedResultsLocked(cleanupCtx, queue)
+			c.egraphMu.Unlock()
+			errs = append(errs, collectErr, runOnReleaseFuncs(cleanupCtx, releases))
+		}
+		return errors.Join(errs...)
+	}
+	return held, release
 }
 
 // The operation and row ownership are already held by the caller. Only this
