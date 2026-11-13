@@ -54,8 +54,7 @@ func (build *Builder) qemuBins() (*dagger.Directory, []string) {
 
 	// Cross-compile on the build platform with xx rather than building under
 	// emulation for other target platforms.
-	return core.NewContainer().
-		From(consts.AlpineImage).
+	return build.withRerun(core.NewContainer().From(consts.AlpineImage)).
 		WithExec([]string{"apk", "add", "--no-cache",
 			"clang", "lld", "llvm", "make", "ninja", "pkgconf", "python3", "perl", "bash", "patch", "xz",
 		}).
