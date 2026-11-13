@@ -588,7 +588,7 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 
 	slog.Debug("connecting to cloud OTLP stream", "url", endpoint, "kind", kind)
 
-	resp, err := c.openStream(ctx, kind, endpoint) //nolint:bodyclose // Closed by the defer below; the watchdog also closes stalled bodies.
+	resp, err := c.openStream(ctx, kind, endpoint)
 	if err != nil {
 		return err
 	}
@@ -613,13 +613,31 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 
 	slog.Debug("connected to cloud OTLP stream", "kind", kind)
 
+	// The network and the sink run apart: a reader goroutine drains the body
+	// into an unbounded queue, and the loop below feeds the sink from it.
+	// Cloud ends a stream the client has stopped reading for about 30
+	// seconds, without a terminal or error frame. A sink can be far slower
+	// than the network: `dagger trace -vvvv --progress=plain` imports a large
+	// CI trace for many minutes, behind a frontend that re-renders the whole
+	// tree every 50ms. Reading only between sink callbacks let those pauses
+	// pass 30 seconds, and Cloud ended the stream partway. The queue holds
+	// what the sink has not consumed yet, at most the whole stream.
+	body := newProgressBody(resp.Body)
+	frames, readerDone := readFrames(body)
+	defer func() {
+		// The sink side can stop first (a sink error, a bad frame): closing
+		// the body unblocks the reader, so it never outlives the fetch.
+		resp.Body.Close()
+		<-readerDone
+	}()
+
 	// The watchdog: a stored trace should always be transferring, so a body
 	// that goes silent for the whole stall window is a dead connection —
 	// Cloud's edge can drop one without a FIN or RST, and a read on it then
 	// blocks forever, before the interactive loop has started. Closing the
 	// body is what unblocks the reader; the flag is what tells the read
-	// error apart from a real one.
-	body := newProgressBody(resp.Body)
+	// error apart from a real one. It measures the network alone: the
+	// reader never waits on the sink.
 	var stalled atomic.Bool
 	if c.stall > 0 {
 		watchdogDone := make(chan struct{})
@@ -630,6 +648,8 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 			for {
 				select {
 				case <-watchdogDone:
+					return
+				case <-readerDone:
 					return
 				case <-ticker.C:
 					if body.idle() > c.stall {
@@ -651,7 +671,12 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 	var haveCursor bool
 
 	for {
-		frame, err := otlpstream.ReadFrame(body)
+		frame, err := frames.pop()
+		// The queue can hold a backlog the network delivered long ago: a
+		// canceled fetch stops feeding the sink now, not after the backlog.
+		if err == nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			// Check the watchdog before anything else: it closes the body,
 			// and what that surfaces as (a closed-body error, sometimes even
@@ -710,10 +735,72 @@ func (c *OTLPClient) consumeStream(ctx context.Context, kind, traceID string, qu
 			if err := cb(frame.Payload); err != nil {
 				return fmt.Errorf("%s stream: %w", kind, err)
 			}
-			// The sink consumed time the socket could not: don't bill it to
-			// the server's stall budget.
-			body.touch()
 		}
+	}
+}
+
+// readFrames reads frames from body into a queue on its own goroutine, until
+// a read error or a non-data frame, which it queues last. The returned channel
+// closes when it stops.
+func readFrames(body io.Reader) (*frameQueue, <-chan struct{}) {
+	frames := newFrameQueue()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			frame, err := otlpstream.ReadFrame(body)
+			frames.push(frame, err)
+			if err != nil || frame.Kind != otlpstream.FrameData {
+				return
+			}
+		}
+	}()
+	return frames, done
+}
+
+// frameQueue is the unbounded FIFO between a stream's network reader and its
+// sink loop. It is unbounded on purpose: any bound would make the reader wait
+// on the sink again, which is what let Cloud drop slow streams.
+type frameQueue struct {
+	mu    sync.Mutex
+	items []queuedFrame
+	ready chan struct{} // holds a token while items may be non-empty
+}
+
+type queuedFrame struct {
+	frame otlpstream.Frame
+	err   error
+}
+
+func newFrameQueue() *frameQueue {
+	return &frameQueue{ready: make(chan struct{}, 1)}
+}
+
+func (q *frameQueue) push(frame otlpstream.Frame, err error) {
+	q.mu.Lock()
+	q.items = append(q.items, queuedFrame{frame: frame, err: err})
+	q.mu.Unlock()
+	select {
+	case q.ready <- struct{}{}:
+	default:
+	}
+}
+
+// pop blocks until a frame or a read error is queued. The reader always
+// queues one last item, a read error or a non-data frame, so pop never waits
+// on a reader that has exited.
+func (q *frameQueue) pop() (otlpstream.Frame, error) {
+	for {
+		q.mu.Lock()
+		if len(q.items) > 0 {
+			item := q.items[0]
+			q.items[0] = queuedFrame{} // drop the payload's reference
+			q.items = q.items[1:]
+			q.mu.Unlock()
+			return item.frame, item.err
+		}
+		q.mu.Unlock()
+		<-q.ready
 	}
 }
 
