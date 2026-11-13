@@ -52,6 +52,9 @@ func storedContentTestSend(t *testing.T, after bool) (string, bool) {
 		_, _, err := cloud.UpdateRemoteHolding(ctx, HolderKey{Cache: "cache-a", Number: aNumber}, RemoteHoldingUpdate{ContentDigest: content})
 		require.NoError(t, err)
 		storedContentTestWait(t, cloud, cloudNumber, content)
+	} else {
+		queued, _, _ := cloud.TaughtContentStats()
+		require.Zero(t, queued, "a record whose frame carries its content digest is never queued for a rewrite")
 	}
 	require.Contains(t, cloud.EquivalentEntries(content.String()), cloudNumber, "the Cloud's class has R's content digest")
 
