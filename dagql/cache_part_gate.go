@@ -107,11 +107,12 @@ func (c *Cache) completePartKeysAndSizes(ctx context.Context, row *sharedResult)
 // all the engine holds; one that read the record reports them all, and
 // settles what the entry owed.
 func (c *Cache) spanPartKeysAndSizes(ctx context.Context, row *sharedResult) ([]string, []int64) {
+	seq := c.owedPartsSeq()
 	keys, sizes, err := c.completeParts(ctx, row, c.completePartSizeReader())
 	if err != nil {
 		c.owePartsReport(row, keys)
 	} else {
-		c.settleOwedPartsReport(row)
+		c.settleOwedPartsReport(row, seq)
 	}
 	return keys, sizes
 }
