@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -985,4 +986,25 @@ func TestRemoteCacheAdapterMergeReturnsWhenCancelled(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the merge did not return when cancelled")
 	}
+}
+
+// An export's layers build on the engine's cores while no session is live,
+// as at a stop, where nothing else runs and the engine has 20 s from its
+// last session; with a session live they build 4 at once, beside it.
+func TestExportLayerBuildsWhileNoSessionIsLive(t *testing.T) {
+	t.Parallel()
+	var ledger sessionLedger
+	a := &RemoteCacheAdapter{ledger: &ledger}
+	idle := a.exportConfig().Builds
+	require.Equal(t, runtime.NumCPU(), idle.Workers, "no session: a build on every core")
+	require.True(t, idle.Gate.TryAcquire(int64(runtime.NumCPU())), "the gate admits as many")
+	idle.Gate.Release(int64(runtime.NumCPU()))
+
+	ledger.sessionStarted("sess-a", "a", "")
+	busy := a.exportConfig().Builds
+	require.Equal(t, exportLayerWorkers, busy.Workers, "a session live: 4 at once, beside it")
+
+	ledger.sessionEnded("sess-a", "a", "", true)
+	require.Equal(t, runtime.NumCPU(), a.exportConfig().Builds.Workers, "its end frees the cores again")
+	require.Equal(t, exportRefConfig.Compression, a.exportConfig().Compression, "the same blobs either way")
 }
