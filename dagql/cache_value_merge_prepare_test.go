@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -292,4 +293,46 @@ func TestMergeValuesReportsTheFirstRefusedRecordInOrder(t *testing.T) {
 	_, err = b.MergeValues(bctx, cloudCacheID, bundle)
 	require.ErrorContains(t, err, fmt.Sprintf("row %d:", first))
 	require.ErrorContains(t, err, "codec dagql_test.Transfer")
+}
+
+// A merge cancelled while an earlier record is being prepared answers with
+// the cancellation, as preparing the records one by one would, even when a
+// later record has already been refused beside it.
+func TestMergeValuesCancelledBeforeAFailingRecordReportsTheCancellation(t *testing.T) {
+	t.Parallel()
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs two Go processors to prepare two records at once")
+	}
+	bundle := mergeTestManyRoots(t, 8)
+	order, err := validateValueBundleShape(bundle)
+	require.NoError(t, err)
+	first := order[0]
+	for i := range bundle.Values {
+		if uint64(bundle.Values[i].Ordinal) != first {
+			bundle.Values[i].Record.Envelope.ObjectJSON = json.RawMessage(`{"text":5}`)
+		}
+	}
+
+	bctx, b, _ := transferTestCache(t)
+	stopped := errors.New("stopped by the test")
+	ctx, cancel := context.WithCancelCause(bctx)
+	defer cancel(nil)
+	others := make(chan struct{}, len(order))
+	b.testRecordPayloadPreparing = func(id uint64) error {
+		if id != first {
+			others <- struct{}{}
+			return nil
+		}
+		// Another record starts and is refused while the first is held;
+		// then the merge is cancelled, and the first is prepared after all.
+		select {
+		case <-others:
+			time.Sleep(500 * time.Millisecond)
+		case <-time.After(2 * time.Second):
+		}
+		cancel(stopped)
+		return nil
+	}
+	_, err = b.MergeValues(ctx, cloudCacheID, bundle)
+	require.ErrorIs(t, err, stopped)
 }
