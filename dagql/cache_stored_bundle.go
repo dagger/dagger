@@ -23,6 +23,10 @@ type StoredBundleResult struct {
 	NoValue []uint64
 	// Held are the numbers of the entries the bundle carries as held rows.
 	Held []uint64
+	// Stamps has, for each of Bundle.Values, its entry's stamp as the build
+	// read the entry, under the same hold: what a reader compares with the
+	// entry's later stamp to tell whether it changed since.
+	Stamps []EntryStamp
 	// CallInputs are the numbers of the entries the bundle carries as
 	// roots only because a call it sends has them as inputs, and
 	// UnsendableCalls counts the terms of its entries' kept calls it sends
@@ -213,6 +217,10 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 		}
 	}
 	out.Bundle, out.Donors, out.stored = build.bundle, build.donors, build.stored
+	out.Stamps = make([]EntryStamp, len(build.bundle.Values))
+	for i, value := range build.bundle.Values {
+		out.Stamps[i] = c.resultsByID[sharedResultID(value.SenderNumber)].stampLocked()
+	}
 	out.CallInputs, out.UnsendableCalls = build.callInputs, build.unsendableCalls
 	for _, res := range rootEntries {
 		out.RootOwners = append(out.RootOwners, build.owners[res.id])
