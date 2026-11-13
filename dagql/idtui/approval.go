@@ -33,9 +33,16 @@ import (
 //   - Once on an approval, its keys answer it straight away: there is no
 //     second "enter the prompt" step. Stepping onto it is already deliberate
 //     (it is its own stop, visibly focused), the default answer is Deny, and
-//     granting takes a choice and a confirm (or y/s/f). Nav keys that mean
-//     something else on a row (h/l, enter, n) steer the approval instead;
-//     j/k and esc still leave it.
+//     granting takes a choice and a confirm (or y/s/a). The choices are a
+//     list: ↑↓ (j/k) move the selection, and only past either end of the
+//     list does the cursor leave for the row above or below -- so the
+//     approval stays one stop when walking the rows downwards, landing on
+//     (and leaving from) Deny. h/l and ←/→ are swallowed: they would
+//     collapse or expand the row underneath.
+//   - Inside the conversation it does not name the agent -- it sits under
+//     that agent's own tool call -- only the module and function asking.
+//     The agent is named only outside it: the roster, and the cue for an
+//     approval that is off screen or has no row.
 //   - The agent it blocks is cued on the roster, so the user knows there is
 //     something to navigate to.
 //
@@ -46,14 +53,16 @@ import (
 
 var _ prompt.ApprovalHandler = (*frontendPretty)(nil)
 
-// approvalJumpKey jumps to the next pending approval from the prompt (and in
-// nav mode, for muscle memory); nav mode also takes the bare approvalNavKey.
+// approvalJumpKey jumps to the next pending approval from the prompt and in
+// nav mode; nav mode also takes the bare approvalNavKey -- but only while no
+// approval has focus, since on a focused approval `a` answers "always".
 const (
 	approvalJumpKey = "alt+a"
 	approvalNavKey  = "a"
 )
 
 type approvalChoice struct {
+	key      string
 	label    string
 	decision prompt.ApprovalDecision
 }
@@ -90,19 +99,27 @@ type pendingApproval struct {
 	view *ApprovalView
 }
 
-// approvalChoices lists the answers in increasing order of trust: the safe
-// answer first (and selected by default), the widest grant last. Forever is
-// only offered when the request names a key it can be remembered under.
+// approvalChoices lists the answers in increasing order of trust, Deny last
+// (and selected by default, see approvalDefaultChoice). Always is only offered
+// when the request names a key it can be remembered under.
 func approvalChoices(req *prompt.ApprovalRequest) []approvalChoice {
 	choices := []approvalChoice{
-		{"Deny", prompt.APPROVAL_DENY},
-		{"Allow once", prompt.APPROVAL_ALLOW_ONCE},
-		{"Allow for this session", prompt.APPROVAL_ALLOW_SESSION},
+		{"y", "Allow once", prompt.APPROVAL_ALLOW_ONCE},
+		{"s", "Allow for this session", prompt.APPROVAL_ALLOW_SESSION},
 	}
 	if req.GetPersistentKey() != "" {
-		choices = append(choices, approvalChoice{"Allow forever", prompt.APPROVAL_ALLOW_FOREVER})
+		module := req.GetRequester().GetModule()
+		if module == "" {
+			module = "this module"
+		}
+		choices = append(choices, approvalChoice{"a", "Always allow " + module, prompt.APPROVAL_ALLOW_FOREVER})
 	}
-	return choices
+	return append(choices, approvalChoice{"n", "Deny", prompt.APPROVAL_DENY})
+}
+
+// approvalDefaultChoice is the index of Deny, the safe default.
+func approvalDefaultChoice(choices []approvalChoice) int {
+	return len(choices) - 1
 }
 
 // HandleApproval implements prompt.ApprovalHandler: it shows the request
@@ -117,6 +134,7 @@ func (fe *frontendPretty) HandleApproval(ctx context.Context, req *prompt.Approv
 		done:    make(chan struct{}),
 		choices: approvalChoices(req),
 	}
+	a.selected = approvalDefaultChoice(a.choices)
 	a.view = &ApprovalView{fe: fe, approval: a}
 	fe.dispatch(func() {
 		fe.addApproval(a)
@@ -469,6 +487,10 @@ func (fe *frontendPretty) focusApproval(a *pendingApproval, fromInput bool) {
 	}
 	a.armed = true
 	a.returnToInput = fromInput
+	// Every visit starts on Deny: the safe default, and the bottom of the
+	// list, so walking the rows downwards passes it in one step.
+	a.selected = approvalDefaultChoice(a.choices)
+	a.view.Update()
 	if a.anchor.IsValid() {
 		if row := fe.rows.BySpan[a.anchor]; row != nil {
 			fe.focus(row)
@@ -556,37 +578,41 @@ func (fe *frontendPretty) handleApprovalKey(a *pendingApproval, keyStr string) b
 		return false
 	}
 	pick := func(decision prompt.ApprovalDecision) bool {
-		for _, c := range a.choices {
-			if c.decision == decision {
-				fe.finishApproval(a, decision, nil)
-				return true
-			}
+		if _, ok := approvalChoiceIndex(a, decision); ok {
+			fe.finishApproval(a, decision, nil)
 		}
-		return false
+		// Claimed even when not on offer: an answer key must never fall
+		// through to navigation (`a` would jump to another approval).
+		return true
 	}
 	switch keyStr {
-	case "left", "h":
-		if a.selected > 0 {
-			a.selected--
-			a.view.Update()
+	case "up", "k":
+		if a.selected == 0 {
+			return false // past the top: on to the row above
 		}
+		a.selected--
+		a.view.Update()
 		return true
-	case "right", "l":
-		if a.selected < len(a.choices)-1 {
-			a.selected++
-			a.view.Update()
+	case "down", "j":
+		if a.selected == len(a.choices)-1 {
+			return false // past Deny: on to the row below
 		}
+		a.selected++
+		a.view.Update()
+		return true
+	case "left", "right", "h", "l":
+		// Would collapse or expand the row underneath.
 		return true
 	case "enter":
 		fe.finishApproval(a, a.choices[a.selected].decision, nil)
 		return true
-	case "y", "o":
+	case "y":
 		return pick(prompt.APPROVAL_ALLOW_ONCE)
 	case "s":
 		return pick(prompt.APPROVAL_ALLOW_SESSION)
-	case "f":
+	case "a":
 		return pick(prompt.APPROVAL_ALLOW_FOREVER)
-	case "n", "d":
+	case "n":
 		return pick(prompt.APPROVAL_DENY)
 	case "esc", "alt+esc":
 		// Leave without answering: the approval stays pending, and focus goes
@@ -602,17 +628,16 @@ func (fe *frontendPretty) approvalKeys() []key.Binding {
 	if a == nil {
 		return nil
 	}
-	_, forever := approvalChoiceIndex(a, prompt.APPROVAL_ALLOW_FOREVER)
+	_, always := approvalChoiceIndex(a, prompt.APPROVAL_ALLOW_FOREVER)
 	return []key.Binding{
-		key.NewBinding(key.WithKeys("←→", "left", "right", "h", "l"), key.WithHelp("←→", "choose")),
+		key.NewBinding(key.WithKeys("↑↓", "up", "down", "j", "k"), key.WithHelp("↑↓", "choose")),
 		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
-		key.NewBinding(key.WithKeys("y", "o"), key.WithHelp("y", "once")),
+		key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "once")),
 		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "session")),
-		key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forever"), KeyEnabled(forever)),
-		key.NewBinding(key.WithKeys("n", "d"), key.WithHelp("n", "deny")),
-		key.NewBinding(key.WithKeys("↑↓", "up", "down", "j", "k"), key.WithHelp("↑↓", "move away")),
+		key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "always"), KeyEnabled(always)),
+		key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "deny")),
 		key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "leave")),
-		key.NewBinding(key.WithKeys(approvalNavKey), key.WithHelp(approvalNavKey, "next approval"),
+		key.NewBinding(key.WithKeys(approvalJumpKey), key.WithHelp(approvalJumpKey, "next approval"),
 			KeyEnabled(len(fe.approvals) > 1)),
 	}
 }
@@ -794,136 +819,139 @@ func (v *ApprovalView) Render(ctx tuist.Context) {
 	ctx.Lines(v.fe.approvalLines(v.approval, v.focused, ctx.Width)...)
 }
 
-// approvalLines renders an approval: who is asking, what for, the choices,
-// and how to answer.
+// approvalLines renders an approval: the question, who asks (module and
+// function -- never the agent, whose own tool call it sits under), and either
+// the choices when focused or a fold to two lines when not.
+//
+// Every field arrives as literal display text the engine already escaped
+// (prompt.ApprovalRequest), so it renders as-is: escaping or stripping it
+// again would mangle what the engine chose to show.
 func (fe *frontendPretty) approvalLines(a *pendingApproval, focused bool, width int) []string {
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
 	req := a.req
-
-	// Every field arrives as literal display text the engine already escaped
-	// (prompt.ApprovalRequest), so it renders as-is: escaping or stripping it
-	// again would mangle what the engine chose to show.
-
-	accent := termenv.ANSIYellow
-	if req.GetDanger() {
-		accent = termenv.ANSIRed
-	}
+	faint := func(s string) string { return out.String(s).Faint().String() }
 
 	var lines []string
+	// add wraps a line to width, indenting its continuation lines.
 	add := func(line string) {
-		if width > 0 {
+		if width > 2 {
 			line = ansi.Wrap(line, width, "")
 		}
-		lines = append(lines, strings.Split(line, "\n")...)
+		for i, l := range strings.Split(line, "\n") {
+			if i > 0 {
+				l = "  " + l
+			}
+			lines = append(lines, l)
+		}
 	}
 
-	// Who is asking.
-	header := out.String(IconApproval+" approval needed").Foreground(accent).Bold().String()
-	if who := approvalRequester(req); who != "" {
-		header += out.String(" · " + who).Faint().String()
-	}
-	add(header)
-
-	// What for. The header already names who asks, so this is the bare
-	// question (the full prompt, which names them again, is for yes/no
-	// fallbacks). A destructive one carries its danger in red, the way the
-	// yes/no fallback flags a force-push.
+	// The question, after a ◆ in the request's accent. The full prompt names
+	// who asks again, for yes/no fallbacks; this one is bare. A destructive
+	// one carries its danger in red, the way the yes/no fallback flags a
+	// force-push.
 	question := req.GetQuestion()
 	if question == "" {
 		question = req.GetPrompt()
 	}
-	style := func(s string) string {
-		return out.String(s).Foreground(termenv.ANSIYellow).Bold().String()
+	accent := termenv.ANSIYellow
+	if req.GetDanger() {
+		accent = termenv.ANSIRed
 	}
-	danger := func(s string) string {
-		return out.String(s).Foreground(termenv.ANSIRed).Bold().String()
-	}
+	bold := func(s string) string { return out.String(s).Bold().String() }
+	danger := func(s string) string { return out.String(s).Foreground(termenv.ANSIRed).Bold().String() }
+	header := out.String(IconApproval).Foreground(accent).Bold().String() + " "
 	switch {
 	case req.GetDanger() && strings.Contains(question, forcePushPhrase):
 		before, after, _ := strings.Cut(question, forcePushPhrase)
-		var b strings.Builder
 		if before != "" {
-			b.WriteString(style(before))
+			header += bold(before)
 		}
-		b.WriteString(danger(forcePushPhrase))
+		header += danger(forcePushPhrase)
 		if after != "" {
-			b.WriteString(style(after))
+			header += bold(after)
 		}
-		add(b.String())
-	case req.GetDanger():
-		add(danger(question))
 	default:
-		add(style(question))
+		header += bold(question)
+	}
+	add(header)
+
+	// Who asks, and (unfocused) how to get here.
+	var agent string
+	if !a.anchor.IsValid() {
+		// No row: it renders outside the conversation, so the agent is named.
+		agent = req.GetRequester().GetAgentName()
+	}
+	if !focused {
+		add("  " + faint(joinNonEmpty(" · ", agent, approvalModule(req), fe.approvalUnfocusedHint(a))))
+		return lines
+	}
+	who := approvalRequester(req, false)
+	if full := approvalRequester(req, true); width <= 0 || ansi.StringWidth(full)+2 <= width {
+		who = full
+	}
+	if who = joinNonEmpty(" · ", agent, who); who != "" {
+		add("  " + faint(who))
 	}
 	if subject := req.GetSubject(); subject != "" && !strings.Contains(question, subject) {
-		add(out.String("subject: ").Faint().String() + subject)
+		add("  " + faint(subject))
 	}
 
-	// The choices.
-	var choices []string
+	// The choices, one per line with its key.
+	lines = append(lines, "")
 	for i, c := range a.choices {
-		label := c.label
-		switch {
-		case focused && i == a.selected:
-			choices = append(choices, out.String(CaretRightFilled+" "+label).Bold().String())
-		case !focused && i == a.selected:
-			choices = append(choices, "  "+out.String(label).Bold().Faint().String())
-		default:
-			choices = append(choices, "  "+out.String(label).Faint().String())
+		if i == a.selected {
+			add(bold(CaretRightFilled + " " + c.key + "  " + c.label))
+		} else {
+			add("  " + bold(c.key) + "  " + c.label)
 		}
 	}
-	add(strings.Join(choices, "   "))
-
-	// How to answer.
-	if focused {
-		hint := "←/→ choose · enter confirm · y once · s session"
-		if _, ok := approvalChoiceIndex(a, prompt.APPROVAL_ALLOW_FOREVER); ok {
-			hint += " · f forever"
-		}
-		hint += " · n deny · esc leave"
-		add(out.String(hint).Faint().String())
-	} else {
-		add(out.String(fe.approvalUnfocusedHint(a)).Faint().String())
-	}
+	add(faint("↑↓ choose · enter confirm · esc leave"))
 	return lines
 }
 
 // approvalUnfocusedHint says how to reach an approval that does not have
-// focus. alt+a works from the prompt and nav mode alike; outside the shell
-// there is no prompt, so the bare key does.
+// focus: ↓ from its row, or the jump key in the shell, where alt+a works from
+// the prompt and nav mode alike. A floating approval has no row to step down
+// from, so it names the jump key.
 func (fe *frontendPretty) approvalUnfocusedHint(a *pendingApproval) string {
-	jump := approvalNavKey
-	if fe.shell != nil {
-		jump = approvalJumpKey
+	switch {
+	case fe.shell != nil:
+		return approvalJumpKey + " to answer"
+	case a.anchor.IsValid():
+		return "↓ to answer"
+	default:
+		return approvalNavKey + " to answer"
 	}
-	if a.anchor.IsValid() {
-		return "select it (↓ from the row above) or press " + jump + " to answer"
-	}
-	return "press " + jump + " to answer"
 }
 
-// approvalRequester renders who is asking: agent, module and function. The
-// fields arrive already escaped, and agent_handle (the engine's raw id) is
-// only matched on, never shown.
-func approvalRequester(req *prompt.ApprovalRequest) string {
+// approvalModule is the requesting module's name, else its ref.
+func approvalModule(req *prompt.ApprovalRequest) string {
 	r := req.GetRequester()
-	if r == nil {
-		return ""
-	}
-	var parts []string
-	if name := r.GetAgentName(); name != "" {
-		parts = append(parts, "agent "+name)
-	}
 	if mod := r.GetModule(); mod != "" {
-		if ref := r.GetModuleRef(); ref != "" && ref != mod {
-			mod += " (" + ref + ")"
+		return mod
+	}
+	return r.GetModuleRef()
+}
+
+// approvalRequester renders who asks inside the conversation: the module and
+// function, with the module's ref when withRef. The fields arrive already
+// escaped; the agent is not named here, and agent_handle (the engine's raw
+// id) is only matched on, never shown.
+func approvalRequester(req *prompt.ApprovalRequest, withRef bool) string {
+	r := req.GetRequester()
+	mod := approvalModule(req)
+	if ref := r.GetModuleRef(); withRef && ref != "" && ref != mod {
+		mod += " (" + ref + ")"
+	}
+	return joinNonEmpty(" · ", mod, r.GetFunction())
+}
+
+func joinNonEmpty(sep string, parts ...string) string {
+	var kept []string
+	for _, p := range parts {
+		if p != "" {
+			kept = append(kept, p)
 		}
-		parts = append(parts, "module "+mod)
-	} else if ref := r.GetModuleRef(); ref != "" {
-		parts = append(parts, "module "+ref)
 	}
-	if fn := r.GetFunction(); fn != "" {
-		parts = append(parts, fn)
-	}
-	return strings.Join(parts, " · ")
+	return strings.Join(kept, sep)
 }

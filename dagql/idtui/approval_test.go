@@ -74,6 +74,9 @@ func approvalTestFrontend(t *testing.T) *frontendPretty {
 	return fe
 }
 
+// pushQuestion is how a pushApproval's question line reads.
+const pushQuestion = "◆ Allow push to origin @ main?"
+
 // pushApproval is a git push request shaped like the engine's: the bare
 // question for frontends that show the requester themselves, and the full
 // prompt naming who asks for yes/no fallbacks.
@@ -169,18 +172,27 @@ func TestApprovalAttachesUnderToolCall(t *testing.T) {
 
 	frame := fe.tui.Step()
 	tool := lineIndex(t, frame, "Push")
-	header := lineIndex(t, frame, "approval needed")
+	header := lineIndex(t, frame, "◆ Allow push to origin @ main?")
 	require.Less(t, tool, header, "the approval sits beneath its tool call")
 	require.Less(t, header, lineIndex(t, frame, "Publish"), "and before the next row")
+	require.Contains(t, frame[header+1], "contributor · ↓ to answer",
+		"unfocused, it folds to two lines: the question, then the module and how to answer")
+	require.Equal(t, header+2, lineIndex(t, frame, "Publish"))
 	text := frameText(frame)
-	require.Contains(t, text, "agent chief · module contributor · Contributor.push",
-		"the prompt names who is asking")
-	require.Contains(t, text, "Allow push to origin @ main?")
-	require.NotContains(t, text, "requested by", "the header names who asks; the question does not repeat it")
-	require.NotContains(t, text, "subject:", "a subject the question already names is not repeated")
-	require.Contains(t, text, "Deny")
-	require.Contains(t, text, "Allow once")
-	require.Contains(t, text, "Allow for this session")
+	require.NotContains(t, text, "chief", "under the agent's own tool call, the agent is not named")
+	require.NotContains(t, text, "requested by", "the question does not name who asks")
+	require.NotContains(t, text, "Deny", "the choices only show once focused")
+
+	// Focused, it lists the choices one per line with their keys.
+	pressKeys(fe, "k", "k")
+	require.True(t, fe.tui.IsFocused(a.view))
+	frame = fe.tui.Step()
+	header = lineIndex(t, frame, "◆ Allow push to origin @ main?")
+	require.Contains(t, frame[header+1], "contributor · Contributor.push")
+	require.Contains(t, frame[header+3], "y  Allow once")
+	require.Contains(t, frame[header+4], "s  Allow for this session")
+	require.Contains(t, frame[header+5], "▶ n  Deny", "Deny is selected by default")
+	require.Contains(t, frame[header+6], "↑↓ choose · enter confirm · esc leave")
 
 	// A request without the bare question falls back to the full prompt.
 	req := pushApproval(approvalPush2ID, "")
@@ -220,18 +232,25 @@ func TestApprovalTakesFocusOnNavigation(t *testing.T) {
 	require.True(t, fe.tui.IsFocused(a.view), "navigating onto the approval focuses it")
 	require.Contains(t, frameText(fe.tui.Step()), "enter confirm", "a focused approval says how to answer")
 
-	// Moving away hands focus back to navigation without answering.
+	// Moving away hands focus back to navigation without answering: Deny is
+	// selected on arrival, the bottom of the list, so ↓ leaves at once.
 	pressKeys(fe, "j")
 	require.Equal(t, approvalTool2ID, fe.FocusedSpan)
 	require.False(t, fe.tui.IsFocused(a.view))
 	require.Same(t, fe.spanTrees[approvalTool2ID], fe.tui.Focused())
 	require.False(t, a.finished)
 
-	// Up past it onto the tool call row, then down onto it again.
+	// ↑ walks the choices, and past the first one leaves for the tool call row.
+	pressKeys(fe, "k")
+	require.True(t, fe.tui.IsFocused(a.view))
 	pressKeys(fe, "k", "k")
+	require.True(t, fe.tui.IsFocused(a.view), "still choosing")
+	require.Equal(t, 0, a.selected)
+	pressKeys(fe, "k")
 	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused(), "the tool call row is its own stop")
 	pressKeys(fe, "j")
 	require.True(t, fe.tui.IsFocused(a.view))
+	require.Equal(t, approvalDefaultChoice(a.choices), a.selected, "each visit starts on Deny")
 
 	// Answer, and focus returns to the row.
 	pressKeys(fe, "y")
@@ -241,7 +260,7 @@ func TestApprovalTakesFocusOnNavigation(t *testing.T) {
 	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused(),
 		"focus returns to the row the approval sat under")
 	require.Empty(t, fe.approvals)
-	require.NotContains(t, frameText(fe.tui.Step()), "approval needed")
+	require.NotContains(t, frameText(fe.tui.Step()), "Allow push to origin")
 }
 
 // The tool call row keeps its own keys: enter there zooms, as everywhere,
@@ -249,7 +268,7 @@ func TestApprovalTakesFocusOnNavigation(t *testing.T) {
 func TestApprovalLeavesRowKeysAlone(t *testing.T) {
 	fe := approvalTestFrontend(t)
 	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
-	pressKeys(fe, "k", "k", "k")
+	pressKeys(fe, "k", "k", "k", "k", "k")
 	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused())
 
 	pressKeys(fe, "enter")
@@ -277,19 +296,20 @@ func TestApprovalAnswers(t *testing.T) {
 		{"default is deny", []string{"enter"}, prompt.APPROVAL_DENY},
 		{"once", []string{"y"}, prompt.APPROVAL_ALLOW_ONCE},
 		{"session", []string{"s"}, prompt.APPROVAL_ALLOW_SESSION},
-		{"forever", []string{"f"}, prompt.APPROVAL_ALLOW_FOREVER},
+		{"always", []string{"a"}, prompt.APPROVAL_ALLOW_FOREVER},
 		{"deny", []string{"n"}, prompt.APPROVAL_DENY},
-		{"choose once", []string{"l", "enter"}, prompt.APPROVAL_ALLOW_ONCE},
-		{"choose session", []string{"right", "right", "enter"}, prompt.APPROVAL_ALLOW_SESSION},
-		{"choose forever", []string{"right", "right", "right", "right", "enter"}, prompt.APPROVAL_ALLOW_FOREVER},
-		{"back to deny", []string{"right", "left", "enter"}, prompt.APPROVAL_DENY},
+		{"choose always", []string{"k", "enter"}, prompt.APPROVAL_ALLOW_FOREVER},
+		{"choose session", []string{"up", "up", "enter"}, prompt.APPROVAL_ALLOW_SESSION},
+		{"choose once", []string{"k", "k", "k", "enter"}, prompt.APPROVAL_ALLOW_ONCE},
+		{"back to deny", []string{"k", "j", "enter"}, prompt.APPROVAL_DENY},
+		{"sideways keys do nothing", []string{"l", "right", "h", "left", "enter"}, prompt.APPROVAL_DENY},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fe := approvalTestFrontend(t)
 			a, results := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, "git-push:github.com/dagger/dagger"))
-			require.Contains(t, frameText(fe.tui.Step()), "Allow forever")
 			pressKeys(fe, "k", "k")
 			require.True(t, fe.tui.IsFocused(a.view))
+			require.Contains(t, frameText(fe.tui.Step()), "a  Always allow contributor")
 			pressKeys(fe, tc.keys...)
 			res := awaitApproval(t, fe, results)
 			require.NoError(t, res.err)
@@ -298,20 +318,21 @@ func TestApprovalAnswers(t *testing.T) {
 	}
 }
 
-func TestApprovalForeverNeedsPersistentKey(t *testing.T) {
+func TestApprovalAlwaysNeedsPersistentKey(t *testing.T) {
 	fe := approvalTestFrontend(t)
 	a, results := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
-	require.NotContains(t, frameText(fe.tui.Step()), "Allow forever",
-		"forever is not offered without a key to remember it under")
 	require.Len(t, a.choices, 3)
 
 	pressKeys(fe, "k", "k")
 	require.True(t, fe.tui.IsFocused(a.view))
-	pressKeys(fe, "f")
-	require.False(t, a.finished, "the forever key answers nothing when forever is not offered")
+	require.NotContains(t, frameText(fe.tui.Step()), "Always allow",
+		"always is not offered without a key to remember it under")
+	pressKeys(fe, "a")
+	require.False(t, a.finished, "the always key answers nothing when always is not offered")
+	require.True(t, fe.tui.IsFocused(a.view), "nor does it fall through to jump elsewhere")
 
 	// The widest choice on offer is the session.
-	pressKeys(fe, "right", "right", "right", "right", "enter")
+	pressKeys(fe, "k", "enter")
 	res := awaitApproval(t, fe, results)
 	require.Equal(t, prompt.APPROVAL_ALLOW_SESSION, res.decision)
 }
@@ -353,7 +374,7 @@ func TestApprovalCancellation(t *testing.T) {
 		return len(fe.approvals) == 0
 	}, 5*time.Second, 5*time.Millisecond)
 	require.True(t, a.finished)
-	require.NotContains(t, frameText(fe.tui.Step()), "approval needed", "a canceled approval disappears")
+	require.NotContains(t, frameText(fe.tui.Step()), pushQuestion, "a canceled approval disappears")
 	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused(), "focus returns to the row")
 }
 
@@ -364,10 +385,15 @@ func TestConcurrentApprovals(t *testing.T) {
 	require.Equal(t, approvalToolID, first.anchor)
 	require.Equal(t, approvalTool2ID, second.anchor)
 	frame := fe.tui.Step()
-	require.Equal(t, 2, strings.Count(frameText(frame), "approval needed"))
+	require.Equal(t, 2, strings.Count(frameText(frame), pushQuestion))
 
 	// Answer the second (nearer) one first; the first stays pending.
 	pressKeys(fe, "k")
+	require.True(t, fe.tui.IsFocused(second.view))
+	// On a focused approval `a` answers, so alt+a is the way to the next one.
+	pressKeys(fe, "alt+a")
+	require.True(t, fe.tui.IsFocused(first.view))
+	pressKeys(fe, "alt+a")
 	require.True(t, fe.tui.IsFocused(second.view))
 	pressKeys(fe, "s")
 	res := awaitApproval(t, fe, secondResult)
@@ -391,7 +417,7 @@ func TestApprovalFloatsUntilItsSpanArrives(t *testing.T) {
 	a, results := startApproval(t, fe, t.Context(), pushApproval(approvalLateID, ""))
 	require.False(t, a.anchor.IsValid(), "an unknown span leaves the approval floating")
 	frame := fe.tui.Step()
-	require.Contains(t, frameText(frame), "approval needed", "a floating approval still shows")
+	require.Contains(t, frameText(frame), pushQuestion, "a floating approval still shows")
 	require.Same(t, before, fe.tui.Focused(), "and still does not take focus")
 
 	// The span arrives under a new tool call: the approval moves there.
@@ -405,7 +431,7 @@ func TestApprovalFloatsUntilItsSpanArrives(t *testing.T) {
 	fe.recalculateViewLocked()
 	frame = fe.tui.Step()
 	require.Equal(t, approvalLateTool, a.anchor)
-	require.Less(t, lineIndex(t, frame, "Late"), lineIndex(t, frame, "approval needed"))
+	require.Less(t, lineIndex(t, frame, "Late"), lineIndex(t, frame, pushQuestion))
 
 	pressKeys(fe, "a", "y")
 	res := awaitApproval(t, fe, results)
@@ -462,13 +488,15 @@ func TestSearchLeavesFloatingApproval(t *testing.T) {
 func TestApprovalJumpKeepsZoomOnItsCall(t *testing.T) {
 	fe := approvalTestFrontend(t)
 	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
-	pressKeys(fe, "k", "k", "k", "enter")
+	// Up past the publish row and the approval's three choices onto the tool
+	// call, then zoom into it.
+	pressKeys(fe, "k", "k", "k", "k", "k", "enter")
 	require.Equal(t, approvalToolID, fe.ZoomedSpan)
 
 	pressKeys(fe, "a")
 	require.Equal(t, approvalToolID, fe.ZoomedSpan, "the zoom is kept")
 	require.True(t, fe.tui.IsFocused(a.view))
-	require.Contains(t, frameText(fe.tui.Step()), "approval needed")
+	require.Contains(t, frameText(fe.tui.Step()), pushQuestion)
 }
 
 // An approval whose call has not arrived may yet land inside the zoom, so
@@ -521,7 +549,7 @@ func TestApprovalOffscreenIsCued(t *testing.T) {
 
 	frame := frameText(fe.tui.Step())
 	require.Contains(t, frame, "step29", "the newest output stays on screen")
-	require.NotContains(t, frame, "Deny", "the approval itself scrolled away")
+	require.NotContains(t, frame, "Allow push to origin", "the approval itself scrolled away")
 	require.Contains(t, frame, "◆ chief is waiting for approval ↑ · a to go there",
 		"a cue names the waiting agent, outside the conversation")
 	require.Contains(t, frame, "a answer approval", "the keymap names the jump key")
