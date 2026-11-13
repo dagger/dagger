@@ -35,16 +35,16 @@ type approvalSpec struct {
 	Danger bool
 }
 
-// approvalKey is what a session grant covers: one owner letting one agent,
-// running one module, have one kind of access to one subject. The function is
-// deliberately not part of it: a grant holds across the module's functions
-// (and its initialization), as the module is what the owner trusts or not.
-// A request without an agent or a module has an empty field, which only
-// matches requests equally without one.
+// approvalKey is what a session grant covers: one owner letting one module
+// have one kind of access to one subject. The module is what the owner trusts
+// or not, so the grant holds for every agent using that module (a chief and
+// its workers share their tool modules) and across the module's functions and
+// its initialization: neither the agent nor the function is part of the key.
+// A request without a module has an empty field, which only matches requests
+// equally without one.
 type approvalKey struct {
 	owner   string // owning client ID
 	kind    string
-	agent   string // agent handle: grants do not carry over to another spawn
 	module  string // resolvedModuleLoadIdentity: source, pin and name
 	subject string
 }
@@ -137,7 +137,6 @@ func (srv *Server) requestApproval(ctx context.Context, client, owner *clientRun
 	key := approvalKey{
 		owner:   owner.clientID,
 		kind:    spec.Kind,
-		agent:   requester.agentHandle,
 		module:  resolvedModuleLoadIdentity(requester.module),
 		subject: spec.Subject,
 	}
@@ -211,7 +210,10 @@ func (srv *Server) promptApproval(ctx context.Context, owner *clientRuntime, req
 	}
 }
 
-// approvalRequester is who asks for approval, as the engine resolved it.
+// approvalRequester is who asks for approval, as the engine resolved it. Only
+// the module scopes a session grant; the agent and function are for display,
+// so the owner sees who is asking, and frontends can show the request outside
+// the conversation (a roster, a notification).
 type approvalRequester struct {
 	agentName, agentHandle string
 	// module is the module nearest the caller: the one whose code drives the
@@ -227,8 +229,7 @@ type approvalRequester struct {
 // call's context (core.CallerAgent), the module nearest the caller, and the
 // function that module client is running. A module container's nested API
 // client has no function call of its own, so its agent is the one stamped on
-// the nearest module's function call: the same agent, and so the same grant,
-// as the module's own requests.
+// the nearest module's function call, which the prompt names.
 func resolveApprovalRequester(ctx context.Context, client *clientRuntime) (approvalRequester, error) {
 	var r approvalRequester
 	modClient, err := nearestModuleClient(client)
