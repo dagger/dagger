@@ -215,9 +215,6 @@ func (c *Cache) initEgraphLocked() {
 	if c.resultsByID == nil {
 		c.resultsByID = make(map[sharedResultID]*sharedResult)
 	}
-	if c.nextEgraphClassID == 0 {
-		c.nextEgraphClassID = 1
-	}
 	if c.nextEgraphTermID == 0 {
 		c.nextEgraphTermID = 1
 	}
@@ -234,10 +231,7 @@ func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eq
 	if id, ok := c.egraphDigestToClass[dig]; ok {
 		return c.findEqClassLocked(id)
 	}
-	id := c.nextEgraphClassID
-	c.nextEgraphClassID++
-	c.egraphParents = append(c.egraphParents, id)
-	c.egraphRanks = append(c.egraphRanks, 0)
+	id := c.allocEqClassLocked()
 	c.egraphDigestToClass[dig] = id
 	digests := c.eqClassToDigests[id]
 	if digests == nil {
@@ -246,6 +240,23 @@ func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eq
 	}
 	digests[dig] = struct{}{}
 	c.traceEqClassCreated(ctx, id, dig)
+	return id
+}
+
+// allocEqClassLocked returns a number for a new class: the lowest that
+// compaction freed, or the next after every slot. Requires egraphMu for
+// writing, and an initialized e-graph.
+func (c *Cache) allocEqClassLocked() eqClassID {
+	if n := len(c.freeEqClassIDs); n > 0 {
+		id := c.freeEqClassIDs[n-1]
+		c.freeEqClassIDs = c.freeEqClassIDs[:n-1]
+		c.egraphParents[id] = id
+		c.egraphRanks[id] = 0
+		return id
+	}
+	id := eqClassID(len(c.egraphParents))
+	c.egraphParents = append(c.egraphParents, id)
+	c.egraphRanks = append(c.egraphRanks, 0)
 	return id
 }
 
@@ -2251,7 +2262,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.holderEntries = nil
 	c.entriesByRecipe = nil
 	c.remoteCaches = nil
-	c.nextEgraphClassID = 0
+	c.freeEqClassIDs = nil
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs
 	// must be engine-lifetime unique because they outlive this index (session
@@ -2300,25 +2311,41 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 		}
 	}
 
-	oldSlots = len(c.egraphParents) - 1
+	oldSlots = c.eqClassSlotsLocked()
 	newSlots = len(liveRoots)
 	if (newSlots == 0 && !freeAll) || oldSlots == newSlots || (!force && oldSlots < newSlots*2) {
 		return false, oldSlots, newSlots
 	}
 
+	// Every live class keeps its number, so a number names its class for as
+	// long as the class lives, outside these tables too. Every other slot is
+	// freed: a dead class, and a class joined into another, whose digests and
+	// terms are flattened onto the root below. The free slots past the
+	// highest live class are trimmed; those below it are taken again by new
+	// classes (allocEqClassLocked).
 	oldRoots := make([]eqClassID, 0, len(liveRoots))
 	for root := range liveRoots {
 		oldRoots = append(oldRoots, root)
 	}
 	slices.Sort(oldRoots)
+	var highest eqClassID
+	if len(oldRoots) > 0 {
+		highest = oldRoots[len(oldRoots)-1]
+	}
 
 	remap := make(map[eqClassID]eqClassID, len(oldRoots))
-	newParents := make([]eqClassID, len(oldRoots)+1)
-	newRanks := make([]uint8, len(oldRoots)+1)
-	for i, oldRoot := range oldRoots {
-		newRoot := eqClassID(i + 1)
-		remap[oldRoot] = newRoot
-		newParents[newRoot] = newRoot
+	newParents := make([]eqClassID, highest+1)
+	newRanks := make([]uint8, highest+1)
+	for _, oldRoot := range oldRoots {
+		remap[oldRoot] = oldRoot
+		newParents[oldRoot] = oldRoot
+	}
+	// Lowest last, so allocEqClassLocked takes the lowest first.
+	newFree := make([]eqClassID, 0, int(highest)-len(oldRoots))
+	for id := highest; id >= 1; id-- {
+		if newParents[id] == 0 {
+			newFree = append(newFree, id)
+		}
 	}
 
 	newEqClassToDigests := make(map[eqClassID]map[string]struct{}, len(oldRoots))
@@ -2427,7 +2454,7 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 	c.resultOutputEqClasses = newResultOutputEqClasses
 	c.outputEqClassResults = newOutputEqClassResults
 	c.egraphTermsByTermDigest = newEgraphTermsByTermDigest
-	c.nextEgraphClassID = eqClassID(len(newParents))
+	c.freeEqClassIDs = newFree
 
 	return true, oldSlots, newSlots
 }

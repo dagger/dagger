@@ -91,6 +91,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				c.eqClassToDigests[eqID] = make(map[string]struct{})
 			}
 		}
+		// Classes keep the numbers they were saved under; the numbers no saved
+		// class holds are free for new classes, lowest first.
+		c.freeEqClassIDs = nil
+		for id := maxEqClassID; id >= 1; id-- {
+			if c.egraphParents[id] == 0 {
+				c.freeEqClassIDs = append(c.freeEqClassIDs, id)
+			}
+		}
 
 		for _, row := range eqClassDigestRows {
 			eqID := eqClassID(row.EqClassID)
@@ -467,15 +475,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.nextSharedResultID = maxResultID + 1
 		}
 		c.nextEgraphTermID = maxTermID + 1
-		c.nextEgraphClassID = maxEqClassID + 1
 		if c.nextSharedResultID == 0 {
 			c.nextSharedResultID = 1
 		}
 		if c.nextEgraphTermID == 0 {
 			c.nextEgraphTermID = 1
-		}
-		if c.nextEgraphClassID == 0 {
-			c.nextEgraphClassID = 1
 		}
 
 		return nil

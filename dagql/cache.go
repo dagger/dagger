@@ -2596,7 +2596,10 @@ type Cache struct {
 	// indexes for eq classes, which are disjoint sets of digests considered equivalent and interchangeable
 	//
 
-	nextEgraphClassID eqClassID
+	// freeEqClassIDs are the class numbers compaction freed below the highest
+	// live one, which new classes take before a new number. A slot whose
+	// parent is 0 is free.
+	freeEqClassIDs []eqClassID
 
 	// map of eqClassID -> all digests in that class
 	eqClassToDigests map[eqClassID]map[string]struct{}
@@ -5991,10 +5994,7 @@ func (c *Cache) MetadataEstimate() CacheMetadataEstimate {
 
 // cacheMetadataEstimateLocked requires egraphMu for reading or writing.
 func (c *Cache) cacheMetadataEstimateLocked() CacheMetadataEstimate {
-	classSlots := len(c.egraphParents) - 1
-	if classSlots < 0 {
-		classSlots = 0
-	}
+	classSlots := c.eqClassSlotsLocked()
 	estimate := CacheMetadataEstimate{
 		ResultCount:     len(c.resultsByID),
 		TermCount:       len(c.egraphTerms),

@@ -147,7 +147,8 @@ type RemoteHoldingUpdate struct {
 // whose holding's parts, count or expiry it changed, and every entry it
 // joined to another class of entries, directly or by congruence
 // (trackJoinsLocked). A recipe digest names the entry's class whenever
-// EquivalentHolders reads it, whatever renumbering the classes had in between.
+// EquivalentHolders reads it, whatever joins and compactions the classes had
+// in between.
 //
 // On a blob-backed cache, Holdings and Entries are what a reader that keeps
 // its answers asks again (cache_change_marks.go), sorted, holdings by number
@@ -944,7 +945,7 @@ func (c *Cache) ReleaseRemoteCache(ctx context.Context, cache CacheID) (change R
 //
 // It then compacts the e-graph's classes, at most once per
 // eqClassCheckInterval and only when something changed since the last check
-// (compactEqClassesAfterCollectionLocked), which renumbers them. Only the
+// (compactEqClassesAfterCollectionLocked), which frees the dead ones. Only the
 // Cloud calls it, and never with snapshot sharing enabled, whose pending queue
 // keeps class IDs. Engines compact through prune.
 func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey) ([]HolderKey, RemoteChange, error) {
@@ -983,13 +984,14 @@ func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKe
 	return collected, change, errors.Join(rerr, err, runOnReleaseFuncs(ctx, releases))
 }
 
-// eqClassSlotsLocked returns the class slots in use: class IDs start at 1.
+// eqClassSlotsLocked returns the class slots in use: class IDs start at 1,
+// and the slots compaction freed below the highest live class hold none.
 // Requires egraphMu.
 func (c *Cache) eqClassSlotsLocked() int {
 	if len(c.egraphParents) == 0 {
 		return 0
 	}
-	return len(c.egraphParents) - 1
+	return len(c.egraphParents) - 1 - len(c.freeEqClassIDs)
 }
 
 // eqClassCheckInterval is the least time between two of the Cloud's

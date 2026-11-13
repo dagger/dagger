@@ -775,7 +775,12 @@ lease/snapshot side can be documented in finer detail separately.
 
 ## Eq-Class Compaction After Prune
 
-Pruning can leave the union-find class ID space sparse. Disk prune keeps the
+Pruning can leave the union-find class ID space sparse. Compaction frees the
+classes no term and no entry uses, and every live class keeps its number: a
+number names its class for as long as the class lives. Freed numbers below
+the highest live class are taken again by new classes, lowest first; free
+slots past it are trimmed, so the class arrays keep the length of the highest
+live class. Disk prune keeps the
 existing heuristic compaction after removals; it declines when allocated slots
 are less than twice the live roots.
 
@@ -787,7 +792,7 @@ pressure without evicting a root.
 
 This:
 
-- rebuilds the live eq-class ID space
+- frees dead and joined class slots, keeping live class numbers
 - rewrites term input/output eq-class IDs
 - rebuilds eq-class/digest mappings
 - rebuilds output-eq-class membership

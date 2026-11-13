@@ -10,7 +10,7 @@ import (
 
 // EquivalentEntries returns the numbers of the entries in the class that dig
 // names, sorted, read under one hold. It is nil when no class has the digest.
-// An entry's number stays its own across the classes' renumbering, so the
+// An entry's number stays its own across the classes' compactions, so the
 // numbers are safe to keep past the call.
 func (c *Cache) EquivalentEntries(dig string) []uint64 {
 	c.egraphMu.RLock()
