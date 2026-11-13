@@ -1450,6 +1450,9 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 		}
 		rec := source
 		if moved {
+			if c.testRelocatedUnderLock != nil {
+				c.testRelocatedUnderLock(row.ordinal)
+			}
 			var err error
 			if rec, err = VisitEncodedReferences(source, relocate); err != nil {
 				return err

@@ -2525,6 +2525,17 @@ type Cache struct {
 	// record of an ordinal with its payload; an error refuses that record.
 	testRecordPayloadPreparing func(uint64) error
 
+	// testRelocatedUnderLock runs when a merge's commit relocates a record
+	// under egraphMu, with the record's ordinal.
+	testRelocatedUnderLock func(uint64)
+	// testNoPrerelocation, when set, keeps a merge from relocating its
+	// records before its commit takes egraphMu.
+	testNoPrerelocation bool
+	// testPrerelocated runs once a merge has relocated its records before
+	// its commit, with the numbers each relocation used, by ordinal and
+	// provisional number, which it may change.
+	testPrerelocated func(map[uint64]map[uint64]sharedResultID)
+
 	// testPartInstalled runs as a part install's last act, after it has
 	// released every lock.
 	testPartInstalled func()
