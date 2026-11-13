@@ -138,7 +138,9 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 			c.testOwedPartsRead(row)
 		}
 		switch {
-		case errors.Is(err, ErrPersistStateNotReady):
+		case errors.Is(err, ErrPersistStateNotReady), err != nil && ctx.Err() != nil:
+			// Not readable yet, or this pass was stopped, as the worker is at
+			// close: the entry still owes, for a later pass or the final one.
 			continue
 		case err != nil:
 			slog.WarnContext(ctx, "owed parts report dropped: the entry's record can't be described", "row", uint64(row.id), "cause", err)
