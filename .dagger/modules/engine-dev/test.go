@@ -495,7 +495,7 @@ func (dev *EngineDev) test(
 			watchArgs = append(watchArgs, "--")
 			args = append(watchArgs, args...)
 		}
-		binaries[i] = builder.TestBinary(dir, opts.race)
+		binaries[i] = builder.TestBinary(dir, dirs, opts.race)
 		runs[i] = container.
 			WithMountedFile(testBinaryPath, binaries[i]).
 			WithWorkdir(path.Join(moduleDir, dir)).
