@@ -52,6 +52,10 @@ func (*currentTypeDefsTestServer) AuthorizeSecret(context.Context, string) (*eng
 	return nil, nil
 }
 
+func (*currentTypeDefsTestServer) AuthorizeGitIdentity(context.Context) (core.GitIdentity, error) {
+	panic("unexpected AuthorizeGitIdentity")
+}
+
 func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool, bool) error {
 	return nil
 }
