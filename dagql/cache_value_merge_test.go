@@ -2273,10 +2273,10 @@ func TestMergeValuesInstalledRecordNamesItsEntry(t *testing.T) {
 			number := reply.Imported()[0].ResultID
 			into.egraphMu.RLock()
 			res := into.resultsByID[sharedResultID(number)]
-			envelope, frame := *res.persistedEnvelope, res.loadResultCall()
+			rec := storedTestRecordLocked(t, res)
 			into.egraphMu.RUnlock()
-			require.Equal(t, number, envelope.ResultID, "the record names its entry")
-			_, err = normalizeTransferRecord(PersistedRecord{ResultID: number, Envelope: envelope, Call: frame})
+			require.Equal(t, number, rec.Envelope.ResultID, "the record names its entry")
+			_, err = normalizeTransferRecord(PersistedRecord{ResultID: number, Envelope: rec.Envelope, Call: rec.Call})
 			require.NoError(t, err, "the entry exports")
 		})
 	}
@@ -2417,7 +2417,9 @@ func TestMergeValuesItemThroughTheCloudIsNotRead(t *testing.T) {
 	cloud.egraphMu.RUnlock()
 
 	cctx, c, csrv := transferTestCache(t)
-	reply, err = c.MergeValues(cctx, cloudCacheID, exportTestBundle(t, cloudCtx, cloud, Result[Typed]{shared: cloudItem}))
+	sent, err := cloud.StoredBundle(cloudCtx, []uint64{uint64(cloudItem.id)}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	reply, err = c.MergeValues(cctx, cloudCacheID, sent.Bundle)
 	require.NoError(t, err)
 	item, err := c.LoadResultByResultID(cctx, "test-session", csrv, reply.Imported()[0].ResultID)
 	require.NoError(t, err)

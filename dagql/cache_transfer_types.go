@@ -98,6 +98,12 @@ type TransferredValue struct {
 	// Record.Envelope: the bundle's encoding writes it out, and a merge of
 	// the bundle in the same process decodes it (cloneValueBundle).
 	storedEnvelope []byte
+	// storedCall is, beside a stored envelope, the record's call frame as
+	// the cache holds it in the same body, compressed, in place of
+	// Record.Call, and storedCallBytes its JSON's length: the bundle's
+	// encoding writes it out, and cloneValueBundle decodes it.
+	storedCall      []byte
+	storedCallBytes int64
 }
 
 // MarshalJSON encodes the value as its fields say, with a stored envelope
@@ -108,7 +114,17 @@ func (v TransferredValue) MarshalJSON() ([]byte, error) {
 	if v.storedEnvelope == nil {
 		return json.Marshal(plain(v))
 	}
-	raw, err := (&storedBody{envelope: v.storedEnvelope}).envelopeJSON()
+	body := &storedBody{envelope: v.storedEnvelope, frame: v.storedCall, frameBytes: v.storedCallBytes}
+	raw, err := body.envelopeJSON()
+	if err != nil {
+		return nil, err
+	}
+	var call json.RawMessage
+	if v.storedCall != nil {
+		call, err = body.frameJSON()
+	} else {
+		call, err = json.Marshal(v.Record.Call)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +132,7 @@ func (v TransferredValue) MarshalJSON() ([]byte, error) {
 		Ordinal:            v.Ordinal,
 		SenderNumber:       v.SenderNumber,
 		SenderReplacements: v.SenderReplacements,
-		Record:             storedRecordJSON{ResultID: v.Record.ResultID, Envelope: raw, Call: v.Record.Call, SnapshotLinks: v.Record.SnapshotLinks},
+		Record:             storedRecordJSON{ResultID: v.Record.ResultID, Envelope: raw, Call: call, SnapshotLinks: v.Record.SnapshotLinks},
 		DependencyIDs:      v.DependencyIDs,
 		ExpiresAtUnix:      v.ExpiresAtUnix,
 		Held:               v.Held,
@@ -135,11 +151,12 @@ type storedValueJSON struct {
 	Held               digest.Digest    `json:"held,omitempty"`
 }
 
-// storedRecordJSON is a PersistedRecord with its envelope as encoded JSON.
+// storedRecordJSON is a PersistedRecord with its envelope and call as
+// encoded JSON.
 type storedRecordJSON struct {
 	ResultID      uint64                     `json:"resultID"`
 	Envelope      json.RawMessage            `json:"envelope"`
-	Call          *ResultCall                `json:"call"`
+	Call          json.RawMessage            `json:"call"`
 	SnapshotLinks []PersistedSnapshotRefLink `json:"snapshotLinks,omitempty"`
 }
 

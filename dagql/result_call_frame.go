@@ -1309,13 +1309,26 @@ func recipeDigestForCachedResult(c *Cache, resultID sharedResultID, visiting map
 	}
 	c.egraphMu.RLock()
 	res := c.resultsByID[resultID]
+	var held entryFrame
+	if res != nil {
+		held = res.entryFrameLocked()
+	}
 	c.egraphMu.RUnlock()
 	if res == nil {
 		return "", fmt.Errorf("missing shared result %d", resultID)
 	}
-	frame := res.loadResultCall()
+	frame := held.call
 	if frame == nil {
-		return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
+		if held.body == nil {
+			return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
+		}
+		// A blob-backed cache's entry holds its frame in its stored body,
+		// with the frame's recipe digest, the one thing a reference reads
+		// from it.
+		if c.testRecipeFromBody != nil {
+			c.testRecipeFromBody()
+		}
+		return held.body.recipe, nil
 	}
 
 	visiting[resultID] = struct{}{}
@@ -1349,13 +1362,21 @@ func contentPreferredDigestForCachedResult(c *Cache, resultID sharedResultID, vi
 	}
 	c.egraphMu.RLock()
 	res := c.resultsByID[resultID]
+	var held entryFrame
+	if res != nil {
+		held = res.entryFrameLocked()
+	}
 	c.egraphMu.RUnlock()
 	if res == nil {
 		return "", fmt.Errorf("missing shared result %d", resultID)
 	}
-	frame := res.loadResultCall()
-	if frame == nil {
+	if !held.ok() {
 		return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
+	}
+	// A frame held in a stored body is decoded for this one derivation.
+	frame, err := held.decode()
+	if err != nil {
+		return "", fmt.Errorf("result call frame for shared result %d: %w", resultID, err)
 	}
 
 	visiting[resultID] = struct{}{}

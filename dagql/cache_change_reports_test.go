@@ -48,7 +48,8 @@ func changeTestAddresses(c *Cache) map[string]PersistedPartAddress {
 			add(part.address())
 		}
 		if res.persistedEnvelope != nil {
-			outputs, err := mapTransferredOutputs(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()})
+			call, _ := res.entryFrameLocked().decode()
+			outputs, err := mapTransferredOutputs(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: call})
 			if err == nil {
 				for _, output := range outputs {
 					add(output.Address)

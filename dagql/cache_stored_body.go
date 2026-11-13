@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/opencontainers/go-digest"
 )
 
 // A blob-backed cache, the Cloud, never decodes a stored value: it indexes,
@@ -20,8 +22,16 @@ import (
 // checks, and the parts it declares absent or pending, which part answers and
 // borrowing read. Its persistedEnvelope keeps only the envelope's small
 // fields (lightStoredEnvelope), which tell a stored value by its presence and
-// its kind. The call frame stays decoded on the entry, since identity reads
-// it.
+// its kind.
+//
+// The body holds the record's call frame too, compressed, once the body
+// worker has made it, and the entry then holds no decoded frame
+// (entryFrame). The cache reads a stored frame for three things: its recipe
+// digest, which the body keeps beside it, for the recipes of held rows and of
+// what references the entry; whether the entry has one; and the frame as
+// JSON, which a bundle carries as it is held, a save writes out and a
+// measure counts. Only a prune's log of a removed entry, and the rare reader
+// that wants the frame itself, decode it, and keep nothing.
 //
 // A bundle carries the compressed envelope as it is, and the message's
 // encoding writes it out (TransferredValue.MarshalJSON), so a build neither
@@ -70,10 +80,21 @@ type storedBody struct {
 	// as JSON compressed with zstd, and envelopeBytes the JSON's length.
 	envelope      []byte
 	envelopeBytes int64
-	// call is the frame the body was made with, and refs and parts are of
-	// the two: the entries the record's child and call references name,
-	// sorted, and the parts it declares absent or pending. The entry's call
-	// can be replaced after (storedFactsLocked).
+	// frame is, once the body holds it, the record's call frame as JSON
+	// compressed with zstd, frameBytes the JSON's length, and recipe the
+	// frame's recipe digest. The entry then holds no decoded frame: the body
+	// is its frame (entryFrame). The JSON is the frame's transfer form, as a
+	// bundle carries it, and the frame itself, as a save writes it: a frame
+	// whose two forms differ stays decoded (withFrame).
+	frame      []byte
+	frameBytes int64
+	recipe     digest.Digest
+	// call is, while the body holds no frame, the decoded frame the body was
+	// made with. refs and parts are of the record and its frame: the entries
+	// the record's child and call references name, sorted, and the parts it
+	// declares absent or pending. An entry's decoded call can be replaced
+	// after (storedFactsLocked); a frame the body holds is replaced only with
+	// the body.
 	call  *ResultCall
 	refs  []uint64
 	parts []declaredPart
@@ -122,6 +143,197 @@ func compressStoredBody(raw []byte, call *ResultCall, refs []uint64, parts []dec
 	// EncodeAll's own buffer has the input's capacity: the body keeps a copy
 	// of what it used.
 	return &storedBody{envelope: bytes.Clone(enc.EncodeAll(raw, nil)), envelopeBytes: int64(len(raw)), call: call, refs: refs, parts: parts}, nil
+}
+
+// withFrame returns a body of b's record with call, the entry's decoded
+// frame, held in it too, compressed, with its recipe digest, or b itself if
+// the frame can't be held: if its transfer form, which a bundle carries,
+// differs from the frame, which a save writes, or it can't be encoded or
+// its recipe derived. Deriving the recipe can read the cache, so the caller
+// holds no lock. It returns an error only if the codec can't be made.
+func (b *storedBody) withFrame(c *Cache, call *ResultCall) (*storedBody, error) {
+	enc, _, err := storedBodyCodec()
+	if err != nil {
+		return nil, err
+	}
+	return b.withFrameEncoded(c, call, enc)
+}
+
+// withFrameEncoded is withFrame, compressing with enc.
+func (b *storedBody) withFrameEncoded(c *Cache, call *ResultCall, enc *zstd.Encoder) (*storedBody, error) {
+	if b.frame != nil || call == nil || b.call != call {
+		return b, nil
+	}
+	// A call a bundle's check would refuse stays decoded, for the check to
+	// refuse it as it would have (validateStoredRecordShape).
+	if call.Type == nil || call.Type.NamedType == "Query" {
+		return b, nil
+	}
+	raw, ok := storedFrameJSON(call)
+	if !ok {
+		return b, nil
+	}
+	recipe, err := call.deriveRecipeDigest(c)
+	if err != nil {
+		return b, nil
+	}
+	return &storedBody{
+		envelope:      b.envelope,
+		envelopeBytes: b.envelopeBytes,
+		frame:         bytes.Clone(enc.EncodeAll(raw, nil)),
+		frameBytes:    int64(len(raw)),
+		recipe:        recipe,
+		refs:          b.refs,
+		parts:         b.parts,
+	}, nil
+}
+
+// storedFrameJSON returns call's JSON, if it is the JSON of its transfer
+// form too, which it is unless call carries an extra digest the transfer
+// form leaves out.
+func storedFrameJSON(call *ResultCall) ([]byte, bool) {
+	raw, err := json.Marshal(call)
+	if err != nil {
+		return nil, false
+	}
+	if transferFormIsTheFrame(call) {
+		return raw, true
+	}
+	transfer, err := normalizeTransferCall(call)
+	if err != nil {
+		return nil, false
+	}
+	sent, err := json.Marshal(transfer)
+	if err != nil || !bytes.Equal(raw, sent) {
+		return nil, false
+	}
+	return raw, true
+}
+
+// transferFormIsTheFrame reports whether normalizeTransferCall leaves call
+// as it is: whether no frame it walks has an extra digest without a digest,
+// which the transfer form drops. A call frame's references name entries by
+// number, which normalizing keeps: visitResultCallReferences reports no
+// recipe ID for them, so the extra digests are all it can change. It only
+// reads call, which other readers share.
+func transferFormIsTheFrame(call *ResultCall) bool {
+	same := true
+	if err := walkTransferCalls(call, func(frame *ResultCall) error {
+		for _, extra := range frame.ExtraDigests {
+			if extra.Digest == "" {
+				same = false
+			}
+		}
+		return nil
+	}, nil); err != nil {
+		return false
+	}
+	return same
+}
+
+// reframe returns a body of b's record with frame, the decoded frame that
+// replaces the one b holds, its facts worked out again, and the frame held in
+// it if it can be (withFrame). Deriving reads the cache, so the caller holds
+// no lock.
+func (b *storedBody) reframe(c *Cache, id sharedResultID, frame *ResultCall) (*storedBody, error) {
+	rec, err := b.record(uint64(id))
+	if err != nil {
+		return nil, err
+	}
+	kept, err := normalizeStoredTransfer(&sharedResult{id: id}, &rec.Envelope, frame)
+	if err != nil {
+		return nil, err
+	}
+	next := &storedBody{envelope: b.envelope, envelopeBytes: b.envelopeBytes, call: frame, refs: kept.refs, parts: kept.parts}
+	return next.withFrame(c, frame)
+}
+
+// holdsFrame reports whether there is a body and it holds the frame.
+func (b *storedBody) holdsFrame() bool {
+	return b != nil && b.frame != nil
+}
+
+// frameJSON returns the JSON of the frame the body holds, decompressed.
+func (b *storedBody) frameJSON() ([]byte, error) {
+	_, dec, err := storedBodyCodec()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := dec.DecodeAll(b.frame, make([]byte, 0, b.frameBytes))
+	if err != nil {
+		return nil, fmt.Errorf("decompress stored call frame: %w", err)
+	}
+	return raw, nil
+}
+
+// decodeFrame returns the frame the body holds, decoded: a copy of its own,
+// which nothing else holds.
+func (b *storedBody) decodeFrame() (*ResultCall, error) {
+	raw, err := b.frameJSON()
+	if err != nil {
+		return nil, err
+	}
+	frame := &ResultCall{}
+	if err := json.Unmarshal(raw, frame); err != nil {
+		return nil, fmt.Errorf("decode stored call frame: %w", err)
+	}
+	return frame, nil
+}
+
+// entryFrame is an entry's call frame as read under egraphMu: decoded, or
+// held compressed in the entry's stored body. Both are replaced, never
+// changed in place, so it can be read after the lock.
+type entryFrame struct {
+	call *ResultCall
+	body *storedBody
+}
+
+// entryFrameLocked returns res's call frame. Requires egraphMu, or an entry
+// no other goroutine changes.
+func (res *sharedResult) entryFrameLocked() entryFrame {
+	if call := res.loadResultCall(); call != nil {
+		return entryFrame{call: call}
+	}
+	if body := res.stored; body != nil && body.frame != nil {
+		return entryFrame{body: body}
+	}
+	return entryFrame{}
+}
+
+// hasCallFrameLocked reports whether res has a call frame, decoded or held
+// compressed. Requires egraphMu.
+func (res *sharedResult) hasCallFrameLocked() bool {
+	return res.entryFrameLocked().ok()
+}
+
+// ok reports whether there is a frame.
+func (f entryFrame) ok() bool {
+	return f.call != nil || f.body != nil
+}
+
+// recipeDigest returns the frame's recipe digest: derived from the decoded
+// frame, which memoizes it, or the one the body keeps beside its frame.
+// Deriving can read the cache, so the caller holds no lock.
+func (f entryFrame) recipeDigest(c *Cache) (digest.Digest, error) {
+	if f.call != nil {
+		return f.call.deriveRecipeDigest(c)
+	}
+	if f.body != nil {
+		return f.body.recipe, nil
+	}
+	return "", errors.New("missing result call frame")
+}
+
+// decode returns the frame decoded: the entry's own, or a copy decoded from
+// its body, which nothing else holds.
+func (f entryFrame) decode() (*ResultCall, error) {
+	if f.call != nil {
+		return f.call, nil
+	}
+	if f.body != nil {
+		return f.body.decodeFrame()
+	}
+	return nil, nil
 }
 
 // envelopeJSON returns the body's envelope JSON, decompressed.
@@ -188,12 +400,18 @@ func lightStoredEnvelope(env *PersistedResultEnvelope) *PersistedResultEnvelope 
 }
 
 // setStoredBodyLocked makes body res's stored record: res keeps the light
-// envelope of env, and no kept transfer record. Requires egraphMu for
+// envelope of env, and no kept transfer record. A body that holds the frame
+// is the entry's frame: res keeps no decoded one. Requires egraphMu for
 // writing, or an entry no reader can reach yet.
 func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvelope, body *storedBody) {
 	// A size measured for the same record and call is the body's: a value is
-	// measured the same whole or compressed.
-	if kept := res.storedTransfer.Load(); kept != nil && kept.envelope == env && kept.call == body.call {
+	// measured the same whole or compressed, and its frame the same decoded
+	// or held in the body.
+	made := body.call
+	if body.frame != nil {
+		made = res.loadResultCall()
+	}
+	if kept := res.storedTransfer.Load(); kept != nil && kept.envelope == env && kept.call == made {
 		if size := kept.size.Load(); size != nil {
 			carried := *size
 			carried.call = body.call
@@ -204,6 +422,11 @@ func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvel
 	res.persistedEnvelope = lightStoredEnvelope(env)
 	res.stored = body
 	res.payloadMu.Unlock()
+	if body.frame != nil {
+		// The frame is not replaced, only held otherwise: no new frame
+		// generation (dropResultCall).
+		res.dropResultCall()
+	}
 	res.storedTransfer.Store(nil)
 	if res.id != 0 && c.resultsByID[res.id] == res {
 		c.setResultPayloadBytesLocked(res, int64(len(body.envelope)))
@@ -218,7 +441,10 @@ func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvel
 func (c *Cache) storedRecordLocked(res *sharedResult) (PersistedRecord, error) {
 	if body := res.stored; body != nil {
 		rec, err := body.record(uint64(res.id))
-		rec.Call = res.loadResultCall()
+		if err != nil {
+			return rec, err
+		}
+		rec.Call, err = res.entryFrameLocked().decode()
 		return rec, err
 	}
 	return c.storedTransferRecordLocked(res)
@@ -242,13 +468,14 @@ func (s sharedResultPayloadState) wholeEnvelope(number uint64) (*PersistedResult
 
 // storedFactsLocked returns the facts of res's compressed record: the
 // entries its references name and the parts it declares. They are its
-// body's, unless its call was replaced since the body was made, as teaching
-// it a digest does: then they are worked out again from the body and the
-// call. Requires egraphMu.
+// body's, unless its decoded call was replaced since the body was made, as
+// teaching it a digest does: then they are worked out again from the body
+// and the call. A body that holds the frame is replaced with it, so its
+// facts are the frame's. Requires egraphMu.
 func (res *sharedResult) storedFactsLocked() ([]uint64, []declaredPart, error) {
 	body := res.stored
 	call := res.loadResultCall()
-	if body.call == call {
+	if body.frame != nil || body.call == call {
 		return body.refs, body.parts, nil
 	}
 	rec, err := body.record(uint64(res.id))
@@ -366,6 +593,68 @@ func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope
 	return &h.Envelope, body, nil
 }
 
+// holdRestoredFramesCompressed has each restored stored record's body hold
+// its call frame too, as the body worker would have, once the restore has
+// derived the recipes from the decoded frames (indexRestoredEntries): the
+// entries then keep no decoded frame. The frames are compressed on all
+// cores, outside egraphMu, a batch at a time, and each batch's bodies are
+// installed in one hold of it as soon as the batch is compressed, so that
+// its decoded frames can go before the next batch is compressed: the pass
+// adds to the restore's memory only what one batch has in flight. The
+// shared encoder compresses one record at a time, so the pass has an
+// encoder of its own, with a state for each core, which it lets go after.
+func (c *Cache) holdRestoredFramesCompressed() error {
+	type read struct {
+		res  *sharedResult
+		env  *PersistedResultEnvelope
+		was  *storedBody
+		body *storedBody
+	}
+	var reads []read
+	c.egraphMu.RLock()
+	for _, res := range c.resultsByID {
+		if body := res.stored; body != nil && body.frame == nil && body.call != nil && body.call == res.loadResultCall() {
+			reads = append(reads, read{res: res, env: res.persistedEnvelope, was: body})
+		}
+	}
+	c.egraphMu.RUnlock()
+	if len(reads) == 0 {
+		return nil
+	}
+	enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(storedBodyLevel), zstd.WithEncoderConcurrency(runtime.GOMAXPROCS(0)))
+	if err != nil {
+		return err
+	}
+	defer enc.Close()
+	for len(reads) > 0 {
+		batch := reads[:min(len(reads), storedFrameRestoreBatch)]
+		reads = reads[len(batch):]
+		if err := forEachIndexParallel(len(batch), func(i int) error {
+			body, err := batch[i].was.withFrameEncoded(c, batch[i].was.call, enc)
+			batch[i].body = body
+			return err
+		}); err != nil {
+			return err
+		}
+		c.egraphMu.Lock()
+		for i, r := range batch {
+			if r.body != r.was && r.res.stored == r.was && c.resultsByID[r.res.id] == r.res {
+				c.setStoredBodyLocked(r.res, r.env, r.body)
+			}
+			// The old body holds the decoded frame: nothing here keeps it.
+			batch[i] = read{}
+		}
+		c.egraphMu.Unlock()
+	}
+	return nil
+}
+
+// storedFrameRestoreBatch is how many restored records holdRestoredFramesCompressed
+// compresses before it installs their bodies: enough to keep every core busy
+// for a while between holds of egraphMu, few enough that a batch's encodings
+// in flight are small beside the restored cache.
+const storedFrameRestoreBatch = 4096
+
 // storedBodyWorker compresses the records merges installed on a blob-backed
 // cache, outside every lock, and installs each body under egraphMu if the
 // entry still holds the record it compressed.
@@ -457,6 +746,11 @@ func (c *Cache) storeBodies(entries []*sharedResult) {
 	c.egraphMu.RUnlock()
 	for i := range reads {
 		body, err := newStoredBody(reads[i].res, reads[i].env, reads[i].call)
+		if err == nil {
+			// The frame goes into the body too, with its recipe digest,
+			// which deriving reads from the cache: no lock is held here.
+			body, err = body.withFrame(c, reads[i].call)
+		}
 		if err == nil {
 			reads[i].body = body
 		}

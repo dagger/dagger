@@ -289,6 +289,20 @@ func validateStoredRecordShape(rec PersistedRecord, deps []uint64) error {
 	return visitResultCallReferences(rec.Call, directTransferReferences(direct))
 }
 
+// validateStoredFrameRecordShape checks a record a blob-backed cache sends
+// with its call frame as it holds it too, compressed: its dependencies. Its
+// call was checked as validateStoredRecordShape checks it when the body took
+// it (storedBody.withFrame), and its call's references, which the body's
+// facts list, against the entry's dependencies as the bundle took the
+// record (addStoredValue).
+func validateStoredFrameRecordShape(rec PersistedRecord, deps []uint64) error {
+	if rec.ResultID == 0 {
+		return fmt.Errorf("missing transferable result call")
+	}
+	_, err := validateTransferDependencies(rec, deps)
+	return err
+}
+
 // validateTransferRecordHeader checks a transferred record's identity, call,
 // envelope and storage links.
 func validateTransferRecordHeader(rec PersistedRecord) error {

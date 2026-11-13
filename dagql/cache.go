@@ -2523,6 +2523,13 @@ type Cache struct {
 	// testStoredBodies runs after the body worker installs a batch, with the
 	// number of entries it read.
 	testStoredBodies func(int)
+	// testRecipeFromBody runs when a recipe is read from a stored body's
+	// kept digest, for an entry without a decoded frame
+	// (recipeDigestForCachedResult). Only a blob-backed cache's entries, and
+	// a merge's held rows standing in for them, have such bodies: an
+	// engine's test sets it to check it never runs there. A merge's private
+	// cache takes its cache's.
+	testRecipeFromBody func()
 
 	// storedBodies is a blob-backed cache's body worker, which compresses
 	// the records merges store (cache_stored_body.go).
@@ -6161,7 +6168,11 @@ func (c *Cache) cacheUsageDagqlCallLocked(res *sharedResult) string {
 	if c == nil || res == nil {
 		return ""
 	}
-	return c.cacheUsageDagqlCallOfLocked(res.loadResultCall())
+	frame, err := res.entryFrameLocked().decode()
+	if err != nil {
+		return ""
+	}
+	return c.cacheUsageDagqlCallOfLocked(frame)
 }
 
 // cacheUsageDagqlCallOfLocked is the usage label of an entry's call frame:
@@ -6179,7 +6190,7 @@ func (c *Cache) cacheUsageDagqlCallOfLocked(frame *ResultCall) string {
 	receiverTypeName := ""
 	if frame.Receiver != nil {
 		if receiverRes := c.resultsByID[sharedResultID(frame.Receiver.ResultID)]; receiverRes != nil {
-			receiverFrame := receiverRes.loadResultCall()
+			receiverFrame, _ := receiverRes.entryFrameLocked().decode()
 			switch {
 			case receiverFrame != nil && receiverFrame.Type != nil && receiverFrame.Type.NamedType != "":
 				receiverTypeName = receiverFrame.Type.NamedType

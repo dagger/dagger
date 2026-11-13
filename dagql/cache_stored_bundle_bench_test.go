@@ -304,7 +304,9 @@ func BenchmarkStoredBundleValues(b *testing.B) {
 	order, build := storedBenchClosure(b, cloud, batch)
 	normalized := make([]PersistedRecord, len(order))
 	for i, res := range order {
-		rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()})
+		frame, err := res.entryFrameLocked().decode()
+		require.NoError(b, err)
+		rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: frame})
 		require.NoError(b, err)
 		rec.Envelope.PendingOffers = nil
 		normalized[i] = rec

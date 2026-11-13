@@ -341,7 +341,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 	for i := range snapshot.results {
 		resultSnapshot := &snapshot.results[i]
-		if resultSnapshot.frame == nil {
+		if resultSnapshot.frame == nil && !resultSnapshot.stored.holdsFrame() {
 			if resultSnapshot.self == nil || resultSnapshot.self.Type() == nil || resultSnapshot.self.Type().Name() != "Query" {
 				return persistStateSnapshot{}, fmt.Errorf("persist result %d: missing result call frame", resultSnapshot.resultID)
 			}
@@ -384,8 +384,17 @@ func (c *Cache) encodePersistedResultRow(ctx context.Context, resultSnapshot *pe
 	if err != nil {
 		return fmt.Errorf("persist result %d payload: %w", resultSnapshot.resultID, err)
 	}
-	if resultSnapshot.frame != nil {
+	switch {
+	case resultSnapshot.frame != nil:
 		callFrameJSON, err := json.Marshal(resultSnapshot.frame)
+		if err != nil {
+			return fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
+		}
+		resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
+	case resultSnapshot.stored.holdsFrame():
+		// A frame held in the body is written out as it is held: the JSON
+		// the frame itself encodes to (storedBody.withFrame).
+		callFrameJSON, err := resultSnapshot.stored.frameJSON()
 		if err != nil {
 			return fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
 		}

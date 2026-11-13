@@ -34,11 +34,11 @@ type pruneSnapshotResult struct {
 	directResultBytes int64
 	usageIdentities   []string
 	// entry is the entry's usage, without its call label, which only the
-	// entries a pass removes take (prunePlanLabels). callFrame is its call
-	// frame as the snapshot read it, which the label and the log of a
-	// removed entry read.
+	// entries a pass removes take (prunePlanLabels). frame is its call frame
+	// as the snapshot read it, which the label and the log of a removed
+	// entry read.
 	entry                    CacheUsageEntry
-	callFrame                *ResultCall
+	frame                    entryFrame
 	hasPersistedEdge         bool
 	persistedEdgeUnpruneable bool
 	expiresAtUnix            int64
@@ -67,15 +67,24 @@ type prunePlanEntry struct {
 // as the usage report names it (cacheUsageDagqlCallLocked), read before the
 // plan removes any of them: so a removed entry whose receiver the same pass
 // removes is labelled with its receiver's type, as before. Only the entries
-// a pass removes are labelled, since only they are reported and logged.
+// a pass removes are labelled, since only they are reported and logged. A
+// frame held compressed is decoded first, outside egraphMu.
 func (c *Cache) prunePlanLabels(snapshot pruneSnapshot, plan []prunePlanEntry) map[sharedResultID]string {
-	labels := make(map[sharedResultID]string, len(plan))
+	frames := make(map[sharedResultID]*ResultCall, len(plan))
+	for _, planEntry := range plan {
+		snapRes, ok := snapshot.results[planEntry.candidate.resultID]
+		if !ok {
+			continue
+		}
+		if frame, err := snapRes.frame.decode(); err == nil && frame != nil {
+			frames[planEntry.candidate.resultID] = frame
+		}
+	}
+	labels := make(map[sharedResultID]string, len(frames))
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	for _, planEntry := range plan {
-		if snapRes, ok := snapshot.results[planEntry.candidate.resultID]; ok && snapRes.callFrame != nil {
-			labels[planEntry.candidate.resultID] = c.cacheUsageDagqlCallOfLocked(snapRes.callFrame)
-		}
+	for id, frame := range frames {
+		labels[id] = c.cacheUsageDagqlCallOfLocked(frame)
 	}
 	return labels
 }
@@ -471,8 +480,8 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			if ok {
 				digest := ""
 				args := []string(nil)
-				if snapRes.callFrame != nil {
-					callFrame := snapRes.callFrame.clone()
+				if frame, err := snapRes.frame.decode(); err == nil && frame != nil {
+					callFrame := frame.clone()
 					if dig, err := callFrame.deriveRecipeDigest(c); err == nil {
 						digest = dig.String()
 					}
@@ -714,7 +723,7 @@ func (c *Cache) snapshotPruneStateLocked(
 			snapshotResult.entry.RecordType = recordType
 			snapshotResult.entry.RecordTypes = recordTypes
 			snapshotResult.entry.SizeBytes = sizeBytes
-			snapshotResult.callFrame = res.loadResultCall()
+			snapshotResult.frame = res.entryFrameLocked()
 			if blobs == nil {
 				snapshot.usedBytes += sizeBytes
 			}

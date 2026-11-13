@@ -54,7 +54,7 @@ type HeldBy struct {
 // heldLocked reports whether the recipient holds res at nowUnix. A nil
 // HeldBy holds nothing. Requires egraphMu.
 func (h *HeldBy) heldLocked(res *sharedResult, nowUnix int64) bool {
-	if h == nil || res.loadResultCall() == nil {
+	if h == nil || !res.hasCallFrameLocked() {
 		return false
 	}
 	if h.Not[uint64(res.id)] {
@@ -97,8 +97,9 @@ func (h *HeldBy) holdsLocked(res *sharedResult, nowUnix int64) bool {
 // An entry held says the recipient holds, a root or not, becomes a held row:
 // its recipe and sending facts, with no record, no outputs, and nothing
 // below it walked. Each held row's recipe is derived from the entry's call
-// frame after egraphMu is released: a replacement keeps the recipe, and
-// deriving can read the cache. A nil held is a bundle with no held rows.
+// frame after egraphMu is released, or read from the stored body that holds
+// the frame: a replacement keeps the recipe, and deriving can read the
+// cache. A nil held is a bundle with no held rows.
 //
 // Expiry, of a donor of its class and of a holding of held's cache, is
 // judged at nowUnix, the reader's clock, so a bundle agrees with what its
@@ -117,11 +118,11 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, nowUnix int64,
 	}
 	for i := range out.Bundle.Values {
 		value := &out.Bundle.Values[i]
-		frame := frames[value.Ordinal]
-		if frame == nil {
+		frame, ok := frames[value.Ordinal]
+		if !ok {
 			continue
 		}
-		if value.Held, err = frame.deriveRecipeDigest(c); err != nil {
+		if value.Held, err = frame.recipeDigest(c); err != nil {
 			return StoredBundleResult{}, fmt.Errorf("stored bundle: held entry %d recipe: %w", value.SenderNumber, err)
 		}
 	}
@@ -134,7 +135,7 @@ func (c *Cache) StoredBundle(ctx context.Context, roots []uint64, nowUnix int64,
 // storedBundle builds StoredBundle's answer in one hold of egraphMu.RLock,
 // with held rows' recipes left empty, and returns the call frame of each held
 // row by ordinal. A bundle without held rows is validated here.
-func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (StoredBundleResult, map[TransferOrdinal]*ResultCall, error) {
+func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (StoredBundleResult, map[TransferOrdinal]entryFrame, error) {
 	var out StoredBundleResult
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
@@ -176,15 +177,15 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 		}
 	}
 	rootEntries = append(rootEntries, build.callRoots...)
-	var frames map[TransferOrdinal]*ResultCall
+	var frames map[TransferOrdinal]entryFrame
 	for _, res := range build.order {
 		if build.held[res.id] {
 			ordinal := build.ordinals[res.id]
 			build.bundle.Values = append(build.bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: PersistedRecord{ResultID: uint64(res.id)}, ExpiresAtUnix: res.expiresAtUnix})
 			if frames == nil {
-				frames = map[TransferOrdinal]*ResultCall{}
+				frames = map[TransferOrdinal]entryFrame{}
 			}
-			frames[ordinal] = res.loadResultCall()
+			frames[ordinal] = res.entryFrameLocked()
 			out.Held = append(out.Held, uint64(res.id))
 			continue
 		}
@@ -337,6 +338,15 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 			build.stored = map[uint64][]declaredPart{}
 		}
 		build.stored[uint64(build.ordinals[res.id])] = parts
+		if body.frame != nil {
+			// So does the frame it holds, which is its transfer form.
+			if err := build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id)}, body.envelope, refs); err != nil {
+				return err
+			}
+			value := &build.bundle.Values[len(build.bundle.Values)-1]
+			value.storedCall, value.storedCallBytes = body.frame, body.frameBytes
+			return nil
+		}
 		call, err := normalizeTransferCall(res.loadResultCall())
 		if err != nil {
 			return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
@@ -414,7 +424,8 @@ type storedTransferRecord struct {
 // record, and the other two.
 type storedValueSize struct {
 	// call is the frame measured with a compressed record (storedBody),
-	// whose call can be replaced while its body stays.
+	// whose decoded call can be replaced while its body stays; nil for a
+	// body that holds its frame, which is replaced with the body.
 	call               *ResultCall
 	dependencyRevision uint64
 	replacements       uint64

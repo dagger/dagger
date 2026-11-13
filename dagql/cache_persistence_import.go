@@ -497,6 +497,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	if err := c.indexRestoredEntries(indexed); err != nil {
 		return err
 	}
+	if c.blobBacked {
+		if err := c.holdRestoredFramesCompressed(); err != nil {
+			return err
+		}
+	}
 
 	for _, resultID := range eagerDecodeResultIDs {
 		res := c.resultsByID[resultID]

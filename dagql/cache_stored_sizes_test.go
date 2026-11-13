@@ -191,7 +191,7 @@ func TestStoredSizesChooseCallsInTheBundlesOrder(t *testing.T) {
 			numbers := map[string]uint64{}
 			cloud.egraphMu.RLock()
 			for id, res := range cloud.resultsByID {
-				if frame := res.loadResultCall(); frame != nil && (frame.Field == "r" || frame.Field == "c") {
+				if frame, _ := res.entryFrameLocked().decode(); frame != nil && (frame.Field == "r" || frame.Field == "c") {
 					numbers[frame.Field] = uint64(id)
 				}
 			}
@@ -313,7 +313,7 @@ func TestStoredSizesNeverPriceLessThanTheBundle(t *testing.T) {
 	var qNumber uint64
 	cloud.egraphMu.RLock()
 	for id, res := range cloud.resultsByID {
-		if frame := res.loadResultCall(); frame != nil && frame.Field == "q" {
+		if frame, _ := res.entryFrameLocked().decode(); frame != nil && frame.Field == "q" {
 			qNumber = uint64(id)
 		}
 	}

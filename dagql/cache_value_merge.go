@@ -548,18 +548,23 @@ func (c *Cache) prepareMergedCalls(calls []TransferredCall) ([]mergedCall, error
 // in its call and offers, a held row standing in with its entry's own call
 // frame (heldFrames), and the bundle's ownership graph, with its offers'
 // owners. It holds no lock: the private cache is the preparation's own.
-func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, heldFrames map[uint64]*ResultCall, relocateRecord, relocate PersistedRefVisitor) (*Cache, error) {
-	private := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, heldFrames map[uint64]entryFrame, relocateRecord, relocate PersistedRefVisitor) (*Cache, error) {
+	private := &Cache{resultsByID: map[sharedResultID]*sharedResult{}, testRecipeFromBody: c.testRecipeFromBody}
 	for _, id := range prep.order {
 		row := prep.index[id]
 		if prep.held[id] {
 			// The held row stands in with its entry's own call frame, whose
-			// recipe the rows that depend on it derive theirs from. The
-			// frame is the cache's: nothing below relocates or rewires it.
+			// recipe the rows that depend on it derive theirs from: decoded,
+			// or held in the entry's stored body with its recipe. The frame
+			// is the cache's: nothing below relocates or rewires it.
 			rec := PersistedRecord{ResultID: prep.firstID + id - 1}
 			prep.records[id] = rec
 			res := &sharedResult{id: sharedResultID(rec.ResultID), imported: true, expiresAtUnix: row.ExpiresAtUnix}
-			res.storeResultCall(heldFrames[id])
+			if frame := heldFrames[id]; frame.call != nil {
+				res.storeResultCall(frame.call)
+			} else {
+				res.stored = frame.body
+			}
 			private.putResultLocked(res)
 			continue
 		}
@@ -738,8 +743,8 @@ func (prep *valueMergePrep) checkHeldRecipes() error {
 // derives another recipe, so the list is complete for this moment. It
 // derives the recipes after egraphMu is released, since deriving can read the
 // cache.
-func (c *Cache) resolveHeldRows(prep *valueMergePrep) map[uint64]*ResultCall {
-	frames := map[uint64]*ResultCall{}
+func (c *Cache) resolveHeldRows(prep *valueMergePrep) map[uint64]entryFrame {
+	frames := map[uint64]entryFrame{}
 	c.egraphMu.RLock()
 	now := time.Now().Unix()
 	for _, row := range prep.bundle.Values {
@@ -749,11 +754,11 @@ func (c *Cache) resolveHeldRows(prep *valueMergePrep) map[uint64]*ResultCall {
 		id := uint64(row.Ordinal)
 		prep.held[id] = true
 		cur := c.currentEntryForRecipeLocked(row.Held)
-		var frame *ResultCall
+		var frame entryFrame
 		if !c.heldRowStaleLocked(cur, row.ExpiresAtUnix, now) {
-			frame = cur.loadResultCall()
+			frame = cur.entryFrameLocked()
 		}
-		if frame == nil {
+		if !frame.ok() {
 			prep.stale = append(prep.stale, row.Ordinal)
 			continue
 		}
@@ -761,7 +766,7 @@ func (c *Cache) resolveHeldRows(prep *valueMergePrep) map[uint64]*ResultCall {
 	}
 	c.egraphMu.RUnlock()
 	for id, frame := range frames {
-		if recipe, err := frame.deriveRecipeDigest(c); err != nil || recipe != prep.index[id].Held {
+		if recipe, err := frame.recipeDigest(c); err != nil || recipe != prep.index[id].Held {
 			prep.stale = append(prep.stale, TransferOrdinal(id))
 		}
 	}
@@ -908,6 +913,14 @@ func cloneValueBundle(in ValueBundle) (ValueBundle, error) {
 				return ValueBundle{}, err
 			}
 			value.Record.Envelope, value.storedEnvelope = rec.Envelope, nil
+		}
+		if value.storedCall != nil {
+			// So is a stored call frame.
+			frame, err := (&storedBody{frame: value.storedCall, frameBytes: value.storedCallBytes}).decodeFrame()
+			if err != nil {
+				return ValueBundle{}, err
+			}
+			value.Record.Call, value.storedCall, value.storedCallBytes = frame, nil, 0
 		}
 		env, err := clonePersistedEnvelope(value.Record.Envelope)
 		if err != nil {
