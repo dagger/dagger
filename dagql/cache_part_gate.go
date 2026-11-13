@@ -3,7 +3,9 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -139,7 +141,7 @@ func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader
 	if reader == nil {
 		keys, version, err := c.describeRowPartsHeld(ctx, row, hold)
 		if err != nil {
-			return row.settledPartKeys(), nil
+			return completePartsFellBack(ctx, row, err), nil
 		}
 		row.completeParts.Store(&rowCompleteParts{stamp: newCompletePartsStamp(version), keys: keys})
 		return keys, nil
@@ -153,11 +155,14 @@ func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader
 		return err
 	})
 	if version == nil || err != nil {
-		return row.settledPartKeys(), nil
+		if err == nil {
+			err = errors.New("no capture of the record")
+		}
+		return completePartsFellBack(ctx, row, err), nil
 	}
 	probes, err := describePartRecord(record)
 	if err != nil {
-		return row.settledPartKeys(), nil
+		return completePartsFellBack(ctx, row, err), nil
 	}
 	type completePart struct {
 		key  string
@@ -187,6 +192,17 @@ func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader
 	}
 	row.completeParts.Store(&rowCompleteParts{stamp: newCompletePartsStamp(version), keys: keys, sizes: sizes})
 	return keys, sizes
+}
+
+// completePartsFellBack returns the parts row's gate has settled, which
+// completeParts returns when it cannot read the row's record: a subset of its
+// complete parts, which a span then reports as if whole. It logs each such
+// read at Debug, with the row, the settled parts and why the record couldn't
+// be read, so a part the engine holds and never reported can be traced to it.
+func completePartsFellBack(ctx context.Context, row *sharedResult, err error) []string {
+	settled := row.settledPartKeys()
+	slog.DebugContext(ctx, "complete parts fell back to settled", "row", uint64(row.id), "settled", settled, "cause", err)
+	return settled
 }
 
 // partSizeStrings formats sizes, index-aligned with parts, as the decimal
