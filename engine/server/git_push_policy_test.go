@@ -24,7 +24,7 @@ func TestGitPushNeedsRefApproval(t *testing.T) {
 		asks   bool
 	}{
 		{"feature branch", "refs/heads/feature/x", false, trunk, false},
-		{"force to a feature branch", "refs/heads/feature/x", true, trunk, gitForcePushToOtherBranchesAsks},
+		{"force to a feature branch", "refs/heads/feature/x", true, trunk, true},
 		{"default branch", "refs/heads/trunk", false, trunk, true},
 		{"default branch, as stored case-insensitively", "refs/heads/Trunk", false, trunk, true},
 		{"force to the default branch", "refs/heads/trunk", true, trunk, true},
@@ -38,12 +38,13 @@ func TestGitPushNeedsRefApproval(t *testing.T) {
 		{"unknown default, master", "refs/heads/master", false, unknown, true},
 		{"unreachable, feature branch", "refs/heads/feature/x", false, unreachable, true},
 		{"unreachable, tag", "refs/tags/v1.0.0", false, unreachable, true},
+		{"unknown default, force to a feature branch", "refs/heads/feature/x", true, unknown, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.asks, gitPushNeedsRefApproval(tc.ref, tc.force, tc.remote))
 		})
 	}
-	require.False(t, gitForcePushToOtherBranchesAsks, "rebasing a pull request's branch is routine")
+	require.True(t, gitForcePushToOtherBranchesAsks, "a force-push rewrites history, so each one asks")
 }
 
 // remoteHeads is a fake core.GitRemoteHead answering from a table, counting
@@ -79,27 +80,47 @@ func TestGitPushApprovalDefaultBranch(t *testing.T) {
 	const by = ` (requested by module "pusher")?`
 
 	// The first push to a branch other than the default asks about the
-	// remote, once for the session; force-pushes there need nothing more.
+	// remote, once for the session.
 	push("refs/heads/feature", false)
 	require.Len(t, questions.asked(), 1)
 	req := questions.asked()[0]
 	require.Equal(t, approvalKindGitPushRemote, req.Kind)
 	require.Equal(t, remote, req.Subject)
-	require.Equal(t, "Allow pushes and force-pushes to git@example.com:repo branches other than trunk, main and master"+by, req.Prompt)
+	require.Equal(t, "Allow pushes to git@example.com:repo branches other than trunk, main and master"+by, req.Prompt)
+	require.Equal(t, "Push to git@example.com:repo branches other than trunk, main and master?", req.Question)
 	require.False(t, req.Danger)
 	push("refs/heads/other", false)
-	push("refs/heads/feature", true)
 	require.Len(t, questions.asked(), 1)
+
+	// A force-push there asks about the exact ref, as dangerous: the remote
+	// grant does not cover rewriting history. A session grant for that ref
+	// holds; another branch asks again.
+	for _, tc := range []struct {
+		ref   string
+		asked int
+	}{
+		{"refs/heads/feature", 2},
+		{"refs/heads/feature", 2},
+		{"refs/heads/other", 3},
+	} {
+		push(tc.ref, true)
+		require.Len(t, questions.asked(), tc.asked)
+		force := questions.asked()[tc.asked-1]
+		require.Equal(t, approvalKindGitForcePush, force.Kind)
+		require.Equal(t, remote+" @ "+tc.ref, force.Subject)
+		require.True(t, force.Danger)
+		require.Empty(t, force.PersistentKey, "a force-push is never allowed forever")
+	}
 
 	// The default branch asks about the exact ref, and force with danger.
 	push("refs/heads/trunk", false)
-	require.Len(t, questions.asked(), 2)
-	require.Equal(t, approvalKindGitPush, questions.asked()[1].Kind)
-	require.Equal(t, "Allow push to git@example.com:repo @ refs/heads/trunk"+by, questions.asked()[1].Prompt)
+	require.Len(t, questions.asked(), 4)
+	require.Equal(t, approvalKindGitPush, questions.asked()[3].Kind)
+	require.Equal(t, "Allow push to git@example.com:repo @ refs/heads/trunk"+by, questions.asked()[3].Prompt)
 	push("refs/heads/trunk", true)
-	require.Len(t, questions.asked(), 3)
-	require.Equal(t, approvalKindGitForcePush, questions.asked()[2].Kind)
-	require.True(t, questions.asked()[2].Danger)
+	require.Len(t, questions.asked(), 5)
+	require.Equal(t, approvalKindGitForcePush, questions.asked()[4].Kind)
+	require.True(t, questions.asked()[4].Danger)
 
 	// So do main and master, whatever the remote says, and tags.
 	for _, ref := range []string{"refs/heads/main", "refs/heads/master", "refs/tags/v1.0.0"} {
@@ -203,7 +224,7 @@ func TestGitPushApprovalInertClientPolicy(t *testing.T) {
 		require.Equal(t, s.owner.clientMetadata, md.Owner, "it pushes with the owner's host")
 	}
 	require.Equal(t, []string{
-		"Allow pushes and force-pushes to git@example.com:repo branches other than trunk, main and master?",
+		"Allow pushes to git@example.com:repo branches other than trunk, main and master?",
 		"Allow push to git@example.com:repo @ refs/heads/trunk?",
 	}, questions.prompts())
 }
@@ -236,11 +257,15 @@ func TestGitPushApprovalOwnerOrigin(t *testing.T) {
 	// The origin as configured, and as the owner's rewrites resolve it for a
 	// push, are approved already for branches other than the default.
 	for _, remote := range []string{"https://example.com/me/repo", "git@example.com:me/repo", "git@push.example.com:me/repo.git"} {
-		_, err := s.srv.AuthorizeGitPush(s.moduleCtx, remote, "refs/heads/feature", true, false)
+		_, err := s.srv.AuthorizeGitPush(s.moduleCtx, remote, "refs/heads/feature", false, false)
 		require.NoError(t, err)
 	}
 	require.Len(t, questions.asked(), 1)
 	require.Equal(t, 1, routing.requests, "the owner's rewrites are read once per session")
+
+	// A force-push there still asks about the exact ref.
+	_, err = s.srv.AuthorizeGitPush(s.moduleCtx, "https://example.com/me/repo", "refs/heads/feature", true, false)
+	require.NoError(t, err)
 
 	// Its default branch still asks, and so does any other repository.
 	_, err = s.srv.AuthorizeGitPush(s.moduleCtx, "https://example.com/me/repo", "refs/heads/main", false, false)
@@ -258,6 +283,7 @@ func TestGitPushApprovalOwnerOrigin(t *testing.T) {
 	}
 	require.Equal(t, []string{
 		"git-push-remote https://example.com/me/repo",
+		"git-force-push https://example.com/me/repo @ refs/heads/feature",
 		"git-push https://example.com/me/repo @ refs/heads/main",
 		"git-push-remote https://example.com/me/other",
 		"git-push-remote https://evil.example/me/repo",
@@ -269,13 +295,14 @@ func TestGitPushRemoteApproval(t *testing.T) {
 	require.Equal(t, approvalSpec{
 		Kind:     approvalKindGitPushRemote,
 		Subject:  "https://example.com/\\u202erepo",
-		Question: "Allow pushes and force-pushes to https://example.com/\\u202erepo branches other than main and master",
+		Question: "Allow pushes to https://example.com/\\u202erepo branches other than main and master",
+		Action:   "Push to https://example.com/\\u202erepo branches other than main and master",
 	}, gitPushRemoteApproval("https://example.com/\u202erepo", gitRemoteDefault{reached: true}))
 	require.Equal(t,
-		`Allow pushes and force-pushes to https://example.com/repo branches other than dev\x1b[31m, main and master`,
+		`Allow pushes to https://example.com/repo branches other than dev\x1b[31m, main and master`,
 		gitPushRemoteApproval("https://example.com/repo", gitRemoteDefault{reached: true, branch: "refs/heads/dev\x1b[31m"}).Question)
 	require.Equal(t,
-		"Allow pushes and force-pushes to https://example.com/repo branches other than main and master",
+		"Allow pushes to https://example.com/repo branches other than main and master",
 		gitPushRemoteApproval("https://example.com/repo", gitRemoteDefault{reached: true, branch: "refs/heads/master"}).Question)
 }
 
