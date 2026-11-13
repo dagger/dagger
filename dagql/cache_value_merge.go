@@ -646,9 +646,10 @@ func (c *Cache) planMergeIdentities(prep *valueMergePrep, private *Cache) error 
 // (forEachIndexParallel), and applies the prepared records in dependency
 // order. A record's preparation reads only what the merge fixed before it and
 // writes only its own result, so each is prepared as it would be alone. It
-// returns the failure of the first record in dependency order that failed,
-// which is ctx's cause when ctx was cancelled before that record's payload,
-// as preparing them one by one would.
+// returns what preparing them one by one would: ctx's cause when ctx was
+// cancelled before the first record in dependency order that failed was
+// started, or once a record before it was prepared; otherwise that record's
+// failure.
 func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateRecord, relocate PersistedRefVisitor) error {
 	ids := make([]uint64, 0, len(prep.order))
 	for _, id := range prep.order {
@@ -657,7 +658,12 @@ func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateR
 		}
 	}
 	prepared := make([]preparedRecordPayload, len(ids))
-	err := forEachIndexParallel(len(ids), func(i int) error {
+	// cancelled[i] is whether ctx was cancelled once record i was prepared,
+	// when preparing the records one by one wouldn't have started the next.
+	cancelled := make([]bool, len(ids))
+	failures := make([]bool, len(ids))
+	if err := forEachIndexParallel(len(ids), func(i int) (err error) {
+		defer func() { failures[i] = err != nil }()
 		if err := context.Cause(ctx); err != nil {
 			return err
 		}
@@ -666,11 +672,15 @@ func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateR
 				return err
 			}
 		}
-		var err error
-		prepared[i], err = prep.prepareRecordPayload(ids[i], relocateRecord, relocate)
-		return err
-	})
-	if err != nil {
+		if prepared[i], err = prep.prepareRecordPayload(ids[i], relocateRecord, relocate); err != nil {
+			return err
+		}
+		cancelled[i] = context.Cause(ctx) != nil
+		return nil
+	}); err != nil {
+		if slices.Contains(cancelled[:slices.Index(failures, true)], true) {
+			return context.Cause(ctx)
+		}
 		return err
 	}
 	for i, id := range ids {
