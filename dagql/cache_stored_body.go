@@ -173,9 +173,11 @@ func (b *storedBody) withFrameEncoded(c *Cache, call *ResultCall, enc *zstd.Enco
 	if !ok {
 		return b, nil
 	}
-	recipe, err := call.deriveRecipeDigest(c)
-	if err != nil {
-		return b, nil
+	// A frame whose recipe can't be derived stays decoded too: its readers
+	// derive it, and report the error, as they would have.
+	recipe, recipeErr := call.deriveRecipeDigest(c)
+	if recipeErr != nil {
+		return b, nil //nolint:nilerr // the frame stays decoded; its readers report the error
 	}
 	return &storedBody{
 		envelope:      b.envelope,
