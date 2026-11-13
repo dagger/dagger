@@ -71,8 +71,9 @@ func TestStoredSizesMeasureWhatTheBundleCarries(t *testing.T) {
 	storedSizesTestClose(t, append(want, StoredSize{}, StoredSize{}), got)
 	require.Equal(t, 2, got[0].Records)
 
+	entry := storedBundleTestEntry(cloud, r)
 	cloud.egraphMu.RLock()
-	size := storedTestSize(storedBundleTestEntry(cloud, r))
+	size := storedTestSize(entry)
 	cloud.egraphMu.RUnlock()
 	require.NotNil(t, size, "the record's size is kept with it")
 }
@@ -515,8 +516,7 @@ func TestHeldRowSizeIsItsEncodingLength(t *testing.T) {
 // measured record rather than replacing it with its own.
 func TestStoredSizesSurviveABuildNormalizingAtOnce(t *testing.T) {
 	t.Parallel()
-	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
-	storedTestHoldWhole(cloud)
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
 	normalized, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	cloud.testStoredTransferNormalized = func() {
