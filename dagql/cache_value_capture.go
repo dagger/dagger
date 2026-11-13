@@ -622,6 +622,10 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 		path  string
 	}
 	var files []fileEntry
+	// sameFile is each File entry's that is the same path in the same
+	// snapshot as an earlier one, by entry: it shares that one's chain.
+	sameFile := map[int]int{}
+	firstFile := map[[2]string]int{}
 	var batched []int
 	var batchRefs []snapshots.ImmutableRef
 	seen := map[string]bool{}
@@ -653,7 +657,13 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 		// A File is its content: it travels as a chain of its own, not as
 		// the filesystem it was taken from.
 		if out.ValueKind == "file" && out.Value != nil {
-			files = append(files, fileEntry{entry: len(chains.Entries) - 1, ref: ref, path: out.Value.Path})
+			entry := len(chains.Entries) - 1
+			if first, ok := firstFile[[2]string{out.SnapshotID, out.Value.Path}]; ok {
+				sameFile[entry] = first
+				continue
+			}
+			firstFile[[2]string{out.SnapshotID, out.Value.Path}] = entry
+			files = append(files, fileEntry{entry: entry, ref: ref, path: out.Value.Path})
 			continue
 		}
 		batched = append(batched, len(chains.Entries)-1)
@@ -717,13 +727,19 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 	})
 	err := eg.Wait()
 	// From here the chains are the entries', in their order, as the
-	// outputs read them.
+	// outputs read them. A chain two entries share releases once, and
+	// counts once in the stats.
+	for entry, first := range sameFile {
+		opened[entry] = opened[first]
+	}
 	chains.chains = opened
 	if err != nil {
 		return nil, err
 	}
 	for i, chain := range opened {
-		chains.Stats.Add(chain.Stats)
+		if _, shared := sameFile[i]; !shared {
+			chains.Stats.Add(chain.Stats)
+		}
 		chains.Entries[i].Layers, chains.Entries[i].Provider = chain.Layers, chain.Provider
 	}
 	return chains, nil
