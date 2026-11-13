@@ -158,7 +158,8 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 // is a boundary even when it serves no module: its host access ends there, so
 // it cannot be its own owner (prompting it, or reading through it, could only
 // be denied). Escalating to the client that started it is deliberate, and is
-// always gated by the owner's approval.
+// gated as a module's request is: by the owner's approval, or for routine
+// pushes by the policy that stands in for it (see git_push_policy.go).
 func gitPushOwner(client *clientRuntime) (*clientRuntime, bool, error) {
 	sess := client.daggerSession
 	parents, err := sess.ancestorRuntimes(client.clientRecord)

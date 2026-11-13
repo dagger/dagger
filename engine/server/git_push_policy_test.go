@@ -182,6 +182,32 @@ func TestGitPushApprovalUnknownDefaultBranch(t *testing.T) {
 	require.Len(t, questions.asked(), 6, "allow once asks again")
 }
 
+func TestGitPushApprovalInertClientPolicy(t *testing.T) {
+	// An in-engine SDK client serving no module (an agent's Dang snippet)
+	// pushes as its owner under the same policy as a module: the remote is
+	// approved once for routine branches, the default branch every time.
+	questions := &approvalPromptServer{decide: func(*prompt.ApprovalRequest) prompt.ApprovalDecision {
+		return prompt.APPROVAL_ALLOW_SESSION
+	}}
+	s := newGitPushTestSession(t, questions, &pushRoutingServer{})
+	eval := s.newClient("eval", "owner")
+	eval.inertAttachables = true
+	s.sess.clientRuntimes["eval"] = eval
+	installTestClientRecords(s.sess)
+	evalCtx := s.clientContext(eval)
+	const remote = "git@example.com:repo"
+	s.srv.gitRemoteHead = (&remoteHeads{heads: map[string]string{remote: "refs/heads/trunk"}}).probe
+	for _, ref := range []string{"refs/heads/feature", "refs/heads/other", "refs/heads/trunk"} {
+		md, err := s.srv.AuthorizeGitPush(evalCtx, remote, ref, false, false)
+		require.NoError(t, err)
+		require.Equal(t, s.owner.clientMetadata, md.Owner, "it pushes with the owner's host")
+	}
+	require.Equal(t, []string{
+		"Allow pushes and force-pushes to git@example.com:repo branches other than trunk, main and master?",
+		"Allow push to git@example.com:repo @ refs/heads/trunk?",
+	}, questions.prompts())
+}
+
 func TestGitPushApprovalOwnerOrigin(t *testing.T) {
 	questions := &approvalPromptServer{decide: func(*prompt.ApprovalRequest) prompt.ApprovalDecision {
 		return prompt.APPROVAL_ALLOW_ONCE
