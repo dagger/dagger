@@ -91,8 +91,30 @@ type PreparedValueMerge struct {
 	input ValueBundle
 	prep  *valueMergePrep
 	op    cacheOperation
+	// unretained are the bundle's roots, by ordinal, the commit gives no
+	// retention edge (Unretained).
+	unretained map[TransferOrdinal]bool
 	// ended is set once, by the terminal action.
 	ended atomic.Bool
+}
+
+// Unretained has the commit give the bundle's roots of these ordinals no
+// retention edge: on an engine, an engine's retention edge; on the Cloud,
+// its stored root. Such a root's value lives, as a value nothing retains
+// does on an engine, only through what holds it: the entries that depend
+// on it, and holdings, its sender's among them. A remote cache service
+// merges so the records an export carries for a root it doesn't send, as
+// the lower half of a root's closure or the members of a root still
+// running, so that they keep no retention of their own beyond the root
+// that carries them. It is the merging caller's choice, never a bundle's:
+// nothing an engine sends says it. Call it before CommitValueMerge.
+func (p *PreparedValueMerge) Unretained(ordinals ...TransferOrdinal) {
+	if p.unretained == nil {
+		p.unretained = map[TransferOrdinal]bool{}
+	}
+	for _, ordinal := range ordinals {
+		p.unretained[ordinal] = true
+	}
 }
 
 // errValueMergeEnded is CommitValueMerge's answer for a prepared merge whose
@@ -158,6 +180,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 	defer p.op.finish(false)
 	from, input, prep := p.from, p.input, p.prep
 	p.input, p.prep = ValueBundle{}, nil
+	prep.unretained = p.unretained
 	if len(prep.stale) > 0 {
 		return c.staleMergeReply(prep.stale), nil
 	}
@@ -203,6 +226,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 			if prep, err = c.prepareValueMerge(ctx, from, input, false); err != nil {
 				return MergeReply{}, err
 			}
+			prep.unretained = p.unretained
 			if len(prep.stale) > 0 {
 				return c.staleMergeReply(prep.stale), nil
 			}
@@ -365,8 +389,11 @@ type valueMergePrep struct {
 	// from is the cache the bundle is from.
 	from   CacheID
 	bundle ValueBundle
-	order  []uint64
-	index  map[uint64]*TransferredValue
+	// unretained are the bundle's roots the commit gives no retention edge
+	// (PreparedValueMerge.Unretained).
+	unretained map[TransferOrdinal]bool
+	order      []uint64
+	index      map[uint64]*TransferredValue
 	// rows are the bundle's ordinals by sender number, which its records'
 	// own references name rows by, and senders the reverse
 	// (transferSenderNumbers).
@@ -1859,9 +1886,10 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 	// Identity, and the sender's holding.
 	c.applyMergedIdentitiesLocked(ctx, commit, &change)
 
-	// Retention: an engine's retention edge, or the Cloud's stored root.
+	// Retention: an engine's retention edge, or the Cloud's stored root,
+	// but for a root the caller left unretained (Unretained).
 	for i, root := range commit.prep.bundle.Roots {
-		if commit.roots[i].Expired {
+		if commit.roots[i].Expired || commit.prep.unretained[root.Ordinal] {
 			continue
 		}
 		row := commit.byOrdinal[uint64(root.Ordinal)]
