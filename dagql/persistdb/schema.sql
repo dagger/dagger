@@ -77,6 +77,19 @@ CREATE TABLE IF NOT EXISTS result_calls (
     FOREIGN KEY(result_id) REFERENCES results(id) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
 
+-- result_taught are, on the Cloud, the content digests holdings' spans taught
+-- an entry, in the order they were taught, and whether the entry's frame had
+-- taken each when it was saved. A store from before the table has none, as
+-- no cache kept any.
+CREATE TABLE IF NOT EXISTS result_taught (
+    result_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    digest TEXT NOT NULL,
+    given INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(result_id, position),
+    FOREIGN KEY(result_id) REFERENCES results(id) ON DELETE CASCADE
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS persisted_edges (
     result_id INTEGER PRIMARY KEY,
     created_at_unix_nano INTEGER NOT NULL,
