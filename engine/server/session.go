@@ -269,8 +269,6 @@ type daggerSession struct {
 
 	allowedLLMModules []string
 
-	gitPushApprovals gitPushApprovals
-	gitReadApprovals gitReadApprovals
 	// approvals remembers the owners' session grants (see requestApproval)
 	approvals approvalGrants
 
