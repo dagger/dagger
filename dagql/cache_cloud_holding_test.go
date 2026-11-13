@@ -132,7 +132,7 @@ func TestCloudHoldingOwnsNothing(t *testing.T) {
 	c.egraphMu.RLock()
 	key, cloud := receiver.cacheSharedResult().cloudHoldingLocked()
 	owners := receiver.cacheSharedResult().incomingOwnershipCount.Load()
-	indexed := len(c.holderEntries) + len(c.remoteCaches)
+	indexed := len(c.holderEntriesForTest()) + len(c.remoteCaches)
 	c.egraphMu.RUnlock()
 	require.Equal(t, HolderKey{Cache: cloudCacheID, Number: 11}, key)
 	require.NotNil(t, cloud)
@@ -161,8 +161,8 @@ func TestOfferRekeysTheCloudHolding(t *testing.T) {
 		defer c.egraphMu.RUnlock()
 		key, cloud := row.cloudHoldingLocked()
 		clouds := 0
-		for k := range row.holders {
-			if k.Cache == cloudCacheID {
+		for _, ref := range row.holderRefsLocked() {
+			if ref.key.Cache == cloudCacheID {
 				clouds++
 			}
 		}

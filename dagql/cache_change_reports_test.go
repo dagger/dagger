@@ -56,8 +56,8 @@ func changeTestAddresses(c *Cache) map[string]PersistedPartAddress {
 				}
 			}
 		}
-		for key, h := range res.holders {
-			info := holdingInfo(key, h)
+		for _, ref := range res.holderRefsLocked() {
+			info := holdingInfo(ref.key, ref.h)
 			for _, address := range append(info.Parts, info.OfferedParts...) {
 				add(address)
 			}
@@ -70,7 +70,7 @@ func changeTestAddresses(c *Cache) map[string]PersistedPartAddress {
 func changeTestRead(t *testing.T, c *Cache, now int64, addresses map[string]PersistedPartAddress) changeTestAnswers {
 	t.Helper()
 	c.egraphMu.RLock()
-	keys := slices.Collect(maps.Keys(c.holderEntries))
+	keys := slices.Collect(maps.Keys(c.holderEntriesForTest()))
 	numbers := make([]uint64, 0, len(c.resultsByID))
 	for id := range c.resultsByID {
 		numbers = append(numbers, uint64(id))
