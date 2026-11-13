@@ -731,9 +731,14 @@ func (fe *frontendPretty) approvalLines(a *pendingApproval, focused bool, width 
 	}
 	add(header)
 
-	// What for. The question is literal text; a destructive one carries its
-	// danger in red, the way the yes/no fallback flags a force-push.
-	question := req.GetPrompt()
+	// What for. The header already names who asks, so this is the bare
+	// question (the full prompt, which names them again, is for yes/no
+	// fallbacks). A destructive one carries its danger in red, the way the
+	// yes/no fallback flags a force-push.
+	question := req.GetQuestion()
+	if question == "" {
+		question = req.GetPrompt()
+	}
 	style := func(s string) string {
 		return out.String(s).Foreground(termenv.ANSIYellow).Bold().String()
 	}

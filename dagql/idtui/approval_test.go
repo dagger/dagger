@@ -73,11 +73,15 @@ func approvalTestFrontend(t *testing.T) *frontendPretty {
 	return fe
 }
 
+// pushApproval is a git push request shaped like the engine's: the bare
+// question for frontends that show the requester themselves, and the full
+// prompt naming who asks for yes/no fallbacks.
 func pushApproval(spanID dagui.SpanID, persistentKey string) *prompt.ApprovalRequest {
 	return &prompt.ApprovalRequest{
-		Kind:    "git-push",
-		Prompt:  "Allow push to origin @ main?",
-		Subject: "https://github.com/dagger/dagger",
+		Kind:     "git-push",
+		Prompt:   `Allow push to origin @ main (requested by agent "chief", module "contributor", function "Contributor.push")?`,
+		Question: "Allow push to origin @ main?",
+		Subject:  "origin @ main",
 		Requester: &prompt.ApprovalRequester{
 			AgentName:   "chief",
 			AgentHandle: "agent-chief",
@@ -171,10 +175,17 @@ func TestApprovalAttachesUnderToolCall(t *testing.T) {
 	require.Contains(t, text, "agent chief · module contributor · Contributor.push",
 		"the prompt names who is asking")
 	require.Contains(t, text, "Allow push to origin @ main?")
-	require.Contains(t, text, "subject: https://github.com/dagger/dagger")
+	require.NotContains(t, text, "requested by", "the header names who asks; the question does not repeat it")
+	require.NotContains(t, text, "subject:", "a subject the question already names is not repeated")
 	require.Contains(t, text, "Deny")
 	require.Contains(t, text, "Allow once")
 	require.Contains(t, text, "Allow for this session")
+
+	// A request without the bare question falls back to the full prompt.
+	req := pushApproval(approvalPush2ID, "")
+	req.Question = ""
+	b, _ := startApproval(t, fe, t.Context(), req)
+	require.Contains(t, strings.Join(fe.approvalLines(b, false, 0), "\n"), "(requested by agent")
 }
 
 func TestApprovalDoesNotTakeFocusOnArrival(t *testing.T) {
@@ -310,7 +321,8 @@ func TestApprovalDangerHighlighted(t *testing.T) {
 	fe.profile = termenv.ANSI
 	req := pushApproval(approvalPushID, "")
 	req.Kind = "git-force-push"
-	req.Prompt = "Allow force-push to origin @ main?"
+	req.Prompt = `Allow force-push to origin @ main (requested by agent "chief", module "contributor", function "Contributor.push")?`
+	req.Question = "Allow force-push to origin @ main?"
 	req.Danger = true
 	a, _ := startApproval(t, fe, t.Context(), req)
 	lines := fe.approvalLines(a, false, 120)
