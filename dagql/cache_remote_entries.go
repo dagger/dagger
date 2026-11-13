@@ -849,17 +849,19 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 
 // AddRemoteHold records that session holds the holding.
 func (c *Cache) AddRemoteHold(ctx context.Context, key HolderKey, session string) (RemoteChange, error) {
+	if session == "" {
+		return RemoteChange{}, errEmptyRemoteHoldSession
+	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	return c.addRemoteHoldLocked(key, session)
 }
 
-// addRemoteHoldLocked is AddRemoteHold's change. Requires egraphMu for
-// writing.
+var errEmptyRemoteHoldSession = errors.New("add remote hold: empty session")
+
+// addRemoteHoldLocked is AddRemoteHold's change, of a session that isn't
+// empty. Requires egraphMu for writing.
 func (c *Cache) addRemoteHoldLocked(key HolderKey, session string) (change RemoteChange, _ error) {
-	if session == "" {
-		return change, fmt.Errorf("add remote hold: empty session")
-	}
 	defer c.takeChangesLocked(&change)
 	_, h := c.holdingLocked(key)
 	if h == nil {
@@ -1010,12 +1012,13 @@ func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKe
 	c.egraphMu.Lock()
 	collected, change, releases, err := c.collectRemoteHoldingsLocked(ctx, candidates)
 	c.egraphMu.Unlock()
+	slices.SortFunc(collected, compareHolderKeys)
 	return collected, change, errors.Join(err, runOnReleaseFuncs(ctx, releases))
 }
 
 // collectRemoteHoldingsLocked is CollectRemoteHoldings' change. It returns
-// what the collected entries release, to run once egraphMu is released.
-// Requires egraphMu for writing.
+// the collected holdings unsorted, and what the collected entries release,
+// to run once egraphMu is released. Requires egraphMu for writing.
 func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []HolderKey) ([]HolderKey, RemoteChange, []OnReleaseFunc, error) {
 	var change RemoteChange
 	entriesBefore := len(c.resultsByID)
@@ -1046,7 +1049,6 @@ func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []Ho
 	releases, err := c.collectUnownedResultsLocked(ctx, entries)
 	c.compactEqClassesAfterCollectionLocked(len(c.resultsByID) < entriesBefore)
 	c.takeChangesLocked(&change)
-	slices.SortFunc(collected, compareHolderKeys)
 	return collected, change, releases, errors.Join(rerr, err)
 }
 
