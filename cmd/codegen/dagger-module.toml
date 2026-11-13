@@ -7,4 +7,4 @@ source = ".dagger"
 
 [[dependencies]]
   name = "go"
-  source = "github.com/dagger/go@2f5cd3df43f4b8e884ce1c69f228c448b029148f"
+  source = "github.com/dagger/go@b02f8aa371a451843bb441c42791cce53ff24b9a"
