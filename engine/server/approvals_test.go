@@ -196,6 +196,30 @@ func TestApprovalRequesterEscaped(t *testing.T) {
 	}, r.proto(), "names chosen by modules and spawners arrive as literal text")
 }
 
+func TestApprovalAgentFromFunctionCall(t *testing.T) {
+	// A module's container calls back through a nested client: no agent loop
+	// context there, only the agent stamped on the module's function call.
+	questions := &approvalPromptServer{decide: func(*prompt.ApprovalRequest) prompt.ApprovalDecision { return prompt.APPROVAL_ALLOW_SESSION }}
+	s := newApprovalTestSession(t, func(srv *grpc.Server) { prompt.RegisterPromptServer(srv, questions) })
+	staff := sessionTestModuleResultWithGitSource(t, "staff", "https://github.com/org/staff", testStaffPin)
+	fnCall := &core.FunctionCall{ParentName: "Staff", Name: "gh"}
+	fnCall.SetCallerAgent(testAgent(t, "agent-1", "worker"))
+	s.client("module", staff, fnCall, "owner")
+	nested := s.client("nested", dagql.ObjectResult[*core.Module]{}, nil, "owner", "module")
+	allowed, err := s.request(s.ctx(nested), nested, testReadSpec("repo"))
+	require.NoError(t, err)
+	require.True(t, allowed)
+	req := questions.asked()[0]
+	require.Equal(t, "worker", req.Requester.AgentName)
+	require.Equal(t, "agent-1", req.Requester.AgentHandle)
+	require.Equal(t, `approval:v1:"test-read":"https://github.com/org/staff|staff":"worker":"repo"`, req.PersistentKey)
+
+	// The grant is the agent's, as if it had asked from its own loop.
+	_, err = s.request(core.AgentToContext(s.ctx(nested), testAgent(t, "agent-1", "worker")), nested, testReadSpec("repo"))
+	require.NoError(t, err)
+	require.Len(t, questions.asked(), 1)
+}
+
 func TestApprovalGrantScope(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

@@ -219,16 +219,23 @@ type approvalRequester struct {
 // resolveApprovalRequester resolves who asks for approval from the engine's
 // own records, never from anything the caller passes: the agent from the
 // call's context (core.CallerAgent), the module nearest the caller, and the
-// function that module client is running.
+// function that module client is running. A module container's nested API
+// client has no function call of its own, so its agent is the one stamped on
+// the nearest module's function call: the same agent, and so the same grant,
+// as the module's own requests.
 func resolveApprovalRequester(ctx context.Context, client *clientRuntime) (approvalRequester, error) {
 	var r approvalRequester
-	if agent, ok := core.CallerAgent(ctx); ok {
-		r.agentName = agent.Self().Name
-		r.agentHandle = agent.Self().Handle
-	}
 	modClient, err := nearestModuleClient(client)
 	if err != nil {
 		return r, err
+	}
+	agent, ok := core.CallerAgent(ctx)
+	if !ok && modClient != nil {
+		agent, ok = modClient.fnCall.CallerAgent()
+	}
+	if ok {
+		r.agentName = agent.Self().Name
+		r.agentHandle = agent.Self().Handle
 	}
 	if modClient != nil {
 		r.module = modClient.mod
