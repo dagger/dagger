@@ -1878,6 +1878,31 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// A directory read at a subpath and a directory holding the same files at its
+// root are keyed by content, and both keys must say where each is rooted:
+// otherwise the cache treats them as one, and a call on one returns the
+// other's result, rooted elsewhere.
+func (DirectorySuite) TestContentKeyCoversRoot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	q := sdkcore.NewQuery(c)
+	daemon, url := gitService(ctx, t, c, q.Directory().WithNewFile("pkg/a.txt", rand.Text()))
+	ws := q.Git(url, sdkcore.GitOpts{ExperimentalServiceHost: daemon}).Head().AsWorkspace()
+	// A Git workspace's root is keyed by content, and so is a subdirectory read
+	// from it.
+	atSubpath := ws.Directory("/").Directory("pkg")
+	// A filtered read that drops nothing copies the same files into a
+	// directory of their own, rooted at /.
+	atRoot := ws.Directory("pkg", sdkcore.WorkspaceDirectoryOpts{Exclude: []string{"**/.git"}, Gitignore: true})
+
+	name, err := atSubpath.WithNewFile("b.txt", "b").Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "pkg/", name)
+
+	name, err = atRoot.WithNewFile("b.txt", "b").Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/", name)
+}
+
 func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
