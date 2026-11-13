@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -468,6 +469,77 @@ func TestApprovalJumpKeepsZoomOnItsCall(t *testing.T) {
 	require.Equal(t, approvalToolID, fe.ZoomedSpan, "the zoom is kept")
 	require.True(t, fe.tui.IsFocused(a.view))
 	require.Contains(t, frameText(fe.tui.Step()), "approval needed")
+}
+
+// An expanded tool call whose children fill the screen pushes its rows -- and
+// so the approval -- off screen while the cursor follows output. The approval
+// anchors under the requesting call's own row, and when that row is off
+// screen a one-line cue says where it went; the keymap names the jump key
+// first, so truncation cannot drop it.
+func TestApprovalOffscreenIsCued(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	start := time.Unix(100, 0)
+	trace := prettyTestTraceID()
+	db := dagui.NewDB()
+	snapshots := []dagui.SpanSnapshot{
+		{ID: approvalRootID, TraceID: trace, Name: "dagger call", StartTime: start},
+		{ID: approvalToolID, TraceID: trace, ParentID: approvalRootID, Name: "push",
+			LLMRole: "assistant", LLMTool: "push", StartTime: start.Add(time.Second)},
+		{ID: approvalPushID, TraceID: trace, ParentID: approvalToolID, Name: "GitRepository.push",
+			StartTime: start.Add(time.Second)},
+	}
+	for i := range 30 {
+		snapshots = append(snapshots, dagui.SpanSnapshot{
+			ID: prettyTestSpanID(byte(0x80 + i)), TraceID: trace, ParentID: approvalToolID,
+			Name: fmt.Sprintf("step%02d", i), StartTime: start.Add(time.Duration(2+i) * time.Second),
+		})
+	}
+	db.ImportSnapshots(snapshots)
+	db.SetPrimarySpan(approvalRootID)
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(100, 12))
+	fe.setupTUI()
+	fe.setExpanded(approvalToolID, true)
+	fe.recalculateViewLocked()
+	fe.tui.Step()
+	require.Equal(t, prettyTestSpanID(0x80+29), fe.FocusedSpan, "precondition: following output to the last child")
+
+	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
+	require.Equal(t, approvalPushID, a.anchor, "the approval anchors under the requesting call's own row")
+
+	frame := frameText(fe.tui.Step())
+	require.Contains(t, frame, "step29", "the newest output stays on screen")
+	require.NotContains(t, frame, "Deny", "the approval itself scrolled away")
+	require.Contains(t, frame, "approval needed ↑ · agent chief", "a cue says an approval waits above")
+	require.Contains(t, frame, "a answer approval", "the keymap names the jump key")
+	require.Equal(t, "a", fe.keys(NewOutput(io.Discard))[0].Help().Key, "first, so truncation keeps it")
+
+	pressKeys(fe, "a")
+	frame = frameText(fe.tui.Step())
+	require.True(t, fe.tui.IsFocused(a.view))
+	require.Contains(t, frame, "Deny", "jumping brings the approval on screen")
+	require.NotContains(t, frame, "approval needed ↑", "and the cue goes away")
+}
+
+// In the shell the transcript flows into scrollback; an approval that went
+// with it is cued the same way.
+func TestApprovalInScrollbackIsCued(t *testing.T) {
+	db := rosterDB(t)
+	start := time.Unix(100, 0)
+	trace := prettyTestTraceID()
+	snapshots := approvalTraceSnapshots()
+	for i := range 30 {
+		snapshots = append(snapshots, dagui.SpanSnapshot{
+			ID: prettyTestSpanID(byte(0x80 + i)), TraceID: trace, ParentID: approvalRootID,
+			Name: fmt.Sprintf("later%02d", i), LLMRole: "assistant", LLMTool: fmt.Sprintf("later%02d", i),
+			StartTime: start.Add(time.Duration(10+i) * time.Second),
+		})
+	}
+	db.ImportSnapshots(snapshots)
+	fe := focusTestFrontend(t, db, &focusShellHandler{target: "agent-chief"})
+	_, _ = startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
+	frame := frameText(fe.tui.Step())
+	require.Contains(t, frame, "approval needed ↑", "a cue says an approval waits above")
+	require.Contains(t, frame, "alt+a to answer")
 }
 
 // In the shell the prompt owns focus: an approval must leave it alone, cue
