@@ -236,6 +236,28 @@ func TestGitIdentityBelowModule(t *testing.T) {
 	require.Len(t, questions.asked(), 1)
 }
 
+func TestGitIdentityApprovalInertClient(t *testing.T) {
+	// An in-engine SDK client serving no module (an agent's Dang snippet) has
+	// no Git config of its own: the client that started it shares its own
+	// identity, once it approves.
+	questions := &approvalPromptServer{decide: func(*prompt.ApprovalRequest) prompt.ApprovalDecision { return prompt.APPROVAL_ALLOW_SESSION }}
+	config := &identityGitServer{entries: identityEntries("user.name", "Personal", "user.email", "personal@example.com")}
+	s := newGitIdentityTestSession(t, questions, config)
+	eval := s.client("eval", dagql.ObjectResult[*core.Module]{}, nil, "owner")
+	eval.inertAttachables = true
+	nested := s.client("eval-nested", dagql.ObjectResult[*core.Module]{}, nil, "owner", "eval")
+	nested.inertAttachables = true
+	worker := testAgent(t, "agent-1", "worker")
+	for _, client := range []*clientRuntime{eval, nested} {
+		identity, err := s.srv.AuthorizeGitIdentity(core.AgentToContext(s.ctx(client), worker))
+		require.NoError(t, err)
+		require.Equal(t, core.GitIdentity{Name: "Personal", Email: "personal@example.com"}, identity)
+	}
+	require.Equal(t, []string{`Allow using your Git identity "Personal <personal@example.com>" (requested by agent "worker")?`},
+		questions.prompts(), "the owner is asked, once for the session")
+	require.Equal(t, []string{".", "."}, config.paths, "the owner's config is read")
+}
+
 func TestGitIdentityApprovalNothingToShare(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
