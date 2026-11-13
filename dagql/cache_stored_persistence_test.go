@@ -94,7 +94,7 @@ func TestCloudSaveAndRestoreKeepThePool(t *testing.T) {
 	p := persistedListTestResult(t, actx, a, asrv, "saved-dep", &transferTestValue{Text: "dep"})
 	transferTestDependency(a, actx, r, p)
 	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
-	stored, err := cloud.SetStoredPart(ctx, root, storedPruneTestPart("snapshot", map[string]int64{"saved-base": 10, "saved-top": 20}), 0)
+	stored, _, err := cloud.SetStoredPart(ctx, root, storedPruneTestPart("snapshot", map[string]int64{"saved-base": 10, "saved-top": 20}), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	storedPruneTestUse(cloud, root, time.Now().Add(-time.Hour))

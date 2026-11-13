@@ -213,7 +213,7 @@ func storedBenchCloud(b testing.TB) (context.Context, *Cache, []uint64) {
 	}
 	for _, value := range bundle.Values {
 		if stored[value.SenderNumber] {
-			ok, err := cloud.SetStoredPart(ctx, numbers[value.Ordinal], storedBenchPart(value.SenderNumber), 0)
+			ok, _, err := cloud.SetStoredPart(ctx, numbers[value.Ordinal], storedBenchPart(value.SenderNumber), 0)
 			require.NoError(b, err)
 			require.True(b, ok)
 		}
