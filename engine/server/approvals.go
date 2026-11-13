@@ -19,8 +19,9 @@ import (
 // approvalSpec is one access request an owner approves on behalf of an agent
 // or module: what kind of access, to what, and the question to ask.
 type approvalSpec struct {
-	// Kind names what is approved, e.g. "git-push", "git-force-push" or
-	// "git-read". Grants are scoped to it, and frontends may style by it.
+	// Kind names what is approved, e.g. "git-push", "git-force-push",
+	// "git-push-remote" or "git-read". Grants are scoped to it, and frontends
+	// may style by it.
 	Kind string
 	// Subject is the thing access is requested to, in the one canonical
 	// spelling grants are keyed by (a remote, a remote and ref, ...), as
