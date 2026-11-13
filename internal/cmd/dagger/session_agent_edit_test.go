@@ -30,6 +30,19 @@ func (r *leaseCheckedRuntime) Reseed(ctx context.Context, llm *core.LLM) error {
 	return r.fakeRuntime.Reseed(ctx, llm)
 }
 
+// contextUseObserver closes used when something first waits on the context.
+// ResetWorkspace takes its save/reload guard before it uses its context.
+type contextUseObserver struct {
+	context.Context
+	once sync.Once
+	used chan struct{}
+}
+
+func (c *contextUseObserver) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.used) })
+	return c.Context.Done()
+}
+
 func TestResetWorkspaceWaitsForBoundaryEdit(t *testing.T) {
 	for _, owned := range []bool{false, true} {
 		for _, cancelReload := range []bool{false, true} {
@@ -86,15 +99,22 @@ func TestResetWorkspaceWaitsForBoundaryEdit(t *testing.T) {
 				}
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
+				reloadCtx := &contextUseObserver{Context: ctx, used: make(chan struct{})}
 				reloadDone := make(chan error, 1)
-				go func() { reloadDone <- a.ResetWorkspace(ctx) }()
-				require.Eventually(t, func() bool {
-					if a.syncOpL.TryLock() {
-						a.syncOpL.Unlock()
-						return false
-					}
-					return true
-				}, 5*time.Second, time.Millisecond, "reload must retain its save/reload guard while waiting")
+				go func() { reloadDone <- a.ResetWorkspace(reloadCtx) }()
+				select {
+				case <-reloadCtx.used:
+				case err := <-reloadDone:
+					t.Fatalf("reload returned before waiting for the boundary edit: %v", err)
+				case <-time.After(5 * time.Second):
+					t.Fatal("reload did not start waiting for the boundary edit")
+				}
+				// Reload refuses to run if it finds its guard held, so this looks only
+				// after reload has taken it, and only once.
+				if a.syncOpL.TryLock() {
+					a.syncOpL.Unlock()
+					t.Fatal("reload must retain its save/reload guard while waiting")
+				}
 				select {
 				case err := <-reloadDone:
 					t.Fatalf("reload bypassed the active boundary edit: %v", err)

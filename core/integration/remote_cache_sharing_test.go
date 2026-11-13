@@ -48,7 +48,7 @@ func (RemoteCacheTransferSuite) TestSharedHostDirectoryLifetime(ctx context.Cont
 		e.tunnel = tunnel
 		endpoint, err := tunnel.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
-		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(workdir), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		e.client, err = dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithWorkdir(workdir), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 		require.NoError(t, err)
 		return e
 	}

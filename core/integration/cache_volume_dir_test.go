@@ -80,7 +80,7 @@ func startCacheVolumeDirEngine(ctx context.Context, t *testctx.T, c *dagger.Clie
 	require.NoError(t, err)
 	client, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)))
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 	require.NoError(t, err)
 	return &cacheVolumeDirEngine{upstream: upstream, tunnel: tunnel, client: client}
 }

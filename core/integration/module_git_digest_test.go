@@ -63,7 +63,7 @@ source = "dang"
 		t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
 		endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
-		client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+		client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.ClientLogOutput(t)))
 		require.NoError(t, err)
 		t.Cleanup(func() { client.Close() })
 		return client

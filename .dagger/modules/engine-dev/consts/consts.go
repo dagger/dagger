@@ -27,13 +27,18 @@ const (
 	JSONCVersion  = "0.18-20240915"
 	JSONCChecksum = "sha256:3112c1f25d39eca661fe3fc663431e130cc6e2f900c081738317fba49d29e298"
 	CniVersion    = "v1.9.0"
+	CniChecksum   = "sha256:5091841a4f379ab6159152b546efc4523d55694c8adc4f19cc7c68f9d1db6d75"
 	SSHFSVersion  = "3.7.6"
+	SSHFSChecksum = "sha256:6a1bcb31450a077e9cb1b7ff158c71de34db697c3c0da6cb362502131e495893"
+
+	TiniVersion = "v0.19.0"
 
 	QemuVersion  = "11.0.2"
 	QemuChecksum = "sha256:3745f6ea88e2e87fe0dc838b2b1d4e0a770bf48e01a1d5a186842a1fff76ccf5"
 	// tonistiigi/binfmt commit providing QEMU patches, and the version of its
 	// buildkit-direct-execve patch series matching QemuVersion.
 	BinfmtCommit    = "e41434fefad6aee7b01fbe5efc1c4b6f6c735fff"
+	BinfmtChecksum  = "sha256:61a65ad197d12cf44eb5df80a5592f3b478f869b1f1e9ac3594d26c2c5d12174"
 	QemuPatchSeries = "11.0"
 
 	XxImage = "tonistiigi/xx:1.2.1"
@@ -44,6 +49,11 @@ const (
 
 	EntireCLIVersion = "0.12.2"
 )
+
+var TiniChecksums = map[string]string{
+	"amd64": "sha256:93dcc18adc78c65a028a84799ecf8ad40c936fdfc5f2a57b1acda5a8117fa82c",
+	"arm64": "sha256:07952557df20bfd2a95f9bef198b445e006171969499a1d361bd9e6f8e5e0e81",
+}
 
 var EntireCLIChecksums = map[string]string{
 	"amd64": "sha256:bfc5c8d5b599f328775b89b735db020c963e307b6a324fc30ce371fe8fa789e8",

@@ -76,3 +76,27 @@ func (tw *tWriter) finish() {
 	}
 	tw.done = true
 }
+
+// ClientLogOutput is the log output for a test's Dagger client. On the host
+// it streams into the test's output, since nothing else shows the client's
+// progress. Inside Dagger, as engine-dev runs the tests, the TUI and trace
+// already show it as the test's spans, so it's discarded: copying it into
+// every test's log only clutters the test spans, and makes each client's
+// session render progress for it.
+func ClientLogOutput(t testing.TB) io.Writer {
+	if InDagger() {
+		return io.Discard
+	}
+	return NewTWriter(t)
+}
+
+// InDagger reports whether the tests run inside Dagger rather than on the
+// host. engine-dev unsets DAGGER_SESSION_PORT so that the tests' clients
+// reach the dev engine, so it marks the tests with _DAGGER_TESTS_IN_DAGGER.
+func InDagger() bool {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		return true
+	}
+	_, ok := os.LookupEnv("_DAGGER_TESTS_IN_DAGGER")
+	return ok
+}

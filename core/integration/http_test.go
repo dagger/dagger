@@ -290,7 +290,7 @@ func (HTTPSuite) TestHTTPETag(ctx context.Context, t *testctx.T) {
 	c1, err := dagger.Connect(
 		ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c1.Close() })
@@ -298,7 +298,7 @@ func (HTTPSuite) TestHTTPETag(ctx context.Context, t *testctx.T) {
 	c2, err := dagger.Connect(
 		ctx,
 		dagger.WithRunnerHost(endpoint),
-		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithLogOutput(testutil.ClientLogOutput(t)),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
