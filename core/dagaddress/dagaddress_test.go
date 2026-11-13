@@ -1,6 +1,7 @@
 package dagaddress
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -131,12 +132,114 @@ func TestParseErrors(t *testing.T) {
 		{"dag://@main:base", "empty workspace or version"},
 		{"dag://base?=key", "empty dimension"},
 		{"dag://base?go-test=%zz", "invalid URL escape"},
+		{"dag://base?!cell=value", "nonempty key"},
+		{"dag://base?%21cell=value", "nonempty key"},
+		{"dag://base?%21", "empty dimension"},
+		{"dag://base?!cell=%zz", "invalid URL escape"},
+		{"dag://base?!", "empty dimension"},
+		{"dag://base?!%zz", "invalid URL escape"},
+		{"dag://base?%zz", "invalid URL escape"},
 	} {
 		t.Run(tc.value, func(t *testing.T) {
 			_, err := Parse(tc.value)
 			require.ErrorContains(t, err, tc.want)
 		})
 	}
+}
+
+func TestAbsentSelectors(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		query string
+		want  []Pair
+		print string
+	}{
+		{
+			name:  "absent present and empty key",
+			query: "!cell&region&name=",
+			want: []Pair{
+				{Dimension: "cell", Absent: true},
+				{Dimension: "region"},
+				{Dimension: "name", HasKey: true},
+			},
+			print: "!cell&region&name=",
+		},
+		{
+			name:  "literal marker in key and inside dimension",
+			query: "cell=!value&cell%21=%21",
+			want: []Pair{
+				{Dimension: "cell", Key: "!value", HasKey: true},
+				{Dimension: "cell!", Key: "!", HasKey: true},
+			},
+			print: "cell=%21value&cell%21=%21",
+		},
+		{
+			name:  "duplicate absent selectors",
+			query: "!cell&!cell",
+			want: []Pair{
+				{Dimension: "cell", Absent: true},
+				{Dimension: "cell", Absent: true},
+			},
+			print: "!cell&!cell",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addr, err := Parse("dag://tests?" + tc.query)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, addr.Query)
+			require.Equal(t, "dag://tests?"+tc.print, addr.String())
+			again, err := Parse(addr.String())
+			require.NoError(t, err)
+			require.Equal(t, addr, again)
+		})
+	}
+}
+
+func TestAbsentDimensionFilters(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  []DimensionFilter
+	}{
+		{
+			query: "cell=x&!cell&cell=y&!cell",
+			want: []DimensionFilter{
+				{Dimension: "cell", Keys: []string{"x", "y"}},
+				{Dimension: "cell", Absent: true},
+			},
+		},
+		{
+			query: "!cell&cell=&cell=&region&cell",
+			want: []DimensionFilter{
+				{Dimension: "cell", Absent: true},
+				{Dimension: "cell"},
+				{Dimension: "region"},
+			},
+		},
+		{
+			query: "cell=&!cell&%21cell=",
+			want: []DimensionFilter{
+				{Dimension: "cell", Keys: []string{""}},
+				{Dimension: "cell", Absent: true},
+			},
+		},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			addr, err := Parse("dag://tests?" + tc.query)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, addr.DimensionFilters())
+		})
+	}
+}
+
+func TestTypeKeyIgnoresAbsent(t *testing.T) {
+	// Even a manually built pair with a key cannot make absence a type key.
+	addr := &Address{Query: []Pair{
+		{Dimension: "type:Check", Key: "ignored", HasKey: true, Absent: true},
+		{Dimension: "check", Key: "tests", HasKey: true},
+	}}
+	pair, ok := addr.TypeKey("check")
+	require.True(t, ok)
+	require.Equal(t, addr.Query[1], pair)
 }
 
 func TestDimensionFilters(t *testing.T) {
@@ -176,5 +279,22 @@ func TestArtifactPath(t *testing.T) {
 		addr, err := Parse(tc.address)
 		require.NoError(t, err)
 		require.Equal(t, tc.path, addr.ArtifactPath(tc.types...), tc.address)
+	}
+}
+
+func TestAbsentSelectorURLQueryRoundTrip(t *testing.T) {
+	for _, query := range []string{"!cell", "!cell=", "%21cell="} {
+		t.Run(query, func(t *testing.T) {
+			parsedURL, err := url.Parse("dag://tests?" + query)
+			require.NoError(t, err)
+			parsedURL.RawQuery = parsedURL.Query().Encode()
+			require.Equal(t, "%21cell=", parsedURL.RawQuery)
+			for _, value := range []string{"dag://tests?" + query, parsedURL.String()} {
+				address, err := Parse(value)
+				require.NoError(t, err)
+				require.Equal(t, []Pair{{Dimension: "cell", Absent: true}}, address.Query)
+				require.Equal(t, "dag://tests?!cell", address.String())
+			}
+		})
 	}
 }

@@ -306,8 +306,23 @@ func artifactCLIArguments(item listedArtifact, names map[string]string, options 
 		}
 		args = append(args, "-W", quoted)
 	}
+	selector := &dagaddress.Address{}
 	if item.CLIPath != "" {
-		quoted, err := quoteArtifactArgument(item.CLIPath)
+		var err error
+		selector, err = dagaddress.Parse(item.CLIPath)
+		if err != nil {
+			return "", err
+		}
+	}
+	if address, err := dagaddress.Parse(item.URI); err == nil {
+		for _, pair := range address.Query {
+			if pair.Absent && !slices.Contains(selector.Query, pair) {
+				selector.Query = append(selector.Query, pair)
+			}
+		}
+	}
+	if item.CLIPath != "" || len(selector.Query) > 0 {
+		quoted, err := quoteArtifactArgument(selector.String())
 		if err != nil {
 			return "", err
 		}

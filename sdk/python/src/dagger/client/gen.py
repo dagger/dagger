@@ -2328,10 +2328,23 @@ class Artifacts(Type):
         _ctx = self._select("filterDimensionKeys", _args)
         return Artifacts(_ctx)
 
-    def filter_dimensions(self, dimensions: list[str]) -> Self:
-        """Keep artifacts selected through any listed dimension."""
+    def filter_dimensions(
+        self,
+        dimensions: list[str],
+        *,
+        exclude: bool | None = False,
+    ) -> Self:
+        """Keep artifacts selected through any listed dimension.
+
+        Parameters
+        ----------
+        dimensions:
+        exclude:
+            Remove artifacts with any listed dimension.
+        """
         _args = [
             Arg("dimensions", dimensions),
+            Arg("exclude", exclude, False),
         ]
         _ctx = self._select("filterDimensions", _args)
         return Artifacts(_ctx)

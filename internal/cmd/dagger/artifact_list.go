@@ -142,7 +142,7 @@ func collapsedArtifactURI(item listedArtifact) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	addr.Query = nil
+	addr.Query = slices.DeleteFunc(addr.Query, func(pair dagaddress.Pair) bool { return !pair.Absent && pair.Dimension != artifact.ModuleDimension })
 	// A collection alias in an item link can have the same name as the
 	// scheme type. Use the exact type path from the listing coordinates.
 	for _, key := range item.DimensionKeys {
@@ -257,7 +257,7 @@ func artifactListHasKeyFilters(cmd *cobra.Command, definitions ...artifact.Dimen
 
 // Collapse only products that can be expressed with repeated dimension flags.
 func artifactListRows(group []listedArtifact, all bool) [][]listedArtifact {
-	if !all && len(group) > 1 && artifactRowsFormProduct(group) {
+	if !all && len(group) > 1 && sameArtifactPresence(group) && artifactRowsFormProduct(group) {
 		return [][]listedArtifact{group}
 	}
 	rows := make([][]listedArtifact, 0, len(group))
@@ -265,4 +265,22 @@ func artifactListRows(group []listedArtifact, all bool) [][]listedArtifact {
 		rows = append(rows, []listedArtifact{item})
 	}
 	return rows
+}
+
+// Keep schema paths and absent selectors separate when a field path is shared.
+func sameArtifactPresence(items []listedArtifact) bool {
+	first, err := dagaddress.Parse(items[0].URI)
+	if err != nil {
+		return false
+	}
+	absent := func(address *dagaddress.Address) []dagaddress.Pair {
+		return slices.DeleteFunc(slices.Clone(address.Query), func(pair dagaddress.Pair) bool { return !pair.Absent })
+	}
+	for _, item := range items[1:] {
+		address, err := dagaddress.Parse(item.URI)
+		if err != nil || items[0].ModuleName != item.ModuleName || !slices.Equal(items[0].Presence, item.Presence) || !slices.Equal(absent(first), absent(address)) {
+			return false
+		}
+	}
+	return true
 }

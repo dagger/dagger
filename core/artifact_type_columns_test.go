@@ -59,25 +59,25 @@ func TestArtifactCollectionTypeFilterKeepsModuleLoadFailure(t *testing.T) {
 	require.Equal(t, []*Artifact{failed}, selected.Entries)
 }
 
-func TestArtifactURIRequiresAbsentDimensionProof(t *testing.T) {
+func TestArtifactURIUsesAbsentDimensionProof(t *testing.T) {
 	entry := &Artifact{
 		ModuleName: "grid", TypeName: "Check", Path: []string{"grid", "rows", "check"},
 		DimensionKeys: []*ArtifactDimensionKey{{Dimension: "Rows", Key: "top"}},
-		links:         &artifact.Links{PathNeedsAbsence: true, CompleteSchema: true},
+		links:         &artifact.Links{CompleteSchema: true, TypedAbsent: []string{"Cell"}},
 	}
 	opts := ArtifactURIOpts{Prune: true, DimensionKeys: true, TypeAssertion: true}
 	uri, err := entry.URI(opts)
-	require.ErrorContains(t, err, "absent-dimension")
-	require.Empty(t, uri)
+	require.NoError(t, err)
+	require.Equal(t, "dag+check://grid/rows/check?!Cell&Rows=top", uri)
 
 	// A complete runtime snapshot can prove the child collection is empty.
-	// An empty key set is a valid proof that the type alone selects this row.
+	// An empty selector set proves that the type alone selects this row.
 	target := entry.addressRow(true)
 	index := artifact.NewAddressIndex([]artifact.AddressRow{target}, true)
-	keys, proven := index.Keys(target)
+	selectors, proven := index.Selectors(target)
 	require.True(t, proven)
-	require.Empty(t, keys)
-	entry.addressPlans = &artifactAddressPlans{Typed: &artifactAddressKeys{Keys: keys}}
+	require.Empty(t, selectors)
+	entry.addressPlans = &artifactAddressPlans{Typed: &artifactAddressPlan{Selectors: selectors}}
 	uri, err = entry.URI(opts)
 	require.NoError(t, err)
 	require.Equal(t, "dag+check://", uri)

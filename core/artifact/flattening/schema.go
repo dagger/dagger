@@ -108,6 +108,9 @@ func compileField(field Field) (schemaField, Dimensions, error) {
 	if field.Type == "" {
 		return schemaField{}, nil, fmt.Errorf("field has no artifact type")
 	}
+	if !schemaTypeIdentifier(field.Type) {
+		return schemaField{}, nil, fmt.Errorf("artifact type %q must be a schema type identifier", field.Type)
+	}
 	if err := validateFieldSegments(field.LocalPath); err != nil {
 		return schemaField{}, nil, err
 	}
@@ -122,6 +125,9 @@ func compileField(field Field) (schemaField, Dimensions, error) {
 		}
 		if collection.ItemType == "" {
 			return schemaField{}, nil, fmt.Errorf("collection has no item type")
+		}
+		if !schemaTypeIdentifier(collection.ItemType) {
+			return schemaField{}, nil, fmt.Errorf("item type %q must be a schema type identifier", collection.ItemType)
 		}
 		if err := validateFieldSegments(collection.Fields); err != nil {
 			return schemaField{}, nil, err

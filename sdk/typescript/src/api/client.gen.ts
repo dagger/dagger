@@ -366,6 +366,13 @@ export type ArtifactsDimensionsOpts = {
   all?: boolean
 }
 
+export type ArtifactsFilterDimensionsOpts = {
+  /**
+   * Remove artifacts with any listed dimension.
+   */
+  exclude?: boolean
+}
+
 export type ArtifactsFilterDirectivesOpts = {
   /**
    * Remove the matching artifacts instead.
@@ -6082,9 +6089,13 @@ export class Artifacts extends BaseClient {
 
   /**
    * Keep artifacts selected through any listed dimension.
+   * @param opts.exclude Remove artifacts with any listed dimension.
    */
-  filterDimensions = (dimensions: string[]): Artifacts => {
-    const ctx = this._ctx.select("filterDimensions", { dimensions })
+  filterDimensions = (
+    dimensions: string[],
+    opts?: ArtifactsFilterDimensionsOpts,
+  ): Artifacts => {
+    const ctx = this._ctx.select("filterDimensions", { dimensions, ...opts })
     return new Artifacts(ctx)
   }
 

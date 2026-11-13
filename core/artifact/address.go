@@ -2,11 +2,13 @@ package artifact
 
 import (
 	"encoding/binary"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/core/artifact/flattening"
+	"github.com/dagger/dagger/core/dagaddress"
 )
 
 // AddressRow is one artifact in the workspace snapshot. Type is the URI's
@@ -19,7 +21,7 @@ type AddressRow struct {
 
 // AddressIndex finds minimum addresses against a complete, unfiltered snapshot.
 // It does not infer key uniqueness from a schema or from a selected set of rows.
-// Its input is copied. Keys may be called concurrently.
+// Its input is copied. Selectors may be called concurrently.
 type AddressIndex struct {
 	mu       sync.Mutex
 	complete bool
@@ -30,7 +32,7 @@ type addressType struct {
 	rows        []map[string]uint32
 	values      map[string]uint32
 	full        map[string]int
-	dimensions  map[string][]int
+	dimensions  map[string]struct{}
 	projections map[string][]uint64
 }
 
@@ -49,7 +51,7 @@ func NewAddressIndex(rows []AddressRow, complete bool) *AddressIndex {
 			group = &addressType{
 				values:      make(map[string]uint32),
 				full:        make(map[string]int),
-				dimensions:  make(map[string][]int),
+				dimensions:  make(map[string]struct{}),
 				projections: make(map[string][]uint64),
 			}
 			index.types[row.Type] = group
@@ -68,7 +70,7 @@ func NewAddressIndex(rows []AddressRow, complete bool) *AddressIndex {
 				group.values[coordinate.Key] = valueID
 			}
 			values[coordinate.Dimension] = valueID
-			group.dimensions[coordinate.Dimension] = append(group.dimensions[coordinate.Dimension], rowID)
+			group.dimensions[coordinate.Dimension] = struct{}{}
 		}
 		group.rows = append(group.rows, values)
 		signature := addressSignature(coordinates)
@@ -81,13 +83,14 @@ func NewAddressIndex(rows []AddressRow, complete bool) *AddressIndex {
 	return index
 }
 
-// Keys returns the fewest coordinate pairs that identify exactly target in its
-// type. Ties prefer collections, with deeper collections first, then the type
-// field name and finally the module. Returned pairs retain canonical order.
+// Selectors returns the fewest predicates that identify target in its type.
+// A predicate matches a present key or an absent dimension. Ties prefer fewer
+// absence tests, then deeper collection keys, name, and module. Present pairs
+// retain coordinate order; absent dimensions follow in identifier order.
 // A true result with no pairs means the type alone identifies the artifact.
 // A false result means the snapshot is incomplete, target is missing, or its
 // full coordinates do not identify exactly one artifact.
-func (index *AddressIndex) Keys(target AddressRow) ([]flattening.Coordinate, bool) {
+func (index *AddressIndex) Selectors(target AddressRow) ([]dagaddress.Pair, bool) {
 	if index == nil {
 		return nil, false
 	}
@@ -115,7 +118,7 @@ func (index *AddressIndex) Keys(target AddressRow) ([]flattening.Coordinate, boo
 		return nil, false
 	}
 	if len(group.rows) == 1 {
-		return []flattening.Coordinate{}, true
+		return []dagaddress.Pair{}, true
 	}
 	slices.SortStableFunc(coordinates, func(a, b flattening.Coordinate) int {
 		priority := func(dimension string) int {
@@ -139,30 +142,78 @@ func (index *AddressIndex) Keys(target AddressRow) ([]flattening.Coordinate, boo
 		}
 		return strings.Compare(a.Dimension, b.Dimension)
 	})
-	var chosen []string
-	var search func(start, remaining int) bool
-	search = func(start, remaining int) bool {
-		if remaining == 0 {
-			return group.unique(chosen, rowID)
+	present := make([]string, len(coordinates))
+	for i, coordinate := range coordinates {
+		present[i] = coordinate.Dimension
+		if group.unique([]string{coordinate.Dimension}, rowID) {
+			return []dagaddress.Pair{{Dimension: coordinate.Dimension, Key: coordinate.Key, HasKey: true}}, true
 		}
-		for i := start; i <= len(coordinates)-remaining; i++ {
-			chosen = append(chosen, coordinates[i].Dimension)
-			if search(i+1, remaining-1) {
+	}
+	absent := slices.DeleteFunc(slices.Sorted(maps.Keys(group.dimensions)), func(id string) bool {
+		_, exists := group.rows[rowID][id]
+		return exists
+	})
+	// If another row differs in only one dimension, every valid address must
+	// test that dimension. Keep these required predicates out of the search.
+	// This also handles a parent with many independent collection children.
+	required := map[string]bool{}
+	if !group.unique(present, rowID) {
+		for candidate, row := range group.rows {
+			if candidate == rowID {
+				continue
+			}
+			difference, count := "", 0
+			for id := range group.dimensions {
+				if row[id] != group.rows[rowID][id] {
+					difference, count = id, count+1
+					if count > 1 {
+						break
+					}
+				}
+			}
+			if count == 1 {
+				required[difference] = true
+			}
+		}
+	}
+	chosen := slices.Sorted(maps.Keys(required))
+	freePresent := slices.DeleteFunc(slices.Clone(present), func(id string) bool { return required[id] })
+	freeAbsent := slices.DeleteFunc(slices.Clone(absent), func(id string) bool { return required[id] })
+	requiredPresent := len(present) - len(freePresent)
+	requiredAbsent := len(absent) - len(freeAbsent)
+	var choose func(candidates []string, start, remaining int, done func() bool) bool
+	choose = func(candidates []string, start, remaining int, done func() bool) bool {
+		if remaining == 0 {
+			return done()
+		}
+		for i := start; i <= len(candidates)-remaining; i++ {
+			chosen = append(chosen, candidates[i])
+			if choose(candidates, i+1, remaining-1, done) {
 				return true
 			}
 			chosen = chosen[:len(chosen)-1]
 		}
 		return false
 	}
-	for size := 1; size <= len(coordinates); size++ {
-		if search(0, size) {
-			keys := make([]flattening.Coordinate, 0, size)
-			for _, coordinate := range target.Coordinates {
-				if slices.Contains(chosen, coordinate.Dimension) {
-					keys = append(keys, coordinate)
+	for size := max(1, len(chosen)); size <= len(present)+len(absent); size++ {
+		for missing := max(requiredAbsent, size-len(present)); missing <= min(size-requiredPresent, len(absent)); missing++ {
+			found := choose(freePresent, 0, size-missing-requiredPresent, func() bool {
+				return choose(freeAbsent, 0, missing-requiredAbsent, func() bool { return group.unique(chosen, rowID) })
+			})
+			if found {
+				selectors := make([]dagaddress.Pair, 0, size)
+				for _, coordinate := range target.Coordinates {
+					if slices.Contains(chosen, coordinate.Dimension) {
+						selectors = append(selectors, dagaddress.Pair{Dimension: coordinate.Dimension, Key: coordinate.Key, HasKey: true})
+					}
 				}
+				for _, id := range absent {
+					if slices.Contains(chosen, id) {
+						selectors = append(selectors, dagaddress.Pair{Dimension: id, Absent: true})
+					}
+				}
+				return selectors, true
 			}
-			return keys, true
 		}
 	}
 	return nil, false
@@ -170,8 +221,8 @@ func (index *AddressIndex) Keys(target AddressRow) ([]flattening.Coordinate, boo
 
 // unique builds each projection once, across all matching rows. Keeping only
 // unique-row bits bounds persistent storage to one bit per row per projection.
-// For n rows with the same d dimensions, all queries cost O(n*d*2^d), rather
-// than scanning the snapshot separately for every artifact.
+// For n rows and d dimensions in one type, the worst-case cost is O(n*d*2^d).
+// Common single-key results and mandatory predicates avoid that search.
 func (group *addressType) unique(dimensions []string, rowID int) bool {
 	dimensions = slices.Sorted(slices.Values(dimensions))
 	var encoded []byte
@@ -181,27 +232,12 @@ func (group *addressType) unique(dimensions []string, rowID int) bool {
 	projection := string(encoded)
 	bits, exists := group.projections[projection]
 	if !exists {
-		candidates := group.dimensions[dimensions[0]]
-		for _, dimension := range dimensions[1:] {
-			if rows := group.dimensions[dimension]; len(rows) < len(candidates) {
-				candidates = rows
-			}
-		}
-		matches := make(map[string]int, len(candidates))
+		matches := make(map[string]int, len(group.rows))
 		encoded = make([]byte, 4*len(dimensions))
-		for _, candidate := range candidates {
-			row := group.rows[candidate]
-			present := true
+		for candidate, row := range group.rows {
 			for i, dimension := range dimensions {
-				value, exists := row[dimension]
-				if !exists {
-					present = false
-					break
-				}
-				binary.LittleEndian.PutUint32(encoded[4*i:], value)
-			}
-			if !present {
-				continue
+				// Value IDs start at one. Zero means the coordinate is absent.
+				binary.LittleEndian.PutUint32(encoded[4*i:], row[dimension])
 			}
 			key := string(encoded)
 			if _, exists := matches[key]; exists {

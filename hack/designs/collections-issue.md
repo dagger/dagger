@@ -225,7 +225,7 @@ type ArtifactDimensionKey implements Node {
 
 extend type Artifacts {
   dimensionDefinitions: [ArtifactDimension!]!
-  filterDimensions(dimensions: [String!]!): Artifacts!
+  filterDimensions(dimensions: [String!]!, exclude: Boolean = false): Artifacts!
   filterDimensionKeys(dimension: String!, keys: [String!]!): Artifacts!
   dimensions(all: Boolean = false): [String!]!
   dimensionKeys(dimension: String!): [String!]!
@@ -283,7 +283,22 @@ Different fields can expose the same collection type with the same key. They sha
 
 For `before: Tests` and `after: Tests`, both collections can contain key `unit`. They share one `test` column. Their checks differ by `name=before.check` and `name=after.check`. A name relative to the nearest item would lose that distinction. The full module-root field path preserves it without another column.
 
-An artifact can also differ from another by an absent collection coordinate. A check on a `Row` collection and a check on its `Cell` can share the public path `rows/check`. The parent has no cell coordinate. The current URI grammar has only positive dimension predicates, so the public-path fallback can select both. Do not present that fallback as a unique address. Without a runtime uniqueness proof, `uri()` now returns an explicit error for this case. The CLI preview does the same before printing output. A child-only selection still works. Adding an absence selector remains separate API work.
+An artifact can also differ from another by an absent coordinate. A check on a `Row` collection and a check on its `Cell` can share the path `rows/check`. The parent has no cell coordinate. Use an absence test to select it.
+
+| Query | Selects |
+| -- | -- |
+| `?cell=left` | The cell key `left` |
+| `?cell=` | An empty cell key |
+| `?cell` | Any present cell key |
+| `?!cell` | No cell coordinate |
+
+The leading `!` is Dagger syntax. Decode the parameter name before reading it. Accept `?!cell=`, including its encoded form `?%21cell=`, with the same meaning. Reject a nonempty value for an absence test.
+
+Repeated positive selectors for one dimension use OR. Absence tests use AND. Thus `?cell=left&cell=right` selects either key; `?cell=left&!cell` selects nothing. An unknown absent dimension keeps all known rows.
+
+In the API, `filterDimensions(dimensions: ["Cell"], exclude: true)` keeps artifacts without that dimension. With several dimensions, all must be absent. An empty list excludes nothing. Resolve names against the full schema before applying the filter. Remove excluded collection levels before reading keys. An unavailable module remains a load failure when its schema cannot prove absence.
+
+Absence tests are selectors. They do not add coordinates or table cells.
 
 #### Projections
 
@@ -331,7 +346,7 @@ These operations use different reference sets:
 | Operation | Reference set | Rule |
 | -- | -- | -- |
 | Choose table columns | Selected artifacts | Omit constant or absent columns |
-| Choose a link's key-value pairs | Entire addressed workspace | Use the fewest pairs that select exactly that artifact |
+| Choose a link's selectors | Entire addressed workspace | Use the fewest selectors that select exactly that artifact |
 
 `Artifact.uri()` chooses its pairs independently of the source selection. Account for any path and type constraints already encoded in the address. A hidden table column can still be required in a link. Conversely, a visible column can be redundant in a link.
 
@@ -339,13 +354,15 @@ For example, a table of docs checks can hide `module=docs`. If another module ha
 
 Use the complete, unfiltered workspace snapshot to choose the pairs. A child collection key can be unique across its parent collections. Do not keep a parent key when the remaining pairs already identify the artifact. If the same child key occurs under two parents, keep another pair that separates them.
 
-Find the smallest set of pairs. Among sets of the same size, prefer collection dimensions, starting with the deepest collection. Read depth from the parent-to-child coordinate order, never from identifier text. Then prefer `name`, then `module`. Use dimension identifier order for any remaining tie. This keeps collection context when it is useful and removes it when it is redundant.
+Find the smallest set of selectors. Among sets of the same size, prefer fewer absence tests. Then prefer present collection keys, starting with the deepest collection, followed by `name` and `module`. Read depth from the parent-to-child coordinate order. Use dimension identifier order for remaining ties. Print absence tests after present keys, in identifier order.
 
 For example, `dag+check://?golang-test=TestCloseAndReopen` is sufficient when that test names one Check in the full workspace. A package item can use `dag+golang-package://?golang-package=cmd/codegen` when that package key is unique across Go modules.
 
 Filtering must not change an artifact's link. Compute the proof against the source workspace with all selection filters cleared. The scheme supplies the type constraint. An untyped address needs a proof across all artifact types. Cache the unfiltered discovery snapshot. Never use the displayed rows as the address reference set.
 
-Present coordinates can match an artifact that has additional collection keys. If no set of present pairs selects only the target, use its full field path and required parent collection keys.
+Present keys can also match artifacts with extra collection coordinates. An absence test excludes those artifacts. For example, a parent check can use `dag+check://?row=top&!cell`, while a child uses `dag+check://?cell=left`.
+
+If runtime discovery cannot prove a short link, use the full path and required parent keys. Keep schema presence and absence tests in this form too. The same rule applies to stored addresses, bound values, and synthetic staleness checks. Add the module selector when public paths from different modules overlap, or when the workspace schema is incomplete. A schema-only link selects a collection level; it does not read keys.
 
 A workspace content change can require a longer address. A relative link is resolved against the receiving workspace. An absolute link pins the source workspace commit. If the full snapshot is unavailable, retain the existing complete address.
 
