@@ -193,11 +193,14 @@ type Server struct {
 	armed   *armedProfile
 
 	// cpuProfile is the process's one CPU profiler, shared by the engine
-	// CPU sampler and wcprof's profiles (engine_cpu.go). engineCPUOn and
-	// testEngineCPUWindow are tests' stand-ins for wcprof recording and a
+	// CPU sampler and wcprof's profiles (engine_cpu.go). engineCPUOn,
+	// engineCPUWindowLen, engineCPUPoll and testEngineCPUWindow are tests'
+	// stand-ins for wcprof recording, the window and poll lengths, and a
 	// window's report.
 	cpuProfile          cpuProfiler
 	engineCPUOn         func() bool
+	engineCPUWindowLen  time.Duration
+	engineCPUPoll       time.Duration
 	testEngineCPUWindow func(engineCPUWindow)
 
 	// The session watch (wcprof_watch.go): its threshold in nanoseconds, 0

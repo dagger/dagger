@@ -5,6 +5,7 @@ import (
 	"context"
 	"runtime/pprof"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,9 +24,10 @@ func spin(d time.Duration) {
 // says, and returns its windows as they come.
 func engineCPUTest(t *testing.T, srv *Server, on func() bool) <-chan engineCPUWindow {
 	t.Helper()
-	prevWindow, prevPoll := engineCPUWindowDuration, engineCPUIdlePoll
-	engineCPUWindowDuration, engineCPUIdlePoll = 500*time.Millisecond, 20*time.Millisecond
-	t.Cleanup(func() { engineCPUWindowDuration, engineCPUIdlePoll = prevWindow, prevPoll })
+	if srv.engineCPUWindowLen == 0 {
+		srv.engineCPUWindowLen = 500 * time.Millisecond
+	}
+	srv.engineCPUPoll = 20 * time.Millisecond
 	windows := make(chan engineCPUWindow, 64)
 	srv.engineCPUOn = on
 	srv.testEngineCPUWindow = func(w engineCPUWindow) {
@@ -35,8 +37,10 @@ func engineCPUTest(t *testing.T, srv *Server, on func() bool) <-chan engineCPUWi
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	srv.startEngineCPU(ctx)
+	wait := srv.startEngineCPU(ctx)
+	// The sampler has stopped, and released the profiler, before the next
+	// test or the settings' restore.
+	t.Cleanup(func() { cancel(); wait() })
 	return windows
 }
 
@@ -135,4 +139,55 @@ func TestSplitCPU(t *testing.T) {
 	require.Equal(t, map[string]int64{unattributedCPU: 900}, splitCPU(900, nil))
 	require.Equal(t, map[string]int64{"merge": 600, unattributedCPU: 300}, splitCPU(900, map[string]int64{"merge": 2, unattributedCPU: 1}))
 	require.Equal(t, map[string]int64{"merge": 333, "lookup": 333, unattributedCPU: 334}, splitCPU(1000, map[string]int64{"merge": 1, "lookup": 1, unattributedCPU: 1}))
+}
+
+// A session watch's capture while a phase's armed profile holds the
+// profiler doesn't wait for it: the capture's profile is skipped, as it was
+// before the sampler, and the capture ends.
+func TestEngineCPUWatchDoesntWaitForAnArmedProfile(t *testing.T) {
+	srv := &Server{}
+	engineCPUTest(t, srv, func() bool { return true })
+	go func() { _, _ = srv.ProfilePhase(context.Background(), PhaseSession) }()
+	require.Eventually(t, func() bool { return armedOf(srv) != nil }, 5*time.Second, time.Millisecond)
+	p := srv.beginSessionPhase(context.Background(), "hung")
+	require.NotNil(t, p)
+	require.NotNil(t, p.prof)
+	defer p.end(srv)
+
+	shortCaptures(t)
+	srv.watchThreshold.Store(int64(time.Second))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.capture("watched", time.Second)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watch's capture waited for the armed profile")
+	}
+	srv.capturesMu.Lock()
+	defer srv.capturesMu.Unlock()
+	require.Len(t, srv.captures, 1)
+	require.NotEmpty(t, srv.captures[0].CPUProfileSkipped)
+}
+
+// Turning wcprof off ends the sampler's window within its poll, and frees
+// the profiler.
+func TestEngineCPUOffEndsTheWindow(t *testing.T) {
+	srv := &Server{engineCPUWindowLen: time.Hour}
+	var on atomic.Bool
+	on.Store(true)
+	engineCPUTest(t, srv, on.Load)
+	// An hour-long window is running, or about to.
+	time.Sleep(200 * time.Millisecond)
+	on.Store(false)
+	require.Eventually(t, func() bool {
+		var buf bytes.Buffer
+		if pprof.StartCPUProfile(&buf) != nil {
+			return false
+		}
+		pprof.StopCPUProfile()
+		return true
+	}, 2*time.Second, 10*time.Millisecond, "the profiler is freed once wcprof is off")
 }
