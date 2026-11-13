@@ -30,6 +30,18 @@ const gitReadPromptPrefix = "Allow an agent to read "
 // as the prompt naming the module implies. A denial holds only for that
 // attempt. Otherwise any module could read whatever the user can, by
 // prompting a model.
+//
+// What "allow once" covers: Query.git asks here once per credentialed lookup,
+// and that lookup is cached per calling client and URL as spelled
+// (gitPerClientInput, in its agent-address namespace). So a once grant lasts,
+// in effect, as long as that client's cached lookup of that spelling: the
+// same client resolving the same URL again reuses the repository without
+// asking, while another spelling or another client asks again. Either way,
+// the repository a lookup returns carries the owner's token as an explicit
+// argument, so whatever the agent derives from it (refs, trees) reads with it
+// for as long as it lives. Making the lookup per-call would not change that,
+// only ask more often and run the credential helper on every lookup, so
+// "once" means one repository handle, not one network read.
 func (srv *Server) AuthorizeGitRead(ctx context.Context, remote string) (*engine.ClientMetadata, error) {
 	// The remote is model-supplied: reject before prompting, and never echo
 	// what may hold credentials.
