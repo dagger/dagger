@@ -2546,6 +2546,10 @@ type FunctionCall struct {
 	// copies, like returnState.
 	ownerSecretRead *atomic.Bool
 
+	// prompted records that the call, or a call it made, asked the user a
+	// question (see MarkPrompted). Engine-side only; shared by copies.
+	prompted *atomic.Bool
+
 	// parentTyped is the receiver object the function was called on, carrying its
 	// dagql ID. It is engine-side only (not persisted, not sent to the module),
 	// and backs Query.currentNode so a module can reference the object that
@@ -2695,6 +2699,23 @@ func (fnCall *FunctionCall) OwnerSecretRead() bool {
 	return fnCall != nil && fnCall.ownerSecretRead != nil && fnCall.ownerSecretRead.Load()
 }
 
+// MarkPrompted records that the call asked the user a question (see
+// Query.prompt). Its result may depend on the answer, which nothing in its
+// cache key says, so it is never reused: unlike a call that read its owner's
+// secret, not even when it returns a result the cache already holds, since
+// that result can encode the answer too (a build made only on a yes, say)
+// without carrying anything another session lacks.
+func (fnCall *FunctionCall) MarkPrompted() {
+	if fnCall != nil && fnCall.prompted != nil {
+		fnCall.prompted.Store(true)
+	}
+}
+
+// Prompted reports whether MarkPrompted was called.
+func (fnCall *FunctionCall) Prompted() bool {
+	return fnCall != nil && fnCall.prompted != nil && fnCall.prompted.Load()
+}
+
 // EngineWork reports whether the call was made as the engine's own work
 // (see FunctionCall.engineWork).
 func (fnCall *FunctionCall) EngineWork() bool {
@@ -2728,6 +2749,7 @@ type functionCallReturn struct {
 func newFunctionCall(fnCall FunctionCall) *FunctionCall {
 	fnCall.returnState = &functionCallReturnState{}
 	fnCall.ownerSecretRead = &atomic.Bool{}
+	fnCall.prompted = &atomic.Bool{}
 	return &fnCall
 }
 
