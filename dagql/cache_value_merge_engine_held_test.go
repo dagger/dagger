@@ -411,7 +411,7 @@ func TestCloudHeldRowAcceptsWhatItWouldOnceTelemetryNamedTheHolding(t *testing.T
 		defer cloud.egraphMu.RUnlock()
 		_, h := cloud.holdingLocked(HolderKey{Cache: "other-engine", Number: uint64(otherChild.cacheSharedResult().id)})
 		require.NotNil(t, h, "the other engine still holds its run")
-		return outcome{rows: reply.Rows, entry: after.id, holder: cloud.holderEntries[HolderKey{Cache: "engine", Number: childNumber}]}
+		return outcome{rows: reply.Rows, entry: after.id, holder: cloud.holderEntriesForTest()[HolderKey{Cache: "engine", Number: childNumber}]}
 	}
 	named, unnamed := run(t, true), run(t, false)
 	require.Equal(t, MergeRowCounts{Held: 1, Created: 1}, named.rows, "the held row stores nothing over the other engine's run")

@@ -31,8 +31,8 @@ import (
 // egraphMu.
 func (res *sharedResult) engineHoldingsLocked() int64 {
 	var n int64
-	for key := range res.holders {
-		if !senderCache(key.Cache) {
+	for _, ref := range res.holderRefsLocked() {
+		if !senderCache(ref.key.Cache) {
 			n++
 		}
 	}
@@ -102,10 +102,10 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	// The cache takes the value back only from a cache that computes it
 	// after the drop.
 	c.markEntryClassLocked(res.id)
-	for key, h := range res.holders {
-		if h.executed {
-			h.executed = false
-			c.markHoldingLocked(key)
+	for _, ref := range res.holderRefsLocked() {
+		if ref.h.executed {
+			ref.h.executed = false
+			c.markHoldingLocked(ref.key)
 		}
 	}
 	res.deps = nil
