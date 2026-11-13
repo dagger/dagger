@@ -976,7 +976,7 @@ func (s *workspaceSchema) artifactsCacheKey(ctx context.Context, parent dagql.Ob
 	if err != nil {
 		return err
 	}
-	inputs, err := s.artifactDiscoveryInputs(ctx, parent, artifactSchemaIncludes(ctx, artifactModuleIncludes(workspaceIncludePatterns(args.Include))))
+	inputs, err := s.artifactDiscoveryInputs(ctx, parent, artifactModuleIncludes(workspaceIncludePatterns(args.Include)))
 	if err != nil {
 		return err
 	}
@@ -1012,6 +1012,14 @@ func (s *workspaceSchema) artifactDiscoveryInputs(ctx context.Context, parent da
 	mods, failures, err := s.workspaceTargetModules(ctx, parent, include, core.ModuleLoadRepairing)
 	if err != nil {
 		return nil, err
+	}
+	if include != nil && core.Supports(ctx, artifactDimensionViewVersion) {
+		// Column names need every schema. Only selected modules belong in
+		// the command's skipped-module report.
+		mods, failures, err = s.workspaceTargetModules(ctx, parent, nil, core.ModuleLoadMetadata)
+		if err != nil {
+			return nil, err
+		}
 	}
 	mains, err := workspaceMainNames(ctx, parent.Self())
 	if err != nil {
@@ -1101,7 +1109,7 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return nil, err
 	}
-	inputs, err := s.artifactDiscoveryInputs(ctx, parent, artifactSchemaIncludes(ctx, include))
+	inputs, err := s.artifactDiscoveryInputs(ctx, parent, include)
 	if err != nil {
 		return nil, err
 	}
