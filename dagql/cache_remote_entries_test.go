@@ -1719,3 +1719,49 @@ func TestStoredEntryHoldsNothingForHoldingsGone(t *testing.T) {
 	t.Logf("after every holding of %d stored entries went, the live heap was %d bytes from where it stood, %.0f bytes an entry", entries, left, perEntry)
 	require.Less(t, perEntry, 64.0, "after every holding of %d stored entries went, the live heap was %d bytes above where it stood before they came, %.0f bytes an entry", entries, left, perEntry)
 }
+
+// A holding's closure is read in pieces, letting the graph lock go between
+// them, and is still one a single hold could have read: here a write lands
+// between two pieces, adding a holding under the root, read in the first
+// piece, and one under the leaf, read in the last. A walk that went on
+// across it would see the leaf's and not the root's, which neither state
+// had; the closure is the state's before the write or after it, whole.
+func TestHolderClosureInPiecesIsOneState(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	const chain = 10
+	var before []HolderKey
+	for n := uint64(1); n <= chain; n++ {
+		var deps []uint64
+		if n > 1 {
+			deps = []uint64{n - 1}
+		}
+		a.call(callRow{key: HolderKey{engine, n}, session: "s", holding: holdingOf(fmt.Sprintf("chain-%d", n), deps...)})
+		before = append(before, HolderKey{engine, n})
+	}
+	root, leaf := HolderKey{engine, chain}, HolderKey{engine, 1}
+	underRoot, underLeaf := HolderKey{engine, 100}, HolderKey{engine, 101}
+	after := append(slices.Clone(before), underRoot, underLeaf)
+	require.Equal(t, before, cloud.HolderClosure(root))
+
+	cloud.readPieceSize = 3
+	pieces, wrote := 0, false
+	cloud.testReadPieceYielded = func() {
+		pieces++
+		if wrote {
+			return
+		}
+		wrote = true
+		a.call(callRow{key: underRoot, session: "s", holding: holdingOf("under-root")})
+		a.call(callRow{key: underLeaf, session: "s", holding: holdingOf("under-leaf")})
+		a.call(callRow{key: root, session: "s", holding: holdingOf(fmt.Sprintf("chain-%d", chain), chain-1, underRoot.Number)})
+		a.call(callRow{key: leaf, session: "s", holding: holdingOf("chain-1", underLeaf.Number)})
+	}
+	got := cloud.HolderClosure(root)
+	require.True(t, wrote, "the walk let go between its pieces")
+	require.Positive(t, pieces)
+	require.Contains(t, [][]HolderKey{before, after}, got, "the closure is one state's, whole")
+	require.Equal(t, after, cloud.HolderClosure(root))
+}
