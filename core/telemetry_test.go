@@ -69,6 +69,10 @@ func (*mockServer) AuthorizeSecret(ctx context.Context, _ string) (*engine.Clien
 	return engine.ClientMetadataFromContext(ctx)
 }
 
+func (*mockServer) AuthorizeGitIdentity(context.Context) (GitIdentity, error) {
+	panic("unexpected AuthorizeGitIdentity")
+}
+
 func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error) {
 	return engine.NewNestedClientTransport(nil), nil
 }
