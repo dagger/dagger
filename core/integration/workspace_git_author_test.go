@@ -150,22 +150,39 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorApproval(ctx context.Conte
 		// both, so the owner is asked once.
 		{"n", "author: Dagger <dagger@localhost>"},
 	} {
-		console, err := newTUIConsole(t, 120*time.Second)
-		require.NoError(t, err)
-		tty := console.Tty()
-		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
-		cmd := hostDaggerCommand(ctx, t, workdir, "call", "-m", "modules/prober", "commit-author")
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
-		require.NoError(t, cmd.Start())
-		_, err = console.ExpectString(`Allow using your Git identity "Dagger Tests <dagger@example.com>"`)
-		require.NoError(t, err)
-		_, err = console.SendLine(tc.answer)
-		require.NoError(t, err)
-		_, _, err = console.MatchLine(ctx, regexp.QuoteMeta(tc.author))
-		require.NoError(t, err)
-		go console.ExpectEOF()
-		require.NoError(t, cmd.Wait())
-		console.Close()
+		func() {
+			// Answer through the plain frontend's yes/no prompt (the fallback
+			// for frontends without an approval UI, where a yes grants the
+			// session), not the pretty TUI's inline approvals, whose keys
+			// need focus. A missed prompt must fail, not hang: the console
+			// times out each expectation, and the deadline kills the CLI.
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+			defer cancel()
+			console, err := newTUIConsole(t, 60*time.Second)
+			require.NoError(t, err)
+			defer console.Close()
+			tty := console.Tty()
+			require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
+			cmd := hostDaggerCommand(ctx, t, workdir, "--progress=plain", "call", "-m", "modules/prober", "commit-author")
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
+			require.NoError(t, cmd.Start())
+			_, err = console.ExpectString(`Allow using your Git identity "Dagger Tests <dagger@example.com>"`)
+			require.NoError(t, err)
+			_, err = console.SendLine(tc.answer)
+			require.NoError(t, err)
+			_, _, err = console.MatchLine(ctx, regexp.QuoteMeta(tc.author))
+			require.NoError(t, err)
+			go console.ExpectEOF()
+			waited := make(chan error, 1)
+			go func() { waited <- cmd.Wait() }()
+			select {
+			case err := <-waited:
+				require.NoError(t, err)
+			case <-ctx.Done():
+				_ = cmd.Process.Kill()
+				t.Fatalf("dagger call did not exit: %v", context.Cause(ctx))
+			}
+		}()
 	}
 }
 
