@@ -96,7 +96,21 @@ func (c *Cache) completePartKeys(ctx context.Context, row *sharedResult) []strin
 // reads no size, and gets nil sizes. Sizes are nil too when the record could
 // not be captured, or a size could not be read.
 func (c *Cache) completePartKeysAndSizes(ctx context.Context, row *sharedResult) ([]string, []int64) {
-	return c.completeParts(ctx, row, c.completePartSizeReader())
+	keys, sizes, _ := c.completeParts(ctx, row, c.completePartSizeReader())
+	return keys, sizes
+}
+
+// spanPartKeysAndSizes is completePartKeysAndSizes for a span, which reports
+// the parts as the entry's complete parts. A read that could only return the
+// settled subset leaves the entry owing a report of its complete parts
+// (owePartsReport), so the remote cache isn't left believing that subset is
+// all the engine holds.
+func (c *Cache) spanPartKeysAndSizes(ctx context.Context, row *sharedResult) ([]string, []int64) {
+	keys, sizes, err := c.completeParts(ctx, row, c.completePartSizeReader())
+	if err != nil {
+		c.owePartsReport(row)
+	}
+	return keys, sizes
 }
 
 // completePartSizeReader is what reads complete parts' raw sizes: on an
@@ -120,8 +134,10 @@ func completePartsCurrent(row *sharedResult, reader partSizeReader) bool {
 // completeParts reads the row's complete part keys and, with reader, their
 // raw sizes, once per revision of the row's value. On an engine with the
 // remote cache every read takes the sizes, so a read for the keys alone,
-// such as a merge's warming, never leaves them unread.
-func (c *Cache) completeParts(ctx context.Context, row *sharedResult, reader partSizeReader) ([]string, []int64) {
+// such as a merge's warming, never leaves them unread. When it can't read
+// the row's record, it returns the parts the row's gate has settled, a
+// subset, and the error that stopped it (completePartsFellBack).
+func (c *Cache) completeParts(ctx context.Context, row *sharedResult, reader partSizeReader) ([]string, []int64, error) {
 	return c.completePartsHeld(ctx, row, reader, func(capture captureFunc) (*capturedRowRevision, error) {
 		return c.holdRowForCapture(ctx, row, capture)
 	})
@@ -129,22 +145,22 @@ func (c *Cache) completeParts(ctx context.Context, row *sharedResult, reader par
 
 // completePartsHeld is completeParts with the row held by hold, when it
 // captures.
-func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader partSizeReader, hold captureHold) ([]string, []int64) {
+func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader partSizeReader, hold captureHold) ([]string, []int64, error) {
 	if cached := row.completeParts.Load(); cached != nil && cached.stamp.current(row) && (reader == nil || cached.sizes != nil) {
 		if reader == nil {
 			// Sizes read while the remote cache was attached are not
 			// reported once it has detached.
-			return cached.keys, nil
+			return cached.keys, nil, nil
 		}
-		return cached.keys, cached.sizes
+		return cached.keys, cached.sizes, nil
 	}
 	if reader == nil {
 		keys, version, err := c.describeRowPartsHeld(ctx, row, hold)
 		if err != nil {
-			return completePartsFellBack(ctx, row, err), nil
+			return completePartsFellBack(ctx, row, err), nil, err
 		}
 		row.completeParts.Store(&rowCompleteParts{stamp: newCompletePartsStamp(version), keys: keys})
-		return keys, nil
+		return keys, nil, nil
 	}
 	// A size is read from its part's descriptor, which only the row's record
 	// carries: capture it, held as captureRowRecord holds it.
@@ -158,11 +174,11 @@ func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader
 		if err == nil {
 			err = errors.New("no capture of the record")
 		}
-		return completePartsFellBack(ctx, row, err), nil
+		return completePartsFellBack(ctx, row, err), nil, err
 	}
 	probes, err := describePartRecord(record)
 	if err != nil {
-		return completePartsFellBack(ctx, row, err), nil
+		return completePartsFellBack(ctx, row, err), nil, err
 	}
 	type completePart struct {
 		key  string
@@ -191,14 +207,14 @@ func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader
 		}
 	}
 	row.completeParts.Store(&rowCompleteParts{stamp: newCompletePartsStamp(version), keys: keys, sizes: sizes})
-	return keys, sizes
+	return keys, sizes, nil
 }
 
 // completePartsFellBack returns the parts row's gate has settled, which
 // completeParts returns when it cannot read the row's record: a subset of its
-// complete parts, which a span then reports as if whole. It logs each such
-// read at Debug, with the row, the settled parts and why the record couldn't
-// be read, so a part the engine holds and never reported can be traced to it.
+// complete parts. A span that reports them owes a full report later
+// (spanPartKeysAndSizes). It logs each such read at Debug, with the row, the
+// settled parts and why the record couldn't be read.
 func completePartsFellBack(ctx context.Context, row *sharedResult, err error) []string {
 	settled := row.settledPartKeys()
 	slog.DebugContext(ctx, "complete parts fell back to settled", "row", uint64(row.id), "settled", settled, "cause", err)
