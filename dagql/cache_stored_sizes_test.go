@@ -835,3 +835,41 @@ func TestStoredSizesGiveUpTheLockBetweenEntries(t *testing.T) {
 	require.Equal(t, 3, got[0].Records, "R, P, and the owner the part stored between two pieces added")
 	require.Greater(t, holds, yields, "a hold for each piece, and the measures' publish")
 }
+
+// A stored-size walk lets egraphMu go on the way back up a closure as well
+// as on the way down: an entry's own reading after its dependencies, its
+// outputs and its size, is a step too. A chain several pieces deep would
+// otherwise read every entry of it on the way back up in one hold, with a
+// writer waiting for all of it. Here a chain of twelve entries, with pieces
+// of four steps, lets the lock go for each four of the walk's steps down,
+// back up, and over the kept calls.
+func TestStoredSizesLetTheLockGoUpADeepChain(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	const depth = 12
+	prev := persistedListTestResult(t, actx, a, asrv, "chain-0", &transferTestValue{Text: "0"})
+	for i := 1; i < depth; i++ {
+		next := persistedListTestResult(t, actx, a, asrv, fmt.Sprintf("chain-%d", i), &transferTestValue{Text: fmt.Sprint(i)})
+		transferTestDependency(a, actx, next, prev)
+		prev = next
+	}
+	bundle := exportTestBundle(t, actx, a, prev)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	var top uint64
+	for _, value := range reply.Values {
+		if value.Ordinal == bundle.Roots[0].Ordinal {
+			top = value.Number
+		}
+	}
+	require.NotZero(t, top)
+
+	cloud.readPieceSize = 4
+	yields := 0
+	cloud.testReadPieceYielded = func() { yields++ }
+	got, err := cloud.StoredSizes(ctx, []uint64{top}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Equal(t, depth, got[0].Records)
+	require.GreaterOrEqual(t, yields, 3*depth/4, "a piece for each four steps down, back up, and over the kept calls")
+}
