@@ -152,6 +152,26 @@ func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
 	return rec, err
 }
 
+// normalizeTransferCall is normalizeTransferRecord's call alone: a copy with
+// the extra digests and recipe digests another cache takes.
+func normalizeTransferCall(frame *ResultCall) (*ResultCall, error) {
+	frame = frame.clone()
+	if err := walkTransferCalls(frame, func(frame *ResultCall) error { frame.ExtraDigests = transferExtras(frame.ExtraDigests); return nil }, func(ref *ResultCallRef) error { ref.shared = nil; return nil }); err != nil {
+		return nil, err
+	}
+	if err := visitResultCallReferences(frame, nil, func(ref *PersistedRef) error {
+		if ref.RecipeID != nil {
+			copied, err := ref.RecipeID.FilterTransferDigests()
+			ref.RecipeID = copied
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return frame, nil
+}
+
 // normalizeTransferRecordRefs is normalizeTransferRecord, and returns too
 // the entries the record's child and call references name, sorted and once
 // each, which its last walk finds.

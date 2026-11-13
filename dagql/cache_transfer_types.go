@@ -101,7 +101,8 @@ type TransferredValue struct {
 }
 
 // MarshalJSON encodes the value as its fields say, with a stored envelope
-// written out as it is held, decompressed but not decoded.
+// written out as it is held, decompressed but not decoded: the same JSON as
+// the value with its envelope decoded, field for field.
 func (v TransferredValue) MarshalJSON() ([]byte, error) {
 	type plain TransferredValue
 	if v.storedEnvelope == nil {
@@ -111,11 +112,27 @@ func (v TransferredValue) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The outer Record, less nested, is the one encoded.
-	return json.Marshal(struct {
-		plain
-		Record storedRecordJSON `json:"record"`
-	}{plain(v), storedRecordJSON{ResultID: v.Record.ResultID, Envelope: raw, Call: v.Record.Call, SnapshotLinks: v.Record.SnapshotLinks}})
+	return json.Marshal(storedValueJSON{
+		Ordinal:            v.Ordinal,
+		SenderNumber:       v.SenderNumber,
+		SenderReplacements: v.SenderReplacements,
+		Record:             storedRecordJSON{ResultID: v.Record.ResultID, Envelope: raw, Call: v.Record.Call, SnapshotLinks: v.Record.SnapshotLinks},
+		DependencyIDs:      v.DependencyIDs,
+		ExpiresAtUnix:      v.ExpiresAtUnix,
+		Held:               v.Held,
+	})
+}
+
+// storedValueJSON is TransferredValue's encoding, field for field, with its
+// record's envelope as encoded JSON.
+type storedValueJSON struct {
+	Ordinal            TransferOrdinal  `json:"ordinal"`
+	SenderNumber       uint64           `json:"senderNumber"`
+	SenderReplacements uint64           `json:"senderReplacements,omitempty"`
+	Record             storedRecordJSON `json:"record"`
+	DependencyIDs      []uint64         `json:"dependencyIDs,omitempty"`
+	ExpiresAtUnix      int64            `json:"expiresAtUnix,omitempty"`
+	Held               digest.Digest    `json:"held,omitempty"`
 }
 
 // storedRecordJSON is a PersistedRecord with its envelope as encoded JSON.

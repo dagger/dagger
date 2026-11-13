@@ -337,7 +337,11 @@ func (c *Cache) storedBundleValueLocked(build *storedBundleBuild, res *sharedRes
 			build.stored = map[uint64][]declaredPart{}
 		}
 		build.stored[uint64(build.ordinals[res.id])] = parts
-		return build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id), Call: res.loadResultCall().clone()}, body.envelope, refs)
+		call, err := normalizeTransferCall(res.loadResultCall())
+		if err != nil {
+			return fmt.Errorf("stored bundle: entry %d: %w", res.id, err)
+		}
+		return build.addStoredValue(res, PersistedRecord{ResultID: uint64(res.id), Call: call}, body.envelope, refs)
 	}
 	kept, err := c.storedTransferLocked(res)
 	if err != nil {
@@ -409,6 +413,9 @@ type storedTransferRecord struct {
 // its dependencies, which a stored part can add to without replacing the
 // record, and the other two.
 type storedValueSize struct {
+	// call is the frame measured with a compressed record (storedBody),
+	// whose call can be replaced while its body stays.
+	call               *ResultCall
 	dependencyRevision uint64
 	replacements       uint64
 	expiresAtUnix      int64

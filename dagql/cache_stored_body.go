@@ -83,19 +83,19 @@ type storedBody struct {
 }
 
 // declaredPart is one part a stored record declares absent or pending: its
-// address key, its part's name, its state and the kind of its value, which
+// address and that address's key, its state and the kind of its value, which
 // part answers, borrowing and the bundle's check of its own outputs read.
 type declaredPart struct {
-	key   string
-	part  PartKey
-	state string
-	kind  string
+	key     string
+	address PersistedPartAddress
+	state   string
+	kind    string
 }
 
 // output is the part as an output of the record's mapping, with what a check
 // of an output against it reads (checkOutputPart).
 func (p declaredPart) output() CapturedCodecOutput {
-	return CapturedCodecOutput{Address: PersistedPartAddress{Part: p.part}, State: p.state, ValueKind: p.kind}
+	return CapturedCodecOutput{Address: p.address, State: p.state, ValueKind: p.kind}
 }
 
 // newStoredBody compresses res's stored record of env and call, normalized
@@ -166,7 +166,7 @@ func declaredPartsOf(outputs []CapturedCodecOutput) ([]declaredPart, error) {
 		if output.Value != nil {
 			kind = output.Value.Kind
 		}
-		parts = append(parts, declaredPart{key: key, part: output.Address.Part, state: output.State, kind: kind})
+		parts = append(parts, declaredPart{key: key, address: output.Address, state: output.State, kind: kind})
 	}
 	return parts, nil
 }
@@ -191,6 +191,15 @@ func lightStoredEnvelope(env *PersistedResultEnvelope) *PersistedResultEnvelope 
 // envelope of env, and no kept transfer record. Requires egraphMu for
 // writing, or an entry no reader can reach yet.
 func (c *Cache) setStoredBodyLocked(res *sharedResult, env *PersistedResultEnvelope, body *storedBody) {
+	// A size measured for the same record and call is the body's: a value is
+	// measured the same whole or compressed.
+	if kept := res.storedTransfer.Load(); kept != nil && kept.envelope == env && kept.call == body.call {
+		if size := kept.size.Load(); size != nil {
+			carried := *size
+			carried.call = body.call
+			body.size.Store(&carried)
+		}
+	}
 	res.payloadMu.Lock()
 	res.persistedEnvelope = lightStoredEnvelope(env)
 	res.stored = body
@@ -301,10 +310,9 @@ type storedRowHeader struct {
 }
 
 type storedRowPart struct {
-	Key   string  `json:"key"`
-	Part  PartKey `json:"part"`
-	State string  `json:"state"`
-	Kind  string  `json:"kind,omitempty"`
+	Address PersistedPartAddress `json:"address"`
+	State   string               `json:"state"`
+	Kind    string               `json:"kind,omitempty"`
 }
 
 // encodeStoredRow returns the saved self payload of a stored record: header
@@ -313,7 +321,7 @@ func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody) ([]byte,
 	h := storedRowHeader{Envelope: *lightStoredEnvelope(header), EnvelopeBytes: body.envelopeBytes, Refs: body.refs}
 	h.Envelope.StoredParts = header.StoredParts
 	for _, part := range body.parts {
-		h.Parts = append(h.Parts, storedRowPart{Key: part.key, Part: part.part, State: part.state, Kind: part.kind})
+		h.Parts = append(h.Parts, storedRowPart{Address: part.address, State: part.state, Kind: part.kind})
 	}
 	raw, err := json.Marshal(h)
 	if err != nil {
@@ -349,7 +357,11 @@ func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope
 		refs:          h.Refs,
 	}
 	for _, part := range h.Parts {
-		body.parts = append(body.parts, declaredPart{key: part.Key, part: part.Part, state: part.State, kind: part.Kind})
+		key, err := partAddressKey(part.Address)
+		if err != nil {
+			return nil, nil, fmt.Errorf("stored row part: %w", err)
+		}
+		body.parts = append(body.parts, declaredPart{key: key, address: part.Address, state: part.State, kind: part.Kind})
 	}
 	return &h.Envelope, body, nil
 }

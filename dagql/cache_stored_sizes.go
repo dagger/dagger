@@ -294,7 +294,9 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 func storedValueMeasuredLocked(res *sharedResult) (int64, bool) {
 	var size *storedValueSize
 	if body := res.stored; body != nil {
-		size = body.size.Load()
+		if size = body.size.Load(); size != nil && size.call != res.loadResultCall() {
+			return 0, false
+		}
 	} else {
 		kept := res.storedTransfer.Load()
 		if kept == nil || kept.envelope != res.persistedEnvelope || kept.call != res.loadResultCall() {
@@ -341,7 +343,11 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 	if miss.body != nil {
 		// A body's value is measured with an empty envelope in its place,
 		// and its envelope's own length added: nothing is decompressed.
-		value.Record = PersistedRecord{ResultID: uint64(miss.res.id), Call: miss.call}
+		call, err := normalizeTransferCall(miss.call)
+		if err != nil {
+			return storedSizeMeasure{}, err
+		}
+		value.Record = PersistedRecord{ResultID: uint64(miss.res.id), Call: call}
 		empty, err := encodedSize(value)
 		if err != nil {
 			return storedSizeMeasure{}, err
@@ -358,7 +364,7 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 		}
 	}
 	c.storedSizeEncodes.Add(1)
-	return storedSizeMeasure{miss: miss, kept: kept, size: &storedValueSize{dependencyRevision: miss.dependencyRevision, replacements: miss.replacements, expiresAtUnix: miss.expiresAtUnix, bytes: bytes}}, nil
+	return storedSizeMeasure{miss: miss, kept: kept, size: &storedValueSize{call: miss.call, dependencyRevision: miss.dependencyRevision, replacements: miss.replacements, expiresAtUnix: miss.expiresAtUnix, bytes: bytes}}, nil
 }
 
 // publishStoredSizes keeps each measure's size on its entry, in one hold of
