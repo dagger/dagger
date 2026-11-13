@@ -178,7 +178,7 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 	}
 	build := &storedBundleBuild{now: nowUnix, ordinals: map[sharedResultID]TransferOrdinal{}, heldBy: held, held: map[sharedResultID]bool{},
 		owners: map[sharedResultID]int{}, ordinary: map[sharedResultID]bool{}, rootSeen: seenRoot}
-	build.bundle.Version = valueBundleVersion
+	build.bundle.Version = ValueBundleVersion
 	visiting := map[sharedResultID]bool{}
 	// Root by root, as StoredSizes prices them: its closure, then the calls
 	// kept on what it added, with their inputs' closures.

@@ -100,7 +100,7 @@ func ResolveChainPrefixes(bundle *ValueBundle) error {
 //
 //nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
 func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]declaredPart) ([]uint64, error) {
-	if bundle.Version != valueBundleVersion {
+	if bundle.Version != ValueBundleVersion {
 		return nil, fmt.Errorf("unsupported value bundle version %d", bundle.Version)
 	}
 	// A prefix output is checked as the chain it names: resolved on a copy of

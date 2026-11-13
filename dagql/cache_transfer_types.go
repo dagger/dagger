@@ -227,7 +227,9 @@ type ImportedValue struct {
 	ResultID uint64
 }
 
-const valueBundleVersion = 8
+// ValueBundleVersion is the version of the bundles this cache builds and
+// merges. A merge refuses a bundle of any other.
+const ValueBundleVersion = 8
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.
