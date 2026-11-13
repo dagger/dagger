@@ -38,7 +38,7 @@ func TestValueBundleWireListsLayersOnce(t *testing.T) {
 	for i := range 20 {
 		base = append(base, layer(fmt.Sprint("base-", i)))
 	}
-	bundle := ValueBundle{Version: valueBundleVersion, Roots: []TransferredRoot{{Ordinal: 1}}}
+	bundle := ValueBundle{Version: ValueBundleVersion, Roots: []TransferredRoot{{Ordinal: 1}}}
 	for i := range 50 {
 		bundle.Values = append(bundle.Values, TransferredValue{Ordinal: TransferOrdinal(i + 1), SenderNumber: uint64(100 + i)})
 		layers := append(append([]snapshots.ExportLayer{}, base...), layer(fmt.Sprint("own-", i)))

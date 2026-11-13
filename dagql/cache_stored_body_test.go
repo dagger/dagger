@@ -230,7 +230,7 @@ func TestStoredBundleChecksANestedPartOfACompressedRecord(t *testing.T) {
 	value := SnapshotValue{Kind: "directory", Path: "/"}
 	frame := &ResultCall{Kind: ResultCallKindField, Field: "nested", Type: NewResultCallType((&transferTestValue{}).Type())}
 	bundle := ValueBundle{
-		Version: valueBundleVersion,
+		Version: ValueBundleVersion,
 		Roots:   []TransferredRoot{{Ordinal: 1}},
 		Values:  []TransferredValue{{Ordinal: 1, SenderNumber: 7, Record: PersistedRecord{ResultID: 7, Call: frame}}},
 		Outputs: []TransferredOutput{{Ordinal: 1, Address: address, State: "completed", Value: &value, Chain: &OfferedChain{}, Owner: &PersistedOfferOwner{}}},
