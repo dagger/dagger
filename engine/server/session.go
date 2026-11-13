@@ -265,6 +265,8 @@ type daggerSession struct {
 
 	gitPushApprovals gitPushApprovals
 	gitReadApprovals gitReadApprovals
+	// approvals remembers the owners' session grants (see requestApproval)
+	approvals approvalGrants
 
 	lockFiles  map[workspaceLockKey]*workspaceLockState
 	lockFileMu sync.RWMutex
