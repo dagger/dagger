@@ -164,10 +164,12 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 	// Reading an entry's complete parts captures its record, which needs the
 	// graph lock free. The reply reads them back only while that capture
 	// still describes the entry's value.
+	warming := time.Now()
 	if c.testWarmStarted != nil {
 		c.testWarmStarted()
 	}
 	c.warmMergeTargetParts(ctx, prep)
+	warmed := time.Since(warming)
 	if c.testBeforeTransferCommit != nil {
 		c.testBeforeTransferCommit()
 	}
@@ -210,7 +212,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 			return MergeReply{}, err
 		}
 		reply, finish := c.commitValueMergeLocked(ctx, commit)
-		reply.Committed, reply.CommitHold = true, time.Since(locked)
+		reply.Committed, reply.CommitHold, reply.Warm = true, time.Since(locked), warmed
 		var stored []*sharedResult
 		if c.blobBacked {
 			for _, row := range commit.rows {
