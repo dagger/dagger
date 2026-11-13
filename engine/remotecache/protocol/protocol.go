@@ -278,11 +278,19 @@ type SkippedRoot struct {
 // unknown again, so that the next export of the same roots carries them in
 // full. It holds nothing that export carried or held; it can hold rows below
 // them that earlier merges proved.
+//
+// Stale, on an Upload without Merged for a merge refused as stale, names by
+// the engine's numbers the held rows the Cloud found stale: only those become
+// unknown, and the bundle's other held rows stay known. The Cloud names every
+// held row stale by one check of the merge; one stale by another check is
+// named by the next export's refusal, so each refusal makes at least one row
+// unknown until the export merges.
 type Upload struct {
 	ExportID string                   `json:"exportID"`
 	URLs     map[digest.Digest]string `json:"urls"`
 	Packs    []UploadPack             `json:"packs,omitempty"`
 	Merged   bool                     `json:"merged,omitempty"`
+	Stale    []uint64                 `json:"stale,omitempty"`
 }
 
 // UploadPack is one pack to upload: its ID, its presigned PUT, and its
