@@ -1,0 +1,49 @@
+"""
+Tools reading secrets, for the secret approval integration tests
+(Server.AuthorizeSecret in engine/server/secret_approval.go).
+
+Dang modules run in an in-engine SDK client with no host of its own: a
+Query.secret it makes can only read the owner's host when an agent drives it
+and the owner approves.
+"""
+type Keeper {
+  let token: Secret = null
+
+  new(token: Secret = null) {
+    self.token = token
+    self
+  }
+
+  """
+  Report whether the secret at uri holds want, without revealing it.
+  """
+  secretMatches(uri: String!, want: String!): String! {
+    if (secret(uri: uri).plaintext == want) { "secret matches" } else { "secret differs" }
+  }
+
+  """
+  Report whether the token configured for this module holds want, without
+  revealing it.
+  """
+  tokenMatches(want: String!): String! {
+    if (token == null) {
+      "no token"
+    } else if (token.plaintext == want) {
+      "token matches"
+    } else {
+      "token differs"
+    }
+  }
+
+  """
+  Spawn a worker agent over this module's own tools, as a module hiring a
+  worker does, send it prompt, and return its transcript once the turn ends.
+  Its tool calls run under this module, on the worker's behalf, not the CLI's.
+  """
+  delegate(model: String!, prompt: String!): String! @cache(policy: FunctionCachePolicy.Never) {
+    # @cache(Never): spawns and drives a real agent runtime.
+    let worker = llm(model: model).withTools(currentNode).spawn(name: "keeper-worker")
+    worker.send(prompt).response
+    worker.snapshot.transcript
+  }
+}
