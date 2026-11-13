@@ -2652,9 +2652,10 @@ func TestMergeWarmingTogetherIsWarmingOneByOne(t *testing.T) {
 	require.Equal(t, want, warmingTestOutcome(t, b[1], together, targets[1]))
 }
 
-// A target whose value changes between the prepare's warming and the commit
-// is captured again in the commit, as one captured one by one before the
-// change is: both report its parts as they stand at the commit.
+// A target whose value changes after its targets were warmed together, and
+// before the commit, is captured again in the commit, as one captured one by
+// one and changed is captured again: both report its parts as they stand at
+// the commit.
 func TestMergeWarmingCapturesAgainWhatChangedSinceThePrepare(t *testing.T) {
 	t.Parallel()
 	bundle, b, ctx, targets := warmingTestCaches(t, 4)
@@ -2662,40 +2663,60 @@ func TestMergeWarmingCapturesAgainWhatChangedSinceThePrepare(t *testing.T) {
 		b[0].completePartKeys(ctx[0], target)
 	}
 	bumpTestRevision(b[0], targets[0][1])
+	b[0].completePartKeys(ctx[0], targets[0][1])
 	one, err := b[0].MergeValues(ctx[0], cloudCacheID, bundle)
 	require.NoError(t, err)
 
 	p, err := b[1].PrepareValueMerge(ctx[1], cloudCacheID, bundle)
 	require.NoError(t, err)
-	bumpTestRevision(b[1], targets[1][1])
+	b[1].warmMergeTargetParts(ctx[1], p.prep)
+	changed := targets[1][1]
+	require.True(t, completePartsCurrent(changed, nil), "warmed together")
+	bumpTestRevision(b[1], changed)
+	require.False(t, completePartsCurrent(changed, nil), "its capture no longer describes it")
 	together, err := b[1].CommitValueMerge(ctx[1], p)
 	require.NoError(t, err)
+	require.True(t, completePartsCurrent(changed, nil), "the commit captured it again")
 	require.Equal(t, warmingTestOutcome(t, b[0], one, targets[0]), warmingTestOutcome(t, b[1], together, targets[1]))
 }
 
 // A target whose value changes while the warming holds it, after its piece
 // is taken and before its capture, is captured as it stands then, as a row
-// held alone and changed before its capture is.
+// changed and then captured alone is.
 func TestMergeWarmingCapturesATargetChangedWhileHeld(t *testing.T) {
 	t.Parallel()
 	bundle, b, ctx, targets := warmingTestCaches(t, 3)
-	bumpTestRevision(b[0], targets[0][0])
+	b[1].capturePieceSize = 1
+	owners := map[*sharedResult]int64{}
+	for _, target := range targets[1] {
+		owners[target] = target.incomingOwnershipCount.Load()
+	}
+	holds, changed := 0, -1
+	b[1].testCaptureWriteLock = func() {
+		// Before the second piece: the first piece's target is held, and not
+		// yet captured.
+		if holds++; holds != 2 {
+			return
+		}
+		for i, target := range targets[1] {
+			if target.incomingOwnershipCount.Load() == owners[target]+1 {
+				require.Equal(t, -1, changed, "one target in the first piece")
+				changed = i
+			}
+		}
+		require.NotEqual(t, -1, changed, "the first piece's target is held")
+		require.False(t, completePartsCurrent(targets[1][changed], nil), "and not yet captured")
+		bumpTestRevision(b[1], targets[1][changed])
+	}
+	together, err := b[1].MergeValues(ctx[1], cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Greater(t, holds, 2, "the warming held its targets in pieces")
+
+	bumpTestRevision(b[0], targets[0][changed])
 	for _, target := range targets[0] {
 		b[0].completePartKeys(ctx[0], target)
 	}
 	one, err := b[0].MergeValues(ctx[0], cloudCacheID, bundle)
 	require.NoError(t, err)
-
-	b[1].capturePieceSize = 1
-	holds := 0
-	b[1].testCaptureWriteLock = func() {
-		// Before the second piece: the first target is held, not captured.
-		if holds++; holds == 2 {
-			bumpTestRevision(b[1], targets[1][0])
-		}
-	}
-	together, err := b[1].MergeValues(ctx[1], cloudCacheID, bundle)
-	require.NoError(t, err)
-	require.Greater(t, holds, 2, "the warming held its targets in pieces")
 	require.Equal(t, warmingTestOutcome(t, b[0], one, targets[0]), warmingTestOutcome(t, b[1], together, targets[1]))
 }
