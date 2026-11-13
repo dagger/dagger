@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -157,7 +158,7 @@ func TestEngineEventsCarryKindCacheAndBody(t *testing.T) {
 	require.Equal(t, json.RawMessage("2"), shareParts[1]["replacements"])
 
 	require.Equal(t, telemetryattrs.EngineEventStop, events[3].kind)
-	require.Equal(t, telemetryattrs.EngineStopEvent{Clean: true}, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[3]))
+	require.Equal(t, telemetryattrs.EngineStopEvent{Clean: true}, withoutPeak(t, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[3])))
 	require.Zero(t, srv.engineEvents.Dropped())
 }
 
@@ -183,7 +184,7 @@ func TestEngineEventsAcrossRestart(t *testing.T) {
 	events := exporter.events(t)
 	require.Len(t, events, 2)
 	firstIdentity := events[0].cache
-	require.Equal(t, telemetryattrs.EngineStopEvent{Clean: true, SavedEntries: 2}, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[1]))
+	require.Equal(t, telemetryattrs.EngineStopEvent{Clean: true, SavedEntries: 2}, withoutPeak(t, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, events[1])))
 
 	cache = openEngineEventTestCache(t, path)
 	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
@@ -394,4 +395,50 @@ func TestEngineEventsShutdownEndsWithTheStopWhenStateIsDiscarded(t *testing.T) {
 	srv.stopEngineEvents(ctx, false)
 	elapsed := time.Since(start)
 	require.Less(t, elapsed, 5*time.Second, "shutdown took %s with 300ms left of the stop", elapsed)
+}
+
+// withoutPeak checks a stop event carries the process's peak memory, and
+// returns it without, for comparing what is the same on every run.
+func withoutPeak(t *testing.T, event telemetryattrs.EngineStopEvent) telemetryattrs.EngineStopEvent {
+	t.Helper()
+	require.Positive(t, event.PeakResident, "the stop says the engine's peak memory")
+	event.PeakResident = 0
+	return event
+}
+
+// The stop event counts the lookup misses the remote cache dropped before a
+// restored part could count them, though the engine's stop has closed the
+// integration, and detached the bridge that keeps the count, before it.
+func TestEngineStopEventCountsUncountedMisses(t *testing.T) {
+	t.Parallel()
+	ctx := boundedContext(t)
+	cache := openEngineEventTestCache(t, "")
+	srv, exporter := engineEventTestServer(cache)
+	srv.startEngineEvents()
+	adapter := newTestRemoteCacheAdapter(t, cache)
+	srv.remoteCacheAdapter = adapter
+	adapter.StartLookups()
+	sessionCtx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "misses", SessionID: "misses"})
+	for i := 0; cache.TrimmedRemoteMisses() == 0; i++ {
+		require.Less(t, i, 1<<17, "the miss log never filled")
+		frame := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Type: dagql.NewResultCallType(dagql.NewInt(0).Type()), Field: fmt.Sprint("missed", i)}
+		_, err := cache.GetOrInitCall(sessionCtx, "misses", gcTestTypeResolver{}, &dagql.CallRequest{ResultCall: frame, CacheReported: true}, func(context.Context) (dagql.AnyResult, error) {
+			return dagql.NewResultForCall(dagql.NewInt(int64(i)), frame)
+		})
+		require.NoError(t, err)
+		if i%1000 == 999 {
+			// Keep the lookup queue from refusing misses, as the connection does.
+			_, _, err := adapter.TakeLookupMisses(t.Context(), 1000, 0)
+			require.NoError(t, err)
+		}
+	}
+	uncounted := cache.TrimmedRemoteMisses()
+	adapter.close(errors.New("stopping"))
+	require.Zero(t, cache.TrimmedRemoteMisses(), "the detached bridge's count is gone from the cache")
+	require.NoError(t, cache.Close(ctx))
+	srv.stopEngineEvents(ctx, true)
+	events := exporter.events(t)
+	stop := events[len(events)-1]
+	require.Equal(t, telemetryattrs.EngineEventStop, stop.kind)
+	require.Equal(t, uncounted, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, stop).UncountedMisses)
 }

@@ -249,6 +249,85 @@ func TestRemoteCacheAdapterLookupMergesGoFirst(t *testing.T) {
 	require.ErrorContains(t, <-second, "refused")
 }
 
+// A restore's part merges as a service's merge does: into the cache, with
+// the rows it lands on known to the connection, and its reply as the commit
+// left it.
+func TestRemoteCacheAdapterRestoresAPart(t *testing.T) {
+	source := newGCTestCache(t)
+	ctx, res := addGCTestPersistableResult(t, source, "source", "restored", dagql.NewInt(7))
+	var bundle dagql.ValueBundle
+	require.NoError(t, source.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{res}}, config.RefConfig{}, func(_ context.Context, exp *dagql.ExportedValues) error {
+		bundle = exp.Bundle
+		return nil
+	}))
+
+	target := newGCTestCache(t)
+	adapter := newTestRemoteCacheAdapter(t, target)
+	known := dagql.NewKnownRows()
+	reply, err := adapter.RestorePart(t.Context(), bundle, known)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.Len(t, reply.Values, 1)
+	require.Equal(t, 1, reply.Rows.Created)
+	require.NotZero(t, reply.EngineTimeUnixNano)
+	require.Equal(t, 1, known.Len(), "the row the part landed on is known")
+	_, release, err := target.HoldEntry(t.Context(), reply.Values[0].Number)
+	require.NoError(t, err, "the part's record is in the cache")
+	require.NoError(t, release(t.Context()))
+
+	again, err := adapter.RestorePart(t.Context(), bundle, known)
+	require.NoError(t, err)
+	require.Equal(t, 1, again.Rows.Kept, "a record the cache holds is kept")
+}
+
+// A restore's part waits behind a merge that answers a lookup, as a
+// placement merge does, and a part the merge refuses is an error.
+func TestRemoteCacheAdapterRestoreWaitsForLookupMerges(t *testing.T) {
+	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	entered := make(chan string, 2)
+	release := make(chan struct{})
+	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
+		entered <- "lookup"
+		<-release
+		return dagql.MergeReply{}, errors.New("refused")
+	}
+	adapter.restoreValues = func(context.Context, dagql.ValueBundle) (dagql.MergeReply, error) {
+		entered <- "restore"
+		return dagql.MergeReply{}, errors.New("refused")
+	}
+	lookup := make(chan error, 1)
+	go func() {
+		_, err := adapter.Merge(t.Context(), 1, protocol.Merge{Lookup: 2}, nil)
+		lookup <- err
+	}()
+	require.Equal(t, "lookup", <-entered)
+	restored := make(chan error, 1)
+	go func() {
+		_, err := adapter.RestorePart(t.Context(), dagql.ValueBundle{}, nil)
+		restored <- err
+	}()
+	select {
+	case <-entered:
+		t.Fatal("a restore's part went while a lookup's merge was in progress")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	require.ErrorContains(t, <-lookup, "refused")
+	require.Equal(t, "restore", <-entered)
+	require.ErrorContains(t, <-restored, "refused")
+}
+
+// Each file a restore ended is kept for the engine's stop event, in order.
+func TestRemoteCacheAdapterKeepsRestoreReports(t *testing.T) {
+	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	adapter.Restored(remotecache.RestoreReport{Kind: "head", Complete: true})
+	adapter.Restored(remotecache.RestoreReport{Kind: "whole", Error: "fetch: 404 Not Found"})
+	reports := adapter.restoreReports()
+	require.Len(t, reports, 2)
+	require.Equal(t, "head", reports[0].Kind)
+	require.Equal(t, "fetch: 404 Not Found", reports[1].Error)
+}
+
 // adapterTestServer gives the core query the one server facility a file
 // blob's body uses: the snapshot manager.
 type adapterTestServer struct {

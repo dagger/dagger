@@ -48,6 +48,8 @@ type session struct {
 	uploadSlots chan struct{}
 	// lookupSlots bounds the lookups unanswered.
 	lookupSlots chan struct{}
+	// restorer merges the files restores name, one part at a time.
+	restorer *restorer
 	// known are the rows the service merged over this connection, from
 	// exports and from its own merges, which exports send as held rows.
 	known *dagql.KnownRows
@@ -68,7 +70,7 @@ type session struct {
 
 func newSession(ctx context.Context, conn wsConn, adapter Adapter, cfg *settings) *session {
 	ctx, cancel := context.WithCancelCause(ctx)
-	return &session{
+	s := &session{
 		ctx:         ctx,
 		cancel:      cancel,
 		conn:        conn,
@@ -82,6 +84,8 @@ func newSession(ctx context.Context, conn wsConn, adapter Adapter, cfg *settings
 		pending:     map[uint64]chan protocol.Envelope{},
 		exports:     map[string]chan protocol.Envelope{},
 	}
+	s.restorer = newRestorer(s)
+	return s
 }
 
 // serve reads the connection, says hello, and serves requests until the
@@ -96,6 +100,7 @@ func (s *session) serve() (bool, error) {
 	s.go_(s.renewals)
 	s.go_(s.lookups)
 	s.go_(s.settles)
+	s.go_(s.restorer.run)
 	<-s.ctx.Done()
 	return true, context.Cause(s.ctx)
 }
@@ -129,6 +134,7 @@ func (s *session) hello() error {
 		EngineName:    s.cfg.EngineName,
 		Period:        settle.Period,
 		Settled:       settle.Settled && !settle.Live,
+		Restored:      s.cfg.restored.list(),
 	})
 	if err != nil {
 		return fmt.Errorf("hello: %w", err)
@@ -194,6 +200,9 @@ func (s *session) dispatchBody(env protocol.Envelope, body any) {
 		s.go_(func() { s.handleMerge(env, merge) })
 	case protocol.TypeOffer:
 		s.go_(func() { s.handleOffer(env) })
+	case protocol.TypeRestore:
+		// Queued here, in the order restores arrive.
+		s.restorer.handleRestore(env)
 	default:
 		s.go_(func() { s.replyError(env, fmt.Errorf("unexpected request %q", env.Type)) })
 	}
