@@ -2509,6 +2509,12 @@ type Cache struct {
 	// timing its warming (CommitValueMerge, MergeReply.Warm).
 	testWarmStarted func()
 
+	// readPieceSize, when set, is how many steps a read in pieces takes in
+	// one hold of egraphMu (readPieceSteps otherwise), and
+	// testReadPieceYielded runs between two of its holds, with none held.
+	readPieceSize        int
+	testReadPieceYielded func()
+
 	// testRecordPayloadPreparing runs as a merge starts preparing the
 	// record of an ordinal with its payload; an error refuses that record.
 	testRecordPayloadPreparing func(uint64) error
