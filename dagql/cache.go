@@ -1875,7 +1875,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 // counts, so a prune that drops it is seen. It reports false once res has
 // left the cache.
 func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge *pendingRetention) (CacheResultState, bool) {
-	parts, sizes := c.completePartKeysAndSizes(ctx, res)
+	parts, sizes := c.spanPartKeysAndSizes(ctx, res)
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	if c.resultsByID[res.id] != res {
@@ -2663,6 +2663,9 @@ type Cache struct {
 	// partReads reports the parts of entries work reads; see
 	// WithPartReadReport. Nil unless set at construction.
 	partReads *partReadLog
+	// owedParts are the entries whose span reported only their settled
+	// parts, each owing a report of its complete parts; see owedPartReports.
+	owedParts owedPartReports
 	// partPreparation is the engine's registered preparation-context
 	// callback, nil on a cache that cannot reconstruct persisted services.
 	partPreparation PartPreparationContext
@@ -5896,6 +5899,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if err == nil {
 				c.notifySnapshotShareCompletion(callbackCtx, shared)
 			}
+			// An evaluation's end frees the record it held, and can complete
+			// parts: owed reports may now be made.
+			c.wakeOwedPartReports()
 		}()
 
 		// Native profiling is full detail and emits the leader wait
@@ -6008,6 +6014,9 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
 		}
+		// Once every evaluation has ended, every owed entry's record can be
+		// read.
+		c.closeOwedPartReports(ctx)
 		// The registered preparation root outlives the worker and every
 		// decoded row until the drain has finished.
 		c.clearPartPreparationContext()
@@ -6057,6 +6066,8 @@ func (c *Cache) CloseDiscardingPersistence() error {
 		// The discard path is the boot reset, before sharing is enabled:
 		// this closes admission and has nothing to drain.
 		c.closeSnapshotSharing()
+		// Nothing is reported for a cache whose state is discarded.
+		c.stopOwedPartReports()
 		slog.Info(
 			"discarding dagql cache without persistence",
 			"hasSQLDB", c.sqlDB != nil,

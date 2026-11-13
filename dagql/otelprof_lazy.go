@@ -248,7 +248,7 @@ type lazySpanCacheState struct {
 // dependencies are read under it.
 func (c *Cache) lazySpanCacheState(ctx context.Context, row *sharedResult, frame *ResultCall) lazySpanCacheState {
 	var state lazySpanCacheState
-	state.parts, state.partSizes = c.completePartKeysAndSizes(ctx, row)
+	state.parts, state.partSizes = c.spanPartKeysAndSizes(ctx, row)
 	if frame != nil {
 		state.contentDigest = frame.ContentDigest()
 	}
