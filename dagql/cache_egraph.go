@@ -352,6 +352,14 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 	dstResults := c.outputEqClassResults[ra]
 	srcResults := c.outputEqClassResults[rb]
 	joinsEntries := len(dstResults) > 0 && len(srcResults) > 0
+	if joinsEntries {
+		// Every entry of both classes now answers from the other's: one
+		// mark of the union's class widens to all of them when handed back.
+		for resID := range srcResults {
+			c.markEntryClassLocked(resID)
+			break
+		}
+	}
 	if len(srcResults) > 0 {
 		if dstResults == nil {
 			dstResults = make(map[sharedResultID]struct{}, len(srcResults))
@@ -1085,6 +1093,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 		res.expiresAtUnix,
 		persistedEdgeExpiresAtUnix,
 	)
+	c.markEntryClassLocked(res.id)
 	touchSharedResultLastUsed(res, now.UnixNano())
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 		return nil, false, 0, false, err
@@ -1666,6 +1675,7 @@ func (c *Cache) removeResultOutputEqClassesLocked(resID sharedResultID) {
 	if resID == 0 {
 		return
 	}
+	c.markLeavingLocked(resID)
 	for outputEqID := range c.resultOutputEqClasses[resID] {
 		outputEqID = c.findEqClassLocked(outputEqID)
 		if outputEqID == 0 {

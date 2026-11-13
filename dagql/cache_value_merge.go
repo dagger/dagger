@@ -1682,6 +1682,7 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 		// entry takes the earliest expiry of its calls, though the entry
 		// was here before.
 		row.res.expiresAtUnix = mergeSharedResultExpiryUnix(row.res.expiresAtUnix, row.value.ExpiresAtUnix)
+		c.markEntryClassLocked(row.res.id)
 		c.teachCallIdentityLocked(ctx, row.res, merged.id)
 	}
 	if joined != nil {
@@ -1744,6 +1745,9 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 		touchSharedResultLastUsed(res, time.Now().UnixNano())
 	}
 	res.transferRevision++
+	if c.resultsByID[res.id] == res {
+		c.markEntryClassLocked(res.id)
+	}
 }
 
 // mergeSenderHoldingLocked records, on the Cloud, the sending engine's holding
@@ -1965,6 +1969,7 @@ func completePartKeysCoverageLocked(res *sharedResult) ([]string, bool) {
 // egraphMu for writing.
 func (c *Cache) failMergedEntryLocked(ctx context.Context, res *sharedResult, queue collectionQueue) collectionQueue {
 	if c.blobBacked {
+		c.markEntryClassLocked(res.id)
 		res.storedRecordBytes = 0
 		res.storedTransfer.Store(nil)
 		res.payloadMu.Lock()
