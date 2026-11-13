@@ -447,6 +447,38 @@ func TestModuleSelfDependencySchemaIsCollectible(t *testing.T) {
 	f.assertReleased("the self entry must not create an ownership cycle")
 }
 
+// A module cloned into a new result, as implementation scoping does, serves
+// itself through its own dependencies, not the module it was cloned from.
+func TestModuleCloneRebindsSelfDependency(t *testing.T) {
+	f := newModuleOwnershipTest(t)
+	producer := f.session("producer")
+	f.runtime.selfCalls = true
+	mod := f.module(producer, "selfish", moduleOwnershipModuleOpts{includeSelf: true})
+
+	clone := mod.Self().Clone()
+	cloneCall := moduleObjectTestSyntheticCall("ownership-module-selfish-clone", clone)
+	detached, err := dagql.NewObjectResultForCall(clone, f.dag, cloneCall)
+	require.NoError(t, err)
+	attachedAny, err := f.cache.GetOrInitCall(producer, "producer", f.dag, &dagql.CallRequest{ResultCall: cloneCall}, dagql.ValueFunc(detached))
+	require.NoError(t, err)
+	attached, ok := attachedAny.(dagql.ObjectResult[*Module])
+	require.True(t, ok)
+	cloneID := resultID(t, attached)
+	require.NotEqual(t, resultID(t, mod), cloneID)
+
+	var depIDs []uint64
+	for _, dep := range attached.Self().Deps.Mods() {
+		depIDs = append(depIDs, resultID(t, dep.ModuleResult()))
+	}
+	require.Equal(t, []uint64{cloneID}, depIDs)
+
+	selfSchema, err := attached.Self().Deps.Schema(producer)
+	require.NoError(t, err)
+	var obj dagql.ObjectResult[*ModuleObject]
+	require.NoError(t, selfSchema.Select(producer, selfSchema.Root(), &obj, dagql.Selector{Field: "selfish"}))
+	require.Equal(t, cloneID, resultID(t, obj.Self().Module))
+}
+
 // Bound tools dispatch through the class they were composed with, so the LLM
 // row holding the binding owns that class's module for eager and lazy bindings
 // alike. A lazy binding never constructs its receiver until a tool runs, the

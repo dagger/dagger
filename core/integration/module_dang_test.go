@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
@@ -344,6 +345,32 @@ func (DangSuite) TestCoreTypeShadowing(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "core", strings.TrimSpace(out))
+	})
+}
+
+// A main object takes the module's name, so it is not namespaced and would
+// clash with a core type of the same name. Such a module is refused.
+func (DangSuite) TestMainObjectNamedAfterCoreType(_ context.Context, t *testctx.T) {
+	t.Run("without calling the core type", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := dangModule(t, c, "core-type-named-container").
+			With(daggerCall("text")).
+			Stdout(ctx)
+		requireErrOut(t, err, `type "Container" is already defined by module "daggercore"`)
+	})
+
+	t.Run("calling the core type's root field", func(ctx context.Context, t *testctx.T) {
+		// When accepted, the module's constructor replaced the core root
+		// field it calls, and waited on itself forever.
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		c := connect(ctx, t)
+
+		_, err := dangModule(t, c, "core-type-named-directory").
+			With(daggerCall("text")).
+			Stdout(ctx)
+		requireErrOut(t, err, `type "Directory" is already defined by module "daggercore"`)
 	})
 }
 

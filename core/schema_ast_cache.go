@@ -37,7 +37,7 @@ func schemaASTCache(mods []modInstall) *dagql.SchemaASTCache {
 			// Other module implementations may install context-dependent metadata.
 			return nil
 		}
-		entries[i] = modDepEntry(entry)
+		entries[i] = modDepEntry{mod: entry.mod, opts: entry.opts}
 	}
 	key, ok := schemaEntriesKey(entries, true)
 	if !ok {

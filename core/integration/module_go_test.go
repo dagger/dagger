@@ -502,6 +502,17 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 	})
 }
 
+// A main object takes the module's name, so it is not namespaced and would
+// clash with a core type of the same name. Such a module is refused.
+func (GoSuite) TestMainObjectNamedAfterCoreType(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := moduleFixture(t, c, "go/core-type-named-directory").
+		With(daggerCall("text")).
+		Stdout(ctx)
+	requireErrOut(t, err, `type "Directory" is already defined by module "daggercore"`)
+}
+
 func (GoSuite) TestBadCtx(ctx context.Context, t *testctx.T) {
 	var logs safeBuffer
 	c := connect(ctx, t, dagger.WithLogOutput(&logs))
