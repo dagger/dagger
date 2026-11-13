@@ -68,6 +68,10 @@ type HeldCapturedClosure struct {
 	unheld map[sharedResultID][]sharedResultID
 	// outputs are the selection's outputs the closure holds.
 	outputs []SelectedValueOutput
+	// unwalked is set when a root was left out before its walk, its own
+	// evaluation in flight (holdTransferClosure): an output below it lies
+	// outside what the capture walked.
+	unwalked bool
 	// walkWait is the wait for egraphMu before the walk, and walk the walk
 	// under it.
 	walkWait    time.Duration
@@ -156,6 +160,32 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 	known := selection.Known
 	if len(selection.Outputs) > 0 {
 		known = nil
+	}
+	// A root whose own evaluation is in flight can't be captured now,
+	// whatever its closure holds, unless it goes as a held row: its record's
+	// copy is refused
+	// (lazyEvaluationInFlightLocked). It's left out before the walk, so
+	// nothing below it is walked or copied for it: a remote cache service
+	// asks for a running root every few seconds until it isn't busy, and
+	// each capture walked and copied its whole closure only to leave it
+	// out. Its lazy lock is taken here, before egraphMu, as the copy takes
+	// it outside the walk. An evaluation that ends meanwhile leaves the root
+	// out once more, as one that ends during a walk does.
+	running := map[*sharedResult]blockedRow{}
+	for _, root := range selection.Roots {
+		if root == nil {
+			continue
+		}
+		res := root.cacheSharedResult()
+		if res == nil {
+			continue
+		}
+		res.lazyMu.Lock()
+		err := lazyEvaluationInFlightLocked(res)
+		res.lazyMu.Unlock()
+		if err != nil {
+			running[res] = blockedRow{row: res.id, kind: res.busyKind(), err: err}
+		}
 	}
 	lockStart := time.Now()
 	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
@@ -300,6 +330,15 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		selected := capturedRoot{row: res}
 		if res.expiresAtUnix != 0 && res.expiresAtUnix <= now {
 			selected.err = &blockedRow{row: res.id, err: fmt.Errorf("transfer capture: expired root %d", res.id)}
+			capture.selected = append(capture.selected, selected)
+			continue
+		}
+		// A root the selection's Known knows goes as a held row, whose
+		// record isn't copied (walk): its evaluation keeps it from nothing.
+		if b, ok := running[res]; ok && res.id != 0 && c.resultsByID[res.id] == res && (carried[res.id] || !known.knowsLocked(res)) {
+			capture.blocked[res.id] = b
+			capture.unwalked = true
+			selected.err = &b
 			capture.selected = append(capture.selected, selected)
 			continue
 		}
@@ -993,7 +1032,9 @@ func (capture *HeldCapturedClosure) settleOutputs(selection ValueSelection, held
 		if _, blocked := capture.blocked[res.id]; blocked {
 			continue
 		}
-		if !selection.LeaveOutOutputsOutsideClosure {
+		// One below a root left out before its walk lies outside the
+		// walk, and is left out with it.
+		if !selection.LeaveOutOutputsOutsideClosure && !capture.unwalked {
 			return fmt.Errorf("selected output lies outside captured closure")
 		}
 	}
