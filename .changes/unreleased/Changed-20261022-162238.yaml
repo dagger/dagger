@@ -6,7 +6,7 @@ body: |
 
   Other changes that follow from it:
   - A user or group name given to `withDirectory`, `withFile`, `withFiles` or `chown` on a subdirectory is looked up in its own `/etc/passwd` and `/etc/group`, not its parent's. Numeric ids and `root` need no lookup.
-  - Gitignore filtering applies `.gitignore` files from the subdirectory down, not from the directories above it. `search` with `skipIgnored` applies only the `.gitignore`, `.ignore` and `.rgignore` files within the Directory it is called on, not those above it (its `paths` narrow what is searched, not which of those files apply), applies `.gitignore` whether or not there is a repository, as filtering does, and no longer applies Git's `info/exclude` file or a global ignore file.
+  - Gitignore filtering applies `.gitignore` files from the subdirectory down, not from the directories above it. `search` with `skipIgnored` applies only the `.gitignore`, `.ignore` and `.rgignore` files within the Directory it is called on, not those above it (its `paths` narrow what is searched, not which of those files apply), and applies `.gitignore` whether or not there is a repository, as filtering does.
   - Git finds no repository above a Directory: `asGit` on a subdirectory of a repository fails instead of opening the parent's repository.
   - Selecting a file or directory through a symlink keeps the name it was selected by, unless resolving it leaves the subdirectory; then it is named after what it resolves to inside it. A `stat` that resolves to the directory itself reports the directory's own name.
   - Copying into a subdirectory through a symlink that leads out of it, to a directory that doesn't exist inside it, replaces the symlink with a directory instead of writing through it.
