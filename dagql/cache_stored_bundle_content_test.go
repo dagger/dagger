@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -282,6 +283,60 @@ func TestCloudRestoreKeepsATaughtContentDigestAcrossAReplacement(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, number, second.Imported()[0].ResultID)
 	require.Equal(t, uint64(1), second.Values[0].Replacements, "the expired record was replaced")
+	storedContentTestWait(t, cloud, number, content)
+}
+
+// storedContentTestRestored has a Cloud saved at a new path take engine
+// cache-a's export of a root, learn the root's content digest from a's span,
+// give it to the frame and close, and returns the Cloud restored from the
+// save, with the export, a's number and the Cloud's. a exports the record
+// again to the restored Cloud, as an engine does after a restart: a holding
+// keeps no span's teach across a restart, and its new one takes a's spans.
+func storedContentTestRestored(t *testing.T, field string, content digest.Digest) (context.Context, *Cache, ValueBundle, uint64, uint64) {
+	t.Helper()
+	bundle, aNumber := storedContentTestRoot(t, field)
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	number := storedPersistenceTestMerge(t, ctx, cloud, bundle)[0]
+	storedContentTestTeach(t, ctx, cloud, aNumber, content)
+	storedContentTestWait(t, cloud, number, content)
+	require.NoError(t, cloud.Close(ctx))
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	t.Cleanup(func() { require.NoError(t, cloud.Close(cacheTestContext(context.Background()))) })
+	require.Equal(t, []uint64{number}, storedPersistenceTestMerge(t, ctx, cloud, bundle), "the restored entry takes a's export")
+	return ctx, cloud, bundle, aNumber, number
+}
+
+// A restored entry taught a new content digest, whose expired record is then
+// replaced, keeps the digest taught before the restore: the new frame has it
+// as replaced-content, as the frame it replaced did.
+func TestCloudRestoreKeepsAnEarlierTaughtDigestWhenALaterOneIsTaught(t *testing.T) {
+	t.Parallel()
+	first, second := testDigest("content-saved"), testDigest("content-after-restore")
+	ctx, cloud, bundle, aNumber, number := storedContentTestRestored(t, "restored-taught-root", first)
+	storedContentTestTeach(t, ctx, cloud, aNumber, second)
+	storedContentTestWait(t, cloud, number, second)
+
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, number))
+	replaced, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), replaced.Values[0].Replacements, "the expired record was replaced")
+	storedContentTestWait(t, cloud, number, second)
+	require.Contains(t, storedTestFrame(t, cloud, storedBundleTestEntry(cloud, number)).ExtraDigests,
+		call.ExtraDigest{Digest: first, Label: call.ExtraDigestLabelReplacedContent}, "the digest taught before the restore")
+}
+
+// A restored entry whose record a prune drops while an engine's holding keeps
+// the entry, and which takes the record again from a later export, keeps the
+// content digest taught before the restore.
+func TestCloudRestoreKeepsATaughtDigestWhenAPrunedEntryStoresAgain(t *testing.T) {
+	t.Parallel()
+	content := testDigest("content-saved-pruned")
+	ctx, cloud, bundle, _, number := storedContentTestRestored(t, "restored-pruned-root", content)
+	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(number))
+	require.NoError(t, err)
+	require.True(t, removed)
+	require.Equal(t, []uint64{number}, storedPersistenceTestMerge(t, ctx, cloud, bundle), "the same entry takes the record again")
 	storedContentTestWait(t, cloud, number, content)
 }
 
