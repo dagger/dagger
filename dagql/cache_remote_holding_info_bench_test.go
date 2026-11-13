@@ -30,7 +30,7 @@ func benchmarkHeldEntryCloud(b *testing.B, holders int) (*Cache, []HolderKey) {
 			b.Fatal(err)
 		}
 		for _, session := range sessions {
-			if err := cloud.AddRemoteHold(ctx, key, session); err != nil {
+			if _, err := cloud.AddRemoteHold(ctx, key, session); err != nil {
 				b.Fatal(err)
 			}
 		}

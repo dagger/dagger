@@ -53,7 +53,7 @@ func TestSetStoredPartNeedsABlobStore(t *testing.T) {
 	t.Parallel()
 	ctx, c := storedPartTestCache(t)
 	res := storedPartTestPublish(t, ctx, c, "s", "engine-stored-part", &captureTestValue{text: "v"})
-	stored, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), 0)
+	stored, _, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), 0)
 	require.ErrorContains(t, err, "no blob store")
 	require.False(t, stored)
 	require.Empty(t, storedPartTestStored(c, res))
@@ -70,17 +70,17 @@ func TestSetStoredPart(t *testing.T) {
 	key, err := partAddressKey(testLiveOffer().Address)
 	require.NoError(t, err)
 
-	stored, err := c.SetStoredPart(ctx, number, testLiveOffer(), 0)
+	stored, _, err := c.SetStoredPart(ctx, number, testLiveOffer(), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	require.Equal(t, testLiveOffer(), storedPartTestStored(c, res)[key])
 
 	metadata := testLiveOffer()
 	metadata.Address.Part = "metadata"
-	_, err = c.SetStoredPart(ctx, number, metadata, 0)
+	_, _, err = c.SetStoredPart(ctx, number, metadata, 0)
 	require.ErrorContains(t, err, "metadata")
 
-	_, err = c.SetStoredPart(ctx, number+1000, testLiveOffer(), 0)
+	_, _, err = c.SetStoredPart(ctx, number+1000, testLiveOffer(), 0)
 	require.ErrorContains(t, err, "no entry")
 
 	a := newCloudApplier(t, c)
@@ -89,7 +89,7 @@ func TestSetStoredPart(t *testing.T) {
 	c.egraphMu.RLock()
 	heldEntry := c.entriesByRecipe[held.Recipe]
 	c.egraphMu.RUnlock()
-	_, err = c.SetStoredPart(ctx, uint64(heldEntry), testLiveOffer(), 0)
+	_, _, err = c.SetStoredPart(ctx, uint64(heldEntry), testLiveOffer(), 0)
 	require.ErrorContains(t, err, "no value")
 }
 
@@ -117,7 +117,7 @@ func TestSetStoredPartAdmission(t *testing.T) {
 			if tc.entryExpired {
 				currentEntryTestExpire(c, res)
 			}
-			stored, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), tc.copyExpires)
+			stored, _, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), tc.copyExpires)
 			require.NoError(t, err)
 			require.Equal(t, tc.stored, stored)
 			require.Equal(t, tc.stored, len(storedPartTestStored(c, res)) == 1)
@@ -131,7 +131,7 @@ func TestReplacementDropsStoredParts(t *testing.T) {
 	t.Parallel()
 	ctx, c := storedPartTestCache(t, WithBlobStore())
 	old := storedPartTestPublish(t, ctx, c, "a", "stored-part-replaced", &captureTestValue{text: "old"})
-	stored, err := c.SetStoredPart(ctx, uint64(old.cacheSharedResult().id), testLiveOffer(), 0)
+	stored, _, err := c.SetStoredPart(ctx, uint64(old.cacheSharedResult().id), testLiveOffer(), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	require.NoError(t, c.ReleaseSession(ctx, "a"))
@@ -166,7 +166,7 @@ func TestSetStoredPartAdmitsUnderTheGraphLock(t *testing.T) {
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		stored, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), expires)
+		stored, _, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), testLiveOffer(), expires)
 		done <- outcome{stored, err}
 	}()
 	blocked := false

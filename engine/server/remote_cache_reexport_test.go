@@ -160,7 +160,7 @@ func TestRemoteCacheAdapterReexportLeavesOutTheCloudsOffers(t *testing.T) {
 		if value.Ordinal == first.Roots[0].Ordinal {
 			cloudRoot = value.Number
 		}
-		stored, err := cloud.SetStoredPart(t.Context(), value.Number, dagql.PersistedPartOffer{Address: snapshotPart, Value: dagql.SnapshotValue{Kind: "file", Path: "/pending"}, Chain: reexportTestChain(i)}, 0)
+		stored, _, err := cloud.SetStoredPart(t.Context(), value.Number, dagql.PersistedPartOffer{Address: snapshotPart, Value: dagql.SnapshotValue{Kind: "file", Path: "/pending"}, Chain: reexportTestChain(i)}, 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 	}
