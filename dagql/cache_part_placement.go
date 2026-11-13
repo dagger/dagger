@@ -69,7 +69,8 @@ func (c *Cache) PlaceOffer(receiver HolderKey, part PersistedPartOffer, nowUnix 
 				if member == nil {
 					continue
 				}
-				for key, h := range member.holders {
+				for _, ref := range member.holderRefsLocked() {
+					key, h := ref.key, ref.h
 					if key.Cache != receiver.Cache || h.expiresAtUnix != 0 && h.expiresAtUnix <= nowUnix {
 						continue
 					}

@@ -63,8 +63,8 @@ func (c *Cache) currentEntryForRecipeLocked(recipe digest.Digest) *sharedResult 
 // sessionMu.
 func (c *Cache) resultInUseLocked(res *sharedResult) bool {
 	idle := int64(0)
-	for key := range res.holders {
-		if !senderCache(key.Cache) {
+	for _, ref := range res.holderRefsLocked() {
+		if !senderCache(ref.key.Cache) {
 			idle++
 		}
 	}

@@ -140,7 +140,7 @@ func cloudIndexes(cloud *Cache) ([]HolderKey, []digest.Digest) {
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
 	var keys []HolderKey
-	for key := range cloud.holderEntries {
+	for key := range cloud.holderEntriesForTest() {
 		keys = append(keys, key)
 	}
 	slices.SortFunc(keys, compareHolderKeys)
@@ -460,8 +460,8 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 				class := cloud.eqClassRootLocked(cloud.egraphDigestToClass[dig.String()])
 				_, classed[dig] = cloud.outputEqClassResults[class][entry.id]
 			}
-			holdings := len(entry.holders)
-			for k := range cloud.holderEntries {
+			holdings := len(entry.holderRefsLocked())
+			for k := range cloud.holderEntriesForTest() {
 				if k.Cache == key.Cache {
 					holdings++
 				}
@@ -909,7 +909,7 @@ func TestRemoteEntryHasNoValue(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, errOf(cloud.AddRemoteHold(ctx, HolderKey{"cache-a", 1}, "s")))
 	cloud.egraphMu.RLock()
-	id := uint64(cloud.holderEntries[HolderKey{"cache-a", 1}])
+	id := uint64(cloud.holderEntriesForTest()[HolderKey{"cache-a", 1}])
 	cloud.egraphMu.RUnlock()
 	require.NotZero(t, id)
 

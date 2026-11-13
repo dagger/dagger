@@ -10,30 +10,53 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// requireCacheHoldersExact checks every entry's index of its holdings by
-// engine cache (cacheHolders) against a recomputation from its holdings:
-// each engine cache's holding numbers, the Cloud's own holding left out.
+// holderEntriesForTest returns the entry of every holding, by key, from the
+// engine caches' indexes. Requires egraphMu.
+func (c *Cache) holderEntriesForTest() map[HolderKey]sharedResultID {
+	out := map[HolderKey]sharedResultID{}
+	for cache, state := range c.remoteCaches {
+		for number, id := range state.entries {
+			out[HolderKey{Cache: cache, Number: number}] = id
+		}
+	}
+	return out
+}
+
+// requireCacheHoldersExact checks every entry's holdings by engine cache
+// (cacheHolderRefsLocked) against a recomputation from all its holdings:
+// each engine cache's holding numbers, the Cloud's own holding left out, and
+// that the engine caches' indexes name exactly the holdings on entries.
 func requireCacheHoldersExact(t *testing.T, c *Cache) {
 	t.Helper()
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
+	indexed := map[HolderKey]sharedResultID{}
 	for id, entry := range c.resultsByID {
+		refs := entry.holderRefsLocked()
+		require.True(t, slices.IsSortedFunc(refs, func(a, b holderRef) int { return compareHolderKeys(a.key, b.key) }), "entry %d", id)
 		want := map[CacheID]map[uint64]struct{}{}
-		for key := range entry.holders {
-			if key.Cache == cloudCacheID {
+		for _, ref := range refs {
+			if senderCache(ref.key.Cache) {
 				continue
 			}
-			if want[key.Cache] == nil {
-				want[key.Cache] = map[uint64]struct{}{}
+			indexed[ref.key] = id
+			if want[ref.key.Cache] == nil {
+				want[ref.key.Cache] = map[uint64]struct{}{}
 			}
-			want[key.Cache][key.Number] = struct{}{}
+			want[ref.key.Cache][ref.key.Number] = struct{}{}
 		}
-		got := entry.cacheHolders
-		if got == nil {
-			got = map[CacheID]map[uint64]struct{}{}
+		got := map[CacheID]map[uint64]struct{}{}
+		for cache := range want {
+			for _, ref := range entry.cacheHolderRefsLocked(cache) {
+				if got[cache] == nil {
+					got[cache] = map[uint64]struct{}{}
+				}
+				got[cache][ref.key.Number] = struct{}{}
+			}
 		}
 		require.Equal(t, want, got, "entry %d", id)
 	}
+	require.Equal(t, indexed, c.holderEntriesForTest())
 }
 
 // The index of holdings by engine cache stays exactly what the holdings say
@@ -87,8 +110,8 @@ func TestCacheHoldersIndexExact(t *testing.T) {
 // heldByHoldingsLocked is HeldBy's predicate on holdings as it was before
 // the index: every holding of the entry walked.
 func heldByHoldingsLocked(h *HeldBy, res *sharedResult, nowUnix int64) bool {
-	for key, held := range res.holders {
-		if key.Cache == h.Cache && (held.expiresAtUnix == 0 || held.expiresAtUnix > nowUnix) {
+	for _, ref := range res.holderRefsLocked() {
+		if key, held := ref.key, ref.h; key.Cache == h.Cache && (held.expiresAtUnix == 0 || held.expiresAtUnix > nowUnix) {
 			return true
 		}
 	}
@@ -118,7 +141,7 @@ func TestHeldByHoldsLikeTheWalk(t *testing.T) {
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
 	res := cloud.resultsByID[sharedResultID(info.Number)]
-	require.Len(t, res.cacheHolders[engineA], 2, "two holdings of one cache on the entry")
+	require.Len(t, res.cacheHolderRefsLocked(engineA), 2, "two holdings of one cache on the entry")
 	for _, tc := range []struct {
 		cache CacheID
 		now   int64

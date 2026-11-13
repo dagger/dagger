@@ -79,7 +79,7 @@ func TestStoredBundleCarriesTheClosureAndItsOwnParts(t *testing.T) {
 	_, err = cloud.AttachRemoteHolding(ctx, HolderKey{Cache: "cache-x", Number: 3}, holdingOf("holdings-only"))
 	require.NoError(t, err)
 	cloud.egraphMu.RLock()
-	holdingsOnly := uint64(cloud.holderEntries[HolderKey{Cache: "cache-x", Number: 3}])
+	holdingsOnly := uint64(cloud.holderEntriesForTest()[HolderKey{Cache: "cache-x", Number: 3}])
 	cloud.egraphMu.RUnlock()
 	mergeTestExpire(cloud, storedBundleTestEntry(cloud, r))
 

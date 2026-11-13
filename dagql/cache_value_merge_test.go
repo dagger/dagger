@@ -385,8 +385,8 @@ func TestMergeValuesStoresARecordOnTheCloud(t *testing.T) {
 	require.Equal(t, []HolderKey{sender, other}, cloud.EquivalentHolders(recipe.String()), "the recipe digest names the entry's class")
 	cloud.egraphMu.RLock()
 	stored, replacements := entry.persistedEnvelope != nil, entry.replacements
-	_, keeps := entry.holders[other]
-	_, holds := entry.holders[sender]
+	keeps := entry.holderLocked(other) != nil
+	holds := entry.holderLocked(sender) != nil
 	noValue = entry.noValueLocked()
 	cloud.egraphMu.RUnlock()
 	require.True(t, stored)

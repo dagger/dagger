@@ -64,12 +64,11 @@ func (h *HeldBy) heldLocked(res *sharedResult, nowUnix int64) bool {
 }
 
 // holdsLocked reports whether res has a holding of h.Cache that hasn't
-// expired at nowUnix: among its holdings of that cache only (cacheHolders),
-// each judged by its own expiry. Requires egraphMu.
+// expired at nowUnix: among its holdings of that cache only
+// (cacheHolderRefsLocked), each judged by its own expiry. Requires egraphMu.
 func (h *HeldBy) holdsLocked(res *sharedResult, nowUnix int64) bool {
-	for number := range res.cacheHolders[h.Cache] {
-		held := res.holders[HolderKey{Cache: h.Cache, Number: number}]
-		if held != nil && (held.expiresAtUnix == 0 || held.expiresAtUnix > nowUnix) {
+	for _, ref := range res.cacheHolderRefsLocked(h.Cache) {
+		if held := ref.h; held.expiresAtUnix == 0 || held.expiresAtUnix > nowUnix {
 			return true
 		}
 	}

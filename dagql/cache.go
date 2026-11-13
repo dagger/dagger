@@ -2622,11 +2622,10 @@ type Cache struct {
 	// storedLayers holds each distinct layer of the stored parts' chains
 	// once. Set with blobBacked.
 	storedLayers *storedLayers
-	// holderEntries maps each holding's key to the entry it sits on, and
-	// entriesByRecipe each recipe digest to its entry. remoteCaches keeps each
-	// held engine cache's own indexes. All guarded by egraphMu. See
+	// entriesByRecipe maps each recipe digest to its entry. remoteCaches
+	// keeps each held engine cache's own indexes, the entry of each of its
+	// holdings among them. All guarded by egraphMu. See
 	// cache_remote_entries.go.
-	holderEntries   map[HolderKey]sharedResultID
 	entriesByRecipe map[digest.Digest]sharedResultID
 	remoteCaches    map[CacheID]*remoteCacheState
 	// joinedEntries, while an operation on holdings runs, collects the
@@ -3069,18 +3068,13 @@ type sharedResult struct {
 	// dependencies describe. Persisted and guarded by egraphMu. See
 	// cache_current_entry.go.
 	replacements uint64
-	// holders are what the cache knows about other engine caches' copies of
-	// this entry, by holding key. recipeKeys are the entriesByRecipe keys
-	// that name it. Both guarded by egraphMu.
-	holders    map[HolderKey]*holding
+	// holders are what the cache knows about other caches' copies of this
+	// entry, sorted by holding key, so that one engine cache's holdings are
+	// one run of them (cacheHolderRefsLocked); nil when it has none.
+	// recipeKeys are the entriesByRecipe keys that name it. Both guarded by
+	// egraphMu.
+	holders    *entryHolders
 	recipeKeys []digest.Digest
-	// cacheHolders indexes holders by engine cache: the numbers of each
-	// engine cache's holdings on this entry, so that a read of one cache's
-	// holdings doesn't walk every other cache's (heldLocked, CacheHoldings).
-	// addHoldingLocked and removeHoldingLocked keep it, as they do holders;
-	// the Cloud's own holding on an engine's entry (noteCloudCopyLocked) is
-	// not in it. Guarded by egraphMu.
-	cacheHolders map[CacheID]map[uint64]struct{}
 	// calls are, on the Cloud, the calls its engines reported returning this
 	// entry other than its own, by request digest, which StoredBundle sends
 	// with the entry (cache_call_records.go). They own nothing and go with
