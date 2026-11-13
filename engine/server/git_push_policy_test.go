@@ -187,16 +187,25 @@ func TestGitPushApprovalOwnerOrigin(t *testing.T) {
 		return prompt.APPROVAL_ALLOW_ONCE
 	}}
 	const root = "/home/me/repo"
-	routing := &pushRoutingServer{checkouts: map[string][]*git.GitConfigEntry{root: {
-		{Key: "remote.origin.url", Value: "https://example.com/me/repo.git"},
+	routing := &pushRoutingServer{entries: []*git.GitConfigEntry{
 		{Key: "url.git@push.example.com:.pushinsteadof", Value: "https://example.com/"},
-	}}}
+	}}
 	s := newGitPushTestSession(t, questions, routing)
-	ws := &core.Workspace{}
+	ws := &core.Workspace{ClientID: "owner"}
 	ws.SetHostPath(root)
 	s.owner.workspace = ws
 	heads := &remoteHeads{heads: map[string]string{}}
 	s.srv.gitRemoteHead = heads.probe
+	// Without the origin the session first saw, nothing is the origin.
+	_, err := s.srv.AuthorizeGitPush(s.moduleCtx, "https://example.com/me/repo", "refs/heads/feature", false, false)
+	require.NoError(t, err)
+	require.Len(t, questions.asked(), 1)
+	require.Zero(t, routing.requests)
+	// The first load records it, and only the first: the checkout's config
+	// may have been rewritten by an export since.
+	key := gitPushPolicyKey{owner: "owner", remote: root}
+	s.sess.checkoutOrigins.record(key, func() string { return "https://example.com/me/repo.git" })
+	s.sess.checkoutOrigins.record(key, func() string { return "https://evil.example/me/repo" })
 
 	// The origin as configured, and as the owner's rewrites resolve it for a
 	// push, are approved already for branches other than the default.
@@ -204,11 +213,11 @@ func TestGitPushApprovalOwnerOrigin(t *testing.T) {
 		_, err := s.srv.AuthorizeGitPush(s.moduleCtx, remote, "refs/heads/feature", true, false)
 		require.NoError(t, err)
 	}
-	require.Empty(t, questions.asked())
-	require.Equal(t, 1, routing.checkoutRequests, "the origin is read once per session")
+	require.Len(t, questions.asked(), 1)
+	require.Equal(t, 1, routing.requests, "the owner's rewrites are read once per session")
 
 	// Its default branch still asks, and so does any other repository.
-	_, err := s.srv.AuthorizeGitPush(s.moduleCtx, "https://example.com/me/repo", "refs/heads/main", false, false)
+	_, err = s.srv.AuthorizeGitPush(s.moduleCtx, "https://example.com/me/repo", "refs/heads/main", false, false)
 	require.NoError(t, err)
 	_, err = s.srv.AuthorizeGitPush(s.moduleCtx, "https://example.com/me/other", "refs/heads/feature", false, false)
 	require.NoError(t, err)
@@ -222,6 +231,7 @@ func TestGitPushApprovalOwnerOrigin(t *testing.T) {
 		asked = append(asked, req.Kind+" "+req.Subject)
 	}
 	require.Equal(t, []string{
+		"git-push-remote https://example.com/me/repo",
 		"git-push https://example.com/me/repo @ refs/heads/main",
 		"git-push-remote https://example.com/me/other",
 		"git-push-remote https://evil.example/me/repo",

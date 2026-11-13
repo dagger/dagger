@@ -18,19 +18,11 @@ type pushRoutingServer struct {
 	git.UnimplementedGitServer // Credential/SSH RPCs must not run during authorization.
 	entries                    []*git.GitConfigEntry
 	requests                   int
-	// checkouts is the config of the owner's own checkouts, by path.
-	checkouts        map[string][]*git.GitConfigEntry
-	checkoutRequests int
 }
 
 func (s *pushRoutingServer) GetConfig(_ context.Context, req *git.GitConfigRequest) (*git.GitConfigResponse, error) {
 	if req.CheckoutPath != "" {
-		entries, ok := s.checkouts[req.CheckoutPath]
-		if !ok {
-			return nil, errors.New("must not read a module checkout's config")
-		}
-		s.checkoutRequests++
-		return &git.GitConfigResponse{Result: &git.GitConfigResponse_Config{Config: &git.GitConfig{Entries: entries}}}, nil
+		return nil, errors.New("must not read a module checkout's config")
 	}
 	s.requests++
 	return &git.GitConfigResponse{Result: &git.GitConfigResponse_Config{Config: &git.GitConfig{Entries: s.entries}}}, nil
