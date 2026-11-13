@@ -52,8 +52,9 @@ var exportRefConfig = config.RefConfig{
 }
 
 // idleExportRefConfig is exportRefConfig for an export the service asks for
-// while no session is live, as an engine's last exports after its last
-// session ends: nothing else runs then, and the engine stops 20 s after that
+// while no session runs work, as an engine's last exports as its last
+// session tears down or after it ends: no check runs then, only the
+// session's own cleanup, and the engine stops 20 s after that
 // session, so its layers build on all its cores, one each at once, through a
 // gate of their own. On a ten-check stack a stopping engine's last export
 // built 113 layers, 23.2 s of diffs, 4 at once in 8.5 s; on the simulator a
@@ -68,7 +69,8 @@ var idleExportRefConfig = config.RefConfig{
 }
 
 // exportConfig is how an export asked for now builds its layers:
-// idleExportRefConfig while no session is live, exportRefConfig otherwise.
+// idleExportRefConfig while no session runs work (sessionLedger.idle),
+// exportRefConfig otherwise.
 func (a *RemoteCacheAdapter) exportConfig() config.RefConfig {
 	if a.ledger != nil && a.ledger.idle() {
 		return idleExportRefConfig
