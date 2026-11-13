@@ -6100,7 +6100,7 @@ func (container *Container) WithDirectory(
 		return nil, err
 	}
 	container.recordPartDiagnostic("writerBody", "")
-	if err := dir.withDirectory(ctx, targetParent, mntSubpath, src, filter, resolvedOwner, nil, container.directoryCommitObserver()); err != nil {
+	if err := dir.withDirectory(ctx, targetParent, mntSubpath, src, "", filter, resolvedOwner, nil, container.directoryCommitObserver()); err != nil {
 		return nil, err
 	}
 	container.ImageRef = ""
