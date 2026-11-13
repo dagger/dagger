@@ -87,6 +87,11 @@ func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest MountableRef, di
 		defer func() {
 			rerr = multierror.Append(rerr, d.Release()).ErrorOrNil()
 		}()
+		if diff.Root {
+			if err := d.rootChange(ctx, a.Apply); err != nil {
+				return snapshots.Usage{}, errors.Wrapf(err, "failed to apply root directory")
+			}
+		}
 		if err := d.HandleChanges(ctx, a.Apply); err != nil {
 			return snapshots.Usage{}, errors.Wrapf(err, "failed to handle changes")
 		}
@@ -796,6 +801,25 @@ func (d *differ) overlayDirLayers(subPath string) ([]string, error) {
 	}
 	d.overlayDirs[subPath] = layers
 	return layers, nil
+}
+
+// rootChange hands on the upper view's root directory itself, as a change
+// to the destination's root.
+func (d *differ) rootChange(ctx context.Context, handle func(context.Context, *change) error) error {
+	fi, err := os.Lstat(d.upperRoot)
+	if err != nil {
+		return err
+	}
+	stat, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return errors.Errorf("unexpected type %T", fi.Sys())
+	}
+	return handle(ctx, &change{
+		kind:    continuityfs.ChangeKindModify,
+		subPath: "/",
+		srcPath: d.upperRoot,
+		srcStat: stat,
+	})
 }
 
 func (d *differ) checkParent(ctx context.Context, subPath string, handle func(context.Context, *change) error) error {

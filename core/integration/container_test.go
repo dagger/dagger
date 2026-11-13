@@ -520,6 +520,28 @@ func (ContainerSuite) TestExecRedirectNotLogged(ctx context.Context, t *testctx.
 	require.Equal(t, "ERR-REDIRECTED\n", errOut)
 }
 
+// Each exec stacks a layer on the container's root filesystem. However many
+// stack, the root directory keeps its owner, and every exec's files.
+func (ContainerSuite) TestLongExecChain(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const execs = 140
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"chown", "1000:1000", "/"})
+	for i := range execs {
+		ctr = ctr.WithExec([]string{"touch", fmt.Sprintf("/f%03d", i)})
+		if i%20 == 19 {
+			// Evaluate as the chain grows, so each query stays small.
+			var err error
+			ctr, err = ctr.Sync(ctx)
+			require.NoError(t, err)
+		}
+	}
+	out, err := ctr.WithExec([]string{"sh", "-c", "stat -c %u:%g / && ls / | grep -c '^f[0-9]'"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("1000:1000\n%d\n", execs), out)
+}
+
 func (ContainerSuite) TestExecWithWorkdir(ctx context.Context, t *testctx.T) {
 	res, err := testutil.Query[struct {
 		Container struct {

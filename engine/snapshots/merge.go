@@ -29,6 +29,10 @@ type Diff struct {
 	Lower      string
 	Upper      string
 	Comparison fsdiff.Comparison
+	// Root also applies Upper's root directory itself (its owner, mode,
+	// xattrs and times), which a diff of its contents leaves out: for a
+	// diff with no Lower that copies a whole tree, as a flatten does.
+	Root bool
 }
 
 type MergeSnapshotter interface {
