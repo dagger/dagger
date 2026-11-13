@@ -1,0 +1,712 @@
+package idtui
+
+import (
+	"context"
+	"slices"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+	"github.com/vito/tuist"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/session/prompt"
+)
+
+// Approvals are access requests (a git push with the user's credentials, a
+// host secret, ...) an agent's module makes on the user's behalf. Unlike
+// prompt forms, which are global, serialized and take keyboard focus the
+// moment they arrive, an approval is scoped to the call that asked for it:
+//
+//   - It renders inline beneath the row of the LLM tool call it came from
+//     (else the nearest rendered ancestor of the requesting call), so several
+//     can be pending at once, each where its agent is working.
+//   - It never takes focus on its own. It gains focus when the user navigates
+//     onto its row (or jumps to it with `a` in nav mode / alt+a at the prompt),
+//     and gives it back once answered or left with esc.
+//   - The agent it blocks is cued on the roster, so the user knows there is
+//     something to navigate to.
+//
+// A request whose span has not arrived (or whose rows are zoomed away) is
+// "floating": it renders below the trace, still without focus, and is
+// re-anchored as soon as its span shows up in the rows.
+
+var _ prompt.ApprovalHandler = (*frontendPretty)(nil)
+
+// approvalJumpKey jumps to the next pending approval from the prompt; nav mode
+// uses the bare approvalNavKey.
+const (
+	approvalJumpKey = "alt+a"
+	approvalNavKey  = "a"
+)
+
+type approvalChoice struct {
+	label    string
+	decision prompt.ApprovalDecision
+}
+
+type pendingApproval struct {
+	req *prompt.ApprovalRequest
+	seq uint64
+
+	done     chan struct{}
+	decision prompt.ApprovalDecision
+	err      error
+	finished bool
+
+	choices  []approvalChoice
+	selected int
+
+	// anchor is the row the approval renders beneath; zero while floating.
+	anchor dagui.SpanID
+	// agentID is the runtime handle of the agent the approval blocks, for the
+	// roster's cue.
+	agentID string
+
+	// armed is set when the user navigates to the approval. Only an armed
+	// approval may hold keyboard focus, so one that appears under the cursor
+	// (or that the cursor follows new output onto) never steals keys.
+	armed bool
+	// returnToInput records that the user jumped here from the prompt, so
+	// answering hands focus back to it rather than leaving them in nav mode.
+	returnToInput bool
+
+	view *ApprovalView
+}
+
+// approvalChoices lists the answers in increasing order of trust: the safe
+// answer first (and selected by default), the widest grant last. Forever is
+// only offered when the request names a key it can be remembered under.
+func approvalChoices(req *prompt.ApprovalRequest) []approvalChoice {
+	choices := []approvalChoice{
+		{"Deny", prompt.APPROVAL_DENY},
+		{"Allow once", prompt.APPROVAL_ALLOW_ONCE},
+		{"Allow for this session", prompt.APPROVAL_ALLOW_SESSION},
+	}
+	if req.GetPersistentKey() != "" {
+		choices = append(choices, approvalChoice{"Allow forever", prompt.APPROVAL_ALLOW_FOREVER})
+	}
+	return choices
+}
+
+// HandleApproval implements prompt.ApprovalHandler: it shows the request
+// inline under the call that made it and blocks until the user answers or ctx
+// is canceled. Several may be pending at once.
+func (fe *frontendPretty) HandleApproval(ctx context.Context, req *prompt.ApprovalRequest) (prompt.ApprovalDecision, error) {
+	if fe.reportOnly {
+		return prompt.APPROVAL_DENY, ErrNonInteractive
+	}
+	a := &pendingApproval{
+		req:     req,
+		done:    make(chan struct{}),
+		choices: approvalChoices(req),
+	}
+	a.view = &ApprovalView{fe: fe, approval: a}
+	fe.dispatch(func() {
+		fe.addApproval(a)
+	})
+	select {
+	case <-ctx.Done():
+		fe.dispatch(func() {
+			fe.finishApproval(a, prompt.APPROVAL_DENY, ctx.Err())
+		})
+		return prompt.APPROVAL_DENY, ctx.Err()
+	case <-a.done:
+		return a.decision, a.err
+	}
+}
+
+// addApproval registers a pending approval. Must run on the UI goroutine.
+func (fe *frontendPretty) addApproval(a *pendingApproval) {
+	if a.finished {
+		return
+	}
+	fe.approvalSeq++
+	a.seq = fe.approvalSeq
+	fe.approvals = append(fe.approvals, a)
+	fe.resolveApproval(a)
+	fe.approvalsChanged()
+}
+
+// finishApproval answers (or cancels) one approval and tears it down. Late
+// and duplicate calls are harmless. Must run on the UI goroutine.
+func (fe *frontendPretty) finishApproval(a *pendingApproval, decision prompt.ApprovalDecision, err error) {
+	if a == nil || a.finished {
+		return
+	}
+	hadFocus := fe.tui != nil && fe.tui.IsFocused(a.view)
+	a.finished = true
+	a.decision = decision
+	a.err = err
+	fe.approvals = slices.DeleteFunc(fe.approvals, func(other *pendingApproval) bool {
+		return other == a
+	})
+	fe.updateApprovalAnchor(a.anchor)
+	if hadFocus {
+		fe.restoreApprovalFocus(a)
+	}
+	close(a.done)
+	fe.approvalsChanged()
+}
+
+// restoreApprovalFocus hands focus back after the approval that held it goes
+// away (or is left with esc): to the prompt if the user jumped here from it,
+// else to the row they navigated from.
+func (fe *frontendPretty) restoreApprovalFocus(a *pendingApproval) {
+	a.armed = false
+	if a.returnToInput && fe.textInput != nil {
+		a.returnToInput = false
+		fe.enterInsertMode()
+		return
+	}
+	a.returnToInput = false
+	fe.focusNavigationTarget()
+	fe.refreshKeymap()
+}
+
+// approvalsChanged re-renders everything an approval's arrival or departure
+// shows up in: the floating list, the roster cue and the keymap.
+func (fe *frontendPretty) approvalsChanged() {
+	fe.approvalsGen++
+	fe.updateAgentRoster()
+	fe.refreshKeymap()
+	fe.Update()
+}
+
+func (fe *frontendPretty) updateApprovalAnchor(anchor dagui.SpanID) {
+	if !anchor.IsValid() {
+		fe.Update()
+		return
+	}
+	if st := fe.spanTrees[anchor]; st != nil {
+		st.Update()
+	}
+}
+
+// resolveApprovals re-anchors every pending approval after the rows change:
+// its span may have arrived, or a zoom or collapse may have moved the nearest
+// rendered ancestor.
+func (fe *frontendPretty) resolveApprovals() {
+	changed := false
+	for _, a := range fe.approvals {
+		if fe.resolveApproval(a) {
+			changed = true
+		}
+	}
+	if changed {
+		fe.approvalsGen++
+		fe.updateAgentRoster()
+	}
+	fe.syncApprovalFocus()
+}
+
+// resolveApproval recomputes one approval's anchor and agent, reporting
+// whether either changed.
+func (fe *frontendPretty) resolveApproval(a *pendingApproval) bool {
+	span := fe.approvalSpan(a.req)
+	anchor := fe.approvalAnchor(span)
+	agentID := a.req.GetRequester().GetAgentHandle()
+	if agentID == "" {
+		for s := span; s != nil; s = s.ParentSpan {
+			if s.Agent && s.AgentID != "" {
+				agentID = s.AgentID
+				break
+			}
+		}
+	}
+	changed := false
+	if anchor != a.anchor {
+		old := a.anchor
+		a.anchor = anchor
+		a.view.Update() // its hint depends on having a row
+		fe.updateApprovalAnchor(old)
+		fe.updateApprovalAnchor(anchor)
+		changed = true
+	}
+	if agentID != a.agentID {
+		a.agentID = agentID
+		changed = true
+	}
+	return changed
+}
+
+// approvalSpan is the span of the call that requested approval, if it has
+// arrived.
+func (fe *frontendPretty) approvalSpan(req *prompt.ApprovalRequest) *dagui.Span {
+	if fe.db == nil || req.GetSpanId() == "" {
+		return nil
+	}
+	id, err := trace.SpanIDFromHex(req.GetSpanId())
+	if err != nil {
+		return nil
+	}
+	return fe.db.Spans.Map[dagui.SpanID{SpanID: id}]
+}
+
+// approvalAnchor finds the row an approval renders beneath: the LLM tool call
+// enclosing the requesting call, or failing that the call itself -- or, when
+// that row is not rendered (collapsed, internal, zoomed past), its nearest
+// rendered ancestor. Zero means there is no such row: the approval floats.
+func (fe *frontendPretty) approvalAnchor(span *dagui.Span) dagui.SpanID {
+	if span == nil || fe.rows == nil {
+		return dagui.SpanID{}
+	}
+	target := span
+	for s := span; s != nil; s = s.ParentSpan {
+		if s.LLMTool == "" {
+			continue
+		}
+		target = s
+		// A tool call renders as a display span (with a role) whose
+		// execution runs in an internal child carrying the same tool name;
+		// the display span is the row the user sees.
+		if s.LLMRole == "" && s.ParentSpan != nil && s.ParentSpan.LLMTool != "" {
+			target = s.ParentSpan
+		}
+		break
+	}
+	for s := target; s != nil; s = s.ParentSpan {
+		if fe.rows.BySpan[s.ID] != nil && fe.spanTrees[s.ID] != nil {
+			return s.ID
+		}
+	}
+	return dagui.SpanID{}
+}
+
+// approvalsAt returns the pending approvals anchored beneath a row, oldest
+// first.
+func (fe *frontendPretty) approvalsAt(spanID dagui.SpanID) []*pendingApproval {
+	var at []*pendingApproval
+	for _, a := range fe.approvals {
+		if a.anchor == spanID {
+			at = append(at, a)
+		}
+	}
+	return at
+}
+
+// approvalAgents is the set of agents blocked on a pending approval.
+func (fe *frontendPretty) approvalAgents() map[string]bool {
+	if len(fe.approvals) == 0 {
+		return nil
+	}
+	agents := map[string]bool{}
+	for _, a := range fe.approvals {
+		if a.agentID != "" {
+			agents[a.agentID] = true
+		}
+	}
+	return agents
+}
+
+// focusableApproval is the approval that should hold keyboard focus while
+// navigating, if any: an armed one under the cursor, else an armed floating
+// one the user jumped to.
+func (fe *frontendPretty) focusableApproval() *pendingApproval {
+	var floating *pendingApproval
+	for _, a := range fe.approvals {
+		if !a.armed {
+			continue
+		}
+		if a.anchor.IsValid() {
+			if a.anchor == fe.FocusedSpan {
+				return a
+			}
+		} else if floating == nil {
+			floating = a
+		}
+	}
+	return floating
+}
+
+// focusedApproval is the approval that holds keyboard focus, if any.
+func (fe *frontendPretty) focusedApproval() *pendingApproval {
+	if fe.tui == nil {
+		return nil
+	}
+	if v, ok := fe.tui.Focused().(*ApprovalView); ok && !v.approval.finished {
+		return v.approval
+	}
+	return nil
+}
+
+// disarmApprovals drops the arming of every approval the cursor is no longer
+// on. Floating approvals stay armed unless includeFloating: only the user's
+// own navigation leaves those.
+func (fe *frontendPretty) disarmApprovals(cursor dagui.SpanID, includeFloating bool) {
+	for _, a := range fe.approvals {
+		if !a.armed {
+			continue
+		}
+		if a.anchor.IsValid() {
+			if a.anchor != cursor {
+				a.armed = false
+				a.returnToInput = false
+			}
+		} else if includeFloating {
+			a.armed = false
+			a.returnToInput = false
+		}
+	}
+}
+
+// armApprovalsAt arms the approvals beneath the row the user navigated onto.
+func (fe *frontendPretty) armApprovalsAt(spanID dagui.SpanID) {
+	for _, a := range fe.approvals {
+		if a.anchor.IsValid() && a.anchor == spanID {
+			a.armed = true
+		}
+	}
+}
+
+// syncApprovalFocus moves focus off an approval view that should no longer
+// hold it (re-anchored away from the cursor, or disarmed).
+func (fe *frontendPretty) syncApprovalFocus() {
+	if fe.tui == nil {
+		return
+	}
+	v, ok := fe.tui.Focused().(*ApprovalView)
+	if !ok {
+		return
+	}
+	if target := fe.navigationTarget(); target != v {
+		fe.tui.SetFocus(target)
+		fe.syncHardwareCursor()
+		fe.refreshKeymap()
+	}
+}
+
+// jumpToApproval moves the cursor to the next pending approval (cycling in
+// arrival order) and gives it focus. Reports whether there was one.
+func (fe *frontendPretty) jumpToApproval() bool {
+	if len(fe.approvals) == 0 || fe.tui == nil {
+		return false
+	}
+	fromInput := fe.inputFocused()
+	next := fe.approvals[0]
+	if cur := fe.focusedApproval(); cur != nil {
+		if i := slices.Index(fe.approvals, cur); i >= 0 {
+			next = fe.approvals[(i+1)%len(fe.approvals)]
+		}
+		// Moving between approvals keeps the original way back.
+		fromInput = fromInput || cur.returnToInput
+		cur.returnToInput = false
+	}
+	if !next.anchor.IsValid() && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+		// The rows may be zoomed away from the requesting call: unzoom to
+		// give it a row to sit under.
+		fe.ZoomedSpan = fe.db.PrimarySpan
+		fe.renderVersion++
+		fe.recalculateViewLocked()
+	}
+	fe.autoFocus = false
+	for _, a := range fe.approvals {
+		a.armed = false
+		a.returnToInput = false
+	}
+	next.armed = true
+	next.returnToInput = fromInput
+	if next.anchor.IsValid() {
+		if row := fe.rows.BySpan[next.anchor]; row != nil {
+			fe.focus(row)
+			if fe.searchQuery != "" {
+				fe.searchIdx = -1
+			}
+		}
+	}
+	fe.tui.SetFocus(next.view)
+	fe.syncHardwareCursor()
+	fe.refreshKeymap()
+	fe.Update()
+	return true
+}
+
+// handleApprovalKey answers or steers the focused approval. Keys it does not
+// claim bubble on to navigation, so moving off the row works as usual.
+func (fe *frontendPretty) handleApprovalKey(a *pendingApproval, keyStr string) bool {
+	if a.finished {
+		return false
+	}
+	pick := func(decision prompt.ApprovalDecision) bool {
+		for _, c := range a.choices {
+			if c.decision == decision {
+				fe.finishApproval(a, decision, nil)
+				return true
+			}
+		}
+		return false
+	}
+	switch keyStr {
+	case "left", "h":
+		if a.selected > 0 {
+			a.selected--
+			a.view.Update()
+		}
+		return true
+	case "right", "l":
+		if a.selected < len(a.choices)-1 {
+			a.selected++
+			a.view.Update()
+		}
+		return true
+	case "enter":
+		fe.finishApproval(a, a.choices[a.selected].decision, nil)
+		return true
+	case "y", "o":
+		return pick(prompt.APPROVAL_ALLOW_ONCE)
+	case "s":
+		return pick(prompt.APPROVAL_ALLOW_SESSION)
+	case "f":
+		return pick(prompt.APPROVAL_ALLOW_FOREVER)
+	case "n", "d":
+		return pick(prompt.APPROVAL_DENY)
+	case "esc", "alt+esc":
+		// Leave without answering: the approval stays pending, and focus goes
+		// back where it came from.
+		fe.restoreApprovalFocus(a)
+		return true
+	}
+	return false
+}
+
+func (fe *frontendPretty) approvalKeys() []key.Binding {
+	a := fe.focusedApproval()
+	if a == nil {
+		return nil
+	}
+	_, forever := approvalChoiceIndex(a, prompt.APPROVAL_ALLOW_FOREVER)
+	return []key.Binding{
+		key.NewBinding(key.WithKeys("←→", "left", "right", "h", "l"), key.WithHelp("←→", "choose")),
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
+		key.NewBinding(key.WithKeys("y", "o"), key.WithHelp("y", "once")),
+		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "session")),
+		key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forever"), KeyEnabled(forever)),
+		key.NewBinding(key.WithKeys("n", "d"), key.WithHelp("n", "deny")),
+		key.NewBinding(key.WithKeys("↑↓", "up", "down", "j", "k"), key.WithHelp("↑↓", "move away")),
+		key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "leave")),
+		key.NewBinding(key.WithKeys(approvalNavKey), key.WithHelp(approvalNavKey, "next approval"),
+			KeyEnabled(len(fe.approvals) > 1)),
+	}
+}
+
+func approvalChoiceIndex(a *pendingApproval, decision prompt.ApprovalDecision) (int, bool) {
+	for i, c := range a.choices {
+		if c.decision == decision {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+// renderFloatingApprovals renders the approvals that have no row to sit under
+// yet, separated by blank lines.
+func (fe *frontendPretty) renderFloatingApprovals(ctx tuist.Context) []string {
+	var lines []string
+	for _, a := range fe.approvals {
+		if a.anchor.IsValid() {
+			continue
+		}
+		childCtx := ctx
+		if ctx.Width > 0 {
+			childCtx.Width = max(ctx.Width-2, 1)
+		}
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		result := fe.RenderChildResult(childCtx, a.view)
+		for _, line := range result.Lines {
+			lines = append(lines, "  "+line)
+		}
+	}
+	return lines
+}
+
+// renderInlineApprovals renders the approvals anchored beneath this row. Only
+// the frontend's own tree hosts them: a view mounts in one place.
+func (s *SpanTreeView) renderInlineApprovals(ctx tuist.Context, r *renderer, row *dagui.TraceRow) []string {
+	if s.finalRender || s.scope != nil || s.fe.spanTrees[s.spanID] != s {
+		return nil
+	}
+	pending := s.fe.approvalsAt(s.spanID)
+	if len(pending) == 0 {
+		return nil
+	}
+	prefix := s.inlineReportPrefix(r, row)
+	childCtx := ctx
+	if ctx.Width > 0 {
+		childCtx.Width = max(ctx.Width-ansi.StringWidth(prefix), 1)
+	}
+	var lines []string
+	for _, a := range pending {
+		result := s.RenderChildResult(childCtx, a.view)
+		for _, line := range result.Lines {
+			lines = append(lines, prefix+line)
+		}
+	}
+	return lines
+}
+
+// ApprovalView renders one pending approval and, when focused, answers it.
+type ApprovalView struct {
+	tuist.Compo
+	fe       *frontendPretty
+	approval *pendingApproval
+	focused  bool
+}
+
+var (
+	_ tuist.Interactive = (*ApprovalView)(nil)
+	_ tuist.Focusable   = (*ApprovalView)(nil)
+)
+
+func (v *ApprovalView) SetFocused(_ tuist.Context, focused bool) {
+	if v.focused != focused {
+		v.focused = focused
+		v.Update()
+	}
+}
+
+func (v *ApprovalView) HandleKeyPress(_ tuist.Context, ev uv.KeyPressEvent) bool {
+	keyStr := uv.Key(ev).String()
+	if !v.fe.handleApprovalKey(v.approval, keyStr) {
+		return false
+	}
+	v.fe.recordKeyPress(keyStr)
+	v.fe.Update()
+	return true
+}
+
+func (v *ApprovalView) Render(ctx tuist.Context) {
+	ctx.Lines(v.fe.approvalLines(v.approval, v.focused, ctx.Width)...)
+}
+
+// approvalLines renders an approval: who is asking, what for, the choices,
+// and how to answer.
+func (fe *frontendPretty) approvalLines(a *pendingApproval, focused bool, width int) []string {
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
+	req := a.req
+
+	// Everything shown is the engine's own display text, but it can carry
+	// remote URLs and refs: strip escape sequences so none reach the terminal.
+	clean := func(s string) string {
+		return strings.TrimSpace(ansi.Strip(s))
+	}
+
+	accent := termenv.ANSIYellow
+	if req.GetDanger() {
+		accent = termenv.ANSIRed
+	}
+
+	var lines []string
+	add := func(line string) {
+		if width > 0 {
+			line = ansi.Wrap(line, width, "")
+		}
+		lines = append(lines, strings.Split(line, "\n")...)
+	}
+
+	// Who is asking.
+	header := out.String(IconApproval+" approval needed").Foreground(accent).Bold().String()
+	if who := approvalRequester(req, clean); who != "" {
+		header += out.String(" · " + who).Faint().String()
+	}
+	add(header)
+
+	// What for. The question is literal text; a destructive one carries its
+	// danger in red, the way the yes/no fallback flags a force-push.
+	question := clean(req.GetPrompt())
+	style := func(s string) string {
+		return out.String(s).Foreground(termenv.ANSIYellow).Bold().String()
+	}
+	danger := func(s string) string {
+		return out.String(s).Foreground(termenv.ANSIRed).Bold().String()
+	}
+	switch {
+	case req.GetDanger() && strings.Contains(question, forcePushPhrase):
+		before, after, _ := strings.Cut(question, forcePushPhrase)
+		var b strings.Builder
+		if before != "" {
+			b.WriteString(style(before))
+		}
+		b.WriteString(danger(forcePushPhrase))
+		if after != "" {
+			b.WriteString(style(after))
+		}
+		add(b.String())
+	case req.GetDanger():
+		add(danger(question))
+	default:
+		add(style(question))
+	}
+	if subject := clean(req.GetSubject()); subject != "" && !strings.Contains(question, subject) {
+		add(out.String("subject: ").Faint().String() + subject)
+	}
+
+	// The choices.
+	var choices []string
+	for i, c := range a.choices {
+		label := c.label
+		switch {
+		case focused && i == a.selected:
+			choices = append(choices, out.String(CaretRightFilled+" "+label).Bold().String())
+		case !focused && i == a.selected:
+			choices = append(choices, "  "+out.String(label).Bold().Faint().String())
+		default:
+			choices = append(choices, "  "+out.String(label).Faint().String())
+		}
+	}
+	add(strings.Join(choices, "   "))
+
+	// How to answer.
+	if focused {
+		hint := "←/→ choose · enter confirm · y once · s session"
+		if _, ok := approvalChoiceIndex(a, prompt.APPROVAL_ALLOW_FOREVER); ok {
+			hint += " · f forever"
+		}
+		hint += " · n deny · esc leave"
+		add(out.String(hint).Faint().String())
+	} else {
+		add(out.String(fe.approvalUnfocusedHint(a)).Faint().String())
+	}
+	return lines
+}
+
+// approvalUnfocusedHint says how to reach an approval that does not have
+// focus: from the prompt by its jump key, else by navigating to its row.
+func (fe *frontendPretty) approvalUnfocusedHint(a *pendingApproval) string {
+	switch {
+	case fe.shell != nil:
+		return approvalJumpKey + " to answer"
+	case a.anchor.IsValid():
+		return "move to this row or press " + approvalNavKey + " to answer"
+	default:
+		return "press " + approvalNavKey + " to answer"
+	}
+}
+
+// approvalRequester renders who is asking: agent, module and function.
+func approvalRequester(req *prompt.ApprovalRequest, clean func(string) string) string {
+	r := req.GetRequester()
+	if r == nil {
+		return ""
+	}
+	var parts []string
+	if name := clean(r.GetAgentName()); name != "" {
+		parts = append(parts, "agent "+name)
+	}
+	if mod := clean(r.GetModule()); mod != "" {
+		if ref := clean(r.GetModuleRef()); ref != "" && ref != mod {
+			mod += " (" + ref + ")"
+		}
+		parts = append(parts, "module "+mod)
+	} else if ref := clean(r.GetModuleRef()); ref != "" {
+		parts = append(parts, "module "+ref)
+	}
+	if fn := clean(r.GetFunction()); fn != "" {
+		parts = append(parts, fn)
+	}
+	return strings.Join(parts, " · ")
+}

@@ -46,6 +46,7 @@ const (
 	IconStop            = "⏹"
 	IconUnreported      = "?"
 	IconCached          = "$" // cache money
+	IconApproval        = "◆" // awaiting the user's approval
 	Diamond             = "◆"
 	LLMPrompt           = "❯"
 	BorderLeft          = "▕"
