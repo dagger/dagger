@@ -456,10 +456,15 @@ func (s *session) handleExport(env protocol.Envelope) {
 				return s.replyError(up, err)
 			}
 			// The service merged the bundle before it asked for the
-			// blobs, or it didn't merge it at all.
-			if req.Merged {
+			// blobs, or it didn't merge it at all: refused as stale, it
+			// names the held rows that no longer hold, and only those
+			// are forgotten.
+			switch {
+			case req.Merged:
 				s.known.Merged(exp.Rows)
-			} else {
+			case len(req.Stale) > 0:
+				s.known.Stale(exp.Rows, req.Stale)
+			default:
 				s.known.NotMerged(exp.Rows)
 			}
 			uploadCtx, uploadOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.upload", wcprof.OpOpts{WorkType: wcprof.WorkTypeExternal})
