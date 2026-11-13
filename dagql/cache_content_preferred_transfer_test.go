@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -123,4 +124,57 @@ func contentPreferredTestCacheAt(t *testing.T, path string) (context.Context, *C
 	srv := newDagqlServerForTest(t, &persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*transferTestValue]{}))
 	return srvToContext(ContextWithCache(ctx, c), srv), c, srv
+}
+
+// A clone of a frame carries its content-preferred digest, and a clone
+// changed into another recipe, as a list element's frame or a derived call
+// is, doesn't use it.
+func TestACloneThatChangesTheRecipeIgnoresTheCarriedContentPreferredDigest(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	file := contentPreferredTestBinary(t, ctx, c, srv, "binary")
+	service := contentPreferredTestService(t, ctx, c, srv, file)
+	frame := service.cacheSharedResult().loadResultCall()
+	produced := contentPreferredTestDigest(t, c, service.cacheSharedResult())
+
+	same := frame.clone()
+	require.NotNil(t, same.ContentPreferred, "a clone carries the computed value")
+	require.Equal(t, produced, same.ContentPreferred.Digest)
+	got, err := same.deriveContentPreferredDigest(c)
+	require.NoError(t, err)
+	require.Equal(t, produced, got)
+
+	changed := frame.clone()
+	changed.Field = "other-service"
+	got, err = changed.deriveContentPreferredDigest(c)
+	require.NoError(t, err)
+	fresh := callRecordTestFrame("other-service")
+	fresh.Receiver = &ResultCallRef{ResultID: frame.Receiver.ResultID}
+	want, err := fresh.deriveContentPreferredDigest(c)
+	require.NoError(t, err)
+	require.Equal(t, want, got, "a changed clone walks its own frame")
+	require.NotEqual(t, produced, got)
+}
+
+// A frame that carries its producer's content-preferred digest and then
+// gains a content digest of its own has that content digest as its
+// content-preferred digest, as a frame computed locally does.
+func TestAContentDigestOverridesTheCarriedContentPreferredDigest(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	file := contentPreferredTestBinary(t, ctx, c, srv, "binary")
+	service := contentPreferredTestService(t, ctx, c, srv, file)
+	contentPreferredTestDigest(t, c, service.cacheSharedResult())
+	carried := service.cacheSharedResult().loadResultCall().clone()
+	require.NotNil(t, carried.ContentPreferred)
+
+	content := digest.FromString("service content")
+	require.NoError(t, c.TeachContentDigest(ctx, service, content))
+	require.Equal(t, content, contentPreferredTestDigest(t, c, service.cacheSharedResult()))
+	require.Nil(t, service.cacheSharedResult().loadResultCall().ContentPreferred, "the taught frame is a fork, which carries none")
+
+	carried.ExtraDigests = append(carried.ExtraDigests, call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent})
+	got, err := carried.deriveContentPreferredDigest(c)
+	require.NoError(t, err)
+	require.Equal(t, content, got, "a frame's own content digest comes first")
 }
