@@ -722,25 +722,21 @@ func (c *Cache) queueStoredBodies(entries []*sharedResult) {
 }
 
 // queueTaughtContentLocked has the body worker give res's frame the content
-// digest a span taught res, when res has a frame and the frame isn't known to
-// carry it: one decoded since with that content digest is. A frame a restored
-// body holds is not known until it is decoded. Requires egraphMu.
+// digests spans taught res that the frame hasn't taken, when res has a frame.
+// A frame known to carry each of them as its content digest takes nothing:
+// one decoded since with that content digest is. A frame a restored body
+// holds is not known until it is decoded. Requires egraphMu.
 func (c *Cache) queueTaughtContentLocked(res *sharedResult) {
 	w := c.storedBodies
-	if !c.blobBacked || w == nil || res.taughtContent == "" || !res.entryFrameLocked().ok() {
+	if !c.blobBacked || w == nil || res.taughtGiven == len(res.taught) || !res.entryFrameLocked().ok() {
 		return
 	}
 	res.resultCallMu.RLock()
-	carried := res.frameContentKnown && res.frameContent == res.taughtContent
+	known, carried := res.frameContentKnown, res.frameContent
 	res.resultCallMu.RUnlock()
-	if carried {
-		res.taughtPending = nil
+	if known && !slices.ContainsFunc(res.taught[res.taughtGiven:], func(d digest.Digest) bool { return d != carried }) {
+		res.taughtGiven = len(res.taught)
 		return
-	}
-	if len(res.taughtPending) == 0 {
-		// The digests pending went to a frame since replaced: the new frame
-		// takes the last one.
-		res.taughtPending = []digest.Digest{res.taughtContent}
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -767,7 +763,8 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 	start := time.Now()
 	for _, res := range entries {
 		c.egraphMu.RLock()
-		pending, live := slices.Clone(res.taughtPending), c.resultsByID[res.id] == res
+		from, frame, live := res.taughtGiven, res.taughtFrame, c.resultsByID[res.id] == res
+		pending := slices.Clone(res.taught[from:])
 		c.egraphMu.RUnlock()
 		if !live || len(pending) == 0 {
 			continue
@@ -788,10 +785,11 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 			c.testTaughtContentGiven()
 		}
 		c.egraphMu.Lock()
-		// Digests taught while these were applied stay pending, queued by
-		// their own teach.
-		if applied <= len(res.taughtPending) && slices.Equal(res.taughtPending[:applied], pending[:applied]) {
-			res.taughtPending = slices.Clone(res.taughtPending[applied:])
+		// A frame a replacement installed since has taken none of them, and
+		// its queueing gives it them all. Digests taught meanwhile are
+		// given by their own queueing.
+		if res.taughtFrame == frame && res.taughtGiven == from {
+			res.taughtGiven = from + applied
 		}
 		c.egraphMu.Unlock()
 	}
@@ -825,8 +823,8 @@ func (c *Cache) closeStoredBodies() {
 	}
 	w.mu.Unlock()
 	<-w.done
-	// A save keeps no taught digest a frame hasn't taken (taughtPending is
-	// not saved), so the frames take theirs before the cache closes.
+	// A save keeps no taught digest a frame hasn't taken (taught is not
+	// saved), so the frames take theirs before the cache closes.
 	if len(content) > 0 {
 		c.applyTaughtContent(content)
 	}
