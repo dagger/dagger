@@ -292,29 +292,18 @@ func (fe *frontendPretty) approvalSpan(req *prompt.ApprovalRequest) *dagui.Span 
 	return fe.db.Spans.Map[dagui.SpanID{SpanID: id}]
 }
 
-// approvalAnchor finds the row an approval renders beneath: the LLM tool call
-// enclosing the requesting call, or failing that the call itself -- or, when
-// that row is not rendered (collapsed, internal, zoomed past), its nearest
-// rendered ancestor. Zero means there is no such row: the approval floats.
+// approvalAnchor finds the row an approval renders beneath: the deepest
+// rendered span on the path to the requesting call -- the call's own row when
+// it is visible, else the nearest ancestor that is, which for a collapsed
+// tool call is the tool call itself. Anchoring as deep as possible keeps the
+// approval next to the work it blocks, which is near the newest output, rather
+// than above every row an expanded tool call has produced since. Zero means
+// there is no such row: the approval floats.
 func (fe *frontendPretty) approvalAnchor(span *dagui.Span) dagui.SpanID {
 	if span == nil || fe.rows == nil {
 		return dagui.SpanID{}
 	}
-	target := span
 	for s := span; s != nil; s = s.ParentSpan {
-		if s.LLMTool == "" {
-			continue
-		}
-		target = s
-		// A tool call renders as a display span (with a role) whose
-		// execution runs in an internal child carrying the same tool name;
-		// the display span is the row the user sees.
-		if s.LLMRole == "" && s.ParentSpan != nil && s.ParentSpan.LLMTool != "" {
-			target = s.ParentSpan
-		}
-		break
-	}
-	for s := target; s != nil; s = s.ParentSpan {
 		if fe.rows.BySpan[s.ID] != nil && fe.spanTrees[s.ID] != nil {
 			return s.ID
 		}
@@ -619,6 +608,66 @@ func approvalChoiceIndex(a *pendingApproval, decision prompt.ApprovalDecision) (
 	return -1, false
 }
 
+// renderApprovalCues renders a one-line cue for each anchored approval whose
+// lines the last progress render left off screen (scrolled above the window,
+// into scrollback, or cropped below it), so a blocked agent is never invisible:
+// outside the shell there is no roster to say so.
+func (fe *frontendPretty) renderApprovalCues() []string {
+	if len(fe.approvals) == 0 || fe.progressTopGaps == nil {
+		return nil
+	}
+	var lines []string
+	for _, a := range fe.approvals {
+		if !a.anchor.IsValid() {
+			continue
+		}
+		tree := fe.spanTrees[a.anchor]
+		if tree == nil {
+			continue
+		}
+		off, ok := tree.approvalLines[a]
+		if !ok {
+			continue
+		}
+		top := fe.findSpanLine(a.anchor, fe.progressTopGaps)
+		if top < 0 {
+			continue
+		}
+		var arrow string
+		switch line := top + off; {
+		case line < fe.progressWindow[0]:
+			arrow = "↑"
+		case line >= fe.progressWindow[1]:
+			arrow = "↓"
+		default:
+			continue
+		}
+		lines = append(lines, fe.approvalCueLine(a, arrow))
+	}
+	return lines
+}
+
+func (fe *frontendPretty) approvalCueLine(a *pendingApproval, arrow string) string {
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
+	accent := termenv.ANSIYellow
+	if a.req.GetDanger() {
+		accent = termenv.ANSIRed
+	}
+	line := "  " + out.String(IconApproval+" approval needed "+arrow).Foreground(accent).Bold().String()
+	if who := approvalRequester(a.req); who != "" {
+		line += out.String(" · " + who).Faint().String()
+	}
+	jump := approvalNavKey
+	if fe.shell != nil {
+		jump = approvalJumpKey
+	}
+	line += out.String(" · " + jump + " to answer").Faint().String()
+	if w := fe.contentWidth; w > 0 {
+		line = ansi.Truncate(line, w, "…")
+	}
+	return line
+}
+
 // renderFloatingApprovals renders the approvals that have no row to sit under
 // yet, separated by blank lines.
 func (fe *frontendPretty) renderFloatingApprovals(ctx tuist.Context) []string {
@@ -642,9 +691,11 @@ func (fe *frontendPretty) renderFloatingApprovals(ctx tuist.Context) []string {
 	return lines
 }
 
-// renderInlineApprovals renders the approvals anchored beneath this row. Only
-// the frontend's own tree hosts them: a view mounts in one place.
-func (s *SpanTreeView) renderInlineApprovals(ctx tuist.Context, r *renderer, row *dagui.TraceRow) []string {
+// renderInlineApprovals renders the approvals anchored beneath this row,
+// starting at line base of this tree. Only the frontend's own tree hosts
+// them: a view mounts in one place.
+func (s *SpanTreeView) renderInlineApprovals(ctx tuist.Context, r *renderer, row *dagui.TraceRow, base int) []string {
+	s.approvalLines = nil
 	if s.finalRender || s.scope != nil || s.fe.spanTrees[s.spanID] != s {
 		return nil
 	}
@@ -657,8 +708,10 @@ func (s *SpanTreeView) renderInlineApprovals(ctx tuist.Context, r *renderer, row
 	if ctx.Width > 0 {
 		childCtx.Width = max(ctx.Width-ansi.StringWidth(prefix), 1)
 	}
+	s.approvalLines = make(map[*pendingApproval]int, len(pending))
 	var lines []string
 	for _, a := range pending {
+		s.approvalLines[a] = base + len(lines)
 		result := s.RenderChildResult(childCtx, a.view)
 		for _, line := range result.Lines {
 			lines = append(lines, prefix+line)
