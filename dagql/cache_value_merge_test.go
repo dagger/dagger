@@ -2800,3 +2800,110 @@ func TestPreparedValueMergeWarmsItsTargets(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, holds, "the commit takes the changed target again")
 }
+
+// A prepared merge's warming runs outside the remote cache service's work
+// lock, and so beside another reply's commit, which on the Cloud replaces an
+// entry's value in place though a capture holds it (decideMergeRowLocked).
+// The capture reads what the replacement writes under the payload's lock: run
+// with -race, a capture that read the entry's imported flag or session
+// handles bare is reported here. The replacement runs in a goroutine started
+// before the capture, once the capture is done and before the warming lets
+// the target go, with no synchronization with the capture but the locks
+// each takes.
+func TestPreparedMergeWarmingBesideAReplacement(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	bctx, b, bsrv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, c, srv, "root-0", &transferTestValue{Text: "sent"})
+	local := persistedListTestResult(t, bctx, b, bsrv, "root-0", &transferTestValue{Text: "local"})
+	target := local.cacheSharedResult()
+	bundle := exportTestBundle(t, ctx, c, root)
+	// The target's parts aren't captured yet: the prepare warms it.
+	target.completeParts.Store(nil)
+	const after = 50 * time.Millisecond
+	var replaced sync.WaitGroup
+	held := false
+	b.testWarmHeld = func() {
+		held = true
+		replaced.Add(1)
+		go func() {
+			defer replaced.Done()
+			time.Sleep(after)
+			fresh := &sharedResult{boundSession: "bound-after", sessionResourceHandle: "handle-after", imported: true}
+			b.egraphMu.Lock()
+			_, _, _ = b.replaceResultValueInPlaceLocked(bctx, target, fresh, 0)
+			b.egraphMu.Unlock()
+		}()
+	}
+	b.testWarmCaptured = func() { time.Sleep(2 * after) }
+	p, err := b.PrepareValueMerge(bctx, cloudCacheID, bundle)
+	replaced.Wait()
+	require.NoError(t, err)
+	require.True(t, held, "the prepare warmed the target")
+	p.Release()
+}
+
+// A replacement in place on the Cloud publishes the merged record's frame
+// before its commit binds the frame's references (bindMergedFrameLocked), and
+// a prepared merge's warming beside it captures the entry, cloning its frame
+// with the references. The capture must never read a reference the commit is
+// binding: run with -race, it is reported here. The replacement holds the
+// graph lock across both, as a commit does, and the warming captures between
+// them.
+func TestPreparedMergeWarmingBesideAReplacementsFrame(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	bctx, b, bsrv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, c, srv, "root-0", &transferTestValue{Text: "sent"})
+	local := persistedListTestResult(t, bctx, b, bsrv, "root-0", &transferTestValue{Text: "local"})
+	other := persistedListTestResult(t, bctx, b, bsrv, "other", &transferTestValue{Text: "other"})
+	target := local.cacheSharedResult()
+	bundle := exportTestBundle(t, ctx, c, root)
+	target.completeParts.Store(nil)
+	const after = 50 * time.Millisecond
+	var replaced sync.WaitGroup
+	b.testWarmHeld = func() {
+		replaced.Add(1)
+		go func() {
+			defer replaced.Done()
+			fresh := &sharedResult{persistedEnvelope: &PersistedResultEnvelope{}}
+			frame := target.loadResultCall().clone()
+			frame.Receiver = &ResultCallRef{ResultID: uint64(other.cacheSharedResult().id)}
+			fresh.storeResultCall(frame)
+			b.egraphMu.Lock()
+			_, _, _ = b.replaceResultValueInPlaceLocked(bctx, target, fresh, 0)
+			time.Sleep(2 * after)
+			_ = b.bindMergedFrameLocked(target, true)
+			b.egraphMu.Unlock()
+		}()
+		time.Sleep(after)
+	}
+	b.testWarmCaptured = func() { time.Sleep(3 * after) }
+	p, err := b.PrepareValueMerge(bctx, cloudCacheID, bundle)
+	replaced.Wait()
+	require.NoError(t, err)
+	p.Release()
+}
+
+// A prepare whose context ends while it warms its targets fails, as a
+// prepare cancelled before does: it returns no prepared merge for its caller
+// to commit or keep.
+func TestPreparedMergeCancelledWhileWarmingFails(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	bctx, b, bsrv := transferTestCache(t)
+	var roots []AnyResult
+	for i := range 3 {
+		field := fmt.Sprintf("root-%d", i)
+		roots = append(roots, persistedListTestResult(t, ctx, c, srv, field, &transferTestValue{Text: "sent"}))
+		persistedListTestResult(t, bctx, b, bsrv, field, &transferTestValue{Text: "local"})
+	}
+	bundle := exportTestBundle(t, ctx, c, roots...)
+	pctx, cancel := context.WithCancel(bctx)
+	defer cancel()
+	b.testWarmStarted = nil
+	b.testCaptureWriteLock = func() { cancel() }
+	p, err := b.PrepareValueMerge(pctx, cloudCacheID, bundle)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, p)
+}

@@ -2614,6 +2614,10 @@ type Cache struct {
 	// in one hold (capturePieceRows otherwise).
 	testCaptureWriteLock func()
 	capturePieceSize     int
+	// testWarmHeld and testWarmCaptured, nil but in tests, run as a merge's
+	// warming has held its targets, before it captures them, and once it
+	// has, before it lets them go (warmMergeTargetParts).
+	testWarmHeld, testWarmCaptured func()
 
 	// readPieceSize, when set, is how many steps a read in pieces takes in
 	// one hold of egraphMu (readPieceSteps otherwise), and
