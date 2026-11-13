@@ -370,6 +370,14 @@ func (srv *Server) backgroundGCContext() context.Context {
 
 func (srv *Server) gcAfterSessionCompletion() {
 	srv.metadataPruneMonitorBlocked.Store(false)
+	// While the engine settles with the remote cache service, its last
+	// exports build their layers, and a collection holds containerd's
+	// metadata and snapshotter locks, which those builds need, for as long as
+	// it removes what the session released: after a long session, seconds of
+	// a stop's export. So the pass waits for the settle to end, which the
+	// settle's bound guarantees, and then runs. A stop that begins meanwhile
+	// abandons it, as it does a running pass.
+	srv.sessionLedger.awaitSettle(srv.backgroundGCContext())
 	srv.gc()
 }
 
