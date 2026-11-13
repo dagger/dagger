@@ -58,6 +58,7 @@ func TestSecretApprovalAgentDrivenModule(t *testing.T) {
 	require.Equal(t, approvalKindSecret, req.Kind)
 	require.Equal(t, uri, req.Subject)
 	require.Equal(t, `Allow reading secret "file:///home/me/.token" (requested by agent "worker", module "staff", function "Staff.gh")?`, req.Prompt)
+	require.Equal(t, `Read secret "file:///home/me/.token"?`, req.Question)
 	require.False(t, req.Danger)
 	require.NotEmpty(t, req.PersistentKey, "reading a secret can be allowed forever")
 }
@@ -76,6 +77,7 @@ func TestSecretApprovalCommand(t *testing.T) {
 	req := s.questions.asked()[0]
 	require.Equal(t, uri, req.Subject)
 	require.Equal(t, `Allow running "gh auth token" on your machine to read a secret (requested by agent "worker", module "staff", function "Staff.gh")?`, req.Prompt)
+	require.Equal(t, `Run "gh auth token" on your machine to read a secret?`, req.Question)
 	require.True(t, req.Danger, "running a command on the owner's host is dangerous")
 	require.Empty(t, req.PersistentKey, "running a command is never allowed forever")
 }
@@ -241,7 +243,9 @@ func TestSecretApprovalPrompt(t *testing.T) {
 	spec := secretApproval("file:///x\u202e\x1b[31m")
 	require.Equal(t, `file:///x\u202e\x1b[31m`, spec.Subject)
 	require.Equal(t, `Allow reading secret "file:///x\u202e\x1b[31m"`, spec.Question)
+	require.Equal(t, `Read secret "file:///x\u202e\x1b[31m"`, spec.Action)
 	spec = secretApproval("cmd://echo \u202e\x1b[31m")
 	require.Equal(t, `cmd://echo \u202e\x1b[31m`, spec.Subject)
 	require.Equal(t, `Allow running "echo \u202e\x1b[31m" on your machine to read a secret`, spec.Question)
+	require.Equal(t, `Run "echo \u202e\x1b[31m" on your machine to read a secret`, spec.Action)
 }

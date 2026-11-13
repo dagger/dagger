@@ -23,9 +23,11 @@ func secretApproval(uri string) approvalSpec {
 		Kind:     approvalKindSecret,
 		Subject:  literalText(uri),
 		Question: "Allow reading secret " + strconv.QuoteToASCII(uri),
+		Action:   "Read secret " + strconv.QuoteToASCII(uri),
 	}
 	if command, ok := strings.CutPrefix(uri, "cmd://"); ok {
 		spec.Question = "Allow running " + strconv.QuoteToASCII(command) + " on your machine to read a secret"
+		spec.Action = "Run " + strconv.QuoteToASCII(command) + " on your machine to read a secret"
 		spec.Danger = true
 		spec.NoForever = true
 	}
