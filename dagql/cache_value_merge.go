@@ -141,8 +141,12 @@ func (c *Cache) PrepareValueMerge(ctx context.Context, from CacheID, input Value
 	// caller commits under its own lock, the remote cache service's work
 	// lock, and the captures take egraphMu for writing, which waits for
 	// egraphMu's readers.
+	// It renumbers its records too, as the commit will decide them: the
+	// commit takes each one whose numbers still hold, and relocates any
+	// other under the graph lock (relocateMergeRowsLocked).
 	if len(prep.stale) == 0 {
 		c.warmMergeTargetParts(ctx, prep)
+		c.prerelocateMergeRows(prep)
 	}
 	// A prepare cancelled while it warmed fails, as one cancelled before
 	// it did: its caller has no merge to commit or release.
@@ -185,7 +189,6 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 	}
 	c.warmMergeTargetParts(ctx, prep)
 	warmed := time.Since(warming)
-	c.prerelocateMergeRows(prep)
 	if c.testBeforeTransferCommit != nil {
 		c.testBeforeTransferCommit()
 	}
