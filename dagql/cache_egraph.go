@@ -1484,42 +1484,7 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 			shared.resultCallMu.Unlock()
 			return false, nil
 		}
-		frame := baseFrame.fork()
-
-		replaced := false
-		var replacedDigest digest.Digest
-		for i, extra := range frame.ExtraDigests {
-			if extra.Label != call.ExtraDigestLabelContent {
-				continue
-			}
-			if extra.Digest != contentDigest {
-				replacedDigest = extra.Digest
-			}
-			frame.ExtraDigests[i].Digest = contentDigest
-			replaced = true
-			break
-		}
-		if !replaced {
-			frame.ExtraDigests = append(frame.ExtraDigests, call.ExtraDigest{
-				Label:  call.ExtraDigestLabelContent,
-				Digest: contentDigest,
-			})
-		}
-		// A replaced content digest still names this result. Keep it on the
-		// frame, so it travels with the result to other engines.
-		if replacedDigest != "" {
-			kept := call.ExtraDigest{Digest: replacedDigest, Label: call.ExtraDigestLabelReplacedContent}
-			if !slices.Contains(frame.ExtraDigests, kept) {
-				frame.ExtraDigests = append(frame.ExtraDigests, kept)
-			}
-		}
-
-		for _, label := range additionalLabels {
-			extra := call.ExtraDigest{Digest: contentDigest, Label: label}
-			if !slices.Contains(frame.ExtraDigests, extra) {
-				frame.ExtraDigests = append(frame.ExtraDigests, extra)
-			}
-		}
+		frame := frameWithContentDigest(baseFrame, contentDigest, additionalLabels)
 
 		requestDigest, err := frame.deriveRecipeDigest(c)
 		if err != nil {
@@ -1598,6 +1563,48 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 		c.egraphMu.Unlock()
 		return true, nil
 	}
+}
+
+// frameWithContentDigest returns a fork of baseFrame whose content digest is
+// contentDigest, with each additional label for it: a content digest it
+// replaces still names the result, so it stays on the frame as
+// replaced-content and travels with the result to other engines.
+func frameWithContentDigest(baseFrame *ResultCall, contentDigest digest.Digest, additionalLabels []string) *ResultCall {
+	frame := baseFrame.fork()
+
+	replaced := false
+	var replacedDigest digest.Digest
+	for i, extra := range frame.ExtraDigests {
+		if extra.Label != call.ExtraDigestLabelContent {
+			continue
+		}
+		if extra.Digest != contentDigest {
+			replacedDigest = extra.Digest
+		}
+		frame.ExtraDigests[i].Digest = contentDigest
+		replaced = true
+		break
+	}
+	if !replaced {
+		frame.ExtraDigests = append(frame.ExtraDigests, call.ExtraDigest{
+			Label:  call.ExtraDigestLabelContent,
+			Digest: contentDigest,
+		})
+	}
+	if replacedDigest != "" {
+		kept := call.ExtraDigest{Digest: replacedDigest, Label: call.ExtraDigestLabelReplacedContent}
+		if !slices.Contains(frame.ExtraDigests, kept) {
+			frame.ExtraDigests = append(frame.ExtraDigests, kept)
+		}
+	}
+
+	for _, label := range additionalLabels {
+		extra := call.ExtraDigest{Digest: contentDigest, Label: label}
+		if !slices.Contains(frame.ExtraDigests, extra) {
+			frame.ExtraDigests = append(frame.ExtraDigests, extra)
+		}
+	}
+	return frame
 }
 
 // frameJSONGrowth is how much longer the JSON of frame, the frame replacing
