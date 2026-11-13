@@ -522,6 +522,7 @@ func TestRelocatedTransferPayloadsStayValid(t *testing.T) {
 		"dagql_test.PartReuse":     {`{"name":"relocated"}`, 0},
 		"dagql_test.StoredCheck":   {`{"text":"relocated"}`, 0},
 		"dagql_test.DescribedPart": {`{"done":true}`, 0},
+		"dagql_test.ExportChain":   {`{"snapshotID":"relocated","file":"/f"}`, 0},
 	}
 	for _, family := range PersistedObjectFamilies() {
 		// core's families, which this package's external tests register,

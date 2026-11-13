@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/sync/errgroup"
 )
 
 type capturedTransferRow struct {
@@ -611,10 +612,16 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 		}
 	}()
 	var chainResults []uint64
-	// opened holds each entry's chain: a File's, which travels as its own
-	// content, as soon as it is exported; the others' once they open
-	// together. batched indexes the entries opening together.
+	// opened holds each entry's chain. files are the entries of Files,
+	// each of which travels as its own content in a chain of its own;
+	// batched indexes the others, which open as one export.
 	var opened []*snapshots.ExportChain
+	type fileEntry struct {
+		entry int
+		ref   snapshots.ImmutableRef
+		path  string
+	}
+	var files []fileEntry
 	var batched []int
 	var batchRefs []snapshots.ImmutableRef
 	seen := map[string]bool{}
@@ -642,25 +649,13 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 		chains.refs = append(chains.refs, ref)
 		chainResults = append(chainResults, uint64(row.shared.id))
 		chains.Entries = append(chains.Entries, SelectedChain{Ordinal: row.ordinal, Address: out.Address})
+		opened = append(opened, nil)
 		// A File is its content: it travels as a chain of its own, not as
 		// the filesystem it was taken from.
 		if out.ValueKind == "file" && out.Value != nil {
-			chainCtx, chainOp := profBeginChain(ctx, out.Address)
-			chain, err := ref.ExportFileChain(chainCtx, cfg, out.Value.Path)
-			var blobBytes int64
-			if chain != nil {
-				blobBytes = chain.Stats.BlobBytes
-			}
-			profEndChain(chainOp, blobBytes, uint64(row.shared.id), err)
-			if err != nil {
-				return nil, err
-			}
-			// Released with the others if a later output fails.
-			chains.chains = append(chains.chains, chain)
-			opened = append(opened, chain)
+			files = append(files, fileEntry{entry: len(chains.Entries) - 1, ref: ref, path: out.Value.Path})
 			continue
 		}
-		opened = append(opened, nil)
 		batched = append(batched, len(chains.Entries)-1)
 		batchRefs = append(batchRefs, ref)
 	}
@@ -681,16 +676,47 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 			},
 		}
 	}
-	batch, err := snapshots.ExportChains(ctx, batchRefs, work, cfg)
+	// The Files' chains build at once with that export and with each
+	// other, up to the layer builds at once a chain may run: each is a
+	// snapshot of its own, whose one layer builds under the same gate as
+	// the export's. Every chain opened is the entry's from here, so a
+	// failure releases it with the others.
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		batch, err := snapshots.ExportChains(egCtx, batchRefs, work, cfg)
+		if err != nil {
+			return err
+		}
+		for i, entry := range batched {
+			opened[entry] = batch[i]
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		fileGroup, fileCtx := errgroup.WithContext(egCtx)
+		fileGroup.SetLimit(int(max(int64(cfg.Builds.Workers), 1)))
+		for _, file := range files {
+			fileGroup.Go(func() error {
+				chainCtx, chainOp := profBeginChain(fileCtx, chains.Entries[file.entry].Address)
+				chain, err := file.ref.ExportFileChain(chainCtx, cfg, file.path)
+				var blobBytes int64
+				if chain != nil {
+					blobBytes = chain.Stats.BlobBytes
+				}
+				profEndChain(chainOp, blobBytes, chainResults[file.entry], err)
+				opened[file.entry] = chain
+				return err
+			})
+		}
+		return fileGroup.Wait()
+	})
+	err := eg.Wait()
+	// From here the chains are the entries', in their order, as the
+	// outputs read them.
+	chains.chains = opened
 	if err != nil {
 		return nil, err
 	}
-	// From here the chains are the entries', in their order, as the
-	// outputs read them.
-	for i, entry := range batched {
-		opened[entry] = batch[i]
-	}
-	chains.chains = opened
 	for i, chain := range opened {
 		chains.Stats.Add(chain.Stats)
 		chains.Entries[i].Layers, chains.Entries[i].Provider = chain.Layers, chain.Provider
