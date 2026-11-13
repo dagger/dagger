@@ -138,13 +138,17 @@ func (c *Cache) holdRowsForCapture(ctx context.Context, rows []*sharedResult) ([
 		}
 		return held, func() error { return nil }
 	}
+	piece := capturePieceRows
+	if c.capturePieceSize > 0 {
+		piece = c.capturePieceSize
+	}
 	var owned []*sharedResult
-	for start := 0; start < len(rows); start += capturePieceRows {
+	for start := 0; start < len(rows); start += piece {
 		if c.testCaptureWriteLock != nil {
 			c.testCaptureWriteLock()
 		}
 		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
-		for i := start; i < min(start+capturePieceRows, len(rows)); i++ {
+		for i := start; i < min(start+piece, len(rows)); i++ {
 			shared := rows[i]
 			held[i].row = shared
 			if shared.id == 0 || c.resultsByID[shared.id] != shared {
@@ -173,13 +177,13 @@ func (c *Cache) holdRowsForCapture(ctx context.Context, rows []*sharedResult) ([
 	release := func() error {
 		cleanupCtx := context.WithoutCancel(ctx)
 		var errs []error
-		for start := 0; start < len(owned); start += capturePieceRows {
+		for start := 0; start < len(owned); start += piece {
 			if c.testCaptureWriteLock != nil {
 				c.testCaptureWriteLock()
 			}
 			wcprof.WriteLock(cleanupCtx, &c.egraphMu, egraphLockIdent)
 			var queue []*sharedResult
-			for _, shared := range owned[start:min(start+capturePieceRows, len(owned))] {
+			for _, shared := range owned[start:min(start+piece, len(owned))] {
 				var decErr error
 				queue, decErr = c.decrementIncomingOwnershipLocked(cleanupCtx, shared, queue)
 				errs = append(errs, decErr)
