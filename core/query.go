@@ -112,10 +112,10 @@ type Server interface {
 	// tool argument, asking that owner first when a module drives the agent.
 	AuthorizeGitRead(context.Context, string) (*engine.ClientMetadata, error)
 
-	// AuthorizeSecret returns the client whose session attachables
-	// Query.secret(uri:) reads its secret through: the calling client, unless
-	// an agent drives a module client that has no host of its own, in which
-	// case it is the trusted owner, once the owner approved the read.
+	// AuthorizeSecret returns the trusted owner whose host Query.secret(uri:)
+	// reads its secret from, once the owner approved the read for the agent
+	// driving a module client that has no host of its own; nil when the
+	// calling client reads its own secret, as always.
 	AuthorizeSecret(context.Context, string) (*engine.ClientMetadata, error)
 
 	// The cached workspace result from ensureWorkspaceLoaded.
