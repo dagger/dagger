@@ -4888,6 +4888,12 @@ func (r ObjectResult[T]) NullableWrapped() AnyResult {
 	return r.Result.resultNullableWrapped()
 }
 
+// onSharedResult is res as an object of r's class. It reads nothing from res,
+// so it is safe while res's payload is being installed.
+func (r ObjectResult[T]) onSharedResult(res *sharedResult) AnyObjectResult {
+	return ObjectResult[T]{Result: Result[T]{shared: res}, class: r.class}
+}
+
 func (r ObjectResult[T]) cacheSharedResult() *sharedResult {
 	return r.shared
 }

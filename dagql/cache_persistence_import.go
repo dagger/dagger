@@ -517,7 +517,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				markRestoredPartDelegation(res, *state.persistedEnvelope, call, state.snapshotOwnerLinks)
 				c.bindPartHost(res, decoded)
 				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok {
-					withSelf.InitializeResultReference(Result[Typed]{shared: res})
+					withSelf.InitializeResultReference(decodedResultReference(res, decoded))
 				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
@@ -1023,7 +1023,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				markRestoredPartDelegation(res, *state.persistedEnvelope, call, roles)
 				c.bindPartHost(res, decoded)
 				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok {
-					withSelf.InitializeResultReference(Result[Typed]{shared: res})
+					withSelf.InitializeResultReference(decodedResultReference(res, decoded))
 				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true

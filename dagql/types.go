@@ -246,10 +246,23 @@ type HasDependencyResults interface {
 
 // HasResultReference restores a value's internal reference to its own attached
 // result. The cache calls this before publishing a decoded persisted payload.
+// For an object payload, self is the row as an object of the decoded value's
+// class, as a fresh result's AttachDependencyResults receives it.
 // Implementations must preserve references that are already set, and must not
 // resolve self: the payload is still being installed.
 type HasResultReference interface {
 	InitializeResultReference(self AnyResult)
+}
+
+// decodedResultReference is the self that HasResultReference receives for
+// decoded, the payload being installed on res.
+func decodedResultReference(res *sharedResult, decoded AnyResult) AnyResult {
+	if obj, ok := decoded.(interface {
+		onSharedResult(*sharedResult) AnyObjectResult
+	}); ok {
+		return obj.onSharedResult(res)
+	}
+	return Result[Typed]{shared: res}
 }
 
 // DependencyResult is an attached dependency result with a kind flag.
