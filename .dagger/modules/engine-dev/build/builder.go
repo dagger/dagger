@@ -282,8 +282,11 @@ func (build *Builder) binary(pkg string, race bool) *dagger.File {
 
 // TestBinary is the test binary of the package in dir, a directory of the
 // source's root Go module, built as go test -c builds it, with the source's
-// VCS info stamped in, by dagger/go's per-package build.
-func (build *Builder) TestBinary(dir string, race bool) *dagger.File {
+// VCS info stamped in, by dagger/go's per-package build. It is planned with
+// the other packages of run, the package directories whose test binaries one
+// test run builds, which include dir: they share one plan of what they
+// compile, and no package outside run is compiled for it.
+func (build *Builder) TestBinary(dir string, run []string, race bool) *dagger.File {
 	opts := golang.GoOpts{Version: consts.GolangVersion}
 	if values := build.VCSValues(); len(values) > 0 {
 		opts.BuildFlags = []string{ldflags(nil, values)}
@@ -292,7 +295,7 @@ func (build *Builder) TestBinary(dir string, race bool) *dagger.File {
 		opts = build.withRace(opts)
 	}
 	ws := build.source.AsWorkspace()
-	return golang.New(opts).Module(ws, dir).Packages(ws).Get(dir).TestBinary(ws)
+	return golang.New(opts).Module(ws, dir).Packages(ws).Subset(run).Get(dir).TestBinary(ws)
 }
 
 // Tests are the test function names of each package of the source's root Go
