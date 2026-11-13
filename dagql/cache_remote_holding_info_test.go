@@ -94,7 +94,7 @@ func TestRemoteHoldingInfoMatchesEntryInfo(t *testing.T) {
 			},
 			retained: retainedAt(1, 10, time.Now().Add(time.Hour).Unix()),
 		})
-		require.NoError(t, cloud.AddRemoteHold(ctx, root, "s2-"+string(engine)))
+		require.NoError(t, errOf(cloud.AddRemoteHold(ctx, root, "s2-"+string(engine))))
 		roots = append(roots, root)
 		keys = append(keys, dep, root)
 	}
@@ -167,7 +167,7 @@ func TestRemoteHoldingInfoMatchesEntryInfo(t *testing.T) {
 	require.NotContains(t, got, roots[0])
 	require.NotContains(t, got, HolderKey{Cache: "cache-b", Number: 1})
 
-	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(ctx, "cache-c")...)
+	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(ctx, "cache-c").Candidates...)
 	got = requireHeldEntryMatches(t, cloud, "cache released", keys)
 	require.Empty(t, got[roots[1]].Holding.Sessions)
 	require.False(t, got[roots[1]].Holding.Retained)

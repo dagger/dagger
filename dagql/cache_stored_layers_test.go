@@ -73,7 +73,7 @@ func TestStoredPartsHoldSharedLayersOnce(t *testing.T) {
 
 	before := storedLayersTestLiveHeap()
 	for i := range parts {
-		stored, err := c.SetStoredPart(ctx, numbers[i], offers[i], 0)
+		stored, _, err := c.SetStoredPart(ctx, numbers[i], offers[i], 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 	}
@@ -122,7 +122,7 @@ func TestStoredPartOffersAreAsStored(t *testing.T) {
 	for _, name := range slices.Sorted(maps.Keys(want)) {
 		res := storedPartTestPublish(t, ctx, c, "s", "as-stored-"+name, &captureTestValue{text: name})
 		numbers[name] = uint64(res.cacheSharedResult().id)
-		stored, err := c.SetStoredPart(ctx, numbers[name], want[name], 0)
+		stored, _, err := c.SetStoredPart(ctx, numbers[name], want[name], 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 	}
@@ -176,10 +176,10 @@ func TestStoredPartOffersAreAsStored(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[digest.Digest]digest.Digest{b2.Descriptor.Digest: min(packA, packB)}, members)
 
-	dropped, err := c.DropStoredPack(packB)
+	dropped, _, err := c.DropStoredPack(packB)
 	require.NoError(t, err)
 	require.Equal(t, []StoredPart{{Number: numbers["three"], Address: want["three"].Address}}, dropped)
-	dropped, err = c.DropStoredParts(testDigest("t2"))
+	dropped, _, err = c.DropStoredParts(testDigest("t2"))
 	require.NoError(t, err)
 	require.Equal(t, []StoredPart{{Number: numbers["two"], Address: want["two"].Address}}, dropped)
 	for _, name := range []string{"one", "four", "empty"} {
@@ -195,7 +195,7 @@ func TestStoredLayersForgetLayersNoPartNames(t *testing.T) {
 	ctx, c := storedPartTestCache(t, WithBlobStore())
 	res := storedPartTestPublish(t, ctx, c, "s", "forgotten-layers", &captureTestValue{text: "v"})
 	number := uint64(res.cacheSharedResult().id)
-	stored, err := c.SetStoredPart(ctx, number, storedLayersTestPart("snapshot", []snapshots.ExportLayer{storedLayersTestLayer("forgotten", "")}, nil), 0)
+	stored, _, err := c.SetStoredPart(ctx, number, storedLayersTestPart("snapshot", []snapshots.ExportLayer{storedLayersTestLayer("forgotten", "")}, nil), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	blobs := func() int {
@@ -205,7 +205,7 @@ func TestStoredLayersForgetLayersNoPartNames(t *testing.T) {
 	}
 	require.Equal(t, 1, blobs())
 
-	_, err = c.DropStoredParts(testDigest("forgotten"))
+	_, _, err = c.DropStoredParts(testDigest("forgotten"))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		runtime.GC()
@@ -224,7 +224,7 @@ func TestClosedCacheWithStoredPartsIsFreed(t *testing.T) {
 		require.NoError(t, err)
 		if store {
 			res := storedPartTestPublish(t, ctx, c, "s", "freed-cache", &captureTestValue{text: "v"})
-			stored, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), storedLayersTestPart("snapshot", []snapshots.ExportLayer{storedLayersTestLayer("freed", "")}, nil), 0)
+			stored, _, err := c.SetStoredPart(ctx, uint64(res.cacheSharedResult().id), storedLayersTestPart("snapshot", []snapshots.ExportLayer{storedLayersTestLayer("freed", "")}, nil), 0)
 			require.NoError(t, err)
 			require.True(t, stored)
 		}

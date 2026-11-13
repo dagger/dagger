@@ -99,6 +99,9 @@ type CachePruneReport struct {
 	// DroppedValues counts the values a blob-backed cache's run dropped:
 	// those that only holdings kept once their stored roots went.
 	DroppedValues int
+	// Change is what a blob-backed cache's run changed, its holdings and
+	// entries (RemoteChange).
+	Change RemoteChange
 }
 
 // CacheRetentionDrop is one retention edge a prune run dropped: the entry's
@@ -184,6 +187,9 @@ type CacheMetadataPruneReport struct {
 	// DroppedValues counts the values a blob-backed cache's pass dropped:
 	// those that only holdings kept once their stored roots went.
 	DroppedValues int
+	// Change is what a blob-backed cache's pass changed, its holdings and
+	// entries (RemoteChange).
+	Change RemoteChange
 
 	SnapshotGCAttempted bool
 	SnapshotGCSucceeded bool
@@ -2523,6 +2529,10 @@ type Cache struct {
 	// (trackJoinsLocked). It is nil at every other time, so no class ID it
 	// could name outlives the hold. Guarded by egraphMu.
 	joinedEntries map[sharedResultID]struct{}
+	// changes are the holdings and entries changed since the last write
+	// handed them back, on a blob-backed cache only: nil on any other
+	// (cache_change_marks.go). Guarded by egraphMu.
+	changes *changeMarks
 
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64

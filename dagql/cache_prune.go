@@ -142,6 +142,13 @@ func (c *Cache) PruneMetadataEstimate(ctx context.Context, maximumBytes, targetB
 	report.MaximumEstimatedBytes = maximumBytes
 	report.TargetEstimatedBytes = targetBytes
 	defer func() {
+		if c != nil && c.changes != nil {
+			// A pass releases the graph lock between its drops; what they
+			// changed is handed back once it ends.
+			c.egraphMu.Lock()
+			c.takeChangesLocked(&report.Change)
+			c.egraphMu.Unlock()
+		}
 		report.Duration = time.Since(started)
 		if report.Triggered && c != nil {
 			c.traceMetadataPruneFinished(ctx, report, rerr)
@@ -336,6 +343,19 @@ func (c *Cache) measurePruneState(ctx context.Context, policyIdx int) (map[share
 }
 
 func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePruneReport, error) {
+	report, err := c.prune(ctx, policies)
+	if c.changes != nil {
+		// A run releases the graph lock between its drops; what they changed
+		// is handed back once it ends.
+		c.egraphMu.Lock()
+		c.takeChangesLocked(&report.Change)
+		c.egraphMu.Unlock()
+	}
+	return report, err
+}
+
+// prune is Prune's run.
+func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePruneReport, error) {
 	report := CachePruneReport{}
 	if len(policies) == 0 {
 		return report, nil

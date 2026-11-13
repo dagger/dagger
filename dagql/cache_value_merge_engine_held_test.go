@@ -277,7 +277,7 @@ func TestCloudStoresAnUploadOnAHeldRowNamingAHeldRow(t *testing.T) {
 	require.True(t, ok, "the named held row lands on an entry")
 	part := PersistedPartOffer{Address: output.Address, Value: *output.Value, Chain: *output.Chain, Owner: PersistedOfferOwner{DependencyIDs: []uint64{svcNumber}}}
 	part.Value.Services = []TransferredServiceBinding{{ServiceResultID: svcNumber, Hostname: "svc"}}
-	stored, err := cloud.SetStoredPart(cctx, numbers[outOrdinal], part, 0)
+	stored, _, err := cloud.SetStoredPart(cctx, numbers[outOrdinal], part, 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	_, deps = cloudEntryOfRecipe(t, cloud, engine, out)

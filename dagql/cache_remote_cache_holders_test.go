@@ -63,12 +63,12 @@ func TestCacheHoldersIndexExact(t *testing.T) {
 	a.collect()
 	requireCacheHoldersExact(t, cloud)
 
-	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), engineA)...)
+	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), engineA).Candidates...)
 	a.collect()
 	requireCacheHoldersExact(t, cloud)
 
 	for _, cache := range []CacheID{engineB, engineC} {
-		a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), cache)...)
+		a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), cache).Candidates...)
 	}
 	a.collect()
 	keys, _ := cloudIndexes(cloud)

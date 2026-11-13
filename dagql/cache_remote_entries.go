@@ -148,9 +148,25 @@ type RemoteHoldingUpdate struct {
 // joined to another class of entries, directly or by congruence
 // (trackJoinsLocked). A recipe digest names the entry's class whenever
 // EquivalentHolders reads it, whatever renumbering the classes had in between.
+//
+// On a blob-backed cache, Holdings and Entries are what a reader that keeps
+// its answers asks again (cache_change_marks.go), sorted:
+//   - Holdings: every holding whose description (RemoteHoldingInfo's
+//     Holding) may differ after the operation, those it created or removed
+//     included;
+//   - Entries: every entry of which any of these may differ: whether it
+//     exists; its own facts, Stored, StoredExpiresAtUnix and Recipes; the
+//     keys of its holdings; the entries of its classes (EntryClassEntries);
+//     and any AvailablePart answer at one clock. A holding's description is
+//     asked again when its entry is named too.
+//
+// Neither covers the digests, class digests, terms or field of an entry,
+// which only EntryInfo returns.
 type RemoteChange struct {
 	Candidates []HolderKey
 	Recipes    []digest.Digest
+	Holdings   []HolderKey
+	Entries    []uint64
 	// Saved reports that the operation changed what a save of the cache
 	// writes, beyond the holdings, which aren't saved: a call kept on a
 	// stored entry, or the entry's expiry.
@@ -423,8 +439,7 @@ func (c *Cache) unindexRecipesLocked(res *sharedResult) {
 // and the content digest. The holding merges the expiry and adds the
 // dependencies and complete parts. A holding it creates is a candidate for
 // collection: it has no owner until a hold, retention or a dependent names it.
-func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc RemoteHolding) (RemoteChange, error) {
-	var change RemoteChange
+func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc RemoteHolding) (change RemoteChange, _ error) {
 	if key.Cache == "" || key.Number == 0 || desc.Recipe == "" {
 		return change, fmt.Errorf("attach remote holding: empty key or recipe")
 	}
@@ -446,6 +461,7 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
+	defer c.takeChangesLocked(&change)
 	c.initEgraphLocked()
 	state := c.remoteCacheLocked(key.Cache)
 	joined := c.trackJoinsLocked()
@@ -550,8 +566,7 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 //
 // It collects nothing. It returns the holdings it created or released an
 // owner of, for the next CollectRemoteHoldings, and the recipes it affected.
-func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueBundle, reply MergeReply) (RemoteChange, error) {
-	var change RemoteChange
+func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueBundle, reply MergeReply) (change RemoteChange, _ error) {
 	if cache == "" || senderCache(cache) {
 		return change, fmt.Errorf("apply merged reply: %q is not an engine cache", cache)
 	}
@@ -585,6 +600,7 @@ func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueB
 
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
+	defer c.takeChangesLocked(&change)
 	c.initEgraphLocked()
 	state := c.remoteCacheLocked(cache)
 	for _, t := range targets {
@@ -633,14 +649,14 @@ func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueB
 // reports false, and changes nothing, when the cache has no such holding: a
 // lazy span or share event never creates one. A higher count can drop
 // dependencies, whose holdings it returns as candidates.
-func (c *Cache) UpdateRemoteHolding(ctx context.Context, key HolderKey, update RemoteHoldingUpdate) (RemoteChange, bool, error) {
-	var change RemoteChange
+func (c *Cache) UpdateRemoteHolding(ctx context.Context, key HolderKey, update RemoteHoldingUpdate) (change RemoteChange, _ bool, _ error) {
 	parts, err := heldPartKeys(update.Parts)
 	if err != nil {
 		return change, false, fmt.Errorf("update remote holding %s/%d: %w", key.Cache, key.Number, err)
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
+	defer c.takeChangesLocked(&change)
 	entry, h := c.holdingLocked(key)
 	if h == nil {
 		return change, false, nil
@@ -777,15 +793,16 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 }
 
 // AddRemoteHold records that session holds the holding.
-func (c *Cache) AddRemoteHold(ctx context.Context, key HolderKey, session string) error {
+func (c *Cache) AddRemoteHold(ctx context.Context, key HolderKey, session string) (change RemoteChange, _ error) {
 	if session == "" {
-		return fmt.Errorf("add remote hold: empty session")
+		return change, fmt.Errorf("add remote hold: empty session")
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
+	defer c.takeChangesLocked(&change)
 	_, h := c.holdingLocked(key)
 	if h == nil {
-		return fmt.Errorf("add remote hold: %w: %s/%d", ErrUnknownHolding, key.Cache, key.Number)
+		return change, fmt.Errorf("add remote hold: %w: %s/%d", ErrUnknownHolding, key.Cache, key.Number)
 	}
 	if h.sessions == nil {
 		h.sessions = make(map[string]struct{})
@@ -798,15 +815,17 @@ func (c *Cache) AddRemoteHold(ctx context.Context, key HolderKey, session string
 		state.sessions[session] = held
 	}
 	held[key.Number] = struct{}{}
-	return nil
+	return change, nil
 }
 
 // ReleaseRemoteSession releases every hold of one session of an engine cache.
 // The holdings it held are candidates for collection.
-func (c *Cache) ReleaseRemoteSession(ctx context.Context, cache CacheID, session string) []HolderKey {
+func (c *Cache) ReleaseRemoteSession(ctx context.Context, cache CacheID, session string) (change RemoteChange) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	return c.releaseRemoteSessionLocked(cache, session, nil)
+	defer c.takeChangesLocked(&change)
+	change.Candidates = c.releaseRemoteSessionLocked(cache, session, nil)
+	return change
 }
 
 // releaseRemoteSessionLocked appends the released holdings to candidates.
@@ -830,45 +849,46 @@ func (c *Cache) releaseRemoteSessionLocked(cache CacheID, session string, candid
 // ObserveRemoteRetention applies one observation of the holding's retention
 // edge: the latest observation, by generation and then engine time, sets it.
 // A holding left without retention is a candidate for collection.
-func (c *Cache) ObserveRemoteRetention(ctx context.Context, key HolderKey, obs RetentionObservation) ([]HolderKey, error) {
+func (c *Cache) ObserveRemoteRetention(ctx context.Context, key HolderKey, obs RetentionObservation) (change RemoteChange, _ error) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
+	defer c.takeChangesLocked(&change)
 	_, h := c.holdingLocked(key)
 	if h == nil {
-		return nil, fmt.Errorf("observe remote retention: %w: %s/%d", ErrUnknownHolding, key.Cache, key.Number)
+		return change, fmt.Errorf("observe remote retention: %w: %s/%d", ErrUnknownHolding, key.Cache, key.Number)
 	}
 	h.retention.observe(obs.Retained, obs.ExpiresAtUnix, obsTime{generation: obs.Generation, engineTime: obs.EngineTimeUnixNano})
-	if h.retention.retained {
-		return nil, nil
+	if !h.retention.retained {
+		change.Candidates = []HolderKey{key}
 	}
-	return []HolderKey{key}, nil
+	return change, nil
 }
 
 // EndRemoteProcess ends the sessions of one process of an engine cache,
 // releasing their holds. What its retention and dependencies own stays, under
 // the same keys, for the cache's next process. The holdings the sessions held
 // are candidates for collection.
-func (c *Cache) EndRemoteProcess(ctx context.Context, cache CacheID, sessions []string) []HolderKey {
+func (c *Cache) EndRemoteProcess(ctx context.Context, cache CacheID, sessions []string) (change RemoteChange) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	var candidates []HolderKey
+	defer c.takeChangesLocked(&change)
 	for _, session := range sessions {
-		candidates = c.releaseRemoteSessionLocked(cache, session, candidates)
+		change.Candidates = c.releaseRemoteSessionLocked(cache, session, change.Candidates)
 	}
-	return candidates
+	return change
 }
 
 // ReleaseRemoteCache releases the holds and retention of every holding of an
 // engine cache, and returns them all as candidates: collection removes them,
 // through their dependencies on each other.
-func (c *Cache) ReleaseRemoteCache(ctx context.Context, cache CacheID) []HolderKey {
+func (c *Cache) ReleaseRemoteCache(ctx context.Context, cache CacheID) (change RemoteChange) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
+	defer c.takeChangesLocked(&change)
 	state := c.remoteCaches[cache]
 	if state == nil {
-		return nil
+		return change
 	}
-	var candidates []HolderKey
 	for key, id := range c.holderEntries {
 		if key.Cache != cache {
 			continue
@@ -876,25 +896,26 @@ func (c *Cache) ReleaseRemoteCache(ctx context.Context, cache CacheID) []HolderK
 		h := c.resultsByID[id].holders[key]
 		h.sessions = nil
 		h.retention = retentionRegister{}
-		candidates = append(candidates, key)
+		change.Candidates = append(change.Candidates, key)
 	}
 	clear(state.sessions)
-	slices.SortFunc(candidates, compareHolderKeys)
-	return candidates
+	slices.SortFunc(change.Candidates, compareHolderKeys)
+	return change
 }
 
 // CollectRemoteHoldings collects every candidate left with no session hold,
 // no retention and no dependent, then the holdings only they owned, through
 // holding dependencies. Each collected holding releases its entry's ownership
 // unit, so entries left with no holding and no other owner are collected too.
-// It returns the collected holdings' keys, sorted.
+// It returns the collected holdings' keys, sorted, and what it changed.
 //
 // It then compacts the e-graph's classes, at most once per
 // eqClassCheckInterval and only when something changed since the last check
 // (compactEqClassesAfterCollectionLocked), which renumbers them. Only the
 // Cloud calls it, and never with snapshot sharing enabled, whose pending queue
 // keeps class IDs. Engines compact through prune.
-func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey) ([]HolderKey, error) {
+func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey) ([]HolderKey, RemoteChange, error) {
+	var change RemoteChange
 	c.egraphMu.Lock()
 	entriesBefore := len(c.resultsByID)
 	var (
@@ -923,9 +944,10 @@ func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKe
 	}
 	releases, err := c.collectUnownedResultsLocked(ctx, entries)
 	c.compactEqClassesAfterCollectionLocked(len(c.resultsByID) < entriesBefore)
+	c.takeChangesLocked(&change)
 	c.egraphMu.Unlock()
 	slices.SortFunc(collected, compareHolderKeys)
-	return collected, errors.Join(rerr, err, runOnReleaseFuncs(ctx, releases))
+	return collected, change, errors.Join(rerr, err, runOnReleaseFuncs(ctx, releases))
 }
 
 // eqClassSlotsLocked returns the class slots in use: class IDs start at 1.
@@ -1085,13 +1107,15 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 // CollectRemoteHoldings, which cascades; it reports false when the cache has
 // no such holding. Entries it removes count toward the next check of the
 // classes' compaction, which only CollectRemoteHoldings runs
-// (compactEqClassesAfterCollectionLocked).
-func (c *Cache) CollectRemoteHolding(ctx context.Context, key HolderKey) ([]HolderKey, bool, error) {
+// (compactEqClassesAfterCollectionLocked). The candidates are change's.
+func (c *Cache) CollectRemoteHolding(ctx context.Context, key HolderKey) (RemoteChange, bool, error) {
+	var change RemoteChange
 	c.egraphMu.Lock()
 	entry, h := c.holdingLocked(key)
 	if h == nil {
+		c.takeChangesLocked(&change)
 		c.egraphMu.Unlock()
-		return nil, false, nil
+		return change, false, nil
 	}
 	entriesBefore := len(c.resultsByID)
 	state := c.remoteCaches[key.Cache]
@@ -1131,17 +1155,18 @@ func (c *Cache) CollectRemoteHolding(ctx context.Context, key HolderKey) ([]Hold
 	if len(c.resultsByID) < entriesBefore {
 		c.eqClassRemoved = true
 	}
+	c.takeChangesLocked(&change)
 	c.egraphMu.Unlock()
 	slices.SortFunc(candidates, compareHolderKeys)
-	return candidates, true, errors.Join(err, collectErr, runOnReleaseFuncs(ctx, releases))
+	change.Candidates = candidates
+	return change, true, errors.Join(err, collectErr, runOnReleaseFuncs(ctx, releases))
 }
 
 // ApplyHeldValueState applies one observation of an existing holding's value
 // state, such as an offered reply's, by its replacement count
 // (applyHeldValueStateLocked). It never creates a holding: an observation
 // about one that doesn't exist is dropped, and reports false.
-func (c *Cache) ApplyHeldValueState(ctx context.Context, key HolderKey, obs HeldValueState) (RemoteChange, bool, error) {
-	var change RemoteChange
+func (c *Cache) ApplyHeldValueState(ctx context.Context, key HolderKey, obs HeldValueState) (change RemoteChange, _ bool, _ error) {
 	parts, err := heldPartKeys(obs.Parts)
 	if err != nil {
 		return change, false, fmt.Errorf("apply held value state %s/%d: %w", key.Cache, key.Number, err)
@@ -1152,6 +1177,7 @@ func (c *Cache) ApplyHeldValueState(ctx context.Context, key HolderKey, obs Held
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
+	defer c.takeChangesLocked(&change)
 	entry, h := c.holdingLocked(key)
 	if h == nil {
 		return change, false, nil

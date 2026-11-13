@@ -61,34 +61,40 @@ func (a *cloudApplier) call(row callRow) {
 	require.NoError(a.t, err)
 	a.candidates = append(a.candidates, change.Candidates...)
 	if row.session != "" && !a.ended[row.session] {
-		require.NoError(a.t, a.cloud.AddRemoteHold(ctx, row.key, row.session))
+		require.NoError(a.t, errOf(a.cloud.AddRemoteHold(ctx, row.key, row.session)))
 	}
 	if row.retained != nil {
-		candidates, err := a.cloud.ObserveRemoteRetention(ctx, row.key, *row.retained)
+		change, err := a.cloud.ObserveRemoteRetention(ctx, row.key, *row.retained)
 		require.NoError(a.t, err)
-		a.candidates = append(a.candidates, candidates...)
+		a.candidates = append(a.candidates, change.Candidates...)
 	}
 }
 
 func (a *cloudApplier) observe(key HolderKey, obs RetentionObservation) {
 	a.t.Helper()
-	candidates, err := a.cloud.ObserveRemoteRetention(a.t.Context(), key, obs)
+	change, err := a.cloud.ObserveRemoteRetention(a.t.Context(), key, obs)
 	require.NoError(a.t, err)
-	a.candidates = append(a.candidates, candidates...)
+	a.candidates = append(a.candidates, change.Candidates...)
 }
 
 func (a *cloudApplier) endSession(cache CacheID, session string) {
 	a.ended[session] = true
-	a.candidates = append(a.candidates, a.cloud.ReleaseRemoteSession(a.t.Context(), cache, session)...)
+	a.candidates = append(a.candidates, a.cloud.ReleaseRemoteSession(a.t.Context(), cache, session).Candidates...)
 }
 
 // collect ends the batch: one collection pass over its candidates.
 func (a *cloudApplier) collect() []HolderKey {
 	a.t.Helper()
-	collected, err := a.cloud.CollectRemoteHoldings(a.t.Context(), a.candidates)
+	collected, _, err := a.cloud.CollectRemoteHoldings(a.t.Context(), a.candidates)
 	require.NoError(a.t, err)
 	a.candidates = nil
 	return collected
+}
+
+// errOf returns the error of a call that also returns a value, for
+// require.NoError.
+func errOf[T any](_ T, err error) error {
+	return err
 }
 
 func holdingOf(field string, deps ...uint64) RemoteHolding {
@@ -623,7 +629,7 @@ func TestRemoteRetentionEveryArrivalOrder(t *testing.T) {
 		_, err := cloud.AttachRemoteHolding(ctx, key, holdingOf("retention"))
 		require.NoError(t, err)
 		// The session hold keeps the holding while the observations apply.
-		require.NoError(t, cloud.AddRemoteHold(ctx, key, session))
+		require.NoError(t, errOf(cloud.AddRemoteHold(ctx, key, session)))
 		for _, obs := range order {
 			_, err := cloud.ObserveRemoteRetention(ctx, key, obs)
 			require.NoError(t, err)
@@ -633,9 +639,9 @@ func TestRemoteRetentionEveryArrivalOrder(t *testing.T) {
 		require.Equal(t, wantExpires, got.RetentionExpiresAtUnix, "order %v", order)
 		orders++
 		// A drop of a later generation, then the session's end, collect it.
-		candidates, err := cloud.ObserveRemoteRetention(ctx, key, droppedAt(100, 0))
+		change, err := cloud.ObserveRemoteRetention(ctx, key, droppedAt(100, 0))
 		require.NoError(t, err)
-		collected, err := cloud.CollectRemoteHoldings(ctx, append(candidates, cloud.ReleaseRemoteSession(ctx, engine, session)...))
+		collected, _, err := cloud.CollectRemoteHoldings(ctx, append(change.Candidates, cloud.ReleaseRemoteSession(ctx, engine, session).Candidates...))
 		require.NoError(t, err)
 		require.Equal(t, []HolderKey{key}, collected)
 	}
@@ -680,7 +686,7 @@ func TestRemoteRetentionTies(t *testing.T) {
 			key := HolderKey{"cache-a", uint64(i + 1)}
 			_, err := cloud.AttachRemoteHolding(ctx, key, holdingOf("tie"))
 			require.NoError(t, err)
-			require.NoError(t, cloud.AddRemoteHold(ctx, key, "s"))
+			require.NoError(t, errOf(cloud.AddRemoteHold(ctx, key, "s")))
 			for _, obs := range order {
 				_, err := cloud.ObserveRemoteRetention(ctx, key, obs)
 				require.NoError(t, err)
@@ -688,7 +694,7 @@ func TestRemoteRetentionTies(t *testing.T) {
 			got := requireHolding(t, cloud, key)
 			require.Equal(t, tc.wantRetained, got.Retained, "case %d order %v", i, order)
 			require.Equal(t, tc.wantExpires, got.RetentionExpiresAtUnix, "case %d order %v", i, order)
-			collected, err := cloud.CollectRemoteHoldings(ctx, append(cloud.ReleaseRemoteCache(ctx, "cache-a"), key))
+			collected, _, err := cloud.CollectRemoteHoldings(ctx, append(cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates, key))
 			require.NoError(t, err)
 			require.Equal(t, []HolderKey{key}, collected)
 		}
@@ -822,7 +828,7 @@ func TestRemoteCleanStopThenNextGenerationPrune(t *testing.T) {
 	a.call(callRow{key: scratch, session: "s2", holding: holdingOf("scratch")})
 	require.Empty(t, a.collect())
 
-	a.candidates = append(a.candidates, cloud.EndRemoteProcess(t.Context(), engine, []string{"s1", "s2"})...)
+	a.candidates = append(a.candidates, cloud.EndRemoteProcess(t.Context(), engine, []string{"s1", "s2"}).Candidates...)
 	require.Equal(t, []HolderKey{scratch}, a.collect())
 	keys, _ := cloudIndexes(cloud)
 	require.Equal(t, []HolderKey{dep, root}, keys, "what the engine saved, under the same keys")
@@ -847,7 +853,7 @@ func TestRemoteReleaseCache(t *testing.T) {
 	a.call(callRow{key: HolderKey{engineB, 1}, session: "b", holding: holdingOf("root"), retained: retainedAt(1, 1, 0)})
 	require.Empty(t, a.collect())
 
-	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), engineA)...)
+	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), engineA).Candidates...)
 	require.Equal(t, []HolderKey{{engineA, 1}, {engineA, 2}}, sortedKeys2(a.collect()))
 	keys, recipes := cloudIndexes(cloud)
 	require.Equal(t, []HolderKey{{engineB, 1}}, keys)
@@ -900,7 +906,7 @@ func TestRemoteEntryHasNoValue(t *testing.T) {
 	require.NoError(t, err)
 	_, err = cloud.AttachRemoteHolding(ctx, HolderKey{"cache-a", 1}, RemoteHolding{Recipe: recipe, Request: recipe, Field: "leaf", TypeName: "Int"})
 	require.NoError(t, err)
-	require.NoError(t, cloud.AddRemoteHold(ctx, HolderKey{"cache-a", 1}, "s"))
+	require.NoError(t, errOf(cloud.AddRemoteHold(ctx, HolderKey{"cache-a", 1}, "s")))
 	cloud.egraphMu.RLock()
 	id := uint64(cloud.holderEntries[HolderKey{"cache-a", 1}])
 	cloud.egraphMu.RUnlock()
@@ -960,7 +966,7 @@ func TestRemoteHoldingsConcurrentReads(t *testing.T) {
 		desc := RemoteHolding{Recipe: testDigest("merge-" + strconv.Itoa(i)), Request: testDigest("merge-" + strconv.Itoa(i+1)), Field: "f"}
 		_, err := cloud.AttachRemoteHolding(ctx, HolderKey{engine, uint64(i + 1)}, desc)
 		require.NoError(t, err)
-		require.NoError(t, cloud.AddRemoteHold(ctx, HolderKey{engine, uint64(i + 1)}, "s"))
+		require.NoError(t, errOf(cloud.AddRemoteHold(ctx, HolderKey{engine, uint64(i + 1)}, "s")))
 	}
 	var wg sync.WaitGroup
 	for g := range 8 {
@@ -980,8 +986,8 @@ func TestRemoteHoldingsConcurrentReads(t *testing.T) {
 			key := HolderKey{"cache-w", uint64(i + 1)}
 			_, err := cloud.AttachRemoteHolding(ctx, key, holdingOf("writer-"+strconv.Itoa(i)))
 			require.NoError(t, err)
-			candidates := cloud.ReleaseRemoteCache(ctx, "cache-w")
-			_, err = cloud.CollectRemoteHoldings(ctx, append(candidates, key))
+			candidates := cloud.ReleaseRemoteCache(ctx, "cache-w").Candidates
+			_, _, err = cloud.CollectRemoteHoldings(ctx, append(candidates, key))
 			require.NoError(t, err)
 		}
 	})
@@ -1229,13 +1235,13 @@ func TestCollectionChecksAReleaseAfterTheInterval(t *testing.T) {
 	checks := testEqClassChecks(cloud)
 
 	advance(time.Second)
-	collected, err := cloud.CollectRemoteHoldings(t.Context(), cloud.ReleaseRemoteCache(t.Context(), "wiped"))
+	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), cloud.ReleaseRemoteCache(t.Context(), "wiped").Candidates)
 	require.NoError(t, err)
 	require.Len(t, collected, 200)
 	require.Equal(t, checks, testEqClassChecks(cloud), "within the interval, the release waits")
 
 	advance(eqClassCheckInterval)
-	collected, err = cloud.CollectRemoteHoldings(t.Context(), nil)
+	collected, _, err = cloud.CollectRemoteHoldings(t.Context(), nil)
 	require.NoError(t, err)
 	require.Empty(t, collected)
 	cloud.egraphMu.Lock()
@@ -1272,7 +1278,7 @@ func TestCollectionChecksGoneAnswersAfterTheInterval(t *testing.T) {
 	}
 	require.Equal(t, checks, testEqClassChecks(cloud), "gone answers don't check, even after the interval")
 
-	collected, err := cloud.CollectRemoteHoldings(t.Context(), nil)
+	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), nil)
 	require.NoError(t, err)
 	require.Empty(t, collected)
 	cloud.egraphMu.Lock()
@@ -1702,7 +1708,7 @@ func TestStoredEntryHoldsNothingForHoldingsGone(t *testing.T) {
 	}
 	cloud.egraphMu.RUnlock()
 
-	applier.candidates = append(applier.candidates, cloud.ReleaseRemoteCache(ctx, engine)...)
+	applier.candidates = append(applier.candidates, cloud.ReleaseRemoteCache(ctx, engine).Candidates...)
 	require.Len(t, applier.collect(), entries)
 	keys, after := cloudIndexes(cloud)
 	require.Empty(t, keys)
