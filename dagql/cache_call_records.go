@@ -86,6 +86,8 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 				entry.calls = make(map[digest.Digest]*keptCall)
 			}
 			entry.calls[kept.id.recipe] = kept
+			// A stored bundle of the entry carries its kept calls.
+			c.stampEntryLocked(entry)
 			changed = true
 		}
 	}
@@ -119,6 +121,7 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 			})
 			if chosen == nil {
 				build.unsendableCalls++
+				build.markPartial(res)
 				continue
 			}
 			for _, input := range add {

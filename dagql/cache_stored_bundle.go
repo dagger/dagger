@@ -23,10 +23,18 @@ type StoredBundleResult struct {
 	NoValue []uint64
 	// Held are the numbers of the entries the bundle carries as held rows.
 	Held []uint64
-	// Stamps has, for each of Bundle.Values, its entry's stamp as the build
-	// read the entry, under the same hold: what a reader compares with the
-	// entry's later stamp to tell whether it changed since.
-	Stamps []EntryStamp
+	// Position is the cache's write count when the build read it, under the
+	// same hold: ChangedSince tells, for each entry it carries, whether a
+	// write since changed it.
+	Position uint64
+	// Partial are, sorted, the numbers of the entries whose record the
+	// bundle carries without something a later build could carry once what
+	// it waits on is stored or joined, which no write to the entry itself
+	// marks: a kept call left out for an input with no stored record, or a
+	// part of its class left out for a service the closure has no row of.
+	// A reader that keeps the bundle can't tell from ChangedSince alone
+	// whether these changed.
+	Partial []uint64
 	// CallInputs are the numbers of the entries the bundle carries as
 	// roots only because a call it sends has them as inputs, and
 	// UnsendableCalls counts the terms of its entries' kept calls it sends
@@ -217,10 +225,11 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 		}
 	}
 	out.Bundle, out.Donors, out.stored = build.bundle, build.donors, build.stored
-	out.Stamps = make([]EntryStamp, len(build.bundle.Values))
-	for i, value := range build.bundle.Values {
-		out.Stamps[i] = c.resultsByID[sharedResultID(value.SenderNumber)].stampLocked()
+	out.Position = c.writes
+	for id := range build.partial {
+		out.Partial = append(out.Partial, uint64(id))
 	}
+	slices.Sort(out.Partial)
 	out.CallInputs, out.UnsendableCalls = build.callInputs, build.unsendableCalls
 	for _, res := range rootEntries {
 		out.RootOwners = append(out.RootOwners, build.owners[res.id])
@@ -253,6 +262,11 @@ type storedBundleBuild struct {
 	callRoots       []*sharedResult
 	callInputs      []uint64
 	unsendableCalls int
+	// partial are the entries whose record the build carries without
+	// something a later build could carry: a kept call it sends none of
+	// (storedBundleCallsLocked), or a part of its class it couldn't place
+	// (storedBundleOutputsLocked).
+	partial map[sharedResultID]bool
 	// owners has, for each entry the build added, the index of the root it
 	// was asked for that added it, or whose call's input it is (current, as
 	// it's added); ordinary are those the roots' closures added, not their
@@ -564,6 +578,7 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 			return uint64(row), row != 0
 		})
 		if !ok {
+			build.markPartial(res)
 			continue
 		}
 		if err := build.addOutput(res, placed, donor.id); err != nil {
@@ -571,6 +586,15 @@ func (c *Cache) storedBundleOutputsLocked(build *storedBundleBuild, res *sharedR
 		}
 	}
 	return nil
+}
+
+// markPartial records that the build carries res's record without
+// something a later build could carry (StoredBundleResult.Partial).
+func (build *storedBundleBuild) markPartial(res *sharedResult) {
+	if build.partial == nil {
+		build.partial = map[sharedResultID]bool{}
+	}
+	build.partial[res.id] = true
 }
 
 // addOutput adds a part of res to the bundle, relocated to ordinals and
