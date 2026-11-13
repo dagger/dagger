@@ -413,16 +413,25 @@ func TestStoredSizesMeasureAgainAfterAPartAddsADependency(t *testing.T) {
 }
 
 // StoredSizes normalizes and encodes an unmeasured value with the graph lock
-// free: a measure never holds egraphMu, and each first measurement counts.
+// free: a measure never holds egraphMu, and each first measurement counts. A
+// measure proves the lock free the way a writer finds it: a write lock taken
+// within ten seconds. The cache's own background work may hold the lock for
+// a moment, which a bare TryLock would take for the measure's.
 func TestStoredSizesMeasureOutsideTheLock(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
 	var free, held int
 	cloud.testStoredSizeMeasure = func() {
-		if cloud.egraphMu.TryLock() {
+		locked := make(chan struct{})
+		go func() {
+			cloud.egraphMu.Lock()
 			cloud.egraphMu.Unlock()
+			close(locked)
+		}()
+		select {
+		case <-locked:
 			free++
-		} else {
+		case <-time.After(10 * time.Second):
 			held++
 		}
 	}
