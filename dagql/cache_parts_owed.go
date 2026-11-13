@@ -30,13 +30,23 @@ import (
 // it held.
 type owedPartReports struct {
 	mu   sync.Mutex
-	rows map[sharedResultID]*sharedResult
+	rows map[sharedResultID]owedPartReport
 	// order is the owed entries in the order they first owed.
-	order   []sharedResultID
+	order []sharedResultID
+	// seq numbers each time an entry owes, so a pass clears only what it
+	// served: an entry that owes again after a pass read it, its value
+	// replaced or not, still owes.
+	seq     uint64
 	wake    chan struct{}
 	started bool
 	stop    context.CancelFunc
 	done    chan struct{}
+}
+
+// owedPartReport is one entry's owed report, as of its latest owing.
+type owedPartReport struct {
+	row *sharedResult
+	seq uint64
 }
 
 // owePartsReport notes that a span reported only the settled parts of row.
@@ -50,13 +60,13 @@ func (c *Cache) owePartsReport(row *sharedResult) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.rows == nil {
-		o.rows = map[sharedResultID]*sharedResult{}
+		o.rows = map[sharedResultID]owedPartReport{}
 	}
-	if _, ok := o.rows[row.id]; ok {
-		return
+	if _, ok := o.rows[row.id]; !ok {
+		o.order = append(o.order, row.id)
 	}
-	o.rows[row.id] = row
-	o.order = append(o.order, row.id)
+	o.seq++
+	o.rows[row.id] = owedPartReport{row: row, seq: o.seq}
 	if !o.started {
 		o.started = true
 		o.wake = make(chan struct{}, 1)
@@ -106,30 +116,33 @@ func (c *Cache) runOwedPartReports(ctx context.Context) {
 func (c *Cache) reportOwedParts(ctx context.Context) int {
 	o := &c.owedParts
 	o.mu.Lock()
-	order := append([]sharedResultID(nil), o.order...)
-	rows := make([]*sharedResult, 0, len(order))
-	for _, id := range order {
-		rows = append(rows, o.rows[id])
+	owed := make([]owedPartReport, 0, len(o.order))
+	for _, id := range o.order {
+		owed = append(owed, o.rows[id])
 	}
 	o.mu.Unlock()
 
 	var parts []SnapshotSharedPart
-	var settled []sharedResultID
-	for _, row := range rows {
+	var settled []owedPartReport
+	for _, report := range owed {
+		row := report.row
 		c.egraphMu.RLock()
 		held, replacements := c.resultsByID[row.id] == row, row.replacements
 		c.egraphMu.RUnlock()
 		if !held {
-			settled = append(settled, row.id)
+			settled = append(settled, report)
 			continue
 		}
 		keys, _, err := c.completeParts(ctx, row, c.completePartSizeReader())
+		if c.testOwedPartsRead != nil {
+			c.testOwedPartsRead(row)
+		}
 		switch {
 		case errors.Is(err, ErrPersistStateNotReady):
 			continue
 		case err != nil:
 			slog.WarnContext(ctx, "owed parts report dropped: the entry's record can't be described", "row", uint64(row.id), "cause", err)
-			settled = append(settled, row.id)
+			settled = append(settled, report)
 			continue
 		}
 		c.egraphMu.RLock()
@@ -140,12 +153,15 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 			}
 		}
 		c.egraphMu.RUnlock()
-		settled = append(settled, row.id)
+		settled = append(settled, report)
 	}
 
 	o.mu.Lock()
-	for _, id := range settled {
-		delete(o.rows, id)
+	for _, report := range settled {
+		// An entry that owed again since this pass read it still owes.
+		if o.rows[report.row.id].seq == report.seq {
+			delete(o.rows, report.row.id)
+		}
 	}
 	// The order kept, of the entries still owed, those owed during this
 	// pass among them.
