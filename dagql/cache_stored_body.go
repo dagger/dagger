@@ -784,6 +784,9 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 				rewritten++
 			}
 		}
+		if c.testTaughtContentGiven != nil {
+			c.testTaughtContentGiven()
+		}
 		c.egraphMu.Lock()
 		// Digests taught while these were applied stay pending, queued by
 		// their own teach.
