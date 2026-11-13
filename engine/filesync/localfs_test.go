@@ -72,6 +72,18 @@ func TestSyncReincludedFileUnderIgnoredParent(t *testing.T) {
 
 	_, err = os.ReadFile(filepath.Join(mirrorRoot, "foo/ignored.txt"))
 	assert.Assert(t, os.IsNotExist(err))
+
+	// Without a re-include rule the client no longer walks foo/, so the mirror
+	// must keep the foo/bar.txt it already has instead of deleting it.
+	assert.NilError(t, os.WriteFile(filepath.Join(clientRoot, ".gitignore"), []byte("foo/\n"), 0o644))
+	client, err = fsxutil.NewGitIgnoreMarkedFS(base, nil)
+	assert.NilError(t, err)
+	_, _, err = local.Sync(context.Background(), readFS{client}, nil, true)
+	assert.NilError(t, err)
+
+	got, err = os.ReadFile(filepath.Join(mirrorRoot, "foo/bar.txt"))
+	assert.NilError(t, err)
+	assert.Equal(t, string(got), "keep")
 }
 
 // Verify that a full sync records the ignored parent directory it creates for
