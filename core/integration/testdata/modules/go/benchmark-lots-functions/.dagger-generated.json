@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "files": {
+    "dagger.dispatch.gen.go": "20fa93b151b754c6c7c3e6d66035273759b4d965ab30efffab0a455faef60206",
+    "dagger.gen.go": "8b5b5c9d903afaf087eedff9d62484e6f84ad308856e793a8a6f0808032f802f",
+    "internal/dagger/dagger.gen.go": "fe057ab725bd5f89c4d71a8311bc74fb800c1d1480c6ab4cca34ebc3cd798b91",
+    "internal/dagger/entrypoint/main.dang": "fd6b99968c708bdc8adc4438a60b27d5c3dd75f96d6027cdbfcd701792b96d53",
+    "internal/dagger/potato-sack.gen.go": "3e48f8e508c29f8e318ee78f8a33a189b1b560abd6ba1ba7675d957c853ba612"
+  }
+}
