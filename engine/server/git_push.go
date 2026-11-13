@@ -40,6 +40,13 @@ func gitPushApproval(remote, ref string, force bool) approvalSpec {
 	return spec
 }
 
+// AuthorizeGitPush resolves the destination of a push of ref to remote and
+// returns the owner whose credentials it may use. A direct call by the owner
+// is its own authorization; a module's or an agent's push asks the owner
+// first, about the exact ref for the remote's default branch, a tag or any
+// other non-branch ref, and otherwise about the remote, once (see
+// git_push_policy.go).
+//
 //nolint:gocyclo // keep owner routing, destination validation, and approval in one auditable flow
 func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, force, resolveURL bool) (*core.GitPushAuthorization, error) {
 	client, err := srv.executableClientFromContext(ctx)
@@ -104,7 +111,20 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 	if !delegated && !core.IsAgentToolCall(ctx) {
 		return authorized()
 	}
-	allowed, err := srv.requestApproval(ctx, client, owner, gitPushApproval(remote, ref, force))
+	// The default branch and non-branch refs ask about the exact ref; other
+	// branches only need the remote approved (see git_push_policy.go).
+	var remoteDefault gitRemoteDefault
+	if !gitPushRefAlwaysAsks(ref) {
+		remoteDefault = srv.gitRemoteDefault(ctx, owner, remote)
+	}
+	spec := gitPushApproval(remote, ref, force)
+	if !gitPushNeedsRefApproval(ref, force, remoteDefault) {
+		if srv.gitPushToOwnerOrigin(ctx, owner, remote) {
+			return authorized()
+		}
+		spec = gitPushRemoteApproval(remote)
+	}
+	allowed, err := srv.requestApproval(ctx, client, owner, spec)
 	if err != nil {
 		return nil, fmt.Errorf("git push requires approval: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/prompt"
@@ -17,11 +18,19 @@ type pushRoutingServer struct {
 	git.UnimplementedGitServer // Credential/SSH RPCs must not run during authorization.
 	entries                    []*git.GitConfigEntry
 	requests                   int
+	// checkouts is the config of the owner's own checkouts, by path.
+	checkouts        map[string][]*git.GitConfigEntry
+	checkoutRequests int
 }
 
 func (s *pushRoutingServer) GetConfig(_ context.Context, req *git.GitConfigRequest) (*git.GitConfigResponse, error) {
 	if req.CheckoutPath != "" {
-		return nil, errors.New("must not read a module checkout's config")
+		entries, ok := s.checkouts[req.CheckoutPath]
+		if !ok {
+			return nil, errors.New("must not read a module checkout's config")
+		}
+		s.checkoutRequests++
+		return &git.GitConfigResponse{Result: &git.GitConfigResponse_Config{Config: &git.GitConfig{Entries: entries}}}, nil
 	}
 	s.requests++
 	return &git.GitConfigResponse{Result: &git.GitConfigResponse_Config{Config: &git.GitConfig{Entries: s.entries}}}, nil
@@ -68,7 +77,12 @@ func newGitPushTestSession(t *testing.T, questions prompt.PromptServer, routing 
 		return ctx
 	}
 	return &gitPushTestSession{
-		srv:           &Server{daggerSessions: map[string]*daggerSession{"session": sess}},
+		srv: &Server{
+			daggerSessions: map[string]*daggerSession{"session": sess},
+			// No remote answers unless a test says so: every push asks as it
+			// did before default branches were told apart.
+			gitRemoteHead: func(context.Context, string) (string, error) { return "", core.ErrGitRemoteUnreachable },
+		},
 		sess:          sess,
 		owner:         owner,
 		ownerCtx:      clientContext(owner),
