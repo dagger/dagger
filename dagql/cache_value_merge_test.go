@@ -2907,3 +2907,57 @@ func TestPreparedMergeCancelledWhileWarmingFails(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.Nil(t, p)
 }
+
+// The Cloud's merge captures no target: its reply's parts, which warming
+// finds, are a cache's local completions, which a blob-backed cache has none
+// of, and its caller, the remote cache service, reads none of them. Here a
+// bundle lands on entries the Cloud already holds, with their values, and the
+// merge takes no hold for a capture, in its prepare or its commit.
+func TestCloudMergeCapturesNoTarget(t *testing.T) {
+	t.Parallel()
+	ctx, engine, srv := transferTestCache(t)
+	var roots []AnyResult
+	for i := range 3 {
+		roots = append(roots, persistedListTestResult(t, ctx, engine, srv, fmt.Sprintf("root-%d", i), &transferTestValue{Text: "sent"}))
+	}
+	bundle := exportTestBundle(t, ctx, engine, roots...)
+	cctx, cloud := storedPartTestCache(t, WithBlobStore())
+	_, err := cloud.MergeValues(cctx, "cache-a", bundle)
+	require.NoError(t, err)
+	holds := 0
+	cloud.testCaptureWriteLock = func() { holds++ }
+	reply, err := cloud.MergeValues(cctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.Equal(t, 3, reply.Rows.Kept, "every record lands on an entry with its value")
+	require.Zero(t, holds, "no target is held for a capture")
+	for _, v := range reply.Values {
+		require.Empty(t, v.Parts)
+		require.Empty(t, v.OfferedParts)
+	}
+}
+
+// An engine's merge still warms its targets and reports their complete
+// parts, which the remote cache service reads from the engine's merged reply.
+func TestEngineMergeStillReportsItsTargetsParts(t *testing.T) {
+	t.Parallel()
+	ctx, c, srv := transferTestCache(t)
+	bctx, b, bsrv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, c, srv, "root-0", &transferTestValue{Text: "sent"})
+	local := persistedListTestResult(t, bctx, b, bsrv, "root-0", &transferTestValue{Text: "local"})
+	local.cacheSharedResult().completeParts.Store(nil)
+	bundle := exportTestBundle(t, ctx, c, root)
+	holds := 0
+	b.testCaptureWriteLock = func() { holds++ }
+	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, 1, reply.Rows.Kept)
+	require.Positive(t, holds, "the target was held for its capture")
+	want := completePartKeysLocked(local.cacheSharedResult())
+	var got []string
+	for _, p := range reply.Values[0].Parts {
+		k, err := partAddressKey(p)
+		require.NoError(t, err)
+		got = append(got, k)
+	}
+	require.Equal(t, want, got, "the reply reports the target's complete parts")
+}
