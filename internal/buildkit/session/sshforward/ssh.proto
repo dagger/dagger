@@ -12,6 +12,8 @@ service SSH {
 // BytesMessage contains a chunk of byte data
 message BytesMessage{
 	bytes data = 1;
+	// Half-closes this direction after data. The other direction remains open.
+	bool eof = 2;
 }
 
 message CheckAgentRequest {
