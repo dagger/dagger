@@ -64,6 +64,12 @@ type pendingApproval struct {
 // prompt is no decision at all: later attempts ask again. Concurrent requests
 // with the same key still share the one prompt in flight, and its answer,
 // whatever it is.
+//
+// "Once" bounds the requests the broker sees, not what the caller does with
+// the access it grants: each kind's caller decides what one request covers.
+// For git-read, one request authorizes one credentialed lookup of an agent's
+// address (see AuthorizeGitRead), whose result keeps the owner's credentials
+// for as long as it lives.
 type approvalGrants struct {
 	mu        sync.Mutex
 	decisions map[approvalKey]*pendingApproval
