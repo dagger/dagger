@@ -71,9 +71,10 @@ func TestStoredSizesMeasureWhatTheBundleCarries(t *testing.T) {
 	storedSizesTestClose(t, append(want, StoredSize{}, StoredSize{}), got)
 	require.Equal(t, 2, got[0].Records)
 
-	kept := storedBundleTestEntry(cloud, r).storedTransfer.Load()
-	require.NotNil(t, kept)
-	require.NotNil(t, kept.size.Load(), "the record's size is kept with it")
+	cloud.egraphMu.RLock()
+	size := storedTestSize(storedBundleTestEntry(cloud, r))
+	cloud.egraphMu.RUnlock()
+	require.NotNil(t, size, "the record's size is kept with it")
 }
 
 // With a recipient that holds P, R's closure is R and P's held row, as the
@@ -488,6 +489,9 @@ func TestStoredSizesKeepNothingOfADroppedValue(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, dropped)
 	require.Nil(t, entry.storedTransfer.Load(), "the dropped value's record isn't kept")
+	cloud.egraphMu.RLock()
+	defer cloud.egraphMu.RUnlock()
+	require.Nil(t, entry.stored, "nor its compressed record")
 }
 
 // A held row's size is computed, not encoded, and is its encoding's length.
@@ -512,6 +516,7 @@ func TestHeldRowSizeIsItsEncodingLength(t *testing.T) {
 func TestStoredSizesSurviveABuildNormalizingAtOnce(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	storedTestHoldWhole(cloud)
 	normalized, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	cloud.testStoredTransferNormalized = func() {
@@ -765,4 +770,20 @@ func TestStoredSizesAllowForAddressesInTheBundlesPartOrder(t *testing.T) {
 		walk.addOutputs(next)
 		require.Equal(t, int64(3)*storedBlobAddressAllowance, walk.size.OutputBytes, "A's address shared, B's on b and on c")
 	}
+}
+
+// A compressed record's kept size goes with its call: once a taught digest
+// replaces the call, pricing measures what the bundle now carries.
+func TestStoredSizesOfACompressedRecordFollowItsCall(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	storedTestCompress(cloud)
+	_, err := cloud.StoredSizes(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.NoError(t, cloud.TeachContentDigest(ctx, Result[Typed]{shared: storedBundleTestEntry(cloud, r)}, testDigest("compressed-size-content")))
+	built, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	got, err := cloud.StoredSizes(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	storedSizesTestClose(t, storedSizesTestMeasure(t, built.Bundle), got)
 }

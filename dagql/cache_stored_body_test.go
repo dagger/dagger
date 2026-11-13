@@ -100,6 +100,37 @@ func storedTestRecordLocked(t *testing.T, res *sharedResult) PersistedRecord {
 	return PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()}
 }
 
+// storedTestHoldWhole stops the Cloud's body worker, so that its records
+// stay whole: a test of the path a record takes until it is compressed.
+func storedTestHoldWhole(c *Cache) {
+	c.closeStoredBodies()
+}
+
+// storedTestCompress stops the Cloud's body worker and compresses every
+// stored record now: a test of the path a compressed record takes.
+func storedTestCompress(c *Cache) {
+	c.closeStoredBodies()
+	c.egraphMu.RLock()
+	var entries []*sharedResult
+	for _, res := range c.resultsByID {
+		entries = append(entries, res)
+	}
+	c.egraphMu.RUnlock()
+	c.storeBodies(entries)
+}
+
+// storedTestSize is the entry's kept measured size: its compressed body's,
+// or its kept transfer record's. Requires egraphMu.
+func storedTestSize(res *sharedResult) *storedValueSize {
+	if res.stored != nil {
+		return res.stored.size.Load()
+	}
+	if kept := res.storedTransfer.Load(); kept != nil {
+		return kept.size.Load()
+	}
+	return nil
+}
+
 // requireHeldCompressed checks that the Cloud holds its stored records in
 // less memory than three quarters of their encoded size: a record's body,
 // held as its encoding or decoded, would take at least that alone.
@@ -184,4 +215,39 @@ func TestCloudWipesAStoreOfAnotherFormat(t *testing.T) {
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
 	require.Empty(t, cloud.resultsByID)
+}
+
+// A bundle's check of itself finds a compressed record's part at a nested
+// output path, an inline list item's, by its whole address.
+func TestStoredBundleChecksANestedPartOfACompressedRecord(t *testing.T) {
+	t.Parallel()
+	address := PersistedPartAddress{OutputPath: PersistedRefPath{}.Field("items").Index(0), Part: "snapshot"}
+	key, err := partAddressKey(address)
+	require.NoError(t, err)
+	value := SnapshotValue{Kind: "directory", Path: "/"}
+	frame := &ResultCall{Kind: ResultCallKindField, Field: "nested", Type: NewResultCallType((&transferTestValue{}).Type())}
+	bundle := ValueBundle{
+		Version: valueBundleVersion,
+		Roots:   []TransferredRoot{{Ordinal: 1}},
+		Values:  []TransferredValue{{Ordinal: 1, SenderNumber: 7, Record: PersistedRecord{ResultID: 7, Call: frame}}},
+		Outputs: []TransferredOutput{{Ordinal: 1, Address: address, State: "completed", Value: &value, Chain: &OfferedChain{}, Owner: &PersistedOfferOwner{}}},
+	}
+	stored := map[uint64][]declaredPart{1: {{key: key, address: address, state: "pending", kind: "directory"}}}
+	require.NoError(t, validateStoredBundle(bundle, stored))
+}
+
+// A value the Cloud sends compressed encodes exactly as the same value sent
+// whole, byte for byte, so a record's encoding doesn't depend on whether it
+// was compressed yet.
+func TestStoredValueEncodesAsTheWholeValue(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	storedTestHoldWhole(cloud)
+	whole, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	storedTestCompress(cloud)
+	compressed, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.NotNil(t, compressed.Bundle.Values[0].storedEnvelope, "the record goes compressed")
+	require.Equal(t, string(mustTransferJSON(t, whole.Bundle.Values)), string(mustTransferJSON(t, compressed.Bundle.Values)))
 }

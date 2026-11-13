@@ -345,7 +345,7 @@ func TestMergeHeldRowRefusals(t *testing.T) {
 	require.NoError(t, err)
 	for i := range bad.Values {
 		if bad.Values[i].Held != "" {
-			bad.Values[i].Record.Envelope = heldTestRow(t, got.Bundle, r).Record.Envelope
+			bad.Values[i].Record.Envelope = heldTestRow(t, bad, r).Record.Envelope
 		}
 	}
 	bctx, b, _ := transferTestCache(t)
