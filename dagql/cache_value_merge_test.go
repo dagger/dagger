@@ -2560,6 +2560,12 @@ func TestMergeValuesTimesItsWarming(t *testing.T) {
 	persistedListTestResult(t, bctx, b, bsrv, "root", &transferTestValue{Text: "local"})
 	p, err := b.PrepareValueMerge(bctx, cloudCacheID, bundle)
 	require.NoError(t, err)
+	// The prepare warmed the target: its capture goes stale, so that the
+	// commit's warming captures it again.
+	b.egraphMu.RLock()
+	target := b.currentEntryForRecipeLocked(p.prep.plans[p.prep.order[0]].recipe)
+	b.egraphMu.RUnlock()
+	target.completeParts.Store(nil)
 	const held = 50 * time.Millisecond
 	b.egraphMu.RLock()
 	started := make(chan struct{})
@@ -2583,10 +2589,10 @@ func TestMergeValuesTimesItsWarming(t *testing.T) {
 	require.GreaterOrEqual(t, r.reply.Warm, held, "the target's capture waited for the reader")
 }
 
-// A commit's warming holds its targets for their captures, and lets them go,
+// A merge's warming holds its targets for their captures, and lets them go,
 // with a few holds of the graph lock for writing, not two for each target:
 // each hold waits for the lock's readers, and a commit warms thousands of
-// targets.
+// targets. The prepare warms them, and the commit finds them warm.
 func TestMergeValuesWarmsItsTargetsInFewHolds(t *testing.T) {
 	t.Parallel()
 	const targets = 20
@@ -2599,15 +2605,8 @@ func TestMergeValuesWarmsItsTargetsInFewHolds(t *testing.T) {
 		persistedListTestResult(t, bctx, b, bsrv, field, &transferTestValue{Text: "local"})
 	}
 	bundle := exportTestBundle(t, ctx, c, roots...)
-	var warming bool
 	var holds int
-	b.testWarmStarted = func() { warming = true }
-	b.testBeforeTransferCommit = func() { warming = false }
-	b.testCaptureWriteLock = func() {
-		if warming {
-			holds++
-		}
-	}
+	b.testCaptureWriteLock = func() { holds++ }
 	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
 	require.NoError(t, err)
 	require.Equal(t, targets, reply.Rows.Kept, "every record lands on a target")
