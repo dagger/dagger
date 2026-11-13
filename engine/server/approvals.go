@@ -157,7 +157,8 @@ func (srv *Server) requestApproval(ctx context.Context, client, owner *clientRun
 }
 
 // promptApproval asks owner's client. A client predating PromptApproval gets
-// the same question as a yes/no prompt, where yes allows once.
+// the same question as a yes/no prompt, where yes allows for the session, as
+// it did before approvals had a grant scope.
 func (srv *Server) promptApproval(ctx context.Context, owner *clientRuntime, req *prompt.ApprovalRequest) (prompt.ApprovalDecision, error) {
 	conn, available, err := srv.SpecificClientAttachableConn(ctx, owner.clientID, core.SpecificClientAttachableConnOpts{IfAvailable: true})
 	if err != nil {
@@ -172,7 +173,7 @@ func (srv *Server) promptApproval(ctx context.Context, owner *clientRuntime, req
 	case codes.OK:
 	case codes.Unimplemented:
 		// Never send the persistent key here: the client would remember a
-		// yes forever when it only grants once.
+		// yes forever when it only grants for the session.
 		response, err := client.PromptBool(ctx, &prompt.BoolRequest{Prompt: req.GetPrompt()})
 		if status.Code(err) == codes.Unimplemented || status.Code(err) == codes.FailedPrecondition {
 			return prompt.APPROVAL_DENY, errApprovalNotInteractive
@@ -181,7 +182,7 @@ func (srv *Server) promptApproval(ctx context.Context, owner *clientRuntime, req
 			return prompt.APPROVAL_DENY, err
 		}
 		if response.GetResponse() {
-			return prompt.APPROVAL_ALLOW_ONCE, nil
+			return prompt.APPROVAL_ALLOW_SESSION, nil
 		}
 		return prompt.APPROVAL_DENY, nil
 	case codes.FailedPrecondition:
