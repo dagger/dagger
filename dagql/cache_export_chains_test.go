@@ -10,8 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
+	"gotest.tools/v3/golden"
 
 	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
@@ -149,7 +152,7 @@ func (r *exportChainTestRef) ExportChain(ctx context.Context, _ config.RefConfig
 	}
 	return r.manager.build(ctx)
 }
-func (r *exportChainTestRef) ExportFileChain(ctx context.Context, _ config.RefConfig, _ string) (*snapshots.ExportChain, error) {
+func (r *exportChainTestRef) ExportFileChain(ctx context.Context, _ config.RefConfig, path string) (*snapshots.ExportChain, error) {
 	r.manager.mu.Lock()
 	r.manager.fileStarts++
 	fail := r.manager.fail
@@ -158,7 +161,7 @@ func (r *exportChainTestRef) ExportFileChain(ctx context.Context, _ config.RefCo
 		return nil, fmt.Errorf("file chain %s failed", r.id)
 	}
 	if r.manager.chains != nil {
-		return &snapshots.ExportChain{Layers: []snapshots.ExportLayer{{Description: r.id}}}, nil
+		return &snapshots.ExportChain{Layers: []snapshots.ExportLayer{exportChainTestLayer(r.id + ":" + path)}}, nil
 	}
 	return r.manager.build(ctx)
 }
@@ -329,4 +332,88 @@ func TestExportBuildsOneFileOnce(t *testing.T) {
 	require.Len(t, layers, 3)
 	require.Equal(t, layers[0], layers[1])
 	require.Len(t, layers[2], 1)
+}
+
+// exportChainTestLayer is a layer whose blob is named by name alone.
+func exportChainTestLayer(name string) snapshots.ExportLayer {
+	return snapshots.ExportLayer{Description: name, Descriptor: ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayerZstd, Digest: digest.FromString(name), Size: int64(len(name))}}
+}
+
+// An export's bundle and chains are what they were before the capture built
+// Files' chains together, built one chain for parts that are the same File
+// and did its last step once per row: its records, its outputs with their
+// chains, prefixes and owners, and each chain's layers. The golden file was
+// written by the capture as it was at 27280baaf3. The closure: rows each
+// built on the one before, the bottom one needing a session resource, whose
+// directories two selected chains walked, each every other one of some, the
+// first carried chain naming a prefix both walked; Files, two of them the
+// same path in one snapshot and a third that path in another; and entry
+// numbers that aren't the bundle's ordinals.
+func TestExportBundleUnchanged(t *testing.T) {
+	t.Parallel()
+	const n = 8
+	top := fmt.Sprintf("s%d", n-1)
+	chain := &snapshots.ExportChain{Prefixes: map[string]int{top: n}}
+	for i := 0; i < n; i++ {
+		chain.Layers = append(chain.Layers, exportChainTestLayer(fmt.Sprintf("s%d", i)))
+	}
+	for i := 0; i < n-1; i += 2 {
+		chain.Prefixes[fmt.Sprintf("s%d", i)] = i + 1
+	}
+	// side walked the lower rows, and comes first among the selected parts.
+	side := &snapshots.ExportChain{Layers: []snapshots.ExportLayer{exportChainTestLayer("s0"), exportChainTestLayer("s1"), exportChainTestLayer("s2"), exportChainTestLayer("t")}, Prefixes: map[string]int{"s0": 1, "s2": 3, "t": 4}}
+	mgr := &exportChainTestManager{fakeSnapshotManager: &fakeSnapshotManager{}, chains: map[string]*snapshots.ExportChain{top: chain, "t": side}}
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), mgr, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
+	srv.InstallObject(NewClass(srv, ClassOpts[*exportChainTestValue]{}))
+	ctx = srvToContext(ContextWithCache(ctx, c), srv)
+
+	// Entries outside the closure, so its entry numbers aren't its ordinals.
+	for i := range 5 {
+		persistedListTestResult(t, ctx, c, srv, fmt.Sprintf("unrelated%d", i), &exportChainTestValue{SnapshotID: fmt.Sprintf("u%d", i)})
+	}
+	rows := make([]AnyResult, n)
+	for i := range rows {
+		rows[i] = persistedListTestResult(t, ctx, c, srv, fmt.Sprintf("row%d", i), &exportChainTestValue{SnapshotID: fmt.Sprintf("s%d", i)})
+		if i > 0 {
+			transferTestDependency(c, ctx, rows[i], rows[i-1])
+		}
+	}
+	c.egraphMu.Lock()
+	rows[0].cacheSharedResult().sessionResourceHandle = "socket"
+	c.egraphMu.Unlock()
+	sideRoot := persistedListTestResult(t, ctx, c, srv, "side", &exportChainTestValue{SnapshotID: "t"})
+	transferTestDependency(c, ctx, sideRoot, rows[3])
+	roots := []AnyResult{
+		sideRoot,
+		rows[n-1],
+		persistedListTestResult(t, ctx, c, srv, "mountA", &exportChainTestValue{SnapshotID: "bin", File: "/pkg.test"}),
+		persistedListTestResult(t, ctx, c, srv, "mountB", &exportChainTestValue{SnapshotID: "bin", File: "/pkg.test"}),
+		persistedListTestResult(t, ctx, c, srv, "mountC", &exportChainTestValue{SnapshotID: "bin2", File: "/pkg.test"}),
+		persistedListTestResult(t, ctx, c, srv, "cli", &exportChainTestValue{SnapshotID: "bin", File: "/cli"}),
+	}
+	transferTestDependency(c, ctx, roots[2], rows[0])
+	selection := ValueSelection{Roots: roots}
+	for _, root := range roots {
+		selection.Outputs = append(selection.Outputs, SelectedValueOutput{Result: root, Address: PersistedPartAddress{Part: "snapshot"}})
+	}
+	var got struct {
+		Bundle ValueBundle
+		Chains []SelectedChain
+	}
+	err = c.WithExportedValues(ctx, selection, config.RefConfig{Builds: config.LayerBuilds{Workers: 4}}, func(_ context.Context, values *ExportedValues) error {
+		got.Bundle = values.Bundle
+		for _, entry := range values.Chains.Entries {
+			entry.Provider = nil
+			got.Chains = append(got.Chains, entry)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	encoded, err := json.MarshalIndent(got, "", "  ")
+	require.NoError(t, err)
+	golden.Assert(t, string(encoded)+"\n", "export-bundle.json")
 }

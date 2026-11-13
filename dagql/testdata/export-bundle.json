@@ -1,0 +1,956 @@
+{
+  "Bundle": {
+    "version": 8,
+    "roots": [
+      {
+        "ordinal": 5
+      },
+      {
+        "ordinal": 9
+      },
+      {
+        "ordinal": 10
+      },
+      {
+        "ordinal": 11
+      },
+      {
+        "ordinal": 12
+      },
+      {
+        "ordinal": 13
+      }
+    ],
+    "values": [
+      {
+        "ordinal": 1,
+        "senderNumber": 6,
+        "record": {
+          "resultID": 6,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 6,
+            "sessionResourceHandle": "socket",
+            "objectJSON": {
+              "snapshotID": "s0"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "row0"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "senderNumber": 7,
+        "record": {
+          "resultID": 7,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 7,
+            "objectJSON": {
+              "snapshotID": "s1"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "row1"
+          }
+        },
+        "dependencyIDs": [
+          1
+        ]
+      },
+      {
+        "ordinal": 3,
+        "senderNumber": 8,
+        "record": {
+          "resultID": 8,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 8,
+            "objectJSON": {
+              "snapshotID": "s2"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "row2"
+          }
+        },
+        "dependencyIDs": [
+          2
+        ]
+      },
+      {
+        "ordinal": 4,
+        "senderNumber": 9,
+        "record": {
+          "resultID": 9,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 9,
+            "objectJSON": {
+              "snapshotID": "s3"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "row3"
+          }
+        },
+        "dependencyIDs": [
+          3
+        ]
+      },
+      {
+        "ordinal": 5,
+        "senderNumber": 14,
+        "record": {
+          "resultID": 14,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 14,
+            "objectJSON": {
+              "snapshotID": "t"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "side"
+          }
+        },
+        "dependencyIDs": [
+          4
+        ]
+      },
+      {
+        "ordinal": 6,
+        "senderNumber": 10,
+        "record": {
+          "resultID": 10,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 10,
+            "objectJSON": {
+              "snapshotID": "s4"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "row4"
+          }
+        },
+        "dependencyIDs": [
+          4
+        ]
+      },
+      {
+        "ordinal": 7,
+        "senderNumber": 11,
+        "record": {
+          "resultID": 11,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 11,
+            "objectJSON": {
+              "snapshotID": "s5"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "row5"
+          }
+        },
+        "dependencyIDs": [
+          6
+        ]
+      },
+      {
+        "ordinal": 8,
+        "senderNumber": 12,
+        "record": {
+          "resultID": 12,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 12,
+            "objectJSON": {
+              "snapshotID": "s6"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "row6"
+          }
+        },
+        "dependencyIDs": [
+          7
+        ]
+      },
+      {
+        "ordinal": 9,
+        "senderNumber": 13,
+        "record": {
+          "resultID": 13,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 13,
+            "objectJSON": {
+              "snapshotID": "s7"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "row7"
+          }
+        },
+        "dependencyIDs": [
+          8
+        ]
+      },
+      {
+        "ordinal": 10,
+        "senderNumber": 15,
+        "record": {
+          "resultID": 15,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 15,
+            "objectJSON": {
+              "snapshotID": "bin",
+              "file": "/pkg.test"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "mountA"
+          }
+        },
+        "dependencyIDs": [
+          1
+        ]
+      },
+      {
+        "ordinal": 11,
+        "senderNumber": 16,
+        "record": {
+          "resultID": 16,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 16,
+            "objectJSON": {
+              "snapshotID": "bin",
+              "file": "/pkg.test"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "mountB"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "senderNumber": 17,
+        "record": {
+          "resultID": 17,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 17,
+            "objectJSON": {
+              "snapshotID": "bin2",
+              "file": "/pkg.test"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "mountC"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "senderNumber": 18,
+        "record": {
+          "resultID": 18,
+          "envelope": {
+            "version": 5,
+            "kind": "object_self",
+            "typeName": "ExportChainTestValue",
+            "objectCodec": "dagql_test.ExportChain",
+            "resultID": 18,
+            "objectJSON": {
+              "snapshotID": "bin",
+              "file": "/cli"
+            }
+          },
+          "call": {
+            "kind": "field",
+            "type": {
+              "namedType": "ExportChainTestValue",
+              "nonNull": true
+            },
+            "field": "cli"
+          }
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "ordinal": 5,
+        "address": {
+          "part": "snapshot"
+        },
+        "state": "completed",
+        "value": {
+          "kind": "directory"
+        },
+        "chain": {
+          "layers": [
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:ec18eac8d758b1eba52d3c10d39adc6dd9806472cb4ae069635d383d9086a513",
+                "size": 2
+              },
+              "Description": "s0",
+              "CreatedAt": null,
+              "Computed": false
+            },
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:e8bc163c82eee18733288c7d4ac636db3a6deb013ef2d37b68322be20edc45cc",
+                "size": 2
+              },
+              "Description": "s1",
+              "CreatedAt": null,
+              "Computed": false
+            },
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:ad328846aa18b32a335816374511cac1063c704b8c57999e51da9f908290a7a4",
+                "size": 2
+              },
+              "Description": "s2",
+              "CreatedAt": null,
+              "Computed": false
+            },
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:e3b98a4da31a127d4bde6e43033f66ba274cab0eb7eb1c70ec41402bf6273dd8",
+                "size": 1
+              },
+              "Description": "t",
+              "CreatedAt": null,
+              "Computed": false
+            }
+          ]
+        },
+        "owner": {
+          "dependencyIDs": [
+            1
+          ]
+        }
+      },
+      {
+        "ordinal": 9,
+        "address": {
+          "part": "snapshot"
+        },
+        "state": "completed",
+        "value": {
+          "kind": "directory"
+        },
+        "chain": {
+          "layers": [
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:ec18eac8d758b1eba52d3c10d39adc6dd9806472cb4ae069635d383d9086a513",
+                "size": 2
+              },
+              "Description": "s0",
+              "CreatedAt": null,
+              "Computed": false
+            },
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:e8bc163c82eee18733288c7d4ac636db3a6deb013ef2d37b68322be20edc45cc",
+                "size": 2
+              },
+              "Description": "s1",
+              "CreatedAt": null,
+              "Computed": false
+            },
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:ad328846aa18b32a335816374511cac1063c704b8c57999e51da9f908290a7a4",
+                "size": 2
+              },
+              "Description": "s2",
+              "CreatedAt": null,
+              "Computed": false
+            },
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:41242b9fae56fad4e6e77dfe33cb18d1c3fc583f988cf25ef9f2d9be0d440bbb",
+                "size": 2
+              },
+              "Description": "s3",
+              "CreatedAt": null,
+              "Computed": false
+            },
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:5b840157e7e86aef3b3fd0fc24f3add34d3e7f210370d429475ed1bcd3e7fca2",
+                "size": 2
+              },
+              "Description": "s4",
+              "CreatedAt": null,
+              "Computed": false
+            },
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:3b96fc064fa874a80a132bda60bebf54efbc780a358fdcae4fbbd7e12b66b630",
+                "size": 2
+              },
+              "Description": "s5",
+              "CreatedAt": null,
+              "Computed": false
+            },
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:71e7690959239ca065841eba3ebb281072baa78ba0bb31079b9acb4a009a9fe3",
+                "size": 2
+              },
+              "Description": "s6",
+              "CreatedAt": null,
+              "Computed": false
+            },
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:13d28fed9becbe6637ef6b017fbefef73b2b907e25eb00396f7c2675623e87f6",
+                "size": 2
+              },
+              "Description": "s7",
+              "CreatedAt": null,
+              "Computed": false
+            }
+          ]
+        },
+        "owner": {
+          "dependencyIDs": [
+            1
+          ]
+        }
+      },
+      {
+        "ordinal": 10,
+        "address": {
+          "part": "snapshot"
+        },
+        "state": "completed",
+        "value": {
+          "kind": "file",
+          "path": "/pkg.test"
+        },
+        "chain": {
+          "layers": [
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:115cffd8aa2223bc207f47d301a892d5e9156e654a8b3a00587cc03c8c2b7d61",
+                "size": 13
+              },
+              "Description": "bin:/pkg.test",
+              "CreatedAt": null,
+              "Computed": false
+            }
+          ]
+        },
+        "owner": {
+          "dependencyIDs": [
+            1
+          ]
+        }
+      },
+      {
+        "ordinal": 11,
+        "address": {
+          "part": "snapshot"
+        },
+        "state": "completed",
+        "value": {
+          "kind": "file",
+          "path": "/pkg.test"
+        },
+        "chain": {
+          "layers": [
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:115cffd8aa2223bc207f47d301a892d5e9156e654a8b3a00587cc03c8c2b7d61",
+                "size": 13
+              },
+              "Description": "bin:/pkg.test",
+              "CreatedAt": null,
+              "Computed": false
+            }
+          ]
+        },
+        "owner": {}
+      },
+      {
+        "ordinal": 12,
+        "address": {
+          "part": "snapshot"
+        },
+        "state": "completed",
+        "value": {
+          "kind": "file",
+          "path": "/pkg.test"
+        },
+        "chain": {
+          "layers": [
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:439fc8ca5965edda86060dcc66997fc332c80db9a493df1b706d3f9f8eae8746",
+                "size": 14
+              },
+              "Description": "bin2:/pkg.test",
+              "CreatedAt": null,
+              "Computed": false
+            }
+          ]
+        },
+        "owner": {}
+      },
+      {
+        "ordinal": 13,
+        "address": {
+          "part": "snapshot"
+        },
+        "state": "completed",
+        "value": {
+          "kind": "file",
+          "path": "/cli"
+        },
+        "chain": {
+          "layers": [
+            {
+              "Descriptor": {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+                "digest": "sha256:9d7e3bf5f8c1e45d0e4a67ebef58885b56c760ab0d2c8f72e44fa53d08a83ab9",
+                "size": 8
+              },
+              "Description": "bin:/cli",
+              "CreatedAt": null,
+              "Computed": false
+            }
+          ]
+        },
+        "owner": {}
+      },
+      {
+        "ordinal": 1,
+        "address": {
+          "part": "snapshot"
+        },
+        "state": "completed",
+        "value": {
+          "kind": "directory"
+        },
+        "prefix": {
+          "ordinal": 5,
+          "address": {
+            "part": "snapshot"
+          },
+          "layers": 1
+        },
+        "owner": {
+          "dependencyIDs": [
+            1
+          ]
+        }
+      },
+      {
+        "ordinal": 3,
+        "address": {
+          "part": "snapshot"
+        },
+        "state": "completed",
+        "value": {
+          "kind": "directory"
+        },
+        "prefix": {
+          "ordinal": 5,
+          "address": {
+            "part": "snapshot"
+          },
+          "layers": 3
+        },
+        "owner": {
+          "dependencyIDs": [
+            1
+          ]
+        }
+      },
+      {
+        "ordinal": 6,
+        "address": {
+          "part": "snapshot"
+        },
+        "state": "completed",
+        "value": {
+          "kind": "directory"
+        },
+        "prefix": {
+          "ordinal": 9,
+          "address": {
+            "part": "snapshot"
+          },
+          "layers": 5
+        },
+        "owner": {
+          "dependencyIDs": [
+            1
+          ]
+        }
+      },
+      {
+        "ordinal": 8,
+        "address": {
+          "part": "snapshot"
+        },
+        "state": "completed",
+        "value": {
+          "kind": "directory"
+        },
+        "prefix": {
+          "ordinal": 9,
+          "address": {
+            "part": "snapshot"
+          },
+          "layers": 7
+        },
+        "owner": {
+          "dependencyIDs": [
+            1
+          ]
+        }
+      }
+    ]
+  },
+  "Chains": [
+    {
+      "Ordinal": 5,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:ec18eac8d758b1eba52d3c10d39adc6dd9806472cb4ae069635d383d9086a513",
+            "size": 2
+          },
+          "Description": "s0",
+          "CreatedAt": null,
+          "Computed": false
+        },
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:e8bc163c82eee18733288c7d4ac636db3a6deb013ef2d37b68322be20edc45cc",
+            "size": 2
+          },
+          "Description": "s1",
+          "CreatedAt": null,
+          "Computed": false
+        },
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:ad328846aa18b32a335816374511cac1063c704b8c57999e51da9f908290a7a4",
+            "size": 2
+          },
+          "Description": "s2",
+          "CreatedAt": null,
+          "Computed": false
+        },
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:e3b98a4da31a127d4bde6e43033f66ba274cab0eb7eb1c70ec41402bf6273dd8",
+            "size": 1
+          },
+          "Description": "t",
+          "CreatedAt": null,
+          "Computed": false
+        }
+      ],
+      "Provider": null
+    },
+    {
+      "Ordinal": 9,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:ec18eac8d758b1eba52d3c10d39adc6dd9806472cb4ae069635d383d9086a513",
+            "size": 2
+          },
+          "Description": "s0",
+          "CreatedAt": null,
+          "Computed": false
+        },
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:e8bc163c82eee18733288c7d4ac636db3a6deb013ef2d37b68322be20edc45cc",
+            "size": 2
+          },
+          "Description": "s1",
+          "CreatedAt": null,
+          "Computed": false
+        },
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:ad328846aa18b32a335816374511cac1063c704b8c57999e51da9f908290a7a4",
+            "size": 2
+          },
+          "Description": "s2",
+          "CreatedAt": null,
+          "Computed": false
+        },
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:41242b9fae56fad4e6e77dfe33cb18d1c3fc583f988cf25ef9f2d9be0d440bbb",
+            "size": 2
+          },
+          "Description": "s3",
+          "CreatedAt": null,
+          "Computed": false
+        },
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:5b840157e7e86aef3b3fd0fc24f3add34d3e7f210370d429475ed1bcd3e7fca2",
+            "size": 2
+          },
+          "Description": "s4",
+          "CreatedAt": null,
+          "Computed": false
+        },
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:3b96fc064fa874a80a132bda60bebf54efbc780a358fdcae4fbbd7e12b66b630",
+            "size": 2
+          },
+          "Description": "s5",
+          "CreatedAt": null,
+          "Computed": false
+        },
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:71e7690959239ca065841eba3ebb281072baa78ba0bb31079b9acb4a009a9fe3",
+            "size": 2
+          },
+          "Description": "s6",
+          "CreatedAt": null,
+          "Computed": false
+        },
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:13d28fed9becbe6637ef6b017fbefef73b2b907e25eb00396f7c2675623e87f6",
+            "size": 2
+          },
+          "Description": "s7",
+          "CreatedAt": null,
+          "Computed": false
+        }
+      ],
+      "Provider": null
+    },
+    {
+      "Ordinal": 10,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:115cffd8aa2223bc207f47d301a892d5e9156e654a8b3a00587cc03c8c2b7d61",
+            "size": 13
+          },
+          "Description": "bin:/pkg.test",
+          "CreatedAt": null,
+          "Computed": false
+        }
+      ],
+      "Provider": null
+    },
+    {
+      "Ordinal": 11,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:115cffd8aa2223bc207f47d301a892d5e9156e654a8b3a00587cc03c8c2b7d61",
+            "size": 13
+          },
+          "Description": "bin:/pkg.test",
+          "CreatedAt": null,
+          "Computed": false
+        }
+      ],
+      "Provider": null
+    },
+    {
+      "Ordinal": 12,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:439fc8ca5965edda86060dcc66997fc332c80db9a493df1b706d3f9f8eae8746",
+            "size": 14
+          },
+          "Description": "bin2:/pkg.test",
+          "CreatedAt": null,
+          "Computed": false
+        }
+      ],
+      "Provider": null
+    },
+    {
+      "Ordinal": 13,
+      "Address": {
+        "part": "snapshot"
+      },
+      "Layers": [
+        {
+          "Descriptor": {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar+zstd",
+            "digest": "sha256:9d7e3bf5f8c1e45d0e4a67ebef58885b56c760ab0d2c8f72e44fa53d08a83ab9",
+            "size": 8
+          },
+          "Description": "bin:/cli",
+          "CreatedAt": null,
+          "Computed": false
+        }
+      ],
+      "Provider": null
+    }
+  ]
+}
