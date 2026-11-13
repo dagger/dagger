@@ -24,20 +24,24 @@ import (
 //   - It renders inline beneath the row of the LLM tool call it came from
 //     (else the nearest rendered ancestor of the requesting call), so several
 //     can be pending at once, each where its agent is working.
-//   - It never takes focus on its own. It gains focus when the user navigates
-//     onto its row (or jumps to it with `a` in nav mode / alt+a at the prompt),
-//     and gives it back once answered or left with esc.
+//   - It never takes focus on its own. Navigation treats it as one more row
+//     right below its tool call: the user steps onto it (↓ from the tool call,
+//     ↑ from the row after) or jumps to it (`a` in nav mode, alt+a at the
+//     prompt), and it gives focus back once answered or left with esc. The
+//     tool call row itself keeps its usual keys, so enter there still zooms
+//     rather than answering.
 //   - The agent it blocks is cued on the roster, so the user knows there is
 //     something to navigate to.
 //
 // A request whose span has not arrived (or whose rows are zoomed away) is
-// "floating": it renders below the trace, still without focus, and is
-// re-anchored as soon as its span shows up in the rows.
+// "floating": it renders below the trace, reachable after the last row and
+// still without focus, and is re-anchored as soon as its span shows up in the
+// rows.
 
 var _ prompt.ApprovalHandler = (*frontendPretty)(nil)
 
-// approvalJumpKey jumps to the next pending approval from the prompt; nav mode
-// uses the bare approvalNavKey.
+// approvalJumpKey jumps to the next pending approval from the prompt (and in
+// nav mode, for muscle memory); nav mode also takes the bare approvalNavKey.
 const (
 	approvalJumpKey = "alt+a"
 	approvalNavKey  = "a"
@@ -71,8 +75,11 @@ type pendingApproval struct {
 	// (or that the cursor follows new output onto) never steals keys.
 	armed bool
 	// returnToInput records that the user jumped here from the prompt, so
-	// answering hands focus back to it rather than leaving them in nav mode.
+	// answering hands focus back to it rather than leaving them in nav mode;
+	// followOutput whether the cursor was following new output then, which
+	// it resumes.
 	returnToInput bool
+	followOutput  bool
 
 	view *ApprovalView
 }
@@ -154,17 +161,39 @@ func (fe *frontendPretty) finishApproval(a *pendingApproval, decision prompt.App
 
 // restoreApprovalFocus hands focus back after the approval that held it goes
 // away (or is left with esc): to the prompt if the user jumped here from it,
-// else to the row they navigated from.
+// else to the row it sits under.
 func (fe *frontendPretty) restoreApprovalFocus(a *pendingApproval) {
 	a.armed = false
 	if a.returnToInput && fe.textInput != nil {
 		a.returnToInput = false
+		if a.followOutput {
+			// The jump only borrowed the cursor: resume following output,
+			// or the agent's next lines would be cropped below it.
+			fe.goEnd()
+		}
 		fe.enterInsertMode()
 		return
 	}
 	a.returnToInput = false
 	fe.focusNavigationTarget()
 	fe.refreshKeymap()
+}
+
+// repairFocus recovers when a focus scope restores to nothing, or to an
+// approval answered (or canceled) while something else held focus on top of
+// it: navigation takes focus again rather than leaving keys unrouted.
+func (fe *frontendPretty) repairFocus() {
+	if fe.tui == nil {
+		return
+	}
+	switch f := fe.tui.Focused().(type) {
+	case nil:
+		fe.focusNavigationTarget()
+	case *ApprovalView:
+		if f.approval.finished {
+			fe.focusNavigationTarget()
+		}
+	}
 }
 
 // approvalsChanged re-renders everything an approval's arrival or departure
@@ -225,6 +254,16 @@ func (fe *frontendPretty) resolveApproval(a *pendingApproval) bool {
 		fe.updateApprovalAnchor(old)
 		fe.updateApprovalAnchor(anchor)
 		changed = true
+		if a.armed && anchor.IsValid() {
+			// The user is on this approval (typically jumped to while it
+			// floated, before its span arrived): the cursor follows it to its
+			// row, so it keeps focus rather than the next key landing on
+			// whatever row the cursor was left on.
+			if row := fe.rows.BySpan[anchor]; row != nil {
+				fe.autoFocus = false
+				fe.focus(row)
+			}
+		}
 	}
 	if agentID != a.agentID {
 		a.agentID = agentID
@@ -353,13 +392,85 @@ func (fe *frontendPretty) disarmApprovals(cursor dagui.SpanID, includeFloating b
 	}
 }
 
-// armApprovalsAt arms the approvals beneath the row the user navigated onto.
-func (fe *frontendPretty) armApprovalsAt(spanID dagui.SpanID) {
-	for _, a := range fe.approvals {
-		if a.anchor.IsValid() && a.anchor == spanID {
-			a.armed = true
+// approvalSlot is one stop of row navigation while approvals are pending:
+// a row, or an approval (just after the row it sits under, or after the last
+// row while it floats).
+type approvalSlot struct {
+	row      *dagui.TraceRow
+	approval *pendingApproval
+}
+
+func (fe *frontendPretty) approvalSlots() []approvalSlot {
+	slots := make([]approvalSlot, 0, len(fe.rows.Order)+len(fe.approvals))
+	for _, row := range fe.rows.Order {
+		slots = append(slots, approvalSlot{row: row})
+		for _, a := range fe.approvalsAt(row.Span.ID) {
+			slots = append(slots, approvalSlot{approval: a})
 		}
 	}
+	for _, a := range fe.approvals {
+		if !a.anchor.IsValid() {
+			slots = append(slots, approvalSlot{approval: a})
+		}
+	}
+	return slots
+}
+
+// stepApproval moves the cursor by one stop when approvals are pending,
+// treating each as a row below its tool call. Reports whether it handled the
+// move; with no approvals pending, plain row navigation applies.
+func (fe *frontendPretty) stepApproval(delta int) bool {
+	if len(fe.approvals) == 0 || fe.rows == nil {
+		return false
+	}
+	slots := fe.approvalSlots()
+	cur := -1
+	if a := fe.focusableApproval(); a != nil {
+		cur = slices.IndexFunc(slots, func(s approvalSlot) bool { return s.approval == a })
+	} else if fe.FocusedSpan.IsValid() {
+		cur = slices.IndexFunc(slots, func(s approvalSlot) bool {
+			return s.row != nil && s.row.Span.ID == fe.FocusedSpan
+		})
+	}
+	if cur < 0 {
+		return false
+	}
+	next := cur + delta
+	if next < 0 || next >= len(slots) {
+		return true
+	}
+	if s := slots[next]; s.approval != nil {
+		fe.focusApproval(s.approval, false)
+	} else {
+		fe.manualFocus(s.row)
+	}
+	return true
+}
+
+// focusApproval puts the cursor on an approval and gives it keyboard focus.
+// fromInput records that the user came from the prompt, to return there.
+func (fe *frontendPretty) focusApproval(a *pendingApproval, fromInput bool) {
+	followOutput := fromInput && fe.autoFocus
+	fe.autoFocus = false
+	for _, other := range fe.approvals {
+		other.armed = false
+		other.returnToInput = false
+	}
+	a.armed = true
+	a.returnToInput = fromInput
+	a.followOutput = followOutput
+	if a.anchor.IsValid() {
+		if row := fe.rows.BySpan[a.anchor]; row != nil {
+			fe.focus(row)
+		}
+	}
+	if fe.searchQuery != "" {
+		fe.searchIdx = -1
+	}
+	fe.tui.SetFocus(a.view)
+	fe.syncHardwareCursor()
+	fe.refreshKeymap()
+	fe.Update()
 }
 
 // syncApprovalFocus moves focus off an approval view that should no longer
@@ -386,14 +497,16 @@ func (fe *frontendPretty) jumpToApproval() bool {
 		return false
 	}
 	fromInput := fe.inputFocused()
+	followOutput := fe.autoFocus
 	next := fe.approvals[0]
 	if cur := fe.focusedApproval(); cur != nil {
 		if i := slices.Index(fe.approvals, cur); i >= 0 {
 			next = fe.approvals[(i+1)%len(fe.approvals)]
 		}
 		// Moving between approvals keeps the original way back.
-		fromInput = fromInput || cur.returnToInput
-		cur.returnToInput = false
+		if cur.returnToInput {
+			fromInput, followOutput = true, cur.followOutput
+		}
 	}
 	if !next.anchor.IsValid() && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
 		// The rows may be zoomed away from the requesting call: unzoom to
@@ -402,25 +515,8 @@ func (fe *frontendPretty) jumpToApproval() bool {
 		fe.renderVersion++
 		fe.recalculateViewLocked()
 	}
-	fe.autoFocus = false
-	for _, a := range fe.approvals {
-		a.armed = false
-		a.returnToInput = false
-	}
-	next.armed = true
-	next.returnToInput = fromInput
-	if next.anchor.IsValid() {
-		if row := fe.rows.BySpan[next.anchor]; row != nil {
-			fe.focus(row)
-			if fe.searchQuery != "" {
-				fe.searchIdx = -1
-			}
-		}
-	}
-	fe.tui.SetFocus(next.view)
-	fe.syncHardwareCursor()
-	fe.refreshKeymap()
-	fe.Update()
+	fe.focusApproval(next, fromInput)
+	next.followOutput = fromInput && followOutput
 	return true
 }
 
@@ -675,16 +771,17 @@ func (fe *frontendPretty) approvalLines(a *pendingApproval, focused bool, width 
 }
 
 // approvalUnfocusedHint says how to reach an approval that does not have
-// focus: from the prompt by its jump key, else by navigating to its row.
+// focus. alt+a works from the prompt and nav mode alike; outside the shell
+// there is no prompt, so the bare key does.
 func (fe *frontendPretty) approvalUnfocusedHint(a *pendingApproval) string {
-	switch {
-	case fe.shell != nil:
-		return approvalJumpKey + " to answer"
-	case a.anchor.IsValid():
-		return "move to this row or press " + approvalNavKey + " to answer"
-	default:
-		return "press " + approvalNavKey + " to answer"
+	jump := approvalNavKey
+	if fe.shell != nil {
+		jump = approvalJumpKey
 	}
+	if a.anchor.IsValid() {
+		return "select it (↓ from the row above) or press " + jump + " to answer"
+	}
+	return "press " + jump + " to answer"
 }
 
 // approvalRequester renders who is asking: agent, module and function.
