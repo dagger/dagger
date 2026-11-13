@@ -324,10 +324,12 @@ func TestApprovalFallsBackToBoolPrompt(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, allowed)
 	}
-	allowed, err := s.request(ctx, module, testReadSpec("no"))
-	require.NoError(t, err)
-	require.False(t, allowed)
-	require.Len(t, questions.requests, 3, "a yes allows once")
+	for range 2 {
+		allowed, err := s.request(ctx, module, testReadSpec("no"))
+		require.NoError(t, err)
+		require.False(t, allowed)
+	}
+	require.Len(t, questions.requests, 3, "a yes allows for the session, a no only once")
 	for _, req := range questions.requests {
 		require.Empty(t, req.PersistentKey, "a yes must not be remembered forever")
 	}

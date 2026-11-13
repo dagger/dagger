@@ -42,7 +42,9 @@ type PromptHandler interface {
 
 // ApprovalHandler is implemented by frontends that can ask for an approval
 // with a choice of how long the grant lasts. Frontends that only implement
-// PromptHandler get a yes/no question instead, and a yes allows once.
+// PromptHandler (e.g. plain and dots) get a yes/no question instead, and a yes
+// allows for the session, as it did before approvals had a grant scope: never
+// forever, which takes the explicit choice only an ApprovalHandler offers.
 //
 // Unlike other prompts, approvals are not serialized by the attachable: a
 // frontend may show several at once, each where its request came from.
@@ -179,7 +181,8 @@ func (p PromptAttachable) PromptApproval(ctx context.Context, req *ApprovalReque
 			return nil, status.Errorf(codes.Internal, "Failed to handle prompt: %v", err)
 		}
 		if confirm {
-			decision = APPROVAL_ALLOW_ONCE
+			// What a yes to an approval always meant: until the session ends.
+			decision = APPROVAL_ALLOW_SESSION
 		}
 	}
 	if decision == APPROVAL_ALLOW_FOREVER {
