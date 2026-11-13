@@ -3,12 +3,15 @@ package compression
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"math/rand"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/util/compressutil"
 )
 
 // layerBytes is n bytes that compress like a layer: random runs between
@@ -32,7 +35,13 @@ func layerBytes(n int) []byte {
 // pieces as a diff does.
 func compressLayer(t *testing.T, data []byte) []byte {
 	t.Helper()
-	compress, _ := New(Zstd).Type.Compress(context.Background(), New(Zstd))
+	return compressLayerAs(t, New(Zstd), data)
+}
+
+// compressLayerAs is compressLayer with the compression comp.
+func compressLayerAs(t *testing.T, comp Config, data []byte) []byte {
+	t.Helper()
+	compress, _ := comp.Type.Compress(context.Background(), comp)
 	var out bytes.Buffer
 	w, err := compress(&out, "")
 	require.NoError(t, err)
@@ -84,6 +93,72 @@ func TestZstdLayerLargerThanTheWindowStillRoundTrips(t *testing.T) {
 	require.NoError(t, h.Decode(blob))
 	require.False(t, h.HasFCS)
 	require.Equal(t, data, decompressLayer(t, blob))
+}
+
+// A framed writer cuts a layer larger than the window into frames of
+// zstdFrameSize, the last one shorter, each compressed on its own as
+// EncodeAll compresses it: its blob depends on its bytes alone, never on
+// the machine's cores or on how the frames were scheduled, and every frame
+// names its size. Run at several -cpu values, it shows the same bytes at
+// each. A layer that fits the window is what an unframed writer writes.
+func TestZstdFramedLayerLargerThanTheWindowIsFramesOfAFixedSize(t *testing.T) {
+	framed := New(Zstd).SetFramed(true)
+	small := layerBytes(zstdSizedLimit)
+	require.Equal(t, compressLayer(t, small), compressLayerAs(t, framed, small))
+
+	data := layerBytes(3*zstdFrameSize + 123)
+	blob := compressLayerAs(t, framed, data)
+
+	enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault))
+	require.NoError(t, err)
+	var want []byte
+	for rest := data; len(rest) > 0; {
+		n := min(len(rest), zstdFrameSize)
+		want = enc.EncodeAll(rest[:n], want)
+		rest = rest[n:]
+	}
+	require.Equal(t, want, blob)
+
+	var h zstd.Header
+	require.NoError(t, h.Decode(blob))
+	require.True(t, h.HasFCS)
+	require.EqualValues(t, zstdFrameSize, h.FrameContentSize)
+	require.Equal(t, data, decompressLayer(t, blob))
+	// The engine's layer imports read it as they read any zstd layer.
+	r, err := compressutil.DecompressStream(bytes.NewReader(blob))
+	require.NoError(t, err)
+	imported, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+	require.Equal(t, data, imported)
+}
+
+func BenchmarkZstdLayer(b *testing.B) {
+	for _, comp := range []Config{New(Zstd), New(Zstd).SetFramed(true)} {
+		b.Run(fmt.Sprintf("framed=%v", comp.Framed), func(b *testing.B) { benchmarkZstdLayer(b, comp) })
+	}
+}
+
+func benchmarkZstdLayer(b *testing.B, comp Config) {
+	data := layerBytes(256 << 20)
+	compress, _ := comp.Type.Compress(context.Background(), comp)
+	b.SetBytes(int64(len(data)))
+	for b.Loop() {
+		w, err := compress(io.Discard, "")
+		if err != nil {
+			b.Fatal(err)
+		}
+		for rest := data; len(rest) > 0; {
+			n := min(len(rest), 32<<10)
+			if _, err := w.Write(rest[:n]); err != nil {
+				b.Fatal(err)
+			}
+			rest = rest[n:]
+		}
+		if err := w.Close(); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
 
 func TestZstdLayerOfNothingIsWhatTheEncoderWrote(t *testing.T) {
