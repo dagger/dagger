@@ -86,10 +86,18 @@ func (s *secretSchema) secret(
 	if _, _, err := secretprovider.ResolverForID(args.URI); err != nil {
 		return dagql.ObjectResult[*core.Secret]{}, err
 	}
+	// Ask which client the secret is read through before reading it: minting
+	// reads the plaintext right away (below) to derive the handle, so this is
+	// where an agent-driven module asking for the owner's host secret is
+	// approved or denied (see Server.AuthorizeSecret).
+	source, err := parent.Self().AuthorizeSecret(ctx, args.URI)
+	if err != nil {
+		return dagql.ObjectResult[*core.Secret]{}, err
+	}
 
 	concreteVal := &core.Secret{
 		URIVal:         args.URI,
-		SourceClientID: clientMetadata.ClientID,
+		SourceClientID: source.ClientID,
 	}
 	var handle dagql.SessionResourceHandle
 	if args.CacheKey.Valid {

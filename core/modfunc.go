@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
@@ -1123,6 +1124,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	// its key doesn't name, its result requires.
 	if borrowErr := dagql.RequireSessionResourcesOf(ctx, fnCall.borrowedResults()...); borrowErr != nil {
 		return nil, borrowErr
+	}
+	if fnCall.OwnerSecretRead() {
+		// The result is derived from a secret read through the owner's host
+		// for one agent, with the owner's approval, while its cache key only
+		// names the call's arguments: never reuse it, so no other session,
+		// agent or caller gets it without asking (see
+		// FunctionCall.MarkOwnerSecretRead).
+		dagql.ExpireBy(ctx, time.Now().Unix())
+		dagql.DeclinePersistence(ctx)
 	}
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {
