@@ -1004,6 +1004,16 @@ func TestExportLayerBuildsWhileNoSessionIsLive(t *testing.T) {
 	busy := a.exportConfig().Builds
 	require.Equal(t, exportLayerWorkers, busy.Workers, "a session live: 4 at once, beside it")
 
+	// The service asks for a stopping engine's last export as its session's
+	// calls end, which can be while the session tears down: its clients
+	// gone, its services stopping, before the ledger counts it ended.
+	ledger.sessionTearingDown("sess-a")
+	require.Equal(t, runtime.NumCPU(), a.exportConfig().Builds.Workers, "a session tearing down runs nothing beside the export")
+
+	ledger.sessionStarted("sess-b", "b", "")
+	require.Equal(t, exportLayerWorkers, a.exportConfig().Builds.Workers, "another session live: 4 again")
+	ledger.sessionEnded("sess-b", "b", "", true)
+
 	ledger.sessionEnded("sess-a", "a", "", true)
 	require.Equal(t, runtime.NumCPU(), a.exportConfig().Builds.Workers, "its end frees the cores again")
 	require.Equal(t, exportRefConfig.Compression, a.exportConfig().Compression, "the same blobs either way")
