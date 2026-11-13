@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger/core"
@@ -480,6 +483,104 @@ echo "{ engine { localCache { prune(maxUsedSpace: \"$half\", targetSpace: \"$hal
 "$@" -out /entries -sdk-digests /sdk-digests.json
 `, "sh"}, exporter...)...))
 	return entriesExported(ctx, ran, exporter)
+}
+
+// The build steps that have built to different bytes before build to the
+// same bytes when they run twice: QEMU's emulators, crun and the Go SDK's
+// files. Two engines that each build the image then hold the same
+// image, and the cache can serve what one built on it to the other.
+// +check
+func (dev *EngineDev) ReproducibleBuild(ctx context.Context) error {
+	builder, err := dev.builder(ctx, "")
+	if err != nil {
+		return err
+	}
+	var runs [2]map[string]*dagger.Directory
+	for i := range runs {
+		runs[i], err = builder.WithRerun(strconv.Itoa(i + 1)).RerunOutputs(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	var names []string
+	for name := range runs[0] {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	differ := make([]string, len(names))
+	eg, ctx := errgroup.WithContext(ctx)
+	for i, name := range names {
+		eg.Go(func() error {
+			a, b := runs[0][name], runs[1][name]
+			sumA, err := a.Digest(ctx)
+			if err != nil {
+				return fmt.Errorf("%s: %w", name, err)
+			}
+			sumB, err := b.Digest(ctx)
+			if err != nil {
+				return fmt.Errorf("%s: %w", name, err)
+			}
+			if sumA == sumB {
+				return nil
+			}
+			files, err := differentFiles(ctx, a, b)
+			if err != nil {
+				return fmt.Errorf("%s differ; listing the files that do: %w", name, err)
+			}
+			differ[i] = name + ": " + strings.Join(files, ", ")
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	differ = slices.DeleteFunc(differ, func(s string) bool { return s == "" })
+	if len(differ) > 0 {
+		return fmt.Errorf("two builds gave different bytes:\n%s", strings.Join(differ, "\n"))
+	}
+	return nil
+}
+
+// differentFiles are the paths of the regular files whose content differs
+// between a and b, or that only one of them has.
+func differentFiles(ctx context.Context, a, b *dagger.Directory) ([]string, error) {
+	var sums [2]map[string]string
+	for i, dir := range []*dagger.Directory{a, b} {
+		paths, err := dir.Glob(ctx, "**")
+		if err != nil {
+			return nil, err
+		}
+		sums[i] = map[string]string{}
+		for _, path := range paths {
+			regular, err := dir.Exists(ctx, path, core.DirectoryExistsOpts{
+				ExpectedType:        core.ExistsTypeRegularType,
+				DoNotFollowSymlinks: true,
+			})
+			if err != nil {
+				return nil, err
+			}
+			if !regular {
+				continue
+			}
+			sums[i][path], err = dir.File(path).Digest(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	var differ []string
+	for path, sum := range sums[0] {
+		if sums[1][path] != sum {
+			differ = append(differ, path)
+		}
+	}
+	for path := range sums[1] {
+		if _, ok := sums[0][path]; !ok {
+			differ = append(differ, path)
+		}
+	}
+	sort.Strings(differ)
+	return differ, nil
 }
 
 // Create a test engine service

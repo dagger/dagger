@@ -43,6 +43,11 @@ type Builder struct {
 	gpuSupport bool
 
 	race bool
+
+	// rerun, when set, is in the environment of the build steps that have
+	// built to different bytes before, so that builders with different
+	// values run those steps apart in one engine (RerunOutputs).
+	rerun string
 }
 
 func NewBuilder(
@@ -66,6 +71,41 @@ func (build *Builder) WithRace(race bool) *Builder {
 	b := *build
 	b.race = race
 	return &b
+}
+
+// WithRerun is a builder whose build steps that have built to different
+// bytes before carry run in their environment, so they run again rather
+// than come from the cache: two builders with different runs build them
+// twice in one engine.
+func (build *Builder) WithRerun(run string) *Builder {
+	b := *build
+	b.rerun = run
+	return &b
+}
+
+// withRerun is ctr with the builder's rerun value in its environment, if it
+// has one.
+func (build *Builder) withRerun(ctr *dagger.Container) *dagger.Container {
+	if build.rerun == "" {
+		return ctr
+	}
+	return ctr.WithEnvVariable("ENGINE_DEV_RERUN", build.rerun)
+}
+
+// RerunOutputs are the outputs of the build steps that have built to
+// different bytes before, by what they are: QEMU's emulators, crun, and the
+// Go SDK's files.
+func (build *Builder) RerunOutputs(ctx context.Context) (map[string]*dagger.Directory, error) {
+	qemu, _ := build.qemuBins()
+	goFiles, err := build.goSDKFiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]*dagger.Directory{
+		"QEMU's emulators":   qemu,
+		"crun":               core.NewDirectory().WithFile("crun", build.runtimeBin()),
+		"the Go SDK's files": goFiles,
+	}, nil
 }
 
 func (build *Builder) WithPlatform(p dagger.Platform) *Builder {
@@ -382,8 +422,7 @@ func (build *Builder) runtimeBin() *dagger.File {
 		"https://github.com/json-c/json-c/archive/refs/tags/json-c-"+consts.JSONCVersion+".tar.gz",
 		dagger.HTTPOpts{Checksum: consts.JSONCChecksum},
 	)
-	return core.NewContainer().
-		From(consts.AlpineImage).
+	return build.withRerun(core.NewContainer().From(consts.AlpineImage)).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
 		WithExec([]string{"apk", "add", "--no-cache",
