@@ -243,22 +243,73 @@ func storedContentTestRoot(t *testing.T, field string) (ValueBundle, uint64) {
 	return exportTestBundle(t, actx, a, r), aNumber
 }
 
-// An entry a prune left with no value, whose holding keeps it, takes a later
-// export's record with the content digest a span taught it before the prune.
-func TestStoredBundleKeepsATaughtContentDigestWhenAPrunedEntryStoresAgain(t *testing.T) {
-	t.Parallel()
-	content := testDigest("content-of-pruned")
-	bundle, aNumber := storedContentTestRoot(t, "pruned-root")
-	ctx, cloud := storedPartTestCache(t, WithBlobStore())
-	number := storedPersistenceTestMerge(t, ctx, cloud, bundle)[0]
-	storedContentTestTeach(t, ctx, cloud, aNumber, content)
-	storedContentTestWait(t, cloud, number, content)
-
-	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(number))
+// storedContentTestFrameDigests returns every digest the frame of the Cloud's
+// entry carries: its content digest and the ones it replaced.
+func storedContentTestFrameDigests(t *testing.T, cloud *Cache, number uint64) []digest.Digest {
+	t.Helper()
+	cloud.egraphMu.RLock()
+	frame := cloud.resultsByID[sharedResultID(number)].entryFrameLocked()
+	cloud.egraphMu.RUnlock()
+	decoded, err := frame.decode()
 	require.NoError(t, err)
-	require.True(t, removed)
-	require.Equal(t, []uint64{number}, storedPersistenceTestMerge(t, ctx, cloud, bundle), "the same entry takes the record again")
-	storedContentTestWait(t, cloud, number, content)
+	require.NotNil(t, decoded)
+	var digests []digest.Digest
+	for _, extra := range decoded.ExtraDigests {
+		digests = append(digests, extra.Digest)
+	}
+	return digests
+}
+
+// An entry a prune left with no value, whose holding keeps it, takes a later
+// export's record without the content digests spans taught it before the
+// prune. They named the bytes of the run it held, and the record may be
+// another engine's run of the recipe, with other bytes: the Cloud would send
+// that run's bytes labelled with the first run's content, and a fresh engine
+// would take them for anything of that content. Until runs are named, the
+// Cloud can't tell another run from the same one, so a prune gives up its
+// taught digests whichever run fills the entry again.
+func TestStoredBundleDropsTaughtContentDigestsWhenAPrunedEntryStoresAgain(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		// fill is the export that fills the pruned entry again, from its
+		// sender, with that sender's number for the recipe.
+		fill func(t *testing.T, a ValueBundle, aNumber uint64) (CacheID, ValueBundle, uint64)
+	}{
+		{"another engine's run", func(t *testing.T, _ ValueBundle, _ uint64) (CacheID, ValueBundle, uint64) {
+			b, bNumber := storedContentTestRoot(t, "pruned-root")
+			return "cache-b", b, bNumber
+		}},
+		{"the same run", func(t *testing.T, a ValueBundle, aNumber uint64) (CacheID, ValueBundle, uint64) {
+			return "cache-a", a, aNumber
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			before, after := testDigest("content-before-the-prune"), testDigest("content-after-the-prune")
+			bundle, aNumber := storedContentTestRoot(t, "pruned-root")
+			ctx, cloud := storedPartTestCache(t, WithBlobStore())
+			number := storedPersistenceTestMerge(t, ctx, cloud, bundle)[0]
+			storedContentTestTeach(t, ctx, cloud, aNumber, before)
+			storedContentTestWait(t, cloud, number, before)
+
+			_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(number))
+			require.NoError(t, err)
+			require.True(t, removed)
+			from, fill, fillNumber := tc.fill(t, bundle, aNumber)
+			reply, err := cloud.MergeValues(ctx, from, fill)
+			require.NoError(t, err)
+			require.Equal(t, number, reply.Imported()[0].ResultID, "the pruned entry takes the record")
+			// The filling run's holding teaches its own content; once the
+			// frame has it, the body worker has given the frame everything
+			// the entry was taught.
+			_, _, err = cloud.UpdateRemoteHolding(ctx, HolderKey{Cache: from, Number: fillNumber}, RemoteHoldingUpdate{ContentDigest: after})
+			require.NoError(t, err)
+			storedContentTestWait(t, cloud, number, after)
+			require.NotContains(t, storedContentTestFrameDigests(t, cloud, number), before,
+				"the frame carries no content digest taught for the bytes the prune took")
+		})
+	}
 }
 
 // An entry restored from a save, whose expired record is then replaced by a
@@ -326,17 +377,21 @@ func TestCloudRestoreKeepsAnEarlierTaughtDigestWhenALaterOneIsTaught(t *testing.
 }
 
 // A restored entry whose record a prune drops while an engine's holding keeps
-// the entry, and which takes the record again from a later export, keeps the
-// content digest taught before the restore.
-func TestCloudRestoreKeepsATaughtDigestWhenAPrunedEntryStoresAgain(t *testing.T) {
+// the entry gives up the content digest taught before the restore with the
+// value, as an entry that was never saved does
+// (TestStoredBundleDropsTaughtContentDigestsWhenAPrunedEntryStoresAgain): a
+// later export's record takes only what spans teach it after.
+func TestCloudRestoreDropsATaughtDigestWhenAPrunedEntryStoresAgain(t *testing.T) {
 	t.Parallel()
-	content := testDigest("content-saved-pruned")
-	ctx, cloud, bundle, _, number := storedContentTestRestored(t, "restored-pruned-root", content)
+	saved, later := testDigest("content-saved-pruned"), testDigest("content-after-the-prune")
+	ctx, cloud, bundle, aNumber, number := storedContentTestRestored(t, "restored-pruned-root", saved)
 	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(number))
 	require.NoError(t, err)
 	require.True(t, removed)
 	require.Equal(t, []uint64{number}, storedPersistenceTestMerge(t, ctx, cloud, bundle), "the same entry takes the record again")
-	storedContentTestWait(t, cloud, number, content)
+	storedContentTestTeach(t, ctx, cloud, aNumber, later)
+	storedContentTestWait(t, cloud, number, later)
+	require.NotContains(t, storedContentTestFrameDigests(t, cloud, number), saved, "the digest saved for the dropped value")
 }
 
 // A content digest the Cloud learned for an entry, still waiting for the
