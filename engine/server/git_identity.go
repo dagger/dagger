@@ -29,7 +29,8 @@ const gitIdentityPromptPrefix = "Allow using your Git identity "
 // does, the identity is the owner's to share: the engine reads it first, so
 // the prompt can show exactly what is shared, and only returns it once the
 // owner approves (see requestApproval). A grant is the agent's and module's,
-// across its functions, once, for the session or forever.
+// across its functions, for that identity (see gitIdentityApproval), once,
+// for the session or forever.
 //
 // A client serving its own attachables below a module boundary (a dagger CLI
 // in a container a module runs) has its own Git config, the module's to set:
@@ -130,8 +131,10 @@ func servesAttachablesBelowModule(client *clientRuntime) (bool, error) {
 // gitIdentityApproval asks the owner to share identity. The question shows the
 // identity itself, quoted and escaped for terminals (including bidi/control
 // characters), not Markdown: Git config is not the code asking, but it is
-// still not prose. There is no subject: a grant shares whatever the identity
-// is when asked.
+// still not prose. The subject is that same identity, escaped, so a grant
+// covers only the identity the owner saw: after a change to their Git config,
+// they are asked again. (A name or email holding angle brackets could spell
+// another identity's subject, but commits reject those anyway.)
 func gitIdentityApproval(identity core.GitIdentity) approvalSpec {
 	var shown string
 	switch {
@@ -144,6 +147,7 @@ func gitIdentityApproval(identity core.GitIdentity) approvalSpec {
 	}
 	return approvalSpec{
 		Kind:     approvalKindGitIdentity,
+		Subject:  literalText(shown),
 		Question: gitIdentityPromptPrefix + strconv.QuoteToASCII(shown),
 	}
 }
