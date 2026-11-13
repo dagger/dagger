@@ -77,7 +77,8 @@ func (c *Cache) persistCurrentState(ctx context.Context) error {
 
 // snapshotPersistState copies, under egraphMu for reading, what the save
 // writes. A Checkpoint runs it beside other readers, so it reads class roots
-// without compressing their paths, which writes.
+// without compressing their paths, which writes. It doesn't encode results'
+// rows: applyPersistStateSnapshot encodes each as it writes it.
 //
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, error) {
@@ -339,18 +340,6 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		}
 	}
 
-	for i := range snapshot.results {
-		resultSnapshot := &snapshot.results[i]
-		if resultSnapshot.frame == nil && !resultSnapshot.stored.holdsFrame() {
-			if resultSnapshot.self == nil || resultSnapshot.self.Type() == nil || resultSnapshot.self.Type().Name() != "Query" {
-				return persistStateSnapshot{}, fmt.Errorf("persist result %d: missing result call frame", resultSnapshot.resultID)
-			}
-		}
-
-		if err := c.encodePersistedResultRow(ctx, resultSnapshot); err != nil {
-			return persistStateSnapshot{}, err
-		}
-	}
 	return snapshot, nil
 }
 
@@ -509,11 +498,32 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 			return fmt.Errorf("insert eq_class_digest (%d,%s,%s): %w", row.EqClassID, row.Digest, row.Label, err)
 		}
 	}
-	for _, result := range snapshot.results {
+	// Each result's row is encoded just before its insert, and its encoding
+	// and the snapshot's copies of its call frame and value are let go once
+	// it is written: the save holds one row's encoding at a time, not every
+	// row's until the commit. Its dependency and snapshot link rows, which
+	// are small, are kept for their own tables below.
+	for i := range snapshot.results {
+		result := &snapshot.results[i]
+		if result.frame == nil && !result.stored.holdsFrame() {
+			if result.self == nil || result.self.Type() == nil || result.self.Type().Name() != "Query" {
+				_ = tx.Rollback()
+				return fmt.Errorf("persist result %d: missing result call frame", result.resultID)
+			}
+		}
+		if err := c.encodePersistedResultRow(ctx, result); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
 		if err := q.InsertMirrorResult(ctx, result.row); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("insert result %d: %w", result.resultID, err)
 		}
+		result.row.SelfPayload = nil
+		result.row.CallFrameJSON = ""
+		result.frame = nil
+		result.self = nil
+		result.stored = nil
 	}
 	for _, row := range snapshot.terms {
 		if err := q.InsertMirrorTerm(ctx, row); err != nil {
