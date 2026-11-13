@@ -122,7 +122,7 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 		if srv.gitPushToOwnerOrigin(ctx, owner, remote) {
 			return authorized()
 		}
-		spec = gitPushRemoteApproval(remote)
+		spec = gitPushRemoteApproval(remote, remoteDefault)
 	}
 	allowed, err := srv.requestApproval(ctx, client, owner, spec)
 	if err != nil {

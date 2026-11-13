@@ -355,7 +355,8 @@ func approvalPrompt(question string, r approvalRequester) string {
 // than reinterpreted.
 //
 // This identity is a policy choice still open to change (e.g. dropping the
-// agent name, or widening a push grant to a whole remote).
+// agent name). Push grants for a whole remote are their own kind
+// (git-push-remote), keyed by the remote alone.
 func approvalPersistentKey(kind string, r approvalRequester, subject string) string {
 	mod := r.module.Self()
 	if mod == nil {

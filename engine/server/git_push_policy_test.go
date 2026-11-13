@@ -85,7 +85,7 @@ func TestGitPushApprovalDefaultBranch(t *testing.T) {
 	req := questions.asked()[0]
 	require.Equal(t, approvalKindGitPushRemote, req.Kind)
 	require.Equal(t, remote, req.Subject)
-	require.Equal(t, "Allow pushes to non-default branches of git@example.com:repo"+by, req.Prompt)
+	require.Equal(t, "Allow pushes and force-pushes to git@example.com:repo branches other than trunk, main and master"+by, req.Prompt)
 	require.False(t, req.Danger)
 	push("refs/heads/other", false)
 	push("refs/heads/feature", true)
@@ -214,6 +214,9 @@ func TestGitPushApprovalOwnerOrigin(t *testing.T) {
 	require.NoError(t, err)
 	_, err = s.srv.AuthorizeGitPush(s.moduleCtx, "https://evil.example/me/repo", "refs/heads/feature", false, false)
 	require.NoError(t, err)
+	// Nor is the origin over a plaintext transport the owner does not use.
+	_, err = s.srv.AuthorizeGitPush(s.moduleCtx, "http://example.com/me/repo", "refs/heads/feature", false, false)
+	require.NoError(t, err)
 	var asked []string
 	for _, req := range questions.asked() {
 		asked = append(asked, req.Kind+" "+req.Subject)
@@ -222,7 +225,22 @@ func TestGitPushApprovalOwnerOrigin(t *testing.T) {
 		"git-push https://example.com/me/repo @ refs/heads/main",
 		"git-push-remote https://example.com/me/other",
 		"git-push-remote https://evil.example/me/repo",
+		"git-push-remote http://example.com/me/repo",
 	}, asked)
+}
+
+func TestGitPushRemoteApproval(t *testing.T) {
+	require.Equal(t, approvalSpec{
+		Kind:     approvalKindGitPushRemote,
+		Subject:  "https://example.com/\\u202erepo",
+		Question: "Allow pushes and force-pushes to https://example.com/\\u202erepo branches other than main and master",
+	}, gitPushRemoteApproval("https://example.com/\u202erepo", gitRemoteDefault{reached: true}))
+	require.Equal(t,
+		`Allow pushes and force-pushes to https://example.com/repo branches other than dev\x1b[31m, main and master`,
+		gitPushRemoteApproval("https://example.com/repo", gitRemoteDefault{reached: true, branch: "refs/heads/dev\x1b[31m"}).Question)
+	require.Equal(t,
+		"Allow pushes and force-pushes to https://example.com/repo branches other than main and master",
+		gitPushRemoteApproval("https://example.com/repo", gitRemoteDefault{reached: true, branch: "refs/heads/master"}).Question)
 }
 
 func TestGitRemoteDefaultsShareInFlight(t *testing.T) {

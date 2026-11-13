@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 
@@ -31,13 +32,28 @@ import (
 const approvalKindGitPushRemote = "git-push-remote"
 
 // gitPushRemoteApproval is the approval for routine pushes to remote: to any
-// of its branches except its default one, which still asks per push.
-func gitPushRemoteApproval(remote string) approvalSpec {
+// of its branches except its default one (as far as known, see
+// gitPushNeedsRefApproval), which still asks per push. The question names the
+// branches that keep asking, and whether force-pushes are included, as the
+// grant covers every other branch.
+func gitPushRemoteApproval(remote string, remoteDefault gitRemoteDefault) approvalSpec {
 	subject := literalText(remote)
+	excluded := slices.Clone(gitWellKnownDefaultBranches)
+	if branch, ok := strings.CutPrefix(remoteDefault.branch, "refs/heads/"); ok && !gitPushRefAlwaysAsks(remoteDefault.branch) {
+		// The remote chose this name: literal text, like the subject.
+		excluded = append([]string{literalText(branch)}, excluded...)
+	}
+	pushes := "pushes and force-pushes"
+	if gitForcePushToOtherBranchesAsks {
+		pushes = "pushes"
+	}
 	return approvalSpec{
-		Kind:     approvalKindGitPushRemote,
-		Subject:  subject,
-		Question: "Allow pushes to non-default branches of " + subject,
+		Kind:    approvalKindGitPushRemote,
+		Subject: subject,
+		// Grants are keyed by the subject, not the question: an answer holds
+		// whatever the remote later reports as its default branch.
+		Question: "Allow " + pushes + " to " + subject + " branches other than " +
+			strings.Join(excluded[:len(excluded)-1], ", ") + " and " + excluded[len(excluded)-1],
 	}
 }
 
@@ -204,11 +220,21 @@ func (srv *Server) gitPushToOwnerOrigin(ctx context.Context, owner *clientRuntim
 		return false
 	}
 	for _, origin := range srv.ownerOrigins(ctx, owner, ws.HostPath()) {
+		// SameRepository ignores the transport: never let a module downgrade
+		// the owner's origin to a plaintext one, which would send the owner's
+		// credentials unencrypted.
+		if gitPlaintextTransport(destination.Scheme) && destination.Scheme != origin.Scheme {
+			continue
+		}
 		if gitutil.SameRepository(origin, destination) {
 			return true
 		}
 	}
 	return false
+}
+
+func gitPlaintextTransport(scheme string) bool {
+	return scheme != gitutil.HTTPSProtocol && scheme != gitutil.SSHProtocol && scheme != gitutil.EntireProtocol
 }
 
 // ownerOrigins returns the URLs of the origin remote of the owner's checkout
