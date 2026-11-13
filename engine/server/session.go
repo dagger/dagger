@@ -437,6 +437,10 @@ type clientRuntime struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
+	// gitIdentityDecisions remembers the owner's answers to Git identity
+	// requests by the call that asked (see gitIdentityMemoKey).
+	gitIdentityDecisions sync.Map
+
 	cloudArtifactMu         sync.Mutex
 	cloudArtifactClients    map[string]*engineclient.Client
 	cloudArtifactLLMConfigs map[string]*cloudLLMConfigState

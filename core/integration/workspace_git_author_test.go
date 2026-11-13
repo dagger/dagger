@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -113,9 +114,8 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorFromModule(ctx context.Con
 }
 
 // TestWorkspaceWithCommitGitAuthorApproval covers an interactive owner
-// approving a module's request for its Git identity, shown in the prompt: the
-// commit is the owner's. (A denial commits as Dagger, as a non-interactive
-// owner's does; see TestWorkspaceWithCommitGitAuthorFromModule.)
+// answering a module's request for its Git identity, shown in the prompt: an
+// approval commits as the owner, a denial as Dagger.
 func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorApproval(ctx context.Context, t *testctx.T) {
 	// Answering the prompt takes a terminal, so run the CLI on the host under
 	// a PTY, in a checkout whose identity is the one initGitRepo configures.
@@ -143,22 +143,30 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorApproval(ctx context.Conte
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, path), []byte(contents), 0o644))
 	}
 
-	console, err := newTUIConsole(t, 120*time.Second)
-	require.NoError(t, err)
-	defer console.Close()
-	tty := console.Tty()
-	require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
-	cmd := hostDaggerCommand(ctx, t, workdir, "call", "-m", "modules/prober", "commit-author")
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
-	require.NoError(t, cmd.Start())
-	_, err = console.ExpectString(`Allow using your Git identity "Dagger Tests <dagger@example.com>"`)
-	require.NoError(t, err)
-	_, err = console.SendLine("y")
-	require.NoError(t, err)
-	_, err = console.ExpectString("author: Dagger Tests <dagger@example.com>")
-	require.NoError(t, err)
-	go console.ExpectEOF()
-	require.NoError(t, cmd.Wait())
+	for _, tc := range []struct{ answer, author string }{
+		{"y", "author: Dagger Tests <dagger@example.com>"},
+		// Not sharing still commits, as Dagger. The module reads two fields
+		// of the commit, each re-evaluating withCommit: one answer covers
+		// both, so the owner is asked once.
+		{"n", "author: Dagger <dagger@localhost>"},
+	} {
+		console, err := newTUIConsole(t, 120*time.Second)
+		require.NoError(t, err)
+		tty := console.Tty()
+		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
+		cmd := hostDaggerCommand(ctx, t, workdir, "call", "-m", "modules/prober", "commit-author")
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
+		require.NoError(t, cmd.Start())
+		_, err = console.ExpectString(`Allow using your Git identity "Dagger Tests <dagger@example.com>"`)
+		require.NoError(t, err)
+		_, err = console.SendLine(tc.answer)
+		require.NoError(t, err)
+		_, _, err = console.MatchLine(ctx, regexp.QuoteMeta(tc.author))
+		require.NoError(t, err)
+		go console.ExpectEOF()
+		require.NoError(t, cmd.Wait())
+		console.Close()
+	}
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitResolvedIdentityReplay(ctx context.Context, t *testctx.T) {
