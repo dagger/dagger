@@ -137,6 +137,13 @@ func (c *Cache) PrepareValueMerge(ctx context.Context, from CacheID, input Value
 	if len(prep.light) > 0 {
 		p.input = input
 	}
+	// The commit's warming captures only targets that changed since: its
+	// caller commits under its own lock, the remote cache service's work
+	// lock, and the captures take egraphMu for writing, which waits for
+	// egraphMu's readers.
+	if len(prep.stale) == 0 {
+		c.warmMergeTargetParts(ctx, prep)
+	}
 	return p, nil
 }
 
