@@ -5353,10 +5353,12 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// durability: focused span disappeared from view
 		fe.autoFocus = true
 	}
+	// The re-render moves the cursor, not the user: a floating approval the
+	// user jumped to keeps focus (see moveFocus).
 	if fe.autoFocus {
-		fe.focus(fe.rows.Order[len(fe.rows.Order)-1])
+		fe.moveFocus(fe.rows.Order[len(fe.rows.Order)-1], false)
 	} else if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
-		fe.focus(row)
+		fe.moveFocus(row, false)
 	} else {
 		// lost focus somehow
 		fe.autoFocus = true
@@ -6997,6 +6999,15 @@ func (fe *frontendPretty) focusedIndex() int {
 }
 
 func (fe *frontendPretty) focus(row *dagui.TraceRow) {
+	fe.moveFocus(row, true)
+}
+
+// moveFocus moves the cursor to row. leaveFloating says the move leaves a
+// floating approval the user is on, as any move the user makes does (a
+// search jump, say); a re-render moving the cursor along with the rows
+// (following output, or off a row that went away) does not, or a floating
+// approval would lose focus to rows changing beneath it.
+func (fe *frontendPretty) moveFocus(row *dagui.TraceRow, leaveFloating bool) {
 	moveKeyboard := fe.navigationFocused()
 	oldSpan := fe.FocusedSpan
 	var newSpan dagui.SpanID
@@ -7014,7 +7025,7 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	// An approval holds focus only while the cursor is on its row: one under
 	// another row loses it, and so does a floating one once the cursor moves
 	// at all (a search jump, say).
-	fe.disarmApprovals(newSpan, oldSpan != newSpan)
+	fe.disarmApprovals(newSpan, leaveFloating && oldSpan != newSpan)
 	if oldSpan != newSpan {
 		// Folded approvals say how to reach them from where the cursor is.
 		fe.updateApprovalViews()
