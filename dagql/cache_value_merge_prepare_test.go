@@ -2,7 +2,13 @@ package dagql
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -205,4 +211,85 @@ func TestMergeValuesCloudChecksClosureAfterDroppingParts(t *testing.T) {
 			require.Empty(t, cloud.resultsByID, "nothing is published")
 		})
 	}
+}
+
+// mergeTestManyRoots returns a bundle of n independent records, each a root.
+func mergeTestManyRoots(t *testing.T, n int) ValueBundle {
+	t.Helper()
+	ctx, c, srv := transferTestCache(t)
+	roots := make([]AnyResult, n)
+	for i := range roots {
+		roots[i] = persistedListTestResult(t, ctx, c, srv, fmt.Sprintf("root%d", i), &transferTestValue{Text: fmt.Sprintf("value%d", i)})
+	}
+	bundle := exportTestBundle(t, ctx, c, roots...)
+	require.Len(t, bundle.Values, n)
+	return bundle
+}
+
+// A merge prepares its records' payloads on more than one goroutine: an
+// engine's start merges its image's thousands of records before it says
+// hello to the remote cache, and one goroutine took most of a second.
+func TestMergeValuesPreparesPayloadsInParallel(t *testing.T) {
+	t.Parallel()
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs two Go processors to prepare two records at once")
+	}
+	bundle := mergeTestManyRoots(t, 8)
+	bctx, b, _ := transferTestCache(t)
+	var (
+		inside   atomic.Int32
+		together = make(chan struct{})
+		once     sync.Once
+	)
+	b.testRecordPayloadPreparing = func(uint64) error {
+		defer inside.Add(-1)
+		if inside.Add(1) >= 2 {
+			once.Do(func() { close(together) })
+		}
+		select {
+		case <-together:
+			return nil
+		case <-time.After(10 * time.Second):
+			return errors.New("records were prepared one at a time")
+		}
+	}
+	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.Len(t, reply.Imported(), 8)
+}
+
+// When several records' payloads are refused, a merge reports the first of
+// them in dependency order, however its preparation is scheduled: here the
+// first record is the last to finish.
+func TestMergeValuesReportsTheFirstRefusedRecordInOrder(t *testing.T) {
+	t.Parallel()
+	bundle := mergeTestManyRoots(t, 8)
+	for i := range bundle.Values {
+		bundle.Values[i].Record.Envelope.ObjectJSON = json.RawMessage(`{"text":5}`)
+	}
+	order, err := validateValueBundleShape(bundle)
+	require.NoError(t, err)
+	first := order[0]
+
+	bctx, b, _ := transferTestCache(t)
+	others := make(chan struct{}, len(order))
+	b.testRecordPayloadPreparing = func(id uint64) error {
+		if id != first {
+			others <- struct{}{}
+			return nil
+		}
+		// Hold the first record until another has started, and then long
+		// enough for that one to be refused first; or long enough that one
+		// would have started if any ran beside it.
+		select {
+		case <-others:
+			time.Sleep(500 * time.Millisecond)
+		case <-time.After(2 * time.Second):
+		}
+		return nil
+	}
+	_, err = b.MergeValues(bctx, cloudCacheID, bundle)
+	require.ErrorContains(t, err, fmt.Sprintf("row %d:", first))
+	require.ErrorContains(t, err, "codec dagql_test.Transfer")
 }

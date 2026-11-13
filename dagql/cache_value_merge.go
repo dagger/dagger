@@ -315,6 +315,8 @@ func (r MergeReply) Imported() []ImportedValue {
 // in a private cache under provisional numbers. A record that becomes a new
 // entry keeps its provisional number, firstID + ordinal - 1.
 type valueMergePrep struct {
+	// payloadPreparing is the cache's testRecordPayloadPreparing.
+	payloadPreparing func(uint64) error
 	// from is the cache the bundle is from.
 	from   CacheID
 	bundle ValueBundle
@@ -438,7 +440,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input Value
 		}
 		recordBytes = map[uint64]int64{}
 	}
-	prep := &valueMergePrep{from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, held: map[uint64]bool{}, heldParts: heldParts}
+	prep := &valueMergePrep{payloadPreparing: c.testRecordPayloadPreparing, from: from, bundle: bundle, order: order, index: map[uint64]*TransferredValue{}, plans: map[uint64]transferIdentityPlan{}, records: map[uint64]PersistedRecord{}, refs: map[uint64][]uint64{}, recordBytes: recordBytes, completeParts: map[uint64][]string{}, held: map[uint64]bool{}, heldParts: heldParts}
 	prep.rows = make(map[uint64]uint64, len(prep.bundle.Values))
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
@@ -649,6 +651,11 @@ func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateR
 		}
 		if err := context.Cause(ctx); err != nil {
 			return err
+		}
+		if prep.payloadPreparing != nil {
+			if err := prep.payloadPreparing(id); err != nil {
+				return err
+			}
 		}
 		if err := prep.prepareRecordPayload(id, relocateRecord, relocate); err != nil {
 			return err

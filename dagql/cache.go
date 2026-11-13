@@ -2502,6 +2502,11 @@ type Cache struct {
 	testTransferPlanPrepared func(int) error
 	testBeforeTransferCommit func()
 	testAfterTransferCommit  func()
+
+	// testRecordPayloadPreparing runs as a merge starts preparing the
+	// record of an ordinal with its payload; an error refuses that record.
+	testRecordPayloadPreparing func(uint64) error
+
 	// testPartInstalled runs as a part install's last act, after it has
 	// released every lock.
 	testPartInstalled func()
