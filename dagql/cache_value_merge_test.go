@@ -2488,3 +2488,27 @@ func TestMergeCommitNamesItsHolder(t *testing.T) {
 	}
 	require.Equal(t, wcprof.HolderUnknown, released, "each release clears the holder")
 }
+
+// A merge's reply counts its records by what the commit did with each: the
+// first merge of a bundle creates its record, the same bundle again keeps
+// it, and an expired entry nothing uses takes it in place.
+func TestMergeValuesCountsItsRowsByAction(t *testing.T) {
+	t.Parallel()
+	bundle, _ := mergeTestSource(t, "root", "value")
+	require.Len(t, bundle.Values, 1)
+	bctx, b, _ := transferTestCache(t)
+	first, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, MergeRowCounts{Created: 1}, first.Rows)
+	again, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, MergeRowCounts{Kept: 1}, again.Rows)
+
+	cctx, c, csrv := transferTestCache(t)
+	local := persistedListTestResult(t, cctx, c, csrv, "root", &transferTestValue{Text: "local"})
+	require.NoError(t, c.ReleaseSession(cctx, "test-session"))
+	mergeTestExpire(c, local.cacheSharedResult())
+	replaced, err := c.MergeValues(cctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, MergeRowCounts{Replaced: 1}, replaced.Rows)
+}

@@ -267,6 +267,18 @@ type MergeReply struct {
 	// CommitHold is how long the commit held egraphMu, from taking it to
 	// releasing it.
 	CommitHold time.Duration
+	// Rows counts the bundle's records by what the commit did with each.
+	Rows MergeRowCounts
+}
+
+// MergeRowCounts counts a merge's records by what its commit did with each:
+// a held row, which stands for the recipient's own value; a record whose
+// recipe's entry kept its value; one a new entry stores (created), one an
+// entry with no value takes (stored), one that replaces an expired value in
+// place (replaced), and one a new entry stores while the expired value it
+// supersedes stays in use (retired).
+type MergeRowCounts struct {
+	Held, Kept, Created, Stored, Replaced, Retired int
 }
 
 // MergedValue is one merged record's target as the commit left it.

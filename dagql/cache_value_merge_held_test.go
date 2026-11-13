@@ -373,3 +373,24 @@ func TestMergeHeldRowRefusesARecordOfTheSameRecipe(t *testing.T) {
 	require.False(t, reply.Committed)
 	require.Equal(t, entries, heldTestEntries(b), "nothing committed")
 }
+
+// A merge's reply counts a held row as held, apart from the records it
+// creates; the full bundle afterwards keeps both.
+func TestMergeHeldRowCountsAsHeld(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := heldTestChainedCloud(t)
+	bctx, b, pb := heldTestEngineWithP(t, ctx, cloud, p)
+	heldTestHold(t, ctx, cloud, "cache-b", pb, p, 0)
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), &HeldBy{Cache: "cache-b"})
+	require.NoError(t, err)
+	require.Equal(t, []uint64{p}, got.Held)
+	reply, err := b.MergeValues(bctx, cloudCacheID, got.Bundle)
+	require.NoError(t, err)
+	require.Equal(t, MergeRowCounts{Held: 1, Created: 1}, reply.Rows)
+
+	full, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	again, err := b.MergeValues(bctx, cloudCacheID, full.Bundle)
+	require.NoError(t, err)
+	require.Equal(t, MergeRowCounts{Kept: 2}, again.Rows)
+}
