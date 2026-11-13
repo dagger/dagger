@@ -12,10 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
@@ -280,6 +282,52 @@ func TestExportChainsZstd(t *testing.T) {
 	imported := importChain(t, consumer, chains[1])
 	testutil.CheckFile(t, imported, "a.txt", "zstd prefix")
 	testutil.CheckFile(t, imported, "c.txt", "zstd other")
+}
+
+// Every zstd layer the engine writes is framed, not only the remote cache's
+// exports: a layer larger than zstd's window is frames of 8 MiB, each naming
+// its size, whether the export diffs it, as an image's export or the engine
+// cache's does, or converts its gzip blob, as a forced export does. The
+// engine imports it back.
+func TestExportZstdLayerLargerThanTheWindowIsFramed(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, consumer := testutil.NewStore(t), testutil.NewStore(t)
+	const frame = 8 << 20
+	line := "a layer larger than zstd's window\n"
+	diffed := strings.Repeat(line, 3*frame/len(line))
+	converted := strings.Repeat("converted: "+line, 3*frame/len(line))
+	diffedRef, _ := store.Build(t, nil, "diffed.txt", diffed)
+	convertedRef, _ := store.Build(t, nil, "converted.txt", converted)
+
+	export := func(ref bkcache.ImmutableRef, comp compression.Config) *bkcache.ExportChain {
+		t.Helper()
+		chain, err := ref.ExportChain(ctx, config.RefConfig{Compression: comp})
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, chain.Release(context.Background())) })
+		require.Len(t, chain.Layers, 1)
+		return chain
+	}
+	export(convertedRef, compression.New(compression.Gzip))
+	for name, tc := range map[string]struct {
+		chain      *bkcache.ExportChain
+		file, want string
+	}{
+		"diffed":    {export(diffedRef, compression.New(compression.Zstd)), "diffed.txt", diffed},
+		"converted": {export(convertedRef, compression.New(compression.Zstd).SetForce(true)), "converted.txt", converted},
+	} {
+		desc := tc.chain.Layers[0].Descriptor
+		require.Equal(t, compression.Zstd.MediaType(), desc.MediaType, name)
+		require.True(t, tc.chain.Layers[0].Computed, name)
+		blob, err := content.ReadBlob(ctx, tc.chain.Provider, desc)
+		require.NoError(t, err, name)
+		var h zstd.Header
+		require.NoError(t, h.Decode(blob), name)
+		require.True(t, h.HasFCS, "%s: the layer's first frame names its size", name)
+		require.EqualValues(t, frame, h.FrameContentSize, "%s: the layer's first frame holds 8 MiB of it", name)
+		imported := importChain(t, consumer, tc.chain)
+		testutil.CheckFile(t, imported, tc.file, tc.want)
+	}
 }
 
 // A gate shared by exports bounds their builds together, and each export
