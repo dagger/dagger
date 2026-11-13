@@ -2637,6 +2637,11 @@ type Cache struct {
 	// handed them back, on a blob-backed cache only: nil on any other
 	// (cache_change_marks.go). Guarded by egraphMu.
 	changes *changeMarks
+	// writes counts, on a blob-backed cache, the changes to what stored
+	// bundles carry (stampEntryLocked): each entry keeps the count of the
+	// last one (sharedResult.changedAt), and a stored bundle the count it was
+	// built at (StoredBundleResult.Position). Guarded by egraphMu.
+	writes  uint64
 
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64
@@ -3057,6 +3062,10 @@ type sharedResult struct {
 	// persistedEnvelope then has only the envelope's small fields. Guarded
 	// by egraphMu, and set under payloadMu too.
 	stored                      *storedBody
+	// changedAt is, on a blob-backed cache, the write count (Cache.writes)
+	// of the last write that changed what a stored bundle carries of the
+	// entry (stampEntryLocked). Guarded by egraphMu.
+	changedAt                   uint64
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.
