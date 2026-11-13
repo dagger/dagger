@@ -227,7 +227,9 @@ func (build *Builder) goSDKFiles(ctx context.Context) (*dagger.Directory, error)
 	withGitAndSSH := toolchain.WithExec(append([]string{"apk", "add"}, distconsts.GoSDKBasePackages...))
 
 	return core.NewDirectory().
-		WithDirectory("apk", toolchain.Rootfs().Diff(withGitAndSSH.Rootfs())).
+		// apk's log records when the install ran, so it would make these
+		// files different on every build.
+		WithDirectory("apk", toolchain.Rootfs().Diff(withGitAndSSH.Rootfs()).WithoutFile("var/log/apk.log")).
 		WithFile("usr/local/bin/codegen", build.CodegenBinary()).
 		WithFile("usr/local/bin/export-driver", exportDriver).
 		// The Go SDK module, which the engine loads for every module with the
@@ -235,8 +237,11 @@ func (build *Builder) goSDKFiles(ctx context.Context) (*dagger.Directory, error)
 		// every runtime with it as dagger/go builds a user's Go code: one
 		// graph of package builds and one cache.
 		WithDirectory("sdk/runtime", build.source.Directory("sdk/go/runtime")).
-		// this cache directory seeds the module cache volume the engine mounts at /go/pkg/mod (core/sdk's goSDKConstructorArgs)
-		WithDirectory("go/pkg/mod", sdkCache.Directory("/go/pkg/mod")), nil
+		// this cache directory seeds the module cache volume the engine mounts at /go/pkg/mod (core/sdk's goSDKConstructorArgs).
+		// Go's checksum database answers are left out: each records the
+		// database's size and signature when it was fetched, so they would
+		// make these files different on every build.
+		WithDirectory("go/pkg/mod", sdkCache.Directory("/go/pkg/mod").WithoutDirectory("cache/download/sumdb")), nil
 }
 
 // GoImageEntriesSeed is the Go module whose dependencies' builds the engine
