@@ -3,6 +3,7 @@ package dagql
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -1542,6 +1543,15 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 				return false, fmt.Errorf("teach content digest: %w", err)
 			}
 		}
+		// A blob-backed cache's record is measured with its frame's JSON
+		// (storedRecordBytes), as a restore of the saved frame measures it:
+		// the new frame changes the record's size by its JSON's growth.
+		var grown int64
+		if c.blobBacked {
+			if grown, err = frameJSONGrowth(base, baseFrame, body, frame); err != nil {
+				return false, fmt.Errorf("teach content digest: %w", err)
+			}
+		}
 
 		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		// A fresh collector for every acquisition of E: the changed-frame
@@ -1580,11 +1590,39 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 			// The new frame goes into a new body, as the old one was held.
 			c.setStoredBodyLocked(shared, shared.persistedEnvelope, body)
 		}
+		if shared.storedRecordBytes != 0 {
+			shared.storedRecordBytes += grown
+		}
 		c.traceResultCallFrameUpdated(ctx, shared, "teach_content_digest", baseFrame, frame)
 		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
 		return true, nil
 	}
+}
+
+// frameJSONGrowth is how much longer the JSON of frame, the frame replacing
+// baseFrame, is than baseFrame's: from the bodies' kept lengths when the
+// frames are held in them, and encoded otherwise. It reads no lock.
+func frameJSONGrowth(base entryFrame, baseFrame *ResultCall, body *storedBody, frame *ResultCall) (int64, error) {
+	length := func(held *storedBody, f *ResultCall) (int64, error) {
+		if held != nil && held.frame != nil {
+			return held.frameBytes, nil
+		}
+		raw, err := json.Marshal(f)
+		if err != nil {
+			return 0, fmt.Errorf("measure call frame: %w", err)
+		}
+		return int64(len(raw)), nil
+	}
+	was, err := length(base.body, baseFrame)
+	if err != nil {
+		return 0, err
+	}
+	now, err := length(body, frame)
+	if err != nil {
+		return 0, err
+	}
+	return now - was, nil
 }
 
 // resultIDForCall finds the attached result for frame. The lookup only reads
