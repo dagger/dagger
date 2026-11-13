@@ -342,10 +342,15 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 	var bytes int64
 	if miss.body != nil {
 		// A body's value is measured with an empty envelope in its place,
-		// and its envelope's own length added: nothing is decompressed.
-		call, err := normalizeTransferCall(miss.call)
-		if err != nil {
-			return storedSizeMeasure{}, err
+		// and its envelope's own length added: nothing is decompressed. A
+		// frame the body holds is measured the same way, in place of a null
+		// call.
+		var call *ResultCall
+		if miss.body.frame == nil {
+			var err error
+			if call, err = normalizeTransferCall(miss.call); err != nil {
+				return storedSizeMeasure{}, err
+			}
 		}
 		value.Record = PersistedRecord{ResultID: uint64(miss.res.id), Call: call}
 		empty, err := encodedSize(value)
@@ -353,6 +358,9 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 			return storedSizeMeasure{}, err
 		}
 		bytes = empty - emptyEnvelopeBytes + miss.body.envelopeBytes
+		if miss.body.frame != nil {
+			bytes += miss.body.frameBytes - nullCallBytes
+		}
 	} else {
 		var err error
 		if kept, err = normalizeStoredTransfer(miss.res, miss.env, miss.call); err != nil {
@@ -391,6 +399,10 @@ func (c *Cache) publishStoredSizes(measured []storedSizeMeasure) {
 		keepStoredTransfer(res, m.kept).size.Store(m.size)
 	}
 }
+
+// nullCallBytes is the length of a missing call's encoding, which a measure
+// of a body that holds its frame replaces with the frame's.
+const nullCallBytes = int64(len("null"))
 
 // emptyEnvelopeBytes is the length of an empty envelope's encoding, which a
 // body's measure replaces with its envelope's.

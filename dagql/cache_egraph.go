@@ -1463,7 +1463,18 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			return err
 		}
 
-		baseFrame := shared.loadResultCall()
+		// A blob-backed cache's entry can hold its frame in its stored
+		// body: it is decoded here, and replaced with the body below.
+		base := entryFrame{call: shared.loadResultCall()}
+		if base.call == nil {
+			c.egraphMu.RLock()
+			base = shared.entryFrameLocked()
+			c.egraphMu.RUnlock()
+		}
+		baseFrame, err := base.decode()
+		if err != nil {
+			return fmt.Errorf("teach content digest: %w", err)
+		}
 		if baseFrame == nil {
 			return fmt.Errorf("teach content digest: result %T has no call frame", res)
 		}
@@ -1521,6 +1532,12 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			}
 			requestInputs = append(requestInputs, dig)
 		}
+		var body *storedBody
+		if base.body != nil {
+			if body, err = base.body.reframe(c, shared.id, frame); err != nil {
+				return fmt.Errorf("teach content digest: %w", err)
+			}
+		}
 
 		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		// A fresh collector for every acquisition of E: the changed-frame
@@ -1534,12 +1551,13 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			c.egraphMu.Unlock()
 			return fmt.Errorf("teach content digest: result %d was already collected", shared.id)
 		}
-		if shared.loadResultCall() == nil {
+		cur := shared.entryFrameLocked()
+		if !cur.ok() {
 			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
 			return fmt.Errorf("teach content digest: result %T has no call frame", res)
 		}
-		if shared.loadResultCall() != baseFrame {
+		if cur != base {
 			// Nothing was mutated in this interval.
 			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
@@ -1554,6 +1572,10 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			return err
 		}
 		shared.storeResultCall(frame)
+		if body != nil {
+			// The new frame goes into a new body, as the old one was held.
+			c.setStoredBodyLocked(shared, shared.persistedEnvelope, body)
+		}
 		c.traceResultCallFrameUpdated(ctx, shared, "teach_content_digest", baseFrame, frame)
 		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
@@ -2052,7 +2074,9 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 		c.nextSharedResultID++
 	}
 	c.putResultLocked(res)
-	if res.loadResultCall() == nil && requestFrame != nil {
+	// An entry with a frame keeps it, decoded or held compressed in its
+	// stored body: a call that returned it teaches it identity, not a frame.
+	if requestFrame != nil && !res.hasCallFrameLocked() {
 		res.storeResultCall(requestFrame.clone())
 		c.traceResultCallFrameUpdated(ctx, res, "index_wait_result_request_frame", nil, res.loadResultCall())
 	}
@@ -2195,6 +2219,9 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	c.removeResultDigestsLocked(res.id, affectedOutputEqClasses)
 	c.removeResultOutputEqClassesLocked(res.id)
 	oldFrame := res.loadResultCall()
+	if oldFrame == nil && c.traceEnabled() {
+		oldFrame, _ = res.entryFrameLocked().decode()
+	}
 	depCount := len(res.deps)
 	res.dropResultCall()
 	c.deleteResultLocked(res)

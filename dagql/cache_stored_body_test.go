@@ -92,12 +92,15 @@ func storedBodyTestUse(t *testing.T, ctx context.Context, cloud *Cache, roots []
 // holds it. Requires egraphMu.
 func storedTestRecordLocked(t *testing.T, res *sharedResult) PersistedRecord {
 	t.Helper()
+	frame, err := res.entryFrameLocked().decode()
+	require.NoError(t, err)
 	if res.stored != nil {
 		rec, err := res.stored.record(uint64(res.id))
 		require.NoError(t, err)
+		rec.Call = frame
 		return rec
 	}
-	return PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()}
+	return PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: frame}
 }
 
 // storedTestHoldWhole stops the Cloud's body worker, so that its records
