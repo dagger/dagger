@@ -371,7 +371,9 @@ func approvalPrompt(question string, r approvalRequester) string {
 //
 // Every field is quoted, so no value can spell another's separator. Bump the
 // version when the identity changes, so old grants are asked again rather
-// than reinterpreted: v1 keys also named the agent, and never match.
+// than reinterpreted: v1 keys also named the agent, and never match. Push
+// grants for a whole remote are their own kind (git-push-remote), keyed by
+// the remote alone.
 func approvalPersistentKey(kind string, module dagql.ObjectResult[*core.Module], subject string) string {
 	mod := module.Self()
 	if mod == nil {
