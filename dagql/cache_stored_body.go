@@ -737,6 +737,7 @@ func (c *Cache) queueTaughtContentLocked(res *sharedResult) {
 	known, carried := res.frameContentKnown, res.frameContent
 	res.resultCallMu.RUnlock()
 	if !seeded && known && !slices.ContainsFunc(res.taught[res.taughtGiven:], func(d digest.Digest) bool { return d != carried }) {
+		c.taughtContentCarried.Add(uint64(len(res.taught) - res.taughtGiven))
 		res.taughtGiven = len(res.taught)
 		return
 	}
@@ -782,6 +783,8 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 			applied++
 			if rewrote {
 				rewritten++
+			} else {
+				c.taughtContentCarried.Add(1)
 			}
 		}
 		if c.testTaughtContentGiven != nil {
@@ -849,11 +852,44 @@ func (c *Cache) adoptReplacedContent(res *sharedResult) {
 	res.taught = append(run, res.taught...)
 }
 
-// TaughtContentStats reports the entries queued for a frame rewrite because
-// a span taught a content digest their frame lacked, the frames rewritten,
-// and the time the rewrites took in all.
-func (c *Cache) TaughtContentStats() (queued, rewritten uint64, took time.Duration) {
-	return c.taughtContentQueued.Load(), c.taughtContentRewrites.Load(), time.Duration(c.taughtContentNanos.Load())
+// TaughtContentStats counts, since the cache opened, what giving entries'
+// frames the content digests spans taught them did (queueTaughtContentLocked,
+// applyTaughtContent).
+type TaughtContentStats struct {
+	// Queued are the entries queued for a rewrite: a span taught a digest
+	// their frame wasn't known to carry.
+	Queued uint64
+	// Rewritten are the frames rewritten.
+	Rewritten uint64
+	// Carried are the taught digests found already on the frame, when
+	// queued or when the worker decoded it.
+	Carried uint64
+	// BundlesWaiting are the bundle builds that found an entry, sent or
+	// held, whose frame wasn't yet recorded as having taken all its taught
+	// digests: an upper bound on the bundles that sent a frame before its
+	// rewrite, since a frame can be rewritten before that is recorded, and
+	// a build can still fail after counting.
+	BundlesWaiting uint64
+	// Took is the time the rewrites took.
+	Took time.Duration
+}
+
+// TaughtContentStats reports what giving frames their taught content digests
+// has done since the cache opened.
+func (c *Cache) TaughtContentStats() TaughtContentStats {
+	return TaughtContentStats{
+		Queued:         c.taughtContentQueued.Load(),
+		Rewritten:      c.taughtContentRewrites.Load(),
+		Carried:        c.taughtContentCarried.Load(),
+		BundlesWaiting: c.taughtContentBundlesWaiting.Load(),
+		Took:           time.Duration(c.taughtContentNanos.Load()),
+	}
+}
+
+// waitsForTaughtContentLocked reports whether res's frame has yet to take a
+// content digest a span taught res. Requires egraphMu.
+func (res *sharedResult) waitsForTaughtContentLocked() bool {
+	return res.taughtGiven < len(res.taught) || res.taughtFrom.ok()
 }
 
 // closeStoredBodies stops the body worker. Entries it hadn't compressed keep

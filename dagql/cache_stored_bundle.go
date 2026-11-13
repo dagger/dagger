@@ -178,7 +178,9 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 	}
 	rootEntries = append(rootEntries, build.callRoots...)
 	var frames map[TransferOrdinal]entryFrame
+	waiting := false
 	for _, res := range build.order {
+		waiting = waiting || res.waitsForTaughtContentLocked()
 		if build.held[res.id] {
 			ordinal := build.ordinals[res.id]
 			build.bundle.Values = append(build.bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: uint64(res.id), SenderReplacements: res.replacements, Record: PersistedRecord{ResultID: uint64(res.id)}, ExpiresAtUnix: res.expiresAtUnix})
@@ -192,6 +194,9 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 		if err := c.storedBundleValueLocked(build, res); err != nil {
 			return StoredBundleResult{}, nil, err
 		}
+	}
+	if waiting {
+		c.taughtContentBundlesWaiting.Add(1)
 	}
 	for _, res := range rootEntries {
 		expiry := res.expiresAtUnix
