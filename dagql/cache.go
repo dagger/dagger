@@ -2648,7 +2648,7 @@ type Cache struct {
 	// bundles carry (stampEntryLocked): each entry keeps the count of the
 	// last one (sharedResult.changedAt), and a stored bundle the count it was
 	// built at (StoredBundleResult.Position). Guarded by egraphMu.
-	writes  uint64
+	writes uint64
 
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64
@@ -3068,7 +3068,7 @@ type sharedResult struct {
 	// compressed (cache_stored_body.go), once its body is made: its
 	// persistedEnvelope then has only the envelope's small fields. Guarded
 	// by egraphMu, and set under payloadMu too.
-	stored                      *storedBody
+	stored *storedBody
 	// changedAt is, on a blob-backed cache, the write count (Cache.writes)
 	// of the last write that changed what a stored bundle carries of the
 	// entry (stampEntryLocked). Guarded by egraphMu.
