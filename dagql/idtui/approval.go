@@ -671,15 +671,21 @@ func (fe *frontendPretty) approvalCueLine(a *pendingApproval, arrow string) stri
 	if a.req.GetDanger() {
 		accent = termenv.ANSIRed
 	}
-	line := "  " + out.String(IconApproval+" approval needed "+arrow).Foreground(accent).Bold().String()
-	if who := approvalRequester(a.req); who != "" {
-		line += out.String(" · " + who).Faint().String()
+	// Outside the conversation, so the agent is named.
+	who := a.req.GetRequester().GetAgentName()
+	if who == "" {
+		who = a.req.GetRequester().GetModule()
+	}
+	if who == "" {
+		who = "an agent"
 	}
 	jump := approvalNavKey
 	if fe.shell != nil {
 		jump = approvalJumpKey
 	}
-	line += out.String(" · " + jump + " to answer").Faint().String()
+	line := "  " + out.String(IconApproval).Foreground(accent).Bold().String() + " " +
+		out.String(who+" is waiting for approval "+arrow).Bold().String() +
+		out.String(" · "+jump+" to go there").Faint().String()
 	if w := fe.contentWidth; w > 0 {
 		line = ansi.Truncate(line, w, "…")
 	}
