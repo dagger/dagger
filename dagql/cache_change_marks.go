@@ -1,16 +1,28 @@
 package dagql
 
-import "slices"
+import (
+	"cmp"
+	"slices"
+	"strings"
+)
 
 // changeMarks are the holdings and entries a blob-backed cache's writes have
 // changed since the last write handed them back (takeChangesLocked), for its
 // reader to ask again of only those (RemoteChange.Holdings and Entries).
 //
-// An entry is marked where anything a reader asks of it changes: its record,
-// stored parts or expiry, its recipes, its holdings, its classes' members,
-// and its creation. An entry's part answers rest on its classes' other
-// entries too (AvailablePart), so each marked entry is widened to every
-// entry of its classes when the marks are handed back. Classes only grow
+// An entry is marked where anything a reader asks of it changes. What an
+// entry's class mates answer changes too when the entry's value, record,
+// stored parts or expiry change, or its class gains it: their part answers
+// consider it (AvailablePart), and their classes' entries include it. Those
+// marks (markEntryClassLocked) are widened to every entry of the entry's
+// classes when the marks are handed back. Its holdings and recipes are its
+// own (markEntryLocked). Its holdings would reach its class mates only by
+// turning whether it has a value (noValueLocked), which never happens to an
+// entry that stays: an entry with no value is owned by its holdings alone,
+// as a prune drops only values that holdings alone keep and a value depends
+// only on entries with values, so it goes with its last engine holding
+// (markLeavingLocked); and one gains its first holding only as it is
+// created, which marks its class. Classes only grow
 // until an entry is removed, so widening then reaches every entry whose
 // class the change touched, but for a removed entry's: its class mates are
 // marked as it leaves its classes (markLeavingLocked), while the classes
@@ -19,27 +31,39 @@ import "slices"
 // A holding is marked where any field of its description
 // (RemoteHoldingInfo) changes, and where it is created or removed.
 //
-// Only a blob-backed cache marks: an engine's own cache has no reader to
-// tell, and its changes is nil. Guarded by egraphMu.
+// Marks are appended, an entry or holding as often as it changes, and sorted
+// and deduplicated once, when handed back: a write's marks cost an append
+// each. Only a blob-backed cache marks: an engine's own cache has no reader
+// to tell, and its changes is nil. Guarded by egraphMu.
 type changeMarks struct {
-	// entries are widened to their classes when handed back, and alone the
-	// entries marked as is: removed entries and a leaving entry's class
-	// mates.
-	entries  map[sharedResultID]struct{}
-	alone    map[sharedResultID]struct{}
-	holdings map[HolderKey]struct{}
+	// entries are marked as they are, and classes widened to their classes'
+	// entries when handed back.
+	entries  []sharedResultID
+	classes  []sharedResultID
+	holdings []HolderKey
+	// left are the classes whose entries a leaving entry has marked, so
+	// collecting a whole class walks it once, not once per entry.
+	left map[eqClassID]struct{}
 }
 
-// markEntryLocked marks res, and its classes' entries when the marks are
-// handed back. Requires egraphMu for writing.
-func (c *Cache) markEntryLocked(res *sharedResult) {
-	if c.changes == nil || res == nil {
+// markEntryLocked marks the entry numbered id: its own facts or holdings
+// changed. Requires egraphMu for writing.
+func (c *Cache) markEntryLocked(id sharedResultID) {
+	if c.changes == nil || id == 0 {
 		return
 	}
-	if c.changes.entries == nil {
-		c.changes.entries = map[sharedResultID]struct{}{}
+	c.changes.entries = append(c.changes.entries, id)
+}
+
+// markEntryClassLocked marks the entry numbered id and, when the marks are
+// handed back, every entry of its classes: its value, record, stored parts
+// or expiry changed, or it joined their class. Requires egraphMu for
+// writing.
+func (c *Cache) markEntryClassLocked(id sharedResultID) {
+	if c.changes == nil || id == 0 {
+		return
 	}
-	c.changes.entries[res.id] = struct{}{}
+	c.changes.classes = append(c.changes.classes, id)
 }
 
 // markLeavingLocked marks an entry that is leaving its classes, before it
@@ -49,13 +73,21 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 	if c.changes == nil {
 		return
 	}
-	if c.changes.alone == nil {
-		c.changes.alone = map[sharedResultID]struct{}{}
-	}
-	c.changes.alone[id] = struct{}{}
-	for root := range c.outputEqClassRootsLocked(id) {
+	c.changes.entries = append(c.changes.entries, id)
+	for eqID := range c.resultOutputEqClasses[id] {
+		root := c.eqClassRootLocked(eqID)
+		if root == 0 {
+			continue
+		}
+		if _, ok := c.changes.left[root]; ok {
+			continue
+		}
+		if c.changes.left == nil {
+			c.changes.left = map[eqClassID]struct{}{}
+		}
+		c.changes.left[root] = struct{}{}
 		for member := range c.outputEqClassResults[root] {
-			c.changes.alone[member] = struct{}{}
+			c.changes.entries = append(c.changes.entries, member)
 		}
 	}
 }
@@ -65,54 +97,69 @@ func (c *Cache) markHoldingLocked(key HolderKey) {
 	if c.changes == nil {
 		return
 	}
-	if c.changes.holdings == nil {
-		c.changes.holdings = map[HolderKey]struct{}{}
-	}
-	c.changes.holdings[key] = struct{}{}
+	c.changes.holdings = append(c.changes.holdings, key)
 }
 
 // takeChangesLocked hands the marks back in change, sorted, and clears them:
-// each marked holding, and each marked entry with every entry of its
-// classes. A write takes them at its end, under the hold that made them, so
-// each is handed back by the write that made it. Requires egraphMu for
-// writing.
+// each marked holding and entry, and every entry of each class-marked
+// entry's classes. A write takes them at its end, under the hold that made
+// them, so each is handed back by the write that made it. Requires egraphMu
+// for writing.
 func (c *Cache) takeChangesLocked(change *RemoteChange) {
-	if c.changes == nil {
+	if !c.changesPendingLocked() {
 		return
 	}
 	marks := c.changes
-	entries := marks.alone
-	if entries == nil {
-		entries = make(map[sharedResultID]struct{}, len(marks.entries))
+	change.Entries = slices.Grow(change.Entries, len(marks.entries)+len(marks.classes))
+	for _, id := range marks.entries {
+		change.Entries = append(change.Entries, uint64(id))
 	}
-	widened := map[eqClassID]struct{}{}
-	for id := range marks.entries {
-		entries[id] = struct{}{}
-		for root := range c.outputEqClassRootsLocked(id) {
+	var widened map[eqClassID]struct{}
+	for _, id := range marks.classes {
+		change.Entries = append(change.Entries, uint64(id))
+		for eqID := range c.resultOutputEqClasses[id] {
+			root := c.eqClassRootLocked(eqID)
+			if root == 0 {
+				continue
+			}
 			if _, ok := widened[root]; ok {
 				continue
 			}
+			if widened == nil {
+				widened = map[eqClassID]struct{}{}
+			}
 			widened[root] = struct{}{}
 			for member := range c.outputEqClassResults[root] {
-				entries[member] = struct{}{}
+				change.Entries = append(change.Entries, uint64(member))
 			}
 		}
 	}
-	for id := range entries {
-		change.Entries = append(change.Entries, uint64(id))
-	}
 	slices.Sort(change.Entries)
 	change.Entries = slices.Compact(change.Entries)
-	for key := range marks.holdings {
-		change.Holdings = append(change.Holdings, key)
+	change.Holdings = append(change.Holdings, marks.holdings...)
+	slices.SortFunc(change.Holdings, compareChangedHoldings)
+	change.Holdings = slices.CompactFunc(change.Holdings, func(a, b HolderKey) bool { return a == b })
+	marks.entries, marks.classes, marks.holdings = marks.entries[:0], marks.classes[:0], marks.holdings[:0]
+	marks.left = nil
+}
+
+// compareChangedHoldings orders a change's holdings: by number, then cache.
+// Most keys differ in their numbers, and an integer compares faster than a
+// cache's name.
+func compareChangedHoldings(a, b HolderKey) int {
+	return cmp.Or(cmp.Compare(a.Number, b.Number), strings.Compare(string(a.Cache), string(b.Cache)))
+}
+
+// clearChangesLocked drops every mark, for a cache that has just opened: no
+// reader keeps answers from before an open. Requires egraphMu for writing.
+func (c *Cache) clearChangesLocked() {
+	if c.changes != nil {
+		*c.changes = changeMarks{}
 	}
-	slices.SortFunc(change.Holdings, compareHolderKeys)
-	change.Holdings = slices.CompactFunc(change.Holdings, func(a, b HolderKey) bool { return compareHolderKeys(a, b) == 0 })
-	*marks = changeMarks{}
 }
 
 // changesPendingLocked reports whether any mark waits to be handed back.
 // Requires egraphMu.
 func (c *Cache) changesPendingLocked() bool {
-	return c.changes != nil && len(c.changes.entries)+len(c.changes.alone)+len(c.changes.holdings) > 0
+	return c.changes != nil && len(c.changes.entries)+len(c.changes.classes)+len(c.changes.holdings) > 0
 }
