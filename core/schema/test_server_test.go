@@ -56,6 +56,14 @@ func (*currentTypeDefsTestServer) AuthorizeGitIdentity(context.Context) (core.Gi
 	panic("unexpected AuthorizeGitIdentity")
 }
 
+func (*currentTypeDefsTestServer) AuthorizeLLM(context.Context, string) error {
+	panic("unexpected AuthorizeLLM")
+}
+
+func (*currentTypeDefsTestServer) Prompt(context.Context, *core.PromptRequest) (*core.PromptAnswer, error) {
+	panic("unexpected Prompt")
+}
+
 func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool, bool) error {
 	return nil
 }
