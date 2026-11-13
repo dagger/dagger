@@ -10,7 +10,7 @@ import (
 )
 
 func TestArtifactAbsentDimensionArgumentViews(t *testing.T) {
-	for _, version := range []string{"v1.0.0-beta.25", artifactDimensionViewVersion} {
+	for _, version := range []string{"v1.0.0-beta.25", "v1.0.0-beta.26", "v1.0.0-beta.27", artifactDimensionViewVersion} {
 		view := call.View(engine.APIViewVersion(version))
 		_, srv := newNestingTestServer(t, view)
 		field := srv.SchemaForView(view).Types["Artifacts"].Fields.ForName("filterDimensions")

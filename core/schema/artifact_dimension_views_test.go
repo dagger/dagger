@@ -20,12 +20,20 @@ func TestArtifactDimensionViews(t *testing.T) {
 		version string
 		all     bool
 	}{
-		{"v1.0.0-beta.25", false}, {artifactDimensionViewVersion, true}, {"v1.0.0", true},
+		{"v1.0.0-beta.25", false}, {"v1.0.0-beta.26", false}, {"v1.0.0-beta.27", false},
+		{artifactDimensionViewVersion, true}, {"v1.0.0", true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
 			view := call.View(engine.APIViewVersion(tc.version))
 			_, srv := newNestingTestServer(t, view)
 			schema := srv.SchemaForView(view)
+			require.Equal(t, tc.all, schema.Types["ArtifactDimensionKind"].EnumValues.ForName("NAME") != nil)
+			for _, name := range []string{"MODULE", "COLLECTION", "TYPE"} {
+				require.NotNil(t, schema.Types["ArtifactDimensionKind"].EnumValues.ForName(name))
+			}
+			dimensions := schema.Types["Artifacts"].Fields.ForName("dimensions")
+			require.Equal(t, "[String!]!", dimensions.Type.String())
+			require.Equal(t, "[ArtifactDimensionKey!]!", schema.Types["Artifact"].Fields.ForName("dimensionKeys").Type.String())
 			for _, field := range []struct{ typ, name string }{{"Artifacts", "dimensions"}, {"Artifact", "dimensionKeys"}} {
 				spec := schema.Types[field.typ].Fields.ForName(field.name)
 				require.NotNil(t, spec)
@@ -72,6 +80,37 @@ func TestArtifactDimensionSelectionMask(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, one.DisplayDimensionKeys(false))
 	require.Len(t, one.DisplayDimensionKeys(true), 3)
+}
+
+func TestArtifactDimensionMetadataByView(t *testing.T) {
+	for _, version := range []string{"v1.0.0-beta.25", "v1.0.0-beta.26", "v1.0.0-beta.27", artifactDimensionViewVersion} {
+		t.Run(version, func(t *testing.T) {
+			ctx, srv := newNestingTestServer(t, call.View(engine.APIViewVersion(version)))
+			row := &core.Artifact{ModuleName: "app", Path: []string{"app", "build"}, TypeName: "Check",
+				DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "module", Key: "app"}, {Dimension: "type:Check", Key: "app/build"}}}
+			selection := &core.Artifacts{Entries: []*core.Artifact{row}, AllDimensions: artifact.Dimensions{
+				{Identifier: "module", Kind: "MODULE", Name: "module"},
+				{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check"},
+			}}
+			dagql.Fields[*core.Query]{dagql.Func("selection", func(context.Context, *core.Query, struct{}) (*core.Artifacts, error) {
+				return selection, nil
+			})}.Install(srv)
+			var definitions dagql.Array[*core.ArtifactDimension]
+			require.NoError(t, srv.Select(ctx, srv.Root(), &definitions,
+				dagql.Selector{Field: "selection"}, dagql.Selector{Field: "dimensionDefinitions", View: srv.View}))
+			byID := map[string]string{}
+			for _, definition := range definitions {
+				byID[definition.Identifier] = definition.Kind
+			}
+			require.Equal(t, "MODULE", byID["module"])
+			require.Equal(t, "TYPE", byID["type:Check"])
+			if version == artifactDimensionViewVersion {
+				require.Equal(t, "NAME", byID["name"])
+			} else {
+				require.NotContains(t, byID, "name")
+			}
+		})
+	}
 }
 
 // Each items resolver call models discovery of an uncached collection source.
@@ -222,7 +261,9 @@ func TestArtifactSchemaIncludesByView(t *testing.T) {
 		view   call.View
 		modern bool
 	}{
-		{call.View("v1.0.0-beta.25"), false},
+		{call.View(engine.APIViewVersion("v1.0.0-beta.25")), false},
+		{call.View(engine.APIViewVersion("v1.0.0-beta.26")), false},
+		{call.View(engine.APIViewVersion("v1.0.0-beta.27")), false},
 		{call.View(artifactDimensionViewVersion), true},
 	} {
 		t.Run(string(tc.view), func(t *testing.T) {
