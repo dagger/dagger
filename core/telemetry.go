@@ -360,6 +360,9 @@ func appendCacheEvidenceAttrs(ctx context.Context, attrs []attribute.KeyValue, e
 			attrs = append(attrs, attribute.String(telemetryattrs.CachePairingDigestAttr, ev.PairingDigest.String()))
 		}
 	}
+	if ev.Caller != "" {
+		attrs = append(attrs, attribute.String(telemetryattrs.CacheCallerAttr, ev.Caller.String()))
+	}
 	if resultNumber, ok := dagql.CacheResultNumber(res); ok {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheResultIDAttr, strconv.FormatUint(resultNumber, 10)))
 	}

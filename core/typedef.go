@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 
@@ -2567,6 +2568,12 @@ type FunctionCall struct {
 	// function body inside the entrypoint's plumbing.
 	processSpan trace.SpanContext
 
+	// callerRecipe is the recipe digest of this function call, carried
+	// engine-side only like processSpan: the calls the module makes to answer
+	// it are made under it (dagql.CallerRecipe), across the module client's
+	// boundary, which a Go context value doesn't cross.
+	callerRecipe digest.Digest
+
 	// engineWork marks a call made as the engine's own work (WithEngineWork),
 	// such as an SDK building a module's runtime. It is carried engine-side
 	// only like processSpan: the calls its module makes are the engine's own
@@ -2669,6 +2676,15 @@ func (fnCall *FunctionCall) CallerAgent() (dagql.ObjectResult[*Agent], bool) {
 // SetCallerAgent stamps the agent whose turn dispatched this function call.
 func (fnCall *FunctionCall) SetCallerAgent(agent dagql.ObjectResult[*Agent]) {
 	fnCall.callerAgent = agent
+}
+
+// CallerRecipe returns the recipe digest of this function call, which the
+// calls its module makes name as their caller (dagql.CallerRecipe).
+func (fnCall *FunctionCall) CallerRecipe() digest.Digest {
+	if fnCall == nil {
+		return ""
+	}
+	return fnCall.callerRecipe
 }
 
 // EngineWork reports whether the call was made as the engine's own work

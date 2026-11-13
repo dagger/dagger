@@ -1099,6 +1099,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if caller, ok := CallerAgent(ctx); ok {
 		fnCall.SetCallerAgent(caller)
 	}
+	// The function's own call, which the cache installed as the caller of
+	// what runs under it, is the caller of the calls its module makes.
+	fnCall.callerRecipe = dagql.CallerRecipe(ctx)
 	// A call made as the engine's own work, such as an SDK building a
 	// module's runtime, carries that to everything its module does to answer
 	// it: its calls are internal in telemetry, as the engine's own selects

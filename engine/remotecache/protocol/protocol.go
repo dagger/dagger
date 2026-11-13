@@ -488,13 +488,15 @@ type Lookup struct {
 // extra digests, which the engine's own lookup tries after the recipe, and
 // its term, which that lookup tries last: the call's self digest over its
 // input digests, matched by the inputs' classes. Field names the call, for
-// logs.
+// logs. Caller is the recipe digest of the cached call the missed call was
+// made under (dagger.io/cache.caller), or empty at its session's top.
 type LookupMiss struct {
 	Recipe digest.Digest   `json:"recipe"`
 	Extra  []digest.Digest `json:"extra,omitempty"`
 	Field  string          `json:"field,omitempty"`
 	Self   digest.Digest   `json:"self,omitempty"`
 	Inputs []digest.Digest `json:"inputs,omitempty"`
+	Caller digest.Digest   `json:"caller,omitempty"`
 }
 
 // LookedUp answers Lookup, one item per miss, in order. The service sends it

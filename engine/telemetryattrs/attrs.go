@@ -804,6 +804,15 @@ const (
 	// call with no implicit inputs it equals CacheSelfDigestAttr.
 	CachePairingDigestAttr = "dagger.io/cache.pairing_digest"
 
+	// CacheCallerAttr is the recipe digest (dagger.io/dag.digest) of the
+	// nearest enclosing cached call: the call this one was made while
+	// running, a resolver's own call for the calls it selects, a module
+	// function's call for the calls the module makes. It is omitted for a
+	// call at its session's top. The remote cache service orders what it
+	// sends an engine by it: an engine asks for its run's calls from the
+	// top down, and never for those below a call it is served.
+	CacheCallerAttr = "dagger.io/cache.caller"
+
 	// CacheOutputContentDigestAttr is the completed result's RECORDED content
 	// digest — the last content-labeled extra digest on the result's
 	// authoritative call frame at span completion — emitted only when

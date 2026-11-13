@@ -3139,6 +3139,10 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	if client.fnCall != nil && client.fnCall.ResultScope != nil {
 		ctx = dagql.WithResultScope(ctx, client.fnCall.ResultScope)
 	}
+	// A module client's calls are made under the function call it answers.
+	if caller := client.fnCall.CallerRecipe(); caller != "" {
+		ctx = dagql.ContextWithCallerRecipe(ctx, caller)
+	}
 
 	// A module client's typedef constructors name the module's declarations
 	// by the module's rules, even when the client declared a core view of
