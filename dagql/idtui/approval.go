@@ -531,12 +531,17 @@ func (fe *frontendPretty) jumpToApproval() bool {
 }
 
 // zoomedAwayFrom reports whether the view is zoomed into a subtree that does
-// not contain the approval's requesting call.
+// not contain the approval's requesting call. A call that has not arrived yet
+// may well be inside the zoom, so it does not count as away.
 func (fe *frontendPretty) zoomedAwayFrom(a *pendingApproval) bool {
 	if !fe.ZoomedSpan.IsValid() || fe.ZoomedSpan == fe.db.PrimarySpan {
 		return false
 	}
-	for s := fe.approvalSpan(a.req); s != nil; s = s.ParentSpan {
+	span := fe.approvalSpan(a.req)
+	if span == nil {
+		return false
+	}
+	for s := span; s != nil; s = s.ParentSpan {
 		if s.ID == fe.ZoomedSpan {
 			return false
 		}
