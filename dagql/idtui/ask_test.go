@@ -309,6 +309,19 @@ func TestAskOffscreenCue(t *testing.T) {
 	require.Contains(t, ansiStrip(fe.approvalCueLine(b, "↑")), "Dagger is waiting for an answer ↑")
 }
 
+func TestAskSaysItIsRemembered(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	req := testAsk(approvalPushID, &prompt.AskText{})
+	req.PersistentKey = `prompt:v1:"string":"m":"k"`
+	a, _ := startAsk(t, fe, t.Context(), req)
+	require.Contains(t, ansiStrip(strings.Join(fe.askLines(a, true, 200), "\n")), "Your answer will be remembered in ")
+
+	secret := testAsk(approvalPush2ID, &prompt.AskSecret{})
+	secret.PersistentKey = `prompt:v1:"secret":"m":"k"`
+	b, _ := startAsk(t, fe, t.Context(), secret)
+	require.NotContains(t, ansiStrip(strings.Join(fe.askLines(b, true, 200), "\n")), "remembered", "secrets never are")
+}
+
 func TestAskLongInputShowsItsEnd(t *testing.T) {
 	fe := approvalTestFrontend(t)
 	a, _ := startAsk(t, fe, t.Context(), testAsk(approvalPushID, &prompt.AskText{}))

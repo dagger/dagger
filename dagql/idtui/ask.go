@@ -331,6 +331,9 @@ func (fe *frontendPretty) askLines(a *pendingApproval, focused bool, width int) 
 	if who = joinNonEmpty(" · ", agent, who); who != "" {
 		add("  " + faint(who))
 	}
+	if note := prompt.RememberedNote(req); note != "" {
+		add("  " + faint(note))
+	}
 
 	// The message, unless it is all the header said.
 	if msg := strings.TrimSpace(req.GetMessage()); msg != "" && msg != question {

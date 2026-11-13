@@ -37,7 +37,7 @@ type PromptRequest struct {
 	// module, message, answer kind and Key: the same question from the same
 	// module is answered once. It also marks the calling function call as
 	// depending on the answer, so its result is never reused for another
-	// call (see FunctionCall.MarkOwnerSecretRead).
+	// call (see FunctionCall.MarkPrompted).
 	Remember bool
 	// Key, with Remember, lets the owner's client remember the answer
 	// beyond the session, under a key the engine namespaces by the asking

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -116,6 +118,38 @@ func TestPromptRememberedConcurrently(t *testing.T) {
 	close(release)
 	wg.Wait()
 	require.EqualValues(t, 1, n.Load(), "concurrent questions share the one prompt")
+}
+
+func TestPromptAskerCanceled(t *testing.T) {
+	var answers promptAnswers
+	key := promptAnswerKey{kind: "boolean", message: "Deploy?"}
+	first, cancel := context.WithCancel(t.Context())
+	started := make(chan struct{})
+	go func() {
+		_, _ = answers.answer(first, key, func(ctx context.Context) (*prompt.AskResponse, error) {
+			close(started)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})
+	}()
+	<-started
+	joined := make(chan error, 1)
+	var asked atomic.Int32
+	go func() {
+		resp, err := answers.answer(t.Context(), key, func(context.Context) (*prompt.AskResponse, error) {
+			asked.Add(1)
+			return &prompt.AskResponse{Answer: &prompt.AskResponse_Boolean{Boolean: true}}, nil
+		})
+		if err == nil && !resp.GetBoolean() {
+			err = errors.New("wrong answer")
+		}
+		joined <- err
+	}()
+	// Let the second caller join the first's prompt, then give up on it.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	require.NoError(t, <-joined, "one caller giving up does not fail the others")
+	require.EqualValues(t, 1, asked.Load(), "the other caller is asked itself")
 }
 
 func TestPromptPersistentKey(t *testing.T) {

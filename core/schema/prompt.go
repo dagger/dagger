@@ -24,7 +24,7 @@ func (s *promptSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("message").Doc(`The question, as Markdown.`),
 				dagql.Arg("key").Doc(
-					`Remember answers beyond the session under this key, in the user's configuration, for the asking module only.`,
+					`Remember answers beyond the session under this key, in the user's configuration (prompt-answers.json in Dagger's configuration directory, where they can be removed), for the asking module only. The user is told so when asked.`,
 					`Only modules loaded from git are remembered so; secrets never are.`,
 				),
 			),
