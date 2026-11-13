@@ -147,6 +147,96 @@ func TestSecretApprovalPerModule(t *testing.T) {
 	require.Len(t, s.questions.asked(), 2)
 }
 
+func TestSecretApprovalInertClient(t *testing.T) {
+	// An agent's snippet evaluated by an in-engine SDK client serving no
+	// module (DangEval without a module): host-less, so its owner, the client
+	// that started it, is asked, rather than the client itself.
+	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_SESSION))
+	eval := s.client("eval", dagql.ObjectResult[*core.Module]{}, nil, "owner")
+	eval.inertAttachables = true
+	// Its nested clients inherit inertness (see hostFromParent).
+	nested := s.client("eval-nested", dagql.ObjectResult[*core.Module]{}, nil, "owner", "eval")
+	nested.inertAttachables = true
+	const uri = "env://SHELL"
+	for _, client := range []*clientRuntime{eval, nested} {
+		md, err := s.srv.AuthorizeSecret(core.AgentToContext(s.ctx(client), s.worker), uri)
+		require.NoError(t, err)
+		require.Equal(t, "owner", md.ClientID, "an approved secret is read through the owner's host")
+	}
+	require.Len(t, s.questions.asked(), 1, "a session grant holds for the agent's snippets")
+	req := s.questions.asked()[0]
+	require.Equal(t, `Allow reading secret "env://SHELL" (requested by agent "worker")?`, req.Prompt)
+	require.Empty(t, req.PersistentKey, "nothing to remember forever without a module")
+
+	// Without an agent it reads as itself, and is denied when it reads.
+	md, err := s.srv.AuthorizeSecret(s.ctx(eval), uri)
+	require.NoError(t, err)
+	require.Nil(t, md)
+	require.Len(t, s.questions.asked(), 1)
+}
+
+func TestSecretApprovalInertRoot(t *testing.T) {
+	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_SESSION))
+	root := s.client("inert-root", dagql.ObjectResult[*core.Module]{}, nil)
+	root.inertAttachables = true
+	_, err := s.srv.AuthorizeSecret(core.AgentToContext(s.ctx(root), s.worker), "env://SHELL")
+	require.ErrorContains(t, err, "no owning client")
+	require.Empty(t, s.questions.asked())
+}
+
+func TestGitPushOwnerBoundaries(t *testing.T) {
+	s := newApprovalTestSession(t, func(*grpc.Server) {})
+	inert := func(c *clientRuntime) *clientRuntime {
+		c.inertAttachables = true
+		return c
+	}
+	none := dagql.ObjectResult[*core.Module]{}
+	mod := sessionTestModuleResult(t, "mod")
+	for _, tc := range []struct {
+		name      string
+		client    *clientRuntime
+		owner     string
+		delegated bool
+		err       string
+	}{
+		{"the root owns itself", s.owner, "owner", false, ""},
+		{"a non-module client owns itself",
+			s.client("cli", none, nil, "owner"), "cli", false, ""},
+		{"a module asks its caller",
+			s.client("module", mod, nil, "owner"), "owner", true, ""},
+		{"a module's non-module client asks the module's caller",
+			s.client("module-nested", none, nil, "owner", "module"), "owner", true, ""},
+		{"an inert client asks its caller",
+			inert(s.client("eval", none, nil, "owner")), "owner", true, ""},
+		{"an inert client's nested client asks the inert client's caller",
+			inert(s.client("eval-nested", none, nil, "owner", "eval")), "owner", true, ""},
+		{"an inert client under a non-module client asks that client",
+			inert(s.client("cli-eval", none, nil, "owner", "cli")), "cli", true, ""},
+		{"a module above an inert client is the boundary",
+			inert(s.client("module-eval", none, nil, "owner", "module")), "owner", true, ""},
+		{"an inert module asks its caller",
+			inert(s.client("inert-module", mod, nil, "owner")), "owner", true, ""},
+		{"an inert root has no owner",
+			inert(s.client("inert-root", none, nil)), "", true, "no owning client"},
+		{"a client under an inert root has no owner",
+			s.client("under-inert-root", none, nil, "inert-root"), "", true, "no owning client"},
+		{"a module root has no owner",
+			s.client("module-root", mod, nil), "", true, "no owning client"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			owner, delegated, err := gitPushOwner(tc.client)
+			if tc.err != "" {
+				require.ErrorContains(t, err, tc.err)
+				require.Nil(t, owner)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.owner, owner.clientID)
+			require.Equal(t, tc.delegated, delegated)
+		})
+	}
+}
+
 func TestSecretApprovalPrompt(t *testing.T) {
 	spec := secretApproval("file:///x\u202e\x1b[31m")
 	require.Equal(t, `file:///x\u202e\x1b[31m`, spec.Subject)
