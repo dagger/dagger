@@ -253,6 +253,17 @@ func Node(ctx context.Context, id core.ID) (core.Node, error) {
 	return core.NewNode(ctx, id)
 }
 
+// Ask the user a question.
+//
+// Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.
+//
+// Answers are remembered for the session, per asking module, message and kind of answer.
+//
+// Deprecated: use dagger.io/dagger/core.NewPrompt instead.
+func Prompt(message string, opts ...core.PromptOpts) *core.Prompt {
+	return core.NewPrompt(message, opts...)
+}
+
 // Load a GraphQL introspection schema for merging.
 //
 // Deprecated: use dagger.io/dagger/core.NewSchema instead.
