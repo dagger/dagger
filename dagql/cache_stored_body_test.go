@@ -241,10 +241,12 @@ func TestStoredBundleChecksANestedPartOfACompressedRecord(t *testing.T) {
 // was compressed yet.
 func TestStoredValueEncodesAsTheWholeValue(t *testing.T) {
 	t.Parallel()
-	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
-	storedTestHoldWhole(cloud)
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
 	whole, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
+	for _, value := range whole.Bundle.Values {
+		require.Nil(t, value.storedEnvelope, "the record goes whole")
+	}
 	storedTestCompress(cloud)
 	compressed, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
