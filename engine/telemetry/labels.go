@@ -158,6 +158,9 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 		DetectDotGit:          true,
 		EnableDotGitCommonDir: true,
 	})
+	if errors.Is(err, git.ErrUnsupportedExtensionRepositoryFormatVersion) || errors.Is(err, git.ErrUnknownExtension) {
+		repo, err = openGitWithWorktreeConfig(workdir)
+	}
 	if err != nil {
 		if !errors.Is(err, git.ErrRepositoryNotExists) {
 			slog.Warn("failed to open git repository", "err", err)
