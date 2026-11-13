@@ -3112,6 +3112,11 @@ type sharedResult struct {
 	taught      []digest.Digest
 	taughtGiven int
 	taughtFrame uint64
+	// taughtFrom is, for an entry with no taught digests whose record a
+	// newer one replaced, the replaced frame: the body worker reads its
+	// content digests, in order, as the entry's taught ones, which a
+	// restored entry doesn't keep (its frame does). Requires egraphMu.
+	taughtFrom entryFrame
 	// payloadMu guards lazy payload publication for imported persisted hits and
 	// prune-accounting timestamps that can change after initial publication.
 	payloadMu sync.RWMutex

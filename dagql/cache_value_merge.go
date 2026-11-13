@@ -1833,11 +1833,16 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 		case mergeReplace:
 			fresh := &sharedResult{}
 			c.installMergedRecordLocked(fresh, row, committedAt)
+			oldFrame := row.res.entryFrameLocked()
 			old, more, err := c.replaceResultValueInPlaceLocked(ctx, row.res, fresh, row.value.ExpiresAtUnix)
 			queue = append(queue, more...)
 			errs = errors.Join(errs, err)
 			// The entry took the fresh record's frame: the content digests
-			// spans taught it before go on that frame too.
+			// spans taught it before go on that frame too, and those of the
+			// replaced frame when it has none (a restored entry).
+			if len(row.res.taught) == 0 && !row.res.taughtFrom.ok() {
+				row.res.taughtFrom = oldFrame
+			}
 			row.res.taughtGiven = 0
 			row.res.taughtFrame++
 			c.queueTaughtContentLocked(row.res)
@@ -2054,8 +2059,10 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 	res.description = row.plan.row.description
 	res.recordType = row.plan.row.recordType
 	res.storeResultCall(rec.Call)
-	// A content digest a span taught the entry before this record arrived
-	// goes on the record's frame too.
+	// The record's frame has taken none of the content digests spans taught
+	// the entry before it arrived (a pruned entry's, say): they go on it too.
+	res.taughtGiven = 0
+	res.taughtFrame++
 	c.queueTaughtContentLocked(res)
 	res.payloadMu.Lock()
 	res.isObject = rec.Envelope.Kind == persistedResultKindObject
