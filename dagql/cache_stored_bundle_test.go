@@ -250,74 +250,111 @@ func TestStoredBundleNeverMixesAReplacement(t *testing.T) {
 // carries the new one, though an earlier build normalized the old.
 func TestStoredBundleCarriesTheCurrentRecord(t *testing.T) {
 	t.Parallel()
-	ctx, cloud, r, _ := storedBundleTestCloud(t, "old")
-	rootRecord := func() PersistedRecord {
-		t.Helper()
-		got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
-		require.NoError(t, err)
-		for _, value := range got.Bundle.Values {
-			if value.SenderNumber == r {
-				return value.Record
+	for _, compressed := range []bool{false, true} {
+		t.Run(storedTestState(compressed), func(t *testing.T) {
+			t.Parallel()
+			ctx, cloud, r, _ := storedBundleTestCloud(t, "old")
+			settle := func() {
+				if compressed {
+					storedTestCompress(cloud)
+				} else {
+					storedTestHoldWhole(cloud)
+				}
 			}
-		}
-		t.Fatal("the bundle has no record of R")
-		return PersistedRecord{}
+			settle()
+			rootRecord := func() PersistedRecord {
+				t.Helper()
+				got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+				require.NoError(t, err)
+				for _, value := range got.Bundle.Values {
+					if value.SenderNumber == r {
+						return sentRecord(t, value)
+					}
+				}
+				t.Fatal("the bundle has no record of R")
+				return PersistedRecord{}
+			}
+			require.Contains(t, string(rootRecord().Envelope.ObjectJSON), "old")
+
+			content := testDigest("current-record-content")
+			require.NoError(t, cloud.TeachContentDigest(ctx, Result[Typed]{shared: storedBundleTestEntry(cloud, r)}, content))
+			require.Contains(t, rootRecord().Call.ExtraDigests, call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent}, "the new call")
+
+			mergeTestExpire(cloud, storedBundleTestEntry(cloud, r))
+			fresh, _ := mergeTestSource(t, "bundle-root", "new")
+			_, err := cloud.MergeValues(ctx, "cache-b", fresh)
+			require.NoError(t, err)
+			require.False(t, storedBundleTestKept(cloud, r), "the replacement releases the old record")
+			settle()
+			require.Contains(t, string(rootRecord().Envelope.ObjectJSON), "new", "the new record")
+		})
 	}
-	require.Contains(t, string(rootRecord().Envelope.ObjectJSON), "old")
+}
 
-	content := testDigest("current-record-content")
-	require.NoError(t, cloud.TeachContentDigest(ctx, Result[Typed]{shared: storedBundleTestEntry(cloud, r)}, content))
-	require.Contains(t, rootRecord().Call.ExtraDigests, call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent}, "the new call")
-
-	mergeTestExpire(cloud, storedBundleTestEntry(cloud, r))
-	fresh, _ := mergeTestSource(t, "bundle-root", "new")
-	_, err := cloud.MergeValues(ctx, "cache-b", fresh)
-	require.NoError(t, err)
-	require.False(t, storedBundleTestKept(cloud, r), "the replacement releases the old record")
-	require.Contains(t, string(rootRecord().Envelope.ObjectJSON), "new", "the new record")
+// storedTestState names a test's storage state of the Cloud's records.
+func storedTestState(compressed bool) string {
+	if compressed {
+		return "compressed"
+	}
+	return "whole"
 }
 
 // storedBundleTestKept reports whether the entry with the number keeps a
-// normalized record.
+// normalized record, or a compressed one.
 func storedBundleTestKept(c *Cache, number uint64) bool {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
-	return c.resultsByID[sharedResultID(number)].storedTransfer.Load() != nil
+	res := c.resultsByID[sharedResultID(number)]
+	return res.storedTransfer.Load() != nil || res.stored != nil
 }
 
-// A prune that drops a value releases the normalized record a build kept for
-// it, and the record the entry later takes again is the one a build carries.
+// A prune that drops a value releases the record a build kept for it,
+// normalized or compressed, and the record the entry later takes again is the
+// one a build carries.
 func TestStoredBundleRecordGoesWithThePrunedValue(t *testing.T) {
 	t.Parallel()
-	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
-	_, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
-	require.NoError(t, err)
-	require.True(t, storedBundleTestKept(cloud, r))
-	require.True(t, storedBundleTestKept(cloud, p))
+	for _, compressed := range []bool{false, true} {
+		t.Run(storedTestState(compressed), func(t *testing.T) {
+			t.Parallel()
+			ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+			if compressed {
+				storedTestCompress(cloud)
+			} else {
+				storedTestHoldWhole(cloud)
+			}
+			_, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+			require.NoError(t, err)
+			require.True(t, storedBundleTestKept(cloud, r))
+			require.True(t, storedBundleTestKept(cloud, p))
 
-	_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
-	require.NoError(t, err)
-	require.True(t, removed)
-	require.Equal(t, 2, dropped)
-	require.False(t, storedBundleTestKept(cloud, r), "released with R's value")
-	require.False(t, storedBundleTestKept(cloud, p), "released with P's value")
-	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
-	require.NoError(t, err)
-	require.Equal(t, []uint64{r}, got.NoValue)
+			_, removed, dropped, err := cloud.removePrunedEdge(ctx, sharedResultID(r))
+			require.NoError(t, err)
+			require.True(t, removed)
+			require.Equal(t, 2, dropped)
+			require.False(t, storedBundleTestKept(cloud, r), "released with R's value")
+			require.False(t, storedBundleTestKept(cloud, p), "released with P's value")
+			got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+			require.NoError(t, err)
+			require.Equal(t, []uint64{r}, got.NoValue)
 
-	actx, a, asrv := transferTestCache(t)
-	root := persistedListTestResult(t, actx, a, asrv, "bundle-root", &transferTestValue{Text: "again"})
-	dep := persistedListTestResult(t, actx, a, asrv, "bundle-dep", &transferTestValue{Text: "dep"})
-	transferTestDependency(a, actx, root, dep)
-	reply, err := cloud.MergeValues(ctx, "cache-b", exportTestBundle(t, actx, a, root))
-	require.NoError(t, err)
-	require.Equal(t, r, reply.Imported()[0].ResultID, "the same entry")
-	got, err = cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
-	require.NoError(t, err)
-	for _, value := range got.Bundle.Values {
-		if value.SenderNumber == r {
-			require.Contains(t, string(value.Record.Envelope.ObjectJSON), "again")
-		}
+			actx, a, asrv := transferTestCache(t)
+			root := persistedListTestResult(t, actx, a, asrv, "bundle-root", &transferTestValue{Text: "again"})
+			dep := persistedListTestResult(t, actx, a, asrv, "bundle-dep", &transferTestValue{Text: "dep"})
+			transferTestDependency(a, actx, root, dep)
+			reply, err := cloud.MergeValues(ctx, "cache-b", exportTestBundle(t, actx, a, root))
+			require.NoError(t, err)
+			require.Equal(t, r, reply.Imported()[0].ResultID, "the same entry")
+			if compressed {
+				storedTestCompress(cloud)
+			}
+			got, err = cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+			require.NoError(t, err)
+			for _, value := range got.Bundle.Values {
+				if value.SenderNumber == r {
+					require.Contains(t, string(sentRecord(t, value).Envelope.ObjectJSON), "again")
+				}
+			}
+		})
 	}
 }
 
@@ -343,7 +380,10 @@ func TestStoredBundleAfterARestore(t *testing.T) {
 
 	ctx, cloud = storedPersistenceTestCloud(t, path)
 	defer func() { require.NoError(t, cloud.Close(ctx)) }()
-	require.False(t, storedBundleTestKept(cloud, root))
+	cloud.egraphMu.RLock()
+	normalized := cloud.resultsByID[sharedResultID(root)].storedTransfer.Load() != nil
+	cloud.egraphMu.RUnlock()
+	require.False(t, normalized, "a restore starts with no normalized record")
 	after, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	got, err := json.Marshal(after)
