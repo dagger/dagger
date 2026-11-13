@@ -1,8 +1,12 @@
 package snapshots_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -377,4 +381,67 @@ func TestExportChainsCanceledGateWait(t *testing.T) {
 	}
 	require.Zero(t, store.Diffs.Load())
 	require.Equal(t, before, transferPins(t, store))
+}
+
+// Each layer an export builds logs when its blob was ready, with its size:
+// at an engine's stop, what could have gone up while the rest still built.
+// A layer whose blob already existed builds nothing and logs nothing.
+func TestExportLayerBuiltLogsWhenItsBlobIsReady(t *testing.T) {
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(lockedWriter{&mu, &buf}, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	store := testutil.NewStore(t)
+	a, _ := store.Build(t, nil, "a.txt", "ready a")
+	ab, _ := store.Build(t, a, "b.txt", "ready b")
+	before := time.Now()
+	chain := exportChains(t, []bkcache.ImmutableRef{ab}, buildsConfig(2, nil))[0]
+	require.Len(t, chain.Layers, 2)
+
+	mu.Lock()
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	mu.Unlock()
+	built := map[string]map[string]any{}
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var rec map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &rec))
+		if rec["msg"] == "export layer built" {
+			built[rec["blob"].(string)] = rec
+		}
+	}
+	require.Len(t, built, 2, "one line a layer built")
+	for _, layer := range chain.Layers {
+		rec := built[layer.Descriptor.Digest.String()]
+		require.NotNil(t, rec, "layer %s", layer.Descriptor.Digest)
+		require.EqualValues(t, layer.Descriptor.Size, rec["bytes"])
+		ready, err := time.Parse(time.RFC3339Nano, rec["ready"].(string))
+		require.NoError(t, err)
+		require.False(t, ready.Before(before), "ready once built")
+	}
+
+	// Exported again, its blobs exist: nothing is built, and nothing logged.
+	mu.Lock()
+	buf.Reset()
+	mu.Unlock()
+	exportChains(t, []bkcache.ImmutableRef{ab}, buildsConfig(2, nil))
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotContains(t, buf.String(), "export layer built")
+}
+
+// lockedWriter serializes writes from the builds' goroutines.
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  *bytes.Buffer
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
