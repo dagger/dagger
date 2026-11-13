@@ -152,6 +152,16 @@ func (PromptSuite) TestSessionMemory(ctx context.Context, t *testctx.T) {
 	s.expect(`Twice?`)
 	s.answer("n")
 	s.finish("no twice")
+
+	// A function returning an object built from the answer declares itself
+	// cached per session: calls on what it returns are not reused either.
+	for _, tc := range []struct{ answer, want string }{{"y", "yes"}, {"n", "no"}} {
+		s = startPromptSession(ctx, t, workdir, configHome, `asker | build --message="Build?" | file answer | contents`)
+		s.expect(`Build?`)
+		s.expect(`(requested by module "asker", function "Asker.build")`)
+		s.answer(tc.answer)
+		s.finish("\n" + tc.want)
+	}
 }
 
 func (PromptSuite) TestPersistentKey(ctx context.Context, t *testctx.T) {

@@ -20,7 +20,8 @@ func (s *promptSchema) Install(srv *dagql.Server) {
 		dagql.Func("prompt", s.prompt).
 			Doc(`Ask the user a question.`,
 				`Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.`,
-				`Answers are remembered for the session, per asking module, message and kind of answer.`).
+				`Answers are remembered for the session, per asking module, message and kind of answer.`,
+				`A module function that asks is never reused for another call. Calls on an object it returns are cached by the function call, though: a function returning an object built from an answer should declare a per-session (or never) cache policy, so another session gets its own.`).
 			Args(
 				dagql.Arg("message").Doc(`The question, as Markdown.`),
 				dagql.Arg("key").Doc(
