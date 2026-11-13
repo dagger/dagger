@@ -394,9 +394,9 @@ type statePartValue struct {
 	file       string
 	block      chan struct{}
 	// fail, when set, is what encoding the value returns.
-	fail       error
-	host       atomic.Pointer[PartHost]
-	rev        atomic.Uint64
+	fail error
+	host atomic.Pointer[PartHost]
+	rev  atomic.Uint64
 }
 
 type persistedStatePartValue struct {
