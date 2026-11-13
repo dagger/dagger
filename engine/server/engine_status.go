@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -322,6 +323,37 @@ func (l *sessionLedger) settleState() (remotecache.SettleState, <-chan struct{})
 		TimedOut: r.timedOut,
 		Claims:   claims,
 	}, l.changed
+}
+
+// settling reports whether the engine is settling with the remote cache
+// service: the integration is attached, no session is live, and the idle
+// period has neither settled nor timed out. The channel is closed when that
+// next changes. The settle's bound ends it: by then the engine has settled,
+// timed out, or a session has started.
+func (l *sessionLedger) settling() (bool, <-chan struct{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.changed == nil {
+		l.changed = make(chan struct{})
+	}
+	r := l.remote
+	return r != nil && l.sessions == 0 && !r.settled && !r.timedOut, l.changed
+}
+
+// awaitSettle returns once the engine isn't settling (settling), or when ctx
+// ends.
+func (l *sessionLedger) awaitSettle(ctx context.Context) {
+	for {
+		settling, changed := l.settling()
+		if !settling {
+			return
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (l *sessionLedger) notifyLocked() {
