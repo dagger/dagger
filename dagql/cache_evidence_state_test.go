@@ -393,6 +393,8 @@ type statePartValue struct {
 	snapshotID string
 	file       string
 	block      chan struct{}
+	// fail, when set, is what encoding the value returns.
+	fail       error
 	host       atomic.Pointer[PartHost]
 	rev        atomic.Uint64
 }
@@ -409,6 +411,9 @@ func (*statePartValue) Type() *ast.Type {
 }
 
 func (v *statePartValue) EncodePersistedObject(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
+	if v.fail != nil {
+		return PersistedObjectEncoding{}, v.fail
+	}
 	raw, err := json.Marshal(persistedStatePartValue{Done: v.done.Load(), AbsentMeta: v.absentMeta, SnapshotID: v.snapshotID, File: v.file})
 	return PersistedObjectEncoding{JSON: raw}, err
 }
