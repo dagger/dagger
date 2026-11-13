@@ -1769,6 +1769,25 @@ func (c *Cache) remoteHoldingInfoLocked(key HolderKey) (RemoteHeldEntry, bool) {
 	return held, true
 }
 
+// HolderEntry returns the number of the entry a holding sits on, as
+// RemoteHoldingInfo reports it, and whether the holding exists, without
+// describing the holding or the entry: for a caller that needs only which
+// entry a holding is on.
+func (c *Cache) HolderEntry(key HolderKey) (uint64, bool) {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.holderEntryLocked(key)
+}
+
+// holderEntryLocked is HolderEntry's answer. Requires egraphMu.
+func (c *Cache) holderEntryLocked(key HolderKey) (uint64, bool) {
+	entry, h := c.holdingLocked(key)
+	if h == nil {
+		return 0, false
+	}
+	return uint64(entry.id), true
+}
+
 // EntryClass is an entry's own facts, as RemoteEntryInfo reports them, and
 // the entries of its classes, itself among them, without any holding.
 type EntryClass struct {
