@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 )
 
 // owedPartReports are the entries a span reported only some of the parts
@@ -14,17 +15,20 @@ import (
 // The span reports them as the entry's parts, so the remote cache believes
 // the engine lacks the rest: it never asks this engine to export them, and a
 // part only this engine holds is never stored. Each such entry owes a report
-// of its complete parts, which the cache makes through the share report
+// of the complete parts its spans left out, with their raw sizes as a span
+// reports them, which the cache makes through the share report
 // (WithSnapshotShareReport) once the entry's record can be read: the remote
 // cache takes a later report of the same value at the same replacement count
-// as more of its parts.
+// as more of its parts. A later span that reads the record whole reports
+// every part itself, and settles what the entry owed.
 //
 // The cache tries again, on its worker, after each lazy evaluation finishes,
 // since an evaluation is what holds an entry's record and what changes it,
 // and finally at the cache's close, once the engine's sessions are gone and
 // before the cache stops admitting reads (closeOwedPartReports). The engine's
-// events, which carry the share report, stop only after the cache closes. Nothing waits on a timer: an engine that goes idle
-// with an entry still owed reports it at its next evaluation or its close.
+// events, which carry the share report, stop only after the cache closes.
+// Nothing waits on a timer: an engine that goes idle with an entry still owed
+// reports it at its next evaluation or its close.
 // An engine killed before then never reports it; its cache is wiped at the
 // next start, and the remote cache releases its identity with everything
 // it held.
@@ -36,37 +40,57 @@ type owedPartReports struct {
 	// seq numbers each time an entry owes, so a pass clears only what it
 	// served: an entry that owes again after a pass read it, its value
 	// replaced or not, still owes.
-	seq     uint64
+	seq uint64
+	// owing is len(rows), kept for a span's read to see without the lock
+	// that nothing is owed, as is nearly always so.
+	owing   atomic.Int64
 	wake    chan struct{}
 	started bool
 	stop    context.CancelFunc
 	done    chan struct{}
 }
 
-// owedPartReport is one entry's owed report, as of its latest owing.
+// owedPartReport is one entry's owed report, as of its latest owing: the
+// value it is owed for, by replacement count, and the parts the entry's
+// spans of that value reported meanwhile, which it needn't name again.
 type owedPartReport struct {
-	row *sharedResult
-	seq uint64
+	row          *sharedResult
+	seq          uint64
+	replacements uint64
+	reported     map[string]struct{}
 }
 
-// owePartsReport notes that a span reported only the settled parts of row.
-// It does nothing on a cache without the share report, whose spans no remote
-// cache reads.
-func (c *Cache) owePartsReport(row *sharedResult) {
+// owePartsReport notes that a span reported only reported, the settled
+// parts of row. It does nothing on a cache without the share report, whose
+// spans no remote cache reads.
+func (c *Cache) owePartsReport(row *sharedResult, reported []string) {
 	if c == nil || row == nil || c.shareReport == nil {
 		return
 	}
+	c.egraphMu.RLock()
+	replacements := row.replacements
+	c.egraphMu.RUnlock()
 	o := &c.owedParts
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.rows == nil {
 		o.rows = map[sharedResultID]owedPartReport{}
 	}
-	if _, ok := o.rows[row.id]; !ok {
+	prev, ok := o.rows[row.id]
+	if !ok {
 		o.order = append(o.order, row.id)
 	}
+	report := owedPartReport{row: row, replacements: replacements, reported: map[string]struct{}{}}
+	if ok && prev.row == row && prev.replacements == replacements {
+		report.reported = prev.reported
+	}
+	for _, key := range reported {
+		report.reported[key] = struct{}{}
+	}
 	o.seq++
-	o.rows[row.id] = owedPartReport{row: row, seq: o.seq}
+	report.seq = o.seq
+	o.rows[row.id] = report
+	o.owing.Store(int64(len(o.rows)))
 	if !o.started {
 		o.started = true
 		o.wake = make(chan struct{}, 1)
@@ -74,6 +98,21 @@ func (c *Cache) owePartsReport(row *sharedResult) {
 		ctx, stop := context.WithCancel(ContextWithCache(context.Background(), c))
 		o.stop = stop
 		go c.runOwedPartReports(ctx)
+	}
+}
+
+// settleOwedPartsReport notes that a span reported every complete part of
+// row, read from its record: whatever row owed, that span has reported.
+func (c *Cache) settleOwedPartsReport(row *sharedResult) {
+	o := &c.owedParts
+	if o.owing.Load() == 0 {
+		return
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if report, ok := o.rows[row.id]; ok && report.row == row {
+		delete(o.rows, row.id)
+		o.owing.Store(int64(len(o.rows)))
 	}
 }
 
@@ -105,10 +144,11 @@ func (c *Cache) runOwedPartReports(ctx context.Context) {
 	}
 }
 
-// reportOwedParts reports the complete parts of each owed entry whose record
-// it can read now, and returns how many entries still owe. An entry the
-// cache no longer holds, or whose value was replaced since, owes nothing: a
-// replaced value's own spans report it. One whose record can't be read for
+// reportOwedParts reports, for each owed entry whose record it can read now,
+// the complete parts its spans left out, with their raw sizes when it reads
+// them, and returns how many entries still owe. An entry the cache no longer
+// holds, or whose value was replaced since it owed, owes nothing: a replaced
+// value's own spans report it. One whose record can't be read for
 // another reason than its state not being ready owes nothing either: no read
 // can describe that record, so the settled parts are all any report can
 // name. That is the one case in which a span's subset stands, and it is
@@ -127,13 +167,13 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 	for _, report := range owed {
 		row := report.row
 		c.egraphMu.RLock()
-		held, replacements := c.resultsByID[row.id] == row, row.replacements
+		held := c.resultsByID[row.id] == row && row.replacements == report.replacements
 		c.egraphMu.RUnlock()
 		if !held {
 			settled = append(settled, report)
 			continue
 		}
-		keys, _, err := c.completeParts(ctx, row, c.completePartSizeReader())
+		keys, sizes, err := c.completeParts(ctx, row, c.completePartSizeReader())
 		if c.testOwedPartsRead != nil {
 			c.testOwedPartsRead(row)
 		}
@@ -148,10 +188,17 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 			continue
 		}
 		c.egraphMu.RLock()
-		if c.resultsByID[row.id] == row && row.replacements == replacements {
+		if c.resultsByID[row.id] == row && row.replacements == report.replacements {
 			deps := sortedResultIDs(row.deps)
-			for _, key := range keys {
-				parts = append(parts, SnapshotSharedPart{ResultID: uint64(row.id), Part: key, Deps: deps, Replacements: replacements})
+			for i, key := range keys {
+				if _, ok := report.reported[key]; ok {
+					continue
+				}
+				part := SnapshotSharedPart{ResultID: uint64(row.id), Part: key, Deps: deps, Replacements: report.replacements}
+				if sizes != nil {
+					part.RawSize = &sizes[i]
+				}
+				parts = append(parts, part)
 			}
 		}
 		c.egraphMu.RUnlock()
@@ -165,6 +212,7 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 			delete(o.rows, report.row.id)
 		}
 	}
+	o.owing.Store(int64(len(o.rows)))
 	// The order kept, of the entries still owed, those owed during this
 	// pass among them.
 	kept := o.order[:0]
