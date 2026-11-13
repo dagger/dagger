@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type workspaceWithCommitArgs struct {
@@ -276,7 +278,8 @@ func validateWorkspaceGitAuthor(name, email string) error {
 // commit tool, for example — samples the identity of the client that called
 // it. Sharing it with an agent or a module takes the owner's approval (see
 // Server.AuthorizeGitIdentity). Unset fields default to Dagger
-// <dagger@localhost>.
+// <dagger@localhost>. When the owner does not share it, the commit is made as
+// whoever asked instead (see notSharedGitAuthor).
 func workspaceGitAuthor(ctx context.Context) (string, string, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -288,9 +291,10 @@ func workspaceGitAuthor(ctx context.Context) (string, string, error) {
 			return "", "", fmt.Errorf("resolve Git author: %w", err)
 		}
 		// Not sharing an identity means "don't attribute this commit to me",
-		// not "don't commit": commit as Dagger. To fail the commit instead,
-		// return the error here.
-		identity = core.GitIdentity{}
+		// not "don't commit": commit as whoever asked. To fail the commit
+		// instead, return the error here.
+		name, email := notSharedGitAuthor(ctx, err)
+		return name, email, nil
 	}
 	name, email := identity.Name, identity.Email
 	if name == "" {
@@ -302,8 +306,90 @@ func workspaceGitAuthor(ctx context.Context) (string, string, error) {
 	return name, email, nil
 }
 
-// The identity commits are made as when the owner's is not set or not shared.
+// The identity commits are made as when the owner's is not set, or not shared
+// outside a trace.
 const (
 	workspaceDefaultGitAuthorName  = "Dagger"
 	workspaceDefaultGitAuthorEmail = "dagger@localhost"
 )
+
+// notSharedGitAuthor is who a commit is attributed to when the owner did not
+// share their Git identity (err, wrapping core.ErrGitIdentityNotShared): the
+// agent that asked, as <agent>@<trace ID>, named for the agent. Without an
+// agent, the module asking stands in for it, then "dagger". The trace ID (32
+// hex digits) ties the commit to the run that made it, where the trace shows
+// what the agent did; without a trace, the commit is made as Dagger
+// <dagger@localhost>.
+//
+// The identity names the run, so nothing carrying it may be reused for
+// another: Workspace.withCommit and withCommitsFrom are never cached, and
+// record it explicitly in the recipe they reselect with, while a module
+// function that asked is never reused at all (see
+// core.FunctionCall.MarkOwnerSecretRead).
+func notSharedGitAuthor(ctx context.Context, err error) (string, string) {
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	if !traceID.IsValid() {
+		return workspaceDefaultGitAuthorName, workspaceDefaultGitAuthorEmail
+	}
+	var askers []string
+	var notShared *core.GitIdentityNotSharedError
+	if errors.As(err, &notShared) {
+		askers = append(askers, notShared.Agent, notShared.Module)
+	}
+	name, local := workspaceDefaultGitAuthorName, "dagger"
+	for _, asker := range askers {
+		if n := gitAuthorName(asker); n != "" {
+			name = n
+			break
+		}
+	}
+	for _, asker := range askers {
+		if l := gitEmailLocalPart(asker); l != "" {
+			local = l
+			break
+		}
+	}
+	return name, local + "@" + traceID.String()
+}
+
+// gitAuthorName is s as a commit author name: without the characters a name
+// must not hold (see validateWorkspaceGitAuthor), its whitespace collapsed.
+func gitAuthorName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r == '<' || r == '>' || r == 0:
+			return -1
+		case unicode.IsSpace(r) || unicode.IsControl(r):
+			return ' '
+		}
+		return r
+	}, s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// gitEmailLocalPart is s as an email address's local part: letters, digits,
+// '.', '_', '+' and '-', anything else replaced with '-', no leading,
+// trailing or repeated separators, at most 64 bytes.
+func gitEmailLocalPart(s string) string {
+	var b strings.Builder
+	var pending byte // the separator owed before the next kept character
+	for _, r := range s {
+		switch {
+		case r < unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)), r == '_', r == '+':
+			if pending != 0 && b.Len() > 0 {
+				b.WriteByte(pending)
+			}
+			pending = 0
+			b.WriteRune(r)
+		case r == '.':
+			pending = '.'
+		case pending == 0:
+			pending = '-'
+		}
+	}
+	local := b.String()
+	if len(local) > 64 {
+		local = strings.TrimRight(local[:64], ".-")
+	}
+	return local
+}

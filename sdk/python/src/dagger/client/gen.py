@@ -19735,7 +19735,10 @@ class Workspace(Type):
         for reproducible commits. Unconfigured fields default to Dagger and
         dagger@localhost. When a module or an agent commits, that identity is
         used only with the owner's approval; if it is denied or cannot be
-        asked, the commit is made as Dagger <dagger@localhost>.
+        asked, the commit is attributed to the agent that asked, as
+        <agent>@<trace ID> named for the agent (for a module without an agent,
+        the module's name; otherwise dagger), or as Dagger <dagger@localhost>
+        outside a trace.
 
         Parameters
         ----------
@@ -19753,12 +19756,12 @@ class Workspace(Type):
             Author and committer name. Defaults to git config user.name in the
             calling client's working directory, otherwise Dagger. A module or
             agent gets that default only with the owner's approval, otherwise
-            Dagger.
+            the asking agent's name.
         author_email:
             Author and committer email. Defaults to git config user.email in
             the calling client's working directory, otherwise
             dagger@localhost. A module or agent gets that default only with
-            the owner's approval, otherwise dagger@localhost.
+            the owner's approval, otherwise <agent>@<trace ID>.
         signoff:
             Add a Signed-off-by trailer using the commit author's name and
             email.
@@ -19799,9 +19802,10 @@ class Workspace(Type):
         calling client's Git config for committer identity, and reuse the
         source committer date for reproducible hashes. When a module or an
         agent pulls, that identity is used only with the owner's approval,
-        otherwise Dagger <dagger@localhost>; a fast-forward commits nothing
-        and needs no committer. Origin trailers track cherry-picked commits.
-        Divergent merge commits require manual integration.
+        otherwise the commits are attributed to the agent that asked (see
+        withCommit); a fast-forward commits nothing and needs no committer.
+        Origin trailers track cherry-picked commits. Divergent merge commits
+        require manual integration.
 
         Parameters
         ----------
