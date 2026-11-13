@@ -1230,6 +1230,14 @@ func functionCallReturnError(ctx context.Context, returned functionCallReturn, r
 // secret requires its session resource, so another session cannot reuse it
 // without holding the secret itself.
 func declineOwnerSecretReuse(ctx context.Context, fnCall *FunctionCall, result dagql.AnyResult) {
+	if fnCall.Prompted() {
+		// Whatever it returns may encode the user's answer: never reuse
+		// it, even if that expires a result the cache holds for others
+		// (see FunctionCall.MarkPrompted).
+		dagql.DeclinePersistence(ctx)
+		dagql.ExpireBy(ctx, time.Now().Unix())
+		return
+	}
 	if !fnCall.OwnerSecretRead() {
 		return
 	}

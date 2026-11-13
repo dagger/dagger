@@ -67,7 +67,7 @@ func (srv *Server) Prompt(ctx context.Context, spec *core.PromptRequest) (*core.
 	if spec.Remember {
 		// Whatever the answer, or none, a result computed after asking
 		// depends on it, while its cache key only names its arguments.
-		markOwnerSecretRead(client)
+		markPrompted(client)
 		if req.GetSecret() == nil {
 			req.PersistentKey = promptPersistentKey(askKind(req), requester.module, spec.Key)
 		}
@@ -91,6 +91,20 @@ func (srv *Server) Prompt(ctx context.Context, spec *core.PromptRequest) (*core.
 		Choice:  resp.GetChoice(),
 		Secret:  resp.GetSecret(),
 	}, nil
+}
+
+// markPrompted marks the function calls client and its ancestors are running
+// as having asked the user (see core.FunctionCall.MarkPrompted): their
+// results may depend on the answer, so none of them may be reused.
+func markPrompted(client *clientRuntime) {
+	client.fnCall.MarkPrompted()
+	parents, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	if err != nil {
+		return
+	}
+	for _, parent := range parents {
+		parent.fnCall.MarkPrompted()
+	}
 }
 
 // askKind names the kind of answer req asks for.
@@ -135,15 +149,23 @@ type promptAnswers struct {
 }
 
 func (a *promptAnswers) answer(ctx context.Context, key promptAnswerKey, ask func(context.Context) (*prompt.AskResponse, error)) (*prompt.AskResponse, error) {
-	a.mu.Lock()
-	if pending, ok := a.answers[key]; ok {
+	for {
+		a.mu.Lock()
+		pending, ok := a.answers[key]
+		if !ok {
+			break
+		}
 		a.mu.Unlock()
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-pending.done:
-			return pending.answer, pending.err
 		}
+		if pending.err != nil && isCanceled(pending.err) && ctx.Err() == nil {
+			// The asker gave up, not the user: ask for this caller.
+			continue
+		}
+		return pending.answer, pending.err
 	}
 	pending := &pendingAnswer{done: make(chan struct{})}
 	if a.answers == nil {
@@ -159,6 +181,11 @@ func (a *promptAnswers) answer(ctx context.Context, key promptAnswerKey, ask fun
 	close(pending.done)
 	a.mu.Unlock()
 	return pending.answer, pending.err
+}
+
+// isCanceled reports whether err is a canceled call, locally or over gRPC.
+func isCanceled(err error) bool {
+	return errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled
 }
 
 // promptPersistentKey is the key an answer to a module's prompt is remembered
