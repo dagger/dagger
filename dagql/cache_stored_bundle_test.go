@@ -380,6 +380,9 @@ func TestStoredBundleAfterARestore(t *testing.T) {
 	require.True(t, stored)
 	before, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
+	// An entry's revisions aren't saved: a restore starts them again, so
+	// the stamps aren't compared.
+	before.Stamps = nil
 	want, err := json.Marshal(before)
 	require.NoError(t, err)
 	require.NoError(t, cloud.Close(ctx))
@@ -392,6 +395,7 @@ func TestStoredBundleAfterARestore(t *testing.T) {
 	require.False(t, normalized, "a restore starts with no normalized record")
 	after, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
+	after.Stamps = nil
 	got, err := json.Marshal(after)
 	require.NoError(t, err)
 	require.JSONEq(t, string(want), string(got))
@@ -816,4 +820,49 @@ func TestMergeLeavesAnUnretainedRootWithoutAnEdge(t *testing.T) {
 			require.Equal(t, !unretained, ok, "an unretained root lives only through what holds it")
 		})
 	}
+}
+
+// A stored bundle gives each value's entry's stamp as the build read it:
+// the revisions the merge that stored it left, and those of the replacement
+// once a later merge replaces it.
+func TestStoredBundleGivesEachValuesStamp(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, "revision-root", &transferTestValue{Text: "x"})
+	bundle := exportTestBundle(t, actx, a, r)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	merged := func() map[uint64]RowRevision {
+		reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+		require.NoError(t, err)
+		revisions := map[uint64]RowRevision{}
+		for _, value := range reply.Values {
+			revisions[value.Number] = value.Revision
+		}
+		return revisions
+	}
+	built := func(number uint64) map[uint64]RowRevision {
+		got, err := cloud.StoredBundle(ctx, []uint64{number}, time.Now().Unix(), nil)
+		require.NoError(t, err)
+		require.Len(t, got.Stamps, len(got.Bundle.Values))
+		revisions := map[uint64]RowRevision{}
+		for i, value := range got.Bundle.Values {
+			revisions[value.SenderNumber] = got.Stamps[i].Revision
+			require.Equal(t, value.ExpiresAtUnix, got.Stamps[i].ExpiresAtUnix)
+		}
+		return revisions
+	}
+
+	first := merged()
+	require.Len(t, first, 1)
+	var number uint64
+	for n := range first {
+		number = n
+	}
+	require.Equal(t, first, built(number))
+
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, number))
+	second := merged()
+	require.Equal(t, uint64(1), second[number].Replacements, "the expired record was replaced")
+	require.NotEqual(t, first[number], second[number])
+	require.Equal(t, second, built(number))
 }
