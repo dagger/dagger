@@ -1113,15 +1113,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	// Delegate the actual function execution to the runtime
 	err = runtime.Call(ctx, &execMD, fnCall, fn.mod)
-	if fnCall.OwnerSecretRead() {
-		// The result is derived from a secret read through the owner's host
-		// for one agent, with the owner's approval, while its cache key only
-		// names the call's arguments: never reuse it, so no other session,
-		// agent or caller gets it without asking (see
-		// FunctionCall.MarkOwnerSecretRead).
-		dagql.ExpireBy(ctx, time.Now().Unix())
-		dagql.DeclinePersistence(ctx)
-	}
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {
 		return nil, returnStateErr
@@ -1179,7 +1170,31 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}
 
+	declineOwnerSecretReuse(ctx, fnCall, returnValue)
 	return returnValue, nil
+}
+
+// declineOwnerSecretReuse keeps result, returned by the function call fnCall,
+// from being reused when the call read a secret through its owner's host for
+// one agent (see FunctionCall.MarkOwnerSecretRead): the result may be derived
+// from that secret, while the call's cache key only names its arguments, so
+// another session, agent or caller could otherwise get it without asking.
+// It must be called with the resolver's own context.
+//
+// A result the cache already holds (dagql.CacheBacked), such as a Container
+// the function built or loaded, is the very entry every other call reaching
+// it shares: expiring it would drop that build for everyone, so only a
+// result the call itself produced is expired. A held result that carries the
+// secret requires its session resource, so another session cannot reuse it
+// without holding the secret itself.
+func declineOwnerSecretReuse(ctx context.Context, fnCall *FunctionCall, result dagql.AnyResult) {
+	if !fnCall.OwnerSecretRead() {
+		return
+	}
+	dagql.DeclinePersistence(ctx)
+	if !dagql.CacheBacked(result) {
+		dagql.ExpireBy(ctx, time.Now().Unix())
+	}
 }
 
 // A receiver's SDK form depends on the receiver result and the active result
