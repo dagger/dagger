@@ -1,10 +1,10 @@
 {
   "version": 1,
   "files": {
-    "dagger.dispatch.gen.go": "91bd1520571fd1a2eb51952ecadb27969fedd2d0565396ce2082eb7ceb96d6f9",
+    "dagger.dispatch.gen.go": "b111f38099d784b778e430c3fc602b7c4483cb479fcf05376ee4d5233440676d",
     "dagger.gen.go": "461e633fb54944984b4367efd2b6cedfb9d95c609e2fad14430585b106d97800",
-    "internal/dagger/dagger.gen.go": "09942cc97be9635dc55fb32b244edeb18e78930b3b1da32018f6923226f819e9",
-    "internal/dagger/entrypoint/main.dang": "fb08f91ffe4533d2b0fa0311f8330b979222334c2d5652785850a5c2b01a674d",
+    "internal/dagger/dagger.gen.go": "f147061dfe0f7fe21fd006718575c6ed55e7bdfe7fe0ac9ef132efb383e38b5f",
+    "internal/dagger/entrypoint/main.dang": "ea7909d390d625cecfaf3e16942ead24c2d7b523f01979873a6c221b1c993a3d",
     "internal/dagger/php-client-dev.gen.go": "4358af73d7013a408fc2e8a5467f44731570b218de72d032501c6f201cf235cf"
   }
 }
