@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/session/prompt"
@@ -200,10 +201,11 @@ func TestApprovalTakesFocusOnNavigation(t *testing.T) {
 	fe := approvalTestFrontend(t)
 	a, results := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
 
-	// Up twice: other step -> publish -> push.
+	// The approval is a stop of its own, just below its tool call:
+	// other -> publish -> the approval.
 	pressKeys(fe, "k", "k")
-	require.Equal(t, approvalToolID, fe.FocusedSpan)
-	require.True(t, fe.tui.IsFocused(a.view), "navigating onto the tool call focuses its approval")
+	require.Equal(t, approvalToolID, fe.FocusedSpan, "the cursor sits on the approval's tool call")
+	require.True(t, fe.tui.IsFocused(a.view), "navigating onto the approval focuses it")
 	require.Contains(t, frameText(fe.tui.Step()), "enter confirm", "a focused approval says how to answer")
 
 	// Moving away hands focus back to navigation without answering.
@@ -213,17 +215,34 @@ func TestApprovalTakesFocusOnNavigation(t *testing.T) {
 	require.Same(t, fe.spanTrees[approvalTool2ID], fe.tui.Focused())
 	require.False(t, a.finished)
 
-	// Back onto it, answer, and focus returns to the row.
-	pressKeys(fe, "k")
+	// Up past it onto the tool call row, then down onto it again.
+	pressKeys(fe, "k", "k")
+	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused(), "the tool call row is its own stop")
+	pressKeys(fe, "j")
 	require.True(t, fe.tui.IsFocused(a.view))
+
+	// Answer, and focus returns to the row.
 	pressKeys(fe, "y")
 	res := awaitApproval(t, fe, results)
 	require.NoError(t, res.err)
 	require.Equal(t, prompt.APPROVAL_ALLOW_ONCE, res.decision)
 	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused(),
-		"focus returns to the row the approval was answered from")
+		"focus returns to the row the approval sat under")
 	require.Empty(t, fe.approvals)
 	require.NotContains(t, frameText(fe.tui.Step()), "approval needed")
+}
+
+// The tool call row keeps its own keys: enter there zooms, as everywhere,
+// rather than answering the approval beneath it with its default.
+func TestApprovalLeavesRowKeysAlone(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
+	pressKeys(fe, "k", "k", "k")
+	require.Same(t, fe.spanTrees[approvalToolID], fe.tui.Focused())
+
+	pressKeys(fe, "enter")
+	require.False(t, a.finished, "enter on the row must not answer the approval")
+	require.Equal(t, approvalToolID, fe.ZoomedSpan, "enter on the row zooms")
 }
 
 func TestApprovalEscLeavesItPending(t *testing.T) {
@@ -411,6 +430,9 @@ func TestApprovalInShellKeepsPromptFocus(t *testing.T) {
 	require.False(t, entries[1].AwaitingApproval)
 	require.Contains(t, frameText(fe.tui.Step()), "chief "+IconApproval+" approval")
 	require.Contains(t, navKeyHelp(fe.keys(NewOutput(io.Discard))), "alt+a answer approval")
+	require.Contains(t, frameText(fe.tui.Step()), "alt+a to answer")
+	require.True(t, fe.autoFocus, "precondition: following output")
+	following := fe.FocusedSpan
 
 	pressKeys(fe, "alt+a")
 	require.True(t, fe.tui.IsFocused(a.view), "alt+a jumps to the approval")
@@ -420,4 +442,72 @@ func TestApprovalInShellKeepsPromptFocus(t *testing.T) {
 	require.True(t, fe.inputFocused(), "answering returns focus to the prompt it was jumped from")
 	require.Equal(t, "still typing", fe.textInput.Value())
 	require.False(t, fe.agentRosterEntries()[0].AwaitingApproval, "the cue clears once answered")
+	require.True(t, fe.autoFocus, "the cursor resumes following output, or new lines crop below it")
+	require.Equal(t, following, fe.FocusedSpan)
+}
+
+// The prompt's alt+a works in nav mode too, so the hint holds in either mode.
+func TestApprovalJumpKeyInShellNavMode(t *testing.T) {
+	db := rosterDB(t)
+	db.ImportSnapshots(approvalTraceSnapshots())
+	fe := focusTestFrontend(t, db, &focusShellHandler{target: "agent-chief"})
+	a, results := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
+	fe.enterNavMode()
+	pressKeys(fe, "alt+a")
+	require.True(t, fe.tui.IsFocused(a.view))
+	pressKeys(fe, "esc")
+	require.False(t, a.finished)
+	require.True(t, fe.navigationFocused(), "esc from a nav-mode jump stays in nav mode")
+	pressKeys(fe, "a", "n")
+	res := awaitApproval(t, fe, results)
+	require.Equal(t, prompt.APPROVAL_DENY, res.decision)
+}
+
+// Jumping to a floating approval and then having its span arrive keeps the
+// approval focused: the cursor follows it to its new row.
+func TestFloatingApprovalKeepsFocusWhenAnchored(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	a, results := startApproval(t, fe, t.Context(), pushApproval(approvalLateID, ""))
+	pressKeys(fe, "a")
+	require.True(t, fe.tui.IsFocused(a.view))
+
+	start := time.Unix(100, 0).Add(4 * time.Second)
+	fe.db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: approvalLateTool, TraceID: prettyTestTraceID(), ParentID: approvalRootID, Name: "late",
+			LLMRole: "assistant", LLMTool: "late", StartTime: start},
+		{ID: approvalLateID, TraceID: prettyTestTraceID(), ParentID: approvalLateTool, Name: "GitRepository.push",
+			StartTime: start},
+	})
+	fe.recalculateViewLocked()
+	fe.tui.Step()
+	require.Equal(t, approvalLateTool, a.anchor)
+	require.Equal(t, approvalLateTool, fe.FocusedSpan, "the cursor follows the approval to its row")
+	require.True(t, fe.tui.IsFocused(a.view), "the approval keeps focus")
+
+	pressKeys(fe, "y")
+	res := awaitApproval(t, fe, results)
+	require.Equal(t, prompt.APPROVAL_ALLOW_ONCE, res.decision)
+}
+
+// A form opened over a focused approval that is canceled meanwhile must not
+// restore focus to the dead approval when it closes.
+func TestFormOverCanceledApprovalRestoresNavigation(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	a, results := startApproval(t, fe, ctx, pushApproval(approvalPushID, ""))
+	pressKeys(fe, "k", "k")
+	require.True(t, fe.tui.IsFocused(a.view))
+
+	fe.handlePromptForm(NewForm(huh.NewGroup(huh.NewInput().Title("Something else"))), nil)
+	fe.tui.Step()
+	require.True(t, fe.formFocused())
+
+	cancel()
+	awaitApproval(t, fe, results)
+	fe.tui.Inject(tuist.ParseKey("ctrl+c"))
+	awaitFormTeardown(t, fe)
+
+	require.True(t, fe.navigationFocused(), "navigation takes focus back")
+	pressKeys(fe, "j")
+	require.Equal(t, approvalTool2ID, fe.FocusedSpan, "and navigation keys work")
 }

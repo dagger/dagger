@@ -2142,6 +2142,8 @@ func (fe *frontendPretty) completePromptForm(active *activePromptForm, invokeRes
 	fe.tui.RemoveChild(active.spacer)
 	fe.tui.RemoveChild(active.trailer)
 	fe.activeForm = nil
+	// The form may have opened over an approval that has since gone away.
+	fe.repairFocus()
 	fe.syncHardwareCursor()
 
 	req := active.request
@@ -6382,14 +6384,9 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 // manualFocus is like focus but also deselects the current search match
 // so that n/N seek relative to the new position.
 func (fe *frontendPretty) manualFocus(row *dagui.TraceRow) {
-	// Navigating onto a row is what gives its pending approvals focus -- but
-	// only the user's own navigation: a cursor moved for them (the prompt
-	// following new output) must not hand the approval their next key.
-	arm := fe.navigationFocused()
+	// Navigating to a row leaves any approval the cursor was on: approvals
+	// are stops of their own (see stepApproval), never the row's.
 	fe.disarmApprovals(dagui.SpanID{}, true)
-	if arm && row != nil {
-		fe.armApprovalsAt(row.Span.ID)
-	}
 	fe.focus(row)
 	if fe.searchQuery != "" {
 		fe.searchIdx = -1
@@ -6679,7 +6676,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	}
 
-	if keyStr == approvalNavKey && fe.jumpToApproval() {
+	if (keyStr == approvalNavKey || keyStr == approvalJumpKey) && fe.jumpToApproval() {
 		// Only claimed while an approval is pending; otherwise the key
 		// falls through to the shell like any unbound one.
 		return
@@ -7183,6 +7180,8 @@ func (fe *frontendPretty) exitSearchMode() {
 	fe.tui.RemoveChild(fe.searchInput)
 	fe.searchInput = nil
 	fe.searchFocus = nil
+	// Search may have opened over an approval that has since gone away.
+	fe.repairFocus()
 	fe.syncHardwareCursor()
 	fe.refreshKeymap()
 }
@@ -7854,6 +7853,9 @@ func (fe *frontendPretty) goEnd() {
 
 func (fe *frontendPretty) goUp() {
 	fe.autoFocus = false
+	if fe.stepApproval(-1) {
+		return
+	}
 	newIdx := fe.focusedIndex() - 1
 	if newIdx < 0 || newIdx >= len(fe.rows.Order) {
 		return
@@ -7863,6 +7865,9 @@ func (fe *frontendPretty) goUp() {
 
 func (fe *frontendPretty) goDown() {
 	fe.autoFocus = false
+	if fe.stepApproval(1) {
+		return
+	}
 	newIdx := fe.focusedIndex() + 1
 	if newIdx >= len(fe.rows.Order) {
 		// at bottom
