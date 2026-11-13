@@ -145,7 +145,7 @@ func (srv *Server) requestApproval(ctx context.Context, client, owner *clientRun
 		Prompt:        approvalPrompt(spec.Question, requester),
 		Subject:       spec.Subject,
 		Requester:     requester.proto(),
-		PersistentKey: approvalPersistentKey(spec.Kind, requester, spec.Subject),
+		PersistentKey: approvalPersistentKey(spec.Kind, requester.module, spec.Subject),
 		Danger:        spec.Danger,
 	}
 	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
@@ -211,7 +211,7 @@ func (srv *Server) promptApproval(ctx context.Context, owner *clientRuntime, req
 }
 
 // approvalRequester is who asks for approval, as the engine resolved it. Only
-// the module scopes a session grant; the agent and function are for display,
+// the module scopes a grant; the agent and function are for display,
 // so the owner sees who is asking, and frontends can show the request outside
 // the conversation (a roster, a notification).
 type approvalRequester struct {
@@ -328,35 +328,30 @@ func approvalPrompt(question string, r approvalRequester) string {
 	return question + " (requested by " + strings.Join(by, ", ") + ")?"
 }
 
-// approvalPersistentKey is the identity a forever grant is remembered under
-// by the owner's client, or "" to not offer forever.
+// approvalPersistentKey is the identity a forever ("always allow <module>")
+// grant is remembered under by the owner's client, or "" to not offer
+// forever.
 //
-// A forever grant outlives the session, so it cannot use what scopes a
-// session grant: agent handles are minted per spawn, and a module's pin moves
-// with every update. It is keyed instead by:
-//
-//   - the kind and the exact subject, as for a session grant;
-//   - the agent's name, a label the spawning code chooses (empty without an
-//     agent);
-//   - the module's git source without its pin (its clone URL and subpath)
-//     and its name, so an update of the same module keeps the grant, while
-//     another source does not.
+// Like a session grant, it covers one module's one kind of access to one
+// subject, for every agent using that module: no agent is part of it. But it
+// outlives the session, so it cannot use the module's load identity, whose pin
+// moves with every update. It is keyed instead by the kind, the exact subject,
+// and the module's git source without its pin (its clone URL and subpath) and
+// its name, so an update of the same module keeps the grant, while another
+// source does not.
 //
 // Only modules loaded from git are identified well enough to remember. A
 // local module is only a path, which any module loaded from the same path
 // (another checkout, or a foreign module put there) would share; a module
-// built from a directory has no source the engine can name; and without a
-// module, an agent's name alone is a label, not an identity. Those are only
-// offered up to a session grant.
+// built from a directory has no source the engine can name; and a request
+// without a module has nothing to remember. Those are only offered up to a
+// session grant.
 //
 // Every field is quoted, so no value can spell another's separator. Bump the
 // version when the identity changes, so old grants are asked again rather
-// than reinterpreted.
-//
-// This identity is a policy choice still open to change (e.g. dropping the
-// agent name, or widening a push grant to a whole remote).
-func approvalPersistentKey(kind string, r approvalRequester, subject string) string {
-	mod := r.module.Self()
+// than reinterpreted: v1 keys also named the agent, and never match.
+func approvalPersistentKey(kind string, module dagql.ObjectResult[*core.Module], subject string) string {
+	mod := module.Self()
 	if mod == nil {
 		return ""
 	}
@@ -368,11 +363,9 @@ func approvalPersistentKey(kind string, r approvalRequester, subject string) str
 	if ref == "" {
 		return ""
 	}
-	module := ref + "|" + canonicalWorkspaceModuleName(mod.Name())
-	return "approval:v1:" + strings.Join([]string{
+	return "approval:v2:" + strings.Join([]string{
 		strconv.Quote(kind),
-		strconv.Quote(module),
-		strconv.Quote(r.agentName),
+		strconv.Quote(ref + "|" + canonicalWorkspaceModuleName(mod.Name())),
 		strconv.Quote(subject),
 	}, ":")
 }
