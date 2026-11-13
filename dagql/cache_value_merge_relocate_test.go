@@ -115,3 +115,32 @@ func TestMergeValuesRelocatesAgainWhenANumberChanged(t *testing.T) {
 	require.Equal(t, want, got)
 	require.Len(t, under, 1, "the record whose numbers no longer hold is relocated under the lock")
 }
+
+// A merge renumbers its records as it is prepared, outside its caller's
+// lock, which on the Cloud is the remote cache service's work lock, and the
+// commit uses them: here the root's record is relocated before the commit
+// begins, and nothing is relocated under the graph lock.
+func TestPreparedMergeRelocatesBeforeItsCommit(t *testing.T) {
+	t.Parallel()
+	child, root := mergeTestMovingStream(t)
+	ctx, c, _ := transferTestCache(t)
+	_, err := c.MergeValues(ctx, cloudCacheID, child)
+	require.NoError(t, err)
+	committing := false
+	var relocatedWhileCommitting []bool
+	var under []uint64
+	c.testPrerelocated = func(used map[uint64]map[uint64]sharedResultID) {
+		if len(used) > 0 {
+			relocatedWhileCommitting = append(relocatedWhileCommitting, committing)
+		}
+	}
+	c.testRelocatedUnderLock = func(ordinal uint64) { under = append(under, ordinal) }
+	p, err := c.PrepareValueMerge(ctx, cloudCacheID, root)
+	require.NoError(t, err)
+	committing = true
+	reply, err := c.CommitValueMerge(ctx, p)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.Equal(t, []bool{false}, relocatedWhileCommitting, "relocated once, in the prepare")
+	require.Empty(t, under, "no record is relocated under the graph lock")
+}
