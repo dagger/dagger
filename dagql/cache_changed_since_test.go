@@ -362,3 +362,23 @@ func BenchmarkChangedSince(b *testing.B) {
 		}
 	}
 }
+
+// StampCauses names the write that last changed each entry's bundle: a part
+// stored on it, one stored on an entry of its class, a kept call of a new
+// term, and gone for an entry that is gone.
+func TestStampCausesNameTheWrite(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	member := storedBundleTestClassMember(t, ctx, cloud, r, "stamp-cause-member")
+	stored, _, err := cloud.SetStoredPart(ctx, member, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	require.Equal(t, map[string]int{"part stored": 1}, cloud.StampCauses([]uint64{member}))
+	require.Equal(t, map[string]int{"part stored (class)": 1}, cloud.StampCauses([]uint64{r}))
+	require.Equal(t, map[string]int{"gone": 1}, cloud.StampCauses([]uint64{12345}))
+
+	cctx, ccloud := storedPartTestCache(t, WithBlobStore())
+	test := newCallRecordTest(t, cctx, ccloud)
+	test.attach(t, cctx, test.span(t, true, 0))
+	require.Equal(t, map[string]int{"kept call, new term": 1}, ccloud.StampCauses([]uint64{test.number}))
+}

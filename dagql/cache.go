@@ -1861,7 +1861,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 		edge.unpruneable = true
 		edge.expiresAtUnix = 0
 		res.expiresAtUnix = 0
-		c.markEntryClassLocked(res.id)
+		c.markEntryClassLocked(res.id, StampUnpruneable)
 	} else if !edge.unpruneable {
 		edge.expiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix)
 	}
@@ -3071,8 +3071,10 @@ type sharedResult struct {
 	stored *storedBody
 	// changedAt is, on a blob-backed cache, the write count (Cache.writes)
 	// of the last write that changed what a stored bundle carries of the
-	// entry (stampEntryLocked). Guarded by egraphMu.
+	// entry (stampEntryLocked), and stampCause what that write was
+	// (StampCause), for diagnostics. Guarded by egraphMu.
 	changedAt                   uint64
+	stampCause                  StampCause
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.
@@ -6184,7 +6186,7 @@ func (c *Cache) putResultLocked(res *sharedResult) {
 	}
 	c.resultPayloadBytes += res.payloadBytes
 	c.resultsByID[res.id] = res
-	c.markEntryClassLocked(res.id)
+	c.markEntryClassLocked(res.id, StampValue)
 }
 
 // deleteResultLocked unregisters res. Requires egraphMu for writing.
@@ -7063,7 +7065,7 @@ func (c *Cache) lookupCacheForDigests(
 		return nil, false, nil
 	}
 
-	c.markEntryClassLocked(hitRes.id)
+	c.markEntryClassLocked(hitRes.id, StampLookupHit)
 	hitRes.expiresAtUnix = mergeSharedResultExpiryUnix(
 		hitRes.expiresAtUnix,
 		candidateSharedResultExpiryUnix(nowUnix, 0),
@@ -7823,7 +7825,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// - 0 means "no TTL for this writer", not necessarily "never expire globally".
 	// - if any writer provides TTL, we keep the earliest non-zero expiry.
 	// - 0 only remains when all writers are 0.
-	c.markEntryClassLocked(oc.res.id)
+	c.markEntryClassLocked(oc.res.id, StampCallReturned)
 	oc.res.expiresAtUnix = mergeSharedResultExpiryUnix(
 		oc.res.expiresAtUnix,
 		oc.candidateExpiryUnix(now.Unix()),
