@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -153,7 +154,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
 				dagql.Arg("resolveBrokenSymlinks").Doc(`Repair symlinks that directory selection would break. Copy targets from this directory into the result. Preserve working relative links and links that already have no target.`).View(AfterVersion("v1.0.0-beta.26")),
 			),
-		dagql.NodeFunc("withDirectory", s.withDirectory).
+		dagql.NodeFunc("withDirectory", s.withDirectoryContentHashed).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Return a snapshot with a directory added`).
@@ -533,7 +534,10 @@ type WithDirectoryArgs struct {
 	core.CopyFilter
 }
 
-func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+// withDirectory copies args' source into parent. included is the identity of
+// what an include copy brings (see includedContent), or empty when the copy
+// has no such identity.
+func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs, included digest.Digest) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
@@ -572,7 +576,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return res, err
 	}
-	return withDirectoryContentDigest(ctx, res, parent, srcDir, args, perms)
+	return withDirectoryContentDigest(ctx, res, parent, srcDir, args, perms, included)
 }
 
 // withDirectoryContentDigest keys a copy of one content-keyed directory into
@@ -583,6 +587,10 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 // holds rather than by every part it was made from. The digest comes from the
 // inputs' digests, so the copy stays lazy. Either side without a content
 // digest leaves the copy keyed by its recipe.
+//
+// A non-empty included replaces the source's digest and accepts a parent
+// without a content digest: an include copy is keyed by what it brings, so a
+// change to a file that it leaves out does not re-key it.
 func withDirectoryContentDigest(
 	ctx context.Context,
 	res dagql.ObjectResult[*core.Directory],
@@ -590,18 +598,29 @@ func withDirectoryContentDigest(
 	src dagql.ObjectResult[*core.Directory],
 	args WithDirectoryArgs,
 	perms *int,
+	included digest.Digest,
 ) (dagql.ObjectResult[*core.Directory], error) {
-	parentCall, err := parent.ResultCall()
-	if err != nil {
-		return res, err
-	}
-	srcCall, err := src.ResultCall()
-	if err != nil {
-		return res, err
-	}
-	parentDgst, srcDgst := parentCall.ContentDigest(), srcCall.ContentDigest()
-	if parentDgst == "" || srcDgst == "" {
-		return res, nil
+	var parentDgst, srcDgst digest.Digest
+	if included != "" {
+		var err error
+		parentDgst, err = parent.ContentPreferredDigest(ctx)
+		if err != nil {
+			return res, fmt.Errorf("failed to content hash directory copy: parent digest: %w", err)
+		}
+		srcDgst = included
+	} else {
+		parentCall, err := parent.ResultCall()
+		if err != nil {
+			return res, err
+		}
+		srcCall, err := src.ResultCall()
+		if err != nil {
+			return res, err
+		}
+		parentDgst, srcDgst = parentCall.ContentDigest(), srcCall.ContentDigest()
+		if parentDgst == "" || srcDgst == "" {
+			return res, nil
+		}
 	}
 	permissions := "unset"
 	if perms != nil {
@@ -621,6 +640,143 @@ func withDirectoryContentDigest(
 	in = append(in, args.Exclude...)
 	in = append(in, string(srcDgst))
 	return res.WithContentDigest(ctx, hashutil.HashStrings(in...))
+}
+
+// withDirectoryContentHashed gives a copy that includes part of a
+// content-identified source a content identity. Otherwise the copy's identity
+// follows the whole source: a change to a file that the copy leaves out
+// re-keys every call downstream of it, so an install step over a lockfile
+// runs again on each commit. A copy with only exclude or gitignore filters
+// keeps most of its source, so it keeps the source's identity rather than
+// copy the source twice to hash it.
+//
+// A filtered copy onto a scratch directory's root is the source's
+// Directory.filter: it hashes its result, which holds only the filtered
+// files. A copy onto any other parent that is a scratch directory, a Git tree,
+// or has no pending lazy work is keyed by withDirectoryContentDigest with the
+// content that it brings (see includedContent). The parent stays lazy. This
+// function only decides whether to compute that content.
+func (s *directorySchema) withDirectoryContentHashed(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
+	if len(args.Include) == 0 {
+		return s.withDirectory(ctx, parent, args, "")
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	src, err := cmp.Or(args.Source, args.Directory).Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	ok, err := hasContentIdentity(src)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	if !ok {
+		return s.withDirectory(ctx, parent, args, "")
+	}
+	scratch, err := isScratchDirectory(parent)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	if scratch && path.Clean("/"+args.Path) == "/" && args.Owner == "" && !args.Permissions.Valid {
+		return s.withDirectoryResultHashed(ctx, parent, args)
+	}
+	// A copy onto a lazy parent that can run container commands, such as the
+	// output of an exec, keeps its recipe. With a content digest, a later
+	// copy of it into a container evaluates it when that call is made, which
+	// would run those commands early.
+	if !scratch && dagql.HasPendingLazyComputation(parent) && !core.DefersContentDigest(parent.Self()) {
+		return s.withDirectory(ctx, parent, args, "")
+	}
+
+	included, err := includedContent(ctx, srv, src, args.CopyFilter)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	return s.withDirectory(ctx, parent, args, included)
+}
+
+// withDirectoryResultHashed performs a filtered copy onto a scratch
+// directory's root and content hashes its result.
+func (s *directorySchema) withDirectoryResultHashed(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
+	res, err := s.withDirectory(ctx, parent, args, "")
+	if err != nil {
+		return res, err
+	}
+	// On errors past this point the result may hold a committed snapshot that
+	// dagql never attached, so release it instead of leaking the ref.
+	releaseErr := func(err error) (dagql.ObjectResult[*core.Directory], error) {
+		_ = res.Self().OnRelease(context.WithoutCancel(ctx))
+		return dagql.ObjectResult[*core.Directory]{}, err
+	}
+	dgst, err := contentHashAt(ctx, res, "")
+	if err != nil {
+		return releaseErr(fmt.Errorf("failed to content hash filtered directory: %w", err))
+	}
+	res, err = res.WithContentDigest(ctx, dgst)
+	if err != nil {
+		return releaseErr(fmt.Errorf("failed to content hash filtered directory: %w", err))
+	}
+	return res, nil
+}
+
+// isScratchDirectory reports whether dir is Query.directory, an empty
+// directory: the only core field named directory without arguments.
+// Directory.filter copies onto it, so a filtered copy onto its root must not
+// narrow its source with Directory.filter again. Hashing the result of a copy
+// onto any other parent is still correct, only slower.
+func isScratchDirectory(dir dagql.ObjectResult[*core.Directory]) (bool, error) {
+	call, err := dir.ResultCall()
+	if err != nil {
+		return false, err
+	}
+	return call.Field == "directory" && call.Module == nil && len(call.Args) == 0, nil
+}
+
+// includedContent returns the identity of what a copy of the
+// content-identified src with filter brings to its destination: the content
+// digest of src filtered by Directory.filter, which holds the same files as
+// the copy because the same matcher selects them, the header of src's root,
+// which the copy gives to its destination directory, and the filter itself:
+// patterns that select the same files can still copy differently, because an
+// included directory replaces a file at its destination and a parent created
+// only to hold an included file does not. It is empty when the filtered
+// directory has no content digest.
+func includedContent(ctx context.Context, srv *dagql.Server, src dagql.ObjectResult[*core.Directory], filter core.CopyFilter) (digest.Digest, error) {
+	var filtered dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, src, &filtered, dagql.Selector{Field: "filter", Args: []dagql.NamedInput{
+		{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Exclude...))},
+		{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Include...))},
+		{Name: "gitignore", Value: dagql.Boolean(filter.Gitignore)},
+	}}); err != nil {
+		return "", fmt.Errorf("failed to filter directory: %w", err)
+	}
+	call, err := filtered.ResultCall()
+	if err != nil {
+		return "", err
+	}
+	if call.ContentDigest() == "" {
+		return "", nil
+	}
+	snapshot, dirPath, err := materialize(ctx, src)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash copy source root: %w", err)
+	}
+	header, err := core.GetDirectoryRootHeaderHash(ctx, snapshot, dirPath)
+	if err != nil {
+		return "", err
+	}
+	in := []string{
+		string(call.ContentDigest()),
+		string(header),
+		strconv.FormatBool(filter.Gitignore),
+		strconv.Itoa(len(filter.Include)),
+	}
+	in = append(in, filter.Include...)
+	in = append(in, strconv.Itoa(len(filter.Exclude)))
+	in = append(in, filter.Exclude...)
+	return hashutil.HashStrings(in...), nil
 }
 
 type WithDirectoryDockerfileCompatArgs struct {
@@ -1054,12 +1210,14 @@ func (s *directorySchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	// Do not evaluate a lazy parent: it can run container commands. Such a
-	// file has no content digest, so its cache key is its recipe. A parent
-	// merged from another engine's record of an operation that completed
-	// there is no lazy parent: it was evaluated where it ran, and its sync
-	// here leaves its content to its reader. The file is read from it,
-	// downloaded or computed, and keyed by its content, as it was there.
-	if dagql.HasPendingLazyComputation(parent) && !dagql.CompletedElsewhere(parent) {
+	// file has no content digest, so its cache key is its recipe. A pending
+	// Git checkout runs none, and its tree is content-identified once it is
+	// checked out. A parent merged from another engine's record of an
+	// operation that completed there is no lazy parent: it was evaluated where
+	// it ran, and its sync here leaves its content to its reader. The file is
+	// read from it, downloaded or computed, and keyed by its content, as it
+	// was there.
+	if dagql.HasPendingLazyComputation(parent) && !core.DefersContentDigest(parent.Self()) && !dagql.CompletedElsewhere(parent) {
 		return fileResult, nil
 	}
 
@@ -2238,8 +2396,61 @@ func (s *directorySchema) chown(
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
+// hasContentIdentity reports whether dir is identified by its content, or
+// will be once its Git checkout succeeds (see core.DefersContentDigest), and
+// can be materialized without running container commands. An include copy of
+// such a directory is keyed by the content that it copies, which it evaluates
+// at call time. A lazy directory with a content digest, such as a Dockerfile
+// copy onto the output of an exec, can still run that exec when it is
+// evaluated, so an include copy of it keeps its recipe.
+func hasContentIdentity(dir dagql.ObjectResult[*core.Directory]) (bool, error) {
+	if core.DefersContentDigest(dir.Self()) {
+		return true, nil
+	}
+	if dagql.HasPendingLazyComputation(dir) {
+		return false, nil
+	}
+	call, err := dir.ResultCall()
+	if err != nil {
+		return false, err
+	}
+	return call.ContentDigest() != "", nil
+}
+
+// materialize evaluates dir and returns its snapshot and its path in it.
+func materialize(ctx context.Context, dir dagql.ObjectResult[*core.Directory]) (bkcache.ImmutableRef, string, error) {
+	if dir.Self() == nil {
+		return nil, "", fmt.Errorf("nil directory result")
+	}
+	if lazy := dir.Self().LazyEvalFunc(); lazy != nil {
+		if err := lazy(ctx); err != nil {
+			return nil, "", err
+		}
+	}
+	snapshot, ok := dir.Self().Snapshot.Peek()
+	if !ok {
+		return nil, "", fmt.Errorf("failed to get directory snapshot: unset")
+	}
+	dirPath, ok := dir.Self().Dir.Peek()
+	if !ok {
+		return nil, "", fmt.Errorf("failed to get directory path: unset")
+	}
+	return snapshot, dirPath, nil
+}
+
+// contentHashAt materializes dir and returns the content hash of its subpath
+// sub, or of all of it when sub is empty or "/".
+func contentHashAt(ctx context.Context, dir dagql.ObjectResult[*core.Directory], sub string) (digest.Digest, error) {
+	snapshot, dirPath, err := materialize(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	return core.GetContentHashFromDirectory(ctx, snapshot, path.Join(dirPath, sub))
+}
+
 // maintainContentHashing wraps the given directory resolver function and makes the returned directory result content-hashed
 // if the parent directory was content-hashed. This allows us to re-use the content-hashing work on the parent for the returned result.
+// A remote Git tree counts as content-hashed: it gets its content digest only after its checkout (see core.DefersContentDigest).
 func maintainContentHashing[A any](
 	fn dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]],
 ) dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]] {
@@ -2253,31 +2464,16 @@ func maintainContentHashing[A any](
 		if err != nil {
 			return res, err
 		}
-		if parentCall.ContentDigest() != "" {
-			if res.Self() == nil {
-				return res, fmt.Errorf("failed to make directory content hashed: nil directory result")
-			}
-			if lazy := res.Self().LazyEvalFunc(); lazy != nil {
-				if err := lazy(ctx); err != nil {
-					return res, fmt.Errorf("failed to make directory content hashed: %w", err)
-				}
-			}
-			snapshot, ok := res.Self().Snapshot.Peek()
-			if !ok {
-				return res, fmt.Errorf("failed to make directory content hashed: failed to get directory snapshot: unset")
-			}
-			dirPath, ok := res.Self().Dir.Peek()
-			if !ok {
-				return res, fmt.Errorf("failed to make directory content hashed: failed to get directory path: unset")
-			}
-			dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
-			if err != nil {
-				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
-			}
-			res, err = res.WithContentDigest(ctx, dgst)
-			if err != nil {
-				return res, fmt.Errorf("failed to make directory content hashed: %w", err)
-			}
+		if parentCall.ContentDigest() == "" && !core.DefersContentDigest(parent.Self()) {
+			return res, nil
+		}
+		dgst, err := contentHashAt(ctx, res, "")
+		if err != nil {
+			return res, fmt.Errorf("failed to make directory content hashed: %w", err)
+		}
+		res, err = res.WithContentDigest(ctx, dgst)
+		if err != nil {
+			return res, fmt.Errorf("failed to make directory content hashed: %w", err)
 		}
 		return res, nil
 	}
