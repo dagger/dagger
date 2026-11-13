@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/session/git"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -75,7 +76,15 @@ func (srv *Server) AuthorizeGitIdentity(ctx context.Context) (core.GitIdentity, 
 			return identity, nil
 		}
 	}
-	allowed, err := srv.requestApproval(ctx, client, owner, gitIdentityApproval(identity))
+	spec := gitIdentityApproval(identity)
+	memo := gitIdentityMemoKey(ctx, delegated, spec.Subject)
+	if memo != "" {
+		if decided, ok := client.gitIdentityDecisions.Load(memo); ok {
+			decided := decided.(gitIdentityDecision)
+			return decided.identity, decided.err
+		}
+	}
+	allowed, err := srv.requestApproval(ctx, client, owner, spec)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return core.GitIdentity{}, ctxErr
@@ -83,12 +92,43 @@ func (srv *Server) AuthorizeGitIdentity(ctx context.Context) (core.GitIdentity, 
 		// Nobody decided, so nothing is shared, as for a denial. Frontends
 		// that cannot prompt do not all say so the same way (a report-mode
 		// CLI fails the prompt outright), and a commit must not fail on it.
-		return core.GitIdentity{}, fmt.Errorf("%w: %w", core.ErrGitIdentityNotShared, err)
+		err = fmt.Errorf("%w: %w", core.ErrGitIdentityNotShared, err)
+		identity = core.GitIdentity{}
+	} else if !allowed {
+		err = fmt.Errorf("%w: denied", core.ErrGitIdentityNotShared)
+		identity = core.GitIdentity{}
 	}
-	if !allowed {
-		return core.GitIdentity{}, fmt.Errorf("%w: denied", core.ErrGitIdentityNotShared)
+	if memo != "" {
+		client.gitIdentityDecisions.Store(memo, gitIdentityDecision{identity: identity, err: err})
 	}
-	return identity, nil
+	return identity, err
+}
+
+type gitIdentityDecision struct {
+	identity core.GitIdentity
+	err      error
+}
+
+// gitIdentityMemoKey keys the answer for the call asking for subject, so
+// evaluating that same call again (a module's SDK sends one query per field
+// it reads, each re-running Workspace.withCommit, which is never cached)
+// shares the one answer rather than asking again, whatever it was: even a
+// denial or an allow-once holds for that call. Only delegated clients
+// remember: they live for one module function call, or an exec within one,
+// so nothing carries over to a later call. Empty when the call is unknown.
+func gitIdentityMemoKey(ctx context.Context, delegated bool, subject string) string {
+	if !delegated {
+		return ""
+	}
+	call := dagql.CurrentCall(ctx)
+	if call == nil {
+		return ""
+	}
+	recipe, err := call.RecipeDigest(ctx)
+	if err != nil {
+		return ""
+	}
+	return recipe.String() + "\x00" + subject
 }
 
 // servesAttachablesBelowModule reports whether client, a non-module client,
