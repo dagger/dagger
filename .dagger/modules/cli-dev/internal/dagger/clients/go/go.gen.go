@@ -198,6 +198,23 @@ func (r *Go) Module(ws *Workspace, path string, opts ...GoModuleOpts) *GoModule 
 	}
 }
 
+// Every module version a go.sum names, downloaded as builds download them,
+// in one directory laid out as a Go module proxy, for GOPROXY=file://<dir>:
+// a version with a zip checksum as its .zip, .mod and .info, one with only a
+// go.mod checksum as its .mod and .info. It has no version lists, so it
+// answers only for exact versions. Each version is downloaded once, keyed
+// by its path, version and checksums, with the downloads container's
+// settings, reading no module cache the image comes with, and checked
+// against the go.sum. Any download that
+// fails, or doesn't match, fails the call.
+func (r *Go) ModuleProxy(goSum *File) *Directory { // go (../../:0:0)
+	assertNotNil("goSum", goSum)
+	q := r.query.Select("moduleProxy")
+	q = q.Arg("goSum", goSum)
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
 // GoModulesOpts contains options for Go.Modules
 type GoModulesOpts struct {
 	Include []string // go (../../:0:0)
@@ -240,8 +257,7 @@ func (r *Go) Modules(ws *Workspace, opts ...GoModulesOpts) *GoModules { // go (.
 	}
 }
 
-// Configured workspace mount path. Null uses "/src/<workspace name>", or
-// "/src" for a workspace made from a directory or git ref.
+// Configured workspace mount path. Null uses "/src".
 func (r *Go) MountPath(ctx context.Context) (string, error) { // go (../../:0:0)
 	if r.mountPath != nil {
 		return *r.mountPath, nil
@@ -249,6 +265,17 @@ func (r *Go) MountPath(ctx context.Context) (string, error) { // go (../../:0:0)
 	q := r.query.Select("mountPath")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Import paths whose packages builds compile in dependency calls of their
+// own.
+func (r *Go) SharedImports(ctx context.Context) ([]string, error) { // go (../../:0:0)
+	q := r.query.Select("sharedImports")
+
+	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -466,6 +493,18 @@ func (r *GoArchiveBuilds) ManifestTool() *Directory { // go (../../:0:0)
 	q := r.query.Select("manifestTool")
 
 	return new(Directory).WithGraphQLQuery(q)
+}
+
+// The shared dependency calls the archives made (sharedImports), each
+// call's result by its ID in this session: a cache that is to have those
+// calls whole, not only each package's build, takes these.
+func (r *GoArchiveBuilds) SharedDependencies(ctx context.Context) ([]string, error) { // go (../../:0:0)
+	q := r.query.Select("sharedDependencies")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // gobuild's gohdr, the tool the builds' execs run, for every machine an
@@ -1480,6 +1519,16 @@ func (r *GoPackage) Platforms() *GoPlatforms { // go (../../:0:0)
 // This package's test binary for the engine's platform, as go test -c builds
 // it. The package must have test files.
 //
+// It is planned with the test binaries of the other packages of the
+// collection it was taken from, as the collection's testBinary builds them,
+// and shares that plan, its setup and the compiles of their dependencies
+// with each of their own testBinary: it compiles only what it links, and is
+// ready when its own link is. Taken from a collection narrowed to the
+// packages wanted, it is planned with those alone. With -coverpkg, or
+// -gcflags, -asmflags or -gccgoflags without a package pattern, whose
+// packages are those on go test's command line, it is planned alone, so that
+// it stays go test -c's of this package alone.
+//
 // Unlike go test -c, it does not run go vet on the package: vet is left to
 // the lint checks, such as golangci-lint's.
 func (r *GoPackage) TestBinary(ws *Workspace) *File { // go (../../:0:0)
@@ -1787,6 +1836,25 @@ func (r *GoPackages) Subset(keys []string) *GoPackages {
 		query:     q,
 		refetchID: r.refetchID,
 	}
+}
+
+// Test binaries of the selected packages that have test files, for the
+// engine's platform, each in its package's directory, relative to the
+// workspace, named as go test -c names it, e.g. "pkg/foo/foo.test".
+//
+// They are built as go test -c builds several packages, from one plan of
+// them all, so what they share is planned and compiled once. As on go test's
+// command line, a build flag without a package pattern, such as -gcflags=-N,
+// applies to every selected package, including where one is another's
+// dependency. A package whose test files build constraints leave out has no
+// test binary. As with a package's testBinary, go vet is not run. A gccgo
+// build has no set: build each package's testBinary.
+func (r *GoPackages) TestBinary(ws *Workspace) *Directory { // go (../../:0:0)
+	assertNotNil("ws", ws)
+	q := r.query.Select("testBinary")
+	q = q.Arg("ws", ws)
+
+	return new(Directory).WithGraphQLQuery(q)
 }
 
 // AsNode returns this GoPackages as a Node.
@@ -2174,6 +2242,86 @@ func (r *GoTest) Test(selection *GoPackages) *Check { // go (../../:0:0)
 // AsNode returns this GoTest as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *GoTest) AsNode() Node {
+	return new(NodeClient).WithGraphQLQuery(r.query)
+}
+
+type GoTestBinary struct { // go (../../:0:0)
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	id *ID
+}
+
+func (r *GoTestBinary) WithGraphQLQuery(q *querybuilder.Selection) *GoTestBinary {
+	return &GoTestBinary{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// A unique identifier for this GoTestBinary.
+func (r *GoTestBinary) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GoTestBinary) XXX_GraphQLType() string {
+	return "GoTestBinary"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GoTestBinary) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GoTestBinary) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GoTestBinary) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *GoTestBinary) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = GoTestBinary{query: selectNode(Connect().QueryBuilder(), id, "GoTestBinary")}
+	return nil
+}
+
+// AsNode returns this GoTestBinary as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoTestBinary) AsNode() Node {
 	return new(NodeClient).WithGraphQLQuery(r.query)
 }
 
@@ -2637,11 +2785,20 @@ type GoOpts struct {
 	//
 	BuildFlags []string // go (../../:0:0)
 	//
+	// Import paths that many builds import, such as what generated code
+	// imports. The packages they reach outside a module are compiled in
+	// dependency calls of their own, the standard library's and then the
+	// rest's, each the same call in every build that keeps those packages'
+	// module versions, so a cache that has one, such as an engine image's,
+	// serves it whole.
+	//
+	SharedImports []string // go (../../:0:0)
+	//
 	// GOFLAGS for every Go container, e.g. "-tags=extended".
 	//
 	Goflags string // go (../../:0:0)
 	//
-	// Where to mount the workspace in Go containers. Defaults to "/src/<workspace name>".
+	// Where to mount the workspace in Go containers. Defaults to "/src".
 	//
 	MountPath string // go (../../:0:0)
 }
@@ -2684,6 +2841,10 @@ func (r *Query) Go(opts ...GoOpts) *Go { // go (../../:0:0)
 		// `buildFlags` optional argument
 		if !querybuilder.IsZeroValue(opts[i].BuildFlags) {
 			q = q.Arg("buildFlags", opts[i].BuildFlags)
+		}
+		// `sharedImports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SharedImports) {
+			q = q.Arg("sharedImports", opts[i].SharedImports)
 		}
 		// `goflags` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Goflags) {
