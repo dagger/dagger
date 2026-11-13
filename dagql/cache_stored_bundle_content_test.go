@@ -102,8 +102,7 @@ func storedContentTestSend(t *testing.T, after bool, contents ...digest.Digest) 
 		}
 		storedContentTestWait(t, cloud, cloudNumber, content)
 	} else {
-		queued, _, _ := cloud.TaughtContentStats()
-		require.Zero(t, queued, "a record whose frame carries its content digest is never queued for a rewrite")
+		require.Zero(t, cloud.TaughtContentStats().Queued, "a record whose frame carries its content digest is never queued for a rewrite")
 	}
 	require.Contains(t, cloud.EquivalentEntries(content.String()), cloudNumber, "the Cloud's class has R's content digest")
 
@@ -432,4 +431,45 @@ func TestCallRecordHitsOverAReceiverWhoseContentTheCloudLearnedLater(t *testing.
 	require.NoError(t, err)
 	require.Len(t, built.Bundle.Calls, 1)
 	require.True(t, test.freshReceiverHits(t, built.Bundle), "b's call on its own receiver of the same content hits")
+}
+
+// TaughtContentStats counts what giving frames their taught content digests
+// did: a digest the frame already carries is counted carried and queues
+// nothing; each digest a frame lacks is queued and rewritten; and a bundle
+// built while an entry in it isn't yet recorded as rewritten is counted
+// once, and one built after is not.
+func TestTaughtContentStatsCountWhatTheRewritesDid(t *testing.T) {
+	t.Parallel()
+	carried, first, second := testDigest("stats-carried"), testDigest("stats-first"), testDigest("stats-second")
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, "stats-carried-root", &transferTestValue{Text: "x"})
+	require.NoError(t, a.TeachContentDigest(actx, r, carried))
+	r2 := persistedListTestResult(t, actx, a, asrv, "stats-taught-root", &transferTestValue{Text: "y"})
+	a.egraphMu.RLock()
+	rNumber, r2Number := uint64(r.cacheSharedResult().id), uint64(r2.cacheSharedResult().id)
+	a.egraphMu.RUnlock()
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	blocked, release, batches := storedContentTestHold(t, cloud)
+	storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))
+	number := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r2))[0]
+
+	storedContentTestTeach(t, ctx, cloud, rNumber, carried)
+	require.Equal(t, TaughtContentStats{Carried: 1}, cloud.TaughtContentStats(), "a digest the frame carries queues nothing")
+
+	storedContentTestTeach(t, ctx, cloud, r2Number, first)
+	<-blocked
+	storedContentTestTeach(t, ctx, cloud, r2Number, second)
+	_, err := cloud.StoredBundle(ctx, []uint64{number}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	release()
+	// The worker's second batch has rewritten the frame and recorded it.
+	require.Eventually(t, func() bool { return batches.Load() >= 2 }, 5*time.Second, 5*time.Millisecond)
+	storedContentTestWait(t, cloud, number, second)
+	_, err = cloud.StoredBundle(ctx, []uint64{number}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+
+	got := cloud.TaughtContentStats()
+	require.Positive(t, got.Took)
+	got.Took = 0
+	require.Equal(t, TaughtContentStats{Queued: 2, Rewritten: 2, Carried: 1, BundlesWaiting: 1}, got)
 }

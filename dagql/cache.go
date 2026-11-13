@@ -2579,11 +2579,16 @@ type Cache struct {
 
 	// taughtContentQueued counts the entries queued for a frame rewrite
 	// because a span taught a content digest their frame lacked,
-	// taughtContentRewrites the frames rewritten, and taughtContentNanos the
-	// time those rewrites took (applyTaughtContent).
-	taughtContentQueued   atomic.Uint64
-	taughtContentRewrites atomic.Uint64
-	taughtContentNanos    atomic.Int64
+	// taughtContentRewrites the frames rewritten, taughtContentCarried the
+	// taught digests found already on the frame, taughtContentNanos the
+	// time the rewrites took (applyTaughtContent), and
+	// taughtContentBundlesWaiting the bundle builds that found an entry not
+	// yet recorded as taking all its taught digests (TaughtContentStats).
+	taughtContentQueued         atomic.Uint64
+	taughtContentRewrites       atomic.Uint64
+	taughtContentCarried        atomic.Uint64
+	taughtContentNanos          atomic.Int64
+	taughtContentBundlesWaiting atomic.Uint64
 
 	offerOwners      map[offerOwnerID]*offerOwner
 	nextOfferOwnerID offerOwnerID
