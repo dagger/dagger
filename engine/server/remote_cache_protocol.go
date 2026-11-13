@@ -35,14 +35,15 @@ const exportLayerWorkers = 4
 
 // exportRefConfig is how exported chains' layers are compressed: zstd, which
 // compresses several times faster than gzip into smaller blobs, and
-// decompresses faster for the engines that install them. A layer that already
+// decompresses faster for the engines that install them, a layer larger
+// than zstd's window as frames of a fixed size compressed at once. A layer that already
 // has a blob, such as a pulled image's, keeps it. It is also how many build at
 // once: up to exportLayerWorkers per export, and across all exports no more
 // than remotecache.ExportsInFlight serial exports built. Only building a blob
 // takes the gate, so it bounds the engine's compression streams and layer
 // reads.
 var exportRefConfig = config.RefConfig{
-	Compression: compression.New(compression.Zstd),
+	Compression: compression.New(compression.Zstd).SetFramed(true),
 	Builds: config.LayerBuilds{
 		Workers: exportLayerWorkers,
 		Gate:    semaphore.NewWeighted(max(exportLayerWorkers, remotecache.ExportsInFlight)),
