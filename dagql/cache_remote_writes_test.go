@@ -224,3 +224,108 @@ func TestRemoteWritesHoldTheCache(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, []string{"s1"}, held.Holding.Sessions)
 }
+
+// A merged reply applied in pieces (MergedReplyApply), the hold let go
+// between them, leaves the cache as the reply applied whole does. At every
+// gap between pieces, a reader sees only holdings the whole reply creates,
+// those of the records applied so far, each in its final value state but
+// for its dependencies on records still to come, which it names as unknown,
+// its dependents, and its retention, observed with the last piece: what a
+// half-applied reply shows is less than the engine holds, never other.
+func TestRemoteWritesApplyAMergedReplyInPieces(t *testing.T) {
+	t.Parallel()
+	const records = 12
+	a, c := CacheID("cache-a"), CacheID("cache-c")
+	setup := func(t *testing.T, cache *Cache) (ValueBundle, MergeReply) {
+		ctx := t.Context()
+		sent := ValueBundle{}
+		reply := MergeReply{Generation: 1, EngineTimeUnixNano: 10}
+		for i := range uint64(records) {
+			_, err := cache.AttachRemoteHolding(ctx, HolderKey{a, i + 1}, holdingOf(fmt.Sprintf("pieces-%d", i+1)))
+			require.NoError(t, err)
+			held, ok := cache.RemoteHoldingInfo(HolderKey{a, i + 1})
+			require.True(t, ok)
+			sent.Values = append(sent.Values, TransferredValue{Ordinal: TransferOrdinal(i + 1), SenderNumber: held.Number})
+			// Each record over the one before it, and every third over the
+			// one after it too, which a later piece applies.
+			var deps []uint64
+			if i > 0 {
+				deps = append(deps, 100+i)
+			}
+			if i%3 == 0 && i+1 < records {
+				deps = append(deps, 100+i+2)
+			}
+			reply.Values = append(reply.Values, MergedValue{Ordinal: TransferOrdinal(i + 1), Number: 100 + i + 1, Deps: deps,
+				Parts: []PersistedPartAddress{{Part: "snapshot"}}})
+		}
+		reply.Roots = []MergedRoot{{Ordinal: records, Number: 100 + records, Retained: true}}
+		return sent, reply
+	}
+	keys := make([]HolderKey, records)
+	for i := range keys {
+		keys[i] = HolderKey{c, 100 + uint64(i) + 1}
+	}
+	read := func(cache *Cache) map[HolderKey]RemoteHeldEntry {
+		out := map[HolderKey]RemoteHeldEntry{}
+		for _, key := range keys {
+			if held, ok := cache.RemoteHoldingInfo(key); ok {
+				out[key] = held
+			}
+		}
+		return out
+	}
+	deps := func(h RemoteHoldingInfo) []uint64 {
+		return slices.Sorted(slices.Values(slices.Concat(h.Deps, h.UnknownDeps)))
+	}
+
+	ctx, whole := storedPartTestCache(t, WithBlobStore())
+	sent, reply := setup(t, whole)
+	wholeChange, err := whole.ApplyMergedReply(ctx, c, sent, reply)
+	require.NoError(t, err)
+	want := read(whole)
+	require.Len(t, want, records)
+
+	_, pieced := storedPartTestCache(t, WithBlobStore())
+	sent, reply = setup(t, pieced)
+	apply, err := PrepareMergedReply(c, sent, reply)
+	require.NoError(t, err)
+	require.Equal(t, records, apply.Records())
+	var candidates []HolderKey
+	for applied := 0; ; {
+		w := pieced.HoldRemoteWrites()
+		change, done := w.ApplyMergedReplyPiece(ctx, apply, 1)
+		require.NoError(t, w.Release(ctx))
+		candidates = append(candidates, change.Candidates...)
+		if !done {
+			applied++
+		}
+		got := read(pieced)
+		for _, key := range keys {
+			held, ok := got[key]
+			if int(key.Number-100) > applied && !done {
+				require.False(t, ok, "%v, not applied yet, after %d records", key, applied)
+				continue
+			}
+			require.True(t, ok, "%v after %d records", key, applied)
+			final := want[key]
+			require.Equal(t, final.Number, held.Number, "%v", key)
+			require.Equal(t, final.Holding.Parts, held.Holding.Parts, "%v", key)
+			require.Equal(t, final.Holding.Replacements, held.Holding.Replacements, "%v", key)
+			require.Equal(t, final.Holding.ExpiresAtUnix, held.Holding.ExpiresAtUnix, "%v", key)
+			require.Equal(t, deps(final.Holding), deps(held.Holding), "%v's dependencies, known or to come, after %d records", key, applied)
+			for _, dep := range held.Holding.Deps {
+				require.LessOrEqual(t, int(dep-100), applied, "%v names %d as held before it is", key, dep)
+			}
+		}
+		if done {
+			break
+		}
+	}
+	require.Equal(t, want, read(pieced), "pieces leave the cache as the whole reply does")
+	set := func(keys []HolderKey) []HolderKey {
+		keys = slices.Clone(keys)
+		slices.SortFunc(keys, compareHolderKeys)
+		return slices.Compact(keys)
+	}
+	require.Equal(t, set(wholeChange.Candidates), set(candidates), "the same candidates")
+}
