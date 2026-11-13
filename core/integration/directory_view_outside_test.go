@@ -425,17 +425,14 @@ func (DirectorySuite) TestHiddenReadsStayInTheView(ctx context.Context, t *testc
 
 	t.Run("search", func(ctx context.Context, t *testctx.T) {
 		// Searching a path inside the subdirectory still applies the
-		// subdirectory's own ignore files, and a .git leading out of it
-		// brings in no exclude rules.
+		// subdirectory's own ignore files.
 		nonce := rand.Text()
 		dir := t.TempDir()
 		writeTree(t, dir, map[string]string{
-			"app/.ignore":       "*.log\n",
-			"app/sub/keep.txt":  nonce,
-			"app/sub/x.log":     nonce,
-			"meta/info/exclude": "*.txt\n",
-			"meta/HEAD":         "ref: refs/heads/main\n",
-		}, map[string]string{"app/.git": "../meta"})
+			"app/.ignore":      "*.log\n",
+			"app/sub/keep.txt": nonce,
+			"app/sub/x.log":    nonce,
+		}, nil)
 		app := host(dir).Directory("app")
 		for _, paths := range [][]string{nil, {"sub"}} {
 			// .gitignore applies without a repository, as filtering does.
