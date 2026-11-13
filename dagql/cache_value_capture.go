@@ -697,6 +697,11 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 		fileGroup.SetLimit(int(max(int64(cfg.Builds.Workers), 1)))
 		for _, file := range files {
 			fileGroup.Go(func() error {
+				// One still waiting for a slot when another fails doesn't
+				// begin.
+				if err := fileCtx.Err(); err != nil {
+					return err
+				}
 				chainCtx, chainOp := profBeginChain(fileCtx, chains.Entries[file.entry].Address)
 				chain, err := file.ref.ExportFileChain(chainCtx, cfg, file.path)
 				var blobBytes int64
