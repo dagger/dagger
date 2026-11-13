@@ -595,40 +595,60 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 //
 // It collects nothing. It returns the holdings it created or released an
 // owner of, for the next CollectRemoteHoldings, and the recipes it affected.
-func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueBundle, reply MergeReply) (change RemoteChange, _ error) {
+func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueBundle, reply MergeReply) (RemoteChange, error) {
+	cloudEntries, targets, err := prepareMergedReply(cache, sent, reply)
+	if err != nil {
+		return RemoteChange{}, err
+	}
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	return c.applyMergedReplyLocked(ctx, cache, cloudEntries, targets, reply), nil
+}
+
+// mergedTarget is a record of a merged reply, with its complete and offered
+// part address keys.
+type mergedTarget struct {
+	value         MergedValue
+	parts, offers []string
+}
+
+// prepareMergedReply checks a merged reply against the bundle sent, and
+// returns the Cloud entry of each of the bundle's ordinals and the reply's
+// records, ready to apply. It reads nothing of the cache.
+func prepareMergedReply(cache CacheID, sent ValueBundle, reply MergeReply) (map[TransferOrdinal]sharedResultID, []mergedTarget, error) {
 	if cache == "" || senderCache(cache) {
-		return change, fmt.Errorf("apply merged reply: %q is not an engine cache", cache)
+		return nil, nil, fmt.Errorf("apply merged reply: %q is not an engine cache", cache)
 	}
 	cloudEntries := make(map[TransferOrdinal]sharedResultID, len(sent.Values))
 	for _, value := range sent.Values {
 		cloudEntries[value.Ordinal] = sharedResultID(value.SenderNumber)
 	}
-	type target struct {
-		value         MergedValue
-		parts, offers []string
-	}
-	targets := make([]target, 0, len(reply.Values))
+	targets := make([]mergedTarget, 0, len(reply.Values))
 	for _, value := range reply.Values {
 		if value.Number == 0 {
-			return change, fmt.Errorf("apply merged reply: ordinal %d has no number", value.Ordinal)
+			return nil, nil, fmt.Errorf("apply merged reply: ordinal %d has no number", value.Ordinal)
 		}
 		if _, ok := cloudEntries[value.Ordinal]; !ok {
-			return change, fmt.Errorf("apply merged reply: ordinal %d was not sent", value.Ordinal)
+			return nil, nil, fmt.Errorf("apply merged reply: ordinal %d was not sent", value.Ordinal)
 		}
 		parts, err := heldPartKeys(value.Parts)
 		if err != nil {
-			return change, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
+			return nil, nil, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
 		}
 		offers, err := heldPartKeys(value.OfferedParts)
 		if err != nil {
-			return change, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
+			return nil, nil, fmt.Errorf("apply merged reply: ordinal %d: %w", value.Ordinal, err)
 		}
-		targets = append(targets, target{value: value, parts: parts, offers: offers})
+		targets = append(targets, mergedTarget{value: value, parts: parts, offers: offers})
 	}
-	at := obsTime{generation: reply.Generation, engineTime: reply.EngineTimeUnixNano}
+	return cloudEntries, targets, nil
+}
 
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
+// applyMergedReplyLocked applies a merged reply prepared by
+// prepareMergedReply, as ApplyMergedReply describes. Requires egraphMu for
+// writing.
+func (c *Cache) applyMergedReplyLocked(ctx context.Context, cache CacheID, cloudEntries map[TransferOrdinal]sharedResultID, targets []mergedTarget, reply MergeReply) (change RemoteChange) {
+	at := obsTime{generation: reply.Generation, engineTime: reply.EngineTimeUnixNano}
 	defer c.takeChangesLocked(&change)
 	c.initEgraphLocked()
 	state := c.remoteCacheLocked(cache)
@@ -673,7 +693,7 @@ func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueB
 			change.Candidates = append(change.Candidates, key)
 		}
 	}
-	return change, nil
+	return change
 }
 
 // UpdateRemoteHolding applies what a later report of an existing holding
