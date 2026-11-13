@@ -578,6 +578,34 @@ func TestApprovalInShellKeepsPromptFocus(t *testing.T) {
 	require.Equal(t, following, fe.FocusedSpan)
 }
 
+// Leaving a jumped-to approval for the prompt by tab or i -- not esc -- also
+// resumes following output and disarms the approval, so it neither keeps the
+// cursor parked nor takes focus back.
+func TestApprovalLeftForPromptResumesFollowing(t *testing.T) {
+	for _, leave := range []string{"tab", "i"} {
+		t.Run(leave, func(t *testing.T) {
+			db := rosterDB(t)
+			db.ImportSnapshots(approvalTraceSnapshots())
+			fe := focusTestFrontend(t, db, &focusShellHandler{target: "agent-chief"})
+			a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
+			require.True(t, fe.autoFocus, "precondition: following output")
+			following := fe.FocusedSpan
+
+			pressKeys(fe, "alt+a")
+			require.True(t, fe.tui.IsFocused(a.view))
+			require.False(t, fe.autoFocus)
+
+			pressKeys(fe, leave)
+			fe.tui.Step()
+			require.True(t, fe.inputFocused(), "%s goes to the prompt", leave)
+			require.False(t, a.finished, "leaving does not answer")
+			require.False(t, a.armed, "the approval no longer holds the cursor")
+			require.True(t, fe.autoFocus, "the cursor resumes following output")
+			require.Equal(t, following, fe.FocusedSpan)
+		})
+	}
+}
+
 // The prompt's alt+a works in nav mode too, so the hint holds in either mode.
 func TestApprovalJumpKeyInShellNavMode(t *testing.T) {
 	db := rosterDB(t)
@@ -619,6 +647,24 @@ func TestFloatingApprovalKeepsFocusWhenAnchored(t *testing.T) {
 	pressKeys(fe, "y")
 	res := awaitApproval(t, fe, results)
 	require.Equal(t, prompt.APPROVAL_ALLOW_ONCE, res.decision)
+}
+
+// A form opened over a focused approval borrows focus and hands it back: the
+// approval keeps its place rather than being left.
+func TestFormOverApprovalReturnsToIt(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
+	pressKeys(fe, "k", "k")
+	require.True(t, fe.tui.IsFocused(a.view))
+
+	fe.handlePromptForm(NewForm(huh.NewGroup(huh.NewInput().Title("Something else"))), nil)
+	fe.tui.Step()
+	require.True(t, fe.formFocused())
+	fe.tui.Inject(tuist.ParseKey("ctrl+c"))
+	awaitFormTeardown(t, fe)
+	fe.tui.Step()
+	require.True(t, a.armed)
+	require.True(t, fe.tui.IsFocused(a.view), "focus returns to the approval")
 }
 
 // A form opened over a focused approval that is canceled meanwhile must not
