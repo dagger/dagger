@@ -94,11 +94,25 @@ func (c *Cache) completePartKeys(ctx context.Context, row *sharedResult) []strin
 // reads no size, and gets nil sizes. Sizes are nil too when the record could
 // not be captured, or a size could not be read.
 func (c *Cache) completePartKeysAndSizes(ctx context.Context, row *sharedResult) ([]string, []int64) {
+	return c.completeParts(ctx, row, c.completePartSizeReader())
+}
+
+// completePartSizeReader is what reads complete parts' raw sizes: on an
+// engine with the remote cache, its snapshot manager; nil elsewhere.
+func (c *Cache) completePartSizeReader() partSizeReader {
 	var reader partSizeReader
 	if c.partContentSource.attachedBridge() != nil {
 		reader, _ = c.snapshotManager.(partSizeReader)
 	}
-	return c.completeParts(ctx, row, reader)
+	return reader
+}
+
+// completePartsCurrent reports whether the row's complete parts, read
+// earlier, still describe its value, with sizes when reader reads them:
+// completeParts would answer from them.
+func completePartsCurrent(row *sharedResult, reader partSizeReader) bool {
+	cached := row.completeParts.Load()
+	return cached != nil && cached.stamp.current(row) && (reader == nil || cached.sizes != nil)
 }
 
 // completeParts reads the row's complete part keys and, with reader, their
@@ -106,6 +120,14 @@ func (c *Cache) completePartKeysAndSizes(ctx context.Context, row *sharedResult)
 // remote cache every read takes the sizes, so a read for the keys alone,
 // such as a merge's warming, never leaves them unread.
 func (c *Cache) completeParts(ctx context.Context, row *sharedResult, reader partSizeReader) ([]string, []int64) {
+	return c.completePartsHeld(ctx, row, reader, func(capture captureFunc) (*capturedRowRevision, error) {
+		return c.holdRowForCapture(ctx, row, capture)
+	})
+}
+
+// completePartsHeld is completeParts with the row held by hold, when it
+// captures.
+func (c *Cache) completePartsHeld(ctx context.Context, row *sharedResult, reader partSizeReader, hold captureHold) ([]string, []int64) {
 	if cached := row.completeParts.Load(); cached != nil && cached.stamp.current(row) && (reader == nil || cached.sizes != nil) {
 		if reader == nil {
 			// Sizes read while the remote cache was attached are not
@@ -115,7 +137,7 @@ func (c *Cache) completeParts(ctx context.Context, row *sharedResult, reader par
 		return cached.keys, cached.sizes
 	}
 	if reader == nil {
-		keys, version, err := c.describeRowParts(ctx, row)
+		keys, version, err := c.describeRowPartsHeld(ctx, row, hold)
 		if err != nil {
 			return row.settledPartKeys(), nil
 		}
@@ -125,7 +147,7 @@ func (c *Cache) completeParts(ctx context.Context, row *sharedResult, reader par
 	// A size is read from its part's descriptor, which only the row's record
 	// carries: capture it, held as captureRowRecord holds it.
 	var record PersistedRecord
-	version, err := c.holdRowForCapture(ctx, row, func(imported bool, offers []PersistedPartOffer, version *capturedRowRevision) error {
+	version, err := hold(func(imported bool, offers []PersistedPartOffer, version *capturedRowRevision) error {
 		var err error
 		record, err = c.captureHeldPersistedRecord(ctx, row, imported, offers, version)
 		return err
