@@ -1398,9 +1398,106 @@ func advanceHeldParts(h *holding, keys []string, state heldPartState) bool {
 
 // teachRemoteIdentityLocked makes the entry an output of the class of its
 // recipe, the request digest and the content digest, and applies the term to
-// that class, as a publication indexes a computed result. Requires egraphMu
-// for writing.
+// that class, as a publication indexes a computed result. Most rows report an
+// identity the cache already holds, as a repeat hit does locally: then
+// nothing would change, and nothing is done. Requires egraphMu for writing.
 func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, entry *sharedResult, field string, recipe, request, content digest.Digest, term *RemoteTerm) {
+	if c.remoteIdentityTeachesNothingLocked(entry, recipe, request, content, term) {
+		return
+	}
+	c.writeRemoteIdentityLocked(ctx, entry, field, recipe, request, content, term)
+}
+
+// remoteIdentityTeachesNothingLocked reports whether writeRemoteIdentityLocked
+// would leave every structure as it is: each digest already in the entry's
+// single output class and posting the entry, the entry a member of that class
+// in both directions, the content digest already a fact of the class, the
+// entry already associated with the term, and every term of that digest
+// already pointing at the class. It is hitTeachesNothingLocked for a remote
+// identity. It only reads, finding roots without path compression, and answers
+// false whenever any step would write. Congruence repair after a merge that
+// unions nothing finds nothing to repair: every union repairs to closure
+// before mergeEqClassesLocked returns. Requires egraphMu, for reading or
+// writing.
+//
+//nolint:gocyclo // One read-only check per write the teach could make; splitting them would hide that they mirror it.
+func (c *Cache) remoteIdentityTeachesNothingLocked(entry *sharedResult, recipe, request, content digest.Digest, term *RemoteTerm) bool {
+	if entry == nil || entry.id == 0 {
+		return false
+	}
+	// The class the teach would merge the entry's output classes into, which
+	// addResultOutputEqClassLocked records in both directions.
+	members := c.resultOutputEqClasses[entry.id]
+	var root eqClassID
+	for id := range members {
+		r := c.eqClassRootLocked(id)
+		if r == 0 {
+			continue
+		}
+		if root != 0 && r != root {
+			return false
+		}
+		root = r
+	}
+	if root == 0 {
+		return false
+	}
+	if _, ok := members[root]; !ok {
+		return false
+	}
+	if _, ok := c.outputEqClassResults[root][entry.id]; !ok {
+		return false
+	}
+	for _, dig := range []digest.Digest{recipe, request, content} {
+		if dig == "" {
+			continue
+		}
+		id, ok := c.egraphDigestToClass[dig.String()]
+		if !ok || c.eqClassRootLocked(id) != root {
+			return false
+		}
+		posting := c.egraphResultsByDigest[dig.String()]
+		if posting == nil || !posting.Contains(entry.id) {
+			return false
+		}
+	}
+	if content != "" {
+		if _, ok := c.eqClassExtraDigests[root][call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent}]; !ok {
+			return false
+		}
+	}
+	if term == nil || term.Self == "" {
+		return true
+	}
+	// applyPreparedResultIdentityLocked: the term's inputs already have
+	// classes, the entry already has a live term of the digest they give, and
+	// mergeOutputsForTermDigestLocked would store no new root on a term.
+	inputEqIDs := make([]eqClassID, len(term.Inputs))
+	for i, in := range term.Inputs {
+		if in == "" {
+			continue
+		}
+		id, ok := c.egraphDigestToClass[in.String()]
+		if !ok {
+			return false
+		}
+		inputEqIDs[i] = c.eqClassRootLocked(id)
+	}
+	termDigest := calcEgraphTermDigest(term.Self, inputEqIDs)
+	if c.termForResultByDigestLocked(entry.id, termDigest) == nil {
+		return false
+	}
+	for termID := range c.egraphTermsByTermDigest[termDigest].Items() {
+		if t := c.egraphTerms[termID]; t != nil && t.outputEqID != root {
+			return false
+		}
+	}
+	return true
+}
+
+// writeRemoteIdentityLocked is teachRemoteIdentityLocked's write. Requires
+// egraphMu for writing.
+func (c *Cache) writeRemoteIdentityLocked(ctx context.Context, entry *sharedResult, field string, recipe, request, content digest.Digest, term *RemoteTerm) {
 	var extras []call.ExtraDigest
 	if content != "" {
 		extras = append(extras, call.ExtraDigest{Digest: content, Label: call.ExtraDigestLabelContent})
