@@ -410,6 +410,54 @@ func TestFloatingApprovalJump(t *testing.T) {
 	require.True(t, fe.navigationFocused(), "focus returns to navigation")
 }
 
+// A jump only borrows the cursor: answering resumes following output when it
+// was following, so new rows are not cropped below the approval's row.
+func TestApprovalJumpResumesFollowingOutput(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	require.True(t, fe.autoFocus, "precondition: following output")
+	_, results := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
+	pressKeys(fe, "a", "y")
+	awaitApproval(t, fe, results)
+	require.True(t, fe.autoFocus)
+
+	start := time.Unix(100, 0).Add(4 * time.Second)
+	fe.db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: approvalLateTool, TraceID: prettyTestTraceID(), ParentID: approvalRootID, Name: "late",
+			LLMRole: "assistant", LLMTool: "late", StartTime: start},
+	})
+	fe.recalculateViewLocked()
+	require.Equal(t, approvalLateTool, fe.FocusedSpan, "the cursor follows new output again")
+}
+
+// A search jump moves the cursor off a floating approval, which must then
+// stop taking keys: `n` means "next match" again, not "deny".
+func TestSearchLeavesFloatingApproval(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalLateID, ""))
+	pressKeys(fe, "a")
+	require.True(t, fe.tui.IsFocused(a.view))
+
+	pressKeys(fe, "/", "P", "u", "s", "h", "enter")
+	require.Equal(t, approvalToolID, fe.FocusedSpan, "the search moved the cursor")
+	require.False(t, fe.tui.IsFocused(a.view), "the approval no longer has focus")
+	pressKeys(fe, "n")
+	require.False(t, a.finished, "n searches rather than denying")
+}
+
+// Jumping to an approval whose call is inside the zoomed subtree keeps the
+// zoom: the approval already shows there.
+func TestApprovalJumpKeepsZoomOnItsCall(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
+	pressKeys(fe, "k", "k", "k", "enter")
+	require.Equal(t, approvalToolID, fe.ZoomedSpan)
+
+	pressKeys(fe, "a")
+	require.Equal(t, approvalToolID, fe.ZoomedSpan, "the zoom is kept")
+	require.True(t, fe.tui.IsFocused(a.view))
+	require.Contains(t, frameText(fe.tui.Step()), "approval needed")
+}
+
 // In the shell the prompt owns focus: an approval must leave it alone, cue
 // the blocked agent on the roster, and hand focus back after a jump.
 func TestApprovalInShellKeepsPromptFocus(t *testing.T) {
