@@ -359,6 +359,13 @@ type frontendPretty struct {
 	activeForm   *activePromptForm
 	pendingForms []*promptFormRequest
 
+	// Pending approvals, oldest first. Unlike forms they are not serialized
+	// and never take focus on arrival: each renders under the call that
+	// requested it (see approval.go).
+	approvals    []*pendingApproval
+	approvalSeq  uint64
+	approvalsGen uint64
+
 	// track whether we've already spawned the run function
 	spawned bool
 
@@ -734,6 +741,13 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		// still renders (collapsed the same way), so the rows navigation
 		// walks are the rows on screen.
 		s.renderRowExtras(ctx, r, row, visualFocused)
+
+		// A pending approval this row's call is blocked on sits right
+		// beneath it, where the user navigates to answer it.
+		if approvals := s.renderInlineApprovals(ctx, r, row); len(approvals) > 0 {
+			s.selfLineCount += len(approvals)
+			ctx.Lines(approvals...)
+		}
 	}
 
 	// Render children (already synced by syncSpanTreeState).
@@ -2906,6 +2920,10 @@ func (fe *frontendPretty) navigationFocused() bool {
 	if focused == fe {
 		return true
 	}
+	if v, ok := focused.(*ApprovalView); ok && !v.approval.finished {
+		// An approval holds focus only while navigating onto it.
+		return true
+	}
 	for _, tree := range fe.spanTrees {
 		if focused == tree {
 			return true
@@ -2915,6 +2933,9 @@ func (fe *frontendPretty) navigationFocused() bool {
 }
 
 func (fe *frontendPretty) navigationTarget() tuist.Component {
+	if a := fe.focusableApproval(); a != nil {
+		return a.view
+	}
 	if fe.FocusedSpan.IsValid() {
 		if tree := fe.spanTrees[fe.FocusedSpan]; tree != nil {
 			return tree
@@ -3414,6 +3435,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 	if fe.formFocused() {
 		return fe.activeForm.model.KeyBinds()
 	}
+	if binds := fe.approvalKeys(); binds != nil {
+		return binds
+	}
 	if view, ok := fe.commandView.(interface{ HideKeymap() bool }); ok && view.HideKeymap() {
 		return nil
 	}
@@ -3529,6 +3553,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		// Roster focus is shown only once there is more than one agent to
 		// switch between. A single-agent roster remains a state display.
 		bnds = append(bnds, fe.promptAgentBindings()...)
+		if len(fe.approvals) > 0 {
+			bnds = append(bnds, key.NewBinding(key.WithKeys(approvalJumpKey),
+				key.WithHelp("alt+a", "answer approval")))
+		}
 		if fe.acceptsPromptImages() {
 			bnds = append(bnds, key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste image")))
 		}
@@ -3604,6 +3632,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("N"),
 			key.WithHelp("N", "prev"),
 			KeyEnabled(fe.searchQuery != "")),
+		key.NewBinding(key.WithKeys(approvalNavKey),
+			key.WithHelp(approvalNavKey, "answer approval"),
+			KeyEnabled(len(fe.approvals) > 0)),
 	}
 	// Roster focus uses unmodified keys because nav mode is the one place they
 	// are free, and is shown only once there is more than one agent to switch.
@@ -3801,13 +3832,20 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			chromeReserve = min(len(chrome)+1, avail/2)
 		}
 	}
-	progressLines := fe.renderProgressLines(r, ctx, reserved+len(zoomHeader)+chromeReserve)
+	// Approvals with no row to sit under yet render right below the rows,
+	// ahead of the chrome, so cropping never hides them.
+	floating := fe.renderFloatingApprovals(ctx)
+	progressLines := fe.renderProgressLines(r, ctx, reserved+len(zoomHeader)+chromeReserve+len(floating))
 	var body []string
 	if len(progressLines) > 0 {
 		body = append(body, progressLines...)
-		if len(chrome) > 0 {
+		if len(chrome) > 0 || len(floating) > 0 {
 			body = append(body, "") // separate tree from logs/tests
 		}
+	}
+	body = append(body, floating...)
+	if len(floating) > 0 && len(chrome) > 0 {
+		body = append(body, "")
 	}
 	// The keymap supplies its own leading gap; content sections only need
 	// separators between them, not a trailing blank line.
@@ -4665,6 +4703,8 @@ func (fe *frontendPretty) formHeight() int {
 //nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
+	// The rows (and their trees) decide where each pending approval renders.
+	defer fe.resolveApprovals()
 	if !fe.reportScopedSubtree && fe.RootFilter == nil {
 		// Promotion reshapes the trace around what the whole run was about: it
 		// hangs the surfaced checks/conversation/generators off the zoomed span
@@ -4903,6 +4943,7 @@ func (fe *frontendPretty) agentRosterEntries() []AgentRosterEntry {
 	}
 	focused := fe.focusedAgentID()
 	agents := fe.db.Agents()
+	awaiting := fe.approvalAgents()
 	entries := make([]AgentRosterEntry, 0, len(agents))
 	for _, agent := range agents {
 		name := agent.Name
@@ -4918,7 +4959,8 @@ func (fe *frontendPretty) agentRosterEntries() []AgentRosterEntry {
 			// addressable, and one whose handle failed to rebuild has been
 			// proven not to be. Either way the entry is watch-only, and says
 			// so rather than pretending it can be spoken to.
-			ReadOnly: agent.CallDigest == "" || fe.unaddressableAgents[agent.ID],
+			ReadOnly:         agent.CallDigest == "" || fe.unaddressableAgents[agent.ID],
+			AwaitingApproval: agent.ID != "" && awaiting[agent.ID],
 		})
 	}
 	return entries
@@ -5414,6 +5456,7 @@ func (fe *frontendPretty) updateAgentRoster() {
 		init:          true,
 		focused:       focused,
 		unaddressable: fe.unaddressableGen,
+		approvals:     fe.approvalsGen,
 	}
 	if fe.db != nil {
 		inputs.agents = fe.db.Agents()
@@ -5445,13 +5488,15 @@ type agentRosterInputs struct {
 	agents        []*dagui.AgentNode
 	focused       string
 	unaddressable uint64
+	approvals     uint64
 }
 
 func (in agentRosterInputs) same(other agentRosterInputs) bool {
 	return in.init == other.init &&
 		sameAgentNodes(in.agents, other.agents) &&
 		in.focused == other.focused &&
-		in.unaddressable == other.unaddressable
+		in.unaddressable == other.unaddressable &&
+		in.approvals == other.approvals
 }
 
 // sameAgentNodes reports whether two db.Agents() results are the same
@@ -6316,6 +6361,8 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
 	}
+	// An approval holds focus only while the cursor is on its row.
+	fe.disarmApprovals(newSpan, false)
 	if moveKeyboard {
 		fe.focusNavigationTarget()
 	}
@@ -6335,6 +6382,14 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 // manualFocus is like focus but also deselects the current search match
 // so that n/N seek relative to the new position.
 func (fe *frontendPretty) manualFocus(row *dagui.TraceRow) {
+	// Navigating onto a row is what gives its pending approvals focus -- but
+	// only the user's own navigation: a cursor moved for them (the prompt
+	// following new output) must not hand the approval their next key.
+	arm := fe.navigationFocused()
+	fe.disarmApprovals(dagui.SpanID{}, true)
+	if arm && row != nil {
+		fe.armApprovalsAt(row.Span.ID)
+	}
 	fe.focus(row)
 	if fe.searchQuery != "" {
 		fe.searchIdx = -1
@@ -6365,6 +6420,12 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 
 	// Let the completion menu handle keys when visible (up/down/esc/tab).
 	if fe.completionMenu != nil && fe.completionMenu.HandleKeyPress(ctx, ev) {
+		return true
+	}
+
+	// Answering an approval is a detour: focus returns here after. Only
+	// claimed while one is pending.
+	if keyStr == approvalJumpKey && fe.jumpToApproval() {
 		return true
 	}
 
@@ -6615,6 +6676,12 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 				fe.terminal()
 			}
 		}
+		return
+	}
+
+	if keyStr == approvalNavKey && fe.jumpToApproval() {
+		// Only claimed while an approval is pending; otherwise the key
+		// falls through to the shell like any unbound one.
 		return
 	}
 
