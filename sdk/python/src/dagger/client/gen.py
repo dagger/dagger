@@ -16399,6 +16399,124 @@ class Port(Type):
 
 
 @typecheck
+class Prompt(Type):
+    """A question for the user, answered in the terminal of the client
+    running the session.  Select the kind of answer wanted to ask it: each
+    selection asks, unless the answer is remembered."""
+
+    async def boolean(self, *, default: bool | None = None) -> bool:
+        """Ask for a yes or no answer.
+
+        Parameters
+        ----------
+        default:
+            The answer selected to begin with, and the answer when nobody can
+            be asked (the client is not interactive). Without one, that is an
+            error.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("default", default, None),
+        ]
+        _ctx = self._select("boolean", _args)
+        return await _ctx.execute(bool)
+
+    async def id(self) -> str:
+        """A unique identifier for this Prompt.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def secret(self, *, multiline: bool | None = False) -> "Secret":
+        """Ask for a secret value, masking the user's input.
+
+        The answer is never remembered beyond the session. When nobody can be
+        asked (the client is not interactive), this is an error.
+
+        Parameters
+        ----------
+        multiline:
+            Accept several lines.
+        """
+        _args = [
+            Arg("multiline", multiline, False),
+        ]
+        _ctx = self._select("secret", _args)
+        return Secret(_ctx)
+
+    async def string(
+        self,
+        *,
+        default: str | None = None,
+        multiline: bool | None = False,
+    ) -> str:
+        """Ask for a text answer.
+
+        Parameters
+        ----------
+        default:
+            The text the answer starts with, and the answer when nobody can be
+            asked (the client is not interactive). Without one, that is an
+            error.
+        multiline:
+            Accept several lines.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("default", default, None),
+            Arg("multiline", multiline, False),
+        ]
+        _ctx = self._select("string", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class Query(Root):
     """The root of the DAG."""
 
@@ -16980,6 +17098,37 @@ class Query(Root):
         ]
         _ctx = self._select("node", _args)
         return await _ctx.execute_object(_NodeClient)
+
+    def prompt(
+        self,
+        message: str,
+        *,
+        key: str | None = None,
+    ) -> Prompt:
+        """Ask the user a question.
+
+        Nothing is asked until an answer is selected from the returned Prompt,
+        in the terminal of the client running the session, which shows who
+        asks: the agent, module and function, as the engine knows them.
+
+        Answers are remembered for the session, per asking module, message and
+        kind of answer.
+
+        Parameters
+        ----------
+        message:
+            The question, as Markdown.
+        key:
+            Remember answers beyond the session under this key, in the user's
+            configuration, for the asking module only.
+            Only modules loaded from git are remembered so; secrets never are.
+        """
+        _args = [
+            Arg("message", message),
+            Arg("key", key, None),
+        ]
+        _ctx = self._select("prompt", _args)
+        return Prompt(_ctx)
 
     def schema(self, json: JSON) -> "Schema":
         """Load a GraphQL introspection schema for merging.
@@ -21569,6 +21718,7 @@ __all__ = [
     "Platform",
     "Port",
     "PortForward",
+    "Prompt",
     "Query",
     "RegistryProtocol",
     "RemoteGitMirror",

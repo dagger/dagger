@@ -3582,6 +3582,32 @@ export type PortForward = {
   protocol?: NetworkProtocol
 }
 
+export type PromptBooleanOpts = {
+  /**
+   * The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.
+   */
+  default?: boolean
+}
+
+export type PromptSecretOpts = {
+  /**
+   * Accept several lines.
+   */
+  multiline?: boolean
+}
+
+export type PromptStringOpts = {
+  /**
+   * The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.
+   */
+  default?: string
+
+  /**
+   * Accept several lines.
+   */
+  multiline?: boolean
+}
+
 export type ClientBlobOpts = {
   /**
    * Permissions of the new file. Example: 0600
@@ -3764,6 +3790,15 @@ export type ClientNamingOpts = {
    * The engine version to answer for, e.g. the engine version a module declares. Defaults to the caller's. Normalized as a module's is: a version past the engine's is capped at the engine's own.
    */
   version?: string
+}
+
+export type ClientPromptOpts = {
+  /**
+   * Remember answers beyond the session under this key, in the user's configuration, for the asking module only.
+   *
+   * Only modules loaded from git are remembered so; secrets never are.
+   */
+  key?: string
 }
 
 export type ClientSecretOpts = {
@@ -16983,6 +17018,87 @@ export class Port extends BaseClient {
 }
 
 /**
+ * A question for the user, answered in the terminal of the client running the session.
+ *
+ * Select the kind of answer wanted to ask it: each selection asks, unless the answer is remembered.
+ */
+export class Prompt extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _boolean?: boolean = undefined
+  private readonly _string?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _boolean?: boolean, _string?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._boolean = _boolean
+    this._string = _string
+  }
+
+  /**
+   * A unique identifier for this Prompt.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Ask for a yes or no answer.
+   * @param opts.default The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.
+   */
+  boolean_ = async (opts?: PromptBooleanOpts): Promise<boolean> => {
+    if (this._boolean) {
+      return this._boolean
+    }
+
+    const ctx = this._ctx.select("boolean", { ...opts })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Ask for a secret value, masking the user's input.
+   *
+   * The answer is never remembered beyond the session. When nobody can be asked (the client is not interactive), this is an error.
+   * @param opts.multiline Accept several lines.
+   */
+  secret = (opts?: PromptSecretOpts): Secret => {
+    const ctx = this._ctx.select("secret", { ...opts })
+    return new Secret(ctx)
+  }
+
+  /**
+   * Ask for a text answer.
+   * @param opts.default The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.
+   * @param opts.multiline Accept several lines.
+   */
+  string_ = async (opts?: PromptStringOpts): Promise<string> => {
+    if (this._string) {
+      return this._string
+    }
+
+    const ctx = this._ctx.select("string", { ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * The root of the DAG.
  */
 export class Client extends BaseClient {
@@ -17386,6 +17502,22 @@ export class Client extends BaseClient {
       return null
     }
     return new _NodeClient(ctx.copy().selectNode(response, "Node"))
+  }
+
+  /**
+   * Ask the user a question.
+   *
+   * Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.
+   *
+   * Answers are remembered for the session, per asking module, message and kind of answer.
+   * @param message The question, as Markdown.
+   * @param opts.key Remember answers beyond the session under this key, in the user's configuration, for the asking module only.
+   *
+   * Only modules loaded from git are remembered so; secrets never are.
+   */
+  prompt = (message: string, opts?: ClientPromptOpts): Prompt => {
+    const ctx = this._ctx.select("prompt", { message, ...opts })
+    return new Prompt(ctx)
   }
 
   /**
