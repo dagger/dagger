@@ -369,7 +369,7 @@ func (p *phaseRun) end(srv *Server) {
 	}
 	if p.prof != nil {
 		pprof.StopCPUProfile()
-		srv.cpuProfile.release()
+		srv.cpuProfile.resume()
 		srv.finishArmedProfile(p.prof, nil)
 	}
 	if p.op == nil {
@@ -453,9 +453,9 @@ func (srv *Server) startArmedProfile(phase string) *armedProfile {
 	if a == nil || a.phase != phase || a.started {
 		return nil
 	}
-	srv.cpuProfile.take()
+	srv.cpuProfile.pause()
 	if err := pprof.StartCPUProfile(&a.buf); err != nil {
-		srv.cpuProfile.release()
+		srv.cpuProfile.resume()
 		srv.armed = nil
 		a.err = err
 		close(a.done)
