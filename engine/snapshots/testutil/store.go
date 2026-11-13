@@ -22,6 +22,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/blobstore"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
+	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	bolt "go.etcd.io/bbolt"
@@ -46,6 +47,9 @@ type Store struct {
 	BeforeSnapshotUpdate func(context.Context, ctdsnapshots.Info) error
 	// BeforeStat runs before each snapshot Stat the manager makes.
 	BeforeStat func(ctx context.Context, key string)
+	// AfterInfo runs after each content Info the manager makes, with its
+	// digest and its error.
+	AfterInfo func(ctx context.Context, dgst digest.Digest, err error)
 	// LeaseCommitErr, when set, rolls back each transaction the manager
 	// makes through SnapshotManagerOpt.MetadataDB and returns it.
 	LeaseCommitErr error
@@ -359,6 +363,15 @@ func (l *observedLeases) Create(ctx context.Context, opts ...leases.Opt) (leases
 type observedContent struct {
 	content.Store
 	owner *Store
+}
+
+// Info runs the owner's AfterInfo.
+func (s observedContent) Info(ctx context.Context, dgst digest.Digest) (content.Info, error) {
+	info, err := s.Store.Info(ctx, dgst)
+	if s.owner.AfterInfo != nil {
+		s.owner.AfterInfo(ctx, dgst, err)
+	}
+	return info, err
 }
 
 // ReaderAt counts the bytes read from the content store in ContentRead.

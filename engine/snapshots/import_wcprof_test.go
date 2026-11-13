@@ -13,9 +13,11 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/leases"
+	cerrdefs "github.com/containerd/errdefs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/engine/wcprof"
+	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
@@ -150,11 +152,18 @@ func TestImportChainProfiled(t *testing.T) {
 			} else {
 				// The upper layer's fetch links its blob to the import's lease,
 				// finds it missing, then waits for the download: the read
-				// waits for that link.
+				// waits until the fetch has found it missing. The download
+				// started ahead looks for the blob too, before the link.
 				fetching := make(chan struct{})
+				var linked atomic.Bool
 				var once sync.Once
 				consumer.AfterAdd = func(_ context.Context, _ leases.Lease, r leases.Resource) {
 					if r.Type == "content" && r.ID == upper.Digest.String() {
+						linked.Store(true)
+					}
+				}
+				consumer.AfterInfo = func(_ context.Context, dgst digest.Digest, err error) {
+					if dgst == upper.Digest && linked.Load() && cerrdefs.IsNotFound(err) {
 						once.Do(func() { close(fetching) })
 					}
 				}
