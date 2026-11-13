@@ -10,7 +10,12 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
+	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/util/grpcutil"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -103,7 +108,12 @@ func (p *socketProxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgent
 }
 
 func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
+	ctx := extractTraceContext(stream.Context())
+	_, span := otel.Tracer(InstrumentationLibrary).Start(ctx, "connect client socket", telemetry.Internal(), trace.WithAttributes(
+		attribute.String("network.transport", p.network),
+	))
 	conn, err := p.dialer(p.network, p.addr)
+	tracing.FinishWithError(span, err)
 	if err != nil {
 		return fmt.Errorf("dialer failed: %w", err)
 	}

@@ -17,11 +17,17 @@ import (
 	"github.com/dagger/dagger/engine"
 	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
+	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/util/hashutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -207,18 +213,11 @@ func (socket *Socket) forwardAgentClient(ctx context.Context) (sshforward.SSH_Fo
 	if socket.SourceClientID == "" {
 		return nil, fmt.Errorf("socket %q: missing source client ID", socket.URLVal)
 	}
-	query, err := CurrentQuery(ctx)
+	conn, _, err := socket.attachableConn(ctx, SpecificClientAttachableConnOpts{})
 	if err != nil {
 		return nil, err
 	}
-	conn, _, err := query.SpecificClientAttachableConn(ctx, socket.SourceClientID, SpecificClientAttachableConnOpts{})
-	if err != nil {
-		return nil, err
-	}
-	outgoingMD, _ := metadata.FromOutgoingContext(ctx)
-	outgoingMD = outgoingMD.Copy()
-	outgoingMD.Set(engine.SocketURLEncodedKey, socket.URLVal)
-	stream, err := sshforward.NewSSHClient(conn).ForwardAgent(metadata.NewOutgoingContext(ctx, outgoingMD))
+	stream, err := sshforward.NewSSHClient(conn).ForwardAgent(socket.forwardContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -235,11 +234,7 @@ func (socket *Socket) forwardAgentClientFromSessionResourceCandidate(ctx context
 	if socket.SourceClientID == "" {
 		return nil, false, fmt.Errorf("socket %q: missing source client ID", socket.URLVal)
 	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-	conn, ok, err := query.SpecificClientAttachableConn(ctx, socket.SourceClientID, SpecificClientAttachableConnOpts{
+	conn, ok, err := socket.attachableConn(ctx, SpecificClientAttachableConnOpts{
 		IfAvailable: true,
 	})
 	if err != nil {
@@ -248,12 +243,9 @@ func (socket *Socket) forwardAgentClientFromSessionResourceCandidate(ctx context
 	if !ok {
 		return nil, true, fmt.Errorf("no active session attachables for client %q", socket.SourceClientID)
 	}
-	outgoingMD, _ := metadata.FromOutgoingContext(ctx)
-	outgoingMD = outgoingMD.Copy()
-	outgoingMD.Set(engine.SocketURLEncodedKey, socket.URLVal)
-	stream, err := sshforward.NewSSHClient(conn).ForwardAgent(metadata.NewOutgoingContext(ctx, outgoingMD))
+	stream, err := sshforward.NewSSHClient(conn).ForwardAgent(socket.forwardContext(ctx))
 	if err != nil {
-		_, active, lookupErr := query.SpecificClientAttachableConn(ctx, socket.SourceClientID, SpecificClientAttachableConnOpts{
+		_, active, lookupErr := socket.attachableConn(ctx, SpecificClientAttachableConnOpts{
 			IfAvailable: true,
 		})
 		if lookupErr != nil {
@@ -265,6 +257,33 @@ func (socket *Socket) forwardAgentClientFromSessionResourceCandidate(ctx context
 		return nil, false, err
 	}
 	return stream, false, nil
+}
+
+func (socket *Socket) attachableConn(ctx context.Context, opts SpecificClientAttachableConnOpts) (_ *grpc.ClientConn, _ bool, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "socket attachable lookup", telemetry.Internal(), trace.WithAttributes(
+		attribute.String("dagger.io/socket.source_client_id", socket.SourceClientID),
+	))
+	defer func() { tracing.FinishWithError(span, rerr) }()
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	return query.SpecificClientAttachableConn(ctx, socket.SourceClientID, opts)
+}
+
+func (socket *Socket) forwardContext(ctx context.Context) context.Context {
+	outgoingMD, _ := metadata.FromOutgoingContext(ctx)
+	outgoingMD = outgoingMD.Copy()
+	outgoingMD.Set(engine.SocketURLEncodedKey, socket.URLVal)
+	// The attachable server does not install tracing interceptors. Carry the
+	// parent explicitly so its connection span joins the engine's trace.
+	carrier := propagation.MapCarrier{}
+	telemetry.Propagator.Inject(ctx, carrier)
+	for key, value := range carrier {
+		outgoingMD.Set(key, value)
+	}
+	return metadata.NewOutgoingContext(ctx, outgoingMD)
 }
 
 func (socket *Socket) MountSSHAgent(ctx context.Context) (string, func() error, error) {
@@ -383,7 +402,7 @@ func (socket *Socket) AgentFingerprints(ctx context.Context) ([]string, error) {
 // listSSHAgentIdentities closes the connection on cancellation because the SSH
 // agent protocol client does not accept a context. Closing it also releases the
 // client's reader goroutine and any pending identity request.
-func listSSHAgentIdentities(ctx context.Context, sockPath string) ([]*agent.Key, error) {
+func listSSHAgentIdentities(ctx context.Context, sockPath string) (_ []*agent.Key, rerr error) {
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", sockPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to mounted SSH socket: %w", err)
@@ -391,6 +410,11 @@ func listSSHAgentIdentities(ctx context.Context, sockPath string) ([]*agent.Key,
 	defer conn.Close()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()
+
+	// This round trip includes forwarding setup. The lookup and client
+	// connection spans show whether either setup boundary was slow.
+	_, span := Tracer(ctx).Start(ctx, "SSH agent identity round trip", telemetry.Internal())
+	defer func() { tracing.FinishWithError(span, rerr) }()
 
 	keys, err := agent.NewClient(conn).List()
 	if err != nil {
