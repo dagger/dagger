@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -127,7 +128,7 @@ func TestOwedPartsOwedAgainDuringAPassStillOwe(t *testing.T) {
 	value.fail = nil
 	c.testOwedPartsRead = func(read *sharedResult) {
 		c.testOwedPartsRead = nil
-		c.owePartsReport(read)
+		c.owePartsReport(read, nil)
 	}
 	require.Equal(t, 1, c.reportOwedParts(ctx), "owed again during the pass: still owes")
 	require.Len(t, <-reports, 1, "the pass reported what it read")
@@ -152,4 +153,73 @@ func TestOwedPartsKeptWhenThePassIsStopped(t *testing.T) {
 	value.fail = nil
 	require.Equal(t, 0, c.reportOwedParts(ctx))
 	require.Len(t, <-reports, 1)
+}
+
+// An owed report names only the parts the entry's spans left out: a part a
+// span already reported, settled when it read the entry, isn't named again.
+func TestOwedPartsReportOnlyWhatSpansLeftOut(t *testing.T) {
+	t.Parallel()
+	value := &describedPartValue{done: true}
+	ctx, c, row, reports := ownedPartsCache(t, value, nil)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	c.owePartsReport(row, []string{snapshotPartKey(t)})
+	require.Equal(t, 0, c.reportOwedParts(ctx), "readable: nothing owed after the pass")
+	requireNoReport(t, reports)
+}
+
+// A span that reads the entry's record reports every complete part itself:
+// what the entry owed from an earlier span is settled, and no report follows.
+func TestSpanReadingTheRecordSettlesWhatWasOwed(t *testing.T) {
+	t.Parallel()
+	value := &describedPartValue{done: true}
+	ctx, c, row, reports := ownedPartsCache(t, value, fmt.Errorf("%w: busy", ErrPersistStateNotReady))
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	state, ok := c.resultState(ctx, row, nil)
+	require.True(t, ok)
+	require.Empty(t, state.Parts)
+	value.fail = nil
+	state, ok = c.resultState(ctx, row, nil)
+	require.True(t, ok)
+	require.Equal(t, []string{snapshotPartKey(t)}, state.Parts, "this span reports the part itself")
+	require.Equal(t, 0, c.reportOwedParts(ctx), "settled by that span")
+	requireNoReport(t, reports)
+}
+
+// On an engine with the remote cache, an owed report gives each part's raw
+// size as a span would: a directory's, the usage its snapshot chain's layers
+// recorded, 300 + 20 + 1.
+func TestOwedPartsCarryRawSizes(t *testing.T) {
+	t.Parallel()
+	reports := make(chan []SnapshotSharedPart, 8)
+	mgr := &partSizeTestManager{
+		fakeSnapshotManager: &fakeSnapshotManager{},
+		usage:               map[string]int64{"top": 300, "mid": 20, "base": 1},
+		parent:              map[string]string{"top": "mid", "mid": "base"},
+	}
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), mgr, nil, WithSnapshotShareReport(func(parts []SnapshotSharedPart) { reports <- parts }))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	_, created, err := c.AttachRemoteCacheBridge()
+	require.NoError(t, err)
+	require.True(t, created)
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
+	srv.InstallObject(NewClass(srv, ClassOpts[*statePartValue]{}))
+	ctx = srvToContext(ContextWithCache(ctx, c), srv)
+	value := &statePartValue{snapshotID: "top"}
+	value.done.Store(true)
+	row := persistedListTestResult(t, ctx, c, srv, "dir", value).cacheSharedResult()
+	value.fail = fmt.Errorf("%w: busy", ErrPersistStateNotReady)
+	row.completeParts.Store(nil)
+
+	state, ok := c.resultState(ctx, row, nil)
+	require.True(t, ok)
+	require.Empty(t, state.Parts, "the span reports the settled parts, none here")
+	value.fail = nil
+	require.Equal(t, 0, c.reportOwedParts(ctx))
+	parts := <-reports
+	require.Len(t, parts, 1)
+	require.Equal(t, snapshotPartKey(t), parts[0].Part)
+	require.NotNil(t, parts[0].RawSize)
+	require.Equal(t, int64(321), *parts[0].RawSize)
 }
