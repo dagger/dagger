@@ -77,6 +77,15 @@ func (srv *Server) AuthorizeGitIdentity(ctx context.Context) (core.GitIdentity, 
 		}
 	}
 	spec := gitIdentityApproval(identity)
+	if delegated {
+		// Whatever the owner answers, the module function's result now
+		// depends on it (its commits' identity), while its cache key only
+		// names its arguments: never reuse it, so a later call asks again
+		// rather than getting this answer, or this identity, unasked. This
+		// is the same guard a secret read through the owner takes (see
+		// core.FunctionCall.MarkOwnerSecretRead).
+		markOwnerSecretRead(client)
+	}
 	memo := gitIdentityMemoKey(ctx, delegated, spec.Subject)
 	if memo != "" {
 		if decided, ok := client.gitIdentityDecisions.Load(memo); ok {
