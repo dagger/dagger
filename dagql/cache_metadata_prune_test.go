@@ -274,7 +274,7 @@ func TestCachePruneMetadataEstimateSkipsPhysicalMeasurementAndUsesColdOrder(t *t
 		assert.Equal(t, "", res.entry.ID)
 		assert.Equal(t, "", res.entry.Description)
 		assert.Equal(t, "", res.entry.DagqlCall)
-		assert.Assert(t, res.callFrame == nil)
+		assert.Assert(t, !res.frame.ok())
 		assert.Equal(t, 0, len(res.usageIdentities))
 	}
 

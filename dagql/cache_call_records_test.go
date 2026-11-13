@@ -288,7 +288,7 @@ func newReceiverCallTest(t *testing.T) *receiverCallTest {
 	numbers := storedPersistenceTestMerge(t, cloudCtx, cloud, exportTestBundle(t, ctx, producer, test.inner, receiver))
 	require.Len(t, numbers, 2)
 	for _, number := range numbers {
-		if storedBundleTestEntry(cloud, number).loadResultCall().Field == "receiver" {
+		if storedTestFrame(t, cloud, storedBundleTestEntry(cloud, number)).Field == "receiver" {
 			test.receiverNumber = number
 		} else {
 			test.number = number
@@ -585,7 +585,7 @@ func TestCallRecordOnAnExpiredRowLeavesTheEnginesValueAlone(t *testing.T) {
 	var innerNumber uint64
 	cloud.egraphMu.Lock()
 	for id, res := range cloud.resultsByID {
-		if call := res.loadResultCall(); call != nil && call.Field == "inner" {
+		if call, _ := res.entryFrameLocked().decode(); call != nil && call.Field == "inner" {
 			res.expiresAtUnix = time.Now().Add(-time.Minute).Unix()
 			innerNumber = uint64(id)
 		}
