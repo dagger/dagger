@@ -10143,11 +10143,14 @@ type TermOutput interface {
 }
 
 // The engine's git push approval (engine/server/git_push.go) asks "Allow
-// force-push to <remote> @ <ref>?" for forced updates. Matching only the
-// prefix keeps a remote or ref that happens to contain the phrase unflagged.
+// force-push to <remote> @ <ref>?" for forced updates, and its bare question
+// (what approvals render) reads "Force-push to <remote> @ <ref>?". Matching
+// only the prefix keeps a remote or ref that happens to contain the phrase
+// unflagged.
 const (
 	forcePushPhrase       = "force-push"
 	forcePushPromptPrefix = "Allow " + forcePushPhrase + " "
+	forcePushAction       = "Force-push"
 )
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {

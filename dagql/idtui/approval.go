@@ -100,12 +100,14 @@ type pendingApproval struct {
 }
 
 // approvalChoices lists the answers in increasing order of trust, Deny last
-// (and selected by default, see approvalDefaultChoice). Always is only offered
-// when the request names a key it can be remembered under.
+// (and selected by default, see approvalDefaultChoice). Each label spells out
+// how long the grant lasts, so a session grant never reads as a lasting one.
+// Always is only offered when the request names a key it can be remembered
+// under.
 func approvalChoices(req *prompt.ApprovalRequest) []approvalChoice {
 	choices := []approvalChoice{
 		{"y", "Allow once", prompt.APPROVAL_ALLOW_ONCE},
-		{"s", "Allow for this session", prompt.APPROVAL_ALLOW_SESSION},
+		{"s", "Allow for this session only", prompt.APPROVAL_ALLOW_SESSION},
 	}
 	if req.GetPersistentKey() != "" {
 		module := req.GetRequester().GetModule()
@@ -861,6 +863,8 @@ func (fe *frontendPretty) approvalLines(a *pendingApproval, focused bool, width 
 	danger := func(s string) string { return out.String(s).Foreground(termenv.ANSIRed).Bold().String() }
 	header := out.String(IconApproval).Foreground(accent).Bold().String() + " "
 	switch {
+	case req.GetDanger() && strings.HasPrefix(question, forcePushAction):
+		header += danger(forcePushAction) + bold(strings.TrimPrefix(question, forcePushAction))
 	case req.GetDanger() && strings.Contains(question, forcePushPhrase):
 		before, after, _ := strings.Cut(question, forcePushPhrase)
 		if before != "" {
