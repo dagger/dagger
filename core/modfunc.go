@@ -691,6 +691,7 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	// WithComposingAgent): a spawn that runs during composition gets the
 	// composing agent as parent, while a cache-hit call that spawned when it
 	// first ran is not re-run and keeps naming that first child.
+	agentConcurrencyKey(ctx, req)
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
@@ -872,6 +873,24 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		return err
 	}
 	return req.SetImplicitInput(ctx, dagql.PerSessionInput.Name, session)
+}
+
+// agentConcurrencyKey keeps a module function call made on an agent's behalf
+// from sharing one in-flight execution with the same call made by another
+// agent, or by no agent. The calling agent decides what the call may do: a
+// host-less module reading its owner's secret asks the owner for that agent
+// and module (see Server.AuthorizeSecret), and another caller joining the
+// execution while the owner decides would get the approved result, or the
+// denial, without being asked about. Only joins are kept apart: the agent is
+// not part of the call's cache key, so recipes and cached results are
+// unchanged (see declineOwnerSecretReuse for those).
+func agentConcurrencyKey(ctx context.Context, req *dagql.CallRequest) {
+	if req == nil || req.ConcurrencyKey == "" {
+		return
+	}
+	if agent, ok := CallerAgent(ctx); ok && agent.Self().Handle != "" {
+		req.ConcurrencyKey += "\x00agent:" + agent.Self().Handle
+	}
 }
 
 // declaredGitClientsDigest digests the git clients that the config governing
