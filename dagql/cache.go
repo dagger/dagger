@@ -2554,6 +2554,10 @@ type Cache struct {
 	// frames the content digests their spans taught (applyTaughtContent),
 	// with the number of frames it rewrote.
 	testTaughtContent func(int)
+	// testTaughtContentGiven runs after the body worker gives one entry's
+	// frame its waiting taught digests, before it records that, holding no
+	// lock.
+	testTaughtContentGiven func()
 	// testRecipeFromBody runs when a recipe is read from a stored body's
 	// kept digest, for an entry without a decoded frame
 	// (recipeDigestForCachedResult). Only a blob-backed cache's entries, and
