@@ -352,6 +352,10 @@ type MergedValue struct {
 	// offer of and not the bytes.
 	Parts        []PersistedPartAddress
 	OfferedParts []PersistedPartAddress
+	// Stored reports that the commit stored the record's value on the
+	// target: a new entry, one with no value, or one in place of an expired
+	// value (MergeRowCounts' created, stored, replaced and retired).
+	Stored bool
 }
 
 // MergedRoot is one root of the bundle: its target and retention, or expired.
@@ -2385,6 +2389,7 @@ func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) MergeReply {
 			continue
 		}
 		value := MergedValue{Ordinal: row.value.Ordinal, Number: uint64(res.id), Replacements: res.replacements, Revision: RowRevision{Replacements: res.replacements, Transfer: res.transferRevision, Dependencies: res.dependencyOwnershipRevision}, ExpiresAtUnix: res.expiresAtUnix}
+		value.Stored = row.value.Held == "" && (row.action == mergeCreate || row.action == mergeStore || row.action == mergeReplace || row.action == mergeRetire)
 		for dep := range res.deps {
 			value.Deps = append(value.Deps, uint64(dep))
 		}

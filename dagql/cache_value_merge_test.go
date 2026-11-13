@@ -2720,3 +2720,38 @@ func TestMergeWarmingCapturesATargetChangedWhileHeld(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, warmingTestOutcome(t, b[0], one, targets[0]), warmingTestOutcome(t, b[1], together, targets[1]))
 }
+
+// A merge's reply says which records its commit stored: each of a new
+// entry, none of a record the cache already had, and a record that
+// replaced an expired value in place.
+func TestMergeReplySaysWhichRecordsItStored(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, "stored-flag-root", &transferTestValue{Text: "x"})
+	bundle := exportTestBundle(t, actx, a, r)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	stored := func(reply MergeReply) map[uint64]bool {
+		got := map[uint64]bool{}
+		for _, value := range reply.Values {
+			got[value.Number] = value.Stored
+		}
+		return got
+	}
+
+	first, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.Equal(t, 1, first.Rows.Created)
+	number := first.Values[0].Number
+	require.Equal(t, map[uint64]bool{number: true}, stored(first))
+
+	again, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.Equal(t, 1, again.Rows.Kept)
+	require.Equal(t, map[uint64]bool{number: false}, stored(again))
+
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, number))
+	replaced, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.Equal(t, 1, replaced.Rows.Replaced)
+	require.Equal(t, map[uint64]bool{number: true}, stored(replaced))
+}
