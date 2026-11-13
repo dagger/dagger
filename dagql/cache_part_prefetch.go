@@ -329,6 +329,12 @@ func (c *Cache) closePartPrefetch() {
 	p.cancel()
 	p.wg.Wait()
 	p.mu.Lock()
+	// A dropped hold was consumed, and counted as used already.
+	for _, h := range p.holds {
+		if h.downloaded {
+			p.unread += h.bytes
+		}
+	}
 	holds := append(slices.Collect(maps.Values(p.holds)), p.dropped...)
 	p.holds, p.dropped = map[digest.Digest]*partPrefetchHold{}, nil
 	p.held, p.pending = 0, 0
