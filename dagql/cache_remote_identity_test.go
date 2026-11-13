@@ -16,9 +16,11 @@ import (
 // A call row whose identity the cache already holds teaches it nothing, so
 // it costs what that identity holds, not what the cache built on it: teaching
 // base again, when 2000 other calls take base as their input, allocates no
-// more than when 10 do. The cost is counted in allocated bytes, which don't
-// vary from run to run; the count is process-wide, so the test doesn't run in
-// parallel.
+// more than when 10 do. The cost is counted in allocated bytes; the count is
+// process-wide, so the test doesn't run in parallel. A teach that walked
+// base's uses would allocate at least a term number for each, 16 KB for 2000;
+// a run under the race detector misses its sync.Pool at random and allocates
+// a few hundred bytes more or less, so that much is allowed.
 func TestKnownRemoteIdentityCostIsIndependentOfItsUses(t *testing.T) {
 	ctx := t.Context()
 	bytes := func(uses int) uint64 {
@@ -49,7 +51,7 @@ func TestKnownRemoteIdentityCostIsIndependentOfItsUses(t *testing.T) {
 	}
 	few, many := bytes(10), bytes(2000)
 	t.Logf("a known row's teach allocates %d bytes with 10 uses of its class, %d with 2000", few, many)
-	require.LessOrEqual(t, many, few, "a known row's teach grew with the calls that take its result as an input")
+	require.Less(t, many, few+1024, "a known row's teach grew with the calls that take its result as an input")
 }
 
 // allocatedBytesPerRun is testing.AllocsPerRun in bytes.
@@ -142,13 +144,13 @@ func checkKnownRemoteIdentityWritesNothing(t *testing.T, seed uint64) {
 		}
 	}
 	for step := range 400 {
-		switch r := rng.IntN(20); {
-		case r == 0:
+		switch rng.IntN(20) {
+		case 0:
 			e := engines[rng.IntN(len(engines))]
 			a.endSession(e, sessionOf(e))
 			session[e]++
 			a.collect()
-		case r == 1:
+		case 1:
 			_, _, err := cloud.CompactEqClasses(ctx)
 			require.NoError(t, err)
 		default:
@@ -169,7 +171,7 @@ func checkKnownRemoteIdentityWritesNothing(t *testing.T, seed uint64) {
 
 // egraphFactsForTest prints every structure of the e-graph, with each
 // class's slot given by its root: finding a root compresses paths, which no
-// reader sees. Requires egraphMu.
+// reader sees; and the marks the cache's writes have made. Requires egraphMu.
 func egraphFactsForTest(c *Cache) string {
 	var b strings.Builder
 	line := func(name string, v any) { fmt.Fprintf(&b, "%s %v\n", name, v) }
@@ -218,5 +220,10 @@ func egraphFactsForTest(c *Cache) string {
 	line("indexedDigests", c.resultIndexedDigests)
 	line("broadlyIndexed", c.broadlyIndexedResults)
 	line("nextTerm", c.nextEgraphTermID)
+	// What the cache's writes have marked for its reader and its save since
+	// the last write handed them back.
+	if c.changes != nil {
+		line("changes", fmt.Sprintf("%+v", *c.changes))
+	}
 	return b.String()
 }
