@@ -7262,6 +7262,12 @@ func (fe *frontendPretty) interceptSearchKey(_ tuist.Context, ev uv.KeyPressEven
 
 func (fe *frontendPretty) enterInsertMode() {
 	if fe.textInput != nil {
+		// Leaving for the prompt leaves any approval the cursor was on.
+		for _, a := range fe.approvals {
+			if a.armed {
+				fe.leaveApproval(a)
+			}
+		}
 		fe.syncPrompt()
 		fe.tui.SetFocus(fe.textInput)
 		fe.syncHardwareCursor()
