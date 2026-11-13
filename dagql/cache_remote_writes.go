@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"slices"
 )
 
 // RemoteWrites is a Cloud cache held for writing (HoldRemoteWrites), for a
@@ -61,6 +62,9 @@ func (w *RemoteWrites) UpdateRemoteHolding(ctx context.Context, key HolderKey, u
 
 // AddRemoteHold is Cache.AddRemoteHold, in the hold.
 func (w *RemoteWrites) AddRemoteHold(ctx context.Context, key HolderKey, session string) (RemoteChange, error) {
+	if session == "" {
+		return RemoteChange{}, errEmptyRemoteHoldSession
+	}
 	return w.c.addRemoteHoldLocked(key, session)
 }
 
@@ -84,6 +88,7 @@ func (w *RemoteWrites) ReleaseRemoteCache(ctx context.Context, cache CacheID) Re
 func (w *RemoteWrites) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey) ([]HolderKey, RemoteChange, error) {
 	collected, change, releases, err := w.c.collectRemoteHoldingsLocked(ctx, candidates)
 	w.releases = append(w.releases, releases...)
+	slices.SortFunc(collected, compareHolderKeys)
 	return collected, change, err
 }
 
