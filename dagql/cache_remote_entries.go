@@ -646,8 +646,16 @@ func prepareMergedReply(cache CacheID, sent ValueBundle, reply MergeReply) (map[
 // prepareMergedReply, as ApplyMergedReply describes. Requires egraphMu for
 // writing.
 func (c *Cache) applyMergedReplyLocked(ctx context.Context, cache CacheID, cloudEntries map[TransferOrdinal]sharedResultID, targets []mergedTarget, reply MergeReply) (change RemoteChange) {
-	at := obsTime{generation: reply.Generation, engineTime: reply.EngineTimeUnixNano}
 	defer c.takeChangesLocked(&change)
+	c.applyMergedTargetsLocked(ctx, cache, cloudEntries, targets, &change)
+	c.applyMergedRootsLocked(cache, reply, &change)
+	return change
+}
+
+// applyMergedTargetsLocked lands a merged reply's records, targets, on the
+// engine cache's holdings, as ApplyMergedReply describes, and adds what it
+// changed to change. Requires egraphMu for writing.
+func (c *Cache) applyMergedTargetsLocked(ctx context.Context, cache CacheID, cloudEntries map[TransferOrdinal]sharedResultID, targets []mergedTarget, change *RemoteChange) {
 	c.initEgraphLocked()
 	state := c.remoteCacheLocked(cache)
 	for _, t := range targets {
@@ -673,6 +681,13 @@ func (c *Cache) applyMergedReplyLocked(ctx context.Context, cache CacheID, cloud
 			change.addRecipeOf(entry)
 		}
 	}
+}
+
+// applyMergedRootsLocked observes a merged reply's roots' retention, at the
+// reply's generation and engine time, on the holdings its records landed
+// on, and adds what it changed to change. Requires egraphMu for writing.
+func (c *Cache) applyMergedRootsLocked(cache CacheID, reply MergeReply, change *RemoteChange) {
+	at := obsTime{generation: reply.Generation, engineTime: reply.EngineTimeUnixNano}
 	for _, root := range reply.Roots {
 		if root.Expired || root.Number == 0 {
 			continue
@@ -691,7 +706,39 @@ func (c *Cache) applyMergedReplyLocked(ctx context.Context, cache CacheID, cloud
 			change.Candidates = append(change.Candidates, key)
 		}
 	}
-	return change
+}
+
+// MergedReplyApply is an engine cache's merged reply prepared to apply in
+// pieces (RemoteWrites.ApplyMergedReplyPiece), each in a hold of the
+// cache's lock of its own, so that the cache's readers get in between the
+// pieces of a large reply. A reader between two pieces sees the holdings of
+// the records applied so far, each in its final value state but for its
+// dependencies on records still to come, which it names as unknown until
+// they land, its dependents, and its retention, which the last piece
+// observes: less than the engine holds, never other. Applied whole, piece
+// by piece, it changes the cache as ApplyMergedReply does.
+type MergedReplyApply struct {
+	cache        CacheID
+	cloudEntries map[TransferOrdinal]sharedResultID
+	targets      []mergedTarget
+	reply        MergeReply
+	next         int
+}
+
+// PrepareMergedReply checks and prepares an engine cache's merged reply,
+// as ApplyMergedReply does before its lock, to apply in pieces. It reads
+// nothing of the cache.
+func PrepareMergedReply(cache CacheID, sent ValueBundle, reply MergeReply) (*MergedReplyApply, error) {
+	cloudEntries, targets, err := prepareMergedReply(cache, sent, reply)
+	if err != nil {
+		return nil, err
+	}
+	return &MergedReplyApply{cache: cache, cloudEntries: cloudEntries, targets: targets, reply: reply}, nil
+}
+
+// Records returns how many records the reply lands.
+func (a *MergedReplyApply) Records() int {
+	return len(a.targets)
 }
 
 // UpdateRemoteHolding applies what a later report of an existing holding

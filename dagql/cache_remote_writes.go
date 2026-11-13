@@ -101,6 +101,29 @@ func (w *RemoteWrites) ApplyMergedReply(ctx context.Context, cache CacheID, sent
 	return w.c.applyMergedReplyLocked(ctx, cache, cloudEntries, targets, reply), nil
 }
 
+// ApplyMergedReplyPiece applies the next records of a merged reply
+// prepared to apply in pieces, at most n, in the hold, and the reply's
+// roots' retention with its last records, and returns what it changed and
+// whether the reply is applied whole. A hold let go between pieces lets the
+// cache's readers in (MergedReplyApply).
+func (w *RemoteWrites) ApplyMergedReplyPiece(ctx context.Context, a *MergedReplyApply, n int) (change RemoteChange, done bool) {
+	defer w.c.takeChangesLocked(&change)
+	if n < 1 {
+		n = 1
+	}
+	end := a.next + n
+	if end > len(a.targets) {
+		end = len(a.targets)
+	}
+	w.c.applyMergedTargetsLocked(ctx, a.cache, a.cloudEntries, a.targets[a.next:end], &change)
+	a.next = end
+	if a.next < len(a.targets) {
+		return change, false
+	}
+	w.c.applyMergedRootsLocked(a.cache, a.reply, &change)
+	return change, true
+}
+
 // RemoteHoldingInfo is Cache.RemoteHoldingInfo, in the hold.
 func (w *RemoteWrites) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) {
 	return w.c.remoteHoldingInfoLocked(key)
