@@ -265,6 +265,9 @@ type daggerSession struct {
 
 	// approvals remembers the owners' session grants (see requestApproval)
 	approvals approvalGrants
+	// promptAnswers remembers the answers to prompts asked to be remembered
+	// (see Server.Prompt)
+	promptAnswers promptAnswers
 	// gitRemoteDefaults remembers push destinations' default branches, and
 	// ownerOrigins the origins of the owners' workspace checkouts (see
 	// git_push_policy.go).
