@@ -59,8 +59,10 @@ message SelectResponse {
 }
 
 // ApprovalRequester is who asks: the agent and module whose code requests
-// access, and the function it was running. Every value is display text the
-// engine resolved itself, never module-supplied prose.
+// access, and the function it was running. The engine resolves every value
+// itself, never taking the requester's word for it, but names may be chosen
+// by a module or by the code spawning the agent, so they arrive as literal
+// text escaped for terminals, like the prompt.
 message ApprovalRequester {
     // the agent's display name, e.g. "engine-tools"
     string agent_name = 1;

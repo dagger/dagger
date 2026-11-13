@@ -262,23 +262,28 @@ func nearestModuleClient(client *clientRuntime) (*clientRuntime, error) {
 	return nil, nil
 }
 
+// proto is r as sent to the frontend. The engine resolved every value, but the
+// names are chosen by a module or by the code spawning the agent, so they are
+// literal text escaped for terminals, like the subject and the prompt. The
+// handle is the engine's own identifier, which frontends match as is.
 func (r approvalRequester) proto() *prompt.ApprovalRequester {
 	p := &prompt.ApprovalRequester{
-		AgentName:   r.agentName,
+		AgentName:   literalText(r.agentName),
 		AgentHandle: r.agentHandle,
-		Function:    r.function,
+		Function:    literalText(r.function),
 	}
 	if mod := r.module.Self(); mod != nil {
-		p.Module = mod.Name()
+		p.Module = literalText(mod.Name())
 		if src := mod.GetSource(); src != nil {
-			p.ModuleRef = canonicalModuleReference(src)
+			ref := canonicalModuleReference(src)
 			if src.Kind == core.ModuleSourceKindGit && src.Pin() != "" {
 				subpath := src.SourceSubpath
 				if subpath == "" {
 					subpath = src.SourceRootSubpath
 				}
-				p.ModuleRef = core.GitRefString(src.Git.CloneRef, subpath, src.Pin())
+				ref = core.GitRefString(src.Git.CloneRef, subpath, src.Pin())
 			}
+			p.ModuleRef = literalText(ref)
 		}
 	}
 	return p
