@@ -2545,3 +2545,35 @@ func TestMergeValuesTimesItsWarming(t *testing.T) {
 	require.Equal(t, MergeRowCounts{Kept: 1}, r.reply.Rows)
 	require.GreaterOrEqual(t, r.reply.Warm, held, "the target's capture waited for the reader")
 }
+
+// A commit's warming holds its targets for their captures, and lets them go,
+// with a few holds of the graph lock for writing, not two for each target:
+// each hold waits for the lock's readers, and a commit warms thousands of
+// targets.
+func TestMergeValuesWarmsItsTargetsInFewHolds(t *testing.T) {
+	t.Parallel()
+	const targets = 20
+	ctx, c, srv := transferTestCache(t)
+	bctx, b, bsrv := transferTestCache(t)
+	var roots []AnyResult
+	for i := range targets {
+		field := fmt.Sprintf("root-%d", i)
+		roots = append(roots, persistedListTestResult(t, ctx, c, srv, field, &transferTestValue{Text: "sent"}))
+		persistedListTestResult(t, bctx, b, bsrv, field, &transferTestValue{Text: "local"})
+	}
+	bundle := exportTestBundle(t, ctx, c, roots...)
+	var warming bool
+	var holds int
+	b.testWarmStarted = func() { warming = true }
+	b.testBeforeTransferCommit = func() { warming = false }
+	b.testCaptureWriteLock = func() {
+		if warming {
+			holds++
+		}
+	}
+	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, targets, reply.Rows.Kept, "every record lands on a target")
+	require.Positive(t, holds, "the warming captured its targets")
+	require.LessOrEqual(t, holds, 2, "one hold to take the targets and one to let them go")
+}

@@ -2508,6 +2508,9 @@ type Cache struct {
 	// testWarmStarted, nil but in tests, runs as a merge's commit starts
 	// timing its warming (CommitValueMerge, MergeReply.Warm).
 	testWarmStarted func()
+	// testCaptureWriteLock, nil but in tests, runs as holding rows for a
+	// capture, or letting them go, is about to take egraphMu for writing.
+	testCaptureWriteLock func()
 
 	// readPieceSize, when set, is how many steps a read in pieces takes in
 	// one hold of egraphMu (readPieceSteps otherwise), and
