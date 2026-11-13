@@ -27,8 +27,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const instrumentationLibrary = "dagger.io/engine.snapshots"
-
 // diffApply applies the provided diffs to the dest MountableRef and returns the correctly calculated disk usage
 // that accounts for any hardlinks made from existing snapshots. ctx is expected to have a temporary lease
 // associated with it.
