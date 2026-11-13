@@ -109,6 +109,17 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 		}
 	}
 	res.deps = nil
+	// The content digests spans taught the entry name the bytes of the
+	// value the drop takes. A record that fills the entry again may be
+	// another engine's run of the recipe, with other bytes, and until runs
+	// are named the cache can't tell, so they go with the value.
+	if len(res.taught) > 0 || res.taughtFrom.ok() {
+		c.taughtContentDropped.Add(1)
+		res.taughtDropped = true
+	}
+	res.taught = nil
+	res.taughtGiven = 0
+	res.taughtFrom = entryFrame{}
 	res.storedParts = nil
 	res.storedRecordBytes = 0
 	res.storedTransfer.Store(nil)
