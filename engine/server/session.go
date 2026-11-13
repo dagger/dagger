@@ -1304,6 +1304,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// session is intentionally left in srv.daggerSessions as a tombstone until
 	// the caller retires it after lifecycleMu is released.
 	sess.markSessionRemoved()
+	srv.sessionLedger.sessionTearingDown(sess.sessionID)
 	sess.beginClientScopeTeardown()
 	sess.beginClosing()
 	sess.endMainClientAttachables()
