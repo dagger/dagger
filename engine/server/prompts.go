@@ -240,7 +240,7 @@ func llmApproval(moduleURL string) approvalSpec {
 	return approvalSpec{
 		Kind:      approvalKindLLM,
 		Subject:   literalText(moduleURL),
-		Question:  "Allow LLM access",
+		Question:  "Allow LLM access for " + literalText(moduleURL),
 		Action:    "Use the LLM API",
 		LegacyKey: "allow_llm:" + moduleURL,
 	}
