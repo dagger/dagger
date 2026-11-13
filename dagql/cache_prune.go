@@ -27,14 +27,17 @@ type pruneUsageIdentityState struct {
 }
 
 type pruneSnapshotResult struct {
-	resultID                 sharedResultID
-	incomingCount            int64
-	deps                     []sharedResultID
-	offers                   []offerOwnerID
-	directResultBytes        int64
-	usageIdentities          []string
+	resultID          sharedResultID
+	incomingCount     int64
+	deps              []sharedResultID
+	offers            []offerOwnerID
+	directResultBytes int64
+	usageIdentities   []string
+	// entry is the entry's usage, without its call label, which only the
+	// entries a pass removes take (prunePlanLabels). callFrame is its call
+	// frame as the snapshot read it, which the label and the log of a
+	// removed entry read.
 	entry                    CacheUsageEntry
-	callLabel                string
 	callFrame                *ResultCall
 	hasPersistedEdge         bool
 	persistedEdgeUnpruneable bool
@@ -58,6 +61,23 @@ type pruneSnapshot struct {
 type prunePlanEntry struct {
 	candidate    pruneCandidate
 	reclaimBytes int64
+}
+
+// prunePlanLabels returns the call label of each entry the plan removes,
+// as the usage report names it (cacheUsageDagqlCallLocked), read before the
+// plan removes any of them: so a removed entry whose receiver the same pass
+// removes is labelled with its receiver's type, as before. Only the entries
+// a pass removes are labelled, since only they are reported and logged.
+func (c *Cache) prunePlanLabels(snapshot pruneSnapshot, plan []prunePlanEntry) map[sharedResultID]string {
+	labels := make(map[sharedResultID]string, len(plan))
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	for _, planEntry := range plan {
+		if snapRes, ok := snapshot.results[planEntry.candidate.resultID]; ok && snapRes.callFrame != nil {
+			labels[planEntry.candidate.resultID] = c.cacheUsageDagqlCallOfLocked(snapRes.callFrame)
+		}
+	}
+	return labels
 }
 
 type pruneSimulationState struct {
@@ -423,6 +443,7 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			continue
 		}
 
+		labels := c.prunePlanLabels(snapshot, plan)
 		policyReclaimed := int64(0)
 		policyApplied := 0
 		for _, planEntry := range plan {
@@ -446,6 +467,7 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 			}
 			compactedNeeded = true
 			policyApplied++
+			label := labels[planEntry.candidate.resultID]
 			if ok {
 				digest := ""
 				args := []string(nil)
@@ -458,7 +480,7 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 				}
 				slog.Info("dagql pruned result",
 					"resultID", planEntry.candidate.resultID,
-					"call", snapRes.callLabel,
+					"call", label,
 					"digest", digest,
 					"args", args,
 					"description", snapRes.entry.Description,
@@ -466,6 +488,7 @@ func (c *Cache) prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 					"reclaimedBytes", planEntry.reclaimBytes)
 			}
 			selectedEntry := planEntry.candidate.entry
+			selectedEntry.DagqlCall = label
 			selectedEntry.SizeBytes = planEntry.reclaimBytes
 			report.Entries = append(report.Entries, selectedEntry)
 			report.ReclaimedBytes += planEntry.reclaimBytes
@@ -685,17 +708,13 @@ func (c *Cache) snapshotPruneStateLocked(
 			if description == "" {
 				description = fmt.Sprintf("dagql cache result %d", resID)
 			}
-			callFrame := res.loadResultCall()
-			callLabel := c.cacheUsageDagqlCallLocked(res)
 			snapshotResult.usageIdentities = usageIdentities
 			snapshotResult.entry.ID = fmt.Sprintf("dagql.result.%d", resID)
 			snapshotResult.entry.Description = description
 			snapshotResult.entry.RecordType = recordType
 			snapshotResult.entry.RecordTypes = recordTypes
-			snapshotResult.entry.DagqlCall = callLabel
 			snapshotResult.entry.SizeBytes = sizeBytes
-			snapshotResult.callLabel = callLabel
-			snapshotResult.callFrame = callFrame
+			snapshotResult.callFrame = res.loadResultCall()
 			if blobs == nil {
 				snapshot.usedBytes += sizeBytes
 			}

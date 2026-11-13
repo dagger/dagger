@@ -6161,7 +6161,12 @@ func (c *Cache) cacheUsageDagqlCallLocked(res *sharedResult) string {
 	if c == nil || res == nil {
 		return ""
 	}
-	frame := res.loadResultCall()
+	return c.cacheUsageDagqlCallOfLocked(res.loadResultCall())
+}
+
+// cacheUsageDagqlCallOfLocked is the usage label of an entry's call frame:
+// its receiver's type and its field. Requires egraphMu.
+func (c *Cache) cacheUsageDagqlCallOfLocked(frame *ResultCall) string {
 	if frame == nil {
 		return ""
 	}
