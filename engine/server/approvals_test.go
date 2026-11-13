@@ -202,22 +202,37 @@ func TestApprovalAgentFromFunctionCall(t *testing.T) {
 	questions := &approvalPromptServer{decide: func(*prompt.ApprovalRequest) prompt.ApprovalDecision { return prompt.APPROVAL_ALLOW_SESSION }}
 	s := newApprovalTestSession(t, func(srv *grpc.Server) { prompt.RegisterPromptServer(srv, questions) })
 	staff := sessionTestModuleResultWithGitSource(t, "staff", "https://github.com/org/staff", testStaffPin)
-	fnCall := &core.FunctionCall{ParentName: "Staff", Name: "gh"}
-	fnCall.SetCallerAgent(testAgent(t, "agent-1", "worker"))
-	s.client("module", staff, fnCall, "owner")
-	nested := s.client("nested", dagql.ObjectResult[*core.Module]{}, nil, "owner", "module")
-	allowed, err := s.request(s.ctx(nested), nested, testReadSpec("repo"))
+	stamped := func(agent dagql.ObjectResult[*core.Agent]) *core.FunctionCall {
+		fnCall := &core.FunctionCall{ParentName: "Staff", Name: "gh"}
+		fnCall.SetCallerAgent(agent)
+		return fnCall
+	}
+	s.client("chief", staff, stamped(testAgent(t, "agent-1", "chief")), "owner")
+	chief := s.client("chief-nested", dagql.ObjectResult[*core.Module]{}, nil, "owner", "chief")
+	s.client("worker", staff, stamped(testAgent(t, "agent-2", "worker")), "owner")
+	worker := s.client("worker-nested", dagql.ObjectResult[*core.Module]{}, nil, "owner", "worker")
+	s.client("other", sessionTestModuleResultWithGitSource(t, "other", "https://github.com/org/other", testStaffPin),
+		stamped(testAgent(t, "agent-1", "chief")), "owner")
+	other := s.client("other-nested", dagql.ObjectResult[*core.Module]{}, nil, "owner", "other")
+
+	allowed, err := s.request(s.ctx(chief), chief, testReadSpec("repo"))
 	require.NoError(t, err)
 	require.True(t, allowed)
 	req := questions.asked()[0]
-	require.Equal(t, "worker", req.Requester.AgentName)
+	require.Equal(t, "chief", req.Requester.AgentName, "the prompt names the agent")
 	require.Equal(t, "agent-1", req.Requester.AgentHandle)
-	require.Equal(t, `approval:v1:"test-read":"https://github.com/org/staff|staff":"worker":"repo"`, req.PersistentKey)
+	require.Contains(t, req.Prompt, `agent "chief"`)
 
-	// The grant is the agent's, as if it had asked from its own loop.
-	_, err = s.request(core.AgentToContext(s.ctx(nested), testAgent(t, "agent-1", "worker")), nested, testReadSpec("repo"))
+	// The grant is the module's: another agent using it shares it.
+	allowed, err = s.request(s.ctx(worker), worker, testReadSpec("repo"))
 	require.NoError(t, err)
-	require.Len(t, questions.asked(), 1)
+	require.True(t, allowed)
+	require.Len(t, questions.asked(), 1, "agents of one module share its grant")
+
+	// Another module is asked about separately, even for the same agent.
+	_, err = s.request(s.ctx(other), other, testReadSpec("repo"))
+	require.NoError(t, err)
+	require.Len(t, questions.asked(), 2, "modules do not share grants")
 }
 
 func TestApprovalGrantScope(t *testing.T) {
@@ -272,33 +287,37 @@ func TestApprovalGrantRequester(t *testing.T) {
 	allowed, err := s.request(core.AgentToContext(s.ctx(spawn), worker), spawn, spec)
 	require.NoError(t, err)
 	require.True(t, allowed)
-	// The grant is the agent's and module's, whichever function asks.
-	allowed, err = s.request(core.AgentToContext(s.ctx(gh), worker), gh, spec)
-	require.NoError(t, err)
-	require.True(t, allowed)
-	require.Len(t, questions.asked(), 1, "a grant holds across the module's functions")
-
-	// Another spawn of an agent named alike, another module, a module only
-	// named alike, or no agent at all is asked separately.
+	// The grant is the module's, whichever function or agent asks.
 	for _, req := range []struct {
 		ctx    context.Context
 		client *clientRuntime
 	}{
+		{core.AgentToContext(s.ctx(gh), worker), gh},
 		{core.AgentToContext(s.ctx(gh), respawned), gh},
-		{core.AgentToContext(s.ctx(other), worker), other},
-		{core.AgentToContext(s.ctx(impostor), worker), impostor},
 		{s.ctx(gh), gh},
 	} {
 		allowed, err := s.request(req.ctx, req.client, spec)
 		require.NoError(t, err)
 		require.True(t, allowed)
 	}
+	require.Len(t, questions.asked(), 1, "a grant holds across the module's functions and agents")
+
+	// Another module, or a module only named alike, is asked separately.
+	for _, req := range []struct {
+		ctx    context.Context
+		client *clientRuntime
+	}{
+		{core.AgentToContext(s.ctx(other), worker), other},
+		{core.AgentToContext(s.ctx(impostor), worker), impostor},
+	} {
+		allowed, err := s.request(req.ctx, req.client, spec)
+		require.NoError(t, err)
+		require.True(t, allowed)
+	}
 	asked := questions.asked()
-	require.Len(t, asked, 5)
-	// Forever grants outlive handles, not names or sources.
-	require.Equal(t, asked[0].PersistentKey, asked[1].PersistentKey, "a respawned agent shares the forever identity")
-	for _, req := range asked[2:] {
-		require.NotEqual(t, asked[0].PersistentKey, req.PersistentKey)
+	require.Len(t, asked, 3)
+	for _, req := range asked[1:] {
+		require.NotEqual(t, asked[0].PersistentKey, req.PersistentKey, "nor do they share forever grants")
 	}
 }
 
