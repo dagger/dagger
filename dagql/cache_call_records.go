@@ -182,7 +182,7 @@ func (c *Cache) placeableCallLocked(group []*keptCall, has func(*sharedResult) b
 				// The recipient's own call reproduces a witness.
 				continue
 			}
-			entry := c.entryOfOwnRecipeLocked(input)
+			entry := c.currentEntryForRecipeLocked(input)
 			switch {
 			case entry == nil:
 				placed, stored = false, false
@@ -202,15 +202,4 @@ func (c *Cache) placeableCallLocked(group []*keptCall, has func(*sharedResult) b
 		}
 	}
 	return fallback, fallbackAdd
-}
-
-// entryOfOwnRecipeLocked returns the entry whose own recipe is dig: the
-// recipe index also names entries by the request digests their calls taught
-// them, which a record doesn't carry. Requires egraphMu.
-func (c *Cache) entryOfOwnRecipeLocked(dig digest.Digest) *sharedResult {
-	entry := c.resultsByID[c.entriesByRecipe[dig]]
-	if entry == nil || len(entry.recipeKeys) == 0 || entry.recipeKeys[0] != dig {
-		return nil
-	}
-	return entry
 }

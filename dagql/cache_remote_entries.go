@@ -500,11 +500,6 @@ func (c *Cache) attachRemoteHoldingLocked(ctx context.Context, key HolderKey, de
 	}
 	c.teachRemoteIdentityLocked(ctx, entry, desc.Field, desc.Recipe, desc.Request, desc.ContentDigest, desc.Term)
 	change.Saved = c.keepCallLocked(entry, desc, kept)
-	if desc.Request != "" && desc.Request != desc.Recipe {
-		if _, ok := c.entriesByRecipe[desc.Request]; !ok {
-			c.indexRecipeLocked(desc.Request, entry)
-		}
-	}
 	if desc.TypeName != "" && desc.TypeName != h.typeName {
 		h.typeName = desc.TypeName
 		c.markHoldingLocked(key)

@@ -153,8 +153,8 @@ func cloudIndexes(cloud *Cache) ([]HolderKey, []digest.Digest) {
 }
 
 // A holding attaches to the entry of its stored recipe. A request digest that
-// differs is taught as an equivalence; it keys the entry only when no entry
-// has it yet.
+// differs is taught as an equivalence only: as in an engine's cache, the
+// recipe index names an entry by its own recipe alone.
 func TestRemoteHoldingAttachesByStoredRecipe(t *testing.T) {
 	t.Parallel()
 	cloud := newCloudCache(t)
@@ -180,7 +180,7 @@ func TestRemoteHoldingAttachesByStoredRecipe(t *testing.T) {
 
 	info, ok := cloud.RemoteEntryInfo(HolderKey{engineA, 7})
 	require.True(t, ok)
-	require.ElementsMatch(t, []digest.Digest{testDigest("from-request"), testDigest("from-stored")}, info.Recipes, "the request digest keys the entry: no entry had it")
+	require.Equal(t, []digest.Digest{testDigest("from-stored")}, info.Recipes, "the request digest doesn't key the entry")
 	require.Len(t, info.Holdings, 2)
 	require.Equal(t, HolderKey{engineA, 7}, info.Holdings[0].Key)
 	require.Equal(t, HolderKey{engineB, 3}, info.Holdings[1].Key)
@@ -191,7 +191,8 @@ func TestRemoteHoldingAttachesByStoredRecipe(t *testing.T) {
 	}
 	require.Equal(t, []RemoteTerm{{Self: testDigest("from-self"), Inputs: []digest.Digest{testDigest("address")}}}, info.Terms)
 
-	// A request digest another entry already has stays an equivalence only.
+	// Another stored recipe asked by the same request digest is another
+	// entry, equivalent through it.
 	a.call(callRow{key: HolderKey{engineA, 8}, session: "s1", holding: RemoteHolding{Recipe: testDigest("other-stored"), Request: testDigest("from-request"), Field: "from", TypeName: "Container"}})
 	require.Empty(t, a.collect())
 	other, ok := cloud.RemoteEntryInfo(HolderKey{engineA, 8})
@@ -439,10 +440,10 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 			require.Equal(t, stayed, after, "with its recipes, postings, classes and terms")
 			cloud.egraphMu.RLock()
 			stayEntry, _ := cloud.holdingLocked(stays)
-			stayKeyed := cloud.entriesByRecipe[live.Recipe] == stayEntry.id && cloud.entriesByRecipe[live.Request] == stayEntry.id
+			stayKeyed := cloud.entriesByRecipe[live.Recipe] == stayEntry.id
 			_, stayClassed := cloud.outputEqClassResults[cloud.eqClassRootLocked(cloud.egraphDigestToClass[live.ContentDigest.String()])][stayEntry.id]
 			cloud.egraphMu.RUnlock()
-			require.True(t, stayKeyed, "by its recipe and alias")
+			require.True(t, stayKeyed, "by its recipe")
 			require.True(t, stayClassed, "and by its content")
 			require.Equal(t, []HolderKey{stays}, cloud.EquivalentHolders(live.ContentDigest.String()))
 
@@ -480,7 +481,7 @@ func TestRemoteEntryOutlivesItsHoldings(t *testing.T) {
 				require.True(t, classed[dig], "the entry stays in the class of %s", dig)
 			}
 			require.True(t, keyed[kept.Recipe])
-			require.True(t, keyed[kept.Request])
+			require.False(t, keyed[kept.Request], "a request digest is no recipe key")
 			require.Empty(t, cloud.EquivalentHolders(kept.Recipe.String()), "with no holding left")
 
 			a.endSession("cache-b", "stays")
