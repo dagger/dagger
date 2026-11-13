@@ -50,6 +50,9 @@ import (
 // "floating": it renders below the trace, reachable after the last row and
 // still without focus, and is re-anchored as soon as its span shows up in the
 // rows.
+//
+// Asks -- the engine's other questions, see ask.go -- share all of this: a
+// pendingApproval carrying an ask renders and answers as one.
 
 var _ prompt.ApprovalHandler = (*frontendPretty)(nil)
 
@@ -65,11 +68,22 @@ type approvalChoice struct {
 	key      string
 	label    string
 	decision prompt.ApprovalDecision
+	// id is the choice an ask answers with (see ask.go); approvals answer
+	// with decision.
+	id string
 }
 
 type pendingApproval struct {
 	req *prompt.ApprovalRequest
 	seq uint64
+
+	// ask is set when this is a question rather than an access request (see
+	// ask.go): req then only carries what the two share (who asks, where).
+	ask *prompt.AskRequest
+	// answer is the ask's answer, once given.
+	answer *prompt.AskResponse
+	// input is what has been typed into a text or secret ask.
+	input []rune
 
 	done     chan struct{}
 	decision prompt.ApprovalDecision
@@ -78,6 +92,8 @@ type pendingApproval struct {
 
 	choices  []approvalChoice
 	selected int
+	// defaultChoice is the choice selected on every visit.
+	defaultChoice int
 
 	// anchor is the row the approval renders beneath; zero while floating.
 	anchor dagui.SpanID
@@ -106,17 +122,17 @@ type pendingApproval struct {
 // under.
 func approvalChoices(req *prompt.ApprovalRequest) []approvalChoice {
 	choices := []approvalChoice{
-		{"y", "Allow once", prompt.APPROVAL_ALLOW_ONCE},
-		{"s", "Allow for this session only", prompt.APPROVAL_ALLOW_SESSION},
+		{key: "y", label: "Allow once", decision: prompt.APPROVAL_ALLOW_ONCE},
+		{key: "s", label: "Allow for this session only", decision: prompt.APPROVAL_ALLOW_SESSION},
 	}
 	if req.GetPersistentKey() != "" {
 		module := req.GetRequester().GetModule()
 		if module == "" {
 			module = "this module"
 		}
-		choices = append(choices, approvalChoice{"a", "Always allow " + module, prompt.APPROVAL_ALLOW_FOREVER})
+		choices = append(choices, approvalChoice{key: "a", label: "Always allow " + module, decision: prompt.APPROVAL_ALLOW_FOREVER})
 	}
-	return append(choices, approvalChoice{"n", "Deny", prompt.APPROVAL_DENY})
+	return append(choices, approvalChoice{key: "n", label: "Deny", decision: prompt.APPROVAL_DENY})
 }
 
 // approvalDefaultChoice is the index of Deny, the safe default.
@@ -136,11 +152,9 @@ func (fe *frontendPretty) HandleApproval(ctx context.Context, req *prompt.Approv
 		done:    make(chan struct{}),
 		choices: approvalChoices(req),
 	}
-	a.selected = approvalDefaultChoice(a.choices)
+	a.defaultChoice = approvalDefaultChoice(a.choices)
+	a.selected = a.defaultChoice
 	a.view = &ApprovalView{fe: fe, approval: a}
-	fe.dispatch(func() {
-		fe.addApproval(a)
-	})
 	// Name the agent, since the notification is read outside its conversation.
 	requester := req.GetRequester().GetAgentName()
 	if requester == "" {
@@ -151,14 +165,26 @@ func (fe *frontendPretty) HandleApproval(ctx context.Context, req *prompt.Approv
 		question = req.GetPrompt()
 	}
 	fe.notifyApproval(requester, question)
+	if err := fe.awaitApproval(ctx, a); err != nil {
+		return prompt.APPROVAL_DENY, err
+	}
+	return a.decision, nil
+}
+
+// awaitApproval shows a pending approval or ask and blocks until it is
+// answered or ctx is canceled.
+func (fe *frontendPretty) awaitApproval(ctx context.Context, a *pendingApproval) error {
+	fe.dispatch(func() {
+		fe.addApproval(a)
+	})
 	select {
 	case <-ctx.Done():
 		fe.dispatch(func() {
 			fe.finishApproval(a, prompt.APPROVAL_DENY, ctx.Err())
 		})
-		return prompt.APPROVAL_DENY, ctx.Err()
+		return ctx.Err()
 	case <-a.done:
-		return a.decision, a.err
+		return a.err
 	}
 }
 
@@ -499,9 +525,10 @@ func (fe *frontendPretty) focusApproval(a *pendingApproval, fromInput bool) {
 	}
 	a.armed = true
 	a.returnToInput = fromInput
-	// Every visit starts on Deny: the safe default, and the bottom of the
-	// list, so walking the rows downwards passes it in one step.
-	a.selected = approvalDefaultChoice(a.choices)
+	// Every visit starts on the default: for an approval Deny, the safe
+	// default, and the bottom of the list, so walking the rows downwards
+	// passes it in one step.
+	a.selected = a.defaultChoice
 	a.view.Update()
 	if a.anchor.IsValid() {
 		if row := fe.rows.BySpan[a.anchor]; row != nil {
@@ -589,6 +616,9 @@ func (fe *frontendPretty) handleApprovalKey(a *pendingApproval, keyStr string) b
 	if a.finished {
 		return false
 	}
+	if a.ask != nil {
+		return fe.handleAskKey(a, keyStr)
+	}
 	pick := func(decision prompt.ApprovalDecision) bool {
 		if _, ok := approvalChoiceIndex(a, decision); ok {
 			fe.finishApproval(a, decision, nil)
@@ -639,6 +669,9 @@ func (fe *frontendPretty) approvalKeys() []key.Binding {
 	a := fe.focusedApproval()
 	if a == nil {
 		return nil
+	}
+	if a.ask != nil {
+		return fe.askKeys(a)
 	}
 	_, always := approvalChoiceIndex(a, prompt.APPROVAL_ALLOW_FOREVER)
 	return []key.Binding{
@@ -721,7 +754,7 @@ func (fe *frontendPretty) approvalCueLine(a *pendingApproval, arrow string) stri
 		jump = approvalJumpKey
 	}
 	line := "  " + out.String(IconApproval).Foreground(accent).Bold().String() + " " +
-		out.String(who+" is waiting for approval "+arrow).Bold().String() +
+		out.String(who+" is waiting for "+waitingFor(a)+" "+arrow).Bold().String() +
 		out.String(" · "+jump+" to go there").Faint().String()
 	if w := fe.contentWidth; w > 0 {
 		line = ansi.Truncate(line, w, "…")
@@ -818,6 +851,14 @@ func (v *ApprovalView) SetFocused(_ tuist.Context, focused bool) {
 }
 
 func (v *ApprovalView) HandleKeyPress(_ tuist.Context, ev uv.KeyPressEvent) bool {
+	if v.approval.ask != nil && askTakesText(v.approval.ask) {
+		// Typed text is not echoed to the keymap: it may be a secret.
+		if !v.fe.handleAskTextKey(v.approval, uv.Key(ev)) {
+			return false
+		}
+		v.fe.Update()
+		return true
+	}
 	keyStr := uv.Key(ev).String()
 	if !v.fe.handleApprovalKey(v.approval, keyStr) {
 		return false
@@ -827,7 +868,23 @@ func (v *ApprovalView) HandleKeyPress(_ tuist.Context, ev uv.KeyPressEvent) bool
 	return true
 }
 
+// HandlePaste implements tuist.Pasteable: text pastes into a text or secret
+// ask; anything else ignores it.
+func (v *ApprovalView) HandlePaste(_ tuist.Context, ev uv.PasteEvent) bool {
+	a := v.approval
+	if a.finished || a.ask == nil || !askTakesText(a.ask) {
+		return true
+	}
+	v.fe.pasteAsk(a, ev.Content)
+	v.fe.Update()
+	return true
+}
+
 func (v *ApprovalView) Render(ctx tuist.Context) {
+	if v.approval.ask != nil {
+		ctx.Lines(v.fe.askLines(v.approval, v.focused, ctx.Width)...)
+		return
+	}
 	ctx.Lines(v.fe.approvalLines(v.approval, v.focused, ctx.Width)...)
 }
 
