@@ -2,13 +2,13 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 )
 
 type workspaceWithCommitArgs struct {
@@ -266,39 +266,33 @@ func validateWorkspaceGitAuthor(name, email string) error {
 	return nil
 }
 
-// workspaceGitAuthor reads the calling client's effective Git configuration at
-// its working directory. Outside a checkout, Git uses system/global config.
+// workspaceGitAuthor resolves the identity of a commit made without an explicit
+// author: the owning client's effective Git configuration at its working
+// directory. Outside a checkout, Git uses system/global config.
 //
-// The effective caller is the nearest non-module ancestor client: module and
-// SDK clients run with inert session attachables (the engine denies them host
-// access by design), so a commit made from module code — an agent's commit
-// tool, for example — samples the same identity a direct CLI call would.
+// The owner is the trusted client before the first module boundary: module
+// and SDK clients run with inert session attachables (the engine denies them
+// host access by design), so a commit made from module code — an agent's
+// commit tool, for example — samples the identity of the client that called
+// it. Sharing it with an agent or a module takes the owner's approval (see
+// Server.AuthorizeGitIdentity). Unset fields default to Dagger
+// <dagger@localhost>.
 func workspaceGitAuthor(ctx context.Context) (string, string, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return "", "", err
 	}
-	bk, err := query.Engine(ctx)
+	identity, err := query.AuthorizeGitIdentity(ctx)
 	if err != nil {
-		return "", "", err
-	}
-	callerMD, err := query.NonModuleParentClientMetadata(ctx)
-	if err != nil {
-		return "", "", fmt.Errorf("resolve Git author client: %w", err)
-	}
-	entries, err := bk.GetGitConfig(engine.ContextWithClientMetadata(ctx, callerMD), ".")
-	if err != nil {
-		return "", "", fmt.Errorf("read Git author config: %w", err)
-	}
-	var name, email string
-	for _, entry := range entries {
-		switch strings.ToLower(entry.GetKey()) {
-		case "user.name":
-			name = entry.GetValue()
-		case "user.email":
-			email = entry.GetValue()
+		if !errors.Is(err, core.ErrGitIdentityNotShared) {
+			return "", "", fmt.Errorf("resolve Git author: %w", err)
 		}
+		// Not sharing an identity means "don't attribute this commit to me",
+		// not "don't commit": commit as Dagger. To fail the commit instead,
+		// return the error here.
+		identity = core.GitIdentity{}
 	}
+	name, email := identity.Name, identity.Email
 	if name == "" {
 		name = "Dagger"
 	}

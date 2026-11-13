@@ -44,7 +44,11 @@ func (args workspacePullArgs) opts() core.WorkspacePullOpts {
 
 // Capture local receivers at the explicit integration boundary, then select
 // pure helpers over pinned values. Source capture is always explicit.
-func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.ObjectResult[*core.Workspace], workspacePullArgs, error) {
+//
+// Only a pull that commits resolves the committer identity (see
+// workspaceGitAuthor), so planning one never asks to share it: a plan reports
+// the source's commits, whose statuses do not depend on who replays them.
+func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs, committer bool) (dagql.ObjectResult[*core.Workspace], workspacePullArgs, error) {
 	resolved := workspacePullArgs{Source: args.Source, Commits: args.Commits, MaxCommits: args.MaxCommits}
 	if err := resolved.opts().ValidateSelection(); err != nil {
 		return receiver, resolved, err
@@ -64,9 +68,13 @@ func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectR
 	if err != nil {
 		return receiver, resolved, err
 	}
-	resolved.CommitterName, resolved.CommitterEmail, err = workspaceGitAuthor(ctx)
-	if err != nil {
-		return receiver, resolved, err
+	if committer {
+		resolved.CommitterName, resolved.CommitterEmail, err = workspaceGitAuthor(ctx)
+		if err != nil {
+			return receiver, resolved, err
+		}
+	} else {
+		resolved.CommitterName, resolved.CommitterEmail = "Dagger", "dagger@localhost"
 	}
 	if err := validateWorkspaceGitAuthor(resolved.CommitterName, resolved.CommitterEmail); err != nil {
 		return receiver, resolved, err
@@ -108,7 +116,7 @@ func (s *workspaceSchema) pullInputs(ctx context.Context, receiver dagql.ObjectR
 }
 
 func (s *workspaceSchema) compareCommitsFrom(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (dagql.Array[*core.WorkspaceCommitPick], error) {
-	parent, resolved, err := s.pullInputs(ctx, parent, args)
+	parent, resolved, err := s.pullInputs(ctx, parent, args, false)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +141,7 @@ func (s *workspaceSchema) compareCommitsFrom(ctx context.Context, parent dagql.O
 }
 
 func (s *workspaceSchema) withCommitsFrom(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceCommitsFromArgs) (inst dagql.ObjectResult[*core.Workspace], err error) {
-	parent, resolved, err := s.pullInputs(ctx, parent, args)
+	parent, resolved, err := s.pullInputs(ctx, parent, args, true)
 	if err != nil {
 		return inst, err
 	}
