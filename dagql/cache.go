@@ -2505,6 +2505,10 @@ type Cache struct {
 	testPartRouted           func(uint64)
 	testOwnerWalked          func(uint64)
 
+	// testWarmStarted, nil but in tests, runs as a merge's commit starts
+	// timing its warming (CommitValueMerge, MergeReply.Warm).
+	testWarmStarted func()
+
 	// testRecordPayloadPreparing runs as a merge starts preparing the
 	// record of an ordinal with its payload; an error refuses that record.
 	testRecordPayloadPreparing func(uint64) error

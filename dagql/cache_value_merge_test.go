@@ -2512,3 +2512,36 @@ func TestMergeValuesCountsItsRowsByAction(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, MergeRowCounts{Replaced: 1}, replaced.Rows)
 }
+
+// A merge's reply times its targets' warming: capturing a target's parts
+// takes the graph lock for writing, so it waits for the lock's readers, here
+// one that holds it 50 ms.
+func TestMergeValuesTimesItsWarming(t *testing.T) {
+	t.Parallel()
+	bundle, _ := mergeTestSource(t, "root", "sent")
+	bctx, b, bsrv := transferTestCache(t)
+	persistedListTestResult(t, bctx, b, bsrv, "root", &transferTestValue{Text: "local"})
+	p, err := b.PrepareValueMerge(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	const held = 50 * time.Millisecond
+	b.egraphMu.RLock()
+	started := make(chan struct{})
+	b.testWarmStarted = func() { close(started) }
+	type result struct {
+		reply MergeReply
+		err   error
+	}
+	done := make(chan result, 1)
+	go func() {
+		reply, err := b.CommitValueMerge(bctx, p)
+		done <- result{reply, err}
+	}()
+	// The reader holds the lock for held from when the warming is timed.
+	<-started
+	time.Sleep(held)
+	b.egraphMu.RUnlock()
+	r := <-done
+	require.NoError(t, r.err)
+	require.Equal(t, MergeRowCounts{Kept: 1}, r.reply.Rows)
+	require.GreaterOrEqual(t, r.reply.Warm, held, "the target's capture waited for the reader")
+}

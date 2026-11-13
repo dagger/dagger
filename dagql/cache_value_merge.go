@@ -164,6 +164,9 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 	// Reading an entry's complete parts captures its record, which needs the
 	// graph lock free. The reply reads them back only while that capture
 	// still describes the entry's value.
+	if c.testWarmStarted != nil {
+		c.testWarmStarted()
+	}
 	c.warmMergeTargetParts(ctx, prep)
 	if c.testBeforeTransferCommit != nil {
 		c.testBeforeTransferCommit()
@@ -269,6 +272,10 @@ type MergeReply struct {
 	CommitHold time.Duration
 	// Rows counts the bundle's records by what the commit did with each.
 	Rows MergeRowCounts
+	// Warm is how long the commit took to capture its targets' complete
+	// parts before it decided (warmMergeTargetParts). Each capture takes
+	// egraphMu for writing, briefly, so it waits for egraphMu's readers.
+	Warm time.Duration
 }
 
 // MergeRowCounts counts a merge's records by what its commit did with each:
