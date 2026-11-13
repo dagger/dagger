@@ -140,6 +140,24 @@ def decode_rows(payload):
     return json.loads(payload) if isinstance(payload, str) else payload
 
 
+def dimension_key_pair(coordinate):
+    """Read public GraphQL names or native private-listing Go names."""
+    if not isinstance(coordinate, dict):
+        raise ValueError('Expected a dimension key object.')
+    values = []
+    for public, native in [('dimension', 'Dimension'), ('key', 'Key')]:
+        names = [name for name in (public, native) if name in coordinate]
+        if not names:
+            raise ValueError(f'Dimension key is missing {public}.')
+        value = coordinate[names[0]]
+        if any(coordinate[name] != value for name in names):
+            raise ValueError(f'Conflicting dimension key fields: {public}, {native}.')
+        if not isinstance(value, str):
+            raise ValueError(f'Dimension key {public} must be a string.')
+        values.append(value)
+    return tuple(values)
+
+
 def source_path(row):
     """Read an explicit source path, or the path-form DAG URI."""
     if 'path' in row:
@@ -212,9 +230,11 @@ def capture_entries(metadata, listing, sdk_modules=(), selected_types=None):
         coordinates = {}
         if 'dimensionKeys' in item or 'coordinates' in item:
             # Full metadata remains valid when the URI omits redundant keys.
-            pairs = [(key['dimension'], key['key'])
-                     for key in item.get('dimensionKeys', item.get('coordinates', []))
-                     if key['dimension'] in collection_ids]
+            raw_coordinates = item.get('dimensionKeys', item.get('coordinates', []))
+            if not isinstance(raw_coordinates, list):
+                raise ValueError('Expected a dimension key array.')
+            pairs = [pair for pair in map(dimension_key_pair, raw_coordinates)
+                     if pair[0] in collection_ids]
         else:
             if modern:
                 raise ValueError('Modern listing rows require dimensionKeys or coordinates.')

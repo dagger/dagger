@@ -169,6 +169,41 @@ class ModernCaptureTest(unittest.TestCase):
         self.assertEqual([], entries[1]['LocalPath'])
         self.assertEqual([], entries[1]['Collections'][1]['Fields'])
 
+    def test_native_and_public_dimension_keys_preserve_empty_keys(self):
+        for array_name in ['dimensionKeys', 'coordinates']:
+            for dimension, key in [('Dimension', 'Key'), ('dimension', 'key')]:
+                with self.subTest(array=array_name, dimension=dimension):
+                    listing = [
+                        {'uri': 'dag+container://app/items', 'moduleName': 'app',
+                         array_name: [{dimension: 'NestedItems', key: value},
+                                      {dimension: 'AppItems', key: 'outer'},
+                                      {dimension: 'module', key: 'app'}]}
+                        for value in ['', 'nonempty']
+                    ]
+                    before = copy.deepcopy(listing)
+                    entries = capture_entries(self.schema(), listing)
+                    self.assertEqual([['outer', ''], ['outer', 'nonempty']],
+                                     [item['Keys'] for item in entries[1]['Items']])
+                    self.assertEqual(before, listing)
+
+    def test_invalid_dimension_keys_are_rejected(self):
+        for coordinate, message in [
+            ({'Dimension': 'AppItems'}, 'missing key'),
+            ({'Key': ''}, 'missing dimension'),
+            ({'Dimension': 'AppItems', 'Key': None}, 'key must be a string'),
+            ({'Dimension': None, 'Key': ''}, 'dimension must be a string'),
+            ({'Dimension': 'AppItems', 'dimension': 'Other', 'Key': ''},
+             'Conflicting dimension key fields'),
+            ({'Dimension': 'AppItems', 'Key': '', 'key': 'other'},
+             'Conflicting dimension key fields'),
+            (None, 'Expected a dimension key object'),
+        ]:
+            with self.subTest(coordinate=coordinate):
+                listing = [{'uri': 'dag+check://app/items/health-check',
+                            'moduleName': 'app', 'dimensionKeys': [coordinate]}]
+                with self.assertRaisesRegex(ValueError, message):
+                    capture_entries(self.schema(), listing)
+
     def test_modern_ids_require_projection_metadata(self):
         metadata = self.schema()
         del metadata['__listing'][0]['projection']
