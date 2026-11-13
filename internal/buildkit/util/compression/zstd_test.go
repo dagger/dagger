@@ -143,6 +143,7 @@ func benchmarkZstdLayer(b *testing.B, comp Config) {
 	data := layerBytes(256 << 20)
 	compress, _ := comp.Type.Compress(context.Background(), comp)
 	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
 	for b.Loop() {
 		w, err := compress(io.Discard, "")
 		if err != nil {
