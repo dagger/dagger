@@ -221,6 +221,21 @@ type ResultCall struct {
 	// profileSkip in core/telemetry.go.
 	ProfileSkip bool `json:"profileSkip,omitempty"`
 
+	// ContentPreferred is the content-preferred digest an engine computed
+	// for this frame, with the recipe digest of the frame it computed it for.
+	// A clone writes it (cloneWith): from the frame's own memo once it has
+	// been computed, or as the source carried it. So an engine's records, in
+	// its exports and its store, carry the value it used, and an engine that
+	// receives the record uses that value for a frame of the same recipe with
+	// no content digest of its own (contentPreferredDigestWithVisiting), as
+	// an engine that hits its own entry uses that entry's memo. The value
+	// otherwise depends on the content digests the walk's refs happen to
+	// carry on each engine, and core derives identities other calls see from
+	// it, such as a service's hostname. A clone that changes the frame's
+	// recipe leaves it unused; a fork, which derives a new frame, drops it.
+	// It enters no digest.
+	ContentPreferred *ResultCallContentPreferred `json:"contentPreferred,omitempty"`
+
 	// recipeDigest is memoized once the frame has reached its finalized
 	// semantic shape. Do not mutate the frame after calling RecipeDigest.
 	recipeDigestOnce sync.Once
@@ -245,6 +260,26 @@ type ResultCall struct {
 	contentPreferredDigestOnce sync.Once
 	contentPreferredDigestErr  error
 	contentPreferredDigest     digest.Digest
+	// contentPreferredComputed is the memo with the frame's recipe digest,
+	// set once a frame with no content digest has it: what a clone carries
+	// as ContentPreferred.
+	contentPreferredComputed atomic.Pointer[ResultCallContentPreferred]
+}
+
+// ResultCallContentPreferred is a content-preferred digest an engine
+// computed for a frame of a recipe (ResultCall.ContentPreferred).
+type ResultCallContentPreferred struct {
+	Recipe digest.Digest `json:"recipe"`
+	Digest digest.Digest `json:"digest"`
+}
+
+// carriedContentPreferred is what a clone of the frame carries: the value
+// computed for this frame, or else the one it carries.
+func (frame *ResultCall) carriedContentPreferred() *ResultCallContentPreferred {
+	if computed := frame.contentPreferredComputed.Load(); computed != nil {
+		return computed
+	}
+	return frame.ContentPreferred
 }
 
 type ResultCallStructuralInputRef struct {
@@ -273,6 +308,8 @@ func (frame *ResultCall) cloneWith(memo resultCallCloneMemo) *ResultCall {
 		EffectIDs:    slices.Clone(frame.EffectIDs),
 		ExtraDigests: slices.Clone(frame.ExtraDigests),
 		ProfileSkip:  frame.ProfileSkip,
+		// Immutable once set, so the clone shares it.
+		ContentPreferred: frame.carriedContentPreferred(),
 	}
 	// Register before recursing so a shared (or, defensively, cyclic) sub-DAG
 	// resolves to this same clone instead of being re-expanded into a tree.
@@ -996,6 +1033,14 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(c *Cache, visiting m
 			frame.contentPreferredDigest = content
 			return
 		}
+		// The recipe digest keys the value a record carries to frames of
+		// that recipe: a frame derived from a clone has another.
+		recipe, recipeErr := frame.deriveRecipeDigest(c)
+		if carried := frame.ContentPreferred; carried != nil && recipeErr == nil && carried.Recipe == recipe {
+			frame.contentPreferredDigest = carried.Digest
+			frame.contentPreferredComputed.Store(carried)
+			return
+		}
 
 		field, err := resultCallIdentityField(frame)
 		if err != nil {
@@ -1083,6 +1128,9 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(c *Cache, visiting m
 			WithDelim()
 
 		frame.contentPreferredDigest = digest.Digest(h.DigestAndClose())
+		if recipeErr == nil {
+			frame.contentPreferredComputed.Store(&ResultCallContentPreferred{Recipe: recipe, Digest: frame.contentPreferredDigest})
+		}
 	})
 	return frame.contentPreferredDigest, frame.contentPreferredDigestErr
 }

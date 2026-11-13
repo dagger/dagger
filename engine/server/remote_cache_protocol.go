@@ -315,13 +315,44 @@ const maxLoggedSkippedRoots = 8
 // bundle holds, with the rows it sent held, and how long the capture and the
 // chains took, and then the capture's phases and the chains' layers. With no
 // bundle, those of the capture and the chains are 0.
+// carriedContentPreferred counts an export's records whose frame carries
+// the content-preferred digest the engine computed for it: the records, the
+// field's JSON bytes, and the service records with no content digest that
+// carry none, whose hostname a receiving engine derives anew.
+type carriedContentPreferred struct {
+	records, bytes, servicesWithout int
+}
+
+func countCarriedContentPreferred(values []dagql.TransferredValue) carriedContentPreferred {
+	var out carriedContentPreferred
+	for _, value := range values {
+		frame := value.Record.Call
+		if frame == nil {
+			continue
+		}
+		if frame.ContentPreferred != nil {
+			out.records++
+			if raw, err := json.Marshal(frame.ContentPreferred); err == nil {
+				out.bytes += len(raw)
+			}
+			continue
+		}
+		if frame.Type != nil && frame.Type.NamedType == "Service" && frame.ContentDigest() == "" {
+			out.servicesWithout++
+		}
+	}
+	return out
+}
+
 func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values *dagql.ExportedValues, capture time.Duration, local exportCapture, busy busyReport) []any {
 	var records, held, outputs int
 	var chains time.Duration
 	var phases dagql.ExportPhases
 	var stats snapshots.ExportStats
+	var carried carriedContentPreferred
 	if values != nil {
 		records, held, outputs, chains = len(values.Bundle.Values), len(values.Rows.Held), len(values.Bundle.Outputs), values.ChainTime
+		carried = countCarriedContentPreferred(values.Bundle.Values)
 		phases = values.Phases
 		if values.Chains != nil {
 			stats = values.Chains.Stats
@@ -375,7 +406,10 @@ func exportLogAttrs(req protocol.Export, skipped []protocol.SkippedRoot, values 
 		"layers_merged", stats.LayersMerged,
 		"merged_raw_bytes", stats.MergedRawBytes,
 		"merged_blob_bytes", stats.MergedBlobBytes,
-		"merged_diff_time", stats.MergedDiffTime)
+		"merged_diff_time", stats.MergedDiffTime,
+		"content_preferred", carried.records,
+		"content_preferred_bytes", carried.bytes,
+		"services_without_content_preferred", carried.servicesWithout)
 }
 
 // offerLogAttrs are an offered part's log attributes: the entry offered to,

@@ -711,6 +711,13 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, BundleKnown: time.Microsecond, BundleCheck: 2 * time.Microsecond, BundleSettle: 3 * time.Microsecond, BundleRecipes: 4 * time.Microsecond, BundleValues: 5 * time.Microsecond, BundlePasses: 2, RetriedStale: 1},
 		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
 	}
+	// One record carries its engine's content-preferred digest, and one is a
+	// service's that carries none.
+	carried := &dagql.ResultCallContentPreferred{Recipe: digest.FromString("recipe"), Digest: digest.FromString("named")}
+	carriedJSON, err := json.Marshal(carried)
+	require.NoError(t, err)
+	values.Bundle.Values[0].Record.Call = &dagql.ResultCall{Field: "service", Type: &dagql.ResultCallType{NamedType: "Service"}, ContentPreferred: carried}
+	values.Bundle.Values[1].Record.Call = &dagql.ResultCall{Field: "service", Type: &dagql.ResultCallType{NamedType: "Service"}}
 	want := []any{
 		"chains", time.Second,
 		"hold", time.Millisecond,
@@ -737,6 +744,9 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"merged_raw_bytes", int64(400),
 		"merged_blob_bytes", int64(100),
 		"merged_diff_time", 3 * time.Millisecond,
+		"content_preferred", 1,
+		"content_preferred_bytes", len(carriedJSON),
+		"services_without_content_preferred", 1,
 	}
 	attrs := exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, values, 2*time.Second, local, busyReport{})
 	require.Equal(t, want, attrs[len(attrs)-len(want):], "appended after chains, in order")
@@ -771,6 +781,9 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"merged_raw_bytes", int64(0),
 		"merged_blob_bytes", int64(0),
 		"merged_diff_time", time.Duration(0),
+		"content_preferred", 0,
+		"content_preferred_bytes", 0,
+		"services_without_content_preferred", 0,
 	}, attrs[len(attrs)-len(want):])
 }
 
