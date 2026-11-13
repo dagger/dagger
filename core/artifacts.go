@@ -166,16 +166,15 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 			link = a.links.Typed
 		}
 	}
+	usePlan := opts.Prune && opts.DimensionKeys && !opts.Full && a.addressPlan(opts.TypeAssertion) != nil
 	switch {
-	case opts.Prune && opts.DimensionKeys && !opts.Full && a.addressKeys(opts.TypeAssertion) != nil:
-		for _, key := range a.addressKeys(opts.TypeAssertion).Keys {
-			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: a.dimensionName(key.Dimension), Key: key.Key, HasKey: true})
+	case usePlan:
+		for _, selector := range a.addressPlan(opts.TypeAssertion).Selectors {
+			selector.Dimension = a.dimensionName(selector.Dimension)
+			addr.Query = append(addr.Query, selector)
 		}
 		keys = nil
 	case opts.Prune && !opts.Full:
-		if a.links != nil && a.links.PathNeedsAbsence {
-			return "", fmt.Errorf("cannot address %s: its path can also select a child collection level; an absent-dimension selector is required", path)
-		}
 		addr.Path = path
 		if !opts.TypeAssertion && a.TypeName != "" && (link == nil || link.TypeKey != "") {
 			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: "type:" + a.TypeName, Key: "/" + path, HasKey: true})
@@ -196,6 +195,23 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 			key = a.TypeKeyName
 		}
 		addr.Query = append(addr.Query, dagaddress.Pair{Dimension: a.dimensionName("type:" + a.TypeName), Key: key, HasKey: true})
+	}
+	if !usePlan && a.links != nil {
+		absent, presence, module := a.links.UntypedAbsent, a.links.UntypedPresence, a.links.UntypedModule
+		if opts.TypeAssertion {
+			absent, presence, module = a.links.TypedAbsent, a.links.TypedPresence, a.links.TypedModule
+		}
+		if module {
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: artifact.ModuleDimension, Key: a.ModuleName, HasKey: a.ModuleName != "", Absent: a.ModuleName == ""})
+		}
+		if !opts.DimensionKeys {
+			for _, id := range presence {
+				addr.Query = append(addr.Query, dagaddress.Pair{Dimension: id})
+			}
+		}
+		for _, id := range absent {
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: id, Absent: true})
+		}
 	}
 	addr.Query = append(addr.Query, keys...)
 	if opts.TypeAssertion {
@@ -225,6 +241,9 @@ func (a *Artifact) StaleArtifact() *Artifact {
 	stale.TypeName = "Check"
 	stale.TypeKeyName = ""
 	stale.links = nil
+	if a.links != nil {
+		stale.links = a.links.Stale
+	}
 	stale.addressPlans = nil
 	stale.setStaticDimensions()
 	return stale
@@ -359,10 +378,12 @@ func (ws *Workspace) GitAddress() (address, commit string, err error) {
 }
 
 // ArtifactDimensionFilter keeps artifacts with any listed key in one
-// dimension. Nil keys keep any key in the dimension.
+// dimension. Nil keys keep any key in the dimension. Absent instead requires
+// the dimension to be missing, independent of keys.
 type ArtifactDimensionFilter struct {
 	Dimension string
 	Keys      []string
+	Absent    bool
 }
 
 // ArtifactSelector records the filters applied to a selection, so the
@@ -442,7 +463,7 @@ func (sel ArtifactSelector) clone() ArtifactSelector {
 		ExcludedURIs:    slices.Clone(sel.ExcludedURIs),
 	}
 	for _, dim := range sel.Dimensions {
-		cloned.Dimensions = append(cloned.Dimensions, ArtifactDimensionFilter{Dimension: dim.Dimension, Keys: slices.Clone(dim.Keys)})
+		cloned.Dimensions = append(cloned.Dimensions, ArtifactDimensionFilter{Dimension: dim.Dimension, Keys: slices.Clone(dim.Keys), Absent: dim.Absent})
 	}
 	for _, group := range sel.DimensionAlternatives {
 		cloned.DimensionAlternatives = append(cloned.DimensionAlternatives, slices.Clone(group))
@@ -755,6 +776,15 @@ func (a *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
 	return selected
 }
 
+// WithoutDimensions keeps artifacts that have none of the listed dimensions.
+func (a *Artifacts) WithoutDimensions(dimensions []string) *Artifacts {
+	selected := a.filter(func(*Artifact) bool { return true })
+	for _, dimension := range dimensions {
+		selected.Selector.addDimension(ArtifactDimensionFilter{Dimension: dimension, Absent: true})
+	}
+	return selected
+}
+
 func (a *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifacts {
 	selected := a.filter(func(*Artifact) bool { return true })
 	if keys == nil {
@@ -769,7 +799,7 @@ func (a *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifa
 func (sel *ArtifactSelector) addDimension(filter ArtifactDimensionFilter) {
 	filter.Keys = slices.Clone(filter.Keys)
 	for i, existing := range sel.Dimensions {
-		if existing.Dimension != filter.Dimension {
+		if existing.Dimension != filter.Dimension || existing.Absent != filter.Absent {
 			continue
 		}
 		switch {
@@ -917,7 +947,9 @@ func (a *Artifacts) filterURI(addr *dagaddress.Address, exact bool) (*Artifacts,
 		selected = selected.FilterTypeNames(addr.Types)
 	}
 	for _, filter := range addr.DimensionFilters() {
-		if filter.Keys == nil {
+		if filter.Absent {
+			selected = selected.WithoutDimensions([]string{filter.Dimension})
+		} else if filter.Keys == nil {
 			selected = selected.FilterDimensions([]string{filter.Dimension})
 		} else {
 			selected = selected.FilterDimensionKeys(filter.Dimension, filter.Keys)
@@ -960,6 +992,10 @@ func (a *Artifacts) URI() string {
 		addr.Path = "{" + strings.Join(sel.Paths, ",") + "}"
 	}
 	for _, dim := range sel.Dimensions {
+		if dim.Absent {
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: dim.Dimension, Absent: true})
+			continue
+		}
 		if dim.Keys == nil {
 			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: dim.Dimension})
 			continue
@@ -1091,6 +1127,9 @@ func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root d
 	artifacts.AllDimensions = artifacts.DimensionDefinitions()
 	artifacts.AllPaths = artifacts.PathIndex()
 	artifacts.SetCollectionRoots(artifacts.Entries)
+	if err := artifacts.NameEntries(); err != nil {
+		return nil, err
+	}
 	return artifacts, nil
 }
 
@@ -1190,7 +1229,7 @@ type persistedArtifact struct {
 
 // Names and address plans depend on the flattening rules. Reject older
 // snapshots instead of reusing coordinates or aliases from another rule set.
-const artifactSnapshotVersion = 1
+const artifactSnapshotVersion = 2
 
 type persistedArtifacts struct {
 	Version         int

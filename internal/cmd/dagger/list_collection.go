@@ -140,6 +140,13 @@ func itemDimensionFilters(item listedArtifact) []dagaddress.Pair {
 	for _, id := range item.Presence {
 		filters = append(filters, dagaddress.Pair{Dimension: id})
 	}
+	if address, err := dagaddress.Parse(item.URI); err == nil {
+		for _, pair := range address.Query {
+			if pair.Absent {
+				filters = append(filters, pair)
+			}
+		}
+	}
 	return filters
 }
 

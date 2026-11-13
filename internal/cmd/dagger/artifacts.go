@@ -197,6 +197,9 @@ func artifactPaths(addresses []*dagaddress.Address, keys ...dagaddress.Pair) []s
 				if pair.Dimension != artifact.ModuleDimension {
 					return nil // Preserve the schema scope used to bind other dimensions.
 				}
+				if pair.Absent {
+					return nil
+				}
 				if pair.HasKey {
 					modules = append(modules, pair.Key)
 				}
@@ -238,7 +241,9 @@ func filterArtifactAddress(artifacts *core.Artifacts, addr *dagaddress.Address) 
 		artifacts = artifacts.FilterURI((&dagaddress.Address{Types: addr.Types}).String())
 	}
 	for _, filter := range addr.DimensionFilters() {
-		if filter.Keys == nil {
+		if filter.Absent {
+			artifacts = artifacts.FilterURI((&dagaddress.Address{Query: []dagaddress.Pair{{Dimension: filter.Dimension, Absent: true}}}).String())
+		} else if filter.Keys == nil {
 			artifacts = artifacts.FilterDimensions([]string{filter.Dimension})
 		} else {
 			artifacts = artifacts.FilterDimensionKeys(filter.Dimension, filter.Keys)

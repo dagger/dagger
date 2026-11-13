@@ -73,7 +73,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asChecks", s.asChecks).DoNotCache("Each selection gets checks that run per their own cache policy.").Doc("Convert the selection to Checks. Fail if any artifact is not a Check. A module load failure is a Check that fails with its load error. Does not apply command filters or run the checks."),
 		dagql.NodeFunc("asChangesets", s.asChangesets).Doc("Convert the selection to Changesets. Fail if any artifact is not a Changeset; a module load failure fails with its load error. Does not apply command filters."),
 		dagql.NodeFunc("asServices", s.asServices).Doc("Convert the selection to Services. Fail if any artifact is not a Service; a module load failure fails with its load error. Does not apply command filters or start the services."),
-		dagql.Func("pathDefinitions", s.pathDefinitions).Doc("List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme."), dagql.Arg("dimension").Doc("Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.")),
+		dagql.Func("pathDefinitions", s.pathDefinitions).View(AllVersion).Doc("List selected schema paths, including empty collections. Does not read runtime values. Applies type keys and collection presence; collection key values require items.").Args(dagql.Arg("absolute").Doc("Prefix each address with the workspace's Git address and commit."), dagql.Arg("typeAssertion").Doc("Include the artifact type in each address scheme."), dagql.Arg("dimension").Doc("Project paths to the items of this collection dimension. Preserve parent dimensions and remove descendant dimensions.")),
 		dagql.Func("dimensionDefinitions", s.dimensionDefinitions).View(AllVersion).Doc("List dimensions on the selected schema paths, including empty collections. Does not read runtime values."),
 		dagql.Func("modules", s.modules).Doc("List the modules represented in this selection without evaluating artifact values."),
 		dagql.Func("types", s.types).Doc("List concrete type definitions represented in this selection, sorted by name with no duplicates."),
@@ -84,7 +84,8 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.Func("filterTypes", s.filterTypes).Doc("Keep artifacts of any listed concrete GraphQL type.").Args(dagql.Arg("types"), dagql.Arg("exclude").Doc("Remove the matching artifacts instead.")),
 		dagql.Func("filterPath", s.filterPath).Doc("Match one complete, ordered field sequence exactly."),
 		dagql.Func("filterPathPattern", s.filterPathPattern).Doc("Keep paths that match a glob pattern. A literal path matches exactly. Both module-qualified and workspace main paths match."),
-		dagql.Func("filterDimensions", s.filterDimensions).Doc("Keep artifacts selected through any listed dimension."),
+		dagql.Func("filterDimensions", s.filterDimensionsLegacy).View(BeforeVersion(artifactDimensionViewVersion)).Doc("Keep artifacts selected through any listed dimension."),
+		dagql.Func("filterDimensions", s.filterDimensions).View(AfterVersion(artifactDimensionViewVersion)).Doc("Keep artifacts selected through any listed dimension.").Args(dagql.Arg("exclude").Doc("Remove artifacts with any listed dimension.")),
 		dagql.Func("filterDimensionKeys", s.filterDimensionKeys).Doc("Keep artifacts with any listed key in this dimension. Replace collection references with matching subsets. Skip absent keys and leave the source view unchanged."),
 		dagql.Func("filterUri", s.filterURI).
 			Doc("Apply a DAG address as one filter: the chain of path, type, and dimension-key filters it encodes.",
@@ -244,9 +245,19 @@ func (*artifactsSchema) filterPathPattern(_ context.Context, parent *core.Artifa
 	return parent.FilterPattern(args.Pattern)
 }
 
-func (*artifactsSchema) filterDimensions(_ context.Context, parent *core.Artifacts, args struct{ Dimensions []string }) (*core.Artifacts, error) {
+func (*artifactsSchema) filterDimensionsLegacy(_ context.Context, parent *core.Artifacts, args struct{ Dimensions []string }) (*core.Artifacts, error) {
 	return parent.FilterDimensions(args.Dimensions), nil
 }
+func (*artifactsSchema) filterDimensions(_ context.Context, parent *core.Artifacts, args struct {
+	Dimensions []string
+	Exclude    bool `default:"false"`
+}) (*core.Artifacts, error) {
+	if args.Exclude {
+		return parent.WithoutDimensions(args.Dimensions), nil
+	}
+	return parent.FilterDimensions(args.Dimensions), nil
+}
+
 func (*artifactsSchema) filterDimensionKeys(_ context.Context, parent *core.Artifacts, args struct {
 	Dimension string
 	Keys      []string
@@ -333,7 +344,7 @@ func (*artifactsSchema) dimensionDefinitions(ctx context.Context, parent *core.A
 	return definitions, nil
 }
 
-func (*artifactsSchema) pathDefinitions(_ context.Context, parent *core.Artifacts, args struct {
+func (*artifactsSchema) pathDefinitions(ctx context.Context, parent *core.Artifacts, args struct {
 	Absolute      bool `default:"false"`
 	TypeAssertion bool `default:"false"`
 	Dimension     dagql.Optional[dagql.String]
@@ -354,7 +365,7 @@ func (*artifactsSchema) pathDefinitions(_ context.Context, parent *core.Artifact
 		}
 		parent = &core.Artifacts{Entries: items}
 	}
-	return parent.PathDefinitions(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion})
+	return parent.PathDefinitions(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion, Prune: core.Supports(ctx, artifactDimensionViewVersion)})
 }
 
 // artifactDimensionViewVersion is the first table presentation API view.
@@ -509,7 +520,7 @@ func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args ar
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		uri, err := item.URI(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion, DimensionKeys: !args.Schema, Prune: prune && !args.Schema, Full: args.Schema})
+		uri, err := item.URI(core.ArtifactURIOpts{Absolute: args.Absolute, TypeAssertion: args.TypeAssertion, DimensionKeys: !args.Schema, Prune: prune, Full: args.Schema && !prune})
 		if err != nil {
 			return nil, err
 		}
@@ -519,7 +530,13 @@ func marshalArtifactListing(ctx context.Context, items []*core.Artifact, args ar
 				return nil, err
 			}
 			address.Path = strings.Join(item.Path, "/")
-			address.Query = nil
+			if prune {
+				address.Query = slices.DeleteFunc(address.Query, func(pair dagaddress.Pair) bool {
+					return pair.HasKey && pair.Dimension != artifact.ModuleDimension
+				})
+			} else {
+				address.Query = nil
+			}
 			uri = address.String()
 		}
 		keys := item.DimensionKeys
@@ -1015,7 +1032,7 @@ func (inputs *artifactDiscoveryInputs) digest(ctx context.Context) (string, erro
 	if err != nil {
 		return "", err
 	}
-	parts := []string{artifactDiscoveryInput + "/v5", "config", string(cfg)}
+	parts := []string{artifactDiscoveryInput + "/v6", "config", string(cfg)}
 	mods := make([]string, 0, len(inputs.mods))
 	for _, mod := range inputs.mods {
 		var scoped dagql.ObjectResult[*core.Module]

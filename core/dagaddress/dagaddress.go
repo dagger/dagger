@@ -20,12 +20,13 @@ import (
 // Scheme is the URL scheme of a DAG address.
 const Scheme = "dag"
 
-// Pair is one dimension selector from the query. A pair without a key
-// selects any key in the dimension.
+// Pair is one dimension selector from the query. Absent selects artifacts
+// without the dimension. Otherwise, a pair without a key selects any key.
 type Pair struct {
 	Dimension string
 	Key       string
 	HasKey    bool
+	Absent    bool
 }
 
 // Address is a parsed DAG address.
@@ -117,27 +118,36 @@ func parseQuery(query string) ([]Pair, error) {
 		if err != nil {
 			return nil, fmt.Errorf("dimension %q: %w", name, err)
 		}
+		// Decode first so standard URL query encoding preserves absence.
+		dimension, absent := strings.CutPrefix(dimension, "!")
 		if dimension == "" {
 			return nil, fmt.Errorf("empty dimension in query %q", query)
 		}
-		pair := Pair{Dimension: dimension, HasKey: hasKey}
+		pair := Pair{Dimension: dimension, HasKey: hasKey, Absent: absent}
 		if hasKey {
 			pair.Key, err = url.PathUnescape(key)
 			if err != nil {
 				return nil, fmt.Errorf("key %q: %w", key, err)
 			}
 		}
+		if absent {
+			if pair.Key != "" {
+				return nil, fmt.Errorf("absent dimension %q cannot have a nonempty key", dimension)
+			}
+			pair.HasKey = false
+		}
 		pairs = append(pairs, pair)
 	}
 	return pairs, nil
 }
 
-// DimensionFilter groups the query by dimension: repeated dimensions are
-// alternatives, and different dimensions combine with AND. Nil keys select
-// any key in the dimension.
+// DimensionFilter groups selectors by dimension and Absent. Keys are
+// alternatives. All filters combine with AND. Absent selects artifacts
+// without the dimension. Otherwise, nil keys select any key in the dimension.
 type DimensionFilter struct {
 	Dimension string
 	Keys      []string
+	Absent    bool
 }
 
 // ArtifactPath returns the path, or the type dimension key that holds it.
@@ -160,7 +170,7 @@ func (addr *Address) TypeKey(types ...string) (Pair, bool) {
 	}
 	for _, plain := range []bool{false, true} {
 		for _, pair := range addr.Query {
-			if !pair.HasKey {
+			if pair.Absent || !pair.HasKey {
 				continue
 			}
 			if !plain && strings.HasPrefix(pair.Dimension, "type:") {
@@ -176,19 +186,24 @@ func (addr *Address) TypeKey(types ...string) (Pair, bool) {
 	return Pair{}, false
 }
 
-// DimensionFilters groups the query pairs by dimension, in first-seen order.
-// A pair without a key makes the whole dimension match any key.
+// DimensionFilters groups pairs by dimension and Absent, in first-seen order.
+// A present pair without a key makes its group match any key.
 func (addr *Address) DimensionFilters() []DimensionFilter {
 	var filters []DimensionFilter
-	index := map[string]int{}
+	type group struct {
+		dimension string
+		absent    bool
+	}
+	index := map[group]int{}
 	for _, pair := range addr.Query {
-		i, ok := index[pair.Dimension]
+		key := group{dimension: pair.Dimension, absent: pair.Absent}
+		i, ok := index[key]
 		if !ok {
 			i = len(filters)
-			index[pair.Dimension] = i
-			filters = append(filters, DimensionFilter{Dimension: pair.Dimension, Keys: []string{}})
+			index[key] = i
+			filters = append(filters, DimensionFilter{Dimension: pair.Dimension, Keys: []string{}, Absent: pair.Absent})
 		}
-		if !pair.HasKey {
+		if pair.Absent || !pair.HasKey {
 			filters[i].Keys = nil
 		} else if filters[i].Keys != nil {
 			filters[i].Keys = append(filters[i].Keys, pair.Key)
@@ -219,6 +234,9 @@ func (addr *Address) String() string {
 		} else {
 			b.WriteString("&")
 		}
+		if pair.Absent {
+			b.WriteString("!")
+		}
 		b.WriteString(escape(pair.Dimension))
 		if pair.HasKey {
 			b.WriteString("=")
@@ -235,7 +253,7 @@ func escape(s string) string {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch c {
-		case '&', '=', '#', '+', '%', ' ', '?':
+		case '&', '=', '#', '+', '%', ' ', '?', '!':
 			fmt.Fprintf(&b, "%%%02X", c)
 		default:
 			b.WriteByte(c)

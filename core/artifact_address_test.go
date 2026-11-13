@@ -3,7 +3,7 @@ package core
 import (
 	"testing"
 
-	"github.com/dagger/dagger/core/artifact/flattening"
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
@@ -62,10 +62,10 @@ func TestArtifactAddressCanonicalNameURI(t *testing.T) {
 		addressPlanCollectionArtifact("cli", "lint", "healthCheck", "run"),
 	}}
 	catalog.PrepareAddressPlans()
-	require.Equal(t, []flattening.Coordinate{
-		{Dimension: "/go/modules/tests", Key: "unit"},
-		{Dimension: "name", Key: "modules.tests.healthCheck.run"},
-	}, target.addressKeys(true).Keys)
+	require.Equal(t, []dagaddress.Pair{
+		{Dimension: "/go/modules/tests", Key: "unit", HasKey: true},
+		{Dimension: "name", Key: "modules.tests.healthCheck.run", HasKey: true},
+	}, target.addressPlan(true).Selectors)
 	uri, err := target.URI(ArtifactURIOpts{TypeAssertion: true, DimensionKeys: true, Prune: true})
 	require.NoError(t, err)
 	require.Equal(t, "dag+check://?go-test=unit&name=modules.tests.healthCheck.run", uri)
@@ -79,8 +79,8 @@ func TestArtifactAddressPlansPersistence(t *testing.T) {
 		{ModuleName: "docs", TypeName: "File", Path: []string{"docs", "unit"}},
 	}}
 	catalog.PrepareAddressPlans()
-	require.Equal(t, []flattening.Coordinate{{Dimension: "name", Key: "unit"}}, target.addressKeys(true).Keys)
-	require.Equal(t, []flattening.Coordinate{{Dimension: "module", Key: "go"}, {Dimension: "name", Key: "unit"}}, target.addressKeys(false).Keys)
+	require.Equal(t, []dagaddress.Pair{{Dimension: "name", Key: "unit", HasKey: true}}, target.addressPlan(true).Selectors)
+	require.Equal(t, []dagaddress.Pair{{Dimension: "module", Key: "go", HasKey: true}, {Dimension: "name", Key: "unit", HasKey: true}}, target.addressPlan(false).Selectors)
 
 	// A load-failure marker permits persistence without a module tree. It does
 	// not change the address coordinates or their prepared minimum plans.
@@ -158,7 +158,7 @@ func TestArtifactAddressTypeFilteredCatalog(t *testing.T) {
 	filtered.PrepareAddressPlans()
 	target := filtered.Entries[0]
 	require.True(t, target.HasAddressPlan(true))
-	require.Empty(t, target.addressKeys(true).Keys)
+	require.Empty(t, target.addressPlan(true).Selectors)
 	require.False(t, target.HasAddressPlan(false), "other types remain possible without a type constraint")
 	uri, err := target.URI(ArtifactURIOpts{TypeAssertion: true, DimensionKeys: true, Prune: true})
 	require.NoError(t, err)
@@ -181,4 +181,25 @@ func TestArtifactAddressUntypedDuplicateCoordinates(t *testing.T) {
 	uri, err := unique.URI(ArtifactURIOpts{DimensionKeys: true, Prune: true})
 	require.NoError(t, err)
 	require.Equal(t, "dag://?name=lint", uri)
+}
+
+func TestArtifactAddressAbsentPlanPersistence(t *testing.T) {
+	target := &Artifact{
+		ModuleName: "grid", TypeName: "Check", Path: []string{"grid", "rows", "check"},
+		DimensionKeys: []*ArtifactDimensionKey{{Dimension: "Rows", Key: "top"}},
+		addressPlans:  &artifactAddressPlans{Typed: &artifactAddressPlan{Selectors: []dagaddress.Pair{{Dimension: "Cell", Absent: true}, {Dimension: "Rows", Key: "top", HasKey: true}}}},
+		LoadFailure:   &ModuleLoadFailure{},
+	}
+	coordinates := target.CanonicalCoordinates()
+	encoded, err := target.EncodePersistedObject(t.Context(), nil)
+	require.NoError(t, err)
+	decoded, err := (&Artifact{}).DecodePersistedObject(t.Context(), dagql.NewPersistDecodeContext(nil, 0, nil), encoded.JSON)
+	require.NoError(t, err)
+	restored := decoded.(*Artifact)
+	require.Equal(t, target.addressPlans, restored.addressPlans)
+	require.Equal(t, coordinates, restored.CanonicalCoordinates())
+	require.Equal(t, target.DimensionKeys, restored.DimensionKeys)
+	uri, err := restored.URI(ArtifactURIOpts{Prune: true, TypeAssertion: true, DimensionKeys: true})
+	require.NoError(t, err)
+	require.Equal(t, "dag+check://?!Cell&Rows=top", uri)
 }

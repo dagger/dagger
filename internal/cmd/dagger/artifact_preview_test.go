@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core/artifact/flattening"
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/stretchr/testify/require"
+	"mvdan.cc/sh/v3/shell"
 )
 
 func TestArtifactPreviewFlagsAreIndependent(t *testing.T) {
@@ -200,11 +202,38 @@ func TestArtifactPreviewSharedPathNeedsAbsentDimension(t *testing.T) {
  {"Module":"grid","Path":["grid","rows","check"],"LocalPath":["check"],"Type":"Check","Collections":[{"Fields":["rows"],"Type":"Rows","ItemType":"Row"}],"Items":[{"Keys":["top"]}]},
  {"Module":"grid","Path":["grid","rows","check"],"LocalPath":["check"],"Type":"Check","Collections":[{"Fields":["rows"],"Type":"Rows","ItemType":"Row"},{"Fields":[],"Type":"Row","ItemType":"Cell"}],"Items":[{"Keys":["top","left"]}]}
  ]`
-	t.Run("unsafe parent fails before output", func(t *testing.T) {
+	for _, expanded := range []bool{false, true} {
+		t.Run(fmt.Sprintf("replay links expanded=%t", expanded), func(t *testing.T) {
+			args := []string{"check", "-l", "-f=link"}
+			if expanded {
+				args = append(args, "-a")
+			}
+			var output, diagnostics bytes.Buffer
+			require.NoError(t, PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, args))
+			links := strings.Split(strings.TrimSpace(output.String()), "\n")
+			require.Len(t, links, 2)
+			require.NotEqual(t, links[0], links[1])
+			require.Contains(t, output.String(), "!")
+			for _, link := range links {
+				var replay, diagnostics bytes.Buffer
+				require.NoError(t, PreviewArtifacts(strings.NewReader(input), &replay, &diagnostics, append(slices.Clone(args), link)))
+				require.Equal(t, link+"\n", replay.String())
+			}
+		})
+	}
+	t.Run("CLI keeps absence", func(t *testing.T) {
 		var output, diagnostics bytes.Buffer
-		err := PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, []string{"check", "-la", "-f=link"})
-		require.ErrorContains(t, err, "absent-dimension")
-		require.Empty(t, output.String())
+		require.NoError(t, PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, []string{"check", "-la", "-f=cli"}))
+		commands := strings.Split(strings.TrimSpace(output.String()), "\n")
+		require.Len(t, commands, 2)
+		require.Contains(t, output.String(), "'dag://?!cell'")
+		for _, command := range commands {
+			args, err := shell.Fields(command, nil)
+			require.NoError(t, err)
+			var replay, diagnostics bytes.Buffer
+			require.NoError(t, PreviewArtifacts(strings.NewReader(input), &replay, &diagnostics, append(args[1:], "-la", "-f=link")))
+			require.Len(t, strings.Split(strings.TrimSpace(replay.String()), "\n"), 1)
+		}
 	})
 	t.Run("child filter excludes unsafe parent", func(t *testing.T) {
 		var output, diagnostics bytes.Buffer
@@ -286,4 +315,108 @@ func TestArtifactPreviewReservedFlagDoesNotRenameColumn(t *testing.T) {
 	require.Contains(t, cli.String(), "--items=two")
 	require.NotContains(t, cli.String(), "--all=")
 	require.Empty(t, diagnostics.String())
+}
+
+func TestArtifactPreviewAbsenceFilters(t *testing.T) {
+	row := listedArtifact{Name: "rows.check", Presence: []string{"Rows"}}
+	row.Coordinates = []struct{ Dimension, Key string }{{"Rows", "top"}, {"Row", ""}}
+	for _, tc := range []struct {
+		query string
+		match bool
+	}{
+		{"dag://?!Other", true},
+		{"dag://?!Row", false},
+		{"dag://?Row=", true},
+		{"dag://?Rows=bottom&Rows=top&!Other", true},
+		{"dag://?Rows=top&!Rows", false},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			address, err := dagaddress.Parse(tc.query)
+			require.NoError(t, err)
+			require.Equal(t, tc.match, artifactPreviewMatches(row, address.Query, nil))
+		})
+	}
+	row.Coordinates = row.Coordinates[:1]
+	require.True(t, artifactPreviewMatches(row, []dagaddress.Pair{{Dimension: "Row", Absent: true}}, nil))
+	require.False(t, artifactPreviewMatches(row, []dagaddress.Pair{{Dimension: "Row", HasKey: true}}, nil))
+}
+
+func TestArtifactPreviewFallbackExcludesChildDimension(t *testing.T) {
+	entry := artifactPreviewEntry{Artifact: flattening.Artifact{
+		Module: "grid", Path: []string{"grid", "rows", "check"}, Type: "Check",
+		Collections: []flattening.Collection{{Type: "Rows"}},
+	}}
+	coordinates := []flattening.Coordinate{{Dimension: "Rows", Key: "top"}}
+	index := artifact.NewAddressIndex([]artifact.AddressRow{{Type: "Check", Coordinates: coordinates}}, false)
+	paths := artifact.Paths{
+		{Module: "grid", Type: "type:Check", Key: "grid/rows/check", Dimensions: []string{"Rows"}},
+		{Module: "grid", Type: "type:Check", Key: "grid/rows/check", Dimensions: []string{"Rows", "Row"}},
+	}
+	link := artifactPreviewLink(entry, coordinates, index, map[string]string{"Rows": "row", "Row": "cell"}, paths)
+	require.Equal(t, "dag+check://grid/rows/check?row=top&!Row", link)
+}
+
+func TestArtifactPreviewCrossModuleSharedPath(t *testing.T) {
+	const input = `[
+ {"Module":"app","Path":["foo","check","unit"],"LocalPath":["foo","check","unit"],"Type":"Check","Items":[{"Keys":[]}]},
+ {"Module":"foo","Path":["foo","check","unit"],"LocalPath":["unit"],"Type":"Check","Collections":[{"Fields":["check"],"Type":"FooTests","ItemType":"FooTest"}],"Items":[{"Keys":["one"]},{"Keys":["two"]}]}
+ ]`
+	for _, expanded := range []bool{false, true} {
+		t.Run(fmt.Sprintf("expanded=%t", expanded), func(t *testing.T) {
+			args := []string{"check", "-l", "-f=link"}
+			count := 2
+			if expanded {
+				args = append(args, "-a")
+				count = 3
+			}
+			var output, diagnostics bytes.Buffer
+			require.NoError(t, PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, args))
+			links := strings.Split(strings.TrimSpace(output.String()), "\n")
+			require.Len(t, links, count)
+			if !expanded {
+				require.Contains(t, links, "dag+check://foo/check/unit?module=app")
+				require.Contains(t, links, "dag+check://foo/check/unit?module=foo")
+			}
+			for _, link := range links {
+				var replay, diagnostics bytes.Buffer
+				require.NoError(t, PreviewArtifacts(strings.NewReader(input), &replay, &diagnostics, append(slices.Clone(args), link)))
+				require.Equal(t, link+"\n", replay.String())
+			}
+			var cli bytes.Buffer
+			cliArgs := slices.Clone(args)
+			cliArgs[2] = "-f=cli"
+			require.NoError(t, PreviewArtifacts(strings.NewReader(input), &cli, &diagnostics, cliArgs))
+			commands := strings.Split(strings.TrimSpace(cli.String()), "\n")
+			require.Len(t, commands, count)
+			for _, command := range commands {
+				commandArgs, err := shell.Fields(command, nil)
+				require.NoError(t, err)
+				commandArgs = append(commandArgs[1:], "-l", "-f=link")
+				if expanded {
+					commandArgs = append(commandArgs, "-a")
+				}
+				var replay, diagnostics bytes.Buffer
+				require.NoError(t, PreviewArtifacts(strings.NewReader(input), &replay, &diagnostics, commandArgs))
+				selected := strings.TrimSpace(replay.String())
+				require.Contains(t, links, selected)
+			}
+
+		})
+	}
+}
+
+func TestArtifactPreviewFallbackScopesModule(t *testing.T) {
+	for _, module := range []string{"app", ""} {
+		t.Run("module="+module, func(t *testing.T) {
+			entry := artifactPreviewEntry{Artifact: flattening.Artifact{Module: module, Path: []string{"foo", "check", "unit"}, Type: "Check"}}
+			paths := artifact.Paths{
+				{Module: module, Type: "type:Check", Key: "foo/check/unit"},
+				{Module: "foo", Type: "type:Check", Key: "foo/check/unit", Dimensions: []string{"FooTests"}},
+			}
+			link := artifactPreviewLink(entry, nil, artifact.NewAddressIndex(nil, false), nil, paths)
+			address, err := dagaddress.Parse(link)
+			require.NoError(t, err)
+			require.Equal(t, []dagaddress.Pair{artifactPreviewModuleSelector(module)}, address.Query)
+		})
+	}
 }
