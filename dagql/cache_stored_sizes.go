@@ -59,8 +59,16 @@ var heldRowSizeDigest = digest.Digest("xxh3:0000000000000000")
 // sizes already measured and reading the value state of each entry not yet
 // measured; it normalizes and encodes those after releasing the lock, and
 // keeps each size under the lock again only for an entry whose value is
-// still the one read. A hold is the walk, or that check, alone. Only a
-// blob-backed cache answers.
+// still the one read. The walk is a read in pieces (readInPieces): it lets
+// the lock go between entries, every readPieceSteps of them, so a writer
+// waiting for it waits for one piece, not the whole walk; it re-reads each
+// entry when it takes the lock again, and reads each entry whole within one
+// piece. So a walk that a
+// write lands in reads each entry as the write left it if it reaches it
+// after, and may count a closure that grew between two of its pieces: what
+// no single hold would have seen at once, but every entry as the cache held
+// it at some moment of the walk. With no write during it, a walk counts
+// what one hold would. Only a blob-backed cache answers.
 func (c *Cache) StoredSizes(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) ([]StoredSize, error) {
 	return c.storedSizes(ctx, roots, nowUnix, held, true)
 }
@@ -146,10 +154,11 @@ func (c *Cache) storedSizesRLock() func() {
 	}
 }
 
-// walkStoredRoot walks what root's closure adds beyond seen, in one hold of
-// egraphMu.RLock: the entries it adds, the size of those already measured or
-// held, counting every value, and the values not yet measured; and how many
-// of the entries, first, are its ordinary closure. It walks as StoredBundle
+// walkStoredRoot walks what root's closure adds beyond seen, under
+// egraphMu.RLock, let go between entries (readInPieces): the entries it adds,
+// the size of those already measured or held, counting every value, and the
+// values not yet measured; and how many of the entries, first, are its
+// ordinary closure. It walks as StoredBundle
 // builds (storedBundleVisitLocked, storedBundleCallsLocked): the closure,
 // dependencies first, then, entry by entry in that order, the calls kept on
 // each, adding the closure of each input a chosen call needs.
@@ -162,19 +171,22 @@ func (c *Cache) storedSizesRLock() func() {
 // another call adds. Otherwise its first stored alternative's inputs are
 // priced, which is the call a bundle that can't place it chooses too.
 func (c *Cache) walkStoredRoot(root sharedResultID, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, outputs *storedOutputsSeen) (StoredSize, []sharedResultID, int, []storedSizeMiss) {
-	defer c.storedSizesRLock()()
+	hold := c.readInPieces()
+	hold.report = c.testStoredSizesHold
+	defer hold.done()
 	res := c.resultsByID[root]
 	if res == nil || res.noValueLocked() {
 		return StoredSize{}, nil, 0, nil
 	}
-	walk, own := c.storedRootWalkLocked(res, nowUnix, held, seen, ordinary, outputs)
+	walk, own := c.storedRootWalkLocked(res, nowUnix, held, seen, ordinary, outputs, hold)
 	return walk.size, walk.closure, own, walk.misses
 }
 
 // storedRootWalkLocked is walkStoredRoot's walk of res, and how many of the
-// entries it reached, first, are res's ordinary closure. Requires egraphMu.
-func (c *Cache) storedRootWalkLocked(res *sharedResult, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, outputs *storedOutputsSeen) (*storedSizeWalk, int) {
-	walk := &storedSizeWalk{c: c, held: held, now: nowUnix, seen: seen, visited: map[sharedResultID]bool{}, outputs: outputs}
+// entries it reached, first, are res's ordinary closure, letting egraphMu go
+// between entries by hold, or never with a nil hold. Requires egraphMu.
+func (c *Cache) storedRootWalkLocked(res *sharedResult, nowUnix int64, held *HeldBy, seen, ordinary map[sharedResultID]bool, outputs *storedOutputsSeen, hold *readPieces) (*storedSizeWalk, int) {
+	walk := &storedSizeWalk{c: c, held: held, now: nowUnix, seen: seen, visited: map[sharedResultID]bool{}, outputs: outputs, hold: hold}
 	walk.visit(res)
 	own := len(walk.closure)
 	mine := make(map[sharedResultID]bool, own)
@@ -183,6 +195,12 @@ func (c *Cache) storedRootWalkLocked(res *sharedResult, nowUnix int64, held *Hel
 	}
 	for i := 0; i < len(walk.order); i++ {
 		entry := walk.order[i]
+		if hold != nil {
+			hold.step()
+			if entry = c.resultsByID[entry.id]; entry == nil {
+				continue
+			}
+		}
 		if len(entry.calls) == 0 {
 			continue
 		}
@@ -212,6 +230,8 @@ type storedSizeWalk struct {
 	closure []sharedResultID
 	misses  []storedSizeMiss
 	outputs *storedOutputsSeen
+	// hold lets egraphMu go between entries, or never if nil.
+	hold *readPieces
 }
 
 // storedOutputsSeen are the layers a bundle's outputs list so far, which a
@@ -257,10 +277,20 @@ func (w *storedSizeWalk) carries(id sharedResultID) bool {
 
 // visit adds res's closure, dependencies first, as storedBundleVisitLocked
 // does: a held row alone, with nothing below it, and an entry with no
-// stored record not at all. Requires egraphMu.
+// stored record not at all. With a hold, an entry is read by its number
+// once the walk holds the lock for it (readPieces.step), as the pointer it
+// was reached by may be from before a piece let the lock go, and read again
+// after its dependencies if a piece of theirs let it go. Requires
+// egraphMu.
 func (w *storedSizeWalk) visit(res *sharedResult) {
 	if w.carries(res.id) {
 		return
+	}
+	if w.hold != nil {
+		w.hold.step()
+		if res = w.c.resultsByID[res.id]; res == nil {
+			return
+		}
 	}
 	w.visited[res.id] = true
 	w.closure = append(w.closure, res.id)
@@ -273,9 +303,15 @@ func (w *storedSizeWalk) visit(res *sharedResult) {
 	if res.noValueLocked() || res.persistedEnvelope == nil {
 		return
 	}
+	yields := w.hold.yields()
 	for _, id := range storedClosureChildrenLocked(res) {
 		if child := w.c.resultsByID[id]; child != nil {
 			w.visit(child)
+		}
+	}
+	if w.hold.yields() != yields {
+		if res = w.c.resultsByID[res.id]; res == nil || res.noValueLocked() || res.persistedEnvelope == nil {
+			return
 		}
 	}
 	w.size.Records++
@@ -524,7 +560,7 @@ func (c *Cache) StoredLowerHalf(ctx context.Context, root uint64, nowUnix int64,
 		return nil, 0, nil
 	}
 	walk, _ := c.storedRootWalkLocked(res, nowUnix, held, map[sharedResultID]bool{}, map[sharedResultID]bool{},
-		&storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}})
+		&storedOutputsSeen{layers: map[*storedLayer]bool{}, blobs: map[digest.Digest]digest.Digest{}}, nil)
 	above := map[sharedResultID]bool{res.id: true}
 	var below []*sharedResult
 	carried := 0
