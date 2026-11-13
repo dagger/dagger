@@ -3439,18 +3439,23 @@ func (res *sharedResult) attachmentState() resultAttachmentState {
 type snapshotLinkIntent struct{ Links []PersistedSnapshotRefLink }
 
 type sharedResultPayloadState struct {
-	payloadRevision    uint64
-	imported           bool
-	snapshotLinkIntent *snapshotLinkIntent
-	self               Typed
-	isObject           bool
-	hasValue           bool
-	objClass           objectClassRef
-	persistedEnvelope  *PersistedResultEnvelope
-	stored             *storedBody
-	snapshotOwnerLinks []PersistedSnapshotRefLink
-	createdAtUnixNano  int64
-	lastUsedAtUnixNano int64
+	payloadRevision uint64
+	imported        bool
+	// sessionResourceHandle and boundSession are the row's, read with the
+	// rest of its value: a Cloud's replacement in place writes them under
+	// payloadMu, beside a capture that reads them outside egraphMu.
+	sessionResourceHandle SessionResourceHandle
+	boundSession          SessionResourceHandle
+	snapshotLinkIntent    *snapshotLinkIntent
+	self                  Typed
+	isObject              bool
+	hasValue              bool
+	objClass              objectClassRef
+	persistedEnvelope     *PersistedResultEnvelope
+	stored                *storedBody
+	snapshotOwnerLinks    []PersistedSnapshotRefLink
+	createdAtUnixNano     int64
+	lastUsedAtUnixNano    int64
 }
 
 func (res *sharedResult) loadResultCall() *ResultCall {
@@ -3524,18 +3529,20 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	}
 	res.payloadMu.RLock()
 	state := sharedResultPayloadState{
-		payloadRevision:    res.payloadRevision,
-		imported:           res.imported,
-		snapshotLinkIntent: res.snapshotLinkIntent,
-		self:               res.self,
-		isObject:           res.isObject,
-		hasValue:           res.hasValue,
-		objClass:           res.objClass,
-		persistedEnvelope:  res.persistedEnvelope,
-		stored:             res.stored,
-		snapshotOwnerLinks: cloneSnapshotRefLinks(res.snapshotOwnerLinks),
-		createdAtUnixNano:  res.createdAtUnixNano,
-		lastUsedAtUnixNano: res.lastUsedAtUnixNano,
+		payloadRevision:       res.payloadRevision,
+		imported:              res.imported,
+		sessionResourceHandle: res.sessionResourceHandle,
+		boundSession:          res.boundSession,
+		snapshotLinkIntent:    res.snapshotLinkIntent,
+		self:                  res.self,
+		isObject:              res.isObject,
+		hasValue:              res.hasValue,
+		objClass:              res.objClass,
+		persistedEnvelope:     res.persistedEnvelope,
+		stored:                res.stored,
+		snapshotOwnerLinks:    cloneSnapshotRefLinks(res.snapshotOwnerLinks),
+		createdAtUnixNano:     res.createdAtUnixNano,
+		lastUsedAtUnixNano:    res.lastUsedAtUnixNano,
 	}
 	res.payloadMu.RUnlock()
 	return state

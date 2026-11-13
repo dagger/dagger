@@ -144,6 +144,12 @@ func (c *Cache) PrepareValueMerge(ctx context.Context, from CacheID, input Value
 	if len(prep.stale) == 0 {
 		c.warmMergeTargetParts(ctx, prep)
 	}
+	// A prepare cancelled while it warmed fails, as one cancelled before
+	// it did: its caller has no merge to commit or release.
+	if err := context.Cause(ctx); err != nil {
+		p.Release()
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -2050,7 +2056,6 @@ type mergeReplacement struct {
 // replacement. Requires egraphMu for writing.
 func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, committedAt int64) {
 	rec := row.rec
-	res.imported = true
 	// The record's own parts and offers decide its value's sources now.
 	res.unavailableParts = nil
 	if !c.blobBacked {
@@ -2058,8 +2063,12 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 	}
 	res.storedRecordBytes = row.recordBytes
 	res.expiresAtUnix = row.value.ExpiresAtUnix
+	// A capture reads these with the value (loadPayloadState).
+	res.payloadMu.Lock()
+	res.imported = true
 	res.sessionResourceHandle = rec.Envelope.SessionResourceHandle
 	res.boundSession = rec.Envelope.BoundSession
+	res.payloadMu.Unlock()
 	res.description = row.plan.row.description
 	res.recordType = row.plan.row.recordType
 	res.storeResultCall(rec.Call)
@@ -2356,12 +2365,23 @@ func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement)
 // bindMergedFrameLocked binds the references of the frame a merge installed
 // on res to the entries they name. published says whether res was in the
 // cache before the merge: an entry that took a record, or whose value the
-// merge replaced in place. Requires egraphMu for writing.
+// merge replaced in place. Such an entry's frame is already published, and on
+// the Cloud a capture outside egraphMu, a prepared merge's warming, can be
+// cloning it: the references are bound on a copy, which then replaces it.
+// Requires egraphMu for writing.
 func (c *Cache) bindMergedFrameLocked(res *sharedResult, published bool) error {
-	return walkTransferCalls(res.loadResultCall(), func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
+	frame := res.loadResultCall()
+	if published && frame != nil {
+		frame = frame.clone()
+	}
+	err := walkTransferCalls(frame, func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
 		ref.shared = c.resultsByID[sharedResultID(ref.ResultID)]
 		return nil
 	})
+	if published && frame != nil {
+		res.storeResultCall(frame)
+	}
+	return err
 }
 
 // mergeReplyLocked reads every target as the commit left it. Requires

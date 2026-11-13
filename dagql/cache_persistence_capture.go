@@ -271,7 +271,7 @@ func capturedRowValue(shared *sharedResult, payload sharedResultPayloadState, fr
 		self:                  payload.self,
 		isObject:              payload.isObject,
 		hasValue:              payload.hasValue,
-		sessionResourceHandle: shared.sessionResourceHandle,
+		sessionResourceHandle: payload.sessionResourceHandle,
 	}
 	captured.storeResultCall(frame)
 	return Result[Typed]{shared: captured}
@@ -319,7 +319,7 @@ func (c *Cache) capturePartRecord(ctx context.Context, shared *sharedResult, imp
 	}
 	encoding.Envelope.Imported, encoding.Envelope.PendingOffers = imported, offers
 	encoding.Envelope.PersistDeclined = false
-	encoding.Envelope.BoundSession = shared.boundSession
+	encoding.Envelope.BoundSession = payload.boundSession
 	envelope, err := clonePersistedEnvelope(encoding.Envelope)
 	if err != nil {
 		return PersistedRecord{}, err

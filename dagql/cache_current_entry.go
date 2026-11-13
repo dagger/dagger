@@ -145,14 +145,11 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	if !cur.noValueLocked() {
 		cur.replacements++
 	}
-	cur.imported = fresh.imported
 	cur.mergedAtUnixNano = fresh.mergedAtUnixNano
 	// A declined value never meets a retention edge here: its publication
 	// retires an entry that has one instead.
 	cur.persistDeclined = fresh.persistDeclined
 	cur.inlineBorrow = fresh.inlineBorrow
-	cur.sessionResourceHandle = fresh.sessionResourceHandle
-	cur.boundSession = fresh.boundSession
 	cur.requiredSessionResources = fresh.requiredSessionResources
 	cur.expiresAtUnix = 0
 	cur.recordType = fresh.recordType
@@ -160,6 +157,11 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	cur.storeResultCall(fresh.loadResultCall())
 
 	cur.payloadMu.Lock()
+	// A capture reads these with the value (loadPayloadState), outside
+	// egraphMu: on the Cloud a replacement doesn't wait for one to end.
+	cur.imported = fresh.imported
+	cur.sessionResourceHandle = fresh.sessionResourceHandle
+	cur.boundSession = fresh.boundSession
 	cur.self = fresh.self
 	cur.isObject = fresh.isObject
 	cur.objClass = fresh.objClass
