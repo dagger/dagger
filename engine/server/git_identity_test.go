@@ -125,6 +125,52 @@ func TestGitIdentityApprovalDenied(t *testing.T) {
 	require.Len(t, questions.asked(), 2, "a denial is not remembered")
 }
 
+// withCommitCall is ctx evaluating Workspace.withCommit with message.
+func withCommitCall(t *testing.T, ctx context.Context, message string) context.Context {
+	t.Helper()
+	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	return dagql.ContextWithCall(dagql.ContextWithCache(ctx, cache), &dagql.ResultCall{
+		Kind:  dagql.ResultCallKindField,
+		Type:  dagql.NewResultCallType((&core.Workspace{}).Type()),
+		Field: "withCommit",
+		Args:  []*dagql.ResultCallArg{{Name: "message", Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: message}}},
+	})
+}
+
+func TestGitIdentityApprovalSameCall(t *testing.T) {
+	for _, decision := range []prompt.ApprovalDecision{prompt.APPROVAL_DENY, prompt.APPROVAL_ALLOW_ONCE} {
+		t.Run(decision.String(), func(t *testing.T) {
+			questions := &approvalPromptServer{decide: func(*prompt.ApprovalRequest) prompt.ApprovalDecision { return decision }}
+			config := &identityGitServer{entries: identityEntries("user.name", "Personal", "user.email", "personal@example.com")}
+			s := newGitIdentityTestSession(t, questions, config)
+			module := s.client("module", sessionTestModuleResult(t, "committer"), nil, "owner")
+
+			// A module's SDK evaluates withCommit again for each field it
+			// reads: that same call shares the one answer.
+			first, firstErr := s.srv.AuthorizeGitIdentity(withCommitCall(t, s.ctx(module), "one"))
+			again, againErr := s.srv.AuthorizeGitIdentity(withCommitCall(t, s.ctx(module), "one"))
+			require.Equal(t, first, again)
+			require.Equal(t, firstErr, againErr)
+			require.Len(t, questions.asked(), 1)
+
+			// Another call, or the same call from another function call, asks.
+			_, _ = s.srv.AuthorizeGitIdentity(withCommitCall(t, s.ctx(module), "two"))
+			other := s.client("other", sessionTestModuleResult(t, "committer"), nil, "owner")
+			_, _ = s.srv.AuthorizeGitIdentity(withCommitCall(t, s.ctx(other), "one"))
+			require.Len(t, questions.asked(), 3)
+
+			// An agent in the owner's own conversation does not remember:
+			// the owner's client outlives any one call.
+			ctx := core.AgentToContext(s.ctx(s.owner), testAgent(t, "agent-1", "worker"))
+			for range 2 {
+				_, _ = s.srv.AuthorizeGitIdentity(withCommitCall(t, ctx, "one"))
+			}
+			require.Len(t, questions.asked(), 5)
+		})
+	}
+}
+
 func TestGitIdentityApprovalNotInteractive(t *testing.T) {
 	config := &identityGitServer{entries: identityEntries("user.name", "Personal", "user.email", "personal@example.com")}
 	s := newGitIdentityTestSession(t, nil, config)
