@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -20,6 +21,7 @@ import (
 type streamSaveTestValue struct {
 	size     int
 	onEncode func()
+	err      error
 }
 
 func (*streamSaveTestValue) Type() *ast.Type {
@@ -29,6 +31,9 @@ func (*streamSaveTestValue) Type() *ast.Type {
 func (v *streamSaveTestValue) EncodePersistedObject(context.Context, *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	if v.onEncode != nil {
 		v.onEncode()
+	}
+	if v.err != nil {
+		return PersistedObjectEncoding{}, v.err
 	}
 	return PersistedObjectEncoding{JSON: json.RawMessage(`"` + strings.Repeat("s", v.size) + `"`)}, nil
 }
@@ -88,4 +93,43 @@ func TestCachePersistenceSaveHoldsOneRowEncodingAtATime(t *testing.T) {
 		}
 	}
 	require.Equal(t, rows, full, "every row is saved whole")
+}
+
+// A save that fails to encode a row after it has written earlier ones leaves
+// the previous save as it was.
+func TestCachePersistenceFailedSaveKeepsPreviousSave(t *testing.T) {
+	t.Parallel()
+
+	ctx, cache, srv := persistedListTestCache(t, filepath.Join(t.TempDir(), "cache.db"))
+	values := make([]*streamSaveTestValue, 3)
+	ids := make([]uint64, len(values))
+	for i := range values {
+		values[i] = &streamSaveTestValue{size: 16}
+		res := persistedListTestResult(t, ctx, cache, srv, fmt.Sprintf("failed-save-%d", i), values[i])
+		id, err := cache.PersistedResultID(res)
+		require.NoError(t, err)
+		ids[i] = id
+	}
+	require.NoError(t, cache.persistCurrentState(ctx))
+	saved, err := cache.pdb.ListMirrorResults(ctx)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(saved), len(values))
+
+	// The save writes rows in their results' order, so the last result's
+	// row fails after the others' new encodings are written.
+	last := 0
+	for i, id := range ids {
+		if id > ids[last] {
+			last = i
+		}
+	}
+	for _, value := range values {
+		value.size = 32
+	}
+	values[last].err = errors.New("stream save test: encode failed")
+	require.ErrorContains(t, cache.persistCurrentState(ctx), "stream save test: encode failed")
+
+	after, err := cache.pdb.ListMirrorResults(ctx)
+	require.NoError(t, err)
+	require.Equal(t, saved, after)
 }
