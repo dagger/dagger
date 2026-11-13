@@ -176,8 +176,26 @@ func TestApprovalRequest(t *testing.T) {
 	}, req.Requester)
 	require.Equal(t, traceID.String(), req.TraceId)
 	require.Equal(t, spanID.String(), req.SpanId)
-	require.Equal(t, `approval:v2:"test-push":"https://github.com/org/staff|staff":"remote @ ref"`, req.PersistentKey,
-		"forever is keyed by the module's source without its pin, not by the agent")
+	require.Empty(t, req.PersistentKey, "a dangerous operation is never offered forever")
+}
+
+func TestApprovalDangerNeverForever(t *testing.T) {
+	questions := &approvalPromptServer{decide: func(*prompt.ApprovalRequest) prompt.ApprovalDecision { return prompt.APPROVAL_ALLOW_FOREVER }}
+	s := newApprovalTestSession(t, func(srv *grpc.Server) { prompt.RegisterPromptServer(srv, questions) })
+	module := s.client("module", sessionTestModuleResultWithGitSource(t, "staff", "https://github.com/org/staff", testStaffPin), nil, "owner")
+	ctx := s.ctx(module)
+	force := approvalSpec{Kind: "test-force-push", Subject: "remote @ ref", Question: "Allow force-push to remote @ ref", Danger: true}
+	for range 2 {
+		allowed, err := s.request(ctx, module, force)
+		require.NoError(t, err)
+		require.True(t, allowed)
+	}
+	_, err := s.request(ctx, module, approvalSpec{Kind: "test-push", Subject: "remote @ ref", Question: "Allow push to remote @ ref"})
+	require.NoError(t, err)
+	asked := questions.asked()
+	require.Len(t, asked, 2, "a forever answer to an unoffered forever lasts the session")
+	require.Empty(t, asked[0].PersistentKey, "a force-push is never offered forever")
+	require.Equal(t, `approval:v2:"test-push":"https://github.com/org/staff|staff":"remote @ ref"`, asked[1].PersistentKey)
 }
 
 func TestApprovalRequesterEscaped(t *testing.T) {

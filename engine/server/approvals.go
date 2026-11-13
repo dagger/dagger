@@ -31,7 +31,8 @@ type approvalSpec struct {
 	// appends who asks. Frontends may match its leading words, so keep each
 	// kind's wording stable.
 	Question string
-	// Danger marks a destructive operation, e.g. a force-push.
+	// Danger marks a destructive operation, e.g. a force-push. Frontends
+	// highlight it, and it is never offered forever.
 	Danger bool
 }
 
@@ -141,12 +142,16 @@ func (srv *Server) requestApproval(ctx context.Context, client, owner *clientRun
 		subject: spec.Subject,
 	}
 	req := &prompt.ApprovalRequest{
-		Kind:          spec.Kind,
-		Prompt:        approvalPrompt(spec.Question, requester),
-		Subject:       spec.Subject,
-		Requester:     requester.proto(),
-		PersistentKey: approvalPersistentKey(spec.Kind, requester.module, spec.Subject),
-		Danger:        spec.Danger,
+		Kind:      spec.Kind,
+		Prompt:    approvalPrompt(spec.Question, requester),
+		Subject:   spec.Subject,
+		Requester: requester.proto(),
+		Danger:    spec.Danger,
+	}
+	// A destructive operation (e.g. a force-push) is never allowed forever:
+	// without a persistent key, the client does not offer it.
+	if !spec.Danger {
+		req.PersistentKey = approvalPersistentKey(spec.Kind, requester.module, spec.Subject)
 	}
 	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
 		req.TraceId = sc.TraceID().String()
