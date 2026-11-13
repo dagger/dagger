@@ -331,3 +331,34 @@ func TestStoredBundlePartialRecords(t *testing.T) {
 		require.Empty(t, built.Partial)
 	})
 }
+
+// BenchmarkChangedSince reads, for a file of test-base's whole set after four
+// pushes, 75,188 records, which changed since its build, a tenth of them
+// having changed: what the service's watcher reads for each file an engine
+// restored, each time the Cloud cache's position has moved.
+func BenchmarkChangedSince(b *testing.B) {
+	const records = 75_188
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	numbers := make([]uint64, records)
+	for i := range numbers {
+		id := sharedResultID(1 + 3*i)
+		res := &sharedResult{id: id}
+		if i%10 == 0 {
+			res.changedAt = 2
+		}
+		c.resultsByID[id] = res
+		numbers[i] = uint64(id)
+	}
+	// Entries other files carry, as a whole pull request's Cloud cache has.
+	for i := range 10 * records {
+		id := sharedResultID(2 + 3*i)
+		c.resultsByID[id] = &sharedResult{id: id}
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		changed := c.ChangedSince(numbers, 1)
+		if !changed[0] || changed[1] {
+			b.Fatal("wrong answer")
+		}
+	}
+}
