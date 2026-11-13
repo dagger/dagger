@@ -120,6 +120,10 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.taught = nil
 	res.taughtGiven = 0
 	res.taughtFrom = entryFrame{}
+	// The frame the drop takes is no longer the one the worker is giving
+	// digests to: what it records of it is dropped, as after a replacement
+	// (applyTaughtContent).
+	res.taughtFrame++
 	res.storedParts = nil
 	res.storedRecordBytes = 0
 	res.storedTransfer.Store(nil)
