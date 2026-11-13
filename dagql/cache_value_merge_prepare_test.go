@@ -336,3 +336,23 @@ func TestMergeValuesCancelledBeforeAFailingRecordReportsTheCancellation(t *testi
 	_, err = b.MergeValues(ctx, cloudCacheID, bundle)
 	require.ErrorIs(t, err, stopped)
 }
+
+// A merge's reply says how long its commit waited for the graph lock, apart
+// from how long it held it: a commit that finds the lock held waits for it.
+func TestMergeReplyTimesItsWaitForTheLock(t *testing.T) {
+	t.Parallel()
+	ctx, a, srv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, a, srv, "root", String("value"))
+	bundle := exportTestBundle(t, ctx, a, root)
+	ctx, b, _ := transferTestCache(t)
+	const held = 50 * time.Millisecond
+	b.testBeforeTransferCommit = func() {
+		b.egraphMu.Lock()
+		time.AfterFunc(held, b.egraphMu.Unlock)
+	}
+	reply, err := b.MergeValues(ctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.GreaterOrEqual(t, reply.LockWait, held)
+	require.Less(t, reply.CommitHold, held, "the wait isn't counted as the hold")
+}

@@ -22,9 +22,10 @@ func splitTestSource(t *testing.T) ValueBundle {
 }
 
 // splitTestReply returns reply without what differs between two equal
-// commits: the clock, and the lengths of the hold and of the warming.
+// commits: the clock, and the lengths of the hold, of the wait for it and of
+// the warming.
 func splitTestReply(reply MergeReply) MergeReply {
-	reply.CommitHold, reply.Warm, reply.EngineTimeUnixNano = 0, 0, 0
+	reply.CommitHold, reply.LockWait, reply.Warm, reply.EngineTimeUnixNano = 0, 0, 0, 0
 	return reply
 }
 

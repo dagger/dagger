@@ -68,6 +68,17 @@ type RemoteCacheAdapter struct {
 	// mergeValues is the cache's MergeValues. A test replaces it to return a
 	// committed reply with a release error.
 	mergeValues func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error)
+	// restoreValues merges a restore's part from the Cloud, as mergeValues
+	// does a merge's bundle. A test replaces it.
+	restoreValues func(context.Context, dagql.ValueBundle) (dagql.MergeReply, error)
+	// restores are what the restores did with each file, for the engine's
+	// stop event.
+	restoresMu sync.Mutex
+	restores   []remotecache.RestoreReport
+	// uncounted is the cache's count of misses dropped uncounted
+	// (dagql.Cache.TrimmedRemoteMisses), taken as close detaches the bridge
+	// that keeps it.
+	uncounted atomic.Uint64
 	// lookupMerges counts the merges in progress that answer lookups,
 	// which the others wait for.
 	lookupMerges inProgress
@@ -153,7 +164,15 @@ func (p *exportPause) resume() {
 }
 
 func newRemoteCacheAdapter(cache *dagql.Cache, bridge *dagql.RemoteCacheBridge) *RemoteCacheAdapter {
-	return &RemoteCacheAdapter{cache: cache, bridge: bridge, cancel: func(error) {}, runDone: make(chan struct{}), mergeValues: cache.MergeValues, stopReserve: remoteCacheStopReserve}
+	return &RemoteCacheAdapter{
+		cache:         cache,
+		bridge:        bridge,
+		cancel:        func(error) {},
+		runDone:       make(chan struct{}),
+		mergeValues:   cache.MergeValues,
+		restoreValues: cache.RestoreValues,
+		stopReserve:   remoteCacheStopReserve,
+	}
 }
 
 func (a *RemoteCacheAdapter) TakeRenewalRequest(ctx context.Context) (*dagql.RenewalRequest, error) {
@@ -290,6 +309,7 @@ func (p *inProgress) closeWhenIdle(ctx context.Context) error {
 // cancels Run. It does not wait for Run.
 func (a *RemoteCacheAdapter) close(cause error) {
 	a.stopped.Store(true)
+	a.uncounted.Store(max(a.uncounted.Load(), a.cache.TrimmedRemoteMisses()))
 	a.cache.DetachRemoteCacheBridge(a.bridge)
 	if a.ledger != nil {
 		a.ledger.detachRemote()
