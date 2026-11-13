@@ -34,7 +34,7 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("ContextFile", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withSourceMap(sourceMap("main.go", 24, 1))
-            .withArg("file", typeDef.withObject("File").withOptional(true), defaultPath: "dagger.json", sourceMap: sourceMap("main.go", 27, 2))
+            .withArg("file", typeDef.withObject("File").withOptional(true), defaultPath: "dagger-module.toml", sourceMap: sourceMap("main.go", 27, 2))
         )
         .withFunction(
           function("ContextGitRef", typeDef.withKind(TypeDefKind.STRING_KIND))
