@@ -21,8 +21,9 @@ import (
 //
 // The cache tries again, on its worker, after each lazy evaluation finishes,
 // since an evaluation is what holds an entry's record and what changes it,
-// and finally at the cache's close, once every evaluation has ended
-// (closeOwedPartReports). Nothing waits on a timer: an engine that goes idle
+// and finally at the cache's close, once the engine's sessions are gone and
+// before the cache stops admitting reads (closeOwedPartReports). The engine's
+// events, which carry the share report, stop only after the cache closes. Nothing waits on a timer: an engine that goes idle
 // with an entry still owed reports it at its next evaluation or its close.
 // An engine killed before then never reports it; its cache is wiped at the
 // next start, and the remote cache releases its identity with everything
@@ -164,8 +165,9 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 }
 
 // closeOwedPartReports stops the worker and makes the last owed reports. It
-// runs once every evaluation has ended, so no read holds a record and every
-// owed entry's record can be read; one that still can't is logged.
+// runs at the cache's close, after the engine's sessions are gone, so no
+// evaluation of theirs holds a record; an entry whose record still can't be
+// read is logged.
 func (c *Cache) closeOwedPartReports(ctx context.Context) {
 	if !c.stopOwedPartReports() {
 		return
