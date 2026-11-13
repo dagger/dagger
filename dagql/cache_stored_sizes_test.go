@@ -424,8 +424,9 @@ func TestStoredSizesMeasureOutsideTheLock(t *testing.T) {
 	cloud.testStoredSizeMeasure = func() {
 		locked := make(chan struct{})
 		go func() {
+			// Taking the write lock is the check: it is empty on purpose.
 			cloud.egraphMu.Lock()
-			cloud.egraphMu.Unlock()
+			cloud.egraphMu.Unlock() //nolint:staticcheck // SA2001: the lock taken is the check
 			close(locked)
 		}()
 		select {
