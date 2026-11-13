@@ -419,7 +419,12 @@ func (s *session) handleExport(env protocol.Envelope) {
 	}
 	ended := exportEnded{roots: len(req.Roots), slotWait: slotted.Sub(arrived)}
 	replied := false
-	err := s.adapter.Export(profCtx, req, s.known, func(ctx context.Context, exp Export) error {
+	captureCtx, unlabel := wcprof.WithCPUKind(profCtx, wcprof.CPUKindExportCapture)
+	defer unlabel()
+	err := s.adapter.Export(captureCtx, req, s.known, func(ctx context.Context, exp Export) error {
+		// The bundle's reply and its upload send what the capture made.
+		ctx, unlabel := wcprof.WithCPUKind(ctx, wcprof.CPUKindExportSend)
+		defer unlabel()
 		replied = true
 		if exp.Bundle == nil {
 			ended.noBundle = true
@@ -911,7 +916,9 @@ func (s *session) handleMerge(env protocol.Envelope, req *protocol.Merge) {
 			return
 		}
 	}
-	merged, err := s.adapter.Merge(s.ctx, env.ID, *req, s.known)
+	ctx, unlabel := wcprof.WithCPUKind(s.ctx, wcprof.CPUKindMerge)
+	defer unlabel()
+	merged, err := s.adapter.Merge(ctx, env.ID, *req, s.known)
 	if err != nil {
 		s.replyError(env, err)
 		return

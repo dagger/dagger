@@ -671,6 +671,8 @@ func (c *Cache) partPrefetchHeld(ctx context.Context, layers []snapshots.ExportL
 // work runs lane's jobs, one at a time, until the prefetcher closes.
 func (p *partPrefetcher) work(lane partPrefetchLane) {
 	defer p.wg.Done()
+	_, unlabel := wcprof.WithCPUKind(p.ctx, wcprof.CPUKindFetch)
+	defer unlabel()
 	for {
 		p.mu.Lock()
 		for !p.closed && len(p.queues[lane]) == 0 {
@@ -707,6 +709,8 @@ func (p *partPrefetcher) work(lane partPrefetchLane) {
 // competes with the engine's own work.
 func (p *partPrefetcher) workAhead() {
 	defer p.wg.Done()
+	_, unlabel := wcprof.WithCPUKind(p.ctx, wcprof.CPUKindFetch)
+	defer unlabel()
 	for {
 		p.mu.Lock()
 		// An offer starts only while no install runs: an import ahead
@@ -1258,6 +1262,8 @@ func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 // jobs have yet to write.
 func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row sharedResultID, a *partPrefetchAhead) {
 	defer p.wg.Done()
+	ctx, unlabel := wcprof.WithCPUKind(ctx, wcprof.CPUKindFetch)
+	defer unlabel()
 	if a.done != nil {
 		defer close(a.done)
 	}

@@ -746,6 +746,8 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 		fileGroup.SetLimit(int(max(int64(cfg.Builds.Workers), 1)))
 		for _, file := range files {
 			fileGroup.Go(func() error {
+				_, unlabel := wcprof.WithCPUKind(fileCtx, wcprof.CPUKindExportLayers)
+				defer unlabel()
 				// One still waiting for a slot when another fails doesn't
 				// begin.
 				if err := fileCtx.Err(); err != nil {

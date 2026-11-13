@@ -587,6 +587,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
+	srv.startEngineCPU(srv.shutdownCtx)
 
 	// initialize the secret salt
 	srv.secretSalt, err = loadSecretSalt(srv.rootDir)

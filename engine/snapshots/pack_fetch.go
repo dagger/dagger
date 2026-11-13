@@ -15,6 +15,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/remotecache/pack"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/wcprof"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -228,6 +229,8 @@ func (cm *snapshotManager) leavePackFetch(f *packFetch) {
 // and once a slot is free, and writes every member into the content store
 // under f's lease.
 func (cm *snapshotManager) runPackFetch(ctx context.Context, f *packFetch, slots chan struct{}) {
+	ctx, unlabel := wcprof.WithCPUKind(ctx, wcprof.CPUKindFetch)
+	defer unlabel()
 	start := time.Now()
 	// queued is how long the read waited for a slot.
 	var queued time.Duration
