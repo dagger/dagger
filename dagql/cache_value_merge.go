@@ -53,9 +53,10 @@ import (
 // engine sends the Cloud. It lands on the recipe's current entry, which keeps
 // its value, and the rows that depend on it relocate onto that entry. It
 // holds when merge would keep the entry's value for a record of the recipe
-// with the row's expiry, judged against the cache before the merge, and, on
-// the Cloud, the Cloud holds the sending engine's holding of the row, and the
-// entry has every part the bundle puts on the row (staleHeldPartsLocked).
+// with the row's expiry, judged against the cache before the merge, and the
+// entry has every part the bundle puts on the row (staleHeldPartsLocked). On
+// the Cloud, a held row teaches the sending engine's holding of the row when
+// the Cloud has none yet.
 // If any held row doesn't hold, the merge commits nothing and its reply names
 // every stale held row. A bundle that carries a held row and a record of the
 // same recipe is malformed.
@@ -1190,8 +1191,8 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 
 	// A held row holds when merge would keep its recipe's current entry's
 	// value for a record with the row's expiry, as the cache stands before
-	// the merge, and, on the Cloud, the sender's holding of it is known.
-	if stale := c.staleHeldRowsLocked(prep, from, now); len(stale) > 0 {
+	// the merge.
+	if stale := c.staleHeldRowsLocked(prep, now); len(stale) > 0 {
 		return nil, &mergeStaleError{ordinals: stale}
 	}
 	if stale := c.staleHeldPartsLocked(prep); len(stale) > 0 {
@@ -1307,23 +1308,17 @@ func (prep *valueMergePrep) liveClosure(now int64) (map[uint64]bool, []MergedRoo
 
 // staleHeldRowsLocked returns, sorted, the held rows that don't hold as the
 // cache stands (heldRowStaleLocked), with expiries judged at now. On the
-// Cloud, an engine's held row also needs the Cloud to hold that engine's
-// holding of the row: a held row teaches no holding, so the rows that depend
-// on it would name one the Cloud doesn't hold. The engine's retry carries
-// the row in full, which does. Requires egraphMu.
-func (c *Cache) staleHeldRowsLocked(prep *valueMergePrep, from CacheID, now int64) []TransferOrdinal {
+// Cloud, an engine's held row holds whether or not the Cloud holds that
+// engine's holding of the row yet: the commit teaches a missing one
+// (applyMergedIdentitiesLocked). Requires egraphMu.
+func (c *Cache) staleHeldRowsLocked(prep *valueMergePrep, now int64) []TransferOrdinal {
 	var stale []TransferOrdinal
 	for _, id := range prep.order {
 		if !prep.held[id] {
 			continue
 		}
 		row := prep.index[id]
-		unheld := false
-		if c.blobBacked {
-			_, h := c.holdingLocked(HolderKey{Cache: from, Number: row.SenderNumber})
-			unheld = h == nil
-		}
-		if unheld || c.heldRowStaleLocked(c.currentEntryForRecipeLocked(prep.plans[id].recipe), row.ExpiresAtUnix, now) {
+		if c.heldRowStaleLocked(c.currentEntryForRecipeLocked(prep.plans[id].recipe), row.ExpiresAtUnix, now) {
 			stale = append(stale, TransferOrdinal(id))
 		}
 	}
@@ -1975,11 +1970,12 @@ func (c *Cache) applyMergedIdentitiesLocked(ctx context.Context, commit *valueMe
 	for _, row := range commit.rows {
 		if commit.prep.held[row.ordinal] {
 			// A held row teaches its entry nothing: it is the entry's own
-			// value. On the Cloud, the sender's holding of it is the one its
-			// record made when it arrived in full, and a held row, with no
-			// dependencies, has nothing to add to it.
+			// value. On the Cloud, it teaches the sender's holding of it
+			// when the Cloud has none yet (mergeHeldSenderHoldingLocked).
 			if !c.blobBacked {
 				row.res.noteSenderCopyLocked(commit.from, row.value.SenderNumber, true, row.value.ExpiresAtUnix)
+			} else {
+				c.mergeHeldSenderHoldingLocked(ctx, cloudState, commit, row, change)
 			}
 			continue
 		}
@@ -2116,6 +2112,27 @@ func (c *Cache) mergeSenderHoldingLocked(ctx context.Context, state *remoteCache
 	if created || changed || row.action != mergeKeep {
 		change.addRecipeOf(entry)
 	}
+}
+
+// mergeHeldSenderHoldingLocked records, on the Cloud, the sending engine's
+// holding of a held row's entry when the Cloud has none: an engine sends a
+// row the Cloud has from another engine as a held row, often before its
+// telemetry names the row, and the rows above it name it as a dependency.
+// The holding starts at the row's replacement count with no dependencies:
+// the row carries none, and the engine's telemetry adds them, as it does
+// for any holding. A holding the Cloud has already is left as it is: a held
+// row with no dependencies has nothing to add to it. Requires egraphMu for
+// writing.
+func (c *Cache) mergeHeldSenderHoldingLocked(ctx context.Context, state *remoteCacheState, commit *valueMergeCommit, row *mergeRow, change *RemoteChange) {
+	key := HolderKey{Cache: commit.from, Number: row.value.SenderNumber}
+	if _, h := c.holdingLocked(key); h != nil {
+		return
+	}
+	entry, h := c.newHoldingLocked(ctx, state, key, RemoteHolding{Recipe: row.plan.recipe, Field: row.res.description})
+	change.Candidates = append(change.Candidates, key)
+	candidates, _ := c.applyHeldValueStateLocked(ctx, state, key, entry, h, HeldValueState{Replacements: row.value.SenderReplacements}, nil, nil)
+	change.Candidates = append(change.Candidates, candidates...)
+	change.addRecipeOf(entry)
 }
 
 // selectMergedOffersLocked decides, before anything changes, which offers
