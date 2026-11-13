@@ -1,5 +1,7 @@
 package dagql
 
+import "time"
+
 // readPieceSteps is how many steps a read in pieces (readInPieces) takes in
 // one hold of egraphMu: a count, not a time, so that a read is the same on
 // every machine. A step of the Cloud's closure walks takes about one to two
@@ -15,6 +17,10 @@ type readPieces struct {
 	c     *Cache
 	size  int
 	steps int
+	// report, if set, is told the length of each hold, as it ends; locked
+	// is when the current one began.
+	report func(time.Duration)
+	locked time.Time
 }
 
 // readInPieces takes egraphMu for reading, for a read in pieces: step after
@@ -25,7 +31,7 @@ func (c *Cache) readInPieces() *readPieces {
 		size = readPieceSteps
 	}
 	c.egraphMu.RLock()
-	return &readPieces{c: c, size: size}
+	return &readPieces{c: c, size: size, locked: time.Now()}
 }
 
 // step counts a step of the read and, after each piece's last, lets egraphMu
@@ -37,15 +43,34 @@ func (r *readPieces) step() bool {
 	if r.steps%r.size != 0 {
 		return false
 	}
-	r.c.egraphMu.RUnlock()
+	r.release()
 	if r.c.testReadPieceYielded != nil {
 		r.c.testReadPieceYielded()
 	}
 	r.c.egraphMu.RLock()
+	r.locked = time.Now()
 	return true
+}
+
+// yields is how many times the read has let egraphMu go so far: a caller
+// that holds a pointer across a stretch of the read compares it before and
+// after, to know whether to read it again. A nil read never lets it go.
+func (r *readPieces) yields() int {
+	if r == nil {
+		return 0
+	}
+	return r.steps / r.size
 }
 
 // done ends the read, letting egraphMu go.
 func (r *readPieces) done() {
+	r.release()
+}
+
+func (r *readPieces) release() {
+	hold := time.Since(r.locked)
 	r.c.egraphMu.RUnlock()
+	if r.report != nil {
+		r.report(hold)
+	}
 }
