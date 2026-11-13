@@ -89,7 +89,9 @@ func TestMergeValuesRefusesUndeclaredPayloadReference(t *testing.T) {
 	cctx, cloud, batch := storedBenchCloud(t)
 	got, err := cloud.StoredBundle(cctx, batch[:1], time.Now().Unix(), nil)
 	require.NoError(t, err)
-	bundle := got.Bundle
+	// The bundle as its encoding carries it.
+	bundle, err := cloneValueBundle(got.Bundle)
+	require.NoError(t, err)
 	var target *TransferredValue
 	for i := range bundle.Values {
 		if len(bundle.Values[i].DependencyIDs) == 1 {

@@ -174,16 +174,16 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 		if row.Held != "" || shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
 			continue
 		}
-		var outputs []CapturedCodecOutput
 		if parts, ok := stored[id]; ok {
+			addresses[id] = make(map[string]CapturedCodecOutput, len(parts))
 			for _, part := range parts {
-				outputs = append(outputs, part.output())
+				addresses[id][part.key] = part.output()
 			}
-		} else {
-			var err error
-			if outputs, err = mapTransferredOutputs(row.Record); err != nil {
-				return nil, err
-			}
+			continue
+		}
+		outputs, err := mapTransferredOutputs(row.Record)
+		if err != nil {
+			return nil, err
 		}
 		addresses[id] = map[string]CapturedCodecOutput{}
 		for _, output := range outputs {
