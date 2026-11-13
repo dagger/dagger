@@ -1,8 +1,12 @@
 package schema
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
@@ -39,4 +43,44 @@ func TestWorkspaceGitAuthorValidation(t *testing.T) {
 	}
 	require.NoError(t, validateWorkspaceGitAuthor("Zoë", "zoe@example.com"))
 	require.NoError(t, validateWorkspaceGitAuthor("", ""))
+}
+
+type gitIdentityServerBase interface{ core.Server }
+
+type gitIdentityServer struct {
+	gitIdentityServerBase // Anything but AuthorizeGitIdentity would panic.
+	identity              core.GitIdentity
+	err                   error
+}
+
+func (s *gitIdentityServer) AuthorizeGitIdentity(context.Context) (core.GitIdentity, error) {
+	return s.identity, s.err
+}
+
+func TestWorkspaceGitAuthor(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		srv               *gitIdentityServer
+		wantName, wantErr string
+		wantEmail         string
+	}{
+		{name: "shared", srv: &gitIdentityServer{identity: core.GitIdentity{Name: "Personal", Email: "personal@example.com"}}, wantName: "Personal", wantEmail: "personal@example.com"},
+		{name: "partial", srv: &gitIdentityServer{identity: core.GitIdentity{Email: "personal@example.com"}}, wantName: "Dagger", wantEmail: "personal@example.com"},
+		{name: "unconfigured", srv: &gitIdentityServer{}, wantName: "Dagger", wantEmail: "dagger@localhost"},
+		// Not sharing means "don't attribute to me", not "don't commit".
+		{name: "not shared", srv: &gitIdentityServer{identity: core.GitIdentity{Name: "Leaked"}, err: fmt.Errorf("%w: denied", core.ErrGitIdentityNotShared)}, wantName: "Dagger", wantEmail: "dagger@localhost"},
+		{name: "failed", srv: &gitIdentityServer{err: errors.New("prompt failed")}, wantErr: "prompt failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := core.ContextWithQuery(t.Context(), &core.Query{Server: tc.srv})
+			name, email, err := workspaceGitAuthor(ctx)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantName, name)
+			require.Equal(t, tc.wantEmail, email)
+		})
+	}
 }
