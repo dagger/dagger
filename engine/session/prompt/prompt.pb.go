@@ -440,8 +440,10 @@ func (m *SelectResponse) GetChoice() string {
 }
 
 // ApprovalRequester is who asks: the agent and module whose code requests
-// access, and the function it was running. Every value is display text the
-// engine resolved itself, never module-supplied prose.
+// access, and the function it was running. The engine resolves every value
+// itself, never taking the requester's word for it, but names may be chosen
+// by a module or by the code spawning the agent, so they arrive as literal
+// text escaped for terminals, like the prompt.
 type ApprovalRequester struct {
 	// the agent's display name, e.g. "engine-tools"
 	AgentName string `protobuf:"bytes,1,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
