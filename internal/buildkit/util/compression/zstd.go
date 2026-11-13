@@ -3,6 +3,7 @@ package compression
 import (
 	"context"
 	"io"
+	"sync"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
@@ -56,19 +57,81 @@ func zstdWriter(comp Config) func(io.Writer) (io.WriteCloser, error) {
 		if comp.Level != nil {
 			level = toZstdEncoderLevel(*comp.Level)
 		}
-		opts := []zstd.EOption{zstd.WithEncoderLevel(level)}
-		if comp.Framed {
-			// Each encoder of the pool keeps its history once used: a
-			// framed writer's frames rotate through as many as compress at
-			// once, and no more.
-			opts = append(opts, zstd.WithEncoderConcurrency(zstdFramesAtOnce))
+		encoders := zstdEncodersFor(zstdEncoderKey{level: level, framed: comp.Framed})
+		enc, _ := encoders.Get().(*zstd.Encoder)
+		if enc == nil {
+			opts := []zstd.EOption{zstd.WithEncoderLevel(level)}
+			if comp.Framed {
+				// Each encoder of the pool keeps its history once used: a
+				// framed writer's frames rotate through as many as
+				// compress at once, and no more.
+				opts = append(opts, zstd.WithEncoderConcurrency(zstdFramesAtOnce))
+			}
+			var err error
+			if enc, err = zstd.NewWriter(nil, opts...); err != nil {
+				return nil, err
+			}
 		}
-		enc, err := zstd.NewWriter(nil, opts...)
-		if err != nil {
-			return nil, err
-		}
-		return &zstdLayerWriter{enc: enc, dest: dest, framed: comp.Framed}, nil
+		return &zstdLayerWriter{enc: enc, encoders: encoders, dest: dest, framed: comp.Framed}, nil
 	}
+}
+
+// zstdEncoderKey is what a layer writer's encoder is made with: its level,
+// and whether its writer frames a large layer, which sets how many frames
+// it compresses at once.
+type zstdEncoderKey struct {
+	level  zstd.EncoderLevel
+	framed bool
+}
+
+// zstdEncoders keeps encoders between layers, by zstdEncoderKey. An encoder
+// keeps its tables, its history and its blocks' buffers once used, and
+// each frame or stream it starts resets them as a new encoder would, so a
+// layer's blob doesn't depend on the layers its encoder compressed before.
+// An engine exporting to the remote cache compresses thousands of layers,
+// and a new encoder for each allocated tens of megabytes. A pool, not a
+// fixed set: those the collector finds idle it frees.
+var zstdEncoders sync.Map
+
+func zstdEncodersFor(key zstdEncoderKey) *sync.Pool {
+	if p, ok := zstdEncoders.Load(key); ok {
+		return p.(*sync.Pool)
+	}
+	p, _ := zstdEncoders.LoadOrStore(key, &sync.Pool{})
+	return p.(*sync.Pool)
+}
+
+// zstdBuffers keeps a layer writer's buffers of zstdFrameSize between
+// layers: the layer held back, and each frame a framed writer fills.
+var zstdBuffers = sync.Pool{New: func() any {
+	b := make([]byte, 0, zstdFrameSize)
+	return &b
+}}
+
+func getZstdBuffer() []byte { return (*zstdBuffers.Get().(*[]byte))[:0] }
+
+func putZstdBuffer(b []byte) {
+	if cap(b) < zstdFrameSize {
+		return
+	}
+	b = b[:0]
+	zstdBuffers.Put(&b)
+}
+
+// zstdOutputs keeps the buffers a framed writer's frames are compressed
+// into, between frames: each goes back once its frame is written.
+var zstdOutputs sync.Pool
+
+func getZstdOutput() []byte {
+	if b, ok := zstdOutputs.Get().(*[]byte); ok {
+		return (*b)[:0]
+	}
+	return make([]byte, 0, zstdFrameSize/2)
+}
+
+func putZstdOutput(b []byte) {
+	b = b[:0]
+	zstdOutputs.Put(&b)
 }
 
 // zstdSizedLimit is the largest layer a zstdLayerWriter holds back to write
@@ -98,10 +161,14 @@ const zstdFramesAtOnce = 4
 // compressing at once: one stream compresses on one core, which a large
 // layer's export waited for.
 type zstdLayerWriter struct {
-	enc  *zstd.Encoder
-	dest io.Writer
+	enc *zstd.Encoder
+	// encoders is where enc goes back once the layer is written.
+	encoders *sync.Pool
+	dest     io.Writer
 	// framed writes a layer that outgrows zstdSizedLimit as frames.
 	framed bool
+	// streamed is set once enc writes the layer as a stream.
+	streamed bool
 	// held is the layer so far, while it fits in zstdSizedLimit.
 	held []byte
 	// outgrown is set once the layer outgrows zstdSizedLimit, or ends.
@@ -115,6 +182,9 @@ type zstdLayerWriter struct {
 func (w *zstdLayerWriter) Write(p []byte) (int, error) {
 	if !w.outgrown {
 		if len(w.held)+len(p) <= zstdSizedLimit {
+			if w.held == nil {
+				w.held = getZstdBuffer()
+			}
 			w.held = append(w.held, p...)
 			return len(p), nil
 		}
@@ -123,11 +193,17 @@ func (w *zstdLayerWriter) Write(p []byte) (int, error) {
 		w.held = nil
 		if !w.framed {
 			// Too large to name its size: the frame declares the window.
+			w.streamed = true
 			w.enc.Reset(w.dest)
 			if _, err := w.enc.Write(held); err != nil {
 				return 0, err
 			}
+			// The encoder copied it.
+			putZstdBuffer(held)
 		} else {
+			if held == nil {
+				held = getZstdBuffer()
+			}
 			w.frame = held
 		}
 	}
@@ -157,9 +233,13 @@ func (w *zstdLayerWriter) compressFrame() error {
 		}
 	}
 	src := w.frame
-	w.frame = make([]byte, 0, zstdFrameSize)
+	w.frame = getZstdBuffer()
 	done := make(chan []byte, 1)
-	go func() { done <- w.enc.EncodeAll(src, make([]byte, 0, len(src)/2)) }()
+	go func() {
+		out := w.enc.EncodeAll(src, getZstdOutput())
+		putZstdBuffer(src)
+		done <- out
+	}()
 	w.compressing = append(w.compressing, done)
 	return nil
 }
@@ -168,19 +248,40 @@ func (w *zstdLayerWriter) writeOldest() error {
 	frame := <-w.compressing[0]
 	w.compressing = w.compressing[1:]
 	_, err := w.dest.Write(frame)
+	// A writer doesn't keep what it's given.
+	putZstdOutput(frame)
 	return err
 }
 
 func (w *zstdLayerWriter) Close() error {
+	if err := w.finish(); err != nil {
+		return err
+	}
+	// The layer is written: its encoder can compress another. One that
+	// failed stays out, in whatever state it's in. One that streamed lets
+	// go of the layer's destination; resetting one that didn't would make
+	// it a stream's state it hasn't needed.
+	if w.streamed {
+		w.enc.Reset(nil)
+	}
+	w.encoders.Put(w.enc)
+	w.enc = nil
+	return nil
+}
+
+func (w *zstdLayerWriter) finish() error {
 	if !w.outgrown {
 		w.outgrown = true
+		w.streamed = true
 		w.enc.ResetContentSize(w.dest, int64(len(w.held)))
 		held := w.held
 		w.held = nil
 		if _, err := w.enc.Write(held); err != nil {
 			return err
 		}
-		return w.enc.Close()
+		err := w.enc.Close()
+		putZstdBuffer(held)
+		return err
 	}
 	if !w.framed {
 		return w.enc.Close()
@@ -195,6 +296,8 @@ func (w *zstdLayerWriter) Close() error {
 			return err
 		}
 	}
+	putZstdBuffer(w.frame)
+	w.frame = nil
 	return nil
 }
 
