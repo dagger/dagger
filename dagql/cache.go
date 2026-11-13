@@ -634,6 +634,11 @@ func NewCache(
 		return nil, errors.Join(err, closeCacheDBs(db, c.pdb))
 	}
 	c.countBootRestored()
+	// The import changed every entry it restored, and no reader keeps answers
+	// from before an open: nothing is handed back for it.
+	c.egraphMu.Lock()
+	c.clearChangesLocked()
+	c.egraphMu.Unlock()
 	return c, nil
 }
 
@@ -1933,6 +1938,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 		edge.unpruneable = true
 		edge.expiresAtUnix = 0
 		res.expiresAtUnix = 0
+		c.markEntryClassLocked(res.id)
 	} else if !edge.unpruneable {
 		edge.expiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix)
 	}
@@ -6133,6 +6139,7 @@ func (c *Cache) putResultLocked(res *sharedResult) {
 	}
 	c.resultPayloadBytes += res.payloadBytes
 	c.resultsByID[res.id] = res
+	c.markEntryClassLocked(res.id)
 }
 
 // deleteResultLocked unregisters res. Requires egraphMu for writing.
@@ -6140,6 +6147,7 @@ func (c *Cache) deleteResultLocked(res *sharedResult) {
 	if c.resultsByID[res.id] != res {
 		return
 	}
+	c.markLeavingLocked(res.id)
 	c.forgetListItemLocked(res)
 	c.resultPayloadBytes -= res.payloadBytes
 	delete(c.resultsByID, res.id)
@@ -6994,6 +7002,7 @@ func (c *Cache) lookupCacheForDigests(
 		return nil, false, nil
 	}
 
+	c.markEntryClassLocked(hitRes.id)
 	hitRes.expiresAtUnix = mergeSharedResultExpiryUnix(
 		hitRes.expiresAtUnix,
 		candidateSharedResultExpiryUnix(nowUnix, 0),
@@ -7768,6 +7777,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// - 0 means "no TTL for this writer", not necessarily "never expire globally".
 	// - if any writer provides TTL, we keep the earliest non-zero expiry.
 	// - 0 only remains when all writers are 0.
+	c.markEntryClassLocked(oc.res.id)
 	oc.res.expiresAtUnix = mergeSharedResultExpiryUnix(
 		oc.res.expiresAtUnix,
 		oc.candidateExpiryUnix(now.Unix()),

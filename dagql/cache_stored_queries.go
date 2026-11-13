@@ -141,12 +141,21 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress, nowUn
 	for _, id := range slices.Compact(others) {
 		candidates = append(candidates, c.resultsByID[id])
 	}
+	// Time alone changes the answer only when a considered value expires: the
+	// entry's own, or another of the class, which then stops answering.
+	// Expired ones never come back but by a write.
+	var validUntil int64
+	for _, candidate := range candidates {
+		if expires := candidate.expiresAtUnix; expires > nowUnix && (validUntil == 0 || expires < validUntil) {
+			validUntil = expires
+		}
+	}
 	for _, candidate := range candidates {
 		if candidate == res && c.resultExpiredAtLocked(res, nowUnix) {
 			continue
 		}
 		if part, ok := candidate.storedParts[key]; ok {
-			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), Part: part.offer()}, nil
+			return PartAvailability{State: PartStored, Donor: uint64(candidate.id), Part: part.offer(), ValidUntilUnix: validUntil}, nil
 		}
 	}
 	for _, candidate := range candidates {
@@ -159,11 +168,11 @@ func (c *Cache) AvailablePart(number uint64, address PersistedPartAddress, nowUn
 		}
 		for _, output := range outputs {
 			if outputKey, _ := partAddressKey(output.Address); outputKey == key && output.State == "absent" {
-				return PartAvailability{State: PartAbsent, Donor: uint64(candidate.id)}, nil
+				return PartAvailability{State: PartAbsent, Donor: uint64(candidate.id), ValidUntilUnix: validUntil}, nil
 			}
 		}
 	}
-	return PartAvailability{}, nil
+	return PartAvailability{ValidUntilUnix: validUntil}, nil
 }
 
 // StoredState is what a blob-backed cache stores: its stored roots, and each

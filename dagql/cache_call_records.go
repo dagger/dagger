@@ -77,6 +77,7 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 	changed := false
 	if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
 		entry.expiresAtUnix = expires
+		c.markEntryClassLocked(entry.id)
 		changed = true
 	}
 	if kept != nil {

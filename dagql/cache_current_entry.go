@@ -120,6 +120,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 		queue collectionQueue
 		rerr  error
 	)
+	c.markEntryClassLocked(cur.id)
 	// The stored parts, like the offers, belonged to the old value, and so
 	// did its normalized record and its place in a list's items
 	// (cache_list_items.go).
