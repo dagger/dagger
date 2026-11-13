@@ -114,10 +114,12 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.storedTransfer.Store(nil)
 	res.dependencyOwnershipRevision++
 	res.transferRevision++
-	res.imported = false
 	res.expiresAtUnix = 0
+	res.payloadMu.Lock()
+	res.imported = false
 	res.sessionResourceHandle = ""
 	res.boundSession = ""
+	res.payloadMu.Unlock()
 	if _, err := c.recomputeRequiredSessionResourcesLocked(res); err != nil {
 		rerr = errors.Join(rerr, err)
 	}
