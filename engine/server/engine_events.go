@@ -160,15 +160,16 @@ func (srv *Server) emitPruneEvent(drops []dagql.CacheRetentionDrop) {
 	srv.engineEvents.Emit(telemetryattrs.EngineEventPrune, srv.engineCache.Identity(), drops[len(drops)-1].DroppedAt, event)
 }
 
-// emitShareEvent reports the parts one snapshot-sharing pass completed. The
-// cache calls it on its sharing worker.
+// emitShareEvent reports the parts one snapshot-sharing pass completed, or
+// the parts entries' spans left out. The cache calls it on its sharing
+// worker or the worker that makes those reports.
 func (srv *Server) emitShareEvent(parts []dagql.SnapshotSharedPart) {
 	if srv.engineEvents == nil || srv.engineCache == nil || len(parts) == 0 {
 		return
 	}
 	event := telemetryattrs.EngineShareEvent{Parts: make([]telemetryattrs.EngineSharedPart, len(parts))}
 	for i, part := range parts {
-		event.Parts[i] = telemetryattrs.EngineSharedPart{ResultID: part.ResultID, Part: part.Part, Deps: part.Deps, Replacements: part.Replacements}
+		event.Parts[i] = telemetryattrs.EngineSharedPart{ResultID: part.ResultID, Part: part.Part, Deps: part.Deps, Replacements: part.Replacements, RawSize: part.RawSize}
 	}
 	srv.engineEvents.Emit(telemetryattrs.EngineEventShare, srv.engineCache.Identity(), time.Now(), event)
 }
