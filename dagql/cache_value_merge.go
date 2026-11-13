@@ -217,6 +217,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		c.testBeforeTransferCommit()
 	}
 	for {
+		asked := time.Now()
 		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		locked := time.Now()
 		if c.testMergeCommitLocked != nil {
@@ -258,6 +259,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		commit.restore = restore
 		reply, finish := c.commitValueMergeLocked(ctx, commit)
 		reply.Committed, reply.CommitHold, reply.Warm = true, time.Since(locked), warmed
+		reply.LockWait = locked.Sub(asked)
 		var stored []*sharedResult
 		if c.blobBacked {
 			for _, row := range commit.rows {
@@ -315,8 +317,9 @@ type MergeReply struct {
 	// the generation and clock.
 	Stale []TransferOrdinal
 	// CommitHold is how long the commit held egraphMu, from taking it to
-	// releasing it.
+	// releasing it, and LockWait how long the commit waited to take it.
 	CommitHold time.Duration
+	LockWait   time.Duration
 	// Rows counts the bundle's records by what the commit did with each.
 	Rows MergeRowCounts
 	// Warm is how long the commit took to capture its targets' complete

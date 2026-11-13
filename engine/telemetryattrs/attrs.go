@@ -1145,4 +1145,52 @@ type EngineStopEvent struct {
 	Clean bool `json:"clean"`
 	// SavedEntries counts the entries the save wrote.
 	SavedEntries int `json:"savedEntries"`
+	// PeakResident is the engine process's peak resident memory, in bytes,
+	// or 0 when unknown.
+	PeakResident int64 `json:"peakResident,omitempty"`
+	// Restores are what the engine did with each set file the remote cache
+	// service had it restore, in the order they ended.
+	Restores []EngineRestore `json:"restores,omitempty"`
+	// UncountedMisses counts the lookup misses the engine dropped before a
+	// restored part could count them as late (EngineRestorePart.Late): a
+	// run with any undercounts its late lookups.
+	UncountedMisses uint64 `json:"uncountedMisses,omitempty"`
+}
+
+// EngineRestore is what an engine did with one set file: the check's name,
+// which file of its set ("head" or "whole"), its digest and size; when its
+// restore arrived and its download began and ended, on the engine's clock,
+// in Unix nanoseconds (0 when not fetched); each part that merged; whether
+// every part merged, whether the engine had merged it whole already, and
+// what stopped it. PeakBefore and PeakAfter are the engine's peak resident
+// memory in bytes before its first part and after its last, 0 when unknown.
+type EngineRestore struct {
+	Check        string              `json:"check"`
+	Kind         string              `json:"kind"`
+	Digest       string              `json:"digest"`
+	Bytes        int64               `json:"bytes"`
+	Arrived      int64               `json:"arrived"`
+	FetchStarted int64               `json:"fetchStarted,omitempty"`
+	Fetched      int64               `json:"fetched,omitempty"`
+	Parts        []EngineRestorePart `json:"parts,omitempty"`
+	Complete     bool                `json:"complete,omitempty"`
+	Already      bool                `json:"already,omitempty"`
+	Error        string              `json:"error,omitempty"`
+	PeakBefore   int64               `json:"peakBefore,omitempty"`
+	PeakAfter    int64               `json:"peakAfter,omitempty"`
+}
+
+// EngineRestorePart is one merged part of a set file: its records, when it
+// committed (Unix nanoseconds), and the lookups that missed before it
+// committed and that it would have served, with the longest and shortest
+// time from such a miss to the commit; then how long its commit waited for
+// the cache's lock and held it. Durations are in nanoseconds.
+type EngineRestorePart struct {
+	Records    int   `json:"records"`
+	Committed  int64 `json:"committed"`
+	Late       int   `json:"late,omitempty"`
+	WorstLate  int64 `json:"worstLate,omitempty"`
+	LeastLate  int64 `json:"leastLate,omitempty"`
+	LockWait   int64 `json:"lockWait,omitempty"`
+	CommitHold int64 `json:"commitHold,omitempty"`
 }

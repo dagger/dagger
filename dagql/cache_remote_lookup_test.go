@@ -59,19 +59,25 @@ func TestRemoteLookupQueuesMisses(t *testing.T) {
 	require.Empty(t, queuedMisses(t, bridge), "nothing is queued while no connection serves lookups")
 
 	bridge.StartRemoteLookups()
+	before := time.Now()
 	req := &CallRequest{ResultCall: frame.clone(), CacheEvidence: NewCacheDecision(), CacheReported: true}
 	_, err := c.GetOrInitCall(ctx, sessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(frame, 1), nil
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, req.CacheEvidence.SelfDigest)
+	missed := queuedMisses(t, bridge)
+	require.Len(t, missed, 1)
+	require.False(t, missed[0].At.Before(before), "the miss is stamped with when it missed")
+	require.False(t, missed[0].At.After(time.Now()))
+	missed[0].At = time.Time{}
 	require.Equal(t, []RemoteMiss{{
 		Recipe: cacheTestCallDigest(frame),
 		Extra:  []digest.Digest{extra.Digest},
 		Field:  "missed",
 		Self:   req.CacheEvidence.SelfDigest,
 		Inputs: req.CacheEvidence.StructuralInputs,
-	}}, queuedMisses(t, bridge), "the miss names its recipe, extras and the term its lookup tried")
+	}}, missed, "the miss names its recipe, extras and the term its lookup tried")
 
 	run(frame, false)
 	require.Empty(t, queuedMisses(t, bridge), "a hit queues nothing")
@@ -249,4 +255,91 @@ func TestRemoteLookupMissFact(t *testing.T) {
 		bridge.noteRemoteMiss(RemoteMiss{Recipe: digest.FromString(fmt.Sprint("filler", i))})
 	}
 	require.Equal(t, RemoteLookupDropped, miss("dropped"))
+}
+
+// A miss queued before a merge is late for it when its lookup now finds an
+// entry the merge landed on: it is returned once, never for a merge that
+// landed elsewhere or for a miss after the merge, and not on a later
+// connection.
+func TestLateRemoteMisses(t *testing.T) {
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	bridge.StartRemoteLookups()
+	frame := cacheTestIntCall("late")
+	beforeMiss := time.Now()
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), CacheReported: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	require.NoError(t, err)
+	landed := map[uint64]struct{}{uint64(res.cacheSharedResult().id): {}}
+
+	require.Empty(t, c.LateRemoteMisses(beforeMiss, landed), "a miss after the merge isn't late for it")
+	require.Empty(t, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{uint64(res.cacheSharedResult().id) + 1000: {}}), "a merge that landed elsewhere wouldn't have served it")
+	late := c.LateRemoteMisses(time.Now(), landed)
+	require.Len(t, late, 1)
+	require.Equal(t, cacheTestCallDigest(frame), late[0].Recipe)
+	require.Empty(t, c.LateRemoteMisses(time.Now(), landed), "a miss is late once")
+
+	other := cacheTestIntCall("late on the next connection")
+	res, err = c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: other.clone(), CacheReported: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(other, 2), nil
+	})
+	require.NoError(t, err)
+	bridge.StopRemoteLookups()
+	bridge.StartRemoteLookups()
+	require.Empty(t, c.LateRemoteMisses(time.Now(), map[uint64]struct{}{uint64(res.cacheSharedResult().id): {}}), "a connection's misses end with it")
+}
+
+// A full miss log makes room by dropping the misses already returned, then
+// its oldest, so a merge that lands late on a long-lived connection is still
+// counted against the recent misses.
+func TestLateRemoteMissesKeepTheRecentMisses(t *testing.T) {
+	_, c, _, _, bridge := lookupTestCache(t)
+	bridge.StartRemoteLookups()
+	l := &bridge.lookups
+	miss := func(i int) RemoteMiss {
+		return RemoteMiss{Recipe: digest.FromString(fmt.Sprint("recipe", i)), At: time.Now()}
+	}
+	for i := range remoteLookupLogCapacity {
+		bridge.noteRemoteMiss(miss(i))
+		// Keep the queue from refusing misses: only the log is under test.
+		l.mu.Lock()
+		l.queue = l.queue[:0]
+		l.mu.Unlock()
+	}
+	bridge.noteRemoteMiss(miss(remoteLookupLogCapacity))
+	require.Equal(t, uint64(remoteLookupLogCapacity/4), c.TrimmedRemoteMisses(), "the misses dropped uncounted are counted")
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	require.Len(t, l.missed, remoteLookupLogCapacity*3/4+1)
+	require.Equal(t, miss(remoteLookupLogCapacity/4).Recipe, l.missed[0].miss.Recipe, "the oldest quarter is dropped")
+	require.Equal(t, miss(remoteLookupLogCapacity).Recipe, l.missed[len(l.missed)-1].miss.Recipe, "the newest miss is kept")
+}
+
+// A trim of the log while a scan checks its candidates doesn't lose the
+// scan: a late miss the trim kept is still returned, once.
+func TestLateRemoteMissesSurviveATrim(t *testing.T) {
+	ctx, c, srv, sessionID, bridge := lookupTestCache(t)
+	bridge.StartRemoteLookups()
+	frame := cacheTestIntCall("late across a trim")
+	res, err := c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: frame.clone(), CacheReported: true}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	require.NoError(t, err)
+	l := &bridge.lookups
+	// The trim lands while the scan is between its two holds of the lock:
+	// an older miss is added first, so the trim drops something.
+	l.mu.Lock()
+	l.missed = append([]loggedMiss{{miss: RemoteMiss{Recipe: "xxh3:old", At: time.Now()}, found: true}}, l.missed...)
+	l.mu.Unlock()
+	landed := map[uint64]struct{}{uint64(res.cacheSharedResult().id): {}}
+	c.testBetweenLateMissHolds = func() {
+		l.mu.Lock()
+		l.trimMissedLocked()
+		l.mu.Unlock()
+	}
+	late := c.LateRemoteMisses(time.Now(), landed)
+	require.Len(t, late, 1)
+	require.Equal(t, cacheTestCallDigest(frame), late[0].Recipe)
+	c.testBetweenLateMissHolds = nil
+	require.Empty(t, c.LateRemoteMisses(time.Now(), landed))
 }

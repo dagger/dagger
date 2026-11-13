@@ -136,6 +136,13 @@ type fakeAdapter struct {
 	settle   SettleState
 	settleCh chan struct{}
 	settled  chan settledCall
+
+	// restore merges a restore's part, after restoreSeen receives it; late
+	// answers LateMisses, and restored receives each file's report.
+	restore     func(context.Context, dagql.ValueBundle, *dagql.KnownRows) (dagql.MergeReply, error)
+	late        func(time.Time, map[uint64]struct{}) []dagql.RemoteMiss
+	restored    chan RestoreReport
+	restoreSeen chan dagql.ValueBundle
 }
 
 type settledCall struct {
@@ -151,8 +158,25 @@ func newFakeAdapter() *fakeAdapter {
 		lookups:  make(chan bool, 8),
 		mergeIDs: make(chan uint64, 64),
 		settled:  make(chan settledCall, 8),
+
+		restored:    make(chan RestoreReport, 64),
+		restoreSeen: make(chan dagql.ValueBundle, 64),
 	}
 }
+
+func (a *fakeAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, known *dagql.KnownRows) (dagql.MergeReply, error) {
+	a.restoreSeen <- part
+	return a.restore(ctx, part, known)
+}
+
+func (a *fakeAdapter) LateMisses(before time.Time, entries map[uint64]struct{}) []dagql.RemoteMiss {
+	if a.late == nil {
+		return nil
+	}
+	return a.late(before, entries)
+}
+
+func (a *fakeAdapter) Restored(report RestoreReport) { a.restored <- report }
 
 func (a *fakeAdapter) SettleState() (SettleState, <-chan struct{}) {
 	a.settleMu.Lock()

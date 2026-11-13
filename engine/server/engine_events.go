@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/remotecache"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
@@ -197,8 +198,11 @@ func (srv *Server) stopEngineEvents(ctx context.Context, clean bool) {
 	}
 	if srv.engineCache != nil {
 		srv.engineEvents.Emit(telemetryattrs.EngineEventStop, srv.engineCache.Identity(), time.Now(), telemetryattrs.EngineStopEvent{
-			Clean:        clean,
-			SavedEntries: srv.engineCache.PersistedResults(),
+			Clean:           clean,
+			SavedEntries:    srv.engineCache.PersistedResults(),
+			PeakResident:    remotecache.PeakResident(),
+			Restores:        srv.restoreEvents(),
+			UncountedMisses: srv.uncountedMisses(),
 		})
 	}
 	shutdownCtx := context.WithoutCancel(ctx)
@@ -217,4 +221,61 @@ func (srv *Server) stopEngineEvents(ctx context.Context, clean bool) {
 	if err := srv.engineEventExport.Shutdown(ctx); err != nil {
 		slog.Warn("engine cache events not exported before shutdown", "error", err)
 	}
+}
+
+// uncountedMisses is how many lookup misses the remote cache's late count
+// never saw (RemoteCacheAdapter.uncountedMisses), for the engine.stop event.
+func (srv *Server) uncountedMisses() uint64 {
+	if srv.remoteCacheAdapter == nil {
+		return 0
+	}
+	return srv.remoteCacheAdapter.uncountedMisses()
+}
+
+// restoreEvents are what the remote cache's restores did with each file,
+// for the engine.stop event.
+func (srv *Server) restoreEvents() []telemetryattrs.EngineRestore {
+	if srv.remoteCacheAdapter == nil {
+		return nil
+	}
+	reports := srv.remoteCacheAdapter.restoreReports()
+	if len(reports) == 0 {
+		return nil
+	}
+	unix := func(t time.Time) int64 {
+		if t.IsZero() {
+			return 0
+		}
+		return t.UnixNano()
+	}
+	events := make([]telemetryattrs.EngineRestore, len(reports))
+	for i, report := range reports {
+		event := telemetryattrs.EngineRestore{
+			Check:        report.Check,
+			Kind:         report.Kind,
+			Digest:       report.Digest.String(),
+			Bytes:        report.Bytes,
+			Arrived:      unix(report.Arrived),
+			FetchStarted: unix(report.FetchStarted),
+			Fetched:      unix(report.Fetched),
+			Complete:     report.Complete,
+			Already:      report.Already,
+			Error:        report.Error,
+			PeakBefore:   report.PeakBefore,
+			PeakAfter:    report.PeakAfter,
+		}
+		for _, part := range report.Parts {
+			event.Parts = append(event.Parts, telemetryattrs.EngineRestorePart{
+				Records:    part.Records,
+				Committed:  unix(part.Committed),
+				Late:       part.Late,
+				WorstLate:  int64(part.WorstLate),
+				LeastLate:  int64(part.LeastLate),
+				LockWait:   int64(part.LockWait),
+				CommitHold: int64(part.CommitHold),
+			})
+		}
+		events[i] = event
+	}
+	return events
 }
