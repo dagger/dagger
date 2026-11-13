@@ -143,7 +143,7 @@ func (c *Cache) setStoredPartLocked(ctx context.Context, number uint64, key stri
 		res.storedParts = make(map[string]storedPart)
 	}
 	res.storedParts[key] = stored
-	c.markEntryClassLocked(res.id)
+	c.markEntryClassLocked(res.id, StampPartStored)
 	// The Cloud serves no sessions, so there are no requirements to carry.
 	c.applyPartDependenciesLocked(ctx, res, named, nil)
 	return true, nil
@@ -264,7 +264,7 @@ func (c *Cache) dropStoredParts(drop func(storedPart) bool) (dropped []StoredPar
 				continue
 			}
 			delete(res.storedParts, key)
-			c.markEntryClassLocked(id)
+			c.markEntryClassLocked(id, StampPartDropped)
 			dropped = append(dropped, StoredPart{Number: uint64(id), Address: part.address()})
 		}
 		if len(res.storedParts) == 0 {
