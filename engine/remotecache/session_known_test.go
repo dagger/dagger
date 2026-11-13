@@ -82,3 +82,40 @@ func TestMergeKnownRows(t *testing.T) {
 	require.Equal(t, protocol.TypeExported, conn.next(t).Type)
 	require.Same(t, adapter.known.Load(), merged, "the same set an export gets")
 }
+
+// An Upload without Merged that names the held rows the service found stale
+// makes only those unknown: the export's other held rows stay known, so the
+// next export carries the stale ones in full and holds the rest. On a whole
+// pull request's fill, test-base's engine forgot thousands of held rows for
+// each 2 to 108 the service named, until a test run's export, carrying its
+// closure in full, no longer fit in a message.
+func TestExportStaleForgetsOnlyTheStaleRows(t *testing.T) {
+	rows := map[uint64]dagql.ExportedRows{
+		1: {Full: map[uint64]dagql.RowRevision{12: {}, 13: {}, 14: {}}},
+		2: {Full: map[uint64]dagql.RowRevision{15: {}}, Held: []uint64{12, 13, 14}},
+	}
+	adapter := newFakeAdapter()
+	adapter.export = func(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error {
+		return consume(ctx, Export{Bundle: testBundle(), Rows: rows[req.Roots[0]]})
+	}
+	var id uint64
+	export := func(s *session, conn *recordingConn, root uint64, upload protocol.Upload) *dagql.KnownRows {
+		t.Helper()
+		id++
+		s.dispatch(request(t, id, protocol.TypeExport, protocol.Export{Roots: []uint64{root}}))
+		exported := decode[protocol.Exported](t, conn.next(t))
+		known := adapter.known.Load()
+		id++
+		upload.ExportID = exported.ExportID
+		s.dispatch(request(t, id, protocol.TypeUpload, upload))
+		require.Equal(t, protocol.TypeUploaded, conn.next(t).Type)
+		return known
+	}
+	s, conn := testSession(t, adapter)
+	known := export(s, conn, 1, protocol.Upload{Merged: true})
+	require.Equal(t, 3, known.Len())
+	export(s, conn, 2, protocol.Upload{Stale: []uint64{13}})
+	require.Equal(t, 2, known.Len(), "only the row the service named stale is unknown")
+	export(s, conn, 2, protocol.Upload{})
+	require.Zero(t, known.Len(), "an Upload without Merged that names none makes every held row unknown")
+}
