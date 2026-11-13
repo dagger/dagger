@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"sync"
 	"time"
 
@@ -101,12 +100,12 @@ var beforeJoinPackFetch = func() {}
 // content store, linked to ctx's lease, by joining a read of the pack in
 // progress or by reading it from provider, or by finding it stored by a read
 // that ended (joinPackFetch). After each read it links the blob and checks
-// for it, whoever read it. Another import's failed read is
-// not this one's: its next read is its own.
+// for it, whoever read it. A read that fails fails every import that waited
+// on it, whoever started it: none reads the pack again.
 func (cm *snapshotManager) downloadPackedContent(ctx context.Context, desc ocispecs.Descriptor, provider PackProvider, id digest.Digest) error {
-	own, misses := false, 0
+	misses := 0
 	for {
-		f, started, present, err := cm.joinPackFetch(ctx, id, provider, desc.Digest, own)
+		f, present, err := cm.joinPackFetch(ctx, id, provider, desc.Digest)
 		if err != nil {
 			return err
 		}
@@ -128,11 +127,7 @@ func (cm *snapshotManager) downloadPackedContent(ctx context.Context, desc ocisp
 		if ok, err := cm.pinContent(ctx, desc); err != nil || ok {
 			return err
 		}
-		mine := started || sameProvider(f.provider, provider)
 		switch {
-		case f.err != nil && !mine:
-			own = true
-			continue
 		case f.err != nil:
 			err = f.err
 		case !f.listed[desc.Digest]:
@@ -140,7 +135,6 @@ func (cm *snapshotManager) downloadPackedContent(ctx context.Context, desc ocisp
 		default:
 			// The read stored it, and it went before this import linked it.
 			if misses++; misses < packFetchMisses {
-				own = false
 				continue
 			}
 			err = &packContentError{stage: "provider", err: fmt.Errorf("pack %s's blob %s is gone after %d reads", id, desc.Digest, misses)}
@@ -153,67 +147,56 @@ func (cm *snapshotManager) downloadPackedContent(ctx context.Context, desc ocisp
 	}
 }
 
-// sameProvider reports whether a and b are one provider. Providers are
-// pointers; any other kind, which may not be comparable, counts as another.
-func sameProvider(a, b PackProvider) bool {
-	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
-	return va.Kind() == reflect.Pointer && vb.Kind() == reflect.Pointer && va.Type() == vb.Type() && va.Pointer() == vb.Pointer()
-}
-
 // joinPackFetch holds the read of the pack id in progress, or starts one with
-// provider, at blob's address, and reports whether it started it. With no
-// read to join it reports present instead when the content store has blob:
-// a read of the pack that ended stored it. An own read never joins another:
-// it starts one with provider, which other imports join when none of theirs
-// runs.
-func (cm *snapshotManager) joinPackFetch(ctx context.Context, id digest.Digest, provider PackProvider, blob digest.Digest, own bool) (_ *packFetch, started, present bool, _ error) {
+// provider, at blob's address. With no read to join it reports present
+// instead when the content store has blob: a read of the pack that ended
+// stored it.
+func (cm *snapshotManager) joinPackFetch(ctx context.Context, id digest.Digest, provider PackProvider, blob digest.Digest) (_ *packFetch, present bool, _ error) {
 	beforeJoinPackFetch()
 	ps := &cm.packs
 	ps.mu.Lock()
-	if f := ps.inflight[id]; f != nil && !own {
+	if f := ps.inflight[id]; f != nil {
 		f.refs++
 		ps.mu.Unlock()
-		return f, false, false, nil
+		return f, false, nil
 	}
 	if cm.storedLocked(ctx, blob) {
 		ps.mu.Unlock()
-		return nil, false, true, nil
+		return nil, true, nil
 	}
 	ps.mu.Unlock()
 	deadline := time.Now().Add(packReadLimit)
 	l, err := cm.LeaseManager.Create(ctx, leases.WithRandomID(), leases.WithExpiration(packLeaseTTL), leases.WithLabels(map[string]string{snapshotTransferLeaseLabel: "true"}))
 	if err != nil {
-		return nil, false, false, err
+		return nil, false, err
 	}
 	// The read runs detached from the import that started it, while another
 	// may wait for it.
 	fctx, cancel := context.WithCancelCause(leases.WithLease(context.WithoutCancel(ctx), l.ID))
 	read := &packFetch{id: id, blob: blob, provider: provider, lease: l, deadline: deadline, done: make(chan struct{}), cancel: cancel, listed: map[digest.Digest]bool{}, refs: 1}
 	ps.mu.Lock()
-	if f := ps.inflight[id]; f != nil && !own {
+	if f := ps.inflight[id]; f != nil {
 		f.refs++
 		ps.mu.Unlock()
 		cancel(nil)
 		_ = cm.LeaseManager.Delete(context.WithoutCancel(ctx), l)
-		return f, false, false, nil
+		return f, false, nil
 	}
 	if cm.storedLocked(ctx, blob) {
 		ps.mu.Unlock()
 		cancel(nil)
 		_ = cm.LeaseManager.Delete(context.WithoutCancel(ctx), l)
-		return nil, false, true, nil
+		return nil, true, nil
 	}
 	if ps.inflight == nil {
 		ps.inflight = map[digest.Digest]*packFetch{}
 		ps.slots = make(chan struct{}, packReads)
 	}
-	if ps.inflight[id] == nil {
-		ps.inflight[id] = read
-	}
+	ps.inflight[id] = read
 	slots := ps.slots
 	ps.mu.Unlock()
 	go cm.runPackFetch(fctx, read, slots)
-	return read, true, false, nil
+	return read, false, nil
 }
 
 // storedLocked reports whether the content store has blob. Requires the
