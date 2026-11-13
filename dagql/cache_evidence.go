@@ -134,6 +134,11 @@ type CacheDecision struct {
 	// the cross-run pairing anchor. Empty for CacheOutcomeUncached.
 	PairingDigest digest.Digest
 
+	// Caller is the recipe digest of the nearest enclosing cached call, the
+	// call this one was made while running (CallerRecipe): empty for a call
+	// at its session's top, and for CacheOutcomeUncached.
+	Caller digest.Digest
+
 	// pendingEdge is the retention edge the publication this call executed or
 	// joined adds to its result, set when the call is persistable. The last of
 	// the publication's waiters creates it, possibly after this call's span
