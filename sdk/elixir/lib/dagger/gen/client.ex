@@ -621,6 +621,27 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Ask the user a question.
+
+  Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.
+
+  Answers are remembered for the session, per asking module, message and kind of answer.
+  """
+  @spec prompt(t(), String.t(), [{:key, String.t() | nil}]) :: Dagger.Prompt.t()
+  def prompt(%__MODULE__{} = client, message, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("prompt")
+      |> QB.put_arg("message", message)
+      |> QB.maybe_put_arg("key", optional_args[:key])
+
+    %Dagger.Prompt{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a GraphQL introspection schema for merging.
   """
   @spec schema(t(), Dagger.JSON.t()) :: Dagger.Schema.t()

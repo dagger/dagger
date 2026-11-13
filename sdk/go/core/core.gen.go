@@ -18635,6 +18635,171 @@ func (r *Port) AsNode() Node {
 	}
 }
 
+// A question for the user, answered in the terminal of the client running the session.
+//
+// Select the kind of answer wanted to ask it: each selection asks, unless the answer is remembered.
+type Prompt struct {
+	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
+
+	boolean *bool
+	id      *ID
+	string_ *string
+}
+
+func (r *Prompt) WithGraphQLQuery(q *querybuilder.Selection) *Prompt {
+	return &Prompt{
+		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
+	}
+}
+
+// withLoadedID is the Prompt that q, a query of the node whose
+// ID is id, selects, knowing that ID (Loaded).
+func (r *Prompt) withLoadedID(q *querybuilder.Selection, id ID) *Prompt {
+	return &Prompt{query: q, id: &id}
+}
+
+// PromptBooleanOpts contains options for Prompt.Boolean
+type PromptBooleanOpts struct {
+	// The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.
+	Default bool
+}
+
+// Ask for a yes or no answer.
+func (r *Prompt) Boolean(ctx context.Context, opts ...PromptBooleanOpts) (bool, error) {
+	if r.boolean != nil {
+		return *r.boolean, nil
+	}
+	q := r.query.Select("boolean")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `default` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Default) {
+			q = q.Arg("default", opts[i].Default)
+		}
+	}
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Prompt.
+func (r *Prompt) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Prompt) XXX_GraphQLType() string {
+	return "Prompt"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Prompt) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Prompt) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Prompt) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// PromptSecretOpts contains options for Prompt.Secret
+type PromptSecretOpts struct {
+	// Accept several lines.
+	Multiline bool
+}
+
+// Ask for a secret value, masking the user's input.
+//
+// The answer is never remembered beyond the session. When nobody can be asked (the client is not interactive), this is an error.
+func (r *Prompt) Secret(opts ...PromptSecretOpts) *Secret {
+	q := r.query.Select("secret")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+	}
+
+	return &Secret{
+		query:     q,
+		refetchID: true,
+	}
+}
+
+// PromptStringOpts contains options for Prompt.String
+type PromptStringOpts struct {
+	// The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.
+	Default string
+	// Accept several lines.
+	Multiline bool
+}
+
+// Ask for a text answer.
+func (r *Prompt) String(ctx context.Context, opts ...PromptStringOpts) (string, error) {
+	if r.string_ != nil {
+		return *r.string_, nil
+	}
+	q := r.query.Select("string")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `default` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Default) {
+			q = q.Arg("default", opts[i].Default)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Prompt as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Prompt) AsNode() Node {
+	return &NodeClient{
+		query:     r.query,
+		refetchID: r.refetchID,
+	}
+}
+
 // The root of the DAG.
 type Query struct {
 	query *querybuilder.Selection
@@ -19339,6 +19504,35 @@ func (r *Query) Node(ctx context.Context, id ID) (Node, error) {
 	return &NodeClient{
 		query: selectNode(q.Root(), *objectID, "Node"),
 	}, nil
+}
+
+// PromptOpts contains options for Query.Prompt
+type PromptOpts struct {
+	// Remember answers beyond the session under this key, in the user's configuration, for the asking module only.
+	//
+	// Only modules loaded from git are remembered so; secrets never are.
+	Key string
+}
+
+// Ask the user a question.
+//
+// Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.
+//
+// Answers are remembered for the session, per asking module, message and kind of answer.
+func (r *Query) Prompt(message string, opts ...PromptOpts) *Prompt {
+	q := r.query.Select("prompt")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `key` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Key) {
+			q = q.Arg("key", opts[i].Key)
+		}
+	}
+	q = q.Arg("message", message)
+
+	return &Prompt{
+		query:     q,
+		refetchID: r.refetchID,
+	}
 }
 
 // Load a GraphQL introspection schema for merging.
@@ -27202,6 +27396,16 @@ func NewNaming(opts ...NamingOpts) *Naming {
 func NewNode(ctx context.Context, id ID) (Node, error) {
 	root := initRoot()
 	return root.Node(ctx, id)
+}
+
+// Ask the user a question.
+//
+// Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.
+//
+// Answers are remembered for the session, per asking module, message and kind of answer.
+func NewPrompt(message string, opts ...PromptOpts) *Prompt {
+	root := initRoot()
+	return root.Prompt(message, opts...)
 }
 
 // Load a GraphQL introspection schema for merging.
