@@ -142,7 +142,7 @@ func (w *changeWatch) reread() {
 }
 
 // step runs one write and checks what its change names.
-func (w *changeWatch) step(name string, write func() RemoteChange) RemoteChange {
+func (w *changeWatch) step(name string, write func() RemoteChange) {
 	w.t.Helper()
 	before := w.last
 	beforeAddresses := changeTestAddresses(w.cache)
@@ -193,7 +193,6 @@ func (w *changeWatch) step(name string, write func() RemoteChange) RemoteChange 
 		}
 	}
 	w.last = after
-	return change
 }
 
 // changeTestEntryEqual compares two readings of an entry, its part answers
