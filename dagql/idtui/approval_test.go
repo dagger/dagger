@@ -522,7 +522,8 @@ func TestApprovalOffscreenIsCued(t *testing.T) {
 	frame := frameText(fe.tui.Step())
 	require.Contains(t, frame, "step29", "the newest output stays on screen")
 	require.NotContains(t, frame, "Deny", "the approval itself scrolled away")
-	require.Contains(t, frame, "approval needed ↑ · agent chief", "a cue says an approval waits above")
+	require.Contains(t, frame, "◆ chief is waiting for approval ↑ · a to go there",
+		"a cue names the waiting agent, outside the conversation")
 	require.Contains(t, frame, "a answer approval", "the keymap names the jump key")
 	require.Equal(t, "a", fe.keys(NewOutput(io.Discard))[0].Help().Key, "first, so truncation keeps it")
 
@@ -530,7 +531,7 @@ func TestApprovalOffscreenIsCued(t *testing.T) {
 	frame = frameText(fe.tui.Step())
 	require.True(t, fe.tui.IsFocused(a.view))
 	require.Contains(t, frame, "Deny", "jumping brings the approval on screen")
-	require.NotContains(t, frame, "approval needed ↑", "and the cue goes away")
+	require.NotContains(t, frame, "waiting for approval ↑", "and the cue goes away")
 }
 
 // In the shell the transcript flows into scrollback; an approval that went
@@ -551,7 +552,7 @@ func TestApprovalInScrollbackIsCued(t *testing.T) {
 	fe := focusTestFrontend(t, db, &focusShellHandler{target: "agent-chief"})
 	_, _ = startApproval(t, fe, t.Context(), pushApproval(approvalPushID, ""))
 	frame := frameText(fe.tui.Step())
-	require.Contains(t, frame, "approval needed ↑", "a cue says an approval waits above")
+	require.Contains(t, frame, "◆ chief is waiting for approval ↑ · alt+a to go there", "a cue says an approval waits above")
 	require.Contains(t, frame, "alt+a to answer")
 }
 
