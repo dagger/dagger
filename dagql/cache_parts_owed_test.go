@@ -133,3 +133,23 @@ func TestOwedPartsOwedAgainDuringAPassStillOwe(t *testing.T) {
 	require.Len(t, <-reports, 1, "the pass reported what it read")
 	require.Equal(t, 0, c.reportOwedParts(ctx))
 }
+
+// A pass stopped while it reads, as the worker is at close, leaves the entry
+// it couldn't read owed, for the final pass: the failure is the pass's, not
+// the record's.
+func TestOwedPartsKeptWhenThePassIsStopped(t *testing.T) {
+	t.Parallel()
+	value := &describedPartValue{done: true}
+	ctx, c, row, reports := ownedPartsCache(t, value, fmt.Errorf("%w: busy", ErrPersistStateNotReady))
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	_, ok := c.resultState(ctx, row, nil)
+	require.True(t, ok)
+	stopped, stop := context.WithCancel(ctx)
+	stop()
+	value.fail = context.Canceled
+	require.Equal(t, 1, c.reportOwedParts(stopped), "stopped mid-read: still owes")
+	requireNoReport(t, reports)
+	value.fail = nil
+	require.Equal(t, 0, c.reportOwedParts(ctx))
+	require.Len(t, <-reports, 1)
+}
