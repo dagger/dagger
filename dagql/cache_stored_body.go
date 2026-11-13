@@ -2,14 +2,17 @@ package dagql
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/opencontainers/go-digest"
@@ -663,6 +666,9 @@ const storedFrameRestoreBatch = 4096
 type storedBodyWorker struct {
 	mu      sync.Mutex
 	pending []*sharedResult
+	// content are the entries whose frames lack the content digest a span
+	// taught them (queueTaughtContentLocked).
+	content []*sharedResult
 	closed  bool
 	wake    chan struct{}
 	done    chan struct{}
@@ -677,16 +683,21 @@ func (c *Cache) startStoredBodyWorker() {
 		for range w.wake {
 			for {
 				w.mu.Lock()
-				batch, closed := w.pending, w.closed
-				w.pending = nil
+				batch, content, closed := w.pending, w.content, w.closed
+				w.pending, w.content = nil, nil
 				w.mu.Unlock()
 				if closed {
 					return
 				}
-				if len(batch) == 0 {
+				if len(batch) == 0 && len(content) == 0 {
 					break
 				}
-				c.storeBodies(batch)
+				if len(batch) > 0 {
+					c.storeBodies(batch)
+				}
+				if len(content) > 0 {
+					c.applyTaughtContent(content)
+				}
 			}
 		}
 	}()
@@ -708,6 +719,80 @@ func (c *Cache) queueStoredBodies(entries []*sharedResult) {
 	case w.wake <- struct{}{}:
 	default:
 	}
+}
+
+// queueTaughtContentLocked has the body worker give res's frame the content
+// digest a span taught res, when res has a frame and the frame isn't known to
+// carry it: one decoded since with that content digest is. A frame a restored
+// body holds is not known until it is decoded. Requires egraphMu.
+func (c *Cache) queueTaughtContentLocked(res *sharedResult) {
+	w := c.storedBodies
+	if !c.blobBacked || w == nil || res.taughtContent == "" || !res.entryFrameLocked().ok() {
+		return
+	}
+	res.resultCallMu.RLock()
+	carried := res.frameContentKnown && res.frameContent == res.taughtContent
+	res.resultCallMu.RUnlock()
+	if carried {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return
+	}
+	w.content = append(w.content, res)
+	c.taughtContentQueued.Add(1)
+	select {
+	case w.wake <- struct{}{}:
+	default:
+	}
+}
+
+// applyTaughtContent gives each entry's frame the content digest a span
+// taught it, as TeachContentDigest gives an engine's result's frame, outside
+// egraphMu but for the replacement: the frame, or the body holding it, is
+// decoded and rewritten off the lock, once, and replaced in one short hold if
+// it hasn't changed since. An entry collected, or whose frame carries the
+// digest by then, is left as it is.
+func (c *Cache) applyTaughtContent(entries []*sharedResult) {
+	ctx := context.Background()
+	rewritten := 0
+	start := time.Now()
+	for _, res := range entries {
+		c.egraphMu.RLock()
+		content, live := res.taughtContent, c.resultsByID[res.id] == res
+		c.egraphMu.RUnlock()
+		if !live || content == "" {
+			continue
+		}
+		res.resultCallMu.RLock()
+		carried := res.frameContentKnown && res.frameContent == content
+		res.resultCallMu.RUnlock()
+		if carried {
+			continue
+		}
+		rewrote, err := c.teachContentDigest(ctx, res, content, nil, true)
+		if err != nil {
+			slog.Warn("dagql cache: giving an entry's frame its taught content digest", "entry", res.id, "err", err)
+			continue
+		}
+		if rewrote {
+			rewritten++
+		}
+	}
+	c.taughtContentRewrites.Add(uint64(rewritten))
+	c.taughtContentNanos.Add(int64(time.Since(start)))
+	if c.testTaughtContent != nil {
+		c.testTaughtContent(rewritten)
+	}
+}
+
+// TaughtContentStats reports the entries queued for a frame rewrite because
+// a span taught a content digest their frame lacked, the frames rewritten,
+// and the time the rewrites took in all.
+func (c *Cache) TaughtContentStats() (queued, rewritten uint64, took time.Duration) {
+	return c.taughtContentQueued.Load(), c.taughtContentRewrites.Load(), time.Duration(c.taughtContentNanos.Load())
 }
 
 // closeStoredBodies stops the body worker. Entries it hadn't compressed keep

@@ -2049,6 +2049,9 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 	res.description = row.plan.row.description
 	res.recordType = row.plan.row.recordType
 	res.storeResultCall(rec.Call)
+	// A content digest a span taught the entry before this record arrived
+	// goes on the record's frame too.
+	c.queueTaughtContentLocked(res)
 	res.payloadMu.Lock()
 	res.isObject = rec.Envelope.Kind == persistedResultKindObject
 	res.hasValue = false

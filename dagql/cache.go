@@ -2550,6 +2550,10 @@ type Cache struct {
 	// testStoredBodies runs after the body worker installs a batch, with the
 	// number of entries it read.
 	testStoredBodies func(int)
+	// testTaughtContent runs after the body worker gives a batch of entries'
+	// frames the content digests their spans taught (applyTaughtContent),
+	// with the number of frames it rewrote.
+	testTaughtContent func(int)
 	// testRecipeFromBody runs when a recipe is read from a stored body's
 	// kept digest, for an entry without a decoded frame
 	// (recipeDigestForCachedResult). Only a blob-backed cache's entries, and
@@ -2564,6 +2568,14 @@ type Cache struct {
 
 	// storedSizeEncodes counts StoredSizes' first measurements of values.
 	storedSizeEncodes atomic.Uint64
+
+	// taughtContentQueued counts the entries queued for a frame rewrite
+	// because a span taught a content digest their frame lacked,
+	// taughtContentRewrites the frames rewritten, and taughtContentNanos the
+	// time those rewrites took (applyTaughtContent).
+	taughtContentQueued   atomic.Uint64
+	taughtContentRewrites atomic.Uint64
+	taughtContentNanos    atomic.Int64
 
 	offerOwners      map[offerOwnerID]*offerOwner
 	nextOfferOwnerID offerOwnerID
@@ -3079,6 +3091,17 @@ type sharedResult struct {
 	// which frame is currently published for this shared result.
 	resultCallMu sync.RWMutex
 	resultCall   *ResultCall
+	// frameContent is the content digest of the last decoded frame stored on
+	// the result (storeResultCall), and frameContentKnown whether one was. A
+	// frame a restored body holds is known once it is decoded. Guarded by
+	// resultCallMu.
+	frameContent      digest.Digest
+	frameContentKnown bool
+	// taughtContent is, on a blob-backed cache, the content digest a
+	// holding's span last taught the entry (teachRemoteIdentityLocked). The
+	// entry's frame takes it as TeachContentDigest would have left the
+	// engine's (queueTaughtContentLocked). Requires egraphMu.
+	taughtContent digest.Digest
 	// payloadMu guards lazy payload publication for imported persisted hits and
 	// prune-accounting timestamps that can change after initial publication.
 	payloadMu sync.RWMutex
@@ -3308,6 +3331,9 @@ func (res *sharedResult) storeResultCall(frame *ResultCall) {
 		resultCallFrameGeneration.Add(1)
 	}
 	res.resultCall = frame
+	if frame != nil {
+		res.frameContent, res.frameContentKnown = frame.ContentDigest(), true
+	}
 	res.resultCallMu.Unlock()
 }
 

@@ -1442,10 +1442,19 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 	if shared == nil || shared.id == 0 {
 		return fmt.Errorf("teach content digest: result %T is not an attached result in this cache", res)
 	}
+	_, err := c.teachContentDigest(ctx, shared, contentDigest, additionalLabels, false)
+	return err
+}
 
+// teachContentDigest is TeachContentDigest on an attached result. With
+// lacking, a frame whose content digest is already contentDigest is left as
+// it is, and reports no rewrite: the body worker gives a Cloud entry's frame
+// the content digest a span taught it only when the frame lacks it
+// (applyTaughtContent). It reports whether it replaced the frame.
+func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, contentDigest digest.Digest, additionalLabels []string, lacking bool) (bool, error) {
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return false, err
 		}
 
 		// A blob-backed cache's entry can hold its frame in its stored
@@ -1458,12 +1467,22 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 		}
 		baseFrame, err := base.decode()
 		if err != nil {
-			return fmt.Errorf("teach content digest: %w", err)
+			return false, fmt.Errorf("teach content digest: %w", err)
 		}
 		if baseFrame == nil {
-			return fmt.Errorf("teach content digest: result %T has no call frame", res)
+			return false, fmt.Errorf("teach content digest: result %d has no call frame", shared.id)
 		}
 		oldContentDigest := baseFrame.ContentDigest()
+		if lacking && oldContentDigest == contentDigest {
+			// The frame carries it: nothing to rewrite. Its content digest is
+			// known now, as a decoded frame's is.
+			shared.resultCallMu.Lock()
+			if shared.resultCall == nil || shared.resultCall == base.call {
+				shared.frameContent, shared.frameContentKnown = oldContentDigest, true
+			}
+			shared.resultCallMu.Unlock()
+			return false, nil
+		}
 		frame := baseFrame.fork()
 
 		replaced := false
@@ -1503,24 +1522,24 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 
 		requestDigest, err := frame.deriveRecipeDigest(c)
 		if err != nil {
-			return fmt.Errorf("teach content digest: derive request digest: %w", err)
+			return false, fmt.Errorf("teach content digest: derive request digest: %w", err)
 		}
 		requestSelf, requestInputRefs, err := frame.selfDigestAndInputRefs(c)
 		if err != nil {
-			return fmt.Errorf("teach content digest: derive request term digests: %w", err)
+			return false, fmt.Errorf("teach content digest: derive request term digests: %w", err)
 		}
 		requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
 		for _, ref := range requestInputRefs {
 			dig, err := ref.inputDigest(c)
 			if err != nil {
-				return fmt.Errorf("teach content digest: derive request term input digest: %w", err)
+				return false, fmt.Errorf("teach content digest: derive request term input digest: %w", err)
 			}
 			requestInputs = append(requestInputs, dig)
 		}
 		var body *storedBody
 		if base.body != nil {
 			if body, err = base.body.reframe(c, shared.id, frame); err != nil {
-				return fmt.Errorf("teach content digest: %w", err)
+				return false, fmt.Errorf("teach content digest: %w", err)
 			}
 		}
 
@@ -1534,13 +1553,13 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 		if _, found := c.resultsByID[shared.id]; !found {
 			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
-			return fmt.Errorf("teach content digest: result %d was already collected", shared.id)
+			return false, fmt.Errorf("teach content digest: result %d was already collected", shared.id)
 		}
 		cur := shared.entryFrameLocked()
 		if !cur.ok() {
 			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
-			return fmt.Errorf("teach content digest: result %T has no call frame", res)
+			return false, fmt.Errorf("teach content digest: result %d has no call frame", shared.id)
 		}
 		if cur != base {
 			// Nothing was mutated in this interval.
@@ -1554,7 +1573,7 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			// flush what survives rather than dropping it.
 			c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 			c.egraphMu.Unlock()
-			return err
+			return false, err
 		}
 		shared.storeResultCall(frame)
 		if body != nil {
@@ -1564,7 +1583,7 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 		c.traceResultCallFrameUpdated(ctx, shared, "teach_content_digest", baseFrame, frame)
 		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
-		return nil
+		return true, nil
 	}
 }
 

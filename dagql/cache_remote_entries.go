@@ -1516,6 +1516,14 @@ func (c *Cache) writeRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 		return
 	}
 	c.addResultOutputEqClassLocked(entry.id, outputEqID)
+	if content != "" {
+		// The entry's own frame takes its content digest, as the engine's
+		// did when it was taught it: a record sent from the Cloud then
+		// carries it, and a fresh engine joins its class as the engine that
+		// computed it does.
+		entry.taughtContent = content
+		c.queueTaughtContentLocked(entry)
+	}
 	if len(extras) > 0 {
 		outputEqID = c.findEqClassLocked(outputEqID)
 		classExtras := c.eqClassExtraDigests[outputEqID]
