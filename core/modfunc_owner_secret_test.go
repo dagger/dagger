@@ -90,3 +90,25 @@ func TestDeclineOwnerSecretReuse(t *testing.T) {
 	selectTwice("unmarked")
 	require.Equal(t, 1, runs["unmarked"])
 }
+
+// The same module call made by two agents, or by an agent and by no agent,
+// never shares one execution: each may get a different answer from the owner.
+func TestAgentConcurrencyKey(t *testing.T) {
+	key := func(ctx context.Context) string {
+		req := &dagql.CallRequest{ResultCall: &dagql.ResultCall{}, ConcurrencyKey: "session"}
+		agentConcurrencyKey(ctx, req)
+		return req.ConcurrencyKey
+	}
+	ctx := t.Context()
+	require.Equal(t, "session", key(ctx), "a call no agent makes keeps the session's key")
+	first := key(testAgentContext(t, ctx, "agent-1", "worker"))
+	second := key(testAgentContext(t, ctx, "agent-2", "worker"))
+	require.NotEqual(t, "session", first)
+	require.NotEqual(t, first, second, "agents named alike are still apart")
+	require.Equal(t, first, key(testAgentContext(t, ctx, "agent-1", "worker")), "one agent's calls still join")
+	require.Equal(t, "session", key(WithComposingAgent(ctx, "agent-1")), "composing is not calling")
+
+	none := &dagql.CallRequest{ResultCall: &dagql.ResultCall{}}
+	agentConcurrencyKey(testAgentContext(t, ctx, "agent-1", "worker"), none)
+	require.Empty(t, none.ConcurrencyKey, "a call that never joins stays so")
+}
