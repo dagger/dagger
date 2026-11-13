@@ -147,6 +147,9 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 		}
 		if _, ok := stored[id]; ok {
 			validate = validateStoredRecordShape
+			if row.storedCall != nil {
+				validate = validateStoredFrameRecordShape
+			}
 		}
 		if err := validate(row.Record, senders.dependencies(row.DependencyIDs)); err != nil {
 			return nil, fmt.Errorf("row %d: %w", id, err)

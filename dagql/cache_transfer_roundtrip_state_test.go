@@ -68,7 +68,7 @@ func roundTripNumbers(t *testing.T, from, to *Cache) map[uint64]uint64 {
 		defer c.egraphMu.RUnlock()
 		out := map[string]uint64{}
 		for id, res := range c.resultsByID {
-			recipe, err := res.loadResultCall().deriveRecipeDigest(c)
+			recipe, err := res.entryFrameLocked().recipeDigest(c)
 			require.NoError(t, err)
 			require.NotContains(t, out, recipe.String(), "one entry a recipe")
 			out[recipe.String()] = uint64(id)
@@ -141,7 +141,7 @@ func roundTripStateLines(t *testing.T, name string, c *Cache) []string {
 			deps = append(deps, dep)
 		}
 		slices.Sort(deps)
-		recipe, err := res.loadResultCall().deriveRecipeDigest(c)
+		recipe, err := res.entryFrameLocked().recipeDigest(c)
 		require.NoError(t, err)
 		lines = append(lines, fmt.Sprintf("STATE %s entry %d deps=%v recipe=%s envelope=%s parts=%s replacements=%d", name, id, deps, recipe, hash(storedTestRecordLocked(t, res).Envelope), hash(storedPartTestOffers(res.storedParts)), res.replacements))
 	}
