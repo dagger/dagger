@@ -10,6 +10,8 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/vito/tuist"
+
+	"github.com/dagger/dagger/dagql/dagui"
 )
 
 // Desktop notifications: the TUI asks the terminal emulator to raise an OS
@@ -47,6 +49,9 @@ const notifyTitle = "Dagger"
 const (
 	// notifyDebounce drops an identical notification repeated within it.
 	notifyDebounce = 10 * time.Second
+	// notifyRunThreshold is how long a whole command must have run before its
+	// completion is worth a notification.
+	notifyRunThreshold = 30 * time.Second
 
 	maxNotifyTitleRunes = 64
 	maxNotifyBodyRunes  = 200
@@ -288,11 +293,15 @@ type desktopNotifier struct {
 	write   func(string)
 	now     func() time.Time
 
-	focus terminalFocus
+	focus   terminalFocus
+	started time.Time
 
 	seq      int
 	lastText string
 	lastAt   time.Time
+
+	// agentStates is each agent's state as last seen, for spotting turn ends.
+	agentStates map[string]string
 }
 
 // newDesktopNotifier returns nil when the environment disables
@@ -303,10 +312,12 @@ func newDesktopNotifier(getenv func(string) string, write func(string)) *desktop
 		return nil
 	}
 	return &desktopNotifier{
-		channel: ch,
-		mux:     detectNotifyMux(getenv),
-		write:   write,
-		now:     time.Now,
+		channel:     ch,
+		mux:         detectNotifyMux(getenv),
+		write:       write,
+		now:         time.Now,
+		started:     time.Now(),
+		agentStates: map[string]string{},
 	}
 }
 
@@ -463,4 +474,69 @@ func (fe *frontendPretty) sendNotification(when notifyWhen, title, body string) 
 		return false
 	}
 	return fe.notifier.send(when, title, body)
+}
+
+// notifyAgentTurns notifies when an agent the user is following finishes its
+// turn: its state leaves RUNNING (or WAITING_INPUT) for IDLE or FAILED. Called
+// with each new roster; an agent's first sighting only records its state, so
+// a restored or replayed roster stays quiet.
+//
+// Followed agents are the focused one and root agents (no parent: the main
+// conversation). Staff workers going idle are left out unless focused: their
+// chief is woken by their report anyway and its own turn end is the moment the
+// user is needed, so a notification per worker would be noise. WAITING_INPUT
+// is not announced here: the prompt the agent waits on arrives through
+// HandlePrompt / approvals, which notify with its text.
+func (fe *frontendPretty) notifyAgentTurns(agents []*dagui.AgentNode) {
+	if !fe.notificationsEnabled() {
+		return
+	}
+	states := fe.notifier.agentStates
+	focused := fe.focusedAgentID()
+	for _, agent := range agents {
+		if agent.ID == "" {
+			continue
+		}
+		prev, seen := states[agent.ID]
+		if prev == agent.State {
+			continue
+		}
+		states[agent.ID] = agent.State
+		if !seen || (prev != "RUNNING" && prev != "WAITING_INPUT") {
+			continue
+		}
+		root := agent.Control == nil || agent.Control.Parent == ""
+		if !root && agent.ID != focused {
+			continue
+		}
+		name := agent.Name
+		if name == "" {
+			name = "Agent"
+		}
+		switch agent.State {
+		case "IDLE":
+			fe.sendNotification(notifyUnlessFocused, notifyTitle, name+" finished its turn")
+		case "FAILED":
+			fe.sendNotification(notifyUnlessFocused, notifyTitle, name+" failed")
+		}
+	}
+}
+
+// notifyRunDone notifies when a long non-interactive command (a `dagger
+// call`, `dagger check`, ...) finishes while the user has switched away.
+// Interactive sessions end when the user exits them, so they never notify.
+func (fe *frontendPretty) notifyRunDone(err error) {
+	if !fe.notificationsEnabled() || fe.shell != nil || fe.interrupted {
+		return
+	}
+	elapsed := fe.notifier.now().Sub(fe.notifier.started)
+	if elapsed < notifyRunThreshold {
+		return
+	}
+	verb := "finished"
+	if err != nil {
+		verb = "failed"
+	}
+	fe.sendNotification(notifyIfBlurred, notifyTitle,
+		fmt.Sprintf("Command %s after %s", verb, dagui.FormatDuration(elapsed)))
 }

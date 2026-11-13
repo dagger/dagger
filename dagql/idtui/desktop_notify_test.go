@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/vito/tuist"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/agentcontrol"
 )
 
 func envFrom(env map[string]string) func(string) string {
@@ -152,9 +154,11 @@ type fakeNotifier struct {
 func newFakeNotifier(ch notifyChannel) *fakeNotifier {
 	f := &fakeNotifier{clock: time.Unix(1000, 0)}
 	f.desktopNotifier = &desktopNotifier{
-		channel: ch,
-		write:   func(s string) { f.out = append(f.out, s) },
-		now:     func() time.Time { return f.clock },
+		channel:     ch,
+		write:       func(s string) { f.out = append(f.out, s) },
+		now:         func() time.Time { return f.clock },
+		started:     f.clock,
+		agentStates: map[string]string{},
 	}
 	return f
 }
@@ -291,4 +295,79 @@ func TestNotifyApproval(t *testing.T) {
 	fe.notifyApproval("scout", "push to main?")
 	fe.tui.Step()
 	require.Equal(t, []string{"\x1b]9;Dagger: scout needs approval: push to main?\a"}, f.out)
+}
+
+func TestAgentTurnEndNotifies(t *testing.T) {
+	db := rosterDB(t) // chief and scout
+	fe, f := notifyTestFrontend(t, db)
+	steps := func() {
+		fe.notifyAgentSteps()
+	}
+
+	// First sightings only record state: a restored IDLE agent is not news.
+	publishAgentControl(t, db, "agent-chief", func(a *agentcontrol.Agent) { a.State = "IDLE" })
+	publishAgentControl(t, db, "agent-scout", func(a *agentcontrol.Agent) {
+		a.State = "IDLE"
+		a.Parent = "agent-chief"
+	})
+	steps()
+	require.Empty(t, f.out)
+
+	// The root agent finishing its turn notifies.
+	publishAgentControl(t, db, "agent-chief", func(a *agentcontrol.Agent) { a.State = "RUNNING" })
+	steps()
+	require.Empty(t, f.out)
+	publishAgentControl(t, db, "agent-chief", func(a *agentcontrol.Agent) { a.State = "IDLE" })
+	steps()
+	require.Equal(t, []string{"\x1b]9;Dagger: chief finished its turn\a"}, f.out)
+
+	// An unfocused worker going idle does not.
+	publishAgentControl(t, db, "agent-scout", func(a *agentcontrol.Agent) { a.State = "RUNNING" })
+	steps()
+	publishAgentControl(t, db, "agent-scout", func(a *agentcontrol.Agent) { a.State = "IDLE" })
+	steps()
+	require.Len(t, f.out, 1)
+
+	// Focused, it does; failing is announced too.
+	fe.pendingFocusAgent = "agent-scout"
+	publishAgentControl(t, db, "agent-scout", func(a *agentcontrol.Agent) { a.State = "RUNNING" })
+	steps()
+	publishAgentControl(t, db, "agent-scout", func(a *agentcontrol.Agent) {
+		a.State = "FAILED"
+		a.Failure = "boom"
+	})
+	steps()
+	require.Len(t, f.out, 2)
+	require.Equal(t, "\x1b]9;Dagger: scout failed\a", f.out[1])
+
+	// Pausing is the user's own doing.
+	publishAgentControl(t, db, "agent-chief", func(a *agentcontrol.Agent) { a.State = "RUNNING" })
+	steps()
+	publishAgentControl(t, db, "agent-chief", func(a *agentcontrol.Agent) { a.State = "PAUSED" })
+	steps()
+	require.Len(t, f.out, 2)
+}
+
+func TestRunDoneNotifiesOnlyWhenAway(t *testing.T) {
+	fe, f := notifyTestFrontend(t, dagui.NewDB())
+
+	f.clock = f.clock.Add(notifyRunThreshold / 2)
+	f.focus = focusOut
+	fe.notifyRunDone(nil)
+	require.Empty(t, f.out, "a short run is not worth it")
+
+	f.clock = f.clock.Add(time.Minute)
+	f.focus = focusUnknown
+	fe.notifyRunDone(nil)
+	require.Empty(t, f.out, "nice-to-know needs a known blur")
+
+	f.focus = focusOut
+	fe.notifyRunDone(errors.New("boom"))
+	require.Len(t, f.out, 1)
+	require.Contains(t, f.out[0], "Command failed after ")
+
+	fe.interrupted = true
+	f.clock = f.clock.Add(time.Minute)
+	fe.notifyRunDone(nil)
+	require.Len(t, f.out, 1, "the user pressed Ctrl-C: they are here")
 }
