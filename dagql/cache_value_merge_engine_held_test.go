@@ -123,13 +123,13 @@ func TestCloudRefusesAnEnginesStaleHeldRow(t *testing.T) {
 	require.Empty(t, cloud.resultsByID, "nothing commits")
 }
 
-// A held row stands for the sender's own holding of the row, which the
-// Cloud learned when the row arrived in full or when the Cloud's merge into
-// the sender landed it. A held row from an engine the Cloud holds no holding
-// of the row for is stale like one whose value is gone: nothing commits, and
-// the sender's retry carries the row in full, which gives the Cloud the
-// holding.
-func TestCloudRefusesAHeldRowItsSenderDoesntHold(t *testing.T) {
+// A held row from an engine the Cloud holds no holding of the row for, whose
+// recipe has a live value there, teaches the Cloud that engine's holding: an
+// engine sends a row the Cloud has from another engine as a held row, before
+// the engine's telemetry has named it. The commit records the holding on the
+// Cloud's entry for the recipe, and the rows above it depend on it there, as
+// they would on the row sent in full.
+func TestCloudLearnsAnEnginesHoldingFromItsHeldRow(t *testing.T) {
 	t.Parallel()
 	ctx, engine, srv := transferTestCache(t)
 	child := persistedListTestResult(t, ctx, engine, srv, "unheld-child", String("child"))
@@ -145,15 +145,22 @@ func TestCloudRefusesAHeldRowItsSenderDoesntHold(t *testing.T) {
 
 	reply, err = cloud.MergeValues(cctx, "engine", held)
 	require.NoError(t, err)
-	require.False(t, reply.Committed, "the sender holds no holding of the held row")
-	require.Len(t, reply.Stale, 1)
+	require.True(t, reply.Committed, "the held row holds on the other engine's copy")
+	require.Empty(t, reply.Stale)
 
-	reply, err = cloud.MergeValues(cctx, "engine", childOnly)
-	require.NoError(t, err)
-	require.True(t, reply.Committed)
-	reply, err = cloud.MergeValues(cctx, "engine", held)
-	require.NoError(t, err)
-	require.True(t, reply.Committed, "once the sender's own copy arrived, its held row holds")
+	childEntry, _ := cloudEntryOfRecipe(t, cloud, engine, child)
+	require.NotNil(t, childEntry)
+	childNumber := uint64(child.cacheSharedResult().id)
+	rootNumber := uint64(root.cacheSharedResult().id)
+	cloud.egraphMu.RLock()
+	defer cloud.egraphMu.RUnlock()
+	entry, h := cloud.holdingLocked(HolderKey{Cache: "engine", Number: childNumber})
+	require.NotNil(t, h, "the held row taught the engine's holding")
+	require.Equal(t, childEntry, entry, "on the Cloud's entry for its recipe")
+	_, rootHolding := cloud.holdingLocked(HolderKey{Cache: "engine", Number: rootNumber})
+	require.NotNil(t, rootHolding)
+	require.Contains(t, rootHolding.deps, childNumber, "the row above depends on the held row's holding")
+	require.Empty(t, rootHolding.unknownDeps)
 }
 
 // heldPartTestBundles are an engine's bundles over root above out: out's own
