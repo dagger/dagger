@@ -1419,8 +1419,6 @@ func (c *Cache) teachRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 // unions nothing finds nothing to repair: every union repairs to closure
 // before mergeEqClassesLocked returns. Requires egraphMu, for reading or
 // writing.
-//
-//nolint:gocyclo // One read-only check per write the teach could make; splitting them would hide that they mirror it.
 func (c *Cache) remoteIdentityTeachesNothingLocked(entry *sharedResult, recipe, request, content digest.Digest, term *RemoteTerm) bool {
 	if entry == nil || entry.id == 0 {
 		return false
