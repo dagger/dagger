@@ -28,8 +28,8 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     public function dimensionKeys(?bool $all = false): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
-        if (null !== $all) {
-        $leafQueryBuilder->setArgument('all', $all);
+        if (true === $all) {
+            $leafQueryBuilder->setArgument('all', $all);
         }
         return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
     }
