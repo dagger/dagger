@@ -1,6 +1,14 @@
 package core
 
-import "errors"
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/vektah/gqlparser/v2/ast"
+)
 
 // PromptRequest is a question the engine asks the user on behalf of the
 // calling code (see Server.Prompt): a yes/no answer, some text, a choice
@@ -24,6 +32,66 @@ type PromptRequest struct {
 	Text    *PromptText
 	Select  *PromptSelect
 	Secret  *PromptSecret
+
+	// Remember remembers the answer for the session, per owner, asking
+	// module, message, answer kind and Key: the same question from the same
+	// module is answered once. It also marks the calling function call as
+	// depending on the answer, so its result is never reused for another
+	// call (see FunctionCall.MarkOwnerSecretRead).
+	Remember bool
+	// Key, with Remember, lets the owner's client remember the answer
+	// beyond the session, under a key the engine namespaces by the asking
+	// module's git source, so no module reads or plants another's answers.
+	// Only modules loaded from git are identified well enough; others, and
+	// secrets, are only remembered for the session.
+	Key string
+}
+
+// Prompt is a question for the user, asked with Query.prompt; its fields ask
+// for an answer of one kind.
+type Prompt struct {
+	// Message is the question, as Markdown.
+	Message string
+	// Key, if set, remembers answers beyond the session (see
+	// PromptRequest.Key).
+	Key string
+}
+
+func (*Prompt) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Prompt",
+		NonNull:   true,
+	}
+}
+
+func (*Prompt) TypeDescription() string {
+	return dagql.FormatDescription(
+		`A question for the user, answered in the terminal of the client running the session.`,
+		`Select the kind of answer wanted to ask it: each selection asks, unless the answer is remembered.`,
+	)
+}
+
+var _ dagql.PersistedObject = (*Prompt)(nil)
+var _ dagql.PersistedObjectDecoder = (*Prompt)(nil)
+
+type persistedPromptPayload struct {
+	Message string `json:"message"`
+	Key     string `json:"key,omitempty"`
+}
+
+func (p *Prompt) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
+	if p == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted prompt: nil prompt")
+	}
+	return encodePersistedObjectPayload(persistedPromptPayload{Message: p.Message, Key: p.Key})
+}
+
+func (*Prompt) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedPromptPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted prompt payload: %w", err)
+	}
+	return &Prompt{Message: persisted.Message, Key: persisted.Key}, nil
 }
 
 type PromptBoolean struct {
