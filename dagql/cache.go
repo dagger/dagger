@@ -659,6 +659,7 @@ func NewCache(
 	c.egraphMu.Unlock()
 	if c.blobBacked {
 		c.startStoredBodyWorker()
+		c.queueRestoredTaughtContent()
 	}
 	return c, nil
 }
@@ -2558,6 +2559,9 @@ type Cache struct {
 	// frame its waiting taught digests, before it records that, holding no
 	// lock.
 	testTaughtContentGiven func()
+	// restoredTaught are the entries a restore gave taught content digests
+	// their saved frame hadn't taken, until the body worker starts.
+	restoredTaught []*sharedResult
 	// testRecipeFromBody runs when a recipe is read from a stored body's
 	// kept digest, for an entry without a decoded frame
 	// (recipeDigestForCachedResult). Only a blob-backed cache's entries, and

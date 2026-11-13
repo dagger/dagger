@@ -246,6 +246,14 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 				Call:          res.calls[request].encoded,
 			})
 		}
+		for i, taught := range res.taught {
+			snapshot.resultTaught = append(snapshot.resultTaught, persistdb.MirrorResultTaught{
+				ResultID: int64(resultID),
+				Position: int64(i),
+				Digest:   taught.String(),
+				Given:    i < res.taughtGiven,
+			})
+		}
 	}
 
 	persistedResultIDs := make([]sharedResultID, 0, len(persistedRootIDs))
@@ -547,6 +555,12 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 		if err := q.InsertMirrorResultCall(ctx, row); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("insert result_call (%d,%s): %w", row.ResultID, row.RequestDigest, err)
+		}
+	}
+	for _, row := range snapshot.resultTaught {
+		if err := q.InsertMirrorResultTaught(ctx, row); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("insert result_taught (%d,%d): %w", row.ResultID, row.Position, err)
 		}
 	}
 	for _, row := range snapshot.persistedEdges {

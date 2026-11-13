@@ -33,6 +33,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		resultOutputEqClassRows []persistdb.MirrorResultOutputEqClass
 		persistedEdgeRows       []persistdb.MirrorPersistedEdge
 		resultCallRows          []persistdb.MirrorResultCall
+		resultTaughtRows        []persistdb.MirrorResultTaught
 		resultDepRows           []persistdb.MirrorResultDep
 		resultSnapshotRows      []persistdb.MirrorResultSnapshotLink
 		snapshotContentRows     []persistdb.MirrorSnapshotContentLink
@@ -51,6 +52,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	listMirrorRows(lists, listCtx, "result_output_eq_classes", &resultOutputEqClassRows, c.pdb.ListMirrorResultOutputEqClasses)
 	listMirrorRows(lists, listCtx, "persisted_edges", &persistedEdgeRows, c.pdb.ListMirrorPersistedEdges)
 	listMirrorRows(lists, listCtx, "result_calls", &resultCallRows, c.pdb.ListMirrorResultCalls)
+	listMirrorRows(lists, listCtx, "result_taught", &resultTaughtRows, c.pdb.ListMirrorResultTaught)
 	listMirrorRows(lists, listCtx, "result_deps", &resultDepRows, c.pdb.ListMirrorResultDeps)
 	listMirrorRows(lists, listCtx, "result_snapshot_links", &resultSnapshotRows, c.pdb.ListMirrorResultSnapshotLinks)
 	listMirrorRows(lists, listCtx, "snapshot_content_links", &snapshotContentRows, c.pdb.ListMirrorSnapshotContentLinks)
@@ -239,6 +241,26 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				res.calls = make(map[digest.Digest]*keptCall)
 			}
 			res.calls[kept.id.recipe] = kept
+		}
+
+		// An entry's taught content digests come back in order, with how many
+		// its saved frame had taken; the body worker gives it the rest once
+		// it starts (queueRestoredTaughtContent).
+		for _, row := range resultTaughtRows {
+			res := c.resultsByID[sharedResultID(row.ResultID)]
+			if res == nil {
+				return fmt.Errorf("import result_taught %d: missing result", row.ResultID)
+			}
+			if row.Position != int64(len(res.taught)) {
+				return fmt.Errorf("import result_taught %d: position %d after %d", row.ResultID, row.Position, len(res.taught))
+			}
+			res.taught = append(res.taught, digest.Digest(row.Digest))
+			if row.Given && res.taughtGiven == len(res.taught)-1 {
+				res.taughtGiven++
+			}
+			if res.taughtGiven < len(res.taught) && (len(c.restoredTaught) == 0 || c.restoredTaught[len(c.restoredTaught)-1] != res) {
+				c.restoredTaught = append(c.restoredTaught, res)
+			}
 		}
 
 		for _, row := range persistedEdgeRows {

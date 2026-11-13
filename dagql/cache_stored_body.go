@@ -803,6 +803,18 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 	}
 }
 
+// queueRestoredTaughtContent has the body worker give the entries a restore
+// left with taught content digests their saved frame hadn't taken (a save
+// before the worker gave them) the rest.
+func (c *Cache) queueRestoredTaughtContent() {
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	for _, res := range c.restoredTaught {
+		c.queueTaughtContentLocked(res)
+	}
+	c.restoredTaught = nil
+}
+
 // adoptReplacedContent takes, as res's taught content digests, those of the
 // frame a replacement took from res when res had none (taughtFrom): its
 // replaced content digests in the order the frame kept them, then its
