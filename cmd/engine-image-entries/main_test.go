@@ -1,10 +1,13 @@
 package main
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -47,4 +50,18 @@ func TestGoSDKBuildFlagsOnCompileLines(t *testing.T) {
 	client := flagged["example.com/seed/internal/dagger"]
 	require.Contains(t, client, "-dwarf=false")
 	require.Contains(t, client, " -l ")
+}
+
+// The Go SDK's shared imports name every third-party package generated code
+// imports, which sdk/go/internal/codegendeps pins: a module's dependency calls
+// for what they reach are the image's only when the list covers them all.
+func TestGoSDKSharedImportsCoverGeneratedCode(t *testing.T) {
+	f, err := parser.ParseFile(token.NewFileSet(), filepath.Join("..", "..", "sdk", "go", "internal", "codegendeps", "codegendeps.go"), nil, parser.ImportsOnly)
+	require.NoError(t, err)
+	require.NotEmpty(t, f.Imports)
+	for _, imp := range f.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		require.NoError(t, err)
+		require.Contains(t, distconsts.GoSDKSharedImports(), path, "generated code imports %s, which the Go SDK's shared imports leave out", path)
+	}
 }
