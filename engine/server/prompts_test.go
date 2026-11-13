@@ -298,7 +298,8 @@ func TestLLMApproval(t *testing.T) {
 	req := questions.asked()[0]
 	require.Equal(t, "llm", req.Kind)
 	require.Equal(t, "Use the LLM API?", req.Question, "frontends rendering the choices show the bare action")
-	require.Equal(t, `Allow LLM access (requested by module "direct", function "Direct.prompt")?`, req.Prompt)
+	require.Equal(t, `Allow LLM access for github.com/org/direct (requested by module "direct", function "Direct.prompt")?`, req.Prompt,
+		"text-only frontends name the module's source, not only the name it chose")
 	require.Equal(t, "github.com/org/direct", req.Subject)
 	require.Equal(t, `approval:v2:"llm":"https://github.com/org/direct|direct":"github.com/org/direct"`, req.PersistentKey)
 	require.Equal(t, []string{"allow_llm:github.com/org/direct"}, req.LegacyPersistentKeys,
@@ -327,7 +328,7 @@ func TestLLMApprovalLegacyClient(t *testing.T) {
 	require.NoError(t, s.srv.AuthorizeLLM(s.ctx(module), "github.com/org/direct"))
 	require.Len(t, questions.requests, 1)
 	require.Equal(t, "allow_llm:github.com/org/direct", questions.requests[0].PersistentKey)
-	require.Equal(t, `Allow LLM access (requested by module "direct")?`, questions.requests[0].Prompt)
+	require.Equal(t, `Allow LLM access for github.com/org/direct (requested by module "direct")?`, questions.requests[0].Prompt)
 }
 
 func TestTerminalSafeText(t *testing.T) {
