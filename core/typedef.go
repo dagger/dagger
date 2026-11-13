@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -2539,6 +2540,12 @@ type FunctionCall struct {
 
 	returnState *functionCallReturnState
 
+	// ownerSecretRead records that the call, or a call it made, read a
+	// secret from the host of its trusted owner on an agent's behalf (see
+	// MarkOwnerSecretRead). Engine-side only, like callerAgent; shared by
+	// copies, like returnState.
+	ownerSecretRead *atomic.Bool
+
 	// parentTyped is the receiver object the function was called on, carrying its
 	// dagql ID. It is engine-side only (not persisted, not sent to the module),
 	// and backs Query.currentNode so a module can reference the object that
@@ -2671,6 +2678,23 @@ func (fnCall *FunctionCall) SetCallerAgent(agent dagql.ObjectResult[*Agent]) {
 	fnCall.callerAgent = agent
 }
 
+// MarkOwnerSecretRead records that the call read a secret through its
+// owner's host with the owner's approval, for one agent (see
+// Server.AuthorizeSecret). The call's result is derived from that secret,
+// while nothing in its cache key says so: ModuleFunction.Call then keeps it
+// from being reused, so another session, agent or caller cannot get it
+// without asking.
+func (fnCall *FunctionCall) MarkOwnerSecretRead() {
+	if fnCall != nil && fnCall.ownerSecretRead != nil {
+		fnCall.ownerSecretRead.Store(true)
+	}
+}
+
+// OwnerSecretRead reports whether MarkOwnerSecretRead was called.
+func (fnCall *FunctionCall) OwnerSecretRead() bool {
+	return fnCall != nil && fnCall.ownerSecretRead != nil && fnCall.ownerSecretRead.Load()
+}
+
 // EngineWork reports whether the call was made as the engine's own work
 // (see FunctionCall.engineWork).
 func (fnCall *FunctionCall) EngineWork() bool {
@@ -2703,6 +2727,7 @@ type functionCallReturn struct {
 
 func newFunctionCall(fnCall FunctionCall) *FunctionCall {
 	fnCall.returnState = &functionCallReturnState{}
+	fnCall.ownerSecretRead = &atomic.Bool{}
 	return &fnCall
 }
 
