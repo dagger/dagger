@@ -85,8 +85,8 @@ type exportChainTestManager struct {
 	// a snapshot it doesn't name exports an empty chain. Its builds don't
 	// wait.
 	chains map[string]*snapshots.ExportChain
-	// fail, when set, fails every File's chain build, each counted in
-	// fileStarts.
+	// fail, when set, fails every File's chain build. fileStarts counts
+	// the Files' chain builds begun.
 	fail       bool
 	fileStarts int
 
@@ -150,11 +150,15 @@ func (r *exportChainTestRef) ExportChain(ctx context.Context, _ config.RefConfig
 	return r.manager.build(ctx)
 }
 func (r *exportChainTestRef) ExportFileChain(ctx context.Context, _ config.RefConfig, _ string) (*snapshots.ExportChain, error) {
-	if r.manager.fail {
-		r.manager.mu.Lock()
-		defer r.manager.mu.Unlock()
-		r.manager.fileStarts++
+	r.manager.mu.Lock()
+	r.manager.fileStarts++
+	fail := r.manager.fail
+	r.manager.mu.Unlock()
+	if fail {
 		return nil, fmt.Errorf("file chain %s failed", r.id)
+	}
+	if r.manager.chains != nil {
+		return &snapshots.ExportChain{Layers: []snapshots.ExportLayer{{Description: r.id}}}, nil
 	}
 	return r.manager.build(ctx)
 }
@@ -289,4 +293,40 @@ func TestExportStartsNoFileChainAfterAFailure(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "file chain a failed")
 	require.Equal(t, 1, mgr.fileStarts, "File chains begun")
+}
+
+// Two of an export's parts that are the same File, the same path in the same
+// snapshot, share one chain: it is built once.
+func TestExportBuildsOneFileOnce(t *testing.T) {
+	t.Parallel()
+	mgr := &exportChainTestManager{fakeSnapshotManager: &fakeSnapshotManager{}, chains: map[string]*snapshots.ExportChain{}}
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), mgr, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
+	srv.InstallObject(NewClass(srv, ClassOpts[*exportChainTestValue]{}))
+	ctx = srvToContext(ContextWithCache(ctx, c), srv)
+
+	roots := []AnyResult{
+		persistedListTestResult(t, ctx, c, srv, "mountA", &exportChainTestValue{SnapshotID: "bin", File: "/pkg.test"}),
+		persistedListTestResult(t, ctx, c, srv, "mountB", &exportChainTestValue{SnapshotID: "bin", File: "/pkg.test"}),
+		persistedListTestResult(t, ctx, c, srv, "other", &exportChainTestValue{SnapshotID: "bin", File: "/other"}),
+	}
+	selection := ValueSelection{Roots: roots}
+	for _, root := range roots {
+		selection.Outputs = append(selection.Outputs, SelectedValueOutput{Result: root, Address: PersistedPartAddress{Part: "snapshot"}})
+	}
+	var layers [][]snapshots.ExportLayer
+	err = c.WithExportedValues(ctx, selection, config.RefConfig{Builds: config.LayerBuilds{Workers: 4}}, func(_ context.Context, values *ExportedValues) error {
+		for _, entry := range values.Chains.Entries {
+			layers = append(layers, entry.Layers)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, mgr.fileStarts, "File chains built")
+	require.Len(t, layers, 3)
+	require.Equal(t, layers[0], layers[1])
+	require.Len(t, layers[2], 1)
 }
