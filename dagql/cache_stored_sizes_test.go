@@ -804,8 +804,11 @@ func TestStoredSizesOfACompressedRecordFollowItsCall(t *testing.T) {
 // short holds, not one. It doesn't restart when a write lands between two
 // pieces: the rest of the walk reads each entry again, by its number, as the
 // write left it, so it may count a closure that grew between two of its
-// pieces. Here, with a piece of one entry, a part stored on R before R is
-// read adds its owner to R's closure, and the walk counts it.
+// pieces. Here, with a piece of one entry, a part stored on R between two
+// pieces, before R is read, adds its owner to R's closure, and the walk
+// counts it. The write takes egraphMu for writing, so it gets in only if the
+// walk let the lock go; it is given ten seconds, and the walk goes on either
+// way.
 func TestStoredSizesGiveUpTheLockBetweenEntries(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
@@ -814,24 +817,40 @@ func TestStoredSizesGiveUpTheLockBetweenEntries(t *testing.T) {
 	require.NoError(t, err)
 	q := reply.Imported()[0].ResultID
 
-	cloud.readPieceSize = 1
+	type stored struct {
+		ok  bool
+		err error
+	}
+	written := make(chan stored, 1)
 	var yields, holds int
+	var late bool
+	cloud.readPieceSize = 1
 	cloud.testStoredSizesHold = func(time.Duration) { holds++ }
 	cloud.testReadPieceYielded = func() {
 		yields++
-		require.True(t, cloud.egraphMu.TryLock(), "the lock is free between two pieces")
-		cloud.egraphMu.Unlock()
-		if yields == 1 {
+		if yields != 1 {
+			return
+		}
+		go func() {
 			part := testLiveOffer()
 			part.Owner.DependencyIDs = []uint64{q}
-			stored, _, err := cloud.SetStoredPart(ctx, r, part, 0)
-			require.NoError(t, err)
-			require.True(t, stored)
+			ok, _, err := cloud.SetStoredPart(ctx, r, part, 0)
+			written <- stored{ok, err}
+		}()
+		select {
+		case w := <-written:
+			written <- w
+		case <-time.After(10 * time.Second):
+			late = true
 		}
 	}
 	got, err := cloud.StoredSizes(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Positive(t, yields, "the walk let the lock go")
+	w := <-written
+	require.NoError(t, w.err)
+	require.True(t, w.ok)
+	require.False(t, late, "the write got the lock between two pieces")
 	require.Equal(t, 3, got[0].Records, "R, P, and the owner the part stored between two pieces added")
 	require.Greater(t, holds, yields, "a hold for each piece, and the measures' publish")
 }
