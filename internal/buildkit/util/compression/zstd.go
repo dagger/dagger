@@ -177,6 +177,11 @@ type zstdLayerWriter struct {
 	outgrown    bool
 	frame       []byte
 	compressing []chan []byte
+	// closed is set by the first Close, and closeErr is what it returned:
+	// callers may Close again, as a deferred Close after an explicit one,
+	// and get the same answer, with enc given back once.
+	closed   bool
+	closeErr error
 }
 
 func (w *zstdLayerWriter) Write(p []byte) (int, error) {
@@ -254,6 +259,14 @@ func (w *zstdLayerWriter) writeOldest() error {
 }
 
 func (w *zstdLayerWriter) Close() error {
+	if !w.closed {
+		w.closed = true
+		w.closeErr = w.close()
+	}
+	return w.closeErr
+}
+
+func (w *zstdLayerWriter) close() error {
 	if err := w.finish(); err != nil {
 		return err
 	}
