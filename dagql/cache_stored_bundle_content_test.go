@@ -231,6 +231,60 @@ func TestStoredBundleKeepsATaughtContentDigestWhenTheRecordIsReplacedAsItIsGiven
 	storedContentTestWait(t, cloud, number, content)
 }
 
+// storedContentTestRoot has engine cache-a compute a root with no content
+// digest and returns its export and its number on a.
+func storedContentTestRoot(t *testing.T, field string) (ValueBundle, uint64) {
+	t.Helper()
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, field, &transferTestValue{Text: "x"})
+	a.egraphMu.RLock()
+	aNumber := uint64(r.cacheSharedResult().id)
+	a.egraphMu.RUnlock()
+	return exportTestBundle(t, actx, a, r), aNumber
+}
+
+// An entry a prune left with no value, whose holding keeps it, takes a later
+// export's record with the content digest a span taught it before the prune.
+func TestStoredBundleKeepsATaughtContentDigestWhenAPrunedEntryStoresAgain(t *testing.T) {
+	t.Parallel()
+	content := testDigest("content-of-pruned")
+	bundle, aNumber := storedContentTestRoot(t, "pruned-root")
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	number := storedPersistenceTestMerge(t, ctx, cloud, bundle)[0]
+	storedContentTestTeach(t, ctx, cloud, aNumber, content)
+	storedContentTestWait(t, cloud, number, content)
+
+	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(number))
+	require.NoError(t, err)
+	require.True(t, removed)
+	require.Equal(t, []uint64{number}, storedPersistenceTestMerge(t, ctx, cloud, bundle), "the same entry takes the record again")
+	storedContentTestWait(t, cloud, number, content)
+}
+
+// An entry restored from a save, whose expired record is then replaced by a
+// new one from an engine, keeps the content digest a span taught it before
+// the save: the new frame takes the old frame's.
+func TestCloudRestoreKeepsATaughtContentDigestAcrossAReplacement(t *testing.T) {
+	t.Parallel()
+	content := testDigest("content-before-restore")
+	bundle, aNumber := storedContentTestRoot(t, "restored-root")
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	number := storedPersistenceTestMerge(t, ctx, cloud, bundle)[0]
+	storedContentTestTeach(t, ctx, cloud, aNumber, content)
+	storedContentTestWait(t, cloud, number, content)
+	require.NoError(t, cloud.Close(ctx))
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, number))
+	second, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.Equal(t, number, second.Imported()[0].ResultID)
+	require.Equal(t, uint64(1), second.Values[0].Replacements, "the expired record was replaced")
+	storedContentTestWait(t, cloud, number, content)
+}
+
 // A content digest the Cloud learned for an entry, still waiting for the
 // body worker when the Cloud closes, is on the entry's frame after a restore:
 // the save keeps frames, not the digests waiting for them.
