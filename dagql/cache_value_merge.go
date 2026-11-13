@@ -272,13 +272,32 @@ type MergeReply struct {
 }
 
 // MergeRowCounts counts a merge's records by what its commit did with each:
-// a held row, which stands for the recipient's own value; a record whose
-// recipe's entry kept its value; one a new entry stores (created), one an
-// entry with no value takes (stored), one that replaces an expired value in
-// place (replaced), and one a new entry stores while the expired value it
-// supersedes stays in use (retired).
+// a held row, which stands for the recipient's own value; a record that
+// lands on an entry that keeps its value (kept): one the cache already had,
+// or one another record of the bundle with the same recipe stores; one a new
+// entry stores (created), one an entry with no value takes (stored), one
+// that replaces an expired value in place (replaced), and one a new entry
+// stores while the expired value it supersedes stays in use (retired).
 type MergeRowCounts struct {
 	Held, Kept, Created, Stored, Replaced, Retired int
+}
+
+// count counts one decided row.
+func (n *MergeRowCounts) count(row *mergeRow) {
+	switch {
+	case row.value.Held != "":
+		n.Held++
+	case row.action == mergeKeep:
+		n.Kept++
+	case row.action == mergeCreate:
+		n.Created++
+	case row.action == mergeStore:
+		n.Stored++
+	case row.action == mergeReplace:
+		n.Replaced++
+	case row.action == mergeRetire:
+		n.Retired++
+	}
 }
 
 // MergedValue is one merged record's target as the commit left it.
@@ -2137,6 +2156,7 @@ func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement)
 func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) MergeReply {
 	reply := MergeReply{Generation: c.identity.Generation, EngineTimeUnixNano: time.Now().UnixNano()}
 	for _, row := range commit.rows {
+		reply.Rows.count(row)
 		res := row.res
 		if c.resultsByID[res.id] != res {
 			// The commit's collection removed an entry the merge created
