@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -410,6 +411,13 @@ func (udp *UserDefaultPrimitive) DagqlInput() (dagql.Input, error) {
 	return typeDef.ToInput().Decoder().DecodeInput(value)
 }
 
+// untrustedSettingsMessage explains why an object setting of a module with
+// UntrustedSettings does not resolve.
+const untrustedSettingsMessage = "this module comes from a staged workspace edit or a workspace value, " +
+	"and its settings or source are not the ones that the session loaded from the host, " +
+	"so this setting cannot use host resources: " +
+	"use a DAG address (dag://) of a workspace artifact, or set it in the dagger.toml on disk"
+
 func (fn *ModuleFunction) newUserDefault(arg *FunctionArg, userInput string) *UserDefault {
 	return &UserDefault{
 		UserDefaultPrimitive{
@@ -504,6 +512,15 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	}
 
 	resolveOne := func(userInput, typename string) (any, error) {
+		// Object values resolve as the main client, with its secret providers,
+		// sockets, files and credentials. Only the configuration that the
+		// session loaded for that client may use them. Other configuration
+		// can only select an artifact of the workspace that it belongs to.
+		if ud.Function.mod.Self().UntrustedSettings {
+			if _, bound := WorkspaceFromContext(ctx); !bound || !dagaddress.IsAddress(userInput) {
+				return nil, ud.errorf(nil, "%s", untrustedSettingsMessage)
+			}
+		}
 		addr, err := resolveUserAddress(mainCtx, srv, userInput)
 		if err != nil {
 			return nil, ud.errorf(err, "resolve address")
@@ -627,6 +644,13 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 		if !fn.mod.Self().DefaultsFromDotEnv {
 			return nil, false, nil
 		}
+	}
+
+	// .env defaults are files of the host, and their values expand with the
+	// main client's environment. An untrusted module reads its .env from a
+	// tree that the host user did not write, so it gets no .env defaults.
+	if fn.mod.Self().UntrustedSettings {
+		return nil, false, nil
 	}
 
 	// Discover whether this function has any defaults before acquiring the

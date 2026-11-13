@@ -4646,6 +4646,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// also load .env defaults for args not found in WorkspaceConfig.
 		LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
 
+		// UntrustedSettings marks a module whose settings must not use the
+		// resources of the session's client (see core.Module.UntrustedSettings).
+		UntrustedSettings bool `internal:"true" default:"false"`
+
 		// DefaultPathContextSourceRef, when set, loads implementation code from
 		// the receiver but resolves +defaultPath inputs from this source ref.
 		DefaultPathContextSourceRef string `internal:"true" default:""`
@@ -4762,7 +4766,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 	// Keep the per-session content cache distinct for module variants produced
 	// from the same source with different internal asModule options.
-	mod.AsModuleVariantDigest = hashutil.HashStrings(
+	variantInputs := []string{
 		"asModuleVariant",
 		defaultPathContextSourceVariant,
 		fmt.Sprintf("%t", args.ForceDefaultFunctionCaching),
@@ -4771,7 +4775,14 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		args.LegacyWorkspaceConfigJSON,
 		fmt.Sprintf("%t", args.LegacyDefaultsFromDotEnv),
 		args.LegacyArgCustomizationsJSON,
-	).String()
+	}
+	// Appended only when set, so trusted variants keep the identity that the
+	// session and dependency load paths share.
+	if args.UntrustedSettings {
+		variantInputs = append(variantInputs, "untrustedSettings")
+	}
+	mod.AsModuleVariantDigest = hashutil.HashStrings(variantInputs...).String()
+	mod.UntrustedSettings = args.UntrustedSettings
 
 	// Apply legacy settings that must be set before Install runs.
 	if args.LegacyNameOverride != "" {

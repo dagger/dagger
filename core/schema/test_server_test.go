@@ -72,6 +72,10 @@ func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []st
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) SessionWorkspaceModule(context.Context, string) (dagql.ObjectResult[*core.Module], bool, error) {
+	return dagql.ObjectResult[*core.Module]{}, false, nil
+}
+
 func (s *currentTypeDefsTestServer) CurrentServedDeps(context.Context) (*core.SchemaBuilder, error) {
 	return s.deps, nil
 }
