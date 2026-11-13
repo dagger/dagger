@@ -1,6 +1,7 @@
 package compression
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -85,6 +86,48 @@ func zstdManyLayers(t *testing.T, comp Config) string {
 func TestZstdManyLayersBlobsDontDependOnEarlierLayers(t *testing.T) {
 	for _, comp := range []Config{New(Zstd), New(Zstd).SetFramed(true)} {
 		require.Equal(t, zstdManyLayersGolden[comp.Framed], zstdManyLayers(t, comp), "framed=%v", comp.Framed)
+	}
+}
+
+// An engine's overlay diff closes its compressed writer, then closes it
+// again in a defer. The second Close writes nothing and gives the encoder
+// back no second time: two layers compressed at once after it each get an
+// encoder of their own, and every blob is the one it was.
+func TestZstdLayerClosedTwice(t *testing.T) {
+	for _, comp := range []Config{New(Zstd), New(Zstd).SetFramed(true)} {
+		compress, _ := comp.Type.Compress(context.Background(), comp)
+		for _, size := range []int{64 << 10, 20 << 20} {
+			data := layerBytes(size)
+			var out bytes.Buffer
+			w, err := compress(&out, "")
+			require.NoError(t, err)
+			_, err = w.Write(data)
+			require.NoError(t, err)
+			require.NoError(t, w.Close())
+			require.NoError(t, w.Close())
+			require.Equal(t, zstdLayerGolden[comp.Framed][size], digestOf(out.Bytes()), "framed=%v size %d", comp.Framed, size)
+
+			// Two layers at once, written in turns, so that a stream
+			// sharing an encoder with the other would interleave.
+			var outs [2]bytes.Buffer
+			var ws [2]io.WriteCloser
+			for i := range ws {
+				ws[i], err = compress(&outs[i], "")
+				require.NoError(t, err)
+			}
+			for rest := data; len(rest) > 0; {
+				n := min(len(rest), 1<<20)
+				for _, w := range ws {
+					_, err := w.Write(rest[:n])
+					require.NoError(t, err)
+				}
+				rest = rest[n:]
+			}
+			for i, w := range ws {
+				require.NoError(t, w.Close())
+				require.Equal(t, zstdLayerGolden[comp.Framed][size], digestOf(outs[i].Bytes()), "framed=%v size %d, layer %d at once", comp.Framed, size, i)
+			}
+		}
 	}
 }
 
