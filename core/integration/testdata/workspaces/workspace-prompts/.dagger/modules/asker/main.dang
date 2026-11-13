@@ -40,4 +40,15 @@ type Asker {
   fallback(message: String!): Boolean! {
     prompt(message: message).boolean(default: true)
   }
+
+  """
+  Build a directory recording the answer to a yes/no question. Calls on what
+  a function returns are cached by its call, so a function returning an
+  object built from an answer declares itself cached per session at most:
+  another session asks again, and gets its own build.
+  """
+  build(message: String!): Directory! @cache(policy: FunctionCachePolicy.PerSession) {
+    let answer = if (prompt(message: message).boolean) { "yes" } else { "no" }
+    directory.withNewFile("answer", answer)
+  }
 }
