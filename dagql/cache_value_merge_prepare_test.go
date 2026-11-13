@@ -160,7 +160,7 @@ func TestMergeValuesFullPreparationBeforeOfferGraph(t *testing.T) {
 	x2.Record.Envelope.PendingOffers = []PersistedPartOffer{offer}
 	frame := &ResultCall{Kind: ResultCallKindField, Field: "fallback-y", Type: NewResultCallType(String("").Type())}
 	y := TransferredValue{Ordinal: 3, SenderNumber: 3, DependencyIDs: []uint64{1}, Record: PersistedRecord{ResultID: 3, Call: frame, Envelope: PersistedResultEnvelope{Version: persistedResultEnvelopeVersion, Kind: persistedResultKindScalar, ResultID: 3, TypeName: "String", ScalarJSON: json.RawMessage(`"y"`)}}}
-	bundle := ValueBundle{Version: valueBundleVersion, Roots: []TransferredRoot{{Ordinal: 2}}, Values: []TransferredValue{x, x2, y}}
+	bundle := ValueBundle{Version: ValueBundleVersion, Roots: []TransferredRoot{{Ordinal: 2}}, Values: []TransferredValue{x, x2, y}}
 	_, err = validateValueBundle(bundle)
 	require.NoError(t, err)
 	c.testBeforeTransferCommit = func() { mergeTestExpire(c, target) }

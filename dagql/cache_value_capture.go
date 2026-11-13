@@ -1296,7 +1296,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		ref.ResultID = uint64(row.ordinal)
 		return nil
 	}
-	bundle := ValueBundle{Version: valueBundleVersion, Roots: capture.roots}
+	bundle := ValueBundle{Version: ValueBundleVersion, Roots: capture.roots}
 	for _, row := range capture.order {
 		if row.held {
 			value := TransferredValue{Ordinal: row.ordinal, SenderNumber: uint64(row.shared.id), SenderReplacements: row.replacements, Record: PersistedRecord{ResultID: uint64(row.shared.id)}, ExpiresAtUnix: row.expiry, Held: row.recipe}
