@@ -158,7 +158,7 @@ func newFakeNotifier(ch notifyChannel) *fakeNotifier {
 		write:       func(s string) { f.out = append(f.out, s) },
 		now:         func() time.Time { return f.clock },
 		started:     f.clock,
-		agentStates: map[string]string{},
+		agentStates: map[agentcontrol.Key]string{},
 	}
 	return f
 }
@@ -234,13 +234,20 @@ func notifyTestFrontend(t *testing.T, db *dagui.DB) (*frontendPretty, *fakeNotif
 func TestTerminalFocusListener(t *testing.T) {
 	fe, f := notifyTestFrontend(t, dagui.NewDB())
 	ctx := tuist.Context{}
+	key := uv.KeyPressEvent(uv.Key{Code: 'x', Text: "x"})
+
+	// Until the terminal reports focus, typing proves nothing: a terminal
+	// that never reports would otherwise stay "focused" forever.
+	require.False(t, fe.handleTerminalFocus(ctx, key))
+	require.Equal(t, focusUnknown, f.focus)
+
 	require.True(t, fe.handleTerminalFocus(ctx, uv.BlurEvent{}), "focus reports are consumed")
 	require.Equal(t, focusOut, f.focus)
 	require.True(t, fe.handleTerminalFocus(ctx, uv.FocusEvent{}))
 	require.Equal(t, focusIn, f.focus)
 	f.focus = focusOut
-	require.False(t, fe.handleTerminalFocus(ctx, uv.KeyPressEvent(uv.Key{Code: 'x', Text: "x"})), "keys still reach the UI")
-	require.Equal(t, focusIn, f.focus, "typing means focused")
+	require.False(t, fe.handleTerminalFocus(ctx, key), "keys still reach the UI")
+	require.Equal(t, focusIn, f.focus, "typing means focused once the terminal reports focus")
 
 	// Without a notifier, reports are still swallowed rather than dispatched.
 	fe.notifier = nil
@@ -348,6 +355,33 @@ func TestAgentTurnEndNotifies(t *testing.T) {
 	require.Len(t, f.out, 2)
 }
 
+// TestRestoredAgentTurnIsQuiet: a resumed session imports the old trace, where
+// the chief was RUNNING when it crashed, then republishes it IDLE under the
+// same handle in the live trace. That is a restore, not a turn ending.
+func TestRestoredAgentTurnIsQuiet(t *testing.T) {
+	db := rosterDB(t)
+	fe, f := notifyTestFrontend(t, db)
+	ingestAgentControl(t, db, agentcontrol.Agent{
+		Key: agentcontrol.Key{
+			Namespace: agentcontrol.Namespace{Session: "old-session", Trace: "old-trace", Incarnation: "old"},
+			Handle:    "agent-chief",
+		},
+		Revision: 7, Activity: time.Unix(1, 0).UTC(),
+		Name: "chief", State: "RUNNING", Digest: "xxh3:old",
+	})
+	fe.notifyAgentSteps()
+	require.Equal(t, "RUNNING", db.Agents()[0].State, "sanity: the imported state is selected")
+
+	publishAgentControl(t, db, "agent-chief", func(a *agentcontrol.Agent) {
+		a.Namespace = agentcontrol.Namespace{Session: "session", Trace: prettyTestTraceID().String(), Incarnation: "incarnation"}
+		a.Revision = 1
+		a.State = "IDLE"
+	})
+	fe.notifyAgentSteps()
+	require.Equal(t, "IDLE", db.Agents()[0].State, "sanity: the live state is selected")
+	require.Empty(t, f.out)
+}
+
 func TestRunDoneNotifiesOnlyWhenAway(t *testing.T) {
 	fe, f := notifyTestFrontend(t, dagui.NewDB())
 
@@ -370,4 +404,18 @@ func TestRunDoneNotifiesOnlyWhenAway(t *testing.T) {
 	f.clock = f.clock.Add(time.Minute)
 	fe.notifyRunDone(nil)
 	require.Len(t, f.out, 1, "the user pressed Ctrl-C: they are here")
+}
+
+// TestRunDoneQuietAfterShell: exiting an interactive session never notifies,
+// even though the shell is torn down before the run returns.
+func TestRunDoneQuietAfterShell(t *testing.T) {
+	fe, f := notifyTestFrontend(t, dagui.NewDB())
+	fe.startShell(context.Background(), &focusShellHandler{})
+	fe.stopShell()
+	require.Nil(t, fe.shell, "sanity: the shell is gone by the time the run ends")
+
+	f.clock = f.clock.Add(time.Hour)
+	f.focus = focusOut
+	fe.notifyRunDone(nil)
+	require.Empty(t, f.out)
 }
