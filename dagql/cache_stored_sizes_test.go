@@ -416,10 +416,13 @@ func TestStoredSizesMeasureAgainAfterAPartAddsADependency(t *testing.T) {
 // free: a measure never holds egraphMu, and each first measurement counts. A
 // measure proves the lock free the way a writer finds it: a write lock taken
 // within ten seconds. The cache's own background work may hold the lock for
-// a moment, which a bare TryLock would take for the measure's.
+// a moment, which a bare TryLock would take for the measure's. The Cloud's
+// body worker is stopped: a body installed while a measure is in flight
+// drops that measure (publishStoredSizes), and the second call would measure
+// again.
 func TestStoredSizesMeasureOutsideTheLock(t *testing.T) {
 	t.Parallel()
-	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
 	var free, held int
 	cloud.testStoredSizeMeasure = func() {
 		locked := make(chan struct{})
