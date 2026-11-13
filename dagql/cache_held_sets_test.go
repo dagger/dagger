@@ -235,3 +235,31 @@ func BenchmarkHoldingsOnOneEntry(b *testing.B) {
 		})
 	}
 }
+
+// On a stored entry with an expiry, HoldingFacts answers the entry's stored
+// record and its expiry as RemoteHoldingInfo does.
+func TestHoldingFactsOnAStoredEntry(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, root, _ := storedBundleTestCloud(t, "root")
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, root))
+	info, ok := cloud.EntryInfo(root)
+	require.True(t, ok)
+	require.True(t, info.Stored)
+	require.NotZero(t, info.StoredExpiresAtUnix)
+	key := HolderKey{Cache: "cache-b", Number: 5}
+	_, err := cloud.AttachRemoteHolding(ctx, key, RemoteHolding{Recipe: info.Recipes[0], Field: "bundle-root", TypeName: "transferTestValue",
+		Parts: []PersistedPartAddress{{Part: "fs"}}, Deps: []uint64{4}, ExpiresAtUnix: info.StoredExpiresAtUnix + 100})
+	require.NoError(t, err)
+	for _, k := range []HolderKey{key, {Cache: "cache-a", Number: bundleSenderNumberForTest(t, cloud, root)}} {
+		held, ok := cloud.RemoteHoldingInfo(k)
+		require.True(t, ok)
+		facts, ok := cloud.HoldingFacts(k)
+		require.True(t, ok)
+		h := held.Holding
+		require.Equal(t, HoldingFacts{
+			Number: held.Number, Stored: true, StoredExpiresAtUnix: info.StoredExpiresAtUnix,
+			TypeName: h.TypeName, ExpiresAtUnix: h.ExpiresAtUnix, Retained: h.Retained, RetentionExpiresAtUnix: h.RetentionExpiresAtUnix,
+			Replacements: h.Replacements, Executed: h.Executed, Image: h.Image, Deps: h.Deps, UnknownDeps: h.UnknownDeps, Parts: h.Parts,
+		}, facts, "%v", k)
+	}
+}
