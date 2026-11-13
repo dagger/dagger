@@ -1,0 +1,333 @@
+package dagql
+
+import (
+	"encoding/json"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+// changedSinceTestBuild builds a stored bundle of the roots.
+func changedSinceTestBuild(t *testing.T, cloud *Cache, roots ...uint64) StoredBundleResult {
+	t.Helper()
+	built, err := cloud.StoredBundle(t.Context(), roots, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	return built
+}
+
+func changedSinceTestOne(t *testing.T, cloud *Cache, number, position uint64) bool {
+	t.Helper()
+	changed := cloud.ChangedSince([]uint64{number}, position)
+	require.Len(t, changed, 1)
+	return changed[0]
+}
+
+// changedSinceTestRecords returns, by Cloud entry number, what a bundle
+// carries of each record: its value, with the rows it names by ordinal named
+// by entry number, its outputs, and the calls that return it.
+func changedSinceTestRecords(t *testing.T, bundle ValueBundle) map[uint64]string {
+	t.Helper()
+	numbers := map[TransferOrdinal]uint64{}
+	for _, value := range bundle.Values {
+		numbers[value.Ordinal] = value.SenderNumber
+	}
+	parts := map[uint64][]string{}
+	add := func(number uint64, kind string, v any) {
+		raw, err := json.Marshal(v)
+		require.NoError(t, err)
+		parts[number] = append(parts[number], kind+string(raw))
+	}
+	for _, value := range bundle.Values {
+		number := value.SenderNumber
+		value.Ordinal = 0
+		deps := make([]uint64, len(value.DependencyIDs))
+		for i, dep := range value.DependencyIDs {
+			deps[i] = numbers[TransferOrdinal(dep)]
+		}
+		value.DependencyIDs = deps
+		add(number, "value:", value)
+	}
+	for _, out := range bundle.Outputs {
+		number := numbers[out.Ordinal]
+		out.Ordinal = 0
+		add(number, "output:", out)
+	}
+	for _, call := range bundle.Calls {
+		parts[numbers[call.Value]] = append(parts[numbers[call.Value]], "call:"+call.Call)
+	}
+	records := map[uint64]string{}
+	for number, p := range parts {
+		slices.Sort(p)
+		records[number] = strings.Join(p, "\n")
+	}
+	return records
+}
+
+// changedSinceTestRebuild builds the roots' bundle again and requires that
+// ChangedSince reports at before's position every record whose bytes the
+// new build differs in, or that it no longer carries, but the records before
+// carried partially (StoredBundleResult.Partial), which a reader never takes
+// as current. It returns the records that differ.
+func changedSinceTestRebuild(t *testing.T, cloud *Cache, before StoredBundleResult, roots ...uint64) []uint64 {
+	t.Helper()
+	after := changedSinceTestBuild(t, cloud, roots...)
+	was, now := changedSinceTestRecords(t, before.Bundle), changedSinceTestRecords(t, after.Bundle)
+	var differ []uint64
+	for number, record := range was {
+		if now[number] != record {
+			differ = append(differ, number)
+		}
+	}
+	slices.Sort(differ)
+	for _, number := range differ {
+		if slices.Contains(before.Partial, number) {
+			continue
+		}
+		require.True(t, changedSinceTestOne(t, cloud, number, before.Position), "entry %d's record differs in a build now, and is reported changed", number)
+	}
+	return differ
+}
+
+// changedSinceTestNumbers returns a's entry numbers of the results.
+func changedSinceTestNumbers(a *Cache, results ...AnyResult) []uint64 {
+	a.egraphMu.RLock()
+	defer a.egraphMu.RUnlock()
+	var numbers []uint64
+	for _, res := range results {
+		numbers = append(numbers, uint64(res.cacheSharedResult().id))
+	}
+	return numbers
+}
+
+// A stored bundle's position tells, for each record it carries, whether a
+// write since changed what a bundle of it would carry: its record, expiry,
+// stored parts, kept calls or frame, a part it borrows from an entry of its
+// class, or its value being dropped. Each case builds the bundle again after
+// the write and requires every record that differs to be reported. A holding
+// added and removed, or a write to another entry, changes nothing of it. An
+// entry that is gone has changed.
+func TestChangedSinceAStoredBundle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nothing changed", func(t *testing.T) {
+		t.Parallel()
+		_, cloud, r, p := storedBundleTestCloud(t, "root")
+		before := changedSinceTestBuild(t, cloud, r)
+		require.Equal(t, []bool{false, false}, cloud.ChangedSince([]uint64{r, p}, before.Position))
+		require.Empty(t, changedSinceTestRebuild(t, cloud, before, r))
+		require.Equal(t, before.Position, cloud.BundlePosition())
+	})
+
+	t.Run("a part stored on the entry, with no new dependency", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+		before := changedSinceTestBuild(t, cloud, r)
+		stored, _, err := cloud.SetStoredPart(ctx, r, testLiveOffer(), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r))
+		require.False(t, changedSinceTestOne(t, cloud, p, before.Position), "its dependency's own record and parts didn't change")
+		require.Greater(t, cloud.BundlePosition(), before.Position)
+	})
+
+	t.Run("a part stored on its dependency", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+		before := changedSinceTestBuild(t, cloud, r)
+		stored, _, err := cloud.SetStoredPart(ctx, p, testLiveOffer(), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		require.Equal(t, []uint64{p}, changedSinceTestRebuild(t, cloud, before, r))
+		require.False(t, changedSinceTestOne(t, cloud, r, before.Position), "the root's own record and parts didn't change: the dependency is a record of its own")
+	})
+
+	t.Run("a part stored on an entry of its class, which the bundle borrows", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		member := storedBundleTestClassMember(t, ctx, cloud, r, "changed-since-member")
+		before := changedSinceTestBuild(t, cloud, r)
+		require.Empty(t, before.Bundle.Outputs)
+		stored, _, err := cloud.SetStoredPart(ctx, member, testLiveOffer(), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r), "the build now borrows the member's part")
+	})
+
+	t.Run("stored parts dropped", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		part := storedBenchPart(1)
+		stored, _, err := cloud.SetStoredPart(ctx, r, part, 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		before := changedSinceTestBuild(t, cloud, r)
+		dropped, _, err := cloud.DropStoredParts(part.Chain.Layers[0].Descriptor.Digest)
+		require.NoError(t, err)
+		require.Len(t, dropped, 1)
+		require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r))
+	})
+
+	t.Run("the record replaced", func(t *testing.T) {
+		t.Parallel()
+		bundle, _ := mergeTestSource(t, "changed-since-replaced", "x")
+		ctx, cloud := storedPartTestCache(t, WithBlobStore())
+		reply, err := cloud.MergeValues(ctx, "cache-a", bundle)
+		require.NoError(t, err)
+		number := reply.Values[0].Number
+		mergeTestExpire(cloud, storedBundleTestEntry(cloud, number))
+		before := changedSinceTestBuild(t, cloud, number)
+		reply, err = cloud.MergeValues(ctx, "cache-a", bundle)
+		require.NoError(t, err)
+		require.Equal(t, number, reply.Values[0].Number)
+		require.Equal(t, uint64(1), reply.Values[0].Replacements, "replaced in place")
+		require.Equal(t, []uint64{number}, changedSinceTestRebuild(t, cloud, before, number))
+	})
+
+	t.Run("a call kept on it, its expiry unchanged", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud := storedPartTestCache(t, WithBlobStore())
+		test := newCallRecordTest(t, ctx, cloud)
+		before := changedSinceTestBuild(t, cloud, test.number)
+		test.attach(t, ctx, test.span(t, true, 0))
+		require.Equal(t, []uint64{test.number}, changedSinceTestRebuild(t, cloud, before, test.number), "the build now carries the call")
+	})
+
+	t.Run("its expiry moved by a call", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud := storedPartTestCache(t, WithBlobStore())
+		test := newCallRecordTest(t, ctx, cloud)
+		before := changedSinceTestBuild(t, cloud, test.number)
+		test.attach(t, ctx, test.span(t, false, time.Now().Add(time.Hour).Unix()))
+		require.Equal(t, []uint64{test.number}, changedSinceTestRebuild(t, cloud, before, test.number))
+	})
+
+	t.Run("its frame given a taught content digest by the body worker", func(t *testing.T) {
+		t.Parallel()
+		actx, a, asrv := transferTestCache(t)
+		first := persistedListTestResult(t, actx, a, asrv, "changed-since-first", &transferTestValue{Text: "first"})
+		r := persistedListTestResult(t, actx, a, asrv, "changed-since-taught", &transferTestValue{Text: "x"})
+		aNumbers := changedSinceTestNumbers(a, first, r)
+		ctx, cloud := storedPartTestCache(t, WithBlobStore())
+		numbers := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, first, r))
+		require.Len(t, numbers, 2)
+		var number uint64
+		for _, n := range numbers {
+			if storedTestFrame(t, cloud, storedBundleTestEntry(cloud, n)).Field == "changed-since-taught" {
+				number = n
+			}
+		}
+		require.NotZero(t, number)
+		// The worker gives the first entry its digest, then is held, so
+		// the second's waits behind it while the bundle is built.
+		blocked, release, _ := storedContentTestHold(t, cloud)
+		storedContentTestTeach(t, ctx, cloud, aNumbers[0], testDigest("changed-since-first-content"))
+		<-blocked
+		content := testDigest("changed-since-taught-content")
+		storedContentTestTeach(t, ctx, cloud, aNumbers[1], content)
+		before := changedSinceTestBuild(t, cloud, number)
+		release()
+		storedContentTestWait(t, cloud, number, content)
+		require.Equal(t, []uint64{number}, changedSinceTestRebuild(t, cloud, before, number), "the build now carries the digest in the frame")
+	})
+
+	t.Run("its value dropped by a prune", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+		before := changedSinceTestBuild(t, cloud, r)
+		report, err := cloud.PruneMetadataEstimate(ctx, 2, 1)
+		require.NoError(t, err)
+		require.Equal(t, 2, report.DroppedValues)
+		require.Equal(t, []bool{true, true}, cloud.ChangedSince([]uint64{r, p}, before.Position))
+	})
+
+	t.Run("another engine's holding added, then released", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+		before := changedSinceTestBuild(t, cloud, r)
+		cloud.egraphMu.RLock()
+		recipe := storedBundleTestEntry(cloud, r).recipeKeys[0]
+		cloud.egraphMu.RUnlock()
+		key := HolderKey{Cache: "cache-b", Number: 7}
+		_, err := cloud.AttachRemoteHolding(ctx, key, RemoteHolding{Recipe: recipe, Request: recipe})
+		require.NoError(t, err)
+		require.Equal(t, []bool{false, false}, cloud.ChangedSince([]uint64{r, p}, before.Position), "a hit's holding changes no bundle")
+		_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates)
+		require.NoError(t, err)
+		require.Equal(t, []bool{false, false}, cloud.ChangedSince([]uint64{r, p}, before.Position), "nor does its engine leaving")
+		require.Empty(t, changedSinceTestRebuild(t, cloud, before, r))
+	})
+
+	t.Run("a write to another entry", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		other := storedPruneTestRoot(t, ctx, cloud, "changed-since-other")
+		before := changedSinceTestBuild(t, cloud, r)
+		stored, _, err := cloud.SetStoredPart(ctx, other, testLiveOffer(), 0)
+		require.NoError(t, err)
+		require.True(t, stored)
+		require.True(t, changedSinceTestOne(t, cloud, other, before.Position))
+		require.False(t, changedSinceTestOne(t, cloud, r, before.Position))
+		require.Empty(t, changedSinceTestRebuild(t, cloud, before, r))
+	})
+
+	t.Run("an entry that is gone", func(t *testing.T) {
+		t.Parallel()
+		_, cloud, r, _ := storedBundleTestCloud(t, "root")
+		before := changedSinceTestBuild(t, cloud, r)
+		require.True(t, changedSinceTestOne(t, cloud, 12345, before.Position))
+	})
+}
+
+// A bundle built later has a later position, at which nothing before it has
+// changed.
+func TestChangedSinceALaterBundle(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	first := changedSinceTestBuild(t, cloud, r)
+	stored, _, err := cloud.SetStoredPart(ctx, r, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, stored)
+	second := changedSinceTestBuild(t, cloud, r)
+	require.Greater(t, second.Position, first.Position)
+	require.True(t, changedSinceTestOne(t, cloud, r, first.Position))
+	require.False(t, changedSinceTestOne(t, cloud, r, second.Position))
+}
+
+// A record the build carries without a kept call it would send once the
+// call's input has a stored record is partial: no write to the record's own
+// entry tells when that input is stored, so a reader that keeps the bundle
+// can't take the record as current. A record carried whole isn't partial.
+func TestStoredBundlePartialRecords(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a kept call whose input has no stored record", func(t *testing.T) {
+		t.Parallel()
+		test := newReceiverCallTest(t)
+		cloud := test.cloud
+		whole := changedSinceTestBuild(t, cloud, test.number)
+		require.Len(t, whole.Bundle.Calls, 1)
+		require.Empty(t, whole.Partial)
+
+		cloud.egraphMu.Lock()
+		receiver := cloud.resultsByID[sharedResultID(test.receiverNumber)]
+		cloud.unindexRecipesLocked(receiver)
+		cloud.egraphMu.Unlock()
+		partial := changedSinceTestBuild(t, cloud, test.number)
+		require.Empty(t, partial.Bundle.Calls)
+		require.Equal(t, 1, partial.UnsendableCalls)
+		require.Equal(t, []uint64{test.number}, partial.Partial)
+	})
+
+	t.Run("a whole record", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud := storedPartTestCache(t, WithBlobStore())
+		test := newCallRecordTest(t, ctx, cloud)
+		test.attach(t, ctx, test.span(t, true, 0))
+		built := changedSinceTestBuild(t, cloud, test.number)
+		require.Len(t, built.Bundle.Calls, 1)
+		require.Empty(t, built.Partial)
+	})
+}
