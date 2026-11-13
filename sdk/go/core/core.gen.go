@@ -19508,7 +19508,7 @@ func (r *Query) Node(ctx context.Context, id ID) (Node, error) {
 
 // PromptOpts contains options for Query.Prompt
 type PromptOpts struct {
-	// Remember answers beyond the session under this key, in the user's configuration, for the asking module only.
+	// Remember answers beyond the session under this key, in the user's configuration (prompt-answers.json in Dagger's configuration directory, where they can be removed), for the asking module only. The user is told so when asked.
 	//
 	// Only modules loaded from git are remembered so; secrets never are.
 	Key string
@@ -19519,6 +19519,8 @@ type PromptOpts struct {
 // Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.
 //
 // Answers are remembered for the session, per asking module, message and kind of answer.
+//
+// A module function that asks is never reused for another call. Calls on an object it returns are cached by the function call, though: a function returning an object built from an answer should declare a per-session (or never) cache policy, so another session gets its own.
 func (r *Query) Prompt(message string, opts ...PromptOpts) *Prompt {
 	q := r.query.Select("prompt")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -27403,6 +27405,8 @@ func NewNode(ctx context.Context, id ID) (Node, error) {
 // Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.
 //
 // Answers are remembered for the session, per asking module, message and kind of answer.
+//
+// A module function that asks is never reused for another call. Calls on an object it returns are cached by the function call, though: a function returning an object built from an answer should declare a per-session (or never) cache policy, so another session gets its own.
 func NewPrompt(message string, opts ...PromptOpts) *Prompt {
 	root := initRoot()
 	return root.Prompt(message, opts...)

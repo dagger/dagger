@@ -17114,13 +17114,20 @@ class Query(Root):
         Answers are remembered for the session, per asking module, message and
         kind of answer.
 
+        A module function that asks is never reused for another call. Calls on
+        an object it returns are cached by the function call, though: a
+        function returning an object built from an answer should declare a
+        per-session (or never) cache policy, so another session gets its own.
+
         Parameters
         ----------
         message:
             The question, as Markdown.
         key:
             Remember answers beyond the session under this key, in the user's
-            configuration, for the asking module only.
+            configuration (prompt-answers.json in Dagger's configuration
+            directory, where they can be removed), for the asking module only.
+            The user is told so when asked.
             Only modules loaded from git are remembered so; secrets never are.
         """
         _args = [
