@@ -76,6 +76,21 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 	return c.CommitValueMerge(ctx, p)
 }
 
+// RestoreValues merges a part of a file of the Cloud's records that an engine
+// restores, as MergeValues merges a bundle from the Cloud, with the same
+// reply, errors and locks. Only prefetching tells them apart: the offers a
+// restore attaches wait in the prefetcher's backlog, in the order the commit
+// attaches them, which for a file is the order its records were first used,
+// and never push out the offers of other merges (partOfferRestored).
+func (c *Cache) RestoreValues(ctx context.Context, bundle ValueBundle) (MergeReply, error) {
+	p, err := c.PrepareValueMerge(ctx, cloudCacheID, bundle)
+	if err != nil {
+		return MergeReply{}, err
+	}
+	p.restore = true
+	return c.CommitValueMerge(ctx, p)
+}
+
 // PreparedValueMerge is a merge prepared for one cache and sending cache,
 // waiting for its one terminal action: CommitValueMerge, or Release when it
 // won't be committed. Until then it holds a cache operation, so the cache
@@ -95,6 +110,9 @@ type PreparedValueMerge struct {
 	// unretained are the bundle's roots, by ordinal, the commit gives no
 	// retention edge (Unretained).
 	unretained map[TransferOrdinal]bool
+	// restore is set for a restore's merge (RestoreValues): its commit
+	// queues the offers it attaches in the prefetcher's backlog.
+	restore bool
 	// ended is set once, by the terminal action.
 	ended atomic.Bool
 }
@@ -179,7 +197,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		return MergeReply{}, errValueMergeEnded
 	}
 	defer p.op.finish(false)
-	from, input, prep := p.from, p.input, p.prep
+	from, input, prep, restore := p.from, p.input, p.prep, p.restore
 	p.input, p.prep = ValueBundle{}, nil
 	prep.unretained = p.unretained
 	if len(prep.stale) > 0 {
@@ -237,6 +255,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 			c.egraphMu.Unlock()
 			return MergeReply{}, err
 		}
+		commit.restore = restore
 		reply, finish := c.commitValueMergeLocked(ctx, commit)
 		reply.Committed, reply.CommitHold, reply.Warm = true, time.Since(locked), warmed
 		var stored []*sharedResult
@@ -1171,8 +1190,11 @@ type valueMergeCommit struct {
 	// attached are the offers applyMergedOffersLocked attached, which the
 	// commit's finish queues for prefetch once egraphMu is released.
 	attached []mergeAttachedOffer
-	roots    []MergedRoot
-	now      int64
+	// restore is set for a restore's merge: its finish queues the attached
+	// offers in the prefetcher's backlog, not its lanes.
+	restore bool
+	roots   []MergedRoot
+	now     int64
 }
 
 // mergeAttachedOffer is an offer a merge attached: the entry, its part key
@@ -1943,10 +1965,15 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 	attached := commit.attached
 	finish := func(ctx context.Context) error {
 		cleanupCtx := context.WithoutCancel(ctx)
-		// Merged offers are prefetched as offered ones are. An offer the
-		// commit's failure path retired since is skipped when its job runs.
+		// Merged offers are prefetched as offered ones are, a restore's
+		// from the backlog. An offer the commit's failure path retired since
+		// is skipped when its job runs.
 		for _, a := range attached {
-			c.partOfferAccepted(cleanupCtx, a.res, a.key, a.offer)
+			if commit.restore {
+				c.partOfferRestored(cleanupCtx, a.res, a.key, a.offer)
+			} else {
+				c.partOfferAccepted(cleanupCtx, a.res, a.key, a.offer)
+			}
 		}
 		c.releaseShareDuplicateHolds(cleanupCtx, duplicates)
 		err := errors.Join(errs, runOnReleaseFuncs(cleanupCtx, releases))
