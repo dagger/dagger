@@ -6010,13 +6010,14 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 		// could strand a counted operation with no worker.
 		c.closeSnapshotSharing()
 		c.partReads.flush()
+		// Before quiescence, which refuses every read of a record: the
+		// engine's sessions are gone by now, so their evaluations no longer
+		// hold records.
+		c.closeOwedPartReports(ctx)
 		if err := c.waitForQuiescence(ctx); err != nil {
 			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
 		}
-		// Once every evaluation has ended, every owed entry's record can be
-		// read.
-		c.closeOwedPartReports(ctx)
 		// The registered preparation root outlives the worker and every
 		// decoded row until the drain has finished.
 		c.clearPartPreparationContext()
