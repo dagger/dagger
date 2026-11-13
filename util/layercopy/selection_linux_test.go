@@ -289,10 +289,10 @@ func TestSelectionPreservesLocalDotDotLinks(t *testing.T) {
 				readable["link-"+alias] = alias + "/../file"
 				readable["multi-"+alias] = "chain-" + alias + "/../" + alias + "/../file"
 			}
-			// The kernel reads below go through at most 20 links. When a mount
-			// happens during a lookup, the kernel restarts the lookup after
-			// its RCU walk fails, without resetting the links it counted, so a
-			// path of exactly 40 links can fail with ELOOP on a busy machine.
+			// The kernel reads below go through at most 20 links. A mount during
+			// a lookup can make the kernel restart it after its RCU walk fails,
+			// without resetting the links it counted, so a path of exactly 40
+			// links can fail with ELOOP on a busy machine.
 			for _, count := range []int{8, 9, 19} {
 				target := "dir"
 				for i := range count {
@@ -355,7 +355,7 @@ func TestSelectionPreservesSymlinkLimit(t *testing.T) {
 				if relative && links == 41 {
 					// Check the kernel's limit before selection changes the tree.
 					// A read through exactly 40 links can fail with ELOOP when a
-					// mount restarts the lookup (see
+					// mount makes the kernel restart the lookup (see
 					// TestSelectionPreservesLocalDotDotLinks), so only 41 is read.
 					_, err := os.ReadFile(filepath.Join(root, "src/link"))
 					require.ErrorIs(t, err, unix.ELOOP)
