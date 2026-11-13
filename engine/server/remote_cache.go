@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -302,6 +304,7 @@ func (a *RemoteCacheAdapter) close(cause error) {
 func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 	a.stopOnce.Do(func() {
 		a.exportsCut = !a.drainExports(ctx)
+		logPartPrefetchCounts(a.cache.PartPrefetchCounts())
 		a.close(errServerShuttingDown)
 		// A Run that has already returned has stopped, whatever ctx says.
 		select {
@@ -316,6 +319,18 @@ func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 		}
 	})
 	return a.stopErr
+}
+
+// logPartPrefetchCounts logs, as the engine stops, what fetching parts ahead
+// of use did over its life: the bytes it downloaded, the part an install then
+// used, the part released unread and the part still held unread, and its
+// jobs by outcome.
+func logPartPrefetchCounts(counts dagql.PartPrefetchCounts) {
+	args := []any{"fetched", counts.Fetched, "used", counts.Used, "unread", counts.Unread, "held", counts.Held}
+	for _, outcome := range slices.Sorted(maps.Keys(counts.Jobs)) {
+		args = append(args, "jobs_"+outcome, counts.Jobs[outcome])
+	}
+	slog.Info("remote cache part prefetch summary", args...)
 }
 
 // drainExports stops lookups and waits until no export is in progress, then
