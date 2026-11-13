@@ -25,6 +25,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // The engine side's limits.
@@ -193,6 +194,10 @@ func newSettings(cfg Config) *settings {
 // then returns nil promptly: it closes the connection without waiting for the
 // service, cancels uploads, and releases the chains held for exports.
 func Run(ctx context.Context, adapter Adapter, cfg Config) error {
+	// Everything the integration starts is the remote cache's work unless a
+	// kind of its own labels it.
+	ctx, unlabel := wcprof.WithCPUKind(ctx, wcprof.CPUKindRemoteCache)
+	defer unlabel()
 	return newSettings(cfg).run(ctx, adapter)
 }
 
