@@ -95,7 +95,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorFromModule(ctx context.Con
 	// commit tool — rather than failing with a PermissionDenied attachables
 	// error. Sharing the owner's identity with a module takes the owner's
 	// approval, which this non-interactive CLI cannot give: the commit is
-	// attributed to Dagger instead, and still made.
+	// attributed to the module that asked, at this trace, and still made.
 	out, err := base.
 		WithNewFile("dagger.toml", "[modules.prober]\nsource = \"modules/prober\"\n").
 		WithNewFile("modules/prober/dagger.json", `{"name":"prober","engineVersion":"latest","sdk":{"source":"dang"}}`).
@@ -110,12 +110,12 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorFromModule(ctx context.Con
 }`, repoURL)).
 		With(daggerCallAt("modules/prober", "commit-author")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "Dagger <dagger@localhost>", strings.TrimSpace(out))
+	require.Regexp(t, `^prober <prober@[0-9a-f]{32}>$`, strings.TrimSpace(out))
 }
 
 // TestWorkspaceWithCommitGitAuthorApproval covers an interactive owner
 // answering a module's request for its Git identity, shown in the prompt: an
-// approval commits as the owner, a denial as Dagger.
+// approval commits as the owner, a denial as the module that asked.
 func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorApproval(ctx context.Context, t *testctx.T) {
 	// Answering the prompt takes a terminal, so run the CLI on the host under
 	// a PTY, in a checkout whose identity is the one initGitRepo configures.
@@ -144,11 +144,12 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorApproval(ctx context.Conte
 	}
 
 	for _, tc := range []struct{ answer, author string }{
-		{"y", "author: Dagger Tests <dagger@example.com>"},
-		// Not sharing still commits, as Dagger. The module reads two fields
-		// of the commit, each re-evaluating withCommit: one answer covers
-		// both, so the owner is asked once.
-		{"n", "author: Dagger <dagger@localhost>"},
+		{"y", regexp.QuoteMeta("author: Dagger Tests <dagger@example.com>")},
+		// Not sharing still commits, as the module that asked, at this
+		// trace. The module reads two fields of the commit, each
+		// re-evaluating withCommit: one answer covers both, so the owner is
+		// asked once.
+		{"n", `author: prober <prober@[0-9a-f]{32}>`},
 	} {
 		func() {
 			// Answer through the plain frontend's yes/no prompt (the fallback
@@ -170,7 +171,7 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorApproval(ctx context.Conte
 			require.NoError(t, err)
 			_, err = console.SendLine(tc.answer)
 			require.NoError(t, err)
-			_, _, err = console.MatchLine(ctx, regexp.QuoteMeta(tc.author))
+			_, _, err = console.MatchLine(ctx, tc.author)
 			require.NoError(t, err)
 			go console.ExpectEOF()
 			waited := make(chan error, 1)
