@@ -163,6 +163,30 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 	}
 }
 
+func TestGitPushApprovalInertClient(t *testing.T) {
+	// An in-engine SDK client serving no module (an agent's DangEval) has no
+	// host to push with: it pushes as the client that started it, which is
+	// asked first, even when the push is a direct call, not a tool call.
+	questions := &approvalPromptServer{decide: func(*prompt.ApprovalRequest) prompt.ApprovalDecision {
+		return prompt.APPROVAL_ALLOW_ONCE
+	}}
+	routing := &pushRoutingServer{entries: []*git.GitConfigEntry{
+		{Key: "url.git@push.example.com:.pushinsteadof", Value: "https://example.com/"},
+	}}
+	s := newGitPushTestSession(t, questions, routing)
+	eval := s.newClient("eval", "owner")
+	eval.inertAttachables = true
+	s.sess.clientRuntimes["eval"] = eval
+	installTestClientRecords(s.sess)
+	const ref = "refs/heads/main"
+	authorized, err := s.srv.AuthorizeGitPush(s.clientContext(eval), "https://example.com/repo", ref, false, true)
+	require.NoError(t, err)
+	require.Equal(t, s.owner.clientMetadata, authorized.Owner, "it pushes with the owner's host")
+	require.Equal(t, "git@push.example.com:repo", authorized.Remote, "through the owner's routing")
+	require.Equal(t, []string{"Allow push to git@push.example.com:repo @ refs/heads/main?"}, questions.prompts())
+	require.Equal(t, 1, routing.requests)
+}
+
 func TestGitPushApprovalBoolPromptFallback(t *testing.T) {
 	// A client predating approvals answers yes/no: a yes allows for the
 	// session, as it did before approvals had a grant scope.

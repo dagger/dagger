@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -122,29 +123,43 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 	return authorized()
 }
 
-// A module cannot regain implicit authorization by spawning a non-module
-// nested client. Use the trusted caller immediately before the first module
-// boundary, not the nearest non-module client after that boundary.
+// gitPushOwner returns the trusted client whose host and authority client's
+// request is made with, and whether client acts on its behalf (delegated), so
+// the request needs the owner's approval.
+//
+// Walking the ancestry root first, the owner is the last client before the
+// first boundary, where a boundary is a module client or an inert client (one
+// without a host of its own, see clientRecord.inertAttachables, inherited by
+// its nested clients). It is not the nearest client with a host: a module
+// cannot regain implicit authorization by spawning a non-module nested client,
+// so no client after the first boundary ever counts.
+//
+// An inert client, e.g. an in-engine SDK client evaluating an agent's snippet,
+// is a boundary even when it serves no module: its host access ends there, so
+// it cannot be its own owner (prompting it, or reading through it, could only
+// be denied). Escalating to the client that started it is deliberate, and is
+// always gated by the owner's approval.
 func gitPushOwner(client *clientRuntime) (*clientRuntime, bool, error) {
-	var owner *clientRuntime
-	parents, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	sess := client.daggerSession
+	parents, err := sess.ancestorRuntimes(client.clientRecord)
 	if err != nil {
 		return nil, false, err
 	}
-	for _, parent := range parents {
-		if parent.mod.Self() != nil {
-			if owner == nil {
-				return nil, true, fmt.Errorf("no owning client for git push")
-			}
-			return owner, true, nil
-		}
-		owner = parent
+	chain := append(slices.Clip(parents), client)
+	boundary := make([]bool, len(chain))
+	sess.scopeMu.Lock()
+	for i, c := range chain {
+		boundary[i] = c.inertAttachables
 	}
-	if client.mod.Self() != nil {
-		if owner == nil {
+	sess.scopeMu.Unlock()
+	for i, c := range chain {
+		if c.mod.Self() == nil && !boundary[i] {
+			continue
+		}
+		if i == 0 {
 			return nil, true, fmt.Errorf("no owning client for git push")
 		}
-		return owner, true, nil
+		return chain[i-1], true, nil
 	}
 	return client, false, nil
 }
