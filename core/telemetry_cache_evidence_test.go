@@ -176,6 +176,28 @@ func TestRecordCacheEvidenceMappingHit(t *testing.T) {
 	assert.DeepEqual(t, inputs, []string{inputA.String(), inputB.String()})
 }
 
+// A call span names its caller's recipe digest when the call has one, and
+// carries no caller attribute when it has none.
+func TestRecordCacheEvidenceMappingCaller(t *testing.T) {
+	t.Parallel()
+	caller := digest.FromString("evidence-map-caller")
+	for _, named := range []bool{true, false} {
+		sr, span := evidenceTestRecordingSpan(t)
+		ev := &dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissUnknownInputIndex: -1}
+		if named {
+			ev.Caller = caller
+		}
+		span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, ev, nil)...)
+		got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+		if named {
+			assert.Equal(t, caller.String(), got[telemetryattrs.CacheCallerAttr])
+		} else {
+			_, present := got[telemetryattrs.CacheCallerAttr]
+			assert.Assert(t, !present)
+		}
+	}
+}
+
 func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 	t.Parallel()
 	sr, span := evidenceTestRecordingSpan(t)
