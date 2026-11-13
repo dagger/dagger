@@ -571,3 +571,25 @@ func TestTaughtContentStatsCountWhatTheRewritesDid(t *testing.T) {
 	got.Took = 0
 	require.Equal(t, TaughtContentStats{Queued: 2, Rewritten: 2, Carried: 1, BundlesWaiting: 1}, got)
 }
+
+// A frame the body worker gives a taught content digest is measured as the
+// record it now is: the entry's record size after the rewrite is the size a
+// restore of the saved record measures, so the pool counts it the same
+// before and after a restart.
+func TestCloudMeasuresARewrittenRecordAsARestoreDoes(t *testing.T) {
+	t.Parallel()
+	content := testDigest("content-measured")
+	bundle, aNumber := storedContentTestRoot(t, "measured-root")
+	path := filepath.Join(t.TempDir(), "cloud.db")
+	ctx, cloud := storedPersistenceTestCloud(t, path)
+	number := storedPersistenceTestMerge(t, ctx, cloud, bundle)[0]
+	storedContentTestTeach(t, ctx, cloud, aNumber, content)
+	storedContentTestWait(t, cloud, number, content)
+	before := storedPersistenceTestState(cloud)
+	require.NoError(t, cloud.Close(ctx))
+
+	ctx, cloud = storedPersistenceTestCloud(t, path)
+	defer func() { require.NoError(t, cloud.Close(ctx)) }()
+	require.Equal(t, before[number].recordBytes, storedPersistenceTestState(cloud)[number].recordBytes, "the rewritten record measures what its restore does")
+	require.Equal(t, before, storedPersistenceTestState(cloud))
+}
