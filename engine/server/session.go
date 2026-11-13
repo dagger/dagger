@@ -276,6 +276,7 @@ type daggerSession struct {
 	// git_push_policy.go).
 	gitRemoteDefaults gitRemoteDefaults
 	ownerOrigins      ownerOrigins
+	checkoutOrigins   checkoutOrigins
 
 	lockFiles  map[workspaceLockKey]*workspaceLockState
 	lockFileMu sync.RWMutex
