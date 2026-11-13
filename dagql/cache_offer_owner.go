@@ -194,16 +194,13 @@ func (c *Cache) attachPartOfferLocked(res *sharedResult, address PersistedPartAd
 	if cloud == nil {
 		return fmt.Errorf("offer attachment: result %d has no Cloud or image holding", res.id)
 	}
-	if cloud.parts[key].offer != nil {
+	if cloud.partLocked(key).offer != nil {
 		return fmt.Errorf("offer attachment: occupied address %s", key)
 	}
 	if offer.owner.slots != 0 {
 		return fmt.Errorf("offer attachment: owner already attached")
 	}
-	if cloud.parts == nil {
-		cloud.parts = make(map[string]heldPart)
-	}
-	cloud.parts[key] = heldPart{state: heldPartComplete, offer: offer}
+	cloud.setPartLocked(key, heldPart{state: heldPartComplete, offer: offer})
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
 	res.transferRevision++
@@ -223,7 +220,7 @@ func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, a
 		return nil, fmt.Errorf("offer replacement: owner already attached")
 	}
 	_, cloud := res.offerHoldingLocked()
-	cloud.parts[key] = heldPart{state: heldPartComplete, offer: offer}
+	cloud.setPartLocked(key, heldPart{state: heldPartComplete, offer: offer})
 	c.partOfferReplaced(old, offer)
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
@@ -242,7 +239,7 @@ func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, ad
 		return nil, nil
 	}
 	_, cloud := res.offerHoldingLocked()
-	delete(cloud.parts, key)
+	cloud.deletePartLocked(key)
 	c.partOfferGone(old)
 	old.owner.slots--
 	res.transferRevision++
