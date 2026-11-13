@@ -1,0 +1,43 @@
+"""
+Functions asking the user questions, for the Query.prompt integration tests
+(core/integration/prompt_test.go).
+"""
+type Asker {
+  """
+  Ask a yes/no question.
+  """
+  yesno(message: String!): String! {
+    if (prompt(message: message).boolean) { "answered yes" } else { "answered no" }
+  }
+
+  """
+  Ask the same yes/no question twice: the session remembers the answer, so
+  the user is asked once.
+  """
+  twice(message: String!): String! {
+    let first = prompt(message: message).boolean
+    let second = prompt(message: message).boolean
+    if (first and second) { "yes twice" } else if (first or second) { "answers differ" } else { "no twice" }
+  }
+
+  """
+  Ask for some text.
+  """
+  text(message: String!, key: String = null): String! {
+    prompt(message: message, key: key).string
+  }
+
+  """
+  Ask for a secret, and report whether it holds want, without revealing it.
+  """
+  token(message: String!, want: String!): String! {
+    if (prompt(message: message).secret.plaintext == want) { "token matches" } else { "token differs" }
+  }
+
+  """
+  Ask a yes/no question that has a default.
+  """
+  fallback(message: String!): Boolean! {
+    prompt(message: message).boolean(default: true)
+  }
+}
