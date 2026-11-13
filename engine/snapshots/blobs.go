@@ -2,6 +2,7 @@ package snapshots
 
 import (
 	"context"
+	"log/slog"
 	"maps"
 	"os"
 	"strconv"
@@ -392,6 +393,11 @@ func (cm *snapshotManager) ensureExportBlob(
 		stats.RawBytes += usage.Size
 		stats.BlobBytes += desc.Size
 		stats.DiffTime += diffTime
+		// When the blob was ready, against when its upload starts: at an
+		// engine's stop, what could have gone up while the export's other
+		// layers still built. One line a layer built, at debug.
+		slog.Debug("export layer built", "blob", desc.Digest, "bytes", desc.Size, "raw_bytes", usage.Size,
+			"diff_start", diffStart, "ready", time.Now(), "diff_time", diffTime)
 		return ensureExportBlobResult{
 			desc:     desc,
 			hasLayer: true,
