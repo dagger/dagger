@@ -1521,9 +1521,8 @@ func (c *Cache) writeRemoteIdentityLocked(ctx context.Context, entry *sharedResu
 		// did when it was taught it: a record sent from the Cloud then
 		// carries it, and a fresh engine joins its class as the engine that
 		// computed it does.
-		if content != entry.taughtContent {
-			entry.taughtContent = content
-			entry.taughtPending = append(entry.taughtPending, content)
+		if n := len(entry.taught); n == 0 || entry.taught[n-1] != content {
+			entry.taught = append(entry.taught, content)
 		}
 		c.queueTaughtContentLocked(entry)
 	}
