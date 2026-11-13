@@ -354,6 +354,11 @@ func (h *holding) owned() bool {
 // its holdings. Guarded by egraphMu.
 type remoteCacheState struct {
 	holdings int
+	// graphVersion counts the changes to the cache's holdings and their
+	// dependencies: a holding added or removed, a dependency added or
+	// dropped. HolderClosure reads a closure in pieces, and starts again
+	// when it changed between two of them.
+	graphVersion uint64
 	// unknownDependents maps each dependency number no holding of this cache
 	// has yet to the numbers of the holdings that name it.
 	unknownDependents map[uint64]map[uint64]struct{}
@@ -548,6 +553,7 @@ func (c *Cache) newHoldingLocked(ctx context.Context, state *remoteCacheState, k
 // Requires egraphMu for writing.
 func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult) *holding {
 	h := &holding{}
+	state.graphVersion++
 	if entry.holders == nil {
 		entry.holders = make(map[HolderKey]*holding)
 	}
@@ -827,6 +833,7 @@ func (c *Cache) applyHeldValueStateLocked(ctx context.Context, state *remoteCach
 				continue
 			}
 			delete(h.deps, number)
+			state.graphVersion++
 			depKey := HolderKey{Cache: key.Cache, Number: number}
 			if _, dep := c.holdingLocked(depKey); dep != nil {
 				dep.dependents--
@@ -1185,6 +1192,7 @@ func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState
 	// A Go map keeps its memory when its last key is deleted, so each map
 	// left empty goes: a stored entry outlives every holding of it.
 	delete(entry.holders, key)
+	state.graphVersion++
 	c.markHoldingLocked(key)
 	c.markEntryLocked(entry.id)
 	if len(entry.holders) == 0 {
@@ -1339,6 +1347,7 @@ func (c *Cache) addHoldingDepsLocked(state *remoteCacheState, key HolderKey, h *
 				h.deps = make(map[uint64]struct{})
 			}
 			h.deps[number] = struct{}{}
+			state.graphVersion++
 			dep.dependents++
 			c.markHoldingLocked(key)
 			c.markHoldingLocked(HolderKey{Cache: key.Cache, Number: number})
@@ -1460,10 +1469,61 @@ func (c *Cache) EquivalentHolders(dig string) []HolderKey {
 // HolderClosure returns the holding and every holding it depends on,
 // transitively, through its cache's own dependencies: what that engine cache
 // exports for it. It is empty when the cache has no such holding.
+//
+// It reads the closure in pieces (readInPieces), letting egraphMu go between
+// them, so that a writer waits for one piece rather than a whole closure: a
+// test-base engine's closures reach tens of thousands of holdings, which held
+// the lock up to seconds. The answer is still one state's: a walk whose
+// cache's holdings or dependencies changed between two of its pieces
+// (graphVersion) starts again, and after holderClosureTries such walks it
+// reads the closure in one hold.
 func (c *Cache) HolderClosure(key HolderKey) []HolderKey {
+	for range holderClosureTries {
+		if keys, ok := c.holderClosureInPieces(key); ok {
+			return keys
+		}
+	}
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	return c.holderClosureLocked(key)
+}
+
+// holderClosureTries is how many walks in pieces HolderClosure starts before
+// it reads the closure in one hold.
+const holderClosureTries = 3
+
+// holderClosureInPieces is HolderClosure's walk in pieces. It reports false
+// when the cache's holdings changed between two pieces: its keys would mix
+// two states.
+func (c *Cache) holderClosureInPieces(key HolderKey) ([]HolderKey, bool) {
+	r := c.readInPieces()
+	defer r.done()
+	state := c.remoteCaches[key.Cache]
+	if _, h := c.holdingLocked(key); h == nil || state == nil {
+		return nil, true
+	}
+	version := state.graphVersion
+	seen := map[uint64]bool{key.Number: true}
+	queue := []uint64{key.Number}
+	var keys []HolderKey
+	for len(queue) > 0 {
+		number := queue[0]
+		queue = queue[1:]
+		if _, h := c.holdingLocked(HolderKey{Cache: key.Cache, Number: number}); h != nil {
+			keys = append(keys, HolderKey{Cache: key.Cache, Number: number})
+			for dep := range h.deps {
+				if !seen[dep] {
+					seen[dep] = true
+					queue = append(queue, dep)
+				}
+			}
+		}
+		if len(queue) > 0 && r.step() && (c.remoteCaches[key.Cache] != state || state.graphVersion != version) {
+			return nil, false
+		}
+	}
+	slices.SortFunc(keys, compareHolderKeys)
+	return keys, true
 }
 
 // holderClosureLocked is HolderClosure's answer. Requires egraphMu.
