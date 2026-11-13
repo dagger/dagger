@@ -2,11 +2,13 @@ package server
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"log/slog"
 	"runtime/pprof"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/pprof/profile"
@@ -22,11 +24,13 @@ import (
 // Only one CPU profile can run in a Go process: a window ends early, and the
 // next waits, while one of wcprof's own profiles wants the profiler.
 
-// engineCPUWindowDuration is how long one window samples.
-var engineCPUWindowDuration = 10 * time.Second
-
-// engineCPUIdlePoll is how often the sampler checks whether wcprof records.
-var engineCPUIdlePoll = time.Second
+// engineCPUWindowDuration is how long one window samples, and
+// engineCPUIdlePoll how often the sampler checks whether wcprof records.
+// A test sets its server's engineCPUWindowLen and engineCPUPoll instead.
+const (
+	engineCPUWindowDuration = 10 * time.Second
+	engineCPUIdlePoll       = time.Second
+)
 
 // unattributedCPU names a window's CPU that no kind's samples account for.
 const unattributedCPU = "unattributed"
@@ -48,13 +52,18 @@ type engineCPUWindow struct {
 	Kinds map[string]int64
 }
 
-// cpuProfiler lets one CPU profile run at a time between the engine CPU
-// sampler and wcprof's own profiles, which take precedence: a take asks the
-// sampler to end its window and waits for it.
+// cpuProfiler keeps the engine CPU sampler off the process's one CPU
+// profiler while one of wcprof's own profiles wants it. wcprof's profiles
+// start the profiler themselves, as they always have, and fail as they
+// always have when another of them holds it; a pause only asks the sampler
+// to end its window and start no other until every pause is resumed.
 type cpuProfiler struct {
-	mu    sync.Mutex
-	yield chan struct{}
-	once  sync.Once
+	// mu is held by the sampler while it profiles, and by pause while it
+	// waits for that to end.
+	mu     sync.Mutex
+	paused atomic.Int32
+	yield  chan struct{}
+	once   sync.Once
 }
 
 func (p *cpuProfiler) yieldCh() chan struct{} {
@@ -62,34 +71,40 @@ func (p *cpuProfiler) yieldCh() chan struct{} {
 	return p.yield
 }
 
-// take waits for the profiler, asking the sampler to give it up.
-func (p *cpuProfiler) take() {
+// pause ends the sampler's window, if one runs, and keeps it from starting
+// another until resume. It waits only for the sampler, never for another of
+// wcprof's profiles.
+func (p *cpuProfiler) pause() {
+	p.paused.Add(1)
 	select {
 	case p.yieldCh() <- struct{}{}:
 	default:
 	}
 	p.mu.Lock()
+	//nolint:staticcheck // the lock only waits out the sampler's window
+	p.mu.Unlock()
 }
 
-func (p *cpuProfiler) release() { p.mu.Unlock() }
+func (p *cpuProfiler) resume() { p.paused.Add(-1) }
 
-// startEngineCPU runs the sampler until ctx ends.
-func (srv *Server) startEngineCPU(ctx context.Context) {
+// startEngineCPU runs the sampler until ctx ends, and returns a func that
+// waits for it to stop.
+func (srv *Server) startEngineCPU(ctx context.Context) (wait func()) {
 	on := srv.engineCPUOn
 	if on == nil {
 		on = wcprof.GloballyEnabled
 	}
+	window, poll := cmp.Or(srv.engineCPUWindowLen, engineCPUWindowDuration), cmp.Or(srv.engineCPUPoll, engineCPUIdlePoll)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for ctx.Err() == nil {
-			if !on() {
+			w, ok := srv.sampleEngineCPU(ctx, on, window, poll)
+			if !ok {
 				select {
-				case <-time.After(engineCPUIdlePoll):
+				case <-time.After(poll):
 				case <-ctx.Done():
 				}
-				continue
-			}
-			w, ok := srv.sampleEngineCPU(ctx)
-			if !ok {
 				continue
 			}
 			logEngineCPU(w)
@@ -98,40 +113,54 @@ func (srv *Server) startEngineCPU(ctx context.Context) {
 			}
 		}
 	}()
+	return func() { <-done }
 }
 
-// sampleEngineCPU samples one window, and reports whether it got one.
-func (srv *Server) sampleEngineCPU(ctx context.Context) (engineCPUWindow, bool) {
-	srv.cpuProfile.mu.Lock()
-	// A take that asked before this window began isn't for it.
+// sampleEngineCPU samples one window, and reports whether it got one: not
+// while wcprof is off or paused, nor while the profiler is in use. A window
+// ends early when wcprof is turned off, or a pause asks for the profiler.
+func (srv *Server) sampleEngineCPU(ctx context.Context, on func() bool, windowLen, pollEvery time.Duration) (engineCPUWindow, bool) {
+	p := &srv.cpuProfile
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// A pause that asked before this window began isn't for it.
 	select {
-	case <-srv.cpuProfile.yieldCh():
+	case <-p.yieldCh():
 	default:
+	}
+	if !on() || p.paused.Load() > 0 || ctx.Err() != nil {
+		return engineCPUWindow{}, false
 	}
 	var buf bytes.Buffer
 	before, ok := readProcessCPU()
 	gcBefore := readGoGC()
 	start := time.Now()
 	if !ok || pprof.StartCPUProfile(&buf) != nil {
-		srv.cpuProfile.mu.Unlock()
-		select {
-		case <-time.After(engineCPUIdlePoll):
-		case <-ctx.Done():
-		}
 		return engineCPUWindow{}, false
 	}
-	timer := time.NewTimer(engineCPUWindowDuration)
-	select {
-	case <-timer.C:
-	case <-srv.cpuProfile.yieldCh():
-	case <-ctx.Done():
+	window := time.NewTimer(windowLen)
+	poll := time.NewTicker(pollEvery)
+wait:
+	for {
+		select {
+		case <-window.C:
+			break wait
+		case <-p.yieldCh():
+			break wait
+		case <-ctx.Done():
+			break wait
+		case <-poll.C:
+			if !on() {
+				break wait
+			}
+		}
 	}
-	timer.Stop()
+	window.Stop()
+	poll.Stop()
 	pprof.StopCPUProfile()
 	end := time.Now()
 	after, _ := readProcessCPU()
 	gcAfter := readGoGC()
-	srv.cpuProfile.mu.Unlock()
 
 	w := engineCPUWindow{
 		Start:     start,
