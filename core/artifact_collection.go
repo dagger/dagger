@@ -79,7 +79,7 @@ func (a *Artifacts) NameEntries() error {
 }
 
 func (a *Artifacts) linkPlans(entry *Artifact) *artifact.Links {
-	if entry.Workspace.Self() == nil || entry.LoadFailure != nil || entry.TypeName == "" {
+	if entry.LoadFailure != nil || entry.TypeName == "" {
 		return nil
 	}
 	path := artifact.Path{
@@ -98,12 +98,25 @@ func (a *Artifacts) linkPlans(entry *Artifact) *artifact.Links {
 			canonicalPath.Dimensions = append(canonicalPath.Dimensions, dimension.CollectionType)
 		}
 	}
-	return &artifact.Links{
-		Typed:            artifact.PlanLink(a.AllPaths, path, a.CompleteSchema, true, cliName),
-		Untyped:          artifact.PlanLink(a.AllPaths, path, a.CompleteSchema, false, cliName),
-		PathNeedsAbsence: artifact.PathNeedsAbsentDimension(a.AllPaths, canonicalPath),
-		CompleteSchema:   a.CompleteSchema,
+	incompleteWorkspace := entry.Workspace.Self() != nil && !a.CompleteSchema
+	links := &artifact.Links{
+		Typed:           artifact.PlanLink(a.AllPaths, path, a.CompleteSchema, true, cliName),
+		Untyped:         artifact.PlanLink(a.AllPaths, path, a.CompleteSchema, false, cliName),
+		TypedAbsent:     artifact.PathAbsentDimensions(a.AllPaths, canonicalPath, true),
+		UntypedAbsent:   artifact.PathAbsentDimensions(a.AllPaths, canonicalPath, false),
+		TypedPresence:   artifact.PathPresenceDimensions(a.AllPaths, canonicalPath, true),
+		UntypedPresence: artifact.PathPresenceDimensions(a.AllPaths, canonicalPath, false),
+		TypedModule:     incompleteWorkspace || artifact.PathNeedsModule(a.AllPaths, canonicalPath, true),
+		UntypedModule:   incompleteWorkspace || artifact.PathNeedsModule(a.AllPaths, canonicalPath, false),
+		CompleteSchema:  a.CompleteSchema,
 	}
+	if entry.TypeName == "Generator" {
+		stale := *entry
+		stale.TypeName = "Check"
+		stale.Path = append(slices.Clone(entry.Path), "stale")
+		links.Stale = a.linkPlans(&stale)
+	}
+	return links
 }
 
 // typeKeyName is the shortest type key that names entry's path among the
@@ -199,7 +212,7 @@ func (a *Artifacts) BindDimensions() (*Artifacts, error) {
 		if err != nil {
 			return nil, err
 		}
-		bound.Selector.addDimension(ArtifactDimensionFilter{Dimension: id, Keys: filter.Keys})
+		bound.Selector.addDimension(ArtifactDimensionFilter{Dimension: id, Keys: filter.Keys, Absent: filter.Absent})
 	}
 	for _, group := range a.Selector.DimensionAlternatives {
 		ids := []string{}
@@ -239,6 +252,9 @@ func (a *Artifacts) resolveTypeKeys() {
 	paths := a.AllPaths
 	var dimensions []string
 	for _, filter := range a.Selector.Dimensions {
+		if filter.Absent {
+			continue
+		}
 		switch {
 		case filter.Dimension == artifact.ModuleDimension && filter.Keys != nil:
 			paths = slices.DeleteFunc(slices.Clone(paths), func(path artifact.Path) bool { return !moduleKeysMatch(filter.Keys, path.Module) })
@@ -247,7 +263,7 @@ func (a *Artifacts) resolveTypeKeys() {
 		}
 	}
 	for i, filter := range a.Selector.Dimensions {
-		if !strings.HasPrefix(filter.Dimension, "type:") || filter.Keys == nil {
+		if filter.Absent || !strings.HasPrefix(filter.Dimension, "type:") || filter.Keys == nil {
 			continue
 		}
 		candidates := paths.CandidatePaths(filter.Dimension, dimensions, nil)
@@ -282,8 +298,21 @@ func (a *Artifacts) hasCollections() bool {
 	return slices.ContainsFunc(a.DimensionDefinitions(), func(d *ArtifactDimension) bool { return !artifact.IsStaticDimension(d.Identifier) })
 }
 
+// matchesAbsenceFilters checks schema metadata before a collection receiver is built.
+func (a *Artifacts) matchesAbsenceFilters(dims []*ArtifactDimension) bool {
+	return !slices.ContainsFunc(a.Selector.Dimensions, func(filter ArtifactDimensionFilter) bool {
+		return filter.Absent && slices.ContainsFunc(dims, func(d *ArtifactDimension) bool { return dimensionMatches(d, filter.Dimension) })
+	})
+}
+
 func (a *Artifacts) matchesDimensionFilters(dims []*ArtifactDimension) bool {
 	for _, filter := range a.Selector.Dimensions {
+		if filter.Absent {
+			if slices.ContainsFunc(dims, func(d *ArtifactDimension) bool { return dimensionMatches(d, filter.Dimension) }) {
+				return false
+			}
+			continue
+		}
 		if filter.Keys != nil && len(filter.Keys) == 0 {
 			return false
 		}
@@ -448,6 +477,11 @@ func (a *Artifacts) ExpandDimensionKeys(ctx context.Context, name string) ([]str
 // Expand evaluates only the collection receivers needed to enumerate selected
 // keys. A leaf artifact's value remains deferred.
 func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
+	bound, err := a.SchemaSelection()
+	if err != nil {
+		return nil, err
+	}
+	a = bound
 	discovery, err := a.viewDiscovery()
 	if err != nil {
 		return nil, err
@@ -469,6 +503,9 @@ func (a *Artifacts) Expand(ctx context.Context) (*Artifacts, error) {
 	}
 	rootsCtx := withArtifactReceivers(discoveryCtx)
 	for _, root := range roots {
+		if !a.matchesAbsenceFilters(root.DimensionDefinitions()) {
+			continue
+		}
 		if !slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
 			return dimensionMatches(root.Node.CollectionDimension, filter.Dimension)
 		}) {
@@ -720,7 +757,7 @@ func (a *Artifacts) hasExactPath(path []string) bool {
 }
 
 func (a *Artifacts) selectsDimension(id string) bool {
-	if slices.ContainsFunc(a.Selector.Dimensions, func(d ArtifactDimensionFilter) bool { return d.Dimension == id }) {
+	if slices.ContainsFunc(a.Selector.Dimensions, func(d ArtifactDimensionFilter) bool { return !d.Absent && d.Dimension == id }) {
 		return true
 	}
 	return slices.ContainsFunc(a.Selector.DimensionAlternatives, func(group []string) bool { return slices.Contains(group, id) })
@@ -735,6 +772,11 @@ func expandArtifactNode(ctx context.Context, node *ModTreeNode, template *Artifa
 	}
 	if node == nil {
 		return []*ModTreeNode{nil}, nil
+	}
+	if slices.ContainsFunc(filters, func(filter ArtifactDimensionFilter) bool {
+		return filter.Absent && dimensionMatches(node.CollectionDimension, filter.Dimension)
+	}) {
+		return nil, nil
 	}
 	parents, err := expandArtifactNode(ctx, node.Parent, template, filters, collectionKeys)
 	if err != nil {
@@ -927,11 +969,32 @@ func (a *Artifacts) SchemaSelection() (*Artifacts, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, filter := range bound.Selector.Dimensions {
+		if filter.Absent && slices.ContainsFunc(bound.Selector.Dimensions, func(other ArtifactDimensionFilter) bool {
+			return !other.Absent && other.Dimension == filter.Dimension
+		}) {
+			return bound.filter(func(*Artifact) bool { return false }), nil
+		}
+	}
 	return bound.filter(func(item *Artifact) bool {
 		has := func(id string) bool {
 			return item.hasDimension(id)
 		}
 		for _, filter := range bound.Selector.Dimensions {
+			if filter.Absent {
+				// Synthetic failure metadata cannot prove a module's dimensions.
+				// Inclusion retains the failure; exact exclusion cannot hide it.
+				if item.LoadFailure != nil && filter.Dimension != artifact.ModuleDimension && filter.Dimension != artifact.NameDimension {
+					if bound.exact {
+						return false
+					}
+					continue
+				}
+				if has(filter.Dimension) {
+					return false
+				}
+				continue
+			}
 			if filter.Keys != nil && len(filter.Keys) == 0 {
 				return false
 			}

@@ -374,3 +374,93 @@ func (*Alpha) Verify() error { panic("check must stay deferred") }
 	}
 	require.True(t, foundBeta, "full discovery must retain the beta load failure")
 }
+
+func (CollectionsSuite) TestSharedRowAndCellCheckAddresses(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	const source = `package main
+
+type Collections struct{}
+func (*Collections) Rows() *Rows { return &Rows{Keys: []string{"top"}} }
+
+// +collection
+type Rows struct {
+  // +keys
+  Keys []string
+}
+func (*Rows) Get(row string) *Row { return &Row{Keys: []string{"left", "right"}} }
+
+// +collection
+type Row struct {
+  // +keys
+  Keys []string
+}
+func (*Row) Get(column string) *Cell { return &Cell{} }
+// +check
+func (*Row) Check() { panic("row check must stay deferred") }
+
+type Cell struct{}
+// +check
+func (*Cell) Check() { panic("cell check must stay deferred") }
+`
+	base := goGitBase(t, c).
+		WithDirectory("/work", collectionSource(c).WithNewFile("collections/main.go", source)).
+		WithWorkdir("/work")
+	for _, expanded := range []bool{false, true} {
+		t.Run(fmt.Sprintf("expanded=%t", expanded), func(ctx context.Context, t *testctx.T) {
+			args := []string{"check", "-l"}
+			count := 2
+			if expanded {
+				args = append(args, "-a")
+				count = 3
+			}
+			out, err := base.With(daggerExec(append(slices.Clone(args), "-f=link")...)).Stdout(ctx)
+			require.NoError(t, err)
+			links := strings.Split(strings.TrimSpace(out), "\n")
+			require.Len(t, links, count)
+			require.Contains(t, out, "!")
+			unique := slices.Clone(links)
+			slices.Sort(unique)
+			require.Len(t, slices.Compact(unique), count)
+			for _, link := range links {
+				out, err := base.With(daggerExec(append(slices.Clone(args), "-f=link", link)...)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, link+"\n", out)
+				if expanded {
+					out, err := base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace { artifacts {
+  filterUri(uri: %q) { items { uri(typeAssertion: true) } }
+} } }`, link), "-m", "core")).Stdout(ctx)
+					require.NoError(t, err)
+					var response struct {
+						CurrentWorkspace struct {
+							Artifacts struct {
+								FilterURI struct{ Items []struct{ URI string } }
+							}
+						}
+					}
+					require.NoError(t, json.Unmarshal([]byte(out), &response))
+					require.Len(t, response.CurrentWorkspace.Artifacts.FilterURI.Items, 1)
+				}
+			}
+			out, err = base.With(daggerExec(append(slices.Clone(args), "-f=cli")...)).Stdout(ctx)
+			require.NoError(t, err)
+			commands := strings.Split(strings.TrimSpace(out), "\n")
+			require.Len(t, commands, count)
+			replayed := []string{}
+			for _, command := range commands {
+				commandArgs, err := shell.Fields(command, nil)
+				require.NoError(t, err)
+				require.Equal(t, []string{"dagger", "check"}, commandArgs[:2])
+				commandArgs = append(commandArgs[1:], "-l", "-f=link")
+				if expanded {
+					commandArgs = append(commandArgs, "-a")
+				}
+				out, err := base.With(daggerExec(commandArgs...)).Stdout(ctx)
+				require.NoError(t, err)
+				selected := strings.Split(strings.TrimSpace(out), "\n")
+				require.Len(t, selected, 1)
+				replayed = append(replayed, selected[0])
+			}
+			require.ElementsMatch(t, links, replayed)
+		})
+	}
+}

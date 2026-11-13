@@ -78,8 +78,10 @@ func TestSchemaErrors(t *testing.T) {
 		want   string
 	}{
 		{"missing type", []flattening.Field{{}}, "no artifact type"},
+		{"invalid artifact type", []flattening.Field{{Type: "!Check"}}, "must be a schema type identifier"},
 		{"missing collection type", []flattening.Field{{Type: "Check", Collections: []flattening.Collection{{ItemType: "Case"}}}}, "no schema type"},
 		{"missing item type", []flattening.Field{{Module: "app", Type: "Check", Collections: []flattening.Collection{{Type: "Cases"}}}}, "no item type"},
+		{"invalid item type", []flattening.Field{{Type: "Check", Collections: []flattening.Collection{{Type: "Cases", ItemType: "!Case"}}}}, "must be a schema type identifier"},
 		{"repeated dimension", []flattening.Field{{Module: "app", Type: "Check", Collections: []flattening.Collection{collection, {Type: "Cases", ItemType: "Case"}}}}, "repeated collection type"},
 		{"empty local field", []flattening.Field{{Type: "Check", LocalPath: []string{""}}}, "invalid field segment"},
 		{"dotted local field", []flattening.Field{{Type: "Check", LocalPath: []string{"unit.check"}}}, "invalid field segment"},

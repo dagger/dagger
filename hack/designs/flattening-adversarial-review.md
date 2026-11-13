@@ -32,11 +32,15 @@ The collection type rule stays simple. Other dimensions distinguish artifacts fr
 
 The rules are in [the spec](collections-issue.md#dimension-names).
 
-## Remaining address limit
+## Absence selectors
 
-The current URI grammar cannot require a dimension to be absent. A parent collection check and its item check can have the same public path and type. The child has an extra collection coordinate. Positive predicates cannot select the parent alone.
+`?!cell` selects artifacts without a cell coordinate. `?cell=` selects an empty key. The parser accepts an optional empty value and a percent-encoded `!`. These forms survive an ordinary query-tool round trip.
 
-The explicit error is safe behavior. Full support needs an absence selector or another explicit address rule. No extra projection column was added.
+The minimum-address search includes absence tests. Equal-sized sets prefer fewer absence tests, then the existing collection/name/module order. No projection column was added.
+
+The review found and fixed schema-list merging, full-form aliasing, cross-module path collisions, synthetic stale proofs, bound-value proofs, and shared alias-map mutation. Schema filters remove excluded collection levels before evaluating receivers. Failed modules remain visible when their schema cannot prove absence.
+
+Exact minimum search has exponential worst-case cost. Cached projections handle common cases. Required predicates avoid subset search when another row differs in only one dimension. A test covers 64 required absence selectors.
 
 ## Validation
 
@@ -48,5 +52,9 @@ The explicit error is safe behavior. Full support needs an absence selector or a
 - Three Cloud tests pass: nested collections, shared collection types at different fields, and cross-module fallback labels. [Trace](https://dagger.cloud/dagger/traces/b9ef81388d862d8f7deeaad848b6db47).
 
 The independent review accepts the implementation. No blocker remains in the approved naming rules.
+
+The absence review also accepts the implementation. Native tests include 2,304 reference targets across 511 snapshots. Focused Linux core, schema, and CLI tests pass. All 2,424 captured links retain their previous minimum size, and all 194 CLI replay checks pass. The capture needs no absence selectors.
+
+Five Cloud cases pass, including schema-only and expanded parent/child listings with copied links and commands. Leaf checks remain deferred. [Trace](https://dagger.cloud/dagger/traces/710f8400748ec27f252915420bcebd42).
 
 An ancestry that repeats one collection type with two different keys is rejected. The captured workspace is a QA case, not a universal identity proof.

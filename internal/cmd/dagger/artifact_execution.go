@@ -364,7 +364,18 @@ func sharedArtifactFilters(addresses []*dagaddress.Address) (*dagaddress.Address
 			slices.Sort(filters[i].Keys)
 			filters[i].Keys = slices.Compact(filters[i].Keys)
 		}
-		slices.SortFunc(filters, func(a, b dagaddress.DimensionFilter) int { return strings.Compare(a.Dimension, b.Dimension) })
+		slices.SortFunc(filters, func(a, b dagaddress.DimensionFilter) int {
+			if order := strings.Compare(a.Dimension, b.Dimension); order != 0 {
+				return order
+			}
+			if a.Absent == b.Absent {
+				return 0
+			}
+			if a.Absent {
+				return 1
+			}
+			return -1
+		})
 		encoded, err := json.Marshal(struct {
 			Types      []string
 			Dimensions []dagaddress.DimensionFilter
@@ -384,7 +395,9 @@ func requireArtifactModules(ctx context.Context, dag *dagger.Client, selection *
 	// A failed module has no schema. Module selectors can exclude it; type
 	// and collection selectors cannot prove that it has no matching artifacts.
 	for _, filter := range filters {
-		if filter.Dimension == artifact.ModuleDimension && filter.Keys != nil {
+		if filter.Dimension == artifact.ModuleDimension && filter.Absent {
+			selection = selection.FilterURI("dag://?!module")
+		} else if filter.Dimension == artifact.ModuleDimension && filter.Keys != nil {
 			selection = selection.FilterDimensionKeys(filter.Dimension, filter.Keys)
 		}
 	}

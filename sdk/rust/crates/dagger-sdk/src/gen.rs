@@ -1519,6 +1519,12 @@ pub struct ArtifactsPathDefinitionsOpts<'a> {
     pub type_assertion: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactsFilterDimensionsOpts {
+    /// Remove artifacts with any listed dimension.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsFilterDirectivesOpts {
     /// Remove the matching artifacts instead.
     #[builder(setter(into, strip_option), default)]
@@ -1977,6 +1983,8 @@ impl Artifacts {
         }
     }
     /// Keep artifacts selected through any listed dimension.
+    ///
+    /// Use [`Self::filter_dimensions_opts`] to set optional arguments.
     pub fn filter_dimensions(&self, dimensions: Vec<impl Into<String>>) -> Artifacts {
         let mut query = self.selection.select("filterDimensions");
         query = query.arg(
@@ -1986,6 +1994,30 @@ impl Artifacts {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep artifacts selected through any listed dimension.
+    ///
+    pub fn filter_dimensions_opts(
+        &self,
+        dimensions: Vec<impl Into<String>>,
+        opts: ArtifactsFilterDimensionsOpts,
+    ) -> Artifacts {
+        let mut query = self.selection.select("filterDimensions");
+        query = query.arg(
+            "dimensions",
+            dimensions
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
         Artifacts {
             proc: self.proc.clone(),
             selection: query,

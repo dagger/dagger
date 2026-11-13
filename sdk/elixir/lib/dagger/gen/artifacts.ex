@@ -223,12 +223,14 @@ defmodule Dagger.Artifacts do
   @doc """
   Keep artifacts selected through any listed dimension.
   """
-  @spec filter_dimensions(t(), [String.t()]) :: Dagger.Artifacts.t()
-  def filter_dimensions(%__MODULE__{} = artifacts, dimensions) do
+  @spec filter_dimensions(t(), [String.t()], [{:exclude, boolean() | nil}]) ::
+          Dagger.Artifacts.t()
+  def filter_dimensions(%__MODULE__{} = artifacts, dimensions, optional_args \\ []) do
     query_builder =
       artifacts.query_builder
       |> QB.select("filterDimensions")
       |> QB.put_arg("dimensions", dimensions)
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
 
     %Dagger.Artifacts{
       query_builder: query_builder,

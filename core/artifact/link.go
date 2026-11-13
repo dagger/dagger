@@ -15,35 +15,71 @@ type Link struct {
 
 // Links holds the schema proof with and without the scheme's type constraint.
 type Links struct {
-	Typed, Untyped *Link
-	CompleteSchema bool `json:",omitempty"`
-	// PathNeedsAbsence marks a same-type descendant that a positive path
-	// selector cannot exclude when no runtime coordinate proof is available.
-	PathNeedsAbsence bool `json:",omitempty"`
+	Typed, Untyped  *Link
+	CompleteSchema  bool     `json:",omitempty"`
+	TypedAbsent     []string `json:",omitempty"`
+	UntypedAbsent   []string `json:",omitempty"`
+	TypedPresence   []string `json:",omitempty"`
+	UntypedPresence []string `json:",omitempty"`
+	TypedModule     bool     `json:",omitempty"`
+	UntypedModule   bool     `json:",omitempty"`
+	Stale           *Links   `json:",omitempty"`
 }
 
-// PathNeedsAbsentDimension reports whether the typed public path also names
-// a deeper collection level. Legacy route aliases are not additional columns.
-func PathNeedsAbsentDimension(paths Paths, target Path) bool {
-	canonical := func(dimension string) bool {
-		return !IsStaticDimension(dimension) && !strings.Contains(dimension, "/")
-	}
+// PathAbsentDimensions returns extra collection dimensions on descendants
+// with the same module and path. A typed address also requires the same type.
+// Every target collection dimension must be present on the descendant.
+func PathAbsentDimensions(paths Paths, target Path, typed bool) []string {
+	var dimensions []string
 	for _, candidate := range paths {
-		if candidate.Module != target.Module || candidate.Type != target.Type || candidate.Key != target.Key {
+		if candidate.Module != target.Module || candidate.Key != target.Key || typed && candidate.Type != target.Type {
 			continue
 		}
 		if slices.ContainsFunc(target.Dimensions, func(dimension string) bool {
-			return canonical(dimension) && !slices.Contains(candidate.Dimensions, dimension)
+			return canonicalCollectionDimension(dimension) && !slices.Contains(candidate.Dimensions, dimension)
 		}) {
 			continue
 		}
-		if slices.ContainsFunc(candidate.Dimensions, func(dimension string) bool {
-			return canonical(dimension) && !slices.Contains(target.Dimensions, dimension)
-		}) {
-			return true
+		for _, dimension := range candidate.Dimensions {
+			if canonicalCollectionDimension(dimension) && !slices.Contains(target.Dimensions, dimension) {
+				dimensions = append(dimensions, dimension)
+			}
 		}
 	}
-	return false
+	slices.Sort(dimensions)
+	return slices.Compact(dimensions)
+}
+
+// PathPresenceDimensions returns target collection dimensions missing from
+// another path with the same module and key. A typed address also requires
+// the same type.
+func PathPresenceDimensions(paths Paths, target Path, typed bool) []string {
+	var dimensions []string
+	for _, candidate := range paths {
+		if candidate.Module != target.Module || candidate.Key != target.Key || typed && candidate.Type != target.Type {
+			continue
+		}
+		for _, dimension := range target.Dimensions {
+			if canonicalCollectionDimension(dimension) && !slices.Contains(candidate.Dimensions, dimension) {
+				dimensions = append(dimensions, dimension)
+			}
+		}
+	}
+	slices.Sort(dimensions)
+	return slices.Compact(dimensions)
+}
+
+func canonicalCollectionDimension(dimension string) bool {
+	return !IsStaticDimension(dimension) && !strings.Contains(dimension, "/")
+}
+
+// PathNeedsModule reports whether the public path also occurs in another
+// module. A typed address also requires the same type.
+func PathNeedsModule(paths Paths, target Path, typed bool) bool {
+	return slices.ContainsFunc(paths, func(candidate Path) bool {
+		return candidate.Module != target.Module && candidate.Key == target.Key &&
+			(!typed || candidate.Type == target.Type)
+	})
 }
 
 // PlanLink chooses the fewest extra pairs that identify target's schema path.

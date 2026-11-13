@@ -2,14 +2,15 @@ package core
 
 import (
 	"encoding/json"
+	"maps"
 
 	"github.com/dagger/dagger/core/artifact"
-	"github.com/dagger/dagger/core/artifact/flattening"
+	"github.com/dagger/dagger/core/dagaddress"
 )
 
-// A non-nil key set can be empty: the type alone can identify an artifact.
-type artifactAddressKeys struct{ Keys []flattening.Coordinate }
-type artifactAddressPlans struct{ Typed, Untyped *artifactAddressKeys }
+// A non-nil plan can be empty: the type alone can identify an artifact.
+type artifactAddressPlan struct{ Selectors []dagaddress.Pair }
+type artifactAddressPlans struct{ Typed, Untyped *artifactAddressPlan }
 
 func (a *Artifact) addressRow(typed bool) artifact.AddressRow {
 	typ := "*"
@@ -47,23 +48,42 @@ func (a *Artifacts) PrepareAddressPlans() {
 		}
 		untyped = artifact.NewAddressIndex(rows, true)
 	}
+	names := a.displayNames()
 	for _, entry := range a.Entries {
 		entry.addressPlans = &artifactAddressPlans{}
-		if keys, ok := typed.Keys(entry.addressRow(true)); ok {
-			entry.addressPlans.Typed = &artifactAddressKeys{Keys: keys}
+		namesOwned := false
+		if selectors, ok := typed.Selectors(entry.addressRow(true)); ok {
+			entry.addressPlans.Typed = &artifactAddressPlan{Selectors: selectors}
 		}
 		if untyped != nil {
-			if keys, ok := untyped.Keys(entry.addressRow(false)); ok {
-				entry.addressPlans.Untyped = &artifactAddressKeys{Keys: keys}
+			if selectors, ok := untyped.Selectors(entry.addressRow(false)); ok {
+				entry.addressPlans.Untyped = &artifactAddressPlan{Selectors: selectors}
+			}
+		}
+		for _, plan := range []*artifactAddressPlan{entry.addressPlans.Typed, entry.addressPlans.Untyped} {
+			if plan == nil {
+				continue
+			}
+			for _, selector := range plan.Selectors {
+				if selector.Absent && names[selector.Dimension] != "" {
+					if !namesOwned {
+						entry.DimensionNames = maps.Clone(entry.DimensionNames)
+						namesOwned = true
+					}
+					if entry.DimensionNames == nil {
+						entry.DimensionNames = map[string]string{}
+					}
+					entry.DimensionNames[selector.Dimension] = names[selector.Dimension]
+				}
 			}
 		}
 	}
 }
 
 func (a *Artifact) HasAddressPlan(typed bool) bool {
-	return a.addressKeys(typed) != nil
+	return a.addressPlan(typed) != nil
 }
-func (a *Artifact) addressKeys(typed bool) *artifactAddressKeys {
+func (a *Artifact) addressPlan(typed bool) *artifactAddressPlan {
 	if a.addressPlans == nil {
 		return nil
 	}

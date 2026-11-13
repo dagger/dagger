@@ -2089,9 +2089,21 @@ func (r *Artifacts) FilterDimensionKeys(dimension string, keys []string) *Artifa
 	}
 }
 
+// ArtifactsFilterDimensionsOpts contains options for Artifacts.FilterDimensions
+type ArtifactsFilterDimensionsOpts struct {
+	// Remove artifacts with any listed dimension.
+	Exclude bool
+}
+
 // Keep artifacts selected through any listed dimension.
-func (r *Artifacts) FilterDimensions(dimensions []string) *Artifacts {
+func (r *Artifacts) FilterDimensions(dimensions []string, opts ...ArtifactsFilterDimensionsOpts) *Artifacts {
 	q := r.query.Select("filterDimensions")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
 	q = q.Arg("dimensions", dimensions)
 
 	return &Artifacts{

@@ -290,3 +290,11 @@ func TestArtifactNameHelp(t *testing.T) {
 	require.Equal(t, []dagaddress.Pair{{Dimension: "name", Key: "generate.stale", HasKey: true}, {Dimension: "name", Key: "test", HasKey: true}}, artifactKeyFlags(cmd))
 	require.Empty(t, artifactDimensionFlagNames(cmd, definitions)["name"].Presence)
 }
+
+func TestArtifactPathsAbsentModuleDoesNotNarrow(t *testing.T) {
+	for _, query := range []string{"dag://?!module", "dag://?module=alpha&!module"} {
+		address, err := dagaddress.Parse(query)
+		require.NoError(t, err)
+		require.Nil(t, artifactPaths([]*dagaddress.Address{address}))
+	}
+}

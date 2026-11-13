@@ -94,3 +94,16 @@ func TestArtifactGeneratorCheckNames(t *testing.T) {
 func (index artifactNameIndex) matchesChecks(name string, filters []dagaddress.Pair) []string {
 	return artifact.MatchTypeKey(index.candidates("type:Check", filters), name)
 }
+
+func TestArtifactNameCandidatesApplyAbsentDimensions(t *testing.T) {
+	index := artifactNameIndex{"type:Check": {
+		{key: "grid/rows/check", dimensions: []string{"type:Check", "Rows"}},
+		{key: "grid/rows/check", dimensions: []string{"type:Check", "Rows", "Row"}},
+	}}
+	filters := []dagaddress.Pair{{Dimension: "Rows", Key: "top", HasKey: true}, {Dimension: "Row", Absent: true}}
+	paths := index.candidatePaths("type:Check", filters)
+	require.Len(t, paths, 1)
+	require.Equal(t, []string{"Rows"}, paths[0].Dimensions)
+	filters = append(filters, dagaddress.Pair{Dimension: "Row", HasKey: true})
+	require.Empty(t, index.candidates("type:Check", filters))
+}

@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core/artifact/flattening"
+	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAddressMinimumKeys(t *testing.T) {
+func TestAddressMinimumSelectors(t *testing.T) {
 	c := func(dimension, key string) flattening.Coordinate {
 		return flattening.Coordinate{Dimension: dimension, Key: key}
 	}
@@ -83,9 +84,9 @@ func TestAddressMinimumKeys(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			keys, ok := NewAddressIndex(test.rows, true).Keys(test.target)
+			selectors, ok := NewAddressIndex(test.rows, true).Selectors(test.target)
 			require.True(t, ok)
-			require.Equal(t, test.want, keys)
+			require.Equal(t, presentSelectors(test.want), selectors)
 		})
 	}
 }
@@ -111,9 +112,9 @@ func TestAddressMinimumCardinality(t *testing.T) {
 		row("0", "0", "1", "1", "0"),
 		row("0", "0", "1", "0", "1"),
 	}
-	keys, ok := NewAddressIndex(rows, true).Keys(target)
+	selectors, ok := NewAddressIndex(rows, true).Selectors(target)
 	require.True(t, ok)
-	require.Equal(t, []flattening.Coordinate{target.Coordinates[3], target.Coordinates[4]}, keys)
+	require.Equal(t, presentSelectors(target.Coordinates[3:]), selectors)
 }
 
 func TestAddressRequiresFullSnapshot(t *testing.T) {
@@ -123,20 +124,20 @@ func TestAddressRequiresFullSnapshot(t *testing.T) {
 	// Filtering the displayed rows must not construct a new address index.
 	for _, selection := range [][]AddressRow{{first}, {first, second}, {second, first}} {
 		for _, target := range selection {
-			keys, ok := index.Keys(target)
+			selectors, ok := index.Selectors(target)
 			require.True(t, ok)
-			require.Equal(t, target.Coordinates[1:], keys)
+			require.Equal(t, presentSelectors(target.Coordinates[1:]), selectors)
 		}
 	}
-	_, ok := NewAddressIndex([]AddressRow{first}, false).Keys(first)
+	_, ok := NewAddressIndex([]AddressRow{first}, false).Selectors(first)
 	require.False(t, ok)
-	_, ok = index.Keys(AddressRow{Type: "Check", Coordinates: first.Coordinates[:1]})
+	_, ok = index.Selectors(AddressRow{Type: "Check", Coordinates: first.Coordinates[:1]})
 	require.False(t, ok, "a partial target is not a row in the snapshot")
-	_, ok = index.Keys(AddressRow{Type: "File", Coordinates: first.Coordinates})
+	_, ok = index.Selectors(AddressRow{Type: "File", Coordinates: first.Coordinates})
 	require.False(t, ok)
-	_, ok = NewAddressIndex([]AddressRow{first, first}, true).Keys(first)
+	_, ok = NewAddressIndex([]AddressRow{first, first}, true).Selectors(first)
 	require.False(t, ok, "duplicate full coordinates cannot identify one artifact")
-	_, ok = NewAddressIndex([]AddressRow{first, {Type: "Check", Coordinates: []flattening.Coordinate{{Dimension: "module", Key: "a"}, {Dimension: "module", Key: "b"}}}}, true).Keys(first)
+	_, ok = NewAddressIndex([]AddressRow{first, {Type: "Check", Coordinates: []flattening.Coordinate{{Dimension: "module", Key: "a"}, {Dimension: "module", Key: "b"}}}}, true).Selectors(first)
 	require.False(t, ok, "invalid snapshot rows must not be silently discarded")
 }
 
@@ -146,9 +147,9 @@ func TestAddressIndexCopiesSnapshot(t *testing.T) {
 	second.Coordinates[1].Key = "lint"
 	index := NewAddressIndex([]AddressRow{first, second}, true)
 	second.Coordinates[1].Key = "run"
-	keys, ok := index.Keys(first)
+	selectors, ok := index.Selectors(first)
 	require.True(t, ok)
-	require.Equal(t, first.Coordinates[1:], keys)
+	require.Equal(t, presentSelectors(first.Coordinates[1:]), selectors)
 }
 
 func TestAddressTypeConstraint(t *testing.T) {
@@ -161,9 +162,9 @@ func TestAddressTypeConstraint(t *testing.T) {
 	container := AddressRow{Type: "Container", Coordinates: coordinates}
 	index := NewAddressIndex([]AddressRow{check, container}, true)
 	for _, target := range []AddressRow{check, container} {
-		keys, ok := index.Keys(target)
+		selectors, ok := index.Selectors(target)
 		require.True(t, ok, "different types with equal coordinates are distinct")
-		require.Empty(t, keys, "the URI type alone identifies this artifact")
+		require.Empty(t, selectors, "the URI type alone identifies this artifact")
 	}
 }
 
@@ -178,14 +179,14 @@ func TestAddressUntypedDuplicateCoordinates(t *testing.T) {
 		{Dimension: flattening.NameDimension, Key: "lint"},
 	}}
 	index := NewAddressIndex([]AddressRow{duplicate, duplicate, unique}, true)
-	_, ok := index.Keys(duplicate)
+	_, ok := index.Selectors(duplicate)
 	require.False(t, ok, "equal full coordinates cannot identify either artifact")
-	keys, ok := index.Keys(unique)
+	selectors, ok := index.Selectors(unique)
 	require.True(t, ok, "duplicate rows do not invalidate other artifacts")
-	require.Equal(t, unique.Coordinates[1:], keys)
+	require.Equal(t, presentSelectors(unique.Coordinates[1:]), selectors)
 }
 
-func BenchmarkAddressMinimumKeys(b *testing.B) {
+func BenchmarkAddressMinimumSelectors(b *testing.B) {
 	const count = 109349
 	rows := make([]AddressRow, count)
 	for i := range rows {
@@ -204,10 +205,19 @@ func BenchmarkAddressMinimumKeys(b *testing.B) {
 	for b.Loop() {
 		index := NewAddressIndex(rows, true)
 		for _, row := range rows {
-			keys, ok := index.Keys(row)
-			if !ok || len(keys) != 2 {
-				b.Fatalf("expected two coordinates: %v, %v", keys, ok)
+			selectors, ok := index.Selectors(row)
+			if !ok || len(selectors) != 2 {
+				b.Fatalf("expected two selectors: %v, %v", selectors, ok)
 			}
 		}
 	}
+}
+
+// presentSelectors preserves the coordinate order in expected selectors.
+func presentSelectors(coordinates []flattening.Coordinate) []dagaddress.Pair {
+	selectors := make([]dagaddress.Pair, len(coordinates))
+	for i, coordinate := range coordinates {
+		selectors[i] = dagaddress.Pair{Dimension: coordinate.Dimension, Key: coordinate.Key, HasKey: true}
+	}
+	return selectors
 }

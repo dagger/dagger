@@ -200,10 +200,13 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Keep artifacts selected through any listed dimension.
      */
-    public function filterDimensions(array $dimensions): Artifacts
+    public function filterDimensions(array $dimensions, ?bool $exclude = false): Artifacts
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDimensions');
         $innerQueryBuilder->setArgument('dimensions', $dimensions);
+        if (true === $exclude) {
+            $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
