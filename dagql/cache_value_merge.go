@@ -1630,6 +1630,7 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 	errs = errors.Join(errs, collectErr)
 
 	reply := c.mergeReplyLocked(commit)
+	c.takeChangesLocked(&change)
 	reply.Change = change
 	attached := commit.attached
 	finish := func(ctx context.Context) error {

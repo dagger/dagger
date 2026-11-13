@@ -86,11 +86,15 @@ const (
 
 // PartAvailability is AvailablePart's answer. Donor is the number of the
 // entry whose stored part or record it is, and Part the stored part, for
-// PartStored.
+// PartStored. ValidUntilUnix is the soonest moment, after the clock it was
+// read at, that one of the entries the answer considered expires (0: none
+// does): before it, only a write can change the answer, and the write's
+// change names the entry (RemoteChange.Entries).
 type PartAvailability struct {
-	State PartAvailabilityState
-	Donor uint64
-	Part  PersistedPartOffer
+	State          PartAvailabilityState
+	Donor          uint64
+	Part           PersistedPartOffer
+	ValidUntilUnix int64
 }
 
 // AvailablePart reports what the cache has of a part of the entry numbered

@@ -55,7 +55,7 @@ func storedPruneTestRoot(t *testing.T, ctx context.Context, cloud *Cache, field 
 func TestPruneDropsValuesOnlyHoldingsKeep(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
-	stored, err := cloud.SetStoredPart(ctx, r, testLiveOffer(), 0)
+	stored, _, err := cloud.SetStoredPart(ctx, r, testLiveOffer(), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	require.Equal(t, storedPruneTestState{registered: true, value: true, parts: true, deps: true, retained: true}, storedPruneTestEntryState(cloud, r))
@@ -80,7 +80,7 @@ func TestPruneDropsValuesOnlyHoldingsKeep(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []uint64{r}, got.NoValue, "a dropped value is not placed")
 
-	_, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-a"))
+	_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates)
 	require.NoError(t, err)
 	for _, number := range []uint64{r, p} {
 		require.Equal(t, storedPruneTestState{}, storedPruneTestEntryState(cloud, number), "collected with its last holding")
@@ -157,7 +157,7 @@ func TestSetStoredPartRefusesAnEntryAPruneEmptied(t *testing.T) {
 	require.False(t, storedPruneTestEntryState(cloud, p).value)
 
 	deps := storedPartTestDeps(cloud, q)
-	stored, err := cloud.SetStoredPart(ctx, q, storedPartNaming(p), 0)
+	stored, _, err := cloud.SetStoredPart(ctx, q, storedPartNaming(p), 0)
 	require.NoError(t, err)
 	require.False(t, stored)
 	require.Equal(t, deps, storedPartTestDeps(cloud, q))
@@ -360,7 +360,7 @@ func TestPruneCountsSharedBlobsOnce(t *testing.T) {
 		older: {"base": 100, "older-top": 50},
 		newer: {"base": 100, "newer-top": 30},
 	} {
-		stored, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", layers), 0)
+		stored, _, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", layers), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 	}
@@ -400,7 +400,7 @@ func TestPruneDiskPolicyWithOvershootAllowance(t *testing.T) {
 				older: {"base": 100, "older-top": 50},
 				newer: {"base": 100, "newer-top": 30},
 			} {
-				stored, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", layers), 0)
+				stored, _, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", layers), 0)
 				require.NoError(t, err)
 				require.True(t, stored)
 			}
@@ -440,7 +440,7 @@ func TestPruneWithOvershootAllowancePassesOverWithoutATrace(t *testing.T) {
 		older: {"base": 100, "older-top": 200},
 		newer: {"base": 100, "newer-top": 50},
 	} {
-		stored, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", layers), 0)
+		stored, _, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", layers), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 	}
@@ -466,7 +466,7 @@ func TestPruneDropsExpiredRootsFirst(t *testing.T) {
 		older:   {"older-layer": 100},
 		expired: {"expired-layer": 100},
 	} {
-		stored, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", layers), 0)
+		stored, _, err := cloud.SetStoredPart(ctx, number, storedPruneTestPart("snapshot", layers), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 	}

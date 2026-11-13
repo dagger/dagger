@@ -34,7 +34,7 @@ func BenchmarkRemoteCollectionCompaction(b *testing.B) {
 			attach := func(key HolderKey, session string, h RemoteHolding) {
 				_, err := cloud.AttachRemoteHolding(ctx, key, h)
 				require.NoError(b, err)
-				require.NoError(b, cloud.AddRemoteHold(ctx, key, session))
+				require.NoError(b, errOf(cloud.AddRemoteHold(ctx, key, session)))
 			}
 			for i := range liveCount {
 				// Each live entry's term takes the one before it as its input.
@@ -42,7 +42,7 @@ func BenchmarkRemoteCollectionCompaction(b *testing.B) {
 			}
 			advance := testEqClassClock(cloud)
 			const perCollection = 164_700 * time.Millisecond / 88_000
-			_, err = cloud.CollectRemoteHoldings(ctx, nil)
+			_, _, err = cloud.CollectRemoteHoldings(ctx, nil)
 			require.NoError(b, err)
 			cloud.egraphMu.RLock()
 			checks := cloud.eqClassChecks
@@ -58,12 +58,12 @@ func BenchmarkRemoteCollectionCompaction(b *testing.B) {
 					field := fmt.Sprintf("churn-%d-%d", i, j)
 					attach(HolderKey{"cache-churn", uint64(2*i + j + 1)}, session, holding(field, (i*2+j)%liveCount))
 				}
-				candidates := cloud.ReleaseRemoteSession(ctx, "cache-churn", session)
+				candidates := cloud.ReleaseRemoteSession(ctx, "cache-churn", session).Candidates
 				cloud.egraphMu.RLock()
 				before := cloud.eqClassSlotsLocked()
 				cloud.egraphMu.RUnlock()
 				start := time.Now()
-				collected, err := cloud.CollectRemoteHoldings(ctx, candidates)
+				collected, _, err := cloud.CollectRemoteHoldings(ctx, candidates)
 				took := time.Since(start)
 				require.NoError(b, err)
 				require.Len(b, collected, 2)

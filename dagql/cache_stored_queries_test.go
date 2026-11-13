@@ -106,7 +106,7 @@ func TestAvailablePartStored(t *testing.T) {
 	t.Run("its own, unexpired", func(t *testing.T) {
 		t.Parallel()
 		ctx, cloud, first, _ := storedQueriesTestClass(t)
-		stored, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
+		stored, _, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 		got, err := cloud.AvailablePart(first, address, time.Now().Unix())
@@ -118,7 +118,7 @@ func TestAvailablePartStored(t *testing.T) {
 	t.Run("its own, expired", func(t *testing.T) {
 		t.Parallel()
 		ctx, cloud, first, _ := storedQueriesTestClass(t)
-		stored, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
+		stored, _, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 		expire(cloud, first)
@@ -129,7 +129,7 @@ func TestAvailablePartStored(t *testing.T) {
 	t.Run("an unexpired class member's", func(t *testing.T) {
 		t.Parallel()
 		ctx, cloud, first, second := storedQueriesTestClass(t)
-		stored, err := cloud.SetStoredPart(ctx, second, testLiveOffer(), 0)
+		stored, _, err := cloud.SetStoredPart(ctx, second, testLiveOffer(), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 		got, err := cloud.AvailablePart(first, address, time.Now().Unix())
@@ -167,7 +167,7 @@ func TestAvailablePartAtTheReadersClock(t *testing.T) {
 	t.Run("its own part", func(t *testing.T) {
 		t.Parallel()
 		ctx, cloud, first, _ := storedQueriesTestClass(t)
-		stored, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
+		stored, _, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 		expireAt(cloud, first)
@@ -181,7 +181,7 @@ func TestAvailablePartAtTheReadersClock(t *testing.T) {
 	t.Run("a class member's part", func(t *testing.T) {
 		t.Parallel()
 		ctx, cloud, first, second := storedQueriesTestClass(t)
-		stored, err := cloud.SetStoredPart(ctx, second, testLiveOffer(), 0)
+		stored, _, err := cloud.SetStoredPart(ctx, second, testLiveOffer(), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 		expireAt(cloud, second)
@@ -196,7 +196,7 @@ func TestAvailablePartAtTheReadersClock(t *testing.T) {
 	t.Run("a value expired by the wall clock", func(t *testing.T) {
 		t.Parallel()
 		ctx, cloud, first, _ := storedQueriesTestClass(t)
-		stored, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
+		stored, _, err := cloud.SetStoredPart(ctx, first, testLiveOffer(), 0)
 		require.NoError(t, err)
 		require.True(t, stored)
 		past := time.Now().Add(-time.Hour)
@@ -274,7 +274,7 @@ func TestAvailablePartCopiesAndNeedsABlobStore(t *testing.T) {
 	part := testLiveOffer()
 	part.Value.Services = []TransferredServiceBinding{{ServiceResultID: second, Hostname: "svc"}}
 	part.Owner.DependencyIDs = []uint64{second}
-	stored, err := cloud.SetStoredPart(ctx, first, part, 0)
+	stored, _, err := cloud.SetStoredPart(ctx, first, part, 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	got, err := cloud.AvailablePart(first, PersistedPartAddress{Part: "snapshot"}, time.Now().Unix())
