@@ -1012,19 +1012,38 @@ func (c *Cache) transferIdentityPlanOf(res *sharedResult) (transferIdentityPlan,
 }
 
 // warmMergeTargetParts reads the complete parts of each recipe's current
-// entry, so the reply can report them without capturing under the lock.
+// entry, so the reply can report them without capturing under the lock. It
+// holds the targets whose parts it must read again for their captures
+// together (holdRowsForCapture), in a few holds of egraphMu for writing
+// rather than two for each target: each hold waits for egraphMu's readers.
 func (c *Cache) warmMergeTargetParts(ctx context.Context, prep *valueMergePrep) {
+	reader := c.completePartSizeReader()
 	c.egraphMu.RLock()
 	targets := make([]*sharedResult, 0, len(prep.plans))
+	seen := map[*sharedResult]bool{}
 	for _, plan := range prep.plans {
-		if res := c.currentEntryForRecipeLocked(plan.recipe); res != nil && !res.noValueLocked() {
+		if res := c.currentEntryForRecipeLocked(plan.recipe); res != nil && !seen[res] && !res.noValueLocked() && !completePartsCurrent(res, reader) {
+			seen[res] = true
 			targets = append(targets, res)
 		}
 	}
 	c.egraphMu.RUnlock()
-	for _, res := range targets {
-		c.completePartKeys(ctx, res)
+	if len(targets) == 0 {
+		return
 	}
+	op, err := c.beginCacheOperation()
+	if err != nil {
+		return
+	}
+	defer op.finish(false)
+	held, release := c.holdRowsForCapture(ctx, targets)
+	for _, h := range held {
+		c.completePartsHeld(ctx, h.row, reader, h.run)
+	}
+	// Warming is a cache the reply reads only while it still describes an
+	// entry's value: a failure to let a target go costs nothing here, as a
+	// capture's own failure doesn't.
+	_ = release()
 }
 
 // mergeAttachmentWaitLocked returns the attachment to wait on when a record's
