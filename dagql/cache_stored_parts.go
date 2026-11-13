@@ -135,9 +135,10 @@ func (res *sharedResult) storedPartsLocked() []storedPart {
 // restoreStoredPartsLocked takes a blob-backed cache's restored value's
 // stored parts out of its saved envelope, onto the entry, and sets the size
 // of its record as merge measured it: the call frame's JSON and the envelope's
-// without them. Requires egraphMu for writing.
-func (c *Cache) restoreStoredPartsLocked(res *sharedResult, env *PersistedResultEnvelope, callFrameJSON string, payload []byte) error {
-	res.storedRecordBytes = int64(len(callFrameJSON) + len(payload))
+// without them. callFrameBytes and payloadBytes are the sizes of the row's
+// saved call frame and envelope. Requires egraphMu for writing.
+func (c *Cache) restoreStoredPartsLocked(res *sharedResult, env *PersistedResultEnvelope, callFrameBytes, payloadBytes int) error {
+	res.storedRecordBytes = int64(callFrameBytes + payloadBytes)
 	if len(env.StoredParts) == 0 {
 		return nil
 	}
@@ -155,7 +156,7 @@ func (c *Cache) restoreStoredPartsLocked(res *sharedResult, env *PersistedResult
 	if err != nil {
 		return err
 	}
-	res.storedRecordBytes = int64(len(callFrameJSON) + len(stripped))
+	res.storedRecordBytes = int64(callFrameBytes + len(stripped))
 	return nil
 }
 

@@ -790,9 +790,10 @@ func (c *Cache) tracePersistedPayloadImportedLazy(ctx context.Context, importRun
 	})
 }
 
-func (c *Cache) traceImportResultLoaded(ctx context.Context, importRunID string, resID sharedResultID, callFrameJSON string) {
+func (c *Cache) traceImportResultLoaded(ctx context.Context, importRunID string, resID sharedResultID, frame *ResultCall) {
 	c.traceLazy(ctx, "import_result_loaded", func() []any {
-		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "call_frame_json", callFrameJSON}
+		callFrameJSON, _ := json.Marshal(frame)
+		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "call_frame_json", string(callFrameJSON)}
 	})
 }
 
