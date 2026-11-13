@@ -190,6 +190,11 @@ func (p PromptAttachable) PromptApproval(ctx context.Context, req *ApprovalReque
 		if confirm {
 			// What a yes to an approval always meant: until the session ends.
 			decision = APPROVAL_ALLOW_SESSION
+			if len(req.GetLegacyPersistentKeys()) > 0 && req.GetPersistentKey() != "" {
+				// Except where a yes was always remembered (e.g. LLM
+				// access): it still is, under today's key.
+				decision = APPROVAL_ALLOW_FOREVER
+			}
 		}
 	}
 	if decision == APPROVAL_ALLOW_FOREVER {
