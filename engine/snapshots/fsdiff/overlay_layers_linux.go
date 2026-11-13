@@ -252,8 +252,10 @@ func lstatIfExists(path string) (os.FileInfo, error) {
 
 // diffLayerDeltaPath reports the changes at one candidate path of
 // WalkLayerDeltaChanges by comparing the two merged views, and whether the
-// path's descendants are covered already (deleted, replaced or listed in
-// full) and must be skipped.
+// path's descendants must be skipped: covered already (deleted, replaced or
+// listed in full), or not in either view at all because the path isn't a
+// directory there. A double walk never looks beneath a non-directory, and a
+// lookup of a descendant beneath a symlink would follow it to another path.
 func diffLayerDeltaPath(
 	ctx context.Context,
 	changeFn continuityfs.ChangeFunc,
@@ -291,12 +293,12 @@ func diffLayerDeltaPath(
 	switch {
 	case upperF == nil && lowerF == nil:
 		// Added by one layer, removed by another.
-		return false, nil
+		return true, nil
 	case upperF == nil:
 		if err := changeFn(continuityfs.ChangeKindDelete, path, nil, nil); err != nil {
 			return false, err
 		}
-		return lowerF.IsDir(), nil
+		return true, nil
 	case lowerF == nil:
 		if err := changeFn(continuityfs.ChangeKindAdd, path, upperF, nil); err != nil {
 			return false, err
@@ -304,7 +306,7 @@ func diffLayerDeltaPath(
 		if upperF.IsDir() {
 			return addDir()
 		}
-		return false, nil
+		return true, nil
 	}
 	same, err := samePathInfo(lowerF, upperF, lowerPath, upperPath, comparison)
 	if err != nil {
@@ -324,6 +326,8 @@ func diffLayerDeltaPath(
 		if err := WalkChanges(ctx, lowerPath, upperPath, comparison, underPath); err != nil {
 			return false, err
 		}
+		return true, nil
+	case !lowerF.IsDir() && !upperF.IsDir():
 		return true, nil
 	}
 	return false, nil
