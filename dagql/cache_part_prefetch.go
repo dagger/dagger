@@ -437,6 +437,12 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 	}
 }
 
+// partOfferRestored queues an offer a restore just attached for prefetch,
+// as partOfferAccepted queues any merge's.
+func (c *Cache) partOfferRestored(ctx context.Context, row *sharedResult, key string, offer *partOffer) {
+	c.partOfferAccepted(ctx, row, key, offer)
+}
+
 // queueLaneLocked queues job in its lane, dropping the lane's oldest job
 // when the lane is full, and returns what it dropped, for the caller to log
 // outside the mutex. Requires p.mu.
