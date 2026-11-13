@@ -170,6 +170,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 	}
 	c.warmMergeTargetParts(ctx, prep)
 	warmed := time.Since(warming)
+	c.prerelocateMergeRows(prep)
 	if c.testBeforeTransferCommit != nil {
 		c.testBeforeTransferCommit()
 	}
@@ -357,6 +358,10 @@ func (r MergeReply) Imported() []ImportedValue {
 type valueMergePrep struct {
 	// payloadPreparing is the cache's testRecordPayloadPreparing.
 	payloadPreparing func(uint64) error
+	// prerelocated are the records relocated before the commit took
+	// egraphMu, by ordinal (prerelocateMergeRows); the commit takes each
+	// whose numbers still hold.
+	prerelocated map[uint64]*prerelocatedRecord
 	// from is the cache the bundle is from.
 	from   CacheID
 	bundle ValueBundle
@@ -1166,6 +1171,41 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 		return nil, &mergeStaleError{ordinals: stale}
 	}
 
+	c.decideMergeRowsLocked(commit)
+	// Everything after the decisions reads the payloads and parts of the
+	// records merge installs, which a light record doesn't have: the cache
+	// changed since the preparation.
+	if commit.installsLight() {
+		return nil, errMergeNeedsFullPrep
+	}
+	commit.byNumber = make(map[sharedResultID]*sharedResult, len(commit.rows))
+	commit.installed = map[*sharedResult]*mergeRow{}
+	for _, row := range commit.rows {
+		commit.byNumber[row.res.id] = row.res
+		if row.action.installs() {
+			commit.installed[row.res] = row
+		}
+	}
+
+	if err := c.relocateMergeRowsLocked(commit); err != nil {
+		return nil, err
+	}
+	if err := c.selectMergedOffersLocked(commit); err != nil {
+		return nil, err
+	}
+	if err := c.checkMergeGraphLocked(commit); err != nil {
+		return nil, err
+	}
+	return commit, nil
+}
+
+// decideMergeRowsLocked decides what commit's merge does with each record of
+// its prepared bundle as the cache stands, by commit's clock: the rows of the
+// unexpired roots' closure, each with its action and the entry it lands on.
+// It reads the cache and changes nothing: egraphMu is held for reading at
+// least.
+func (c *Cache) decideMergeRowsLocked(commit *valueMergeCommit) {
+	prep, now := commit.prep, commit.now
 	// An expired root is skipped, with whatever only it needs.
 	var merged map[uint64]bool
 	merged, commit.roots = prep.liveClosure(now)
@@ -1203,31 +1243,6 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 		row.action, row.target, row.res = mergeKeep, b.res, b.res
 		row.keptExpired = b.keptExpired || b.action.installs() && b.expired
 	}
-	// Everything after the decisions reads the payloads and parts of the
-	// records merge installs, which a light record doesn't have: the cache
-	// changed since the preparation.
-	if commit.installsLight() {
-		return nil, errMergeNeedsFullPrep
-	}
-	commit.byNumber = make(map[sharedResultID]*sharedResult, len(commit.rows))
-	commit.installed = map[*sharedResult]*mergeRow{}
-	for _, row := range commit.rows {
-		commit.byNumber[row.res.id] = row.res
-		if row.action.installs() {
-			commit.installed[row.res] = row
-		}
-	}
-
-	if err := c.relocateMergeRowsLocked(commit); err != nil {
-		return nil, err
-	}
-	if err := c.selectMergedOffersLocked(commit); err != nil {
-		return nil, err
-	}
-	if err := c.checkMergeGraphLocked(commit); err != nil {
-		return nil, err
-	}
-	return commit, nil
 }
 
 // liveClosure returns the rows the bundle's unexpired roots need, judged at
@@ -1394,6 +1409,108 @@ func (c *Cache) decideMergeRowLocked(row *mergeRow, now int64, fresh sharedResul
 	}
 }
 
+// prerelocatedRecord is a record a merge relocated before its commit took
+// egraphMu (prerelocateMergeRows), with the final number it gave each
+// provisional number it renumbered.
+type prerelocatedRecord struct {
+	rec     PersistedRecord
+	numbers map[uint64]sharedResultID
+}
+
+// holds reports whether final, the commit's numbering, gives every number the
+// relocation renumbered the number the relocation gave it. Relocating a
+// record reads nothing but its own encoding and those numbers, so then the
+// relocated record is the one the commit would relocate.
+func (p *prerelocatedRecord) holds(final func(uint64) (sharedResultID, error)) bool {
+	for provisional, n := range p.numbers {
+		if got, err := final(provisional); err != nil || got != n {
+			return false
+		}
+	}
+	return true
+}
+
+// prerelocateMergeRows relocates, before the commit takes egraphMu for
+// writing, each record the commit would relocate as the cache stands now:
+// under the read lock it decides every row as the commit does
+// (decideMergeRowsLocked), and with no lock held it renumbers each moved
+// record's references, the records in parallel. The commit uses a relocated
+// record only when every number it gave still holds
+// (relocateMergeRowsLocked); any other is relocated under the lock, as
+// before. Decoding and encoding a record's payload is most of a commit's
+// hold of the lock on an engine taking a stream of merges, whose records
+// mostly reference entries earlier merges made.
+func (c *Cache) prerelocateMergeRows(prep *valueMergePrep) {
+	if c.testNoPrerelocation || len(prep.stale) > 0 {
+		return
+	}
+	commit := &valueMergeCommit{prep: prep, byOrdinal: map[uint64]*mergeRow{}, now: time.Now().Unix()}
+	c.egraphMu.RLock()
+	c.decideMergeRowsLocked(commit)
+	c.egraphMu.RUnlock()
+	if commit.installsLight() {
+		return
+	}
+	final := func(provisional uint64) (sharedResultID, bool) {
+		row := commit.byOrdinal[provisional-prep.firstID+1]
+		if row == nil {
+			return 0, false
+		}
+		return row.res.id, true
+	}
+	var moved []uint64
+	for _, row := range commit.rows {
+		if !row.action.installs() {
+			continue
+		}
+		for _, provisional := range prep.refs[row.ordinal] {
+			if n, ok := final(provisional); !ok || uint64(n) != provisional {
+				moved = append(moved, row.ordinal)
+				break
+			}
+		}
+	}
+	relocated := make([]*prerelocatedRecord, len(moved))
+	_ = forEachIndexParallel(len(moved), func(i int) error {
+		numbers := map[uint64]sharedResultID{}
+		rec, err := VisitEncodedReferences(prep.records[moved[i]], func(ref *PersistedRef) error {
+			if ref.RecipeID != nil || ref.ResultID == 0 {
+				return nil
+			}
+			n, ok := final(ref.ResultID)
+			if !ok {
+				return errMergeRowOutsideClosure
+			}
+			numbers[ref.ResultID] = n
+			ref.ResultID = uint64(n)
+			return nil
+		})
+		// A record that doesn't relocate here is left to the commit, which
+		// relocates it under the lock and answers its error.
+		if err == nil {
+			relocated[i] = &prerelocatedRecord{rec: rec, numbers: numbers}
+		}
+		return nil
+	})
+	prep.prerelocated = make(map[uint64]*prerelocatedRecord, len(moved))
+	for i, ordinal := range moved {
+		if relocated[i] != nil {
+			prep.prerelocated[ordinal] = relocated[i]
+		}
+	}
+	if c.testPrerelocated != nil {
+		used := make(map[uint64]map[uint64]sharedResultID, len(prep.prerelocated))
+		for ordinal, pre := range prep.prerelocated {
+			used[ordinal] = pre.numbers
+		}
+		c.testPrerelocated(used)
+	}
+}
+
+// errMergeRowOutsideClosure stops a relocation before the lock at a
+// reference outside the rows the merge decides.
+var errMergeRowOutsideClosure = errors.New("merge values: reference outside the merged closure")
+
 // relocateMergeRowsLocked relocates each decided record from its provisional
 // numbers to the final ones; each row's incoming offers are relocated too. A
 // new entry keeps its provisional number, so a record whose own number and
@@ -1450,12 +1567,19 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 		}
 		rec := source
 		if moved {
-			if c.testRelocatedUnderLock != nil {
-				c.testRelocatedUnderLock(row.ordinal)
-			}
-			var err error
-			if rec, err = VisitEncodedReferences(source, relocate); err != nil {
-				return err
+			if pre, ok := prep.prerelocated[row.ordinal]; ok && pre.holds(final) {
+				// Relocated before the lock with the numbers the commit
+				// decides: the same record relocation here would give.
+				rec = pre.rec
+				delete(prep.prerelocated, row.ordinal)
+			} else {
+				if c.testRelocatedUnderLock != nil {
+					c.testRelocatedUnderLock(row.ordinal)
+				}
+				var err error
+				if rec, err = VisitEncodedReferences(source, relocate); err != nil {
+					return err
+				}
 			}
 		} else {
 			// The record is shared with the preparation: copy what the
