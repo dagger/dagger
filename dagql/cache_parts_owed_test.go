@@ -242,3 +242,18 @@ func TestOwingMadeDuringASpansReadStands(t *testing.T) {
 	require.Equal(t, 0, c.reportOwedParts(ctx))
 	requireNoReport(t, reports)
 }
+
+// An entry that owes, is settled by a span that reads its record, and owes
+// again is reported once by the next pass.
+func TestOwedAgainAfterSettlingIsReportedOnce(t *testing.T) {
+	t.Parallel()
+	value := &describedPartValue{done: true}
+	ctx, c, row, reports := ownedPartsCache(t, value, nil)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	c.owePartsReport(row, nil)
+	c.settleOwedPartsReport(row, c.owedPartsSeq())
+	c.owePartsReport(row, nil)
+	require.Equal(t, 0, c.reportOwedParts(ctx))
+	require.Len(t, <-reports, 1, "one part, reported once")
+	requireNoReport(t, reports)
+}
