@@ -875,7 +875,89 @@ func testEqClassContentsLocked(c *Cache) eqClassContents {
 	return out
 }
 
-// Compaction renumbers the classes and rebuilds their tables at the live
+// Compaction frees the classes that no term and no entry uses, and keeps the
+// number of every live class: a class's number names it for as long as it
+// lives, so what holds the number outside the e-graph's own tables, such as a
+// saved row, stays right across a compaction. The numbers it frees are taken
+// again, lowest first, by the classes created after it, and the slots in use
+// count only the classes that hold one.
+func TestCompactEqClassesKeepsLiveClassNumbers(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	c.initEgraphLocked()
+	a := c.ensureEqClassForDigestLocked(ctx, "numbers-a")
+	dead1 := c.ensureEqClassForDigestLocked(ctx, "numbers-dead-1")
+	b := c.ensureEqClassForDigestLocked(ctx, "numbers-b")
+	dead2 := c.ensureEqClassForDigestLocked(ctx, "numbers-dead-2")
+	joined := c.ensureEqClassForDigestLocked(ctx, "numbers-joined")
+	d := c.ensureEqClassForDigestLocked(ctx, "numbers-d")
+	dead3 := c.ensureEqClassForDigestLocked(ctx, "numbers-dead-3")
+	c.resultsByID = map[sharedResultID]*sharedResult{
+		1: {id: 1, self: Int(1), hasValue: true, resultCall: cacheTestIntCall("numbers-a")},
+		2: {id: 2, self: Int(2), hasValue: true, resultCall: cacheTestIntCall("numbers-b")},
+		3: {id: 3, self: Int(3), hasValue: true, resultCall: cacheTestIntCall("numbers-d")},
+	}
+	c.addResultOutputEqClassLocked(1, a)
+	c.addResultOutputEqClassLocked(2, b)
+	c.addResultOutputEqClassLocked(3, d)
+	// numbers-joined joins b's class: its digest now names b's root.
+	root := c.mergeEqClassesLocked(ctx, b, joined)
+	live := map[string]eqClassID{}
+	for _, dig := range []string{"numbers-a", "numbers-b", "numbers-joined", "numbers-d"} {
+		live[dig] = c.findEqClassLocked(c.egraphDigestToClass[dig])
+	}
+	assert.Equal(t, root, live["numbers-b"])
+	assert.Equal(t, root, live["numbers-joined"])
+
+	changed, oldSlots, newSlots := c.compactEqClassesLocked(true)
+	assert.Assert(t, changed)
+	assert.Equal(t, 7, oldSlots)
+	assert.Equal(t, 3, newSlots)
+	for dig, want := range live {
+		assert.Equal(t, want, c.egraphDigestToClass[dig], "digest %s keeps its class's number", dig)
+		assert.Equal(t, want, c.findEqClassLocked(want), "class of %s is a root under its own number", dig)
+	}
+	for _, id := range []eqClassID{dead1, dead2, dead3} {
+		assert.Equal(t, eqClassID(0), c.findEqClassLocked(id), "dead class %d is freed", id)
+	}
+	_, deadDigest := c.egraphDigestToClass["numbers-dead-1"]
+	assert.Assert(t, !deadDigest)
+	assert.Equal(t, 3, c.eqClassSlotsLocked())
+
+	// The freed numbers below the highest live one are taken first, lowest
+	// first; the highest dead number was trimmed away, so a class created
+	// once they're taken gets the next one after the highest live class.
+	liveRoots := map[eqClassID]bool{live["numbers-a"]: true, live["numbers-b"]: true, live["numbers-d"]: true}
+	var highest eqClassID
+	for root := range liveRoots {
+		if root > highest {
+			highest = root
+		}
+	}
+	var freed []eqClassID
+	for id := eqClassID(1); id < highest; id++ {
+		if !liveRoots[id] {
+			freed = append(freed, id)
+		}
+	}
+	assert.Assert(t, len(freed) > 0)
+	slices.Sort(freed)
+	var got []eqClassID
+	for i := range freed {
+		got = append(got, c.ensureEqClassForDigestLocked(ctx, fmt.Sprintf("numbers-new-%d", i)))
+	}
+	assert.DeepEqual(t, freed, got)
+	next := c.ensureEqClassForDigestLocked(ctx, "numbers-new-last")
+	assert.Equal(t, highest+1, next)
+	assert.Equal(t, 3+len(freed)+1, c.eqClassSlotsLocked())
+}
+
+// Compaction frees the dead classes and rebuilds their tables at the live
 // size, the digest map included; what the tables hold is unchanged. Across a
 // forced compaction that frees dead classes, every table reads the same when
 // each class is named by its digests: which digests share a class, each
