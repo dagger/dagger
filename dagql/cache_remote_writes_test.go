@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -40,6 +41,11 @@ func remoteWritesScript(t *testing.T, ctx context.Context, ops remoteWriteOps) [
 	t.Helper()
 	var out []string
 	note := func(name string, v ...any) {
+		for i, x := range v {
+			if change, ok := x.(RemoteChange); ok {
+				v[i] = unorderedChange(change)
+			}
+		}
 		out = append(out, fmt.Sprintf("%s: %+v", name, v))
 	}
 	attach := func(key HolderKey, desc RemoteHolding) {
@@ -118,12 +124,24 @@ func remoteWritesScript(t *testing.T, ctx context.Context, ops remoteWriteOps) [
 	collect(HolderKey{a, 3}, HolderKey{b, 6})
 	change := ops.ReleaseRemoteSession(ctx, a, "s1")
 	note("end s1", change)
-	collect(change.Candidates...)
+	collect(unorderedChange(change).Candidates...)
 	change = ops.ReleaseRemoteCache(ctx, b)
 	note("release cache-b", change)
-	collect(change.Candidates...)
+	collect(unorderedChange(change).Candidates...)
 	read("released")
 	return out
+}
+
+// unorderedChange is change with its Candidates and Recipes sorted: a
+// change lists them in no order of its own, such as a session's holdings,
+// which it releases in its map's order.
+func unorderedChange(change RemoteChange) RemoteChange {
+	change.recipes = nil
+	change.Candidates = slices.Clone(change.Candidates)
+	slices.SortFunc(change.Candidates, compareHolderKeys)
+	change.Recipes = slices.Clone(change.Recipes)
+	slices.Sort(change.Recipes)
+	return change
 }
 
 // A run of operations in one hold answers, and leaves the cache, as the
