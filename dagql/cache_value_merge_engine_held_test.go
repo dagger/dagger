@@ -364,3 +364,58 @@ func TestCloudHeldRowsHoldBesideAnotherEnginesRequestDigest(t *testing.T) {
 	assert.Empty(t, reply.Stale, "the child, merged in full, holds")
 	assert.True(t, reply.Committed)
 }
+
+// A held row accepts nothing on the Cloud that it wouldn't accept once the
+// sending engine's telemetry had named the row's holding: the row's recipe
+// has a live value that another engine's run gave it, the sending engine
+// ran the row's call itself, and its bundle sends the row held. One Cloud
+// has the engine's holding of the row already, as telemetry attaches it to
+// the entry of the row's recipe; the other doesn't. Both commit the same
+// rows, keep the other engine's value on the same entry, and end with the
+// engine's holding of the row on it.
+func TestCloudHeldRowAcceptsWhatItWouldOnceTelemetryNamedTheHolding(t *testing.T) {
+	t.Parallel()
+	ctx, engine, srv := transferTestCache(t)
+	child := persistedListTestResult(t, ctx, engine, srv, "named-child", String("child"))
+	root := persistedListTestResult(t, ctx, engine, srv, "named-root", String("root"))
+	transferTestDependency(engine, ctx, root, child)
+	held := engineHeldTestBundle(t, engine, exportTestBundle(t, ctx, engine, root), child)
+	childNumber := uint64(child.cacheSharedResult().id)
+
+	// otherRun is another engine's run of the child's call.
+	octx, other, osrv := transferTestCache(t)
+	otherChild := persistedListTestResult(t, octx, other, osrv, "named-child", String("child"))
+	otherRun := exportTestBundle(t, octx, other, otherChild)
+
+	type outcome struct {
+		rows   MergeRowCounts
+		entry  sharedResultID
+		holder sharedResultID
+	}
+	run := func(t *testing.T, named bool) outcome {
+		cctx, cloud := storedPartTestCache(t, WithBlobStore())
+		reply, err := cloud.MergeValues(cctx, "other-engine", otherRun)
+		require.NoError(t, err)
+		require.True(t, reply.Committed)
+		before, _ := cloudEntryOfRecipe(t, cloud, engine, child)
+		require.NotNil(t, before)
+		if named {
+			heldTestHold(t, cctx, cloud, "engine", childNumber, uint64(before.id), 0)
+		}
+		reply, err = cloud.MergeValues(cctx, "engine", held)
+		require.NoError(t, err)
+		require.True(t, reply.Committed)
+		after, _ := cloudEntryOfRecipe(t, cloud, engine, child)
+		require.Same(t, before, after, "the entry keeps the other engine's value")
+		cloud.egraphMu.RLock()
+		defer cloud.egraphMu.RUnlock()
+		_, h := cloud.holdingLocked(HolderKey{Cache: "other-engine", Number: uint64(otherChild.cacheSharedResult().id)})
+		require.NotNil(t, h, "the other engine still holds its run")
+		return outcome{rows: reply.Rows, entry: after.id, holder: cloud.holderEntries[HolderKey{Cache: "engine", Number: childNumber}]}
+	}
+	named, unnamed := run(t, true), run(t, false)
+	require.Equal(t, MergeRowCounts{Held: 1, Created: 1}, named.rows, "the held row stores nothing over the other engine's run")
+	require.Equal(t, named.rows, unnamed.rows, "both commit the same rows")
+	require.Equal(t, named.entry, named.holder)
+	require.Equal(t, unnamed.entry, unnamed.holder, "the engine's holding sits on the entry of the row's recipe either way")
+}
