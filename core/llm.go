@@ -2479,7 +2479,9 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxStep
 		steps++
 
 		var err error
-		inst, err = inst.Self().Step(ctx, inst, maxTokens)
+		// Not Step: the loop was allowed above, and asking again per step
+		// would turn an "allow once" into a prompt per model step.
+		inst, err = inst.Self().step(ctx, inst, maxTokens)
 		if err != nil {
 			if ctx.Err() != nil {
 				// Context was cancelled (user interrupt). Return the last
