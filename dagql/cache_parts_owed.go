@@ -37,10 +37,11 @@ type owedPartReports struct {
 	rows map[sharedResultID]owedPartReport
 	// order is the owed entries in the order they first owed.
 	order []sharedResultID
-	// seq numbers each time an entry owes, so a pass clears only what it
-	// served: an entry that owes again after a pass read it, its value
-	// replaced or not, still owes.
-	seq uint64
+	// seq numbers each time an entry owes, so a pass, or a span's read,
+	// clears only what it served: an entry that owes again after a pass or
+	// a span read it, its value replaced or not, still owes. Written under
+	// mu; a span's read loads it before it reads.
+	seq atomic.Uint64
 	// owing is len(rows), kept for a span's read to see without the lock
 	// that nothing is owed, as is nearly always so.
 	owing   atomic.Int64
@@ -80,15 +81,18 @@ func (c *Cache) owePartsReport(row *sharedResult, reported []string) {
 	if !ok {
 		o.order = append(o.order, row.id)
 	}
+	// A new map, never the one an earlier owing kept: a pass reads that
+	// one outside the lock.
 	report := owedPartReport{row: row, replacements: replacements, reported: map[string]struct{}{}}
 	if ok && prev.row == row && prev.replacements == replacements {
-		report.reported = prev.reported
+		for key := range prev.reported {
+			report.reported[key] = struct{}{}
+		}
 	}
 	for _, key := range reported {
 		report.reported[key] = struct{}{}
 	}
-	o.seq++
-	report.seq = o.seq
+	report.seq = o.seq.Add(1)
 	o.rows[row.id] = report
 	o.owing.Store(int64(len(o.rows)))
 	if !o.started {
@@ -101,16 +105,24 @@ func (c *Cache) owePartsReport(row *sharedResult, reported []string) {
 	}
 }
 
+// owedPartsSeq is the owings so far, which a span's read loads before it
+// reads, for settleOwedPartsReport.
+func (c *Cache) owedPartsSeq() uint64 {
+	return c.owedParts.seq.Load()
+}
+
 // settleOwedPartsReport notes that a span reported every complete part of
-// row, read from its record: whatever row owed, that span has reported.
-func (c *Cache) settleOwedPartsReport(row *sharedResult) {
+// row, read from its record by a read that began once seq owings were made:
+// what row owed by then, that span has reported. An owing made since, of
+// parts the read may not have seen, still stands.
+func (c *Cache) settleOwedPartsReport(row *sharedResult, seq uint64) {
 	o := &c.owedParts
 	if o.owing.Load() == 0 {
 		return
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if report, ok := o.rows[row.id]; ok && report.row == row {
+	if report, ok := o.rows[row.id]; ok && report.row == row && report.seq <= seq {
 		delete(o.rows, row.id)
 		o.owing.Store(int64(len(o.rows)))
 	}
@@ -158,7 +170,11 @@ func (c *Cache) reportOwedParts(ctx context.Context) int {
 	o.mu.Lock()
 	owed := make([]owedPartReport, 0, len(o.order))
 	for _, id := range o.order {
-		owed = append(owed, o.rows[id])
+		// An entry a span's read settled is in the order until a pass
+		// tidies it.
+		if report, ok := o.rows[id]; ok {
+			owed = append(owed, report)
+		}
 	}
 	o.mu.Unlock()
 

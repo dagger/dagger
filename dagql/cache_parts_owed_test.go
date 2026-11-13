@@ -223,3 +223,22 @@ func TestOwedPartsCarryRawSizes(t *testing.T) {
 	require.NotNil(t, parts[0].RawSize)
 	require.Equal(t, int64(321), *parts[0].RawSize)
 }
+
+// A span's read settles only what was owed before it began: an owing made
+// while it read, of parts it may not have seen, stands.
+func TestOwingMadeDuringASpansReadStands(t *testing.T) {
+	t.Parallel()
+	value := &describedPartValue{done: true}
+	ctx, c, row, reports := ownedPartsCache(t, value, nil)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	began := c.owedPartsSeq()
+	c.owePartsReport(row, nil)
+	c.settleOwedPartsReport(row, began)
+	require.Equal(t, 0, c.reportOwedParts(ctx), "the owing stood, and this pass reported it")
+	require.Len(t, <-reports, 1)
+
+	c.owePartsReport(row, nil)
+	c.settleOwedPartsReport(row, c.owedPartsSeq())
+	require.Equal(t, 0, c.reportOwedParts(ctx))
+	requireNoReport(t, reports)
+}
