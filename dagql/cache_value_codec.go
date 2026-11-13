@@ -159,7 +159,7 @@ func normalizeTransferCall(frame *ResultCall) (*ResultCall, error) {
 	if err := walkTransferCalls(frame, func(frame *ResultCall) error { frame.ExtraDigests = transferExtras(frame.ExtraDigests); return nil }, func(ref *ResultCallRef) error { ref.shared = nil; return nil }); err != nil {
 		return nil, err
 	}
-	if err := visitResultCallReferences(frame, nil, func(ref *PersistedRef) error {
+	if err := visitResultCallReferences(frame, func(ref *PersistedRef) error {
 		if ref.RecipeID != nil {
 			copied, err := ref.RecipeID.FilterTransferDigests()
 			ref.RecipeID = copied
@@ -271,7 +271,7 @@ func validateTransferRecordShape(rec PersistedRecord, deps []uint64) error {
 	if err != nil {
 		return err
 	}
-	return visitResultCallReferences(rec.Call, nil, directTransferReferences(direct))
+	return visitResultCallReferences(rec.Call, directTransferReferences(direct))
 }
 
 // validateStoredRecordShape checks a record a blob-backed cache sends as it
@@ -286,7 +286,7 @@ func validateStoredRecordShape(rec PersistedRecord, deps []uint64) error {
 	if err != nil {
 		return err
 	}
-	return visitResultCallReferences(rec.Call, nil, directTransferReferences(direct))
+	return visitResultCallReferences(rec.Call, directTransferReferences(direct))
 }
 
 // validateTransferRecordHeader checks a transferred record's identity, call,

@@ -566,7 +566,7 @@ func (c *Cache) privateMergeCache(ctx context.Context, prep *valueMergePrep, hel
 		rec.Envelope.ResultID = rec.ResultID
 		rec.Envelope.Imported = true
 		rec.Call = rec.Call.clone()
-		if err := visitResultCallReferences(rec.Call, nil, relocateRecord); err != nil {
+		if err := visitResultCallReferences(rec.Call, relocateRecord); err != nil {
 			return nil, err
 		}
 		offers, err := clonePartOffers(rec.Envelope.PendingOffers)
