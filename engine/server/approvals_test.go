@@ -270,11 +270,34 @@ func TestApprovalPersistentKey(t *testing.T) {
 		"neither handle, pin nor function is part of a forever grant")
 	// Quoting keeps each field's separators its own.
 	require.NotEqual(t,
-		approvalPersistentKey("k", approvalRequester{agentName: `a":"b`}, "s"),
-		approvalPersistentKey("k", approvalRequester{agentName: "a"}, `b":"s`))
-	require.Empty(t, approvalPersistentKey("k", approvalRequester{agentHandle: "h"}, "s"), "nobody identifiable to remember")
+		approvalPersistentKey("k", approvalRequester{agentName: `a":"b`, module: staff}, "s"),
+		approvalPersistentKey("k", approvalRequester{agentName: "a", module: staff}, `b":"s`))
+	require.Empty(t, approvalPersistentKey("k", approvalRequester{agentName: "a", agentHandle: "h"}, "s"),
+		"an agent's name alone is not an identity")
 	require.Empty(t, approvalPersistentKey("k", approvalRequester{agentName: "a", module: sessionTestModuleResult(t, "nosource")}, "s"),
 		"a module without a source is not identifiable")
+	dir := &core.Module{NameField: "staff", Source: dagql.NonNull(sessionTestModuleSource(t, &core.ModuleSource{Kind: core.ModuleSourceKindDir}))}
+	require.Empty(t, approvalPersistentKey("k", approvalRequester{agentName: "a", module: sessionTestModuleOf(t, dir)}, "s"),
+		"a module built from a directory has no source the engine can name")
+}
+
+func sessionTestModuleSource(t *testing.T, src *core.ModuleSource) dagql.ObjectResult[*core.ModuleSource] {
+	t.Helper()
+	dag, err := dagql.NewServer(t.Context(), &core.Module{})
+	require.NoError(t, err)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.ModuleSource]{Typed: &core.ModuleSource{}}))
+	res, err := dagql.NewObjectResultForCall(src, dag, &dagql.ResultCall{SyntheticOp: "approval-test-module-source"})
+	require.NoError(t, err)
+	return res
+}
+
+func sessionTestModuleOf(t *testing.T, mod *core.Module) dagql.ObjectResult[*core.Module] {
+	t.Helper()
+	dag, err := dagql.NewServer(t.Context(), &core.Module{})
+	require.NoError(t, err)
+	res, err := dagql.NewObjectResultForCall(mod, dag, &dagql.ResultCall{SyntheticOp: "approval-test-module-" + mod.Name()})
+	require.NoError(t, err)
+	return res
 }
 
 func TestApprovalForeverNotOffered(t *testing.T) {
