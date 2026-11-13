@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/prompt"
@@ -161,7 +162,8 @@ func TestGitPushApprovalOwnerBoundary(t *testing.T) {
 }
 
 func TestGitPushApprovalBoolPromptFallback(t *testing.T) {
-	// A client predating approvals answers yes/no: yes allows once.
+	// A client predating approvals answers yes/no: a yes allows for the
+	// session, as it did before approvals had a grant scope.
 	questions := &boolPromptServer{answer: func(req *prompt.BoolRequest) bool {
 		return req.Prompt == `Allow push to git@example.com:repo @ refs/heads/main (requested by module "pusher")?`
 	}}
@@ -175,11 +177,34 @@ func TestGitPushApprovalBoolPromptFallback(t *testing.T) {
 	}
 	_, err := s.srv.AuthorizeGitPush(s.moduleCtx, remote, ref, true, false)
 	require.ErrorContains(t, err, "permission denied")
-	require.Len(t, questions.requests, 3, "a yes allows once")
-	require.Equal(t, `Allow force-push to git@example.com:repo @ refs/heads/main (requested by module "pusher")?`, questions.requests[2].Prompt)
+	require.Len(t, questions.requests, 2, "a yes allows for the session")
+	require.Equal(t, `Allow force-push to git@example.com:repo @ refs/heads/main (requested by module "pusher")?`, questions.requests[1].Prompt)
 	for _, req := range questions.requests {
 		require.Empty(t, req.PersistentKey)
 	}
+}
+
+// yesHandler is a frontend that can only ask yes/no, like plain and dots, and
+// says yes.
+type yesHandler struct{ prompts []string }
+
+func (h *yesHandler) HandlePrompt(_ context.Context, _, question string, dest any) error {
+	h.prompts = append(h.prompts, question)
+	*dest.(*bool) = true
+	return nil
+}
+
+func (h *yesHandler) HandleForm(context.Context, *huh.Form) error { return errors.New("not a form") }
+
+func TestGitPushApprovalYesNoFrontend(t *testing.T) {
+	// The real attachable, with a frontend that has no ApprovalHandler.
+	handler := &yesHandler{}
+	s := newGitPushTestSession(t, prompt.NewPromptAttachable(handler), &pushRoutingServer{})
+	for range 3 {
+		_, err := s.srv.AuthorizeGitPush(s.moduleCtx, "git@example.com:repo", "refs/heads/main", false, false)
+		require.NoError(t, err)
+	}
+	require.Len(t, handler.prompts, 1, "a yes allows for the session")
 }
 
 func TestGitPushApprovalPrompt(t *testing.T) {
