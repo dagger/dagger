@@ -1070,8 +1070,14 @@ func (c *Cache) warmMergeTargetParts(ctx context.Context, prep *valueMergePrep) 
 	}
 	defer op.finish(false)
 	held, release := c.holdRowsForCapture(ctx, targets)
+	if c.testWarmHeld != nil {
+		c.testWarmHeld()
+	}
 	for _, h := range held {
 		c.completePartsHeld(ctx, h.row, reader, h.run)
+	}
+	if c.testWarmCaptured != nil {
+		c.testWarmCaptured()
 	}
 	// Warming is a cache the reply reads only while it still describes an
 	// entry's value: a failure to let a target go costs nothing here, as a
@@ -1878,10 +1884,7 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			c.incrementIncomingOwnershipLocked(ctx, dep)
 		}
 		res.dependencyOwnershipRevision++
-		if err := walkTransferCalls(res.loadResultCall(), func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
-			ref.shared = c.resultsByID[sharedResultID(ref.ResultID)]
-			return nil
-		}); err != nil {
+		if err := c.bindMergedFrameLocked(res, row.action == mergeReplace || row.action == mergeStore); err != nil {
 			errs = errors.Join(errs, err)
 		}
 	}
@@ -2348,6 +2351,17 @@ func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement)
 	}
 	r.res.attachDepsMu.Unlock()
 	return err
+}
+
+// bindMergedFrameLocked binds the references of the frame a merge installed
+// on res to the entries they name. published says whether res was in the
+// cache before the merge: an entry that took a record, or whose value the
+// merge replaced in place. Requires egraphMu for writing.
+func (c *Cache) bindMergedFrameLocked(res *sharedResult, published bool) error {
+	return walkTransferCalls(res.loadResultCall(), func(*ResultCall) error { return nil }, func(ref *ResultCallRef) error {
+		ref.shared = c.resultsByID[sharedResultID(ref.ResultID)]
+		return nil
+	})
 }
 
 // mergeReplyLocked reads every target as the commit left it. Requires
