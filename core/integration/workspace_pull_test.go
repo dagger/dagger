@@ -512,6 +512,45 @@ func (WorkspaceSuite) TestWorkspacePullCherryPick(ctx context.Context, t *testct
 	require.Equal(t, sha, git("rev-parse", "HEAD"))
 }
 
+// TestWorkspacePullCommitterOnlyWhenCommitting covers a pull whose source
+// descends from the receiver: taking the whole range fast-forwards, needing no
+// committer; taking only part of it cherry-picks, committed by the caller's
+// Git identity, as any other cherry-pick.
+func (WorkspaceSuite) TestWorkspacePullCommitterOnlyWhenCommitting(ctx context.Context, t *testctx.T) {
+	checkout, git := workspaceExportCheckout(ctx, t)
+	git("config", "user.name", "Receiver")
+	git("config", "user.email", "receiver@example.com")
+	c := connect(ctx, t, dagger.WithWorkdir(checkout))
+	base := snapshotWorkspace(ctx, t, c, core.NewQuery(c).CurrentWorkspace())
+	commit := func(ws *core.Workspace, path string) *core.Workspace {
+		ws = ws.WithNewFile(path, path)
+		return ws.WithCommit(ws.Git().Uncommitted(), path, workspaceCommitDate,
+			core.WorkspaceWithCommitOpts{AuthorName: "Source", AuthorEmail: "source@example.com"})
+	}
+	first := commit(base, "first.txt")
+	source := commit(first, "second.txt")
+	secondSHA, err := source.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+
+	forwarded, err := applyWorkspacePull(ctx, c, base, source, nil, 100)
+	require.NoError(t, err)
+	sha, err := forwarded.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.Equal(t, secondSHA, sha, "the whole range fast-forwards")
+
+	picked, err := applyWorkspacePull(ctx, c, base, source, []string{secondSHA}, 100)
+	require.NoError(t, err)
+	sha, err = picked.Git().Head().CommitSHA(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, secondSHA, sha, "skipping the first commit cherry-picks the second")
+	committer, err := picked.Git().Head().TargetCommit().CommitterName(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Receiver", committer)
+	author, err := picked.Git().Head().TargetCommit().AuthorName(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Source", author)
+}
+
 func (WorkspaceSuite) TestWorkspacePullConflictsAndRedundancy(ctx context.Context, t *testctx.T) {
 	checkout, _ := workspaceExportCheckout(ctx, t)
 	c := connect(ctx, t, dagger.WithWorkdir(checkout))

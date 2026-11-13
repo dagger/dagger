@@ -294,10 +294,16 @@ func workspaceGitAuthor(ctx context.Context) (string, string, error) {
 	}
 	name, email := identity.Name, identity.Email
 	if name == "" {
-		name = "Dagger"
+		name = workspaceDefaultGitAuthorName
 	}
 	if email == "" {
-		email = "dagger@localhost"
+		email = workspaceDefaultGitAuthorEmail
 	}
 	return name, email, nil
 }
+
+// The identity commits are made as when the owner's is not set or not shared.
+const (
+	workspaceDefaultGitAuthorName  = "Dagger"
+	workspaceDefaultGitAuthorEmail = "dagger@localhost"
+)
