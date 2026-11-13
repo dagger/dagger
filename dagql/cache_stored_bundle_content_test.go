@@ -308,6 +308,9 @@ func TestStoredBundleDropsTaughtContentDigestsWhenAPrunedEntryStoresAgain(t *tes
 			storedContentTestWait(t, cloud, number, after)
 			require.NotContains(t, storedContentTestFrameDigests(t, cloud, number), before,
 				"the frame carries no content digest taught for the bytes the prune took")
+			stats := cloud.TaughtContentStats()
+			require.Equal(t, uint64(1), stats.Dropped, "the prune took the entry's taught digests")
+			require.Equal(t, uint64(1), stats.Refilled, "and a record filled the entry again")
 		})
 	}
 }
