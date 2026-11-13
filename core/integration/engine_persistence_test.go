@@ -1860,6 +1860,32 @@ func (m *Viewed) Served(ctx context.Context) error {
 		require.NoError(t, err, "the module must be answered at the view it declares after the restart: %s", out)
 	})
 
+	t.Run("a module that calls itself can still call itself after restart", func(ctx context.Context, t *testctx.T) {
+		// A Dang module's API includes the module itself, so its code can
+		// call its own constructor, as Verify calls selfcall.greeting. Dang
+		// type checks the whole module each time a function runs, and
+		// Verify, a check never cached, runs again in every session, from
+		// the Module the first engine saved.
+		const source = `type Selfcall {
+  pub greeting: String! { "hello" }
+
+  @cache(policy: FunctionCachePolicy.NEVER)
+  pub verify: Void @check {
+    let got = selfcall.greeting
+    if (got != "hello") { raise "a self call returned " + got }
+    null
+  }
+}
+`
+		out, err := checkAcrossRestart(ctx, t, func(c *dagger.Client) *core.Directory {
+			return core.NewQuery(c).Directory().
+				WithNewFile("dagger.toml", "[modules.selfcall]\nsource = \"selfcall\"\n").
+				WithNewFile("selfcall/dagger-module.toml", "name = \"selfcall\"\nengineVersion = \"v1.0.0-beta.26\"\n\n[runtime]\nsource = \"dang\"\n").
+				WithNewFile("selfcall/main.dang", source)
+		})
+		require.NoError(t, err, "the module must still find its own constructor after the restart: %s", out)
+	})
+
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "persist-function-cache-state-" + rand.Text()
