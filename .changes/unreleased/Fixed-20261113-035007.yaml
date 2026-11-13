@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  The digest of a host directory no longer depends on a symbolic link's
+  permission bits. macOS records bits for a link from the umask it was created
+  under and Linux always reports `0777`, so the same tree had one digest from a
+  macOS client and another from a Linux client.
+time: 2026-11-13T03:50:07Z
+custom:
+  Author: dshaw

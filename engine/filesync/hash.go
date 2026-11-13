@@ -3,6 +3,7 @@ package filesync
 import (
 	"encoding/binary"
 	"hash"
+	"os"
 	"sync"
 
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
@@ -40,7 +41,13 @@ func (h *statHash) Reset() {
 	buf := *(statHashBufPool.Get().(*[]byte))
 	buf = buf[:0]
 
-	buf = binary.LittleEndian.AppendUint32(buf, h.stat.Mode)
+	// skip a symlink's permission bits: Linux has none to set, so the mirror's link is 0777 whatever the client sent
+	mode := h.stat.Mode
+	if os.FileMode(mode)&os.ModeSymlink != 0 {
+		mode |= uint32(os.ModePerm)
+	}
+
+	buf = binary.LittleEndian.AppendUint32(buf, mode)
 	buf = binary.LittleEndian.AppendUint32(buf, h.stat.Uid)
 	buf = binary.LittleEndian.AppendUint32(buf, h.stat.Gid)
 	buf = binary.LittleEndian.AppendUint64(buf, uint64(h.stat.Devmajor))
