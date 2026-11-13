@@ -642,26 +642,57 @@ func (c *Cache) planMergeIdentities(prep *valueMergePrep, private *Cache) error 
 }
 
 // prepareRecordPayloads prepares every record but a light one with its
-// payload (prepareRecordPayload), in dependency order. It returns ctx's cause
-// when ctx is cancelled before a payload.
+// payload (prepareRecordPayload), on up to GOMAXPROCS goroutines
+// (forEachIndexParallel), and applies the prepared records in dependency
+// order. A record's preparation reads only what the merge fixed before it and
+// writes only its own result, so each is prepared as it would be alone. It
+// returns the failure of the first record in dependency order that failed,
+// which is ctx's cause when ctx was cancelled before that record's payload,
+// as preparing them one by one would.
 func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateRecord, relocate PersistedRefVisitor) error {
+	ids := make([]uint64, 0, len(prep.order))
 	for _, id := range prep.order {
-		if prep.light[id] || prep.held[id] {
-			continue
+		if !prep.light[id] && !prep.held[id] {
+			ids = append(ids, id)
 		}
+	}
+	prepared := make([]preparedRecordPayload, len(ids))
+	err := forEachIndexParallel(len(ids), func(i int) error {
 		if err := context.Cause(ctx); err != nil {
 			return err
 		}
 		if prep.payloadPreparing != nil {
-			if err := prep.payloadPreparing(id); err != nil {
+			if err := prep.payloadPreparing(ids[i]); err != nil {
 				return err
 			}
 		}
-		if err := prep.prepareRecordPayload(id, relocateRecord, relocate); err != nil {
-			return err
+		var err error
+		prepared[i], err = prep.prepareRecordPayload(ids[i], relocateRecord, relocate)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	for i, id := range ids {
+		p := prepared[i]
+		prep.records[id] = p.record
+		prep.refs[id] = p.refs
+		prep.completeParts[id] = p.completeParts
+		if prep.recordBytes != nil {
+			prep.recordBytes[id] = p.recordBytes
 		}
 	}
 	return nil
+}
+
+// preparedRecordPayload is a record prepared with its payload
+// (prepareRecordPayload), which prepareRecordPayloads applies to the merge's
+// preparation.
+type preparedRecordPayload struct {
+	record        PersistedRecord
+	refs          []uint64
+	completeParts []string
+	recordBytes   int64
 }
 
 // checkHeldRecipes refuses a bundle that carries a held row and a record of
@@ -740,15 +771,16 @@ func (c *Cache) heldRowStaleLocked(cur *sharedResult, expiresAtUnix, now int64) 
 // as validateTransferRecord does, and relocates it in full to its provisional
 // numbers with relocate. One visit of the record's references both checks
 // and relocates them, since visiting decodes its payload; its offers, whose
-// references validateTransferRecordContent checks, are relocated apart.
-func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relocate PersistedRefVisitor) error {
+// references validateTransferRecordContent checks, are relocated apart. It
+// returns the prepared record and changes nothing in prep.
+func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relocate PersistedRefVisitor) (preparedRecordPayload, error) {
 	row := prep.index[id]
 	direct, err := validateTransferRecordContent(row.Record, prep.senders.dependencies(row.DependencyIDs))
 	if err != nil {
-		return fmt.Errorf("row %d: %w", id, err)
+		return preparedRecordPayload{}, fmt.Errorf("row %d: %w", id, err)
 	}
 	if _, err := mapTransferredOutputs(row.Record); err != nil {
-		return err
+		return preparedRecordPayload{}, err
 	}
 	var refs []uint64
 	collect := func(relocate PersistedRefVisitor) PersistedRefVisitor {
@@ -775,31 +807,29 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocateRecord, relo
 		return ownRef(ref)
 	})
 	if err != nil {
-		return err
+		return preparedRecordPayload{}, err
 	}
 	if rec.Envelope.PendingOffers, err = clonePartOffers(row.Record.Envelope.PendingOffers); err != nil {
-		return err
+		return preparedRecordPayload{}, err
 	}
 	offerRef := collect(relocate)
 	for i := range rec.Envelope.PendingOffers {
 		if err := visitPersistedPartOffer(&rec.Envelope.PendingOffers[i], nil, offerRef); err != nil {
-			return err
+			return preparedRecordPayload{}, err
 		}
 	}
 	slices.Sort(refs)
-	prep.refs[id] = slices.Compact(refs)
 	rec.Envelope.Imported = true
 	// The record shares its call with the private cache's entry, whose
 	// identity merge applies.
 	rec.Call = prep.records[id].Call
-	prep.completeParts[id] = recordCompletePartKeys(rec)
-	prep.records[id] = rec
+	out := preparedRecordPayload{record: rec, refs: slices.Compact(refs), completeParts: recordCompletePartKeys(rec)}
 	// A blob-backed cache prepares every record so: skipKept applies to an
 	// engine only.
 	if prep.recordBytes != nil {
-		prep.recordBytes[id] = encodedRecordBytes(rec)
+		out.recordBytes = encodedRecordBytes(rec)
 	}
-	return nil
+	return out, nil
 }
 
 // keptMergeRecords returns the records merge would keep, deciding now
