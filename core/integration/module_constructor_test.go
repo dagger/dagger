@@ -77,7 +77,14 @@ func (ModuleSuite) TestConstructor(ctx context.Context, t *testctx.T) {
 
 				out, err = ctr.With(daggerCall("--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "gimme-dir-ents")).Stdout(ctx)
 				require.NoError(t, err)
-				require.Contains(t, strings.TrimSpace(out), "dagger.json")
+				// The directory argument is the module's own directory, which holds
+				// its manifest: dagger-module.toml for the Go module, whose
+				// bindings are committed, and dagger.json for the others.
+				manifest := "dagger.json"
+				if tc.sdk == "go" {
+					manifest = "dagger-module.toml"
+				}
+				require.Contains(t, strings.TrimSpace(out), manifest)
 			})
 		}
 	})
