@@ -163,7 +163,7 @@ func (r *entrypointRuntime) Call(
 	}
 	nestedClientMetadata.SDKEntrypoint = true
 
-	contract := entrypointContract{dangVersion: r.modSource.Self().DangVersion}
+	contract := entrypointContract{dangVersion: r.modSource.Self().DangVersion, member: EntrypointServeMember}
 	var resultJSON []byte
 	_, err = evalDangSource(
 		ctx,
@@ -180,6 +180,13 @@ func (r *entrypointRuntime) Call(
 			entrypointName, err := findModuleEntrypoint(env)
 			if err != nil {
 				return nil, err
+			}
+			if contract.declaresMember {
+				result, served, err := callModuleServer(ctx, dag, query, env, entrypointName, fnCall, moduleContext)
+				if err != nil || served {
+					resultJSON = result
+					return nil, err
+				}
 			}
 			callArgs, err := contract.workspaceArgs(ctx, dag, r.modSource)
 			if err != nil {

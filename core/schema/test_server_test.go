@@ -131,6 +131,10 @@ func (s *currentTypeDefsTestServer) RegisterNestedClientTransport(context.Contex
 	return engine.NewNestedClientTransport(nil), nil
 }
 
+func (s *currentTypeDefsTestServer) NestedClientScope(ctx context.Context, _ *engine.NestedClientTransport, _ *engine.ClientMetadata) (context.Context, func(), error) {
+	return ctx, func() {}, nil
+}
+
 func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
 }
 
