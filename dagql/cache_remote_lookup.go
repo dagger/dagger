@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"sync"
@@ -26,6 +27,11 @@ const (
 	remoteLookupAskedCapacity = 1 << 16
 	// remoteLookupMaxExtras bounds the extra digests a miss names.
 	remoteLookupMaxExtras = 8
+	// remoteLookupLogCapacity bounds the misses a connection keeps for
+	// LateRemoteMisses. A full log drops the misses LateRemoteMisses has
+	// returned, and then its oldest quarter: a merge that lands now is
+	// late for recent misses far more than for old ones.
+	remoteLookupLogCapacity = 1 << 14
 )
 
 // What a miss did about a remote lookup, as its evidence records it
@@ -52,6 +58,8 @@ type RemoteMiss struct {
 	// Caller is the recipe digest of the cached call the missed call was
 	// made under (CallerRecipe), or "" at its session's top.
 	Caller digest.Digest
+	// At is when the lookup missed.
+	At time.Time
 }
 
 // remoteLookups is one bridge's lookup state. Its mutex is a leaf: it is
@@ -68,6 +76,16 @@ type remoteLookups struct {
 	asked   map[digest.Digest]struct{}
 	queue   []RemoteMiss
 	dropped uint64
+	// missed are the misses queued on this connection, kept for
+	// LateRemoteMisses in the order they were queued, each numbered by
+	// missedSeq; generation counts the connections, so that a mark is never
+	// made on a later connection's misses.
+	missed     []loggedMiss
+	missedSeq  uint64
+	generation uint64
+	// trimmed counts the misses a full log dropped before any call returned
+	// them, over every connection.
+	trimmed uint64
 	// notify holds a signal when misses were queued since the last take.
 	notify chan struct{}
 	// done closes when the bridge detaches.
@@ -90,6 +108,8 @@ func (b *RemoteCacheBridge) StartRemoteLookups() {
 	}
 	l.asked = map[digest.Digest]struct{}{}
 	l.queue, l.dropped = nil, 0
+	l.missed = nil
+	l.generation++
 	l.on.Store(true)
 }
 
@@ -100,6 +120,8 @@ func (b *RemoteCacheBridge) StopRemoteLookups() {
 	defer l.mu.Unlock()
 	l.on.Store(false)
 	l.asked, l.queue, l.dropped = nil, nil, 0
+	l.missed = nil
+	l.generation++
 }
 
 // noteRemoteMiss queues a miss, unless its recipe was asked for already on
@@ -124,6 +146,11 @@ func (b *RemoteCacheBridge) noteRemoteMiss(miss RemoteMiss) string {
 	}
 	l.asked[miss.Recipe] = struct{}{}
 	l.queue = append(l.queue, miss)
+	if len(l.missed) >= remoteLookupLogCapacity {
+		l.trimMissedLocked()
+	}
+	l.missedSeq++
+	l.missed = append(l.missed, loggedMiss{miss: miss, seq: l.missedSeq})
 	select {
 	case l.notify <- struct{}{}:
 	default:
@@ -211,7 +238,7 @@ func (c *Cache) noteRemoteMiss(req *CallRequest, recipe, caller, self digest.Dig
 	if b == nil || !b.lookups.on.Load() || recipe == "" || req.ListItem || !req.CacheReported {
 		return ""
 	}
-	miss := RemoteMiss{Recipe: recipe, Field: req.ResultCall.Field, Self: self, Inputs: inputs, Caller: caller}
+	miss := RemoteMiss{Recipe: recipe, Field: req.ResultCall.Field, Self: self, Inputs: inputs, Caller: caller, At: time.Now()}
 	for _, extra := range req.ResultCall.ExtraDigests {
 		if len(miss.Extra) == remoteLookupMaxExtras {
 			break
@@ -221,4 +248,112 @@ func (c *Cache) noteRemoteMiss(req *CallRequest, recipe, caller, self digest.Dig
 		}
 	}
 	return b.noteRemoteMiss(miss)
+}
+
+// loggedMiss is a miss kept for LateRemoteMisses: its number on the
+// connection, and whether a call has returned it.
+type loggedMiss struct {
+	miss  RemoteMiss
+	seq   uint64
+	found bool
+}
+
+// trimMissedLocked makes room in a full miss log: it drops the misses
+// already returned, then, while the log is still over three quarters full,
+// its oldest quarter.
+func (l *remoteLookups) trimMissedLocked() {
+	kept := slices.DeleteFunc(l.missed, func(m loggedMiss) bool { return m.found })
+	if len(kept) > remoteLookupLogCapacity*3/4 {
+		kept = slices.Delete(kept, 0, remoteLookupLogCapacity/4)
+		l.trimmed += remoteLookupLogCapacity / 4
+	}
+	l.missed = kept
+}
+
+// LateRemoteMisses returns the misses queued on the current connection
+// before before, that no earlier call returned, whose lookup now finds one
+// of entries, by the cache's entry numbers (missFinds). It is how a merge
+// that landed late is counted: the entries are the ones it landed on, and a
+// miss it returns is a call that missed before the merge would have served
+// it. A miss whose recipe the connection had already asked for, or that a
+// full queue dropped, isn't kept, and a full log drops the oldest
+// (remoteLookupLogCapacity), so misses older than the log are never
+// counted. Of the misses kept it is an upper bound: an entry found by digest
+// or term is counted without the session checks a real lookup makes, so a
+// result the missed session couldn't have used, such as one needing a
+// secret it lacks, still counts.
+func (c *Cache) LateRemoteMisses(before time.Time, entries map[uint64]struct{}) []RemoteMiss {
+	b := c.partContentSource.attachedBridge()
+	if b == nil || len(entries) == 0 {
+		return nil
+	}
+	l := &b.lookups
+	l.mu.Lock()
+	generation := l.generation
+	var candidates []loggedMiss
+	for _, m := range l.missed {
+		if !m.found && m.miss.At.Before(before) {
+			candidates = append(candidates, m)
+		}
+	}
+	l.mu.Unlock()
+	var late []loggedMiss
+	for _, m := range candidates {
+		if c.missFinds(m.miss, entries) {
+			late = append(late, m)
+		}
+	}
+	if c.testBetweenLateMissHolds != nil {
+		c.testBetweenLateMissHolds()
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.generation != generation {
+		return nil
+	}
+	// The log may have been trimmed meanwhile, and a call made meanwhile
+	// may have returned some of them: each is found by its number.
+	var returned []RemoteMiss
+	for _, m := range late {
+		i, ok := slices.BinarySearchFunc(l.missed, m.seq, func(e loggedMiss, seq uint64) int { return cmp.Compare(e.seq, seq) })
+		if ok && !l.missed[i].found {
+			l.missed[i].found = true
+			returned = append(returned, m.miss)
+		}
+	}
+	return returned
+}
+
+// TrimmedRemoteMisses returns how many misses a full log dropped before
+// LateRemoteMisses could count them, over the bridge's connections: the
+// misses the late count never saw.
+func (c *Cache) TrimmedRemoteMisses() uint64 {
+	b := c.partContentSource.attachedBridge()
+	if b == nil {
+		return 0
+	}
+	b.lookups.mu.Lock()
+	defer b.lookups.mu.Unlock()
+	return b.lookups.trimmed
+}
+
+// missFinds reports whether a miss's lookup now finds one of entries: by
+// the class of its recipe or of one of its extra digests, or by its term,
+// as the service resolves a lookup.
+func (c *Cache) missFinds(miss RemoteMiss, entries map[uint64]struct{}) bool {
+	found := func(numbers []uint64) bool {
+		return slices.ContainsFunc(numbers, func(n uint64) bool {
+			_, ok := entries[n]
+			return ok
+		})
+	}
+	if found(c.EquivalentEntries(miss.Recipe.String())) {
+		return true
+	}
+	for _, extra := range miss.Extra {
+		if found(c.EquivalentEntries(extra.String())) {
+			return true
+		}
+	}
+	return found(c.TermEntries(miss.Self, miss.Inputs))
 }

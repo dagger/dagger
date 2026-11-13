@@ -502,27 +502,9 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.
 		return protocol.Merged{}, ErrRemoteCacheAdapterClosed
 	}
 	start := time.Now()
-	// A merge that answers a lookup goes first: the others wait while one
-	// is in progress.
-	if req.Lookup != 0 {
-		a.lookupMerges.begin()
-		defer a.lookupMerges.end()
-	} else if err := a.lookupMerges.wait(ctx); err != nil {
-		return protocol.Merged{}, err
-	}
-	priorityWait := time.Since(start)
-	// The merge's op is named by its ID, the ID of the protocol request
-	// that carried it, so overlapping merges can be told apart.
-	mergeCtx, mergeOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.merge", wcprof.OpOpts{})
-	if mergeOp != nil {
-		mergeOp.SetIdent(strconv.FormatUint(id, 10))
-	}
-	reply, err := a.mergeValues(mergeCtx, dagql.CloudCacheID, req.Bundle)
-	if reply.Committed {
-		mergeOp.End(wcprof.OutcomeOK)
-	} else {
-		mergeOp.EndErr(err)
-	}
+	reply, priorityWait, err := a.merge(ctx, "remotecache.merge", strconv.FormatUint(id, 10), req.Lookup != 0, func(ctx context.Context) (dagql.MergeReply, error) {
+		return a.mergeValues(ctx, dagql.CloudCacheID, req.Bundle)
+	})
 	held := 0
 	for _, value := range req.Bundle.Values {
 		if value.Held != "" {
@@ -552,14 +534,115 @@ func (a *RemoteCacheAdapter) Merge(ctx context.Context, id uint64, req protocol.
 	if err != nil {
 		slog.Warn("remote cache merge committed, then a release failed", "error", err)
 	}
-	if known != nil {
-		rows := dagql.ExportedRows{Full: make(map[uint64]dagql.RowRevision, len(reply.Values))}
-		for _, value := range reply.Values {
-			rows.Full[value.Number] = value.Revision
-		}
-		known.Merged(rows)
-	}
+	knowMerged(known, reply)
 	return mergedReply(reply), nil
+}
+
+// merge runs one merge of the service's values, a merge's or a restore's
+// part, as an op named name and ident: a merge that answers a lookup goes
+// first, and the others wait while one is in progress. It returns the
+// merge's reply and error, and how long it waited for its turn.
+func (a *RemoteCacheAdapter) merge(ctx context.Context, name, ident string, lookup bool, merge func(context.Context) (dagql.MergeReply, error)) (dagql.MergeReply, time.Duration, error) {
+	start := time.Now()
+	if lookup {
+		a.lookupMerges.begin()
+		defer a.lookupMerges.end()
+	} else if err := a.lookupMerges.wait(ctx); err != nil {
+		return dagql.MergeReply{}, time.Since(start), err
+	}
+	priorityWait := time.Since(start)
+	// The op is named by its ident, so overlapping merges can be told
+	// apart.
+	mergeCtx, mergeOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, name, wcprof.OpOpts{})
+	if mergeOp != nil {
+		mergeOp.SetIdent(ident)
+	}
+	reply, err := merge(mergeCtx)
+	if reply.Committed {
+		mergeOp.End(wcprof.OutcomeOK)
+	} else {
+		mergeOp.EndErr(err)
+	}
+	return reply, priorityWait, err
+}
+
+// knowMerged adds the rows a committed merge landed on to known: the
+// service holds the records it sent.
+func knowMerged(known *dagql.KnownRows, reply dagql.MergeReply) {
+	if known == nil {
+		return
+	}
+	rows := dagql.ExportedRows{Full: make(map[uint64]dagql.RowRevision, len(reply.Values))}
+	for _, value := range reply.Values {
+		rows.Full[value.Number] = value.Revision
+	}
+	known.Merged(rows)
+}
+
+// RestorePart merges one part of a set file through the path a merge takes
+// (merge), behind the merges that answer lookups, and its rows join known
+// as a merge's do. A part that commits is answered even when a release after
+// the commit failed, as a merge is; one refused for stale held rows, which a
+// set file never carries, is an error.
+func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, known *dagql.KnownRows) (dagql.MergeReply, error) {
+	if a.stopped.Load() {
+		return dagql.MergeReply{}, ErrRemoteCacheAdapterClosed
+	}
+	start := time.Now()
+	reply, priorityWait, err := a.merge(ctx, "remotecache.restore", "", false, func(ctx context.Context) (dagql.MergeReply, error) {
+		return a.restoreValues(ctx, part)
+	})
+	slog.Info("remote cache restore merge",
+		"records", len(part.Values),
+		"roots", len(part.Roots),
+		"committed", reply.Committed,
+		"stale", len(reply.Stale),
+		"kept", reply.Rows.Kept,
+		"created", reply.Rows.Created,
+		"commitHold", reply.CommitHold,
+		"duration", time.Since(start),
+		"priority_wait", priorityWait,
+		"error", err)
+	if err == nil && len(reply.Stale) > 0 {
+		return dagql.MergeReply{}, fmt.Errorf("%d held rows are stale", len(reply.Stale))
+	}
+	if !reply.Committed {
+		return dagql.MergeReply{}, err
+	}
+	if err != nil {
+		slog.Warn("remote cache restore merge committed, then a release failed", "error", err)
+	}
+	knowMerged(known, reply)
+	return reply, nil
+}
+
+// LateMisses returns the cache's misses on this connection that a merge
+// landing on entries would have served (dagql.Cache.LateRemoteMisses).
+func (a *RemoteCacheAdapter) LateMisses(before time.Time, entries map[uint64]struct{}) []dagql.RemoteMiss {
+	return a.cache.LateRemoteMisses(before, entries)
+}
+
+// Restored keeps what a restore did with a file, for the engine's stop
+// event.
+func (a *RemoteCacheAdapter) Restored(report remotecache.RestoreReport) {
+	a.restoresMu.Lock()
+	defer a.restoresMu.Unlock()
+	a.restores = append(a.restores, report)
+}
+
+// uncountedMisses returns how many lookup misses the cache dropped before
+// a restored part could count them as late, before or after the adapter
+// closed.
+func (a *RemoteCacheAdapter) uncountedMisses() uint64 {
+	return max(a.uncounted.Load(), a.cache.TrimmedRemoteMisses())
+}
+
+// restoreReports returns what the restores did, in the order their files
+// ended.
+func (a *RemoteCacheAdapter) restoreReports() []remotecache.RestoreReport {
+	a.restoresMu.Lock()
+	defer a.restoresMu.Unlock()
+	return slices.Clone(a.restores)
 }
 
 // mergedReply is the merged message for a committed merge's reply.
