@@ -85,6 +85,10 @@ type exportChainTestManager struct {
 	// a snapshot it doesn't name exports an empty chain. Its builds don't
 	// wait.
 	chains map[string]*snapshots.ExportChain
+	// fail, when set, fails every File's chain build, each counted in
+	// fileStarts.
+	fail       bool
+	fileStarts int
 
 	mu       sync.Mutex
 	building int
@@ -146,6 +150,12 @@ func (r *exportChainTestRef) ExportChain(ctx context.Context, _ config.RefConfig
 	return r.manager.build(ctx)
 }
 func (r *exportChainTestRef) ExportFileChain(ctx context.Context, _ config.RefConfig, _ string) (*snapshots.ExportChain, error) {
+	if r.manager.fail {
+		r.manager.mu.Lock()
+		defer r.manager.mu.Unlock()
+		r.manager.fileStarts++
+		return nil, fmt.Errorf("file chain %s failed", r.id)
+	}
 	return r.manager.build(ctx)
 }
 
@@ -251,4 +261,32 @@ func TestExportLastStepOncePerRow(t *testing.T) {
 	}
 	require.Equal(t, n/2, routes, "parts routed")
 	require.LessOrEqual(t, walks, n, "rows walked to name owners")
+}
+
+// Once a File's chain fails, the export starts no File's chain still
+// waiting for a build slot: with one build at a time, the first failure is
+// the only File's chain begun.
+func TestExportStartsNoFileChainAfterAFailure(t *testing.T) {
+	t.Parallel()
+	mgr := &exportChainTestManager{fakeSnapshotManager: &fakeSnapshotManager{}, fail: true}
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), mgr, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	srv := newDagqlServerForTest(t, &persistCodecRoot{})
+	srv.InstallObject(NewClass(srv, ClassOpts[*exportChainTestValue]{}))
+	ctx = srvToContext(ContextWithCache(ctx, c), srv)
+
+	var selection ValueSelection
+	for _, name := range []string{"a", "b", "c"} {
+		root := persistedListTestResult(t, ctx, c, srv, "file"+name, &exportChainTestValue{SnapshotID: name, File: "/bin/" + name})
+		selection.Roots = append(selection.Roots, root)
+		selection.Outputs = append(selection.Outputs, SelectedValueOutput{Result: root, Address: PersistedPartAddress{Part: "snapshot"}})
+	}
+	err = c.WithExportedValues(ctx, selection, config.RefConfig{Builds: config.LayerBuilds{Workers: 1}}, func(context.Context, *ExportedValues) error {
+		t.Error("a failed export consumes nothing")
+		return nil
+	})
+	require.ErrorContains(t, err, "file chain a failed")
+	require.Equal(t, 1, mgr.fileStarts, "File chains begun")
 }
