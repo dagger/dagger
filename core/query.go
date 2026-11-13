@@ -126,6 +126,14 @@ type Server interface {
 	// IsRestoredBindingLoad): no approval carries over a resume.
 	AuthorizeSecret(context.Context, string) (*engine.ClientMetadata, error)
 
+	// AuthorizeGitIdentity returns the Git identity (user.name, user.email)
+	// of the owning client at its working directory, for attributing a commit
+	// made without an explicit author. When an agent or module asks, the owner
+	// approves sharing it first; if they do not, it returns an error wrapping
+	// ErrGitIdentityNotShared. An unconfigured identity is returned empty,
+	// without asking.
+	AuthorizeGitIdentity(context.Context) (GitIdentity, error)
+
 	// The cached workspace result from ensureWorkspaceLoaded.
 	CurrentWorkspace(context.Context) (*Workspace, error)
 
