@@ -192,6 +192,14 @@ type Server struct {
 	armedMu sync.Mutex
 	armed   *armedProfile
 
+	// cpuProfile is the process's one CPU profiler, shared by the engine
+	// CPU sampler and wcprof's profiles (engine_cpu.go). engineCPUOn and
+	// testEngineCPUWindow are tests' stand-ins for wcprof recording and a
+	// window's report.
+	cpuProfile          cpuProfiler
+	engineCPUOn         func() bool
+	testEngineCPUWindow func(engineCPUWindow)
+
 	// The session watch (wcprof_watch.go): its threshold in nanoseconds, 0
 	// while it's off; the start of each watched session while it runs;
 	// captureMu, which lets one capture run at a time; and the last few
