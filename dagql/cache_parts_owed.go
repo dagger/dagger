@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 )
@@ -125,6 +126,8 @@ func (c *Cache) settleOwedPartsReport(row *sharedResult, seq uint64) {
 	if report, ok := o.rows[row.id]; ok && report.row == row && report.seq <= seq {
 		delete(o.rows, row.id)
 		o.owing.Store(int64(len(o.rows)))
+		// Out of the order too, so an owing made again joins it once.
+		o.order = slices.DeleteFunc(o.order, func(id sharedResultID) bool { return id == row.id })
 	}
 }
 
