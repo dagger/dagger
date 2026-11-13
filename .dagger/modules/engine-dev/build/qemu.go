@@ -69,6 +69,10 @@ func (build *Builder) qemuBins() (*dagger.Directory, []string) {
 		WithMountedFile("/qemu.tar.xz", src).
 		WithMountedDirectory("/patches", patches).
 		WithEnvVariable("QEMU_TARGETS", strings.Join(targets, " ")).
+		// QEMU's decodetree.py orders the code it generates through a Python
+		// set, so with Python's random hash seed the arm, ppc and riscv
+		// emulators would come out different on every build.
+		WithEnvVariable("PYTHONHASHSEED", "0").
 		WithExec([]string{"sh", "-euc", `
 mkdir /src /out
 tar -xJf /qemu.tar.xz -C /src --strip-components=1 --exclude='*/roms'
