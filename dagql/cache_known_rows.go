@@ -60,6 +60,25 @@ func (k *KnownRows) NotMerged(rows ExportedRows) {
 	}
 }
 
+// Stale records that the recipient refused the export that carried rows
+// because the held rows stale named no longer hold there: those of its held
+// rows are forgotten, so that another export carries them in full, and the
+// others stay known, since the recipient still holds them. Its full rows
+// were never marked.
+func (k *KnownRows) Stale(rows ExportedRows, stale []uint64) {
+	named := make(map[uint64]bool, len(stale))
+	for _, number := range stale {
+		named[number] = true
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	for _, number := range rows.Held {
+		if named[number] {
+			delete(k.rows, number)
+		}
+	}
+}
+
 // knowsLocked reports whether the recipient merged res as it stands: an
 // export it merged carried res in full, and res's revisions haven't moved
 // since. A nil KnownRows knows nothing. Requires egraphMu.
