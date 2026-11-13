@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/klauspost/compress/zstd"
 	"github.com/opencontainers/go-digest"
 )
@@ -728,13 +729,14 @@ func (c *Cache) queueStoredBodies(entries []*sharedResult) {
 // holds is not known until it is decoded. Requires egraphMu.
 func (c *Cache) queueTaughtContentLocked(res *sharedResult) {
 	w := c.storedBodies
-	if !c.blobBacked || w == nil || res.taughtGiven == len(res.taught) || !res.entryFrameLocked().ok() {
+	seeded := res.taughtFrom.ok()
+	if !c.blobBacked || w == nil || (res.taughtGiven == len(res.taught) && !seeded) || !res.entryFrameLocked().ok() {
 		return
 	}
 	res.resultCallMu.RLock()
 	known, carried := res.frameContentKnown, res.frameContent
 	res.resultCallMu.RUnlock()
-	if known && !slices.ContainsFunc(res.taught[res.taughtGiven:], func(d digest.Digest) bool { return d != carried }) {
+	if !seeded && known && !slices.ContainsFunc(res.taught[res.taughtGiven:], func(d digest.Digest) bool { return d != carried }) {
 		res.taughtGiven = len(res.taught)
 		return
 	}
@@ -762,6 +764,7 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 	rewritten := 0
 	start := time.Now()
 	for _, res := range entries {
+		c.adoptReplacedContent(res)
 		c.egraphMu.RLock()
 		from, frame, live := res.taughtGiven, res.taughtFrame, c.resultsByID[res.id] == res
 		pending := slices.Clone(res.taught[from:])
@@ -798,6 +801,40 @@ func (c *Cache) applyTaughtContent(entries []*sharedResult) {
 	if c.testTaughtContent != nil {
 		c.testTaughtContent(rewritten)
 	}
+}
+
+// adoptReplacedContent takes, as res's taught content digests, those of the
+// frame a replacement took from res when res had none (taughtFrom): its
+// replaced content digests in the order the frame kept them, then its
+// content digest. The frame is decoded outside egraphMu.
+func (c *Cache) adoptReplacedContent(res *sharedResult) {
+	c.egraphMu.RLock()
+	from := res.taughtFrom
+	c.egraphMu.RUnlock()
+	if !from.ok() {
+		return
+	}
+	var run []digest.Digest
+	if frame, err := from.decode(); err != nil {
+		slog.Warn("dagql cache: reading a replaced frame's content digests", "entry", res.id, "err", err)
+	} else if frame != nil {
+		for _, extra := range frame.ExtraDigests {
+			if extra.Label == call.ExtraDigestLabelReplacedContent && extra.Digest != "" {
+				run = append(run, extra.Digest)
+			}
+		}
+		if content := frame.ContentDigest(); content != "" {
+			run = append(run, content)
+		}
+	}
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	if res.taughtFrom != from {
+		return
+	}
+	res.taughtFrom = entryFrame{}
+	// Digests taught since the replacement come after the frame's.
+	res.taught = append(run, res.taught...)
 }
 
 // TaughtContentStats reports the entries queued for a frame rewrite because
