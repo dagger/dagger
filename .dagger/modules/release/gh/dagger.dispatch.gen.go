@@ -97,6 +97,7 @@ func main() {
 	default:
 		err = fmt.Errorf("unknown mode %q", os.Args[1])
 	}
+
 	// fatalf exits without running deferred calls, so spans are flushed first.
 	telemetry.Close()
 	if err != nil {
@@ -115,6 +116,7 @@ func fatalf(format string, args ...any) {
 	}
 	encoded, _ := json.Marshal(reported)
 	fmt.Fprintf(os.Stderr, "%s\n%s%s\n", message, "::dagger-function-error::", encoded)
+
 	os.Exit(2)
 }
 
