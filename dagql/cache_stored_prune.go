@@ -101,7 +101,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	}
 	// The cache takes the value back only from a cache that computes it
 	// after the drop.
-	c.markEntryClassLocked(res.id)
+	c.markEntryClassLocked(res.id, StampPruned)
 	for _, ref := range res.holderRefsLocked() {
 		if ref.h.executed {
 			ref.h.executed = false

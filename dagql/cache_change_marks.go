@@ -40,6 +40,7 @@ type changeMarks struct {
 	// entries when handed back.
 	entries  []sharedResultID
 	classes  []sharedResultID
+	causes   []StampCause
 	holdings []HolderKey
 	// left are the classes whose entries a leaving entry has marked, so
 	// collecting a whole class walks it once, not once per entry.
@@ -59,11 +60,12 @@ func (c *Cache) markEntryLocked(id sharedResultID) {
 // handed back, every entry of its classes: its value, record, stored parts
 // or expiry changed, or it joined their class. Requires egraphMu for
 // writing.
-func (c *Cache) markEntryClassLocked(id sharedResultID) {
+func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
 	if c.changes == nil || id == 0 {
 		return
 	}
 	c.changes.classes = append(c.changes.classes, id)
+	c.changes.causes = append(c.changes.causes, cause)
 }
 
 // markLeavingLocked marks an entry that is leaving its classes, before it
@@ -74,7 +76,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 		return
 	}
 	c.changes.entries = append(c.changes.entries, id)
-	c.stampEntryLocked(c.resultsByID[id])
+	c.stampEntryLocked(c.resultsByID[id], StampLeft)
 	for eqID := range c.resultOutputEqClasses[id] {
 		root := c.eqClassRootLocked(eqID)
 		if root == 0 {
@@ -89,7 +91,9 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 		c.changes.left[root] = struct{}{}
 		for member := range c.outputEqClassResults[root] {
 			c.changes.entries = append(c.changes.entries, member)
-			c.stampEntryLocked(c.resultsByID[member])
+			if member != id {
+				c.stampEntryLocked(c.resultsByID[member], StampLeft|StampViaClass)
+			}
 		}
 	}
 }
@@ -117,9 +121,10 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 		change.Entries = append(change.Entries, uint64(id))
 	}
 	var widened map[eqClassID]struct{}
-	for _, id := range marks.classes {
+	for i, id := range marks.classes {
+		cause := marks.causes[i]
 		change.Entries = append(change.Entries, uint64(id))
-		c.stampEntryLocked(c.resultsByID[id])
+		c.stampEntryLocked(c.resultsByID[id], cause)
 		for eqID := range c.resultOutputEqClasses[id] {
 			root := c.eqClassRootLocked(eqID)
 			if root == 0 {
@@ -134,7 +139,9 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 			widened[root] = struct{}{}
 			for member := range c.outputEqClassResults[root] {
 				change.Entries = append(change.Entries, uint64(member))
-				c.stampEntryLocked(c.resultsByID[member])
+				if member != id {
+					c.stampEntryLocked(c.resultsByID[member], cause|StampViaClass)
+				}
 			}
 		}
 	}
@@ -143,7 +150,7 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	change.Holdings = append(change.Holdings, marks.holdings...)
 	slices.SortFunc(change.Holdings, compareChangedHoldings)
 	change.Holdings = slices.CompactFunc(change.Holdings, func(a, b HolderKey) bool { return a == b })
-	marks.entries, marks.classes, marks.holdings = marks.entries[:0], marks.classes[:0], marks.holdings[:0]
+	marks.entries, marks.classes, marks.causes, marks.holdings = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.holdings[:0]
 	marks.left = nil
 }
 
@@ -180,12 +187,86 @@ func (c *Cache) changesPendingLocked() bool {
 // alone (markEntryLocked), doesn't: a bundle carries no holding. It is a
 // no-op on any other cache, and for a nil res. Requires egraphMu for
 // writing.
-func (c *Cache) stampEntryLocked(res *sharedResult) {
+func (c *Cache) stampEntryLocked(res *sharedResult, cause StampCause) {
 	if c.changes == nil || res == nil {
 		return
 	}
 	c.writes++
 	res.changedAt = c.writes
+	res.stampCause = cause
+}
+
+// StampCause is what last changed what a stored bundle carries of an entry
+// (stampEntryLocked), for a reader's diagnostics: which write it was, and,
+// with StampViaClass, that the write was to another entry of its class.
+type StampCause uint8
+
+const (
+	StampUnknown StampCause = iota
+	StampValue
+	StampUnpruneable
+	StampLookupHit
+	StampCallReturned
+	StampReplaced
+	StampJoin
+	StampEdgeExpiry
+	StampPartStored
+	StampPartDropped
+	StampPruned
+	StampMergeExpiry
+	StampMergeInstall
+	StampMergeFailed
+	StampCallExpiry
+	StampLeft
+	StampKeptCallNewTerm
+	StampKeptCallOldTerm
+	StampKeptCallUnsendable
+	StampFrame
+
+	// StampViaClass marks a stamp of a write to another entry of the
+	// entry's class, widened to it.
+	StampViaClass StampCause = 0x80
+)
+
+var stampCauseNames = [...]string{
+	StampUnknown: "unknown", StampValue: "value", StampUnpruneable: "unpruneable", StampLookupHit: "lookup hit",
+	StampCallReturned: "call returned", StampReplaced: "replaced", StampJoin: "class joined", StampEdgeExpiry: "edge expiry",
+	StampPartStored: "part stored", StampPartDropped: "part dropped", StampPruned: "pruned", StampMergeExpiry: "merge expiry",
+	StampMergeInstall: "merge install", StampMergeFailed: "merge failed", StampCallExpiry: "call expiry", StampLeft: "left class",
+	StampKeptCallNewTerm: "kept call, new term", StampKeptCallOldTerm: "kept call, old term",
+	StampKeptCallUnsendable: "kept call, unsendable", StampFrame: "frame rewritten",
+}
+
+func (s StampCause) String() string {
+	name := "unknown"
+	if base := s &^ StampViaClass; int(base) < len(stampCauseNames) {
+		name = stampCauseNames[base]
+	}
+	if s&StampViaClass != 0 {
+		name += " (class)"
+	}
+	return name
+}
+
+// StampCauses counts, for entry numbers, the cause of each one's last stamp
+// (StampCause), by name, and "gone" for an entry that is gone: a reader's
+// diagnostic of why entries changed. It holds egraphMu for reading
+// changedSincePiece entries at a time.
+func (c *Cache) StampCauses(numbers []uint64) map[string]int {
+	causes := map[string]int{}
+	for start := 0; start < len(numbers); start += changedSincePiece {
+		end := min(start+changedSincePiece, len(numbers))
+		c.egraphMu.RLock()
+		for _, number := range numbers[start:end] {
+			if res := c.resultsByID[sharedResultID(number)]; res == nil {
+				causes["gone"]++
+			} else {
+				causes[res.stampCause.String()]++
+			}
+		}
+		c.egraphMu.RUnlock()
+	}
+	return causes
 }
 
 // BundlePosition is the cache's write count (Cache.writes) now: a stored
