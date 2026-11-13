@@ -108,7 +108,11 @@ func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) err
 		return fmt.Errorf("dialer failed: %w", err)
 	}
 
-	err = sshforward.Copy(context.TODO(), conn, stream, nil)
+	// The receive loop may already have finished after CloseSend. Closing
+	// the socket on cancellation also unblocks the remaining socket read.
+	stop := context.AfterFunc(stream.Context(), func() { _ = conn.Close() })
+	defer stop()
+	err = sshforward.Copy(stream.Context(), conn, stream, nil)
 	if err != nil {
 		return fmt.Errorf("copy failed: %w", err)
 	}
