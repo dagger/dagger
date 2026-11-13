@@ -134,6 +134,17 @@ type Server interface {
 	// without asking.
 	AuthorizeGitIdentity(context.Context) (GitIdentity, error)
 
+	// AuthorizeLLM checks that the module calling the LLM API, loaded from
+	// moduleURL (a git module's unpinned source), may use it, asking the
+	// owning client to approve when no --allow-llm policy did already.
+	AuthorizeLLM(ctx context.Context, moduleURL string) error
+
+	// Prompt asks the user a question on behalf of the calling code, through
+	// the trusted client owning the call, naming who asks as the engine
+	// resolved it. An error wrapping ErrPromptNotInteractive means nobody
+	// could be asked.
+	Prompt(context.Context, *PromptRequest) (*PromptAnswer, error)
+
 	// The cached workspace result from ensureWorkspaceLoaded.
 	CurrentWorkspace(context.Context) (*Workspace, error)
 
