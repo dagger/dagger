@@ -10,6 +10,7 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -310,6 +311,10 @@ func (cm *snapshotManager) buildExportLayers(ctx context.Context, planned []*lay
 	eg.SetLimit(max(refCfg.Builds.Workers, 1))
 	for _, build := range planned {
 		eg.Go(func() (err error) {
+			// A layer's diff and compression is an export's own kind of
+			// work, apart from the capture that plans it.
+			_, unlabel := wcprof.WithCPUKind(ctx, wcprof.CPUKindExportLayers)
+			defer unlabel()
 			owner := build.owner
 			workCtx := owner.beginBuild(ctx, work)
 			defer func() { owner.endBuild(work, build.stats.BlobBytes, err) }()
