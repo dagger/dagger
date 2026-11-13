@@ -200,3 +200,41 @@ func TestNarrowReadsAnswerAsTheWideOnes(t *testing.T) {
 	require.False(t, ok)
 	require.Empty(t, cloud.CacheHoldings(engineA, []uint64{1 << 40}))
 }
+
+// EntriesHeld returns what EntryInfo reports of each entry's own facts, and
+// the keys of its first holdings in EntryInfo's order, skipping a number
+// the cache has no entry for.
+func TestEntriesHeldAnswersAsEntryInfo(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	f := RemoteHolding{Recipe: testDigest("f"), Request: testDigest("f"), Field: "f"}
+	g := RemoteHolding{Recipe: testDigest("g"), Request: testDigest("g"), Field: "g"}
+	for i, cache := range []CacheID{"cache-d", "cache-b", "cache-e", "cache-a", "cache-c"} {
+		a.call(callRow{key: HolderKey{cache, uint64(i + 1)}, session: string(cache), holding: f})
+	}
+	a.call(callRow{key: HolderKey{"cache-a", 9}, session: "cache-a", holding: f})
+	a.call(callRow{key: HolderKey{"cache-a", 10}, session: "cache-a", holding: g})
+	require.Empty(t, a.collect())
+
+	fInfo, ok := cloud.RemoteEntryInfo(HolderKey{"cache-a", 4})
+	require.True(t, ok)
+	gInfo, ok := cloud.RemoteEntryInfo(HolderKey{"cache-a", 10})
+	require.True(t, ok)
+	require.Len(t, fInfo.Holdings, 6)
+	numbers := []uint64{gInfo.Number, 1 << 40, fInfo.Number}
+	for _, limit := range []int{0, 1, 3, 6, 10} {
+		held := cloud.EntriesHeld(numbers, limit)
+		require.Len(t, held, 2, "the missing number is skipped")
+		for i, info := range []RemoteEntryInfo{gInfo, fInfo} {
+			require.Equal(t, info.Number, held[i].Number)
+			require.Equal(t, info.Stored, held[i].Stored)
+			require.Equal(t, info.StoredExpiresAtUnix, held[i].StoredExpiresAtUnix)
+			var want []HolderKey
+			for _, h := range info.Holdings[:min(limit, len(info.Holdings))] {
+				want = append(want, h.Key)
+			}
+			require.Equal(t, want, held[i].Keys, "entry %d's first %d holdings", info.Number, limit)
+		}
+	}
+}
