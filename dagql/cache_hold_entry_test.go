@@ -20,7 +20,7 @@ func TestHoldEntryRefusesWhatHasNoValue(t *testing.T) {
 	_, err = cloud.AttachRemoteHolding(t.Context(), HolderKey{Cache: "cache-a", Number: 1}, holdingOf("known-only-through-holdings"))
 	require.NoError(t, err)
 	cloud.egraphMu.RLock()
-	number := cloud.holderEntries[HolderKey{Cache: "cache-a", Number: 1}]
+	number := cloud.holderEntriesForTest()[HolderKey{Cache: "cache-a", Number: 1}]
 	cloud.egraphMu.RUnlock()
 	require.NotZero(t, number)
 	_, _, err = cloud.HoldEntry(t.Context(), uint64(number))

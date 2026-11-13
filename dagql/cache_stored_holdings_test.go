@@ -80,7 +80,7 @@ func storedHoldingsTestKey(t *testing.T, cloud *Cache, cache CacheID, number uin
 	t.Helper()
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
-	for key, id := range cloud.holderEntries {
+	for key, id := range cloud.holderEntriesForTest() {
 		if key.Cache == cache && uint64(id) == number && key != except {
 			return key
 		}
@@ -302,7 +302,7 @@ func TestStoredQueries(t *testing.T) {
 		Entries:       len(cloud.resultsByID),
 		Terms:         len(cloud.egraphTerms),
 		ClassSlots:    cloud.eqClassSlotsLocked(),
-		Holdings:      len(cloud.holderEntries),
+		Holdings:      len(cloud.holderEntriesForTest()),
 	}
 	cloud.egraphMu.RUnlock()
 	require.Equal(t, want, usage)

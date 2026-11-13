@@ -253,7 +253,7 @@ func bundleSenderNumberForTest(t *testing.T, cloud *Cache, number uint64) uint64
 	t.Helper()
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
-	for key, id := range cloud.holderEntries {
+	for key, id := range cloud.holderEntriesForTest() {
 		if key.Cache == "cache-a" && uint64(id) == number {
 			return key.Number
 		}

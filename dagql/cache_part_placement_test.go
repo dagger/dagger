@@ -15,7 +15,7 @@ func placementTestEntry(t *testing.T, cloud *Cache, key HolderKey, h RemoteHoldi
 	require.NoError(t, err)
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
-	number := cloud.holderEntries[key]
+	number := cloud.holderEntriesForTest()[key]
 	require.NotZero(t, number)
 	return uint64(number)
 }

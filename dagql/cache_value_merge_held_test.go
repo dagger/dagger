@@ -20,7 +20,7 @@ func heldTestHold(t *testing.T, ctx context.Context, cloud *Cache, cache CacheID
 	require.NoError(t, err)
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
-	require.Equal(t, sharedResultID(cloudNumber), cloud.holderEntries[HolderKey{Cache: cache, Number: number}], "the holding sits on the Cloud entry")
+	require.Equal(t, sharedResultID(cloudNumber), cloud.holderEntriesForTest()[HolderKey{Cache: cache, Number: number}], "the holding sits on the Cloud entry")
 }
 
 // heldTestRow returns the bundle's row sent for the Cloud entry number.

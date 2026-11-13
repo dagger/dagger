@@ -313,7 +313,9 @@ func (c *Cache) BlobCacheUsage() (BlobCacheUsage, error) {
 		Entries:    len(c.resultsByID),
 		Terms:      len(c.egraphTerms),
 		ClassSlots: c.eqClassSlotsLocked(),
-		Holdings:   len(c.holderEntries),
+	}
+	for _, state := range c.remoteCaches {
+		usage.Holdings += state.holdings
 	}
 	// The pool as storedPoolLocked walks it, from the stored roots through
 	// each value's dependencies; only the pool's values name the blobs it
