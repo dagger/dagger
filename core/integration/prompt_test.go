@@ -127,7 +127,9 @@ func (PromptSuite) TestAnswers(ctx context.Context, t *testctx.T) {
 		const token = "hunter2-token"
 		s := startPromptSession(ctx, t, workdir, configHome, fmt.Sprintf(`asker | token --message="Your token?" --want=%q`, token))
 		s.expect(`Your token?`)
-		s.answer(token)
+		// A masked form (raw mode): enter is a carriage return.
+		_, err := s.console.Send(token + "\r")
+		require.NoError(t, err)
 		s.finish("token matches")
 	})
 }
