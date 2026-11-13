@@ -68,6 +68,14 @@ func BenchmarkMergeSharedLayers(b *testing.B) {
 			}
 		}
 	})
+	b.Run("message", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if _, err := EncodeEnvelope(1, 0, TypeMerge, merge); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 	b.Run("decode", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
