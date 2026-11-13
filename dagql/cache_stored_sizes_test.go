@@ -373,7 +373,7 @@ func TestStoredBundleCarriesALaterRootWithTheCallThatNeedsIt(t *testing.T) {
 // without replacing the record: the entry's size is measured again.
 func TestStoredSizesMeasureAgainAfterAPartAddsADependency(t *testing.T) {
 	t.Parallel()
-	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
 	_, err := cloud.StoredSizes(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 
@@ -459,7 +459,7 @@ func TestStoredSizesMeasureOutsideTheLock(t *testing.T) {
 // later roots are measured as if it weren't there.
 func TestMeasuredStoredSizesNeverMeasure(t *testing.T) {
 	t.Parallel()
-	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", true)
 	before := cloud.StoredSizeEncodes()
 	got, err := cloud.MeasuredStoredSizes(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
@@ -561,7 +561,7 @@ func TestStoredSizesSurviveABuildNormalizingAtOnce(t *testing.T) {
 // nothing, so it can't replace the size measured for the new dependencies.
 func TestStoredSizesKeepNoMeasureOfAnOlderState(t *testing.T) {
 	t.Parallel()
-	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	ctx, cloud, r, _ := storedBundleTestCloudIn(t, "root", true)
 	source, _ := mergeTestSource(t, "sizes-later-owner", "owner")
 	reply, err := cloud.MergeValues(ctx, "cache-b", source)
 	require.NoError(t, err)
