@@ -3102,6 +3102,12 @@ type sharedResult struct {
 	// entry's frame takes it as TeachContentDigest would have left the
 	// engine's (queueTaughtContentLocked). Requires egraphMu.
 	taughtContent digest.Digest
+	// taughtPending are the content digests spans taught the entry that its
+	// frame hasn't taken yet, in the order they were taught: the body worker
+	// gives them to the frame in that order, as TeachContentDigest would, so
+	// one replaced by a later one is kept as replaced-content. Requires
+	// egraphMu.
+	taughtPending []digest.Digest
 	// payloadMu guards lazy payload publication for imported persisted hits and
 	// prune-accounting timestamps that can change after initial publication.
 	payloadMu sync.RWMutex
