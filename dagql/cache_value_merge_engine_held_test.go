@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/snapshots/config"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -282,4 +283,77 @@ func TestCloudStoresAnUploadOnAHeldRowNamingAHeldRow(t *testing.T) {
 	require.True(t, stored)
 	_, deps = cloudEntryOfRecipe(t, cloud, engine, out)
 	require.Equal(t, []sharedResultID{sharedResultID(svcNumber)}, deps, "the stored part makes its entry depend on the entry it names")
+}
+
+// receiverTestResult is a result of field called on receiver, so that its
+// recipe derives from receiver's.
+func receiverTestResult(t *testing.T, ctx context.Context, c *Cache, srv *Server, field string, receiver AnyResult) AnyResult {
+	t.Helper()
+	frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType(String("").Type()), Receiver: &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)}}
+	res, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(String(field), frame)
+	})
+	require.NoError(t, err)
+	return res
+}
+
+// One engine's call can be answered with an entry of another recipe: its
+// call span reports the call's request digest beside the recipe of what came
+// back. Another engine that computed the call itself has a row whose recipe
+// is that request digest. Once that engine has merged the row, and the row
+// above it, in full, the Cloud holds both, and the engine's next exports send
+// them as held rows: each holds, as on any other recipe.
+func TestCloudHeldRowsHoldBesideAnotherEnginesRequestDigest(t *testing.T) {
+	t.Parallel()
+	ctx, engine, srv := transferTestCache(t)
+	child := persistedListTestResult(t, ctx, engine, srv, "asked-child", String("child"))
+	mid := receiverTestResult(t, ctx, engine, srv, "asked-mid", child)
+	top := receiverTestResult(t, ctx, engine, srv, "asked-top", mid)
+	childRecipe, err := child.cacheSharedResult().loadResultCall().deriveRecipeDigest(engine)
+	require.NoError(t, err)
+
+	octx, other, osrv := transferTestCache(t)
+	answer := persistedListTestResult(t, octx, other, osrv, "asked-answer", String("child"))
+	answerRecipe, err := answer.cacheSharedResult().loadResultCall().deriveRecipeDigest(other)
+	require.NoError(t, err)
+	require.NotEqual(t, childRecipe, answerRecipe)
+
+	cctx, cloud := storedPartTestCache(t, WithBlobStore())
+	merge := func(t *testing.T, from CacheID, bundle ValueBundle) MergeReply {
+		t.Helper()
+		reply, err := cloud.MergeValues(cctx, from, bundle)
+		require.NoError(t, err)
+		return reply
+	}
+	// The other engine's entry, in full, then its call span: a call whose
+	// request digest is the child's recipe, answered with that entry.
+	require.True(t, merge(t, "other-engine", exportTestBundle(t, octx, other, answer)).Committed)
+	_, err = cloud.AttachRemoteHolding(cctx, HolderKey{Cache: "other-engine", Number: uint64(answer.cacheSharedResult().id)}, RemoteHolding{Recipe: answerRecipe, Request: childRecipe, Field: "asked-answer", TypeName: "String"})
+	require.NoError(t, err)
+
+	// The engine merges the child and mid in full, then exports rows above
+	// each, records only, as a whole fill does: each merged row is sent held.
+	known := NewKnownRows()
+	export := func(t *testing.T, root AnyResult, held AnyResult) MergeReply {
+		t.Helper()
+		bundle, rows, _ := recordsOnlyCapture(t, ctx, engine, known, root)
+		if held != nil {
+			heldRows, _ := heldNumbers(bundle)
+			require.True(t, heldRows[knownRowsTestNumber(held)], "the export sends the merged row held")
+		}
+		reply := merge(t, "engine", bundle)
+		if reply.Committed {
+			known.Merged(rows)
+		}
+		return reply
+	}
+	require.True(t, export(t, mid, nil).Committed)
+
+	reply := export(t, top, mid)
+	assert.Empty(t, reply.Stale, "mid, merged in full on the child, holds")
+	assert.True(t, reply.Committed)
+
+	reply = export(t, receiverTestResult(t, ctx, engine, srv, "asked-side", child), child)
+	assert.Empty(t, reply.Stale, "the child, merged in full, holds")
+	assert.True(t, reply.Committed)
 }
