@@ -111,8 +111,9 @@ func (sn *mergeSnapshotter) flatten(ctx context.Context, parent string, layers i
 		span.SetAttributes(attribute.Int64("dagger.snapshot.flatten.ms", time.Since(start).Milliseconds()))
 		telemetry.EndWithCause(span, &rerr)
 	}()
-	// Merging parent alone applies its whole tree onto an empty snapshot.
-	if err := sn.Merge(ctx, key, []Diff{{Upper: parent}}); err != nil {
+	// Merging parent alone applies its whole tree, root included, onto an
+	// empty snapshot.
+	if err := sn.Merge(ctx, key, []Diff{{Upper: parent, Root: true}}); err != nil {
 		return "", errors.Wrapf(err, "flatten snapshot %s", parent)
 	}
 	return key, nil
