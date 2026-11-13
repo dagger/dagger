@@ -6681,10 +6681,14 @@ func (c *Cache) getOrInitCallInner(
 		return nil, fmt.Errorf("derive request digest: %w", err)
 	}
 	// The call names the cached call it was made under, and is the caller of
-	// the cached calls its resolver makes. A call that isn't cached installs
-	// nothing, so the calls under it name the cached call above it.
+	// the cached calls its resolver makes, if its span is reported: one that
+	// isn't, as Generator.sync's isn't, or isn't cached installs nothing, so
+	// the calls under it name the reported cached call above it, which the
+	// service hears of.
 	caller := CallerRecipe(ctx)
-	ctx = ContextWithCallerRecipe(ctx, callDigest)
+	if req.CacheReported {
+		ctx = ContextWithCallerRecipe(ctx, callDigest)
+	}
 	requestSelf, requestInputRefs, err := req.selfDigestAndInputRefs(c)
 	if err != nil {
 		return nil, fmt.Errorf("derive request term digests: %w", err)
