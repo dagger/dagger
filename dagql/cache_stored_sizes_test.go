@@ -797,3 +797,41 @@ func TestStoredSizesOfACompressedRecordFollowItsCall(t *testing.T) {
 	require.NoError(t, err)
 	storedSizesTestClose(t, storedSizesTestMeasure(t, built.Bundle), got)
 }
+
+// A stored-size walk is a read in pieces (readInPieces): it lets egraphMu
+// go between entries, every readPieceSteps of them, and takes it again, so a
+// writer waiting for the lock gets in, and a walk of a large closure is many
+// short holds, not one. It doesn't restart when a write lands between two
+// pieces: the rest of the walk reads each entry again, by its number, as the
+// write left it, so it may count a closure that grew between two of its
+// pieces. Here, with a piece of one entry, a part stored on R before R is
+// read adds its owner to R's closure, and the walk counts it.
+func TestStoredSizesGiveUpTheLockBetweenEntries(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	source, _ := mergeTestSource(t, "sizes-owner", "owner")
+	reply, err := cloud.MergeValues(ctx, "cache-b", source)
+	require.NoError(t, err)
+	q := reply.Imported()[0].ResultID
+
+	cloud.readPieceSize = 1
+	var yields, holds int
+	cloud.testStoredSizesHold = func(time.Duration) { holds++ }
+	cloud.testReadPieceYielded = func() {
+		yields++
+		require.True(t, cloud.egraphMu.TryLock(), "the lock is free between two pieces")
+		cloud.egraphMu.Unlock()
+		if yields == 1 {
+			part := testLiveOffer()
+			part.Owner.DependencyIDs = []uint64{q}
+			stored, _, err := cloud.SetStoredPart(ctx, r, part, 0)
+			require.NoError(t, err)
+			require.True(t, stored)
+		}
+	}
+	got, err := cloud.StoredSizes(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	require.Positive(t, yields, "the walk let the lock go")
+	require.Equal(t, 3, got[0].Records, "R, P, and the owner the part stored between two pieces added")
+	require.Greater(t, holds, yields, "a hold for each piece, and the measures' publish")
+}
