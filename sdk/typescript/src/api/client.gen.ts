@@ -4411,12 +4411,12 @@ export type WorkspaceWithClientOpts = {
 
 export type WorkspaceWithCommitOpts = {
   /**
-   * Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
+   * Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger. A module or agent gets that default only with the owner's approval, otherwise Dagger.
    */
   authorName?: string
 
   /**
-   * Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
+   * Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost. A module or agent gets that default only with the owner's approval, otherwise dagger@localhost.
    */
   authorEmail?: string
 
@@ -19526,12 +19526,12 @@ export class Workspace extends BaseClient {
    *
    * A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
    *
-   * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+   * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost. When a module or an agent commits, that identity is used only with the owner's approval; if it is denied or cannot be asked, the commit is made as Dagger <dagger@localhost>.
    * @param changes Changeset to commit, for example git.uncommitted.filter(...). Paths are rooted at the repository; rename sides are determined by the changeset. Git metadata (.git) is ignored; metadata-only changes fail with nothing to commit.
    * @param message Commit message.
    * @param date RFC3339 author and committer date. Required for reproducible commits.
-   * @param opts.authorName Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
-   * @param opts.authorEmail Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
+   * @param opts.authorName Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger. A module or agent gets that default only with the owner's approval, otherwise Dagger.
+   * @param opts.authorEmail Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost. A module or agent gets that default only with the owner's approval, otherwise dagger@localhost.
    * @param opts.signoff Add a Signed-off-by trailer using the commit author's name and email.
    */
   withCommit = (
@@ -19556,7 +19556,7 @@ export class Workspace extends BaseClient {
    *
    * A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
    *
-   * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+   * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. When a module or an agent pulls, that identity is used only with the owner's approval, otherwise Dagger <dagger@localhost>; a fast-forward commits nothing and needs no committer. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
    * @param source Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace.
    * @param opts.commits Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits.
    * @param opts.maxCommits Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.

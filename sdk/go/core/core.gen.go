@@ -22665,9 +22665,9 @@ func (r *Workspace) WithClient(module string, opts ...WorkspaceWithClientOpts) *
 
 // WorkspaceWithCommitOpts contains options for Workspace.WithCommit
 type WorkspaceWithCommitOpts struct {
-	// Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger.
+	// Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger. A module or agent gets that default only with the owner's approval, otherwise Dagger.
 	AuthorName string
-	// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost.
+	// Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost. A module or agent gets that default only with the owner's approval, otherwise dagger@localhost.
 	AuthorEmail string
 	// Add a Signed-off-by trailer using the commit author's name and email.
 	Signoff bool
@@ -22679,7 +22679,7 @@ type WorkspaceWithCommitOpts struct {
 //
 // A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
 //
-// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+// Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost. When a module or an agent commits, that identity is used only with the owner's approval; if it is denied or cannot be asked, the commit is made as Dagger <dagger@localhost>.
 func (r *Workspace) WithCommit(changes *Changeset, message string, date string, opts ...WorkspaceWithCommitOpts) *Workspace {
 	assertNotNil("changes", changes)
 	q := r.query.Select("withCommit")
@@ -22723,7 +22723,7 @@ type WorkspaceWithCommitsFromOpts struct {
 //
 // A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
 //
-// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+// Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. When a module or an agent pulls, that identity is used only with the owner's approval, otherwise Dagger <dagger@localhost>; a fast-forward commits nothing and needs no committer. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
 func (r *Workspace) WithCommitsFrom(source *Workspace, opts ...WorkspaceWithCommitsFromOpts) *Workspace {
 	assertNotNil("source", source)
 	q := r.query.Select("withCommitsFrom")
