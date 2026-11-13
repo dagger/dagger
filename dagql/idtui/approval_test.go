@@ -471,6 +471,19 @@ func TestApprovalJumpKeepsZoomOnItsCall(t *testing.T) {
 	require.Contains(t, frameText(fe.tui.Step()), "approval needed")
 }
 
+// An approval whose call has not arrived may yet land inside the zoom, so
+// jumping to it keeps the zoom too.
+func TestFloatingApprovalJumpKeepsZoom(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	a, _ := startApproval(t, fe, t.Context(), pushApproval(approvalLateID, ""))
+	pressKeys(fe, "k", "enter")
+	require.Equal(t, approvalTool2ID, fe.ZoomedSpan)
+
+	pressKeys(fe, "a")
+	require.Equal(t, approvalTool2ID, fe.ZoomedSpan, "the zoom is kept")
+	require.True(t, fe.tui.IsFocused(a.view))
+}
+
 // An expanded tool call whose children fill the screen pushes its rows -- and
 // so the approval -- off screen while the cursor follows output. The approval
 // anchors under the requesting call's own row, and when that row is off
