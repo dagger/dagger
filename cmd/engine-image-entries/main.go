@@ -26,6 +26,11 @@
 // own, as go-sdk's entrypoints build; gobuild's binary and the image its
 // calls run in, which its entrypoint declares (Module._prebuild and
 // Module._runtimeImage); and exports them with their blobs into -out.
+//
+// It exits 3 (exitUnreadable) when the engine it is a client of exports
+// another bundle version than an engine of this source merges, as one
+// released before or after a change of the version does. An engine built
+// from this source makes them then.
 package main
 
 import (
@@ -35,10 +40,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
@@ -73,8 +80,27 @@ func main() {
 	}
 	if err := run(context.Background(), sdks, *sdkDigests, seeds, entrypointSeeds, *builtinGoSDK, *entrypointDaggerGo, *goVersion, *platform, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "engine-image-entries:", err)
+		var unreadable unreadableError
+		if errors.As(err, &unreadable) {
+			os.Exit(exitUnreadable)
+		}
 		os.Exit(1)
 	}
+}
+
+// exitUnreadable is the exit code when the engine the tool is a client of
+// can't make entries that an engine of this source merges (unreadableError),
+// so that an engine of this source has to make them instead.
+const exitUnreadable = 3
+
+// unreadableError says why the engine the tool is a client of can't make
+// entries that an engine of this source merges: it writes another bundle
+// version than this source's engine merges (dagql.ValueBundleVersion), as an
+// engine released before or after a change of the version does.
+type unreadableError struct{ reason string }
+
+func (e unreadableError) Error() string {
+	return "this engine can't make entries an engine of this source starts from: " + e.reason
 }
 
 // builtinGoSDKModule selects the built-in Go SDK module's source from its
@@ -119,6 +145,9 @@ func run(ctx context.Context, sdks []string, sdkDigests string, seeds, entrypoin
 		map[string]any{"results": results, "out": out}, nil); err != nil {
 		return fmt.Errorf("export the entries: %w", err)
 	}
+	if err := sameBundleVersion(out); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(digests)
 	if err != nil {
 		return err
@@ -127,6 +156,29 @@ func run(ctx context.Context, sdks []string, sdkDigests string, seeds, entrypoin
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "engine-image-entries: exported %d results to %s; the built-in SDKs' files are %v\n", len(results), out, digests)
+	return nil
+}
+
+// bundleFile is the bundle's file in an exported image directory
+// (core/schema's EngineImageBundleFile).
+const bundleFile = "bundle.json"
+
+// sameBundleVersion is an unreadableError unless the bundle exported to out
+// is of the version an engine of this source merges.
+func sameBundleVersion(out string) error {
+	raw, err := os.ReadFile(filepath.Join(out, bundleFile))
+	if err != nil {
+		return fmt.Errorf("the exported bundle: %w", err)
+	}
+	var bundle struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		return fmt.Errorf("the exported bundle: %w", err)
+	}
+	if bundle.Version != dagql.ValueBundleVersion {
+		return unreadableError{fmt.Sprintf("it wrote bundle version %d, and an engine of this source merges only %d", bundle.Version, dagql.ValueBundleVersion)}
+	}
 	return nil
 }
 
