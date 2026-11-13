@@ -77,17 +77,21 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 	changed := false
 	if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
 		entry.expiresAtUnix = expires
-		c.markEntryClassLocked(entry.id)
+		c.markEntryClassLocked(entry.id, StampCallExpiry)
 		changed = true
 	}
 	if kept != nil {
 		if _, ok := entry.calls[kept.id.recipe]; !ok {
+			// A stored bundle of the entry carries its kept calls. The cause
+			// tells a new term the bundle can send from one it has (a term
+			// the entry's calls already derive) and one it can't (an input
+			// with no stored record of its own recipe), for diagnostics.
+			cause := c.keptCallCauseLocked(entry, kept)
 			if entry.calls == nil {
 				entry.calls = make(map[digest.Digest]*keptCall)
 			}
 			entry.calls[kept.id.recipe] = kept
-			// A stored bundle of the entry carries its kept calls.
-			c.stampEntryLocked(entry)
+			c.stampEntryLocked(entry, cause)
 			changed = true
 		}
 	}
@@ -142,6 +146,45 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 	return nil
 }
 
+// keptCallTermKeyLocked is the term a kept call derives on the Cloud, as
+// keptCallTermsLocked groups calls by: its self digest over its inputs'
+// classes, an input the Cloud has no class for standing for itself.
+// Requires egraphMu.
+func (c *Cache) keptCallTermKeyLocked(kept *keptCall) string {
+	key := kept.id.self.String()
+	for _, input := range kept.id.inputs {
+		if root := c.eqClassRootLocked(c.egraphDigestToClass[input.String()]); root != 0 {
+			key += fmt.Sprintf("|%d", root)
+		} else {
+			key += "|" + input.String()
+		}
+	}
+	return key
+}
+
+// keptCallCauseLocked says what keeping kept on entry, before it is kept,
+// changes in a stored bundle of the entry (StampCause): a call of a term the
+// entry's calls already derive, one with an input no bundle can place (no
+// stored record of its own recipe; a witness needs none), or a new term a
+// bundle can send. Requires egraphMu.
+func (c *Cache) keptCallCauseLocked(entry *sharedResult, kept *keptCall) StampCause {
+	for i, input := range kept.id.inputs {
+		if kept.id.witnesses[i] {
+			continue
+		}
+		if in := c.currentEntryForRecipeLocked(input); in == nil || in.noValueLocked() || in.persistedEnvelope == nil {
+			return StampKeptCallUnsendable
+		}
+	}
+	key := c.keptCallTermKeyLocked(kept)
+	for _, other := range entry.calls {
+		if c.keptCallTermKeyLocked(other) == key {
+			return StampKeptCallOldTerm
+		}
+	}
+	return StampKeptCallNewTerm
+}
+
 // keptCallTermsLocked groups the calls kept on res by the term each derives
 // on the Cloud, the call's self digest over its inputs' classes, in a stable
 // order: by term, then by request digest. An input the Cloud has no class for
@@ -149,14 +192,7 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
 	byTerm := map[string][]*keptCall{}
 	for _, kept := range res.calls {
-		key := kept.id.self.String()
-		for _, input := range kept.id.inputs {
-			if root := c.eqClassRootLocked(c.egraphDigestToClass[input.String()]); root != 0 {
-				key += fmt.Sprintf("|%d", root)
-			} else {
-				key += "|" + input.String()
-			}
-		}
+		key := c.keptCallTermKeyLocked(kept)
 		byTerm[key] = append(byTerm[key], kept)
 	}
 	groups := make([][]*keptCall, 0, len(byTerm))

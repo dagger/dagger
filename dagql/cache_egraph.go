@@ -368,7 +368,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 		// Every entry of both classes now answers from the other's: one
 		// mark of the union's class widens to all of them when handed back.
 		for resID := range srcResults {
-			c.markEntryClassLocked(resID)
+			c.markEntryClassLocked(resID, StampJoin)
 			break
 		}
 	}
@@ -1120,7 +1120,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 		res.expiresAtUnix,
 		persistedEdgeExpiresAtUnix,
 	)
-	c.markEntryClassLocked(res.id)
+	c.markEntryClassLocked(res.id, StampEdgeExpiry)
 	touchSharedResultLastUsed(res, now.UnixNano())
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 		return nil, false, 0, false, err
@@ -1574,7 +1574,7 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 			shared.storedRecordBytes += grown
 		}
 		// A stored bundle of the entry carries the new frame.
-		c.stampEntryLocked(shared)
+		c.stampEntryLocked(shared, StampFrame)
 		c.traceResultCallFrameUpdated(ctx, shared, "teach_content_digest", baseFrame, frame)
 		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
