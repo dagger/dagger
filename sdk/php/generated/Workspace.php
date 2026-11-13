@@ -90,7 +90,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      *
      * A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.
      *
-     * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
+     * Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. When a module or an agent pulls, that identity is used only with the owner's approval, otherwise Dagger <dagger@localhost>; a fast-forward commits nothing and needs no committer. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.
      */
     public function withCommitsFrom(Workspace $source, ?array $commits = [], ?int $maxCommits = 100): Workspace
     {
@@ -112,7 +112,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      *
      * A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.
      *
-     * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.
+     * Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost. When a module or an agent commits, that identity is used only with the owner's approval; if it is denied or cannot be asked, the commit is made as Dagger <dagger@localhost>.
      */
     public function withCommit(
         Changeset $changes,

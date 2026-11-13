@@ -113,7 +113,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Integrate source commits into this workspace and return the result, preserving this workspace's uncommitted changes and metadata.",
 				"Fast-forward when the selected commits include all new ancestors of their tip; otherwise cherry-pick them oldest first. Already integrated commits and patches already present are skipped. Any conflict fails the operation. Source uncommitted changes are not transferred; merge them explicitly if needed. Use compareCommitsFrom to preview the integration.",
 				"A local receiver is snapshotted automatically; untracked files require interactive approval. The checkout is not modified. Export the result with an explicit path to write it to a checkout.",
-				"Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.").
+				"Cherry-picks preserve the source author and author date, use the calling client's Git config for committer identity, and reuse the source committer date for reproducible hashes. When a module or an agent pulls, that identity is used only with the owner's approval, otherwise Dagger <dagger@localhost>; a fast-forward commits nothing and needs no committer. Origin trailers track cherry-picked commits. Divergent merge commits require manual integration.").
 			Args(dagql.Arg("source").Doc("Git-backed source workspace. For a local checkout, call snapshot on the source first and pass the returned workspace."),
 				dagql.Arg("commits").Doc("Full lowercase commit hashes or unambiguous lowercase hex prefixes (4-40 characters) to select, in any order. Prefixes resolve against the frozen source's Git objects and are recorded as full hashes; duplicate selections after resolution are rejected. Empty selects all new source commits. Selected commits must be within the source's latest 10000 commits."),
 				dagql.Arg("maxCommits").Doc("Maximum commits in either differing history, from 1 to 1000. Exceeding the limit fails; nothing is silently omitted.")),
@@ -126,13 +126,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Create a Git commit from a changeset and return a stable workspace with HEAD advanced.",
 				"The changeset is three-way merged into both HEAD and the frozen working tree. Compatible unselected edits remain uncommitted; incoming changes need not already be in the working tree. Conflicts with either tree fail without modifying the workspace. Empty changesets, or changes already present in HEAD, fail with nothing to commit.",
 				"A local workspace is snapshotted automatically before committing; untracked files require interactive approval. The host checkout is not modified.",
-				"Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost.").
+				"Missing author fields are resolved from Git config in the calling client's working directory at commit time, then recorded explicitly for reproducible commits. Unconfigured fields default to Dagger and dagger@localhost. When a module or an agent commits, that identity is used only with the owner's approval; if it is denied or cannot be asked, the commit is made as Dagger <dagger@localhost>.").
 			Args(
 				dagql.Arg("changes").Doc("Changeset to commit, for example git.uncommitted.filter(...). Paths are rooted at the repository; rename sides are determined by the changeset. Git metadata (.git) is ignored; metadata-only changes fail with nothing to commit."),
 				dagql.Arg("message").Doc("Commit message."),
 				dagql.Arg("date").Doc("RFC3339 author and committer date. Required for reproducible commits."),
-				dagql.Arg("authorName").Doc("Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger."),
-				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost."),
+				dagql.Arg("authorName").Doc("Author and committer name. Defaults to git config user.name in the calling client's working directory, otherwise Dagger. A module or agent gets that default only with the owner's approval, otherwise Dagger."),
+				dagql.Arg("authorEmail").Doc("Author and committer email. Defaults to git config user.email in the calling client's working directory, otherwise dagger@localhost. A module or agent gets that default only with the owner's approval, otherwise dagger@localhost."),
 				dagql.Arg("signoff").Doc("Add a Signed-off-by trailer using the commit author's name and email."),
 			),
 		dagql.NodeFunc("withReset", s.withReset).
