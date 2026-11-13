@@ -839,27 +839,14 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string, wcp
 // goModuleDownloads.
 const testGoModuleDownloadsPath = "/go-module-downloads"
 
-// goModuleDownloads are the downloads of every module the source's root Go
-// module requires, laid out as the go command's module cache download
-// directory, which a file:// GOPROXY serves. They come from the root go.mod,
-// go.sum and the go.mod of each local replacement alone, in a container with
-// no cache volume, so the directory is the exec's own result, keyed by those
-// files, and holds the downloads on every engine that has the result.
+// goModuleDownloads are the downloads of every module version the source's
+// root go.sum names, as dagger/go serves them: one directory laid out as a Go
+// module proxy, which a file:// GOPROXY serves. Each version is downloaded
+// once, keyed by its path, version and checksums, so the directory is a
+// result on every engine that has it, with no cache volume.
 func (dev *EngineDev) goModuleDownloads() *dagger.Directory {
-	src := core.NewDirectory().
-		WithFile("go.mod", dev.Source.File("go.mod")).
-		WithFile("go.sum", dev.Source.File("go.sum"))
-	for _, replacement := range []string{"sdk/go", "engine/distconsts", "internal/fastbolt"} {
-		src = src.WithFile(path.Join(replacement, "go.mod"), dev.Source.File(path.Join(replacement, "go.mod")))
-	}
-	return core.NewContainer().
-		From(consts.GolangImage).
-		WithEnvVariable("GOMODCACHE", "/gomodcache").
-		WithEnvVariable("GOTOOLCHAIN", "local").
-		WithMountedDirectory("/src", src).
-		WithWorkdir("/src").
-		WithExec([]string{"go", "mod", "download"}).
-		Directory("/gomodcache/cache/download")
+	return golang.New(golang.GoOpts{Version: consts.GolangVersion}).
+		ModuleProxy(dev.Source.File("go.sum"))
 }
 
 func registry() *dagger.Service {

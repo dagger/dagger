@@ -47,9 +47,9 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("GoEnv", typeDef.withObject("Container"))
             .withDescription("GoEnv is a Go environment for working on dagger/dagger: wolfi with the Go\ntoolchain, a C toolchain, and what the engine's tests use, with dagger/go's\nGo caches, and source as its working directory. It is for running Go code\nand the go command; dagger/dagger's own binaries and test binaries are\nbuilt with dagger/go's per-package build, not here.")
-            .withSourceMap(sourceMap("test.go", 889, 1))
-            .withArg("source", typeDef.withObject("Directory").withOptional(true), description: "The source to work in; the engine's source by default", sourceMap: sourceMap("test.go", 892, 2))
-            .withArg("cgo", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), description: "Enable cgo", sourceMap: sourceMap("test.go", 895, 2))
+            .withSourceMap(sourceMap("test.go", 876, 1))
+            .withArg("source", typeDef.withObject("Directory").withOptional(true), description: "The source to work in; the engine's source by default", sourceMap: sourceMap("test.go", 879, 2))
+            .withArg("cgo", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), description: "Enable cgo", sourceMap: sourceMap("test.go", 882, 2))
         )
         .withFunction(
           function("GraphqlSchema", typeDef.withObject("File"))
