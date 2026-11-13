@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -2576,4 +2577,125 @@ func TestMergeValuesWarmsItsTargetsInFewHolds(t *testing.T) {
 	require.Equal(t, targets, reply.Rows.Kept, "every record lands on a target")
 	require.Positive(t, holds, "the warming captured its targets")
 	require.LessOrEqual(t, holds, 2, "one hold to take the targets and one to let them go")
+}
+
+// warmingTestCaches makes a sending cache's bundle of n roots, each a value
+// with a part, and two receiving caches that each computed the same n
+// recipes, so that every record lands on a target with a value to capture.
+func warmingTestCaches(t *testing.T, n int) (ValueBundle, [2]*Cache, [2]context.Context, [2][]*sharedResult) {
+	t.Helper()
+	ctx, c, srv := transferTestCache(t)
+	var roots []AnyResult
+	var caches [2]*Cache
+	var ctxs [2]context.Context
+	var targets [2][]*sharedResult
+	for i := range 2 {
+		bctx, b, bsrv := transferTestCache(t)
+		caches[i], ctxs[i] = b, bctx
+		for j := range n {
+			local := persistedListTestResult(t, bctx, b, bsrv, fmt.Sprintf("root-%d", j), &transferTestValue{Text: "ready"})
+			targets[i] = append(targets[i], local.cacheSharedResult())
+		}
+	}
+	for j := range n {
+		roots = append(roots, persistedListTestResult(t, ctx, c, srv, fmt.Sprintf("root-%d", j), &transferTestValue{Text: "ready"}))
+	}
+	return exportTestBundle(t, ctx, c, roots...), caches, ctxs, targets
+}
+
+// warmingTestOutcome is what a merge left and reported, as two caches can
+// compare: each record's reported parts and offers by ordinal, the reply's
+// counts, and each target's complete parts and whether its capture counts.
+func warmingTestOutcome(t *testing.T, b *Cache, reply MergeReply, targets []*sharedResult) string {
+	t.Helper()
+	var w strings.Builder
+	fmt.Fprintf(&w, "rows %+v\n", reply.Rows)
+	for _, v := range reply.Values {
+		fmt.Fprintf(&w, "value %d parts %v offered %v\n", v.Ordinal, v.Parts, v.OfferedParts)
+	}
+	b.egraphMu.RLock()
+	defer b.egraphMu.RUnlock()
+	for i, target := range targets {
+		keys, current := completePartKeysCoverageLocked(target)
+		fmt.Fprintf(&w, "target %d parts %v current %t\n", i, keys, current)
+	}
+	return w.String()
+}
+
+// bumpTestRevision changes a row's value revision, as a replaced record
+// does: a capture taken before no longer describes it.
+func bumpTestRevision(b *Cache, row *sharedResult) {
+	b.egraphMu.Lock()
+	row.payloadMu.Lock()
+	row.payloadRevision++
+	row.payloadMu.Unlock()
+	b.egraphMu.Unlock()
+}
+
+// A merge whose targets are captured together, in the prepare and in pieces,
+// leaves and reports what capturing them one by one, as each row is held
+// alone, leaves and reports: every record's parts, the counts, and each
+// target's captured parts.
+func TestMergeWarmingTogetherIsWarmingOneByOne(t *testing.T) {
+	t.Parallel()
+	bundle, b, ctx, targets := warmingTestCaches(t, 6)
+	for _, target := range targets[0] {
+		b[0].completePartKeys(ctx[0], target)
+	}
+	one, err := b[0].MergeValues(ctx[0], cloudCacheID, bundle)
+	require.NoError(t, err)
+	b[1].capturePieceSize = 4
+	together, err := b[1].MergeValues(ctx[1], cloudCacheID, bundle)
+	require.NoError(t, err)
+	want := warmingTestOutcome(t, b[0], one, targets[0])
+	require.Contains(t, want, "snapshot", "the targets' parts are captured")
+	require.Equal(t, want, warmingTestOutcome(t, b[1], together, targets[1]))
+}
+
+// A target whose value changes between the prepare's warming and the commit
+// is captured again in the commit, as one captured one by one before the
+// change is: both report its parts as they stand at the commit.
+func TestMergeWarmingCapturesAgainWhatChangedSinceThePrepare(t *testing.T) {
+	t.Parallel()
+	bundle, b, ctx, targets := warmingTestCaches(t, 4)
+	for _, target := range targets[0] {
+		b[0].completePartKeys(ctx[0], target)
+	}
+	bumpTestRevision(b[0], targets[0][1])
+	one, err := b[0].MergeValues(ctx[0], cloudCacheID, bundle)
+	require.NoError(t, err)
+
+	p, err := b[1].PrepareValueMerge(ctx[1], cloudCacheID, bundle)
+	require.NoError(t, err)
+	bumpTestRevision(b[1], targets[1][1])
+	together, err := b[1].CommitValueMerge(ctx[1], p)
+	require.NoError(t, err)
+	require.Equal(t, warmingTestOutcome(t, b[0], one, targets[0]), warmingTestOutcome(t, b[1], together, targets[1]))
+}
+
+// A target whose value changes while the warming holds it, after its piece
+// is taken and before its capture, is captured as it stands then, as a row
+// held alone and changed before its capture is.
+func TestMergeWarmingCapturesATargetChangedWhileHeld(t *testing.T) {
+	t.Parallel()
+	bundle, b, ctx, targets := warmingTestCaches(t, 3)
+	bumpTestRevision(b[0], targets[0][0])
+	for _, target := range targets[0] {
+		b[0].completePartKeys(ctx[0], target)
+	}
+	one, err := b[0].MergeValues(ctx[0], cloudCacheID, bundle)
+	require.NoError(t, err)
+
+	b[1].capturePieceSize = 1
+	holds := 0
+	b[1].testCaptureWriteLock = func() {
+		// Before the second piece: the first target is held, not captured.
+		if holds++; holds == 2 {
+			bumpTestRevision(b[1], targets[1][0])
+		}
+	}
+	together, err := b[1].MergeValues(ctx[1], cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Greater(t, holds, 2, "the warming held its targets in pieces")
+	require.Equal(t, warmingTestOutcome(t, b[0], one, targets[0]), warmingTestOutcome(t, b[1], together, targets[1]))
 }

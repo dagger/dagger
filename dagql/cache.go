@@ -2510,7 +2510,10 @@ type Cache struct {
 	testWarmStarted func()
 	// testCaptureWriteLock, nil but in tests, runs as holding rows for a
 	// capture, or letting them go, is about to take egraphMu for writing.
+	// capturePieceSize, when set, is how many rows holdRowsForCapture takes
+	// in one hold (capturePieceRows otherwise).
 	testCaptureWriteLock func()
+	capturePieceSize     int
 
 	// readPieceSize, when set, is how many steps a read in pieces takes in
 	// one hold of egraphMu (readPieceSteps otherwise), and
