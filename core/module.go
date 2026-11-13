@@ -125,6 +125,7 @@ func (*Module) TypeDescription() string {
 var _ dagql.PersistedObject = (*Module)(nil)
 var _ dagql.PersistedObjectDecoder = (*Module)(nil)
 var _ dagql.HasDependencyResults = (*Module)(nil)
+var _ dagql.HasResultReference = (*Module)(nil)
 
 func (mod *Module) Name() string {
 	return mod.NameField
@@ -1101,6 +1102,26 @@ func (mod *Module) AttachDependencyResults(
 		}
 	}
 	return owned, nil
+}
+
+// InitializeResultReference gives a Module decoded from a stored record its
+// own entry in its dependencies, as AttachDependencyResults gives a module
+// built fresh. EncodePersistedObject leaves that entry out, since a record
+// can't reference itself, and the cache doesn't run AttachDependencyResults
+// for a decoded payload. Without it, the module's SDK would serve the module
+// an API without its own constructor, so a module that calls itself, as a
+// Dang module can, would fail.
+func (mod *Module) InitializeResultReference(self dagql.AnyResult) {
+	if !mod.IncludeSelfInDeps {
+		return
+	}
+	selfMod := NewUserMod(self.(dagql.ObjectResult[*Module]))
+	if mod.Deps != nil {
+		mod.Deps = mod.Deps.Append(selfMod)
+	}
+	if mod.EntrypointDeps != nil {
+		mod.EntrypointDeps = mod.EntrypointDeps.Append(selfMod)
+	}
 }
 
 type persistedModulePayload struct {
