@@ -849,7 +849,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 				// inline under the call, without taking focus: `a` jumps to
 				// it. Only test the "no" case: the yes case may persist.
 				if tc.plain {
-					_, err = console.ExpectString("Allow LLM access (requested by")
+					_, err = console.ExpectString("Allow LLM access for github.com/dagger/dagger-test-modules/llm/direct (requested by")
 					require.NoError(t, err)
 					_, err = console.SendLine("n")
 					require.NoError(t, err)
