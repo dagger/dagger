@@ -74,6 +74,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 		return
 	}
 	c.changes.entries = append(c.changes.entries, id)
+	c.stampEntryLocked(c.resultsByID[id])
 	for eqID := range c.resultOutputEqClasses[id] {
 		root := c.eqClassRootLocked(eqID)
 		if root == 0 {
@@ -88,6 +89,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 		c.changes.left[root] = struct{}{}
 		for member := range c.outputEqClassResults[root] {
 			c.changes.entries = append(c.changes.entries, member)
+			c.stampEntryLocked(c.resultsByID[member])
 		}
 	}
 }
@@ -117,6 +119,7 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	var widened map[eqClassID]struct{}
 	for _, id := range marks.classes {
 		change.Entries = append(change.Entries, uint64(id))
+		c.stampEntryLocked(c.resultsByID[id])
 		for eqID := range c.resultOutputEqClasses[id] {
 			root := c.eqClassRootLocked(eqID)
 			if root == 0 {
@@ -131,6 +134,7 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 			widened[root] = struct{}{}
 			for member := range c.outputEqClassResults[root] {
 				change.Entries = append(change.Entries, uint64(member))
+				c.stampEntryLocked(c.resultsByID[member])
 			}
 		}
 	}
@@ -162,4 +166,55 @@ func (c *Cache) clearChangesLocked() {
 // Requires egraphMu.
 func (c *Cache) changesPendingLocked() bool {
 	return c.changes != nil && len(c.changes.entries)+len(c.changes.classes)+len(c.changes.holdings) > 0
+}
+
+// stampEntryLocked records, on a blob-backed cache, that what a stored
+// bundle carries of res changed at this write: res takes the next write
+// count (sharedResult.changedAt), so every bundle built before it reads res
+// as changed (ChangedSince). The writes that stamp are those a bundle reads:
+// a class mark (markEntryClassLocked: the entry's value, record, stored
+// parts or expiry, or its class, whose parts it can borrow), an entry
+// leaving its classes (markLeavingLocked), a kept call added
+// (keepCallLocked), and a frame rewritten with a taught content digest
+// (teachContentDigest). A holding added or removed, which marks its entry
+// alone (markEntryLocked), doesn't: a bundle carries no holding. It is a
+// no-op on any other cache, and for a nil res. Requires egraphMu for
+// writing.
+func (c *Cache) stampEntryLocked(res *sharedResult) {
+	if c.changes == nil || res == nil {
+		return
+	}
+	c.writes++
+	res.changedAt = c.writes
+}
+
+// BundlePosition is the cache's write count (Cache.writes) now: a stored
+// bundle built now would have it as its Position, and if it equals a
+// bundle's Position, nothing the bundle carries has changed since.
+func (c *Cache) BundlePosition() uint64 {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.writes
+}
+
+// changedSincePiece is how many entries ChangedSince reads in one hold of
+// egraphMu.
+const changedSincePiece = 1024
+
+// ChangedSince reports, for each entry number, whether a write since
+// position, a stored bundle's (StoredBundleResult.Position), changed what a
+// stored bundle carries of the entry (stampEntryLocked), or the entry is
+// gone. It holds egraphMu for reading changedSincePiece entries at a time.
+func (c *Cache) ChangedSince(numbers []uint64, position uint64) []bool {
+	changed := make([]bool, len(numbers))
+	for start := 0; start < len(numbers); start += changedSincePiece {
+		end := min(start+changedSincePiece, len(numbers))
+		c.egraphMu.RLock()
+		for i := start; i < end; i++ {
+			res := c.resultsByID[sharedResultID(numbers[i])]
+			changed[i] = res == nil || res.changedAt > position
+		}
+		c.egraphMu.RUnlock()
+	}
+	return changed
 }

@@ -27,24 +27,6 @@ type RowRevision struct {
 	Dependencies uint64
 }
 
-// EntryStamp is what a reader keeps of an entry as it read it, to tell
-// later whether the entry changed since: its revisions, its own expiry, and
-// how many calls it keeps (Calls), which are only ever added.
-type EntryStamp struct {
-	Revision      RowRevision
-	ExpiresAtUnix int64
-	Calls         int
-}
-
-// stampLocked is the entry's stamp as it stands. Requires egraphMu.
-func (res *sharedResult) stampLocked() EntryStamp {
-	return EntryStamp{
-		Revision:      RowRevision{Replacements: res.replacements, Transfer: res.transferRevision, Dependencies: res.dependencyOwnershipRevision},
-		ExpiresAtUnix: res.expiresAtUnix,
-		Calls:         len(res.calls),
-	}
-}
-
 // ExportedRows are the rows one export carried: in full, by number, with the
 // revisions it captured, and as held rows, by number.
 type ExportedRows struct {
