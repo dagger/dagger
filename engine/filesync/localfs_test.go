@@ -14,7 +14,9 @@ import (
 	bkcontainerd "github.com/dagger/dagger/engine/snapshots/containerd"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/fsutil"
+	"github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/dagger/dagger/util/fsxutil"
+	"github.com/opencontainers/go-digest"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 )
@@ -227,4 +229,55 @@ func assertSyncedFile(t *testing.T, ref bkcache.ImmutableRef, name, want string)
 	got, err := os.ReadFile(filepath.Join(testutil.Root(t, ref), name))
 	assert.NilError(t, err)
 	assert.Equal(t, string(got), want)
+}
+
+// A symlink's permission bits belong to the client's host: macOS records the
+// umask the link was created under, and Linux has none to set. The mirror's
+// link is the same whatever the client sent, so the digest must be too, on a
+// cold mirror and on a warm one.
+func TestSyncDigestIgnoresSymlinkPermissions(t *testing.T) {
+	t.Parallel()
+
+	root := writeTree(t, map[string]string{"notes.md": "hello"})
+	assert.NilError(t, os.Symlink("notes.md", filepath.Join(root, "latest.md")))
+
+	syncWithLinkPermissions := func(perm os.FileMode) (cold, warm digest.Digest) {
+		t.Helper()
+
+		base, err := fsutil.NewFS(root)
+		assert.NilError(t, err)
+		client, err := fsutil.NewFilterFS(base, &fsutil.FilterOpt{
+			Map: func(_ string, st *types.Stat) fsutil.MapResult {
+				if os.FileMode(st.Mode)&os.ModeSymlink != 0 {
+					st.Mode = uint32(os.ModeSymlink | perm)
+				}
+				return fsutil.MapResultKeep
+			},
+		})
+		assert.NilError(t, err)
+
+		store := testutil.NewStore(t)
+		local, err := newLocalFS(NewMirrorSharedState(t.TempDir()), "", nil, nil, nil, "")
+		assert.NilError(t, err)
+		ctx, releaseOp, err := bkcache.WithLazyLease(context.Background(), store.Leases, bkcache.MakeTemporary)
+		assert.NilError(t, err)
+		defer releaseOp(context.Background())
+
+		sync := func() digest.Digest {
+			ref, dgst, err := local.Sync(ctx, readFS{client}, store.Manager, false)
+			assert.NilError(t, err)
+			defer ref.Release(context.Background())
+			target, err := os.Readlink(filepath.Join(testutil.Root(t, ref), "latest.md"))
+			assert.NilError(t, err)
+			assert.Equal(t, target, "notes.md")
+			return dgst
+		}
+		return sync(), sync()
+	}
+
+	linuxCold, linuxWarm := syncWithLinkPermissions(0o777)
+	macCold, macWarm := syncWithLinkPermissions(0o755)
+	assert.Equal(t, linuxCold, linuxWarm)
+	assert.Equal(t, macCold, linuxCold)
+	assert.Equal(t, macWarm, linuxCold)
 }
