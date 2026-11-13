@@ -1059,6 +1059,11 @@ func (c *Cache) transferIdentityPlanOf(res *sharedResult) (transferIdentityPlan,
 // together (holdRowsForCapture), in a few holds of egraphMu for writing
 // rather than two for each target: each hold waits for egraphMu's readers.
 func (c *Cache) warmMergeTargetParts(ctx context.Context, prep *valueMergePrep) {
+	// A blob-backed cache, the Cloud's, has no local completions to find,
+	// and its merge's caller reads no parts from the reply (mergeReplyLocked).
+	if c.blobBacked {
+		return
+	}
 	reader := c.completePartSizeReader()
 	c.egraphMu.RLock()
 	targets := make([]*sharedResult, 0, len(prep.plans))
@@ -2404,17 +2409,22 @@ func (c *Cache) mergeReplyLocked(commit *valueMergeCommit) MergeReply {
 			value.Deps = append(value.Deps, uint64(dep))
 		}
 		slices.Sort(value.Deps)
-		complete := map[string]bool{}
-		for _, key := range c.mergedCompletePartKeysLocked(commit, res) {
-			complete[key] = true
-			value.Parts = appendPartAddress(value.Parts, key)
-		}
-		for key := range res.partOffersLocked() {
-			if !complete[key] {
-				value.OfferedParts = appendPartAddress(value.OfferedParts, key)
+		// A blob-backed cache, the Cloud's, holds no local completion or
+		// offer of a part (SetStoredPart keeps its parts), and its merge's
+		// caller, the remote cache service, reads none from the reply.
+		if !c.blobBacked {
+			complete := map[string]bool{}
+			for _, key := range c.mergedCompletePartKeysLocked(commit, res) {
+				complete[key] = true
+				value.Parts = appendPartAddress(value.Parts, key)
 			}
+			for key := range res.partOffersLocked() {
+				if !complete[key] {
+					value.OfferedParts = appendPartAddress(value.OfferedParts, key)
+				}
+			}
+			slices.SortFunc(value.OfferedParts, comparePartAddresses)
 		}
-		slices.SortFunc(value.OfferedParts, comparePartAddresses)
 		reply.Values = append(reply.Values, value)
 	}
 	for _, root := range commit.roots {
