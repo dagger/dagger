@@ -309,6 +309,29 @@ type containerAcquiredOutput struct {
 	Payload  persistedContainerPayload
 	Links    []dagql.PersistedSnapshotRefLink
 	Revision dagql.OutputRevision
+
+	// router routes parts under the view's recorded operation, built on
+	// first use: a published view doesn't change, so neither do its routes.
+	routerMu sync.Mutex
+	router   *partRouter
+}
+
+// passesThrough reports whether the view's recorded operation copies part
+// unchanged from the call's receiver: it maps the part to the part's own
+// delegation group, as a native refined op does (containerPartSource). call
+// is the call that recorded the operation. A view without a recorded
+// operation passes nothing through here.
+func (view *containerAcquiredOutput) passesThrough(call *dagql.ResultCall, part dagql.PartKey) bool {
+	if len(view.Payload.LazyJSON) == 0 || !view.Payload.Metadata.Consumed {
+		return false
+	}
+	view.routerMu.Lock()
+	defer view.routerMu.Unlock()
+	if view.router == nil {
+		view.router = &partRouter{family: "Container", v: dagql.PersistedPayloadVisit{Call: call}, payload: &partPayload{container: view.Payload}}
+	}
+	mapped := view.router.partGroups(part)
+	return mapped.err == nil && len(mapped.groups) == 1 && mapped.groups[0] == containerDelegationGroup(part)
 }
 
 func (container *Container) PersistedOutputRevision() (dagql.OutputRevision, error) {
