@@ -195,9 +195,27 @@ func (PromptSuite) TestNotInteractive(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "true")
 	})
 
-	t.Run("no default", func(ctx context.Context, t *testctx.T) {
-		_, err := base.With(daggerShell(`asker | yesno --message="Proceed?"`)).Stdout(ctx)
+	t.Run("boolean without a default answers no", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell(`asker | yesno --message="Proceed?"`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "answered no")
+	})
+
+	t.Run("string without a default", func(ctx context.Context, t *testctx.T) {
+		_, err := base.With(daggerShell(`asker | text --message="Your name?"`)).Stdout(ctx)
 		requireErrOut(t, err, "prompt needs an answer and has no default")
+	})
+
+	t.Run("string with an empty default", func(ctx context.Context, t *testctx.T) {
+		// Some SDKs cannot send an empty default: it is no default.
+		_, err := base.With(daggerShell(`asker | text --message="Your name?" --otherwise=""`)).Stdout(ctx)
+		requireErrOut(t, err, "prompt needs an answer and has no default")
+	})
+
+	t.Run("string with a default", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell(`asker | text --message="Your name?" --otherwise=Anonymous`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Anonymous")
 	})
 
 	t.Run("secret", func(ctx context.Context, t *testctx.T) {
