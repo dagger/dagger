@@ -120,7 +120,7 @@ func (PromptSuite) TestAnswers(ctx context.Context, t *testctx.T) {
 		s := startPromptSession(ctx, t, workdir, configHome, `asker | text --message="Your name?"`)
 		s.expect(`Your name?`)
 		s.answer("Ada Lovelace")
-		s.finish("Ada Lovelace")
+		s.finish("[Ada Lovelace]")
 	})
 
 	t.Run("secret", func(ctx context.Context, t *testctx.T) {
@@ -175,7 +175,7 @@ func (PromptSuite) TestPersistentKey(ctx context.Context, t *testctx.T) {
 		s := startPromptSession(ctx, t, workdir, configHome, `asker | text --message="Your name?" --key=name`)
 		s.expect(`Your name?`)
 		s.answer(name)
-		s.finish(name)
+		s.finish("[" + name + "]")
 	}
 	data, err := os.ReadFile(filepath.Join(configHome, "dagger", "prompt-answers.json"))
 	if err == nil {
@@ -201,25 +201,20 @@ func (PromptSuite) TestNotInteractive(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "answered no")
 	})
 
-	t.Run("string without a default", func(ctx context.Context, t *testctx.T) {
-		_, err := base.With(daggerShell(`asker | text --message="Your name?"`)).Stdout(ctx)
-		requireErrOut(t, err, "prompt needs an answer and has no default")
-	})
-
-	t.Run("string with an empty default", func(ctx context.Context, t *testctx.T) {
-		// Some SDKs cannot send an empty default: it is no default.
-		_, err := base.With(daggerShell(`asker | text --message="Your name?" --otherwise=""`)).Stdout(ctx)
-		requireErrOut(t, err, "prompt needs an answer and has no default")
+	t.Run("string without a default answers empty", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerShell(`asker | text --message="Your name?"`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "[]")
 	})
 
 	t.Run("string with a default", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerShell(`asker | text --message="Your name?" --otherwise=Anonymous`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "Anonymous")
+		require.Contains(t, out, "[Anonymous]")
 	})
 
 	t.Run("secret", func(ctx context.Context, t *testctx.T) {
 		_, err := base.With(daggerShell(`asker | token --message="Token?" --want=x`)).Stdout(ctx)
-		requireErrOut(t, err, "prompt needs an answer and has no default")
+		requireErrOut(t, err, "prompting for a secret needs an interactive client")
 	})
 }
