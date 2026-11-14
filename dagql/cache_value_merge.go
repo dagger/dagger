@@ -2426,6 +2426,8 @@ func (c *Cache) finishMergedReplacement(ctx context.Context, r mergeReplacement)
 		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		queue := c.failMergedEntryLocked(ctx, r.res, nil)
 		releases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
+		// This write hands back no marks: the entry taken back is stamped now.
+		c.stampPendingLocked()
 		c.egraphMu.Unlock()
 		err = errors.Join(err, collectErr, runOnReleaseFuncs(ctx, releases))
 	}

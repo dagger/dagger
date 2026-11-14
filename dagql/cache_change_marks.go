@@ -42,6 +42,9 @@ type changeMarks struct {
 	classes  []sharedResultID
 	causes   []StampCause
 	holdings []HolderKey
+	// stamped counts the class marks, from the first, whose entries' stamps
+	// a write applied before handing them back (stampPendingLocked).
+	stamped int
 	// left are the classes whose entries a leaving entry has marked, so
 	// collecting a whole class walks it once, not once per entry.
 	left map[eqClassID]struct{}
@@ -120,11 +123,10 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	for _, id := range marks.entries {
 		change.Entries = append(change.Entries, uint64(id))
 	}
+	c.stampClassMarksLocked(marks.stamped)
 	var widened map[eqClassID]struct{}
-	for i, id := range marks.classes {
-		cause := marks.causes[i]
+	for _, id := range marks.classes {
 		change.Entries = append(change.Entries, uint64(id))
-		c.stampEntryLocked(c.resultsByID[id], cause)
 		for eqID := range c.resultOutputEqClasses[id] {
 			root := c.eqClassRootLocked(eqID)
 			if root == 0 {
@@ -139,9 +141,6 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 			widened[root] = struct{}{}
 			for member := range c.outputEqClassResults[root] {
 				change.Entries = append(change.Entries, uint64(member))
-				if member != id {
-					c.stampEntryLocked(c.resultsByID[member], cause|StampViaClass)
-				}
 			}
 		}
 	}
@@ -151,7 +150,52 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	slices.SortFunc(change.Holdings, compareChangedHoldings)
 	change.Holdings = slices.CompactFunc(change.Holdings, func(a, b HolderKey) bool { return a == b })
 	marks.entries, marks.classes, marks.causes, marks.holdings = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.holdings[:0]
+	marks.stamped = 0
 	marks.left = nil
+}
+
+// stampClassMarksLocked applies the stamps of the class marks from the from'th
+// (stampEntryLocked): each marked entry's own, with its cause, and each other
+// entry's of its classes, as a write to its class. Requires egraphMu for
+// writing.
+func (c *Cache) stampClassMarksLocked(from int) {
+	marks := c.changes
+	var widened map[eqClassID]struct{}
+	for i := from; i < len(marks.classes); i++ {
+		id, cause := marks.classes[i], marks.causes[i]
+		c.stampEntryLocked(c.resultsByID[id], cause)
+		for eqID := range c.resultOutputEqClasses[id] {
+			root := c.eqClassRootLocked(eqID)
+			if root == 0 {
+				continue
+			}
+			if _, ok := widened[root]; ok {
+				continue
+			}
+			if widened == nil {
+				widened = map[eqClassID]struct{}{}
+			}
+			widened[root] = struct{}{}
+			for member := range c.outputEqClassResults[root] {
+				if member != id {
+					c.stampEntryLocked(c.resultsByID[member], cause|StampViaClass)
+				}
+			}
+		}
+	}
+}
+
+// stampPendingLocked applies, at the end of a write that hands no marks back,
+// the stamps of the class marks it made, which a stored bundle's reader reads
+// (ChangedSince): the marks stay for the next write that hands marks back,
+// for the readers of the changes, but a bundle built in between must not
+// read the entries as current. Requires egraphMu for writing.
+func (c *Cache) stampPendingLocked() {
+	if c.changes == nil {
+		return
+	}
+	c.stampClassMarksLocked(c.changes.stamped)
+	c.changes.stamped = len(c.changes.classes)
 }
 
 // compareChangedHoldings orders a change's holdings: by number, then cache.
