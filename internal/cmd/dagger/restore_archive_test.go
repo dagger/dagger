@@ -505,7 +505,7 @@ func TestArchiveHistoryRedeliveryIsIdempotent(t *testing.T) {
 	mutations := fe.db.MutationCount()
 
 	history := historyTestArchive{restoreTestArchive: source, historyLogs: source.logs}
-	require.NoError(t, importArchiveRemainder(t.Context(), history, source.header.TraceID, importer, cut))
+	require.NoError(t, importArchiveRemainder(t.Context(), history, source.header.TraceID, importer, cut, false))
 
 	after, afterEdges, err := appliedArchivePlan(fe, source.header.Completion)
 	require.NoError(t, err)
@@ -519,5 +519,127 @@ func TestArchiveHistoryRedeliveryIsIdempotent(t *testing.T) {
 	for _, entry := range after.plan {
 		_, err := fe.EncodedIDForCallDigest(entry.SnapshotDigest)
 		require.NoError(t, err)
+	}
+}
+
+// lazyRestoreFrontend is an interactive frontend: it takes the restored
+// trace's log provider.
+type lazyRestoreFrontend struct {
+	*restoreTestFrontend
+	idtui.TraceFrontend
+	traceID  dagui.TraceID
+	provider func(dagui.SpanID, bool)
+	wait     func()
+}
+
+func (fe *lazyRestoreFrontend) SetTraceLogProvider(traceID dagui.TraceID, f func(dagui.SpanID, bool)) {
+	fe.traceID, fe.provider = traceID, f
+}
+func (fe *lazyRestoreFrontend) SetFetchWaiter(f func()) { fe.wait = f }
+
+// lazyRestoreArchive reports every history and selected read.
+type lazyRestoreArchive struct {
+	*restoreTestArchive
+	spans chan archive.StreamOptions
+	logs  chan archive.StreamOptions
+	// blockSelected makes selected (per-span) log reads block until
+	// cancelled.
+	blockSelected bool
+}
+
+func newLazyRestoreArchive() *lazyRestoreArchive {
+	base, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
+	base.header.HighWater = archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}
+	return &lazyRestoreArchive{restoreTestArchive: base, spans: make(chan archive.StreamOptions, 1), logs: make(chan archive.StreamOptions, 64)}
+}
+
+func (s *lazyRestoreArchive) Traces(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
+	s.spans <- opts
+	return opts.HighWater, nil
+}
+func (s *lazyRestoreArchive) Metrics(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
+	return opts.HighWater, nil
+}
+func (s *lazyRestoreArchive) Logs(ctx context.Context, _ string, opts archive.StreamOptions, _ func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
+	s.logs <- opts
+	if s.blockSelected && opts.Logs != nil && opts.Logs.SpanID != "" {
+		<-ctx.Done()
+		return 0, ctx.Err()
+	}
+	return opts.HighWater, nil
+}
+
+func receiveOpts(t *testing.T, ch chan archive.StreamOptions, what string) archive.StreamOptions {
+	t.Helper()
+	select {
+	case opts := <-ch:
+		return opts
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s was not read", what)
+		return archive.StreamOptions{}
+	}
+}
+
+// TestArchiveRestoreLoadsDisplayLogsOnDemand: an interactive frontend gets
+// the history's whole span tree, with the dagui view's hints, and only its
+// semantic log records in the background; display logs are read per span on
+// request, pinned to the cut, from the provider for the restored trace.
+func TestArchiveRestoreLoadsDisplayLogsOnDemand(t *testing.T) {
+	source := newLazyRestoreArchive()
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	target := newFakeRestoreTarget()
+	cleanup, err := restoreArchive(t.Context(), source, fe, target, restoreRequest())
+	require.NoError(t, err)
+	defer cleanup()
+	require.Equal(t, "chief", target.focused, "verified bootstrap still restores before history")
+	require.Equal(t, restoreRequest().traceID, fe.traceID.String(), "the provider serves the restored trace only")
+
+	spans := receiveOpts(t, source.spans, "span history")
+	require.Equal(t, &archive.SpanSelection{Full: true, DagUIView: true}, spans.Spans)
+	require.EqualValues(t, 10, spans.HighWater)
+	metadata := receiveOpts(t, source.logs, "log history")
+	require.Equal(t, &archive.LogSelection{Records: archive.LogRecordsMetadata}, metadata.Logs)
+	require.EqualValues(t, 20, metadata.HighWater)
+
+	id := dagui.SpanID{SpanID: [8]byte{1}}
+	fe.provider(id, false)
+	fe.provider(id, false)
+	fe.wait()
+	own := receiveOpts(t, source.logs, "the span's logs")
+	require.Equal(t, &archive.LogSelection{SpanID: id.String()}, own.Logs, "every record class of the span")
+	require.EqualValues(t, 20, own.HighWater)
+	select {
+	case opts := <-source.logs:
+		t.Fatalf("eager or duplicate log read: %+v", opts.Logs)
+	default:
+	}
+}
+
+// TestArchiveRestoreCleanupCancelsLazyFetches: exit cancels lazy log fetches
+// both in flight and queued behind the loader's concurrency limit.
+func TestArchiveRestoreCleanupCancelsLazyFetches(t *testing.T) {
+	source := newLazyRestoreArchive()
+	source.blockSelected = true
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), restoreRequest())
+	require.NoError(t, err)
+	receiveOpts(t, source.logs, "log history")
+	for i := range 20 {
+		fe.provider(dagui.SpanID{SpanID: [8]byte{byte(i + 1)}}, false)
+	}
+	// Wait for the in-flight fetches to occupy the loader's limit, leaving
+	// the rest queued.
+	for range cap(newTraceLoaderFor(t.Context(), nil, "", fe).logSem) {
+		receiveOpts(t, source.logs, "a lazy fetch")
+	}
+	done := make(chan struct{})
+	go func() {
+		cleanup()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cleanup did not cancel queued lazy fetches")
 	}
 }
