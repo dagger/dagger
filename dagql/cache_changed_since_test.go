@@ -91,6 +91,17 @@ func changedSinceTestRebuild(t *testing.T, cloud *Cache, before StoredBundleResu
 	return differ
 }
 
+// changedSinceTestJoined waits until the body worker has given both entries'
+// frames the content digest that joins them in one class
+// (storedBundleTestClassMember): the join is a write of its own, which a
+// test of a later write mustn't race.
+func changedSinceTestJoined(t *testing.T, cloud *Cache, numbers ...uint64) {
+	t.Helper()
+	for _, number := range numbers {
+		storedContentTestWait(t, cloud, number, testDigest("bundle-class-content"))
+	}
+}
+
 // changedSinceTestNumbers returns a's entry numbers of the results.
 func changedSinceTestNumbers(a *Cache, results ...AnyResult) []uint64 {
 	a.egraphMu.RLock()
@@ -148,6 +159,7 @@ func TestChangedSinceAStoredBundle(t *testing.T) {
 		t.Parallel()
 		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
 		member := storedBundleTestClassMember(t, ctx, cloud, r, "changed-since-member")
+		changedSinceTestJoined(t, cloud, r, member)
 		before := changedSinceTestBuild(t, cloud, r)
 		require.Empty(t, before.Bundle.Outputs)
 		stored, _, err := cloud.SetStoredPart(ctx, member, testLiveOffer(), 0)
@@ -370,6 +382,7 @@ func TestStampCausesNameTheWrite(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
 	member := storedBundleTestClassMember(t, ctx, cloud, r, "stamp-cause-member")
+	changedSinceTestJoined(t, cloud, r, member)
 	stored, _, err := cloud.SetStoredPart(ctx, member, testLiveOffer(), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
