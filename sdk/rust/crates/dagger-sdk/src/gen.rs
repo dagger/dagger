@@ -16117,7 +16117,7 @@ pub struct PromptBooleanOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct PromptStringOpts<'a> {
-    /// The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one (or with an empty one), that is an error.
+    /// The text the answer starts with, and the answer when nobody can be asked (the client is not interactive).
     #[builder(setter(into, strip_option), default)]
     pub default: Option<&'a str>,
     /// Accept several lines.

@@ -18762,7 +18762,7 @@ func (r *Prompt) Secret(opts ...PromptSecretOpts) *Secret {
 
 // PromptStringOpts contains options for Prompt.String
 type PromptStringOpts struct {
-	// The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one (or with an empty one), that is an error.
+	// The text the answer starts with, and the answer when nobody can be asked (the client is not interactive).
 	Default string
 	// Accept several lines.
 	Multiline bool
