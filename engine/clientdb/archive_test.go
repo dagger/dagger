@@ -98,11 +98,11 @@ func TestAgentSpanIDs(t *testing.T) {
 	db, err := openStore(t.Context(), t.TempDir(), "client", telemetryTailBudget)
 	require.NoError(t, err)
 	defer db.Close()
-	agentAttrs, err := MarshalProtoJSONs([]*commonpb.KeyValue{{Key: telemetryattrs.AgentIDAttr, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "worker"}}}})
+	agentAttrs, err := MarshalProtoList([]*commonpb.KeyValue{{Key: telemetryattrs.AgentIDAttr, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "worker"}}}})
 	require.NoError(t, err)
 	_, err = db.AppendSpans([]Span{
-		{TraceID: "t", SpanID: "loop", Attributes: []byte("[]")},
-		{TraceID: "t", SpanID: "work", Attributes: []byte("[]")},
+		{TraceID: "t", SpanID: "loop"},
+		{TraceID: "t", SpanID: "work"},
 		// The agent attributes may arrive on a later snapshot.
 		{TraceID: "t", SpanID: "loop", Attributes: agentAttrs},
 	})
