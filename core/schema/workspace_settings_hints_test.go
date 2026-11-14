@@ -54,8 +54,24 @@ func TestWorkspaceSettingHintTypeInfo(t *testing.T) {
 			configurable: true,
 		},
 		{
-			name:         "object list",
+			name:         "address backed object list",
 			typeDef:      listTypeDef(t, dag, objectTypeDef(t, dag, "Secret")),
+			configurable: true,
+		},
+		{
+			name:         "file object list",
+			typeDef:      listTypeDef(t, dag, objectTypeDef(t, dag, "File")),
+			configurable: true,
+			exampleValue: `["./file"]`,
+		},
+		{
+			name:         "non address backed object list",
+			typeDef:      listTypeDef(t, dag, objectTypeDef(t, dag, "CacheVolume")),
+			configurable: false,
+		},
+		{
+			name:         "workspace object list",
+			typeDef:      listTypeDef(t, dag, objectTypeDef(t, dag, "Workspace")),
 			configurable: false,
 		},
 	}
@@ -91,6 +107,7 @@ func TestWriteSettingValueUsesSettingType(t *testing.T) {
 		{"string drops marking quotes", constructorArgHint{Name: "version", IsString: true}, `"1.27"`, "1.27"},
 		{"address keeps a number-looking value", constructorArgHint{Name: "version", IsObject: true}, "0123", "0123"},
 		{"list stores an array", constructorArgHint{Name: "version", IsList: true}, "1.20", []any{"1.20"}},
+		{"object list stores an array of addresses", constructorArgHint{Name: "files", IsList: true}, "builder:binary,frontend:assets", []any{"builder:binary", "frontend:assets"}},
 		{"int is typed from the value", constructorArgHint{Name: "version"}, "42", int64(42)},
 		{"float is typed from the value", constructorArgHint{Name: "version"}, "1.5", 1.5},
 		{"bool is typed from the value", constructorArgHint{Name: "version"}, "true", true},
@@ -126,12 +143,29 @@ func TestWorkspaceSettingHintIsString(t *testing.T) {
 		{"float", &core.TypeDef{Kind: core.TypeDefKindFloat}, false},
 		{"boolean", &core.TypeDef{Kind: core.TypeDefKindBoolean}, false},
 		{"string list", listTypeDef(t, dag, &core.TypeDef{Kind: core.TypeDefKindString}), false},
+		{"object list", listTypeDef(t, dag, objectTypeDef(t, dag, "Secret")), false},
 		{"address backed object", objectTypeDef(t, dag, "Secret"), false},
 	} {
 		hint, ok := buildHintFromArg(&core.FunctionArg{Name: "arg", TypeDef: objectResult(t, dag, "arg-"+tt.name, tt.typeDef)})
 		require.True(t, ok, tt.name)
 		require.Equal(t, tt.isString, hint.IsString, tt.name)
 	}
+}
+
+func TestWorkspaceSettingHintObjectList(t *testing.T) {
+	t.Parallel()
+
+	dag := workspaceSettingHintTypeTestDag(t)
+	hint, ok := buildHintFromArg(&core.FunctionArg{
+		Name:    "files",
+		TypeDef: objectResult(t, dag, "arg-files", listTypeDef(t, dag, objectTypeDef(t, dag, "File"))),
+	})
+	require.True(t, ok)
+	require.True(t, hint.IsList)
+	require.False(t, hint.IsString)
+	require.False(t, hint.IsObject)
+	require.Equal(t, "[]File", hint.TypeLabel)
+	require.Equal(t, `["./file"]`, hint.ExampleValue)
 }
 
 func workspaceSettingHintTypeTestDag(t *testing.T) *dagql.Server {
