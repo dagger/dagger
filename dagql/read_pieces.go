@@ -21,6 +21,11 @@ type readPieces struct {
 	// is when the current one began.
 	report func(time.Duration)
 	locked time.Time
+	// held is whether the read holds egraphMu: not between two pieces, so
+	// that done, deferred by the read, lets go only of a hold it has, even
+	// when the read ends there, as a test's failed check in
+	// testReadPieceYielded ends its goroutine.
+	held bool
 }
 
 // readInPieces takes egraphMu for reading, for a read in pieces: step after
@@ -31,7 +36,7 @@ func (c *Cache) readInPieces() *readPieces {
 		size = readPieceSteps
 	}
 	c.egraphMu.RLock()
-	return &readPieces{c: c, size: size, locked: time.Now()}
+	return &readPieces{c: c, size: size, locked: time.Now(), held: true}
 }
 
 // step counts a step of the read and, after each piece's last, lets egraphMu
@@ -48,6 +53,7 @@ func (r *readPieces) step() bool {
 		r.c.testReadPieceYielded()
 	}
 	r.c.egraphMu.RLock()
+	r.held = true
 	r.locked = time.Now()
 	return true
 }
@@ -62,13 +68,16 @@ func (r *readPieces) yields() int {
 	return r.steps / r.size
 }
 
-// done ends the read, letting egraphMu go.
+// done ends the read, letting egraphMu go if it holds it.
 func (r *readPieces) done() {
-	r.release()
+	if r.held {
+		r.release()
+	}
 }
 
 func (r *readPieces) release() {
 	hold := time.Since(r.locked)
+	r.held = false
 	r.c.egraphMu.RUnlock()
 	if r.report != nil {
 		r.report(hold)
