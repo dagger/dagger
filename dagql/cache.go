@@ -2559,6 +2559,9 @@ type Cache struct {
 	testStoredSizeMeasure        func()
 	testStoredSizesHold          func(time.Duration)
 	testStoredTransferNormalized func()
+	// testCallTermsBuilt runs each time an entry's kept calls are grouped
+	// by term (keptCallTermsLocked).
+	testCallTermsBuilt func()
 	// testStoredBodies runs after the body worker installs a batch, with the
 	// number of entries it read.
 	testStoredBodies func(int)
