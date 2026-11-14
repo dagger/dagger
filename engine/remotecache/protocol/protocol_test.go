@@ -84,7 +84,7 @@ func TestMessagesRoundTrip(t *testing.T) {
 		{TypeRestore, Restore{Sets: []RestoreSet{{Check: "test-base", Head: &SetFile{Digest: digest.FromString("head"), Size: 712, Address: dagql.BlobAddress{URL: "https://blobs/head"}, Table: AddressTable{Blobs: map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs/get", ExpiresAtUnix: 1790007200}}, Packs: map[digest.Digest]dagql.BlobAddress{digest.FromString("pack"): {URL: "https://blobs/pack"}}}}}}}, func() any { return &Restore{} }},
 		{TypeRestore, Restore{Sets: []RestoreSet{{Check: "test-base", Whole: &SetFile{Digest: digest.FromString("whole"), Size: 23_300_000, Address: dagql.BlobAddress{URL: "https://blobs/whole"}, Table: AddressTable{}}}}}, func() any { return &Restore{} }},
 		{TypeRestored, Restored{Generation: 2, EngineTime: 1790000000123456789, Files: []RestoredFile{
-			{Digest: digest.FromString("head"), Complete: true, Parts: 2, Records: 12212, Rows: RowCounts{Kept: 4745, Created: 7467}, FirstCommit: 1790000000023456789},
+			{Digest: digest.FromString("head"), Complete: true, Parts: 2, Records: 12212, Rows: RowCounts{Kept: 4745, Created: 7467}, FirstCommit: 1790000000023456789, Entries: EntryNumbers{40, 41, 0, 12}},
 			{Digest: digest.FromString("whole"), Parts: 0, Error: "unsupported value bundle version 9"},
 			{Digest: digest.FromString("again"), Complete: true, Already: true},
 		}}, func() any { return &Restored{} }},
