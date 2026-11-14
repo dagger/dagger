@@ -2,6 +2,9 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -113,7 +116,7 @@ func TestPreparedMergeCommitsTheSameWithoutItsRecordCopies(t *testing.T) {
 						require.True(t, reply.Committed)
 						replies = append(replies, MergeReply{Values: reply.Values, Roots: reply.Roots, Stale: reply.Stale, Rows: reply.Rows})
 					}
-					return replies, mergeTestState(t, c)
+					return replies, mergeTestWholeState(t, c)
 				}
 				keptReplies, keptState := merge(true)
 				droppedReplies, droppedState := merge(false)
@@ -125,14 +128,19 @@ func TestPreparedMergeCommitsTheSameWithoutItsRecordCopies(t *testing.T) {
 	}
 }
 
-// A caller that keeps no light record's input, the Cloud's or an engine's
-// with none, may let its input go once PrepareValueMerge returns: the commit
-// is the same, reply and entries record for record, as when the caller keeps
-// it, even with every byte of the input's payloads overwritten.
+// A caller whose preparation keeps no light record's input, the Cloud's or
+// an engine's with none, may let its input go once PrepareValueMerge
+// returns: the commit is the same, reply and entries record for record, as
+// when the caller keeps it, even with every byte of the input's payloads
+// overwritten. On an engine the moved stream's child is kept, a light
+// record, so the engine merges the offered stream alone.
 func TestPreparedMergeCommitsTheSameWithItsInputLetGo(t *testing.T) {
 	t.Parallel()
 	for cacheName, newCache := range mergeTestDropCaches {
 		for streamName, bundles := range mergeTestDropStreams(t) {
+			if cacheName == "engine" && streamName == "moved" {
+				continue
+			}
 			t.Run(cacheName+"/"+streamName, func(t *testing.T) {
 				t.Parallel()
 				merge := func(letGo bool) ([]MergeReply, []string) {
@@ -155,7 +163,7 @@ func TestPreparedMergeCommitsTheSameWithItsInputLetGo(t *testing.T) {
 						require.True(t, reply.Committed)
 						replies = append(replies, MergeReply{Values: reply.Values, Roots: reply.Roots, Stale: reply.Stale, Rows: reply.Rows})
 					}
-					return replies, mergeTestState(t, c)
+					return replies, mergeTestWholeState(t, c)
 				}
 				keptReplies, keptState := merge(false)
 				goneReplies, goneState := merge(true)
@@ -178,4 +186,33 @@ func mergeTestOverwritePayloads(env *PersistedResultEnvelope) {
 	for i := range env.Items {
 		mergeTestOverwritePayloads(&env.Items[i])
 	}
+}
+
+// mergeTestWholeState is a cache's entries as merge leaves them, however
+// each holds its record: each entry's number, dependencies, call frame and
+// whole envelope, decoded when held compressed (the Cloud's stored bodies),
+// in number order.
+func mergeTestWholeState(t *testing.T, c *Cache) []string {
+	t.Helper()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	var out []string
+	for id, res := range c.resultsByID {
+		var deps []uint64
+		for dep := range res.deps {
+			deps = append(deps, uint64(dep))
+		}
+		slices.Sort(deps)
+		frame, err := res.entryFrameLocked().decode()
+		require.NoError(t, err)
+		call, err := json.Marshal(frame)
+		require.NoError(t, err)
+		env, err := res.loadPayloadState().wholeEnvelope(uint64(id))
+		require.NoError(t, err)
+		envelope, err := json.Marshal(env)
+		require.NoError(t, err)
+		out = append(out, fmt.Sprintf("%d deps=%v call=%s envelope=%s", id, deps, call, envelope))
+	}
+	slices.Sort(out)
+	return out
 }
