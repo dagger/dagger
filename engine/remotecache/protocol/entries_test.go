@@ -1,7 +1,9 @@
 package protocol
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -55,15 +57,13 @@ func TestCompletePartsRoundTrip(t *testing.T) {
 	exec := dagql.PersistedPartAddress{Part: "execMeta"}
 	nested := dagql.PersistedPartAddress{OutputPath: dagql.PersistedRefPath{}.Field("rootfs"), Part: "fs"}
 	parts := [][]dagql.PersistedPartAddress{nil, {meta, exec}, nil, nil, {meta}, {nested, meta}, nil}
-	table, packed, err := PackCompleteParts(parts)
-	require.NoError(t, err)
+	table, packed := PackCompleteParts(parts)
 	require.Len(t, table, 3, "each distinct address once")
 	got, err := UnpackCompleteParts(table, packed)
 	require.NoError(t, err)
 	require.Equal(t, map[int][]dagql.PersistedPartAddress{1: {meta, exec}, 4: {meta}, 5: {nested, meta}}, got)
 
-	table, packed, err = PackCompleteParts(make([][]dagql.PersistedPartAddress, 5))
-	require.NoError(t, err)
+	table, packed = PackCompleteParts(make([][]dagql.PersistedPartAddress, 5))
 	require.Empty(t, table)
 	require.Empty(t, packed, "no complete part takes no bytes")
 	got, err = UnpackCompleteParts(table, packed)
@@ -80,4 +80,7 @@ func TestCompletePartsRefusesAMalformedList(t *testing.T) {
 	require.Error(t, err, "index 1 of a table of 1")
 	_, err = UnpackCompleteParts(table, []byte{0, 2, 0})
 	require.Error(t, err, "two parts announced, one given")
+	huge := binary.AppendUvarint([]byte{0}, math.MaxUint64)
+	_, err = UnpackCompleteParts(table, huge)
+	require.Error(t, err, "a count larger than what follows is refused before anything is made for it")
 }
