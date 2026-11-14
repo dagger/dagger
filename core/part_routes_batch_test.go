@@ -9,7 +9,7 @@ import (
 )
 
 // Routing a payload's parts together decodes it once, and gives each part
-// exactly the route and error routing it alone gives.
+// exactly the route and error routing it alone gives, without the write set.
 func TestRouteEachPartRoutesAsRoutePartsDoes(t *testing.T) {
 	t.Parallel()
 	payload := func(lazyJSON string, consumed bool) json.RawMessage {
@@ -54,6 +54,7 @@ func TestRouteEachPartRoutesAsRoutePartsDoes(t *testing.T) {
 		require.Len(t, errs, len(parts))
 		for i, part := range parts {
 			want, wantErr := family.RouteParts(v, part)
+			want.WriteSet = nil
 			require.Equal(t, want, routes[i], "%s %s", tc.field, part)
 			if wantErr == nil {
 				require.NoError(t, errs[i], "%s %s", tc.field, part)
@@ -66,4 +67,27 @@ func TestRouteEachPartRoutesAsRoutePartsDoes(t *testing.T) {
 	for _, err := range errs {
 		require.Error(t, err, "an undecodable payload fails every part")
 	}
+}
+
+// Routing all of a container's parts together decodes its payload once and
+// routes each part without reading every other: four times the mounts must
+// allocate well under sixteen times as much, as routing each part on its own
+// decode would.
+func TestRouteEachPartScalesWithMounts(t *testing.T) {
+	allocs := func(n int) float64 {
+		v := probeTestMountedFile(n).visit(t)
+		outputs, err := foreignFamilyCodec("Container").MapSnapshotParts(v)
+		require.NoError(t, err)
+		parts := make([]dagql.PartKey, len(outputs))
+		for i, out := range outputs {
+			parts[i] = out.Address.Part
+		}
+		return testing.AllocsPerRun(3, func() {
+			if _, errs := foreignFamilyCodec("Container").RouteEachPart(v, parts); errs[0] != nil {
+				panic(errs[0])
+			}
+		})
+	}
+	small, large := allocs(50), allocs(200)
+	require.Less(t, large, 6*small, "routing 200 mounts allocated %.0f times, 50 mounts %.0f times", large, small)
 }
