@@ -218,3 +218,100 @@ func TestNoLockLookupCacheInputs(t *testing.T) {
 		})
 	}
 }
+
+// A model-written query (a DangEval snippet's) selects every core lookup
+// that takes noLock with noLock: true, unless it passes noLock itself. Other
+// fields, and a module function's own noLock argument, are left alone.
+func TestLiveLookupSelectionArgs(t *testing.T) {
+	ctx := t.Context()
+	server := &currentTypeDefsTestServer{}
+	base, err := NewCoreSchemaBase(ctx, server)
+	require.NoError(t, err)
+	const view = call.View("v1.0.0")
+	srv, err := base.Fork(ctx, core.NewRoot(server), view)
+	require.NoError(t, err)
+
+	// Every core field taking noLock, so a lookup that gains it can't be
+	// missed. Fields without noLock (moduleSource's refString) are module
+	// loads, which keep the lock.
+	var lookups []string
+	for typeName, def := range srv.Schema().Types {
+		class, ok := srv.ObjectType(typeName)
+		if !ok {
+			continue
+		}
+		for _, field := range def.Fields {
+			spec, ok := class.FieldSpec(field.Name, view)
+			if !ok {
+				continue
+			}
+			if _, ok := spec.Args.Input(noLockArgName, view); ok {
+				lookups = append(lookups, typeName+"."+field.Name)
+			}
+		}
+	}
+	require.ElementsMatch(t, []string{
+		"Address.container",
+		"Address.directory",
+		"Address.file",
+		"Address.gitRef",
+		"Container.from",
+		"GitRepository.branch",
+		"GitRepository.head",
+		"GitRepository.latest",
+		"GitRepository.ref",
+		"GitRepository.tag",
+	}, lookups)
+
+	specOf := func(t *testing.T, typeName, field string) *dagql.FieldSpec {
+		t.Helper()
+		class, ok := srv.ObjectType(typeName)
+		require.True(t, ok)
+		spec, ok := class.FieldSpec(field, view)
+		require.True(t, ok)
+		return &spec
+	}
+	noLockOf := func(args []dagql.NamedInput) dagql.Input {
+		for _, arg := range args {
+			if arg.Name == noLockArgName {
+				// An optional argument decodes as a query's value does.
+				if opt, ok := arg.Value.(dagql.DynamicOptional); ok && opt.Valid {
+					return opt.Value
+				}
+				return arg.Value
+			}
+		}
+		return nil
+	}
+
+	for _, lookup := range lookups {
+		typeName, field, _ := strings.Cut(lookup, ".")
+		t.Run(lookup, func(t *testing.T) {
+			spec := specOf(t, typeName, field)
+			name := []dagql.NamedInput{{Name: "name", Value: dagql.String("main")}}
+			args := liveLookupSelectionArgs(ctx, spec, view, name)
+			require.Equal(t, dagql.Boolean(true), noLockOf(args))
+			require.Equal(t, name[0], args[0], "the query's own arguments are kept")
+
+			explicit := []dagql.NamedInput{{Name: noLockArgName, Value: dagql.Boolean(false)}}
+			require.Equal(t, explicit, liveLookupSelectionArgs(ctx, spec, view, explicit),
+				"a query passing noLock keeps its value")
+		})
+	}
+
+	t.Run("other fields", func(t *testing.T) {
+		require.Empty(t, liveLookupSelectionArgs(ctx, specOf(t, "Container", "withExec"), view, nil))
+	})
+
+	t.Run("module function", func(t *testing.T) {
+		spec := *specOf(t, "Container", "from")
+		spec.Module = &dagql.ResultCallModule{Name: "mod"}
+		require.Nil(t, noLockOf(liveLookupSelectionArgs(ctx, &spec, view, nil)),
+			"a module function's noLock argument is the module's")
+	})
+
+	t.Run("older view", func(t *testing.T) {
+		require.Nil(t, noLockOf(liveLookupSelectionArgs(ctx, specOf(t, "Container", "from"), "v1.0.0-beta.14", nil)),
+			"a view without noLock isn't given it")
+	})
+}
