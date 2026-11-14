@@ -182,12 +182,6 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 					ThoughtSignature: decodeThoughtSignature(block.Signature),
 				})
 			case LLMContentToolCall:
-				var args map[string]any
-				if len(block.Arguments) > 0 {
-					if err := json.Unmarshal(block.Arguments.Bytes(), &args); err != nil {
-						return nil, nil, err
-					}
-				}
 				part := &genai.Part{
 					FunctionCall: &genai.FunctionCall{
 						// Reuse the CallID as the function-call ID so its result
@@ -195,7 +189,7 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 						// unambiguously, even for parallel calls to the same tool.
 						ID:   block.CallID,
 						Name: block.ToolName,
-						Args: args,
+						Args: toolCallInput(block.Arguments),
 					},
 				}
 				// Gemini attaches a thought signature to the function-call part
