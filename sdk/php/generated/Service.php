@@ -57,7 +57,7 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
     public function ports(?bool $declared = false): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ports');
-        if (null !== $declared) {
+        if (true === $declared) {
         $leafQueryBuilder->setArgument('declared', $declared);
         }
         return (array)$this->queryLeaf($leafQueryBuilder, 'ports');
@@ -103,7 +103,7 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
         if (null !== $ports) {
         $leafQueryBuilder->setArgument('ports', $ports);
         }
-        if (null !== $random) {
+        if (true === $random) {
         $leafQueryBuilder->setArgument('random', $random);
         }
         $this->queryLeaf($leafQueryBuilder, 'up');
@@ -115,7 +115,7 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
     public function stop(?bool $kill = false): Service
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stop');
-        if (null !== $kill) {
+        if (true === $kill) {
         $leafQueryBuilder->setArgument('kill', $kill);
         }
         $id = $this->queryLeaf($leafQueryBuilder, 'stop');

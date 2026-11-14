@@ -28,7 +28,7 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     public function sync(?bool $keyByContent = false): File
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        if (null !== $keyByContent) {
+        if (true === $keyByContent) {
         $leafQueryBuilder->setArgument('keyByContent', $keyByContent);
         }
         $id = $this->queryLeaf($leafQueryBuilder, 'sync');
@@ -88,7 +88,7 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     public function digest(?bool $excludeMetadata = false): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('digest');
-        if (null !== $excludeMetadata) {
+        if (true === $excludeMetadata) {
         $leafQueryBuilder->setArgument('excludeMetadata', $excludeMetadata);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'digest');
@@ -124,25 +124,25 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     ): array {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
         $leafQueryBuilder->setArgument('pattern', $pattern);
-        if (null !== $literal) {
+        if (true === $literal) {
         $leafQueryBuilder->setArgument('literal', $literal);
         }
-        if (null !== $multiline) {
+        if (true === $multiline) {
         $leafQueryBuilder->setArgument('multiline', $multiline);
         }
-        if (null !== $dotall) {
+        if (true === $dotall) {
         $leafQueryBuilder->setArgument('dotall', $dotall);
         }
-        if (null !== $insensitive) {
+        if (true === $insensitive) {
         $leafQueryBuilder->setArgument('insensitive', $insensitive);
         }
-        if (null !== $skipIgnored) {
+        if (true === $skipIgnored) {
         $leafQueryBuilder->setArgument('skipIgnored', $skipIgnored);
         }
-        if (null !== $skipHidden) {
+        if (true === $skipHidden) {
         $leafQueryBuilder->setArgument('skipHidden', $skipHidden);
         }
-        if (null !== $filesOnly) {
+        if (true === $filesOnly) {
         $leafQueryBuilder->setArgument('filesOnly', $filesOnly);
         }
         if (null !== $limit) {
@@ -177,7 +177,7 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReplaced');
         $innerQueryBuilder->setArgument('search', $search);
         $innerQueryBuilder->setArgument('replacement', $replacement);
-        if (null !== $all) {
+        if (true === $all) {
         $innerQueryBuilder->setArgument('all', $all);
         }
         if (null !== $firstFrom) {
@@ -193,7 +193,7 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
-        if (null !== $allowParentDirPath) {
+        if (true === $allowParentDirPath) {
         $leafQueryBuilder->setArgument('allowParentDirPath', $allowParentDirPath);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'export');

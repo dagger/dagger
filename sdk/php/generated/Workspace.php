@@ -132,7 +132,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $authorEmail) {
         $innerQueryBuilder->setArgument('authorEmail', $authorEmail);
         }
-        if (null !== $signoff) {
+        if (true === $signoff) {
         $innerQueryBuilder->setArgument('signoff', $signoff);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -151,7 +151,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReset');
         $innerQueryBuilder->setArgument('commit', $commit);
-        if (null !== $hard) {
+        if (true === $hard) {
         $innerQueryBuilder->setArgument('hard', $hard);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -236,7 +236,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        if (null !== $gitignore) {
+        if (true === $gitignore) {
         $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -294,25 +294,25 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $globs) {
         $leafQueryBuilder->setArgument('globs', $globs);
         }
-        if (null !== $literal) {
+        if (true === $literal) {
         $leafQueryBuilder->setArgument('literal', $literal);
         }
-        if (null !== $multiline) {
+        if (true === $multiline) {
         $leafQueryBuilder->setArgument('multiline', $multiline);
         }
-        if (null !== $dotall) {
+        if (true === $dotall) {
         $leafQueryBuilder->setArgument('dotall', $dotall);
         }
-        if (null !== $insensitive) {
+        if (true === $insensitive) {
         $leafQueryBuilder->setArgument('insensitive', $insensitive);
         }
-        if (null !== $skipIgnored) {
+        if (true === $skipIgnored) {
         $leafQueryBuilder->setArgument('skipIgnored', $skipIgnored);
         }
-        if (null !== $skipHidden) {
+        if (true === $skipHidden) {
         $leafQueryBuilder->setArgument('skipHidden', $skipHidden);
         }
-        if (null !== $filesOnly) {
+        if (true === $filesOnly) {
         $leafQueryBuilder->setArgument('filesOnly', $filesOnly);
         }
         if (null !== $limit) {
@@ -538,7 +538,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $name) {
         $innerQueryBuilder->setArgument('name', $name);
         }
-        if (null !== $here) {
+        if (true === $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -553,7 +553,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutModule');
         $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $here) {
+        if (true === $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -569,7 +569,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $name) {
         $innerQueryBuilder->setArgument('name', $name);
         }
-        if (null !== $here) {
+        if (true === $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
         if (null !== $asSdkName) {
@@ -585,7 +585,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSdk');
         $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $here) {
+        if (true === $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -726,7 +726,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $modules) {
         $innerQueryBuilder->setArgument('modules', $modules);
         }
-        if (null !== $all) {
+        if (true === $all) {
         $innerQueryBuilder->setArgument('all', $all);
         }
         if (null !== $sdk) {
@@ -748,7 +748,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $values) {
         $innerQueryBuilder->setArgument('values', $values);
         }
-        if (null !== $here) {
+        if (true === $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -765,7 +765,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutConfigValue');
         $innerQueryBuilder->setArgument('key', $key);
-        if (null !== $here) {
+        if (true === $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -778,7 +778,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConfigEnv');
         $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $here) {
+        if (true === $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -791,7 +791,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutConfigEnv');
         $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $here) {
+        if (true === $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -805,7 +805,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     public function withUpdatedLock(?bool $noGenerate = false): Workspace
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdatedLock');
-        if (null !== $noGenerate) {
+        if (true === $noGenerate) {
         $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
         }
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -900,7 +900,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $key) {
         $leafQueryBuilder->setArgument('key', $key);
         }
-        if (null !== $effective) {
+        if (true === $effective) {
         $leafQueryBuilder->setArgument('effective', $effective);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'configRead');

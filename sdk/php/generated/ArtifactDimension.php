@@ -38,7 +38,7 @@ class ArtifactDimension extends Client\AbstractObject implements Client\IdAble, 
     }
 
     /**
-     * Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+     * Collection schema type name, module, name, or a legacy selector identifier.
      */
     public function identifier(): string
     {

@@ -223,13 +223,13 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         if (null !== $cacheKey) {
         $innerQueryBuilder->setArgument('cacheKey', $cacheKey);
         }
-        if (null !== $insecureSkipHostKeyCheck) {
+        if (true === $insecureSkipHostKeyCheck) {
         $innerQueryBuilder->setArgument('insecureSkipHostKeyCheck', $insecureSkipHostKeyCheck);
         }
         if (null !== $experimentalServiceHost) {
         $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
         }
-        if (null !== $followSymlinks) {
+        if (true === $followSymlinks) {
         $innerQueryBuilder->setArgument('followSymlinks', $followSymlinks);
         }
         return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -329,10 +329,10 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         if (null !== $refPin) {
         $innerQueryBuilder->setArgument('refPin', $refPin);
         }
-        if (null !== $disableFindUp) {
+        if (true === $disableFindUp) {
         $innerQueryBuilder->setArgument('disableFindUp', $disableFindUp);
         }
-        if (null !== $allowNotExists) {
+        if (true === $allowNotExists) {
         $innerQueryBuilder->setArgument('allowNotExists', $allowNotExists);
         }
         if (null !== $requireKind) {
@@ -407,7 +407,7 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     public function currentTypeDefs(?bool $returnAllTypes = false, ?bool $hideCore = null): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentTypeDefs');
-        if (null !== $returnAllTypes) {
+        if (true === $returnAllTypes) {
         $leafQueryBuilder->setArgument('returnAllTypes', $returnAllTypes);
         }
         if (null !== $hideCore) {

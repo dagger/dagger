@@ -28,7 +28,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     public function head(?bool $noLock = false): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('head');
-        if (null !== $noLock) {
+        if (true === $noLock) {
         $innerQueryBuilder->setArgument('noLock', $noLock);
         }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -41,7 +41,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
         $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $noLock) {
+        if (true === $noLock) {
         $innerQueryBuilder->setArgument('noLock', $noLock);
         }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -54,7 +54,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('branch');
         $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $noLock) {
+        if (true === $noLock) {
         $innerQueryBuilder->setArgument('noLock', $noLock);
         }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -67,7 +67,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tag');
         $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $noLock) {
+        if (true === $noLock) {
         $innerQueryBuilder->setArgument('noLock', $noLock);
         }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -94,7 +94,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $version) {
         $innerQueryBuilder->setArgument('version', $version);
         }
-        if (null !== $noLock) {
+        if (true === $noLock) {
         $innerQueryBuilder->setArgument('noLock', $noLock);
         }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));

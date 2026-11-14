@@ -492,7 +492,10 @@ class NewCodegenVisitor extends CodeWriter
     {
         foreach ($args as $arg) {
             if (!$arg->isRequired()) {
-                $method->addBody('if (null !== $?) {', [$arg->name]);
+                $comparison = $this->unwrapNonNull($arg->type)->name === 'Boolean' && $arg->defaultValue === 'false'
+                    ? 'true ==='
+                    : 'null !==';
+                $method->addBody('if (' . $comparison . ' $?) {', [$arg->name]);
             }
             $method->addBody('$?->setArgument(?, $?);', [$targetVar, $arg->name, $arg->name]);
             if (!$arg->isRequired()) {

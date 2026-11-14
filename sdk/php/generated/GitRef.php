@@ -75,13 +75,13 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
     public function tree(?bool $discardGitDir = false, ?int $depth = 1, ?bool $includeTags = false): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tree');
-        if (null !== $discardGitDir) {
+        if (true === $discardGitDir) {
         $innerQueryBuilder->setArgument('discardGitDir', $discardGitDir);
         }
         if (null !== $depth) {
         $innerQueryBuilder->setArgument('depth', $depth);
         }
-        if (null !== $includeTags) {
+        if (true === $includeTags) {
         $innerQueryBuilder->setArgument('includeTags', $includeTags);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -188,10 +188,10 @@ class GitRef extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $committerDate) {
         $innerQueryBuilder->setArgument('committerDate', $committerDate);
         }
-        if (null !== $allowEmpty) {
+        if (true === $allowEmpty) {
         $innerQueryBuilder->setArgument('allowEmpty', $allowEmpty);
         }
-        if (null !== $signoff) {
+        if (true === $signoff) {
         $innerQueryBuilder->setArgument('signoff', $signoff);
         }
         return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));

@@ -47,7 +47,7 @@ class EngineCache extends Client\AbstractObject implements Client\IdAble, Node
         ?int $targetEstimatedBytes = null,
     ): void {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('prune');
-        if (null !== $useDefaultPolicy) {
+        if (true === $useDefaultPolicy) {
         $leafQueryBuilder->setArgument('useDefaultPolicy', $useDefaultPolicy);
         }
         if (null !== $maxUsedSpace) {

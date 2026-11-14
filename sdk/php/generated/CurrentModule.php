@@ -106,7 +106,7 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        if (null !== $gitignore) {
+        if (true === $gitignore) {
         $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
