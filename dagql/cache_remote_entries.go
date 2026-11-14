@@ -1871,6 +1871,26 @@ func (c *Cache) holderEntryLocked(key HolderKey) (uint64, bool) {
 	return uint64(entry.id), true
 }
 
+// EntryRecipe returns a recipe that names the entry numbered number in the
+// cache's recipe index: one an engine's holding of the entry attaches by
+// (RemoteHolding.Recipe), as when the Cloud learns that an engine holds an
+// entry other than by the engine's own call span. It reports false when the
+// cache has no such entry, or no recipe names it.
+func (c *Cache) EntryRecipe(number uint64) (digest.Digest, bool) {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.entryRecipeLocked(number)
+}
+
+// entryRecipeLocked is EntryRecipe's answer. Requires egraphMu.
+func (c *Cache) entryRecipeLocked(number uint64) (digest.Digest, bool) {
+	entry := c.resultsByID[sharedResultID(number)]
+	if entry == nil || len(entry.recipeKeys) == 0 {
+		return "", false
+	}
+	return entry.recipeKeys[0], true
+}
+
 // EntryClass is an entry's own facts, as RemoteEntryInfo reports them, and
 // the entries of its classes, itself among them, without any holding.
 type EntryClass struct {
