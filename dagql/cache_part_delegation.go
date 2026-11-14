@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -231,20 +232,42 @@ func (c *Cache) demandDelegatedParent(ctx context.Context, pending *PartSourceLe
 
 // Restore marks only validated pending mappings for foreground acquisition.
 // Boot/decoding performs no parent load, body, provider or snapshot operation.
+// Each payload's pending parts are routed together, so a payload is decoded
+// once, not once per part: a container with n pending mounts would otherwise
+// decode its record n times each time it's decoded.
 func markRestoredPartDelegation(row *sharedResult, envelope PersistedResultEnvelope, frame *ResultCall, links []PersistedSnapshotRefLink) {
-	record := PersistedRecord{Envelope: envelope, Call: frame, SnapshotLinks: links}
-	outputs, err := mapTransferredOutputs(record)
-	if err != nil {
+	if _, err := mapTransferredOutputs(PersistedRecord{Envelope: envelope, Call: frame, SnapshotLinks: links}); err != nil {
 		return
 	}
-	for _, output := range outputs {
-		if output.State != "pending" {
-			continue
+	found := false
+	_ = walkTransferPayloads(&envelope, frame, links, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+		if found || f.Transfer == nil {
+			return v.Payload, nil
 		}
-		route, err := routePartRecord(record, output.Address)
-		if err == nil && route.Delegation != nil {
-			row.partGate.restoredDelegation.Store(true)
-			return
+		mapped, err := f.Transfer.MapSnapshotParts(v)
+		if err != nil {
+			return v.Payload, nil
 		}
+		var pending []PartKey
+		for _, output := range mapped {
+			if output.State == "pending" && slices.Equal(output.Address.OutputPath, v.Path) {
+				pending = append(pending, output.Address.Part)
+			}
+		}
+		router, ok := f.Transfer.(PersistedPartRouter)
+		if len(pending) == 0 || !ok {
+			return v.Payload, nil
+		}
+		routes, errs := routeEachPart(router, v, pending)
+		for i := range routes {
+			if errs[i] == nil && routes[i].Delegation != nil {
+				found = true
+				break
+			}
+		}
+		return v.Payload, nil
+	})
+	if found {
+		row.partGate.restoredDelegation.Store(true)
 	}
 }
