@@ -21,10 +21,10 @@ type Asker {
   }
 
   """
-  Ask for some text.
+  Ask for some text, answered with otherwise when nobody can be asked.
   """
-  text(message: String!, key: String = null): String! {
-    prompt(message: message, key: key).string
+  text(message: String!, key: String = null, otherwise: String = null): String! {
+    prompt(message: message, key: key).string(default: otherwise)
   }
 
   """

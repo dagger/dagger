@@ -37,7 +37,7 @@ func (s *promptSchema) Install(srv *dagql.Server) {
 			Doc(`Ask for a yes or no answer.`).
 			Args(
 				dagql.Arg("default").Doc(
-					`The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.`,
+					`The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive).`,
 				),
 			),
 		dagql.NodeFunc("string", s.string).
@@ -45,7 +45,7 @@ func (s *promptSchema) Install(srv *dagql.Server) {
 			Doc(`Ask for a text answer.`).
 			Args(
 				dagql.Arg("default").Doc(
-					`The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.`,
+					`The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one (or with an empty one), that is an error.`,
 				),
 				dagql.Arg("multiline").Doc(`Accept several lines.`),
 			),
@@ -99,18 +99,20 @@ func notAsked(err error) error {
 }
 
 type promptBooleanArgs struct {
-	Default dagql.Optional[dagql.Boolean]
+	Default bool `default:"false"`
 }
 
 func (s *promptSchema) boolean(ctx context.Context, parent dagql.ObjectResult[*core.Prompt], args promptBooleanArgs) (dagql.Boolean, error) {
 	answer, err := ask(ctx, parent.Self(), &core.PromptRequest{
-		Boolean: &core.PromptBoolean{Default: args.Default.Valid && args.Default.Value.Bool()},
+		Boolean: &core.PromptBoolean{Default: args.Default},
 	})
 	if err != nil {
-		if errors.Is(err, core.ErrPromptNotInteractive) && args.Default.Valid {
-			return args.Default.Value, nil
+		if errors.Is(err, core.ErrPromptNotInteractive) {
+			// A yes/no question always has an answer to fall back to: no,
+			// unless the caller says otherwise.
+			return dagql.NewBoolean(args.Default), nil
 		}
-		return false, notAsked(err)
+		return false, err
 	}
 	return dagql.NewBoolean(answer.Boolean), nil
 }
@@ -127,8 +129,10 @@ func (s *promptSchema) string(ctx context.Context, parent dagql.ObjectResult[*co
 	}
 	answer, err := ask(ctx, parent.Self(), &core.PromptRequest{Text: text})
 	if err != nil {
-		if errors.Is(err, core.ErrPromptNotInteractive) && args.Default.Valid {
-			return args.Default.Value, nil
+		// An empty default is no default: some SDKs cannot tell the two
+		// apart, so neither does the engine.
+		if errors.Is(err, core.ErrPromptNotInteractive) && text.Default != "" {
+			return dagql.NewString(text.Default), nil
 		}
 		return "", notAsked(err)
 	}
