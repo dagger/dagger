@@ -51,7 +51,7 @@ func init() {
 
 const (
 	modelDefaultAnthropic  = anthropic.ModelClaudeSonnet4_6
-	modelDefaultGoogle     = "gemini-2.5-flash"
+	modelDefaultGoogle     = "gemini-3.8-flash"
 	modelDefaultOpenAI     = "gpt-4.1"
 	modelDefaultCodex      = "gpt-5.5"
 	modelDefaultOpenRouter = "anthropic/claude-sonnet-4.6"
