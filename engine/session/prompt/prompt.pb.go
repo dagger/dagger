@@ -4,6 +4,7 @@
 package prompt
 
 import (
+	bytes "bytes"
 	context "context"
 	fmt "fmt"
 	proto "github.com/gogo/protobuf/proto"
@@ -552,6 +553,11 @@ type ApprovalRequest struct {
 	// literal text: frontends that render the requester and the grant choices
 	// themselves show this instead of prompt, which also names who asks
 	Question string `protobuf:"bytes,9,opt,name=question,proto3" json:"question,omitempty"`
+	// keys an older client may have remembered an equivalent forever grant
+	// under (e.g. "allow_llm:<module>"): if the client remembers any of them,
+	// it answers APPROVAL_ALLOW_FOREVER without prompting. Never remembered
+	// anew: a new forever grant goes under persistent_key.
+	LegacyPersistentKeys []string `protobuf:"bytes,10,rep,name=legacy_persistent_keys,json=legacyPersistentKeys,proto3" json:"legacy_persistent_keys,omitempty"`
 }
 
 func (m *ApprovalRequest) Reset()      { *m = ApprovalRequest{} }
@@ -649,6 +655,13 @@ func (m *ApprovalRequest) GetQuestion() string {
 	return ""
 }
 
+func (m *ApprovalRequest) GetLegacyPersistentKeys() []string {
+	if m != nil {
+		return m.LegacyPersistentKeys
+	}
+	return nil
+}
+
 type ApprovalResponse struct {
 	Decision ApprovalDecision `protobuf:"varint,1,opt,name=decision,proto3,enum=dagger.prompt.ApprovalDecision" json:"decision,omitempty"`
 }
@@ -692,6 +705,494 @@ func (m *ApprovalResponse) GetDecision() ApprovalDecision {
 	return APPROVAL_DENY
 }
 
+// AskRequest asks the user a question on behalf of the engine or a module:
+// a yes/no answer, some text, a choice, or a secret. Like an approval, it
+// names who asks (resolved by the engine) and the call that asks, so a
+// frontend can show it where that call is rendered.
+type AskRequest struct {
+	// what is asked, e.g. "llm-help", "workspace-checkpoint". Frontends may
+	// style by kind.
+	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	// a (very) brief title, as literal (already escaped) text; may be empty
+	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	// the message, as Markdown whose terminal control characters the engine
+	// already escaped. It never names who asks: frontends render requester.
+	Message   string             `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Requester *ApprovalRequester `protobuf:"bytes,4,opt,name=requester,proto3" json:"requester,omitempty"`
+	// the call that asks, so a frontend can show the question where that
+	// call is rendered
+	TraceId string `protobuf:"bytes,5,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	SpanId  string `protobuf:"bytes,6,opt,name=span_id,json=spanId,proto3" json:"span_id,omitempty"`
+	// if set, the client may remember the answer under this key and answer
+	// later requests with it without prompting. Never set for secrets.
+	PersistentKey string `protobuf:"bytes,7,opt,name=persistent_key,json=persistentKey,proto3" json:"persistent_key,omitempty"`
+	// the kind of answer wanted
+	//
+	// Types that are valid to be assigned to Input:
+	//	*AskRequest_Boolean
+	//	*AskRequest_Text
+	//	*AskRequest_Select
+	//	*AskRequest_Secret
+	Input isAskRequest_Input `protobuf_oneof:"input"`
+}
+
+func (m *AskRequest) Reset()      { *m = AskRequest{} }
+func (*AskRequest) ProtoMessage() {}
+func (*AskRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{10}
+}
+func (m *AskRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AskRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AskRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AskRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AskRequest.Merge(m, src)
+}
+func (m *AskRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *AskRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_AskRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AskRequest proto.InternalMessageInfo
+
+type isAskRequest_Input interface {
+	isAskRequest_Input()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type AskRequest_Boolean struct {
+	Boolean *AskBoolean `protobuf:"bytes,8,opt,name=boolean,proto3,oneof" json:"boolean,omitempty"`
+}
+type AskRequest_Text struct {
+	Text *AskText `protobuf:"bytes,9,opt,name=text,proto3,oneof" json:"text,omitempty"`
+}
+type AskRequest_Select struct {
+	Select *AskSelect `protobuf:"bytes,10,opt,name=select,proto3,oneof" json:"select,omitempty"`
+}
+type AskRequest_Secret struct {
+	Secret *AskSecret `protobuf:"bytes,11,opt,name=secret,proto3,oneof" json:"secret,omitempty"`
+}
+
+func (*AskRequest_Boolean) isAskRequest_Input() {}
+func (*AskRequest_Text) isAskRequest_Input()    {}
+func (*AskRequest_Select) isAskRequest_Input()  {}
+func (*AskRequest_Secret) isAskRequest_Input()  {}
+
+func (m *AskRequest) GetInput() isAskRequest_Input {
+	if m != nil {
+		return m.Input
+	}
+	return nil
+}
+
+func (m *AskRequest) GetKind() string {
+	if m != nil {
+		return m.Kind
+	}
+	return ""
+}
+
+func (m *AskRequest) GetTitle() string {
+	if m != nil {
+		return m.Title
+	}
+	return ""
+}
+
+func (m *AskRequest) GetMessage() string {
+	if m != nil {
+		return m.Message
+	}
+	return ""
+}
+
+func (m *AskRequest) GetRequester() *ApprovalRequester {
+	if m != nil {
+		return m.Requester
+	}
+	return nil
+}
+
+func (m *AskRequest) GetTraceId() string {
+	if m != nil {
+		return m.TraceId
+	}
+	return ""
+}
+
+func (m *AskRequest) GetSpanId() string {
+	if m != nil {
+		return m.SpanId
+	}
+	return ""
+}
+
+func (m *AskRequest) GetPersistentKey() string {
+	if m != nil {
+		return m.PersistentKey
+	}
+	return ""
+}
+
+func (m *AskRequest) GetBoolean() *AskBoolean {
+	if x, ok := m.GetInput().(*AskRequest_Boolean); ok {
+		return x.Boolean
+	}
+	return nil
+}
+
+func (m *AskRequest) GetText() *AskText {
+	if x, ok := m.GetInput().(*AskRequest_Text); ok {
+		return x.Text
+	}
+	return nil
+}
+
+func (m *AskRequest) GetSelect() *AskSelect {
+	if x, ok := m.GetInput().(*AskRequest_Select); ok {
+		return x.Select
+	}
+	return nil
+}
+
+func (m *AskRequest) GetSecret() *AskSecret {
+	if x, ok := m.GetInput().(*AskRequest_Secret); ok {
+		return x.Secret
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*AskRequest) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*AskRequest_Boolean)(nil),
+		(*AskRequest_Text)(nil),
+		(*AskRequest_Select)(nil),
+		(*AskRequest_Secret)(nil),
+	}
+}
+
+type AskBoolean struct {
+	// the answer preselected for the user
+	Default bool `protobuf:"varint,1,opt,name=default,proto3" json:"default,omitempty"`
+}
+
+func (m *AskBoolean) Reset()      { *m = AskBoolean{} }
+func (*AskBoolean) ProtoMessage() {}
+func (*AskBoolean) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{11}
+}
+func (m *AskBoolean) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AskBoolean) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AskBoolean.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AskBoolean) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AskBoolean.Merge(m, src)
+}
+func (m *AskBoolean) XXX_Size() int {
+	return m.Size()
+}
+func (m *AskBoolean) XXX_DiscardUnknown() {
+	xxx_messageInfo_AskBoolean.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AskBoolean proto.InternalMessageInfo
+
+func (m *AskBoolean) GetDefault() bool {
+	if m != nil {
+		return m.Default
+	}
+	return false
+}
+
+type AskText struct {
+	// the text the input starts with
+	Default string `protobuf:"bytes,1,opt,name=default,proto3" json:"default,omitempty"`
+	// accept several lines
+	Multiline bool `protobuf:"varint,2,opt,name=multiline,proto3" json:"multiline,omitempty"`
+}
+
+func (m *AskText) Reset()      { *m = AskText{} }
+func (*AskText) ProtoMessage() {}
+func (*AskText) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{12}
+}
+func (m *AskText) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AskText) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AskText.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AskText) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AskText.Merge(m, src)
+}
+func (m *AskText) XXX_Size() int {
+	return m.Size()
+}
+func (m *AskText) XXX_DiscardUnknown() {
+	xxx_messageInfo_AskText.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AskText proto.InternalMessageInfo
+
+func (m *AskText) GetDefault() string {
+	if m != nil {
+		return m.Default
+	}
+	return ""
+}
+
+func (m *AskText) GetMultiline() bool {
+	if m != nil {
+		return m.Multiline
+	}
+	return false
+}
+
+type AskSelect struct {
+	Choices []*SelectChoice `protobuf:"bytes,1,rep,name=choices,proto3" json:"choices,omitempty"`
+	// Required: must name a choice.
+	DefaultChoice string `protobuf:"bytes,2,opt,name=default_choice,json=defaultChoice,proto3" json:"default_choice,omitempty"`
+}
+
+func (m *AskSelect) Reset()      { *m = AskSelect{} }
+func (*AskSelect) ProtoMessage() {}
+func (*AskSelect) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{13}
+}
+func (m *AskSelect) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AskSelect) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AskSelect.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AskSelect) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AskSelect.Merge(m, src)
+}
+func (m *AskSelect) XXX_Size() int {
+	return m.Size()
+}
+func (m *AskSelect) XXX_DiscardUnknown() {
+	xxx_messageInfo_AskSelect.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AskSelect proto.InternalMessageInfo
+
+func (m *AskSelect) GetChoices() []*SelectChoice {
+	if m != nil {
+		return m.Choices
+	}
+	return nil
+}
+
+func (m *AskSelect) GetDefaultChoice() string {
+	if m != nil {
+		return m.DefaultChoice
+	}
+	return ""
+}
+
+type AskSecret struct {
+	// accept several lines
+	Multiline bool `protobuf:"varint,1,opt,name=multiline,proto3" json:"multiline,omitempty"`
+}
+
+func (m *AskSecret) Reset()      { *m = AskSecret{} }
+func (*AskSecret) ProtoMessage() {}
+func (*AskSecret) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{14}
+}
+func (m *AskSecret) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AskSecret) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AskSecret.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AskSecret) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AskSecret.Merge(m, src)
+}
+func (m *AskSecret) XXX_Size() int {
+	return m.Size()
+}
+func (m *AskSecret) XXX_DiscardUnknown() {
+	xxx_messageInfo_AskSecret.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AskSecret proto.InternalMessageInfo
+
+func (m *AskSecret) GetMultiline() bool {
+	if m != nil {
+		return m.Multiline
+	}
+	return false
+}
+
+type AskResponse struct {
+	// the answer, of the kind asked for
+	//
+	// Types that are valid to be assigned to Answer:
+	//	*AskResponse_Boolean
+	//	*AskResponse_Text
+	//	*AskResponse_Choice
+	//	*AskResponse_Secret
+	Answer isAskResponse_Answer `protobuf_oneof:"answer"`
+}
+
+func (m *AskResponse) Reset()      { *m = AskResponse{} }
+func (*AskResponse) ProtoMessage() {}
+func (*AskResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{15}
+}
+func (m *AskResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AskResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AskResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AskResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AskResponse.Merge(m, src)
+}
+func (m *AskResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *AskResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_AskResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AskResponse proto.InternalMessageInfo
+
+type isAskResponse_Answer interface {
+	isAskResponse_Answer()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type AskResponse_Boolean struct {
+	Boolean bool `protobuf:"varint,1,opt,name=boolean,proto3,oneof" json:"boolean,omitempty"`
+}
+type AskResponse_Text struct {
+	Text string `protobuf:"bytes,2,opt,name=text,proto3,oneof" json:"text,omitempty"`
+}
+type AskResponse_Choice struct {
+	Choice string `protobuf:"bytes,3,opt,name=choice,proto3,oneof" json:"choice,omitempty"`
+}
+type AskResponse_Secret struct {
+	Secret []byte `protobuf:"bytes,4,opt,name=secret,proto3,oneof" json:"secret,omitempty"`
+}
+
+func (*AskResponse_Boolean) isAskResponse_Answer() {}
+func (*AskResponse_Text) isAskResponse_Answer()    {}
+func (*AskResponse_Choice) isAskResponse_Answer()  {}
+func (*AskResponse_Secret) isAskResponse_Answer()  {}
+
+func (m *AskResponse) GetAnswer() isAskResponse_Answer {
+	if m != nil {
+		return m.Answer
+	}
+	return nil
+}
+
+func (m *AskResponse) GetBoolean() bool {
+	if x, ok := m.GetAnswer().(*AskResponse_Boolean); ok {
+		return x.Boolean
+	}
+	return false
+}
+
+func (m *AskResponse) GetText() string {
+	if x, ok := m.GetAnswer().(*AskResponse_Text); ok {
+		return x.Text
+	}
+	return ""
+}
+
+func (m *AskResponse) GetChoice() string {
+	if x, ok := m.GetAnswer().(*AskResponse_Choice); ok {
+		return x.Choice
+	}
+	return ""
+}
+
+func (m *AskResponse) GetSecret() []byte {
+	if x, ok := m.GetAnswer().(*AskResponse_Secret); ok {
+		return x.Secret
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*AskResponse) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*AskResponse_Boolean)(nil),
+		(*AskResponse_Text)(nil),
+		(*AskResponse_Choice)(nil),
+		(*AskResponse_Secret)(nil),
+	}
+}
+
 func init() {
 	proto.RegisterEnum("dagger.prompt.ApprovalDecision", ApprovalDecision_name, ApprovalDecision_value)
 	proto.RegisterType((*BoolRequest)(nil), "dagger.prompt.BoolRequest")
@@ -704,59 +1205,81 @@ func init() {
 	proto.RegisterType((*ApprovalRequester)(nil), "dagger.prompt.ApprovalRequester")
 	proto.RegisterType((*ApprovalRequest)(nil), "dagger.prompt.ApprovalRequest")
 	proto.RegisterType((*ApprovalResponse)(nil), "dagger.prompt.ApprovalResponse")
+	proto.RegisterType((*AskRequest)(nil), "dagger.prompt.AskRequest")
+	proto.RegisterType((*AskBoolean)(nil), "dagger.prompt.AskBoolean")
+	proto.RegisterType((*AskText)(nil), "dagger.prompt.AskText")
+	proto.RegisterType((*AskSelect)(nil), "dagger.prompt.AskSelect")
+	proto.RegisterType((*AskSecret)(nil), "dagger.prompt.AskSecret")
+	proto.RegisterType((*AskResponse)(nil), "dagger.prompt.AskResponse")
 }
 
 func init() { proto.RegisterFile("prompt.proto", fileDescriptor_2532b5caf780ac64) }
 
 var fileDescriptor_2532b5caf780ac64 = []byte{
-	// 739 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x84, 0x55, 0xcd, 0x6e, 0xd3, 0x40,
-	0x10, 0xce, 0x26, 0x6d, 0x7e, 0x26, 0x3f, 0xa4, 0x0b, 0x4a, 0x4d, 0x4a, 0xb7, 0xc1, 0x02, 0x29,
-	0xaa, 0x50, 0x0e, 0x01, 0x4e, 0x20, 0xa4, 0xb4, 0x0d, 0xa2, 0x6a, 0x95, 0x14, 0x47, 0x6a, 0x05,
-	0x97, 0xc8, 0x8d, 0x37, 0xa9, 0x69, 0x62, 0x1b, 0x7b, 0x53, 0xa9, 0xe2, 0xc2, 0x23, 0x70, 0xe7,
-	0x8e, 0xfa, 0x10, 0x3c, 0x00, 0xc7, 0x1e, 0x7b, 0xa4, 0xee, 0x85, 0x63, 0x1f, 0x01, 0x79, 0x77,
-	0x9d, 0xba, 0x49, 0x03, 0xb7, 0xfd, 0x66, 0x76, 0x66, 0xbe, 0xf9, 0xc6, 0xb3, 0x86, 0x9c, 0xe3,
-	0xda, 0x23, 0x87, 0xd5, 0x1c, 0xd7, 0x66, 0x36, 0xce, 0x1b, 0xfa, 0x60, 0x40, 0xdd, 0x9a, 0x30,
-	0xaa, 0x5f, 0x20, 0xbb, 0x61, 0xdb, 0x43, 0x8d, 0x7e, 0x1e, 0x53, 0x8f, 0xe1, 0x12, 0x24, 0x85,
-	0x43, 0x41, 0x15, 0x54, 0xcd, 0x68, 0x12, 0xe1, 0x27, 0x90, 0x77, 0xa8, 0xeb, 0x99, 0x1e, 0xa3,
-	0x16, 0xdb, 0xa1, 0xa7, 0x4a, 0x9c, 0xbb, 0x6f, 0x1b, 0xb1, 0x02, 0x29, 0x83, 0xf6, 0xf5, 0xf1,
-	0x90, 0x29, 0x89, 0x0a, 0xaa, 0xa6, 0xb5, 0x10, 0xe2, 0x07, 0xb0, 0xc8, 0x4c, 0x36, 0xa4, 0xca,
-	0x02, 0x8f, 0x13, 0x40, 0x5d, 0x87, 0x9c, 0x28, 0xee, 0x39, 0xb6, 0xe5, 0x51, 0x5c, 0x86, 0xb4,
-	0x2b, 0xcf, 0xbc, 0x7e, 0x5a, 0x9b, 0x60, 0xf5, 0x00, 0xf2, 0x1d, 0xe6, 0x9a, 0xd6, 0xe0, 0x7f,
-	0x54, 0x23, 0x24, 0x04, 0xc9, 0x59, 0x12, 0x89, 0x28, 0x89, 0x67, 0x50, 0x08, 0x13, 0xcf, 0xa1,
-	0x91, 0x89, 0xd0, 0x78, 0x01, 0xb9, 0x0e, 0x1d, 0xd2, 0x1e, 0xdb, 0x3c, 0xb2, 0xcd, 0x1e, 0xc5,
-	0x05, 0x88, 0x9b, 0x86, 0xbc, 0x15, 0x37, 0x8d, 0xa0, 0xc6, 0x50, 0x3f, 0xa4, 0x43, 0x59, 0x5b,
-	0x00, 0xf5, 0x3b, 0x82, 0xbc, 0x08, 0x0b, 0xd9, 0x4f, 0xb8, 0xa0, 0x08, 0x97, 0x48, 0x4f, 0xf1,
-	0x5b, 0x3d, 0xbd, 0x84, 0x54, 0x8f, 0xd7, 0xf3, 0x94, 0x44, 0x25, 0x51, 0xcd, 0xd6, 0x57, 0x6a,
-	0xb7, 0xc6, 0x58, 0x8b, 0x72, 0xd2, 0xc2, 0xbb, 0xf8, 0x29, 0x14, 0x64, 0xef, 0x5d, 0x61, 0x92,
-	0xf2, 0xe7, 0xa5, 0x55, 0xdc, 0x57, 0xab, 0x50, 0x08, 0xc9, 0x49, 0x05, 0x4a, 0x90, 0x94, 0x01,
-	0x52, 0x5b, 0x81, 0xd4, 0x33, 0x04, 0x4b, 0x0d, 0xc7, 0x71, 0xed, 0x13, 0x3d, 0xfc, 0x64, 0xa8,
-	0x8b, 0x57, 0x01, 0xf4, 0x01, 0xb5, 0x58, 0xd7, 0xd2, 0x47, 0x61, 0x44, 0x86, 0x5b, 0x5a, 0xfa,
-	0x88, 0xe2, 0xc7, 0x90, 0x13, 0xee, 0x23, 0xdd, 0x32, 0x86, 0x54, 0xb6, 0x96, 0xe5, 0xb6, 0x77,
-	0xdc, 0x14, 0xd4, 0x1b, 0xd9, 0xc6, 0x78, 0x32, 0x1a, 0x89, 0x82, 0xcc, 0xe2, 0xd4, 0x75, 0x69,
-	0x5f, 0x92, 0xcf, 0x08, 0x8b, 0x46, 0xfb, 0xc1, 0xa0, 0xfa, 0x63, 0xab, 0xc7, 0x4c, 0xdb, 0x52,
-	0x16, 0xc5, 0xa0, 0x42, 0xac, 0xfe, 0x88, 0xc3, 0xbd, 0x29, 0xaa, 0x18, 0xc3, 0xc2, 0xb1, 0x69,
-	0x85, 0xe3, 0xe2, 0xe7, 0xb9, 0x92, 0x2b, 0x90, 0xf2, 0xc6, 0x87, 0x9f, 0x68, 0x8f, 0x49, 0x4e,
-	0x21, 0xc4, 0x6f, 0x20, 0xe3, 0x86, 0xbd, 0x73, 0x4e, 0xd9, 0x7a, 0x65, 0x6a, 0x1c, 0x33, 0x1a,
-	0x69, 0x37, 0x21, 0xf8, 0x21, 0xa4, 0x99, 0xab, 0xf7, 0x68, 0xd7, 0x34, 0x24, 0xeb, 0x14, 0xc7,
-	0xdb, 0x06, 0x5e, 0x86, 0x94, 0xe7, 0xe8, 0x56, 0xe0, 0x49, 0x0a, 0x36, 0x01, 0xdc, 0x36, 0x82,
-	0x49, 0xde, 0xac, 0x5a, 0xf7, 0x98, 0x9e, 0x2a, 0xa9, 0xbb, 0x16, 0xb0, 0x04, 0x49, 0x43, 0xb7,
-	0x06, 0xd4, 0x55, 0xd2, 0x7c, 0x7d, 0x24, 0x0a, 0x84, 0xe2, 0xd5, 0x03, 0xa1, 0x32, 0x42, 0xa8,
-	0x10, 0xab, 0x6d, 0x28, 0xde, 0xd0, 0x95, 0xf3, 0x7f, 0x05, 0x69, 0x83, 0xf6, 0x4c, 0x2f, 0xb8,
-	0x1f, 0x88, 0x55, 0xa8, 0xaf, 0xcd, 0xe9, 0x70, 0x4b, 0x5e, 0xd3, 0x26, 0x01, 0xeb, 0x27, 0x50,
-	0x9c, 0xf6, 0xe2, 0x25, 0xc8, 0x37, 0xf6, 0xf6, 0xb4, 0xf6, 0x7e, 0x63, 0xb7, 0xbb, 0xd5, 0x6c,
-	0x7d, 0x28, 0xc6, 0xf0, 0x32, 0xdc, 0x9f, 0x98, 0x1a, 0xbb, 0xbb, 0xed, 0x83, 0x6e, 0xbb, 0xb5,
-	0xd9, 0x2c, 0x22, 0x5c, 0x86, 0xd2, 0x94, 0xa3, 0xd3, 0xec, 0x74, 0xb6, 0xdb, 0xad, 0x62, 0xfc,
-	0x0e, 0xdf, 0xdb, 0xb6, 0xd6, 0xdc, 0x6f, 0x6a, 0xc5, 0x44, 0xfd, 0x67, 0x1c, 0x92, 0x7b, 0x62,
-	0x78, 0x4d, 0x00, 0x71, 0x0a, 0x9e, 0x17, 0x5c, 0x9e, 0xe2, 0x1e, 0x79, 0xf0, 0xca, 0x2b, 0x77,
-	0xfa, 0xa4, 0x0c, 0x3b, 0x90, 0x13, 0x69, 0xc4, 0x03, 0x81, 0x1f, 0x4d, 0x6f, 0x5d, 0xf4, 0x41,
-	0x2a, 0xaf, 0xce, 0xf1, 0xce, 0x24, 0xe3, 0xbb, 0x36, 0x9b, 0x2c, 0xfa, 0x3e, 0x94, 0x57, 0xe7,
-	0x78, 0x65, 0xb2, 0xf7, 0x50, 0x10, 0xc9, 0x42, 0xa5, 0x31, 0xf9, 0xf7, 0x27, 0x58, 0x5e, 0x9b,
-	0xeb, 0x17, 0x29, 0x37, 0x5e, 0x9f, 0x5f, 0x92, 0xd8, 0xc5, 0x25, 0x89, 0x5d, 0x5f, 0x12, 0xf4,
-	0xd5, 0x27, 0xe8, 0xcc, 0x27, 0xe8, 0x97, 0x4f, 0xd0, 0xb9, 0x4f, 0xd0, 0x6f, 0x9f, 0xa0, 0x3f,
-	0x3e, 0x89, 0x5d, 0xfb, 0x04, 0x7d, 0xbb, 0x22, 0xb1, 0xf3, 0x2b, 0x12, 0xbb, 0xb8, 0x22, 0xb1,
-	0x8f, 0x72, 0x5d, 0x0e, 0x93, 0xfc, 0xef, 0xf2, 0xfc, 0xef, 0x00, 0x66, 0x23, 0xbc, 0x4b, 0x6d,
-	0x06, 0x00, 0x00,
+	// 1000 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x56, 0x4f, 0x8f, 0xdb, 0x44,
+	0x14, 0xb7, 0x93, 0xdd, 0x38, 0x7e, 0xf9, 0x43, 0x3a, 0xac, 0x52, 0x37, 0xdd, 0xba, 0xc1, 0x02,
+	0x14, 0xaa, 0x6a, 0x0f, 0xa1, 0x3d, 0x81, 0x90, 0x92, 0x36, 0x68, 0x57, 0x5d, 0x6d, 0x16, 0x07,
+	0xb5, 0x82, 0x4b, 0xe4, 0xb5, 0x67, 0x53, 0x13, 0xc7, 0x36, 0x9e, 0x49, 0xe9, 0x0a, 0x21, 0xf5,
+	0x23, 0x70, 0xe7, 0x0b, 0xf4, 0x6b, 0x70, 0xe3, 0xb8, 0xc7, 0x1e, 0x38, 0xb0, 0xd9, 0x0b, 0xc7,
+	0x7e, 0x04, 0xe4, 0x99, 0xb1, 0xe3, 0x38, 0xc9, 0x72, 0xe0, 0xc2, 0xcd, 0xef, 0xff, 0x6f, 0xde,
+	0x6f, 0xde, 0x1b, 0x43, 0x35, 0x8c, 0x82, 0x59, 0x48, 0x0f, 0xc2, 0x28, 0xa0, 0x01, 0xaa, 0x39,
+	0xd6, 0x64, 0x82, 0xa3, 0x03, 0xae, 0x34, 0x7e, 0x86, 0x4a, 0x3f, 0x08, 0x3c, 0x13, 0xff, 0x38,
+	0xc7, 0x84, 0xa2, 0x26, 0x94, 0xb8, 0x41, 0x93, 0xdb, 0x72, 0x47, 0x35, 0x85, 0x84, 0x3e, 0x86,
+	0x5a, 0x88, 0x23, 0xe2, 0x12, 0x8a, 0x7d, 0xfa, 0x0c, 0x5f, 0x68, 0x05, 0x66, 0x5e, 0x55, 0x22,
+	0x0d, 0x14, 0x07, 0x9f, 0x5b, 0x73, 0x8f, 0x6a, 0xc5, 0xb6, 0xdc, 0x29, 0x9b, 0x89, 0x88, 0xf6,
+	0x60, 0x97, 0xba, 0xd4, 0xc3, 0xda, 0x0e, 0x8b, 0xe3, 0x82, 0xf1, 0x00, 0xaa, 0xbc, 0x38, 0x09,
+	0x03, 0x9f, 0x60, 0xd4, 0x82, 0x72, 0x24, 0xbe, 0x59, 0xfd, 0xb2, 0x99, 0xca, 0xc6, 0x0b, 0xa8,
+	0x8d, 0x68, 0xe4, 0xfa, 0x93, 0x7f, 0x83, 0x9a, 0x01, 0xc1, 0x41, 0xae, 0x83, 0x28, 0x66, 0x41,
+	0x3c, 0x84, 0x7a, 0x92, 0x78, 0x0b, 0x0c, 0x35, 0x03, 0xe3, 0x11, 0x54, 0x47, 0xd8, 0xc3, 0x36,
+	0x7d, 0xf2, 0x32, 0x70, 0x6d, 0x8c, 0xea, 0x50, 0x70, 0x1d, 0xe1, 0x55, 0x70, 0x9d, 0xb8, 0x86,
+	0x67, 0x9d, 0x61, 0x4f, 0xd4, 0xe6, 0x82, 0xf1, 0x9b, 0x0c, 0x35, 0x1e, 0x96, 0xa0, 0x4f, 0xb1,
+	0xc8, 0x19, 0x2c, 0x99, 0x33, 0x15, 0x56, 0xce, 0xf4, 0x18, 0x14, 0x9b, 0xd5, 0x23, 0x5a, 0xb1,
+	0x5d, 0xec, 0x54, 0xba, 0x77, 0x0f, 0x56, 0x68, 0x3c, 0xc8, 0x62, 0x32, 0x13, 0x5f, 0xf4, 0x09,
+	0xd4, 0xc5, 0xd9, 0xc7, 0x5c, 0x25, 0xda, 0x5f, 0x13, 0x5a, 0xee, 0x6f, 0x74, 0xa0, 0x9e, 0x80,
+	0x13, 0x1d, 0x68, 0x42, 0x49, 0x04, 0x88, 0xde, 0x72, 0xc9, 0x78, 0x2b, 0xc3, 0xad, 0x5e, 0x18,
+	0x46, 0xc1, 0x2b, 0x2b, 0xb9, 0x32, 0x38, 0x42, 0xf7, 0x00, 0xac, 0x09, 0xf6, 0xe9, 0xd8, 0xb7,
+	0x66, 0x49, 0x84, 0xca, 0x34, 0x27, 0xd6, 0x0c, 0xa3, 0x8f, 0xa0, 0xca, 0xcd, 0x2f, 0x2d, 0xdf,
+	0xf1, 0xb0, 0x38, 0x5a, 0x85, 0xe9, 0x0e, 0x99, 0x2a, 0xae, 0x37, 0x0b, 0x9c, 0x79, 0x4a, 0x8d,
+	0x90, 0xe2, 0xcc, 0xfc, 0x6b, 0x1c, 0xe1, 0x73, 0x01, 0x5e, 0xe5, 0x1a, 0x13, 0x9f, 0xc7, 0x44,
+	0x9d, 0xcf, 0x7d, 0x9b, 0xba, 0x81, 0xaf, 0xed, 0x72, 0xa2, 0x12, 0xd9, 0xf8, 0xb3, 0x00, 0x1f,
+	0xe4, 0xa0, 0x22, 0x04, 0x3b, 0x53, 0xd7, 0x4f, 0xe8, 0x62, 0xdf, 0x5b, 0x5b, 0xae, 0x81, 0x42,
+	0xe6, 0x67, 0x3f, 0x60, 0x9b, 0x0a, 0x4c, 0x89, 0x88, 0xbe, 0x02, 0x35, 0x4a, 0xce, 0xce, 0x30,
+	0x55, 0xba, 0xed, 0x1c, 0x1d, 0x6b, 0x3d, 0x32, 0x97, 0x21, 0xe8, 0x0e, 0x94, 0x69, 0x64, 0xd9,
+	0x78, 0xec, 0x3a, 0x02, 0xb5, 0xc2, 0xe4, 0x23, 0x07, 0xdd, 0x06, 0x85, 0x84, 0x96, 0x1f, 0x5b,
+	0x4a, 0x1c, 0x4d, 0x2c, 0x1e, 0x39, 0x31, 0x93, 0xcb, 0x51, 0x1b, 0x4f, 0xf1, 0x85, 0xa6, 0x6c,
+	0x1a, 0xc0, 0x26, 0x94, 0x1c, 0xcb, 0x9f, 0xe0, 0x48, 0x2b, 0xb3, 0xf1, 0x11, 0x52, 0xdc, 0x28,
+	0x56, 0x3d, 0x6e, 0x94, 0xca, 0x1b, 0x95, 0xc8, 0xe8, 0x11, 0x34, 0x3d, 0x3c, 0xb1, 0xec, 0x8b,
+	0xf1, 0x6a, 0x05, 0xa2, 0x41, 0xbb, 0xd8, 0x51, 0xcd, 0x3d, 0x6e, 0x3d, 0xcd, 0x16, 0x22, 0xc6,
+	0x10, 0x1a, 0xcb, 0x43, 0x8a, 0x5b, 0xf3, 0x05, 0x94, 0x1d, 0x6c, 0xbb, 0x24, 0xae, 0x12, 0xb7,
+	0xb8, 0xde, 0xbd, 0xbf, 0xa5, 0x2f, 0x4f, 0x85, 0x9b, 0x99, 0x06, 0x18, 0xbf, 0x17, 0x01, 0x7a,
+	0x64, 0x7a, 0x13, 0x55, 0xe9, 0xcc, 0x14, 0xb2, 0x33, 0xa3, 0x81, 0x32, 0xc3, 0x84, 0x58, 0x93,
+	0xe4, 0xf2, 0x24, 0xe2, 0xff, 0x99, 0xa8, 0xc7, 0xa0, 0x9c, 0x05, 0x81, 0x87, 0x2d, 0x9f, 0x31,
+	0x55, 0xe9, 0xde, 0xc9, 0x03, 0x23, 0xd3, 0x3e, 0x77, 0x38, 0x94, 0xcc, 0xc4, 0x17, 0x3d, 0x84,
+	0x1d, 0x8a, 0x5f, 0x53, 0xc6, 0x61, 0xa5, 0xdb, 0x5c, 0x8f, 0xf9, 0x16, 0xbf, 0xa6, 0x87, 0x92,
+	0xc9, 0xbc, 0x50, 0x17, 0x4a, 0x84, 0xcd, 0xb5, 0x06, 0xcc, 0x5f, 0x5b, 0xf7, 0xe7, 0x73, 0x7f,
+	0x28, 0x99, 0xc2, 0x93, 0xc7, 0xd8, 0x11, 0xa6, 0x5a, 0x65, 0x7b, 0x4c, 0x6c, 0xe7, 0x31, 0xf1,
+	0x57, 0x5f, 0x81, 0x5d, 0xd7, 0x0f, 0xe7, 0xd4, 0xf8, 0x14, 0x60, 0x89, 0x3b, 0xbb, 0x88, 0xe5,
+	0x95, 0xd7, 0xc0, 0xe8, 0x81, 0x22, 0xb0, 0xe6, 0x9d, 0x32, 0xdb, 0x7a, 0x1f, 0xd4, 0xd9, 0xdc,
+	0xa3, 0xae, 0xe7, 0xfa, 0x9c, 0xf1, 0xb2, 0xb9, 0x54, 0x18, 0x2e, 0xa8, 0x29, 0xfc, 0xec, 0x7a,
+	0x94, 0xff, 0xd3, 0x7a, 0x2c, 0x6c, 0x5a, 0x8f, 0x9f, 0x89, 0x52, 0xf1, 0x59, 0x57, 0x51, 0xc9,
+	0x79, 0x54, 0xbf, 0x40, 0x85, 0xdd, 0xe1, 0xf4, 0x21, 0x49, 0x59, 0x66, 0xae, 0x59, 0x2a, 0xf7,
+	0x04, 0x95, 0xac, 0x64, 0x4a, 0x99, 0x96, 0x2e, 0xde, 0xa2, 0xd0, 0x0b, 0x39, 0xb6, 0x08, 0x62,
+	0xe2, 0x9b, 0x5c, 0xcd, 0xb4, 0xbf, 0x0c, 0x25, 0xcb, 0x27, 0x3f, 0xe1, 0xe8, 0xc1, 0x2b, 0x68,
+	0xe4, 0x27, 0x0c, 0xdd, 0x82, 0x5a, 0xef, 0xf4, 0xd4, 0x1c, 0x3e, 0xef, 0x1d, 0x8f, 0x9f, 0x0e,
+	0x4e, 0xbe, 0x6b, 0x48, 0xe8, 0x36, 0x7c, 0x98, 0xaa, 0x7a, 0xc7, 0xc7, 0xc3, 0x17, 0xe3, 0xe1,
+	0xc9, 0x93, 0x41, 0x43, 0x46, 0x2d, 0x68, 0xe6, 0x0c, 0xa3, 0xc1, 0x68, 0x74, 0x34, 0x3c, 0x69,
+	0x14, 0x36, 0xd8, 0xbe, 0x1e, 0x9a, 0x83, 0xe7, 0x03, 0xb3, 0x51, 0xec, 0xbe, 0x29, 0x42, 0xe9,
+	0x94, 0xaf, 0xcd, 0x01, 0x00, 0xff, 0x8a, 0x6f, 0x01, 0x6a, 0xe5, 0x78, 0xc8, 0xfc, 0x6a, 0xb4,
+	0xee, 0x6e, 0xb4, 0x89, 0xce, 0x3d, 0x83, 0x2a, 0x4f, 0xc3, 0x9f, 0x66, 0xb4, 0x9f, 0x27, 0x34,
+	0xfb, 0x2b, 0xd0, 0xba, 0xb7, 0xc5, 0xba, 0x96, 0x8c, 0x5f, 0x97, 0xfd, 0x8d, 0xb7, 0x63, 0x6b,
+	0xb2, 0xd5, 0xa7, 0xf1, 0x1b, 0xa8, 0xf3, 0x64, 0x49, 0xa7, 0x91, 0x7e, 0xf3, 0x4e, 0x69, 0xdd,
+	0xdf, 0x6a, 0x17, 0x29, 0xfb, 0xa0, 0x8a, 0x94, 0x64, 0x8a, 0x36, 0x2c, 0x82, 0x24, 0x51, 0x6b,
+	0x93, 0x89, 0xe7, 0xe8, 0x7f, 0x79, 0x79, 0xa5, 0x4b, 0xef, 0xae, 0x74, 0xe9, 0xfd, 0x95, 0x2e,
+	0xbf, 0x59, 0xe8, 0xf2, 0xdb, 0x85, 0x2e, 0xff, 0xb1, 0xd0, 0xe5, 0xcb, 0x85, 0x2e, 0xff, 0xb5,
+	0xd0, 0xe5, 0xbf, 0x17, 0xba, 0xf4, 0x7e, 0xa1, 0xcb, 0xbf, 0x5e, 0xeb, 0xd2, 0xe5, 0xb5, 0x2e,
+	0xbd, 0xbb, 0xd6, 0xa5, 0xef, 0xc5, 0x63, 0x77, 0x56, 0x62, 0xff, 0x86, 0x9f, 0xff, 0x33, 0x00,
+	0x03, 0x7c, 0x91, 0x5f, 0x2b, 0x0a, 0x00, 0x00,
 }
 
 func (x ApprovalDecision) String() string {
@@ -1048,6 +1571,14 @@ func (this *ApprovalRequest) Equal(that interface{}) bool {
 	if this.Question != that1.Question {
 		return false
 	}
+	if len(this.LegacyPersistentKeys) != len(that1.LegacyPersistentKeys) {
+		return false
+	}
+	for i := range this.LegacyPersistentKeys {
+		if this.LegacyPersistentKeys[i] != that1.LegacyPersistentKeys[i] {
+			return false
+		}
+	}
 	return true
 }
 func (this *ApprovalResponse) Equal(that interface{}) bool {
@@ -1070,6 +1601,386 @@ func (this *ApprovalResponse) Equal(that interface{}) bool {
 		return false
 	}
 	if this.Decision != that1.Decision {
+		return false
+	}
+	return true
+}
+func (this *AskRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskRequest)
+	if !ok {
+		that2, ok := that.(AskRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Kind != that1.Kind {
+		return false
+	}
+	if this.Title != that1.Title {
+		return false
+	}
+	if this.Message != that1.Message {
+		return false
+	}
+	if !this.Requester.Equal(that1.Requester) {
+		return false
+	}
+	if this.TraceId != that1.TraceId {
+		return false
+	}
+	if this.SpanId != that1.SpanId {
+		return false
+	}
+	if this.PersistentKey != that1.PersistentKey {
+		return false
+	}
+	if that1.Input == nil {
+		if this.Input != nil {
+			return false
+		}
+	} else if this.Input == nil {
+		return false
+	} else if !this.Input.Equal(that1.Input) {
+		return false
+	}
+	return true
+}
+func (this *AskRequest_Boolean) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskRequest_Boolean)
+	if !ok {
+		that2, ok := that.(AskRequest_Boolean)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Boolean.Equal(that1.Boolean) {
+		return false
+	}
+	return true
+}
+func (this *AskRequest_Text) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskRequest_Text)
+	if !ok {
+		that2, ok := that.(AskRequest_Text)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Text.Equal(that1.Text) {
+		return false
+	}
+	return true
+}
+func (this *AskRequest_Select) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskRequest_Select)
+	if !ok {
+		that2, ok := that.(AskRequest_Select)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Select.Equal(that1.Select) {
+		return false
+	}
+	return true
+}
+func (this *AskRequest_Secret) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskRequest_Secret)
+	if !ok {
+		that2, ok := that.(AskRequest_Secret)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Secret.Equal(that1.Secret) {
+		return false
+	}
+	return true
+}
+func (this *AskBoolean) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskBoolean)
+	if !ok {
+		that2, ok := that.(AskBoolean)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Default != that1.Default {
+		return false
+	}
+	return true
+}
+func (this *AskText) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskText)
+	if !ok {
+		that2, ok := that.(AskText)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Default != that1.Default {
+		return false
+	}
+	if this.Multiline != that1.Multiline {
+		return false
+	}
+	return true
+}
+func (this *AskSelect) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskSelect)
+	if !ok {
+		that2, ok := that.(AskSelect)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Choices) != len(that1.Choices) {
+		return false
+	}
+	for i := range this.Choices {
+		if !this.Choices[i].Equal(that1.Choices[i]) {
+			return false
+		}
+	}
+	if this.DefaultChoice != that1.DefaultChoice {
+		return false
+	}
+	return true
+}
+func (this *AskSecret) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskSecret)
+	if !ok {
+		that2, ok := that.(AskSecret)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Multiline != that1.Multiline {
+		return false
+	}
+	return true
+}
+func (this *AskResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskResponse)
+	if !ok {
+		that2, ok := that.(AskResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Answer == nil {
+		if this.Answer != nil {
+			return false
+		}
+	} else if this.Answer == nil {
+		return false
+	} else if !this.Answer.Equal(that1.Answer) {
+		return false
+	}
+	return true
+}
+func (this *AskResponse_Boolean) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskResponse_Boolean)
+	if !ok {
+		that2, ok := that.(AskResponse_Boolean)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Boolean != that1.Boolean {
+		return false
+	}
+	return true
+}
+func (this *AskResponse_Text) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskResponse_Text)
+	if !ok {
+		that2, ok := that.(AskResponse_Text)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Text != that1.Text {
+		return false
+	}
+	return true
+}
+func (this *AskResponse_Choice) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskResponse_Choice)
+	if !ok {
+		that2, ok := that.(AskResponse_Choice)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Choice != that1.Choice {
+		return false
+	}
+	return true
+}
+func (this *AskResponse_Secret) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*AskResponse_Secret)
+	if !ok {
+		that2, ok := that.(AskResponse_Secret)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.Secret, that1.Secret) {
 		return false
 	}
 	return true
@@ -1173,7 +2084,7 @@ func (this *ApprovalRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 13)
+	s := make([]string, 0, 14)
 	s = append(s, "&prompt.ApprovalRequest{")
 	s = append(s, "Kind: "+fmt.Sprintf("%#v", this.Kind)+",\n")
 	s = append(s, "Prompt: "+fmt.Sprintf("%#v", this.Prompt)+",\n")
@@ -1186,6 +2097,7 @@ func (this *ApprovalRequest) GoString() string {
 	s = append(s, "PersistentKey: "+fmt.Sprintf("%#v", this.PersistentKey)+",\n")
 	s = append(s, "Danger: "+fmt.Sprintf("%#v", this.Danger)+",\n")
 	s = append(s, "Question: "+fmt.Sprintf("%#v", this.Question)+",\n")
+	s = append(s, "LegacyPersistentKeys: "+fmt.Sprintf("%#v", this.LegacyPersistentKeys)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1198,6 +2110,147 @@ func (this *ApprovalResponse) GoString() string {
 	s = append(s, "Decision: "+fmt.Sprintf("%#v", this.Decision)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
+}
+func (this *AskRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 15)
+	s = append(s, "&prompt.AskRequest{")
+	s = append(s, "Kind: "+fmt.Sprintf("%#v", this.Kind)+",\n")
+	s = append(s, "Title: "+fmt.Sprintf("%#v", this.Title)+",\n")
+	s = append(s, "Message: "+fmt.Sprintf("%#v", this.Message)+",\n")
+	if this.Requester != nil {
+		s = append(s, "Requester: "+fmt.Sprintf("%#v", this.Requester)+",\n")
+	}
+	s = append(s, "TraceId: "+fmt.Sprintf("%#v", this.TraceId)+",\n")
+	s = append(s, "SpanId: "+fmt.Sprintf("%#v", this.SpanId)+",\n")
+	s = append(s, "PersistentKey: "+fmt.Sprintf("%#v", this.PersistentKey)+",\n")
+	if this.Input != nil {
+		s = append(s, "Input: "+fmt.Sprintf("%#v", this.Input)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *AskRequest_Boolean) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&prompt.AskRequest_Boolean{` +
+		`Boolean:` + fmt.Sprintf("%#v", this.Boolean) + `}`}, ", ")
+	return s
+}
+func (this *AskRequest_Text) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&prompt.AskRequest_Text{` +
+		`Text:` + fmt.Sprintf("%#v", this.Text) + `}`}, ", ")
+	return s
+}
+func (this *AskRequest_Select) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&prompt.AskRequest_Select{` +
+		`Select:` + fmt.Sprintf("%#v", this.Select) + `}`}, ", ")
+	return s
+}
+func (this *AskRequest_Secret) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&prompt.AskRequest_Secret{` +
+		`Secret:` + fmt.Sprintf("%#v", this.Secret) + `}`}, ", ")
+	return s
+}
+func (this *AskBoolean) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&prompt.AskBoolean{")
+	s = append(s, "Default: "+fmt.Sprintf("%#v", this.Default)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *AskText) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&prompt.AskText{")
+	s = append(s, "Default: "+fmt.Sprintf("%#v", this.Default)+",\n")
+	s = append(s, "Multiline: "+fmt.Sprintf("%#v", this.Multiline)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *AskSelect) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&prompt.AskSelect{")
+	if this.Choices != nil {
+		s = append(s, "Choices: "+fmt.Sprintf("%#v", this.Choices)+",\n")
+	}
+	s = append(s, "DefaultChoice: "+fmt.Sprintf("%#v", this.DefaultChoice)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *AskSecret) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&prompt.AskSecret{")
+	s = append(s, "Multiline: "+fmt.Sprintf("%#v", this.Multiline)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *AskResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&prompt.AskResponse{")
+	if this.Answer != nil {
+		s = append(s, "Answer: "+fmt.Sprintf("%#v", this.Answer)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *AskResponse_Boolean) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&prompt.AskResponse_Boolean{` +
+		`Boolean:` + fmt.Sprintf("%#v", this.Boolean) + `}`}, ", ")
+	return s
+}
+func (this *AskResponse_Text) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&prompt.AskResponse_Text{` +
+		`Text:` + fmt.Sprintf("%#v", this.Text) + `}`}, ", ")
+	return s
+}
+func (this *AskResponse_Choice) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&prompt.AskResponse_Choice{` +
+		`Choice:` + fmt.Sprintf("%#v", this.Choice) + `}`}, ", ")
+	return s
+}
+func (this *AskResponse_Secret) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&prompt.AskResponse_Secret{` +
+		`Secret:` + fmt.Sprintf("%#v", this.Secret) + `}`}, ", ")
+	return s
 }
 func valueToGoStringPrompt(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
@@ -1224,6 +2277,7 @@ type PromptClient interface {
 	PromptString(ctx context.Context, in *StringRequest, opts ...grpc.CallOption) (*StringResponse, error)
 	PromptSelect(ctx context.Context, in *SelectRequest, opts ...grpc.CallOption) (*SelectResponse, error)
 	PromptApproval(ctx context.Context, in *ApprovalRequest, opts ...grpc.CallOption) (*ApprovalResponse, error)
+	PromptAsk(ctx context.Context, in *AskRequest, opts ...grpc.CallOption) (*AskResponse, error)
 }
 
 type promptClient struct {
@@ -1270,12 +2324,22 @@ func (c *promptClient) PromptApproval(ctx context.Context, in *ApprovalRequest, 
 	return out, nil
 }
 
+func (c *promptClient) PromptAsk(ctx context.Context, in *AskRequest, opts ...grpc.CallOption) (*AskResponse, error) {
+	out := new(AskResponse)
+	err := c.cc.Invoke(ctx, "/dagger.prompt.Prompt/PromptAsk", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PromptServer is the server API for Prompt service.
 type PromptServer interface {
 	PromptBool(context.Context, *BoolRequest) (*BoolResponse, error)
 	PromptString(context.Context, *StringRequest) (*StringResponse, error)
 	PromptSelect(context.Context, *SelectRequest) (*SelectResponse, error)
 	PromptApproval(context.Context, *ApprovalRequest) (*ApprovalResponse, error)
+	PromptAsk(context.Context, *AskRequest) (*AskResponse, error)
 }
 
 // UnimplementedPromptServer can be embedded to have forward compatible implementations.
@@ -1293,6 +2357,9 @@ func (*UnimplementedPromptServer) PromptSelect(ctx context.Context, req *SelectR
 }
 func (*UnimplementedPromptServer) PromptApproval(ctx context.Context, req *ApprovalRequest) (*ApprovalResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PromptApproval not implemented")
+}
+func (*UnimplementedPromptServer) PromptAsk(ctx context.Context, req *AskRequest) (*AskResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PromptAsk not implemented")
 }
 
 func RegisterPromptServer(s *grpc.Server, srv PromptServer) {
@@ -1371,6 +2438,24 @@ func _Prompt_PromptApproval_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Prompt_PromptAsk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PromptServer).PromptAsk(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dagger.prompt.Prompt/PromptAsk",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PromptServer).PromptAsk(ctx, req.(*AskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Prompt_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "dagger.prompt.Prompt",
 	HandlerType: (*PromptServer)(nil),
@@ -1390,6 +2475,10 @@ var _Prompt_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PromptApproval",
 			Handler:    _Prompt_PromptApproval_Handler,
+		},
+		{
+			MethodName: "PromptAsk",
+			Handler:    _Prompt_PromptAsk_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -1760,6 +2849,15 @@ func (m *ApprovalRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.LegacyPersistentKeys) > 0 {
+		for iNdEx := len(m.LegacyPersistentKeys) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.LegacyPersistentKeys[iNdEx])
+			copy(dAtA[i:], m.LegacyPersistentKeys[iNdEx])
+			i = encodeVarintPrompt(dAtA, i, uint64(len(m.LegacyPersistentKeys[iNdEx])))
+			i--
+			dAtA[i] = 0x52
+		}
+	}
 	if len(m.Question) > 0 {
 		i -= len(m.Question)
 		copy(dAtA[i:], m.Question)
@@ -1862,6 +2960,419 @@ func (m *ApprovalResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *AskRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AskRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Input != nil {
+		{
+			size := m.Input.Size()
+			i -= size
+			if _, err := m.Input.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if len(m.PersistentKey) > 0 {
+		i -= len(m.PersistentKey)
+		copy(dAtA[i:], m.PersistentKey)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.PersistentKey)))
+		i--
+		dAtA[i] = 0x3a
+	}
+	if len(m.SpanId) > 0 {
+		i -= len(m.SpanId)
+		copy(dAtA[i:], m.SpanId)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.SpanId)))
+		i--
+		dAtA[i] = 0x32
+	}
+	if len(m.TraceId) > 0 {
+		i -= len(m.TraceId)
+		copy(dAtA[i:], m.TraceId)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.TraceId)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if m.Requester != nil {
+		{
+			size, err := m.Requester.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintPrompt(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.Message) > 0 {
+		i -= len(m.Message)
+		copy(dAtA[i:], m.Message)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Message)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.Title) > 0 {
+		i -= len(m.Title)
+		copy(dAtA[i:], m.Title)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Title)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Kind) > 0 {
+		i -= len(m.Kind)
+		copy(dAtA[i:], m.Kind)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Kind)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AskRequest_Boolean) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskRequest_Boolean) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Boolean != nil {
+		{
+			size, err := m.Boolean.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintPrompt(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x42
+	}
+	return len(dAtA) - i, nil
+}
+func (m *AskRequest_Text) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskRequest_Text) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Text != nil {
+		{
+			size, err := m.Text.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintPrompt(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x4a
+	}
+	return len(dAtA) - i, nil
+}
+func (m *AskRequest_Select) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskRequest_Select) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Select != nil {
+		{
+			size, err := m.Select.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintPrompt(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x52
+	}
+	return len(dAtA) - i, nil
+}
+func (m *AskRequest_Secret) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskRequest_Secret) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Secret != nil {
+		{
+			size, err := m.Secret.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintPrompt(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x5a
+	}
+	return len(dAtA) - i, nil
+}
+func (m *AskBoolean) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AskBoolean) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskBoolean) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Default {
+		i--
+		if m.Default {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AskText) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AskText) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskText) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Multiline {
+		i--
+		if m.Multiline {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Default) > 0 {
+		i -= len(m.Default)
+		copy(dAtA[i:], m.Default)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Default)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AskSelect) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AskSelect) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskSelect) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.DefaultChoice) > 0 {
+		i -= len(m.DefaultChoice)
+		copy(dAtA[i:], m.DefaultChoice)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.DefaultChoice)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Choices) > 0 {
+		for iNdEx := len(m.Choices) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Choices[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintPrompt(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AskSecret) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AskSecret) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskSecret) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Multiline {
+		i--
+		if m.Multiline {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AskResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AskResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Answer != nil {
+		{
+			size := m.Answer.Size()
+			i -= size
+			if _, err := m.Answer.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AskResponse_Boolean) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskResponse_Boolean) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i--
+	if m.Boolean {
+		dAtA[i] = 1
+	} else {
+		dAtA[i] = 0
+	}
+	i--
+	dAtA[i] = 0x8
+	return len(dAtA) - i, nil
+}
+func (m *AskResponse_Text) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskResponse_Text) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= len(m.Text)
+	copy(dAtA[i:], m.Text)
+	i = encodeVarintPrompt(dAtA, i, uint64(len(m.Text)))
+	i--
+	dAtA[i] = 0x12
+	return len(dAtA) - i, nil
+}
+func (m *AskResponse_Choice) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskResponse_Choice) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= len(m.Choice)
+	copy(dAtA[i:], m.Choice)
+	i = encodeVarintPrompt(dAtA, i, uint64(len(m.Choice)))
+	i--
+	dAtA[i] = 0x1a
+	return len(dAtA) - i, nil
+}
+func (m *AskResponse_Secret) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AskResponse_Secret) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Secret != nil {
+		i -= len(m.Secret)
+		copy(dAtA[i:], m.Secret)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Secret)))
+		i--
+		dAtA[i] = 0x22
+	}
+	return len(dAtA) - i, nil
+}
 func encodeVarintPrompt(dAtA []byte, offset int, v uint64) int {
 	offset -= sovPrompt(v)
 	base := offset
@@ -2070,6 +3581,12 @@ func (m *ApprovalRequest) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovPrompt(uint64(l))
 	}
+	if len(m.LegacyPersistentKeys) > 0 {
+		for _, s := range m.LegacyPersistentKeys {
+			l = len(s)
+			n += 1 + l + sovPrompt(uint64(l))
+		}
+	}
 	return n
 }
 
@@ -2081,6 +3598,207 @@ func (m *ApprovalResponse) Size() (n int) {
 	_ = l
 	if m.Decision != 0 {
 		n += 1 + sovPrompt(uint64(m.Decision))
+	}
+	return n
+}
+
+func (m *AskRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Kind)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.Title)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.Message)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	if m.Requester != nil {
+		l = m.Requester.Size()
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.TraceId)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.SpanId)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.PersistentKey)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	if m.Input != nil {
+		n += m.Input.Size()
+	}
+	return n
+}
+
+func (m *AskRequest_Boolean) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Boolean != nil {
+		l = m.Boolean.Size()
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	return n
+}
+func (m *AskRequest_Text) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Text != nil {
+		l = m.Text.Size()
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	return n
+}
+func (m *AskRequest_Select) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Select != nil {
+		l = m.Select.Size()
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	return n
+}
+func (m *AskRequest_Secret) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Secret != nil {
+		l = m.Secret.Size()
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	return n
+}
+func (m *AskBoolean) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Default {
+		n += 2
+	}
+	return n
+}
+
+func (m *AskText) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Default)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	if m.Multiline {
+		n += 2
+	}
+	return n
+}
+
+func (m *AskSelect) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Choices) > 0 {
+		for _, e := range m.Choices {
+			l = e.Size()
+			n += 1 + l + sovPrompt(uint64(l))
+		}
+	}
+	l = len(m.DefaultChoice)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	return n
+}
+
+func (m *AskSecret) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Multiline {
+		n += 2
+	}
+	return n
+}
+
+func (m *AskResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Answer != nil {
+		n += m.Answer.Size()
+	}
+	return n
+}
+
+func (m *AskResponse_Boolean) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	n += 2
+	return n
+}
+func (m *AskResponse_Text) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Text)
+	n += 1 + l + sovPrompt(uint64(l))
+	return n
+}
+func (m *AskResponse_Choice) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Choice)
+	n += 1 + l + sovPrompt(uint64(l))
+	return n
+}
+func (m *AskResponse_Secret) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Secret != nil {
+		l = len(m.Secret)
+		n += 1 + l + sovPrompt(uint64(l))
 	}
 	return n
 }
@@ -2203,6 +3921,7 @@ func (this *ApprovalRequest) String() string {
 		`PersistentKey:` + fmt.Sprintf("%v", this.PersistentKey) + `,`,
 		`Danger:` + fmt.Sprintf("%v", this.Danger) + `,`,
 		`Question:` + fmt.Sprintf("%v", this.Question) + `,`,
+		`LegacyPersistentKeys:` + fmt.Sprintf("%v", this.LegacyPersistentKeys) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2213,6 +3932,160 @@ func (this *ApprovalResponse) String() string {
 	}
 	s := strings.Join([]string{`&ApprovalResponse{`,
 		`Decision:` + fmt.Sprintf("%v", this.Decision) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskRequest{`,
+		`Kind:` + fmt.Sprintf("%v", this.Kind) + `,`,
+		`Title:` + fmt.Sprintf("%v", this.Title) + `,`,
+		`Message:` + fmt.Sprintf("%v", this.Message) + `,`,
+		`Requester:` + strings.Replace(this.Requester.String(), "ApprovalRequester", "ApprovalRequester", 1) + `,`,
+		`TraceId:` + fmt.Sprintf("%v", this.TraceId) + `,`,
+		`SpanId:` + fmt.Sprintf("%v", this.SpanId) + `,`,
+		`PersistentKey:` + fmt.Sprintf("%v", this.PersistentKey) + `,`,
+		`Input:` + fmt.Sprintf("%v", this.Input) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskRequest_Boolean) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskRequest_Boolean{`,
+		`Boolean:` + strings.Replace(fmt.Sprintf("%v", this.Boolean), "AskBoolean", "AskBoolean", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskRequest_Text) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskRequest_Text{`,
+		`Text:` + strings.Replace(fmt.Sprintf("%v", this.Text), "AskText", "AskText", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskRequest_Select) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskRequest_Select{`,
+		`Select:` + strings.Replace(fmt.Sprintf("%v", this.Select), "AskSelect", "AskSelect", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskRequest_Secret) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskRequest_Secret{`,
+		`Secret:` + strings.Replace(fmt.Sprintf("%v", this.Secret), "AskSecret", "AskSecret", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskBoolean) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskBoolean{`,
+		`Default:` + fmt.Sprintf("%v", this.Default) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskText) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskText{`,
+		`Default:` + fmt.Sprintf("%v", this.Default) + `,`,
+		`Multiline:` + fmt.Sprintf("%v", this.Multiline) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskSelect) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForChoices := "[]*SelectChoice{"
+	for _, f := range this.Choices {
+		repeatedStringForChoices += strings.Replace(f.String(), "SelectChoice", "SelectChoice", 1) + ","
+	}
+	repeatedStringForChoices += "}"
+	s := strings.Join([]string{`&AskSelect{`,
+		`Choices:` + repeatedStringForChoices + `,`,
+		`DefaultChoice:` + fmt.Sprintf("%v", this.DefaultChoice) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskSecret) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskSecret{`,
+		`Multiline:` + fmt.Sprintf("%v", this.Multiline) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskResponse{`,
+		`Answer:` + fmt.Sprintf("%v", this.Answer) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskResponse_Boolean) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskResponse_Boolean{`,
+		`Boolean:` + fmt.Sprintf("%v", this.Boolean) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskResponse_Text) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskResponse_Text{`,
+		`Text:` + fmt.Sprintf("%v", this.Text) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskResponse_Choice) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskResponse_Choice{`,
+		`Choice:` + fmt.Sprintf("%v", this.Choice) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *AskResponse_Secret) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&AskResponse_Secret{`,
+		`Secret:` + fmt.Sprintf("%v", this.Secret) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -3584,6 +5457,38 @@ func (m *ApprovalRequest) Unmarshal(dAtA []byte) error {
 			}
 			m.Question = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 10:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LegacyPersistentKeys", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.LegacyPersistentKeys = append(m.LegacyPersistentKeys, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipPrompt(dAtA[iNdEx:])
@@ -3653,6 +5558,950 @@ func (m *ApprovalResponse) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AskRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AskRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AskRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Kind", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Kind = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Title", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Title = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Message", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Message = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Requester", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Requester == nil {
+				m.Requester = &ApprovalRequester{}
+			}
+			if err := m.Requester.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TraceId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TraceId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SpanId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SpanId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PersistentKey", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PersistentKey = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Boolean", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &AskBoolean{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Input = &AskRequest_Boolean{v}
+			iNdEx = postIndex
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Text", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &AskText{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Input = &AskRequest_Text{v}
+			iNdEx = postIndex
+		case 10:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Select", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &AskSelect{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Input = &AskRequest_Select{v}
+			iNdEx = postIndex
+		case 11:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Secret", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &AskSecret{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Input = &AskRequest_Secret{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AskBoolean) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AskBoolean: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AskBoolean: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Default", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Default = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AskText) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AskText: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AskText: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Default", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Default = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Multiline", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Multiline = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AskSelect) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AskSelect: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AskSelect: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Choices", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Choices = append(m.Choices, &SelectChoice{})
+			if err := m.Choices[len(m.Choices)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DefaultChoice", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DefaultChoice = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AskSecret) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AskSecret: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AskSecret: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Multiline", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Multiline = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AskResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AskResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AskResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Boolean", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			b := bool(v != 0)
+			m.Answer = &AskResponse_Boolean{b}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Text", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Answer = &AskResponse_Text{string(dAtA[iNdEx:postIndex])}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Choice", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Answer = &AskResponse_Choice{string(dAtA[iNdEx:postIndex])}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Secret", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := make([]byte, postIndex-iNdEx)
+			copy(v, dAtA[iNdEx:postIndex])
+			m.Answer = &AskResponse_Secret{v}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipPrompt(dAtA[iNdEx:])

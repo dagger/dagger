@@ -2479,7 +2479,9 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxStep
 		steps++
 
 		var err error
-		inst, err = inst.Self().Step(ctx, inst, maxTokens)
+		// Not Step: the loop was allowed above, and asking again per step
+		// would turn an "allow once" into a prompt per model step.
+		inst, err = inst.Self().step(ctx, inst, maxTokens)
 		if err != nil {
 			if ctx.Err() != nil {
 				// Context was cancelled (user interrupt). Return the last
@@ -2529,10 +2531,20 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 	if !foundReply {
 		return self, false, fmt.Errorf("no message from assistant")
 	}
-	msg, err := bk.PromptHumanHelp(ctx, "LLM needs help!", fmt.Sprintf("The LLM was unable to complete its task and needs a prompt to continue. Here is its last message:\n%s", mdQuote(lastAssistantMessage)))
+	answer, err := query.Prompt(ctx, &PromptRequest{
+		Kind:    "llm-help",
+		Title:   "LLM needs help!",
+		Message: fmt.Sprintf("The LLM was unable to complete its task and needs a prompt to continue. Here is its last message:\n%s", mdQuote(lastAssistantMessage)),
+		Text:    &PromptText{},
+	})
 	if err != nil {
+		if errors.Is(err, ErrPromptNotInteractive) {
+			// Nobody can answer: the turn ends as if they said nothing.
+			return self, false, nil
+		}
 		return self, false, err
 	}
+	msg := answer.Text
 	if msg == "" {
 		return self, false, nil
 	}
@@ -2599,12 +2611,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		}
 	}
 
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return fmt.Errorf("llm sync failed fetching bk client for llm allow prompting: %w", err)
-	}
-
-	return bk.PromptAllowLLM(ctx, moduleURL)
+	return query.AuthorizeLLM(ctx, moduleURL)
 }
 
 // emitMessageSpan creates telemetry for a live LLM message.

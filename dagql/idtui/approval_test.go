@@ -451,6 +451,27 @@ func TestFloatingApprovalJump(t *testing.T) {
 	require.True(t, fe.navigationFocused(), "focus returns to navigation")
 }
 
+// Rows change beneath a floating approval the user jumped to -- the row the
+// cursor sat on goes away, as loading rows do while a command starts -- and
+// the re-render moves the cursor: the approval keeps focus, since the user
+// did not leave it.
+func TestFloatingApprovalKeepsFocusWhenRowsChange(t *testing.T) {
+	fe := approvalTestFrontend(t)
+	a, results := startApproval(t, fe, t.Context(), pushApproval(approvalLateID, ""))
+	pressKeys(fe, "a")
+	require.True(t, fe.tui.IsFocused(a.view))
+
+	fe.FocusedSpan = prettyTestSpanID(0x7f) // a row that went away
+	fe.recalculateViewLocked()
+	fe.tui.Step()
+	require.True(t, a.armed)
+	require.True(t, fe.tui.IsFocused(a.view), "the approval keeps focus")
+
+	pressKeys(fe, "n")
+	res := awaitApproval(t, fe, results)
+	require.Equal(t, prompt.APPROVAL_DENY, res.decision)
+}
+
 // A jump only borrows the cursor: answering resumes following output when it
 // was following, so new rows are not cropped below the approval's row.
 func TestApprovalJumpResumesFollowingOutput(t *testing.T) {

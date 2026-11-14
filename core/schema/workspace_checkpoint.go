@@ -15,11 +15,8 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	gitsession "github.com/dagger/dagger/engine/session/git"
-	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type capturedCheckpointChunk struct {
@@ -188,7 +185,7 @@ func (s *workspaceSchema) checkpointClientLocal(
 			return inst, fmt.Errorf("workspace snapshot approval required without selected paths")
 		}
 		summary := checkpointApprovalSummary(approvalErr.Candidates)
-		choice, promptErr := checkpointPrompt(clientCtx, bk, summary)
+		choice, promptErr := checkpointPrompt(clientCtx, query, summary)
 		if promptErr != nil {
 			return inst, fmt.Errorf("workspace snapshot requires interactive approval for untracked files: %s: %w", summary, promptErr)
 		}
@@ -902,51 +899,42 @@ func applyCheckpointDecision(policy *gitsession.CaptureGitPolicy, candidates []*
 	return nil
 }
 
-func checkpointPrompt(ctx context.Context, bk *engineutil.Client, summary string) (string, error) {
-	md, err := engine.ClientMetadataFromContext(ctx)
+// checkpointPrompt asks the workspace's owner what to do with the untracked
+// files a checkpoint would carry, through the engine's prompt broker (see
+// Server.Prompt), which shows the question beneath the checkpoint call.
+func checkpointPrompt(ctx context.Context, query *core.Query, summary string) (string, error) {
+	answer, err := query.Prompt(ctx, checkpointPromptRequest(summary))
 	if err != nil {
 		return "", err
 	}
-	caller, err := bk.GetHostServiceCaller(ctx, md.ClientID)
-	if err != nil {
-		return "", err
-	}
-	return checkpointPromptClient(ctx, prompt.NewPromptClient(caller.Conn()), caller.Supports("/dagger.prompt.Prompt/PromptSelect"), summary)
+	return checkpointChoice(answer)
 }
 
-func checkpointPromptClient(ctx context.Context, client prompt.PromptClient, supportsSelect bool, summary string) (string, error) {
-	if supportsSelect {
-		response, err := client.PromptSelect(ctx, &prompt.SelectRequest{
-			Title:  "Include workspace changes?",
-			Prompt: summary + "\n\nDrop omits all untracked files from the checkpoint, keeps tracked changes, and leaves local files untouched.",
-			Choices: []*prompt.SelectChoice{
-				{Id: checkpointInclude, Label: "Include"},
-				{Id: checkpointDrop, Label: "Drop"},
-				{Id: checkpointCancel, Label: "Cancel"},
+func checkpointPromptRequest(summary string) *core.PromptRequest {
+	return &core.PromptRequest{
+		Kind:    "workspace-checkpoint",
+		Title:   "Include workspace changes?",
+		Message: summary + "\n\nDrop omits all untracked files from the checkpoint, keeps tracked changes, and leaves local files untouched.",
+		Select: &core.PromptSelect{
+			Choices: []core.PromptChoice{
+				{ID: checkpointInclude, Label: "Include"},
+				{ID: checkpointDrop, Label: "Drop"},
+				{ID: checkpointCancel, Label: "Cancel"},
 			},
-			DefaultChoice: checkpointCancel,
-		})
-		if err == nil {
-			switch response.GetChoice() {
-			case checkpointInclude, checkpointDrop, checkpointCancel:
-				return response.Choice, nil
-			default:
-				return "", fmt.Errorf("invalid workspace snapshot choice")
-			}
-		}
-		// A new proxy can advertise the RPC while its upstream client is old.
-		if status.Code(err) != codes.Unimplemented {
-			return "", err
-		}
+			// Never implicitly include: the safe default cancels.
+			Default: checkpointCancel,
+			// A client predating selections answers yes/no: yes includes,
+			// no cancels.
+			BoolFallback: &[2]string{checkpointInclude, checkpointCancel},
+		},
 	}
-	response, err := client.PromptBool(ctx, &prompt.BoolRequest{
-		Title: "Include workspace changes?", Prompt: summary,
-	})
-	if err != nil {
-		return "", err
+}
+
+func checkpointChoice(answer *core.PromptAnswer) (string, error) {
+	switch answer.Choice {
+	case checkpointInclude, checkpointDrop, checkpointCancel:
+		return answer.Choice, nil
+	default:
+		return "", fmt.Errorf("invalid workspace snapshot choice")
 	}
-	if response.Response {
-		return checkpointInclude, nil
-	}
-	return checkpointCancel, nil
 }

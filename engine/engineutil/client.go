@@ -45,7 +45,6 @@ import (
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
 	"github.com/dagger/dagger/engine/session/pipe"
-	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/engine/session/store"
 	"github.com/dagger/dagger/engine/session/terminal"
 	"github.com/dagger/dagger/engine/slog"
@@ -467,46 +466,6 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	default:
 		return nil, fmt.Errorf("unexpected response type")
 	}
-}
-
-func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error {
-	// the flag hasn't allowed this LLM call, so prompt the user
-	caller, err := c.GetMainClientCaller(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get main client caller to prompt for allow llm: %w", err)
-	}
-
-	response, err := prompt.NewPromptClient(caller.Conn()).PromptBool(ctx, &prompt.BoolRequest{
-		Title:         "Allow LLM access?",
-		Prompt:        fmt.Sprintf("Remote module **%s** attempted to access the LLM API. Allow it?", moduleRepoURL),
-		PersistentKey: "allow_llm:" + moduleRepoURL,
-		Default:       false, // TODO: default to true?
-	})
-	if err != nil {
-		return fmt.Errorf("failed to prompt user for LLM API access from %s: %w", moduleRepoURL, err)
-	}
-	if response.Response {
-		return nil
-	}
-
-	return fmt.Errorf("module %s was denied LLM access; pass --allow-llm=%s or --allow-llm=all to allow", moduleRepoURL, moduleRepoURL)
-}
-
-func (c *Client) PromptHumanHelp(ctx context.Context, title, question string) (string, error) {
-	caller, err := c.GetMainClientCaller(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get main client caller to prompt user for human help: %w", err)
-	}
-
-	response, err := prompt.NewPromptClient(caller.Conn()).PromptString(ctx, &prompt.StringRequest{
-		Title:   title,
-		Prompt:  question,
-		Default: "The user did not respond.",
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to prompt user for human help: %w", err)
-	}
-	return response.Response, nil
 }
 
 func (c *Client) GetGitConfig(ctx context.Context, checkoutPath ...string) ([]*git.GitConfigEntry, error) {

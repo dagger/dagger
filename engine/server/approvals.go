@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -45,6 +44,10 @@ type approvalSpec struct {
 	// NoForever withholds the forever grant: the owner can allow the request
 	// at most for the session, e.g. running a command on the owner's host.
 	NoForever bool
+	// LegacyKey is the key a client predating approvals remembered an
+	// equivalent "yes" forever under, e.g. "allow_llm:<module>". Such a grant
+	// still holds, and such a client still remembers its yes under it.
+	LegacyKey string
 }
 
 // approvalKey is what a session grant covers: one owner letting one module
@@ -130,7 +133,7 @@ func approvalRemembered(decision prompt.ApprovalDecision) bool {
 	return decision == prompt.APPROVAL_ALLOW_SESSION || decision == prompt.APPROVAL_ALLOW_FOREVER
 }
 
-var errApprovalNotInteractive = errors.New("owning client cannot prompt (not interactive)")
+var errApprovalNotInteractive = core.ErrPromptNotInteractive
 
 // requestApproval asks owner, the trusted client whose credentials or
 // authority are at stake, to approve spec for the code running as client. It
@@ -169,6 +172,9 @@ func (srv *Server) requestApproval(ctx context.Context, client, owner *clientRun
 	// persistent key, the client does not offer it.
 	if !spec.Danger && !spec.NoForever {
 		req.PersistentKey = approvalPersistentKey(spec.Kind, requester.module, spec.Subject)
+		if req.PersistentKey != "" && spec.LegacyKey != "" {
+			req.LegacyPersistentKeys = []string{spec.LegacyKey}
+		}
 	}
 	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
 		req.TraceId = sc.TraceID().String()
@@ -200,8 +206,14 @@ func (srv *Server) promptApproval(ctx context.Context, owner *clientRuntime, req
 	case codes.OK:
 	case codes.Unimplemented:
 		// Never send the persistent key here: the client would remember a
-		// yes forever when it only grants for the session.
-		response, err := client.PromptBool(ctx, &prompt.BoolRequest{Prompt: req.GetPrompt()})
+		// yes forever when it only grants for the session. A legacy key is
+		// the exception: under it, such a client always remembered its yes
+		// forever, and still does.
+		legacy := &prompt.BoolRequest{Prompt: req.GetPrompt()}
+		if keys := req.GetLegacyPersistentKeys(); len(keys) > 0 {
+			legacy.PersistentKey = keys[0]
+		}
+		response, err := client.PromptBool(ctx, legacy)
 		if status.Code(err) == codes.Unimplemented || status.Code(err) == codes.FailedPrecondition {
 			return prompt.APPROVAL_DENY, errApprovalNotInteractive
 		}
