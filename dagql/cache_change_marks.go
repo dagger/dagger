@@ -49,9 +49,17 @@ type changeMarks struct {
 	// part at the mark, or the mark is a stored part's own write: whether
 	// the write can change what its class mates borrow (stampEntryLocked).
 	lends []bool
+	// lending are the entries with a class mark that can lend whose stamps
+	// no write has applied yet: an entry that leaves its classes before they
+	// are applied, its class mates no longer reachable from it, lends to
+	// them at its leaving (markLeavingLocked), though a prune or a part's
+	// retirement has emptied its stored parts.
+	lending map[sharedResultID]struct{}
 	// left are the classes whose entries a leaving entry has marked, so
-	// collecting a whole class walks it once, not once per entry.
-	left map[eqClassID]struct{}
+	// collecting a whole class walks it once, not once per entry, and
+	// whether their entries' stamps moved: a later leaving entry that lends
+	// still moves them.
+	left map[eqClassID]bool
 }
 
 // markEntryLocked marks the entry numbered id: its own facts or holdings
@@ -80,6 +88,12 @@ func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
 		lends = true
 	}
 	c.changes.lends = append(c.changes.lends, lends)
+	if lends {
+		if c.changes.lending == nil {
+			c.changes.lending = map[sharedResultID]struct{}{}
+		}
+		c.changes.lending[id] = struct{}{}
+	}
 }
 
 // classLendsLocked reports whether an entry of the class rooted at root
@@ -103,22 +117,27 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 	c.changes.entries = append(c.changes.entries, id)
 	leaving := c.resultsByID[id]
 	c.stampEntryLocked(leaving, StampLeft)
-	// Its class mates' bundles change only if it could lend them a part.
-	lends := leaving != nil && len(leaving.storedParts) > 0
+	// Its class mates' bundles change only if it could lend them a part:
+	// one it stores, or one a mark not yet applied says it stored.
+	_, lends := c.changes.lending[id]
+	lends = lends || leaving != nil && len(leaving.storedParts) > 0
 	for eqID := range c.resultOutputEqClasses[id] {
 		root := c.eqClassRootLocked(eqID)
 		if root == 0 {
 			continue
 		}
-		if _, ok := c.changes.left[root]; ok {
+		stamped, seen := c.changes.left[root]
+		if seen && (stamped || !lends) {
 			continue
 		}
 		if c.changes.left == nil {
-			c.changes.left = map[eqClassID]struct{}{}
+			c.changes.left = map[eqClassID]bool{}
 		}
-		c.changes.left[root] = struct{}{}
+		c.changes.left[root] = lends
 		for member := range c.outputEqClassResults[root] {
-			c.changes.entries = append(c.changes.entries, member)
+			if !seen {
+				c.changes.entries = append(c.changes.entries, member)
+			}
 			if member != id && lends {
 				c.stampEntryLocked(c.resultsByID[member], StampLeft|StampViaClass)
 			}
@@ -176,6 +195,7 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	change.Holdings = slices.CompactFunc(change.Holdings, func(a, b HolderKey) bool { return a == b })
 	marks.entries, marks.classes, marks.causes, marks.lends, marks.holdings = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.lends[:0], marks.holdings[:0]
 	marks.stamped = 0
+	marks.lending = nil
 	marks.left = nil
 }
 
@@ -248,6 +268,7 @@ func (c *Cache) stampPendingLocked() {
 	}
 	c.stampClassMarksLocked(c.changes.stamped)
 	c.changes.stamped = len(c.changes.classes)
+	c.changes.lending = nil
 	// A later hold of the write walks a leaving entry's classes afresh: their
 	// entries can have changed between the holds, and one walked in an
 	// earlier hold must still be stamped by a later entry's leaving.
