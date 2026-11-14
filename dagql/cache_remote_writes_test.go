@@ -17,6 +17,7 @@ type remoteWriteOps interface {
 	UpdateRemoteHolding(context.Context, HolderKey, RemoteHoldingUpdate) (RemoteChange, bool, error)
 	AddRemoteHold(context.Context, HolderKey, string) (RemoteChange, error)
 	ObserveRemoteRetention(context.Context, HolderKey, RetentionObservation) (RemoteChange, error)
+	ApplyHeldValueState(context.Context, HolderKey, HeldValueState) (RemoteChange, bool, error)
 	ApplyMergedReply(context.Context, CacheID, ValueBundle, MergeReply) (RemoteChange, error)
 	ReleaseRemoteSession(context.Context, CacheID, string) RemoteChange
 	ReleaseRemoteCache(context.Context, CacheID) RemoteChange
@@ -141,6 +142,18 @@ func remoteWritesScript(t *testing.T, ctx context.Context, ops remoteWriteOps) [
 		}
 	}
 	read("held")
+
+	// A value state applies to a holding there, offered parts and all, and
+	// to none that isn't.
+	for _, key := range []HolderKey{{a, 2}, {a, 9}} {
+		change, found, err := ops.ApplyHeldValueState(ctx, key, HeldValueState{
+			Replacements: 0,
+			Deps:         []uint64{1},
+			OfferedParts: []PersistedPartAddress{{Part: "offered"}},
+		})
+		note(fmt.Sprintf("held value state %v", key), change, found, err)
+	}
+	read("held value state")
 
 	collect := func(candidates ...HolderKey) {
 		collected, change, err := ops.CollectRemoteHoldings(ctx, candidates)

@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/opencontainers/go-digest"
@@ -134,6 +135,20 @@ func (w *RemoteWrites) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) 
 // HolderEntry is Cache.HolderEntry, in the hold.
 func (w *RemoteWrites) HolderEntry(key HolderKey) (uint64, bool) {
 	return w.c.holderEntryLocked(key)
+}
+
+// ApplyHeldValueState is Cache.ApplyHeldValueState, in the hold.
+func (w *RemoteWrites) ApplyHeldValueState(ctx context.Context, key HolderKey, obs HeldValueState) (RemoteChange, bool, error) {
+	parts, err := heldPartKeys(obs.Parts)
+	if err != nil {
+		return RemoteChange{}, false, fmt.Errorf("apply held value state %s/%d: %w", key.Cache, key.Number, err)
+	}
+	offered, err := heldPartKeys(obs.OfferedParts)
+	if err != nil {
+		return RemoteChange{}, false, fmt.Errorf("apply held value state %s/%d: %w", key.Cache, key.Number, err)
+	}
+	change, found := w.c.applyHeldValueStateOfLocked(ctx, key, obs, parts, offered)
+	return change, found, nil
 }
 
 // EntryRecipe is Cache.EntryRecipe, in the hold.
