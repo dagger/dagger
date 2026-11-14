@@ -878,6 +878,12 @@ func (r *renderer) renderSpan(
 	if span != nil {
 		contentType = span.ContentType
 		if span.LLMTool != "" {
+			// Calls that render from their full arguments (a Dang snippet, a
+			// Timeout presenting as the call it wraps) have a header of
+			// their own.
+			if r.renderToolCallTitle(out, span) {
+				return nil
+			}
 			if span.LLMToolServer != "" {
 				fmt.Fprint(out,
 					out.String(dagui.ToolServerLabel(span.LLMToolServer)).

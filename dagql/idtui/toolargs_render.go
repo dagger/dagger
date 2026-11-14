@@ -24,7 +24,12 @@ import (
 // skip the default first-arg rendering. Unrecognized tools/args return false
 // so the fallback rendering is preserved.
 func renderToolArgsSummary(out TermOutput, span *dagui.Span) bool {
-	parts := span.ToolArgsSummary()
+	return renderToolArgParts(out, span.ToolArgsSummary())
+}
+
+// renderToolArgParts renders a tool call's header summary parts, as
+// renderToolArgsSummary describes, and reports whether there were any.
+func renderToolArgParts(out TermOutput, parts []dagui.ToolArgPart) bool {
 	for _, part := range parts {
 		fmt.Fprint(out, " ")
 		switch part.Style {

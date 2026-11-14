@@ -86,7 +86,7 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 	// and rolled-up execution output as logs with no Message, so render those
 	// explicitly here (the same log block a failed check's cause uses).
 	if node.Span.Message == "" && !superseded {
-		fe.renderMessageLogs(rowOut, node.Span)
+		fe.renderMessageLogs(rowOut, node.Span, fe.contentWidth-len(indent))
 	}
 
 	for _, line := range strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n") {
@@ -100,18 +100,27 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 		return
 	}
 
+	// A Timeout's row presents as the call it runs (its nested call is left
+	// out below), so what that call ran -- checks, tests, generators,
+	// services, beneath its own boundary -- rolls up here.
+	wrapped := fe.db.WrappedCallSpan(node.Span)
+	rollupSpan := node.Span
+	if wrapped != nil {
+		rollupSpan = wrapped
+	}
+
 	// The checks rollup nests each check's tests, so render it first under
 	// forked claims; the TESTS rollup then covers only the cases it left out.
 	var checks []string
 	checkClaims := fe.withForkedClaims(func() {
-		checks = indentLines("  ", fe.renderMessageChecks(ctx, r, node.Span))
+		checks = indentLines("  ", fe.renderMessageChecks(ctx, r, rollupSpan))
 	})
 	checkClaims.commit()
 	for _, rollup := range [][]string{
-		fe.renderMessageTests(ctx, node.Span, len(indent), checkClaims),
+		fe.renderMessageTests(ctx, rollupSpan, len(indent), checkClaims),
 		checks,
-		indentLines("  ", fe.renderMessageGenerators(ctx, r, node.Span)),
-		indentLines("  ", fe.renderMessageServices(ctx, r, node.Span)),
+		indentLines("  ", fe.renderMessageGenerators(ctx, r, rollupSpan)),
+		indentLines("  ", fe.renderMessageServices(ctx, r, rollupSpan)),
 	} {
 		if len(rollup) == 0 {
 			continue
@@ -123,6 +132,14 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 	}
 
 	for _, child := range node.Children {
+		if wrapped != nil && child.Span == wrapped {
+			// The Timeout's row already said it all. Keep what's beneath
+			// its nested call.
+			for _, grandchild := range child.Children {
+				fe.renderMessageNode(ctx, out, r, grandchild, depth+1)
+			}
+			continue
+		}
 		fe.renderMessageNode(ctx, out, r, child, depth+1)
 	}
 }
@@ -236,11 +253,21 @@ func (fe *frontendPretty) indentMessageNodeLogs(span *dagui.Span, width int) {
 // roll-up doesn't return nested execution output here (it crosses the tool call's
 // RollUpLogs boundary), so the report fetches the exec span's own logs directly
 // (recalculateViewLocked).
-func (fe *frontendPretty) renderMessageLogs(out TermOutput, span *dagui.Span) {
-	if fe.spanVerbosity(span) >= toolArgsVerbosity {
+func (fe *frontendPretty) renderMessageLogs(out TermOutput, span *dagui.Span, width int) {
+	// A Dang snippet is the call: show it as code, in full, in place of its
+	// JSON arguments, lined up under the call as the live row has it.
+	indent := ""
+	if fe.shellTranscript() && span.LLMTool != "" {
+		indent = "  "
+	}
+	if source := fe.dangSourceLines(span, width-len(indent), 0, true); len(source) > 0 {
+		for _, line := range source {
+			fmt.Fprintln(out, indent+line)
+		}
+	} else if fe.spanVerbosity(span) >= toolArgsVerbosity {
 		fe.renderSpanLogBlock(out, span, span, 0, true)
 	}
-	if span.CollapsesToolOutput() {
+	if fe.db.CollapsesToolOutput(span) {
 		return
 	}
 	fe.renderSpanLogBlock(out, span, span, 0, false)
