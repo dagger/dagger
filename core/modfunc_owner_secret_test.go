@@ -89,6 +89,25 @@ func TestDeclineOwnerSecretReuse(t *testing.T) {
 	require.Equal(t, 2, runs["derived"], "a result derived from the owner's secret is not reused")
 	selectTwice("unmarked")
 	require.Equal(t, 1, runs["unmarked"])
+
+	// A call that asked the user is never reused, even returning a held
+	// build: the build itself may encode the answer.
+	prompted := newFunctionCall(FunctionCall{})
+	prompted.MarkPrompted()
+	dagql.Fields[*Query]{
+		dagql.NodeFunc("askedBuild", func(ctx context.Context, _ dagql.ObjectResult[*Query], _ struct{}) (dagql.ObjectResult[*Agent], error) {
+			runs["askedBuild"]++
+			var built dagql.ObjectResult[*Agent]
+			if err := srv.Select(ctx, srv.Root(), &built, dagql.Selector{Field: "build"}); err != nil {
+				return built, err
+			}
+			declineOwnerSecretReuse(ctx, prompted, built)
+			return built, nil
+		}),
+	}.Install(srv)
+	selectTwice("askedBuild")
+	require.Equal(t, 1, runs["returnsBuild"], "a held build read with an owner's secret is reused")
+	require.Equal(t, 2, runs["askedBuild"], "a call that asked the user is not reused")
 }
 
 // The same module call made by two agents, or by an agent and by no agent,

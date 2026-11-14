@@ -16104,6 +16104,146 @@ impl Node for Port {
     }
 }
 #[derive(Clone)]
+pub struct Prompt {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct PromptBooleanOpts {
+    /// The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive).
+    #[builder(setter(into, strip_option), default)]
+    pub default: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct PromptStringOpts<'a> {
+    /// The text the answer starts with, and the answer when nobody can be asked (the client is not interactive).
+    #[builder(setter(into, strip_option), default)]
+    pub default: Option<&'a str>,
+    /// Accept several lines.
+    #[builder(setter(into, strip_option), default)]
+    pub multiline: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct PromptSecretOpts {
+    /// Accept several lines.
+    #[builder(setter(into, strip_option), default)]
+    pub multiline: Option<bool>,
+}
+impl IntoID<Id> for Prompt {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Prompt {
+    fn graphql_type() -> &'static str {
+        "Prompt"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Prompt {
+    /// A unique identifier for this Prompt.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Ask for a yes or no answer.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn boolean(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("boolean");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Ask for a yes or no answer.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn boolean_opts(&self, opts: PromptBooleanOpts) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("boolean");
+        if let Some(default) = opts.default {
+            query = query.arg("default", default);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Ask for a text answer.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn string(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("string");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Ask for a text answer.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn string_opts<'a>(&self, opts: PromptStringOpts<'a>) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("string");
+        if let Some(default) = opts.default {
+            query = query.arg("default", default);
+        }
+        if let Some(multiline) = opts.multiline {
+            query = query.arg("multiline", multiline);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Ask for a secret value, masking the user's input.
+    /// The answer is never remembered beyond the session. When nobody can be asked (the client is not interactive), this is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn secret(&self) -> Secret {
+        let query = self.selection.select("secret");
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Ask for a secret value, masking the user's input.
+    /// The answer is never remembered beyond the session. When nobody can be asked (the client is not interactive), this is an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn secret_opts(&self, opts: PromptSecretOpts) -> Secret {
+        let mut query = self.selection.select("secret");
+        if let Some(multiline) = opts.multiline {
+            query = query.arg("multiline", multiline);
+        }
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for Prompt {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct Query {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -16196,6 +16336,13 @@ pub struct QuerySecretOpts<'a> {
     /// If not set, the cache key for the secret will be derived from its plaintext value as looked up when the secret is constructed.
     #[builder(setter(into, strip_option), default)]
     pub cache_key: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryPromptOpts<'a> {
+    /// Remember answers beyond the session under this key, in the user's configuration (prompt-answers.json in Dagger's configuration directory, where they can be removed), for the asking module only. The user is told so when asked.
+    /// Only modules loaded from git are remembered so; secrets never are.
+    #[builder(setter(into, strip_option), default)]
+    pub key: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryHttpOpts<'a> {
@@ -16724,6 +16871,45 @@ impl Query {
         query = query.arg("name", name.into());
         query = query.arg("plaintext", plaintext.into());
         Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Ask the user a question.
+    /// Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.
+    /// Answers are remembered for the session, per asking module, message and kind of answer.
+    /// A module function that asks is never reused for another call. Calls on an object it returns are cached by the function call, though: a function returning an object built from an answer should declare a per-session (or never) cache policy, so another session gets its own.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The question, as Markdown.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn prompt(&self, message: impl Into<String>) -> Prompt {
+        let mut query = self.selection.select("prompt");
+        query = query.arg("message", message.into());
+        Prompt {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Ask the user a question.
+    /// Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.
+    /// Answers are remembered for the session, per asking module, message and kind of answer.
+    /// A module function that asks is never reused for another call. Calls on an object it returns are cached by the function call, though: a function returning an object built from an answer should declare a per-session (or never) cache policy, so another session gets its own.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The question, as Markdown.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn prompt_opts<'a>(&self, message: impl Into<String>, opts: QueryPromptOpts<'a>) -> Prompt {
+        let mut query = self.selection.select("prompt");
+        query = query.arg("message", message.into());
+        if let Some(key) = opts.key {
+            query = query.arg("key", key);
+        }
+        Prompt {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
@@ -29,6 +31,13 @@ import (
 // An owner whose client cannot ask (no terminal, or a client predating the
 // kind of question) fails with an error wrapping core.ErrPromptNotInteractive,
 // so the caller can fall back to a default.
+//
+// A question asked to be remembered (spec.Remember, as Query.prompt's are) is
+// answered once per session for each owner, asking module, message, kind of
+// answer and key (see promptAnswers), and, with a key, by the owner's client
+// beyond the session, under a key namespaced by the asking module (see
+// promptPersistentKey). The calling function calls are marked as depending on
+// the answer, so their results are never reused for another call.
 func (srv *Server) Prompt(ctx context.Context, spec *core.PromptRequest) (*core.PromptAnswer, error) {
 	req, err := askRequest(spec)
 	if err != nil {
@@ -51,7 +60,28 @@ func (srv *Server) Prompt(ctx context.Context, spec *core.PromptRequest) (*core.
 		req.TraceId = sc.TraceID().String()
 		req.SpanId = sc.SpanID().String()
 	}
-	resp, err := srv.promptAsk(ctx, owner, req, spec)
+	ask := func(ctx context.Context) (*prompt.AskResponse, error) {
+		return srv.promptAsk(ctx, owner, req, spec)
+	}
+	var resp *prompt.AskResponse
+	if spec.Remember {
+		// Whatever the answer, or none, a result computed after asking
+		// depends on it, while its cache key only names its arguments.
+		markPrompted(client)
+		if req.GetSecret() == nil {
+			req.PersistentKey = promptPersistentKey(askKind(req), requester.module, spec.Key)
+		}
+		key := promptAnswerKey{
+			owner:   owner.clientID,
+			module:  resolvedModuleLoadIdentity(requester.module),
+			kind:    askKind(req),
+			message: req.GetMessage(),
+			key:     spec.Key,
+		}
+		resp, err = client.daggerSession.promptAnswers.answer(ctx, key, ask)
+	} else {
+		resp, err = ask(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +91,123 @@ func (srv *Server) Prompt(ctx context.Context, spec *core.PromptRequest) (*core.
 		Choice:  resp.GetChoice(),
 		Secret:  resp.GetSecret(),
 	}, nil
+}
+
+// markPrompted marks the function calls client and its ancestors are running
+// as having asked the user (see core.FunctionCall.MarkPrompted): their
+// results may depend on the answer, so none of them may be reused.
+func markPrompted(client *clientRuntime) {
+	client.fnCall.MarkPrompted()
+	parents, err := client.daggerSession.ancestorRuntimes(client.clientRecord)
+	if err != nil {
+		return
+	}
+	for _, parent := range parents {
+		parent.fnCall.MarkPrompted()
+	}
+}
+
+// askKind names the kind of answer req asks for.
+func askKind(req *prompt.AskRequest) string {
+	switch {
+	case req.GetBoolean() != nil:
+		return "boolean"
+	case req.GetText() != nil:
+		return "string"
+	case req.GetSelect() != nil:
+		return "select"
+	case req.GetSecret() != nil:
+		return "secret"
+	}
+	return ""
+}
+
+// promptAnswerKey is what a remembered answer answers: one owner's answer to
+// one module's question, of one kind. A question without a module has an
+// empty module, which only matches questions equally without one.
+type promptAnswerKey struct {
+	owner   string // owning client ID
+	module  string // resolvedModuleLoadIdentity: source, pin and name
+	kind    string
+	message string
+	key     string
+}
+
+type pendingAnswer struct {
+	done   chan struct{}
+	answer *prompt.AskResponse
+	err    error
+}
+
+// promptAnswers remembers answers for a session. Like approvalGrants, it
+// lives only in daggerSession. Only answers are remembered: a prompt that
+// failed, was canceled or could not be asked asks again next time, while
+// concurrent identical questions share the one prompt in flight.
+type promptAnswers struct {
+	mu      sync.Mutex
+	answers map[promptAnswerKey]*pendingAnswer
+}
+
+func (a *promptAnswers) answer(ctx context.Context, key promptAnswerKey, ask func(context.Context) (*prompt.AskResponse, error)) (*prompt.AskResponse, error) {
+	for {
+		a.mu.Lock()
+		pending, ok := a.answers[key]
+		if !ok {
+			break
+		}
+		a.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-pending.done:
+		}
+		if pending.err != nil && isCanceled(pending.err) && ctx.Err() == nil {
+			// The asker gave up, not the user: ask for this caller.
+			continue
+		}
+		return pending.answer, pending.err
+	}
+	pending := &pendingAnswer{done: make(chan struct{})}
+	if a.answers == nil {
+		a.answers = make(map[promptAnswerKey]*pendingAnswer)
+	}
+	a.answers[key] = pending
+	a.mu.Unlock()
+	pending.answer, pending.err = ask(ctx)
+	a.mu.Lock()
+	if pending.err != nil {
+		delete(a.answers, key)
+	}
+	close(pending.done)
+	a.mu.Unlock()
+	return pending.answer, pending.err
+}
+
+// isCanceled reports whether err is a canceled call, locally or over gRPC.
+func isCanceled(err error) bool {
+	return errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled
+}
+
+// promptPersistentKey is the key an answer to a module's prompt is remembered
+// under by the owner's client beyond the session, or "" to not remember it:
+// the module's own key, namespaced by the kind of answer and by the module
+// the way forever approvals are (see foreverModuleIdentity), so a module can
+// neither read nor plant another's answers, and an answer of one kind never
+// answers another. Only modules loaded from git are identified well enough;
+// nothing is remembered for others, or without a key.
+func promptPersistentKey(kind string, module dagql.ObjectResult[*core.Module], key string) string {
+	if key == "" {
+		return ""
+	}
+	identity := foreverModuleIdentity(module)
+	if identity == "" {
+		return ""
+	}
+	return "prompt:v1:" + strings.Join([]string{
+		strconv.Quote(kind),
+		strconv.Quote(identity),
+		strconv.Quote(key),
+	}, ":")
 }
 
 // askRequest is spec as sent to the owner's client. The text is chosen by the

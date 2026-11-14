@@ -6472,6 +6472,46 @@ input PortForward {
   protocol: NetworkProtocol = TCP
 }
 
+"""
+A question for the user, answered in the terminal of the client running the session.
+
+Select the kind of answer wanted to ask it: each selection asks, unless the answer is remembered.
+"""
+type Prompt implements Node {
+  """A unique identifier for this Prompt."""
+  id: ID!
+
+  """Ask for a yes or no answer."""
+  boolean(
+    """
+    The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive).
+    """
+    default: Boolean = false
+  ): Boolean! @reevaluate
+
+  """Ask for a text answer."""
+  string(
+    """
+    The text the answer starts with, and the answer when nobody can be asked (the client is not interactive).
+    """
+    default: String = ""
+
+    """Accept several lines."""
+    multiline: Boolean = false
+  ): String! @reevaluate
+
+  """
+  Ask for a secret value, masking the user's input.
+
+  The answer is never remembered beyond the session. When nobody can be asked
+  (the client is not interactive), this is an error.
+  """
+  secret(
+    """Accept several lines."""
+    multiline: Boolean = false
+  ): Secret! @reevaluate
+}
+
 """The root of the DAG."""
 type Query implements Node {
   """A unique identifier for this Query."""
@@ -6690,6 +6730,35 @@ type Query implements Node {
     """The plaintext of the secret"""
     plaintext: String!
   ): Secret! @reevaluate
+
+  """
+  Ask the user a question.
+
+  Nothing is asked until an answer is selected from the returned Prompt, in the
+  terminal of the client running the session, which shows who asks: the agent,
+  module and function, as the engine knows them.
+
+  Answers are remembered for the session, per asking module, message and kind of answer.
+
+  A module function that asks is never reused for another call. Calls on an
+  object it returns are cached by the function call, though: a function
+  returning an object built from an answer should declare a per-session (or
+  never) cache policy, so another session gets its own.
+  """
+  prompt(
+    """The question, as Markdown."""
+    message: String!
+
+    """
+    Remember answers beyond the session under this key, in the user's
+    configuration (prompt-answers.json in Dagger's configuration directory,
+    where they can be removed), for the asking module only. The user is told so
+    when asked.
+
+    Only modules loaded from git are remembered so; secrets never are.
+    """
+    key: String
+  ): Prompt!
 
   """Queries the host environment."""
   host: Host!
