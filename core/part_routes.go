@@ -57,6 +57,21 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 	return router.route(demand, true)
 }
 
+// RouteEachPart routes parts of one payload with one router, so the payload
+// is decoded once: each route and error is what RouteParts gives for it.
+func (family foreignFamilyCodec) RouteEachPart(v dagql.PersistedPayloadVisit, parts []dagql.PartKey) ([]dagql.LazyOperationRoute, []error) {
+	routes, errs := make([]dagql.LazyOperationRoute, len(parts)), make([]error, len(parts))
+	router, err := family.newPartRouter(v)
+	for i, part := range parts {
+		if err != nil {
+			routes[i], errs[i] = dagql.LazyOperationRoute{Group: dagql.LazyGroupAddress{OutputPath: slices.Clone(v.Path)}}, err
+			continue
+		}
+		routes[i], errs[i] = router.route(part, true)
+	}
+	return routes, errs
+}
+
 // partRouter routes demands on one decoded payload. A probe routes every
 // output of its payload, so the payload is decoded once, and the Container
 // routing metadata and each part's groups are derived once, not per demand.
