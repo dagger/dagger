@@ -190,6 +190,9 @@ func (c *Cache) keptCallCauseLocked(entry *sharedResult, kept *keptCall) StampCa
 // order: by term, then by request digest. An input the Cloud has no class for
 // stands for itself. Requires egraphMu.
 func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
+	if c.testCallTermsBuilt != nil {
+		c.testCallTermsBuilt()
+	}
 	byTerm := map[string][]*keptCall{}
 	for _, kept := range res.calls {
 		key := c.keptCallTermKeyLocked(kept)
