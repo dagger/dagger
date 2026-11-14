@@ -1005,13 +1005,20 @@ func delegateContainerPart(ctx context.Context, dst *Container, parent dagql.Obj
 // first result that does not pass it through skips evaluating them; through
 // a chain of n mounts that is one evaluation per part instead of n. The walk
 // reads only settled metadata and stops at any result it cannot prove passes
-// the part through.
+// the part through. A result decoded from another engine's record passes a
+// part through by the same rule, read from its recorded operation
+// (transferredPartReceiver).
 func containerPartSource(ctx context.Context, parent dagql.ObjectResult[*Container], part dagql.PartKey) dagql.ObjectResult[*Container] {
 	group := containerDelegationGroup(part)
 	for {
 		ctr := parent.Self()
-		if ctr.acquiredOutput.Load() != nil {
-			return parent
+		if view := ctr.acquiredOutput.Load(); view != nil {
+			next, ok := transferredPartReceiver(ctx, parent, view, part)
+			if !ok {
+				return parent
+			}
+			parent = next
+			continue
 		}
 		op, ok := ctr.lazyOpForRouting().(LazyContainerParts)
 		if !ok {
@@ -1033,6 +1040,43 @@ func containerPartSource(ctx context.Context, parent dagql.ObjectResult[*Contain
 		}
 		parent = next
 	}
+}
+
+// transferredPartReceiver returns the receiver that shell, a container
+// decoded from another engine's record, copies part from, when it passes the
+// part through: it holds no value of the part and no offer of one, and its
+// recorded operation maps the part to the part's delegation group. Through a
+// chain of such results, each mount then comes from the result that mounted
+// it, as it does natively, rather than through every result above it.
+func transferredPartReceiver(ctx context.Context, shell dagql.ObjectResult[*Container], view *containerAcquiredOutput, part dagql.PartKey) (dagql.ObjectResult[*Container], bool) {
+	var none dagql.ObjectResult[*Container]
+	if descriptor, ok := view.Payload.Parts[part]; !ok || descriptor.Kind != containerPartPending {
+		return none, false
+	}
+	srv := dagql.CurrentDagqlServer(ctx)
+	cache, err := dagql.EngineCache(ctx)
+	if srv == nil || err != nil || cache.HasPartOffer(shell, part) {
+		return none, false
+	}
+	call, err := shell.ResultCall()
+	if err != nil || call.Kind != dagql.ResultCallKindField || call.Module != nil || call.Nth != 0 ||
+		call.Receiver == nil || call.Receiver.ResultID == 0 || call.Receiver.Call != nil {
+		return none, false
+	}
+	if !view.passesThrough(call, part) {
+		return none, false
+	}
+	// The exact receiver the record names, as a delegation loads its parent.
+	// The shell depends on it, so it lives as long as the shell does.
+	receiver, err := cache.LoadResultByResultID(ctx, "", srv, call.Receiver.ResultID)
+	if err != nil {
+		return none, false
+	}
+	next, ok := receiver.(dagql.ObjectResult[*Container])
+	if !ok || next.Self() == nil {
+		return none, false
+	}
+	return next, true
 }
 
 // evaluateTemplateAContainerGroup runs one group of a metadata-only
