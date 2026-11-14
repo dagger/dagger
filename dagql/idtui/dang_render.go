@@ -136,15 +136,21 @@ func (fe *frontendPretty) toolBlockIndent(r *renderer, row *dagui.TraceRow) stri
 // Until Dang's highlighter is ready (see dangHighlighter), the code renders
 // plain, and the view re-renders once it is -- unless wait is set, for a
 // one-shot render that would never be redrawn.
+//
+// Source still streaming in renders plain too: it changes with every chunk,
+// and highlighting each version would thrash dangHighlights (and run the
+// highlighter on every frame) for code that's about to change again. It
+// highlights once whole, which doubles as the cue that it is.
 func (fe *frontendPretty) dangSourceLines(span *dagui.Span, width, maxLines int, wait bool) []string {
 	if !isToolCallDisplay(span) || !dagui.RendersToolArgs(span.LLMTool) {
 		return nil
 	}
-	snippet, ok := fe.db.ToolCallView(span).DangSnippet()
+	view := fe.db.ToolCallView(span)
+	snippet, ok := view.DangSnippet()
 	if !ok || strings.TrimSpace(snippet.Source) == "" {
 		return nil
 	}
-	highlight := fe.profile != termenv.Ascii && fe.dangHighlighterReady(wait)
+	highlight := fe.profile != termenv.Ascii && !view.Streaming && fe.dangHighlighterReady(wait)
 	return renderDangSourceWith(fe.profile, highlight, snippet.Source, width, maxLines)
 }
 
