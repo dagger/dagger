@@ -137,6 +137,9 @@ type restoreFile struct {
 	// The rest is its lane's alone. unretained are each part's roots to
 	// merge with no retention edge, and releases the holds each committed
 	// part's merge took on what it landed, kept until the file ends.
+	// entries are the entries the file's records landed on, in the file's
+	// order (protocol.RestoredFile.Entries), and placed the records already
+	// among them, by Cloud number.
 	opened     bool
 	parts      [][]byte
 	unretained [][]dagql.TransferOrdinal
@@ -144,6 +147,8 @@ type restoreFile struct {
 	result     protocol.RestoredFile
 	report     RestoreReport
 	releases   []func(context.Context) error
+	entries    protocol.EntryNumbers
+	placed     map[uint64]struct{}
 }
 
 // restoreRequest is one Restore, answered once its files are done. left
@@ -355,6 +360,7 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	if err != nil {
 		return fmt.Errorf("part %d: %w", f.next, err)
 	}
+	f.noteEntries(bundle, reply)
 	committed := time.Unix(0, reply.EngineTimeUnixNano)
 	f.parts[f.next] = nil
 	f.next++
@@ -368,6 +374,29 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	r.lateMisses(reply, &part)
 	f.report.Parts = append(f.report.Parts, part)
 	return nil
+}
+
+// noteEntries records, for a committed part, the entry each record it
+// carries in full landed on, at the record's first appearance in the file,
+// and 0 for one its merge landed nowhere.
+func (f *restoreFile) noteEntries(part dagql.ValueBundle, reply dagql.MergeReply) {
+	if f.placed == nil {
+		f.placed = map[uint64]struct{}{}
+	}
+	landed := make(map[dagql.TransferOrdinal]uint64, len(reply.Values))
+	for _, value := range reply.Values {
+		landed[value.Ordinal] = value.Number
+	}
+	for _, value := range part.Values {
+		if value.Held != "" {
+			continue
+		}
+		if _, ok := f.placed[value.SenderNumber]; ok {
+			continue
+		}
+		f.placed[value.SenderNumber] = struct{}{}
+		f.entries = append(f.entries, landed[value.Ordinal])
+	}
 }
 
 // decodePart decodes one part of a set file with a decoder of its own,
@@ -410,6 +439,7 @@ func (r *restorer) finish(f *restoreFile, err error) {
 	r.mu.Unlock()
 	if err == nil && f.next == len(f.parts) {
 		f.result.Complete = true
+		f.result.Entries = f.entries
 		r.s.cfg.restored.add(f.file.Digest)
 	}
 	if err != nil {
@@ -419,7 +449,7 @@ func (r *restorer) finish(f *restoreFile, err error) {
 		f.report.PeakAfter = r.s.cfg.peakRSS()
 	}
 	f.report.Complete, f.report.Error = f.result.Complete, f.result.Error
-	f.data, f.parts = nil, nil
+	f.data, f.parts, f.placed = nil, nil, nil
 	r.release(f)
 	r.s.adapter.Restored(f.report)
 	level := "info"
