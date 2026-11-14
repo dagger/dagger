@@ -116,6 +116,10 @@ type frontendPretty struct {
 	// OwnsTerminal, which other goroutines call.
 	ownsTerminal atomic.Bool
 
+	// notifier raises desktop notifications (desktop_notify.go); nil when
+	// disabled or not on a real terminal.
+	notifier *desktopNotifier
+
 	// lifecycle channels
 	quit          chan struct{}
 	backgroundReq chan backgroundRequest
@@ -1231,6 +1235,7 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 			}
 		}
 	}
+	term, notifier := withDesktopNotifications(term, realTerminal)
 	tui := tuist.New(term)
 	logs := newPrettyLogs(profile, db)
 	logs.Images = images
@@ -1255,7 +1260,9 @@ func newWithTerminalProfile(w io.Writer, db *dagui.DB, term tuist.Terminal, prof
 		tuiTerm:            term,
 		claims:             newRenderClaims(),
 		promptColorProfile: promptProfile,
+		notifier:           notifier,
 	}
+	tui.AddInputListener(fe.handleTerminalFocus)
 	tui.AddInputListener(fe.handlePromptBackground)
 	tui.AddInputListener(fe.handleHUDKey)
 	tui.AddChild(fe)
@@ -1941,8 +1948,10 @@ func (fe *frontendPretty) reportHeartbeatLine(elapsed time.Duration) string {
 func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string, dest any) error {
 	switch x := dest.(type) {
 	case *bool:
+		fe.notifyPrompt(title, prompt)
 		return fe.handlePromptBool(ctx, title, prompt, x)
 	case *string:
+		fe.notifyPrompt(title, prompt)
 		return fe.handlePromptString(ctx, title, prompt, x)
 	default:
 		return fmt.Errorf("unsupported prompt destination type: %T", dest)
@@ -1950,6 +1959,7 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 }
 
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
+	fe.notifyPrompt("", "")
 	return fe.handleForm(ctx, func() *huh.Form { return form })
 }
 
@@ -3045,6 +3055,7 @@ func (fe *frontendPretty) spawnRun() {
 
 func (fe *frontendPretty) handleDone(err error) {
 	slog.Debug("run finished", "err", err)
+	fe.notifyRunDone(err)
 	fe.done = true
 	fe.err = err
 	if isOutputDrainError(err) {
@@ -5561,6 +5572,7 @@ func (fe *frontendPretty) notifyAgentSteps() {
 		return
 	}
 	fe.agentStepsSeen = agents
+	fe.notifyAgentTurns(agents)
 	for _, agent := range agents {
 		if agent.ID == "" || agent.SnapshotDigest == "" {
 			continue
@@ -10172,7 +10184,7 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message s
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
-	return fe.HandleForm(ctx, NewForm(
+	form := NewForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title(title).
@@ -10183,7 +10195,9 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 				}).View())).
 				Value(dest),
 		),
-	))
+	)
+	// Not HandleForm: HandlePrompt has already notified with the prompt text.
+	return fe.handleForm(ctx, func() *huh.Form { return form })
 }
 
 func handleTelemetryErrorOutput(w io.Writer, to TermOutput, err error) {

@@ -141,6 +141,16 @@ func (fe *frontendPretty) HandleApproval(ctx context.Context, req *prompt.Approv
 	fe.dispatch(func() {
 		fe.addApproval(a)
 	})
+	// Name the agent, since the notification is read outside its conversation.
+	requester := req.GetRequester().GetAgentName()
+	if requester == "" {
+		requester = req.GetRequester().GetModule()
+	}
+	question := req.GetQuestion()
+	if question == "" {
+		question = req.GetPrompt()
+	}
+	fe.notifyApproval(requester, question)
 	select {
 	case <-ctx.Done():
 		fe.dispatch(func() {
