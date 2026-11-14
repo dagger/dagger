@@ -3211,6 +3211,10 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		r = r.WithContext(queryCtx)
 	}
 
+	// A client whose queries are model-written code (a DangEval snippet's)
+	// resolves the lookups they select live, not by the workspace lock.
+	r = r.WithContext(client.withLiveLookups(r.Context()))
+
 	_, handlerStep := dagql.BeginStep(queryCtx, "graphql.handler")
 	gqlSrv := schema.Handler()
 	handlerStep.End(nil)
@@ -3239,6 +3243,16 @@ func (client *clientRuntime) withModuleNaming(ctx context.Context) context.Conte
 		return ctx
 	}
 	return core.ContextWithNamingView(ctx, mod.Source.Value.Self().NamingView())
+}
+
+// withLiveLookups returns ctx for serving a query of client: a client whose
+// queries are model-written code (engine.ClientMetadata.LiveLookups) has the
+// lookups they select resolve live (schema.WithLiveLookupSelections).
+func (client *clientRuntime) withLiveLookups(ctx context.Context) context.Context {
+	if client.clientMetadata == nil || !client.clientMetadata.LiveLookups {
+		return ctx
+	}
+	return schema.WithLiveLookupSelections(ctx)
 }
 
 func (client *clientRuntime) claimSingleQueryRequest() error {

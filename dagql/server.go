@@ -1199,7 +1199,9 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (r
 			if rerr != nil {
 				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, rerr)
 			}
-			resolveCtx, resolveStep := BeginStep(ctx, "graphql.resolve")
+			// Only the query's own selections take the arguments
+			// ContextWithSelectorArgs gives.
+			resolveCtx, resolveStep := BeginStep(withoutSelectorArgs(ctx), "graphql.resolve")
 			results, rerr = s.Resolve(resolveCtx, s.root, sels...)
 			resolveStep.End(rerr)
 			if rerr != nil {
@@ -2727,6 +2729,35 @@ func selectorView(ctx context.Context, class ObjectType, sel Selector) call.View
 		return sel.View
 	}
 	return view
+}
+
+// SelectorArgsFunc gives the arguments a GraphQL selection of field records
+// and resolves with, at view, given the ones the query passes.
+type SelectorArgsFunc func(ctx context.Context, field *FieldSpec, view call.View, args []NamedInput) []NamedInput
+
+type selectorArgsCtx struct{}
+
+// ContextWithSelectorArgs makes the GraphQL queries executed with ctx select
+// their objects' fields with the arguments fn gives, as if the query had
+// passed them: their calls (IDs and cache keys) record them. Only a query's
+// own selections go through fn: what their resolvers select in turn doesn't,
+// and neither does a query a resolver executes.
+func ContextWithSelectorArgs(ctx context.Context, fn SelectorArgsFunc) context.Context {
+	return context.WithValue(ctx, selectorArgsCtx{}, fn)
+}
+
+func selectorArgs(ctx context.Context) SelectorArgsFunc {
+	fn, _ := ctx.Value(selectorArgsCtx{}).(SelectorArgsFunc)
+	return fn
+}
+
+// withoutSelectorArgs is ctx without the SelectorArgsFunc
+// ContextWithSelectorArgs set, to resolve a query's selections with.
+func withoutSelectorArgs(ctx context.Context) context.Context {
+	if selectorArgs(ctx) == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, selectorArgsCtx{}, SelectorArgsFunc(nil))
 }
 
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
