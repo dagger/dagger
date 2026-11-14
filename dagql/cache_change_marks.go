@@ -185,17 +185,22 @@ func (c *Cache) stampClassMarksLocked(from int) {
 	}
 }
 
-// stampPendingLocked applies, at the end of a write that hands no marks back,
-// the stamps of the class marks it made, which a stored bundle's reader reads
-// (ChangedSince): the marks stay for the next write that hands marks back,
-// for the readers of the changes, but a bundle built in between must not
-// read the entries as current. Requires egraphMu for writing.
+// stampPendingLocked applies, at the end of a write, or of one hold of a write,
+// that hands no marks back, the stamps of the class marks it made, which a
+// stored bundle's reader reads (ChangedSince): the marks stay for the next
+// write that hands marks back, for the readers of the changes, but a bundle
+// built in between must not read the entries as current. Requires egraphMu for
+// writing.
 func (c *Cache) stampPendingLocked() {
 	if c.changes == nil {
 		return
 	}
 	c.stampClassMarksLocked(c.changes.stamped)
 	c.changes.stamped = len(c.changes.classes)
+	// A later hold of the write walks a leaving entry's classes afresh: their
+	// entries can have changed between the holds, and one walked in an
+	// earlier hold must still be stamped by a later entry's leaving.
+	c.changes.left = nil
 }
 
 // compareChangedHoldings orders a change's holdings: by number, then cache.
