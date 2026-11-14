@@ -129,3 +129,19 @@ func (res *sharedResult) hasPartOffersLocked() bool {
 	}
 	return false
 }
+
+// HasPartOffer reports whether the image or the Cloud offers res's part: an
+// address the part can be fetched from instead of made.
+func (c *Cache) HasPartOffer(res AnyResult, part PartKey) bool {
+	row := res.cacheSharedResult()
+	if row == nil {
+		return false
+	}
+	key, err := partAddressKey(PersistedPartAddress{Part: part})
+	if err != nil {
+		return false
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return row.partOfferLocked(key) != nil
+}
