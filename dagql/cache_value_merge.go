@@ -1340,7 +1340,7 @@ func (c *Cache) planValueMergeLocked(ctx context.Context, from CacheID, prep *va
 	if err := c.selectMergedOffersLocked(commit); err != nil {
 		return nil, err
 	}
-	if err := c.checkMergeGraphLocked(commit); err != nil {
+	if err := c.checkMergeGraphLocked(ctx, commit); err != nil {
 		return nil, err
 	}
 	return commit, nil
@@ -1784,7 +1784,7 @@ func compactOfferOwners(offers []PersistedPartOffer) {
 // two caches' values of the same recipes depend on each other differently
 // through explicit dependencies. A bundle that would close one is refused,
 // like any failed check. Requires egraphMu.
-func (c *Cache) checkMergeGraphLocked(commit *valueMergeCommit) error {
+func (c *Cache) checkMergeGraphLocked(ctx context.Context, commit *valueMergeCommit) error {
 	installed := commit.installed
 	// An entry's children are its dependencies, the installed record's for
 	// an entry that takes one, and the owners of its offers as the commit
@@ -1837,6 +1837,62 @@ func (c *Cache) checkMergeGraphLocked(commit *valueMergeCommit) error {
 			changed = append(changed, row.res)
 		}
 	}
+	judge := mergeGraphJudge.Load()
+	if judge == nil {
+		_, err := c.searchMergeGraphLocked(changed, children, true)
+		return err
+	}
+	start := time.Now()
+	narrow, err := c.searchMergeGraphLocked(changed, children, true)
+	narrowTime := time.Since(start)
+	start = time.Now()
+	whole, wholeErr := c.searchMergeGraphLocked(changed, children, false)
+	(*judge)(ctx, MergeGraphJudgement{
+		From:   commit.from,
+		Narrow: err, Whole: wholeErr,
+		NarrowVisits: narrow.visits, NarrowReach: narrow.reach, WholeVisits: whole.visits,
+		NarrowTime: narrowTime, WholeTime: time.Since(start),
+	})
+	return err
+}
+
+// mergeGraphSearch is what one search of a merge's graph visited: the
+// entries it followed, and the stored ancestors it walked up to first.
+type mergeGraphSearch struct {
+	visits, reach int
+}
+
+// searchMergeGraphLocked searches depth-first for a cycle from the changed
+// entries, over the graph children gives. Narrowed, it follows a child only
+// if the merge changes it, or it already existed and the stored graph has a
+// path from it to an existing changed entry (mergeReachLocked); whole, it
+// follows every child, as the check did before it was narrowed, and judges
+// the narrowed one in tests and judging builds (JudgeMergeGraphs).
+//
+// The two refuse the same merges while the stored graph is acyclic, as every
+// merge's check keeps it. An unchanged entry's children are its stored
+// ones, so every edge the merge adds starts at a changed entry and every
+// cycle runs through one. From one changed entry to the next, a cycle runs
+// only through unchanged entries, by stored edges, so the last of them
+// points at an existing changed entry and each is a stored ancestor of it.
+// Every entry of a cycle is changed or such an ancestor, and the narrowed
+// search, from the changed entries over just those, finds it. An entry the
+// merge creates has nothing stored pointing at it: when every changed entry
+// is new, the search visits only them. Requires egraphMu.
+func (c *Cache) searchMergeGraphLocked(changed []*sharedResult, children func(*sharedResult) []*sharedResult, narrow bool) (mergeGraphSearch, error) {
+	var (
+		isChanged map[*sharedResult]bool
+		reach     map[*sharedResult]bool
+		search    mergeGraphSearch
+	)
+	if narrow {
+		isChanged = make(map[*sharedResult]bool, len(changed))
+		for _, res := range changed {
+			isChanged[res] = true
+		}
+		reach = c.mergeReachLocked(changed)
+		search.reach = len(reach)
+	}
 	const (
 		visiting = 1
 		done     = 2
@@ -1851,11 +1907,11 @@ func (c *Cache) checkMergeGraphLocked(commit *valueMergeCommit) error {
 			return nil
 		}
 		state[res] = visiting
-		if c.testMergeGraphVisited != nil {
+		if narrow && c.testMergeGraphVisited != nil {
 			c.testMergeGraphVisited(res.id)
 		}
 		for _, child := range children(res) {
-			if child == nil {
+			if child == nil || narrow && !isChanged[child] && !reach[child] {
 				continue
 			}
 			if cycle := visit(child); cycle != nil {
@@ -1867,10 +1923,98 @@ func (c *Cache) checkMergeGraphLocked(commit *valueMergeCommit) error {
 	}
 	for _, res := range changed {
 		if cycle := visit(res); cycle != nil {
-			return fmt.Errorf("merge values: the merge would close a dependency cycle through entry %d", cycle.id)
+			search.visits = len(state)
+			return search, fmt.Errorf("merge values: the merge would close a dependency cycle through entry %d", cycle.id)
 		}
 	}
-	return nil
+	search.visits = len(state)
+	return search, nil
+}
+
+// mergeReachLocked returns the stored ancestors of the changed entries that
+// already exist: every entry with a stored path to one, walked up through
+// each entry's dependents (depParents) and through the entries whose offers
+// it owns (offerParents, to the entry holding the owner's offer). An entry
+// the merge creates isn't registered yet, and nothing stored points at it.
+// Requires egraphMu.
+func (c *Cache) mergeReachLocked(changed []*sharedResult) map[*sharedResult]bool {
+	reach := map[*sharedResult]bool{}
+	var queue []*sharedResult
+	for _, res := range changed {
+		if res.id != 0 && c.resultsByID[res.id] == res {
+			queue = append(queue, res)
+		}
+	}
+	add := func(res *sharedResult) {
+		if res != nil && !reach[res] {
+			reach[res] = true
+			queue = append(queue, res)
+		}
+	}
+	for len(queue) > 0 {
+		res := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		if res.depParents != nil {
+			for id := range res.depParents {
+				add(c.resultsByID[id])
+			}
+		}
+		for id := range res.offerParents {
+			add(c.offerHolderLocked(c.offerOwners[id]))
+		}
+	}
+	return reach
+}
+
+// offerHolderLocked returns the entry whose offer owner holds, or nil for an
+// owner that holds none: one prepared and not attached, or released.
+// Requires egraphMu.
+func (c *Cache) offerHolderLocked(owner *offerOwner) *sharedResult {
+	if owner == nil || owner.slots == 0 {
+		return nil
+	}
+	holder := c.resultsByID[owner.origin]
+	if holder == nil {
+		return nil
+	}
+	key, err := partAddressKey(owner.address)
+	if err != nil {
+		return nil
+	}
+	if offer := holder.partOfferLocked(key); offer == nil || offer.owner != owner {
+		return nil
+	}
+	return holder
+}
+
+// MergeGraphJudgement is one merge's cycle check decided both ways: by the
+// narrowed search that decides it, and by the whole search it replaced, with
+// what each visited and how long it took. NarrowReach is how many stored
+// ancestors the narrowed search walked up to first.
+type MergeGraphJudgement struct {
+	From                                   CacheID
+	Narrow, Whole                          error
+	NarrowVisits, NarrowReach, WholeVisits int
+	NarrowTime, WholeTime                  time.Duration
+}
+
+// Disagrees reports that the two searches decided the merge differently.
+func (j MergeGraphJudgement) Disagrees() bool {
+	return (j.Narrow == nil) != (j.Whole == nil)
+}
+
+var mergeGraphJudge atomic.Pointer[func(context.Context, MergeGraphJudgement)]
+
+// JudgeMergeGraphs has every merge's cycle check from now on also decided by
+// the whole search the narrowed one replaced, and gives judge each merge's
+// two decisions; nil stops it. Only tests and judging builds call it: the
+// narrowed search alone decides a merge either way.
+func JudgeMergeGraphs(judge func(context.Context, MergeGraphJudgement)) {
+	if judge == nil {
+		mergeGraphJudge.Store(nil)
+		return
+	}
+	mergeGraphJudge.Store(&judge)
 }
 
 // installedInDependencyOrder returns the rows that install a record,
