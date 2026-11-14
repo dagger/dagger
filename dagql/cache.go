@@ -2646,6 +2646,10 @@ type Cache struct {
 	// testNoPrerelocation, when set, keeps a merge from relocating its
 	// records before its commit takes egraphMu.
 	testNoPrerelocation bool
+	// testKeepRecordCopies, when set, keeps a prepared merge holding the
+	// copies of its bundle's records that only its preparation reads
+	// (dropRecordCopies).
+	testKeepRecordCopies bool
 	// testPrerelocated runs once a merge has relocated its records before
 	// its commit, with the numbers each relocation used, by ordinal and
 	// provisional number, which it may change.
