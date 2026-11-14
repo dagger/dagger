@@ -124,6 +124,14 @@ const (
 	// the span (or, with dagger.io/dag.digest, the digest's creator span)
 	// has logs, to be read on demand.
 	LogRolePresence = "log.presence"
+	// LogRowAttr is a log record's row ID in the engine's live store it was
+	// read from (clientdb.Log.ID), positive and increasing in storage order.
+	// It is transport-only: the engine sets it on the records of on-demand
+	// log queries (POST /v1/logs/query) alone, so a reader can tell a row it
+	// already holds from a new one when two reads return it. IDs are
+	// per-store, so they compare only within one store's reads. A record
+	// without it has no identity. (int)
+	LogRowAttr = "dagger.io/log.row"
 
 	// LogHumanOnlyAttr marks a log record written for people reading the
 	// trace, not for a model: frontends render it as usual, while the logs an

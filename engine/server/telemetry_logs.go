@@ -104,7 +104,8 @@ func presenceResourceLogs(presence []clientdb.LogPresence) *otlplogsv1.ResourceL
 	return &otlplogsv1.ResourceLogs{ScopeLogs: []*otlplogsv1.ScopeLogs{{LogRecords: records}}}
 }
 
-// displayLogFetcher reads the display text of spans. A one-shot read ends at
+// displayLogFetcher reads the display text of spans, each record carrying
+// its row ID (telemetryattrs.LogRowAttr). A one-shot read ends at
 // the store's end when it first runs, or at through when that is lower and
 // non-negative, and reads its rows through the store's row indexes
 // (ReadDisplayLogs): its batches count the rows they return, and its cursor
@@ -142,13 +143,13 @@ func displayLogFetcher(spans []archive.LogSpan, oneShot bool, through int64) str
 			if err != nil {
 				return 0, nil, 0, err
 			}
-			return next, encodeMessage(&collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows)}), n, nil
+			return next, encodeMessage(&collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPBWithRowIDs(rows)}), n, nil
 		}
 		rows, next, err := db.SelectDisplayLogs(ctx, p, "", scope)
 		if err != nil {
 			return 0, nil, 0, err
 		}
-		return next, encodeMessage(&collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows)}), int(next - since), nil
+		return next, encodeMessage(&collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPBWithRowIDs(rows)}), int(next - since), nil
 	}
 }
 

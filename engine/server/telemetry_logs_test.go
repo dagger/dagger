@@ -116,6 +116,8 @@ type logFrame struct {
 	cursor int64
 	bodies []string
 	attrs  []map[string]string
+	// rows are the records' row IDs (telemetryattrs.LogRowAttr); 0 for none.
+	rows []int64
 }
 
 func readLogFrame(t *testing.T, r io.Reader) logFrame {
@@ -133,10 +135,15 @@ func readLogFrame(t *testing.T, r io.Reader) logFrame {
 			for _, lr := range sl.LogRecords {
 				f.bodies = append(f.bodies, lr.GetBody().GetStringValue())
 				attrs := map[string]string{"span": fmt.Sprintf("%x", lr.SpanId)}
+				var row int64
 				for _, kv := range lr.Attributes {
 					attrs[kv.Key] = kv.GetValue().GetStringValue()
+					if kv.Key == telemetryattrs.LogRowAttr {
+						row = kv.GetValue().GetIntValue()
+					}
 				}
 				f.attrs = append(f.attrs, attrs)
+				f.rows = append(f.rows, row)
 			}
 		}
 	}
@@ -406,6 +413,89 @@ func TestLivePresencePush(t *testing.T) {
 		}
 	}
 	require.ElementsMatch(t, []string{lqRoot + "/", lqKid + "/xxh3:svc"}, presence, "one presence record per span and digest")
+}
+
+// TestLiveLogQueryRowIDs: every record a log query returns carries its row
+// ID in the store, one-shot or followed, resumed or not -- the identity a
+// reader dedupes rows that two reads return by. The pushes carry none: they
+// are unchanged.
+func TestLiveLogQueryRowIDs(t *testing.T) {
+	f := newLogQueryFixture(t, "client")
+	f.append(t, "client",
+		[]clientdb.Span{logQuerySpanRow(lqRoot, ""), logQuerySpanRow(lqKid, lqRoot), logQuerySpanRow(lqOther, "")},
+		logQueryRow(t, lqRoot, "root 1"), // 1
+		logQueryRow(t, lqOther, "other"), // 2
+		logQueryRow(t, lqKid, "kid 1"),   // 3
+		logQueryRow(t, lqRoot, "root 2", logapi.String(telemetry.DagDigestAttr, "xxh3:svc")), // 4
+	)
+	ts := f.serve(t, "client")
+	spans := []archive.LogSpan{{SpanID: lqRoot, Descendants: true}}
+	type row struct {
+		body string
+		id   int64
+	}
+	readRows := func(r io.Reader, want int) ([]row, logFrame) {
+		var rows []row
+		for {
+			frame := readLogFrame(t, r)
+			for i, body := range frame.bodies {
+				rows = append(rows, row{body, frame.rows[i]})
+			}
+			if frame.kind == enginetel.LiveFrameTerminal || (want > 0 && len(rows) >= want) {
+				return rows, frame
+			}
+		}
+	}
+	query := func(q archive.LogQuery, cursor string) *http.Response {
+		body, err := json.Marshal(q)
+		require.NoError(t, err)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/v1/logs/query", bytes.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Accept", enginetel.LiveContentType)
+		if cursor != "" {
+			req.Header.Set(enginetel.LiveCursorHeader, cursor)
+		}
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		t.Cleanup(func() { resp.Body.Close() })
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, enginetel.LiveFrameHello, readLogFrame(t, resp.Body).kind)
+		return resp
+	}
+
+	got, _ := readRows(query(archive.LogQuery{Spans: spans}, "").Body, 0)
+	require.Equal(t, []row{{"root 1", 1}, {"kid 1", 3}, {"root 2", 4}}, got, "a one-shot read")
+	got, _ = readRows(query(archive.LogQuery{Spans: spans, Through: 3}, "1").Body, 0)
+	require.Equal(t, []row{{"kid 1", 3}}, got, "a resumed, bounded read")
+
+	follow := query(archive.LogQuery{Spans: spans, Follow: true}, "2")
+	got, _ = readRows(follow.Body, 2)
+	require.Equal(t, []row{{"kid 1", 3}, {"root 2", 4}}, got, "a resumed follow")
+	f.append(t, "client", nil,
+		logQueryRow(t, lqOther, "other 2"), // 5
+		logQueryRow(t, lqKid, "kid 2"),     // 6
+	)
+	got, _ = readRows(follow.Body, 1)
+	require.Equal(t, []row{{"kid 2", 6}}, got, "followed rows")
+
+	// The pushes are not log query responses: they carry no row IDs.
+	close(f.shutdown["client"])
+	for _, path := range []string{"/v1/logs", "/v1/logs?display=presence"} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+path, nil)
+		require.NoError(t, err)
+		req.Header.Set("Accept", enginetel.LiveContentType)
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode, path)
+		require.Equal(t, enginetel.LiveFrameHello, readLogFrame(t, resp.Body).kind)
+		got, last := readRows(resp.Body, 0)
+		require.Equal(t, enginetel.LiveFrameTerminal, last.kind)
+		require.NotEmpty(t, got, path)
+		for _, r := range got {
+			require.Zero(t, r.id, "%s: %q carries a row ID", path, r.body)
+		}
+	}
 }
 
 // A batch the stream discards to refetch a smaller one (too large to frame)

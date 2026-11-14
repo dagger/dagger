@@ -16,12 +16,26 @@ import (
 	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 // LogsToPB converts log rows to OTLP, grouped by resource and
 // instrumentation scope, each group in the order its first row comes. Each
 // distinct resource and scope is decoded once per call, as in SpansToPB.
 func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
+	return logsToPB(dbLog, false)
+}
+
+// LogsToPBWithRowIDs is LogsToPB with each record carrying its row's ID
+// (telemetryattrs.LogRowAttr) after its stored attributes, for the rows that
+// have one (ID > 0): on-demand log queries send it, so a reader can tell a
+// row it holds already from a new one.
+func LogsToPBWithRowIDs(dbLog []Log) []*otlplogsv1.ResourceLogs {
+	return logsToPB(dbLog, true)
+}
+
+func logsToPB(dbLog []Log, rowIDs bool) []*otlplogsv1.ResourceLogs {
 	if len(dbLog) == 0 {
 		return nil
 	}
@@ -116,6 +130,12 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 		if err != nil {
 			slog.Error("failed to unmarshal span id", "error", err)
 			continue
+		}
+		if rowIDs && sd.ID > 0 {
+			attrs = append(attrs, &otlpcommonv1.KeyValue{
+				Key:   telemetryattrs.LogRowAttr,
+				Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_IntValue{IntValue: sd.ID}},
+			})
 		}
 		scopeLog.LogRecords = append(scopeLog.LogRecords, &otlplogsv1.LogRecord{
 			TimeUnixNano:   uint64(sd.Timestamp),
