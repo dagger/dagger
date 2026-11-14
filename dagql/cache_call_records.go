@@ -77,14 +77,22 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 	changed := false
 	if expires := mergeSharedResultExpiryUnix(entry.expiresAtUnix, desc.ExpiresAtUnix); expires != entry.expiresAtUnix {
 		entry.expiresAtUnix = expires
+		c.markEntryClassLocked(entry.id, StampCallExpiry)
 		changed = true
 	}
 	if kept != nil {
 		if _, ok := entry.calls[kept.id.recipe]; !ok {
+			// A stored bundle of the entry carries its kept calls. The cause
+			// tells a new term the bundle can send from one it has (a term
+			// the entry's calls already derive) and one it can't (an input
+			// with no stored record of its own recipe), for diagnostics.
+			cause := c.keptCallCauseLocked(entry, kept)
 			if entry.calls == nil {
 				entry.calls = make(map[digest.Digest]*keptCall)
 			}
 			entry.calls[kept.id.recipe] = kept
+			c.stampEntryLocked(entry, cause)
+			c.indexKeptCallLocked(entry, kept)
 			changed = true
 		}
 	}
@@ -114,10 +122,11 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 		}
 		for _, group := range c.keptCallTermsLocked(res) {
 			chosen, add := c.placeableCallLocked(group, func(entry *sharedResult) bool {
-				return build.ordinary[entry.id] || build.heldBy.heldLocked(entry)
+				return build.ordinary[entry.id] || build.heldBy.heldLocked(entry, build.now)
 			})
 			if chosen == nil {
 				build.unsendableCalls++
+				build.markPartial(res)
 				continue
 			}
 			for _, input := range add {
@@ -138,21 +147,79 @@ func (c *Cache) storedBundleCallsLocked(build *storedBundleBuild, start int) err
 	return nil
 }
 
+// keptCallTermKeyLocked is the term a kept call derives on the Cloud, as
+// keptCallTermsLocked groups calls by: its self digest over its inputs'
+// classes, an input the Cloud has no class for standing for itself.
+// Requires egraphMu.
+func (c *Cache) keptCallTermKeyLocked(kept *keptCall) string {
+	key := kept.id.self.String()
+	for _, input := range kept.id.inputs {
+		if root := c.eqClassRootLocked(c.egraphDigestToClass[input.String()]); root != 0 {
+			key += fmt.Sprintf("|%d", root)
+		} else {
+			key += "|" + input.String()
+		}
+	}
+	return key
+}
+
+// keptCallCauseLocked says what keeping kept on entry, before it is kept,
+// changes in a stored bundle of the entry (StampCause): a call of a term the
+// entry's calls already derive, one with an input no bundle can place (no
+// stored record of its own recipe; a witness needs none), or a new term a
+// bundle can send. Requires egraphMu.
+func (c *Cache) keptCallCauseLocked(entry *sharedResult, kept *keptCall) StampCause {
+	for i, input := range kept.id.inputs {
+		if kept.id.witnesses[i] {
+			continue
+		}
+		if in := c.currentEntryForRecipeLocked(input); in == nil || in.noValueLocked() || in.persistedEnvelope == nil {
+			return StampKeptCallUnsendable
+		}
+	}
+	key := c.keptCallTermKeyLocked(kept)
+	for _, other := range entry.calls {
+		if c.keptCallTermKeyLocked(other) == key {
+			return StampKeptCallOldTerm
+		}
+	}
+	return StampKeptCallNewTerm
+}
+
+// verifyKeptCallTerms, set only by tests, checks every kept grouping of an
+// entry's calls against one built fresh, and panics if they differ.
+var verifyKeptCallTerms bool
+
 // keptCallTermsLocked groups the calls kept on res by the term each derives
 // on the Cloud, the call's self digest over its inputs' classes, in a stable
 // order: by term, then by request digest. An input the Cloud has no class for
-// stands for itself. Requires egraphMu.
+// stands for itself. The grouping is kept with the entry until its calls, or
+// an input's class, change (forgetCallTermsLocked): each pricing and bundle
+// visits it, and an entry's calls grow with the runs that taught them.
+// Requires egraphMu.
 func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
-	byTerm := map[string][]*keptCall{}
-	for _, kept := range res.calls {
-		key := kept.id.self.String()
-		for _, input := range kept.id.inputs {
-			if root := c.eqClassRootLocked(c.egraphDigestToClass[input.String()]); root != 0 {
-				key += fmt.Sprintf("|%d", root)
-			} else {
-				key += "|" + input.String()
+	if kept := res.callTerms.Load(); kept != nil {
+		if verifyKeptCallTerms {
+			if fresh := c.callTermsLocked(res); !slices.EqualFunc(*kept, fresh, slices.Equal) {
+				panic(fmt.Sprintf("entry %d: kept call terms %v, built fresh %v", res.id, *kept, fresh))
 			}
 		}
+		return *kept
+	}
+	if c.testCallTermsBuilt != nil {
+		c.testCallTermsBuilt()
+	}
+	groups := c.callTermsLocked(res)
+	res.callTerms.Store(&groups)
+	return groups
+}
+
+// callTermsLocked is keptCallTermsLocked's grouping, built fresh. Requires
+// egraphMu.
+func (c *Cache) callTermsLocked(res *sharedResult) [][]*keptCall {
+	byTerm := map[string][]*keptCall{}
+	for _, kept := range res.calls {
+		key := c.keptCallTermKeyLocked(kept)
 		byTerm[key] = append(byTerm[key], kept)
 	}
 	groups := make([][]*keptCall, 0, len(byTerm))
@@ -162,6 +229,60 @@ func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
 		groups = append(groups, group)
 	}
 	return groups
+}
+
+// indexKeptCallLocked notes kept, newly kept on entry, under each of its
+// inputs, and drops entry's grouping. Requires egraphMu for writing.
+func (c *Cache) indexKeptCallLocked(entry *sharedResult, kept *keptCall) {
+	for _, input := range kept.id.inputs {
+		entries := c.callInputEntries[input.String()]
+		if entries == nil {
+			if c.callInputEntries == nil {
+				c.callInputEntries = make(map[string]map[sharedResultID]struct{})
+			}
+			entries = make(map[sharedResultID]struct{})
+			c.callInputEntries[input.String()] = entries
+		}
+		entries[entry.id] = struct{}{}
+	}
+	entry.callTerms.Store(nil)
+}
+
+// unindexKeptCallsLocked forgets the inputs of the calls kept on entry, which
+// is leaving the cache. Requires egraphMu for writing.
+func (c *Cache) unindexKeptCallsLocked(entry *sharedResult) {
+	for _, kept := range entry.calls {
+		for _, input := range kept.id.inputs {
+			entries := c.callInputEntries[input.String()]
+			delete(entries, entry.id)
+			if len(entries) == 0 {
+				delete(c.callInputEntries, input.String())
+			}
+		}
+	}
+}
+
+// forgetCallTermsLocked drops the grouping of each entry with a kept call
+// whose input is dig, whose class has changed. Requires egraphMu for
+// writing.
+func (c *Cache) forgetCallTermsLocked(dig string) {
+	for id := range c.callInputEntries[dig] {
+		if res := c.resultsByID[id]; res != nil {
+			res.callTerms.Store(nil)
+		}
+	}
+}
+
+// forgetAllCallTermsLocked drops every entry's grouping. Requires egraphMu
+// for writing.
+func (c *Cache) forgetAllCallTermsLocked() {
+	for _, entries := range c.callInputEntries {
+		for id := range entries {
+			if res := c.resultsByID[id]; res != nil {
+				res.callTerms.Store(nil)
+			}
+		}
+	}
 }
 
 // placeableCallLocked chooses, of calls that derive one term, the first whose
@@ -181,7 +302,7 @@ func (c *Cache) placeableCallLocked(group []*keptCall, has func(*sharedResult) b
 				// The recipient's own call reproduces a witness.
 				continue
 			}
-			entry := c.entryOfOwnRecipeLocked(input)
+			entry := c.currentEntryForRecipeLocked(input)
 			switch {
 			case entry == nil:
 				placed, stored = false, false
@@ -201,15 +322,4 @@ func (c *Cache) placeableCallLocked(group []*keptCall, has func(*sharedResult) b
 		}
 	}
 	return fallback, fallbackAdd
-}
-
-// entryOfOwnRecipeLocked returns the entry whose own recipe is dig: the
-// recipe index also names entries by the request digests their calls taught
-// them, which a record doesn't carry. Requires egraphMu.
-func (c *Cache) entryOfOwnRecipeLocked(dig digest.Digest) *sharedResult {
-	entry := c.resultsByID[c.entriesByRecipe[dig]]
-	if entry == nil || len(entry.recipeKeys) == 0 || entry.recipeKeys[0] != dig {
-		return nil
-	}
-	return entry
 }

@@ -105,7 +105,7 @@ func storedSizesBenchCloud(b *testing.B) (context.Context, *Cache, []uint64) {
 	var batch []uint64
 	for _, root := range bundle.Roots {
 		number := numbers[root.Ordinal]
-		ok, err := cloud.SetStoredPart(ctx, number, storedBenchPart(number), 0)
+		ok, _, err := cloud.SetStoredPart(ctx, number, storedBenchPart(number), 0)
 		require.NoError(b, err)
 		require.True(b, ok)
 		batch = append(batch, number)
@@ -197,7 +197,7 @@ func BenchmarkStoredSizesAtScale(b *testing.B) {
 			storedSizesBenchForget(cloud)
 			runtime.GC()
 			b.StartTimer()
-			sizes, err := cloud.StoredSizes(ctx, roots, nil)
+			sizes, err := cloud.StoredSizes(ctx, roots, time.Now().Unix(), nil)
 			require.NoError(b, err)
 			records = 0
 			for _, size := range sizes {
@@ -216,14 +216,15 @@ func BenchmarkStoredSizesAtScale(b *testing.B) {
 		measured bool
 	}{{"warm-64", 64, false}, {"warm-9", 9, false}, {"measured-64", 64, true}} {
 		b.Run(run.name, func(b *testing.B) {
-			_, err := cloud.StoredSizes(ctx, roots, nil)
+			_, err := cloud.StoredSizes(ctx, roots, time.Now().Unix(), nil)
 			require.NoError(b, err)
-			held := &HeldBy{Cache: "cache-03", Now: time.Now().Unix()}
+			now := time.Now().Unix()
+			held := &HeldBy{Cache: "cache-03"}
 			// Only the roots the engine cache doesn't hold are candidates.
 			var candidates []uint64
 			cloud.egraphMu.RLock()
 			for _, root := range roots {
-				if !held.heldLocked(cloud.resultsByID[sharedResultID(root)]) {
+				if !held.heldLocked(cloud.resultsByID[sharedResultID(root)], now) {
 					candidates = append(candidates, root)
 				}
 			}
@@ -238,7 +239,7 @@ func BenchmarkStoredSizesAtScale(b *testing.B) {
 			b.ResetTimer()
 			for i := range b.N {
 				start := (i * run.n) % (len(candidates) - run.n)
-				sizes, err := measure(ctx, candidates[start:start+run.n], held)
+				sizes, err := measure(ctx, candidates[start:start+run.n], now, held)
 				require.NoError(b, err)
 				records = 0
 				for _, size := range sizes {

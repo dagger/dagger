@@ -63,8 +63,8 @@ func (c *Cache) currentEntryForRecipeLocked(recipe digest.Digest) *sharedResult 
 // sessionMu.
 func (c *Cache) resultInUseLocked(res *sharedResult) bool {
 	idle := int64(0)
-	for key := range res.holders {
-		if !senderCache(key.Cache) {
+	for _, ref := range res.holderRefsLocked() {
+		if !senderCache(ref.key.Cache) {
 			idle++
 		}
 	}
@@ -120,6 +120,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 		queue collectionQueue
 		rerr  error
 	)
+	c.markEntryClassLocked(cur.id, StampReplaced)
 	// The stored parts, like the offers, belonged to the old value, and so
 	// did its normalized record and its place in a list's items
 	// (cache_list_items.go).
@@ -164,6 +165,7 @@ func (c *Cache) replaceResultValueInPlaceLocked(ctx context.Context, cur, fresh 
 	// A nil new value leaves hasValue false, as its fresh publication would.
 	cur.hasValue = fresh.hasValue
 	cur.persistedEnvelope = fresh.persistedEnvelope
+	cur.stored = fresh.stored
 	cur.payloadRevision++
 	c.setResultPayloadBytesLocked(cur, fresh.payloadBytes)
 	// fresh was never registered, so its own lease cleanup does nothing.

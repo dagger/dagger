@@ -20,7 +20,7 @@ func heldTestHold(t *testing.T, ctx context.Context, cloud *Cache, cache CacheID
 	require.NoError(t, err)
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
-	require.Equal(t, sharedResultID(cloudNumber), cloud.holderEntries[HolderKey{Cache: cache, Number: number}], "the holding sits on the Cloud entry")
+	require.Equal(t, sharedResultID(cloudNumber), cloud.holderEntriesForTest()[HolderKey{Cache: cache, Number: number}], "the holding sits on the Cloud entry")
 }
 
 // heldTestRow returns the bundle's row sent for the Cloud entry number.
@@ -101,13 +101,54 @@ func heldTestSessionValue(t *testing.T, ctx context.Context, c *Cache, srv *Serv
 // and returns the engine and P's number there.
 func heldTestEngineWithP(t *testing.T, ctx context.Context, cloud *Cache, p uint64) (context.Context, *Cache, uint64) {
 	t.Helper()
-	alone, err := cloud.StoredBundle(ctx, []uint64{p}, nil)
+	alone, err := cloud.StoredBundle(ctx, []uint64{p}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	bctx, b, _ := transferTestCache(t)
 	reply, err := b.MergeValues(bctx, cloudCacheID, alone.Bundle)
 	require.NoError(t, err)
 	require.True(t, reply.Committed)
 	return bctx, b, reply.Imported()[0].ResultID
+}
+
+// The reads that judge what a recipient holds judge its holdings at the
+// reader's clock, not their own: a holding that expires an hour from the
+// wall clock makes a held row before that moment and none from it, in the
+// bundle, its sizes and its lower half alike.
+func TestHeldRowsAtTheReadersClock(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	heldTestHold(t, ctx, cloud, "cache-b", 7, p, expiresAt)
+	held := &HeldBy{Cache: "cache-b"}
+
+	bundle, err := cloud.StoredBundle(ctx, []uint64{r}, expiresAt-1, held)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{p}, bundle.Held, "held before the holding expires")
+	bundle, err = cloud.StoredBundle(ctx, []uint64{r}, expiresAt, held)
+	require.NoError(t, err)
+	require.Empty(t, bundle.Held, "the holding has expired at the reader's moment, though not by the wall clock")
+
+	whole, err := cloud.StoredSizes(ctx, []uint64{r}, expiresAt, nil)
+	require.NoError(t, err)
+	before, err := cloud.StoredSizes(ctx, []uint64{r}, expiresAt-1, held)
+	require.NoError(t, err)
+	require.Less(t, before[0].Bytes, whole[0].Bytes, "priced with a held row before the holding expires")
+	at, err := cloud.StoredSizes(ctx, []uint64{r}, expiresAt, held)
+	require.NoError(t, err)
+	require.Equal(t, whole, at, "priced whole once it has expired")
+	measured, err := cloud.MeasuredStoredSizes(ctx, []uint64{r}, expiresAt-1, held)
+	require.NoError(t, err)
+	require.Equal(t, before, measured, "measured as StoredSizes prices it, at the same moment")
+	measured, err = cloud.MeasuredStoredSizes(ctx, []uint64{r}, expiresAt, held)
+	require.NoError(t, err)
+	require.Equal(t, whole, measured, "measured whole once the holding has expired")
+
+	_, carried, err := cloud.StoredLowerHalf(ctx, r, expiresAt-1, held)
+	require.NoError(t, err)
+	require.Equal(t, 1, carried, "the held row isn't counted before the holding expires")
+	_, carried, err = cloud.StoredLowerHalf(ctx, r, expiresAt, held)
+	require.NoError(t, err)
+	require.Equal(t, 2, carried, "both records once it has expired")
 }
 
 // The Cloud carries an entry the recipient holds as a held row: its recipe
@@ -120,25 +161,23 @@ func TestStoredBundleCarriesAHeldEntryAsAHeldRow(t *testing.T) {
 	heldTestHold(t, ctx, cloud, "cache-b", 7, p, 0)
 	heldTestHold(t, ctx, cloud, "cache-c", 8, p, now-10)
 
-	got, err := cloud.StoredBundle(ctx, []uint64{r}, &HeldBy{Cache: "cache-b", Now: now})
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, now, &HeldBy{Cache: "cache-b"})
 	require.NoError(t, err)
 	require.Equal(t, []uint64{p}, got.Held)
 	require.Len(t, got.Bundle.Values, 2)
 	held := heldTestRow(t, got.Bundle, p)
-	entry := storedBundleTestEntry(cloud, p)
-	recipe, err := entry.loadResultCall().deriveRecipeDigest(cloud)
-	require.NoError(t, err)
+	recipe := storedTestRecipe(t, cloud, storedBundleTestEntry(cloud, p))
 	require.Equal(t, recipe, held.Held, "the held row names the entry's recipe")
-	require.Equal(t, PersistedRecord{ResultID: uint64(held.Ordinal)}, held.Record, "no record")
+	require.Equal(t, PersistedRecord{ResultID: held.SenderNumber}, held.Record, "no record")
 	require.Empty(t, held.DependencyIDs)
 	require.Equal(t, []uint64{uint64(held.Ordinal)}, heldTestRow(t, got.Bundle, r).DependencyIDs, "R depends on the held row")
 
 	for name, by := range map[string]*HeldBy{
-		"not":     {Cache: "cache-b", Now: now, Not: map[uint64]bool{p: true}},
-		"expired": {Cache: "cache-c", Now: now},
-		"other":   {Cache: "cache-d", Now: now},
+		"not":     {Cache: "cache-b", Not: map[uint64]bool{p: true}},
+		"expired": {Cache: "cache-c"},
+		"other":   {Cache: "cache-d"},
 	} {
-		got, err := cloud.StoredBundle(ctx, []uint64{r}, by)
+		got, err := cloud.StoredBundle(ctx, []uint64{r}, now, by)
 		require.NoError(t, err, name)
 		require.Empty(t, got.Held, name)
 		require.Empty(t, heldTestRow(t, got.Bundle, p).Held, name)
@@ -154,7 +193,7 @@ func TestMergeHeldRowLandsOnTheEnginesEntry(t *testing.T) {
 	ctx, cloud, r, p := heldTestChainedCloud(t)
 	bctx, b, pb := heldTestEngineWithP(t, ctx, cloud, p)
 	heldTestHold(t, ctx, cloud, "cache-b", pb, p, 0)
-	got, err := cloud.StoredBundle(ctx, []uint64{r}, &HeldBy{Cache: "cache-b", Now: time.Now().Unix()})
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), &HeldBy{Cache: "cache-b"})
 	require.NoError(t, err)
 	require.Equal(t, []uint64{p}, got.Held)
 
@@ -167,14 +206,13 @@ func TestMergeHeldRowLandsOnTheEnginesEntry(t *testing.T) {
 	rMerged := heldTestMerged(t, reply, heldTestRow(t, got.Bundle, r).Ordinal)
 	require.Equal(t, []uint64{pb}, rMerged.Deps, "R depends on the engine's P")
 	require.Equal(t, []ImportedValue{{Ordinal: heldTestRow(t, got.Bundle, r).Ordinal, ResultID: rMerged.Number}}, reply.Imported())
-	cloudRecipe, err := storedBundleTestEntry(cloud, r).loadResultCall().deriveRecipeDigest(cloud)
-	require.NoError(t, err)
+	cloudRecipe := storedTestRecipe(t, cloud, storedBundleTestEntry(cloud, r))
 	b.egraphMu.RLock()
 	require.Equal(t, sharedResultID(rMerged.Number), b.entriesByRecipe[cloudRecipe], "R is indexed under the Cloud's recipe")
 	b.egraphMu.RUnlock()
 
 	entries := heldTestEntries(b)
-	full, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	full, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	again, err := b.MergeValues(bctx, cloudCacheID, full.Bundle)
 	require.NoError(t, err)
@@ -189,7 +227,7 @@ func TestMergeHeldRowStaleWhenTheEngineLacksIt(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
 	heldTestHold(t, ctx, cloud, "cache-b", 7, p, 0)
-	got, err := cloud.StoredBundle(ctx, []uint64{r}, &HeldBy{Cache: "cache-b", Now: time.Now().Unix()})
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), &HeldBy{Cache: "cache-b"})
 	require.NoError(t, err)
 
 	bctx, b, _ := transferTestCache(t)
@@ -210,7 +248,7 @@ func TestMergeHeldRowStaleWhenTheEnginesValueExpired(t *testing.T) {
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
 	bctx, b, pb := heldTestEngineWithP(t, ctx, cloud, p)
 	heldTestHold(t, ctx, cloud, "cache-b", pb, p, 0)
-	got, err := cloud.StoredBundle(ctx, []uint64{r}, &HeldBy{Cache: "cache-b", Now: time.Now().Unix()})
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), &HeldBy{Cache: "cache-b"})
 	require.NoError(t, err)
 	b.egraphMu.RLock()
 	entry := b.resultsByID[sharedResultID(pb)]
@@ -243,7 +281,7 @@ func TestMergeHeldRowKeepsASessionValueAlive(t *testing.T) {
 	bctx, b, bsrv := transferTestCache(t)
 	pb := heldTestSessionValue(t, bctx, b, bsrv)
 	heldTestHold(t, ctx, cloud, "cache-b", pb, p, 0)
-	got, err := cloud.StoredBundle(ctx, []uint64{r}, &HeldBy{Cache: "cache-b", Now: time.Now().Unix()})
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), &HeldBy{Cache: "cache-b"})
 	require.NoError(t, err)
 	require.Equal(t, []uint64{p}, got.Held)
 
@@ -269,7 +307,7 @@ func TestMergeHeldRootRenewsRetention(t *testing.T) {
 	ctx, cloud, _, p := storedBundleTestCloud(t, "root")
 	bctx, b, pb := heldTestEngineWithP(t, ctx, cloud, p)
 	heldTestHold(t, ctx, cloud, "cache-b", pb, p, 0)
-	got, err := cloud.StoredBundle(ctx, []uint64{p}, &HeldBy{Cache: "cache-b", Now: time.Now().Unix()})
+	got, err := cloud.StoredBundle(ctx, []uint64{p}, time.Now().Unix(), &HeldBy{Cache: "cache-b"})
 	require.NoError(t, err)
 	require.Len(t, got.Bundle.Values, 1)
 	require.NotEmpty(t, got.Bundle.Values[0].Held)
@@ -291,7 +329,7 @@ func TestMergeHeldRowRefusals(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
 	heldTestHold(t, ctx, cloud, "cache-b", 7, p, 0)
-	got, err := cloud.StoredBundle(ctx, []uint64{r}, &HeldBy{Cache: "cache-b", Now: time.Now().Unix()})
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), &HeldBy{Cache: "cache-b"})
 	require.NoError(t, err)
 
 	cctx, other := storedPartTestCache(t, WithBlobStore())
@@ -304,7 +342,7 @@ func TestMergeHeldRowRefusals(t *testing.T) {
 	require.NoError(t, err)
 	for i := range bad.Values {
 		if bad.Values[i].Held != "" {
-			bad.Values[i].Record.Envelope = heldTestRow(t, got.Bundle, r).Record.Envelope
+			bad.Values[i].Record.Envelope = heldTestRow(t, bad, r).Record.Envelope
 		}
 	}
 	bctx, b, _ := transferTestCache(t)
@@ -319,13 +357,14 @@ func TestMergeHeldRowRefusesARecordOfTheSameRecipe(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
 	bctx, b, _ := heldTestEngineWithP(t, ctx, cloud, p)
-	full, err := cloud.StoredBundle(ctx, []uint64{r}, nil)
+	full, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
 	require.NoError(t, err)
-	recipe, err := storedBundleTestEntry(cloud, p).loadResultCall().deriveRecipeDigest(cloud)
-	require.NoError(t, err)
+	recipe := storedTestRecipe(t, cloud, storedBundleTestEntry(cloud, p))
 	ordinal := TransferOrdinal(len(full.Bundle.Values) + 1)
 	bundle := full.Bundle
-	bundle.Values = append(bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: p, Record: PersistedRecord{ResultID: uint64(ordinal)}, Held: recipe})
+	// A number of its own: a sender names each of its entries once.
+	number := p + 1<<20
+	bundle.Values = append(bundle.Values, TransferredValue{Ordinal: ordinal, SenderNumber: number, Record: PersistedRecord{ResultID: number}, Held: recipe})
 	bundle.Roots = append(bundle.Roots, TransferredRoot{Ordinal: ordinal})
 
 	entries := heldTestEntries(b)
@@ -333,4 +372,25 @@ func TestMergeHeldRowRefusesARecordOfTheSameRecipe(t *testing.T) {
 	require.ErrorContains(t, err, "same recipe")
 	require.False(t, reply.Committed)
 	require.Equal(t, entries, heldTestEntries(b), "nothing committed")
+}
+
+// A merge's reply counts a held row as held, apart from the records it
+// creates; the full bundle afterwards keeps both.
+func TestMergeHeldRowCountsAsHeld(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := heldTestChainedCloud(t)
+	bctx, b, pb := heldTestEngineWithP(t, ctx, cloud, p)
+	heldTestHold(t, ctx, cloud, "cache-b", pb, p, 0)
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), &HeldBy{Cache: "cache-b"})
+	require.NoError(t, err)
+	require.Equal(t, []uint64{p}, got.Held)
+	reply, err := b.MergeValues(bctx, cloudCacheID, got.Bundle)
+	require.NoError(t, err)
+	require.Equal(t, MergeRowCounts{Held: 1, Created: 1}, reply.Rows)
+
+	full, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	again, err := b.MergeValues(bctx, cloudCacheID, full.Bundle)
+	require.NoError(t, err)
+	require.Equal(t, MergeRowCounts{Kept: 2}, again.Rows)
 }

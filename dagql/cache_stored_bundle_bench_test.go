@@ -213,7 +213,7 @@ func storedBenchCloud(b testing.TB) (context.Context, *Cache, []uint64) {
 	}
 	for _, value := range bundle.Values {
 		if stored[value.SenderNumber] {
-			ok, err := cloud.SetStoredPart(ctx, numbers[value.Ordinal], storedBenchPart(value.SenderNumber), 0)
+			ok, _, err := cloud.SetStoredPart(ctx, numbers[value.Ordinal], storedBenchPart(value.SenderNumber), 0)
 			require.NoError(b, err)
 			require.True(b, ok)
 		}
@@ -263,7 +263,7 @@ func BenchmarkStoredBundle(b *testing.B) {
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	_, err := cloud.StoredBundle(ctx, batch, nil)
+	_, err := cloud.StoredBundle(ctx, batch, time.Now().Unix(), nil)
 	require.NoError(b, err)
 	runtime.GC()
 	runtime.ReadMemStats(&after)
@@ -274,7 +274,7 @@ func BenchmarkStoredBundle(b *testing.B) {
 	for range b.N {
 		storedBenchSettle(b)
 		var err error
-		got, err = cloud.StoredBundle(ctx, batch, nil)
+		got, err = cloud.StoredBundle(ctx, batch, time.Now().Unix(), nil)
 		require.NoError(b, err)
 	}
 	b.StopTimer()
@@ -304,7 +304,9 @@ func BenchmarkStoredBundleValues(b *testing.B) {
 	order, build := storedBenchClosure(b, cloud, batch)
 	normalized := make([]PersistedRecord, len(order))
 	for i, res := range order {
-		rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()})
+		frame, err := res.entryFrameLocked().decode()
+		require.NoError(b, err)
+		rec, err := normalizeTransferRecord(PersistedRecord{ResultID: uint64(res.id), Envelope: *res.persistedEnvelope, Call: frame})
 		require.NoError(b, err)
 		rec.Envelope.PendingOffers = nil
 		normalized[i] = rec
@@ -353,9 +355,9 @@ func BenchmarkStoredBundleValues(b *testing.B) {
 	}
 }
 
-// BenchmarkStoredBundlePartCopies measures StoredBundle's deep copies of the
-// closure's stored parts, which relocation and the removal of addresses and
-// renewal keys then change, against copying the same parts by a JSON round
+// BenchmarkStoredBundlePartCopies measures StoredBundle's copies of the
+// closure's stored parts' offers (storedPart.offer), which relocation and
+// the removal of addresses and renewal keys then change, against copying the same parts by a JSON round
 // trip, the way clonePartOffers copied them before (in a profile of the
 // remote cache service under load: 1.75 s of StoredBundle's 11.70 s).
 //
@@ -363,7 +365,7 @@ func BenchmarkStoredBundleValues(b *testing.B) {
 func BenchmarkStoredBundlePartCopies(b *testing.B) {
 	_, cloud, batch := storedBenchCloud(b)
 	order, _ := storedBenchClosure(b, cloud, batch)
-	var parts []PersistedPartOffer
+	var parts []storedPart
 	cloud.egraphMu.RLock()
 	for _, res := range order {
 		for _, part := range res.storedParts {
@@ -372,20 +374,22 @@ func BenchmarkStoredBundlePartCopies(b *testing.B) {
 	}
 	cloud.egraphMu.RUnlock()
 	require.Len(b, parts, storedBenchChain/4+storedBenchRoots)
+	offers := make([]PersistedPartOffer, len(parts))
+	for i, part := range parts {
+		offers[i] = part.offer()
+	}
 	var copying, roundTrips time.Duration
 	b.ResetTimer()
 	for range b.N {
 		storedBenchSettle(b)
 		start := time.Now()
 		for _, part := range parts {
-			if _, err := clonePartOffers([]PersistedPartOffer{part}); err != nil {
-				b.Fatal(err)
-			}
+			_ = part.offer()
 		}
 		copying += time.Since(start)
 		storedBenchSettle(b)
 		start = time.Now()
-		for _, part := range parts {
+		for _, part := range offers {
 			data, err := json.Marshal([]PersistedPartOffer{part})
 			if err != nil {
 				b.Fatal(err)
@@ -422,7 +426,7 @@ func BenchmarkStoredBundlePartCopies(b *testing.B) {
 // largest part of a build and keeps it from fitting.
 func BenchmarkStoredBundleValidation(b *testing.B) {
 	ctx, cloud, batch := storedBenchCloud(b)
-	got, err := cloud.StoredBundle(ctx, batch, nil)
+	got, err := cloud.StoredBundle(ctx, batch, time.Now().Unix(), nil)
 	require.NoError(b, err)
 	bundle := got.Bundle
 	var validating, full, encoding time.Duration
@@ -430,7 +434,7 @@ func BenchmarkStoredBundleValidation(b *testing.B) {
 	for range b.N {
 		storedBenchSettle(b)
 		start := time.Now()
-		if err := validateStoredBundle(bundle); err != nil {
+		if err := validateStoredBundle(bundle, got.stored); err != nil {
 			b.Fatal(err)
 		}
 		validating += time.Since(start)

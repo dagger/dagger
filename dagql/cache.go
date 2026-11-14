@@ -77,6 +77,18 @@ type CachePrunePolicy struct {
 	// evaluate MinFreeSpace. When unset, MinFreeSpace behaves as if free space
 	// were zero.
 	CurrentFreeSpace int64
+
+	// OvershootAllowance, when positive, keeps a prune from freeing far more
+	// than it needs. Candidates still go oldest first, but one whose removal
+	// would take what the prune has freed past the bytes it needs plus this
+	// allowance is passed over, and the next is tried instead: removing one
+	// result can release a closure that most of the cache shares. If passing
+	// over can't free what the policy requires (the bytes over its maximum or
+	// reserved space, or under its minimum free space), the prune runs plain
+	// oldest first, so nothing is ever left unprunable. Zero is plain oldest
+	// first. PruneMetadataEstimate takes the same allowance through
+	// WithOvershootAllowance.
+	OvershootAllowance int64
 }
 
 type CachePruneReport struct {
@@ -87,6 +99,9 @@ type CachePruneReport struct {
 	// DroppedValues counts the values a blob-backed cache's run dropped:
 	// those that only holdings kept once their stored roots went.
 	DroppedValues int
+	// Change is what a blob-backed cache's run changed, its holdings and
+	// entries (RemoteChange).
+	Change RemoteChange
 }
 
 // CacheRetentionDrop is one retention edge a prune run dropped: the entry's
@@ -172,6 +187,9 @@ type CacheMetadataPruneReport struct {
 	// DroppedValues counts the values a blob-backed cache's pass dropped:
 	// those that only holdings kept once their stored roots went.
 	DroppedValues int
+	// Change is what a blob-backed cache's pass changed, its holdings and
+	// entries (RemoteChange).
+	Change RemoteChange
 
 	SnapshotGCAttempted bool
 	SnapshotGCSucceeded bool
@@ -212,7 +230,27 @@ type persistedEdge struct {
 // (DeclinePersistence). An older engine reading a newer store drops the mark
 // when it saves, and a declined value would then gain a retention edge from
 // its next persistable hit, so stores of another version are wiped on import.
-const cachePersistenceSchemaVersion = "23"
+//
+// 24: a Module records the core view its dependencies were built with, which
+// its source's engine version chose. Older stores rebuilt them at the view of
+// whichever client loaded the Module, so a module could be served another
+// view than it declares; they are wiped on import.
+const cachePersistenceSchemaVersion = "24"
+
+// blobBackedStoreFormat names the format a blob-backed cache saves its stored
+// records in (encodeStoredRow), on top of the schema: it saves in a format of
+// its own, so an engine's store keeps its version when only the Cloud's
+// format changes.
+const blobBackedStoreFormat = "compressed-records-1"
+
+// persistenceSchemaVersion is the schema version the cache saves under, and
+// restores only from.
+func (c *Cache) persistenceSchemaVersion() string {
+	if c.blobBacked {
+		return cachePersistenceSchemaVersion + "+" + blobBackedStoreFormat
+	}
+	return cachePersistenceSchemaVersion
+}
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
@@ -511,6 +549,9 @@ func NewCache(
 		if err := c.reconcileEmptyOwnerLeases(ctx); err != nil {
 			return nil, err
 		}
+		if c.blobBacked {
+			c.startStoredBodyWorker()
+		}
 		return c, nil
 	}
 
@@ -528,10 +569,10 @@ func NewCache(
 		}
 		return nil, fmt.Errorf("read schema_version metadata: %w", err)
 	}
-	if found && schemaVersionVal != cachePersistenceSchemaVersion {
+	if found && schemaVersionVal != c.persistenceSchemaVersion() {
 		c.persistenceResetReason = CachePersistenceResetSchemaMismatch
-		c.tracePersistStoreWipedSchemaMismatch(ctx, cachePersistenceSchemaVersion, schemaVersionVal)
-		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", cachePersistenceSchemaVersion, "actual", schemaVersionVal)
+		c.tracePersistStoreWipedSchemaMismatch(ctx, c.persistenceSchemaVersion(), schemaVersionVal)
+		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", c.persistenceSchemaVersion(), "actual", schemaVersionVal)
 		c.readWipedCacheID(ctx)
 		if err := c.reopenWiped(ctx, dbPath, "close db before schema-version wipe", "wipe schema-mismatched persistence db"); err != nil {
 			return nil, err
@@ -595,7 +636,7 @@ func NewCache(
 		}
 	}
 
-	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, cachePersistenceSchemaVersion); err != nil {
+	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, c.persistenceSchemaVersion()); err != nil {
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
 			return nil, errors.Join(fmt.Errorf("set persistence schema version: %w", err), closeErr)
 		}
@@ -611,6 +652,15 @@ func NewCache(
 		return nil, errors.Join(err, closeCacheDBs(db, c.pdb))
 	}
 	c.countBootRestored()
+	// The import changed every entry it restored, and no reader keeps answers
+	// from before an open: nothing is handed back for it.
+	c.egraphMu.Lock()
+	c.clearChangesLocked()
+	c.egraphMu.Unlock()
+	if c.blobBacked {
+		c.startStoredBodyWorker()
+		c.queueRestoredTaughtContent()
+	}
 	return c, nil
 }
 
@@ -1112,18 +1162,69 @@ func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID str
 	c.sessionMu.Unlock()
 }
 
-func (c *Cache) sessionLazySpanContext(sessionID string, resultID sharedResultID) (trace.SpanContext, bool) {
+func (c *Cache) sessionLazySpanContext(ctx context.Context, sessionID string, resultID sharedResultID) (trace.SpanContext, bool) {
 	if c == nil || sessionID == "" || resultID == 0 {
 		return trace.SpanContext{}, false
 	}
 
-	c.sessionMu.Lock()
+	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	spanCtx := c.sessionLazySpansBySession[sessionID][resultID]
 	c.sessionMu.Unlock()
 	if !spanCtx.IsValid() {
 		return trace.SpanContext{}, false
 	}
 	return spanCtx, true
+}
+
+// sessionLazyAnchor is the evaluation of a lazy result in a session that
+// carries the result's cause links, and the install spans it links. Later
+// evaluations of the result in the session link only the anchor.
+type sessionLazyAnchor struct {
+	spanCtx  trace.SpanContext
+	installs []trace.SpanContext // sorted by compareSpanContexts
+}
+
+// sessionLazyAnchorFor returns the session's anchor for resultID if it links
+// every one of installCtxs, sorted by compareSpanContexts.
+func (c *Cache) sessionLazyAnchorFor(ctx context.Context, sessionID string, resultID sharedResultID, installCtxs []trace.SpanContext) (trace.SpanContext, bool) {
+	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
+	anchor, ok := c.sessionLazyAnchors[sessionID][resultID]
+	c.sessionMu.Unlock()
+	if !ok || !spanContextsCover(anchor.installs, installCtxs) {
+		return trace.SpanContext{}, false
+	}
+	return anchor.spanCtx, true
+}
+
+func (c *Cache) recordSessionLazyAnchor(ctx context.Context, sessionID string, resultID sharedResultID, spanCtx trace.SpanContext, installCtxs []trace.SpanContext) {
+	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
+	defer c.sessionMu.Unlock()
+	// Same released-session refusal as the other session telemetry writers.
+	if c.sessionLifecycle(sessionID).lifecycle.Load()&cacheSessionReleasedBit != 0 {
+		return
+	}
+	if c.sessionLazyAnchors == nil {
+		c.sessionLazyAnchors = make(map[string]map[sharedResultID]sessionLazyAnchor)
+	}
+	if c.sessionLazyAnchors[sessionID] == nil {
+		c.sessionLazyAnchors[sessionID] = make(map[sharedResultID]sessionLazyAnchor)
+	}
+	c.sessionLazyAnchors[sessionID][resultID] = sessionLazyAnchor{spanCtx: spanCtx, installs: installCtxs}
+}
+
+// spanContextsCover reports whether have holds every span context in want.
+// Both are sorted by compareSpanContexts.
+func spanContextsCover(have, want []trace.SpanContext) bool {
+	i := 0
+	for _, w := range want {
+		for i < len(have) && compareSpanContexts(have[i], w) < 0 {
+			i++
+		}
+		if i == len(have) || compareSpanContexts(have[i], w) != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // captureSessionResultInstallSpan records the current span context as an
@@ -1308,7 +1409,7 @@ func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID
 // given session — i.e. the API spans whose call returned (or owns) this
 // result. Used to attribute later runtime failures (e.g. a service exiting
 // early) back to the API span that installed the value.
-func (c *Cache) ResultInstallSpans(sessionID string, res AnyResult) []trace.SpanContext {
+func (c *Cache) ResultInstallSpans(ctx context.Context, sessionID string, res AnyResult) []trace.SpanContext {
 	if c == nil || sessionID == "" || res == nil {
 		return nil
 	}
@@ -1316,7 +1417,7 @@ func (c *Cache) ResultInstallSpans(sessionID string, res AnyResult) []trace.Span
 	if shared == nil || shared.id == 0 {
 		return nil
 	}
-	return c.sessionResultInstallSpanContexts(sessionID, shared.id)
+	return c.sessionResultInstallSpanContexts(ctx, sessionID, shared.id)
 }
 
 // sessionResultInstallSpanContexts returns the install span contexts for
@@ -1324,16 +1425,16 @@ func (c *Cache) ResultInstallSpans(sessionID string, res AnyResult) []trace.Span
 // plus closure-owning install spans (module API call returns) recorded for
 // any result that transitively depends on it. The upward walk happens here,
 // on demand, instead of eagerly materializing the closure at install time.
-func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID sharedResultID) []trace.SpanContext {
+func (c *Cache) sessionResultInstallSpanContexts(ctx context.Context, sessionID string, resultID sharedResultID) []trace.SpanContext {
 	if c == nil || sessionID == "" || resultID == 0 {
 		return nil
 	}
 
-	c.egraphMu.RLock()
+	walk := c.readLockGraphAs(ctx, "dagql.installSpans.walk")
 	ancestorIDs := c.installAncestorIDsLocked(resultID)
-	c.egraphMu.RUnlock()
+	c.runlockGraphAs(walk)
 
-	c.sessionMu.Lock()
+	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	defer c.sessionMu.Unlock()
 	byResult := c.sessionResultInstallSpans[sessionID]
 	if byResult == nil {
@@ -1613,7 +1714,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 		rerr       error
 		onReleases []OnReleaseFunc
 	)
-	c.egraphMu.Lock()
+	step := c.lockGraphAs(ctx, "dagql.releaseSession")
 	queue := make([]*sharedResult, 0, len(plan.resultIDs))
 	for resultID := range plan.resultIDs {
 		var err error
@@ -1623,7 +1724,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
 	onReleases = append(onReleases, collectReleases...)
 	rerr = errors.Join(rerr, collectErr)
-	c.egraphMu.Unlock()
+	c.unlockGraphAs(step)
 
 	rerr = errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
 	for callKey := range plan.arbitraryCallKeys {
@@ -1659,6 +1760,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 	delete(c.sessionArbitraryCallKeysBySession, plan.sessionID)
 	delete(c.sessionLazySpansBySession, plan.sessionID)
 	delete(c.sessionResultInstallSpans, plan.sessionID)
+	delete(c.sessionLazyAnchors, plan.sessionID)
 	delete(c.sessionResourcesBySession, plan.sessionID)
 	delete(c.sessionVolatileVarsBySession, plan.sessionID)
 	delete(c.sessionHandlesBySession, plan.sessionID)
@@ -1759,6 +1861,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 		edge.unpruneable = true
 		edge.expiresAtUnix = 0
 		res.expiresAtUnix = 0
+		c.markEntryClassLocked(res.id, StampUnpruneable)
 	} else if !edge.unpruneable {
 		edge.expiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix)
 	}
@@ -1772,7 +1875,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 // counts, so a prune that drops it is seen. It reports false once res has
 // left the cache.
 func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge *pendingRetention) (CacheResultState, bool) {
-	parts, sizes := c.completePartKeysAndSizes(ctx, res)
+	parts, sizes := c.spanPartKeysAndSizes(ctx, res)
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	if c.resultsByID[res.id] != res {
@@ -1784,6 +1887,9 @@ func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge 
 		Parts:         parts,
 		PartSizes:     sizes,
 		Replacements:  res.replacements,
+	}
+	if _, image := res.imageHoldingLocked(); image != nil {
+		state.Image = true
 	}
 	edge, found := c.persistedEdgesByResult[res.id]
 	pending := pendingEdge != nil && !pendingEdge.created
@@ -1849,10 +1955,10 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 		onReleases []OnReleaseFunc
 		rerr       error
 	)
-	c.egraphMu.Lock()
+	step := c.lockGraphAs(ctx, "dagql.prune.removeEdge")
 	edge, found := c.persistedEdgesByResult[resultID]
 	if !found || edge.unpruneable {
-		c.egraphMu.Unlock()
+		c.unlockGraphAs(step)
 		return time.Time{}, false, 0, nil
 	}
 	delete(c.persistedEdgesByResult, resultID)
@@ -1875,7 +1981,11 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 		// The Cloud compacts its classes on collection, not in a prune.
 		c.eqClassRemoved = true
 	}
-	c.egraphMu.Unlock()
+	// A prune drops its edges each in a hold of its own and hands its marks
+	// back once it ends: this hold's stamps apply now, while the classes the
+	// drops changed still name their entries.
+	c.stampPendingLocked()
+	c.unlockGraphAs(step)
 	if c.testAfterRetentionDrop != nil {
 		c.testAfterRetentionDrop(resultID)
 	}
@@ -2353,12 +2463,94 @@ const (
 	resultPayloadLockIdent = "dagql.result.payload"
 )
 
+// lockGraphAs takes the graph lock for writing as a profile step of its
+// own, name, for a caller whose context may carry no op of its own, such as
+// a pass the engine starts by itself: a wait behind the hold names the step,
+// and the step's op spans the wait and the hold. unlockGraphAs releases the
+// lock and ends the step. When nothing records, the step is empty and costs
+// a nil check.
+func (c *Cache) lockGraphAs(ctx context.Context, name string) Step {
+	ctx, step := BeginStep(ctx, name)
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+	return step
+}
+
+// unlockGraphAs releases the graph lock lockGraphAs took as step, and ends
+// the step.
+func (c *Cache) unlockGraphAs(step Step) {
+	c.egraphMu.Unlock()
+	step.End(nil)
+}
+
+// readLockGraphAs takes the graph lock for reading as a profile step of its
+// own, name, for a reader that may hold it long, such as a walk of the
+// graph: a writer that waits behind readers names only the readers, and the
+// step's op spans this reader's wait and hold, which a recording's analysis
+// lines up with that writer's wait. runlockGraphAs releases the lock and
+// ends the step. When nothing records, the step is empty and costs a nil
+// check.
+func (c *Cache) readLockGraphAs(ctx context.Context, name string) Step {
+	ctx, step := BeginStep(ctx, name)
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	return step
+}
+
+// runlockGraphAs releases the graph lock readLockGraphAs took as step, and
+// ends the step.
+func (c *Cache) runlockGraphAs(step Step) {
+	c.egraphMu.RUnlock()
+	step.End(nil)
+}
+
 type Cache struct {
-	partFixture              atomic.Pointer[partFixtureState]
 	testTransferCopied       func(uint64)
 	testTransferPlanPrepared func(int) error
 	testBeforeTransferCommit func()
 	testAfterTransferCommit  func()
+	testPartRouted           func(uint64)
+	testOwnerWalked          func(uint64)
+
+	// testWarmStarted, nil but in tests, runs as a merge's commit starts
+	// timing its warming (CommitValueMerge, MergeReply.Warm).
+	testWarmStarted func()
+
+	// partsWithoutSource counts the parts read with no source.
+	partsWithoutSource partsWithoutSource
+
+	// testBetweenLateMissHolds, nil but in tests, runs between
+	// LateRemoteMisses's two holds of the lookups' lock.
+	testBetweenLateMissHolds func()
+	// testCaptureWriteLock, nil but in tests, runs as holding rows for a
+	// capture, or letting them go, is about to take egraphMu for writing.
+	// capturePieceSize, when set, is how many rows holdRowsForCapture takes
+	// in one hold (capturePieceRows otherwise).
+	testCaptureWriteLock func()
+	capturePieceSize     int
+
+	// readPieceSize, when set, is how many steps a read in pieces takes in
+	// one hold of egraphMu (readPieceSteps otherwise), and
+	// testReadPieceYielded runs between two of its holds, with none held.
+	readPieceSize        int
+	testReadPieceYielded func()
+
+	// testRecordPayloadPreparing runs as a merge starts preparing the
+	// record of an ordinal with its payload; an error refuses that record.
+	testRecordPayloadPreparing func(uint64) error
+
+	// testRelocatedUnderLock runs when a merge's commit relocates a record
+	// under egraphMu, with the record's ordinal.
+	testRelocatedUnderLock func(uint64)
+	// testNoPrerelocation, when set, keeps a merge from relocating its
+	// records before its commit takes egraphMu.
+	testNoPrerelocation bool
+	// testPrerelocated runs once a merge has relocated its records before
+	// its commit, with the numbers each relocation used, by ordinal and
+	// provisional number, which it may change.
+	testPrerelocated func(map[uint64]map[uint64]sharedResultID)
+
+	// testPartInstalled runs as a part install's last act, after it has
+	// released every lock.
+	testPartInstalled func()
 
 	// testStoredSizeMeasure runs before StoredSizes measures each value,
 	// testStoredSizesHold after each hold of egraphMu it takes, with the
@@ -2367,9 +2559,55 @@ type Cache struct {
 	testStoredSizeMeasure        func()
 	testStoredSizesHold          func(time.Duration)
 	testStoredTransferNormalized func()
+	// testCallTermsBuilt runs each time an entry's kept calls are grouped
+	// by term (keptCallTermsLocked).
+	testCallTermsBuilt func()
+	// testStoredBodies runs after the body worker installs a batch, with the
+	// number of entries it read.
+	testStoredBodies func(int)
+	// testTaughtContent runs after the body worker gives a batch of entries'
+	// frames the content digests their spans taught (applyTaughtContent),
+	// with the number of frames it rewrote.
+	testTaughtContent func(int)
+	// testTaughtContentGiven runs after the body worker gives one entry's
+	// frame its waiting taught digests, before it records that, holding no
+	// lock.
+	testTaughtContentGiven func()
+	// restoredTaught are the entries a restore gave taught content digests
+	// their saved frame hadn't taken, until the body worker starts.
+	restoredTaught []*sharedResult
+	// testRecipeFromBody runs when a recipe is read from a stored body's
+	// kept digest, for an entry without a decoded frame
+	// (recipeDigestForCachedResult). Only a blob-backed cache's entries, and
+	// a merge's held rows standing in for them, have such bodies: an
+	// engine's test sets it to check it never runs there. A merge's private
+	// cache takes its cache's.
+	testRecipeFromBody func()
+
+	// storedBodies is a blob-backed cache's body worker, which compresses
+	// the records merges store (cache_stored_body.go).
+	storedBodies *storedBodyWorker
 
 	// storedSizeEncodes counts StoredSizes' first measurements of values.
 	storedSizeEncodes atomic.Uint64
+
+	// taughtContentQueued counts the entries queued for a frame rewrite
+	// because a span taught a content digest their frame lacked,
+	// taughtContentRewrites the frames rewritten, taughtContentCarried the
+	// taught digests found already on the frame, taughtContentNanos the
+	// time the rewrites took (applyTaughtContent), and
+	// taughtContentBundlesWaiting the bundle builds that found an entry not
+	// yet recorded as taking all its taught digests, taughtContentDropped
+	// the entries whose taught digests a drop took (dropValueLocked), and
+	// taughtContentRefilled those of them a record filled again
+	// (TaughtContentStats).
+	taughtContentQueued         atomic.Uint64
+	taughtContentRewrites       atomic.Uint64
+	taughtContentCarried        atomic.Uint64
+	taughtContentNanos          atomic.Int64
+	taughtContentBundlesWaiting atomic.Uint64
+	taughtContentDropped        atomic.Uint64
+	taughtContentRefilled       atomic.Uint64
 
 	offerOwners      map[offerOwnerID]*offerOwner
 	nextOfferOwnerID offerOwnerID
@@ -2395,11 +2633,13 @@ type Cache struct {
 	// blobBacked marks a cache that keeps parts in a blob store: only it
 	// accepts SetStoredPart (WithBlobStore).
 	blobBacked bool
-	// holderEntries maps each holding's key to the entry it sits on, and
-	// entriesByRecipe each recipe digest to its entry. remoteCaches keeps each
-	// held engine cache's own indexes. All guarded by egraphMu. See
+	// storedLayers holds each distinct layer of the stored parts' chains
+	// once. Set with blobBacked.
+	storedLayers *storedLayers
+	// entriesByRecipe maps each recipe digest to its entry. remoteCaches
+	// keeps each held engine cache's own indexes, the entry of each of its
+	// holdings among them. All guarded by egraphMu. See
 	// cache_remote_entries.go.
-	holderEntries   map[HolderKey]sharedResultID
 	entriesByRecipe map[digest.Digest]sharedResultID
 	remoteCaches    map[CacheID]*remoteCacheState
 	// joinedEntries, while an operation on holdings runs, collects the
@@ -2407,6 +2647,15 @@ type Cache struct {
 	// (trackJoinsLocked). It is nil at every other time, so no class ID it
 	// could name outlives the hold. Guarded by egraphMu.
 	joinedEntries map[sharedResultID]struct{}
+	// changes are the holdings and entries changed since the last write
+	// handed them back, on a blob-backed cache only: nil on any other
+	// (cache_change_marks.go). Guarded by egraphMu.
+	changes *changeMarks
+	// writes counts, on a blob-backed cache, the changes to what stored
+	// bundles carry (stampEntryLocked): each entry keeps the count of the
+	// last one (sharedResult.changedAt), and a stored bundle the count it was
+	// built at (StoredBundleResult.Position). Guarded by egraphMu.
+	writes uint64
 
 	closing                atomic.Bool
 	activeGlobalOperations atomic.Int64
@@ -2432,6 +2681,12 @@ type Cache struct {
 	// partReads reports the parts of entries work reads; see
 	// WithPartReadReport. Nil unless set at construction.
 	partReads *partReadLog
+	// owedParts are the entries whose span reported only their settled
+	// parts, each owing a report of its complete parts; see owedPartReports.
+	owedParts owedPartReports
+	// testOwedPartsRead, when set, runs after a pass of owed reports has read
+	// an entry's parts, before the pass ends.
+	testOwedPartsRead func(*sharedResult)
 	// partPreparation is the engine's registered preparation-context
 	// callback, nil on a cache that cannot reconstruct persisted services.
 	partPreparation PartPreparationContext
@@ -2464,7 +2719,10 @@ type Cache struct {
 	// indexes for eq classes, which are disjoint sets of digests considered equivalent and interchangeable
 	//
 
-	nextEgraphClassID eqClassID
+	// freeEqClassIDs are the class numbers compaction freed below the highest
+	// live one, which new classes take before a new number. A slot whose
+	// parent is 0 is free.
+	freeEqClassIDs []eqClassID
 
 	// map of eqClassID -> all digests in that class
 	eqClassToDigests map[eqClassID]map[string]struct{}
@@ -2476,6 +2734,12 @@ type Cache struct {
 	// due to the sets being disjoint, a digest is enforced to only be in one
 	// set at a time (any overlap results in union of the sets)
 	egraphDigestToClass map[string]eqClassID
+
+	// callInputEntries are, for each digest that is an input of a call kept
+	// on an entry (sharedResult.calls), those entries: a change to the
+	// digest's class changes the term their calls derive, and so their
+	// kept grouping (forgetCallTermsLocked).
+	callInputEntries map[string]map[sharedResultID]struct{}
 
 	// the parent of the given eqClassID, slice is index by eqClassID so it's
 	// conceptually a map of eqClassID->parent eqClassID
@@ -2575,7 +2839,10 @@ type Cache struct {
 	// module API call returns are recorded once on the returned result with
 	// ownsClosure set, and lookups resolve closure ownership on demand by
 	// walking dep edges upward via depParents.
-	sessionResultInstallSpans    map[string]map[sharedResultID]*sessionResultInstalls
+	sessionResultInstallSpans map[string]map[sharedResultID]*sessionResultInstalls
+	// sessionLazyAnchors holds, per session and result, the evaluation that
+	// carries the result's cause links; see beginOTelLazyOp.
+	sessionLazyAnchors           map[string]map[sharedResultID]sessionLazyAnchor
 	sessionResourcesBySession    map[string]map[SessionResourceHandle]*sessionResourceBindings
 	sessionHandlesBySession      map[string]*set.TreeSet[SessionResourceHandle]
 	sessionVolatileVarsBySession map[string]map[string]string
@@ -2797,9 +3064,10 @@ type sharedResult struct {
 	// egraphMu.
 	mergedAtUnixNano int64
 	// storedParts are the parts whose layer chains are in this cache's own
-	// blob store, by part address key. Only a blob-backed cache (the Cloud)
-	// sets them. Guarded by egraphMu.
-	storedParts map[string]PersistedPartOffer
+	// blob store, by part address key, their layers the cache's
+	// (storedLayers). Only a blob-backed cache (the Cloud) sets them. Guarded
+	// by egraphMu.
+	storedParts map[string]storedPart
 	// storedRecordBytes is the size of the record a blob-backed cache stores
 	// for the entry, as persistence writes it (encodedRecordBytes), or 0.
 	// Guarded by egraphMu.
@@ -2808,7 +3076,18 @@ type sharedResult struct {
 	// which StoredBundle keeps (storedTransferRecordLocked) and dropping or
 	// replacing the value releases. Builds hold egraphMu for reading, so it is set
 	// atomically.
-	storedTransfer              atomic.Pointer[storedTransferRecord]
+	storedTransfer atomic.Pointer[storedTransferRecord]
+	// stored is, on a blob-backed cache, the entry's stored record held
+	// compressed (cache_stored_body.go), once its body is made: its
+	// persistedEnvelope then has only the envelope's small fields. Guarded
+	// by egraphMu, and set under payloadMu too.
+	stored *storedBody
+	// changedAt is, on a blob-backed cache, the write count (Cache.writes)
+	// of the last write that changed what a stored bundle carries of the
+	// entry (stampEntryLocked), and stampCause what that write was
+	// (StampCause), for diagnostics. Guarded by egraphMu.
+	changedAt                   uint64
+	stampCause                  StampCause
 	transferRevision            uint64
 	dependencyOwnershipRevision uint64
 	// Reverse offer ownership does not propagate lookup requirements.
@@ -2820,23 +3099,23 @@ type sharedResult struct {
 	// dependencies describe. Persisted and guarded by egraphMu. See
 	// cache_current_entry.go.
 	replacements uint64
-	// holders are what the cache knows about other engine caches' copies of
-	// this entry, by holding key. recipeKeys are the entriesByRecipe keys
-	// that name it. Both guarded by egraphMu.
-	holders    map[HolderKey]*holding
+	// holders are what the cache knows about other caches' copies of this
+	// entry, sorted by holding key, so that one engine cache's holdings are
+	// one run of them (cacheHolderRefsLocked); nil when it has none.
+	// recipeKeys are the entriesByRecipe keys that name it. Both guarded by
+	// egraphMu.
+	holders    *entryHolders
 	recipeKeys []digest.Digest
-	// cacheHolders indexes holders by engine cache: the numbers of each
-	// engine cache's holdings on this entry, so that a read of one cache's
-	// holdings doesn't walk every other cache's (heldLocked, CacheHoldings).
-	// addHoldingLocked and removeHoldingLocked keep it, as they do holders;
-	// the Cloud's own holding on an engine's entry (noteCloudCopyLocked) is
-	// not in it. Guarded by egraphMu.
-	cacheHolders map[CacheID]map[uint64]struct{}
 	// calls are, on the Cloud, the calls its engines reported returning this
 	// entry other than its own, by request digest, which StoredBundle sends
 	// with the entry (cache_call_records.go). They own nothing and go with
 	// the entry. Persisted and guarded by egraphMu.
 	calls map[digest.Digest]*keptCall
+	// callTerms is calls grouped by the term each derives, as
+	// keptCallTermsLocked groups them, or nil until it does: kept until the
+	// calls change or an input's class does (forgetCallTermsLocked). A
+	// reader holding egraphMu for reading may store it; a writer clears it.
+	callTerms atomic.Pointer[[][]*keptCall]
 	// listItems are, on a list entry, the item read at each position of its
 	// value, and listItemOf and listItemNth name that list and position on
 	// such an item (CallRequest.ListItem). Not persisted; guarded by
@@ -2866,6 +3145,31 @@ type sharedResult struct {
 	// which frame is currently published for this shared result.
 	resultCallMu sync.RWMutex
 	resultCall   *ResultCall
+	// frameContent is the content digest of the last decoded frame stored on
+	// the result (storeResultCall), and frameContentKnown whether one was. A
+	// frame a restored body holds is known once it is decoded. Guarded by
+	// resultCallMu.
+	frameContent      digest.Digest
+	frameContentKnown bool
+	// taught are, on a blob-backed cache, the content digests holdings'
+	// spans taught the entry (teachRemoteIdentityLocked), in the order they
+	// were taught, the last its current one. The entry's frame takes them in
+	// that order, as a run of TeachContentDigest calls leaves an engine's,
+	// so one replaced by a later one is kept as replaced-content
+	// (queueTaughtContentLocked). taughtGiven is how many of them the
+	// current frame has taken, and taughtFrame counts the frames a
+	// replacement installed, which have taken none. Requires egraphMu.
+	taught      []digest.Digest
+	taughtGiven int
+	taughtFrame uint64
+	// taughtFrom is, for an entry with no taught digests whose record a
+	// newer one replaced, the replaced frame: the body worker reads its
+	// content digests, in order, as the entry's taught ones, which a
+	// restored entry doesn't keep (its frame does). Requires egraphMu.
+	taughtFrom entryFrame
+	// taughtDropped marks an entry whose taught digests a drop took, until a
+	// record fills it again (taughtContentRefilled). Requires egraphMu.
+	taughtDropped bool
 	// payloadMu guards lazy payload publication for imported persisted hits and
 	// prune-accounting timestamps that can change after initial publication.
 	payloadMu sync.RWMutex
@@ -3070,6 +3374,7 @@ type sharedResultPayloadState struct {
 	hasValue           bool
 	objClass           objectClassRef
 	persistedEnvelope  *PersistedResultEnvelope
+	stored             *storedBody
 	snapshotOwnerLinks []PersistedSnapshotRefLink
 	createdAtUnixNano  int64
 	lastUsedAtUnixNano int64
@@ -3094,6 +3399,9 @@ func (res *sharedResult) storeResultCall(frame *ResultCall) {
 		resultCallFrameGeneration.Add(1)
 	}
 	res.resultCall = frame
+	if frame != nil {
+		res.frameContent, res.frameContentKnown = frame.ContentDigest(), true
+	}
 	res.resultCallMu.Unlock()
 }
 
@@ -3151,6 +3459,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		hasValue:           res.hasValue,
 		objClass:           res.objClass,
 		persistedEnvelope:  res.persistedEnvelope,
+		stored:             res.stored,
 		snapshotOwnerLinks: cloneSnapshotRefLinks(res.snapshotOwnerLinks),
 		createdAtUnixNano:  res.createdAtUnixNano,
 		lastUsedAtUnixNano: res.lastUsedAtUnixNano,
@@ -4768,6 +5077,12 @@ func (r ObjectResult[T]) NullableWrapped() AnyResult {
 	return r.Result.resultNullableWrapped()
 }
 
+// onSharedResult is res as an object of r's class. It reads nothing from res,
+// so it is safe while res's payload is being installed.
+func (r ObjectResult[T]) onSharedResult(res *sharedResult) AnyObjectResult {
+	return ObjectResult[T]{Result: Result[T]{shared: res}, class: r.class}
+}
+
 func (r ObjectResult[T]) cacheSharedResult() *sharedResult {
 	return r.shared
 }
@@ -5105,7 +5420,7 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 // groups: the whole-result group for plain lazy values, the resolved
 // named groups for parts values. nil or empty parts means "everything".
 func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sharedResult, parts []PartKey) error {
-	if c.usesPartAcquisition(res, shared) {
+	if c.usesPartAcquisition(ctx, res, shared) {
 		return c.evaluateAcquiredParts(ctx, res, shared, parts)
 	}
 	shared.lazyMu.Lock()
@@ -5617,6 +5932,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			if err == nil {
 				c.notifySnapshotShareCompletion(callbackCtx, shared)
 			}
+			// An evaluation's end frees the record it held, and can complete
+			// parts: owed reports may now be made.
+			c.wakeOwedPartReports()
 		}()
 
 		// Native profiling is full detail and emits the leader wait
@@ -5716,8 +6034,13 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 			"hasSQLDB", c.sqlDB != nil,
 			"hasPersistDB", c.pdb != nil,
 		)
+		// First: the bridge detach sets closing, which refuses every read of
+		// a record. The engine's sessions are gone by now, so their
+		// evaluations no longer hold records.
+		c.closeOwedPartReports(ctx)
 		c.closeRemoteCacheBridge()
 		c.closePartPrefetch()
+		c.closeStoredBodies()
 		// After the bridge detach, which is what sets closing: an enqueue
 		// either finished its E section before this step, and is dropped
 		// here, or fails admission. Placed before it, an enqueue in between
@@ -5773,9 +6096,12 @@ func (c *Cache) CloseDiscardingPersistence() error {
 	c.closeOnce.Do(func() {
 		c.closeRemoteCacheBridge()
 		c.closePartPrefetch()
+		c.closeStoredBodies()
 		// The discard path is the boot reset, before sharing is enabled:
 		// this closes admission and has nothing to drain.
 		c.closeSnapshotSharing()
+		// Nothing is reported for a cache whose state is discarded.
+		c.stopOwedPartReports()
 		slog.Info(
 			"discarding dagql cache without persistence",
 			"hasSQLDB", c.sqlDB != nil,
@@ -5849,10 +6175,7 @@ func (c *Cache) MetadataEstimate() CacheMetadataEstimate {
 
 // cacheMetadataEstimateLocked requires egraphMu for reading or writing.
 func (c *Cache) cacheMetadataEstimateLocked() CacheMetadataEstimate {
-	classSlots := len(c.egraphParents) - 1
-	if classSlots < 0 {
-		classSlots = 0
-	}
+	classSlots := c.eqClassSlotsLocked()
 	estimate := CacheMetadataEstimate{
 		ResultCount:     len(c.resultsByID),
 		TermCount:       len(c.egraphTerms),
@@ -5881,6 +6204,7 @@ func (c *Cache) putResultLocked(res *sharedResult) {
 	}
 	c.resultPayloadBytes += res.payloadBytes
 	c.resultsByID[res.id] = res
+	c.markEntryClassLocked(res.id, StampValue)
 }
 
 // deleteResultLocked unregisters res. Requires egraphMu for writing.
@@ -5888,7 +6212,9 @@ func (c *Cache) deleteResultLocked(res *sharedResult) {
 	if c.resultsByID[res.id] != res {
 		return
 	}
+	c.markLeavingLocked(res.id)
 	c.forgetListItemLocked(res)
+	c.unindexKeptCallsLocked(res)
 	c.resultPayloadBytes -= res.payloadBytes
 	delete(c.resultsByID, res.id)
 	c.partReads.forget(res.id)
@@ -5973,7 +6299,16 @@ func (c *Cache) cacheUsageDagqlCallLocked(res *sharedResult) string {
 	if c == nil || res == nil {
 		return ""
 	}
-	frame := res.loadResultCall()
+	frame, err := res.entryFrameLocked().decode()
+	if err != nil {
+		return ""
+	}
+	return c.cacheUsageDagqlCallOfLocked(frame)
+}
+
+// cacheUsageDagqlCallOfLocked is the usage label of an entry's call frame:
+// its receiver's type and its field. Requires egraphMu.
+func (c *Cache) cacheUsageDagqlCallOfLocked(frame *ResultCall) string {
 	if frame == nil {
 		return ""
 	}
@@ -5986,7 +6321,7 @@ func (c *Cache) cacheUsageDagqlCallLocked(res *sharedResult) string {
 	receiverTypeName := ""
 	if frame.Receiver != nil {
 		if receiverRes := c.resultsByID[sharedResultID(frame.Receiver.ResultID)]; receiverRes != nil {
-			receiverFrame := receiverRes.loadResultCall()
+			receiverFrame, _ := receiverRes.entryFrameLocked().decode()
 			switch {
 			case receiverFrame != nil && receiverFrame.Type != nil && receiverFrame.Type.NamedType != "":
 				receiverTypeName = receiverFrame.Type.NamedType
@@ -6078,8 +6413,8 @@ func (c *Cache) measureAllResultSizes(ctx context.Context) (rerr error) {
 			rerr = errors.Join(rerr, err)
 		}
 	}()
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
+	step := c.lockGraphAs(ctx, "dagql.usage.publish")
+	defer c.unlockGraphAs(step)
 	snapshot.releaseLocked(context.WithoutCancel(ctx))
 	if err := ctx.Err(); err != nil {
 		return err
@@ -6449,6 +6784,15 @@ func (c *Cache) getOrInitCallInner(
 	if err != nil {
 		return nil, fmt.Errorf("derive request digest: %w", err)
 	}
+	// The call names the cached call it was made under, and is the caller of
+	// the cached calls its resolver makes, if its span is reported: one that
+	// isn't, as Generator.sync's isn't, or isn't cached installs nothing, so
+	// the calls under it name the reported cached call above it, which the
+	// service hears of.
+	caller := CallerRecipe(ctx)
+	if req.CacheReported {
+		ctx = ContextWithCallerRecipe(ctx, callDigest)
+	}
 	requestSelf, requestInputRefs, err := req.selfDigestAndInputRefs(c)
 	if err != nil {
 		return nil, fmt.Errorf("derive request term digests: %w", err)
@@ -6462,6 +6806,7 @@ func (c *Cache) getOrInitCallInner(
 		requestInputs = append(requestInputs, dig)
 	}
 	if ev != nil {
+		ev.Caller = caller
 		ev.SelfDigest = requestSelf
 		ev.StructuralInputs = requestInputs
 		// Best-effort optional fact: pairing derivation shares the self-digest
@@ -6497,7 +6842,7 @@ func (c *Cache) getOrInitCallInner(
 		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
 		return hitRes, nil
 	}
-	if lookup := c.noteRemoteMiss(req, callDigest, requestSelf, requestInputs); ev != nil {
+	if lookup := c.noteRemoteMiss(req, callDigest, caller, requestSelf, requestInputs); ev != nil {
 		ev.MissRemoteLookup = lookup
 	}
 
@@ -6739,6 +7084,7 @@ func (c *Cache) lookupCacheForDigests(
 		return nil, false, nil
 	}
 
+	c.markEntryClassLocked(hitRes.id, StampLookupHit)
 	hitRes.expiresAtUnix = mergeSharedResultExpiryUnix(
 		hitRes.expiresAtUnix,
 		candidateSharedResultExpiryUnix(nowUnix, 0),
@@ -7498,6 +7844,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// - 0 means "no TTL for this writer", not necessarily "never expire globally".
 	// - if any writer provides TTL, we keep the earliest non-zero expiry.
 	// - 0 only remains when all writers are 0.
+	c.markEntryClassLocked(oc.res.id, StampCallReturned)
 	oc.res.expiresAtUnix = mergeSharedResultExpiryUnix(
 		oc.res.expiresAtUnix,
 		oc.candidateExpiryUnix(now.Unix()),

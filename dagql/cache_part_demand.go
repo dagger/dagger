@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -50,7 +52,7 @@ func transferShellLocked(res AnyResult, row *sharedResult) bool {
 	return !ok || shell.PartTransferShell()
 }
 
-func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
+func (c *Cache) usesPartAcquisition(ctx context.Context, res AnyResult, row *sharedResult) bool {
 	if _, ok := UnwrapAs[HasPartHost](res); !ok {
 		return false
 	}
@@ -62,7 +64,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if settled {
 		return uses
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	shell := transferShellLocked(res, row)
 	gate := row.partGate.gate.Load()
@@ -318,15 +320,6 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					return err
 				}
 				if source != nil {
-					kind := "selected-ready"
-					if source.readiness == PartDownloadable {
-						kind = "selected-chain"
-					}
-					if source.delegation != nil {
-						c.recordPartFixtureDelegation(row, address, "selected-delegation", source.delegation)
-					} else {
-						c.recordPartFixture(row, address, kind)
-					}
 					var ownership atomic.Uint32 // 0 caller, 1 body, 2 caller released before body entry
 					err = c.RunLazyTask(ctx, res, partTaskKey("obtain", address), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
 						if !ownership.CompareAndSwap(0, 1) {
@@ -383,6 +376,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					// and the value it makes is then a ready source.
 					if !ranCall {
 						ranCall = true
+						c.partsWithoutSource.count("call_run")
 						callCtx, endCall := profDemandStep(ctx, "call")
 						callErr = c.runCallForPart(callCtx, res, key)
 						endCall(callErr)
@@ -535,7 +529,6 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			return err
 		}
 		row := res.cacheSharedResult()
-		ctx = c.partFixtureLazyContext(ctx, row, address)
 		var version capturedRowRevision
 		record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version)
 		if err != nil {
@@ -606,7 +599,6 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			if err := engine.CheckSnapshotSharePreparation(ctx, "run lazy operation"); err != nil {
 				return err
 			}
-			c.recordPartFixture(row, address, "lazy-enter")
 			// No source could supply the part: it is computed here.
 			wcprof.Fact(ctx, 0, "part.no_source", uint64(row.id))
 			c.logPartWithoutSource(ctx, row, address, route, record, scan.NoSource)
@@ -647,6 +639,14 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 //
 // origin is merged for a value a merge installed since the engine started,
 // and restored for any other.
+//
+// The computation is a second execution of the entry's recipe beside what
+// the cache holds from the first (cache_part_rebuild_mix.go): kept_parts are
+// the entry's other parts of the same operation group that are already
+// complete, which stay from the first; merged_dependents are the merged
+// entries computed from the first, over a walk of at most
+// rebuildMixCountLimit entries, with merged_dependents_more set when the walk
+// stopped there.
 func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, address PersistedPartAddress, route LazyOperationRoute, record PersistedRecord, check *SourceCheck) {
 	offers, failed, busy := 0, 0, false
 	for _, candidate := range check.candidates {
@@ -670,8 +670,14 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 	case busy:
 		reason = "holder_busy"
 	}
+	kept := 0
+	if probes, err := describePartRecord(record); err == nil {
+		key, _ := partAddressKey(address)
+		kept = keptParts(probes, route.WriteSet, key)
+	}
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	replacements, mergedAt := row.replacements, row.mergedAtUnixNano
+	dependents, more := c.mergedDependentsLocked(row, rebuildMixCountLimit)
 	c.egraphMu.RUnlock()
 	origin := "restored"
 	if mergedAt != 0 {
@@ -685,6 +691,7 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 	if record.Call != nil {
 		field = record.Call.Field
 	}
+	c.partsWithoutSource.count(reason)
 	slog.InfoContext(ctx, "remote cache part without a source",
 		"cache", c.Identity().ID,
 		"entry", uint64(row.id),
@@ -696,7 +703,10 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 		"group", string(route.Group.Group),
 		"reason", reason,
 		"candidates", len(check.candidates),
-		"offers", offers)
+		"offers", offers,
+		"kept_parts", kept,
+		"merged_dependents", dependents,
+		"merged_dependents_more", more)
 }
 
 // runCallForPart runs again the call that made res, for res's part key that
@@ -719,17 +729,31 @@ func (c *Cache) runCallForPart(ctx context.Context, res AnyResult, key string) e
 	if err != nil {
 		return fmt.Errorf("run call for part %s: %w", key, err)
 	}
+	// The call's run is a second execution beside the first's other parts
+	// and the merged entries computed from it, as logPartWithoutSource
+	// counts them.
+	kept := 0
+	var version capturedRowRevision
+	if record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version); err == nil {
+		if probes, err := describePartRecord(record); err == nil {
+			kept = keptParts(probes, nil, key)
+		}
+	}
 	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if row.unavailableParts == nil {
 		row.unavailableParts = map[string]struct{}{}
 	}
 	row.unavailableParts[key] = struct{}{}
+	dependents, more := c.mergedDependentsLocked(row, rebuildMixCountLimit)
 	c.egraphMu.Unlock()
 	slog.InfoContext(ctx, "remote cache part unavailable: running its call",
 		"cache", c.Identity().ID,
 		"entry", uint64(row.id),
 		"field", frame.Field,
-		"part", key)
+		"part", key,
+		"kept_parts", kept,
+		"merged_dependents", dependents,
+		"merged_dependents_more", more)
 	ran, err := srv.LoadTypeReplayable(ctx, id)
 	if err != nil {
 		return fmt.Errorf("run call for part %s: %w", key, err)
@@ -764,4 +788,31 @@ func (c *Cache) joinLazyEvaluation(ctx context.Context, res AnyResult, address P
 		return err
 	}
 	return partRefused("join: joined evaluation finished")
+}
+
+// partsWithoutSource counts the parts work read with no source to read them
+// from, by the reason logPartWithoutSource gives, over the cache's life.
+type partsWithoutSource struct {
+	mu     sync.Mutex
+	counts map[string]uint64
+}
+
+func (p *partsWithoutSource) count(reason string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.counts == nil {
+		p.counts = map[string]uint64{}
+	}
+	p.counts[reason]++
+}
+
+// PartsWithoutSource returns how many parts work read with no source over
+// the cache's life, by reason: those an operation of the value made again,
+// by why no source served them (no_offer, download_failed,
+// offer_unavailable, holder_busy), and call_run for those with no such
+// operation, whose call ran again. It is nil when there were none.
+func (c *Cache) PartsWithoutSource() map[string]uint64 {
+	c.partsWithoutSource.mu.Lock()
+	defer c.partsWithoutSource.mu.Unlock()
+	return maps.Clone(c.partsWithoutSource.counts)
 }

@@ -148,14 +148,42 @@ func mapTransferredOutputs(rec PersistedRecord) ([]CapturedCodecOutput, error) {
 	return outputs, err
 }
 func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
+	rec, _, err := normalizeTransferRecordRefs(rec)
+	return rec, err
+}
+
+// normalizeTransferCall is normalizeTransferRecord's call alone: a copy with
+// the extra digests and recipe digests another cache takes.
+func normalizeTransferCall(frame *ResultCall) (*ResultCall, error) {
+	frame = frame.clone()
+	if err := walkTransferCalls(frame, func(frame *ResultCall) error { frame.ExtraDigests = transferExtras(frame.ExtraDigests); return nil }, func(ref *ResultCallRef) error { ref.shared = nil; return nil }); err != nil {
+		return nil, err
+	}
+	if err := visitResultCallReferences(frame, func(ref *PersistedRef) error {
+		if ref.RecipeID != nil {
+			copied, err := ref.RecipeID.FilterTransferDigests()
+			ref.RecipeID = copied
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return frame, nil
+}
+
+// normalizeTransferRecordRefs is normalizeTransferRecord, and returns too
+// the entries the record's child and call references name, sorted and once
+// each, which its last walk finds.
+func normalizeTransferRecordRefs(rec PersistedRecord) (PersistedRecord, []uint64, error) {
 	var err error
 	rec.Envelope, err = clonePersistedEnvelope(rec.Envelope)
 	if err != nil {
-		return PersistedRecord{}, err
+		return PersistedRecord{}, nil, err
 	}
 	rec.Call = rec.Call.clone()
 	if err := walkTransferCalls(rec.Call, func(frame *ResultCall) error { frame.ExtraDigests = transferExtras(frame.ExtraDigests); return nil }, func(ref *ResultCallRef) error { ref.shared = nil; return nil }); err != nil {
-		return PersistedRecord{}, err
+		return PersistedRecord{}, nil, err
 	}
 	if err := walkTransferPayloads(&rec.Envelope, rec.Call, rec.SnapshotLinks, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if family.Transfer == nil {
@@ -167,17 +195,26 @@ func normalizeTransferRecord(rec PersistedRecord) (PersistedRecord, error) {
 		normalized, err := family.Transfer.NormalizeForeign(v)
 		return normalized.JSON, err
 	}); err != nil {
-		return PersistedRecord{}, err
+		return PersistedRecord{}, nil, err
 	}
 	rec.SnapshotLinks = nil
-	return VisitEncodedReferences(rec, func(ref *PersistedRef) error {
+	var refs []uint64
+	rec, err = VisitEncodedReferences(rec, func(ref *PersistedRef) error {
 		if ref.RecipeID != nil {
 			copied, err := ref.RecipeID.FilterTransferDigests()
 			ref.RecipeID = copied
 			return err
 		}
+		if ref.ResultID != 0 && (ref.Kind == PersistedRefChild || ref.Kind == PersistedRefCall) {
+			refs = append(refs, ref.ResultID)
+		}
 		return nil
 	})
+	if err != nil {
+		return PersistedRecord{}, nil, err
+	}
+	slices.Sort(refs)
+	return rec, slices.Compact(refs), nil
 }
 
 // validateTransferRecord checks a transferred record against its direct
@@ -234,7 +271,36 @@ func validateTransferRecordShape(rec PersistedRecord, deps []uint64) error {
 	if err != nil {
 		return err
 	}
-	return visitResultCallReferences(rec.Call, nil, directTransferReferences(direct))
+	return visitResultCallReferences(rec.Call, directTransferReferences(direct))
+}
+
+// validateStoredRecordShape checks a record a blob-backed cache sends as it
+// holds it, compressed: its call, its dependencies, and its call's
+// references against them. Its envelope was checked when it was compressed
+// (newStoredBody).
+func validateStoredRecordShape(rec PersistedRecord, deps []uint64) error {
+	if rec.ResultID == 0 || rec.Call == nil || rec.Call.Type == nil || rec.Call.Type.NamedType == "Query" {
+		return fmt.Errorf("missing transferable result call")
+	}
+	direct, err := validateTransferDependencies(rec, deps)
+	if err != nil {
+		return err
+	}
+	return visitResultCallReferences(rec.Call, directTransferReferences(direct))
+}
+
+// validateStoredFrameRecordShape checks a record a blob-backed cache sends
+// with its call frame as it holds it too, compressed: its dependencies. Its
+// call was checked as validateStoredRecordShape checks it when the body took
+// it (storedBody.withFrame), and its call's references, which the body's
+// facts list, against the entry's dependencies as the bundle took the
+// record (addStoredValue).
+func validateStoredFrameRecordShape(rec PersistedRecord, deps []uint64) error {
+	if rec.ResultID == 0 {
+		return fmt.Errorf("missing transferable result call")
+	}
+	_, err := validateTransferDependencies(rec, deps)
+	return err
 }
 
 // validateTransferRecordHeader checks a transferred record's identity, call,

@@ -225,7 +225,7 @@ func (m *CoreMod) SchemaASTCacheKey() string {
 	return fmt.Sprintf("%p:%s", m.base, m.view)
 }
 
-func (m *CoreMod) WithView(view call.View) *CoreMod {
+func (m *CoreMod) WithView(view call.View) core.Mod {
 	return &CoreMod{
 		base: m.base,
 		view: view,
@@ -275,7 +275,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		schema.Install(dag)
 	}
 
-	return installRemoteCacheFixture(dag)
+	return nil
 }
 
 func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (core.ModType, bool, error) {

@@ -223,8 +223,8 @@ type GCPolicy struct {
 }
 
 type GCSpace struct {
-	// ReservedSpace is the minimum amount of disk space this policy is guaranteed to retain.
-	// Any usage below this threshold will not be reclaimed during garbage collection.
+	// ReservedSpace is the amount of disk space this policy keeps when pruning for MaxUsedSpace.
+	// Pruning for MinFreeSpace can reclaim usage below this threshold.
 	ReservedSpace DiskSpace `json:"reservedSpace,omitempty"`
 
 	// MaxUsedSpace is the maximum amount of disk space this policy is allowed to use.
@@ -232,7 +232,7 @@ type GCSpace struct {
 	MaxUsedSpace DiskSpace `json:"maxUsedSpace,omitempty"`
 
 	// MinFreeSpace is the target amount of free disk space the garbage collector will attempt to leave.
-	// However, it will never let the available space fall below ReservedSpace.
+	// To reach it, the garbage collector can reclaim usage below ReservedSpace.
 	MinFreeSpace DiskSpace `json:"minFreeSpace,omitempty"`
 
 	// SweepSize is the minimum amount of space to sweep during a single gc pass.

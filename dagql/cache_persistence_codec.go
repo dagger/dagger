@@ -676,7 +676,7 @@ func VisitEncodedReferences(rec PersistedRecord, visit PersistedRefVisitor) (Per
 	out.SnapshotLinks = scopes.links
 	if rec.Call != nil {
 		out.Call = rec.Call.clone()
-		if err := visitResultCallReferences(out.Call, nil, visit); err != nil {
+		if err := visitResultCallReferences(out.Call, visit); err != nil {
 			return PersistedRecord{}, err
 		}
 	}
@@ -799,9 +799,10 @@ func visitPersistedObjectEnvelope(env PersistedResultEnvelope, ownerCall *Result
 
 // visitResultCallReferences walks the descriptive references of a recorded
 // call in place: receiver, module, argument and implicit-input literals, and
-// nested call descriptions. Each shared frame is visited once.
-func visitResultCallReferences(frame *ResultCall, path PersistedRefPath, visit PersistedRefVisitor) error {
-	return visitResultCallReferencesSeen(frame, path.Field("call"), visit, map[*ResultCall]struct{}{})
+// nested call descriptions, at paths under "call". Each shared frame is
+// visited once.
+func visitResultCallReferences(frame *ResultCall, visit PersistedRefVisitor) error {
+	return visitResultCallReferencesSeen(frame, PersistedRefPath(nil).Field("call"), visit, map[*ResultCall]struct{}{})
 }
 
 func visitResultCallReferencesSeen(frame *ResultCall, path PersistedRefPath, visit PersistedRefVisitor, seen map[*ResultCall]struct{}) error {

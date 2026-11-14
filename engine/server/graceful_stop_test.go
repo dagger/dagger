@@ -124,7 +124,9 @@ func TestGracefulStopWithDiscardedStateKeepsWhatOutlivesTheEngine(t *testing.T) 
 			stops = append(stops, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, event))
 		}
 	}
-	require.Equal(t, []telemetryattrs.EngineStopEvent{{Clean: false, SavedEntries: 0}}, stops, "the stop reports that it saved nothing")
+	require.Len(t, stops, 1)
+	require.False(t, stops[0].Clean, "the stop reports that it saved nothing")
+	require.Zero(t, stops[0].SavedEntries, "the stop reports that it saved nothing")
 
 	require.True(t, store.Closed(), "the directory wasn't given up")
 	next, err := cachevolumedir.Open(dir, cachevolumedir.Options{EngineVersion: "test"})
@@ -137,6 +139,61 @@ func TestGracefulStopWithDiscardedStateKeepsWhatOutlivesTheEngine(t *testing.T) 
 		keys = append(keys, e.Identity.Key)
 	}
 	require.ElementsMatch(t, []string{"mid", "new"}, keys, "the next engine doesn't get the volumes within their capacity")
+}
+
+func TestDiscardedStateStopDoesntWaitForCacheVolumeDeletions(t *testing.T) {
+	// with state.discarded, the stop collects the cache volume directory
+	// within its capacity but doesn't wait for the deletions it starts: the
+	// directory's next owner finishes them in the background
+	srv := newGracefulStopServer(t, filepath.Join(t.TempDir(), "cache.db"))
+	srv.stateDiscarded = true
+	srv.localCacheGCEnabled = true
+
+	const mib = 1 << 20
+	dir := filepath.Join(t.TempDir(), "cache-volumes")
+	held := make(chan struct{})
+	t.Cleanup(func() { close(held) })
+	var clock atomic.Int64
+	store, err := cachevolumedir.Open(dir, cachevolumedir.Options{
+		EngineVersion: "test",
+		Now:           func() time.Time { return time.Unix(clock.Add(60), 0) },
+		RemoveAll: func(path string) error {
+			<-held
+			return os.RemoveAll(path)
+		},
+	})
+	require.NoError(t, err)
+	srv.cacheVolumeDir = store
+	srv.cacheVolumesCfg.CapacityBytes = 3 * mib
+	for _, key := range []string{"old", "mid", "new"} {
+		pin, err := store.Acquire(t.Context(), cachevolumedir.Identity{Key: key}, true, func(context.Context, string) error { return nil })
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(pin.Path(), "f"), make([]byte, mib), 0o644))
+		pin.Release()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	srv.BeginGracefulStop()
+	start := time.Now()
+	require.NoError(t, srv.GracefulStop(ctx))
+	require.Less(t, time.Since(start), 5*time.Second, "the stop waited for the deletion it started")
+	require.True(t, store.Closed(), "the directory wasn't given up")
+
+	next, err := cachevolumedir.Open(dir, cachevolumedir.Options{EngineVersion: "test"})
+	require.NoError(t, err)
+	defer func() { require.NoError(t, next.Close()) }()
+	entries, _, err := next.Usage(t.Context())
+	require.NoError(t, err)
+	var keys []string
+	for _, e := range entries {
+		keys = append(keys, e.Identity.Key)
+	}
+	require.ElementsMatch(t, []string{"mid", "new"}, keys, "the stop didn't collect the directory within its capacity")
+	require.NoError(t, next.WaitRemovals(t.Context()))
+	trash, err := os.ReadDir(filepath.Join(dir, "v1", "trash"))
+	require.NoError(t, err)
+	require.Empty(t, trash, "the next owner didn't finish the deletion")
 }
 
 func TestDiscardedStateStopEndsTheRunningGC(t *testing.T) {

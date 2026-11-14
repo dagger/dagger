@@ -119,6 +119,13 @@ type ContainerExecState struct {
 
 	// ExecMD changes during execution and retries. Persist the supplied input.
 	originalExecMD *engineutil.ExecutionMetadata
+
+	// callerRecipe is the cached call the exec was made under
+	// (dagql.CallerRecipe), the withExec's own once the cache installed it:
+	// the calls a process in the exec makes are made under it
+	// (ExecutionMetadata.CallerRecipe). It isn't persisted: an exec loaded
+	// from the cache names none, as before.
+	callerRecipe digest.Digest
 }
 
 type ContainerExecLazy struct {
@@ -1410,6 +1417,7 @@ func (container *Container) WithExec(
 		// entrypoint starts its module's process.
 		EngineWork:     functionCall.EngineWork() || IsEngineWork(ctx),
 		originalExecMD: copyExecInputMetadata(execMD),
+		callerRecipe:   dagql.CallerRecipe(ctx),
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
@@ -2327,6 +2335,9 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 			// context that does not carry this ctx's mark (see
 			// ExecutionMetadata.UserFacingSpanCtx).
 			execMD.UserFacingSpanCtx = dagql.UserFacingSpanContext(ctx)
+			// Same in-process pattern: the calls a process in the exec makes
+			// through its nested client name the exec's call as their caller.
+			execMD.CallerRecipe = state.callerRecipe
 			// Same in-process pattern; a module runtime's parent metadata
 			// already names the function call instead.
 			SetExecutionIdentity(ctx, execMD)

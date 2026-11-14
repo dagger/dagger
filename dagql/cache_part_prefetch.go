@@ -188,6 +188,22 @@ type partPrefetcher struct {
 	aheadBytes map[digest.Digest]int64
 	// aheadLayers counts, for each layer, the chains in aheads that name it.
 	aheadLayers map[digest.Digest]int
+	// used and unread are the bytes of downloaded blobs that an install
+	// then used, and that were released unread.
+	used, unread int64
+	// offers counts the offers accepted, which numbers each offer's place
+	// in the order of acceptance; placeFetched and placeUsed are the
+	// downloaded bytes, and the part of them an install then used, by the
+	// place of the offer whose job downloaded them.
+	offers                  int64
+	placeFetched, placeUsed map[int64]int64
+
+	// countMu guards outcomes and fetched, which log counts outside mu.
+	countMu sync.Mutex
+	// outcomes counts the jobs by logged outcome, and fetched the bytes
+	// they downloaded.
+	outcomes map[string]int64
+	fetched  int64
 }
 
 // partPrefetchAhead is an offer's chain imported ahead of demand: ref holds
@@ -223,6 +239,8 @@ type partPrefetchJob struct {
 	lane     partPrefetchLane
 	record   PersistedPartOffer
 	accepted time.Time
+	// place is its offer's place in the order offers were accepted, from 1.
+	place int64
 	// size is the offer's chain size, and ahead whether the job waits in
 	// the ahead queue.
 	size  int64
@@ -251,6 +269,12 @@ type partPrefetchHold struct {
 	release func(context.Context) error
 	offers  map[*partOffer]struct{}
 	expires time.Time
+	// downloaded is set when prefetching downloaded the blob, rather than
+	// holding one already in the content store.
+	downloaded bool
+	// place is the place, in the order of acceptance, of the offer whose
+	// job downloaded it.
+	place int64
 }
 
 // jobKey is the job's current key. Requires p.mu: a replacement passes the
@@ -283,7 +307,7 @@ func (c *Cache) partPrefetch(ctx context.Context) *partPrefetcher {
 		cfg = *c.partPrefetchConfig
 	}
 	base, cancel := context.WithCancel(context.Background())
-	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, changed: make(chan struct{}), consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}, aheadLayers: map[digest.Digest]int{}}
+	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, outcomes: map[string]int64{}, placeFetched: map[int64]int64{}, placeUsed: map[int64]int64{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, changed: make(chan struct{}), consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}, aheadLayers: map[digest.Digest]int{}}
 	p.cond = sync.NewCond(&p.mu)
 	p.wg.Add(cfg.workers + cfg.smallWorkers + 1)
 	for range cfg.workers {
@@ -316,6 +340,12 @@ func (c *Cache) closePartPrefetch() {
 	p.cancel()
 	p.wg.Wait()
 	p.mu.Lock()
+	// A dropped hold was consumed, and counted as used already.
+	for _, h := range p.holds {
+		if h.downloaded {
+			p.unread += h.bytes
+		}
+	}
 	holds := append(slices.Collect(maps.Values(p.holds)), p.dropped...)
 	p.holds, p.dropped = map[digest.Digest]*partPrefetchHold{}, nil
 	p.held, p.pending = 0, 0
@@ -378,10 +408,12 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 		return
 	}
 	p.rows[offer] = row.id
+	p.offers++
 	for _, job := range jobs {
 		if p.jobs[job.jobKey()] != nil {
 			continue
 		}
+		job.place = p.offers
 		// The cap is read under the mutex the worker takes offers under.
 		if job.ahead && p.aheadFullLocked() {
 			job.ahead = false
@@ -403,6 +435,12 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 	for _, job := range dropped {
 		p.log(job, "skipped_queue", 0, 0, nil, 0, nil)
 	}
+}
+
+// partOfferRestored queues an offer a restore just attached for prefetch,
+// as partOfferAccepted queues any merge's.
+func (c *Cache) partOfferRestored(ctx context.Context, row *sharedResult, key string, offer *partOffer) {
+	c.partOfferAccepted(ctx, row, key, offer)
 }
 
 // queueLaneLocked queues job in its lane, dropping the lane's oldest job
@@ -605,6 +643,69 @@ func (c *Cache) partOfferReplaced(old, next *partOffer) {
 	}
 }
 
+// PartPrefetchCounts is what prefetching has done since the cache started:
+// its jobs by outcome, and the bytes of the blobs it downloaded by what
+// became of them. A blob counts in Used, Unread or Held as it lands, and in
+// Fetched once its job ends.
+type PartPrefetchCounts struct {
+	// Jobs counts the jobs by outcome, as their lines log it.
+	Jobs map[string]int64
+	// Fetched is the bytes prefetching downloaded.
+	Fetched int64
+	// Used is the part of them an install then used.
+	Used int64
+	// Unread is the part released without an install using it: no offer
+	// wanted it any more, or its time to be held passed.
+	Unread int64
+	// Held is the part still held, unread so far.
+	Held int64
+	// Offers is how many offers were accepted for prefetch. ByTenth splits
+	// the downloaded bytes, and the part an install then used, by where
+	// their offer sits in the order of acceptance: the first tenth of the
+	// offers, the second, and so on.
+	Offers  int64
+	ByTenth [10]PartPrefetchTenth
+}
+
+// PartPrefetchTenth is the bytes prefetching downloaded for the offers of one
+// tenth of the order of acceptance, and the part of them an install used.
+type PartPrefetchTenth struct {
+	Fetched, Used int64
+}
+
+// PartPrefetchCounts returns what prefetching has done since the cache
+// started; zero counts when it never started.
+func (c *Cache) PartPrefetchCounts() PartPrefetchCounts {
+	counts := PartPrefetchCounts{Jobs: map[string]int64{}}
+	p := c.partPrefetcher.Load()
+	if p == nil {
+		return counts
+	}
+	p.countMu.Lock()
+	maps.Copy(counts.Jobs, p.outcomes)
+	counts.Fetched = p.fetched
+	p.countMu.Unlock()
+	p.mu.Lock()
+	counts.Used, counts.Unread = p.used, p.unread
+	counts.Offers = p.offers
+	if p.offers > 0 {
+		tenth := func(place int64) int { return int((place - 1) * 10 / p.offers) }
+		for place, n := range p.placeFetched {
+			counts.ByTenth[tenth(place)].Fetched += n
+		}
+		for place, n := range p.placeUsed {
+			counts.ByTenth[tenth(place)].Used += n
+		}
+	}
+	for _, h := range p.holds {
+		if h.downloaded {
+			counts.Held += h.bytes
+		}
+	}
+	p.mu.Unlock()
+	return counts
+}
+
 // partPrefetcherLockIdent names the prefetcher's lock in profiles.
 const partPrefetcherLockIdent = "dagql.partPrefetcher.mu"
 
@@ -633,6 +734,10 @@ func (c *Cache) partPrefetchConsumed(ctx context.Context, layers []snapshots.Exp
 			// janitor releases its lease outside the mutex.
 			delete(p.holds, d)
 			p.held -= h.bytes
+			if h.downloaded {
+				p.used += h.bytes
+				p.placeUsed[h.place] += h.bytes
+			}
 			p.dropped = append(p.dropped, h)
 			idle = true
 		} else if _, ok := p.fetching[d]; ok {
@@ -671,6 +776,8 @@ func (c *Cache) partPrefetchHeld(ctx context.Context, layers []snapshots.ExportL
 // work runs lane's jobs, one at a time, until the prefetcher closes.
 func (p *partPrefetcher) work(lane partPrefetchLane) {
 	defer p.wg.Done()
+	_, unlabel := wcprof.WithCPUKind(p.ctx, wcprof.CPUKindFetch)
+	defer unlabel()
 	for {
 		p.mu.Lock()
 		for !p.closed && len(p.queues[lane]) == 0 {
@@ -707,6 +814,8 @@ func (p *partPrefetcher) work(lane partPrefetchLane) {
 // competes with the engine's own work.
 func (p *partPrefetcher) workAhead() {
 	defer p.wg.Done()
+	_, unlabel := wcprof.WithCPUKind(p.ctx, wcprof.CPUKindFetch)
+	defer unlabel()
 	for {
 		p.mu.Lock()
 		// An offer starts only while no install runs: an import ahead
@@ -1165,7 +1274,7 @@ func (p *partPrefetcher) fetch(ctx context.Context, job *partPrefetchJob, wanted
 				bytes += desc.Size
 			}
 			mu.Unlock()
-			if release = p.settle(job, desc, release, fetched || held); release != nil {
+			if release = p.settle(job, desc, release, fetched || held, fetched); release != nil {
 				_ = release(context.WithoutCancel(ctx))
 			}
 		})
@@ -1185,8 +1294,10 @@ func (p *partPrefetcher) wanted(job *partPrefetchJob, d digest.Digest) bool {
 // settle ends desc's download for job: a fetched blob becomes a hold for the
 // offers that still want it, unless none does, it was consumed meanwhile or
 // prefetching closed. It returns the release to run, outside the mutex, for
-// a blob that isn't held.
-func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, release func(context.Context) error, fetched bool) func(context.Context) error {
+// a blob that isn't held. downloaded says whether the job downloaded the
+// blob, which the counts take as used if an install consumed it meanwhile,
+// and as unread if it isn't held.
+func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, release func(context.Context) error, fetched, downloaded bool) func(context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.pending -= desc.Size
@@ -1200,11 +1311,21 @@ func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, 
 	p.cancelUnwantedLocked(job)
 	_, consumed := p.consumed[desc.Digest]
 	delete(p.consumed, desc.Digest)
+	if downloaded {
+		p.placeFetched[job.place] += desc.Size
+	}
 	if !fetched || len(offers) == 0 || consumed || p.closed {
 		p.held -= desc.Size
+		switch {
+		case downloaded && consumed:
+			p.used += desc.Size
+			p.placeUsed[job.place] += desc.Size
+		case downloaded:
+			p.unread += desc.Size
+		}
 		return release
 	}
-	p.holds[desc.Digest] = &partPrefetchHold{bytes: desc.Size, release: release, offers: offers, expires: job.accepted.Add(p.cfg.ttl)}
+	p.holds[desc.Digest] = &partPrefetchHold{bytes: desc.Size, release: release, offers: offers, expires: job.accepted.Add(p.cfg.ttl), downloaded: downloaded, place: job.place}
 	for offer := range offers {
 		p.checkAheadLocked(offer)
 	}
@@ -1258,6 +1379,8 @@ func (p *partPrefetcher) checkAheadLocked(offer *partOffer) {
 // jobs have yet to write.
 func (p *partPrefetcher) importAhead(ctx context.Context, offer *partOffer, row sharedResultID, a *partPrefetchAhead) {
 	defer p.wg.Done()
+	ctx, unlabel := wcprof.WithCPUKind(ctx, wcprof.CPUKindFetch)
+	defer unlabel()
 	if a.done != nil {
 		defer close(a.done)
 	}
@@ -1442,6 +1565,9 @@ func (p *partPrefetcher) releaseIdle(now time.Time) {
 			idle = append(idle, h)
 			delete(p.holds, d)
 			p.held -= h.bytes
+			if h.downloaded {
+				p.unread += h.bytes
+			}
 		}
 	}
 	for d, at := range p.consumed {
@@ -1469,6 +1595,10 @@ func (p *partPrefetcher) log(job *partPrefetchJob, outcome string, blobs int, by
 	// requests and ttfb are the job's content requests and their summed wait
 	// for response headers, as an install's line gives them: with bytes and
 	// the lane, the store's time to first byte by blob size.
+	p.countMu.Lock()
+	p.outcomes[outcome]++
+	p.fetched += bytes
+	p.countMu.Unlock()
 	var requests int64
 	var ttfb time.Duration
 	if stats != nil {

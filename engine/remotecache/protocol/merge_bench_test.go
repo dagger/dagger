@@ -33,7 +33,7 @@ func sharedLayersMerge() Merge {
 	for i := range 30 {
 		base = append(base, layer(fmt.Sprint("base-", i)))
 	}
-	bundle := dagql.ValueBundle{Version: 7, Roots: []dagql.TransferredRoot{{Ordinal: 1}}}
+	bundle := dagql.ValueBundle{Version: 8, Roots: []dagql.TransferredRoot{{Ordinal: 1}}}
 	for i := range 2000 {
 		bundle.Values = append(bundle.Values, dagql.TransferredValue{Ordinal: dagql.TransferOrdinal(i + 1), SenderNumber: uint64(i + 1)})
 		layers := append(append([]snapshots.ExportLayer{}, base...), layer(fmt.Sprint("own-", i)))
@@ -64,6 +64,14 @@ func BenchmarkMergeSharedLayers(b *testing.B) {
 		b.ReportMetric(float64(len(env.Body)), "bytes/msg")
 		for b.Loop() {
 			if _, err := NewEnvelope(1, 0, TypeMerge, merge); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("message", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if _, err := EncodeEnvelope(1, 0, TypeMerge, merge); err != nil {
 				b.Fatal(err)
 			}
 		}

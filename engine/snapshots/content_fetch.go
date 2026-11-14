@@ -49,8 +49,8 @@ type contentFetches struct {
 // contentFetch is one blob's download.
 type contentFetch struct {
 	desc ocispecs.Descriptor
-	// owner is the chain import the download started for. An import never
-	// retries its own failed download.
+	// owner is the chain import the download started for; any other import
+	// holding it joined it.
 	owner *ExportChain
 	// done is closed once err is set and, if no import held the download by
 	// then, its lease is released.
@@ -71,11 +71,10 @@ type contentFetch struct {
 }
 
 // joinFetch holds desc's download for owner, starting it with provider when
-// none runs. A retry names the download that failed: it starts a new one in
-// its place, unless another import already did, which it then joins. ended,
-// when set, runs once a download this call starts ends, and right away when
-// it starts none. It reports whether this call started the download.
-func (cm *snapshotManager) joinFetch(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, owner *ExportChain, failed *contentFetch, ended func()) (_ *contentFetch, started bool, rerr error) {
+// none runs. ended, when set, runs once a download this call starts ends, and
+// right away when it starts none. It reports whether this call started the
+// download.
+func (cm *snapshotManager) joinFetch(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, owner *ExportChain, ended func()) (_ *contentFetch, started bool, rerr error) {
 	defer func() {
 		if !started && ended != nil {
 			ended()
@@ -86,7 +85,7 @@ func (cm *snapshotManager) joinFetch(ctx context.Context, desc ocispecs.Descript
 	if f.inflight == nil {
 		f.inflight = map[digest.Digest]*contentFetch{}
 	}
-	if current := f.inflight[desc.Digest]; current != nil && current != failed {
+	if current := f.inflight[desc.Digest]; current != nil {
 		current.refs++
 		f.mu.Unlock()
 		return current, false, nil
@@ -101,7 +100,7 @@ func (cm *snapshotManager) joinFetch(ctx context.Context, desc ocispecs.Descript
 	dctx, cancel := context.WithCancelCause(dctx)
 	download := &contentFetch{desc: desc, owner: owner, done: make(chan struct{}), cancel: cancel, pin: pin, ended: ended, refs: 1}
 	f.mu.Lock()
-	if current := f.inflight[desc.Digest]; current != nil && current != failed {
+	if current := f.inflight[desc.Digest]; current != nil {
 		// Another import started the download meanwhile.
 		current.refs++
 		f.mu.Unlock()
@@ -172,56 +171,41 @@ func (cm *snapshotManager) dropFetch(ctx context.Context, f *contentFetch) {
 // fetchChainContent puts desc's blob in the content store, linked to ctx's
 // lease: by waiting for held, this import's own download of it started
 // ahead, by joining a download of it in progress, or by downloading it from
-// provider. A download that failed for other imports leaves this import its
-// own attempt with its provider, unless it already made one: an import never
-// retries its own failed download, and imports retrying the same failed
-// download join one retry. The caller keeps its hold of held. It reports
-// whether the blob came from another import's download, and whether the
-// download it came from read the provider.
+// provider. A download that fails fails every import that holds it, whoever
+// started it: none downloads the blob again. The caller keeps its hold of
+// held. It reports whether the blob came from another import's download, and
+// whether the download it came from read the provider.
 func (cm *snapshotManager) fetchChainContent(ctx context.Context, desc ocispecs.Descriptor, provider content.Provider, owner *ExportChain, held *contentFetch) (joined, read bool, _ error) {
 	f := held
 	if f == nil {
 		var err error
-		if f, _, err = cm.joinFetch(ctx, desc, provider, owner, nil, nil); err != nil {
+		if f, _, err = cm.joinFetch(ctx, desc, provider, owner, nil); err != nil {
 			return false, false, err
 		}
 	}
-	// leave drops this call's own hold; held stays the caller's.
-	leave := func(f *contentFetch) {
+	select {
+	case <-f.done:
+	case <-ctx.Done():
+	}
+	if cause := context.Cause(ctx); cause != nil {
 		if f != held {
-			cm.leaveFetch(ctx, f)
+			cm.dropFetch(ctx, f)
 		}
+		return false, false, cause
 	}
-	for {
-		select {
-		case <-f.done:
-		case <-ctx.Done():
-		}
-		if cause := context.Cause(ctx); cause != nil {
-			if f != held {
-				cm.dropFetch(ctx, f)
-			}
-			return false, false, cause
-		}
-		if f.err == nil {
-			// Linked while the download still holds the content.
-			err := cm.linkContentToContextLease(ctx, desc)
-			leave(f)
-			return f.owner != owner, f.read, err
-		}
-		leave(f)
-		// This import's own attempt failed: it is done. Another import's
-		// failed: this import tries next, or joins whichever import already
-		// does, and that attempt's failure is judged the same way.
-		if f.owner == owner {
-			return false, false, f.err
-		}
-		next, _, err := cm.joinFetch(ctx, desc, provider, owner, f, nil)
-		if err != nil {
-			return false, false, err
-		}
-		f = next
+	var err error
+	if f.err == nil {
+		// Linked while the download still holds the content.
+		err = cm.linkContentToContextLease(ctx, desc)
 	}
+	// Only this call's own hold is dropped; held stays the caller's.
+	if f != held {
+		cm.leaveFetch(ctx, f)
+	}
+	if f.err != nil {
+		return false, false, f.err
+	}
+	return f.owner != owner, f.read, err
 }
 
 // fetchAhead starts downloading desc's blob for owner before its layer is
@@ -245,7 +229,7 @@ func (cm *snapshotManager) fetchAhead(ctx context.Context, desc ocispecs.Descrip
 		return nil, false, true
 	}
 	var once sync.Once
-	f, started, err := cm.joinFetch(ctx, desc, provider, owner, nil, func() { once.Do(func() { slots.Release(1) }) })
+	f, started, err := cm.joinFetch(ctx, desc, provider, owner, func() { once.Do(func() { slots.Release(1) }) })
 	if err != nil {
 		return nil, false, false
 	}

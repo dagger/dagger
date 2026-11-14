@@ -723,7 +723,7 @@ func lookupServiceOriginSpanContexts(ctx context.Context, svc dagql.ObjectResult
 	if err != nil || clientMD.SessionID == "" {
 		return nil
 	}
-	return cache.ResultInstallSpans(clientMD.SessionID, svc)
+	return cache.ResultInstallSpans(ctx, clientMD.SessionID, svc)
 }
 
 func (ss *Services) StartInteractive(

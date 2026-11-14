@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -246,6 +247,88 @@ func TestRemoteCacheAdapterLookupMergesGoFirst(t *testing.T) {
 	close(release[placementVersion])
 	require.ErrorContains(t, <-placement, "refused")
 	require.ErrorContains(t, <-second, "refused")
+}
+
+// A restore's part merges as a service's merge does: into the cache, with
+// the rows it lands on known to the connection, and its reply as the commit
+// left it.
+func TestRemoteCacheAdapterRestoresAPart(t *testing.T) {
+	source := newGCTestCache(t)
+	ctx, res := addGCTestPersistableResult(t, source, "source", "restored", dagql.NewInt(7))
+	var bundle dagql.ValueBundle
+	require.NoError(t, source.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{res}}, config.RefConfig{}, func(_ context.Context, exp *dagql.ExportedValues) error {
+		bundle = exp.Bundle
+		return nil
+	}))
+
+	target := newGCTestCache(t)
+	adapter := newTestRemoteCacheAdapter(t, target)
+	known := dagql.NewKnownRows()
+	reply, err := adapter.RestorePart(t.Context(), bundle, nil, known)
+	require.NoError(t, err)
+	require.NotNil(t, reply.Release, "a restore's part holds what it landed")
+	defer func() { require.NoError(t, reply.Release(t.Context())) }()
+	require.True(t, reply.Committed)
+	require.Len(t, reply.Values, 1)
+	require.Equal(t, 1, reply.Rows.Created)
+	require.NotZero(t, reply.EngineTimeUnixNano)
+	require.Equal(t, 1, known.Len(), "the row the part landed on is known")
+	_, release, err := target.HoldEntry(t.Context(), reply.Values[0].Number)
+	require.NoError(t, err, "the part's record is in the cache")
+	require.NoError(t, release(t.Context()))
+
+	again, err := adapter.RestorePart(t.Context(), bundle, nil, known)
+	require.NoError(t, err)
+	require.NoError(t, again.Release(t.Context()))
+	require.Equal(t, 1, again.Rows.Kept, "a record the cache holds is kept")
+}
+
+// A restore's part waits behind a merge that answers a lookup, as a
+// placement merge does, and a part the merge refuses is an error.
+func TestRemoteCacheAdapterRestoreWaitsForLookupMerges(t *testing.T) {
+	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	entered := make(chan string, 2)
+	release := make(chan struct{})
+	adapter.mergeValues = func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error) {
+		entered <- "lookup"
+		<-release
+		return dagql.MergeReply{}, errors.New("refused")
+	}
+	adapter.restoreValues = func(context.Context, dagql.ValueBundle, []dagql.TransferOrdinal) (dagql.MergeReply, error) {
+		entered <- "restore"
+		return dagql.MergeReply{}, errors.New("refused")
+	}
+	lookup := make(chan error, 1)
+	go func() {
+		_, err := adapter.Merge(t.Context(), 1, protocol.Merge{Lookup: 2}, nil)
+		lookup <- err
+	}()
+	require.Equal(t, "lookup", <-entered)
+	restored := make(chan error, 1)
+	go func() {
+		_, err := adapter.RestorePart(t.Context(), dagql.ValueBundle{}, nil, nil)
+		restored <- err
+	}()
+	select {
+	case <-entered:
+		t.Fatal("a restore's part went while a lookup's merge was in progress")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	require.ErrorContains(t, <-lookup, "refused")
+	require.Equal(t, "restore", <-entered)
+	require.ErrorContains(t, <-restored, "refused")
+}
+
+// Each file a restore ended is kept for the engine's stop event, in order.
+func TestRemoteCacheAdapterKeepsRestoreReports(t *testing.T) {
+	adapter := newTestRemoteCacheAdapter(t, newGCTestCache(t))
+	adapter.Restored(remotecache.RestoreReport{Kind: "head", Complete: true})
+	adapter.Restored(remotecache.RestoreReport{Kind: "whole", Error: "fetch: 404 Not Found"})
+	reports := adapter.restoreReports()
+	require.Len(t, reports, 2)
+	require.Equal(t, "head", reports[0].Kind)
+	require.Equal(t, "fetch: 404 Not Found", reports[1].Error)
 }
 
 // adapterTestServer gives the core query the one server facility a file
@@ -707,9 +790,16 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		Bundle:    dagql.ValueBundle{Values: make([]dagql.TransferredValue, 3)},
 		Rows:      dagql.ExportedRows{Held: []uint64{4, 5}},
 		ChainTime: time.Second,
-		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, RetriedStale: 1},
+		Phases:    dagql.ExportPhases{WalkWait: 6 * time.Microsecond, Walk: 7 * time.Microsecond, Copy: 8 * time.Microsecond, Bundle: 12 * time.Microsecond, BundleKnown: time.Microsecond, BundleCheck: 2 * time.Microsecond, BundleSettle: 3 * time.Microsecond, BundleRecipes: 4 * time.Microsecond, BundleValues: 5 * time.Microsecond, BundlePasses: 2, RetriedStale: 1},
 		Chains:    &dagql.SelectedChains{Stats: bkcache.ExportStats{Layers: 3, LayersReused: 1, LayersDiffed: 2, RawBytes: 900, BlobBytes: 300, DiffTime: 9 * time.Millisecond, LockWait: 10 * time.Microsecond, BuildWait: 11 * time.Microsecond, LayersMerged: 1, MergedRawBytes: 400, MergedBlobBytes: 100, MergedDiffTime: 3 * time.Millisecond}},
 	}
+	// One record carries its engine's content-preferred digest, and one is a
+	// service's that carries none.
+	carried := &dagql.ResultCallContentPreferred{Recipe: digest.FromString("recipe"), Digest: digest.FromString("named")}
+	carriedJSON, err := json.Marshal(carried)
+	require.NoError(t, err)
+	values.Bundle.Values[0].Record.Call = &dagql.ResultCall{Field: "service", Type: &dagql.ResultCallType{NamedType: "Service"}, ContentPreferred: carried}
+	values.Bundle.Values[1].Record.Call = &dagql.ResultCall{Field: "service", Type: &dagql.ResultCallType{NamedType: "Service"}}
 	want := []any{
 		"chains", time.Second,
 		"hold", time.Millisecond,
@@ -717,6 +807,12 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"walk", 7 * time.Microsecond,
 		"copy", 8 * time.Microsecond,
 		"bundle", 12 * time.Microsecond,
+		"bundle_passes", 2,
+		"bundle_known", time.Microsecond,
+		"bundle_check", 2 * time.Microsecond,
+		"bundle_settle", 3 * time.Microsecond,
+		"bundle_recipes", 4 * time.Microsecond,
+		"bundle_values", 5 * time.Microsecond,
 		"retried_stale", 1,
 		"layers", 3,
 		"layers_reused", 1,
@@ -730,6 +826,9 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"merged_raw_bytes", int64(400),
 		"merged_blob_bytes", int64(100),
 		"merged_diff_time", 3 * time.Millisecond,
+		"content_preferred", 1,
+		"content_preferred_bytes", len(carriedJSON),
+		"services_without_content_preferred", 1,
 	}
 	attrs := exportLogAttrs(protocol.Export{Roots: []uint64{1}}, nil, values, 2*time.Second, local, busyReport{})
 	require.Equal(t, want, attrs[len(attrs)-len(want):], "appended after chains, in order")
@@ -745,6 +844,12 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"walk", time.Duration(0),
 		"copy", time.Duration(0),
 		"bundle", time.Duration(0),
+		"bundle_passes", 0,
+		"bundle_known", time.Duration(0),
+		"bundle_check", time.Duration(0),
+		"bundle_settle", time.Duration(0),
+		"bundle_recipes", time.Duration(0),
+		"bundle_values", time.Duration(0),
 		"retried_stale", 0,
 		"layers", 0,
 		"layers_reused", 0,
@@ -758,6 +863,9 @@ func TestExportLogAttrsPhases(t *testing.T) {
 		"merged_raw_bytes", int64(0),
 		"merged_blob_bytes", int64(0),
 		"merged_diff_time", time.Duration(0),
+		"content_preferred", 0,
+		"content_preferred_bytes", 0,
+		"services_without_content_preferred", 0,
 	}, attrs[len(attrs)-len(want):])
 }
 
@@ -985,4 +1093,35 @@ func TestRemoteCacheAdapterMergeReturnsWhenCancelled(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the merge did not return when cancelled")
 	}
+}
+
+// An export's layers build on the engine's cores while no session is live,
+// as at a stop, where nothing else runs and the engine has 20 s from its
+// last session; with a session live they build 4 at once, beside it.
+func TestExportLayerBuildsWhileNoSessionIsLive(t *testing.T) {
+	t.Parallel()
+	var ledger sessionLedger
+	a := &RemoteCacheAdapter{ledger: &ledger}
+	idle := a.exportConfig().Builds
+	require.Equal(t, runtime.NumCPU(), idle.Workers, "no session: a build on every core")
+	require.True(t, idle.Gate.TryAcquire(int64(runtime.NumCPU())), "the gate admits as many")
+	idle.Gate.Release(int64(runtime.NumCPU()))
+
+	ledger.sessionStarted("sess-a", "a", "")
+	busy := a.exportConfig().Builds
+	require.Equal(t, exportLayerWorkers, busy.Workers, "a session live: 4 at once, beside it")
+
+	// The service asks for a stopping engine's last export as its session's
+	// calls end, which can be while the session tears down: its clients
+	// gone, its services stopping, before the ledger counts it ended.
+	ledger.sessionTearingDown("sess-a")
+	require.Equal(t, runtime.NumCPU(), a.exportConfig().Builds.Workers, "a session tearing down runs nothing beside the export")
+
+	ledger.sessionStarted("sess-b", "b", "")
+	require.Equal(t, exportLayerWorkers, a.exportConfig().Builds.Workers, "another session live: 4 again")
+	ledger.sessionEnded("sess-b", "b", "", true)
+
+	ledger.sessionEnded("sess-a", "a", "", true)
+	require.Equal(t, runtime.NumCPU(), a.exportConfig().Builds.Workers, "its end frees the cores again")
+	require.Equal(t, exportRefConfig.Compression, a.exportConfig().Compression, "the same blobs either way")
 }

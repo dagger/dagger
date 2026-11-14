@@ -28,21 +28,29 @@ func TestPersistedDecodeDefaultDeps(t *testing.T) {
 	}
 
 	t.Run("marked without a registered factory is refused", func(t *testing.T) {
-		_, err := persistedDecodeDefaultDeps(engine.WithSnapshotSharePreparation(ctx), dec, root)
+		_, err := persistedDecodeDefaultDeps(engine.WithSnapshotSharePreparation(ctx), dec, root, "")
 		require.ErrorIs(t, err, engine.ErrSnapshotShareEvaluation)
 	})
 
 	t.Run("marked with the registered root returns a fresh builder", func(t *testing.T) {
 		marked := ContextWithPersistedDecodeDefaults(engine.WithSnapshotSharePreparation(ctx), root, factory)
-		deps, err := persistedDecodeDefaultDeps(marked, dec, root)
+		deps, err := persistedDecodeDefaultDeps(marked, dec, root, "")
 		require.NoError(t, err)
 		require.NotNil(t, deps)
 		require.Equal(t, []call.View{srv.View}, views, "the builder uses the decoding server's own core view")
 
 		// A nested decode makes its own builder rather than sharing one.
-		nested, err := persistedDecodeDefaultDeps(marked, dec, root)
+		nested, err := persistedDecodeDefaultDeps(marked, dec, root, "")
 		require.NoError(t, err)
 		require.NotSame(t, deps, nested)
+	})
+
+	t.Run("marked with a saved view builds at that view", func(t *testing.T) {
+		views = nil
+		marked := ContextWithPersistedDecodeDefaults(engine.WithSnapshotSharePreparation(ctx), root, factory)
+		_, err := persistedDecodeDefaultDeps(marked, dec, root, "v0.0.9")
+		require.NoError(t, err)
+		require.Equal(t, []call.View{"v0.0.9"}, views, "the Module's saved view wins over the decoding server's")
 	})
 
 	t.Run("a decoding server with another root is refused", func(t *testing.T) {
@@ -50,7 +58,7 @@ func TestPersistedDecodeDefaultDeps(t *testing.T) {
 		otherSrv, err := dagql.NewServer(ctx, other)
 		require.NoError(t, err)
 		marked := ContextWithPersistedDecodeDefaults(engine.WithSnapshotSharePreparation(ctx), root, factory)
-		_, err = persistedDecodeDefaultDeps(marked, dagql.NewPersistDecodeContext(otherSrv, 1, nil), other)
+		_, err = persistedDecodeDefaultDeps(marked, dagql.NewPersistDecodeContext(otherSrv, 1, nil), other, "")
 		require.ErrorIs(t, err, engine.ErrSnapshotShareEvaluation)
 	})
 
@@ -59,7 +67,7 @@ func TestPersistedDecodeDefaultDeps(t *testing.T) {
 		// reaching it at all is the assertion, and it panics or errors rather
 		// than silently using the background factory.
 		withDefaults := ContextWithPersistedDecodeDefaults(ctx, root, factory)
-		require.Panics(t, func() { _, _ = persistedDecodeDefaultDeps(withDefaults, dec, root) },
+		require.Panics(t, func() { _, _ = persistedDecodeDefaultDeps(withDefaults, dec, root, "") },
 			"an unmarked decode never consults the background factory")
 	})
 }

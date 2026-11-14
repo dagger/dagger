@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"slices"
+	"sync"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/persistdb"
@@ -23,7 +25,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	var finalOffers []restoredFinalOffer
 
 	var (
-		resultRows              []persistdb.MirrorResult
+		resultRows              []importedResultRow
 		eqClassRows             []persistdb.MirrorEqClass
 		eqClassDigestRows       []persistdb.MirrorEqClassDigest
 		termRows                []persistdb.MirrorTerm
@@ -31,6 +33,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		resultOutputEqClassRows []persistdb.MirrorResultOutputEqClass
 		persistedEdgeRows       []persistdb.MirrorPersistedEdge
 		resultCallRows          []persistdb.MirrorResultCall
+		resultTaughtRows        []persistdb.MirrorResultTaught
 		resultDepRows           []persistdb.MirrorResultDep
 		resultSnapshotRows      []persistdb.MirrorResultSnapshotLink
 		snapshotContentRows     []persistdb.MirrorSnapshotContentLink
@@ -41,7 +44,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	// The tables are independent reads of a store nothing else writes yet, so
 	// they are listed concurrently, each on its own connection.
 	lists, listCtx := errgroup.WithContext(ctx)
-	listMirrorRows(lists, listCtx, "results", &resultRows, c.pdb.ListMirrorResults)
+	listImportedResultRows(lists, listCtx, &resultRows, c.blobBacked, c.pdb.EachMirrorResult)
 	listMirrorRows(lists, listCtx, "eq_classes", &eqClassRows, c.pdb.ListMirrorEqClasses)
 	listMirrorRows(lists, listCtx, "eq_class_digests", &eqClassDigestRows, c.pdb.ListMirrorEqClassDigests)
 	listMirrorRows(lists, listCtx, "terms", &termRows, c.pdb.ListMirrorTerms)
@@ -49,6 +52,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	listMirrorRows(lists, listCtx, "result_output_eq_classes", &resultOutputEqClassRows, c.pdb.ListMirrorResultOutputEqClasses)
 	listMirrorRows(lists, listCtx, "persisted_edges", &persistedEdgeRows, c.pdb.ListMirrorPersistedEdges)
 	listMirrorRows(lists, listCtx, "result_calls", &resultCallRows, c.pdb.ListMirrorResultCalls)
+	listMirrorRows(lists, listCtx, "result_taught", &resultTaughtRows, c.pdb.ListMirrorResultTaught)
 	listMirrorRows(lists, listCtx, "result_deps", &resultDepRows, c.pdb.ListMirrorResultDeps)
 	listMirrorRows(lists, listCtx, "result_snapshot_links", &resultSnapshotRows, c.pdb.ListMirrorResultSnapshotLinks)
 	listMirrorRows(lists, listCtx, "snapshot_content_links", &snapshotContentRows, c.pdb.ListMirrorSnapshotContentLinks)
@@ -64,8 +68,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	}
 
 	var eagerDecodeResultIDs []sharedResultID
-
-	decodedResultRows := decodeImportedResultRows(resultRows)
+	indexed := make(map[sharedResultID]struct{})
 
 	c.egraphMu.Lock()
 	importErr := func() error {
@@ -88,6 +91,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.egraphParents[eqID] = eqID
 			if c.eqClassToDigests[eqID] == nil {
 				c.eqClassToDigests[eqID] = make(map[string]struct{})
+			}
+		}
+		// Classes keep the numbers they were saved under; the numbers no saved
+		// class holds are free for new classes, lowest first.
+		c.freeEqClassIDs = nil
+		for id := maxEqClassID; id >= 1; id-- {
+			if c.egraphParents[id] == 0 {
+				c.freeEqClassIDs = append(c.freeEqClassIDs, id)
 			}
 		}
 
@@ -123,7 +134,8 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 		}
 
 		var maxResultID sharedResultID
-		for i, row := range resultRows {
+		for i := range resultRows {
+			row := &resultRows[i]
 			resultID := sharedResultID(row.ID)
 			if resultID == 0 {
 				return fmt.Errorf("import result: zero ID")
@@ -131,14 +143,16 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if resultID > maxResultID {
 				maxResultID = resultID
 			}
+			if row.Indexed {
+				indexed[resultID] = struct{}{}
+			}
 
-			decoded := decodedResultRows[i]
-			env := decoded.env
+			env := row.env
 			if env == nil {
 				return fmt.Errorf("import result %d: empty self payload", resultID)
 			}
-			if decoded.envErr != nil {
-				return fmt.Errorf("import result %d self payload: %w", resultID, decoded.envErr)
+			if row.envErr != nil {
+				return fmt.Errorf("import result %d self payload: %w", resultID, row.envErr)
 			}
 			if env.Kind == "" {
 				return fmt.Errorf("import result %d: empty self payload kind", resultID)
@@ -147,12 +161,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				return fmt.Errorf("import result %d: unsupported self payload version %d", resultID, env.Version)
 			}
 
-			frame := decoded.frame
+			frame := row.frame
 			if frame == nil {
 				return fmt.Errorf("import result %d: empty call_frame_json", resultID)
 			}
-			if decoded.frameErr != nil {
-				return fmt.Errorf("import result %d call_frame_json: %w", resultID, decoded.frameErr)
+			if row.frameErr != nil {
+				return fmt.Errorf("import result %d call_frame_json: %w", resultID, row.frameErr)
 			}
 
 			// The decline mark goes back onto the entry, not into the
@@ -186,8 +200,14 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				// A blob-backed cache never decodes a value: it keeps every
 				// record as it was saved, which placement copies into
 				// bundles, and takes back its stored parts.
-				if err := restoreStoredPartsLocked(res, env, row.CallFrameJSON, row.SelfPayload); err != nil {
+				if err := c.restoreStoredPartsLocked(res, env, row.callFrameBytes, row.payloadBytes); err != nil {
 					return fmt.Errorf("import result %d stored parts: %w", resultID, err)
+				}
+				if body := row.body; body != nil {
+					// As merge measured it: the call and the envelope
+					// encoded.
+					res.storedRecordBytes = int64(row.callFrameBytes) + body.envelopeBytes
+					c.setStoredBodyLocked(res, env, body)
 				}
 			} else if env.Kind == persistedResultKindNull {
 				// An attached absent value keeps its row identity, recorded
@@ -205,7 +225,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				eagerDecodeResultIDs = append(eagerDecodeResultIDs, resultID)
 			}
 			c.putResultLocked(res)
-			c.traceImportResultLoaded(ctx, importRunID, resultID, row.CallFrameJSON)
+			c.traceImportResultLoaded(ctx, importRunID, resultID, frame)
 		}
 
 		for _, row := range resultCallRows {
@@ -221,6 +241,27 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				res.calls = make(map[digest.Digest]*keptCall)
 			}
 			res.calls[kept.id.recipe] = kept
+			c.indexKeptCallLocked(res, kept)
+		}
+
+		// An entry's taught content digests come back in order, with how many
+		// its saved frame had taken; the body worker gives it the rest once
+		// it starts (queueRestoredTaughtContent).
+		for _, row := range resultTaughtRows {
+			res := c.resultsByID[sharedResultID(row.ResultID)]
+			if res == nil {
+				return fmt.Errorf("import result_taught %d: missing result", row.ResultID)
+			}
+			if row.Position != int64(len(res.taught)) {
+				return fmt.Errorf("import result_taught %d: position %d after %d", row.ResultID, row.Position, len(res.taught))
+			}
+			res.taught = append(res.taught, digest.Digest(row.Digest))
+			if row.Given && res.taughtGiven == len(res.taught)-1 {
+				res.taughtGiven++
+			}
+			if res.taughtGiven < len(res.taught) && (len(c.restoredTaught) == 0 || c.restoredTaught[len(c.restoredTaught)-1] != res) {
+				c.restoredTaught = append(c.restoredTaught, res)
+			}
 		}
 
 		for _, row := range persistedEdgeRows {
@@ -463,15 +504,11 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			c.nextSharedResultID = maxResultID + 1
 		}
 		c.nextEgraphTermID = maxTermID + 1
-		c.nextEgraphClassID = maxEqClassID + 1
 		if c.nextSharedResultID == 0 {
 			c.nextSharedResultID = 1
 		}
 		if c.nextEgraphTermID == 0 {
 			c.nextEgraphTermID = 1
-		}
-		if c.nextEgraphClassID == 0 {
-			c.nextEgraphClassID = 1
 		}
 
 		return nil
@@ -480,14 +517,13 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	if importErr != nil {
 		return importErr
 	}
-	indexed := make(map[sharedResultID]struct{})
-	for _, row := range resultRows {
-		if row.Indexed {
-			indexed[sharedResultID(row.ID)] = struct{}{}
-		}
-	}
 	if err := c.indexRestoredEntries(indexed); err != nil {
 		return err
+	}
+	if c.blobBacked {
+		if err := c.holdRestoredFramesCompressed(); err != nil {
+			return err
+		}
 	}
 
 	for _, resultID := range eagerDecodeResultIDs {
@@ -517,7 +553,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				markRestoredPartDelegation(res, *state.persistedEnvelope, call, state.snapshotOwnerLinks)
 				c.bindPartHost(res, decoded)
 				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok {
-					withSelf.InitializeResultReference(Result[Typed]{shared: res})
+					withSelf.InitializeResultReference(decodedResultReference(res, decoded))
 				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
@@ -535,7 +571,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			installedRevision := res.payloadRevision
 			res.payloadMu.Unlock()
-			c.updateDecodedPayloadBytes(res, decoded.Unwrap(), installedRevision)
+			c.updateDecodedPayloadBytes(ctx, res, decoded.Unwrap(), installedRevision)
 			if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
 				return err
 			}
@@ -659,34 +695,95 @@ func listMirrorRows[T any](lists *errgroup.Group, ctx context.Context, table str
 	})
 }
 
-// importedResultRow is a results row's self payload and call frame, decoded
-// ahead of the import loop. A nil env or frame means the row stored none.
+// importResultBatchRows is how many results rows are read before they are
+// decoded together. Rows wait for their batch with their raw bytes, a few
+// kilobytes each, so a batch is small enough that the batches read but not
+// yet decoded, about two per core, stay far below what the restored cache
+// holds, and big enough that handing one to a decoder costs nothing next to
+// decoding it.
+const importResultBatchRows = 64
+
+// importedResultRow is a results row as the import keeps it: its columns,
+// with its self payload and call frame decoded and their raw bytes dropped
+// (SelfPayload and CallFrameJSON are empty), and the sizes those had. A nil
+// env or frame means the row stored none.
 type importedResultRow struct {
-	env      *PersistedResultEnvelope
-	envErr   error
-	frame    *ResultCall
-	frameErr error
+	persistdb.MirrorResult
+	payloadBytes   int
+	callFrameBytes int
+	env            *PersistedResultEnvelope
+	envErr         error
+	frame          *ResultCall
+	frameErr       error
+	// body is, on a blob-backed cache, the row's stored record as it was
+	// held, whose envelope env is without its value (decodeStoredRow).
+	body *storedBody
 }
 
-// decodeImportedResultRows decodes every results row on all cores. Decoding
-// reads only the row. The import loop checks the rows in order, so the error
-// it reports is the one of the first invalid row.
-func decodeImportedResultRows(rows []persistdb.MirrorResult) []importedResultRow {
-	decoded := make([]importedResultRow, len(rows))
-	_ = forEachIndexParallel(len(rows), func(i int) error {
-		row := &rows[i]
-		out := &decoded[i]
-		if len(row.SelfPayload) > 0 {
-			out.env = new(PersistedResultEnvelope)
-			out.envErr = json.Unmarshal(row.SelfPayload, out.env)
+// decode decodes the row's call frame and self payload, and drops their raw
+// bytes. Decoding reads only the row. A blob-backed cache's stored record is
+// taken back as it was held, its value not decoded.
+func (row *importedResultRow) decode(blobBacked bool) {
+	row.payloadBytes = len(row.SelfPayload)
+	row.callFrameBytes = len(row.CallFrameJSON)
+	if row.CallFrameJSON != "" {
+		row.frame = &ResultCall{}
+		row.frameErr = json.Unmarshal([]byte(row.CallFrameJSON), row.frame)
+	}
+	switch {
+	case len(row.SelfPayload) == 0:
+	case blobBacked && isStoredRow(row.SelfPayload):
+		row.env, row.body, row.envErr = decodeStoredRow(row.SelfPayload, row.frame)
+	default:
+		row.env = new(PersistedResultEnvelope)
+		row.envErr = json.Unmarshal(row.SelfPayload, row.env)
+	}
+	row.SelfPayload = nil
+	row.CallFrameJSON = ""
+}
+
+// listImportedResultRows lists the results table into dst, in the table's
+// order, decoding rows on all cores as they are read, a batch at a time
+// (importResultBatchRows). A row keeps its raw bytes only until its batch is
+// decoded, so a restore never holds the whole table's bytes beside their
+// decoded form. The import loop checks the rows in order, so the error it
+// reports is the one of the first invalid row.
+func listImportedResultRows(lists *errgroup.Group, ctx context.Context, dst *[]importedResultRow, blobBacked bool, each func(context.Context, func(persistdb.MirrorResult) error) error) {
+	lists.Go(func() error {
+		pending := make(chan []importedResultRow, runtime.GOMAXPROCS(0))
+		var decoders sync.WaitGroup
+		for range runtime.GOMAXPROCS(0) {
+			decoders.Go(func() {
+				for batch := range pending {
+					for i := range batch {
+						batch[i].decode(blobBacked)
+					}
+				}
+			})
 		}
-		if row.CallFrameJSON != "" {
-			out.frame = &ResultCall{}
-			out.frameErr = json.Unmarshal([]byte(row.CallFrameJSON), out.frame)
+		var batches [][]importedResultRow
+		batch := make([]importedResultRow, 0, importResultBatchRows)
+		err := each(ctx, func(row persistdb.MirrorResult) error {
+			batch = append(batch, importedResultRow{MirrorResult: row})
+			if len(batch) == importResultBatchRows {
+				batches = append(batches, batch)
+				pending <- batch
+				batch = make([]importedResultRow, 0, importResultBatchRows)
+			}
+			return nil
+		})
+		if len(batch) > 0 {
+			batches = append(batches, batch)
+			pending <- batch
 		}
+		close(pending)
+		decoders.Wait()
+		if err != nil {
+			return fmt.Errorf("list mirror results: %w", err)
+		}
+		*dst = slices.Concat(batches...)
 		return nil
 	})
-	return decoded
 }
 
 func normalizeImportedDigest(raw string) digest.Digest {
@@ -746,9 +843,9 @@ func persistedEnvelopeTypeNames(env PersistedResultEnvelope, names []persistedEn
 // updateDecodedPayloadBytes replaces an imported row's envelope size with
 // its decoded value's, unless the row's payload changed after revision.
 // Callers hold no cache locks: sizing may take the value's own lock.
-func (c *Cache) updateDecodedPayloadBytes(res *sharedResult, decoded Typed, revision uint64) {
+func (c *Cache) updateDecodedPayloadBytes(ctx context.Context, res *sharedResult, decoded Typed, revision uint64) {
 	n := cachePayloadBytes(decoded)
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	res.payloadMu.RLock()
 	current := res.payloadRevision == revision
@@ -1023,7 +1120,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				markRestoredPartDelegation(res, *state.persistedEnvelope, call, roles)
 				c.bindPartHost(res, decoded)
 				if withSelf, ok := UnwrapAs[HasResultReference](decoded); ok {
-					withSelf.InitializeResultReference(Result[Typed]{shared: res})
+					withSelf.InitializeResultReference(decodedResultReference(res, decoded))
 				}
 				res.self = decoded.Unwrap()
 				res.hasValue = true
@@ -1042,7 +1139,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			}
 			installedRevision := res.payloadRevision
 			res.payloadMu.Unlock()
-			c.updateDecodedPayloadBytes(res, decoded.Unwrap(), installedRevision)
+			c.updateDecodedPayloadBytes(ctx, res, decoded.Unwrap(), installedRevision)
 
 			resolver = decodeResolver
 		}

@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/remotecache/protocol"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/stretchr/testify/require"
@@ -883,6 +884,98 @@ func TestGCSessionCompletionClearsMetadataPruneBlock(t *testing.T) {
 	srv.gcAfterSessionCompletion()
 	require.False(t, srv.metadataPruneMonitorBlocked.Load())
 	require.Zero(t, cache.EntryStats().RetainedCalls)
+}
+
+// newGCSessionTestServer is a server whose post-session pass has a released
+// entry to prune, and whose ledger has seen session sess-a of client a end.
+// With remote, the remote cache is attached, with a bound that doesn't pass
+// during the test, so the engine is settling.
+func newGCSessionTestServer(t *testing.T, remote bool) (*Server, *dagql.Cache) {
+	t.Helper()
+	cache := newGCTestCache(t)
+	ctx := addGCTestPersistable(t, cache, "gc-session-complete", "gcSessionComplete", dagql.NewInt(1))
+	require.NoError(t, cache.ReleaseSession(ctx, "gc-session-complete"))
+	estimate := cache.MetadataEstimate()
+	srv := &Server{
+		rootDir:                        t.TempDir(),
+		engineCache:                    cache,
+		localCacheGCEnabled:            true,
+		dagqlCacheMaxEstimatedBytes:    estimate.EstimatedBytes - 1,
+		dagqlCacheTargetEstimatedBytes: 1,
+	}
+	if remote {
+		srv.sessionLedger.attachRemote(func() int { return 0 }, func() {}, func() {})
+		srv.sessionLedger.remote.bound = time.Hour
+	}
+	srv.sessionLedger.sessionStarted("sess-a", "a", "")
+	srv.sessionLedger.sessionEnded("sess-a", "a", "", true)
+	require.NotZero(t, cache.EntryStats().RetainedCalls)
+	return srv, cache
+}
+
+// With the remote cache, the pass after a session ends waits while the
+// engine settles: the stop's last exports build their layers then, and a
+// collection holds the locks those builds need. It runs once the settle ends,
+// whichever way it ends.
+func TestGCSessionCompletionWaitsForTheSettle(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		end  func(l *sessionLedger)
+	}{
+		{"settled", func(l *sessionLedger) {
+			l.settledFor(1, []protocol.SettleSession{{ID: "sess-a", Marker: true}})
+		}},
+		{"timed out", func(l *sessionLedger) { l.settleTimedOut(l.remote, 1) }},
+		{"a session started", func(l *sessionLedger) { l.sessionStarted("sess-b", "b", "") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv, cache := newGCSessionTestServer(t, true)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				srv.gcAfterSessionCompletion()
+			}()
+			select {
+			case <-done:
+				t.Fatal("the pass ran while the engine was settling")
+			case <-time.After(100 * time.Millisecond):
+			}
+			require.NotZero(t, cache.EntryStats().RetainedCalls, "nothing pruned while settling")
+
+			tc.end(&srv.sessionLedger)
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the pass didn't run once the settle ended")
+			}
+			require.Zero(t, cache.EntryStats().RetainedCalls)
+		})
+	}
+}
+
+// The pass runs at once when there's no settle to wait for: on an engine
+// without the remote cache, and on one that has already settled.
+func TestGCSessionCompletionRunsAtOnceWithoutASettle(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		remote bool
+	}{
+		{"without the remote cache", false},
+		{"already settled", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv, cache := newGCSessionTestServer(t, tc.remote)
+			if tc.remote {
+				srv.sessionLedger.settledFor(1, []protocol.SettleSession{{ID: "sess-a", Marker: true}})
+			}
+			srv.gcAfterSessionCompletion()
+			require.Zero(t, cache.EntryStats().RetainedCalls)
+		})
+	}
 }
 
 func TestExplicitPruneClearsMetadataPruneBlock(t *testing.T) {

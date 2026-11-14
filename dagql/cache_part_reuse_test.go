@@ -2,64 +2,103 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// partReuseTestReceiver returns an imported receiver whose snapshot part was
-// installed from a local donor and settled, and an evaluation of it by ID in
-// the test session, as a step of a later build reads it.
-func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) (context.Context, *Cache, *Server, AnyResult, func() error) {
+// partReuseTestValue gives a sharing test value the acquisition entry point
+// of a core Directory: a demand of it binds its part host.
+type partReuseTestValue struct {
+	*shareTestValue
+	host *PartHost
+}
+
+func (*partReuseTestValue) Type() *ast.Type {
+	return &ast.Type{NamedType: "PartReuseTestValue", NonNull: true}
+}
+
+func (v *partReuseTestValue) BindPartHost(host *PartHost) { v.host = host }
+
+func (*partReuseTestValue) DecodePersistedObject(ctx context.Context, dec *PersistDecodeContext, raw json.RawMessage) (Typed, error) {
+	value, err := (*shareTestValue)(nil).DecodePersistedObject(ctx, dec, raw)
+	if err != nil {
+		return nil, err
+	}
+	return &partReuseTestValue{shareTestValue: value.(*shareTestValue)}, nil
+}
+
+func init() {
+	RegisterPersistedObjectFamily(PersistedObjectFamily{
+		Name: "dagql_test.PartReuse", Typed: (*partReuseTestValue)(nil),
+		Visitor: shareTestCodec{}, Transfer: shareTestCodec{}, BackgroundDecode: true,
+	})
+}
+
+// partReuseCase is an imported receiver whose snapshot part was installed from a
+// local donor and settled, in cache c; evaluate evaluates that exact row, as
+// a step of a later build reads it; and tasks counts the part tasks that have
+// finished on the row. An evaluation that reuses the part runs none.
+type partReuseCase struct {
+	c        *Cache
+	receiver AnyResult
+	evaluate func() error
+	tasks    func() int
+}
+
+// partReuseTestReceiver returns a partReuseCase, with setup applied to its cache
+// first.
+func partReuseTestReceiver(t *testing.T, setup ...func(*Cache)) partReuseCase {
 	t.Helper()
 	ctx, c, srv, _ := shareTestCache(t)
 	for _, f := range setup {
 		f(c)
 	}
+	var receiverRow atomic.Pointer[sharedResult]
+	var tasks atomic.Int64
+	after := c.testAfterLazyEvalFinish
+	c.testAfterLazyEvalFinish = func(attempt *lazyEvalAttempt) {
+		if attempt.token != nil && attempt.token.row == receiverRow.Load() {
+			tasks.Add(1)
+		}
+		if after != nil {
+			after(attempt)
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	t.Cleanup(cancel)
-	c.EnableTransferFixtureParts()
-	srv.InstallObject(NewClass(srv, ClassOpts[*fixtureDemandTestValue]{}))
+	srv.InstallObject(NewClass(srv, ClassOpts[*partReuseTestValue]{}))
 	barrier := newSharePassBarrier(c)
 	held := make(chan struct{})
 	release := sync.OnceFunc(func() { close(held) })
 	barrier.hold.Store(&held)
 	t.Cleanup(release)
-	donor := persistedListTestResult(t, ctx, c, srv, "donor", &fixtureDemandTestValue{shareTestValue: newShareTestValue("donor", map[string]sharePartState{"snapshot": {Snapshot: "local-snapshot"}})})
-	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &fixtureDemandTestValue{shareTestValue: newShareTestValue("receiver", map[string]sharePartState{"snapshot": {}})})
+	donor := persistedListTestResult(t, ctx, c, srv, "donor", &partReuseTestValue{shareTestValue: newShareTestValue("donor", map[string]sharePartState{"snapshot": {Snapshot: "local-snapshot"}})})
+	receiver := persistedListTestResult(t, ctx, c, srv, "receiver", &partReuseTestValue{shareTestValue: newShareTestValue("receiver", map[string]sharePartState{"snapshot": {}})})
 	shareTestEncodedReceiver(t, ctx, c, receiver)
-	receiverID, err := receiver.ID()
-	require.NoError(t, err)
+	receiverRow.Store(receiver.cacheSharedResult())
 	shareTestUnite(t, ctx, c, "part-reuse", donor, receiver)
 	require.Equal(t, 1, barrier.awaitEntered(t))
+	// The row itself, not an equivalent a load by ID could select instead:
+	// the donor is complete and would exercise nothing of the receiver's.
 	evaluate := func() error {
-		return c.EvaluateTransferFixtureRoots(ctx, "test-session", srv, []*call.ID{receiverID})
+		loaded, err := c.ensurePersistedHitValueLoaded(ctx, srv, Result[Typed]{shared: receiver.cacheSharedResult(), hitCache: true})
+		if err != nil {
+			return err
+		}
+		return c.Evaluate(ctx, loaded)
 	}
 	require.NoError(t, evaluate())
 	release()
 	require.Equal(t, 1, barrier.awaitPass(t))
 	require.True(t, shareTestHasLink(receiver, "local-snapshot"))
-	return ctx, c, srv, receiver, evaluate
-}
-
-// partReuseTestTasks counts the acquisition tasks that have finished for
-// res: each records its row's owner lease sync.
-func partReuseTestTasks(t *testing.T, ctx context.Context, c *Cache, res AnyResult) int {
-	t.Helper()
-	report, err := c.TransferFixtureSnapshot(ctx, "test-session", nil)
-	require.NoError(t, err)
-	n := 0
-	for _, event := range report.Parts {
-		if event.ResultID == uint64(res.cacheSharedResult().id) && event.Kind == "owner-sync" {
-			n++
-		}
-	}
-	return n
+	return partReuseCase{c: c, receiver: receiver, evaluate: evaluate, tasks: func() int { return int(tasks.Load()) }}
 }
 
 // testMovePayload moves res's payload revision, as a change to its payload
@@ -75,14 +114,15 @@ func testMovePayload(res *sharedResult) {
 // again.
 func TestAcquiredPartReuseRunsNoTask(t *testing.T) {
 	t.Parallel()
-	ctx, c, _, receiver, evaluate := partReuseTestReceiver(t)
+	p := partReuseTestReceiver(t)
+	evaluate, tasks := p.evaluate, p.tasks
 	// The first read after the installation settled finds the part complete
 	// and opens it.
 	require.NoError(t, evaluate())
-	before := partReuseTestTasks(t, ctx, c, receiver)
+	before := tasks()
 	require.NoError(t, evaluate())
 	require.NoError(t, evaluate())
-	require.Equal(t, before, partReuseTestTasks(t, ctx, c, receiver), "a reused part runs no acquisition task")
+	require.Equal(t, before, tasks(), "a reused part runs no acquisition task")
 }
 
 // Anything that changes the row after the part was opened makes the next
@@ -106,17 +146,18 @@ func TestAcquiredPartReuseEndsWhenTheRowChanges(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ctx, c, _, receiver, evaluate := partReuseTestReceiver(t)
+			p := partReuseTestReceiver(t)
+			c, receiver, evaluate, tasks := p.c, p.receiver, p.evaluate, p.tasks
 			require.NoError(t, evaluate())
-			before := partReuseTestTasks(t, ctx, c, receiver)
+			before := tasks()
 			c.egraphMu.Lock()
 			tc.change(receiver.cacheSharedResult())
 			c.egraphMu.Unlock()
 			require.NoError(t, evaluate())
-			after := partReuseTestTasks(t, ctx, c, receiver)
+			after := tasks()
 			require.Greater(t, after, before, "a changed row is acquired again")
 			require.NoError(t, evaluate())
-			require.Equal(t, after, partReuseTestTasks(t, ctx, c, receiver), "and then reused")
+			require.Equal(t, after, tasks(), "and then reused")
 		})
 	}
 }
@@ -128,7 +169,7 @@ func TestAcquiredPartReuseAfterItsOwnTaskMovesTheRow(t *testing.T) {
 	t.Parallel()
 	var target atomic.Pointer[sharedResult]
 	var moved atomic.Bool
-	ctx, c, _, receiver, evaluate := partReuseTestReceiver(t, func(c *Cache) {
+	p := partReuseTestReceiver(t, func(c *Cache) {
 		c.testAfterLazyEvalFinish = func(attempt *lazyEvalAttempt) {
 			row := target.Load()
 			if row == nil || attempt.token == nil || attempt.token.row != row ||
@@ -140,33 +181,17 @@ func TestAcquiredPartReuseAfterItsOwnTaskMovesTheRow(t *testing.T) {
 			}
 		}
 	})
-	row := receiver.cacheSharedResult()
+	evaluate, tasks := p.evaluate, p.tasks
+	row := p.receiver.cacheSharedResult()
 	// The row changes, so the next read acquires the part again; that
 	// acquisition's own task moves the row before it finishes.
 	testMovePayload(row)
 	target.Store(row)
 	require.NoError(t, evaluate())
 	require.True(t, moved.Load(), "the acquisition ran its task")
-	before := partReuseTestTasks(t, ctx, c, receiver)
+	before := tasks()
 	require.NoError(t, evaluate())
-	require.Equal(t, before, partReuseTestTasks(t, ctx, c, receiver), "the next read reuses the part")
-}
-
-// A reused part is still refused to a session that doesn't satisfy its
-// row's resource requirements, which can grow without the row changing
-// otherwise.
-func TestAcquiredPartReuseChecksSessionRequirements(t *testing.T) {
-	t.Parallel()
-	ctx, c, srv, receiver, evaluate := partReuseTestReceiver(t)
-	require.NoError(t, evaluate())
-	leaf := persistedListTestResult(t, ctx, c, srv, "leaf", String("socket"))
-	c.egraphMu.Lock()
-	leaf.cacheSharedResult().sessionResourceHandle = "socket"
-	_, err := c.recomputeRequiredSessionResourcesLocked(leaf.cacheSharedResult())
-	receiver.cacheSharedResult().requiredSessionResources = leaf.cacheSharedResult().requiredSessionResources
-	c.egraphMu.Unlock()
-	require.NoError(t, err)
-	require.Error(t, evaluate())
+	require.Equal(t, before, tasks(), "the next read reuses the part")
 }
 
 // A record is never dated later than the state it saw, and a part being

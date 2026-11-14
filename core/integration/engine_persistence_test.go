@@ -1736,6 +1736,156 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		require.Equal(t, tokensA, tokensB, "a cached object whose inline object fields hold directories should survive engine restart")
 	})
 
+	// checkAcrossRestart runs dagger check on a git workspace of content,
+	// restarts the engine with its state kept, and checks again. It returns
+	// the second check's output and error. From a git workspace at one
+	// commit, the second engine plans the checks from what the first saved,
+	// the workspace's modules among them, and a check cached per session runs
+	// again with them.
+	checkAcrossRestart := func(ctx context.Context, t *testctx.T, content func(*dagger.Client) *core.Directory) (string, error) {
+		t.Helper()
+		c := connect(ctx, t)
+		stateKey := "persist-module-view-state-" + rand.Text()
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, content(c).WithNewFile("nonce.txt", rand.Text()))
+		check := func(engineClient *dagger.Client) (string, error) {
+			return core.NewQuery(engineClient).Container().From(alpineImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, engineClient)).
+				WithWorkdir("/empty").
+				WithEnvVariable("CACHE_BUST", rand.Text()).
+				WithExec([]string{"dagger", "--progress=report", "check", "-W", remoteRef}, core.ContainerWithExecOpts{
+					UseEntrypoint:            true,
+					DaggerInDaggerNewSession: true,
+				}).
+				CombinedOutput(ctx)
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+		out, err := check(engineClientA)
+		require.NoError(t, err, out)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+		return check(engineClientB)
+	}
+
+	t.Run("a module from a git workspace keeps the core view it declares after restart", func(ctx context.Context, t *testctx.T) {
+		// The module declares v1.0.0-beta.25, whose view spells the cache
+		// policy PerSession. The CLI that checks it runs this engine's
+		// version, past engine.IdentifierCasingVersion, whose view spells it
+		// PER_SESSION. The entrypoint is type checked against the module's
+		// view each time a function runs, and Verify, a check cached per
+		// session, runs again in every session.
+		const source = `type Entrypoint implements ModuleEntrypoint {
+  pub types(workspace: Workspace!): [TypeDef!]! {
+    [
+      typeDef
+        .withObject("Tiny")
+        .withConstructor(function("", typeDef.withObject("Tiny")))
+        .withFunction(
+          function("Verify", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
+            .withCachePolicy(FunctionCachePolicy.PerSession)
+            .withCheck
+        ),
+    ]
+  }
+
+  pub call(
+    workspace: Workspace!,
+    receiverType: String!,
+    receiverValue: JSON,
+    fnName: String!,
+    fnArgs: JSON!,
+  ): JSON! {
+    if (fnName == "") {
+      ("{}" :: JSON!)
+    } else {
+      ("null" :: JSON!)
+    }
+  }
+}
+`
+		out, err := checkAcrossRestart(ctx, t, func(c *dagger.Client) *core.Directory {
+			return core.NewQuery(c).Directory().
+				WithNewFile("dagger.toml", "[modules.tiny]\nsource = \"tiny\"\n").
+				WithNewFile("tiny/dagger-module.toml", "name = \"tiny\"\n\n[entrypoint]\nkind = \"dang\"\nsource = \"./entrypoint\"\n").
+				WithNewFile("tiny/entrypoint/dang.toml", "dang = \"2.1\"\n\n[imports.Dagger]\ndagger = \"v1.0.0-beta.25\"\n").
+				WithNewFile("tiny/entrypoint/main.dang", source)
+		})
+		require.NoError(t, err, "the module must be served the view it declares after the restart: %s", out)
+	})
+
+	t.Run("a module whose client declares no version is answered at its own view after restart", func(ctx context.Context, t *testctx.T) {
+		// A Go module's process declares no client version, so the engine
+		// serves it the module's own core view: the view of the version it
+		// declares, v1.0.0-beta.25. Nothing in the API it uses differs
+		// between that view and the CLI's, so a wrong one would go unnoticed;
+		// the check reads the view its calls are answered at, the one every
+		// view-gated field reads.
+		const source = `package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/Khan/genqlient/graphql"
+)
+
+type Viewed struct{}
+
+// Served checks that this module is answered at the view it declares.
+// +check
+// +cache="session"
+func (m *Viewed) Served(ctx context.Context) error {
+	resp := &graphql.Response{}
+	if err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{Query: "{__schemaVersion}"}, resp); err != nil {
+		return err
+	}
+	if view := resp.Data.(map[string]any)["__schemaVersion"]; view != "v1.0.0-beta.25" {
+		return fmt.Errorf("answered at view %v, not v1.0.0-beta.25", view)
+	}
+	return nil
+}
+`
+		out, err := checkAcrossRestart(ctx, t, func(c *dagger.Client) *core.Directory {
+			return core.NewQuery(c).Directory().
+				WithNewFile("dagger.toml", "[modules.viewed]\nsource = \"viewed\"\n").
+				WithNewFile("viewed/dagger.json", `{"name": "viewed", "engineVersion": "v1.0.0-beta.25", "sdk": {"source": "go"}}`).
+				WithNewFile("viewed/main.go", source)
+		})
+		require.NoError(t, err, "the module must be answered at the view it declares after the restart: %s", out)
+	})
+
+	t.Run("a module that calls itself can still call itself after restart", func(ctx context.Context, t *testctx.T) {
+		// A Dang module's API includes the module itself, so its code can
+		// call its own constructor, as Verify calls selfcall.greeting. Dang
+		// type checks the whole module each time a function runs, and
+		// Verify, a check never cached, runs again in every session, from
+		// the Module the first engine saved.
+		const source = `type Selfcall {
+  pub greeting: String! { "hello" }
+
+  @cache(policy: FunctionCachePolicy.NEVER)
+  pub verify: Void @check {
+    let got = selfcall.greeting
+    if (got != "hello") { raise "a self call returned " + got }
+    null
+  }
+}
+`
+		out, err := checkAcrossRestart(ctx, t, func(c *dagger.Client) *core.Directory {
+			return core.NewQuery(c).Directory().
+				WithNewFile("dagger.toml", "[modules.selfcall]\nsource = \"selfcall\"\n").
+				WithNewFile("selfcall/dagger-module.toml", "name = \"selfcall\"\nengineVersion = \"v1.0.0-beta.26\"\n\n[runtime]\nsource = \"dang\"\n").
+				WithNewFile("selfcall/main.dang", source)
+		})
+		require.NoError(t, err, "the module must still find its own constructor after the restart: %s", out)
+	})
+
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "persist-function-cache-state-" + rand.Text()

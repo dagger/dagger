@@ -36,9 +36,6 @@ const (
 	// fetched or being fetched and not yet read: 256 MiB. A stream that finds
 	// none left waits for one.
 	maxPartHeldChunks = 32
-	// partChunkRetries is how many times a chunk is requested again after a
-	// network error.
-	partChunkRetries = 2
 	// maxPartIdleConnsPerHost is the part transport's idle connections per
 	// blob host.
 	maxPartIdleConnsPerHost = 32
@@ -50,7 +47,6 @@ type partRangeConfig struct {
 	streams int
 	minBlob int64
 	chunk   int64
-	retries int
 	// window is how many chunks past the read offset a reader holds.
 	window int
 	// extra holds the streams beyond each blob's first, and held the chunks
@@ -64,7 +60,6 @@ func defaultPartRangeConfig() partRangeConfig {
 		streams: partStreams,
 		minBlob: partParallelMinBlob,
 		chunk:   partChunkSize,
-		retries: partChunkRetries,
 		window:  partWindowChunks,
 		extra:   semaphore.NewWeighted(maxPartExtraStreams),
 		held:    semaphore.NewWeighted(maxPartHeldChunks),
@@ -158,7 +153,6 @@ func (p *partContentProvider) rangeReader(ctx context.Context, desc ocispecs.Des
 		workers:  1 + extra,
 		window:   cfg.window,
 		slots:    cfg.held,
-		retries:  cfg.retries,
 		url:      url,
 		renewed:  renewed,
 		held:     map[int64]*partRangeChunk{},
@@ -207,9 +201,8 @@ type partRangeReader struct {
 	workers int
 	window  int
 	// slots holds one per chunk claimed and not yet read, engine-wide.
-	slots   *semaphore.Weighted
-	retries int
-	wg      sync.WaitGroup
+	slots *semaphore.Weighted
+	wg    sync.WaitGroup
 
 	// readMu serializes reads; it is never held while waiting on mu's state
 	// to change.
@@ -469,28 +462,17 @@ func (r *partRangeReader) work() {
 	}
 }
 
-// fetch reads chunk idx. A network error requests the chunk again, up to
-// the retry bound; a retry status renews the address as partHTTPReader does.
+// fetch reads chunk idx. A network error fails the chunk; a retry status
+// renews the address as partHTTPReader does.
 func (r *partRangeReader) fetch(idx int64) ([]byte, error) {
 	start := idx * r.chunk
 	end := min(start+r.chunk, r.desc.Size) - 1
-	attempts := 0
-	retry := func(err error) bool {
-		if r.workCtx.Err() != nil || errors.Is(err, errPartContentIdle) || attempts >= r.retries {
-			return false
-		}
-		attempts++
-		return true
-	}
 	for {
 		r.mu.Lock()
 		url, renewed := r.url, r.renewed
 		r.mu.Unlock()
 		stream, resp, err := r.provider.get(r.workCtx, url, start, end) //nolint:bodyclose // The stream wrapper closes the body.
 		if err != nil {
-			if retry(err) {
-				continue
-			}
 			return nil, r.chunkError("provider", err)
 		}
 		if _, renew := renewalRetryStatuses[resp.StatusCode]; renew {
@@ -527,16 +509,13 @@ func (r *partRangeReader) fetch(idx int64) ([]byte, error) {
 		data := make([]byte, end-start+1)
 		_, err = io.ReadFull(stream, data)
 		stream.close()
-		if err == nil {
-			return data, nil
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				err = io.ErrUnexpectedEOF
+			}
+			return nil, r.chunkError("copy", err)
 		}
-		if errors.Is(err, io.EOF) {
-			err = io.ErrUnexpectedEOF
-		}
-		if retry(err) {
-			continue
-		}
-		return nil, r.chunkError("copy", err)
+		return data, nil
 	}
 }
 

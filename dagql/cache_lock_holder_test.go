@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"maps"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -203,4 +204,154 @@ func TestSnapshotSharingNamesItsHolder(t *testing.T) {
 			require.Eventually(t, func() bool { return classOf(h) == "snapshot.share" }, 10*time.Second, 10*time.Millisecond, "%s's holder %d is a snapshot.share op", name, h)
 		}
 	}
+}
+
+// TestEnginePassesNameTheirHolder: the passes the engine starts on its own
+// take the graph lock each as a profile step of their own, though their
+// context carries no op: a session's release, a prune's measurement of
+// result sizes, its snapshot of the prune state and its removal of each
+// edge, a metadata prune's estimate and its compaction, and a save. So a
+// wait behind any of them names the step, and the step spans the hold. They
+// run on contexts only engine-wide recording reaches, so the test records
+// engine-wide and doesn't run in parallel.
+func TestEnginePassesNameTheirHolder(t *testing.T) {
+	rec := wcprof.NewRecorder(1 << 16)
+	t.Cleanup(wcprof.SetActiveForTest(rec, true))
+	ctx := cacheTestContext(context.Background())
+	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+	publish := func(session, field string) {
+		frame := cacheTestIntCall(field)
+		_, err := c.GetOrInitCall(ctx, session, noopTypeResolver{}, &CallRequest{ResultCall: frame, IsPersistable: true}, ValueFunc(cacheTestIntResult(frame, 1)))
+		require.NoError(t, err)
+	}
+	publish("pruned", "holder-pruned")
+	publish("metadata", "holder-metadata")
+
+	takers := lockTakers(t, c)
+	require.NoError(t, c.ReleaseSession(context.Background(), "pruned"))
+	require.NoError(t, c.persistCurrentState(context.Background()))
+	report, err := c.Prune(context.Background(), []CachePrunePolicy{{All: true}})
+	require.NoError(t, err)
+	require.NotEmpty(t, report.DroppedEdges, "the prune removed an edge")
+	require.NoError(t, c.ReleaseSession(context.Background(), "metadata"))
+	estimate, err := c.PruneMetadataEstimate(context.Background(), c.MetadataEstimate().EstimatedBytes-1, 1)
+	require.NoError(t, err)
+	require.True(t, estimate.Triggered, "the metadata prune ran")
+
+	var buf bytes.Buffer
+	require.NoError(t, rec.WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	classes := map[uint64]string{}
+	for _, ev := range events {
+		if ev.Type == "op" {
+			classes[ev.OpID] = header.Strings[ev.ClassID]
+		}
+	}
+	held := map[string]bool{}
+	for name, holders := range takers() {
+		for _, h := range holders {
+			require.NotEqual(t, wcprof.HolderUnknown, h, "%s took the graph lock as an unknown holder", name)
+			class, ok := classes[h]
+			require.True(t, ok, "%s's holder %d is an op in the dump", name, h)
+			held[class] = true
+		}
+	}
+	for _, want := range []string{
+		"dagql.releaseSession",
+		"dagql.persist",
+		"dagql.usage.capture",
+		"dagql.usage.publish",
+		"dagql.prune.snapshot",
+		"dagql.prune.removeEdge",
+		"dagql.prune.metadataEstimate",
+		"dagql.prune.metadataCompact",
+	} {
+		require.True(t, held[want], "a %s step held the graph lock (held: %v)", want, held)
+	}
+}
+
+// TestPartAcquisitionAndDecodeNameTheirHolder: starting to manage a row's
+// part gate, as the first lazy evaluation of a value decoded from another
+// engine's record does, and sizing a decoded payload take the graph lock as
+// the op they run under.
+func TestPartAcquisitionAndDecodeNameTheirHolder(t *testing.T) {
+	ctx, c, srv := persistedListTestCache(t, "")
+	srv.InstallObject(NewClass(srv, ClassOpts[*inlineCaptureTestValue]{}))
+	value := &inlineCaptureTestValue{}
+	frame := persistCodecFrame("acquisition-holder", value)
+	res, err := c.GetOrInitCall(ctx, "acquisition-holder", noopTypeResolver{}, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(value, frame)
+	})
+	require.NoError(t, err)
+	row := res.cacheSharedResult()
+	c.egraphMu.Lock()
+	row.imported = true
+	c.egraphMu.Unlock()
+	takers := lockTakers(t, c)
+	opCtx, op := wcprof.BeginOp(wcprof.ContextWithProfiling(ctx), wcprof.OpKindLazy, "test.lazy", wcprof.OpOpts{})
+	defer op.End(wcprof.OutcomeOK)
+	require.True(t, c.usesPartAcquisition(opCtx, res, row), "a decoded value acquires its parts")
+	c.updateDecodedPayloadBytes(opCtx, row, NewString("decoded"), row.loadPayloadState().payloadRevision)
+	requireTakesNamed(t, takers(), op.ID(), "usesPartAcquisition", "updateDecodedPayloadBytes")
+}
+
+// TestNamedReadersSpanTheirHold: a reader that takes the graph lock as a
+// step of its own, as a save's snapshot and a prune's snapshot do, records
+// a step that spans its hold, so a writer's wait behind the readers, which
+// names only the readers, lines up with the reader that held the lock when
+// it began. Engine-wide recording, as a save runs on a context with no op.
+func TestNamedReadersSpanTheirHold(t *testing.T) {
+	rec := wcprof.NewRecorder(1 << 16)
+	t.Cleanup(wcprof.SetActiveForTest(rec, true))
+	ctx := cacheTestContext(context.Background())
+	c, err := NewCache(ctx, filepath.Join(t.TempDir(), "cache.db"), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, c.CloseDiscardingPersistence()) })
+
+	step := c.readLockGraphAs(ctx, "test.read")
+	waiterCtx, waiter := wcprof.BeginOp(ctx, wcprof.OpKindLazy, "test.writer", wcprof.OpOpts{})
+	locked := make(chan struct{})
+	go func() {
+		wcprof.WriteLock(waiterCtx, &c.egraphMu, egraphLockIdent)
+		close(locked)
+	}()
+	// A pending writer keeps new readers out; a probe that gets in leaves.
+	require.Eventually(t, func() bool {
+		if c.egraphMu.TryRLock() {
+			c.egraphMu.RUnlock()
+			return false
+		}
+		return true
+	}, 10*time.Second, time.Millisecond, "the writer waits")
+	c.runlockGraphAs(step)
+	<-locked
+	c.egraphMu.Unlock()
+	waiter.End(wcprof.OutcomeOK)
+	require.NoError(t, c.persistCurrentState(context.Background()))
+
+	var buf bytes.Buffer
+	require.NoError(t, rec.WriteDump(&buf, false))
+	header, events, err := wcprof.ReadDump(&buf)
+	require.NoError(t, err)
+	var reads, saves []wcprof.DumpEvent
+	var wait *wcprof.DumpEvent
+	for i, ev := range events {
+		switch {
+		case ev.Type == "op" && header.Strings[ev.ClassID] == "test.read":
+			reads = append(reads, ev)
+		case ev.Type == "op" && header.Strings[ev.ClassID] == "dagql.persist.snapshot":
+			saves = append(saves, ev)
+		case ev.Type == "wait" && ev.ParentID == waiter.ID() && header.Strings[ev.IdentID] == egraphLockIdent:
+			wait = &events[i]
+		}
+	}
+	require.Len(t, reads, 1)
+	require.NotNil(t, wait, "the writer's wait is recorded")
+	require.Equal(t, wcprof.HolderReaders, wait.HolderID, "the writer waited behind readers")
+	require.LessOrEqual(t, reads[0].StartNS, wait.StartNS, "the reader's step began before the wait")
+	require.GreaterOrEqual(t, reads[0].EndNS, wait.StartNS, "and spans its start")
+	require.Len(t, saves, 1, "a save's snapshot reads as a step of its own")
 }

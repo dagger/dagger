@@ -116,7 +116,7 @@ func TestCallRecordHitsOnAFreshEngine(t *testing.T) {
 			ctx, cloud := storedPartTestCache(t, WithBlobStore())
 			test := newCallRecordTest(t, ctx, cloud)
 			test.attach(t, ctx, test.span(t, withCall, 0))
-			built, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+			built, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
 			require.NoError(t, err)
 			if withCall {
 				require.Len(t, built.Bundle.Calls, 1)
@@ -135,10 +135,10 @@ func TestCallRecordOutlivesItsEngine(t *testing.T) {
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
 	test := newCallRecordTest(t, ctx, cloud)
 	test.attach(t, ctx, test.span(t, true, 0))
-	candidates := cloud.ReleaseRemoteCache(ctx, "cache-a")
-	_, err := cloud.CollectRemoteHoldings(ctx, candidates)
+	candidates := cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates
+	_, _, err := cloud.CollectRemoteHoldings(ctx, candidates)
 	require.NoError(t, err)
-	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, built.Bundle.Calls, 1)
 	require.True(t, test.freshHits(t, built.Bundle))
@@ -151,14 +151,14 @@ func TestCallRecordSurvivesARestore(t *testing.T) {
 	ctx, cloud := storedPersistenceTestCloud(t, path)
 	test := newCallRecordTest(t, ctx, cloud)
 	test.attach(t, ctx, test.span(t, true, 0))
-	stored, err := cloud.SetStoredPart(ctx, test.number, storedBenchPart(1), 0)
+	stored, _, err := cloud.SetStoredPart(ctx, test.number, storedBenchPart(1), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	require.NoError(t, cloud.Close(ctx))
 
 	ctx, cloud = storedPersistenceTestCloud(t, path)
 	defer func() { require.NoError(t, cloud.Close(ctx)) }()
-	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, built.Bundle.Calls, 1)
 	test.cloud = cloud
@@ -175,7 +175,7 @@ func TestCallRecordGivesTheEntryItsExpiry(t *testing.T) {
 	test := newCallRecordTest(t, ctx, cloud)
 	expires := time.Now().Add(time.Hour).Unix()
 	test.attach(t, ctx, test.span(t, true, expires))
-	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	var got int64
 	for _, value := range built.Bundle.Values {
@@ -235,7 +235,7 @@ func TestCallRecordWithAWitnessInputIsSent(t *testing.T) {
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
 	test := newCallRecordTestOf(t, ctx, cloud, frame)
 	test.attach(t, ctx, test.span(t, true, 0))
-	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, built.Bundle.Calls, 1)
 	require.Zero(t, built.UnsendableCalls)
@@ -288,7 +288,7 @@ func newReceiverCallTest(t *testing.T) *receiverCallTest {
 	numbers := storedPersistenceTestMerge(t, cloudCtx, cloud, exportTestBundle(t, ctx, producer, test.inner, receiver))
 	require.Len(t, numbers, 2)
 	for _, number := range numbers {
-		if storedBundleTestEntry(cloud, number).loadResultCall().Field == "receiver" {
+		if storedTestFrame(t, cloud, storedBundleTestEntry(cloud, number)).Field == "receiver" {
 			test.receiverNumber = number
 		} else {
 			test.number = number
@@ -334,7 +334,7 @@ func TestCallRecordHitsOverAnEquivalentReceiver(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			test := newReceiverCallTest(t)
-			built, err := test.cloud.StoredBundle(test.ctx, roots(test), nil)
+			built, err := test.cloud.StoredBundle(test.ctx, roots(test), time.Now().Unix(), nil)
 			require.NoError(t, err)
 			require.Len(t, built.Bundle.Calls, 1)
 			if name == "added" {
@@ -357,7 +357,7 @@ func TestCallRecordWithAnUnplaceableInputIsNotSent(t *testing.T) {
 	receiver := cloud.resultsByID[sharedResultID(test.receiverNumber)]
 	cloud.unindexRecipesLocked(receiver)
 	cloud.egraphMu.Unlock()
-	built, err := cloud.StoredBundle(test.ctx, []uint64{test.number}, nil)
+	built, err := cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Empty(t, built.Bundle.Calls)
 	require.Equal(t, 1, built.UnsendableCalls)
@@ -400,7 +400,7 @@ func TestCallRecordPrefersAnInputTheRecipientHolds(t *testing.T) {
 	require.NoError(t, err)
 	_, err = cloud.AttachRemoteHolding(test.ctx, HolderKey{Cache: "cache-fresh", Number: 1}, RemoteHolding{Recipe: recipeB, Request: recipeB, Field: "receiver"})
 	require.NoError(t, err)
-	built, err := cloud.StoredBundle(test.ctx, []uint64{test.number}, &HeldBy{Cache: "cache-fresh", Now: time.Now().Unix()})
+	built, err := cloud.StoredBundle(test.ctx, []uint64{test.number}, time.Now().Unix(), &HeldBy{Cache: "cache-fresh"})
 	require.NoError(t, err)
 	require.Len(t, built.Bundle.Calls, 1)
 	require.Empty(t, built.CallInputs)
@@ -501,7 +501,7 @@ func TestCallRecordLateFirstCallStaysExpired(t *testing.T) {
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
 	test := newCallRecordTest(t, ctx, cloud)
 	test.attach(t, ctx, test.span(t, true, time.Now().Add(-time.Second).Unix()))
-	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Empty(t, built.Bundle.Calls)
 	require.False(t, test.freshHits(t, built.Bundle))
@@ -517,7 +517,7 @@ func TestCallRecordExpiresOnAnEntryTheEngineHad(t *testing.T) {
 			t.Parallel()
 			ctx, cloud := storedPartTestCache(t, WithBlobStore())
 			test := newCallRecordTest(t, ctx, cloud)
-			initial, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+			initial, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
 			require.NoError(t, err)
 			freshCtx, fresh, srv := transferTestCache(t)
 			_, err = fresh.MergeValues(freshCtx, CloudCacheID, initial.Bundle)
@@ -528,11 +528,11 @@ func TestCallRecordExpiresOnAnEntryTheEngineHad(t *testing.T) {
 				own.Request = own.Recipe
 				_, err = cloud.AttachRemoteHolding(ctx, HolderKey{Cache: "fresh", Number: 1}, own)
 				require.NoError(t, err)
-				heldBy = &HeldBy{Cache: "fresh", Now: time.Now().Unix()}
+				heldBy = &HeldBy{Cache: "fresh"}
 			}
 			expires := time.Now().Add(2 * time.Second).Unix()
 			test.attach(t, ctx, test.span(t, true, expires))
-			built, err := cloud.StoredBundle(ctx, []uint64{test.number}, heldBy)
+			built, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), heldBy)
 			require.NoError(t, err)
 			require.Len(t, built.Bundle.Calls, 1)
 			if held {
@@ -585,14 +585,14 @@ func TestCallRecordOnAnExpiredRowLeavesTheEnginesValueAlone(t *testing.T) {
 	var innerNumber uint64
 	cloud.egraphMu.Lock()
 	for id, res := range cloud.resultsByID {
-		if call := res.loadResultCall(); call != nil && call.Field == "inner" {
+		if call, _ := res.entryFrameLocked().decode(); call != nil && call.Field == "inner" {
 			res.expiresAtUnix = time.Now().Add(-time.Minute).Unix()
 			innerNumber = uint64(id)
 		}
 	}
 	cloud.egraphMu.Unlock()
 	require.NotZero(t, innerNumber)
-	built, err := cloud.StoredBundle(cloudCtx, numbers, nil)
+	built, err := cloud.StoredBundle(cloudCtx, numbers, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, built.Bundle.Calls, 1)
 
@@ -641,7 +641,7 @@ func TestCallRecordExpiredCallIsNotTaughtOnAValueTheEngineKept(t *testing.T) {
 	stored := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, pctx, producer, inner))
 	require.Len(t, stored, 1)
 	test := &callRecordTest{ctx: pctx, producer: producer, frame: frame, inner: inner, cloud: cloud, number: stored[0]}
-	initial, err := cloud.StoredBundle(ctx, []uint64{test.number}, nil)
+	initial, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	fctx, fresh, srv := transferTestCache(t)
 	_, err = fresh.MergeValues(fctx, CloudCacheID, initial.Bundle)
@@ -654,7 +654,7 @@ func TestCallRecordExpiredCallIsNotTaughtOnAValueTheEngineKept(t *testing.T) {
 	expires := time.Now().Add(2 * time.Second).Unix()
 	test.attach(t, ctx, test.span(t, true, expires))
 	time.Sleep(time.Until(time.Unix(expires+1, 0)))
-	built, err := cloud.StoredBundle(ctx, numbers, nil)
+	built, err := cloud.StoredBundle(ctx, numbers, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, built.Bundle.Calls, 1)
 	_, err = fresh.MergeValues(fctx, CloudCacheID, built.Bundle)

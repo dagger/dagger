@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -87,13 +88,17 @@ type sessionLedger struct {
 	now      func() time.Time
 	live     map[clientClaim]int
 	sessions int
-	ended    map[clientClaim]time.Time
+	// tearingDown are the live sessions whose teardown has begun
+	// (sessionTearingDown): their clients are gone, and they only stop
+	// their services and flush before they end.
+	tearingDown map[string]struct{}
+	ended       map[clientClaim]time.Time
 	// claims are the sessions that started under a claim, by session ID,
-	// which the remote cache's settle state reports (settleState): live
-	// ones, and, with the remote cache, ended ones until a Settled covers
-	// them, so that a session that ends before its claim is sent is still
-	// sent before its settle.
-	claims map[string]string
+	// with when each started, which the remote cache's settle state reports
+	// (settleState): live ones, and, with the remote cache, ended ones until
+	// a Settled covers them, so that a session that ends before its claim is
+	// sent is still sent before its settle.
+	claims map[string]sessionClaim
 	// remote is the remote cache's settle state, while an integration is
 	// attached (attachRemote).
 	remote *remoteSettle
@@ -122,6 +127,12 @@ type remoteSettle struct {
 	timer             *time.Timer
 }
 
+// sessionClaim is a session's claim, and when the session started.
+type sessionClaim struct {
+	claim   string
+	started time.Time
+}
+
 func (l *sessionLedger) clock() time.Time {
 	if l.now != nil {
 		return l.now()
@@ -143,9 +154,9 @@ func (l *sessionLedger) sessionStarted(sessionID, clientID, claimID string) {
 	l.sessions++
 	if claimID != "" {
 		if l.claims == nil {
-			l.claims = map[string]string{}
+			l.claims = map[string]sessionClaim{}
 		}
-		l.claims[sessionID] = claimID
+		l.claims[sessionID] = sessionClaim{claim: claimID, started: l.clock()}
 		if l.remote != nil {
 			l.notifyLocked()
 		}
@@ -179,6 +190,7 @@ func (l *sessionLedger) sessionEnded(sessionID, clientID, claimID string, marker
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	key := clientClaim{clientID, claimID}
+	delete(l.tearingDown, sessionID)
 	if l.live[key] == 0 {
 		return
 	}
@@ -203,6 +215,26 @@ func (l *sessionLedger) sessionEnded(sessionID, clientID, claimID string, marker
 		l.ended = map[clientClaim]time.Time{}
 	}
 	l.ended[key] = l.clock()
+}
+
+// idle reports whether no session runs work on the engine: none is live,
+// or every live one is tearing down.
+func (l *sessionLedger) idle() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.sessions <= len(l.tearingDown)
+}
+
+// sessionTearingDown records that a live session's teardown has begun: it
+// still counts as live, for the remote cache's settle and bound, until
+// sessionEnded, but runs no check's work any more, only its cleanup (idle).
+func (l *sessionLedger) sessionTearingDown(sessionID string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.tearingDown == nil {
+		l.tearingDown = map[string]struct{}{}
+	}
+	l.tearingDown[sessionID] = struct{}{}
 }
 
 // attachRemote gives the ledger the remote cache's settle state, for an
@@ -279,8 +311,8 @@ func (l *sessionLedger) settleState() (remotecache.SettleState, <-chan struct{})
 		return remotecache.SettleState{Live: l.sessions > 0}, l.changed
 	}
 	var claims []protocol.SessionClaim
-	for id, claim := range l.claims {
-		claims = append(claims, protocol.SessionClaim{ID: id, Claim: claim})
+	for id, c := range l.claims {
+		claims = append(claims, protocol.SessionClaim{ID: id, Claim: c.claim, Started: c.started})
 	}
 	slices.SortFunc(claims, func(a, b protocol.SessionClaim) int { return strings.Compare(a.ID, b.ID) })
 	return remotecache.SettleState{
@@ -291,6 +323,37 @@ func (l *sessionLedger) settleState() (remotecache.SettleState, <-chan struct{})
 		TimedOut: r.timedOut,
 		Claims:   claims,
 	}, l.changed
+}
+
+// settling reports whether the engine is settling with the remote cache
+// service: the integration is attached, no session is live, and the idle
+// period has neither settled nor timed out. The channel is closed when that
+// next changes. The settle's bound ends it: by then the engine has settled,
+// timed out, or a session has started.
+func (l *sessionLedger) settling() (bool, <-chan struct{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.changed == nil {
+		l.changed = make(chan struct{})
+	}
+	r := l.remote
+	return r != nil && l.sessions == 0 && !r.settled && !r.timedOut, l.changed
+}
+
+// awaitSettle returns once the engine isn't settling (settling), or when ctx
+// ends.
+func (l *sessionLedger) awaitSettle(ctx context.Context) {
+	for {
+		settling, changed := l.settling()
+		if !settling {
+			return
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (l *sessionLedger) notifyLocked() {

@@ -20,7 +20,7 @@ func TestSchemaFileLazy(t *testing.T) {
 	open := func() (context.Context, *dagql.Cache, *dagql.Server) {
 		ctx, cache, srv := scratchTestCache(t, store, path, "schema")
 		srv.InstallObject(dagql.NewClass[*core.File](srv))
-		dagql.Fields[*core.Query]{dagql.NodeFunc("__schemaJSONFile", (&querySchema{}).schemaJSONFile).View(AllVersion).IsPersistable().WithInput(dagql.CurrentSchemaInput).WithInput(engineDefaultPlatformInput)}.Install(srv)
+		dagql.Fields[*core.Query]{dagql.NodeFunc("__schemaJSONFile", (&querySchema{}).schemaJSONFile).View(AllVersion).IsPersistable().WithInput(dagql.CurrentSchemaInput).WithInput(core.EngineDefaultPlatformInput)}.Install(srv)
 		return ctx, cache, srv
 	}
 	ctx, cache, srv := open()

@@ -12,7 +12,7 @@ import (
 // validateValueBundle checks a bundle and every record's payload, and returns
 // its ordinals in dependency order.
 func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
-	return checkValueBundle(bundle, false)
+	return checkValueBundle(bundle, false, nil)
 }
 
 // validateValueBundleShape checks a bundle as validateValueBundle does, except
@@ -20,7 +20,7 @@ func validateValueBundle(bundle ValueBundle) ([]uint64, error) {
 // and a payload is decoded only to find the parts the record's offers and
 // outputs name. The caller checks the payloads it uses.
 func validateValueBundleShape(bundle ValueBundle) ([]uint64, error) {
-	return checkValueBundle(bundle, true)
+	return checkValueBundle(bundle, true, nil)
 }
 
 // ResolveChainPrefixes gives each of the bundle's outputs that names a chain
@@ -91,9 +91,16 @@ func ResolveChainPrefixes(bundle *ValueBundle) error {
 	return nil
 }
 
+// checkValueBundle checks a bundle as validateValueBundle does, or, with
+// shapeOnly, as validateValueBundleShape does. stored has, for each row whose
+// record a blob-backed cache sends as it holds it, compressed, the parts the
+// record declares (storedBody.parts): its content was checked when its body
+// was made, and its references by the build, so the row is checked by its
+// dependencies and call, and its outputs against those parts.
+//
 //nolint:gocyclo // one check per bundle field and record kind; splitting hides the order of the checks
-func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
-	if bundle.Version != valueBundleVersion {
+func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]declaredPart) ([]uint64, error) {
+	if bundle.Version != ValueBundleVersion {
 		return nil, fmt.Errorf("unsupported value bundle version %d", bundle.Version)
 	}
 	// A prefix output is checked as the chain it names: resolved on a copy of
@@ -106,9 +113,11 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		return nil, fmt.Errorf("bundle has no roots")
 	}
 	rows := map[uint64]TransferredValue{}
+	senders := transferSenders(bundle)
+	sent := map[uint64]bool{}
 	for _, row := range bundle.Values {
 		id := uint64(row.Ordinal)
-		if id == 0 || id > uint64(len(bundle.Values)) || row.Record.ResultID != id {
+		if id == 0 || id > uint64(len(bundle.Values)) {
 			return nil, fmt.Errorf("invalid ordinal %d", id)
 		}
 		if _, exists := rows[id]; exists {
@@ -116,6 +125,14 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		}
 		if row.SenderNumber == 0 {
 			return nil, fmt.Errorf("row %d: no sender number", id)
+		}
+		if sent[row.SenderNumber] {
+			return nil, fmt.Errorf("row %d: duplicate sender number %d", id, row.SenderNumber)
+		}
+		sent[row.SenderNumber] = true
+		// A record names itself and its references by the sender's numbers.
+		if row.Record.ResultID != row.SenderNumber {
+			return nil, fmt.Errorf("row %d: record %d is not its sender number %d", id, row.Record.ResultID, row.SenderNumber)
 		}
 		if row.Held != "" {
 			if err := validateHeldRow(row); err != nil {
@@ -128,7 +145,13 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 		if shapeOnly {
 			validate = validateTransferRecordShape
 		}
-		if err := validate(row.Record, row.DependencyIDs); err != nil {
+		if _, ok := stored[id]; ok {
+			validate = validateStoredRecordShape
+			if row.storedCall != nil {
+				validate = validateStoredFrameRecordShape
+			}
+		}
+		if err := validate(row.Record, senders.dependencies(row.DependencyIDs)); err != nil {
 			return nil, fmt.Errorf("row %d: %w", id, err)
 		}
 		rows[id] = row
@@ -152,6 +175,13 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool) ([]uint64, error) {
 	addresses := map[uint64]map[string]CapturedCodecOutput{}
 	for id, row := range rows {
 		if row.Held != "" || shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
+			continue
+		}
+		if parts, ok := stored[id]; ok {
+			addresses[id] = make(map[string]CapturedCodecOutput, len(parts))
+			for _, part := range parts {
+				addresses[id][part.key] = part.output()
+			}
 			continue
 		}
 		outputs, err := mapTransferredOutputs(row.Record)
@@ -347,4 +377,31 @@ type transferIdentityPlan struct {
 	recipe, self digest.Digest
 	inputs       []digest.Digest
 	provenance   []egraphInputProvenanceKind
+}
+
+// transferSenderNumbers maps a bundle's ordinals to its rows' sender numbers.
+// A transferred record names itself and every row it references by the
+// sender's entry numbers, as the sender stores it: everything else in the
+// bundle, the rows' dependencies, roots, outputs and calls, names rows by
+// ordinal.
+type transferSenderNumbers map[uint64]uint64
+
+// transferSenders returns the bundle's ordinals' sender numbers.
+func transferSenders(bundle ValueBundle) transferSenderNumbers {
+	senders := make(transferSenderNumbers, len(bundle.Values))
+	for _, row := range bundle.Values {
+		senders[uint64(row.Ordinal)] = row.SenderNumber
+	}
+	return senders
+}
+
+// dependencies returns a row's dependencies, ordinals, as the sender numbers
+// its record's references name them by; one no row has becomes 0, which
+// validation refuses.
+func (s transferSenderNumbers) dependencies(deps []uint64) []uint64 {
+	out := make([]uint64, len(deps))
+	for i, dep := range deps {
+		out[i] = s[dep]
+	}
+	return out
 }

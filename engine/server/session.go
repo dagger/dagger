@@ -1304,6 +1304,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// session is intentionally left in srv.daggerSessions as a tombstone until
 	// the caller retires it after lifecycleMu is released.
 	sess.markSessionRemoved()
+	srv.sessionLedger.sessionTearingDown(sess.sessionID)
 	sess.beginClientScopeTeardown()
 	sess.beginClosing()
 	sess.endMainClientAttachables()
@@ -3137,6 +3138,10 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 	if client.fnCall != nil && client.fnCall.ResultScope != nil {
 		ctx = dagql.WithResultScope(ctx, client.fnCall.ResultScope)
+	}
+	// A module client's calls are made under the function call it answers.
+	if caller := client.fnCall.CallerRecipe(); caller != "" {
+		ctx = dagql.ContextWithCallerRecipe(ctx, caller)
 	}
 
 	// A module client's typedef constructors name the module's declarations

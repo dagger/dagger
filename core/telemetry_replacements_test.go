@@ -26,3 +26,18 @@ func TestCacheStateAttrsReplacements(t *testing.T) {
 	}
 	assert.Assert(t, found)
 }
+
+// A result the engine image ships is stamped so, and no other is.
+func TestCacheStateAttrsImage(t *testing.T) {
+	for _, attr := range cacheStateAttrs(dagql.CacheResultState{}) {
+		assert.Assert(t, attr.Key != telemetryattrs.CacheImageAttr, "an entry the engine made carries no image fact")
+	}
+	found := false
+	for _, attr := range cacheStateAttrs(dagql.CacheResultState{Image: true}) {
+		if attr.Key == attribute.Key(telemetryattrs.CacheImageAttr) {
+			found = true
+			assert.Equal(t, "true", attr.Value.AsString())
+		}
+	}
+	assert.Assert(t, found)
+}

@@ -5,6 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -64,6 +68,17 @@ type RemoteCacheAdapter struct {
 	// mergeValues is the cache's MergeValues. A test replaces it to return a
 	// committed reply with a release error.
 	mergeValues func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error)
+	// restoreValues merges a restore's part from the Cloud, as mergeValues
+	// does a merge's bundle. A test replaces it.
+	restoreValues func(context.Context, dagql.ValueBundle, []dagql.TransferOrdinal) (dagql.MergeReply, error)
+	// restores are what the restores did with each file, for the engine's
+	// stop event.
+	restoresMu sync.Mutex
+	restores   []remotecache.RestoreReport
+	// uncounted is the cache's count of misses dropped uncounted
+	// (dagql.Cache.TrimmedRemoteMisses), taken as close detaches the bridge
+	// that keeps it.
+	uncounted atomic.Uint64
 	// lookupMerges counts the merges in progress that answer lookups,
 	// which the others wait for.
 	lookupMerges inProgress
@@ -149,7 +164,15 @@ func (p *exportPause) resume() {
 }
 
 func newRemoteCacheAdapter(cache *dagql.Cache, bridge *dagql.RemoteCacheBridge) *RemoteCacheAdapter {
-	return &RemoteCacheAdapter{cache: cache, bridge: bridge, cancel: func(error) {}, runDone: make(chan struct{}), mergeValues: cache.MergeValues, stopReserve: remoteCacheStopReserve}
+	return &RemoteCacheAdapter{
+		cache:         cache,
+		bridge:        bridge,
+		cancel:        func(error) {},
+		runDone:       make(chan struct{}),
+		mergeValues:   cache.MergeValues,
+		restoreValues: cache.RestoreValues,
+		stopReserve:   remoteCacheStopReserve,
+	}
 }
 
 func (a *RemoteCacheAdapter) TakeRenewalRequest(ctx context.Context) (*dagql.RenewalRequest, error) {
@@ -286,6 +309,7 @@ func (p *inProgress) closeWhenIdle(ctx context.Context) error {
 // cancels Run. It does not wait for Run.
 func (a *RemoteCacheAdapter) close(cause error) {
 	a.stopped.Store(true)
+	a.uncounted.Store(max(a.uncounted.Load(), a.cache.TrimmedRemoteMisses()))
 	a.cache.DetachRemoteCacheBridge(a.bridge)
 	if a.ledger != nil {
 		a.ledger.detachRemote()
@@ -302,6 +326,7 @@ func (a *RemoteCacheAdapter) close(cause error) {
 func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 	a.stopOnce.Do(func() {
 		a.exportsCut = !a.drainExports(ctx)
+		logPartPrefetchCounts(a.cache.PartPrefetchCounts())
 		a.close(errServerShuttingDown)
 		// A Run that has already returned has stopped, whatever ctx says.
 		select {
@@ -316,6 +341,24 @@ func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 		}
 	})
 	return a.stopErr
+}
+
+// logPartPrefetchCounts logs, as the engine stops, what fetching parts ahead
+// of use did over its life: the bytes it downloaded, the part an install then
+// used, the part released unread and the part still held unread, and its
+// jobs by outcome. The offers accepted for it, and the bytes downloaded and
+// used by tenth of the order they were accepted in, follow.
+func logPartPrefetchCounts(counts dagql.PartPrefetchCounts) {
+	fetched, used := make([]string, len(counts.ByTenth)), make([]string, len(counts.ByTenth))
+	for i, tenth := range counts.ByTenth {
+		fetched[i], used[i] = strconv.FormatInt(tenth.Fetched, 10), strconv.FormatInt(tenth.Used, 10)
+	}
+	args := []any{"fetched", counts.Fetched, "used", counts.Used, "unread", counts.Unread, "held", counts.Held,
+		"offers", counts.Offers, "fetched_by_tenth", strings.Join(fetched, ","), "used_by_tenth", strings.Join(used, ",")}
+	for _, outcome := range slices.Sorted(maps.Keys(counts.Jobs)) {
+		args = append(args, "jobs_"+outcome, counts.Jobs[outcome])
+	}
+	slog.Info("remote cache part prefetch summary", args...)
 }
 
 // drainExports stops lookups and waits until no export is in progress, then

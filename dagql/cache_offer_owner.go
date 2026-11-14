@@ -107,9 +107,17 @@ func (c *Cache) releaseOfferOwnerLocked(ctx context.Context, owner *offerOwner) 
 	return queue, rerr
 }
 
+// partAddressKey is a part address's key: its JSON encoding. Every call row
+// keys its parts, so the common address, a part of the value itself under a
+// name of plain characters, is written out directly, as json.Marshal writes
+// it: the encoder and the path's check cost a call row more than the rest of
+// its parts' handling.
 func partAddressKey(address PersistedPartAddress) (string, error) {
 	if address.Part == "" {
 		return "", fmt.Errorf("part address: empty part")
+	}
+	if len(address.OutputPath) == 0 && plainJSONString(string(address.Part)) {
+		return `{"part":"` + string(address.Part) + `"}`, nil
 	}
 	if _, err := canonicalPath(address.OutputPath); err != nil {
 		return "", err
@@ -186,16 +194,13 @@ func (c *Cache) attachPartOfferLocked(res *sharedResult, address PersistedPartAd
 	if cloud == nil {
 		return fmt.Errorf("offer attachment: result %d has no Cloud or image holding", res.id)
 	}
-	if cloud.parts[key].offer != nil {
+	if cloud.partLocked(key).offer != nil {
 		return fmt.Errorf("offer attachment: occupied address %s", key)
 	}
 	if offer.owner.slots != 0 {
 		return fmt.Errorf("offer attachment: owner already attached")
 	}
-	if cloud.parts == nil {
-		cloud.parts = make(map[string]heldPart)
-	}
-	cloud.parts[key] = heldPart{state: heldPartComplete, offer: offer}
+	cloud.setPartLocked(key, heldPart{state: heldPartComplete, offer: offer})
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
 	res.transferRevision++
@@ -215,7 +220,7 @@ func (c *Cache) replacePartOfferLocked(ctx context.Context, res *sharedResult, a
 		return nil, fmt.Errorf("offer replacement: owner already attached")
 	}
 	_, cloud := res.offerHoldingLocked()
-	cloud.parts[key] = heldPart{state: heldPartComplete, offer: offer}
+	cloud.setPartLocked(key, heldPart{state: heldPartComplete, offer: offer})
 	c.partOfferReplaced(old, offer)
 	offer.owner.slots++
 	offer.owner.origin, offer.owner.address = res.id, address
@@ -234,7 +239,7 @@ func (c *Cache) retirePartOfferLocked(ctx context.Context, res *sharedResult, ad
 		return nil, nil
 	}
 	_, cloud := res.offerHoldingLocked()
-	delete(cloud.parts, key)
+	cloud.deletePartLocked(key)
 	c.partOfferGone(old)
 	old.owner.slots--
 	res.transferRevision++
@@ -290,10 +295,15 @@ func clonePartOffers(offers []PersistedPartOffer) ([]PersistedPartOffer, error) 
 	return cloned, nil
 }
 
-// clonePartOffer deep-copies offer: every nested map, slice and pointer,
-// including layer annotations, before reference relocation and the removal
-// of addresses can change the copy. It refuses an offer that can't be encoded
-// as its record is, which only a layer's creation time can make it.
+// clonePartOffer copies offer for a caller that may change the copy: every
+// nested map, slice and pointer of its address, value, owner and chain, so
+// that reference relocation and the removal of addresses can't reach the
+// original. The copy shares the chain's layers. An offered layer is never
+// written after it's built: not the layer, its descriptor's annotations,
+// URLs, data or platform, nor its creation time. The layers are most of an
+// offer, and every copy of every offer repeated them. It refuses an offer
+// that can't be encoded as its record is, which only a layer's creation time
+// can make it.
 func clonePartOffer(offer PersistedPartOffer) (PersistedPartOffer, error) {
 	offer.Address.OutputPath = slices.Clone(offer.Address.OutputPath)
 	offer.Value.Platform = clonePlatform(offer.Value.Platform)
@@ -301,21 +311,16 @@ func clonePartOffer(offer PersistedPartOffer) (PersistedPartOffer, error) {
 	for i := range offer.Value.Services {
 		offer.Value.Services[i].Aliases = slices.Clone(offer.Value.Services[i].Aliases)
 	}
-	offer.Chain.Layers = slices.Clone(offer.Chain.Layers)
-	for i := range offer.Chain.Layers {
-		layer := &offer.Chain.Layers[i]
-		layer.Descriptor.URLs = slices.Clone(layer.Descriptor.URLs)
-		layer.Descriptor.Annotations = maps.Clone(layer.Descriptor.Annotations)
-		layer.Descriptor.Data = slices.Clone(layer.Descriptor.Data)
-		layer.Descriptor.Platform = clonePlatform(layer.Descriptor.Platform)
+	for _, layer := range offer.Chain.Layers {
 		if layer.CreatedAt != nil {
 			if _, err := layer.CreatedAt.MarshalJSON(); err != nil {
 				return PersistedPartOffer{}, err
 			}
-			createdAt := *layer.CreatedAt
-			layer.CreatedAt = &createdAt
 		}
 	}
+	// Clipped, so that an append to the copy's layers can't write over the
+	// original's.
+	offer.Chain.Layers = slices.Clip(offer.Chain.Layers)
 	offer.Chain.Addresses = maps.Clone(offer.Chain.Addresses)
 	offer.Chain.Packs = maps.Clone(offer.Chain.Packs)
 	offer.Owner.DependencyIDs = slices.Clone(offer.Owner.DependencyIDs)
@@ -454,6 +459,19 @@ func validateStoredOwnership(res *sharedResult) error {
 		}
 	}
 	env.PendingOffers = nil
+	if res.stored != nil {
+		// A record held compressed names what its body's facts say.
+		refs, _, err := res.storedFactsLocked()
+		if err != nil {
+			return fmt.Errorf("result %d: %w", res.id, err)
+		}
+		for _, ref := range refs {
+			if _, ok := res.deps[sharedResultID(ref)]; !ok {
+				return fmt.Errorf("result %d: reference to %d is not a direct dependency", res.id, ref)
+			}
+		}
+		return nil
+	}
 	_, err := VisitEncodedReferences(PersistedRecord{ResultID: uint64(res.id), Envelope: env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}, func(ref *PersistedRef) error {
 		if ref.RecipeID != nil {
 			return nil
@@ -470,4 +488,19 @@ func validateStoredOwnership(res *sharedResult) error {
 		return fmt.Errorf("result %d: %w", res.id, err)
 	}
 	return nil
+}
+
+// plainJSONString reports whether json.Marshal writes s between its quotes as
+// it is: printable ASCII with nothing it escapes, neither a quote nor a
+// backslash, nor <, > and &, which it escapes for HTML.
+func plainJSONString(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch b := s[i]; {
+		case b < 0x20 || b >= 0x7f:
+			return false
+		case b == '"' || b == '\\' || b == '<' || b == '>' || b == '&':
+			return false
+		}
+	}
+	return true
 }

@@ -3,6 +3,7 @@ package dagql
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -215,9 +216,6 @@ func (c *Cache) initEgraphLocked() {
 	if c.resultsByID == nil {
 		c.resultsByID = make(map[sharedResultID]*sharedResult)
 	}
-	if c.nextEgraphClassID == 0 {
-		c.nextEgraphClassID = 1
-	}
 	if c.nextEgraphTermID == 0 {
 		c.nextEgraphTermID = 1
 	}
@@ -234,11 +232,9 @@ func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eq
 	if id, ok := c.egraphDigestToClass[dig]; ok {
 		return c.findEqClassLocked(id)
 	}
-	id := c.nextEgraphClassID
-	c.nextEgraphClassID++
-	c.egraphParents = append(c.egraphParents, id)
-	c.egraphRanks = append(c.egraphRanks, 0)
+	id := c.allocEqClassLocked()
 	c.egraphDigestToClass[dig] = id
+	c.forgetCallTermsLocked(dig)
 	digests := c.eqClassToDigests[id]
 	if digests == nil {
 		digests = make(map[string]struct{}, 1)
@@ -246,6 +242,23 @@ func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eq
 	}
 	digests[dig] = struct{}{}
 	c.traceEqClassCreated(ctx, id, dig)
+	return id
+}
+
+// allocEqClassLocked returns a number for a new class: the lowest that
+// compaction freed, or the next after every slot. Requires egraphMu for
+// writing, and an initialized e-graph.
+func (c *Cache) allocEqClassLocked() eqClassID {
+	if n := len(c.freeEqClassIDs); n > 0 {
+		id := c.freeEqClassIDs[n-1]
+		c.freeEqClassIDs = c.freeEqClassIDs[:n-1]
+		c.egraphParents[id] = id
+		c.egraphRanks[id] = 0
+		return id
+	}
+	id := eqClassID(len(c.egraphParents))
+	c.egraphParents = append(c.egraphParents, id)
+	c.egraphRanks = append(c.egraphRanks, 0)
 	return id
 }
 
@@ -301,6 +314,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 		}
 		for dig := range srcDigests {
 			dstDigests[dig] = struct{}{}
+			c.forgetCallTermsLocked(dig)
 		}
 		delete(c.eqClassToDigests, rb)
 	}
@@ -352,6 +366,14 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 	dstResults := c.outputEqClassResults[ra]
 	srcResults := c.outputEqClassResults[rb]
 	joinsEntries := len(dstResults) > 0 && len(srcResults) > 0
+	if joinsEntries {
+		// Every entry of both classes now answers from the other's: one
+		// mark of the union's class widens to all of them when handed back.
+		for resID := range srcResults {
+			c.markEntryClassLocked(resID, StampJoin)
+			break
+		}
+	}
 	if len(srcResults) > 0 {
 		if dstResults == nil {
 			dstResults = make(map[sharedResultID]struct{}, len(srcResults))
@@ -1085,6 +1107,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 		res.expiresAtUnix,
 		persistedEdgeExpiresAtUnix,
 	)
+	c.markEntryClassLocked(res.id, StampEdgeExpiry)
 	touchSharedResultLastUsed(res, now.UnixNano())
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 		return nil, false, 0, false, err
@@ -1422,69 +1445,79 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 	if shared == nil || shared.id == 0 {
 		return fmt.Errorf("teach content digest: result %T is not an attached result in this cache", res)
 	}
+	_, err := c.teachContentDigest(ctx, shared, contentDigest, additionalLabels, false)
+	return err
+}
 
+// teachContentDigest is TeachContentDigest on an attached result. With
+// lacking, a frame whose content digest is already contentDigest is left as
+// it is, and reports no rewrite: the body worker gives a Cloud entry's frame
+// the content digest a span taught it only when the frame lacks it
+// (applyTaughtContent). It reports whether it replaced the frame.
+func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, contentDigest digest.Digest, additionalLabels []string, lacking bool) (bool, error) {
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return false, err
 		}
 
-		baseFrame := shared.loadResultCall()
+		// A blob-backed cache's entry can hold its frame in its stored
+		// body: it is decoded here, and replaced with the body below.
+		base := entryFrame{call: shared.loadResultCall()}
+		if base.call == nil {
+			c.egraphMu.RLock()
+			base = shared.entryFrameLocked()
+			c.egraphMu.RUnlock()
+		}
+		baseFrame, err := base.decode()
+		if err != nil {
+			return false, fmt.Errorf("teach content digest: %w", err)
+		}
 		if baseFrame == nil {
-			return fmt.Errorf("teach content digest: result %T has no call frame", res)
+			return false, fmt.Errorf("teach content digest: result %d has no call frame", shared.id)
 		}
 		oldContentDigest := baseFrame.ContentDigest()
-		frame := baseFrame.fork()
-
-		replaced := false
-		var replacedDigest digest.Digest
-		for i, extra := range frame.ExtraDigests {
-			if extra.Label != call.ExtraDigestLabelContent {
-				continue
+		if lacking && oldContentDigest == contentDigest {
+			// The frame carries it: nothing to rewrite. Its content digest is
+			// known now, as a decoded frame's is.
+			shared.resultCallMu.Lock()
+			if shared.resultCall == nil || shared.resultCall == base.call {
+				shared.frameContent, shared.frameContentKnown = oldContentDigest, true
 			}
-			if extra.Digest != contentDigest {
-				replacedDigest = extra.Digest
-			}
-			frame.ExtraDigests[i].Digest = contentDigest
-			replaced = true
-			break
+			shared.resultCallMu.Unlock()
+			return false, nil
 		}
-		if !replaced {
-			frame.ExtraDigests = append(frame.ExtraDigests, call.ExtraDigest{
-				Label:  call.ExtraDigestLabelContent,
-				Digest: contentDigest,
-			})
-		}
-		// A replaced content digest still names this result. Keep it on the
-		// frame, so it travels with the result to other engines.
-		if replacedDigest != "" {
-			kept := call.ExtraDigest{Digest: replacedDigest, Label: call.ExtraDigestLabelReplacedContent}
-			if !slices.Contains(frame.ExtraDigests, kept) {
-				frame.ExtraDigests = append(frame.ExtraDigests, kept)
-			}
-		}
-
-		for _, label := range additionalLabels {
-			extra := call.ExtraDigest{Digest: contentDigest, Label: label}
-			if !slices.Contains(frame.ExtraDigests, extra) {
-				frame.ExtraDigests = append(frame.ExtraDigests, extra)
-			}
-		}
+		frame := frameWithContentDigest(baseFrame, contentDigest, additionalLabels)
 
 		requestDigest, err := frame.deriveRecipeDigest(c)
 		if err != nil {
-			return fmt.Errorf("teach content digest: derive request digest: %w", err)
+			return false, fmt.Errorf("teach content digest: derive request digest: %w", err)
 		}
 		requestSelf, requestInputRefs, err := frame.selfDigestAndInputRefs(c)
 		if err != nil {
-			return fmt.Errorf("teach content digest: derive request term digests: %w", err)
+			return false, fmt.Errorf("teach content digest: derive request term digests: %w", err)
 		}
 		requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
 		for _, ref := range requestInputRefs {
 			dig, err := ref.inputDigest(c)
 			if err != nil {
-				return fmt.Errorf("teach content digest: derive request term input digest: %w", err)
+				return false, fmt.Errorf("teach content digest: derive request term input digest: %w", err)
 			}
 			requestInputs = append(requestInputs, dig)
+		}
+		var body *storedBody
+		if base.body != nil {
+			if body, err = base.body.reframe(c, shared.id, frame); err != nil {
+				return false, fmt.Errorf("teach content digest: %w", err)
+			}
+		}
+		// A blob-backed cache's record is measured with its frame's JSON
+		// (storedRecordBytes), as a restore of the saved frame measures it:
+		// the new frame changes the record's size by its JSON's growth.
+		var grown int64
+		if c.blobBacked {
+			if grown, err = frameJSONGrowth(base, baseFrame, body, frame); err != nil {
+				return false, fmt.Errorf("teach content digest: %w", err)
+			}
 		}
 
 		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
@@ -1497,14 +1530,15 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 		if _, found := c.resultsByID[shared.id]; !found {
 			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
-			return fmt.Errorf("teach content digest: result %d was already collected", shared.id)
+			return false, fmt.Errorf("teach content digest: result %d was already collected", shared.id)
 		}
-		if shared.loadResultCall() == nil {
+		cur := shared.entryFrameLocked()
+		if !cur.ok() {
 			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
-			return fmt.Errorf("teach content digest: result %T has no call frame", res)
+			return false, fmt.Errorf("teach content digest: result %d has no call frame", shared.id)
 		}
-		if shared.loadResultCall() != baseFrame {
+		if cur != base {
 			// Nothing was mutated in this interval.
 			c.discardShareNotificationsLocked(notify, notifyOwner)
 			c.egraphMu.Unlock()
@@ -1516,14 +1550,93 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			// flush what survives rather than dropping it.
 			c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 			c.egraphMu.Unlock()
-			return err
+			return false, err
 		}
 		shared.storeResultCall(frame)
+		if body != nil {
+			// The new frame goes into a new body, as the old one was held.
+			c.setStoredBodyLocked(shared, shared.persistedEnvelope, body)
+		}
+		if shared.storedRecordBytes != 0 {
+			shared.storedRecordBytes += grown
+		}
+		// A stored bundle of the entry carries the new frame, and those of its
+		// class mates whatever the identity taught joined; this write hands
+		// back no marks.
+		c.stampEntryLocked(shared, StampFrame)
+		c.stampPendingLocked()
 		c.traceResultCallFrameUpdated(ctx, shared, "teach_content_digest", baseFrame, frame)
 		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
-		return nil
+		return true, nil
 	}
+}
+
+// frameWithContentDigest returns a fork of baseFrame whose content digest is
+// contentDigest, with each additional label for it: a content digest it
+// replaces still names the result, so it stays on the frame as
+// replaced-content and travels with the result to other engines.
+func frameWithContentDigest(baseFrame *ResultCall, contentDigest digest.Digest, additionalLabels []string) *ResultCall {
+	frame := baseFrame.fork()
+
+	replaced := false
+	var replacedDigest digest.Digest
+	for i, extra := range frame.ExtraDigests {
+		if extra.Label != call.ExtraDigestLabelContent {
+			continue
+		}
+		if extra.Digest != contentDigest {
+			replacedDigest = extra.Digest
+		}
+		frame.ExtraDigests[i].Digest = contentDigest
+		replaced = true
+		break
+	}
+	if !replaced {
+		frame.ExtraDigests = append(frame.ExtraDigests, call.ExtraDigest{
+			Label:  call.ExtraDigestLabelContent,
+			Digest: contentDigest,
+		})
+	}
+	if replacedDigest != "" {
+		kept := call.ExtraDigest{Digest: replacedDigest, Label: call.ExtraDigestLabelReplacedContent}
+		if !slices.Contains(frame.ExtraDigests, kept) {
+			frame.ExtraDigests = append(frame.ExtraDigests, kept)
+		}
+	}
+
+	for _, label := range additionalLabels {
+		extra := call.ExtraDigest{Digest: contentDigest, Label: label}
+		if !slices.Contains(frame.ExtraDigests, extra) {
+			frame.ExtraDigests = append(frame.ExtraDigests, extra)
+		}
+	}
+	return frame
+}
+
+// frameJSONGrowth is how much longer the JSON of frame, the frame replacing
+// baseFrame, is than baseFrame's: from the bodies' kept lengths when the
+// frames are held in them, and encoded otherwise. It reads no lock.
+func frameJSONGrowth(base entryFrame, baseFrame *ResultCall, body *storedBody, frame *ResultCall) (int64, error) {
+	length := func(held *storedBody, f *ResultCall) (int64, error) {
+		if held != nil && held.frame != nil {
+			return held.frameBytes, nil
+		}
+		raw, err := json.Marshal(f)
+		if err != nil {
+			return 0, fmt.Errorf("measure call frame: %w", err)
+		}
+		return int64(len(raw)), nil
+	}
+	was, err := length(base.body, baseFrame)
+	if err != nil {
+		return 0, err
+	}
+	now, err := length(body, frame)
+	if err != nil {
+		return 0, err
+	}
+	return now - was, nil
 }
 
 // resultIDForCall finds the attached result for frame. The lookup only reads
@@ -1666,6 +1779,7 @@ func (c *Cache) removeResultOutputEqClassesLocked(resID sharedResultID) {
 	if resID == 0 {
 		return
 	}
+	c.markLeavingLocked(resID)
 	for outputEqID := range c.resultOutputEqClasses[resID] {
 		outputEqID = c.findEqClassLocked(outputEqID)
 		if outputEqID == 0 {
@@ -2016,7 +2130,9 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 		c.nextSharedResultID++
 	}
 	c.putResultLocked(res)
-	if res.loadResultCall() == nil && requestFrame != nil {
+	// An entry with a frame keeps it, decoded or held compressed in its
+	// stored body: a call that returned it teaches it identity, not a frame.
+	if requestFrame != nil && !res.hasCallFrameLocked() {
 		res.storeResultCall(requestFrame.clone())
 		c.traceResultCallFrameUpdated(ctx, res, "index_wait_result_request_frame", nil, res.loadResultCall())
 	}
@@ -2159,6 +2275,9 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	c.removeResultDigestsLocked(res.id, affectedOutputEqClasses)
 	c.removeResultOutputEqClassesLocked(res.id)
 	oldFrame := res.loadResultCall()
+	if oldFrame == nil && c.traceEnabled() {
+		oldFrame, _ = res.entryFrameLocked().decode()
+	}
 	depCount := len(res.deps)
 	res.dropResultCall()
 	c.deleteResultLocked(res)
@@ -2219,6 +2338,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	}
 
 	c.egraphDigestToClass = nil
+	c.callInputEntries = nil
 	c.egraphParents = nil
 	c.egraphRanks = nil
 	c.eqClassToDigests = nil
@@ -2238,10 +2358,9 @@ func (c *Cache) maybeResetEgraphLocked() {
 	c.restoredDigestGroups = nil
 	c.resultsByID = nil
 	c.resultPayloadBytes = 0
-	c.holderEntries = nil
 	c.entriesByRecipe = nil
 	c.remoteCaches = nil
-	c.nextEgraphClassID = 0
+	c.freeEqClassIDs = nil
 	c.nextEgraphTermID = 0
 	// nextSharedResultID deliberately survives the reset: numeric result IDs
 	// must be engine-lifetime unique because they outlive this index (session
@@ -2290,25 +2409,41 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 		}
 	}
 
-	oldSlots = len(c.egraphParents) - 1
+	oldSlots = c.eqClassSlotsLocked()
 	newSlots = len(liveRoots)
 	if (newSlots == 0 && !freeAll) || oldSlots == newSlots || (!force && oldSlots < newSlots*2) {
 		return false, oldSlots, newSlots
 	}
 
+	// Every live class keeps its number, so a number names its class for as
+	// long as the class lives, outside these tables too. Every other slot is
+	// freed: a dead class, and a class joined into another, whose digests and
+	// terms are flattened onto the root below. The free slots past the
+	// highest live class are trimmed; those below it are taken again by new
+	// classes (allocEqClassLocked).
 	oldRoots := make([]eqClassID, 0, len(liveRoots))
 	for root := range liveRoots {
 		oldRoots = append(oldRoots, root)
 	}
 	slices.Sort(oldRoots)
+	var highest eqClassID
+	if len(oldRoots) > 0 {
+		highest = oldRoots[len(oldRoots)-1]
+	}
 
 	remap := make(map[eqClassID]eqClassID, len(oldRoots))
-	newParents := make([]eqClassID, len(oldRoots)+1)
-	newRanks := make([]uint8, len(oldRoots)+1)
-	for i, oldRoot := range oldRoots {
-		newRoot := eqClassID(i + 1)
-		remap[oldRoot] = newRoot
-		newParents[newRoot] = newRoot
+	newParents := make([]eqClassID, highest+1)
+	newRanks := make([]uint8, highest+1)
+	for _, oldRoot := range oldRoots {
+		remap[oldRoot] = oldRoot
+		newParents[oldRoot] = oldRoot
+	}
+	// Lowest last, so allocEqClassLocked takes the lowest first.
+	newFree := make([]eqClassID, 0, int(highest)-len(oldRoots))
+	for id := highest; id >= 1; id-- {
+		if newParents[id] == 0 {
+			newFree = append(newFree, id)
+		}
 	}
 
 	newEqClassToDigests := make(map[eqClassID]map[string]struct{}, len(oldRoots))
@@ -2417,7 +2552,9 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 	c.resultOutputEqClasses = newResultOutputEqClasses
 	c.outputEqClassResults = newOutputEqClassResults
 	c.egraphTermsByTermDigest = newEgraphTermsByTermDigest
-	c.nextEgraphClassID = eqClassID(len(newParents))
+	c.freeEqClassIDs = newFree
+	// Classes have new numbers, which the terms of kept calls name.
+	c.forgetAllCallTermsLocked()
 
 	return true, oldSlots, newSlots
 }

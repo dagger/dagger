@@ -63,6 +63,13 @@ type MirrorResultCall struct {
 	Call          string
 }
 
+type MirrorResultTaught struct {
+	ResultID int64
+	Position int64
+	Digest   string
+	Given    bool
+}
+
 type MirrorPersistedEdge struct {
 	ResultID          int64
 	CreatedAtUnixNano int64
@@ -106,6 +113,7 @@ const clearMirrorSnapshotContentHashes = `DELETE FROM snapshot_content_hashes`
 const clearMirrorResultSnapshotLinks = `DELETE FROM result_snapshot_links`
 const clearMirrorPersistedEdges = `DELETE FROM persisted_edges`
 const clearMirrorResultCalls = `DELETE FROM result_calls`
+const clearMirrorResultTaught = `DELETE FROM result_taught`
 const clearMirrorResultDeps = `DELETE FROM result_deps`
 const clearMirrorResultOutputEqClasses = `DELETE FROM result_output_eq_classes`
 const clearMirrorTermInputs = `DELETE FROM term_inputs`
@@ -123,6 +131,7 @@ func (q *Queries) ClearMirrorState(ctx context.Context) error {
 		clearMirrorResultSnapshotLinks,
 		clearMirrorPersistedEdges,
 		clearMirrorResultCalls,
+		clearMirrorResultTaught,
 		clearMirrorResultDeps,
 		clearMirrorResultOutputEqClasses,
 		clearMirrorTermInputs,
@@ -219,6 +228,15 @@ func (q *Queries) InsertMirrorResultCall(ctx context.Context, arg MirrorResultCa
 	return err
 }
 
+const insertMirrorResultTaught = `
+INSERT INTO result_taught (result_id, position, digest, given) VALUES (?, ?, ?, ?)
+`
+
+func (q *Queries) InsertMirrorResultTaught(ctx context.Context, arg MirrorResultTaught) error {
+	_, err := q.exec(ctx, nil, insertMirrorResultTaught, arg.ResultID, arg.Position, arg.Digest, arg.Given)
+	return err
+}
+
 const insertMirrorPersistedEdge = `
 INSERT INTO persisted_edges (result_id, created_at_unix_nano, expires_at_unix, unpruneable) VALUES (?, ?, ?, ?)
 `
@@ -283,13 +301,24 @@ FROM results
 `
 
 func (q *Queries) ListMirrorResults(ctx context.Context) ([]MirrorResult, error) {
+	var out []MirrorResult
+	err := q.EachMirrorResult(ctx, func(row MirrorResult) error {
+		out = append(out, row)
+		return nil
+	})
+	return out, err
+}
+
+// EachMirrorResult calls fn with each results row as it is read, so the
+// caller decides what of a row outlives the call. An error from fn stops the
+// read and is returned.
+func (q *Queries) EachMirrorResult(ctx context.Context, fn func(MirrorResult) error) error {
 	rows, err := q.db.QueryContext(ctx, listMirrorResults)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
 
-	var out []MirrorResult
 	for rows.Next() {
 		var row MirrorResult
 		if err := rows.Scan(
@@ -308,11 +337,13 @@ func (q *Queries) ListMirrorResults(ctx context.Context) ([]MirrorResult, error)
 			&row.RecordType,
 			&row.Description,
 		); err != nil {
-			return nil, err
+			return err
 		}
-		out = append(out, row)
+		if err := fn(row); err != nil {
+			return err
+		}
 	}
-	return out, rows.Err()
+	return rows.Err()
 }
 
 const listMirrorEqClasses = `SELECT id FROM eq_classes`
@@ -348,6 +379,27 @@ func (q *Queries) ListMirrorResultCalls(ctx context.Context) ([]MirrorResultCall
 	for rows.Next() {
 		var row MirrorResultCall
 		if err := rows.Scan(&row.ResultID, &row.RequestDigest, &row.Call); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+const listMirrorResultTaught = `
+SELECT result_id, position, digest, given FROM result_taught ORDER BY result_id, position
+`
+
+func (q *Queries) ListMirrorResultTaught(ctx context.Context) ([]MirrorResultTaught, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorResultTaught)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MirrorResultTaught
+	for rows.Next() {
+		var row MirrorResultTaught
+		if err := rows.Scan(&row.ResultID, &row.Position, &row.Digest, &row.Given); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

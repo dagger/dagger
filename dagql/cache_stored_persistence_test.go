@@ -3,13 +3,14 @@ package dagql
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -67,7 +68,7 @@ func storedPersistenceTestState(c *Cache) map[uint64]storedPersistenceTestEntry 
 		state := res.loadPayloadState()
 		out[uint64(id)] = storedPersistenceTestEntry{
 			retained:                retained,
-			storedParts:             res.storedParts,
+			storedParts:             storedPartTestOffers(res.storedParts),
 			deps:                    deps,
 			recordBytes:             res.storedRecordBytes,
 			createdAt:               state.createdAtUnixNano,
@@ -94,7 +95,7 @@ func TestCloudSaveAndRestoreKeepThePool(t *testing.T) {
 	p := persistedListTestResult(t, actx, a, asrv, "saved-dep", &transferTestValue{Text: "dep"})
 	transferTestDependency(a, actx, r, p)
 	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
-	stored, err := cloud.SetStoredPart(ctx, root, storedPruneTestPart("snapshot", map[string]int64{"saved-base": 10, "saved-top": 20}), 0)
+	stored, _, err := cloud.SetStoredPart(ctx, root, storedPruneTestPart("snapshot", map[string]int64{"saved-base": 10, "saved-top": 20}), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	storedPruneTestUse(cloud, root, time.Now().Add(-time.Hour))
@@ -114,7 +115,7 @@ func TestCloudSaveAndRestoreKeepThePool(t *testing.T) {
 	cloud.egraphMu.RUnlock()
 	require.Equal(t, poolBefore, poolAfter, "the record sizes come back as merge measured them")
 
-	got, err := cloud.StoredBundle(ctx, []uint64{root}, nil)
+	got, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	require.Len(t, got.Bundle.Values, 2)
 	for _, value := range got.Bundle.Values {
@@ -147,12 +148,12 @@ func TestCloudRestoreKeepsEveryRecord(t *testing.T) {
 	r := persistedListTestResult(t, actx, a, asrv, "list-holder", &transferTestValue{Text: "holder"})
 	transferTestDependency(a, actx, r, list)
 	root := storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, r))[0]
-	before, err := cloud.StoredBundle(ctx, []uint64{root}, nil)
+	before, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err)
 	kinds := func(bundle ValueBundle) []string {
 		var out []string
 		for _, value := range bundle.Values {
-			out = append(out, value.Record.Envelope.Kind)
+			out = append(out, sentRecord(t, value).Envelope.Kind)
 		}
 		slices.Sort(out)
 		return out
@@ -162,10 +163,10 @@ func TestCloudRestoreKeepsEveryRecord(t *testing.T) {
 
 	ctx, cloud = storedPersistenceTestCloud(t, path)
 	defer func() { require.NoError(t, cloud.Close(ctx)) }()
-	after, err := cloud.StoredBundle(ctx, []uint64{root}, nil)
+	after, err := cloud.StoredBundle(ctx, []uint64{root}, time.Now().Unix(), nil)
 	require.NoError(t, err, "every record of the closure is still stored")
 	require.Equal(t, kinds(before.Bundle), kinds(after.Bundle))
-	require.Equal(t, before.Bundle.Values, after.Bundle.Values)
+	require.JSONEq(t, string(mustTransferJSON(t, before.Bundle.Values)), string(mustTransferJSON(t, after.Bundle.Values)))
 
 	bctx, b, _ := transferTestCache(t)
 	reply, err := b.MergeValues(bctx, cloudCacheID, after.Bundle)
@@ -249,7 +250,7 @@ func TestCheckpointRunsBesideReaders(t *testing.T) {
 				cloud.EquivalentEntries(recipeA.String())
 				cloud.EquivalentHolders(recipeB.String())
 				_, _ = cloud.EntryInfo(rootA)
-				_, _ = cloud.StoredBundle(ctx, []uint64{rootA}, nil)
+				_, _ = cloud.StoredBundle(ctx, []uint64{rootA}, time.Now().Unix(), nil)
 				_, _ = cloud.BlobCacheUsage()
 			}
 		})
@@ -272,7 +273,7 @@ func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
 	t.Parallel()
 	const (
 		roots    = 3000
-		pad      = 4096
+		pad      = 6144
 		saves    = 5
 		walBound = 1 << 20
 	)
@@ -281,7 +282,13 @@ func TestCheckpointBoundsTheWriteAheadLog(t *testing.T) {
 	actx, a, asrv := transferTestCache(t)
 	var results []AnyResult
 	for i := range roots {
-		value := &transferTestValue{Text: fmt.Sprintf("%d-%s", i, strings.Repeat("x", pad))}
+		// Random padding, which the Cloud's compression of its records
+		// can't shrink.
+		random := make([]byte, pad*3/4)
+		for j := range random {
+			random[j] = byte(rand.New(rand.NewPCG(uint64(i), uint64(j))).Uint32())
+		}
+		value := &transferTestValue{Text: fmt.Sprintf("%d-%s", i, base64.StdEncoding.EncodeToString(random))}
 		results = append(results, persistedListTestResult(t, actx, a, asrv, fmt.Sprintf("wal-root-%d", i), value))
 	}
 	require.Len(t, storedPersistenceTestMerge(t, ctx, cloud, exportTestBundle(t, actx, a, results...)), roots)

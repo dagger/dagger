@@ -31,8 +31,8 @@ import (
 // egraphMu.
 func (res *sharedResult) engineHoldingsLocked() int64 {
 	var n int64
-	for key := range res.holders {
-		if !senderCache(key.Cache) {
+	for _, ref := range res.holderRefsLocked() {
+		if !senderCache(ref.key.Cache) {
 			n++
 		}
 	}
@@ -101,10 +101,29 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	}
 	// The cache takes the value back only from a cache that computes it
 	// after the drop.
-	for _, h := range res.holders {
-		h.executed = false
+	c.markEntryClassLocked(res.id, StampPruned)
+	for _, ref := range res.holderRefsLocked() {
+		if ref.h.executed {
+			ref.h.executed = false
+			c.markHoldingLocked(ref.key)
+		}
 	}
 	res.deps = nil
+	// The content digests spans taught the entry name the bytes of the
+	// value the drop takes. A record that fills the entry again may be
+	// another engine's run of the recipe, with other bytes, and until runs
+	// are named the cache can't tell, so they go with the value.
+	if len(res.taught) > 0 || res.taughtFrom.ok() {
+		c.taughtContentDropped.Add(1)
+		res.taughtDropped = true
+	}
+	res.taught = nil
+	res.taughtGiven = 0
+	res.taughtFrom = entryFrame{}
+	// The frame the drop takes is no longer the one the worker is giving
+	// digests to: what it records of it is dropped, as after a replacement
+	// (applyTaughtContent).
+	res.taughtFrame++
 	res.storedParts = nil
 	res.storedRecordBytes = 0
 	res.storedTransfer.Store(nil)
@@ -123,6 +142,7 @@ func (c *Cache) dropValueLocked(ctx context.Context, res *sharedResult) ([]*shar
 	res.objClass = objectClassRef{}
 	res.hasValue = false
 	res.persistedEnvelope = nil
+	res.stored = nil
 	res.createdAtUnixNano = 0
 	res.payloadRevision++
 	res.payloadMu.Unlock()
@@ -201,8 +221,8 @@ func (res *sharedResult) storedBlobsLocked() map[digest.Digest]int64 {
 	}
 	blobs := make(map[digest.Digest]int64)
 	for _, part := range res.storedParts {
-		for _, layer := range part.Chain.Layers {
-			blobs[layer.Descriptor.Digest] = layer.Descriptor.Size
+		for _, layer := range part.layers {
+			blobs[layer.layer.Descriptor.Digest] = layer.layer.Descriptor.Size
 		}
 	}
 	return blobs

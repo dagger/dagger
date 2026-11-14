@@ -25,6 +25,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // The engine side's limits.
@@ -108,6 +109,20 @@ type Adapter interface {
 	// addresses; ReplyRenewal answers it.
 	TakeRenewalRequest(ctx context.Context) (*dagql.RenewalRequest, error)
 	ReplyRenewal(dagql.RenewalReply) dagql.RenewalReplyDisposition
+	// RestorePart merges one part of a set file (protocol.Restore) into the
+	// cache, through the path Merge takes, with the roots in unretained given
+	// no retention edge, and returns what its commit left. The commit holds
+	// every entry it lands on until the reply's Release
+	// (dagql.Cache.RestoreValues). known are as for Merge: the rows the part
+	// lands on join them.
+	RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows) (dagql.MergeReply, error)
+	// LateMisses returns the cache's lookup misses on this connection before
+	// before, not returned already, whose lookup now finds one of entries,
+	// by the engine's numbers (dagql.Cache.LateRemoteMisses).
+	LateMisses(before time.Time, entries map[uint64]struct{}) []dagql.RemoteMiss
+	// Restored records what a restore did with one file, for the engine's
+	// stop event.
+	Restored(RestoreReport)
 	// StartLookups starts queuing the cache's lookup misses for this
 	// connection, with nothing asked yet, and StopLookups stops it.
 	StartLookups()
@@ -166,13 +181,18 @@ type BlobSource interface {
 	ReadBlob(ctx context.Context, dgst digest.Digest) (io.ReadCloser, int64, error)
 }
 
-// settings are Run's configuration with the limits and seams tests change.
+// settings are Run's configuration with the limits and seams tests change,
+// and what outlives a connection.
 type settings struct {
 	Config
 	dial       func(context.Context) (wsConn, error)
 	put        func(ctx context.Context, url string, body io.Reader, size int64) error
+	getFile    func(context.Context, protocol.SetFile) ([]byte, error)
+	peakRSS    func() int64
 	maxMessage int
 	jitter     func() float64
+	// restored are the set files this engine process merged whole.
+	restored restoredFiles
 }
 
 func newSettings(cfg Config) *settings {
@@ -182,6 +202,8 @@ func newSettings(cfg Config) *settings {
 	s := &settings{
 		Config:     cfg,
 		put:        httpPut(uploadClient(uploadResponseTimeout), uploadIdleTimeout),
+		getFile:    getSetFile(&http.Client{}, restoreIdleTimeout),
+		peakRSS:    PeakResident,
 		maxMessage: protocol.MaxMessageBytes,
 		jitter:     rand.Float64,
 	}
@@ -193,6 +215,10 @@ func newSettings(cfg Config) *settings {
 // then returns nil promptly: it closes the connection without waiting for the
 // service, cancels uploads, and releases the chains held for exports.
 func Run(ctx context.Context, adapter Adapter, cfg Config) error {
+	// Everything the integration starts is the remote cache's work unless a
+	// kind of its own labels it.
+	ctx, unlabel := wcprof.WithCPUKind(ctx, wcprof.CPUKindRemoteCache)
+	defer unlabel()
 	return newSettings(cfg).run(ctx, adapter)
 }
 

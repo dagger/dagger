@@ -192,6 +192,17 @@ type Server struct {
 	armedMu sync.Mutex
 	armed   *armedProfile
 
+	// cpuProfile is the process's one CPU profiler, shared by the engine
+	// CPU sampler and wcprof's profiles (engine_cpu.go). engineCPUOn,
+	// engineCPUWindowLen, engineCPUPoll and testEngineCPUWindow are tests'
+	// stand-ins for wcprof recording, the window and poll lengths, and a
+	// window's report.
+	cpuProfile          cpuProfiler
+	engineCPUOn         func() bool
+	engineCPUWindowLen  time.Duration
+	engineCPUPoll       time.Duration
+	testEngineCPUWindow func(engineCPUWindow)
+
 	// The session watch (wcprof_watch.go): its threshold in nanoseconds, 0
 	// while it's off; the start of each watched session while it runs;
 	// captureMu, which lets one capture run at a time; and the last few
@@ -579,6 +590,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
+	srv.startEngineCPU(srv.shutdownCtx)
 
 	// initialize the secret salt
 	srv.secretSalt, err = loadSecretSalt(srv.rootDir)
@@ -697,7 +709,6 @@ func (srv *Server) initRecursiveReadOnlyMounts(ctx context.Context) {
 }
 
 func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) error {
-	var bootReset core.RemoteCacheFixturePersistence
 	for attempt := 0; attempt < 2; attempt++ {
 		resetReason, err := srv.initLocalCacheStateOnce(ctx, cfg, ociCfg)
 		if srv.engineCache != nil {
@@ -713,10 +724,7 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 				// start resets as before.
 				return errors.Join(err, srv.closeLocalCacheStateForReset())
 			}
-			return srv.updateRemoteCacheFixturePersistence(func(report *core.RemoteCacheFixturePersistence) {
-				report.PersistenceResetReason = bootReset.PersistenceResetReason
-				report.LocalCacheResetReason = bootReset.LocalCacheResetReason
-			})
+			return nil
 		}
 		if attempt == 1 {
 			if err != nil {
@@ -727,10 +735,6 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 
 		if resetReason == localCacheStateResetBoltDBInitFailed {
 			srv.corruptDBReset = true
-		}
-		bootReset.LocalCacheResetReason = string(resetReason)
-		if srv.engineCache != nil {
-			bootReset.PersistenceResetReason = srv.engineCache.PersistenceResetReason()
 		}
 		slog.Warn("local cache state invalid; resetting worker and dagql persistence state", "reason", resetReason, "error", err)
 		if closeErr := srv.closeLocalCacheStateForReset(); closeErr != nil {

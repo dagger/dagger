@@ -12,8 +12,9 @@ import (
 
 // requireHeldEntryMatches checks that RemoteHoldingInfo reports, for every
 // key given and every holding the cache has, what RemoteEntryInfo reports for
-// that holding and its entry, and that the two report the same absence. It
-// returns the descriptions by key.
+// that holding and its entry, and that the two report the same absence; and
+// that HolderEntry, on the cache and in a hold of its writes, reports the
+// same entry number and absence. It returns the descriptions by key.
 func requireHeldEntryMatches(t *testing.T, cloud *Cache, step string, keys []HolderKey) map[HolderKey]RemoteHeldEntry {
 	t.Helper()
 	held, _ := cloudIndexes(cloud)
@@ -25,6 +26,14 @@ func requireHeldEntryMatches(t *testing.T, cloud *Cache, step string, keys []Hol
 		info, ok := cloud.RemoteEntryInfo(key)
 		got, gotOK := cloud.RemoteHoldingInfo(key)
 		require.Equal(t, ok, gotOK, "%s: %v exists in both reads or neither", step, key)
+		number, numberOK := cloud.HolderEntry(key)
+		hold := cloud.HoldRemoteWrites()
+		heldNumber, heldOK := hold.HolderEntry(key)
+		require.NoError(t, hold.Release(t.Context()))
+		require.Equal(t, ok, numberOK, "%s: HolderEntry finds %v as the others do", step, key)
+		require.Equal(t, ok, heldOK, "%s: HolderEntry in a hold finds %v as the others do", step, key)
+		require.Equal(t, got.Number, number, "%s: HolderEntry's entry for %v", step, key)
+		require.Equal(t, got.Number, heldNumber, "%s: HolderEntry's entry for %v in a hold", step, key)
 		if !ok {
 			require.Equal(t, RemoteHeldEntry{}, got, "%s: %v", step, key)
 			continue
@@ -94,7 +103,7 @@ func TestRemoteHoldingInfoMatchesEntryInfo(t *testing.T) {
 			},
 			retained: retainedAt(1, 10, time.Now().Add(time.Hour).Unix()),
 		})
-		require.NoError(t, cloud.AddRemoteHold(ctx, root, "s2-"+string(engine)))
+		require.NoError(t, errOf(cloud.AddRemoteHold(ctx, root, "s2-"+string(engine))))
 		roots = append(roots, root)
 		keys = append(keys, dep, root)
 	}
@@ -167,7 +176,7 @@ func TestRemoteHoldingInfoMatchesEntryInfo(t *testing.T) {
 	require.NotContains(t, got, roots[0])
 	require.NotContains(t, got, HolderKey{Cache: "cache-b", Number: 1})
 
-	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(ctx, "cache-c")...)
+	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(ctx, "cache-c").Candidates...)
 	got = requireHeldEntryMatches(t, cloud, "cache released", keys)
 	require.Empty(t, got[roots[1]].Holding.Sessions)
 	require.False(t, got[roots[1]].Holding.Retained)

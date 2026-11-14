@@ -135,6 +135,15 @@ type ExecutionMetadata struct {
 	// JSON cannot drop it before use.
 	UserFacingSpanCtx trace.SpanContext `json:"-"`
 
+	// CallerRecipe is the recipe digest of the cached call the exec runs
+	// under (dagql.CallerRecipe), captured in core as the exec is set up. A
+	// process in the exec makes its calls through the exec's nested client
+	// under it, as a resolver makes its calls under its own call, unless the
+	// exec is a function runtime's, whose client names the function call.
+	// json:"-" for the same reason as ProfArgs: it is set at run time and
+	// handed over in process, and must never perturb a cache key.
+	CallerRecipe digest.Digest `json:"-"`
+
 	// HostAliasFQDNs maps a HostAliases key (a bound service's advertised
 	// hostname) to the fully qualified name the running service actually
 	// registered in DNS under. A service with a custom hostname is namespaced

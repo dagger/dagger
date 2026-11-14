@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // lookups sends the cache's misses to the service, with at most
@@ -14,7 +15,9 @@ func (s *session) lookups() {
 	if !s.cfg.Lookups {
 		return
 	}
-	ctx, stop := context.WithCancel(s.ctx)
+	ctx, unlabel := wcprof.WithCPUKind(s.ctx, wcprof.CPUKindLookup)
+	defer unlabel()
+	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	s.adapter.StartLookups()
 	defer s.adapter.StopLookups()
@@ -44,7 +47,7 @@ func (s *session) lookup(ctx context.Context, misses []dagql.RemoteMiss, dropped
 		Misses: make([]protocol.LookupMiss, len(misses)),
 	}
 	for i, miss := range misses {
-		req.Misses[i] = protocol.LookupMiss{Recipe: miss.Recipe, Extra: miss.Extra, Field: miss.Field, Self: miss.Self, Inputs: miss.Inputs}
+		req.Misses[i] = protocol.LookupMiss{Recipe: miss.Recipe, Extra: miss.Extra, Field: miss.Field, Self: miss.Self, Inputs: miss.Inputs, Caller: miss.Caller}
 	}
 	id := s.lastID.Add(1)
 	sent := time.Now()

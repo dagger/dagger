@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -63,6 +64,9 @@ func TestPartFixedProviderAndContentExhaustion(t *testing.T) {
 	sibling := clonePartAddress(address)
 	sibling.OutputPath[1].Index = 1
 	require.False(t, demand.exhausted(7, sibling, &refreshed[0], 1))
+	// A copy shares its layers (clonePartOffer): an offer whose content
+	// changed has layers of its own.
+	refreshed[0].Chain.Layers = slices.Clone(refreshed[0].Chain.Layers)
 	refreshed[0].Chain.Layers[0].Descriptor.Digest = digest.FromString("new content")
 	require.False(t, demand.exhausted(7, address, &refreshed[0], 1))
 }

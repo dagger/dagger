@@ -31,6 +31,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"os"
@@ -38,9 +39,11 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 )
 
@@ -101,6 +104,19 @@ type Options struct {
 	EngineVersion string
 	// Now is the clock; time.Now when nil.
 	Now func() time.Time
+	// RemoveAll deletes a removed volume's tree; os.RemoveAll when nil.
+	// Tests replace it to hold a deletion.
+	RemoveAll func(string) error
+	// OnDeletionError, when set, is told of each background deletion that
+	// failed, as it fails: nothing waits for the deletions to report them.
+	OnDeletionError func(error)
+	// OnLeftovers, when set, is told what a previous owner left when Open
+	// finds it: how many trees, the bytes their volumes recorded, and how
+	// many recorded no size and are measured as they're deleted.
+	OnLeftovers func(count int, recordedBytes int64, unmeasured int)
+	// OnLeftoversDeleted, when set, is told when the background deletion of
+	// a previous owner's leftovers has ended, and how long it took.
+	OnLeftoversDeleted func(count int, took time.Duration)
 }
 
 // Store is an owned cache volume directory.
@@ -168,6 +184,9 @@ func Open(dir string, opts Options) (*Store, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	if opts.RemoveAll == nil {
+		opts.RemoveAll = os.RemoveAll
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create cache volume directory: %w", err)
 	}
@@ -188,7 +207,7 @@ func Open(dir string, opts Options) (*Store, error) {
 		opts:       opts,
 		lock:       lock,
 		pins:       map[string]*pinState{},
-		removeAll:  os.RemoveAll,
+		removeAll:  opts.RemoveAll,
 		trashSize:  treeSize,
 		collecting: make(chan struct{}, 1),
 	}
@@ -199,12 +218,13 @@ func Open(dir string, opts Options) (*Store, error) {
 		}
 	}
 	// This process owns the directory now, so anything in tmp/ or trash/ was
-	// left by a previous owner that stopped mid-way.
-	for _, sub := range []string{"tmp", "trash"} {
-		if err := removeContents(filepath.Join(s.formDir, sub)); err != nil {
-			s.Close()
-			return nil, fmt.Errorf("remove leftover cache volumes in %s: %w", sub, err)
-		}
+	// left by a previous owner that stopped mid-way: volumes it was creating,
+	// and deletions it didn't wait for. They're deleted in the background,
+	// counted as space being freed until they're gone, so the engine doesn't
+	// wait for them before it serves anything.
+	if err := s.deleteLeftovers(); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("delete leftover cache volumes: %w", err)
 	}
 	return s, nil
 }
@@ -224,8 +244,8 @@ var ErrClosed = errors.New("cache volume directory is closed")
 // still in progress, it keeps ownership and returns ErrPinned: another owner
 // could otherwise collect a volume that is still in use, or sweep one being
 // created. The ownership lock then lasts until the process exits. Once
-// closed, Acquire fails with ErrClosed. Removals in progress keep running
-// until they finish.
+// closed, Acquire fails with ErrClosed. Deletions in progress keep running
+// until they finish or the process exits; the next owner deletes what's left.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -479,13 +499,32 @@ type Entry struct {
 // returns the bytes the whole directory uses, including what is still being
 // created or removed.
 func (s *Store) Usage(ctx context.Context) ([]Entry, int64, error) {
-	entries, used, _, err := s.usage(ctx)
+	entries, used, _, err := s.usage(ctx, nil)
 	return entries, used, err
 }
 
-// usage is Usage, also returning the pending-removal bytes it counted.
-func (s *Store) usage(ctx context.Context) ([]Entry, int64, int64, error) {
-	entries, err := s.scan(ctx)
+// measurement is what a scan spent measuring stale volumes.
+type measurement struct {
+	volumes int
+	bytes   int64
+	files   int64
+	took    time.Duration
+}
+
+func (m *measurement) add(bytes, files int64, took time.Duration) {
+	if m == nil {
+		return
+	}
+	m.volumes++
+	m.bytes += bytes
+	m.files += files
+	m.took += took
+}
+
+// usage is Usage, also returning the pending-removal bytes it counted. It
+// adds what it spent measuring stale volumes to measured, if set.
+func (s *Store) usage(ctx context.Context, measured *measurement) ([]Entry, int64, int64, error) {
+	entries, err := s.scan(ctx, measured)
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -506,8 +545,9 @@ func (s *Store) usage(ctx context.Context) ([]Entry, int64, int64, error) {
 	return entries, used + tmpBytes + pending + stuck, pending, nil
 }
 
-// scan lists every volume, measuring stale sizes.
-func (s *Store) scan(ctx context.Context) ([]Entry, error) {
+// scan lists every volume, measuring stale sizes, and adds what that took
+// to measured, if set.
+func (s *Store) scan(ctx context.Context, measured *measurement) ([]Entry, error) {
 	vols, err := os.ReadDir(filepath.Join(s.formDir, "volumes"))
 	if err != nil {
 		return nil, fmt.Errorf("read cache volumes: %w", err)
@@ -520,7 +560,7 @@ func (s *Store) scan(ctx context.Context) ([]Entry, error) {
 		if !vol.IsDir() {
 			continue
 		}
-		e, err := s.volumeEntry(ctx, vol.Name())
+		e, err := s.volumeEntry(ctx, vol.Name(), measured)
 		if errors.Is(err, fs.ErrNotExist) {
 			// Removed while scanning.
 			continue
@@ -533,7 +573,7 @@ func (s *Store) scan(ctx context.Context) ([]Entry, error) {
 	return entries, nil
 }
 
-func (s *Store) volumeEntry(ctx context.Context, id string) (Entry, error) {
+func (s *Store) volumeEntry(ctx context.Context, id string, measured *measurement) (Entry, error) {
 	volDir := s.volumeDir(id)
 	if _, err := os.Stat(filepath.Join(volDir, fsName)); err != nil {
 		return Entry{}, err
@@ -571,7 +611,9 @@ func (s *Store) volumeEntry(ctx context.Context, id string) (Entry, error) {
 	}
 	s.mu.Unlock()
 
-	size, err := treeSize(ctx, filepath.Join(volDir, fsName))
+	start := time.Now()
+	size, files, err := treeWalk(ctx, filepath.Join(volDir, fsName))
+	measured.add(size, files, time.Since(start))
 	if err != nil {
 		return Entry{}, err
 	}
@@ -628,15 +670,27 @@ func (p Policy) targetBytes(usedBytes int64) int64 {
 		target = max(target, usedBytes-max(p.MaxUsedSpace, p.ReservedSpace))
 	}
 	if p.MinFreeSpace > 0 && p.CurrentFreeSpace < p.MinFreeSpace {
-		target = max(target, min(p.MinFreeSpace-p.CurrentFreeSpace, usedBytes-p.ReservedSpace))
+		// The free-space minimum outranks the reserve.
+		target = max(target, p.MinFreeSpace-p.CurrentFreeSpace)
 	}
 	return max(target, 0)
 }
 
-// Report is what one Collect removed.
+// Report is what one Collect removed, and what it measured to decide.
 type Report struct {
 	Removed        []Entry
 	ReclaimedBytes int64
+	// UsedBytes is the directory's usage the collection decided on.
+	UsedBytes int64
+
+	// Measured is how many volumes written since their last measurement
+	// were walked to learn their size, a walk cut off by the context
+	// included; MeasuredBytes and MeasuredFiles are what those walks found,
+	// and MeasureTime how long they took.
+	Measured      int
+	MeasuredBytes int64
+	MeasuredFiles int64
+	MeasureTime   time.Duration
 }
 
 // Collect removes volumes until the policy is met, the least recently used
@@ -656,10 +710,13 @@ func (s *Store) Collect(ctx context.Context, policy Policy) (Report, error) {
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
-	entries, used, pending, err := s.usage(ctx)
+	var m measurement
+	entries, used, pending, err := s.usage(ctx, &m)
+	report.Measured, report.MeasuredBytes, report.MeasuredFiles, report.MeasureTime = m.volumes, m.bytes, m.files, m.took
 	if err != nil {
 		return report, err
 	}
+	report.UsedBytes = used
 	if s.afterUsage != nil {
 		s.afterUsage()
 	}
@@ -720,12 +777,35 @@ func (s *Store) remove(e Entry) (bool, error) {
 		return false, fmt.Errorf("remove cache volume %s: %w", e.ID, err)
 	}
 	delete(s.pins, e.ID)
-	s.pendingBytes += e.SizeBytes
-	s.removals.Add(1)
+	s.startDeletionLocked(trash, e.SizeBytes, "cache volume "+e.ID, nil)
 	s.mu.Unlock()
+	return true, nil
+}
 
+// startDeletionLocked deletes trash, a tree moved into trash/, in the
+// background, counting size as pending until it's gone, then calls done if
+// set. A negative size is unknown: the deletion measures the tree first.
+// s.mu must be held.
+func (s *Store) startDeletionLocked(trash string, size int64, what string, done func()) {
+	if size > 0 {
+		s.pendingBytes += size
+	}
+	s.removals.Add(1)
 	go func() {
 		defer s.removals.Done()
+		if done != nil {
+			defer done()
+		}
+		if size < 0 {
+			measured, err := s.trashSize(context.Background(), trash)
+			size = max(measured, 0)
+			if err != nil {
+				size = 0
+			}
+			s.mu.Lock()
+			s.pendingBytes += size
+			s.mu.Unlock()
+		}
 		if s.beforeRemove != nil {
 			s.beforeRemove()
 		}
@@ -733,28 +813,106 @@ func (s *Store) remove(e Entry) (bool, error) {
 		var survived int64
 		if err != nil {
 			// What survived still takes space: count it as stuck until a
-			// later owner's open removes it. If it can't be measured,
+			// later owner's open deletes it. If it can't be measured,
 			// assume nothing was freed.
 			measured, measureErr := s.trashSize(context.Background(), trash)
-			survived = min(max(measured, 0), e.SizeBytes)
+			survived = min(max(measured, 0), size)
 			if measureErr != nil {
-				survived = e.SizeBytes
+				survived = size
 				err = errors.Join(err, fmt.Errorf("measure what survived: %w", measureErr))
 			}
 		}
+		if err != nil {
+			err = fmt.Errorf("remove %s: %w", what, err)
+			if s.opts.OnDeletionError != nil {
+				s.opts.OnDeletionError(err)
+			}
+		}
 		s.mu.Lock()
-		s.pendingBytes -= e.SizeBytes
+		s.pendingBytes -= size
 		s.stuckBytes += survived
 		if err != nil {
-			s.removalErr = errors.Join(s.removalErr, fmt.Errorf("remove cache volume %s: %w", e.ID, err))
+			s.removalErr = errors.Join(s.removalErr, err)
 		}
 		s.mu.Unlock()
 	}()
-	return true, nil
 }
 
-// WaitRemovals waits until every removal Collect started has finished, or ctx
-// ends. It reports the removals that failed since it last reported.
+// deleteLeftovers deletes, in the background, what a previous owner left in
+// tmp/ and trash/. Volumes it was creating move to trash/ first, so tmp/
+// holds only this owner's.
+func (s *Store) deleteLeftovers() error {
+	tmpDir := filepath.Join(s.formDir, "tmp")
+	trashDir := filepath.Join(s.formDir, "trash")
+	tmps, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return err
+	}
+	for _, ent := range tmps {
+		trash, err := os.MkdirTemp(trashDir, "")
+		if err != nil {
+			return err
+		}
+		if err := os.Rename(filepath.Join(tmpDir, ent.Name()), filepath.Join(trash, "volume")); err != nil {
+			return err
+		}
+	}
+	ents, err := os.ReadDir(trashDir)
+	if err != nil {
+		return err
+	}
+	if len(ents) == 0 {
+		return nil
+	}
+	sizes := make([]int64, len(ents))
+	var recorded int64
+	var unmeasured int
+	for i, ent := range ents {
+		sizes[i] = leftoverSize(filepath.Join(trashDir, ent.Name()))
+		if sizes[i] < 0 {
+			unmeasured++
+		} else {
+			recorded += sizes[i]
+		}
+	}
+	if s.opts.OnLeftovers != nil {
+		s.opts.OnLeftovers(len(ents), recorded, unmeasured)
+	}
+	start := time.Now()
+	var deleted sync.WaitGroup
+	deleted.Add(len(ents))
+	s.mu.Lock()
+	for i, ent := range ents {
+		s.startDeletionLocked(filepath.Join(trashDir, ent.Name()), sizes[i], "leftover "+ent.Name(), deleted.Done)
+	}
+	s.mu.Unlock()
+	go func() {
+		deleted.Wait()
+		if s.opts.OnLeftoversDeleted != nil {
+			s.opts.OnLeftoversDeleted(len(ents), time.Since(start))
+		}
+	}()
+	return nil
+}
+
+// leftoverSize is the recorded size of the volume a leftover in trash/
+// holds, if it was measured since it was last written, or -1 if it's
+// unknown.
+func leftoverSize(trash string) int64 {
+	vol := filepath.Join(trash, "volume")
+	if _, err := os.Stat(filepath.Join(vol, dirtyName)); err == nil {
+		return -1
+	}
+	m, err := readMeta(filepath.Join(vol, metaName))
+	if err != nil || m.SizeBytes == nil {
+		return -1
+	}
+	return *m.SizeBytes
+}
+
+// WaitRemovals waits until every deletion in progress has finished, those
+// Collect started and a previous owner's leftovers alike, or ctx ends. It
+// reports the deletions that failed since it last reported.
 func (s *Store) WaitRemovals(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
@@ -852,57 +1010,133 @@ func writeMarker(path string) error {
 
 // treeSize is the disk space a tree takes, counting each inode once.
 func treeSize(ctx context.Context, root string) (int64, error) {
-	type inode struct{ dev, ino uint64 }
-	seen := map[inode]struct{}{}
-	var size int64
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				// Changed while walking.
-				return nil
-			}
-			return err
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		st, ok := info.Sys().(*syscall.Stat_t)
-		if !ok {
-			size += info.Size()
-			return nil
-		}
-		key := inode{uint64(st.Dev), uint64(st.Ino)} //nolint:unconvert // types differ by platform
-		if _, ok := seen[key]; ok {
-			return nil
-		}
-		seen[key] = struct{}{}
-		size += int64(st.Blocks) * 512 //nolint:unconvert // types differ by platform
-		return nil
-	})
-	if errors.Is(err, fs.ErrNotExist) {
-		return 0, nil
-	}
+	size, _, err := treeWalk(ctx, root)
 	return size, err
 }
 
-func removeContents(dir string) error {
-	ents, err := os.ReadDir(dir)
+// treeWalkers is how many directories a walk reads at once. A walk waits
+// on the kernel's directory reads and stats, one entry at a time, and a
+// volume such as a Go build cache spreads its entries over many
+// directories, so those are read side by side.
+const treeWalkers = 16
+
+// treeWalk is treeSize, also returning how many entries it counted.
+func treeWalk(ctx context.Context, root string) (int64, int64, error) {
+	info, err := os.Lstat(root)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, 0, nil
+		}
+		return 0, 0, err
+	}
+	w := newTreeWalker()
+	w.count(info)
+	if !info.IsDir() {
+		return w.size.Load(), w.files.Load(), nil
+	}
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(treeWalkers)
+	eg.Go(func() error { return w.walkDir(ctx, eg, root) })
+	err = eg.Wait()
+	return w.size.Load(), w.files.Load(), err
+}
+
+type treeInode struct{ dev, ino uint64 }
+
+// treeWalkerShards splits the set of counted inodes, so the directories a
+// walk reads at once rarely wait on each other to record one.
+const treeWalkerShards = 64
+
+// treeWalker is one treeWalk's count, shared by the directories it reads at
+// once.
+type treeWalker struct {
+	size  atomic.Int64
+	files atomic.Int64
+	// seen holds every inode counted, so a hard link takes no more space,
+	// even if its link count changes during the walk.
+	seen [treeWalkerShards]struct {
+		mu     sync.Mutex
+		inodes map[treeInode]struct{}
+	}
+}
+
+func newTreeWalker() *treeWalker {
+	w := &treeWalker{}
+	for i := range w.seen {
+		w.seen[i].inodes = map[treeInode]struct{}{}
+	}
+	return w
+}
+
+// count adds an entry, and the space it takes unless that inode was
+// counted already.
+func (w *treeWalker) count(info fs.FileInfo) {
+	w.files.Add(1)
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		w.size.Add(info.Size())
+		return
+	}
+	key := treeInode{uint64(st.Dev), uint64(st.Ino)} //nolint:unconvert // types differ by platform
+	shard := &w.seen[key.ino%treeWalkerShards]
+	shard.mu.Lock()
+	_, counted := shard.inodes[key]
+	shard.inodes[key] = struct{}{}
+	shard.mu.Unlock()
+	if counted {
+		return
+	}
+	w.size.Add(int64(st.Blocks) * 512) //nolint:unconvert // types differ by platform
+}
+
+// walkDir counts dir's entries, and the trees of its subdirectories: in a
+// goroutine of eg's while one is free, here otherwise.
+func (w *treeWalker) walkDir(ctx context.Context, eg *errgroup.Group, dir string) error {
+	f, err := os.Open(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// Removed while walking.
+			return nil
+		}
 		return err
 	}
-	for _, ent := range ents {
-		if err := os.RemoveAll(filepath.Join(dir, ent.Name())); err != nil {
+	defer f.Close()
+	for {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
+		ents, readErr := f.ReadDir(1024)
+		for _, ent := range ents {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			info, err := ent.Info()
+			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					continue
+				}
+				return err
+			}
+			w.count(info)
+			if !ent.IsDir() {
+				continue
+			}
+			sub := filepath.Join(dir, ent.Name())
+			if !eg.TryGo(func() error { return w.walkDir(ctx, eg, sub) }) {
+				if err := w.walkDir(ctx, eg, sub); err != nil {
+					return err
+				}
+			}
+		}
+		switch {
+		case errors.Is(readErr, io.EOF):
+			return nil
+		case errors.Is(readErr, fs.ErrNotExist):
+			return nil
+		case readErr != nil:
+			return readErr
+		}
 	}
-	return nil
 }
 
 // keyedMutex is a mutex per key.

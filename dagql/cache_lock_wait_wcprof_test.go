@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/wcprof"
 )
 
@@ -170,4 +172,72 @@ func waitBlockedIn(t *testing.T, fn string) {
 		}
 		runtime.Gosched()
 	}
+}
+
+// A lazy evaluation's gathering of its install spans is a step of its own
+// under the evaluation's op, and its walk under the graph lock is a step of
+// its own under that, dagql.installSpans.walk, with the walk's wait for the
+// lock under it: a profile tells them apart from the evaluation's other
+// set-up, and a writer waiting behind readers lines up with the walks that
+// read when it began.
+func TestLazyInstallSpansWaitForLocksWcprof(t *testing.T) {
+	wcprof.EnsureRecorder()
+	const sessionID = "lazy-install-spans-session"
+	const resultID = sharedResultID(7)
+	_, rootCtx, root := newLazyRecordingRoot("POST /query")
+	defer root.End()
+	// A module call's return on the result, so the gathering walks above it
+	// under the graph lock.
+	const moduleReturnID = sharedResultID(8)
+	result := &sharedResult{id: resultID}
+	moduleReturn := &sharedResult{id: moduleReturnID}
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{resultID: result, moduleReturnID: moduleReturn}}
+	c.egraphMu.Lock()
+	require.NoError(t, c.addExplicitDependencyLocked(t.Context(), moduleReturn, result, "test"))
+	c.egraphMu.Unlock()
+	_, producer := Tracer(rootCtx).Start(rootCtx, "Container.withExec")
+	producer.End()
+	_, moduleCall := Tracer(rootCtx).Start(rootCtx, "Go.binary")
+	moduleCall.End()
+	c.sessionMu.Lock()
+	c.sessionLazySpansBySession = map[string]map[sharedResultID]trace.SpanContext{
+		sessionID: {resultID: producer.SpanContext()},
+	}
+	c.sessionMu.Unlock()
+	c.recordSessionResultInstallSpanLocked(t.Context(), sessionID, resultID, producer.SpanContext(), false)
+	c.recordSessionResultInstallSpanLocked(t.Context(), sessionID, moduleReturnID, moduleCall.SpanContext(), true)
+
+	evalCtx := wcprof.ContextWithProfiling(engine.ContextWithClientMetadata(rootCtx, &engine.ClientMetadata{SessionID: sessionID, ClientID: "client-1"}))
+	evalCtx, lazyOp := wcprof.BeginOp(evalCtx, wcprof.OpKindLazy, "Container.withExec", wcprof.OpOpts{})
+
+	c.egraphMu.Lock()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, lazySpan, isResume := c.beginOTelLazyOp(evalCtx, resultID, LazyGroupWhole, &ResultCall{Field: "withExec"}, "")
+		var err error
+		endOTelLazyOp(lazySpan, nil, isResume, resultID, false, false, "", lazySpanCacheState{}, &err)
+	}()
+	waitBlockedIn(t, "wcprof.ReadLock(")
+	c.egraphMu.Unlock()
+	<-done
+	lazyOp.End(wcprof.OutcomeOK)
+
+	header, events := lockWaitTestDump(t)
+	steps := map[uint64]bool{}
+	for _, ev := range events {
+		if ev.Type == "op" && header.Strings[ev.ClassID] == "lazy.installSpans" && ev.ParentID == lazyOp.ID() {
+			require.Equal(t, wcprof.OpKindInternal.String(), ev.OpKind)
+			steps[ev.OpID] = true
+		}
+	}
+	require.Len(t, steps, 1, "no lazy.installSpans step under the lazy op")
+	walks := map[uint64]bool{}
+	for _, ev := range events {
+		if ev.Type == "op" && header.Strings[ev.ClassID] == "dagql.installSpans.walk" && steps[ev.ParentID] {
+			walks[ev.OpID] = true
+		}
+	}
+	require.Len(t, walks, 1, "no dagql.installSpans.walk step under the gathering")
+	requireWaitUnder(t, header, events, walks, egraphLockIdent)
 }

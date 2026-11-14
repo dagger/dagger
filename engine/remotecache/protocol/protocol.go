@@ -71,6 +71,8 @@ const (
 	TypeSettled  Type = "settled"
 	TypeClaims   Type = "claims"
 	TypeClaimed  Type = "claimed"
+	TypeRestore  Type = "restore"
+	TypeRestored Type = "restored"
 	TypeError    Type = "error"
 )
 
@@ -98,6 +100,8 @@ func ReplyType(request Type) (Type, bool) {
 		return TypeSettled, true
 	case TypeClaims:
 		return TypeClaimed, true
+	case TypeRestore:
+		return TypeRestored, true
 	}
 	return "", false
 }
@@ -119,6 +123,26 @@ func NewEnvelope(id, re uint64, typ Type, body any) (Envelope, error) {
 		return Envelope{}, fmt.Errorf("encode %s body: %w", typ, err)
 	}
 	return Envelope{ID: id, Re: re, Type: typ, Body: raw}, nil
+}
+
+// EncodeEnvelope returns the message an envelope of body is, the bytes
+// json.Marshal gives for NewEnvelope's envelope, in one encoding: NewEnvelope
+// encodes the body into its own bytes, and encoding the envelope checks and
+// copies them again.
+func EncodeEnvelope(id, re uint64, typ Type, body any) ([]byte, error) {
+	data, err := json.Marshal(outgoing{ID: id, Re: re, Type: typ, Body: body})
+	if err != nil {
+		return nil, fmt.Errorf("encode %s body: %w", typ, err)
+	}
+	return data, nil
+}
+
+// outgoing is an Envelope whose body is encoded with it.
+type outgoing struct {
+	ID   uint64 `json:"id"`
+	Re   uint64 `json:"re,omitempty"`
+	Type Type   `json:"type"`
+	Body any    `json:"body"`
 }
 
 // Decode decodes the envelope's body into v.
@@ -146,6 +170,9 @@ type Hello struct {
 	// it for nothing until an Open with a later period.
 	Period  uint64 `json:"period"`
 	Settled bool   `json:"settled,omitempty"`
+	// Restored are the set files (Restore) this engine process merged
+	// whole, by digest: the service doesn't offer them again.
+	Restored []digest.Digest `json:"restored,omitempty"`
 }
 
 // Welcome is the service's reply to Hello.
@@ -191,11 +218,15 @@ type Claims struct {
 }
 
 // SessionClaim is one session and its claim: ID is the engine session's ID,
-// as its telemetry names it (dagger.io/engine.session), and Claim is the
-// claim ID its client connected with.
+// as its telemetry names it (dagger.io/engine.session), Claim is the claim
+// ID its client connected with, and Started is when the session started,
+// on the engine's clock, the clock its spans' times are on: the service
+// counts how far into the claim's run each of the run's calls came from its
+// first session's start.
 type SessionClaim struct {
-	ID    string `json:"id"`
-	Claim string `json:"claim"`
+	ID      string    `json:"id"`
+	Claim   string    `json:"claim"`
+	Started time.Time `json:"started"`
 }
 
 // Claimed is the service's reply to Claims.
@@ -246,7 +277,9 @@ const (
 
 // Exported answers Export. Bundle is nil when no root survived. The engine
 // keeps the bundle's chains open under ExportID until Upload, or until the
-// connection ends.
+// connection ends. The bundle's records carry no offers of parts: an
+// engine's offers are the Cloud's own, and its parts go as the bundle's
+// outputs.
 type Exported struct {
 	ExportID string             `json:"exportID,omitempty"`
 	Bundle   *dagql.ValueBundle `json:"bundle,omitempty"`
@@ -272,11 +305,19 @@ type SkippedRoot struct {
 // unknown again, so that the next export of the same roots carries them in
 // full. It holds nothing that export carried or held; it can hold rows below
 // them that earlier merges proved.
+//
+// Stale, on an Upload without Merged for a merge refused as stale, names by
+// the engine's numbers the held rows the Cloud found stale: only those become
+// unknown, and the bundle's other held rows stay known. The Cloud names every
+// held row stale by one check of the merge; one stale by another check is
+// named by the next export's refusal, so each refusal makes at least one row
+// unknown until the export merges.
 type Upload struct {
 	ExportID string                   `json:"exportID"`
 	URLs     map[digest.Digest]string `json:"urls"`
 	Packs    []UploadPack             `json:"packs,omitempty"`
 	Merged   bool                     `json:"merged,omitempty"`
+	Stale    []uint64                 `json:"stale,omitempty"`
 }
 
 // UploadPack is one pack to upload: its ID, its presigned PUT, and its
@@ -482,13 +523,15 @@ type Lookup struct {
 // extra digests, which the engine's own lookup tries after the recipe, and
 // its term, which that lookup tries last: the call's self digest over its
 // input digests, matched by the inputs' classes. Field names the call, for
-// logs.
+// logs. Caller is the recipe digest of the cached call the missed call was
+// made under (dagger.io/cache.caller), or empty at its session's top.
 type LookupMiss struct {
 	Recipe digest.Digest   `json:"recipe"`
 	Extra  []digest.Digest `json:"extra,omitempty"`
 	Field  string          `json:"field,omitempty"`
 	Self   digest.Digest   `json:"self,omitempty"`
 	Inputs []digest.Digest `json:"inputs,omitempty"`
+	Caller digest.Digest   `json:"caller,omitempty"`
 }
 
 // LookedUp answers Lookup, one item per miss, in order. The service sends it
@@ -532,3 +575,82 @@ const (
 	LookupPartsPartial  LookupParts = "partial"
 	LookupPartsNone     LookupParts = "none"
 )
+
+// Restore asks the engine to fetch published files of its claims' sets and
+// merge their parts (SetFile), each through the path a Merge takes. The
+// engine merges heads and wholes on lanes of their own, side by side: each
+// lane one file at a time, in the order the restores arrived, and each
+// file's parts in the file's order. So a head never waits for a whole, even
+// one of another set that started first. A restore can come at any time after Welcome. Nothing in
+// a restore fails it: a file that can't be fetched, read or merged is
+// reported in Restored, and leaves the engine as it was without it, but for
+// the parts that merged.
+type Restore struct {
+	Sets []RestoreSet `json:"sets"`
+}
+
+// RestoreSet is one claim's set: its head, its whole, or both. Check names
+// the set's check, for logs only.
+type RestoreSet struct {
+	Check string   `json:"check"`
+	Head  *SetFile `json:"head,omitempty"`
+	Whole *SetFile `json:"whole,omitempty"`
+}
+
+// SetFile is one published file of a set: the digest and size of its bytes,
+// which name it in Restored and Hello, its download address, and the
+// download addresses of the blobs and packs its parts name (AddressTable).
+type SetFile struct {
+	Digest  digest.Digest     `json:"digest"`
+	Size    int64             `json:"size"`
+	Address dagql.BlobAddress `json:"address"`
+	Table   AddressTable      `json:"table"`
+}
+
+// Restored answers Restore once every file it named is done, one item per
+// file, as the restore named them, heads first. Generation and EngineTime are
+// the engine cache's start count and clock when it answers, as Merged has
+// them.
+type Restored struct {
+	Generation uint64         `json:"generation"`
+	EngineTime int64          `json:"engineTime"`
+	Files      []RestoredFile `json:"files"`
+}
+
+// RestoredFile is what the engine did with one file: Complete when every
+// part merged, Already when this engine process had merged it whole and did
+// nothing. Parts counts the parts that merged, Records the records they
+// carried, and Rows what their merges did with them. FirstCommit is the
+// engine's clock, in Unix nanoseconds, when its first part committed, and
+// Error is what stopped it, if anything did.
+type RestoredFile struct {
+	Digest      digest.Digest `json:"digest"`
+	Complete    bool          `json:"complete,omitempty"`
+	Already     bool          `json:"already,omitempty"`
+	Parts       int           `json:"parts"`
+	Records     int           `json:"records"`
+	Rows        RowCounts     `json:"rows"`
+	FirstCommit int64         `json:"firstCommit,omitempty"`
+	Error       string        `json:"error,omitempty"`
+}
+
+// RowCounts counts merged records by what their merge did with each
+// (dagql.MergeRowCounts).
+type RowCounts struct {
+	Held     int `json:"held,omitempty"`
+	Kept     int `json:"kept,omitempty"`
+	Created  int `json:"created,omitempty"`
+	Stored   int `json:"stored,omitempty"`
+	Replaced int `json:"replaced,omitempty"`
+	Retired  int `json:"retired,omitempty"`
+}
+
+// AddressTable is a set file's download addresses: one for each blob and
+// pack its parts' outputs name, by the layer's digest or the pack's ID. A
+// set file carries none of its own, so that only the table is signed again
+// as addresses expire. One the store couldn't sign is left out: a read of
+// its layer renews it, by its chain's renewal key.
+type AddressTable struct {
+	Blobs map[digest.Digest]dagql.BlobAddress `json:"blobs,omitempty"`
+	Packs map[digest.Digest]dagql.BlobAddress `json:"packs,omitempty"`
+}

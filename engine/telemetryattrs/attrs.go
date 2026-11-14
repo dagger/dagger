@@ -148,6 +148,11 @@ const (
 	// resumption does not resolve the owning API span's pending state. (bool)
 	DagPartialAttr = "dagger.io/dag.partial"
 
+	// LazyAnchorAttr marks a lazy result's evaluation span that carries the
+	// result's cause links in its session: later evaluations of the result
+	// in the session link only this span. (bool)
+	LazyAnchorAttr = "dagger.io/lazy.anchor"
+
 	// GenerateSkippedAttr marks a span reporting a workspace module that
 	// best-effort `dagger generate` skipped because it could not be loaded. The
 	// TUI collects these into a persisted "SKIPPED MODULES" final-report section
@@ -799,6 +804,15 @@ const (
 	// call with no implicit inputs it equals CacheSelfDigestAttr.
 	CachePairingDigestAttr = "dagger.io/cache.pairing_digest"
 
+	// CacheCallerAttr is the recipe digest (dagger.io/dag.digest) of the
+	// nearest enclosing cached call: the call this one was made while
+	// running, a resolver's own call for the calls it selects, a module
+	// function's call for the calls the module makes. It is omitted for a
+	// call at its session's top. The remote cache service orders what it
+	// sends an engine by it: an engine asks for its run's calls from the
+	// top down, and never for those below a call it is served.
+	CacheCallerAttr = "dagger.io/cache.caller"
+
 	// CacheOutputContentDigestAttr is the completed result's RECORDED content
 	// digest — the last content-labeled extra digest on the result's
 	// authoritative call frame at span completion — emitted only when
@@ -854,6 +868,11 @@ const (
 	CachePartSizesAttr = "dagger.io/cache.parts.sizes"
 	// CacheTypeAttr is the name of the entry's type, such as "Container".
 	CacheTypeAttr = "dagger.io/cache.type"
+	// CacheImageAttr is "true" when the engine image ships the entry: the
+	// image's merge gave it an image holding, so every engine built from the
+	// image has it and its parts, and the engine never exports them (the
+	// Cloud carries only what engines made); absent otherwise.
+	CacheImageAttr = "dagger.io/cache.image"
 	// CacheReplacementsAttr is the decimal-string count of the times the
 	// entry's value was replaced in place under the same result number, read
 	// with the state beside it: the parts, dependencies and expiry it names
@@ -1079,12 +1098,14 @@ type EngineRetentionDrop struct {
 }
 
 // EngineShareEvent is the body of an engine.share event: every part one
-// snapshot-sharing pass completed.
+// snapshot-sharing pass completed, or the complete parts an entry's spans
+// left out, which the engine reports once it can read the entry's record.
 type EngineShareEvent struct {
 	Parts []EngineSharedPart `json:"parts"`
 }
 
-// EngineSharedPart is one part a snapshot-sharing pass completed.
+// EngineSharedPart is one complete part of an entry that no span reported:
+// one a snapshot-sharing pass completed, or one an entry's spans left out.
 type EngineSharedPart struct {
 	// ResultID is the entry's result number.
 	ResultID uint64 `json:"resultId"`
@@ -1095,6 +1116,9 @@ type EngineSharedPart struct {
 	// Replacements is the entry's replacement count (CacheReplacementsAttr),
 	// when not 0: the part and the dependencies are its current value's.
 	Replacements uint64 `json:"replacements,omitempty"`
+	// RawSize is the part's raw size, as CachePartSizesAttr gives a span's,
+	// when the engine read it; absent when it didn't.
+	RawSize *int64 `json:"rawSize,omitempty"`
 }
 
 // EngineReadEvent is the body of an engine.read event: the parts of entries
@@ -1121,4 +1145,57 @@ type EngineStopEvent struct {
 	Clean bool `json:"clean"`
 	// SavedEntries counts the entries the save wrote.
 	SavedEntries int `json:"savedEntries"`
+	// PeakResident is the engine process's peak resident memory, in bytes,
+	// or 0 when unknown.
+	PeakResident int64 `json:"peakResident,omitempty"`
+	// Restores are what the engine did with each set file the remote cache
+	// service had it restore, in the order they ended.
+	Restores []EngineRestore `json:"restores,omitempty"`
+	// PartsWithoutSource counts, by reason, the parts work read with no
+	// source to read them from over the engine's life, each made again: by
+	// an operation of the value, or by running its call again (call_run)
+	// (dagql.Cache.PartsWithoutSource).
+	PartsWithoutSource map[string]uint64 `json:"partsWithoutSource,omitempty"`
+	// UncountedMisses counts the lookup misses the engine dropped before a
+	// restored part could count them as late (EngineRestorePart.Late): a
+	// run with any undercounts its late lookups.
+	UncountedMisses uint64 `json:"uncountedMisses,omitempty"`
+}
+
+// EngineRestore is what an engine did with one set file: the check's name,
+// which file of its set ("head" or "whole"), its digest and size; when its
+// restore arrived and its download began and ended, on the engine's clock,
+// in Unix nanoseconds (0 when not fetched); each part that merged; whether
+// every part merged, whether the engine had merged it whole already, and
+// what stopped it. PeakBefore and PeakAfter are the engine's peak resident
+// memory in bytes before its first part and after its last, 0 when unknown.
+type EngineRestore struct {
+	Check        string              `json:"check"`
+	Kind         string              `json:"kind"`
+	Digest       string              `json:"digest"`
+	Bytes        int64               `json:"bytes"`
+	Arrived      int64               `json:"arrived"`
+	FetchStarted int64               `json:"fetchStarted,omitempty"`
+	Fetched      int64               `json:"fetched,omitempty"`
+	Parts        []EngineRestorePart `json:"parts,omitempty"`
+	Complete     bool                `json:"complete,omitempty"`
+	Already      bool                `json:"already,omitempty"`
+	Error        string              `json:"error,omitempty"`
+	PeakBefore   int64               `json:"peakBefore,omitempty"`
+	PeakAfter    int64               `json:"peakAfter,omitempty"`
+}
+
+// EngineRestorePart is one merged part of a set file: its records, when it
+// committed (Unix nanoseconds), and the lookups that missed before it
+// committed and that it would have served, with the longest and shortest
+// time from such a miss to the commit; then how long its commit waited for
+// the cache's lock and held it. Durations are in nanoseconds.
+type EngineRestorePart struct {
+	Records    int   `json:"records"`
+	Committed  int64 `json:"committed"`
+	Late       int   `json:"late,omitempty"`
+	WorstLate  int64 `json:"worstLate,omitempty"`
+	LeastLate  int64 `json:"leastLate,omitempty"`
+	LockWait   int64 `json:"lockWait,omitempty"`
+	CommitHold int64 `json:"commitHold,omitempty"`
 }

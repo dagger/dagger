@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -344,9 +345,9 @@ func mergeTestUnderLiveRoot(t *testing.T, bundle ValueBundle) ValueBundle {
 	dep.ExpiresAtUnix = time.Now().Add(-time.Hour).Unix()
 	root := TransferredValue{Ordinal: 2, SenderNumber: dep.SenderNumber + 1000, DependencyIDs: []uint64{1}}
 	root.Record = dep.Record
-	root.Record.ResultID = 2
+	root.Record.ResultID = root.SenderNumber
 	if root.Record.Envelope.ResultID != 0 {
-		root.Record.Envelope.ResultID = 2
+		root.Record.Envelope.ResultID = root.SenderNumber
 	}
 	root.Record.Envelope.PendingOffers = nil
 	call := dep.Record.Call.clone()
@@ -384,8 +385,8 @@ func TestMergeValuesStoresARecordOnTheCloud(t *testing.T) {
 	require.Equal(t, []HolderKey{sender, other}, cloud.EquivalentHolders(recipe.String()), "the recipe digest names the entry's class")
 	cloud.egraphMu.RLock()
 	stored, replacements := entry.persistedEnvelope != nil, entry.replacements
-	_, keeps := entry.holders[other]
-	_, holds := entry.holders[sender]
+	keeps := entry.holderLocked(other) != nil
+	holds := entry.holderLocked(sender) != nil
 	noValue = entry.noValueLocked()
 	cloud.egraphMu.RUnlock()
 	require.True(t, stored)
@@ -405,7 +406,7 @@ func TestMergeValuesReplacesAnExpiredCloudRecord(t *testing.T) {
 	first, err := cloud.MergeValues(ctx, "cache-a", bundle)
 	require.NoError(t, err)
 	number := first.Imported()[0].ResultID
-	stored, err := cloud.SetStoredPart(ctx, number, testLiveOffer(), 0)
+	stored, _, err := cloud.SetStoredPart(ctx, number, testLiveOffer(), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 	cloud.egraphMu.RLock()
@@ -424,23 +425,20 @@ func TestMergeValuesReplacesAnExpiredCloudRecord(t *testing.T) {
 }
 
 // mergeTestThroughTheCloud merges an engine's export into a new Cloud cache,
-// and returns the bundle the Cloud sends on: the same records, named by the
-// Cloud's numbers.
+// and returns the bundle the Cloud sends on: the same records, as the Cloud
+// stores them.
 func mergeTestThroughTheCloud(t *testing.T, exported ValueBundle) (context.Context, *Cache, ValueBundle) {
 	t.Helper()
 	ctx, cloud := storedPartTestCache(t, WithBlobStore())
 	stored, err := cloud.MergeValues(ctx, "cache-a", exported)
 	require.NoError(t, err)
-	sent := exported
-	sent.Values = append([]TransferredValue(nil), exported.Values...)
-	for i := range sent.Values {
-		for _, value := range stored.Values {
-			if value.Ordinal == sent.Values[i].Ordinal {
-				sent.Values[i].SenderNumber = value.Number
-			}
-		}
+	var roots []uint64
+	for _, root := range stored.Roots {
+		roots = append(roots, root.Number)
 	}
-	return ctx, cloud, sent
+	sent, err := cloud.StoredBundle(ctx, roots, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	return ctx, cloud, sent.Bundle
 }
 
 // mergeTestHolding returns cache's holding on the entry of key.
@@ -476,7 +474,7 @@ func TestApplyMergedReplyCreatesTheEngineHoldings(t *testing.T) {
 	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
 	require.NoError(t, err)
 	require.Len(t, change.Candidates, 2)
-	collected, err := cloud.CollectRemoteHoldings(ctx, change.Candidates)
+	collected, _, err := cloud.CollectRemoteHoldings(ctx, change.Candidates)
 	require.NoError(t, err)
 	require.Empty(t, collected)
 	for _, value := range reply.Values {
@@ -657,7 +655,7 @@ func TestHeldValueStateInEveryOrder(t *testing.T) {
 		a.call(callRow{key: key(r), session: "r", holding: holdingOf("r", p, q)})
 		require.Empty(t, a.collect())
 		for _, i := range order {
-			collected, err := cloud.CollectRemoteHoldings(t.Context(), events[i].apply(t, cloud))
+			collected, _, err := cloud.CollectRemoteHoldings(t.Context(), events[i].apply(t, cloud))
 			require.NoError(t, err)
 			require.NotContains(t, collected, key(q), "order %v: Q is never collected", order)
 		}
@@ -686,14 +684,15 @@ func TestCollectRemoteHoldingForAGoneAnswer(t *testing.T) {
 	a.call(callRow{key: key(3), session: "s", holding: holdingOf("parent", 1)})
 	require.Empty(t, a.collect())
 
-	candidates, found, err := cloud.CollectRemoteHolding(t.Context(), key(1))
+	change, found, err := cloud.CollectRemoteHolding(t.Context(), key(1))
 	require.NoError(t, err)
 	require.True(t, found)
+	candidates := change.Candidates
 	require.Equal(t, []HolderKey{key(2)}, candidates)
 	requireNoHolding(t, cloud, key(1))
 	require.Equal(t, []uint64{1}, requireHolding(t, cloud, key(3)).UnknownDeps, "the dependent's edge is an unknown number now")
 
-	collected, err := cloud.CollectRemoteHoldings(t.Context(), candidates)
+	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), candidates)
 	require.NoError(t, err)
 	require.Equal(t, []HolderKey{key(2)}, collected, "the dependency only it owned")
 	_, found, err = cloud.CollectRemoteHolding(t.Context(), key(1))
@@ -730,7 +729,7 @@ func TestMergeValuesOnTheCloudCreatesTheSendersHoldings(t *testing.T) {
 	require.Equal(t, []uint64{typedefNumber}, user.Deps, "the unknown number attached to the new holding")
 	require.Equal(t, []uint64{typedefNumber}, requireHolding(t, cloud, HolderKey{"cache-a", rootNumber}).Deps)
 
-	collected, err := cloud.CollectRemoteHoldings(ctx, reply.Change.Candidates)
+	collected, _, err := cloud.CollectRemoteHoldings(ctx, reply.Change.Candidates)
 	require.NoError(t, err)
 	require.Equal(t, []HolderKey{{"cache-a", rootNumber}}, collected, "the type definition's holding is its user's")
 	cloud.egraphMu.RLock()
@@ -946,7 +945,7 @@ func valueStateCloud(t *testing.T, observations []valueStateObs) valueStateFinal
 			})
 		}
 		require.NoError(t, err)
-		_, err = cloud.CollectRemoteHoldings(ctx, change.Candidates)
+		_, _, err = cloud.CollectRemoteHoldings(ctx, change.Candidates)
 		require.NoError(t, err)
 	}
 	h := requireHolding(t, cloud, key(vsR))
@@ -1236,7 +1235,7 @@ func TestApplyMergedReplyThenAPruneDrop(t *testing.T) {
 	rootKey := HolderKey{Cache: "cache-b", Number: reply.Roots[0].Number}
 	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
 	require.NoError(t, err)
-	collected, err := cloud.CollectRemoteHoldings(ctx, change.Candidates)
+	collected, _, err := cloud.CollectRemoteHoldings(ctx, change.Candidates)
 	require.NoError(t, err)
 	require.Empty(t, collected)
 	require.True(t, mergeTestHolding(t, cloud, rootKey).Retained)
@@ -1251,15 +1250,15 @@ func TestApplyMergedReplyThenAPruneDrop(t *testing.T) {
 	}
 	require.NotNil(t, drop, "the prune drops the merged root's edge")
 	require.Greater(t, drop.DroppedAt.UnixNano(), reply.EngineTimeUnixNano, "the drop is later than the commit")
-	candidates, err := cloud.ObserveRemoteRetention(ctx, rootKey, RetentionObservation{Generation: b.Identity().Generation, EngineTimeUnixNano: drop.DroppedAt.UnixNano()})
+	observed, err := cloud.ObserveRemoteRetention(ctx, rootKey, RetentionObservation{Generation: b.Identity().Generation, EngineTimeUnixNano: drop.DroppedAt.UnixNano()})
 	require.NoError(t, err)
-	collected, err = cloud.CollectRemoteHoldings(ctx, candidates)
+	collected, _, err = cloud.CollectRemoteHoldings(ctx, observed.Candidates)
 	require.NoError(t, err)
 	require.Len(t, collected, 2, "the root's holding and its dependency's")
 
 	change, err = cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
 	require.NoError(t, err)
-	collected, err = cloud.CollectRemoteHoldings(ctx, change.Candidates)
+	collected, _, err = cloud.CollectRemoteHoldings(ctx, change.Candidates)
 	require.NoError(t, err)
 	require.Empty(t, collected)
 	require.True(t, mergeTestHolding(t, cloud, rootKey).Retained, "a late reply recreates the stale retention")
@@ -1288,7 +1287,7 @@ func TestApplyMergedReplyKeepsAKeptEntrysOwnDependencies(t *testing.T) {
 
 	change, err := cloud.ApplyMergedReply(ctx, "cache-b", sent, reply)
 	require.NoError(t, err)
-	collected, err := cloud.CollectRemoteHoldings(ctx, change.Candidates)
+	collected, _, err := cloud.CollectRemoteHoldings(ctx, change.Candidates)
 	require.NoError(t, err)
 	pNewKey := HolderKey{Cache: "cache-b", Number: uint64(pNew.cacheSharedResult().id)}
 	require.Equal(t, []HolderKey{pNewKey}, collected, "P' is nobody's dependency")
@@ -1412,7 +1411,7 @@ func TestMergeValuesKeepsAnExpiredDependencysStoredPart(t *testing.T) {
 	reply, err := cloud.MergeValues(ctx, "cache-a", first)
 	require.NoError(t, err)
 	number := numberOf(reply, firstP)
-	stored, err := cloud.SetStoredPart(ctx, number, testLiveOffer(), 0)
+	stored, _, err := cloud.SetStoredPart(ctx, number, testLiveOffer(), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
 
@@ -2275,10 +2274,10 @@ func TestMergeValuesInstalledRecordNamesItsEntry(t *testing.T) {
 			number := reply.Imported()[0].ResultID
 			into.egraphMu.RLock()
 			res := into.resultsByID[sharedResultID(number)]
-			envelope, frame := *res.persistedEnvelope, res.loadResultCall()
+			rec := storedTestRecordLocked(t, res)
 			into.egraphMu.RUnlock()
-			require.Equal(t, number, envelope.ResultID, "the record names its entry")
-			_, err = normalizeTransferRecord(PersistedRecord{ResultID: number, Envelope: envelope, Call: frame})
+			require.Equal(t, number, rec.Envelope.ResultID, "the record names its entry")
+			_, err = normalizeTransferRecord(PersistedRecord{ResultID: number, Envelope: rec.Envelope, Call: rec.Call})
 			require.NoError(t, err, "the entry exports")
 		})
 	}
@@ -2419,7 +2418,9 @@ func TestMergeValuesItemThroughTheCloudIsNotRead(t *testing.T) {
 	cloud.egraphMu.RUnlock()
 
 	cctx, c, csrv := transferTestCache(t)
-	reply, err = c.MergeValues(cctx, cloudCacheID, exportTestBundle(t, cloudCtx, cloud, Result[Typed]{shared: cloudItem}))
+	sent, err := cloud.StoredBundle(cloudCtx, []uint64{uint64(cloudItem.id)}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	reply, err = c.MergeValues(cctx, cloudCacheID, sent.Bundle)
 	require.NoError(t, err)
 	item, err := c.LoadResultByResultID(cctx, "test-session", csrv, reply.Imported()[0].ResultID)
 	require.NoError(t, err)
@@ -2487,4 +2488,270 @@ func TestMergeCommitNamesItsHolder(t *testing.T) {
 		require.Equal(t, mergeOp.ID(), h, "each take names the merge")
 	}
 	require.Equal(t, wcprof.HolderUnknown, released, "each release clears the holder")
+}
+
+// A merge's reply counts its records by what the commit did with each: the
+// first merge of a bundle creates its record, the same bundle again keeps
+// it, and an expired entry nothing uses takes it in place.
+func TestMergeValuesCountsItsRowsByAction(t *testing.T) {
+	t.Parallel()
+	bundle, _ := mergeTestSource(t, "root", "value")
+	require.Len(t, bundle.Values, 1)
+	bctx, b, _ := transferTestCache(t)
+	first, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, MergeRowCounts{Created: 1}, first.Rows)
+	again, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, MergeRowCounts{Kept: 1}, again.Rows)
+
+	cctx, c, csrv := transferTestCache(t)
+	local := persistedListTestResult(t, cctx, c, csrv, "root", &transferTestValue{Text: "local"})
+	require.NoError(t, c.ReleaseSession(cctx, "test-session"))
+	mergeTestExpire(c, local.cacheSharedResult())
+	replaced, err := c.MergeValues(cctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, MergeRowCounts{Replaced: 1}, replaced.Rows)
+}
+
+// A merge's reply times its targets' warming: capturing a target's parts
+// takes the graph lock for writing, so it waits for the lock's readers, here
+// one that holds it 50 ms.
+func TestMergeValuesTimesItsWarming(t *testing.T) {
+	t.Parallel()
+	bundle, _ := mergeTestSource(t, "root", "sent")
+	bctx, b, bsrv := transferTestCache(t)
+	persistedListTestResult(t, bctx, b, bsrv, "root", &transferTestValue{Text: "local"})
+	p, err := b.PrepareValueMerge(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	const held = 50 * time.Millisecond
+	b.egraphMu.RLock()
+	started := make(chan struct{})
+	b.testWarmStarted = func() { close(started) }
+	type result struct {
+		reply MergeReply
+		err   error
+	}
+	done := make(chan result, 1)
+	go func() {
+		reply, err := b.CommitValueMerge(bctx, p)
+		done <- result{reply, err}
+	}()
+	// The reader holds the lock for held from when the warming is timed.
+	<-started
+	time.Sleep(held)
+	b.egraphMu.RUnlock()
+	r := <-done
+	require.NoError(t, r.err)
+	require.Equal(t, MergeRowCounts{Kept: 1}, r.reply.Rows)
+	require.GreaterOrEqual(t, r.reply.Warm, held, "the target's capture waited for the reader")
+}
+
+// A commit's warming holds its targets for their captures, and lets them go,
+// with a few holds of the graph lock for writing, not two for each target:
+// each hold waits for the lock's readers, and a commit warms thousands of
+// targets.
+func TestMergeValuesWarmsItsTargetsInFewHolds(t *testing.T) {
+	t.Parallel()
+	const targets = 20
+	ctx, c, srv := transferTestCache(t)
+	bctx, b, bsrv := transferTestCache(t)
+	var roots []AnyResult
+	for i := range targets {
+		field := fmt.Sprintf("root-%d", i)
+		roots = append(roots, persistedListTestResult(t, ctx, c, srv, field, &transferTestValue{Text: "sent"}))
+		persistedListTestResult(t, bctx, b, bsrv, field, &transferTestValue{Text: "local"})
+	}
+	bundle := exportTestBundle(t, ctx, c, roots...)
+	var warming bool
+	var holds int
+	b.testWarmStarted = func() { warming = true }
+	b.testBeforeTransferCommit = func() { warming = false }
+	b.testCaptureWriteLock = func() {
+		if warming {
+			holds++
+		}
+	}
+	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, targets, reply.Rows.Kept, "every record lands on a target")
+	require.Positive(t, holds, "the warming captured its targets")
+	require.LessOrEqual(t, holds, 2, "one hold to take the targets and one to let them go")
+}
+
+// warmingTestCaches makes a sending cache's bundle of n roots, each a value
+// with a part, and two receiving caches that each computed the same n
+// recipes, so that every record lands on a target with a value to capture.
+func warmingTestCaches(t *testing.T, n int) (ValueBundle, [2]*Cache, [2]context.Context, [2][]*sharedResult) {
+	t.Helper()
+	ctx, c, srv := transferTestCache(t)
+	var roots []AnyResult
+	var caches [2]*Cache
+	var ctxs [2]context.Context
+	var targets [2][]*sharedResult
+	for i := range 2 {
+		bctx, b, bsrv := transferTestCache(t)
+		caches[i], ctxs[i] = b, bctx
+		for j := range n {
+			local := persistedListTestResult(t, bctx, b, bsrv, fmt.Sprintf("root-%d", j), &transferTestValue{Text: "ready"})
+			targets[i] = append(targets[i], local.cacheSharedResult())
+		}
+	}
+	for j := range n {
+		roots = append(roots, persistedListTestResult(t, ctx, c, srv, fmt.Sprintf("root-%d", j), &transferTestValue{Text: "ready"}))
+	}
+	return exportTestBundle(t, ctx, c, roots...), caches, ctxs, targets
+}
+
+// warmingTestOutcome is what a merge left and reported, as two caches can
+// compare: each record's reported parts and offers by ordinal, the reply's
+// counts, and each target's complete parts and whether its capture counts.
+func warmingTestOutcome(t *testing.T, b *Cache, reply MergeReply, targets []*sharedResult) string {
+	t.Helper()
+	var w strings.Builder
+	fmt.Fprintf(&w, "rows %+v\n", reply.Rows)
+	for _, v := range reply.Values {
+		fmt.Fprintf(&w, "value %d parts %v offered %v\n", v.Ordinal, v.Parts, v.OfferedParts)
+	}
+	b.egraphMu.RLock()
+	defer b.egraphMu.RUnlock()
+	for i, target := range targets {
+		keys, current := completePartKeysCoverageLocked(target)
+		fmt.Fprintf(&w, "target %d parts %v current %t\n", i, keys, current)
+	}
+	return w.String()
+}
+
+// bumpTestRevision changes a row's value revision, as a replaced record
+// does: a capture taken before no longer describes it.
+func bumpTestRevision(b *Cache, row *sharedResult) {
+	b.egraphMu.Lock()
+	row.payloadMu.Lock()
+	row.payloadRevision++
+	row.payloadMu.Unlock()
+	b.egraphMu.Unlock()
+}
+
+// A merge whose targets are captured together, in the prepare and in pieces,
+// leaves and reports what capturing them one by one, as each row is held
+// alone, leaves and reports: every record's parts, the counts, and each
+// target's captured parts.
+func TestMergeWarmingTogetherIsWarmingOneByOne(t *testing.T) {
+	t.Parallel()
+	bundle, b, ctx, targets := warmingTestCaches(t, 6)
+	for _, target := range targets[0] {
+		b[0].completePartKeys(ctx[0], target)
+	}
+	one, err := b[0].MergeValues(ctx[0], cloudCacheID, bundle)
+	require.NoError(t, err)
+	b[1].capturePieceSize = 4
+	together, err := b[1].MergeValues(ctx[1], cloudCacheID, bundle)
+	require.NoError(t, err)
+	want := warmingTestOutcome(t, b[0], one, targets[0])
+	require.Contains(t, want, "snapshot", "the targets' parts are captured")
+	require.Equal(t, want, warmingTestOutcome(t, b[1], together, targets[1]))
+}
+
+// A target whose value changes after its targets were warmed together, and
+// before the commit, is captured again in the commit, as one captured one by
+// one and changed is captured again: both report its parts as they stand at
+// the commit.
+func TestMergeWarmingCapturesAgainWhatChangedSinceThePrepare(t *testing.T) {
+	t.Parallel()
+	bundle, b, ctx, targets := warmingTestCaches(t, 4)
+	for _, target := range targets[0] {
+		b[0].completePartKeys(ctx[0], target)
+	}
+	bumpTestRevision(b[0], targets[0][1])
+	b[0].completePartKeys(ctx[0], targets[0][1])
+	one, err := b[0].MergeValues(ctx[0], cloudCacheID, bundle)
+	require.NoError(t, err)
+
+	p, err := b[1].PrepareValueMerge(ctx[1], cloudCacheID, bundle)
+	require.NoError(t, err)
+	b[1].warmMergeTargetParts(ctx[1], p.prep)
+	changed := targets[1][1]
+	require.True(t, completePartsCurrent(changed, nil), "warmed together")
+	bumpTestRevision(b[1], changed)
+	require.False(t, completePartsCurrent(changed, nil), "its capture no longer describes it")
+	together, err := b[1].CommitValueMerge(ctx[1], p)
+	require.NoError(t, err)
+	require.True(t, completePartsCurrent(changed, nil), "the commit captured it again")
+	require.Equal(t, warmingTestOutcome(t, b[0], one, targets[0]), warmingTestOutcome(t, b[1], together, targets[1]))
+}
+
+// A target whose value changes while the warming holds it, after its piece
+// is taken and before its capture, is captured as it stands then, as a row
+// changed and then captured alone is.
+func TestMergeWarmingCapturesATargetChangedWhileHeld(t *testing.T) {
+	t.Parallel()
+	bundle, b, ctx, targets := warmingTestCaches(t, 3)
+	b[1].capturePieceSize = 1
+	owners := map[*sharedResult]int64{}
+	for _, target := range targets[1] {
+		owners[target] = target.incomingOwnershipCount.Load()
+	}
+	holds, changed := 0, -1
+	b[1].testCaptureWriteLock = func() {
+		// Before the second piece: the first piece's target is held, and not
+		// yet captured.
+		if holds++; holds != 2 {
+			return
+		}
+		for i, target := range targets[1] {
+			if target.incomingOwnershipCount.Load() == owners[target]+1 {
+				require.Equal(t, -1, changed, "one target in the first piece")
+				changed = i
+			}
+		}
+		require.NotEqual(t, -1, changed, "the first piece's target is held")
+		require.False(t, completePartsCurrent(targets[1][changed], nil), "and not yet captured")
+		bumpTestRevision(b[1], targets[1][changed])
+	}
+	together, err := b[1].MergeValues(ctx[1], cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Greater(t, holds, 2, "the warming held its targets in pieces")
+
+	bumpTestRevision(b[0], targets[0][changed])
+	for _, target := range targets[0] {
+		b[0].completePartKeys(ctx[0], target)
+	}
+	one, err := b[0].MergeValues(ctx[0], cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.Equal(t, warmingTestOutcome(t, b[0], one, targets[0]), warmingTestOutcome(t, b[1], together, targets[1]))
+}
+
+// A merge's reply says which records its commit stored: each of a new
+// entry, none of a record the cache already had, and a record that
+// replaced an expired value in place.
+func TestMergeReplySaysWhichRecordsItStored(t *testing.T) {
+	t.Parallel()
+	actx, a, asrv := transferTestCache(t)
+	r := persistedListTestResult(t, actx, a, asrv, "stored-flag-root", &transferTestValue{Text: "x"})
+	bundle := exportTestBundle(t, actx, a, r)
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	stored := func(reply MergeReply) map[uint64]bool {
+		got := map[uint64]bool{}
+		for _, value := range reply.Values {
+			got[value.Number] = value.Stored
+		}
+		return got
+	}
+
+	first, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.Equal(t, 1, first.Rows.Created)
+	number := first.Values[0].Number
+	require.Equal(t, map[uint64]bool{number: true}, stored(first))
+
+	again, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.Equal(t, 1, again.Rows.Kept)
+	require.Equal(t, map[uint64]bool{number: false}, stored(again))
+
+	mergeTestExpire(cloud, storedBundleTestEntry(cloud, number))
+	replaced, err := cloud.MergeValues(ctx, "cache-a", bundle)
+	require.NoError(t, err)
+	require.Equal(t, 1, replaced.Rows.Replaced)
+	require.Equal(t, map[uint64]bool{number: true}, stored(replaced))
 }

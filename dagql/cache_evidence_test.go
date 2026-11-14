@@ -22,6 +22,7 @@ func cacheTestArmedRequest(frame *ResultCall) *CallRequest {
 	return &CallRequest{
 		ResultCall:    frame,
 		CacheEvidence: NewCacheDecision(),
+		CacheReported: true,
 	}
 }
 
@@ -694,4 +695,87 @@ func TestCacheEvidenceNilCarrierIsNoop(t *testing.T) {
 		return cacheTestIntResult(frame, 3), nil
 	})
 	assert.NilError(t, err)
+}
+
+// A call names its caller, the nearest enclosing cached call, by that call's
+// recipe digest: a call made while another call runs, as a resolver selects
+// another field, names it; a call at the top names none; and a call made
+// under a call that isn't cached names the cached call above that one.
+func TestCacheEvidenceCaller(t *testing.T) {
+	t.Parallel()
+	ctx, c := cacheTestEvidenceEnv(t)
+
+	outerFrame, innerFrame, uncachedFrame, belowFrame := cacheTestIntCall("caller-outer"), cacheTestIntCall("caller-inner"), cacheTestIntCall("caller-uncached"), cacheTestIntCall("caller-below")
+	outer, inner, uncached, below := cacheTestArmedRequest(outerFrame), cacheTestArmedRequest(innerFrame), cacheTestArmedRequest(uncachedFrame), cacheTestArmedRequest(belowFrame)
+	uncached.DoNotCache = true
+	_, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, outer, func(ctx context.Context) (AnyResult, error) {
+		if _, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, inner, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(innerFrame, 2), nil
+		}); err != nil {
+			return nil, err
+		}
+		if _, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, uncached, func(ctx context.Context) (AnyResult, error) {
+			if _, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, below, func(context.Context) (AnyResult, error) {
+				return cacheTestIntResult(belowFrame, 4), nil
+			}); err != nil {
+				return nil, err
+			}
+			return cacheTestIntResult(uncachedFrame, 3), nil
+		}); err != nil {
+			return nil, err
+		}
+		return cacheTestIntResult(outerFrame, 1), nil
+	})
+	assert.NilError(t, err)
+
+	outerRecipe, err := outer.deriveRecipeDigest(c)
+	assert.NilError(t, err)
+	assert.Equal(t, digest.Digest(""), outer.CacheEvidence.Caller, "a call at the top names no caller")
+	assert.Equal(t, outerRecipe, inner.CacheEvidence.Caller, "a call made while another runs names it")
+	assert.Equal(t, outerRecipe, below.CacheEvidence.Caller, "past a call that isn't cached, the cached call above it")
+}
+
+// A call's caller rides the context: one that reaches the cache in a
+// context that names a caller, as a module's client's calls do, names it.
+func TestCacheEvidenceCallerFromContext(t *testing.T) {
+	t.Parallel()
+	ctx, c := cacheTestEvidenceEnv(t)
+	caller := digest.FromString("a module function's call")
+
+	frame := cacheTestIntCall("caller-from-context")
+	req := cacheTestArmedRequest(frame)
+	_, err := c.GetOrInitCall(ContextWithCallerRecipe(ctx, caller), "test-session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frame, 1), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, caller, req.CacheEvidence.Caller)
+}
+
+// A cached call whose span isn't reported, as Generator.sync's isn't, names
+// no caller the service ever hears of: the calls under it name the reported
+// cached call above it, as past a call that isn't cached.
+func TestCacheEvidenceCallerSkipsAnUnreportedCall(t *testing.T) {
+	t.Parallel()
+	ctx, c := cacheTestEvidenceEnv(t)
+
+	outerFrame, hiddenFrame, belowFrame := cacheTestIntCall("caller-reported"), cacheTestIntCall("caller-unreported"), cacheTestIntCall("caller-under-unreported")
+	outer, below := cacheTestArmedRequest(outerFrame), cacheTestArmedRequest(belowFrame)
+	hidden := &CallRequest{ResultCall: hiddenFrame}
+	_, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, outer, func(ctx context.Context) (AnyResult, error) {
+		if _, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, hidden, func(ctx context.Context) (AnyResult, error) {
+			if _, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, below, func(context.Context) (AnyResult, error) {
+				return cacheTestIntResult(belowFrame, 3), nil
+			}); err != nil {
+				return nil, err
+			}
+			return cacheTestIntResult(hiddenFrame, 2), nil
+		}); err != nil {
+			return nil, err
+		}
+		return cacheTestIntResult(outerFrame, 1), nil
+	})
+	assert.NilError(t, err)
+	outerRecipe, err := outer.deriveRecipeDigest(c)
+	assert.NilError(t, err)
+	assert.Equal(t, outerRecipe, below.CacheEvidence.Caller, "past a cached call that isn't reported, the reported one above it")
 }

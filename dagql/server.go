@@ -2336,6 +2336,23 @@ func CurrentFieldIsTrivial(ctx context.Context) bool {
 	return trivial
 }
 
+type callerRecipeCtx struct{}
+
+// ContextWithCallerRecipe returns ctx naming recipe as the caller of the
+// cached calls made under it (CallerRecipe): the cache installs each cached
+// call's recipe for the calls its resolver makes, and a module's client
+// installs its function call's for the calls the module makes.
+func ContextWithCallerRecipe(ctx context.Context, recipe digest.Digest) context.Context {
+	return context.WithValue(ctx, callerRecipeCtx{}, recipe)
+}
+
+// CallerRecipe returns the recipe digest of the nearest enclosing cached
+// call (ContextWithCallerRecipe), or "" at a session's top.
+func CallerRecipe(ctx context.Context) digest.Digest {
+	recipe, _ := ctx.Value(callerRecipeCtx{}).(digest.Digest)
+	return recipe
+}
+
 func CurrentCall(ctx context.Context) *ResultCall {
 	val := ctx.Value(callCtx{})
 	if val == nil {

@@ -80,7 +80,7 @@ func storedHoldingsTestKey(t *testing.T, cloud *Cache, cache CacheID, number uin
 	t.Helper()
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
-	for key, id := range cloud.holderEntries {
+	for key, id := range cloud.holderEntriesForTest() {
 		if key.Cache == cache && uint64(id) == number && key != except {
 			return key
 		}
@@ -112,6 +112,48 @@ func TestRowsSetTheLastUse(t *testing.T) {
 // DropStoredParts removes every stored part whose chain names the blob, on
 // every entry, and nothing else: the entries' other parts, values and
 // dependencies stay.
+// The service reads BlobCacheUsage for every status request and metrics
+// scrape, outside its work lock, so the read is in pieces (readInPieces): it
+// lets egraphMu go every readPieceSteps values of the pool, and a writer
+// waiting for the lock waits for one piece, not a walk of the whole pool.
+// With no write during it, it counts what one hold would. The Cloud's body
+// worker is stopped: it takes egraphMu by itself, when it installs a body,
+// and the hook's TryLock would take its hold for the read's.
+func TestBlobCacheUsageGivesUpTheLockBetweenValues(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedPartServiceTestCloud(t)
+	storedTestHoldWhole(cloud)
+	p := storedPartTestDeps(cloud, r)[0]
+	for _, stored := range []struct {
+		number uint64
+		part   PersistedPartOffer
+	}{
+		{r, storedPruneTestPart("snapshot", map[string]int64{"shared": 100, "r-top": 10})},
+		{p, storedPruneTestPart("snapshot", map[string]int64{"shared": 100})},
+	} {
+		ok, _, err := cloud.SetStoredPart(ctx, stored.number, stored.part, 0)
+		require.NoError(t, err)
+		require.True(t, ok)
+	}
+	whole, err := cloud.BlobCacheUsage()
+	require.NoError(t, err)
+	require.Equal(t, 2, whole.PoolValues, "R and P")
+	require.Equal(t, 2, whole.PoolBlobs)
+	require.Equal(t, int64(110), whole.PoolBlobBytes, "the shared blob once, and R's own")
+
+	cloud.readPieceSize = 1
+	var yields int
+	cloud.testReadPieceYielded = func() {
+		yields++
+		require.True(t, cloud.egraphMu.TryLock(), "the lock is free between two pieces")
+		cloud.egraphMu.Unlock()
+	}
+	pieces, err := cloud.BlobCacheUsage()
+	require.NoError(t, err)
+	require.Positive(t, yields, "the read let the lock go")
+	require.Equal(t, whole, pieces)
+}
+
 func TestDropStoredParts(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
@@ -125,13 +167,13 @@ func TestDropStoredParts(t *testing.T) {
 		{q, storedPruneTestPart("snapshot", map[string]int64{"gone-base": 10})},
 		{p, storedPruneTestPart("snapshot", map[string]int64{"p-layer": 3})},
 	} {
-		ok, err := cloud.SetStoredPart(ctx, stored.number, stored.part, 0)
+		ok, _, err := cloud.SetStoredPart(ctx, stored.number, stored.part, 0)
 		require.NoError(t, err)
 		require.True(t, ok)
 	}
 	deps := storedPartTestDeps(cloud, r)
 
-	dropped, err := cloud.DropStoredParts(testDigest("gone-base"))
+	dropped, _, err := cloud.DropStoredParts(testDigest("gone-base"))
 	require.NoError(t, err)
 	require.Equal(t, []StoredPart{
 		{Number: r, Address: PersistedPartAddress{Part: "snapshot"}},
@@ -148,7 +190,7 @@ func TestDropStoredParts(t *testing.T) {
 		require.True(t, storedPruneTestEntryState(cloud, number).value)
 	}
 
-	none, err := cloud.DropStoredParts(testDigest("never-stored"))
+	none, _, err := cloud.DropStoredParts(testDigest("never-stored"))
 	require.NoError(t, err)
 	require.Empty(t, none)
 }
@@ -173,20 +215,20 @@ func TestDropStoredPack(t *testing.T) {
 		{q, packed(storedPruneTestPart("snapshot", map[string]int64{"q-top": 4}), "q-top", "gone-pack")},
 		{p, storedPruneTestPart("snapshot", map[string]int64{"gone-pack": 3})},
 	} {
-		ok, err := cloud.SetStoredPart(ctx, stored.number, stored.part, 0)
+		ok, _, err := cloud.SetStoredPart(ctx, stored.number, stored.part, 0)
 		require.NoError(t, err)
 		require.True(t, ok)
 	}
 
 	// A layer two parts store in different packs maps to the lowest pack.
-	ok, err := cloud.SetStoredPart(ctx, r, packed(storedPruneTestPart("mount:/twice", map[string]int64{"kept-layer": 7}), "kept-layer", "other-pack"), 0)
+	ok, _, err := cloud.SetStoredPart(ctx, r, packed(storedPruneTestPart("mount:/twice", map[string]int64{"kept-layer": 7}), "kept-layer", "other-pack"), 0)
 	require.NoError(t, err)
 	require.True(t, ok)
 	members, err := cloud.LivePackMembers()
 	require.NoError(t, err)
 	require.Equal(t, min(testDigest("kept-pack"), testDigest("other-pack")), members[testDigest("kept-layer")])
 
-	dropped, err := cloud.DropStoredPack(testDigest("gone-pack"))
+	dropped, _, err := cloud.DropStoredPack(testDigest("gone-pack"))
 	require.NoError(t, err)
 	require.Equal(t, []StoredPart{
 		{Number: r, Address: PersistedPartAddress{Part: "snapshot"}},
@@ -200,7 +242,7 @@ func TestDropStoredPack(t *testing.T) {
 	}, state.Parts, "a blob whose digest is the pack's is not the pack")
 
 	_, c := storedPartTestCache(t)
-	_, err = c.DropStoredPack(testDigest("x"))
+	_, _, err = c.DropStoredPack(testDigest("x"))
 	require.ErrorContains(t, err, "no blob store")
 }
 
@@ -226,7 +268,7 @@ func TestStoredQueries(t *testing.T) {
 		{p, storedPruneTestPart("snapshot", map[string]int64{"shared": 100})},
 		{service, packed(storedPruneTestPart("snapshot", map[string]int64{"outside-pool": 1000}), map[string]string{"outside-pool": "pack-outside"})},
 	} {
-		ok, err := cloud.SetStoredPart(ctx, stored.number, stored.part, 0)
+		ok, _, err := cloud.SetStoredPart(ctx, stored.number, stored.part, 0)
 		require.NoError(t, err)
 		require.True(t, ok)
 	}
@@ -260,8 +302,7 @@ func TestStoredQueries(t *testing.T) {
 		Entries:       len(cloud.resultsByID),
 		Terms:         len(cloud.egraphTerms),
 		ClassSlots:    cloud.eqClassSlotsLocked(),
-		Holdings:      len(cloud.holderEntries),
-		RecordBytes:   recordBytes(r) + recordBytes(p) + recordBytes(service),
+		Holdings:      len(cloud.holderEntriesForTest()),
 	}
 	cloud.egraphMu.RUnlock()
 	require.Equal(t, want, usage)
@@ -279,6 +320,6 @@ func TestStoredQueries(t *testing.T) {
 	require.ErrorContains(t, err, "no blob store")
 	_, err = c.BlobCacheUsage()
 	require.ErrorContains(t, err, "no blob store")
-	_, err = c.DropStoredParts(testDigest("x"))
+	_, _, err = c.DropStoredParts(testDigest("x"))
 	require.ErrorContains(t, err, "no blob store")
 }

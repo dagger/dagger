@@ -32,7 +32,7 @@ type persistResultSnapshot struct {
 	imported              bool
 	persistDeclined       bool
 	pendingOffers         []PersistedPartOffer
-	storedParts           []PersistedPartOffer
+	storedParts           []storedPart
 	resultID              sharedResultID
 	frame                 *ResultCall
 	self                  Typed
@@ -40,6 +40,7 @@ type persistResultSnapshot struct {
 	hasValue              bool
 	sessionResourceHandle SessionResourceHandle
 	persistedEnvelope     *PersistedResultEnvelope
+	stored                *storedBody
 	snapshotOwnerLinks    []PersistedSnapshotRefLink
 	row                   persistdb.MirrorResult
 	resultDeps            []persistdb.MirrorResultDep
@@ -50,6 +51,7 @@ type persistStateSnapshot struct {
 	nextResultID          sharedResultID
 	persistedEdges        []persistdb.MirrorPersistedEdge
 	resultCalls           []persistdb.MirrorResultCall
+	resultTaught          []persistdb.MirrorResultTaught
 	eqClasses             []persistdb.MirrorEqClass
 	eqClassDigests        []persistdb.MirrorEqClassDigest
 	terms                 []persistdb.MirrorTerm

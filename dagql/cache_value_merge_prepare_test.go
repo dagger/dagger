@@ -1,8 +1,15 @@
 package dagql
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -57,7 +64,7 @@ func TestMergeValuesKeptRecordChecksItsShape(t *testing.T) {
 	bctx, b, bsrv := transferTestCache(t)
 	persistedListTestResult(t, bctx, b, bsrv, "root", &transferTestValue{Text: "local"})
 	row := &bundle.Values[0]
-	row.Record.Call.Receiver = &ResultCallRef{ResultID: uint64(row.Ordinal)}
+	row.Record.Call.Receiver = &ResultCallRef{ResultID: row.SenderNumber}
 	_, err := b.MergeValues(bctx, cloudCacheID, bundle)
 	require.ErrorContains(t, err, "not a direct dependency")
 }
@@ -119,7 +126,7 @@ func TestMergeValuesRefusesUndeclaredCallReferenceBeforeIdentity(t *testing.T) {
 	bundle, _ := mergeTestSource(t, "self-call", "value")
 	require.Len(t, bundle.Values, 1)
 	row := &bundle.Values[0]
-	row.Record.Call.Receiver = &ResultCallRef{ResultID: uint64(row.Ordinal)}
+	row.Record.Call.Receiver = &ResultCallRef{ResultID: row.SenderNumber}
 	ctx, cache, _ := transferTestCache(t)
 	_, err := cache.MergeValues(ctx, cloudCacheID, bundle)
 	require.ErrorContains(t, err, "not a direct dependency")
@@ -153,7 +160,7 @@ func TestMergeValuesFullPreparationBeforeOfferGraph(t *testing.T) {
 	x2.Record.Envelope.PendingOffers = []PersistedPartOffer{offer}
 	frame := &ResultCall{Kind: ResultCallKindField, Field: "fallback-y", Type: NewResultCallType(String("").Type())}
 	y := TransferredValue{Ordinal: 3, SenderNumber: 3, DependencyIDs: []uint64{1}, Record: PersistedRecord{ResultID: 3, Call: frame, Envelope: PersistedResultEnvelope{Version: persistedResultEnvelopeVersion, Kind: persistedResultKindScalar, ResultID: 3, TypeName: "String", ScalarJSON: json.RawMessage(`"y"`)}}}
-	bundle := ValueBundle{Version: valueBundleVersion, Roots: []TransferredRoot{{Ordinal: 2}}, Values: []TransferredValue{x, x2, y}}
+	bundle := ValueBundle{Version: ValueBundleVersion, Roots: []TransferredRoot{{Ordinal: 2}}, Values: []TransferredValue{x, x2, y}}
 	_, err = validateValueBundle(bundle)
 	require.NoError(t, err)
 	c.testBeforeTransferCommit = func() { mergeTestExpire(c, target) }
@@ -205,4 +212,147 @@ func TestMergeValuesCloudChecksClosureAfterDroppingParts(t *testing.T) {
 			require.Empty(t, cloud.resultsByID, "nothing is published")
 		})
 	}
+}
+
+// mergeTestManyRoots returns a bundle of n independent records, each a root.
+func mergeTestManyRoots(t *testing.T, n int) ValueBundle {
+	t.Helper()
+	ctx, c, srv := transferTestCache(t)
+	roots := make([]AnyResult, n)
+	for i := range roots {
+		roots[i] = persistedListTestResult(t, ctx, c, srv, fmt.Sprintf("root%d", i), &transferTestValue{Text: fmt.Sprintf("value%d", i)})
+	}
+	bundle := exportTestBundle(t, ctx, c, roots...)
+	require.Len(t, bundle.Values, n)
+	return bundle
+}
+
+// A merge prepares its records' payloads on more than one goroutine: an
+// engine's start merges its image's thousands of records before it says
+// hello to the remote cache, and one goroutine took most of a second.
+func TestMergeValuesPreparesPayloadsInParallel(t *testing.T) {
+	t.Parallel()
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs two Go processors to prepare two records at once")
+	}
+	bundle := mergeTestManyRoots(t, 8)
+	bctx, b, _ := transferTestCache(t)
+	var (
+		inside   atomic.Int32
+		together = make(chan struct{})
+		once     sync.Once
+	)
+	b.testRecordPayloadPreparing = func(uint64) error {
+		defer inside.Add(-1)
+		if inside.Add(1) >= 2 {
+			once.Do(func() { close(together) })
+		}
+		select {
+		case <-together:
+			return nil
+		case <-time.After(10 * time.Second):
+			return errors.New("records were prepared one at a time")
+		}
+	}
+	reply, err := b.MergeValues(bctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.Len(t, reply.Imported(), 8)
+}
+
+// When several records' payloads are refused, a merge reports the first of
+// them in dependency order, however its preparation is scheduled: here the
+// first record is the last to finish.
+func TestMergeValuesReportsTheFirstRefusedRecordInOrder(t *testing.T) {
+	t.Parallel()
+	bundle := mergeTestManyRoots(t, 8)
+	for i := range bundle.Values {
+		bundle.Values[i].Record.Envelope.ObjectJSON = json.RawMessage(`{"text":5}`)
+	}
+	order, err := validateValueBundleShape(bundle)
+	require.NoError(t, err)
+	first := order[0]
+
+	bctx, b, _ := transferTestCache(t)
+	others := make(chan struct{}, len(order))
+	b.testRecordPayloadPreparing = func(id uint64) error {
+		if id != first {
+			others <- struct{}{}
+			return nil
+		}
+		// Hold the first record until another has started, and then long
+		// enough for that one to be refused first; or long enough that one
+		// would have started if any ran beside it.
+		select {
+		case <-others:
+			time.Sleep(500 * time.Millisecond)
+		case <-time.After(2 * time.Second):
+		}
+		return nil
+	}
+	_, err = b.MergeValues(bctx, cloudCacheID, bundle)
+	require.ErrorContains(t, err, fmt.Sprintf("row %d:", first))
+	require.ErrorContains(t, err, "codec dagql_test.Transfer")
+}
+
+// A merge cancelled while an earlier record is being prepared answers with
+// the cancellation, as preparing the records one by one would, even when a
+// later record has already been refused beside it.
+func TestMergeValuesCancelledBeforeAFailingRecordReportsTheCancellation(t *testing.T) {
+	t.Parallel()
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("needs two Go processors to prepare two records at once")
+	}
+	bundle := mergeTestManyRoots(t, 8)
+	order, err := validateValueBundleShape(bundle)
+	require.NoError(t, err)
+	first := order[0]
+	for i := range bundle.Values {
+		if uint64(bundle.Values[i].Ordinal) != first {
+			bundle.Values[i].Record.Envelope.ObjectJSON = json.RawMessage(`{"text":5}`)
+		}
+	}
+
+	bctx, b, _ := transferTestCache(t)
+	stopped := errors.New("stopped by the test")
+	ctx, cancel := context.WithCancelCause(bctx)
+	defer cancel(nil)
+	others := make(chan struct{}, len(order))
+	b.testRecordPayloadPreparing = func(id uint64) error {
+		if id != first {
+			others <- struct{}{}
+			return nil
+		}
+		// Another record starts and is refused while the first is held;
+		// then the merge is cancelled, and the first is prepared after all.
+		select {
+		case <-others:
+			time.Sleep(500 * time.Millisecond)
+		case <-time.After(2 * time.Second):
+		}
+		cancel(stopped)
+		return nil
+	}
+	_, err = b.MergeValues(ctx, cloudCacheID, bundle)
+	require.ErrorIs(t, err, stopped)
+}
+
+// A merge's reply says how long its commit waited for the graph lock, apart
+// from how long it held it: a commit that finds the lock held waits for it.
+func TestMergeReplyTimesItsWaitForTheLock(t *testing.T) {
+	t.Parallel()
+	ctx, a, srv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, a, srv, "root", String("value"))
+	bundle := exportTestBundle(t, ctx, a, root)
+	ctx, b, _ := transferTestCache(t)
+	const held = 50 * time.Millisecond
+	b.testBeforeTransferCommit = func() {
+		b.egraphMu.Lock()
+		time.AfterFunc(held, b.egraphMu.Unlock)
+	}
+	reply, err := b.MergeValues(ctx, cloudCacheID, bundle)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.GreaterOrEqual(t, reply.LockWait, held)
+	require.Less(t, reply.CommitHold, held, "the wait isn't counted as the hold")
 }

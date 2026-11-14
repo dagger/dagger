@@ -10,30 +10,53 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// requireCacheHoldersExact checks every entry's index of its holdings by
-// engine cache (cacheHolders) against a recomputation from its holdings:
-// each engine cache's holding numbers, the Cloud's own holding left out.
+// holderEntriesForTest returns the entry of every holding, by key, from the
+// engine caches' indexes. Requires egraphMu.
+func (c *Cache) holderEntriesForTest() map[HolderKey]sharedResultID {
+	out := map[HolderKey]sharedResultID{}
+	for cache, state := range c.remoteCaches {
+		for number, id := range state.entries {
+			out[HolderKey{Cache: cache, Number: number}] = id
+		}
+	}
+	return out
+}
+
+// requireCacheHoldersExact checks every entry's holdings by engine cache
+// (cacheHolderRefsLocked) against a recomputation from all its holdings:
+// each engine cache's holding numbers, the Cloud's own holding left out, and
+// that the engine caches' indexes name exactly the holdings on entries.
 func requireCacheHoldersExact(t *testing.T, c *Cache) {
 	t.Helper()
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
+	indexed := map[HolderKey]sharedResultID{}
 	for id, entry := range c.resultsByID {
+		refs := entry.holderRefsLocked()
+		require.True(t, slices.IsSortedFunc(refs, func(a, b holderRef) int { return compareHolderKeys(a.key, b.key) }), "entry %d", id)
 		want := map[CacheID]map[uint64]struct{}{}
-		for key := range entry.holders {
-			if key.Cache == cloudCacheID {
+		for _, ref := range refs {
+			if senderCache(ref.key.Cache) {
 				continue
 			}
-			if want[key.Cache] == nil {
-				want[key.Cache] = map[uint64]struct{}{}
+			indexed[ref.key] = id
+			if want[ref.key.Cache] == nil {
+				want[ref.key.Cache] = map[uint64]struct{}{}
 			}
-			want[key.Cache][key.Number] = struct{}{}
+			want[ref.key.Cache][ref.key.Number] = struct{}{}
 		}
-		got := entry.cacheHolders
-		if got == nil {
-			got = map[CacheID]map[uint64]struct{}{}
+		got := map[CacheID]map[uint64]struct{}{}
+		for cache := range want {
+			for _, ref := range entry.cacheHolderRefsLocked(cache) {
+				if got[cache] == nil {
+					got[cache] = map[uint64]struct{}{}
+				}
+				got[cache][ref.key.Number] = struct{}{}
+			}
 		}
 		require.Equal(t, want, got, "entry %d", id)
 	}
+	require.Equal(t, indexed, c.holderEntriesForTest())
 }
 
 // The index of holdings by engine cache stays exactly what the holdings say
@@ -63,12 +86,12 @@ func TestCacheHoldersIndexExact(t *testing.T) {
 	a.collect()
 	requireCacheHoldersExact(t, cloud)
 
-	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), engineA)...)
+	a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), engineA).Candidates...)
 	a.collect()
 	requireCacheHoldersExact(t, cloud)
 
 	for _, cache := range []CacheID{engineB, engineC} {
-		a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), cache)...)
+		a.candidates = append(a.candidates, cloud.ReleaseRemoteCache(t.Context(), cache).Candidates...)
 	}
 	a.collect()
 	keys, _ := cloudIndexes(cloud)
@@ -86,9 +109,9 @@ func TestCacheHoldersIndexExact(t *testing.T) {
 
 // heldByHoldingsLocked is HeldBy's predicate on holdings as it was before
 // the index: every holding of the entry walked.
-func heldByHoldingsLocked(h *HeldBy, res *sharedResult) bool {
-	for key, held := range res.holders {
-		if key.Cache == h.Cache && (held.expiresAtUnix == 0 || held.expiresAtUnix > h.Now) {
+func heldByHoldingsLocked(h *HeldBy, res *sharedResult, nowUnix int64) bool {
+	for _, ref := range res.holderRefsLocked() {
+		if key, held := ref.key, ref.h; key.Cache == h.Cache && (held.expiresAtUnix == 0 || held.expiresAtUnix > nowUnix) {
 			return true
 		}
 	}
@@ -118,7 +141,7 @@ func TestHeldByHoldsLikeTheWalk(t *testing.T) {
 	cloud.egraphMu.RLock()
 	defer cloud.egraphMu.RUnlock()
 	res := cloud.resultsByID[sharedResultID(info.Number)]
-	require.Len(t, res.cacheHolders[engineA], 2, "two holdings of one cache on the entry")
+	require.Len(t, res.cacheHolderRefsLocked(engineA), 2, "two holdings of one cache on the entry")
 	for _, tc := range []struct {
 		cache CacheID
 		now   int64
@@ -130,9 +153,9 @@ func TestHeldByHoldsLikeTheWalk(t *testing.T) {
 		{engineB, 1 << 40, true},
 		{"cache-none", 0, false},
 	} {
-		h := &HeldBy{Cache: tc.cache, Now: tc.now}
-		require.Equal(t, tc.held, h.holdsLocked(res), "%s at %d", tc.cache, tc.now)
-		require.Equal(t, heldByHoldingsLocked(h, res), h.holdsLocked(res), "%s at %d, as the walk", tc.cache, tc.now)
+		h := &HeldBy{Cache: tc.cache}
+		require.Equal(t, tc.held, h.holdsLocked(res, tc.now), "%s at %d", tc.cache, tc.now)
+		require.Equal(t, heldByHoldingsLocked(h, res, tc.now), h.holdsLocked(res, tc.now), "%s at %d, as the walk", tc.cache, tc.now)
 	}
 }
 
@@ -199,4 +222,73 @@ func TestNarrowReadsAnswerAsTheWideOnes(t *testing.T) {
 	_, ok := cloud.EntryClassEntries(1 << 40)
 	require.False(t, ok)
 	require.Empty(t, cloud.CacheHoldings(engineA, []uint64{1 << 40}))
+}
+
+// EntriesHeld returns what EntryInfo reports of each entry's own facts, and
+// the keys of its first holdings in EntryInfo's order, skipping a number
+// the cache has no entry for.
+func TestEntriesHeldAnswersAsEntryInfo(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	f := RemoteHolding{Recipe: testDigest("f"), Request: testDigest("f"), Field: "f"}
+	g := RemoteHolding{Recipe: testDigest("g"), Request: testDigest("g"), Field: "g"}
+	for i, cache := range []CacheID{"cache-d", "cache-b", "cache-e", "cache-a", "cache-c"} {
+		a.call(callRow{key: HolderKey{cache, uint64(i + 1)}, session: string(cache), holding: f})
+	}
+	a.call(callRow{key: HolderKey{"cache-a", 9}, session: "cache-a", holding: f})
+	a.call(callRow{key: HolderKey{"cache-a", 10}, session: "cache-a", holding: g})
+	require.Empty(t, a.collect())
+
+	fInfo, ok := cloud.RemoteEntryInfo(HolderKey{"cache-a", 4})
+	require.True(t, ok)
+	gInfo, ok := cloud.RemoteEntryInfo(HolderKey{"cache-a", 10})
+	require.True(t, ok)
+	require.Len(t, fInfo.Holdings, 6)
+	numbers := []uint64{gInfo.Number, 1 << 40, fInfo.Number}
+	for _, limit := range []int{0, 1, 3, 6, 10} {
+		held := cloud.EntriesHeld(numbers, limit)
+		require.Len(t, held, 2, "the missing number is skipped")
+		for i, info := range []RemoteEntryInfo{gInfo, fInfo} {
+			require.Equal(t, info.Number, held[i].Number)
+			require.Equal(t, info.Stored, held[i].Stored)
+			require.Equal(t, info.StoredExpiresAtUnix, held[i].StoredExpiresAtUnix)
+			var want []HolderKey
+			for _, h := range info.Holdings[:min(limit, len(info.Holdings))] {
+				want = append(want, h.Key)
+			}
+			require.Equal(t, want, held[i].Keys, "entry %d's first %d holdings", info.Number, limit)
+		}
+	}
+}
+
+// EntriesFacts answers, for each entry, the entry's own facts as
+// RemoteHoldingInfo reports them for every holding on it, recipes
+// included, and skips a number with no entry.
+func TestEntriesFactsAnswersAsRemoteHoldingInfo(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	f := RemoteHolding{Recipe: testDigest("f"), Request: testDigest("f"), Field: "f"}
+	g := RemoteHolding{Recipe: testDigest("g"), Request: testDigest("g-other"), Field: "g"}
+	a.call(callRow{key: HolderKey{"cache-a", 1}, session: "cache-a", holding: f})
+	a.call(callRow{key: HolderKey{"cache-b", 2}, session: "cache-b", holding: f})
+	a.call(callRow{key: HolderKey{"cache-a", 3}, session: "cache-a", holding: g})
+	require.Empty(t, a.collect())
+
+	keys := []HolderKey{{"cache-a", 1}, {"cache-b", 2}, {"cache-a", 3}}
+	held := map[HolderKey]RemoteHeldEntry{}
+	for _, key := range keys {
+		h, ok := cloud.RemoteHoldingInfo(key)
+		require.True(t, ok)
+		held[key] = h
+	}
+	numbers := []uint64{held[keys[2]].Number, 1 << 40, held[keys[0]].Number}
+	facts := cloud.EntriesFacts(numbers)
+	require.Len(t, facts, 2, "the missing number is skipped")
+	for i, key := range []HolderKey{keys[2], keys[0]} {
+		want := held[key]
+		require.Equal(t, EntryFacts{Number: want.Number, Stored: want.Stored, StoredExpiresAtUnix: want.StoredExpiresAtUnix, Recipes: want.Recipes}, facts[i])
+	}
+	require.Equal(t, held[keys[0]].Number, held[keys[1]].Number, "both engines' f are one entry")
 }

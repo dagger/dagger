@@ -33,7 +33,19 @@ func (srv *Server) initCacheVolumeDir(cfg config.CacheVolumesConfig) error {
 	if err != nil {
 		return err
 	}
-	store, err := cachevolumedir.Open(dir, cachevolumedir.Options{EngineVersion: engine.Version})
+	store, err := cachevolumedir.Open(dir, cachevolumedir.Options{
+		EngineVersion: engine.Version,
+		OnDeletionError: func(err error) {
+			slog.Warn("cache volume deletion failed; what's left stays counted until the directory's next owner deletes it", "error", err)
+		},
+		OnLeftovers: func(count int, recordedBytes int64, unmeasured int) {
+			slog.Info("deleting a previous engine's leftover cache volumes in the background",
+				"count", count, "recordedBytes", recordedBytes, "unmeasured", unmeasured)
+		},
+		OnLeftoversDeleted: func(count int, took time.Duration) {
+			slog.Info("deleted a previous engine's leftover cache volumes", "count", count, "duration", took)
+		},
+	})
 	if errors.Is(err, cachevolumedir.ErrOwned) {
 		slog.Warn("cache volume directory is in use by another engine; cache volumes are snapshots for this run", "dir", dir)
 		return nil
@@ -137,8 +149,17 @@ func (srv *Server) collectCacheVolumeDir(ctx context.Context, all bool) (cachevo
 		return cachevolumedir.Report{}, err
 	}
 	report, err := srv.cacheVolumeDir.Collect(ctx, policy)
+	if report.Measured > 0 {
+		slog.Info("measured cache volumes written since their last measurement", "count", report.Measured,
+			"bytes", report.MeasuredBytes, "files", report.MeasuredFiles, "duration", report.MeasureTime,
+			"usedBytes", report.UsedBytes, "maxUsedBytes", policy.MaxUsedSpace, "freeBytes", policy.CurrentFreeSpace)
+	}
 	if len(report.Removed) > 0 {
 		slog.Info("removed cache volumes from the cache volume directory", "count", len(report.Removed), "bytes", report.ReclaimedBytes)
+		for _, e := range report.Removed {
+			slog.Info("removed cache volume", "key", e.Identity.Key, "namespace", e.Identity.Namespace,
+				"bytes", e.SizeBytes, "lastUsed", e.LastUsedAt, "created", e.CreatedAt)
+		}
 	}
 	if err != nil {
 		return report, fmt.Errorf("collect cache volume directory: %w", err)
@@ -146,17 +167,16 @@ func (srv *Server) collectCacheVolumeDir(ctx context.Context, all bool) (cachevo
 	return report, nil
 }
 
-// collectCacheVolumeDirAtShutdown collects the directory and waits for the
-// removals to finish, so that what the next engine receives is what was
-// accounted. Both stop when ctx ends, leaving the directory consistent.
+// collectCacheVolumeDirAtShutdown collects the directory within its
+// capacity before the engine gives it up. The volumes it removes move to
+// trash at once, and their deletion runs in the background without the stop
+// waiting for it: what's left when the engine exits, the directory's next
+// owner deletes in the background, counted as space being freed until then.
 func (srv *Server) collectCacheVolumeDirAtShutdown(ctx context.Context) error {
 	if srv.cacheVolumeDir == nil {
 		return nil
 	}
 	_, err := srv.collectCacheVolumeDir(ctx, false)
-	if waitErr := srv.cacheVolumeDir.WaitRemovals(ctx); waitErr != nil {
-		err = errors.Join(err, fmt.Errorf("wait for cache volume removals: %w", waitErr))
-	}
 	return err
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/sync/errgroup"
 )
 
 type capturedTransferRow struct {
@@ -34,8 +35,8 @@ type capturedTransferRow struct {
 	// children are the rows the walk reached from this one: its
 	// dependencies, and those of the owners of its offers.
 	children []sharedResultID
-	// transfer is the record as the bundle carries it, before its
-	// references are relocated to ordinals.
+	// transfer is the record as the bundle carries it, naming rows by the
+	// engine's entry numbers; only its offers are relocated to ordinals.
 	transfer PersistedRecord
 	// held makes the row a held row, of recipe: the selection's recipient
 	// knows it, so the bundle carries no record for it and nothing below it.
@@ -67,6 +68,10 @@ type HeldCapturedClosure struct {
 	unheld map[sharedResultID][]sharedResultID
 	// outputs are the selection's outputs the closure holds.
 	outputs []SelectedValueOutput
+	// unwalked is set when a root was left out before its walk, its own
+	// evaluation in flight (holdTransferClosure): an output below it lies
+	// outside what the capture walked.
+	unwalked bool
 	// walkWait is the wait for egraphMu before the walk, and walk the walk
 	// under it.
 	walkWait    time.Duration
@@ -155,6 +160,32 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 	known := selection.Known
 	if len(selection.Outputs) > 0 {
 		known = nil
+	}
+	// A root whose own evaluation is in flight can't be captured now,
+	// whatever its closure holds, unless it goes as a held row: its record's
+	// copy is refused
+	// (lazyEvaluationInFlightLocked). It's left out before the walk, so
+	// nothing below it is walked or copied for it: a remote cache service
+	// asks for a running root every few seconds until it isn't busy, and
+	// each capture walked and copied its whole closure only to leave it
+	// out. Its lazy lock is taken here, before egraphMu, as the copy takes
+	// it outside the walk. An evaluation that ends meanwhile leaves the root
+	// out once more, as one that ends during a walk does.
+	running := map[*sharedResult]blockedRow{}
+	for _, root := range selection.Roots {
+		if root == nil {
+			continue
+		}
+		res := root.cacheSharedResult()
+		if res == nil {
+			continue
+		}
+		res.lazyMu.Lock()
+		err := lazyEvaluationInFlightLocked(res)
+		res.lazyMu.Unlock()
+		if err != nil {
+			running[res] = blockedRow{row: res.id, kind: res.busyKind(), err: err}
+		}
 	}
 	lockStart := time.Now()
 	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
@@ -299,6 +330,15 @@ func (c *Cache) holdTransferClosure(ctx context.Context, selection ValueSelectio
 		selected := capturedRoot{row: res}
 		if res.expiresAtUnix != 0 && res.expiresAtUnix <= now {
 			selected.err = &blockedRow{row: res.id, err: fmt.Errorf("transfer capture: expired root %d", res.id)}
+			capture.selected = append(capture.selected, selected)
+			continue
+		}
+		// A root the selection's Known knows goes as a held row, whose
+		// record isn't copied (walk): its evaluation keeps it from nothing.
+		if b, ok := running[res]; ok && res.id != 0 && c.resultsByID[res.id] == res && (carried[res.id] || !known.knowsLocked(res)) {
+			capture.blocked[res.id] = b
+			capture.unwalked = true
+			selected.err = &b
 			capture.selected = append(capture.selected, selected)
 			continue
 		}
@@ -611,10 +651,20 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 		}
 	}()
 	var chainResults []uint64
-	// opened holds each entry's chain: a File's, which travels as its own
-	// content, as soon as it is exported; the others' once they open
-	// together. batched indexes the entries opening together.
+	// opened holds each entry's chain. files are the entries of Files,
+	// each of which travels as its own content in a chain of its own;
+	// batched indexes the others, which open as one export.
 	var opened []*snapshots.ExportChain
+	type fileEntry struct {
+		entry int
+		ref   snapshots.ImmutableRef
+		path  string
+	}
+	var files []fileEntry
+	// sameFile is each File entry's that is the same path in the same
+	// snapshot as an earlier one, by entry: it shares that one's chain.
+	sameFile := map[int]int{}
+	firstFile := map[[2]string]int{}
 	var batched []int
 	var batchRefs []snapshots.ImmutableRef
 	seen := map[string]bool{}
@@ -642,25 +692,19 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 		chains.refs = append(chains.refs, ref)
 		chainResults = append(chainResults, uint64(row.shared.id))
 		chains.Entries = append(chains.Entries, SelectedChain{Ordinal: row.ordinal, Address: out.Address})
+		opened = append(opened, nil)
 		// A File is its content: it travels as a chain of its own, not as
 		// the filesystem it was taken from.
 		if out.ValueKind == "file" && out.Value != nil {
-			chainCtx, chainOp := profBeginChain(ctx, out.Address)
-			chain, err := ref.ExportFileChain(chainCtx, cfg, out.Value.Path)
-			var blobBytes int64
-			if chain != nil {
-				blobBytes = chain.Stats.BlobBytes
+			entry := len(chains.Entries) - 1
+			if first, ok := firstFile[[2]string{out.SnapshotID, out.Value.Path}]; ok {
+				sameFile[entry] = first
+				continue
 			}
-			profEndChain(chainOp, blobBytes, uint64(row.shared.id), err)
-			if err != nil {
-				return nil, err
-			}
-			// Released with the others if a later output fails.
-			chains.chains = append(chains.chains, chain)
-			opened = append(opened, chain)
+			firstFile[[2]string{out.SnapshotID, out.Value.Path}] = entry
+			files = append(files, fileEntry{entry: entry, ref: ref, path: out.Value.Path})
 			continue
 		}
-		opened = append(opened, nil)
 		batched = append(batched, len(chains.Entries)-1)
 		batchRefs = append(batchRefs, ref)
 	}
@@ -681,18 +725,62 @@ func OpenSelectedChains(ctx context.Context, capture *HeldCapturedClosure, outpu
 			},
 		}
 	}
-	batch, err := snapshots.ExportChains(ctx, batchRefs, work, cfg)
+	// The Files' chains build at once with that export and with each
+	// other, up to the layer builds at once a chain may run: each is a
+	// snapshot of its own, whose one layer builds under the same gate as
+	// the export's. Every chain opened is the entry's from here, so a
+	// failure releases it with the others.
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		batch, err := snapshots.ExportChains(egCtx, batchRefs, work, cfg)
+		if err != nil {
+			return err
+		}
+		for i, entry := range batched {
+			opened[entry] = batch[i]
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		fileGroup, fileCtx := errgroup.WithContext(egCtx)
+		fileGroup.SetLimit(int(max(int64(cfg.Builds.Workers), 1)))
+		for _, file := range files {
+			fileGroup.Go(func() error {
+				_, unlabel := wcprof.WithCPUKind(fileCtx, wcprof.CPUKindExportLayers)
+				defer unlabel()
+				// One still waiting for a slot when another fails doesn't
+				// begin.
+				if err := fileCtx.Err(); err != nil {
+					return err
+				}
+				chainCtx, chainOp := profBeginChain(fileCtx, chains.Entries[file.entry].Address)
+				chain, err := file.ref.ExportFileChain(chainCtx, cfg, file.path)
+				var blobBytes int64
+				if chain != nil {
+					blobBytes = chain.Stats.BlobBytes
+				}
+				profEndChain(chainOp, blobBytes, chainResults[file.entry], err)
+				opened[file.entry] = chain
+				return err
+			})
+		}
+		return fileGroup.Wait()
+	})
+	err := eg.Wait()
+	// From here the chains are the entries', in their order, as the
+	// outputs read them. A chain two entries share releases once, and
+	// counts once in the stats.
+	for entry, first := range sameFile {
+		opened[entry] = opened[first]
+	}
+	chains.chains = opened
 	if err != nil {
 		return nil, err
 	}
-	// From here the chains are the entries', in their order, as the
-	// outputs read them.
-	for i, entry := range batched {
-		opened[entry] = batch[i]
-	}
-	chains.chains = opened
 	for i, chain := range opened {
-		chains.Stats.Add(chain.Stats)
+		if _, shared := sameFile[i]; !shared {
+			chains.Stats.Add(chain.Stats)
+		}
 		chains.Entries[i].Layers, chains.Entries[i].Provider = chain.Layers, chain.Provider
 	}
 	return chains, nil
@@ -812,6 +900,18 @@ type ExportPhases struct {
 	// building the bundle of the kept roots' rows.
 	Copy   time.Duration
 	Bundle time.Duration
+	// The bundle phase's steps, summed over its passes: holding the known
+	// rows, checking the copied records, settling the roots, deriving the
+	// held rows' recipes, and building the bundle's values. BundlePasses
+	// counts the captures: each one after the first carries in full the
+	// held rows whose recipe a row of the bundle shares, and copies the
+	// closure again.
+	BundleKnown   time.Duration
+	BundleCheck   time.Duration
+	BundleSettle  time.Duration
+	BundleRecipes time.Duration
+	BundleValues  time.Duration
+	BundlePasses  int
 	// RetriedStale is 1 when obsolete offers were retired and the closure
 	// captured again.
 	RetriedStale int
@@ -946,7 +1046,9 @@ func (capture *HeldCapturedClosure) settleOutputs(selection ValueSelection, held
 		if _, blocked := capture.blocked[res.id]; blocked {
 			continue
 		}
-		if !selection.LeaveOutOutputsOutsideClosure {
+		// One below a root left out before its walk lies outside the
+		// walk, and is left out with it.
+		if !selection.LeaveOutOutputsOutsideClosure && !capture.unwalked {
 			return fmt.Errorf("selected output lies outside captured closure")
 		}
 	}
@@ -1134,14 +1236,22 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		if capture, err = c.captureCopied(ctx, selection, carried, &phases); err != nil {
 			return err
 		}
+		phases.BundlePasses++
 		passStart = time.Now()
 		_, bundleOp = wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.bundle", wcprof.OpOpts{})
 		capture.holdKnownRows(selection, carried)
+		known := time.Now()
+		phases.BundleKnown += known.Sub(passStart)
 		capture.checkRecords()
+		checked := time.Now()
+		phases.BundleCheck += checked.Sub(known)
 		leftOut, err = capture.settle(selection)
+		settled := time.Now()
+		phases.BundleSettle += settled.Sub(checked)
 		var shared []sharedResultID
 		if err == nil {
 			shared, err = capture.deriveHeldRecipes()
+			phases.BundleRecipes += time.Since(settled)
 		}
 		if err == nil && len(shared) == 0 {
 			break
@@ -1162,6 +1272,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		}
 	}
 	defer func() { rerr = errors.Join(rerr, capture.Release(ctx)) }()
+	valuesStart := time.Now()
 	if len(capture.roots) == 0 {
 		err = &RootsLeftOutError{Roots: leftOut}
 		bundleOp.EndErr(err)
@@ -1178,10 +1289,10 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		ref.ResultID = uint64(row.ordinal)
 		return nil
 	}
-	bundle := ValueBundle{Version: valueBundleVersion, Roots: capture.roots}
+	bundle := ValueBundle{Version: ValueBundleVersion, Roots: capture.roots}
 	for _, row := range capture.order {
 		if row.held {
-			value := TransferredValue{Ordinal: row.ordinal, SenderNumber: uint64(row.shared.id), SenderReplacements: row.replacements, Record: PersistedRecord{ResultID: uint64(row.ordinal)}, ExpiresAtUnix: row.expiry, Held: row.recipe}
+			value := TransferredValue{Ordinal: row.ordinal, SenderNumber: uint64(row.shared.id), SenderReplacements: row.replacements, Record: PersistedRecord{ResultID: uint64(row.shared.id)}, ExpiresAtUnix: row.expiry, Held: row.recipe}
 			// A row held at the walk has no dependencies here: it stands for
 			// its closure. One held after its copy keeps its links to the
 			// rows below it.
@@ -1191,10 +1302,25 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 			bundle.Values = append(bundle.Values, value)
 			continue
 		}
-		rec, err := VisitEncodedReferences(row.transfer, relocate)
-		if err != nil {
-			bundleOp.EndErr(err)
-			return err
+		// The record goes as the engine holds it, naming itself and its
+		// references by the engine's numbers, which the receiver maps
+		// (transferSenderNumbers); its references were checked against its
+		// dependencies when it was normalized (checkRecords), and every
+		// dependency is a row of the bundle. Its offers are the bundle's,
+		// which name rows by ordinal: they alone are relocated.
+		rec := row.transfer
+		if len(rec.Envelope.PendingOffers) > 0 {
+			offers, err := clonePartOffers(rec.Envelope.PendingOffers)
+			for i := range offers {
+				if err == nil {
+					err = visitPersistedPartOffer(&offers[i], nil, relocate)
+				}
+			}
+			if err != nil {
+				bundleOp.EndErr(err)
+				return err
+			}
+			rec.Envelope.PendingOffers = offers
 		}
 		value := TransferredValue{Ordinal: row.ordinal, SenderNumber: uint64(row.shared.id), SenderReplacements: row.replacements, Record: rec, ExpiresAtUnix: row.expiry}
 		for _, id := range row.deps {
@@ -1203,6 +1329,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		bundle.Values = append(bundle.Values, value)
 	}
 	bundleOp.End(wcprof.OutcomeOK)
+	phases.BundleValues = time.Since(valuesStart)
 	phases.Bundle = bundleNS + time.Since(passStart)
 	chainStart := time.Now()
 	chainsCtx, chainsOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.chains", wcprof.OpOpts{})
@@ -1213,34 +1340,41 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		return err
 	}
 	defer func() { rerr = errors.Join(rerr, chains.Release(ctx)) }()
+	// sessionRows are the rows below each row, itself included, that carry
+	// a session resource handle, sorted: each row's once, from its
+	// dependencies'.
+	sessionRows := map[sharedResultID][]uint64{}
+	var rowsNeedingSessions func(*capturedTransferRow) []uint64
+	rowsNeedingSessions = func(row *capturedTransferRow) []uint64 {
+		if ids, ok := sessionRows[row.shared.id]; ok {
+			return ids
+		}
+		if hook := capture.cache.testOwnerWalked; hook != nil {
+			hook(uint64(row.shared.id))
+		}
+		var ids []uint64
+		if row.shared.sessionResourceHandle != "" {
+			ids = append(ids, uint64(row.shared.id))
+		}
+		for _, dep := range row.deps {
+			ids = append(ids, rowsNeedingSessions(capture.rows[sharedResultID(dep)])...)
+		}
+		slices.Sort(ids)
+		ids = slices.Compact(ids)
+		sessionRows[row.shared.id] = ids
+		return ids
+	}
 	// withOwner gives an output with a chain the owner of its offer: the
 	// services it binds and the session resources its row's closure needs,
 	// relocated to ordinals.
 	withOwner := func(row *capturedTransferRow, output *TransferredOutput) error {
 		owner := PersistedOfferOwner{}
-		owned := map[uint64]bool{}
 		for _, service := range output.Value.Services {
-			owned[service.ServiceResultID] = true
+			owner.DependencyIDs = append(owner.DependencyIDs, service.ServiceResultID)
 		}
-		visited := map[sharedResultID]bool{}
-		var ownWalk func(*capturedTransferRow)
-		ownWalk = func(row *capturedTransferRow) {
-			if visited[row.shared.id] {
-				return
-			}
-			visited[row.shared.id] = true
-			if row.shared.sessionResourceHandle != "" {
-				owned[uint64(row.shared.id)] = true
-			}
-			for _, dep := range row.deps {
-				ownWalk(capture.rows[sharedResultID(dep)])
-			}
-		}
-		ownWalk(row)
-		for id := range owned {
-			owner.DependencyIDs = append(owner.DependencyIDs, id)
-		}
+		owner.DependencyIDs = append(owner.DependencyIDs, rowsNeedingSessions(row)...)
 		slices.Sort(owner.DependencyIDs)
+		owner.DependencyIDs = slices.Compact(owner.DependencyIDs)
 		offer := PersistedPartOffer{Address: output.Address, Value: *output.Value, Owner: owner}
 		if err := visitPersistedPartOffer(&offer, nil, relocate); err != nil {
 			return err
@@ -1258,8 +1392,23 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	}
 	selected := map[string]bool{}
 	// carriedBy names, for each of the chains, the bundle's output that
-	// carries it, if one does: a prefix of the chain names it.
+	// carries it, if one does: a prefix of the chain names it. entryOf is
+	// the first chain of each selected output, by ordinal and part, and
+	// prefixesOf the chains that walked each snapshot, in their order.
 	carriedBy := make([]*ChainPrefix, len(chains.Entries))
+	entryOf := map[string]int{}
+	prefixesOf := map[string][]int{}
+	for i, entry := range chains.Entries {
+		entryKey, _ := partAddressKey(entry.Address)
+		if _, ok := entryOf[fmt.Sprintf("%d:%s", entry.Ordinal, entryKey)]; !ok {
+			entryOf[fmt.Sprintf("%d:%s", entry.Ordinal, entryKey)] = i
+		}
+		for snapshotID, n := range chains.chains[i].Prefixes {
+			if n > 0 {
+				prefixesOf[snapshotID] = append(prefixesOf[snapshotID], i)
+			}
+		}
+	}
 	for _, sel := range capture.outputs {
 		row, out, err := selectedCapturedOutput(capture, sel)
 		if err != nil {
@@ -1271,13 +1420,9 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 			continue
 		}
 		output := TransferredOutput{Ordinal: row.ordinal, Address: out.Address, State: out.State, Value: out.Value}
-		for i, entry := range chains.Entries {
-			entryKey, _ := partAddressKey(entry.Address)
-			if entry.Ordinal == row.ordinal && entryKey == key {
-				output.Chain = &OfferedChain{Layers: entry.Layers}
-				carriedBy[i] = &ChainPrefix{Ordinal: row.ordinal, Address: out.Address}
-				break
-			}
+		if i, ok := entryOf[fmt.Sprintf("%d:%s", row.ordinal, key)]; ok {
+			output.Chain = &OfferedChain{Layers: chains.Entries[i].Layers}
+			carriedBy[i] = &ChainPrefix{Ordinal: row.ordinal, Address: out.Address}
 		}
 		if output.Chain != nil {
 			if err := withOwner(row, &output); err != nil {
@@ -1316,30 +1461,33 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 	}
 	for _, row := range capture.order {
 		for _, out := range row.outputs {
-			key, _ := partAddressKey(out.Address)
-			if out.State != "completed" || out.SnapshotID == "" || out.Value == nil || selected[fmt.Sprintf("%d:%s", row.ordinal, key)] || hasOffer(row, key) {
+			// Only a snapshot a selected chain walked is a prefix: most of
+			// the closure's parts are no chain's.
+			walked := prefixesOf[out.SnapshotID]
+			if out.State != "completed" || out.SnapshotID == "" || out.Value == nil || len(walked) == 0 {
 				continue
+			}
+			key, _ := partAddressKey(out.Address)
+			if selected[fmt.Sprintf("%d:%s", row.ordinal, key)] || hasOffer(row, key) {
+				continue
+			}
+			if hook := capture.cache.testPartRouted; hook != nil {
+				hook(uint64(row.shared.id))
 			}
 			if route, err := routePartRecord(row.record, out.Address); err == nil && prefixServedByDelegation(route, capture.rows, offered) {
 				continue
 			}
 			var layers []snapshots.ExportLayer
 			var prefix *ChainPrefix
-			for i, entry := range chains.Entries {
+			for _, i := range walked {
 				n := chains.chains[i].Prefixes[out.SnapshotID]
-				if n == 0 {
-					continue
-				}
 				if carriedBy[i] != nil {
 					prefix = &ChainPrefix{Ordinal: carriedBy[i].Ordinal, Address: carriedBy[i].Address, Layers: n}
 					break
 				}
 				if layers == nil {
-					layers = entry.Layers[:n]
+					layers = chains.Entries[i].Layers[:n]
 				}
-			}
-			if prefix == nil && layers == nil {
-				continue
 			}
 			output := TransferredOutput{Ordinal: row.ordinal, Address: out.Address, State: out.State, Value: out.Value, Prefix: prefix}
 			if prefix == nil {

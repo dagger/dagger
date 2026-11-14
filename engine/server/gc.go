@@ -370,6 +370,14 @@ func (srv *Server) backgroundGCContext() context.Context {
 
 func (srv *Server) gcAfterSessionCompletion() {
 	srv.metadataPruneMonitorBlocked.Store(false)
+	// While the engine settles with the remote cache service, its last
+	// exports build their layers, and a collection holds containerd's
+	// metadata and snapshotter locks, which those builds need, for as long as
+	// it removes what the session released: after a long session, seconds of
+	// a stop's export. So the pass waits for the settle to end, which the
+	// settle's bound guarantees, and then runs. A stop that begins meanwhile
+	// abandons it, as it does a running pass.
+	srv.sessionLedger.awaitSettle(srv.backgroundGCContext())
 	srv.gc()
 }
 
@@ -457,14 +465,6 @@ func (srv *Server) pruneLocalCacheLocked(ctx context.Context, reason localCacheG
 
 			report, err := srv.engineCache.Prune(ctx, prunePolicies)
 			srv.emitPruneEvent(report.DroppedEdges)
-			if len(report.Entries) > 0 {
-				rerr = errors.Join(rerr, srv.updateRemoteCacheFixturePersistence(func(diagnostics *core.RemoteCacheFixturePersistence) {
-					diagnostics.RemovedPersistedRootCount += len(report.Entries)
-					for _, entry := range report.Entries {
-						diagnostics.DiskPrunedResults = append(diagnostics.DiskPrunedResults, entry.ID)
-					}
-				}))
-			}
 			if err != nil {
 				bklog.G(ctx).Errorf("disk gc error: %+v", err)
 				rerr = errors.Join(rerr, fmt.Errorf("prune disk cache metadata: %w", err))
@@ -493,11 +493,6 @@ func (srv *Server) pruneLocalCacheLocked(ctx context.Context, reason localCacheG
 		srv.dagqlCacheTargetEstimatedBytes,
 	)
 	srv.emitPruneEvent(report.DroppedEdges)
-	if report.RemovedPersistedRootCount > 0 {
-		rerr = errors.Join(rerr, srv.updateRemoteCacheFixturePersistence(func(diagnostics *core.RemoteCacheFixturePersistence) {
-			diagnostics.RemovedPersistedRootCount += report.RemovedPersistedRootCount
-		}))
-	}
 	if err != nil {
 		bklog.G(ctx).Errorf("dagql metadata gc error: %+v", err)
 		return errors.Join(rerr, fmt.Errorf("prune dagql cache metadata: %w", err))

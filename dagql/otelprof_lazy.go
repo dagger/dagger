@@ -144,7 +144,7 @@ func (wcprofLazyParentProcessor) ForceFlush(context.Context) error { return nil 
 // options: the cache passes the native lazy op's start.
 func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID, group LazyGroupKey, resultCall *ResultCall, storedPart PartKey, opts ...trace.SpanStartOption) (context.Context, trace.Span, bool) {
 	if clientMD, err := engine.ClientMetadataFromContext(evalCtx); err == nil && clientMD.SessionID != "" {
-		if originalSpanCtx, ok := c.sessionLazySpanContext(clientMD.SessionID, sharedID); ok {
+		if originalSpanCtx, ok := c.sessionLazySpanContext(evalCtx, clientMD.SessionID, sharedID); ok {
 			spanName := "resume lazy evaluation"
 			if resultCall != nil && resultCall.Field != "" {
 				spanName = "resume " + resultCall.Field
@@ -162,18 +162,41 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 			// Lazy failure attribution: link the resume span back to all API spans
 			// that installed/own this result in the session (dagui interprets
 			// cause-purpose links as "this resume is the cause of those installs
-			// failing"). Unchanged from the original goroutine emit.
-			installCtxs := c.sessionResultInstallSpanContexts(clientMD.SessionID, sharedID)
-			links := lazyResumeLinks(originalSpanCtx, installCtxs)
+			// failing").
+			// The gathering is a step of its own in the profile, with its
+			// lock waits under it.
+			stepCtx, step := BeginStep(evalCtx, "lazy.installSpans")
+			installCtxs := c.sessionResultInstallSpanContexts(stepCtx, clientMD.SessionID, sharedID)
+			// Only the result's first evaluation in the session carries these
+			// links, as its anchor; later ones link only the anchor, which dagui
+			// follows back to the same spans. Part demand runs many evaluations
+			// of a result, and links on each grew the trace by evaluations ×
+			// installs. An evaluation finding install spans the anchor doesn't
+			// link carries them all and becomes the anchor.
+			// The anchor is marked, so a reader that loads only it knows later
+			// evaluations link it rather than the call.
+			anchorCtx, anchored := c.sessionLazyAnchorFor(stepCtx, clientMD.SessionID, sharedID, installCtxs)
+			step.End(nil)
+			links := []trace.Link{{SpanContext: anchorCtx}}
+			attrs := []attribute.KeyValue{attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())}
+			if !anchored {
+				links = lazyResumeLinks(originalSpanCtx, installCtxs)
+				attrs = append(attrs, attribute.Bool(telemetryattrs.LazyAnchorAttr, true))
+			}
 			resumeCtx, resumeSpan := Tracer(evalCtx).Start(
 				evalCtx,
 				spanName,
 				append([]trace.SpanStartOption{
 					trace.WithLinks(links...),
 					telemetry.Passthrough(),
-					trace.WithAttributes(attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())),
+					trace.WithAttributes(attrs...),
 				}, opts...)...,
 			)
+			if !anchored {
+				// Under the result's lazyMu: no other evaluation of it is
+				// choosing its links meanwhile.
+				c.recordSessionLazyAnchor(evalCtx, clientMD.SessionID, sharedID, resumeSpan.SpanContext(), installCtxs)
+			}
 			callbackCtx := trace.ContextWithSpan(resumeCtx, resumedCallbackSpan{
 				Span: resumeSpan,
 				sc:   originalSpanCtx,
@@ -225,7 +248,7 @@ type lazySpanCacheState struct {
 // dependencies are read under it.
 func (c *Cache) lazySpanCacheState(ctx context.Context, row *sharedResult, frame *ResultCall) lazySpanCacheState {
 	var state lazySpanCacheState
-	state.parts, state.partSizes = c.completePartKeysAndSizes(ctx, row)
+	state.parts, state.partSizes = c.spanPartKeysAndSizes(ctx, row)
 	if frame != nil {
 		state.contentDigest = frame.ContentDigest()
 	}

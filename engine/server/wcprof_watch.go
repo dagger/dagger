@@ -127,6 +127,7 @@ func (srv *Server) capture(session string, threshold time.Duration) {
 
 	c.GoroutinesBefore = goroutineStacks()
 	var prof bytes.Buffer
+	srv.cpuProfile.pause()
 	if err := pprof.StartCPUProfile(&prof); err != nil {
 		c.CPUProfileSkipped = err.Error()
 	} else {
@@ -134,6 +135,7 @@ func (srv *Server) capture(session string, threshold time.Duration) {
 		pprof.StopCPUProfile()
 		c.CPUProfile = prof.Bytes()
 	}
+	srv.cpuProfile.resume()
 	c.GoroutinesAfter = goroutineStacks()
 
 	srv.capturesMu.Lock()

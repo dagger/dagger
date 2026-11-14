@@ -634,3 +634,146 @@ func TestExportLeavesOutOutputsOutsideTheClosureOnRequest(t *testing.T) {
 	require.Len(t, bundle.Outputs, 1, "only the output inside the closure")
 	require.Equal(t, bundle.Values[0].Ordinal, bundle.Outputs[0].Ordinal)
 }
+
+func testValueTransferCaptureConcurrent(t *testing.T) {
+	t.Run("concurrent replacement and pruning", func(t *testing.T) {
+		ctx, c, srv := transferTestCache(t)
+		root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "pending"})
+		old := persistedListTestResult(t, ctx, c, srv, "old", String("old"))
+		next := persistedListTestResult(t, ctx, c, srv, "next", String("next"))
+		transferTestOffer(t, c, ctx, root, old)
+		entered, finish := make(chan struct{}), make(chan struct{})
+		done := make(chan error, 1)
+		go func() {
+			done <- c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error { close(entered); <-finish; return nil })
+		}()
+		<-entered
+		c.egraphMu.Lock()
+		owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{DependencyIDs: []uint64{uint64(next.cacheSharedResult().id)}})
+		var releases []OnReleaseFunc
+		if err == nil {
+			address := PersistedPartAddress{Part: "snapshot"}
+			var queue []*sharedResult
+			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
+			if err == nil {
+				releases, err = c.collectUnownedResultsLocked(ctx, queue)
+			}
+		}
+		c.egraphMu.Unlock()
+		require.NoError(t, err)
+		require.NoError(t, runOnReleaseFuncs(ctx, releases))
+		for _, row := range []AnyResult{root, old, next} {
+			_, _, err := c.removePersistedEdge(ctx, row.cacheSharedResult().id)
+			require.NoError(t, err)
+		}
+		require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+		snapshot := c.snapshotPruneState(pruneSnapshotMetadata, 10)
+		require.Contains(t, pruneActiveClosure(snapshot, nil), old.cacheSharedResult().id)
+		c.egraphMu.RLock()
+		ownerCount := len(c.offerOwners)
+		c.egraphMu.RUnlock()
+		require.Equal(t, 2, ownerCount)
+		close(finish)
+		require.NoError(t, <-done)
+		require.Empty(t, c.resultsByID)
+		require.Empty(t, c.offerOwners)
+	})
+}
+
+func testValueTransferImportConcurrent(t *testing.T) {
+	t.Run("lookup at commit boundary", func(t *testing.T) {
+		ctx, a, srv := transferTestCache(t)
+		leaf := persistedListTestResult(t, ctx, a, srv, "leaf", String("value"))
+		root := persistedListTestResult(t, ctx, a, srv, "root", DynamicResultArrayOutput{Elem: String(""), Values: []AnyResult{leaf}})
+		bundle := exportTestBundle(t, ctx, a, root)
+		ctx, b, bsrv := transferTestCache(t)
+		entered, commit := make(chan struct{}), make(chan struct{})
+		b.testBeforeTransferCommit = func() { close(entered); <-commit }
+		done := make(chan error, 1)
+		go func() { _, err := b.MergeValues(ctx, cloudCacheID, bundle); done <- err }()
+		<-entered
+		for _, value := range bundle.Values {
+			_, err := b.LoadResultByResultID(ctx, "consumer", bsrv, uint64(value.Ordinal))
+			require.ErrorContains(t, err, "missing shared result")
+		}
+		close(commit)
+		require.NoError(t, <-done)
+		b.egraphMu.RLock()
+		resultCount := len(b.resultsByID)
+		b.egraphMu.RUnlock()
+		require.Equal(t, len(bundle.Values), resultCount)
+		for _, value := range bundle.Values {
+			_, err := b.LoadResultByResultID(ctx, "consumer", bsrv, uint64(value.Ordinal))
+			require.NoError(t, err)
+		}
+	})
+	t.Run("close waits for admitted import", func(t *testing.T) {
+		ctx, a, srv := transferTestCache(t)
+		bundle := exportTestBundle(t, ctx, a, persistedListTestResult(t, ctx, a, srv, "root", String("value")))
+		ctx, b, _ := transferTestCache(t)
+		entered, commit := make(chan struct{}), make(chan struct{})
+		b.testBeforeTransferCommit = func() { close(entered); <-commit }
+		done := make(chan error, 1)
+		go func() { _, err := b.MergeValues(ctx, cloudCacheID, bundle); done <- err }()
+		<-entered
+		closed := make(chan error, 1)
+		go func() { closed <- b.Close(ctx) }()
+		select {
+		case err := <-closed:
+			t.Fatalf("close passed admitted import: %v", err)
+		case <-time.After(10 * time.Millisecond):
+		}
+		close(commit)
+		require.NoError(t, <-done)
+		require.NoError(t, <-closed)
+	})
+}
+
+// A capture splits its bundle phase into its steps, summed over its passes:
+// holding the known rows, checking the copied records, settling the roots,
+// deriving the held rows' recipes, and building the bundle's values. A known
+// row whose recipe another row of the closure shares goes in full, which
+// takes a second pass.
+func TestValueTransferCaptureBundlePhases(t *testing.T) {
+	t.Parallel()
+	steps := func(p ExportPhases) time.Duration {
+		return p.BundleKnown + p.BundleCheck + p.BundleSettle + p.BundleRecipes + p.BundleValues
+	}
+	t.Run("one pass", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := transferTestCache(t)
+		root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "bundle phases"})
+		var phases ExportPhases
+		require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+			phases = values.Phases
+			return nil
+		}))
+		require.Equal(t, 1, phases.BundlePasses)
+		require.Positive(t, phases.BundleCheck, "the root's record is checked")
+		require.Positive(t, phases.BundleSettle)
+		require.Positive(t, phases.BundleValues)
+		require.LessOrEqual(t, steps(phases), phases.Bundle)
+	})
+	t.Run("a held row carried in full", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := transferTestCache(t)
+		old := persistedListTestResult(t, ctx, c, srv, "phases-recipe", String("old"))
+		known := NewKnownRows()
+		_, rows, _ := recordsOnlyCapture(t, ctx, c, known, old)
+		known.Merged(rows)
+		root := persistedListTestResult(t, ctx, c, srv, "phases-recipe-root", String("root"))
+		transferTestDependency(c, ctx, root, old)
+		currentEntryTestExpire(c, old)
+		fresh := persistedListTestResult(t, ctx, c, srv, "phases-recipe", String("fresh"))
+		transferTestDependency(c, ctx, root, fresh)
+
+		var phases ExportPhases
+		require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}, Known: known}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+			phases = values.Phases
+			return nil
+		}))
+		require.Equal(t, 2, phases.BundlePasses, "the old entry goes in full in a second pass")
+		require.Positive(t, phases.BundleRecipes, "the held row's recipe is derived")
+		require.LessOrEqual(t, steps(phases), phases.Bundle)
+	})
+}
