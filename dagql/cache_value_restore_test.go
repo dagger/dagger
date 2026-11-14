@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,7 @@ func TestRestoreValuesMergesAsMergeValues(t *testing.T) {
 	rctx, r, _ := transferTestCache(t)
 	restored, err := r.RestoreValues(rctx, bundle, nil)
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, restored.Release(context.Background())) })
 	require.True(t, restored.Committed)
 	require.Equal(t, merged.Rows, restored.Rows)
 	require.Len(t, restored.Imported(), len(merged.Imported()))
