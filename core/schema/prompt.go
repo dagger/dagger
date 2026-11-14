@@ -45,7 +45,7 @@ func (s *promptSchema) Install(srv *dagql.Server) {
 			Doc(`Ask for a text answer.`).
 			Args(
 				dagql.Arg("default").Doc(
-					`The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one (or with an empty one), that is an error.`,
+					`The text the answer starts with, and the answer when nobody can be asked (the client is not interactive).`,
 				),
 				dagql.Arg("multiline").Doc(`Accept several lines.`),
 			),
@@ -89,11 +89,11 @@ func ask(ctx context.Context, p *core.Prompt, req *core.PromptRequest) (*core.Pr
 	return query.Prompt(ctx, req)
 }
 
-// notAsked is the error for a prompt nobody could answer and that has no
-// default to fall back to.
+// notAsked is the error for a secret prompt nobody could answer: a secret
+// has no default to fall back to.
 func notAsked(err error) error {
 	if errors.Is(err, core.ErrPromptNotInteractive) {
-		return fmt.Errorf("prompt needs an answer and has no default: %w", err)
+		return fmt.Errorf("prompting for a secret needs an interactive client: %w", err)
 	}
 	return err
 }
@@ -118,23 +118,21 @@ func (s *promptSchema) boolean(ctx context.Context, parent dagql.ObjectResult[*c
 }
 
 type promptStringArgs struct {
-	Default   dagql.Optional[dagql.String]
-	Multiline bool `default:"false"`
+	Default   string `default:""`
+	Multiline bool   `default:"false"`
 }
 
 func (s *promptSchema) string(ctx context.Context, parent dagql.ObjectResult[*core.Prompt], args promptStringArgs) (dagql.String, error) {
-	text := &core.PromptText{Multiline: args.Multiline}
-	if args.Default.Valid {
-		text.Default = args.Default.Value.String()
-	}
-	answer, err := ask(ctx, parent.Self(), &core.PromptRequest{Text: text})
+	answer, err := ask(ctx, parent.Self(), &core.PromptRequest{
+		Text: &core.PromptText{Default: args.Default, Multiline: args.Multiline},
+	})
 	if err != nil {
-		// An empty default is no default: some SDKs cannot tell the two
-		// apart, so neither does the engine.
-		if errors.Is(err, core.ErrPromptNotInteractive) && text.Default != "" {
-			return dagql.NewString(text.Default), nil
+		if errors.Is(err, core.ErrPromptNotInteractive) {
+			// Like a yes/no question, text always has an answer to fall
+			// back to: the default, empty unless the caller says otherwise.
+			return dagql.NewString(args.Default), nil
 		}
-		return "", notAsked(err)
+		return "", err
 	}
 	return dagql.NewString(answer.Text), nil
 }
