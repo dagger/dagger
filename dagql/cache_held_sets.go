@@ -33,18 +33,18 @@ func handleString(h unique.Handle[string]) string {
 	return h.Value()
 }
 
-// withNumber returns set with n, and whether n is new: set itself when it
-// has n, a new slice otherwise.
-func withNumber(set []uint64, n uint64) ([]uint64, bool) {
+// withNumber returns set with n: set itself when it has n, a new slice
+// otherwise.
+func withNumber(set []uint64, n uint64) []uint64 {
 	i, found := slices.BinarySearch(set, n)
 	if found {
-		return set, false
+		return set
 	}
 	out := make([]uint64, len(set)+1)
 	copy(out, set[:i])
 	out[i] = n
 	copy(out[i+1:], set[i:])
-	return out, true
+	return out
 }
 
 // withNumbers returns set with every number of adds, sorted and without
