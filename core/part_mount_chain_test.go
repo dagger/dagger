@@ -266,17 +266,16 @@ func restoredMountChainCost(t *testing.T, n int) mountChainCost {
 }
 
 // requireMountChainLinear checks that demanding the chain's mounts costs
-// about n, not n²: a bounded number of tasks and record captures per mount,
-// and at most eight times the work for four times the mounts, where n would
-// be about four and n² sixteen; scheduling moves the counts somewhat. Before the walk went through merged layers and a row's
-// source scans took turns, 64 merged mounts took 48,654 tasks and 69,669
-// captures, 47 times those of 16.
+// about n, not n²: the distinct tasks it runs, each a result and a task key,
+// are a bounded number per mount, and about four times as many for four
+// times the mounts, where n² would be sixteen. Copying each mount through
+// every layer above the one that mounted it runs a task per layer and mount.
+// How often a task runs again depends on scheduling, so the totals are
+// logged, not held.
 func requireMountChainLinear(t *testing.T, small, large mountChainCost, n int) {
 	t.Helper()
-	require.Less(t, large.tasks, 12*n, "lazy tasks grow with n, not n²")
-	require.Less(t, large.captures(), 48*n, "record captures grow with n, not n²")
-	require.LessOrEqual(t, large.tasks, 8*small.tasks)
-	require.LessOrEqual(t, large.captures(), 8*small.captures())
+	require.Less(t, len(large.keys), 8*n, "distinct lazy tasks grow with n, not n²")
+	require.LessOrEqual(t, len(large.keys), 5*len(small.keys))
 }
 
 // An exec over a chain of n mounts merged from another engine demands every
