@@ -38,6 +38,36 @@ func attachCollectionTestObject(t *testing.T, obj *ModuleObject) {
 	require.NoError(t, err)
 }
 
+// collectionEnumTestObject builds the same shape as collectionTestObject but
+// keyed by an enum. Members keep their module-original names (ColorRed) in
+// stored keys, while the schema exposes the canonical member names (RED).
+func collectionEnumTestObject(t *testing.T, keys any) *ModuleObject {
+	t.Helper()
+	dag := newTypeDefTestDag(t)
+	installModuleObjectTestModuleClass(dag)
+	red := newTypeDefDetachedResult(t, dag, "memberRed", &EnumMemberTypeDef{Name: "RED", OriginalName: "ColorRed", Value: "red"})
+	blue := newTypeDefDetachedResult(t, dag, "memberBlue", &EnumMemberTypeDef{Name: "BLUE", OriginalName: "ColorBlue", Value: "blue"})
+	enumDef := NewEnumTypeDef("TestColor", "", dagql.ObjectResult[*SourceMap]{})
+	enumDef.Members = dagql.ObjectResultArray[*EnumMemberTypeDef]{red, blue}
+	enumDefRes := newTypeDefDetachedResult(t, dag, "enumDef", enumDef)
+	key := newTypeDefDetachedResult(t, dag, "key", (&TypeDef{}).WithEnum(enumDefRes))
+	list := newTypeDefDetachedResult(t, dag, "keyList", &ListTypeDef{ElementTypeDef: key})
+	keyList := newTypeDefDetachedResult(t, dag, "keys", (&TypeDef{}).WithListOf(list))
+	item := newTypeDefDetachedResult(t, dag, "item", NewObjectTypeDef("Item", "", nil))
+	itemType := newTypeDefDetachedResult(t, dag, "itemType", (&TypeDef{}).WithObjectTypeDef(item))
+	arg := newTypeDefDetachedResult(t, dag, "arg", &FunctionArg{Name: "color", OriginalName: "color", TypeDef: key})
+	field := newTypeDefDetachedResult(t, dag, "field", &FieldTypeDef{Name: "keys", OriginalName: "Keys", TypeDef: keyList})
+	get := newTypeDefDetachedResult(t, dag, "get", &Function{Name: "get", OriginalName: "Get", ReturnType: itemType, Args: dagql.ObjectResultArray[*FunctionArg]{arg}})
+	obj := NewObjectTypeDef("Test", "", nil)
+	obj.Collection = &CollectionConfig{Enabled: true}
+	obj.Fields = dagql.ObjectResultArray[*FieldTypeDef]{field}
+	obj.Functions = dagql.ObjectResultArray[*Function]{get}
+	mod := newTypeDefDetachedResult(t, dag, "module", &Module{NameField: "test", Deps: NewSchemaBuilder(nil, nil), EnumDefs: dagql.ObjectResultArray[*TypeDef]{key}})
+	value := &ModuleObject{Module: mod, TypeDef: obj, Fields: map[string]any{"Keys": keys}}
+	attachCollectionTestObject(t, value)
+	return value
+}
+
 func TestCollectionSubsetDelta(t *testing.T) {
 	obj, dag := collectionTestObject(t, TypeDefKindString, []any{"a", "b", "c"})
 	selectKeys := func(obj *ModuleObject, names ...string) *ModuleObject {
@@ -147,6 +177,47 @@ func TestCollectionInvalidKeys(t *testing.T) {
 	require.ErrorContains(t, err, "duplicate key")
 	_, err = obj.collectionSubset(t.Context(), []collectionKey{missing})
 	require.ErrorContains(t, err, "does not contain")
+}
+
+func TestCollectionEnumRequestedKeys(t *testing.T) {
+	obj := collectionEnumTestObject(t, []any{"ColorRed", "ColorBlue"})
+	ctx := dagql.ContextWithCall(t.Context(), moduleObjectTestSyntheticCall("collection", obj))
+
+	enumInput := func(name string) dagql.Input {
+		return &dagql.EnumValueName{Enum: "TestColor", Name: name}
+	}
+
+	// Stored keys are decoded through the enum into canonical member names.
+	stored, err := obj.collectionKeys(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "RED", stored[0].text)
+	require.Equal(t, "BLUE", stored[1].text)
+
+	// A valid member resolves and selects normally.
+	requested, err := obj.collectionRequestedKeys(ctx, []dagql.Input{enumInput("RED")})
+	require.NoError(t, err)
+	require.Equal(t, "RED", requested[0].text)
+	subset, err := obj.collectionSubset(ctx, requested)
+	require.NoError(t, err)
+	require.Equal(t, []any{"ColorRed"}, subset.Fields["Keys"])
+
+	// A name that is not a member is refused as invalid, not reported missing.
+	_, err = obj.collectionRequestedKeys(ctx, []dagql.Input{enumInput("Red")})
+	require.ErrorContains(t, err, `invalid enum member "Red" for TestColor`)
+	_, err = obj.collectionRequestedKeys(ctx, []dagql.Input{enumInput("RED"), enumInput("Red")})
+	require.ErrorContains(t, err, `invalid enum member "Red" for TestColor`)
+
+	// A member absent from the current subset is still reported missing.
+	requested, err = subset.collectionRequestedKeys(ctx, []dagql.Input{enumInput("BLUE")})
+	require.NoError(t, err)
+	_, err = subset.collectionSubset(ctx, requested)
+	require.ErrorContains(t, err, "does not contain keys")
+
+	// Non-enum keys are converted without any member check.
+	strObj, _ := collectionTestObject(t, TypeDefKindString, []any{"a", "b"})
+	got, err := strObj.collectionRequestedKeys(ctx, []dagql.Input{dagql.String("not-there")})
+	require.NoError(t, err)
+	require.Equal(t, "not-there", got[0].text)
 }
 
 func TestCollectionTypedKeyText(t *testing.T) {

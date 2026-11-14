@@ -35,6 +35,56 @@ func collectionKeyFromInput(input dagql.Input) (collectionKey, error) {
 	return collectionKey{input: input, text: text, sdkValue: value}, nil
 }
 
+// collectionRequestedKeys converts the key arguments of get and subset into
+// collectionKeys. When the collection is keyed by an enum, each requested
+// name is checked against the enum's members, so a name that is not a member
+// is refused as invalid instead of being reported as a missing key.
+func (obj *ModuleObject) collectionRequestedKeys(ctx context.Context, inputs []dagql.Input) ([]collectionKey, error) {
+	var enum *ModuleEnum
+	members, err := obj.TypeDef.CollectionMembers()
+	if err != nil {
+		return nil, err
+	}
+	keyDef := members.Keys.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self()
+	if keyDef.Kind == TypeDefKindEnum {
+		modType, ok, err := NewUserMod(obj.Module).ModTypeFor(ctx, keyDef, true)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("collection enum key type %s not found", keyDef.ToType())
+		}
+		enumType, ok := modType.(*ModuleEnumType)
+		if !ok {
+			return nil, fmt.Errorf("collection enum key type %s has unexpected mod type %T", keyDef.ToType(), modType)
+		}
+		enum, err = enumType.getEnum(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Requested keys are spelled with the member names the schema
+		// exposes, while the owning module's own decoder spells members by
+		// their original names.
+		schemaEnum := *enum
+		schemaEnum.Local = false
+		enum = &schemaEnum
+	}
+	keys := make([]collectionKey, 0, len(inputs))
+	for _, input := range inputs {
+		key, err := collectionKeyFromInput(input)
+		if err != nil {
+			return nil, err
+		}
+		if enum != nil {
+			if _, err := enum.Lookup(key.text); err != nil {
+				return nil, err
+			}
+		}
+		keys = append(keys, key)
+	}
+	return keys, nil
+}
+
 func (obj *ModuleObject) collectionKeys(ctx context.Context) ([]collectionKey, error) {
 	members, err := obj.TypeDef.CollectionMembers()
 	if err != nil {
@@ -306,10 +356,11 @@ func (obj *ModuleObject) collectionFields(ctx context.Context, dag *dagql.Server
 		if err != nil {
 			return nil, err
 		}
-		key, err := collectionKeyFromInput(args["key"])
+		requested, err := self.Self().collectionRequestedKeys(ctx, []dagql.Input{args["key"]})
 		if err != nil {
 			return nil, err
 		}
+		key := requested[0]
 		if !slices.ContainsFunc(keys, func(k collectionKey) bool { return k.text == key.text }) {
 			return nil, fmt.Errorf("collection %q does not contain key %q in the current subset", obj.TypeDef.Name, key.text)
 		}
@@ -369,13 +420,9 @@ func (obj *ModuleObject) collectionFields(ctx context.Context, dag *dagql.Server
 				if !ok {
 					return nil, fmt.Errorf("expected an array of collection keys, got %T", args["keys"])
 				}
-				keys := make([]collectionKey, 0, len(inputs.Values))
-				for _, input := range inputs.Values {
-					key, err := collectionKeyFromInput(input)
-					if err != nil {
-						return nil, err
-					}
-					keys = append(keys, key)
+				keys, err := self.Self().collectionRequestedKeys(ctx, inputs.Values)
+				if err != nil {
+					return nil, err
 				}
 				subset, err := self.Self().collectionSubset(ctx, keys)
 				if err != nil {
