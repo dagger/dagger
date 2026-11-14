@@ -14,6 +14,12 @@ func TestArtifactAbsentPlanUsesCatalogAlias(t *testing.T) {
 	parent := &Artifact{ModuleName: "grid", TypeName: "Check", Path: []string{"grid", "check"}}
 	child := parent.Clone()
 	child.DimensionKeys = []*ArtifactDimensionKey{{Dimension: "Cell", Key: "left"}}
+	key := "left"
+	module := &ModTreeNode{Name: "grid", Parent: &ModTreeNode{}}
+	collection := &ModTreeNode{Name: "check", Parent: module}
+	child.Node = &ModTreeNode{Name: "get", Parent: collection, CollectionKey: &key,
+		CollectionDimension: &ArtifactDimension{Identifier: "Cell", CollectionType: "Cell", ItemType: "Check"}}
+
 	originalNames := map[string]string{"module": "module"}
 	parent.DimensionNames = originalNames
 	catalog := &Artifacts{CompleteSchema: true, Entries: []*Artifact{parent, child}, AllDimensions: artifact.Dimensions{{Identifier: "Cell", Name: "cell", CollectionType: "Cell", Kind: "COLLECTION"}}}
@@ -21,7 +27,7 @@ func TestArtifactAbsentPlanUsesCatalogAlias(t *testing.T) {
 	catalog.PrepareAddressPlans()
 	require.Equal(t, []dagaddress.Pair{{Dimension: "Cell", Absent: true}}, parent.addressPlan(true).Selectors)
 	require.NotContains(t, originalNames, "Cell")
-	uri, err := parent.URI(ArtifactURIOpts{Prune: true, DimensionKeys: true, TypeAssertion: true})
+	uri, err := parent.URI(ArtifactURIOpts{Canonical: true, DimensionKeys: true, TypeAssertion: true})
 	require.NoError(t, err)
 	require.Equal(t, "dag+check://?!cell", uri)
 	persisted := parent.Clone()
@@ -33,7 +39,7 @@ func TestArtifactAbsentPlanUsesCatalogAlias(t *testing.T) {
 	restored := decoded.(*Artifact)
 	require.Equal(t, coordinates, restored.CanonicalCoordinates())
 	require.Empty(t, restored.DimensionKeys)
-	uri, err = restored.URI(ArtifactURIOpts{Prune: true, DimensionKeys: true, TypeAssertion: true})
+	uri, err = restored.URI(ArtifactURIOpts{Canonical: true, DimensionKeys: true, TypeAssertion: true})
 	require.NoError(t, err)
 	require.Equal(t, "dag+check://?!cell", uri)
 }
@@ -49,13 +55,13 @@ func TestArtifactSyntheticStaleHasIndependentAbsenceProof(t *testing.T) {
 	require.Empty(t, generator.links.TypedAbsent)
 	stale := generator.StaleArtifact()
 	require.Equal(t, []string{"Cell"}, stale.links.TypedAbsent)
-	for _, opts := range []ArtifactURIOpts{{Prune: true, TypeAssertion: true}, {Prune: true, TypeAssertion: true, Full: true}, {TypeAssertion: true}} {
+	for _, opts := range []ArtifactURIOpts{{Canonical: true, TypeAssertion: true}, {Canonical: true, TypeAssertion: true, Full: true}} {
 		uri, err := stale.URI(opts)
 		require.NoError(t, err)
 		addr, err := dagaddress.Parse(uri)
 		require.NoError(t, err)
 		require.Contains(t, addr.Query, dagaddress.Pair{Dimension: "Cell", Absent: true})
-		if opts.Prune && !opts.Full {
+		if opts.Canonical && !opts.Full {
 			require.Equal(t, "grid/generate/stale", addr.Path)
 		}
 	}
@@ -72,11 +78,17 @@ func TestArtifactPathDefinitionsRetainModuleAndStructure(t *testing.T) {
 		{Module: "beta", Type: "type:Check", Key: "shared"},
 	}}
 	require.NoError(t, catalog.NameEntries())
-	for _, opts := range []ArtifactURIOpts{{Prune: true, TypeAssertion: true}, {Prune: true, TypeAssertion: true, Full: true}, {TypeAssertion: true}} {
+	for _, opts := range []ArtifactURIOpts{{Canonical: true, TypeAssertion: true}, {Canonical: true, TypeAssertion: true, Full: true}} {
 		paths, err := catalog.PathDefinitions(opts)
 		require.NoError(t, err)
 		require.Len(t, paths, 3)
 		for _, path := range paths {
+			if opts.Canonical {
+				require.Contains(t, path.Dimensions, "name")
+				require.NotContains(t, path.Dimensions, "type:Check")
+			} else {
+				require.Contains(t, path.Dimensions, "type:Check")
+			}
 			addr, err := dagaddress.Parse(path.URI)
 			require.NoError(t, err)
 			require.Contains(t, addr.Query, dagaddress.Pair{Dimension: "module", Key: path.ModuleName, HasKey: true})
@@ -104,7 +116,7 @@ func TestArtifactIncompleteWorkspaceAddressKeepsModule(t *testing.T) {
 			catalog := &Artifacts{CompleteSchema: tc.complete, Entries: []*Artifact{entry}}
 			catalog.AllPaths = catalog.PathIndex()
 			require.NoError(t, catalog.NameEntries())
-			for _, opts := range []ArtifactURIOpts{{Prune: true, TypeAssertion: true}, {Full: true, TypeAssertion: true}, {Full: true}} {
+			for _, opts := range []ArtifactURIOpts{{Canonical: true, TypeAssertion: true}, {Canonical: true, Full: true, TypeAssertion: true}, {Canonical: true, Full: true}} {
 				uri, err := entry.URI(opts)
 				require.NoError(t, err)
 				addr, err := dagaddress.Parse(uri)

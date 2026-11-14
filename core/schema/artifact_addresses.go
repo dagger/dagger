@@ -8,8 +8,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-// Use cached, unfiltered workspace items as the address reference set. Failure
-// to read that catalog prevents shortening; it must not hide selected rows.
 func prepareArtifactAddresses(ctx context.Context, items []*core.Artifact, typed bool) ([]*core.Artifact, error) {
 	if !core.Supports(ctx, artifactDimensionViewVersion) {
 		return items, nil
@@ -27,7 +25,7 @@ func prepareArtifactAddresses(ctx context.Context, items []*core.Artifact, typed
 		}
 		key := fmt.Sprint(wsID.EngineResultID())
 		if typed {
-			key += ":" + item.TypeName
+			key += ":" + core.ArtifactTypeName(item.TypeName)
 		}
 		catalog, ok := catalogs[key]
 		if !ok {
@@ -63,7 +61,7 @@ func unfilteredAddressItems(ctx context.Context, item *core.Artifact, typed bool
 	}
 	if typed {
 		var selected dagql.ObjectResult[*core.Artifacts]
-		if err := srv.Select(ctx, selection, &selected, dagql.Selector{Field: "filterTypes", Args: []dagql.NamedInput{{Name: "types", Value: dagql.ArrayInput[dagql.String]{dagql.String(item.TypeName)}}}}); err != nil {
+		if err := srv.Select(ctx, selection, &selected, dagql.Selector{Field: "filterUri", Args: []dagql.NamedInput{{Name: "uri", Value: dagql.String("dag+" + core.ArtifactTypeName(item.TypeName) + "://")}}}); err != nil {
 			return nil, err
 		}
 		selection = selected

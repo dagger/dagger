@@ -3,6 +3,7 @@ package daggercmd
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"dagger.io/dagger/core"
@@ -143,7 +144,11 @@ func (fc *FuncCommand) selectArtifactRoot(ctx context.Context, cmd *cobra.Comman
 		return nil
 	}
 
-	target := artifactSelectionType(artifactKeyFlags(cmd), dimensions)
+	paths, err := readArtifactListPaths(ctx, dag, all)
+	if err != nil {
+		return err
+	}
+	target := artifactSelectionType(artifactKeyFlags(cmd), dimensions, paths)
 	if target == "" {
 		// Only static dimensions were given (a module, say). Those narrow a
 		// listing; they do not name an item to call functions on.
@@ -194,32 +199,10 @@ func (fc *FuncCommand) selectArtifactRoot(ctx context.Context, cmd *cobra.Comman
 	fc.artifactRoot = &artifactRootSelection{
 		fn: &modFunction{
 			ReturnType: typeDef,
-			// Stand where a walk would have stood, so a collection nested
-			// under this item derives the selector name it has on check.
-			commandPath: commandPathFromArtifact(items[0]),
 		},
 		uri: items[0].URI,
 	}
 	return nil
-}
-
-// commandPathFromArtifact is the schema path of the collection the selected
-// item belongs to, taken from the deepest path-shaped dimension it carries.
-func commandPathFromArtifact(item listedArtifact) *functionCommandPath {
-	deepest := ""
-	for _, key := range item.DimensionKeys {
-		if !strings.HasPrefix(key.Dimension, "/") {
-			continue
-		}
-		if deepest == "" || strings.Count(key.Dimension, "/") > strings.Count(deepest, "/") {
-			deepest = key.Dimension
-		}
-	}
-	if deepest == "" {
-		return nil
-	}
-	parts := strings.Split(strings.TrimPrefix(deepest, "/"), "/")
-	return &functionCommandPath{Module: parts[0], Fields: parts[1:]}
 }
 
 // parseArtifactSelectorFlags fills in the selector values now that the flags
@@ -237,19 +220,27 @@ func parseArtifactSelectorFlags(cmd *cobra.Command, args []string) error {
 
 // artifactSelectionType is the item type the selectors name: the one from the
 // deepest collection dimension, since a nested selector narrows the outer one.
-func artifactSelectionType(keys []dagaddress.Pair, dimensions artifact.Dimensions) string {
-	target, depth := "", -1
+func artifactSelectionType(keys []dagaddress.Pair, dimensions artifact.Dimensions, paths []artifactListPath) string {
+	var selected artifact.Dimensions
 	for _, key := range keys {
 		for _, dim := range dimensions {
-			if dim.Identifier != key.Dimension || dim.ItemType == "" {
-				continue
-			}
-			if d := strings.Count(dim.Identifier, "/"); d > depth {
-				target, depth = dim.ItemType, d
+			if dim.Identifier == key.Dimension && dim.ItemType != "" && !slices.Contains(selected, dim) {
+				selected = append(selected, dim)
 			}
 		}
 	}
-	return target
+	for _, dim := range selected {
+		for _, path := range paths {
+			if slices.Contains(path.Dimensions, "type:"+dim.ItemType) &&
+				!slices.ContainsFunc(selected, func(d *artifact.Dimension) bool { return !slices.Contains(path.Dimensions, d.Identifier) }) {
+				return dim.ItemType
+			}
+		}
+	}
+	if len(selected) > 0 {
+		return selected[0].ItemType
+	}
+	return ""
 }
 
 func artifactSelectionError(target string, items []listedArtifact) error {

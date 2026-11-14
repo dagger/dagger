@@ -498,13 +498,6 @@ func requireScopeMatch(ctx context.Context, selection *Artifacts, addr *dagaddre
 	return fmt.Errorf("%s matches %d artifacts:\n%s", addr, len(selection.Entries), strings.Join(lines, "\n"))
 }
 
-// resolveScopeObject evaluates the one value a relative DAG address names in
-// the conversation's scope: its bound tools with their live state, and its
-// workspace. It is LLM.artifacts(include: [<path>]).filterUri(<addr>).one.value.
-// The type assertion chooses among several matches. A single candidate of
-// another type produces a type mismatch error, and
-// the value must have the argument's type. Artifact.value evaluates each
-// artifact in its own workspace (or, for a bound tool's, the conversation's).
 func (m *MCP) resolveScopeObject(ctx context.Context, srv *dagql.Server, parsed *dagaddress.Address, addr, typeName string) (dagql.AnyObjectResult, error) {
 	llm, err := m.scopeLLM(ctx, srv)
 	if err != nil {

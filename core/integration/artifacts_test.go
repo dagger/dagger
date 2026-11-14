@@ -152,7 +152,7 @@ func (ArtifactsSuite) TestURI(ctx context.Context, t *testctx.T) {
   "container":{"one":{"uri":"dag://?module=provider&name=base","typed":"dag+container://?module=provider&name=base","pathOnly":"dag://base?type:Container=/base"}},
   "docs":{"one":{"typed":"dag+provider-docs://?name=docs.again"}}
 }}}`, string(*got))
-	// The path-only address retains the type guard when copied.
+
 	replayed, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts {
     filterUri(uri: "dag://base?type:Container=/base") { one { uri } }
@@ -202,7 +202,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	// The provider's generate/stale check remains in the full workspace schema.
 	require.Equal(t, "dagger check -W "+ref+" --provider --name=verify\n", out)
-	// The printed command must retain the remote workspace when copied.
+
 	_, err = base.WithExec([]string{"sh", "-c", out}).Sync(ctx)
 	require.NoError(t, err)
 	for _, typ := range []string{"Expertise", "expertise"} {
@@ -222,7 +222,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 		{[]string{"start", "-l", "-f=link", "web"}, []string{"dag+service://web"}, [][]string{{"web"}}},
 		{[]string{"agent", "-l", "-f=link", "assistant"}, []string{"dag+expertise://assistant"}, [][]string{{"assistant"}}},
 		{[]string{"shell", "-l", "-f=link", "base"}, []string{"dag+container://base"}, [][]string{{"base"}}},
-		{[]string{"list", "containers", "-f=link"}, []string{"dag+container://?module=consumer", "dag+container://?module=provider&name=base", "dag+container://?name=broken"}, [][]string{{"consumer", "base"}, {"base"}, {"broken"}}},
+		{[]string{"list", "containers", "-f=link"}, []string{"dag+container://base", "dag+container://broken", "dag+container://consumer/base"}, [][]string{{"base"}, {"broken"}, {"consumer", "base"}}},
 	} {
 		for _, flag := range []string{"--absolute", "--abs"} {
 			t.Run(strings.Join(tc.args, " ")+" "+flag, func(ctx context.Context, t *testctx.T) {
@@ -240,7 +240,7 @@ func (ArtifactsSuite) TestAbsoluteURI(ctx context.Context, t *testctx.T) {
 					want = append(want, address.String())
 				}
 				require.Equal(t, strings.Join(want, "\n")+"\n", out)
-				// Every copied absolute link must resolve to one artifact.
+
 				for i, link := range want {
 					replayed, err := base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace {
   artifacts { filterUri(uri: %q) { one { path } } }
@@ -616,12 +616,12 @@ func (ArtifactsSuite) TestInclude(ctx context.Context, t *testctx.T) {
 		patterns []string
 		want     []string
 	}{
-		{[]string{"docs"}, []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
-		{[]string{"provider/docs"}, []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
-		{[]string{"provider:docs"}, []string{"dag://docs", "dag://docs/again", "dag://docs/source"}},
-		{[]string{"**/source"}, []string{"dag://docs/source", "dag://other-docs/source"}},
-		{[]string{"**:source"}, []string{"dag://docs/source", "dag://other-docs/source"}},
-		{[]string{"base", "consumer/base"}, []string{"dag://base", "dag://consumer/base"}},
+		{[]string{"docs"}, []string{"dag://?name=docs", "dag://?name=docs.again", "dag://?name=docs.source"}},
+		{[]string{"provider/docs"}, []string{"dag://?name=docs", "dag://?name=docs.again", "dag://?name=docs.source"}},
+		{[]string{"provider:docs"}, []string{"dag://?name=docs", "dag://?name=docs.again", "dag://?name=docs.source"}},
+		{[]string{"**/source"}, []string{"dag://?name=docs.source", "dag://?name=otherDocs.source"}},
+		{[]string{"**:source"}, []string{"dag://?name=docs.source", "dag://?name=otherDocs.source"}},
+		{[]string{"base", "consumer/base"}, []string{"dag://?module=provider&name=base", "dag://?module=consumer&name=base"}},
 	} {
 		items, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: tc.patterns}).Items(ctx)
 		require.NoError(t, err)
@@ -809,7 +809,7 @@ func (ArtifactsSuite) TestHelpProgress(ctx context.Context, t *testctx.T) {
 		result := base.With(daggerExec("-v", "list", "containers", "--by-provider", "-f=link"))
 		out, err := result.Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "dag+container://?module=provider&name=base")
+		require.Contains(t, out, "dag+container://base")
 		progress, err := result.Stderr(ctx)
 		require.NoError(t, err)
 		require.Contains(t, progress, "Load available types")
@@ -950,7 +950,7 @@ main = true
 	out, err := reserved.With(workspaceSelectionDaggerExec("-W", "/work/selected", "list", "-a", "types", "-f=link")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "dag+directory://\n", out)
-	// The copied type-only link still identifies the field named types.
+
 	out, err = reserved.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
   artifacts { filterUri(uri: "dag+directory://") { one { dimensionKeys(all: true) { dimension key } } } }
 } }`, "-W", "/work/selected", "-m", "core")).Stdout(ctx)

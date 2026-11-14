@@ -2,19 +2,8 @@ package flattening
 
 import "strings"
 
-// NameDimension identifies the full ordinary field path from the module root.
 const NameDimension = "name"
 
-// CanonicalCoordinates assigns module, collection, and name coordinates.
-// fieldPath contains every ordinary schema field from the exposed module root,
-// including collection fields. It excludes the module prefix and synthetic get
-// operations. Field.FieldPath builds this path from nearest-item input metadata.
-// An empty path names the root itself with ".". Field spelling is preserved.
-//
-// Collection coordinates keep their order and values. Existing module, name,
-// and legacy type coordinates are replaced. Collection identifiers must already
-// be exact schema collection type names. No artifact type or selected schema is
-// needed: neither can change an artifact's canonical coordinates.
 func CanonicalCoordinates(module string, fieldPath []string, collections []Coordinate) []Coordinate {
 	coordinates := make([]Coordinate, 0, len(collections)+2)
 	if module != "" {
@@ -32,11 +21,6 @@ func CanonicalCoordinates(module string, fieldPath []string, collections []Coord
 	return append(coordinates, Coordinate{Dimension: NameDimension, Key: name})
 }
 
-// CanonicalDimensions replaces legacy static metadata with module and name
-// metadata. Collection definitions use their exact CollectionType identities
-// and retain first-occurrence order. Repeated collection types add one column.
-// CollectionType and ItemType must be supplied by schema metadata.
-// The result owns its metadata, so changes do not affect the input.
 func CanonicalDimensions(module string, dimensions Dimensions) Dimensions {
 	result := make(Dimensions, 0, len(dimensions)+2)
 	if module != "" {

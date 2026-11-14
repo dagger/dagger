@@ -232,7 +232,6 @@ func TestAbsentDimensionFilters(t *testing.T) {
 }
 
 func TestTypeKeyIgnoresAbsent(t *testing.T) {
-	// Even a manually built pair with a key cannot make absence a type key.
 	addr := &Address{Query: []Pair{
 		{Dimension: "type:Check", Key: "ignored", HasKey: true, Absent: true},
 		{Dimension: "check", Key: "tests", HasKey: true},

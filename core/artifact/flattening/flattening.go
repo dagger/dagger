@@ -1,5 +1,3 @@
-// Package flattening maps artifact schema paths and collection items to
-// dimensions. It does not load modules, evaluate collections, or format URLs.
 package flattening
 
 import (
@@ -8,21 +6,14 @@ import (
 	"github.com/dagger/dagger/engine/naming"
 )
 
-// Collection describes a collection boundary on an artifact's route. Fields
-// are relative to the previous collection item, or to the module root for the
-// first boundary. They name object fields, not synthetic get operations.
 type Collection struct {
-	Fields []string
-	// Type is the collection object type; ItemType is its lookup result type.
+	Fields         []string
 	Type           string
 	ItemType       string
 	KeyName        string
 	KeyDescription string
 }
 
-// Dimension retains the legacy path-based collection identity. Parent is the
-// preceding collection boundary. Ordinary object fields extend its path.
-// A nil name function uses current artifact spelling.
 func (c Collection) Dimension(module string, parent *Dimension, name func(string) string) *Dimension {
 	if name == nil {
 		name = latestName
@@ -50,21 +41,16 @@ func (c Collection) Dimension(module string, parent *Dimension, name func(string
 		KeyName: c.KeyName, KeyDescription: c.KeyDescription}
 }
 
-// CanonicalDimension identifies a collection by its exact schema type name.
-// Type and ItemType must come from schema metadata, not from a field route.
 func (c Collection) CanonicalDimension() *Dimension {
 	return &Dimension{
 		Kind: "COLLECTION", Identifier: c.Type, CollectionType: c.Type,
-		Name: latestName(c.ItemType), QualifiedName: latestName(c.Type),
+		Name: latestName(c.ItemType), QualifiedName: c.Type,
 		ItemType: c.ItemType, KeyName: c.KeyName, KeyDescription: c.KeyDescription,
 	}
 }
 
-// Coordinate is one dimension's value for an artifact. Collection values are
-// supplied by discovery; flattening only assigns their dimensions.
 type Coordinate struct{ Dimension, Key string }
 
-// latestName follows the current artifact CLI spelling, including path syntax.
 func latestName(name string) string {
 	return naming.MapNamePattern(name, func(run string) string {
 		id, err := naming.Latest.Parse(run)

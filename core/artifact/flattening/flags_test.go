@@ -9,7 +9,6 @@ import (
 )
 
 func TestDimensionFlagsCollectionTypeCollision(t *testing.T) {
-	// From TestArtifactDimensionHelp: collection keys take the short name.
 	dims := Dimensions{
 		{Identifier: "go/modules", Name: "go-module", QualifiedName: "go-modules", ItemType: "GoModule"},
 		{Identifier: "type:GoModule", Kind: "TYPE", Name: "go-module", ItemType: "GoModule"},
@@ -23,7 +22,6 @@ func TestDimensionFlagsCollectionTypeCollision(t *testing.T) {
 }
 
 func TestDimensionFlagsCollectionQualification(t *testing.T) {
-	// From TestArtifactCollectionFlagNames: parent collections supply identity.
 	dims := Dimensions{
 		{Identifier: "/tools/items", Kind: "COLLECTION", Name: "item"},
 		{Identifier: "/tools/other", Kind: "COLLECTION", Name: "item"},
@@ -53,7 +51,6 @@ func TestDimensionFlagsCollectionQualification(t *testing.T) {
 	}
 	permute(0)
 
-	// From TestCollectionSelectorNames: object fields qualify sibling routes.
 	objects := Dimensions{
 		{Identifier: "/tools/linux/modules", Name: "module"},
 		{Identifier: "/tools/windows/modules", Name: "module"},
@@ -71,7 +68,6 @@ func TestDimensionFlagsCollectionQualification(t *testing.T) {
 }
 
 func TestDimensionFlagsReserved(t *testing.T) {
-	// From TestArtifactProjectionFlagNames: peer command flags are reserved.
 	dims := Dimensions{
 		{Identifier: "build/skip", Name: "skip", QualifiedName: "build-skip"},
 		{Identifier: "go/tests", Name: "go-test", QualifiedName: "go-tests"},
@@ -94,7 +90,6 @@ func TestDimensionFlagsReserved(t *testing.T) {
 }
 
 func TestFlatteningModuleFlags(t *testing.T) {
-	// From TestArtifactSelectorFlags, with casing and alias conflicts added.
 	dims := Dimensions{
 		{Identifier: "module", Kind: "MODULE", Name: "module"},
 		{Identifier: "go/tests", Kind: "COLLECTION", Name: "go-test"},
@@ -158,7 +153,8 @@ func TestFlagNamingPolicy(t *testing.T) {
 	name := func(value string) string { return "policy-" + latestName(value) }
 	require.Equal(t, "policy-check", SelectorDimensions(nil, name)[0].Name)
 	require.Equal(t, FlagNames{Key: "policy-check"}, DimensionFlags(nil, nil, name)["type:Check"])
-	// Module allocation must reserve selectors made with the same policy.
+	canonical := (Collection{Type: "GoPackages", ItemType: "GoPackage"}).CanonicalDimension()
+	require.Equal(t, FlagNames{Key: "policy-go-package", Presence: "policy-go-packages"}, DimensionFlags(Dimensions{canonical}, nil, name)["GoPackages"])
 	require.Equal(t, "by-Check", ModuleFlags([]string{"Check"}, nil, nil, name)["Check"])
 	reserved := map[string]bool{
 		"tools-item": true, "tools-items-item": true,

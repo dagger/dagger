@@ -7,11 +7,8 @@ import (
 	"strings"
 )
 
-// FlagNames contains the item key and collection presence flag names.
 type FlagNames struct{ Key, Presence string }
 
-// DimensionFlags allocates all names together. A flag has the same meaning in every peer command.
-// A nil name function uses current artifact spelling.
 func DimensionFlags(dimensions Dimensions, reserved map[string]bool, name func(string) string) map[string]FlagNames {
 	if name == nil {
 		name = latestName
@@ -48,6 +45,11 @@ func DimensionFlags(dimensions Dimensions, reserved map[string]bool, name func(s
 			}
 			presence := kind == "collection-presence"
 			candidates := dims.Names(d, presence)
+			if d.CollectionType != "" && d.Identifier == d.CollectionType {
+				for i, candidate := range candidates {
+					candidates[i] = name(candidate)
+				}
+			}
 			if kind == "type" {
 				candidates = []string{d.Name, "artifact-" + d.Name}
 			}
@@ -97,8 +99,6 @@ func DimensionFlags(dimensions Dimensions, reserved map[string]bool, name func(s
 	return names
 }
 
-// ModuleFlags allocates module aliases after dimension flags.
-// A nil name function uses current artifact spelling.
 func ModuleFlags(modules []string, dimensions Dimensions, reserved map[string]bool, name func(string) string) map[string]string {
 	if name == nil {
 		name = latestName
@@ -128,8 +128,6 @@ func ModuleFlags(modules []string, dimensions Dimensions, reserved map[string]bo
 	return names
 }
 
-// SelectorDimensions includes the fixed artifact type selectors.
-// A nil name function uses current artifact spelling.
 func SelectorDimensions(dimensions Dimensions, name func(string) string) Dimensions {
 	if name == nil {
 		name = latestName

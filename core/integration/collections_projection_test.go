@@ -102,7 +102,7 @@ func (*Probe) Run() error { panic("check evaluated") }
 			out, err := ctr.With(daggerExec("check", "-l", "--name="+platform+".modules.cases.run", "-f=link")).Stdout(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, strings.TrimSpace(out))
-			// Listing a schema path cannot read collection keys or check values.
+
 			replay, err := ctr.With(daggerExec("check", "-l", strings.TrimSpace(out), "-f=link")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, out, replay)
@@ -131,8 +131,7 @@ func (*Probe) Run() error { panic("check evaluated") }
 			selected, err := base.With(daggerExec("check", "-la", "-f=link", link)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, links, selected)
-			// Replay the address through a fresh API selection. Shared collection
-			// types must preserve the platform route in the full name coordinate.
+
 			metadata, err := base.With(daggerQueryAt("core", `{
     currentWorkspace { artifacts { filterUri(uri: %q) { one {
      dimensionKeys(all: true) { dimension key }

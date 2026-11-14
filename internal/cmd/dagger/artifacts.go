@@ -363,13 +363,29 @@ func artifactDimensions(ctx context.Context, dag *dagger.Client, artifacts *core
 		return nil, err
 	}
 	var res struct {
-		Node struct{ DimensionDefinitions artifact.Dimensions }
+		Node struct {
+			DimensionDefinitions artifact.Dimensions
+			Types                []struct{ Name string }
+		}
 	}
 	err = dag.Do(ctx, &dagger.Request{
-		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { dimensionDefinitions { kind identifier name qualifiedName collectionType itemType keyName keyDescription } } } }`,
+		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { dimensionDefinitions { kind identifier name qualifiedName collectionType itemType keyName keyDescription } types { name } } } }`,
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &res})
-	return res.Node.DimensionDefinitions, err
+	if err != nil {
+		return nil, err
+	}
+	definitions := res.Node.DimensionDefinitions
+	for _, typ := range res.Node.Types {
+		id := "type:" + typ.Name
+		if !slices.ContainsFunc(definitions, func(d *artifact.Dimension) bool { return d.Identifier == id }) {
+			definitions = append(definitions, &artifact.Dimension{
+				Identifier: id, Kind: "TYPE", Name: cliName(typ.Name),
+				QualifiedName: "artifact-" + cliName(typ.Name), ItemType: typ.Name,
+			})
+		}
+	}
+	return definitions, nil
 }
 
 func validateArtifactDimensionFlags(cmd *cobra.Command, defs artifact.Dimensions) error {
@@ -469,8 +485,6 @@ type listedArtifact struct {
 	DimensionKeys    []struct{ Dimension, Key string }
 }
 
-// Older engines omit coordinates from listing metadata and carry every
-// runtime key in the address. Recover those keys only for those engines.
 func (item *listedArtifact) keysFromAddress(definitions artifact.Dimensions) error {
 	if item.DimensionKeys != nil {
 		return nil
@@ -561,8 +575,6 @@ func isMissingArtifactListingField(err error) bool {
 	return gqlErr != nil && len(gqlErr.Path) == 0 && gqlErr.Extensions["code"] == "GRAPHQL_VALIDATION_FAILED" && strings.HasPrefix(gqlErr.Message, missing)
 }
 
-// Schema listing was added after __listing. Only a validation error can
-// trigger the older pathDefinitions query; resolver failures must propagate.
 func isMissingArtifactSchemaListing(err error) bool {
 	if isMissingArtifactListingField(err) {
 		return true
@@ -633,10 +645,7 @@ func readListedArtifactsMetadata(ctx context.Context, dag *dagger.Client, select
 	return items, nil
 }
 
-func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, dimension string, absolute, expand bool) ([]listedArtifact, error) {
-	if !expand {
-		return readListedArtifactPaths(ctx, dag, selection, absolute, dimension)
-	}
+func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, dimension string, absolute bool) ([]listedArtifact, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err

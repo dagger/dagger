@@ -20,8 +20,6 @@ import (
 // Scheme is the URL scheme of a DAG address.
 const Scheme = "dag"
 
-// Pair is one dimension selector from the query. Absent selects artifacts
-// without the dimension. Otherwise, a pair without a key selects any key.
 type Pair struct {
 	Dimension string
 	Key       string
@@ -118,7 +116,7 @@ func parseQuery(query string) ([]Pair, error) {
 		if err != nil {
 			return nil, fmt.Errorf("dimension %q: %w", name, err)
 		}
-		// Decode first so standard URL query encoding preserves absence.
+
 		dimension, absent := strings.CutPrefix(dimension, "!")
 		if dimension == "" {
 			return nil, fmt.Errorf("empty dimension in query %q", query)
@@ -141,9 +139,6 @@ func parseQuery(query string) ([]Pair, error) {
 	return pairs, nil
 }
 
-// DimensionFilter groups selectors by dimension and Absent. Keys are
-// alternatives. All filters combine with AND. Absent selects artifacts
-// without the dimension. Otherwise, nil keys select any key in the dimension.
 type DimensionFilter struct {
 	Dimension string
 	Keys      []string
@@ -186,8 +181,6 @@ func (addr *Address) TypeKey(types ...string) (Pair, bool) {
 	return Pair{}, false
 }
 
-// DimensionFilters groups pairs by dimension and Absent, in first-seen order.
-// A present pair without a key makes its group match any key.
 func (addr *Address) DimensionFilters() []DimensionFilter {
 	var filters []DimensionFilter
 	type group struct {

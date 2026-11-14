@@ -19,9 +19,11 @@ func canonicalCLICommands(t *testing.T, output string) [][]string {
 	program, err := syntax.NewParser().Parse(strings.NewReader(output), "")
 	require.NoError(t, err)
 	var commands [][]string
-	shell, err := interp.New(interp.ExecHandler(func(_ context.Context, args []string) error {
-		commands = append(commands, append([]string{}, args...))
-		return nil
+	shell, err := interp.New(interp.ExecHandlers(func(_ interp.ExecHandlerFunc) interp.ExecHandlerFunc {
+		return func(_ context.Context, args []string) error {
+			commands = append(commands, append([]string{}, args...))
+			return nil
+		}
 	}))
 	require.NoError(t, err)
 	require.NoError(t, shell.Run(t.Context(), program))
@@ -91,7 +93,6 @@ func TestArtifactCanonicalCLIPathProof(t *testing.T) {
 			require.Equal(t, []string{"check"}, selector.Types)
 			require.Equal(t, "tools/items/test", selector.Path)
 			require.Equal(t, []dagaddress.Pair{{Dimension: "type:Check", Key: "/tools/items/test", HasKey: true}}, selector.Query)
-			// The real exact-path resolver excludes the same-name descendant.
 			candidates := artifact.Paths{{Type: "type:Check", Key: "tools/items/test"}, {Type: "type:Check", Key: "tools/items/parts/test"}}
 			require.Equal(t, []string{"tools/items/test"}, artifact.ResolveTypeKey(candidates, selector.Query[0].Key))
 			arguments, err := artifactCLIArguments(items[0], map[string]string{"/tools/items": "item"}, nil)

@@ -5,15 +5,12 @@ import (
 	"strings"
 )
 
-// Link selects a schema path in an address. Every collection boundary
-// still needs its item key. A module or type key can narrow the path further.
 type Link struct {
 	Module          bool
 	TypeKey         string
 	ExactDimensions bool
 }
 
-// Links holds the schema proof with and without the scheme's type constraint.
 type Links struct {
 	Typed, Untyped  *Link
 	CompleteSchema  bool     `json:",omitempty"`
@@ -26,9 +23,6 @@ type Links struct {
 	Stale           *Links   `json:",omitempty"`
 }
 
-// PathAbsentDimensions returns extra collection dimensions on descendants
-// with the same module and path. A typed address also requires the same type.
-// Every target collection dimension must be present on the descendant.
 func PathAbsentDimensions(paths Paths, target Path, typed bool) []string {
 	var dimensions []string
 	for _, candidate := range paths {
@@ -50,9 +44,6 @@ func PathAbsentDimensions(paths Paths, target Path, typed bool) []string {
 	return slices.Compact(dimensions)
 }
 
-// PathPresenceDimensions returns target collection dimensions missing from
-// another path with the same module and key. A typed address also requires
-// the same type.
 func PathPresenceDimensions(paths Paths, target Path, typed bool) []string {
 	var dimensions []string
 	for _, candidate := range paths {
@@ -73,8 +64,6 @@ func canonicalCollectionDimension(dimension string) bool {
 	return !IsStaticDimension(dimension) && !strings.Contains(dimension, "/")
 }
 
-// PathNeedsModule reports whether the public path also occurs in another
-// module. A typed address also requires the same type.
 func PathNeedsModule(paths Paths, target Path, typed bool) bool {
 	return slices.ContainsFunc(paths, func(candidate Path) bool {
 		return candidate.Module != target.Module && candidate.Key == target.Key &&
@@ -82,15 +71,6 @@ func PathNeedsModule(paths Paths, target Path, typed bool) bool {
 	})
 }
 
-// PlanLink chooses the fewest extra pairs that identify target's schema path.
-// Collection keys are unique only within their own collection instance, so
-// every enclosing collection key is required. Prefer omitting module, then
-// the field discriminator. In the current address format the latter is the
-// type dimension's path key.
-//
-// An incomplete catalog can prove uniqueness inside a module. Collection
-// identifiers carry their owning module. Otherwise include the module pair.
-// Use exact dimension identifiers when another module's aliases are unknown.
 func PlanLink(paths Paths, target Path, complete, typed bool, cliName func(string) string) *Link {
 	if target.Type == "" || target.Key == "" || target.Module == "" {
 		return nil
@@ -134,7 +114,6 @@ func PlanLink(paths Paths, target Path, complete, typed bool, cliName func(strin
 		if option.field {
 			slices.Sort(fieldPaths)
 			link.TypeKey = ShortTypeKey(slices.Compact(fieldPaths), target.Key)
-			// The resolver gives an exact full path precedence over suffixes.
 			if link.TypeKey == "/"+target.Key {
 				link.TypeKey = target.Key
 			}

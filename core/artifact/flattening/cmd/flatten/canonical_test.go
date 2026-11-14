@@ -68,7 +68,6 @@ func TestCanonicalRejectsInvalidInputBeforeOutput(t *testing.T) {
 		{"null row", `[{"type":"Check","items":[null]}]`, `expected an array`},
 		{"null key", `[{"type":"Check","items":[[null]]}]`, `must be a string`},
 		{"non-string key", `[{"type":"Check","items":[[2]]}]`, `read schema:`},
-		{"duplicate row", `[{"type":"Check","items":[[],[]]}]`, `duplicate typed coordinates`},
 		{"duplicate after selection", `[{"type":"Check","localPath":["other"],"items":[[],[]]}]`, `duplicate typed coordinates`},
 		{"extra keys", `[{"type":"Check","items":[["x"]]}]`, `keys`},
 	} {

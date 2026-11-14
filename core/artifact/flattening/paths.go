@@ -95,7 +95,7 @@ func ResolveTypeKey(candidates Paths, key string) []string {
 // ShortTypeKey is the shortest suffix of path that names only path among the
 // candidates. Without one, it is the full path, or the full path with a
 // leading "/" when that is also the suffix of a longer candidate. It is a
-// flattening: adding a path to the schema can lengthen it.
+// projection: adding a path to the schema can lengthen it.
 func ShortTypeKey(candidates []string, path string) string {
 	if !slices.Contains(candidates, path) {
 		return path

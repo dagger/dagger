@@ -7,9 +7,6 @@ import (
 	"github.com/dagger/dagger/core/artifact/flattening"
 )
 
-// VisibleDimensions lists columns whose key sets differ across rows. A
-// missing cell differs from every present key, including the empty string.
-// Repeated coordinates are compared as sets, independent of their order.
 func VisibleDimensions(rows [][]flattening.Coordinate) []string {
 	type column struct {
 		first   map[string]struct{}

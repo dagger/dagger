@@ -135,9 +135,9 @@ func TestNameDimensionsWholeSchema(t *testing.T) {
 	got, err := NameDimensions(input)
 	require.NoError(t, err)
 	require.Equal(t, Dimensions{
-		{Kind: "COLLECTION", Identifier: "Dependencies", CollectionType: "Dependencies", ItemType: "Package", Name: "dependencies", QualifiedName: "dependencies"},
-		{Kind: "COLLECTION", Identifier: "Packages", CollectionType: "Packages", ItemType: "Package", Name: "packages", QualifiedName: "packages"},
-		{Kind: "COLLECTION", Identifier: "Tests", CollectionType: "Tests", ItemType: "Test", Name: "test", QualifiedName: "tests"},
+		{Kind: "COLLECTION", Identifier: "Dependencies", CollectionType: "Dependencies", ItemType: "Package", Name: "dependencies", QualifiedName: "Dependencies"},
+		{Kind: "COLLECTION", Identifier: "Packages", CollectionType: "Packages", ItemType: "Package", Name: "packages", QualifiedName: "Packages"},
+		{Kind: "COLLECTION", Identifier: "Tests", CollectionType: "Tests", ItemType: "Test", Name: "test", QualifiedName: "Tests"},
 	}, got)
 	require.Equal(t, "package", input[0].Name)
 	require.Equal(t, "package", input[1].Name)
@@ -201,4 +201,24 @@ func TestNameDimensionsKeepsLegacyMetadata(t *testing.T) {
 	require.Equal(t, Dimensions{legacy}, got)
 	got[0].Name = "changed"
 	require.Equal(t, "app-name", legacy.Name)
+}
+
+func TestCanonicalDimensionAliasesResolveOwnColumn(t *testing.T) {
+	input := Dimensions{
+		{Kind: "COLLECTION", Identifier: "Tests", CollectionType: "Tests", ItemType: "Thing", QualifiedName: "tests"},
+		{Kind: "COLLECTION", Identifier: "Other", CollectionType: "Other", ItemType: "Tests", QualifiedName: "other"},
+	}
+	dimensions, err := NameDimensions(input)
+	require.NoError(t, err)
+	for _, dimension := range dimensions {
+		require.Equal(t, dimension.Identifier, dimension.QualifiedName)
+		for _, alias := range []string{dimension.Name, dimension.QualifiedName} {
+			identifier, err := dimensions.Resolve(alias)
+			require.NoError(t, err)
+			require.Equal(t, dimension.Identifier, identifier, alias)
+		}
+	}
+	flags := DimensionFlags(dimensions, nil, nil)
+	require.Equal(t, FlagNames{Key: "thing", Presence: "dimension-tests-all"}, flags["Tests"])
+	require.Equal(t, FlagNames{Key: "tests", Presence: "other"}, flags["Other"])
 }

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Convert saved workspace metadata to CLI replay or native flattening input."""
 import argparse
 import json
 from pathlib import Path
@@ -8,7 +7,6 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 
 
 def comparable_name(name):
-    """Compare captured CLI spelling without inventing schema field spelling."""
     return ''.join(char for char in name.casefold() if char.isalnum())
 
 
@@ -20,7 +18,6 @@ def unique_match(values, name, context):
 
 
 class LocalPaths:
-    # Actual engine field names from core/schema/workspace.go and generator.go.
     ENGINE_FIELDS = {'WorkspaceSDK': {'generate': 'Changeset'},
                      'Generator': {'stale': 'Check'}}
 
@@ -47,11 +44,7 @@ class LocalPaths:
             raise ValueError(f'Expected one field path: {path}')
         return pairs[0][1].split('/') if pairs[0][1] else []
 
-    def resolve(self, path):
-        return self.resolve_projection(path)[0]
-
     def resolve_projection(self, path):
-        """Resolve the tail and each collection chunk from literal object fields."""
         module = path['moduleName']
         fields = self.fields(path)
         offset = int(bool(fields) and comparable_name(fields[0]) == comparable_name(module))
@@ -90,8 +83,6 @@ class LocalPaths:
                 returns = (result.get('asObject') or {}).get('name')
             local.append(actual)
             prefix = tuple(fields[:offset + index + 1])
-            # @generate changes a Changeset return into Generator. @check can
-            # also project a function whose original return is void.
             current = self.projections.get((module, prefix, frozenset(active)), returns)
             boundary = boundaries.get(tuple(relative[:index + 1]))
             if boundary is not None:
@@ -111,7 +102,6 @@ class LocalPaths:
         return local, collections
 
 def format_entries(entries, output_format):
-    """Convert resolved CLI entries without changing their schema or keys."""
     if output_format == 'cli':
         return entries
     if output_format != 'flattening':
@@ -141,7 +131,6 @@ def decode_rows(payload):
 
 
 def dimension_key_pair(coordinate):
-    """Read public GraphQL names or native private-listing Go names."""
     if not isinstance(coordinate, dict):
         raise ValueError('Expected a dimension key object.')
     values = []
@@ -159,7 +148,6 @@ def dimension_key_pair(coordinate):
 
 
 def source_path(row):
-    """Read an explicit source path, or the path-form DAG URI."""
     if 'path' in row:
         return list(row['path'])
     address = urlsplit(row['uri'])
@@ -170,7 +158,6 @@ def source_path(row):
 
 
 def capture_entries(metadata, listing, sdk_modules=(), selected_types=None):
-    """Use exact projections for modern captures and retain the old adapter."""
     paths = (decode_rows(metadata['__listing']) if '__listing' in metadata
              else metadata['pathDefinitions'])
     collection_ids = {d['identifier'] for d in metadata['dimensionDefinitions']
@@ -196,7 +183,6 @@ def capture_entries(metadata, listing, sdk_modules=(), selected_types=None):
             local_path = list(projection['localPath'] or [])
             collections = []
             for collection in projection.get('collections') or []:
-                # Go's Collection fields retain their exported JSON names.
                 copied = dict(collection)
                 copied['Fields'] = list(collection.get('Fields') or [])
                 collections.append(copied)
@@ -229,7 +215,6 @@ def capture_entries(metadata, listing, sdk_modules=(), selected_types=None):
         typ = schemes[address.scheme]
         coordinates = {}
         if 'dimensionKeys' in item or 'coordinates' in item:
-            # Full metadata remains valid when the URI omits redundant keys.
             raw_coordinates = item.get('dimensionKeys', item.get('coordinates', []))
             if not isinstance(raw_coordinates, list):
                 raise ValueError('Expected a dimension key array.')
@@ -238,7 +223,6 @@ def capture_entries(metadata, listing, sdk_modules=(), selected_types=None):
         else:
             if modern:
                 raise ValueError('Modern listing rows require dimensionKeys or coordinates.')
-            # Older captures retain every collection key in their URI.
             pairs = [(aliases[name], value)
                      for name, value in parse_qsl(address.query, keep_blank_values=True)
                      if name in aliases]
@@ -259,7 +243,7 @@ def capture_entries(metadata, listing, sdk_modules=(), selected_types=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description='Convert saved workspace metadata to CLI replay or native flattening input.')
     parser.add_argument('--schema', type=Path, required=True)
     parser.add_argument('--listing', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)

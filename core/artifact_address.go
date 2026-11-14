@@ -3,35 +3,33 @@ package core
 import (
 	"encoding/json"
 	"maps"
+	"slices"
+	"strings"
 
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/dagaddress"
 )
 
-// A non-nil plan can be empty: the type alone can identify an artifact.
 type artifactAddressPlan struct{ Selectors []dagaddress.Pair }
 type artifactAddressPlans struct{ Typed, Untyped *artifactAddressPlan }
 
 func (a *Artifact) addressRow(typed bool) artifact.AddressRow {
 	typ := "*"
 	if typed {
-		typ = a.TypeName
+		typ = ArtifactTypeName(a.TypeName)
 	}
 	return artifact.AddressRow{Type: typ, Coordinates: a.CanonicalCoordinates()}
 }
 
-// AddressIdentity identifies an artifact within its source workspace. It does
-// not depend on a selection or the shorter spelling of a link.
 func (a *Artifact) AddressIdentity() string {
 	data, _ := json.Marshal(struct {
 		Path []string
+		Type string
 		Row  artifact.AddressRow
-	}{a.Path, a.addressRow(true)})
+	}{a.Path, a.TypeName, a.addressRow(true)})
 	return string(data)
 }
 
-// PrepareAddressPlans requires an expanded catalog with no row filters.
-// A type filter still supplies a complete catalog for typed addresses.
 func (a *Artifacts) PrepareAddressPlans() {
 	if !a.CompleteSchema || a.Selector.Paths != nil || len(a.Selector.Dimensions) != 0 || len(a.Selector.DimensionAlternatives) != 0 || len(a.Selector.ExcludedURIs) != 0 || len(a.Selector.CollectionPaths) != 0 {
 		return
@@ -52,8 +50,14 @@ func (a *Artifacts) PrepareAddressPlans() {
 	for _, entry := range a.Entries {
 		entry.addressPlans = &artifactAddressPlans{}
 		namesOwned := false
-		if selectors, ok := typed.Selectors(entry.addressRow(true)); ok {
-			entry.addressPlans.Typed = &artifactAddressPlan{Selectors: selectors}
+		completeType := a.Selector.Types == nil || !slices.ContainsFunc(a.AllPaths, func(path artifact.Path) bool {
+			typ := strings.TrimPrefix(path.Type, "type:")
+			return ArtifactTypeName(typ) == ArtifactTypeName(entry.TypeName) && !slices.Contains(a.Selector.Types, typ)
+		})
+		if completeType {
+			if selectors, ok := typed.Selectors(entry.addressRow(true)); ok {
+				entry.addressPlans.Typed = &artifactAddressPlan{Selectors: selectors}
+			}
 		}
 		if untyped != nil {
 			if selectors, ok := untyped.Selectors(entry.addressRow(false)); ok {
@@ -93,7 +97,6 @@ func (a *Artifact) addressPlan(typed bool) *artifactAddressPlan {
 	return a.addressPlans.Untyped
 }
 
-// WithAddressPlan retains the source artifact's evaluation and display context.
 func (a *Artifact) WithAddressPlan(source *Artifact) *Artifact {
 	result := a.Clone()
 	result.addressPlans = source.addressPlans
@@ -101,7 +104,6 @@ func (a *Artifact) WithAddressPlan(source *Artifact) *Artifact {
 	return result
 }
 
-// A deliberately narrow schema must not load unrelated modules for shorter links.
 func (a *Artifact) HasCompleteAddressSchema() bool {
 	return a.links != nil && (a.links.CompleteSchema || a.links.Typed != nil && !a.links.Typed.ExactDimensions)
 }

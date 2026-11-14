@@ -106,8 +106,6 @@ func reversedRows(rows []AddressRow) []AddressRow {
 }
 
 func TestAddressMinimumSelectorsAgainstReference(t *testing.T) {
-	// Each dimension has three states: absent, empty key, and nonempty key.
-	// Check every nonempty subset of the nine possible rows.
 	dimensions := []string{"A", "B"}
 	universe := make([]AddressRow, 0, 9)
 	for a := 0; a < 3; a++ {
@@ -234,8 +232,6 @@ func TestAddressManyRequiredAbsentSelectors(t *testing.T) {
 		rows = append(rows, AddressRow{Type: target.Type, Coordinates: coordinates})
 		want[i] = dagaddress.Pair{Dimension: dimension, Absent: true}
 	}
-	// Each competitor differs in one independent dimension. Every absence is
-	// required, so removing any selector would include another artifact.
 	for _, snapshot := range [][]AddressRow{rows, reversedRows(rows)} {
 		got, ok := NewAddressIndex(snapshot, true).Selectors(target)
 		require.True(t, ok)
