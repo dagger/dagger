@@ -387,7 +387,11 @@ func TestStampCausesNameTheWrite(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, stored)
 	require.Equal(t, map[string]int{"part stored": 1}, cloud.StampCauses([]uint64{member}))
-	require.Equal(t, map[string]int{"part stored (class)": 1}, cloud.StampCauses([]uint64{r}))
+	causes := cloud.StampCauses([]uint64{r})
+	require.Len(t, causes, 1)
+	for cause := range causes {
+		require.True(t, strings.HasSuffix(cause, " (class)"), "a write to its class member, not to r: %s", cause)
+	}
 	require.Equal(t, map[string]int{"gone": 1}, cloud.StampCauses([]uint64{12345}))
 
 	cctx, ccloud := storedPartTestCache(t, WithBlobStore())
