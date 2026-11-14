@@ -92,6 +92,7 @@ func (c *Cache) keepCallLocked(entry *sharedResult, desc RemoteHolding, kept *ke
 			}
 			entry.calls[kept.id.recipe] = kept
 			c.stampEntryLocked(entry, cause)
+			c.indexKeptCallLocked(entry, kept)
 			changed = true
 		}
 	}
@@ -185,14 +186,37 @@ func (c *Cache) keptCallCauseLocked(entry *sharedResult, kept *keptCall) StampCa
 	return StampKeptCallNewTerm
 }
 
+// verifyKeptCallTerms, set only by tests, checks every kept grouping of an
+// entry's calls against one built fresh, and panics if they differ.
+var verifyKeptCallTerms bool
+
 // keptCallTermsLocked groups the calls kept on res by the term each derives
 // on the Cloud, the call's self digest over its inputs' classes, in a stable
 // order: by term, then by request digest. An input the Cloud has no class for
-// stands for itself. Requires egraphMu.
+// stands for itself. The grouping is kept with the entry until its calls, or
+// an input's class, change (forgetCallTermsLocked): each pricing and bundle
+// visits it, and an entry's calls grow with the runs that taught them.
+// Requires egraphMu.
 func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
+	if kept := res.callTerms.Load(); kept != nil {
+		if verifyKeptCallTerms {
+			if fresh := c.callTermsLocked(res); !slices.EqualFunc(*kept, fresh, slices.Equal) {
+				panic(fmt.Sprintf("entry %d: kept call terms %v, built fresh %v", res.id, *kept, fresh))
+			}
+		}
+		return *kept
+	}
 	if c.testCallTermsBuilt != nil {
 		c.testCallTermsBuilt()
 	}
+	groups := c.callTermsLocked(res)
+	res.callTerms.Store(&groups)
+	return groups
+}
+
+// callTermsLocked is keptCallTermsLocked's grouping, built fresh. Requires
+// egraphMu.
+func (c *Cache) callTermsLocked(res *sharedResult) [][]*keptCall {
 	byTerm := map[string][]*keptCall{}
 	for _, kept := range res.calls {
 		key := c.keptCallTermKeyLocked(kept)
@@ -205,6 +229,60 @@ func (c *Cache) keptCallTermsLocked(res *sharedResult) [][]*keptCall {
 		groups = append(groups, group)
 	}
 	return groups
+}
+
+// indexKeptCallLocked notes kept, newly kept on entry, under each of its
+// inputs, and drops entry's grouping. Requires egraphMu for writing.
+func (c *Cache) indexKeptCallLocked(entry *sharedResult, kept *keptCall) {
+	for _, input := range kept.id.inputs {
+		entries := c.callInputEntries[input.String()]
+		if entries == nil {
+			if c.callInputEntries == nil {
+				c.callInputEntries = make(map[string]map[sharedResultID]struct{})
+			}
+			entries = make(map[sharedResultID]struct{})
+			c.callInputEntries[input.String()] = entries
+		}
+		entries[entry.id] = struct{}{}
+	}
+	entry.callTerms.Store(nil)
+}
+
+// unindexKeptCallsLocked forgets the inputs of the calls kept on entry, which
+// is leaving the cache. Requires egraphMu for writing.
+func (c *Cache) unindexKeptCallsLocked(entry *sharedResult) {
+	for _, kept := range entry.calls {
+		for _, input := range kept.id.inputs {
+			entries := c.callInputEntries[input.String()]
+			delete(entries, entry.id)
+			if len(entries) == 0 {
+				delete(c.callInputEntries, input.String())
+			}
+		}
+	}
+}
+
+// forgetCallTermsLocked drops the grouping of each entry with a kept call
+// whose input is dig, whose class has changed. Requires egraphMu for
+// writing.
+func (c *Cache) forgetCallTermsLocked(dig string) {
+	for id := range c.callInputEntries[dig] {
+		if res := c.resultsByID[id]; res != nil {
+			res.callTerms.Store(nil)
+		}
+	}
+}
+
+// forgetAllCallTermsLocked drops every entry's grouping. Requires egraphMu
+// for writing.
+func (c *Cache) forgetAllCallTermsLocked() {
+	for _, entries := range c.callInputEntries {
+		for id := range entries {
+			if res := c.resultsByID[id]; res != nil {
+				res.callTerms.Store(nil)
+			}
+		}
+	}
 }
 
 // placeableCallLocked chooses, of calls that derive one term, the first whose
