@@ -264,6 +264,13 @@ func withRestoredBindingRouting(ctx context.Context, metadata *engine.ClientMeta
 // restoredBindingLoadContext returns the context to load a lazily bound
 // object's recipe in: routed to the restoring client if the recipe is one it
 // restored (see withRestoredBindingRouting), else ctx unchanged.
+//
+// The route is marked too (see IsRestoredBindingLoad): the restorer vouches
+// for the recipe, not for every host read in it. Re-evaluating the recipe
+// mints its secrets again, now under the restorer, and nothing approved in
+// the session the recipe was recorded in carries over to a resume: each read
+// of the restorer's host is asked of the restorer first, as a module asks for
+// an agent (see Server.AuthorizeSecret).
 func restoredBindingLoadContext(ctx context.Context, id *call.ID) context.Context {
 	routing, ok := ctx.Value(restoredBindingRoutingKey{}).(restoredBindingRouting)
 	if !ok || id == nil {
@@ -272,7 +279,36 @@ func restoredBindingLoadContext(ctx context.Context, id *call.ID) context.Contex
 	if _, restored := routing.recipes[id]; !restored {
 		return ctx
 	}
+	ctx = ContextWithRestoredBindingLoad(ctx)
 	return engine.ContextWithClientMetadata(ctx, routing.metadata)
+}
+
+type restoredBindingLoadKey struct{}
+
+// ContextWithRestoredBindingLoad marks ctx as loading a restored agent's
+// binding (see restoredBindingLoadContext).
+func ContextWithRestoredBindingLoad(ctx context.Context) context.Context {
+	return context.WithValue(ctx, restoredBindingLoadKey{}, true)
+}
+
+// WithoutRestoredBindingLoad clears the mark of ContextWithRestoredBindingLoad,
+// for the engine's own work on the owner's behalf within such a load: a module
+// setting resolved freshly from the restorer's current config while the load
+// runs is the restorer's own. It does not cover a setting's secret the
+// restored recipe already records (as a constructor's argument, say): that is
+// re-evaluated from the recipe like any other secret in it, and asks.
+func WithoutRestoredBindingLoad(ctx context.Context) context.Context {
+	if !IsRestoredBindingLoad(ctx) {
+		return ctx
+	}
+	return context.WithValue(ctx, restoredBindingLoadKey{}, false)
+}
+
+// IsRestoredBindingLoad reports whether ctx is loading a restored agent's
+// binding (see restoredBindingLoadContext).
+func IsRestoredBindingLoad(ctx context.Context) bool {
+	restored, _ := ctx.Value(restoredBindingLoadKey{}).(bool)
+	return restored
 }
 
 // rebindBoundTool replaces the object for typeName's binding with newObj — the
