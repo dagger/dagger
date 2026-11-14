@@ -42,4 +42,5 @@ func TestEntryNumbersRefusesATruncatedList(t *testing.T) {
 	var numbers EntryNumbers
 	require.Error(t, json.Unmarshal([]byte(`"gA=="`), &numbers), "a varint cut off")
 	require.Error(t, json.Unmarshal([]byte(`"not base64!"`), &numbers))
+	require.Error(t, json.Unmarshal([]byte(`"/////////////wE="`), &numbers), "a varint too large for 64 bits")
 }
