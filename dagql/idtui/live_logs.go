@@ -298,6 +298,96 @@ func (fe *frontendPretty) liveLogActivity(id dagui.SpanID) LogActivity {
 	return activity
 }
 
+// LiveLogsRunningFrontend is the optional interface of a LiveLogsFrontend
+// that tells what keeps a span active.
+type LiveLogsRunningFrontend interface {
+	// LiveLogsRunning tells, for each span, the work that keeps it active
+	// (LogActivity.Active). It returns nothing once the frontend quit.
+	LiveLogsRunning([]dagui.SpanID) []LogRunning
+}
+
+// LogRunning is the work that keeps a span active.
+type LogRunning struct {
+	// Self: the span itself runs.
+	Self bool
+	// Running lists up to logRunningMax of the running spans its logs
+	// include -- descendants, and effects cause-linked to it or to them --
+	// and Total counts them all.
+	Running []LogRunningSpan
+	Total   int
+	// Effects: effects cause-linked to the span, or to its descendants,
+	// run.
+	Effects bool
+}
+
+// LogRunningSpan is a running span a span's logs include: Effect when it is
+// not one of its descendants, Agent when it is an agent's loop, InAgent when
+// it is a descendant beneath one.
+type LogRunningSpan struct {
+	ID      dagui.SpanID
+	Name    string
+	Effect  bool
+	Agent   bool
+	InAgent bool
+}
+
+const logRunningMax = 10
+
+var _ LiveLogsRunningFrontend = (*frontendPretty)(nil)
+
+func (fe *frontendPretty) LiveLogsRunning(spans []dagui.SpanID) []LogRunning {
+	got := make(chan []LogRunning, 1)
+	fe.dispatchWait(func() {
+		running := make([]LogRunning, len(spans))
+		for i, id := range spans {
+			running[i] = fe.liveLogRunning(id)
+		}
+		got <- running
+	})
+	select {
+	case running := <-got:
+		return running
+	default:
+		// The TUI quit: nothing tells.
+		return nil
+	}
+}
+
+func (fe *frontendPretty) liveLogRunning(id dagui.SpanID) LogRunning {
+	span, ok := fe.db.Spans.Map[id]
+	if !ok {
+		return LogRunning{}
+	}
+	r := LogRunning{Self: span.IsRunning()}
+	// The span's Activity holds itself and its effects.
+	for running := range span.Activity.AllRunning {
+		if running != span.ID {
+			r.Effects = true
+			break
+		}
+	}
+	if span.RunningSpans == nil {
+		return r
+	}
+	r.Total = span.RunningSpans.Len()
+	for running := range span.RunningSpans.Iter() {
+		if len(r.Running) == logRunningMax {
+			break
+		}
+		rs := LogRunningSpan{ID: running.ID, Name: running.Name, Agent: running.Agent, Effect: true}
+		var inAgent bool
+		for p := running.ParentSpan; p != nil; p = p.ParentSpan {
+			if p == span {
+				rs.Effect, rs.InAgent = false, inAgent
+				break
+			}
+			inAgent = inAgent || p.Agent
+		}
+		r.Running = append(r.Running, rs)
+	}
+	return r
+}
+
 func (fe *frontendPretty) liveLogRoute(t LogTarget) LogRoute {
 	target := fe.db.LogTarget(t.Trace, t.Span, t.Digest)
 	span, ok := fe.db.Spans.Map[target]

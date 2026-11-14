@@ -202,6 +202,13 @@ func withEngineAction(
 			// holds all of its output, and before the session closes.
 			cleanup.Add("read the final logs", func() error {
 				finishLiveLogs(ctx, sess, live)
+				if live.diag.wrote() {
+					// Its warnings may have come after the hand-over:
+					// hand them over too, bounded like the hand-over.
+					ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), localTelemetryFlushTimeout)
+					cliLocalTelemetry.attach(ctx, sess)()
+					cancel()
+				}
 				return nil
 			})
 		}
