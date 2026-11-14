@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"context"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -398,4 +399,49 @@ func TestStampCausesNameTheWrite(t *testing.T) {
 	test := newCallRecordTest(t, cctx, ccloud)
 	test.attach(t, cctx, test.span(t, true, 0))
 	require.Equal(t, map[string]int{"kept call, new term": 1}, ccloud.StampCauses([]uint64{test.number}))
+}
+
+// stampTestMember merges another record, of a different recipe, into the
+// Cloud, with a stored part, without joining it to any class. It returns
+// the member's number.
+func stampTestMember(t *testing.T, ctx context.Context, cloud *Cache, field string) uint64 {
+	t.Helper()
+	bundle, _ := mergeTestSource(t, field, "member")
+	reply, err := cloud.MergeValues(ctx, "cache-b", bundle)
+	require.NoError(t, err)
+	member := reply.Imported()[0].ResultID
+	ok, _, err := cloud.SetStoredPart(ctx, member, testLiveOffer(), 0)
+	require.NoError(t, err)
+	require.True(t, ok)
+	return member
+}
+
+// stampTestTeach gives entries' frames a content digest, by the body worker,
+// and waits for each.
+func stampTestTeach(t *testing.T, ctx context.Context, cloud *Cache, content string, numbers ...uint64) {
+	t.Helper()
+	for _, number := range numbers {
+		require.NoError(t, cloud.TeachContentDigest(ctx, Result[Typed]{shared: storedBundleTestEntry(cloud, number)}, testDigest(content)))
+	}
+	for _, number := range numbers {
+		storedContentTestWait(t, cloud, number, testDigest(content))
+	}
+}
+
+// A class mate that joins a record's class when the body worker gives its
+// frame a taught content digest, and stores a part the record declares,
+// changes what a bundle of the record carries: the record borrows the part.
+// The worker's write is a write of its own, with no later write behind it,
+// and the record is reported changed as soon as it ends.
+func TestChangedSinceAJoinByTheBodyWorker(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	member := stampTestMember(t, ctx, cloud, "stamp-join-mate")
+	// The record's own frame takes the digest before the build, so only the
+	// mate's taking it, the join, comes after.
+	stampTestTeach(t, ctx, cloud, "stamp-join", r)
+	before := changedSinceTestBuild(t, cloud, r)
+	require.Empty(t, before.Bundle.Outputs)
+	stampTestTeach(t, ctx, cloud, "stamp-join", member)
+	require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r), "the record now borrows the mate's part")
 }
