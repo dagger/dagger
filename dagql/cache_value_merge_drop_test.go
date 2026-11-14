@@ -33,6 +33,13 @@ func mergeTestDropStreams(t *testing.T) map[string][]ValueBundle {
 	}
 }
 
+// mergeTestDropSkip reports a stream a kind of cache doesn't merge: the
+// Cloud drops offers and refuses the offered stream, whose offer's owner is
+// reachable only through the offer (TestMergeValuesCloudChecksClosureAfterDroppingParts).
+func mergeTestDropSkip(cacheName, streamName string) bool {
+	return cacheName == "cloud" && streamName == "offered"
+}
+
 // mergeTestDropCaches are the two kinds of cache that merge: an engine, from
 // the Cloud, and the Cloud, from an engine.
 var mergeTestDropCaches = map[string]func(t *testing.T) (context.Context, *Cache, CacheID){
@@ -55,6 +62,9 @@ func TestPreparedMergeHoldsNoCopyOfItsRecords(t *testing.T) {
 	t.Parallel()
 	for cacheName, newCache := range mergeTestDropCaches {
 		for streamName, bundles := range mergeTestDropStreams(t) {
+			if mergeTestDropSkip(cacheName, streamName) {
+				continue
+			}
 			t.Run(cacheName+"/"+streamName, func(t *testing.T) {
 				t.Parallel()
 				ctx, c, from := newCache(t)
@@ -102,6 +112,9 @@ func TestPreparedMergeCommitsTheSameWithoutItsRecordCopies(t *testing.T) {
 	t.Parallel()
 	for cacheName, newCache := range mergeTestDropCaches {
 		for streamName, bundles := range mergeTestDropStreams(t) {
+			if mergeTestDropSkip(cacheName, streamName) {
+				continue
+			}
 			t.Run(cacheName+"/"+streamName, func(t *testing.T) {
 				t.Parallel()
 				merge := func(keep bool) ([]MergeReply, []string) {
@@ -138,7 +151,7 @@ func TestPreparedMergeCommitsTheSameWithItsInputLetGo(t *testing.T) {
 	t.Parallel()
 	for cacheName, newCache := range mergeTestDropCaches {
 		for streamName, bundles := range mergeTestDropStreams(t) {
-			if cacheName == "engine" && streamName == "moved" {
+			if mergeTestDropSkip(cacheName, streamName) || cacheName == "engine" && streamName == "moved" {
 				continue
 			}
 			t.Run(cacheName+"/"+streamName, func(t *testing.T) {
