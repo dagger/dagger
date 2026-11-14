@@ -1,4 +1,3 @@
-// artifact-preview renders captured artifact metadata with the CLI renderer.
 package main
 
 import (

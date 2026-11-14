@@ -17,7 +17,6 @@ func TestPlanLink(t *testing.T) {
 	require.Equal(t, &Link{TypeKey: "unit"}, PlanLink(Paths{unit, race, docs}, unit, true, true, name))
 	require.Equal(t, &Link{ExactDimensions: true}, PlanLink(Paths{unit, file}, unit, false, true, name))
 
-	// Both a module and a field can identify this path. Prefer the field.
 	require.Equal(t, &Link{TypeKey: "links"}, PlanLink(Paths{unit, docs}, docs, true, true, name))
 	require.Equal(t, &Link{Module: true, ExactDimensions: true}, PlanLink(Paths{docs}, docs, false, true, name))
 }

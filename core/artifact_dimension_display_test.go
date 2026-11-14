@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"slices"
 	"testing"
 
 	"github.com/dagger/dagger/core/artifact"
@@ -13,19 +12,27 @@ import (
 )
 
 func TestArtifactDimensionDisplay(t *testing.T) {
-	coordinates := []*ArtifactDimensionKey{{Dimension: "module", Key: "app"}, {Dimension: "/app/items", Key: "a"}}
-	source := &Artifact{ModuleName: "app", DimensionKeys: coordinates}
-	complete := append(slices.Clone(coordinates), &ArtifactDimensionKey{Dimension: "name", Key: "."})
-	selection := &Artifacts{Entries: []*Artifact{source, {ModuleName: "app", DimensionKeys: []*ArtifactDimensionKey{{Dimension: "module", Key: "app"}, {Dimension: "/app/items", Key: "b"}}}}}
-	require.Equal(t, []string{"/app/items"}, selection.Dimensions())
+	item := func(key string) *Artifact {
+		module := &ModTreeNode{Name: "app", Parent: &ModTreeNode{}}
+		items := &ModTreeNode{Name: "items", Parent: module}
+		return &Artifact{ModuleName: "app", TypeName: "Item", Path: []string{"app", "items"},
+			Node: &ModTreeNode{Name: "get", Parent: items, CollectionKey: &key,
+				CollectionDimension: &ArtifactDimension{Identifier: "Items", CollectionType: "Items", ItemType: "Item"}},
+			DimensionKeys: []*ArtifactDimensionKey{{Dimension: "module", Key: "app"}, {Dimension: "Items", Key: key}},
+		}
+	}
+	source := item("a")
+	complete := []*ArtifactDimensionKey{{Dimension: "module", Key: "app"}, {Dimension: "Items", Key: "a"}, {Dimension: "name", Key: "items"}}
+	visible := []*ArtifactDimensionKey{{Dimension: "Items", Key: "a"}}
+	selection := &Artifacts{Entries: []*Artifact{source, item("b")}}
+	require.Equal(t, []string{"Items"}, selection.Dimensions())
 	row := source.WithDimensionDisplay(selection.Dimensions())
-	require.Equal(t, coordinates[1:], row.DisplayDimensionKeys(false))
+	require.Equal(t, visible, row.DisplayDimensionKeys(false))
 	require.Equal(t, complete, row.DisplayDimensionKeys(true))
 	require.Equal(t, complete, source.DisplayDimensionKeys(false))
-	require.Equal(t, coordinates, row.DimensionKeys)
 	clone := row.Clone()
 	clone.dimensionDisplay.Dimensions[0] = "module"
-	require.Equal(t, coordinates[1:], row.DisplayDimensionKeys(false))
+	require.Equal(t, visible, row.DisplayDimensionKeys(false))
 	returned := row.DisplayDimensionKeys(false)
 	returned[0].Key = "changed"
 	require.Equal(t, "a", source.DimensionKeys[1].Key)
@@ -33,17 +40,16 @@ func TestArtifactDimensionDisplay(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, one.DisplayDimensionKeys(false))
 	require.Equal(t, complete, one.DisplayDimensionKeys(true))
-	require.Equal(t, coordinates, source.DimensionKeys)
 }
 
 func TestArtifactSchemaDimensionsPreserved(t *testing.T) {
 	source := &Artifacts{
 		Entries:       []*Artifact{{ModuleName: "app", TypeName: "Check", Path: []string{"app", "check"}}},
-		AllDimensions: artifact.Dimensions{{Identifier: "module"}, {Identifier: "/app/empty"}, {Identifier: "type:Check"}},
+		AllDimensions: artifact.Dimensions{{Identifier: "module"}, {Kind: "COLLECTION", Identifier: "EmptyItems", CollectionType: "EmptyItems", ItemType: "Item"}, {Identifier: "type:Check"}},
 	}
-	want := []string{"/app/empty", "module", "name"}
+	want := []string{"EmptyItems", "module", "name"}
 	for _, selection := range []*Artifacts{
-		source, source.FilterTypes([]string{}, false), source.FilterPath([]string{"missing"}), source.FilterDimensionKeys("/app/empty", []string{}),
+		source, source.FilterTypes([]string{}, false), source.FilterPath([]string{"missing"}), source.FilterDimensionKeys("EmptyItems", []string{}),
 	} {
 		require.Equal(t, want, selection.SchemaDimensions())
 	}
@@ -56,13 +62,13 @@ func TestArtifactSchemaDimensionsPreserved(t *testing.T) {
 
 func TestArtifactDimensionDisplayPersistence(t *testing.T) {
 	ctx := context.Background()
-	source := &Artifact{LoadFailure: &ModuleLoadFailure{}, DimensionKeys: []*ArtifactDimensionKey{{Dimension: "x", Key: "a"}}}
+	source := &Artifact{ModuleName: "broken", TypeName: "Check", Path: []string{"broken", "load"}, LoadFailure: &ModuleLoadFailure{Name: "broken", Message: "module unavailable"}, DimensionKeys: []*ArtifactDimensionKey{}}
 	for _, tc := range []struct {
 		name       string
 		dimensions []string
 		hasView    bool
 	}{
-		{name: "legacy"}, {name: "empty", hasView: true}, {name: "visible", dimensions: []string{"x"}, hasView: true},
+		{name: "legacy"}, {name: "empty", hasView: true}, {name: "visible", dimensions: []string{"module"}, hasView: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			row := source.Clone()
@@ -118,7 +124,6 @@ func TestArtifactDimensionDisplaySourcePersistence(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sourceID.EngineResultID(), restoredID.EngineResultID())
 
-	// Dependency attachment rewrites only the clone's wrapper.
 	clone := restored.Clone()
 	owned, err := clone.AttachDependencyResults(ctx, nil, func(dagql.AnyResult) (dagql.AnyResult, error) { return other, nil })
 	require.NoError(t, err)

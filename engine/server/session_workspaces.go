@@ -1363,8 +1363,6 @@ func (client *clientRuntime) recordFailedModule(mod pendingModule, err error) {
 	client.failedModules[moduleProgressName(mod)] = err
 }
 
-// reportFailedModuleLocked defers metadata-only failures until the command
-// selects the module. client.modulesMu must be held.
 func (client *clientRuntime) reportFailedModuleLocked(ctx context.Context, mod pendingModule, err error, mode core.ModuleLoadMode) {
 	if mode == core.ModuleLoadMetadata || !mode.BestEffort() {
 		return
@@ -1374,8 +1372,7 @@ func (client *clientRuntime) reportFailedModuleLocked(ctx context.Context, mod p
 		return
 	}
 	reportSkippedModule(ctx, name, core.LoadFailureCause("", err, mode))
-	// Transient failures are not cached. A later attempt can report its own
-	// failure after retrying the load.
+
 	if _, cached := client.failedModules[name]; cached {
 		if client.reportedFailedModules == nil {
 			client.reportedFailedModules = make(map[string]bool)

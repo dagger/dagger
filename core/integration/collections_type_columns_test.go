@@ -126,7 +126,7 @@ func (*Cell) Check() error { panic("check must stay deferred") }
 	for _, link := range links {
 		expected, exists := apiByLink[link]
 		require.True(t, exists, "CLI link is absent from API rows: %s", link)
-		// Every query starts a new CLI session. No address plan is retained.
+
 		out, err := base.With(workspaceSelectionDaggerQuery(fmt.Sprintf(`{ currentWorkspace { artifacts {
   filterUri(uri: %q) { items { uri(typeAssertion: true) dimensionKeys(all: true) { dimension key } } }
 } } }`, link), "-m", "core")).Stdout(ctx)
@@ -193,7 +193,7 @@ func (*Test) Check() error { panic("check must stay deferred") }
   }
 } } }`, "-m", "core")).Stdout(ctx)
 	require.NoError(t, err)
-	// Decode the named selection to keep the response structure explicit.
+
 	var selected struct {
 		CurrentWorkspace struct {
 			Artifacts struct{ FilterTypes struct{ Items []item } }

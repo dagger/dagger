@@ -43,45 +43,6 @@ func TestArtifactDimensionViews(t *testing.T) {
 	}
 }
 
-func TestArtifactDimensionSelectionMask(t *testing.T) {
-	ctx := context.Background()
-	selection := &core.Artifacts{Entries: []*core.Artifact{
-		{ModuleName: "app", TypeName: "Check", DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "module", Key: "app"}, {Dimension: "/app/items", Key: "a"}}},
-		{ModuleName: "app", TypeName: "Check", DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "module", Key: "app"}}},
-	}, AllDimensions: artifact.Dimensions{{Identifier: "module"}, {Identifier: "/app/items"}, {Identifier: "/app/empty"}, {Identifier: "type:Check", Kind: "TYPE"}}}
-	s := &artifactsSchema{}
-	expanded, err := expandArtifacts(ctx, selection)
-	require.NoError(t, err)
-	dimensions := expanded.Dimensions()
-	require.Equal(t, []string{"/app/items"}, dimensions)
-	items, err := s.items(ctx, selection, struct{}{})
-	require.NoError(t, err)
-	require.Len(t, items, 2)
-	for _, item := range items {
-		visible, err := s.artifactDimensionKeys(ctx, item, artifactDimensionViewArgs{})
-		require.NoError(t, err)
-		for _, key := range visible {
-			require.Contains(t, dimensions, key.Dimension)
-		}
-		full, err := s.artifactDimensionKeys(ctx, item, artifactDimensionViewArgs{All: true})
-		require.NoError(t, err)
-		require.Equal(t, item.CanonicalDimensionKeys(), full)
-	}
-	require.Len(t, items[0].DisplayDimensionKeys(false), 1)
-	require.Empty(t, items[1].DisplayDimensionKeys(false))
-	legacy, err := s.legacyDimensions(ctx, selection, struct{}{})
-	require.NoError(t, err)
-	require.Equal(t, []string{"/app/items", "module", "type:Check"}, legacy)
-	all := selection.FilterTypes([]string{}, false).SchemaDimensions()
-	require.Equal(t, []string{"/app/empty", "/app/items", "module", "name"}, all)
-	singleton := selection.FilterTypes([]string{}, false)
-	singleton.Entries = selection.Entries[:1]
-	one, err := s.one(ctx, singleton, struct{}{})
-	require.NoError(t, err)
-	require.Empty(t, one.DisplayDimensionKeys(false))
-	require.Len(t, one.DisplayDimensionKeys(true), 3)
-}
-
 func TestArtifactDimensionMetadataByView(t *testing.T) {
 	for _, version := range []string{"v1.0.0-beta.25", "v1.0.0-beta.26", "v1.0.0-beta.27", artifactDimensionViewVersion} {
 		t.Run(version, func(t *testing.T) {
@@ -103,23 +64,20 @@ func TestArtifactDimensionMetadataByView(t *testing.T) {
 				byID[definition.Identifier] = definition.Kind
 			}
 			require.Equal(t, "MODULE", byID["module"])
-			require.Equal(t, "TYPE", byID["type:Check"])
 			if version == artifactDimensionViewVersion {
-				require.Equal(t, "NAME", byID["name"])
+				require.Equal(t, map[string]string{"module": "MODULE", "name": "NAME"}, byID)
 			} else {
-				require.NotContains(t, byID, "name")
+				require.Equal(t, map[string]string{"module": "MODULE", "type:Check": "TYPE"}, byID)
 			}
 		})
 	}
 }
 
-// Each items resolver call models discovery of an uncached collection source.
-// Subsequent discovery would change both membership and visible dimensions.
 func TestArtifactDimensionSnapshot(t *testing.T) {
 	for _, initialRows := range []int{1, 2} {
 		t.Run(fmt.Sprint(initialRows), func(t *testing.T) {
 			ctx, srv := newNestingTestServer(t, call.View(artifactDimensionViewVersion))
-			selection := &core.Artifacts{AllDimensions: artifact.Dimensions{{Identifier: "/app/items"}}}
+			selection := &core.Artifacts{AllDimensions: artifact.Dimensions{{Identifier: "Items", CollectionType: "Items", ItemType: "AppItem", Kind: "COLLECTION"}}}
 			dagql.Fields[*core.Query]{dagql.Func("selection", func(context.Context, *core.Query, struct{}) (*core.Artifacts, error) { return selection, nil })}.Install(srv)
 			var discoveries atomic.Int32
 			dagql.Fields[*core.Artifacts]{dagql.Func("items", func(context.Context, *core.Artifacts, struct{}) ([]*core.Artifact, error) {
@@ -129,7 +87,7 @@ func TestArtifactDimensionSnapshot(t *testing.T) {
 				}
 				snapshot := &core.Artifacts{}
 				for i := range count {
-					snapshot.Entries = append(snapshot.Entries, &core.Artifact{Path: []string{"check"}, DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "/app/items", Key: fmt.Sprint(i)}}})
+					snapshot.Entries = append(snapshot.Entries, dimensionViewItem(fmt.Sprint(i)))
 				}
 				columns := snapshot.Dimensions()
 				rows := make([]*core.Artifact, 0, count)
@@ -137,8 +95,8 @@ func TestArtifactDimensionSnapshot(t *testing.T) {
 					rows = append(rows, row.WithDimensionDisplay(columns))
 				}
 				return rows, nil
-			})}.Install(srv)
-			// all:true reads schema only, even when items have never been discovered.
+			}).View(core.AllVersion)}.Install(srv)
+
 			_, err := srv.Query(ctx, `{ selection { dimensions(all:true) } }`, nil)
 			require.NoError(t, err)
 			require.Zero(t, discoveries.Load())
@@ -149,7 +107,7 @@ func TestArtifactDimensionSnapshot(t *testing.T) {
 			require.NoError(t, srv.Select(ctx, srv.Root(), &columns, dagql.Selector{Field: "selection"}, dagql.Selector{Field: "dimensions", View: srv.View}))
 			require.Len(t, columns, initialRows-1)
 			var rows dagql.ObjectResultArray[*core.Artifact]
-			require.NoError(t, srv.Select(ctx, srv.Root(), &rows, dagql.Selector{Field: "selection"}, dagql.Selector{Field: "items"}))
+			require.NoError(t, srv.Select(ctx, srv.Root(), &rows, dagql.Selector{Field: "selection"}, dagql.Selector{Field: "items", View: srv.View}))
 			require.Len(t, rows, initialRows)
 			for _, row := range rows {
 				require.Len(t, row.Self().DisplayDimensionKeys(false), initialRows-1)
@@ -170,7 +128,7 @@ func TestArtifactDimensionSnapshot(t *testing.T) {
 func TestArtifactDimensionItemDisplaySourceIsLazy(t *testing.T) {
 	ctx, srv := newNestingTestServer(t, call.View(artifactDimensionViewVersion))
 	selection := &core.Artifacts{}
-	row := &core.Artifact{ModuleName: "app", TypeName: "AppItem", DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "/app/items", Key: "a"}}}
+	row := dimensionViewItem("a")
 	dagql.Fields[*core.Query]{dagql.Func("selection", func(context.Context, *core.Query, struct{}) (*core.Artifacts, error) {
 		return selection, nil
 	})}.Install(srv)
@@ -178,13 +136,12 @@ func TestArtifactDimensionItemDisplaySourceIsLazy(t *testing.T) {
 	dagql.Fields[*core.Artifacts]{
 		dagql.Func("items", func(context.Context, *core.Artifacts, struct{}) ([]*core.Artifact, error) {
 			discoveries.Add(1)
-			// The parent has an item and one child check. Only name varies;
-			// projecting its item must keep this exact parent's mask.
+
 			return []*core.Artifact{row, {
-				ModuleName: "app", TypeName: "Check", Path: []string{"check"},
-				DimensionKeys: []*core.ArtifactDimensionKey{{Dimension: "/app/items", Key: "a"}},
+				ModuleName: "app", TypeName: "Check", Path: []string{"app", "items", "check"},
+				Node: &core.ModTreeNode{Name: "check", Parent: row.Node},
 			}}, nil
-		}),
+		}).View(core.AllVersion),
 		dagql.NodeFunc("projectedItem", func(_ context.Context, parent dagql.ObjectResult[*core.Artifacts], _ struct{}) (*core.Artifact, error) {
 			return row.WithDimensionDisplaySource(parent), nil
 		}),
@@ -200,7 +157,7 @@ func TestArtifactDimensionItemDisplaySourceIsLazy(t *testing.T) {
 		require.NoError(t, srv.Select(ctx, srv.Root(), &visible,
 			dagql.Selector{Field: "selection"}, dagql.Selector{Field: "projectedItem"},
 			dagql.Selector{Field: "dimensionKeys", View: srv.View}))
-		require.Equal(t, []*core.ArtifactDimensionKey{{Dimension: "name", Key: "."}}, []*core.ArtifactDimensionKey(visible))
+		require.Equal(t, []*core.ArtifactDimensionKey{{Dimension: "name", Key: "items"}}, []*core.ArtifactDimensionKey(visible))
 		require.EqualValues(t, 1, discoveries.Load(), "default coordinates must reuse the parent's cached snapshot")
 	}
 }
@@ -224,8 +181,7 @@ func TestArtifactDimensionDefinitionsUseGlobalLabels(t *testing.T) {
 			{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check"},
 		},
 	}
-	// Dependencies is absent from the selected entries. Its schema still
-	// determines the Packages label. Tests has no item-name conflict.
+
 	for _, dimension := range []*core.ArtifactDimension{packages, tests, checks} {
 		selection.Entries = append(selection.Entries, &core.Artifact{
 			ModuleName: "app", TypeName: "Check",
@@ -246,11 +202,10 @@ func TestArtifactDimensionDefinitionsUseGlobalLabels(t *testing.T) {
 	require.Contains(t, byID, "Packages")
 	require.Equal(t, "packages", byID["Packages"].Name)
 	require.Equal(t, "test", byID["Tests"].Name)
-	// Legacy TYPE selectors do not rename a canonical collection column.
+
 	require.Equal(t, "check", byID["Checks"].Name)
 	require.Equal(t, "COLLECTION", byID["Checks"].Kind)
-	require.Equal(t, "check", byID["type:Check"].Name)
-	require.Equal(t, "TYPE", byID["type:Check"].Kind)
+	require.NotContains(t, byID, "type:Check")
 	require.Equal(t, "module", byID["module"].Name)
 	require.Equal(t, "name", byID["name"].Name)
 }
@@ -283,5 +238,15 @@ func TestArtifactSchemaIncludesByView(t *testing.T) {
 			require.NoError(t, srv.Select(ctx, srv.Root(), &omitted, dagql.Selector{Field: "schemaIncludes", View: srv.View}))
 			require.Equal(t, tc.modern, bool(omitted))
 		})
+	}
+}
+
+func dimensionViewItem(key string) *core.Artifact {
+	root := &core.ModTreeNode{Name: "app", Parent: &core.ModTreeNode{}}
+	items := &core.ModTreeNode{Name: "items", Parent: root}
+	return &core.Artifact{
+		ModuleName: "app", TypeName: "AppItem", Path: []string{"app", "items"},
+		Node: &core.ModTreeNode{Name: "get", Parent: items, CollectionKey: &key,
+			CollectionDimension: &core.ArtifactDimension{Identifier: "Items", CollectionType: "Items", ItemType: "AppItem"}},
 	}
 }

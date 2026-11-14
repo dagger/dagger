@@ -11,17 +11,11 @@ import (
 	"github.com/dagger/dagger/core/dagaddress"
 )
 
-// AddressRow is one artifact in the workspace snapshot. Type is the URI's
-// concrete type constraint. Coordinates contains its complete canonical keys,
-// with collection ancestors ordered from parent to child.
 type AddressRow struct {
 	Type        string
 	Coordinates []flattening.Coordinate
 }
 
-// AddressIndex finds minimum addresses against a complete, unfiltered snapshot.
-// It does not infer key uniqueness from a schema or from a selected set of rows.
-// Its input is copied. Selectors may be called concurrently.
 type AddressIndex struct {
 	mu       sync.Mutex
 	complete bool
@@ -36,9 +30,6 @@ type addressType struct {
 	projections map[string][]uint64
 }
 
-// NewAddressIndex records every artifact of every type in the snapshot.
-// Set complete only when rows includes all workspace artifacts, before filters.
-// An incomplete snapshot cannot prove that a shorter address is unique.
 func NewAddressIndex(rows []AddressRow, complete bool) *AddressIndex {
 	index := &AddressIndex{complete: complete, types: make(map[string]*addressType)}
 	for _, row := range rows {
@@ -75,7 +66,7 @@ func NewAddressIndex(rows []AddressRow, complete bool) *AddressIndex {
 		group.rows = append(group.rows, values)
 		signature := addressSignature(coordinates)
 		if _, exists := group.full[signature]; exists {
-			group.full[signature] = 0 // Identical coordinates cannot distinguish these rows.
+			group.full[signature] = 0
 		} else {
 			group.full[signature] = rowID + 1
 		}
@@ -83,13 +74,6 @@ func NewAddressIndex(rows []AddressRow, complete bool) *AddressIndex {
 	return index
 }
 
-// Selectors returns the fewest predicates that identify target in its type.
-// A predicate matches a present key or an absent dimension. Ties prefer fewer
-// absence tests, then deeper collection keys, name, and module. Present pairs
-// retain coordinate order; absent dimensions follow in identifier order.
-// A true result with no pairs means the type alone identifies the artifact.
-// A false result means the snapshot is incomplete, target is missing, or its
-// full coordinates do not identify exactly one artifact.
 func (index *AddressIndex) Selectors(target AddressRow) ([]dagaddress.Pair, bool) {
 	if index == nil {
 		return nil, false
@@ -122,10 +106,10 @@ func (index *AddressIndex) Selectors(target AddressRow) ([]dagaddress.Pair, bool
 	}
 	slices.SortStableFunc(coordinates, func(a, b flattening.Coordinate) int {
 		priority := func(dimension string) int {
-			switch {
-			case dimension == flattening.ModuleDimension:
+			switch dimension {
+			case flattening.ModuleDimension:
 				return 2
-			case dimension == flattening.NameDimension:
+			case flattening.NameDimension:
 				return 1
 			default:
 				return 0
@@ -134,7 +118,6 @@ func (index *AddressIndex) Selectors(target AddressRow) ([]dagaddress.Pair, bool
 		if difference := priority(a.Dimension) - priority(b.Dimension); difference != 0 {
 			return difference
 		}
-		// Canonical coordinates list collection ancestors from parent to child.
 		if priority(a.Dimension) == 0 {
 			if difference := depth[b.Dimension] - depth[a.Dimension]; difference != 0 {
 				return difference
@@ -153,28 +136,9 @@ func (index *AddressIndex) Selectors(target AddressRow) ([]dagaddress.Pair, bool
 		_, exists := group.rows[rowID][id]
 		return exists
 	})
-	// If another row differs in only one dimension, every valid address must
-	// test that dimension. Keep these required predicates out of the search.
-	// This also handles a parent with many independent collection children.
 	required := map[string]bool{}
 	if !group.unique(present, rowID) {
-		for candidate, row := range group.rows {
-			if candidate == rowID {
-				continue
-			}
-			difference, count := "", 0
-			for id := range group.dimensions {
-				if row[id] != group.rows[rowID][id] {
-					difference, count = id, count+1
-					if count > 1 {
-						break
-					}
-				}
-			}
-			if count == 1 {
-				required[difference] = true
-			}
-		}
+		required = group.requiredDimensions(rowID)
 	}
 	chosen := slices.Sorted(maps.Keys(required))
 	freePresent := slices.DeleteFunc(slices.Clone(present), func(id string) bool { return required[id] })
@@ -219,10 +183,28 @@ func (index *AddressIndex) Selectors(target AddressRow) ([]dagaddress.Pair, bool
 	return nil, false
 }
 
-// unique builds each projection once, across all matching rows. Keeping only
-// unique-row bits bounds persistent storage to one bit per row per projection.
-// For n rows and d dimensions in one type, the worst-case cost is O(n*d*2^d).
-// Common single-key results and mandatory predicates avoid that search.
+func (group *addressType) requiredDimensions(rowID int) map[string]bool {
+	required := map[string]bool{}
+	for candidate, row := range group.rows {
+		if candidate == rowID {
+			continue
+		}
+		difference, count := "", 0
+		for id := range group.dimensions {
+			if row[id] != group.rows[rowID][id] {
+				difference, count = id, count+1
+				if count > 1 {
+					break
+				}
+			}
+		}
+		if count == 1 {
+			required[difference] = true
+		}
+	}
+	return required
+}
+
 func (group *addressType) unique(dimensions []string, rowID int) bool {
 	dimensions = slices.Sorted(slices.Values(dimensions))
 	var encoded []byte
@@ -236,7 +218,6 @@ func (group *addressType) unique(dimensions []string, rowID int) bool {
 		encoded = make([]byte, 4*len(dimensions))
 		for candidate, row := range group.rows {
 			for i, dimension := range dimensions {
-				// Value IDs start at one. Zero means the coordinate is absent.
 				binary.LittleEndian.PutUint32(encoded[4*i:], row[dimension])
 			}
 			key := string(encoded)

@@ -7,11 +7,6 @@ import (
 	"strings"
 )
 
-// Field describes one artifact field, including fields in empty collections.
-// LocalPath contains literal schema field names after the nearest collection
-// item, or after the exposed module root. An empty path selects that root.
-// The final name uses FieldPath, which includes enclosing collection fields.
-// Collections lists collection boundaries in parent-to-child order.
 type Field struct {
 	Module      string       `json:"module"`
 	Type        string       `json:"type"`
@@ -19,8 +14,6 @@ type Field struct {
 	Collections []Collection `json:"collections"`
 }
 
-// FieldPath returns every ordinary schema field from the exposed module root.
-// Collection lookups add keys, not field names. The caller owns the result.
 func (f Field) FieldPath() []string {
 	var path []string
 	for _, collection := range f.Collections {
@@ -29,8 +22,6 @@ func (f Field) FieldPath() []string {
 	return append(path, f.LocalPath...)
 }
 
-// Schema holds the complete field metadata before callers select rows.
-// Artifact types identify fields but do not add coordinate dimensions.
 type Schema struct {
 	dimensions Dimensions
 	fields     map[string]schemaField
@@ -42,8 +33,6 @@ type schemaField struct {
 	collections []string
 }
 
-// NewSchema compiles canonical dimensions from all artifact fields. Collection
-// types define columns; field routes do not change their identities.
 func NewSchema(fields []Field) (*Schema, error) {
 	schema := &Schema{fields: make(map[string]schemaField)}
 	byID := make(map[string]*Dimension)
@@ -72,8 +61,6 @@ func NewSchema(fields []Field) (*Schema, error) {
 	return schema, nil
 }
 
-// Dimensions returns all schema dimensions in identifier order. The caller
-// owns the slice and its metadata.
 func (s *Schema) Dimensions() Dimensions {
 	result := make(Dimensions, len(s.dimensions))
 	for i, dimension := range s.dimensions {
@@ -83,8 +70,6 @@ func (s *Schema) Dimensions() Dimensions {
 	return result
 }
 
-// Coordinates assigns one key per collection boundary to a known field.
-// Empty keys are valid. The result does not depend on the selected fields.
 func (s *Schema) Coordinates(field Field, keys ...string) ([]Coordinate, error) {
 	known, exists := s.fields[fieldIdentity(field)]
 	name := strings.Join(field.FieldPath(), ".")
@@ -142,8 +127,6 @@ func compileField(field Field) (schemaField, Dimensions, error) {
 	return compiled, dimensions, nil
 }
 
-// schemaTypeIdentifier accepts the literal GraphQL name syntax. It does not
-// normalize names or treat paths and legacy dimension IDs as schema types.
 func schemaTypeIdentifier(name string) bool {
 	if name == "" {
 		return false
@@ -167,8 +150,6 @@ func validateFieldSegments(fields []string) error {
 	return nil
 }
 
-// fieldIdentity uses literal boundaries, not normalized dimension names.
-// Lookup and display metadata are excluded from field identity.
 func fieldIdentity(field Field) string {
 	type boundary struct {
 		Type   string
@@ -178,14 +159,10 @@ func fieldIdentity(field Field) string {
 	for i, collection := range field.Collections {
 		collections[i] = boundary{collection.Type, append([]string{}, collection.Fields...)}
 	}
-	return schemaKey(struct {
+	encoded, _ := json.Marshal(struct {
 		Module, Type string
 		LocalPath    []string
 		Collections  []boundary
 	}{field.Module, field.Type, append([]string{}, field.LocalPath...), collections})
-}
-
-func schemaKey(value any) string {
-	encoded, _ := json.Marshal(value) // All callers pass structs of strings and slices.
 	return string(encoded)
 }

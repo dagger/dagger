@@ -56,7 +56,7 @@ source = "dang"
 	for _, selector := range [][]string{
 		{"dag://?module=good"},
 		{"--module=good"},
-		// Module flags and their check flags come from discovery.
+
 		{"--good"},
 		{"--good", "--check=verify"},
 		{"--module=good", "--check=verify"},

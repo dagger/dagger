@@ -92,8 +92,6 @@ func TestAddressMinimumSelectors(t *testing.T) {
 }
 
 func TestAddressMinimumCardinality(t *testing.T) {
-	// Keeping the preferred collection alone does not identify the target.
-	// A two-pair address must beat every three-pair address, regardless of ties.
 	dimensions := []string{"/go/a", "/go/a/b", "/go/a/b/c", "name", "module"}
 	row := func(values ...string) AddressRow {
 		coordinates := make([]flattening.Coordinate, len(dimensions))
@@ -121,7 +119,6 @@ func TestAddressRequiresFullSnapshot(t *testing.T) {
 	first := AddressRow{Type: "Check", Coordinates: []flattening.Coordinate{{Dimension: "module", Key: "go"}, {Dimension: "name", Key: "run"}}}
 	second := AddressRow{Type: "Check", Coordinates: []flattening.Coordinate{{Dimension: "module", Key: "go"}, {Dimension: "name", Key: "lint"}}}
 	index := NewAddressIndex([]AddressRow{first, second}, true)
-	// Filtering the displayed rows must not construct a new address index.
 	for _, selection := range [][]AddressRow{{first}, {first, second}, {second, first}} {
 		for _, target := range selection {
 			selectors, ok := index.Selectors(target)
@@ -169,7 +166,6 @@ func TestAddressTypeConstraint(t *testing.T) {
 }
 
 func TestAddressUntypedDuplicateCoordinates(t *testing.T) {
-	// The caller uses one shared type group for an address without a type.
 	duplicate := AddressRow{Type: "*", Coordinates: []flattening.Coordinate{
 		{Dimension: flattening.ModuleDimension, Key: "go"},
 		{Dimension: flattening.NameDimension, Key: "run"},
@@ -213,7 +209,6 @@ func BenchmarkAddressMinimumSelectors(b *testing.B) {
 	}
 }
 
-// presentSelectors preserves the coordinate order in expected selectors.
 func presentSelectors(coordinates []flattening.Coordinate) []dagaddress.Pair {
 	selectors := make([]dagaddress.Pair, len(coordinates))
 	for i, coordinate := range coordinates {

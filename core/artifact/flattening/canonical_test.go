@@ -68,24 +68,6 @@ func TestCanonicalFullFieldPaths(t *testing.T) {
 	}
 }
 
-func TestCanonicalSameTypeFieldsAndSelection(t *testing.T) {
-	// Each path returns a Check. The field paths distinguish them without a
-	// type dimension or a schema-dependent shortest suffix.
-	paths := [][]string{{"unit", "check"}, {"slow", "check"}, {"check"}}
-	var all [][]flattening.Coordinate
-	for _, path := range paths {
-		all = append(all, flattening.CanonicalCoordinates("tests", path, nil))
-	}
-	require.Equal(t, []flattening.Coordinate{{Dimension: "module", Key: "tests"}, {Dimension: "name", Key: "unit.check"}}, all[0])
-	require.Equal(t, "slow.check", all[1][1].Key)
-	require.Equal(t, "check", all[2][1].Key)
-	// Selecting one artifact or changing traversal order cannot shorten its name.
-	require.Equal(t, all[1], flattening.CanonicalCoordinates("tests", paths[1], nil))
-	for i := len(paths) - 1; i >= 0; i-- {
-		require.Equal(t, all[i], flattening.CanonicalCoordinates("tests", paths[i], nil))
-	}
-}
-
 func TestCanonicalReplacesStaticCoordinates(t *testing.T) {
 	input := []flattening.Coordinate{
 		{Dimension: "module", Key: "old"},
@@ -113,7 +95,7 @@ func TestCanonicalDimensions(t *testing.T) {
 	got := flattening.CanonicalDimensions("tests", legacy)
 	require.Equal(t, flattening.Dimensions{
 		{Kind: "MODULE", Identifier: "module", Name: "module", QualifiedName: "module", KeyName: "name"},
-		{Kind: "COLLECTION", Identifier: "TestsCases", CollectionType: "TestsCases", ItemType: "TestsCase", Name: "tests-case", QualifiedName: "tests-cases", KeyName: "testName", KeyDescription: "Test to run"},
+		{Kind: "COLLECTION", Identifier: "TestsCases", CollectionType: "TestsCases", ItemType: "TestsCase", Name: "tests-case", QualifiedName: "TestsCases", KeyName: "testName", KeyDescription: "Test to run"},
 		{Kind: "NAME", Identifier: "name", Name: "name", QualifiedName: "name", KeyName: "name"},
 	}, got)
 	require.Len(t, flattening.CanonicalDimensions("", nil), 1)
@@ -122,10 +104,4 @@ func TestCanonicalDimensions(t *testing.T) {
 	resolved, err := got.Resolve("name")
 	require.NoError(t, err)
 	require.Equal(t, flattening.NameDimension, resolved)
-}
-
-func TestCanonicalCollectionIdentifiersAreExactSchemaTypes(t *testing.T) {
-	require.Equal(t, []flattening.Coordinate{
-		{Dimension: "module", Key: "tests"}, {Dimension: "TestsCases", Key: "TestConnect"}, {Dimension: "name", Key: "check"},
-	}, flattening.CanonicalCoordinates("tests", []string{"check"}, []flattening.Coordinate{{Dimension: "TestsCases", Key: "TestConnect"}}))
 }

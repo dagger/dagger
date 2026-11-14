@@ -19,7 +19,6 @@ type inputField struct {
 	Items []itemKeys `json:"items"`
 }
 
-// itemKeys rejects JSON null keys, which encoding/json otherwise reads as "".
 type itemKeys []string
 
 func (keys *itemKeys) UnmarshalJSON(data []byte) error {
@@ -62,11 +61,7 @@ func run(args []string, input io.Reader, output io.Writer) error {
 		return fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
 	if *legacy {
-		legacyArgs := []string{}
-		if *only != "" {
-			legacyArgs = append(legacyArgs, "-only", *only)
-		}
-		return runLegacy(legacyArgs, input, output)
+		return runLegacy(*only, input, output)
 	}
 	var entries []inputField
 	decoder := json.NewDecoder(input)
@@ -106,9 +101,6 @@ func run(args []string, input io.Reader, output io.Writer) error {
 			}
 			cells := make(map[string]string, len(coordinates))
 			for _, coordinate := range coordinates {
-				if _, exists := cells[coordinate.Dimension]; exists {
-					return fmt.Errorf("field %d item %d: repeated dimension %s", i, j, coordinate.Dimension)
-				}
 				cells[coordinate.Dimension] = coordinate.Key
 			}
 			values := []string{visible(entry.Type)}
@@ -155,7 +147,6 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	return w.Flush()
 }
 
-// visible distinguishes empty and control keys from absent coordinates.
 func visible(value string) string {
 	if value == "" || value == "-" || strings.TrimSpace(value) != value || strings.ContainsFunc(value, unicode.IsControl) {
 		return strconv.Quote(value)

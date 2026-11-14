@@ -22,8 +22,6 @@ func TestCollections(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(CollectionsSuite{})
 }
 
-// collectionCLIArguments removes a known command prefix before replaying its
-// selectors through another listing command. Each emitted command is checked.
 func collectionCLIArguments(t *testctx.T, output, command string) string {
 	t.Helper()
 	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
@@ -202,7 +200,7 @@ func (CollectionsSuite) TestCallCollectionSelectors(ctx context.Context, t *test
 
 	// Item functions stay on the authored collection path. The selector name
 	// comes from the singular item type, not the plural collection field.
-	out, err := base.With(daggerCallAt("./collections", "items", "name", "--collections-items-item=a")).Stdout(ctx)
+	out, err := base.With(daggerCallAt("./collections", "items", "name", "--collections-item=a")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "item:a", out)
 
@@ -213,7 +211,7 @@ func (CollectionsSuite) TestCallCollectionSelectors(ctx context.Context, t *test
 	require.Equal(t, "a\nc\n", out)
 
 	// Every nested collection boundary contributes its own selector.
-	out, err = base.With(daggerCallAt("./collections", "items", "parts", "name", "--collections-items-item=a", "--collections-items-part=x")).Stdout(ctx)
+	out, err = base.With(daggerCallAt("./collections", "items", "parts", "name", "--collections-item=a", "--collections-part=x")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "x", out)
 
@@ -227,7 +225,7 @@ func (CollectionsSuite) TestCallCollectionSelectors(ctx context.Context, t *test
 		core.ContainerWithExecOpts{UseEntrypoint: true, Expect: core.ReturnTypeFailure},
 	).Stderr(ctx)
 	require.NoError(t, err)
-	require.Contains(t, stderr, "required collection selector --collections-items-item not set")
+	require.Contains(t, stderr, "required collection selector --collections-item not set")
 }
 
 // A collection grid whose key argument names differ from its type names, so
@@ -328,9 +326,9 @@ func (CollectionsSuite) TestCLI(ctx context.Context, t *testctx.T) {
 		args []string
 		want string
 	}{
-		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-item=a"}, "dag+file://items/file?collections-item=a\n"},
-		{[]string{"list", "-a", "-f", "link", "items/file?collections-item=a", "--collections-item=c"}, "dag+file://items/file?collections-item=a\ndag+file://items/file?collections-item=c\n"},
-		{[]string{"list", "collections-items", "items", "-a", "-f", "link"}, "dag+collections-item://items?collections-item=a\ndag+collections-item://items?collections-item=b\ndag+collections-item://items?collections-item=c\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file", "--collections-item=a"}, "dag+file://?collections-item=a&name=items.file\n"},
+		{[]string{"list", "-a", "-f", "link", "items/file?collections-item=a", "--collections-item=c"}, "dag+file://?collections-item=a&name=items.file\ndag+file://?collections-item=c&name=items.file\n"},
+		{[]string{"list", "collections-items", "items", "-a", "-f", "link"}, "dag+collections-item://?collections-item=a&name=items\ndag+collections-item://?collections-item=b&name=items\ndag+collections-item://?collections-item=c&name=items\n"},
 	} {
 		out, err := base.With(daggerExec(tc.args...)).Stdout(ctx)
 		require.NoError(t, err)
@@ -381,26 +379,21 @@ type Suite {
 	require.NoError(t, err)
 	require.Equal(t, link+"\n", out)
 
-	// Replay from the workspace without the original CLI selection.
 	out, err = base.With(daggerQueryAt("core", `{
   currentWorkspace { artifacts { filterUri(uri: %q) { one { path uri(typeAssertion: true) } } } }
 }`, link)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, fmt.Sprintf(`{"currentWorkspace":{"artifacts":{"filterUri":{"one":{"path":["projects","suites","run"],"uri":%q}}}}}`, link), out)
 
-	// The test name repeats under both projects. Keep the project key.
 	out, err = base.With(daggerExec("check", "--list", "--all", "--format=link", "dag+check://?selectors-suite=unit.test.ts")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, link+"\ndag+check://?selectors-project=./web&selectors-suite=unit.test.ts\n", out)
 
-	// This child key exists under only one project. The complete workspace
-	// supplies that proof, even when the CLI selection names both keys.
 	const unique = "dag+check://?selectors-suite=api.test.ts"
 	out, err = base.With(daggerExec("check", "--list", "--all", "--format=link", "--selectors-project=./api", "--selectors-suite=api.test.ts")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, unique+"\n", out)
 
-	// A fresh query must enumerate the projects when the link omits their key.
 	out, err = base.With(daggerQueryAt("core", `{
   currentWorkspace { artifacts { filterUri(uri: %q) { one {
     path dimensionKeys(all: true) { dimension key } uri(typeAssertion: true)
@@ -413,8 +406,6 @@ type Suite {
   "uri":%q
 }}}}}`, unique), out)
 
-	// Names use literal schema fields. They distinguish the generator from
-	// its stale check. Collection items retain the full path from the module root.
 	out, err = base.With(daggerQueryAt("core", `{
   currentWorkspace {
     artifacts {
@@ -466,7 +457,7 @@ func (CollectionsSuite) TestListFormats(ctx context.Context, t *testctx.T) {
 	t.Run("parent listing honors child filters", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("list", "collections-items", "-a", "items?collections-item=a&collections-item=b&collections-part=x", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "dag+collections-item://items?collections-item=a\ndag+collections-item://items?collections-item=b\n", out)
+		require.Equal(t, "dag+collections-item://?collections-item=a&name=items\ndag+collections-item://?collections-item=b&name=items\n", out)
 	})
 	t.Run("type table does not evaluate leaf values", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("list", "containers", "-a", "items/broken?collections-item=a&collections-item=b")).Stdout(ctx)
@@ -474,8 +465,8 @@ func (CollectionsSuite) TestListFormats(ctx context.Context, t *testctx.T) {
 		lines := strings.Split(strings.TrimSpace(out), "\n")
 		require.Len(t, lines, 3)
 		require.Equal(t, []string{"COLLECTIONS-ITEM", "LINK"}, strings.Fields(lines[0]))
-		require.Equal(t, []string{"a", "dag+container://items/broken?collections-item=a"}, strings.Fields(lines[1]))
-		require.Equal(t, []string{"b", "dag+container://items/broken?collections-item=b"}, strings.Fields(lines[2]))
+		require.Equal(t, []string{"a", "dag+container://?collections-item=a&name=items.broken"}, strings.Fields(lines[1]))
+		require.Equal(t, []string{"b", "dag+container://?collections-item=b&name=items.broken"}, strings.Fields(lines[2]))
 	})
 	t.Run("collection cli filters remain unambiguous without a path", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerExec("list", "collections-items", "items?collections-item=b", "-f=cli")).Stdout(ctx)
@@ -693,7 +684,7 @@ func (*Part) Verify() error { return nil }
 		require.Equal(t, "dag+check://items/verify\n", out)
 		out, err = base.With(daggerExec("check", "-la", "--collections-item=a", "--check=items/verify", "--generated=false")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"LINK", "dag+check://items/verify?collections-item=a"}, strings.Fields(out))
+		require.Equal(t, []string{"LINK", "dag+check://?collections-item=a&name=items.verify"}, strings.Fields(out))
 		// No collection flag: every sibling, including the empty one, matches.
 		out, err = base.With(daggerExec("check", "-l", "--check=verify", "-f=link")).Stdout(ctx)
 		require.NoError(t, err)
@@ -833,7 +824,6 @@ check.skip = ["deferred/load"]
 	})
 }
 
-// Keep the shipped route-based metadata and selector contract in its own view.
 func (CollectionsSuite) TestArtifactsLegacyView(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithVersionOverride("v1.0.0-beta.27"))
 	ws, err := goGitBase(t, c).
@@ -898,8 +888,7 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
 	ws, err := goGitBase(t, c).WithDirectory("/work", collectionSource(c)).
 		WithWorkdir("/work").Directory("/work").AsWorkspace().ID(ctx)
 	require.NoError(t, err)
-	// Exact collection type IDs and their public aliases select the same row.
-	// Name keys retain every ordinary field from the module root.
+
 	got, err := testutil.QueryWithClient[json.RawMessage](c, t, `query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts {
     dimensionDefinitions { identifier name kind }
@@ -952,7 +941,7 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "collections-item", byID["CollectionsItems"])
 	require.Equal(t, "collections-part", byID["CollectionsParts"])
 	require.Equal(t, "name", byID["name"])
-	// Replay the emitted URI through a fresh selection, without the original filters.
+
 	replay, err := testutil.QueryWithClient[json.RawMessage](c, t, fmt.Sprintf(`query($ws: ID!) {
   node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: %q) { one { value { ... on File { contents } } } } } } }
  }`, artifacts.Exact.One.URI), &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})
@@ -962,9 +951,9 @@ func (CollectionsSuite) TestArtifacts(ctx context.Context, t *testctx.T) {
 
 func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	// Two parents expose the same child key. A leaf panics if discovery
-	// evaluates its value. Parent c prevents a complete address proof, so
-	// untyped links must retain the full path and collection keys.
+
+	// evaluates its value, and unrelated parent c must remain deferred.
+
 	source := strings.Replace(collectionGoSource,
 		`if item.Name != "item:a" { panic("excluded parent must stay deferred") }`,
 		`if item.Name == "item:c" { panic("excluded parent must stay deferred") }`, 1)
@@ -1037,7 +1026,7 @@ func (CollectionsSuite) TestDimensionItems(ctx context.Context, t *testctx.T) {
 				expected["CollectionsParts"] = "x"
 			}
 			require.Equal(t, expected, coordinates)
-			// Replaying the emitted address must identify exactly this row.
+
 			replay, err := testutil.QueryWithClient[json.RawMessage](c, t, fmt.Sprintf(`query($ws: ID!) {
     node(id: $ws) { ... on Workspace { artifacts { filterUri(uri: %q) { one { dimensionKeys(all: true) { dimension key } } } } } }
    }`, tc.row.URI), &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})
@@ -1099,7 +1088,7 @@ type Part struct { Name string }
 			}
 		}
 	}](c, t, `query($ws: ID!) {
-  node(id: $ws) { ... on Workspace { artifacts { dimensionItems(dimension: "probe-groups-part") { dimensionKeys(all: true) { dimension key } } } } }
+  node(id: $ws) { ... on Workspace { artifacts { dimensionItems(dimension: "ProbeParts") { dimensionKeys(all: true) { dimension key } } } } }
 }`, &testutil.QueryOptions{Variables: map[string]any{"ws": ws}})
 	require.NoError(t, err)
 	require.Len(t, got.Node.Artifacts.DimensionItems, 1)
@@ -1107,8 +1096,8 @@ type Part struct { Name string }
 	for _, key := range got.Node.Artifacts.DimensionItems[0].DimensionKeys {
 		keys[key.Dimension] = key.Key
 	}
-	require.NotEmpty(t, keys["/probe/groups"])
-	require.Equal(t, keys["/probe/groups"], keys["/probe/groups/parts"])
+	require.NotEmpty(t, keys["ProbeGroups"])
+	require.Equal(t, keys["ProbeGroups"], keys["ProbeParts"])
 }
 
 func (CollectionsSuite) TestMainCollection(ctx context.Context, t *testctx.T) {

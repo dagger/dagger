@@ -23,17 +23,13 @@ func TestCollectionCommandDimensionUsesItemTypeName(t *testing.T) {
 	}
 
 	dimension, err := collectionCommandDimension(
-		&functionCommandPath{Module: "prettier", Fields: []string{"projects"}},
 		collectionType,
 		collection,
 	)
 	require.NoError(t, err)
 	require.Equal(t, "PrettierProjects", dimension.Identifier)
 	require.Equal(t, "prettier-project", dimension.Name)
-	require.Equal(t, "prettier-projects", dimension.QualifiedName)
-	other, err := collectionCommandDimension(nil, collectionType, collection)
-	require.NoError(t, err)
-	require.Equal(t, dimension, other, "field routes do not define collection identity")
+	require.Equal(t, "PrettierProjects", dimension.QualifiedName)
 	require.Equal(t, "prettier-project", artifactDimensionFlagNames(
 		&cobra.Command{Use: "write"},
 		artifact.Dimensions{dimension},

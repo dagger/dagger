@@ -67,8 +67,7 @@ func (*Part) Run() error { panic("check evaluated") }
 				out, err := ctr.With(daggerExec(append(command, "-a", "items/run?CollectionsItems=a", "-f=cli")...)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Contains(t, out, "--collections-item=a")
-				// Items and Deferred share one collection column. The name must
-				// preserve the route even when each item has only one check.
+
 				require.Contains(t, out, "--name=items.run")
 				replay := append(append([]string{}, command...), "-a", "-f=link")
 				prefix := "dagger check"

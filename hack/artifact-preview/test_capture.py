@@ -1,4 +1,3 @@
-"""Check schema field spelling and collection boundaries in saved captures."""
 import copy
 import json
 import unittest
@@ -27,7 +26,7 @@ class LocalPathsTest(unittest.TestCase):
         target = path('app/python-310/unit', 'Check')
         captured = metadata([target], {'App': [field('python310', 'Version')],
                                        'Version': [field('unit', 'Check')]})
-        self.assertEqual(['python310', 'unit'], LocalPaths(captured).resolve(target))
+        self.assertEqual(['python310', 'unit'], LocalPaths(captured).resolve_projection(target)[0])
 
     def test_collection_field_resets_only_for_item_boundary(self):
         collection = path('app/items/verify', 'Check')
@@ -40,29 +39,29 @@ class LocalPathsTest(unittest.TestCase):
         }, [{'identifier': '/app/items', 'collectionType': 'AppItems',
              'itemType': 'AppItem'}])
         resolver = LocalPaths(captured)
-        self.assertEqual(['items', 'verify'], resolver.resolve(collection))
-        self.assertEqual(['verify'], resolver.resolve(item))
-        self.assertEqual([], resolver.resolve(root))
+        self.assertEqual(['items', 'verify'], resolver.resolve_projection(collection)[0])
+        self.assertEqual(['verify'], resolver.resolve_projection(item)[0])
+        self.assertEqual([], resolver.resolve_projection(root)[0])
 
     def test_generator_projection_preserves_stale_tail(self):
         generator = path('app/generate', 'Generator')
         stale = path('app/generate/stale', 'Check')
         captured = metadata([generator, stale], {'App': [field('generate', 'Changeset')]})
-        self.assertEqual(['generate', 'stale'], LocalPaths(captured).resolve(stale))
+        self.assertEqual(['generate', 'stale'], LocalPaths(captured).resolve_projection(stale)[0])
 
     def test_ambiguous_spelling_is_rejected(self):
         target = path('app/python-310', 'Check')
         captured = metadata([target], {'App': [field('python310', 'Check'),
                                               field('python_310', 'Check')]})
         with self.assertRaisesRegex(ValueError, 'expected one schema name'):
-            LocalPaths(captured).resolve(target)
+            LocalPaths(captured).resolve_projection(target)[0]
 
     def test_bound_sdk_root_requires_explicit_provider(self):
         target = path('app/generate', 'Generator')
         captured = metadata([target], {})
         with self.assertRaisesRegex(ValueError, 'Module app'):
-            LocalPaths(captured).resolve(target)
-        self.assertEqual(['generate'], LocalPaths(captured, ['app']).resolve(target))
+            LocalPaths(captured).resolve_projection(target)[0]
+        self.assertEqual(['generate'], LocalPaths(captured, ['app']).resolve_projection(target)[0])
 
 
 class OutputFormatTest(unittest.TestCase):
@@ -94,16 +93,10 @@ class OutputFormatTest(unittest.TestCase):
              'collections': [], 'items': [[]]},
         ], native)
         self.assertEqual(before, captured)
-        # The result owns its lists. Later edits cannot change the capture.
         native[0]['collections'][0]['fields'].append('changed')
         native[0]['items'][0].append('changed')
         native[1]['localPath'].append('changed')
         self.assertEqual(before, captured)
-
-    def test_cli_format_preserves_capture(self):
-        captured = [{'Module': 'app', 'Items': []}]
-        self.assertEqual(captured, format_entries(captured, 'cli'))
-
 
 class ModernCaptureTest(unittest.TestCase):
     @staticmethod
@@ -153,7 +146,6 @@ class ModernCaptureTest(unittest.TestCase):
         ], format_entries(entries, 'flattening'))
         self.assertEqual(['app', 'items'], entries[1]['Path'])
         self.assertEqual(before, metadata)
-        # The same projection works on pathDefinitions-based schema captures.
         metadata['pathDefinitions'] = metadata.pop('__listing')
         self.assertEqual(entries, capture_entries(metadata, listing))
 

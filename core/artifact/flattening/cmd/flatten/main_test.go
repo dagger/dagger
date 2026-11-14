@@ -42,7 +42,6 @@ func TestLegacyComposeSelection(t *testing.T) {
 	if err := run([]string{"-legacy", "-only", "docker/compose/projects/services/up"}, bytes.NewReader(input), &selected); err != nil {
 		t.Fatal(err)
 	}
-	// Filtering rows must keep the complete column definition table.
 	allColumns := strings.SplitN(out.String(), "\n\n", 2)[0]
 	selectedColumns := strings.SplitN(selected.String(), "\n\n", 2)[0]
 	if allColumns != selectedColumns {

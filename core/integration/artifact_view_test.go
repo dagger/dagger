@@ -183,7 +183,7 @@ type Case {
   pub alias: Cases!
 }
 `)
-	// The collection type is shared. The field name selects each origin.
+
 	out, err := base.With(daggerQuery(`{
  currentWorkspace { artifacts { filterTypes(types: ["ViewCase"]) {
   first: filterUri(uri: "?name=first&ViewCases=a&ViewCases=b") {
@@ -229,7 +229,6 @@ func (ArtifactsSuite) TestFilteredViewChecks(ctx context.Context, t *testctx.T) 
 	links := strings.Fields(out)
 	require.Len(t, links, 3)
 
-	// Each copied link must select one item, including safe path-form links.
 	var query strings.Builder
 	query.WriteString("{ currentWorkspace { artifacts {")
 	for i, link := range links {
@@ -262,7 +261,6 @@ func (ArtifactsSuite) TestFilteredViewChecks(ctx context.Context, t *testctx.T) 
 		{"module": "view", "ViewPackages": "right", "ViewCases": "Bar", "name": "packages.tests.verify"},
 	}, copiedCoordinates)
 
-	// Path input must select the same view as the canonical name selector.
 	pathSelection := "packages/tests/verify?view-package=left&view-package=right&view-case=Foo&view-case=Bar"
 	out, err = base.With(daggerExec("check", "-la", "-f=link", pathSelection)).Stdout(ctx)
 	require.NoError(t, err, out)

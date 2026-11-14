@@ -46,7 +46,6 @@ func listedArtifactKeys(items []listedArtifact) []dagaddress.Pair {
 	return keys
 }
 
-// listedArtifactCoordinates retains every canonical value in a collapsed row.
 func listedArtifactCoordinates(items []listedArtifact) []struct{ Dimension, Key string } {
 	var coordinates []struct{ Dimension, Key string }
 	for _, item := range items {
@@ -82,7 +81,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 			if dimension.CollectionType != collectionType {
 				continue
 			}
-			projected, err := readListedDimensionItems(ctx, dag, selection, dimension.Identifier, absolute, true)
+			projected, err := readListedDimensionItems(ctx, dag, selection, dimension.Identifier, absolute)
 			if err != nil {
 				return err
 			}
@@ -91,7 +90,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 	} else if all || filtered {
 		items, err = readListedArtifactsMetadata(ctx, dag, selection, absolute, true)
 	} else {
-		items, err = readListedArtifactPaths(ctx, dag, selection, absolute, "")
+		items, err = readListedArtifactPaths(ctx, dag, selection, absolute)
 	}
 	if err != nil {
 		return err
@@ -143,8 +142,6 @@ func collapsedArtifactURI(item listedArtifact) (string, error) {
 		return "", err
 	}
 	addr.Query = slices.DeleteFunc(addr.Query, func(pair dagaddress.Pair) bool { return !pair.Absent && pair.Dimension != artifact.ModuleDimension })
-	// A collection alias in an item link can have the same name as the
-	// scheme type. Use the exact type path from the listing coordinates.
 	for _, key := range item.DimensionKeys {
 		if strings.HasPrefix(key.Dimension, "type:") {
 			addr.Path = ""
@@ -178,15 +175,13 @@ func reportArtifactList(ctx context.Context, cmd *cobra.Command, output []listed
 	return nil
 }
 
-func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute bool, dimension string) ([]listedArtifact, error) {
-	if dimension == "" {
-		items, supported, err := readArtifactSchemaListing(ctx, dag, selection, absolute)
-		if err != nil {
-			return nil, err
-		}
-		if supported {
-			return items, nil
-		}
+func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute bool) ([]listedArtifact, error) {
+	items, supported, err := readArtifactSchemaListing(ctx, dag, selection, absolute)
+	if err != nil {
+		return nil, err
+	}
+	if supported {
+		return items, nil
 	}
 	id, err := selection.ID(ctx)
 	if err != nil {
@@ -201,18 +196,15 @@ func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection 
 		}
 	}
 	variables := map[string]any{"id": id, "absolute": absolute}
-	if dimension != "" {
-		variables["dimension"] = dimension
-	}
-	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!, $dimension: String) {
-  node(id: $id) { ... on Artifacts { pathDefinitions(absolute: $absolute, typeAssertion: true, dimension: $dimension) { uri description dimensions moduleName } } }
+	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
+  node(id: $id) { ... on Artifacts { pathDefinitions(absolute: $absolute, typeAssertion: true) { uri description dimensions moduleName } } }
  }`, Variables: variables}, &dagger.Response{Data: &response})
 	if err != nil {
 		return nil, err
 	}
-	var items []listedArtifact
+	items = nil
 	for _, path := range response.Node.PathDefinitions {
-		item := listedArtifact{URI: path.URI, Description: path.Description, CollectionItem: dimension != ""}
+		item := listedArtifact{URI: path.URI, Description: path.Description}
 		addr, err := dagaddress.Parse(path.URI)
 		if err != nil {
 			return nil, err
@@ -232,7 +224,7 @@ func readListedArtifactPaths(ctx context.Context, dag *dagger.Client, selection 
 }
 
 // Keep explicit input filters even if they include every current key.
-func artifactListHasKeyFilters(cmd *cobra.Command, definitions ...artifact.Dimensions) (bool, error) {
+func artifactListHasKeyFilters(cmd *cobra.Command, definitions artifact.Dimensions) (bool, error) {
 	keys := artifactKeyFlags(cmd)
 	addresses, err := parseArtifactAddresses(cmd.Flags().Args())
 	if err != nil {
@@ -241,11 +233,9 @@ func artifactListHasKeyFilters(cmd *cobra.Command, definitions ...artifact.Dimen
 	for _, address := range addresses {
 		for _, pair := range address.Query {
 			dimension := pair.Dimension
-			if len(definitions) > 0 {
-				dimension, err = definitions[0].Resolve(dimension)
-				if err != nil {
-					return false, err
-				}
+			dimension, err = definitions.Resolve(dimension)
+			if err != nil {
+				return false, err
 			}
 			if pair.HasKey && !artifact.IsStaticDimension(dimension) {
 				return true, nil
@@ -267,7 +257,6 @@ func artifactListRows(group []listedArtifact, all bool) [][]listedArtifact {
 	return rows
 }
 
-// Keep schema paths and absent selectors separate when a field path is shared.
 func sameArtifactPresence(items []listedArtifact) bool {
 	first, err := dagaddress.Parse(items[0].URI)
 	if err != nil {

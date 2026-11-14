@@ -40,8 +40,6 @@ func TestArtifactDirectNestedCollectionTypeColumns(t *testing.T) {
 	require.Equal(t, want, projected)
 	require.Equal(t, want, entry.CanonicalCoordinates())
 
-	// Two source fields can have equal projected rows. Source addresses must
-	// still retain the field path that selects each artifact.
 	other := *entry
 	other.Path = []string{"grid", "otherRows"}
 	require.Equal(t, entry.CanonicalCoordinates(), other.CanonicalCoordinates())
@@ -65,13 +63,17 @@ func TestArtifactURIUsesAbsentDimensionProof(t *testing.T) {
 		DimensionKeys: []*ArtifactDimensionKey{{Dimension: "Rows", Key: "top"}},
 		links:         &artifact.Links{CompleteSchema: true, TypedAbsent: []string{"Cell"}},
 	}
-	opts := ArtifactURIOpts{Prune: true, DimensionKeys: true, TypeAssertion: true}
+	key := "top"
+	module := &ModTreeNode{Name: "grid", Parent: &ModTreeNode{}}
+	rows := &ModTreeNode{Name: "rows", Parent: module}
+	item := &ModTreeNode{Name: "get", Parent: rows, CollectionKey: &key,
+		CollectionDimension: &ArtifactDimension{Identifier: "Rows", CollectionType: "Rows", ItemType: "Row"}}
+	entry.Node = &ModTreeNode{Name: "check", Parent: item}
+	opts := ArtifactURIOpts{Canonical: true, DimensionKeys: true, TypeAssertion: true}
 	uri, err := entry.URI(opts)
 	require.NoError(t, err)
 	require.Equal(t, "dag+check://grid/rows/check?!Cell&Rows=top", uri)
 
-	// A complete runtime snapshot can prove the child collection is empty.
-	// An empty selector set proves that the type alone selects this row.
 	target := entry.addressRow(true)
 	index := artifact.NewAddressIndex([]artifact.AddressRow{target}, true)
 	selectors, proven := index.Selectors(target)
@@ -91,8 +93,6 @@ func TestArtifactSnapshotRejectsStaleProjectionMetadata(t *testing.T) {
 		{"unsupported future snapshot", fmt.Sprintf(`"Version":%d,`, artifactSnapshotVersion+1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// The unknown node would fail decoding if the version check did
-			// not reject the snapshot before restoring its names and plans.
 			payload := json.RawMessage(fmt.Sprintf(`{%s"Entries":[{
   "Node":12345,"ModuleName":"app","TypeName":"Check","Path":["app","tests","check"],
   "DimensionNames":{"Tests":"old-label"},

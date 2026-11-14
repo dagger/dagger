@@ -9,21 +9,6 @@ import (
 	"github.com/dagger/dagger/core/artifact"
 )
 
-// A module that fails to load has no schema, so its load failure stands in
-// for whatever the module would have held. Inclusion filters keep the failure
-// when the module could have held something they select, so consumers report
-// the load error instead of an incomplete result; FilterTypes does the same.
-// Exclusions match the failure only by its own path and keys (see
-// Artifacts.exact), so excluding part of a broken module does not hide its
-// failure.
-//
-// Whether a module could hold something follows from how discovery names
-// artifacts: paths start with the module's address name (a main's may
-// omit it). Legacy collection selectors contain module prefixes. Canonical
-// collection type identifiers can be shared by several module fields, so an
-// unavailable schema cannot prove that those columns are absent. Legacy type
-// selector keys remain artifact paths.
-
 // failedModule is the address name of the module whose load failure a is: the
 // first segment of its path. Empty for any other artifact.
 func (a *Artifact) failedModule() string {
@@ -94,8 +79,7 @@ func (a *Artifact) mayHaveDimension(id string, keys []string) bool {
 	case id == artifact.ModuleDimension:
 		return keys == nil || moduleKeysMatch(keys, a.ModuleName)
 	case id == artifact.NameDimension:
-		// Name coordinates contain no module prefix. An unknown module can
-		// contain an artifact with any selected field name.
+
 		return true
 	case strings.HasPrefix(id, "type:"):
 		return paths()
@@ -103,8 +87,7 @@ func (a *Artifact) mayHaveDimension(id string, keys []string) bool {
 		owner, _, _ := strings.Cut(strings.TrimPrefix(id, "/"), "/")
 		return slices.Contains(modules, owner)
 	case len(id) > 0 && id[0] >= 'A' && id[0] <= 'Z':
-		// Exact schema type IDs can be shared across module fields. A failed
-		// module can expose that collection; its schema cannot rule it out.
+
 		return true
 	case namedByModule(id):
 		// An unknown name of one of the module's collections.

@@ -1098,13 +1098,12 @@ type modFunction struct {
 
 	// These fields belong only to command-local clones. Canonical
 	// introspection values never carry CLI traversal state.
-	commandPath      *functionCommandPath
 	collectionRoute  *collectionCallRoute
 	collectionRoutes []*collectionCallRoute
 }
 
 func (f *modFunction) commandClone() *modFunction {
-	clone := &modFunction{
+	return &modFunction{
 		Name:             f.Name,
 		Description:      f.Description,
 		SourceModuleName: f.SourceModuleName,
@@ -1113,13 +1112,6 @@ func (f *modFunction) commandClone() *modFunction {
 		collectionRoute:  f.collectionRoute,
 		collectionRoutes: slices.Clone(f.collectionRoutes),
 	}
-	if f.commandPath != nil {
-		clone.commandPath = &functionCommandPath{
-			Module: f.commandPath.Module,
-			Fields: slices.Clone(f.commandPath.Fields),
-		}
-	}
-	return clone
 }
 
 func (f *modFunction) CmdName() string {

@@ -48,7 +48,7 @@ func resolveModuleRef(ctx context.Context, address *core.Address, typeName strin
 		return true, err
 	}
 	ctx = core.WorkspaceToContext(ctx, ws)
-	artifact, err := resolveWorkspaceArtifact(ctx, ws, parsed, addr, typeName)
+	artifact, err := resolveWorkspaceArtifact(ctx, ws, parsed, addr)
 	if err != nil {
 		return true, err
 	}
@@ -99,10 +99,9 @@ func hasModuleRefScope(address *core.Address) bool {
 // typeName is the expected type, which may name the type key holding the path.
 // A short type key names no module, so when the narrowed load matches nothing,
 // resolve against every module.
-func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], parsed *dagaddress.Address, uri, typeName string) (*core.Artifact, error) {
+func resolveWorkspaceArtifact(ctx context.Context, ws dagql.ObjectResult[*core.Workspace], parsed *dagaddress.Address, uri string) (*core.Artifact, error) {
 	path := parsed.Path
-	// A typed query can use the type's name as a collection dimension. Its
-	// key is an item key, so bind query aliases against the workspace schema.
+
 	if path != "" {
 		artifact, err := resolveWorkspaceArtifactIn(ctx, ws, parsed, uri, []string{path})
 		if !errors.Is(err, core.ErrNoArtifactMatch) {
