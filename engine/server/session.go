@@ -1810,7 +1810,22 @@ func (srv *Server) initializeClientRuntime(
 		if len(client.mod.Self().ObjectDefs) > 0 {
 			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
+		if deps := nestedServedDeps(client.clientMetadata); deps != nil && opts.InertAttachables {
+			// A DangEval snippet in a module's scope also reaches the
+			// conversation's bound tool objects: their modules' types,
+			// beside the module's own API.
+			for _, mod := range deps.Mods() {
+				if mod.Name() != core.ModuleName {
+					servedMods = servedMods.With(mod, core.InstallOpts{SkipConstructor: true})
+				}
+			}
+		}
 		client.servedMods = servedMods.ClientOwned()
+	} else if deps := nestedServedDeps(client.clientMetadata); deps != nil && opts.InertAttachables {
+		// An in-engine client running for a conversation (DangEval) serves
+		// the conversation's API, as a module client serves its module's
+		// dependencies, without the conversation's host access.
+		client.servedMods = deps.WithRoot(client.dagqlRoot).ClientOwned()
 	} else if !opts.InertAttachables {
 		// Only a client that can read its host detects its own workspace. An
 		// in-engine SDK client without a module, such as one that evaluates an
@@ -1839,6 +1854,16 @@ func (srv *Server) initializeClientRuntime(
 
 	client.state = clientStateInitialized
 	return nil
+}
+
+// nestedServedDeps is the schema an in-engine nested client was given to
+// serve (engine.ClientMetadata.ServedDeps), or nil.
+func nestedServedDeps(md *engine.ClientMetadata) *core.SchemaBuilder {
+	if md == nil {
+		return nil
+	}
+	deps, _ := md.ServedDeps.(*core.SchemaBuilder)
+	return deps
 }
 
 func (sess *daggerSession) resolveClientAttachableCaller(
@@ -2546,6 +2571,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 		return
 	}
 	clientMetadata := nestedClientMetadataForRequest(r.Header, nestedClientMetadata)
+	clientMetadata.InertAttachables = inertAttachables
 
 	var moduleContext dagql.ObjectResult[*core.Module]
 	if moduleCtx != nil {

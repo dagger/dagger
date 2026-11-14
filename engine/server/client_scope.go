@@ -351,6 +351,10 @@ func cloneClientMetadata(metadata *engine.ClientMetadata) (*engine.ClientMetadat
 	cloned.UseRecipeIDsByDefault = metadata.UseRecipeIDsByDefault
 	cloned.SDKEntrypoint = metadata.SDKEntrypoint
 	cloned.ClientVersionDeclared = metadata.ClientVersionDeclared
+	// Shared, not copied: the schema is immutable once built.
+	cloned.ServedDeps = metadata.ServedDeps
+	cloned.CallerAgent = metadata.CallerAgent
+	cloned.InertAttachables = metadata.InertAttachables
 	return &cloned, nil
 }
 
@@ -430,6 +434,12 @@ func (sess *daggerSession) sealClientMetadataLocked(record *clientRecord) error 
 	snapshot, err := cloneClientMetadata(record.clientMetadata)
 	if err != nil {
 		return err
+	}
+	// The record is what the server enforces; the metadata says so too, for
+	// operations that must know there is no host to ask (a client nested
+	// under an inert one inherits the record flag without declaring it).
+	if record.inertAttachables {
+		snapshot.InertAttachables = true
 	}
 	record.clientMetadata = snapshot
 	record.clientVersion = snapshot.ClientVersion

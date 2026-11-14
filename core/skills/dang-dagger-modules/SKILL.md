@@ -52,10 +52,16 @@ engineVersion = "v1.0.0"
 - Without `dang = ...`, `engineVersion` picks the Dang language: `< v0.21.5` is
   Dang 1.0 (where `.{ }` is GraphQL selection); `v0.21.5` up to
   `v1.0.0-beta.28` is Dang 2.1 (`.{ }` is dot-block application, `.{{ }}` is
-  selection); `>= v1.0.0-beta.28` is Dang 2.4, where a type pattern spells the
-  non-null type its arm binds (`c: Cat! =>`, `e: Error! =>` in `rescue`).
+  selection, and `"${x}"` is literal text: interpolate with backticks,
+  `` `hi ${x}` ``); `>= v1.0.0-beta.28` is Dang 2.5, where a type pattern
+  spells the non-null type its arm binds (`c: Cat! =>`, `e: Error! =>` in
+  `rescue`), `"..."`/`"""..."""` strings interpolate `${...}` and process
+  escapes, and only a language tag may follow an opening `"""`. Write
+  `'...'`/`'''...'''` for verbatim text (shell with `${VAR}` or `\`
+  continuations, regexes), or escape `\${`.
   Don't bump an old module's `engineVersion` without checking its syntax
-  (`dang migrate` rewrites it), or pin `dang = "X.Y"`.
+  (`dang migrate -w --from 2.1` rewrites a module that declares no `dang`), or
+  pin `dang = "X.Y"`.
 - Dependencies are `[[dependencies]]` tables (`name = "gochild"`,
   `source = "./gochild"`), managed with `dagger module client add/rm/update`
   from the module directory. Deps may use any SDK (Go, Python, TypeScript,
@@ -227,8 +233,13 @@ type Test {
 - Declaring `id` when implementing a dep interface → error; omit it.
 - Using v1 `.{ }` selection in a `>= v0.21.5` module — that's dot-block now;
   select with `.{{ }}`.
-- A bare type pattern (`c: Cat =>`) in a Dang 2.4 module → error; write
+- A bare type pattern (`c: Cat =>`) in a Dang 2.5 module → error; write
   `c: Cat! =>`.
+- A shell-ish `"${PATH}"` in a Dang 2.5 module interpolates (or fails to
+  resolve `PATH`), and a `\` in a `"""` string is an escape; write verbatim
+  text as `'${PATH}'` or `'''...'''`.
+- Conversely, `"hi ${name}"` in a Dang 2.1 module (`engineVersion` before
+  v1.0.0-beta.28) is literal text, not an interpolation; use backticks.
 - Passing bare `JSON` where a Dagger API wants its `JSON` scalar → type
   mismatch; cast it, `value :: Dagger.JSON!`.
 - Only *top-level* type declarations become module types; types defined inside

@@ -1,0 +1,5 @@
+name = "notes"
+engineVersion = "latest"
+
+[runtime]
+  source = "dang"

@@ -598,7 +598,7 @@ func TestConversationReportConciseReadAndGrep(t *testing.T) {
 			}
 			if verbosity >= toolArgsVerbosity {
 				var buf strings.Builder
-				fe.renderMessageLogs(NewOutput(&buf, termenv.WithProfile(termenv.Ascii)), span)
+				fe.renderMessageLogs(NewOutput(&buf, termenv.WithProfile(termenv.Ascii)), span, 0)
 				if rendered := buf.String(); rendered != "" && !strings.HasSuffix(rendered, "\n") {
 					t.Fatalf("rendered JSON args lack trailing newline: %q", rendered)
 				}

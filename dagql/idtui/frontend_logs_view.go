@@ -165,12 +165,16 @@ func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dag
 	logPrefix, trimPrefix := s.fe.logLinePrefixes(styleOut, r, row, "", focused)
 
 	var lines []string
-	if isToolCallDisplay(span) && s.fe.spanVerbosity(span) >= toolArgsVerbosity {
+	// A Dang snippet is the call: show it as code, in place of its JSON
+	// arguments.
+	source := s.fe.dangSourceRows(r, row)
+	lines = append(lines, source...)
+	if len(source) == 0 && isToolCallDisplay(span) && s.fe.spanVerbosity(span) >= toolArgsVerbosity {
 		argsView := s.fe.getOrCreateLogsView(span.ID, true)
 		argsView.sync(logPrefix, trimPrefix, limit, s.fe.finalRender, false)
 		lines = append(lines, s.RenderChildResult(ctx, argsView).Lines...)
 	}
-	if span.CollapsesToolOutput() && !row.Expanded {
+	if s.fe.db.CollapsesToolOutput(span) && !row.Expanded {
 		return lines
 	}
 

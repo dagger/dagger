@@ -1,0 +1,2 @@
+[modules.notes]
+source = ".dagger/modules/notes"

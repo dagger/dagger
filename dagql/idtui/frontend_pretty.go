@@ -380,6 +380,10 @@ type frontendPretty struct {
 	logsViews     map[logsViewKey]*LogsView
 	renderVersion uint64 // bumped on global render config changes (verbosity, zoom)
 
+	// dangHighlightPending is set once a Dang snippet rendered plain while
+	// Dang's highlighter warmed up; the rows re-render when it's ready.
+	dangHighlightPending bool
+
 	// rewindsKey fingerprints the set of messages rewinds have abandoned as
 	// of the last recalculation, so a change to it can bump renderVersion
 	// (see syncRewindsLocked).
@@ -8703,7 +8707,15 @@ func (fe *frontendPretty) renderSpanErrorMessage(out TermOutput, r *renderer, ro
 }
 
 func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Span) {
-	if !isToolCallDisplay(span) || !dagui.ToolNameIs(span.LLMTool, "grep") {
+	if !isToolCallDisplay(span) {
+		return
+	}
+	tool := span.LLMTool
+	if dagui.RendersToolArgs(tool) {
+		// a Timeout summarizes as the call it wraps
+		tool = fe.db.ToolCallView(span).Tool
+	}
+	if !dagui.ToolNameIs(tool, "grep") {
 		return
 	}
 	logs := fe.logs.Logs[span.ID]

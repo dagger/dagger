@@ -128,6 +128,45 @@ func TestComposingAgentCallCache(t *testing.T) {
 	}
 }
 
+// An in-engine nested client that runs no function, such as a DangEval
+// snippet's, acts for the agent it was created for: its requests resolve
+// that agent from the client scope they hold, which keeps it beside the
+// metadata's JSON snapshot, through clones of the scope too.
+func TestCallerAgentFromNestedClientMetadata(t *testing.T) {
+	agent, ok := AgentFromContext(testAgentContext(t, t.Context(), "owner", "owner"))
+	require.True(t, ok)
+	var newLease func(engine.ClientLeaseKind, string) *engine.ClientLifecycleLease
+	newLease = func(kind engine.ClientLeaseKind, owner string) *engine.ClientLifecycleLease {
+		return engine.NewClientLifecycleLease(kind, owner, nil, func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+			return newLease(kind, owner), nil
+		})
+	}
+	lease := newLease(engine.ClientLeaseRequest, "test")
+	t.Cleanup(lease.Release)
+
+	_, ok = CallerAgent(engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: "plain", SessionID: "session"}))
+	require.False(t, ok, "a client created for no agent acts for none")
+
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{ClientID: "snippet", SessionID: "session", CallerAgent: agent}, lease)
+	require.NoError(t, err)
+	clone, err := scope.Clone(engine.ClientLeaseRequest, "clone")
+	require.NoError(t, err)
+	t.Cleanup(clone.Lease().Release)
+	for _, scope := range []engine.ClientScope{scope, clone} {
+		ctx, err := engine.ContextWithClientScope(t.Context(), scope)
+		require.NoError(t, err)
+		caller, ok := CallerAgent(ctx)
+		require.True(t, ok)
+		require.Equal(t, "owner", caller.Self().Handle)
+		// A Workspace operation routes its metadata to the workspace's
+		// owner, and keeps the scope: the snippet keeps its agent.
+		routed := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{ClientID: "workspace-owner", SessionID: "session"})
+		caller, ok = CallerAgent(routed)
+		require.True(t, ok)
+		require.Equal(t, "owner", caller.Self().Handle)
+	}
+}
+
 func TestAgentToolCallContext(t *testing.T) {
 	ctx := t.Context()
 	require.False(t, IsAgentToolCall(ctx))

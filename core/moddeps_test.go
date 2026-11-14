@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -14,9 +15,17 @@ import (
 type memoTestMod struct {
 	Mod
 	name string
+	// same, if set, is another module this one is the same installed
+	// module as.
+	same Mod
 }
 
 func (m *memoTestMod) Name() string { return m.name }
+
+func (m *memoTestMod) Same(other Mod) (bool, error) {
+	o, _ := other.(*memoTestMod)
+	return o == m || (o != nil && (m.same == Mod(o) || o.same == Mod(m))), nil
+}
 
 func TestSchemaBuilderMemo(t *testing.T) {
 	a, b := &memoTestMod{name: "a"}, &memoTestMod{name: "b"}
@@ -163,6 +172,35 @@ func TestSchemaBuilderMemoOwnsACopy(t *testing.T) {
 	}
 }
 
+// A value workspace's installed modules are loaded once per session, failures
+// included; a failed load is tried again.
+func TestSchemaBuilderMemoWorkspaceModules(t *testing.T) {
+	memo := NewSchemaBuilderMemo()
+	loads := 0
+	loaded := &InstalledWorkspaceModules{Failures: []ModuleLoadFailure{{Name: "broken"}}}
+	load := func() (*InstalledWorkspaceModules, error) {
+		loads++
+		if loads == 1 {
+			return nil, errors.New("canceled")
+		}
+		return loaded, nil
+	}
+	_, err := memo.WorkspaceModules("ws", load)
+	require.Error(t, err)
+	got, err := memo.WorkspaceModules("ws", load)
+	require.NoError(t, err)
+	require.Same(t, loaded, got)
+	got, err = memo.WorkspaceModules("ws", load)
+	require.NoError(t, err)
+	require.Same(t, loaded, got)
+	require.Equal(t, 2, loads)
+
+	var none *SchemaBuilderMemo
+	_, err = none.WorkspaceModules("ws", load)
+	require.NoError(t, err)
+	require.Equal(t, 3, loads, "a nil memo loads every time")
+}
+
 func TestSchemaBuilderWithCoreMod(t *testing.T) {
 	oldCore := &memoTestMod{name: ModuleName}
 	newCore := &memoTestMod{name: ModuleName}
@@ -174,4 +212,52 @@ func TestSchemaBuilderWithCoreMod(t *testing.T) {
 	require.Equal(t, []Mod{newCore, dependency}, replaced.Mods())
 	require.Equal(t, original.entries[1], replaced.entries[1])
 	require.Equal(t, []Mod{oldCore, dependency}, original.Mods())
+}
+
+// A conversation's Dang scope serves the modules its workspace installs as of
+// the call: a module installed since is added, a changed one replaced, an
+// uninstalled one dropped, and an unchanged one kept as it was, so the schema
+// built for it is reused.
+func TestSchemaBuilderWithPrimaryMods(t *testing.T) {
+	core := &memoTestMod{name: ModuleName}
+	served := &memoTestMod{name: "served"}
+	other := &memoTestMod{name: "other"}
+	typesOnly := &memoTestMod{name: "types-only"}
+	promoted := &memoTestMod{name: "promoted"}
+	root := &Query{}
+	base := NewSchemaBuilder(root, []Mod{core}).
+		With(served, InstallOpts{Main: true}).
+		With(other, InstallOpts{}).
+		With(typesOnly, InstallOpts{SkipConstructor: true}).
+		With(promoted, InstallOpts{SkipConstructor: true})
+
+	sameServed := &memoTestMod{name: "served", same: served}
+	promotedAgain := &memoTestMod{name: "promoted", same: promoted}
+	installed := &memoTestMod{name: "installed"}
+	got := base.WithPrimaryMods([]Mod{installed, sameServed, promotedAgain}, nil)
+
+	require.Same(t, root, got.root)
+	require.Equal(t, []Mod{core, served, other, typesOnly, promoted, installed}, got.Mods(),
+		"a new module is appended")
+	require.Same(t, served, got.Mods()[1], "the same served module is kept as it was")
+	require.Same(t, promoted, got.Mods()[4])
+	require.Equal(t, []Mod{core, served, other, promoted, installed}, got.PrimaryMods(),
+		"a module served only for its types gets its constructor")
+	opts, _ := got.InstallOpts("served")
+	require.True(t, opts.Main, "a kept entry keeps its install options")
+	require.Len(t, base.Mods(), 5, "the builder itself is unchanged")
+
+	changed := &memoTestMod{name: "served"}
+	replaced := base.WithPrimaryMods([]Mod{changed}, nil)
+	require.Same(t, changed, replaced.Mods()[1], "a different module of the same name replaces the served one")
+	opts, _ = replaced.InstallOpts("served")
+	require.True(t, opts.Main, "a replaced entry keeps its install options")
+	require.Equal(t, base.Mods(), base.WithPrimaryMods(nil, nil).Mods())
+	require.Same(t, base, base.WithPrimaryMods([]Mod{sameServed, other}, []string{"types-only"}),
+		"a builder nothing changes is kept, with its server")
+
+	// A module the workspace uninstalled is dropped; a module served only
+	// for its types, which no workspace installs, is kept.
+	require.Equal(t, []Mod{core, served, typesOnly, promoted},
+		base.WithPrimaryMods(nil, []string{"other", "types-only"}).Mods())
 }
