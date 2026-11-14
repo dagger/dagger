@@ -61,6 +61,7 @@ func (s chainsContentSource) ReaderAt(ctx context.Context, desc ocispec.Descript
 // by its own operation that holds "m<i>.txt".
 type mountChain struct {
 	top     dagql.ObjectResult[*Container]
+	layers  []dagql.ObjectResult[*Container]
 	targets []string
 	// outputs are the content an engine that built the chain exports with
 	// it: each layer's rootfs. The mounted directories aren't exported, as
@@ -100,6 +101,7 @@ func buildMountChain(t *testing.T, ctx context.Context, cache *dagql.Cache, srv 
 		child.Mounts = child.Mounts.With(ContainerMount{Target: chain.targets[i], Readonly: true, DirectorySource: new(LazyAccessor[*Directory, *Container])})
 		child.Lazy = &ContainerWithMountedDirectoryLazy{LazyState: NewLazyState(), Parent: layer, Source: source, Target: chain.targets[i], Readonly: true}
 		layer = attachDelegationChild(t, ctx, cache, srv, session, "withMountedDirectory", layer, child)
+		chain.layers = append(chain.layers, layer)
 		chain.outputs = append(chain.outputs, dagql.SelectedValueOutput{Result: layer, Address: dagql.PersistedPartAddress{Part: ContainerPartFS}})
 	}
 	chain.top = layer
@@ -237,6 +239,42 @@ func importedMountChainCost(t *testing.T, n int) mountChainCost {
 	return cost
 }
 
+// builtThenOfferedMountChainCost builds the chain on one cache and exports
+// it with each layer's rootfs, as another engine does; builds the same chain
+// on a second cache, as an engine does that runs the same calls itself;
+// merges the first's records onto it, which offers the rootfs of each of its
+// own layers; and installs each offered rootfs, which gives each layer an
+// acquired output. The second cache then demands every mount of its own top.
+func builtThenOfferedMountChainCost(t *testing.T, n int) mountChainCost {
+	t.Helper()
+	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
+	actx, a, asrv := transferCache(t, aStore, "", "a")
+	bctx, b, bsrv := transferCache(t, bStore, "", "b")
+	exported := buildMountChain(t, actx, a, asrv, aStore, "a", n)
+	require.NoError(t, a.EvaluateParts(actx, exported.top, exported.parts()...))
+	built := buildMountChain(t, bctx, b, bsrv, bStore, "b", n)
+	var cost mountChainCost
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{exported.top}, Outputs: exported.outputs}
+	require.NoError(t, a.WithExportedValues(actx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, bundle *dagql.ExportedValues) error {
+		var source chainsContentSource
+		for _, entry := range bundle.Chains.Entries {
+			source = append(source, entry.Provider)
+		}
+		b.SetPartContentSource(source)
+		_, err := b.MergeValues(bctx, dagql.CloudCacheID, bundle.Bundle)
+		require.NoError(t, err)
+		require.True(t, b.HasPartOffer(built.top, ContainerPartFS), "the merge offers the rootfs of the engine's own top")
+		for _, layer := range built.layers {
+			require.NoError(t, b.EvaluateParts(bctx, layer, ContainerPartFS))
+		}
+		require.NotNil(t, built.top.Self().acquiredOutput.Load(), "an installed offer gives the engine's own top an acquired output")
+		cost = demandMountChain(t, bctx, b, built.top, built.targets, built.parts())
+		return nil
+	}))
+	t.Logf("built, then offered, chain of %d mounts: %d lazy tasks over %d distinct, %d record captures, %s", n, cost.tasks, len(cost.keys), cost.captures(), cost.elapsed)
+	return cost
+}
+
 // restoredMountChainCost builds the chain on a cache that persists, leaves
 // every mount pending, and restarts the cache from its own persisted state,
 // as an engine without the remote cache restarts, which then demands every
@@ -288,6 +326,16 @@ func requireMountChainLinear(t *testing.T, small, large mountChainCost, n int) {
 func TestImportedMountChainCopiesFromWriter(t *testing.T) {
 	t.Parallel()
 	requireMountChainLinear(t, importedMountChainCost(t, 16), importedMountChainCost(t, 64), 64)
+}
+
+// An engine that built the chain itself and then had the rootfs of its
+// layers offered and installed demands every mount of its top at once: each
+// mount must still come from the layer that mounted it. On a whole pull
+// request's edit, an engine that built a 585-mount module proxy that way
+// stopped serving requests until its check was cancelled.
+func TestBuiltThenOfferedMountChainCopiesFromWriter(t *testing.T) {
+	t.Parallel()
+	requireMountChainLinear(t, builtThenOfferedMountChainCost(t, 16), builtThenOfferedMountChainCost(t, 64), 64)
 }
 
 // The same chain restored from the cache's own persisted state, with the
