@@ -496,6 +496,8 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		return nil, nil, err
 	}
 	key, _ := partAddressKey(address)
+	wcprof.Lock(ctx, &row.partGate.scanMu, "dagql.partGate.scanMu")
+	defer row.partGate.scanMu.Unlock()
 	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	candidates := c.collectPartCandidatesLocked(row, lookup, session)
 	held := 0
