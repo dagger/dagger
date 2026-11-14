@@ -572,7 +572,7 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 	for _, parent := range state.unknownDependents[key.Number] {
 		if _, parentHolding := c.holdingLocked(HolderKey{Cache: key.Cache, Number: parent}); parentHolding != nil {
 			parentHolding.unknownDeps, _ = withoutNumber(parentHolding.unknownDeps, key.Number)
-			parentHolding.deps, _ = withNumber(parentHolding.deps, key.Number)
+			parentHolding.deps = withNumber(parentHolding.deps, key.Number)
 			c.markHoldingLocked(HolderKey{Cache: key.Cache, Number: parent})
 			h.dependents++
 		}
@@ -1227,7 +1227,7 @@ func (c *Cache) CollectRemoteHolding(ctx context.Context, key HolderKey) (Remote
 			if parent.deps, had = withoutNumber(parent.deps, key.Number); !had {
 				continue
 			}
-			parent.unknownDeps, _ = withNumber(parent.unknownDeps, key.Number)
+			parent.unknownDeps = withNumber(parent.unknownDeps, key.Number)
 			c.markHoldingLocked(parentKey)
 			state.unknownDependents[key.Number] = insertNumber(state.unknownDependents[key.Number], parentKey.Number)
 		}
