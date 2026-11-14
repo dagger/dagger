@@ -728,3 +728,52 @@ func testValueTransferImportConcurrent(t *testing.T) {
 		require.NoError(t, <-closed)
 	})
 }
+
+// A capture splits its bundle phase into its steps, summed over its passes:
+// holding the known rows, checking the copied records, settling the roots,
+// deriving the held rows' recipes, and building the bundle's values. A known
+// row whose recipe another row of the closure shares goes in full, which
+// takes a second pass.
+func TestValueTransferCaptureBundlePhases(t *testing.T) {
+	t.Parallel()
+	steps := func(p ExportPhases) time.Duration {
+		return p.BundleKnown + p.BundleCheck + p.BundleSettle + p.BundleRecipes + p.BundleValues
+	}
+	t.Run("one pass", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := transferTestCache(t)
+		root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "bundle phases"})
+		var phases ExportPhases
+		require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+			phases = values.Phases
+			return nil
+		}))
+		require.Equal(t, 1, phases.BundlePasses)
+		require.Positive(t, phases.BundleCheck, "the root's record is checked")
+		require.Positive(t, phases.BundleSettle)
+		require.Positive(t, phases.BundleValues)
+		require.LessOrEqual(t, steps(phases), phases.Bundle)
+	})
+	t.Run("a held row carried in full", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := transferTestCache(t)
+		old := persistedListTestResult(t, ctx, c, srv, "phases-recipe", String("old"))
+		known := NewKnownRows()
+		_, rows, _ := recordsOnlyCapture(t, ctx, c, known, old)
+		known.Merged(rows)
+		root := persistedListTestResult(t, ctx, c, srv, "phases-recipe-root", String("root"))
+		transferTestDependency(c, ctx, root, old)
+		currentEntryTestExpire(c, old)
+		fresh := persistedListTestResult(t, ctx, c, srv, "phases-recipe", String("fresh"))
+		transferTestDependency(c, ctx, root, fresh)
+
+		var phases ExportPhases
+		require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}, Known: known}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+			phases = values.Phases
+			return nil
+		}))
+		require.Equal(t, 2, phases.BundlePasses, "the old entry goes in full in a second pass")
+		require.Positive(t, phases.BundleRecipes, "the held row's recipe is derived")
+		require.LessOrEqual(t, steps(phases), phases.Bundle)
+	})
+}
