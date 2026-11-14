@@ -376,6 +376,7 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					// and the value it makes is then a ready source.
 					if !ranCall {
 						ranCall = true
+						c.partsWithoutSource.count("call_run")
 						callCtx, endCall := profDemandStep(ctx, "call")
 						callErr = c.runCallForPart(callCtx, res, key)
 						endCall(callErr)
@@ -806,9 +807,10 @@ func (p *partsWithoutSource) count(reason string) {
 }
 
 // PartsWithoutSource returns how many parts work read with no source over
-// the cache's life, by reason (no_offer, download_failed, offer_unavailable,
-// holder_busy): each a part the engine had to make again. It is nil when
-// there were none.
+// the cache's life, by reason: those an operation of the value made again,
+// by why no source served them (no_offer, download_failed,
+// offer_unavailable, holder_busy), and call_run for those with no such
+// operation, whose call ran again. It is nil when there were none.
 func (c *Cache) PartsWithoutSource() map[string]uint64 {
 	c.partsWithoutSource.mu.Lock()
 	defer c.partsWithoutSource.mu.Unlock()

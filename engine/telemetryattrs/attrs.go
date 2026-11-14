@@ -1152,7 +1152,8 @@ type EngineStopEvent struct {
 	// service had it restore, in the order they ended.
 	Restores []EngineRestore `json:"restores,omitempty"`
 	// PartsWithoutSource counts, by reason, the parts work read with no
-	// source to read them from over the engine's life, each made again
+	// source to read them from over the engine's life, each made again: by
+	// an operation of the value, or by running its call again (call_run)
 	// (dagql.Cache.PartsWithoutSource).
 	PartsWithoutSource map[string]uint64 `json:"partsWithoutSource,omitempty"`
 	// UncountedMisses counts the lookup misses the engine dropped before a
