@@ -199,6 +199,19 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 	rootEntries = append(rootEntries, build.callRoots...)
 	var frames map[TransferOrdinal]entryFrame
 	waiting := false
+	// A row for each entry, and at least an output for each stored part of
+	// those that go in full.
+	build.bundle.Values = make([]TransferredValue, 0, len(build.order))
+	parts := 0
+	for _, res := range build.order {
+		if !build.held[res.id] {
+			parts += len(res.storedParts)
+		}
+	}
+	if parts > 0 {
+		build.bundle.Outputs = make([]TransferredOutput, 0, parts)
+		build.donors = make([]uint64, 0, parts)
+	}
 	for _, res := range build.order {
 		waiting = waiting || res.waitsForTaughtContentLocked()
 		if build.held[res.id] {
