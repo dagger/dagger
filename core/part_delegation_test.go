@@ -268,6 +268,7 @@ func testChildAndParentChainFailure(t *testing.T, bctx context.Context, b *dagql
 	require.ErrorIs(t, err, parentFailure)
 	require.ErrorIs(t, err, dagql.ErrUnavailablePart)
 	require.EqualValues(t, 2, provider.Reads.Load())
+	require.Equal(t, uint64(1), b.PartsWithoutSource()["call_run"], "the part had no source and no operation, so its call ran again, and is counted")
 }
 
 // assertDelegationRoute checks the route that served the child's fs for the

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -539,23 +538,28 @@ func setFileOf(t *testing.T, parts []dagql.ValueBundle, unretained [][]dagql.Tra
 
 // Each part is merged with the roots its header entry leaves unretained,
 // and the hold each committed part's merge took is released only when the
-// file ends: after its last part, whether the file completed or a part
-// stopped it, so that a later part's held rows find an earlier part's
-// records.
+// file ends: after its last part, whether the file completed, a part
+// stopped it, or the connection ended, so that a later part's held rows
+// find an earlier part's records.
 func TestRestoreHoldsEachPartUntilTheFileEnds(t *testing.T) {
 	t.Parallel()
-	for _, stop := range []bool{false, true} {
-		t.Run(fmt.Sprint("stopped=", stop), func(t *testing.T) {
+	for _, end := range []string{"completed", "stopped", "disconnected"} {
+		t.Run(end, func(t *testing.T) {
 			t.Parallel()
 			adapter := newFakeAdapter()
 			var released atomic.Int32
 			second := make(chan struct{})
-			adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+			adapter.restore = func(ctx context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
 				if part.Values[0].SenderNumber == 2 {
-					<-second
-					if stop {
+					switch end {
+					case "stopped":
+						<-second
 						return dagql.MergeReply{}, errors.New("refused: a held row is stale")
+					case "disconnected":
+						<-ctx.Done()
+						return dagql.MergeReply{}, context.Cause(ctx)
 					}
+					<-second
 				}
 				reply := merged(part, time.Now())
 				reply.Release = func(context.Context) error {
@@ -573,12 +577,16 @@ func TestRestoreHoldsEachPartUntilTheFileEnds(t *testing.T) {
 			require.Empty(t, <-adapter.unretainedSeen)
 			require.Equal(t, []uint64{1, 2}, seen(t, adapter, 2))
 			require.Zero(t, released.Load(), "the first part stays held while the second merges")
-			close(second)
-			file := decode[protocol.Restored](t, conn.next(t)).Files[0]
-			require.Equal(t, !stop, file.Complete)
+			if end == "disconnected" {
+				s.cancel(errors.New("gone"))
+			} else {
+				close(second)
+				file := decode[protocol.Restored](t, conn.next(t)).Files[0]
+				require.Equal(t, end == "completed", file.Complete)
+			}
 			nextReport(t, adapter)
 			want := int32(2)
-			if stop {
+			if end != "completed" {
 				want = 1
 			}
 			require.Equal(t, want, released.Load(), "every committed part's hold is released when the file ends")
