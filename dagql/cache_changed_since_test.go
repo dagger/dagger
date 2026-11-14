@@ -445,3 +445,33 @@ func TestChangedSinceAJoinByTheBodyWorker(t *testing.T) {
 	stampTestTeach(t, ctx, cloud, "stamp-join", member)
 	require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r), "the record now borrows the mate's part")
 }
+
+// A prune drops its edges one at a time, each in a hold of the graph lock of
+// its own, and hands its marks back only once it ends, so a bundle can be
+// built between two of its drops. R, A and B share a class, and A and B store
+// a part R declares; neither has a holding left. Dropping A's edge collects
+// A; a bundle of R built then borrows B's part; dropping B's edge collects B,
+// and R's bundle loses the part. R is reported changed since that build as
+// soon as the drop's hold ends.
+func TestChangedSinceABuildBetweenAPrunesDrops(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+	a := stampTestMember(t, ctx, cloud, "stamp-prune-a")
+	b := stampTestMember(t, ctx, cloud, "stamp-prune-b")
+	stampTestTeach(t, ctx, cloud, "stamp-prune", r, a, b)
+	_, _, err := cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates)
+	require.NoError(t, err)
+
+	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(a))
+	require.NoError(t, err)
+	require.True(t, removed)
+	require.Nil(t, storedBundleTestEntry(cloud, a), "A is collected")
+	before := changedSinceTestBuild(t, cloud, r)
+	require.Len(t, before.Bundle.Outputs, 1, "R borrows B's part")
+
+	_, removed, _, err = cloud.removePrunedEdge(ctx, sharedResultID(b))
+	require.NoError(t, err)
+	require.True(t, removed)
+	require.Nil(t, storedBundleTestEntry(cloud, b), "B is collected")
+	require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r), "R's bundle lost the part it borrowed")
+}
