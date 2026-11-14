@@ -257,6 +257,46 @@ func TestLiveLogsActivity(t *testing.T) {
 	require.Equal(t, []LogActivity{{Through: later.Add(time.Millisecond)}}, fe.LiveLogsActivity([]dagui.SpanID{done}))
 }
 
+// TestLiveLogsRunning: what keeps a roll-up active is told apart: the span
+// itself, its running descendants, beneath an agent or not, and its
+// effects.
+func TestLiveLogsRunning(t *testing.T) {
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	rollUp, loop, exec, service, done, child :=
+		prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3), prettyTestSpanID(4),
+		prettyTestSpanID(5), prettyTestSpanID(6)
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.reportOnly = true
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rollUp, TraceID: live, Name: "check", StartTime: start, RollUpLogs: true, Final: true},
+		{ID: loop, TraceID: live, ParentID: rollUp, Name: "agent: lint", StartTime: start, Agent: true, Final: true},
+		{ID: exec, TraceID: live, ParentID: loop, Name: "exec", StartTime: start, Final: true},
+		{ID: service, TraceID: live, Name: "exec server", StartTime: start, Service: true, Final: true,
+			Links: []dagui.SpanLink{{SpanContext: dagui.SpanContext{TraceID: live, SpanID: rollUp}, Purpose: "cause"}}},
+		{ID: done, TraceID: live, Name: "tool", StartTime: start, EndTime: end, RollUpLogs: true, Final: true},
+		{ID: child, TraceID: live, ParentID: done, Name: "exec", StartTime: start, Final: true},
+	})
+	running := fe.LiveLogsRunning([]dagui.SpanID{rollUp, done, prettyTestSpanID(9)})
+	require.Len(t, running, 3)
+	require.True(t, running[0].Self)
+	require.True(t, running[0].Effects)
+	require.Equal(t, 3, running[0].Total)
+	spans := map[dagui.SpanID]LogRunningSpan{}
+	for _, s := range running[0].Running {
+		spans[s.ID] = s
+	}
+	require.Equal(t, map[dagui.SpanID]LogRunningSpan{
+		loop:    {ID: loop, Name: "agent: lint", Agent: true},
+		exec:    {ID: exec, Name: "exec", InAgent: true},
+		service: {ID: service, Name: "exec server", Effect: true},
+	}, spans)
+	require.Equal(t, LogRunning{Total: 1, Running: []LogRunningSpan{{ID: child, Name: "exec"}}}, running[1],
+		"an ended span with a running descendant is neither running itself nor its effects")
+	require.Equal(t, LogRunning{}, running[2])
+}
+
 // TestLiveLogsBufferAfterPrimaryOutput: what this process logs after the
 // primary output was read at exit (e.g. a failing cleanup) is still written.
 func TestLiveLogsBufferAfterPrimaryOutput(t *testing.T) {

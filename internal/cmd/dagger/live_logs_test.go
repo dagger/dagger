@@ -426,6 +426,12 @@ func (exporterFunc) ForceFlush(context.Context) error { return nil }
 // cancelled.
 type fakeLogStore struct {
 	parents map[uint16]uint16
+	// placing makes the store answer like the engine's (clientdb's
+	// LogQueryScope): a query selecting any span with its descendants also
+	// returns the rows of spans it has no snapshot of yet (not known), whose
+	// place it cannot tell. Spans get snapshots with snapshot.
+	placing bool
+	known   map[uint16]bool
 
 	mu      sync.Mutex
 	rows    []liveLogRow
@@ -438,6 +444,22 @@ func (s *fakeLogStore) add(rows ...liveLogRow) {
 	s.rows = append(s.rows, rows...)
 }
 
+// snapshot stores span's snapshot, placing it beneath parent (0: a root).
+func (s *fakeLogStore) snapshot(span, parent uint16) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.known == nil {
+		s.known = map[uint16]bool{}
+	}
+	s.known[span] = true
+	if parent != 0 {
+		if s.parents == nil {
+			s.parents = map[uint16]uint16{}
+		}
+		s.parents[span] = parent
+	}
+}
+
 func (s *fakeLogStore) seen() []tracesource.LogQuery {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -448,15 +470,21 @@ func (s *fakeLogStore) ReadLogs(ctx context.Context, _ string, q tracesource.Log
 	q.Spans = slices.Clone(q.Spans)
 	slices.SortFunc(q.Spans, func(a, b archive.LogSpan) int { return compareStrings(a.SpanID, b.SpanID) })
 	spans, descendants, digests := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	var tree bool
 	for _, span := range q.Spans {
 		spans[span.SpanID] = true
 		descendants[span.SpanID] = span.Descendants
+		tree = tree || span.Descendants
 		for _, d := range span.Digests {
 			digests[d] = true
 		}
 	}
+	// selects runs with s.mu held.
 	selects := func(r liveLogRow) bool {
 		if spans[liveTestSpan(r.span).String()] || (r.digest != "" && digests[r.digest]) {
+			return true
+		}
+		if s.placing && tree && !s.known[r.span] {
 			return true
 		}
 		for n, ok := s.parents[r.span]; ok; n, ok = s.parents[n] {

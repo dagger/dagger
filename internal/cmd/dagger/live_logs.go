@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"math"
 	"os"
 	"os/signal"
 	"slices"
@@ -99,6 +100,11 @@ type liveLogs struct {
 	maxSpans int
 	// frontend is the frontend reading, which finishLiveLogs finishes.
 	frontend idtui.LiveLogsFrontend
+	// diag, when set, warns about replays and long-lived roll-ups
+	// (live_logs_diag.go); running, when set, tells what keeps a span
+	// active (idtui.LiveLogsRunningFrontend).
+	diag    *liveLogsDiag
+	running func([]dagui.SpanID) []idtui.LogRunning
 
 	mu sync.Mutex
 	// spans are followed (or, without following, read at finish);
@@ -131,6 +137,14 @@ type liveLogs struct {
 	released map[dagui.SpanID]uint64
 	finished bool
 	wake     chan struct{}
+	// With diag: unclaimed remembers the pairs imported unclaimed, up to
+	// liveLogsUnclaimedMax of them, oldest first in unclaimedOrder; rollUps,
+	// the spans followed with their descendants. imports numbers the
+	// batches imported.
+	unclaimed      map[logOwner]liveLogsUnclaimed
+	unclaimedOrder []logOwner
+	rollUps        map[string]liveLogsRollUp
+	imports        uint64
 
 	stop func()
 }
@@ -159,6 +173,9 @@ type retiredLogSpan struct {
 	through time.Time
 	// read numbers its gap read, should it reactivate (see liveLogs.owned).
 	read uint64
+	// imported is liveLogs.imports when it retired: its gap read reads again
+	// what the follow imported since.
+	imported uint64
 }
 
 func newLiveLogs(reader tracesource.LogReader, traceID string, export sdklog.Exporter, follow bool) *liveLogs {
@@ -179,6 +196,8 @@ func newLiveLogs(reader tracesource.LogReader, traceID string, export sdklog.Exp
 		reactivated: map[string]retiredLogSpan{},
 		owned:       map[logOwner]logClaim{},
 		released:    map[dagui.SpanID]uint64{},
+		unclaimed:   map[logOwner]liveLogsUnclaimed{},
+		rollUps:     map[string]liveLogsRollUp{},
 		wake:        make(chan struct{}, 1),
 		stop:        func() {},
 	}
@@ -197,6 +216,10 @@ func startLiveLogs(ctx context.Context, fe idtui.Frontend, client tracesource.Li
 	l.frontend = lf
 	l.coverage = lf.LiveLogsCoverage
 	l.activity = lf.LiveLogsActivity
+	l.diag = startLiveLogsDiag(ctx)
+	if rf, ok := lf.(idtui.LiveLogsRunningFrontend); ok {
+		l.running = rf.LiveLogsRunning
+	}
 	l.export = lf.SetLiveLogs(traceID, l.subscribe)
 	if cf, ok := fe.(idtui.LogCacheFrontend); ok {
 		cf.SetLogRelease(traceID, l.release)
@@ -284,6 +307,14 @@ func (l *liveLogs) release(r idtui.LogRelease) {
 		if dropped[claim.target] {
 			delete(l.owned, key)
 		}
+	}
+	if len(l.unclaimed) > 0 && len(dropped) > 0 {
+		// Their records are dropped: importing them again is no replay. A
+		// digest's may route to its creator, unknown when they were
+		// imported: rather than warn falsely, forget them all.
+		l.forgetUnclaimedLocked(func(key logOwner) bool {
+			return key.digest != "" || dropped[dagui.SpanID{SpanID: key.span}]
+		})
 	}
 	var left bool
 	for _, id := range r.Spans {
@@ -443,6 +474,7 @@ func (l *liveLogs) poll(ctx context.Context) {
 		case <-ticker.C:
 		}
 		l.pollActive()
+		l.reportLongRollUps()
 	}
 }
 
@@ -529,7 +561,7 @@ func (l *liveLogs) retire(readStart time.Time) {
 			continue
 		}
 		l.catchUps++
-		r := retiredLogSpan{span: span, cursor: l.cursor, through: l.through[id], read: l.catchUps}
+		r := retiredLogSpan{span: span, cursor: l.cursor, through: l.through[id], read: l.catchUps, imported: l.imports}
 		l.retired[id] = r
 		delete(l.idleSince, id)
 		delete(l.through, id)
@@ -607,7 +639,7 @@ func (l *liveLogs) reactivate(ctx context.Context) error {
 				Cursor:  r.cursor,
 				Through: cursor,
 			}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, next string) error {
-				if err := l.importLogs(ctx, req, r.read, start); err != nil {
+				if err := l.importRead(ctx, req, r.read, start, r.imported); err != nil {
 					return err
 				}
 				r.cursor = next
@@ -664,7 +696,7 @@ func (l *liveLogs) catchUp(ctx context.Context) error {
 			Through: cursor,
 		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
 			imported = true
-			return l.importLogs(ctx, req, read, start)
+			return l.importFromStart(ctx, req, read, start)
 		})
 	}
 	l.mu.Lock()
@@ -703,8 +735,28 @@ func (l *liveLogs) importFollowed(start uint64) func(context.Context, *collogspb
 
 // importLogs exports the records of req that read owns (see liveLogs), of
 // those the frontend routes to what it requested, leaving out the spans it
-// dropped since the read started (at release generation start).
+// dropped since the read started (at release generation start). It is the
+// follow's import, which reads on from its cursor; importFromStart and
+// importRead import reads that may read again what the follow imported.
 func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read, start uint64) error {
+	return l.importRead(ctx, req, read, start, liveLogsReadOn)
+}
+
+// importFromStart is importLogs for a read from the store's start: a
+// catch-up.
+func (l *liveLogs) importFromStart(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read, start uint64) error {
+	return l.importRead(ctx, req, read, start, 0)
+}
+
+// liveLogsReadOn is the since of a read that imports nothing again.
+const liveLogsReadOn = math.MaxUint64
+
+// importRead is importLogs for a read that imports again what the follow
+// imported after its batch number since (liveLogs.imports): 0 for a read
+// from the store's start, the batch a span retired after for its gap read,
+// liveLogsReadOn for the follow. With diag, it warns about the rows imported
+// unclaimed it imports again (liveLogsReplay).
+func (l *liveLogs) importRead(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read, start, since uint64) error {
 	var targets []idtui.LogTarget
 	for _, rl := range req.GetResourceLogs() {
 		for _, sl := range rl.GetScopeLogs() {
@@ -732,7 +784,14 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 	// Keep only this batch's claim lifetimes. The read may end, clearing
 	// released, before the frontend applies its queued export.
 	claims := make(map[logOwner]uint64)
+	// With diag, the records of each pair imported unclaimed, and the
+	// replays (liveLogsReplay): claims of remembered pairs are looked up
+	// only while some pair is.
+	var unclaimed map[logOwner]int
+	var replays map[logOwner]*liveLogsReplay
 	l.mu.Lock()
+	l.imports++
+	remembered := l.diag != nil && len(l.unclaimed) > 0
 	i, kept := 0, 0
 	for _, rl := range req.GetResourceLogs() {
 		for _, sl := range rl.GetScopeLogs() {
@@ -756,6 +815,12 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 				case idtui.LogUnknown:
 					// Its span is not placed yet: import it, but without
 					// claiming the pair this read may not keep selecting.
+					if l.diag != nil && !l.diag.own(key.span) {
+						if unclaimed == nil {
+							unclaimed = map[logOwner]int{}
+						}
+						unclaimed[key]++
+					}
 					return false
 				}
 				claim, ok := l.owned[key]
@@ -766,12 +831,22 @@ func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServ
 					return true
 				}
 				claims[key] = claim.generation
+				if remembered {
+					l.claimUnclaimedLocked(key, read, since, &replays)
+				}
 				return false
 			})
 			kept += len(sl.LogRecords)
 		}
 	}
+	l.rememberUnclaimedLocked(read, since, unclaimed, &replays)
+	var rollUps string
+	var rollUpCount int
+	if len(replays) > 0 {
+		rollUps, rollUpCount = l.rollUpsLocked()
+	}
 	l.mu.Unlock()
+	l.reportReplays(read, replays, rollUps, rollUpCount)
 	if kept == 0 {
 		return nil
 	}
@@ -850,7 +925,7 @@ func (l *liveLogs) finish(ctx context.Context) error {
 			Spans:  []archive.LogSpan{r.span},
 			Cursor: r.cursor,
 		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
-			return l.importLogs(ctx, req, r.read, start)
+			return l.importRead(ctx, req, r.read, start, r.imported)
 		}))
 	}
 	for chunk := range slices.Chunk(pending, l.maxSpans) {
@@ -861,7 +936,7 @@ func (l *liveLogs) finish(ctx context.Context) error {
 		start := l.beginRead()
 		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: chunk},
 			func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
-				return l.importLogs(ctx, req, read, start)
+				return l.importFromStart(ctx, req, read, start)
 			}))
 	}
 	return err
@@ -1043,6 +1118,9 @@ func finishLiveLogs(ctx context.Context, sess liveLogsSession, live *liveLogs) {
 		slog.Warn("error reading the primary output", "err", err)
 	}
 	lf.SetPrimaryOutput(records)
+	// Flush the warnings, for the caller to hand to the engine before the
+	// session closes.
+	live.diag.finish()
 }
 
 // readPrimaryOutput reads the primary span's output, the process's own
