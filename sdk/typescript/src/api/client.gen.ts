@@ -3598,7 +3598,7 @@ export type PromptSecretOpts = {
 
 export type PromptStringOpts = {
   /**
-   * The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one (or with an empty one), that is an error.
+   * The text the answer starts with, and the answer when nobody can be asked (the client is not interactive).
    */
   default?: string
 
@@ -17082,7 +17082,7 @@ export class Prompt extends BaseClient {
 
   /**
    * Ask for a text answer.
-   * @param opts.default The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one (or with an empty one), that is an error.
+   * @param opts.default The text the answer starts with, and the answer when nobody can be asked (the client is not interactive).
    * @param opts.multiline Accept several lines.
    */
   string_ = async (opts?: PromptStringOpts): Promise<string> => {
