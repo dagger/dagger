@@ -68,6 +68,20 @@ type LLMTool struct {
 	// CallBatch runs these after every other call in the turn, so the
 	// conversation they receive already reflects the turn's effects.
 	ReturnsLLM bool `json:"-"`
+	// Continues, if set, reports whether a call with these arguments acts as
+	// a continuation, for a tool that only sometimes does: DangEval, when its
+	// snippet reassigns `chat`. CallBatch schedules such a call as it does a
+	// ReturnsLLM tool's.
+	Continues func(arguments []byte) bool `json:"-"`
+	// Whether the tool logs its own result to the tool call's span, as
+	// DangCheck and DangEval log their reports (streaming a snippet's prints
+	// as they happen). CallContent then doesn't log a result the tool
+	// returned a second time; it still logs an errored one, which the tool
+	// never produced. The span's logs are then the tool's own, not the
+	// result the model sees: a Dang call logs its whole report, while its
+	// result bounds it (see MCP.dangToolResult) and points at ReadLogs for
+	// the rest.
+	LogsOwnResult bool `json:"-"`
 	// GraphQL API field that this tool corresponds to
 	Field *ast.FieldDefinition `json:"-"`
 	// Function implementing the tool.
@@ -106,6 +120,11 @@ type MCP struct {
 	// the model through ListSkills/ReadSkill alongside the engine-embedded and
 	// workspace-discovered skills.
 	skillDirs []ownedSkillDirectory
+	// readSkills are the skills ReadSkill read on this MCP, by name (see
+	// hasReadSkill): a step's reads, before they are on the conversation's
+	// record, or a standalone server's (dagger mcp), which has no record.
+	// Transient: cleared by Clone; across steps, the record says.
+	readSkills map[string]bool
 	// selfLLM is the conversation dispatching the current step's tool calls —
 	// inst + withResponse, i.e. up to and including the in-flight tool call.
 	// The object-tool adapter passes it explicitly to hidden LLM arguments.
@@ -194,6 +213,7 @@ func (m *MCP) Clone() *MCP {
 	cp.selfLLM = dagql.ObjectResult[*LLM]{}
 	cp.continuation = dagql.ObjectResult[*LLM]{}
 	cp.stateChanged = false
+	cp.readSkills = nil
 	cp.mu = &sync.Mutex{}
 	return &cp
 }
@@ -289,34 +309,183 @@ func (m *MCP) LastResult() dagql.Typed {
 }
 
 // baseServer provides the schema for core tools and dispatch. Bound module
-// tools retain their own defining schemas. Value workspaces use only core here;
-// their modules are loaded from their trees during explicit agent composition.
-// Live workspaces load their modules best-effort: a broken module is left out
-// of the schema (and listed by FindArtifacts as a load failure) instead of
-// failing every step.
+// tools retain their own defining schemas.
+//
+// A bound workspace's installed modules are part of it, live or value alike
+// (a snapshot is a workspace too): a live workspace's as its owning client
+// serves them, a value workspace's loaded from its own tree, and either's
+// as its pending edits leave them, so a module a tool installs or
+// uninstalls (`withModule`, `withoutModule`) joins or leaves the next step's
+// schema. Loading is best-effort: a broken module is left out of the schema
+// (and listed by FindArtifacts as a load failure) instead of failing every
+// step, and if the installed modules don't fit together, the schema goes
+// without them.
 func (m *MCP) baseServer(ctx context.Context) (*dagql.Server, error) {
-	query, err := CurrentQuery(ctx)
+	ctx, base, err := m.loadBase(ctx)
 	if err != nil {
 		return nil, err
 	}
+	srv, err := base.deps.Schema(ctx)
+	if err != nil && base.deps != base.served {
+		return base.served.Schema(ctx)
+	}
+	return srv, err
+}
 
-	var deps *SchemaBuilder
+// mcpBase is what baseServer serves.
+type mcpBase struct {
+	// deps is the schema's dependencies: served with the workspace's
+	// installed modules.
+	deps *SchemaBuilder
+	// served is the schema without the workspace's installed modules: the
+	// calling client's or the owning client's served modules, or core.
+	served *SchemaBuilder
+	// installed is what loading the workspace's installed modules found,
+	// or installedErr why it couldn't; neither is set without a workspace.
+	installed    *InstalledWorkspaceModules
+	installedErr error
+}
+
+// loadBase loads what baseServer serves, with the context to build it in (a
+// live workspace's owner context).
+func (m *MCP) loadBase(ctx context.Context) (context.Context, *mcpBase, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ws := m.workspace
+	var served *SchemaBuilder
 	switch {
-	case m.workspace.Self() == nil:
-		deps, err = query.CurrentServedDeps(ctx)
-	case m.workspace.Self().IsValueWorkspace():
-		deps, err = query.DefaultDeps(ctx)
+	case ws.Self() == nil:
+		served, err = query.CurrentServedDeps(ctx)
+	case ws.Self().IsValueWorkspace():
+		// No client serves a value's modules: they load from its tree.
+		served, err = query.DefaultDeps(ctx)
 	default:
-		ctx, err = loadWorkspaceOwnerContext(ctx, m.workspace)
+		ctx, err = loadWorkspaceOwnerContext(ctx, ws)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		deps, err = query.CurrentServedDeps(ctx)
+		served, err = query.CurrentServedDeps(ctx)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load tool base schema dependencies: %w", err)
+		return nil, nil, fmt.Errorf("load tool base schema dependencies: %w", err)
 	}
-	return deps.Schema(ctx)
+	base := &mcpBase{deps: served, served: served}
+	if ws.Self() == nil {
+		return ctx, base, nil
+	}
+	base.installed, base.installedErr = installedWorkspaceModules(ctx, served, ws)
+	if base.installedErr == nil {
+		bound := m.boundModules()
+		mods := make([]Mod, len(base.installed.Loaded))
+		for i, mod := range base.installed.Loaded {
+			mods[i] = NewUserMod(mod)
+			// A bound object's types are its own module's: where the
+			// workspace installs another revision of it that no client
+			// serves (one loaded from a snapshot's tree, or whose source
+			// the agent is editing), the bound object's module takes its
+			// place, as the session's served copy keeps it for a live one.
+			boundMod, ok := bound[mods[i].Name()]
+			if !ok {
+				continue
+			}
+			if same, err := boundMod.Same(mods[i]); err == nil && same {
+				continue
+			}
+			if servedMod, ok := served.Lookup(mods[i].Name()); ok {
+				if same, err := servedMod.Same(mods[i]); err == nil && same {
+					continue
+				}
+			}
+			mods[i] = boundMod
+		}
+		// A bound object's module that no longer loads (an edit broke its
+		// source) keeps serving the bound object's types: the session's
+		// copy for a live workspace, else the bound object's own.
+		var removed []string
+		for _, name := range base.installed.Removed {
+			if boundMod, ok := boundByCLIName(bound, name); ok {
+				if _, isServed := served.Lookup(boundMod.Name()); !isServed {
+					mods = append(mods, boundMod)
+				}
+				continue
+			}
+			removed = append(removed, name)
+		}
+		base.deps = served.WithPrimaryMods(mods, removed)
+	}
+	return ctx, base, nil
+}
+
+// boundByCLIName finds the bound module named name in CLI case.
+func boundByCLIName(bound map[string]Mod, name string) (Mod, bool) {
+	for modName, mod := range bound {
+		if LatestNamer.CLIName(modName) == name {
+			return mod, true
+		}
+	}
+	return nil, false
+}
+
+// boundModules are the modules of the bound tool objects and their
+// dependencies, by name.
+func (m *MCP) boundModules() map[string]Mod {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mods := map[string]Mod{}
+	add := func(mod Mod) {
+		if _, seen := mods[mod.Name()]; !seen && mod.Name() != ModuleName {
+			mods[mod.Name()] = mod
+		}
+	}
+	for _, b := range m.boundTools {
+		objType := b.objType
+		if b.object != nil {
+			objType = b.object.ObjectType()
+		}
+		mod, ok := ModuleObjectTypeModule(objType)
+		if !ok {
+			continue
+		}
+		add(NewUserMod(mod))
+		if deps := mod.Self().Deps; deps != nil {
+			for _, dep := range deps.Mods() {
+				add(dep)
+			}
+		}
+	}
+	return mods
+}
+
+// installedWorkspaceModules loads the modules installed in ws (see
+// LoadWorkspaceModules) with the schema of served. A value workspace's,
+// identified by its content, are loaded once per session, failures
+// included: every step asks for them, and a module that failed to build
+// would otherwise build again each time. A live workspace's change with its
+// host, and its owning client keeps its own record of what failed.
+func installedWorkspaceModules(ctx context.Context, served *SchemaBuilder, ws dagql.ObjectResult[*Workspace]) (*InstalledWorkspaceModules, error) {
+	srv, err := served.Schema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	load := func() (*InstalledWorkspaceModules, error) {
+		installed, err := LoadWorkspaceModules(dagql.ContextWithServer(ctx, srv), ws)
+		if err == nil && ctx.Err() != nil {
+			// Failures of a canceled load say nothing about the modules.
+			return nil, ctx.Err()
+		}
+		return installed, err
+	}
+	if !ws.Self().IsValueWorkspace() {
+		return load()
+	}
+	key, err := ws.RecipeDigest(ctx)
+	if err != nil {
+		return load()
+	}
+	return currentSessionSchemaBuilderMemo(ctx).WorkspaceModules(key.String(), load)
 }
 
 func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
@@ -358,6 +527,7 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 	}
 	m.loadSkillTools(srv, allTools)
 	m.loadArtifactTools(srv, allTools)
+	m.loadDangTools(srv, allTools)
 	m.loadBuiltins(srv, allTools)
 	return allTools.Order, nil
 }
@@ -1946,7 +2116,9 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 		}
 		guardToolContent(res)
 
-		emitToolResultLogs(ctx, res)
+		if !tool.LogsOwnResult || res.Errored {
+			emitToolResultLogs(ctx, res)
+		}
 	}()
 
 	toolCtx := context.WithValue(ctx, agentToolCallKey{}, true)
@@ -2306,10 +2478,31 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 }
 
 // isContinuationCall reports whether call is to a tool that returns an LLM — a
-// continuation (see adoptLLM) — directly or wrapped in the Timeout builtin.
+// continuation (see adoptLLM) — or, for a tool that only sometimes is one
+// (LLMTool.Continues), whether this call is, directly or wrapped in the
+// Timeout builtin.
 func (m *MCP) isContinuationCall(call *LLMToolCall, tools []LLMTool) bool {
 	tool, err := m.planningTool(call, tools)
-	return err == nil && tool.ReturnsLLM
+	if err != nil {
+		return false
+	}
+	if tool.ReturnsLLM {
+		return true
+	}
+	if tool.Continues == nil {
+		return false
+	}
+	args := []byte(call.Arguments)
+	if call.Name == timeoutToolName && tool.Name != timeoutToolName {
+		var timeout struct {
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if json.Unmarshal(args, &timeout) != nil {
+			return false
+		}
+		args = timeout.Arguments
+	}
+	return tool.Continues(args)
 }
 
 // annotateMCPSyncFailure rewrites the results of an MCP server's calls after

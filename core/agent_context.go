@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type agentContextKey struct{}
@@ -72,7 +73,11 @@ func AgentFromContext(ctx context.Context) (dagql.ObjectResult[*Agent], bool) {
 // the ambient loop context (a tool dispatched in-process by an agent's step),
 // or — for module functions and every nested API call they make — the calling
 // client's function-call record, which modfunc stamps with the ambient agent
-// at dispatch time. This is what lets the central enqueue path resolve
+// at dispatch time, or else the agent an in-engine nested client was created
+// for (engine.ClientMetadata.CallerAgent: a DangEval snippet's, which runs no
+// function), read from the client scope the request holds, which a
+// Workspace operation keeps while it routes the metadata to the workspace's
+// owner. This is what lets the central enqueue path resolve
 // message provenance (hack/designs/agent-messaging.md §4.1) without any
 // forgeable "from" argument: a module cannot claim an agent it was not
 // actually called from.
@@ -80,13 +85,15 @@ func CallerAgent(ctx context.Context) (dagql.ObjectResult[*Agent], bool) {
 	if agent, ok := AgentFromContext(ctx); ok {
 		return agent, true
 	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*Agent]{}, false
+	if query, err := CurrentQuery(ctx); err == nil {
+		if fnCall, err := query.CurrentFunctionCall(ctx); err == nil && fnCall != nil {
+			return fnCall.CallerAgent()
+		}
 	}
-	fnCall, err := query.CurrentFunctionCall(ctx)
-	if err != nil || fnCall == nil {
-		return dagql.ObjectResult[*Agent]{}, false
+	if scope, ok := engine.ClientScopeFromContext(ctx); ok {
+		if agent, ok := scope.CallerAgent().(dagql.ObjectResult[*Agent]); ok && agent.Self() != nil {
+			return agent, true
+		}
 	}
-	return fnCall.CallerAgent()
+	return dagql.ObjectResult[*Agent]{}, false
 }

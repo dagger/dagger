@@ -173,6 +173,37 @@ type SchemaBuilderMemo struct {
 	// module set, and builtServers how many it holds (countSchemaBuild).
 	builtModuleSets map[string]*sessionBuilds
 	builtServers    int
+	// workspaceModules holds the modules installed in a value workspace, by
+	// its recipe digest (see MCP.loadBase).
+	workspaceModules map[string]*InstalledWorkspaceModules
+}
+
+// WorkspaceModules returns the modules installed in the workspace key names,
+// loading them with load the first time. A failed load is not kept. Two
+// callers may load the same key at once; the last load is kept. A nil memo
+// loads every time.
+func (m *SchemaBuilderMemo) WorkspaceModules(key string, load func() (*InstalledWorkspaceModules, error)) (*InstalledWorkspaceModules, error) {
+	if m == nil {
+		return load()
+	}
+	m.mu.Lock()
+	cached, ok := m.workspaceModules[key]
+	m.mu.Unlock()
+	if ok {
+		return cached, nil
+	}
+	// Loading builds schemas through this memo, so it runs unlocked.
+	loaded, err := load()
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	if m.workspaceModules == nil {
+		m.workspaceModules = map[string]*InstalledWorkspaceModules{}
+	}
+	m.workspaceModules[key] = loaded
+	m.mu.Unlock()
+	return loaded, nil
 }
 
 func NewSchemaBuilderMemo() *SchemaBuilderMemo {
@@ -262,6 +293,54 @@ func (b *SchemaBuilder) With(mod Mod, opts InstallOpts) *SchemaBuilder {
 		}
 	}
 	cp.entries = append(cp.entries, modDepEntry{mod: mod, opts: opts})
+	return cp
+}
+
+// WithPrimaryMods returns b serving mods with their constructors, and without
+// the primary entries named in removed (by LatestNamer.CLIName). An entry
+// named as a module of mods serves that module instead, with its install
+// options and its constructor; the rest of mods are appended. An entry whose
+// module is the same as its replacement is kept as it is, so the result
+// builds the same schema, and if that leaves every entry as it was, the
+// result is b itself, with the server it may keep.
+func (b *SchemaBuilder) WithPrimaryMods(mods []Mod, removed []string) *SchemaBuilder {
+	cp := b.Clone()
+	byName := make(map[string]Mod, len(mods))
+	for _, mod := range mods {
+		byName[mod.Name()] = mod
+	}
+	changed := false
+	entries := cp.entries[:0]
+	for _, e := range cp.entries {
+		name := e.mod.Name()
+		mod, named := byName[name]
+		switch {
+		case name == ModuleName:
+		case named:
+			if same, err := e.mod.Same(mod); err != nil || !same {
+				e.mod, changed = mod, true
+			}
+			if e.opts.SkipConstructor {
+				e.opts.SkipConstructor, changed = false, true
+			}
+			delete(byName, name)
+		case !e.opts.SkipConstructor && slices.Contains(removed, LatestNamer.CLIName(name)):
+			changed = true
+			continue
+		}
+		entries = append(entries, e)
+	}
+	cp.entries = entries
+	for _, mod := range mods {
+		if _, ok := byName[mod.Name()]; ok {
+			cp.entries = append(cp.entries, modDepEntry{mod: mod})
+			delete(byName, mod.Name())
+			changed = true
+		}
+	}
+	if !changed {
+		return b
+	}
 	return cp
 }
 

@@ -57,7 +57,8 @@ func emitContentLog(ctx context.Context, stdout io.Writer, block *LLMContentBloc
 	}
 }
 
-// emitToolResultLogs is shared by live execution and history replay. Keep the
+// emitToolResultLogs logs a tool call's result to its span, for MCP.CallContent
+// (unless the tool logs its own result; see LLMTool.LogsOwnResult). Keep the
 // all-text path intact (including patch detection), splitting only media-bearing
 // results into ordered text and attachment records.
 func emitToolResultLogs(ctx context.Context, result *LLMContentBlock) {
