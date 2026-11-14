@@ -184,8 +184,7 @@ func emptyCheckPaths(ctx context.Context, dag *dagger.Client, ws *core.Workspace
 		if err != nil {
 			return nil, err
 		}
-		// A check's type key is its full field path.
-		empty = append(empty, addr.Query[0].Key)
+		empty = append(empty, addr.ArtifactPath("check"))
 	}
 	return empty, nil
 }
