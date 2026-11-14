@@ -2735,6 +2735,12 @@ type Cache struct {
 	// set at a time (any overlap results in union of the sets)
 	egraphDigestToClass map[string]eqClassID
 
+	// callInputEntries are, for each digest that is an input of a call kept
+	// on an entry (sharedResult.calls), those entries: a change to the
+	// digest's class changes the term their calls derive, and so their
+	// kept grouping (forgetCallTermsLocked).
+	callInputEntries map[string]map[sharedResultID]struct{}
+
 	// the parent of the given eqClassID, slice is index by eqClassID so it's
 	// conceptually a map of eqClassID->parent eqClassID
 	egraphParents []eqClassID
@@ -3105,6 +3111,11 @@ type sharedResult struct {
 	// with the entry (cache_call_records.go). They own nothing and go with
 	// the entry. Persisted and guarded by egraphMu.
 	calls map[digest.Digest]*keptCall
+	// callTerms is calls grouped by the term each derives, as
+	// keptCallTermsLocked groups them, or nil until it does: kept until the
+	// calls change or an input's class does (forgetCallTermsLocked). A
+	// reader holding egraphMu for reading may store it; a writer clears it.
+	callTerms atomic.Pointer[[][]*keptCall]
 	// listItems are, on a list entry, the item read at each position of its
 	// value, and listItemOf and listItemNth name that list and position on
 	// such an item (CallRequest.ListItem). Not persisted; guarded by
@@ -6203,6 +6214,7 @@ func (c *Cache) deleteResultLocked(res *sharedResult) {
 	}
 	c.markLeavingLocked(res.id)
 	c.forgetListItemLocked(res)
+	c.unindexKeptCallsLocked(res)
 	c.resultPayloadBytes -= res.payloadBytes
 	delete(c.resultsByID, res.id)
 	c.partReads.forget(res.id)

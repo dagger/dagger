@@ -241,6 +241,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				res.calls = make(map[digest.Digest]*keptCall)
 			}
 			res.calls[kept.id.recipe] = kept
+			c.indexKeptCallLocked(res, kept)
 		}
 
 		// An entry's taught content digests come back in order, with how many
