@@ -150,7 +150,7 @@ func TestMarkRestoredPartDelegationRoutesEachPayloadOnce(t *testing.T) {
 				object("dagql_test.MarkBatch", markTestPayload{Parts: []string{"a"}, Delegate: "a"}),
 				object("dagql_test.MarkBatch", markTestPayload{Parts: []string{"a"}, FailMapped: true}),
 			),
-			calls: &markBatchCalls,
+			calls: &markBatchCalls, routeEach: 1, routed: 1,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
