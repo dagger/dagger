@@ -90,6 +90,8 @@ const (
 // doesn't open an object. complete reports whether the object was closed;
 // truncated is the path to a string value cut short (see partialJSON), and
 // truncatedAt where it starts in doc.
+//
+//nolint:gocyclo // streaming JSON scanner; a flat state machine is clearest here
 func repairJSON(doc string) (repaired string, complete bool, truncated []string, truncatedAt int) {
 	var stack []jsonFrame
 	// The last point the document can be cut at, and closers to append.
