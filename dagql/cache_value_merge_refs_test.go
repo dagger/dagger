@@ -31,6 +31,9 @@ func TestMergePreparationRelocatesAsValidateThenVisit(t *testing.T) {
 	}
 
 	ctx, engine, _ := transferTestCache(t)
+	// The test reads each row's record as the bundle carried it, from the
+	// prepared merge: the preparation keeps its copies of them.
+	engine.testKeepRecordCopies = true
 	// Provisional numbers start past the ordinals, so that relocating
 	// changes every reference.
 	engine.egraphMu.Lock()
