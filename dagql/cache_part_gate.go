@@ -22,6 +22,12 @@ type PartGateCell struct {
 	restoredDelegation atomic.Bool
 	hostOnce           sync.Once
 	host               PartHost
+	// scanMu admits one scan for the row's part sources at a time
+	// (scanPartSources). A scan checks that nothing about its candidates
+	// changed while it probed them, which any part's installation on the row
+	// changes; concurrent scans of one row's parts would each be refused by
+	// the others' installations and scan again, about n² scans for n parts.
+	scanMu sync.Mutex
 }
 
 func (cell *PartGateCell) loadOrCreate() *PartWriterGate {
