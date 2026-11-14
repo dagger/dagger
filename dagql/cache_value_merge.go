@@ -1835,7 +1835,7 @@ func (c *Cache) mergeEntryLocked(commit *valueMergeCommit, number sharedResultID
 // engine entry that meets one is taken back as a failed replacement is, and a
 // Cloud entry goes back to no value, keeping its holdings. It returns the
 // work that runs after the lock is released. Requires egraphMu for writing.
-func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCommit) (MergeReply, func(context.Context) error) {
+func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCommit) (MergeReply, func(context.Context) error) { //nolint:gocyclo // one commit, step by step, under one hold of the graph lock
 	c.initEgraphLocked()
 	if c.offerOwners == nil {
 		c.offerOwners = map[offerOwnerID]*offerOwner{}
