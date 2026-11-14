@@ -70,7 +70,7 @@ type RemoteCacheAdapter struct {
 	mergeValues func(context.Context, dagql.CacheID, dagql.ValueBundle) (dagql.MergeReply, error)
 	// restoreValues merges a restore's part from the Cloud, as mergeValues
 	// does a merge's bundle. A test replaces it.
-	restoreValues func(context.Context, dagql.ValueBundle) (dagql.MergeReply, error)
+	restoreValues func(context.Context, dagql.ValueBundle, []dagql.TransferOrdinal) (dagql.MergeReply, error)
 	// restores are what the restores did with each file, for the engine's
 	// stop event.
 	restoresMu sync.Mutex
