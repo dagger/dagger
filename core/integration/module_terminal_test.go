@@ -45,6 +45,9 @@ func terminalFixtureMod(ctx context.Context, t *testctx.T, fixture string) strin
 	t.Helper()
 	modDir := t.TempDir()
 	copyTestdataFixture(ctx, t, modDir, "modules", "go", fixture)
+	// A git repository makes modDir a workspace, so a CLI call without -m
+	// finds the fixture's dagger.toml and its main module.
+	initGitRepo(ctx, t, modDir)
 	return modDir
 }
 
