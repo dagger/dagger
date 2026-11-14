@@ -1,3 +1,10 @@
 The `LLM` type initializes a Large Language Model (LLM).
 
-An `LLM` acts through tools. `withWorkspace` exposes a workspace's modules as tools, the way the Dagger CLI serves them. `withTools` exposes the methods of one object.
+An `LLM` acts through tools. `withWorkspace` exposes a workspace's modules as tools, the way the Dagger CLI serves them. This works for any workspace, including a snapshot or a Git checkout, whose modules load from its own files. A module that fails to load is left out. `withTools` exposes the methods of one object.
+
+Two builtin tools for writing [Dang](https://github.com/vito/dang) are always available, whatever the `LLM` is bound to:
+
+- `DangCheck` type-checks Dang and describes values, types and members, without running anything.
+- `DangEval` runs a Dang snippet and returns its output and result. It can make any API call: the core API, the workspace's installed modules, or a module's API (with `at`). This includes containers with network access, and reading the bound workspace through `ws`. Its calls have no access to the host.
+
+Both bind the workspace as `ws`, the conversation itself as `chat` (an `LLM`), the agent that owns it as `me` (an `Agent`, or null without one), and each object bound with `withTools` by its type name (`editor` for an `Editor`). Each tool's description lists the bindings its conversation has. `DangEval` writes by assignment only: when a snippet succeeds, a reassigned `ws` (`ws = ws.withChanges(editor.edit(source: ws, ...))`) is applied to the workspace, a reassigned tool object (`editor = editor.todoWrite(...)`) becomes that tool's state, and a reassigned `chat` (`chat = editor.install(llm: chat, ref: "...")`) becomes the conversation the next call runs in, with its workspace, tools and history. As with a tool that returns an `LLM`, any `LLM` may be assigned, including one with other system prompts, model or history. A module installed through `ws` or `chat` is callable in the next call. `chat` carries its own workspace and tools, so a snippet that reassigns it together with `ws` or a tool object is rejected, and `me` can't be reassigned. A snippet that fails writes nothing, and a workspace or changeset it only returns is not applied.
