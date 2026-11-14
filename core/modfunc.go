@@ -493,7 +493,10 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("access main client: %w", err)
 	}
-	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
+	// A setting resolved freshly from the current config is the restorer's
+	// own, even while loading a restored agent's binding (see
+	// WithoutRestoredBindingLoad).
+	mainCtx := engine.ContextWithClientMetadata(WithoutRestoredBindingLoad(ctx), mainClient)
 	// Module settings belong to the caller's workspace.
 	servedDeps, err := query.Server.CurrentServedDeps(mainCtx)
 	if err != nil {

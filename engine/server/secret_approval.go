@@ -58,7 +58,17 @@ func secretApproval(uri string) approvalSpec {
 // workspace artifacts (e.g. a module constructor's `cmd://gh auth token`
 // setting) are resolved with the owner's own client metadata, so they read
 // through the owner as before.
+//
+// A restored agent's bindings load under the client that restored it (see
+// core.IsRestoredBindingLoad). The restorer vouches for the recipes it
+// restored, not for every host read in them, and no approval carries over a
+// resume: every secret such a load would read from the restorer's host is
+// asked of the restorer first (see authorizeRestoredSecret), whoever minted it
+// in the recorded session.
 func (srv *Server) AuthorizeSecret(ctx context.Context, uri string) (*engine.ClientMetadata, error) {
+	if core.IsRestoredBindingLoad(ctx) {
+		return srv.authorizeRestoredSecret(ctx, uri)
+	}
 	// The client whose metadata the call runs with, validated against the
 	// held scope: a workspace owner's routing reads as that owner.
 	client, err := srv.workspaceRuntimeFromContext(ctx)
@@ -95,6 +105,40 @@ func (srv *Server) AuthorizeSecret(ctx context.Context, uri string) (*engine.Cli
 		return nil, fmt.Errorf("reading secret %s was denied by the owning client", quoted)
 	}
 	markOwnerSecretRead(client)
+	return ownerMD, nil
+}
+
+// authorizeRestoredSecret asks the client that restored an agent to approve a
+// read of its host, for a secret in one of the agent's restored bindings: one
+// the owner minted in the recorded session as much as one a module built into
+// a worker's tool object. Approvals are not remembered across a resume, and
+// the recipe cannot say who minted a secret without letting a module claim
+// to be the owner, so a resume reads none unasked. The restorer is the client
+// whose metadata the load runs with; on approval the secret is read from its
+// host once, as an approved read always is, and never allowed forever. A
+// denial, or a restorer that cannot prompt, fails the load.
+func (srv *Server) authorizeRestoredSecret(ctx context.Context, uri string) (*engine.ClientMetadata, error) {
+	quoted := strconv.QuoteToASCII(uri)
+	owner, err := srv.workspaceRuntimeFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading secret %s for a restored agent: %w", quoted, err)
+	}
+	ownerMD, err := owner.daggerSession.clientMetadataSnapshot(owner.clientRecord)
+	if err != nil {
+		return nil, err
+	}
+	spec := secretApproval(uri)
+	spec.NoForever = true
+	allowed, err := srv.requestApproval(ctx, owner, owner, spec)
+	if err != nil {
+		return nil, fmt.Errorf("reading secret %s for a restored agent requires approval: %w", quoted, err)
+	}
+	if !allowed {
+		return nil, fmt.Errorf("reading secret %s for a restored agent was denied by the owning client", quoted)
+	}
+	if client, err := srv.executableClientFromContext(ctx); err == nil {
+		markOwnerSecretRead(client)
+	}
 	return ownerMD, nil
 }
 

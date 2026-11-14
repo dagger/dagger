@@ -21,6 +21,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -649,17 +650,22 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 	require.Empty(t, restoredRemoved.mustRun(ctx, t, "snapshot { messages { role } }").Get("snapshot.messages").Array())
 }
 
-// TestRestoredWorkerReadsHostSecret is the staff shape across a restore: a
-// worker bound to a tool object that holds a HOST secret, whose loop is driven
-// by a module function (staff's sendTo: resume, send, response) rather than by
-// the client that owns the host.
+// TestRestoredWorkerReadsHostSecret is the staff shape across a restore:
+// workers bound to tool objects that hold HOST secrets, whose loops are driven
+// by a module function (staff's sendTo: resume, send, response) or by the
+// client that owns the host.
 //
-// Before the restore the binding loads from the recipe the client already
-// evaluated, so the secret it holds was minted by the host client. After it,
-// nothing in the new session has evaluated that recipe, and the lazily bound
-// tool object has to be rebuilt from its recipe — including the
-// Query.secret(uri:) that reads the host. The worker's tool must still read
-// the same secret, whichever client happens to drive its loop.
+// Before the restore a binding loads from the recipe the session already
+// evaluated. After it, nothing in the new session has, and the lazily bound
+// tool object is rebuilt from its recipe under the restoring client —
+// including the Query.secret(uri:) calls that read a host. No approval
+// carries over a resume, and the recipe cannot tell who minted a secret: so
+// every such secret is asked of the restorer, which here cannot prompt and
+// refuses, whether the owner minted it (the "owned" worker's tool), a module
+// built it into its own tool object (the "minter" worker's), or the owner's
+// workspace config set it for a module (the "configured" worker's keeper,
+// whose recipe records the setting's secret as its constructor's argument).
+// Resuming someone else's trace must never read your secrets unasked.
 func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, t *testctx.T) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
 	defer cancel()
@@ -668,6 +674,22 @@ func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, 
 	token := "host-token-" + run
 	tokenPath := filepath.Join(t.TempDir(), "token")
 	require.NoError(t, os.WriteFile(tokenPath, []byte(token), 0o600))
+
+	// Every session runs in a workspace whose dagger.toml sets the keeper
+	// module's token setting to env://KEEPER_TOKEN, read from the CLI's host.
+	// Its value differs from the file's: equal secrets are one result, which
+	// a recipe may spell either way.
+	keeperToken := "keeper-token-" + run
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.CopyFS(workdir, os.DirFS(filepath.Join("testdata", "workspaces", "workspace-agent-secrets"))))
+	connectWorkspace := func() (*dagger.Client, *agentTraceSink) {
+		return connectWithTrace(ctx, t, engineconn.Config{
+			Workdir:              workdir,
+			ExtraEnv:             []string{"KEEPER_TOKEN=" + keeperToken},
+			LoadWorkspaceModules: true,
+		})
+	}
 
 	const (
 		firstPrompt  = "use the token"
@@ -678,28 +700,37 @@ func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, 
 	// The exec checks the secret without printing it or naming the success
 	// marker literally, so an error message quoting the command cannot pass
 	// for a successful read.
+	checkScript := fmt.Sprintf(`[ "${#TOKEN}" -eq %d ] && echo "secret-read-$((6*7))"`, len(token))
 	checkSecret := func(c *dagger.Client) core.ID {
 		id, err := core.NewQuery(c).Container().From(alpineImage).
 			WithEnvVariable("CACHEBUSTER", run).
 			WithSecretVariable("TOKEN", core.NewQuery(c).Secret("file://"+tokenPath)).
-			WithExec([]string{"sh", "-c", fmt.Sprintf(`[ "${#TOKEN}" -eq %d ] && echo "secret-read-$((6*7))"`, len(token))}).
+			WithExec([]string{"sh", "-c", checkScript}).
 			ID(ctx)
 		require.NoError(t, err)
 		return id
 	}
-	const readMarker = "secret-read-42"
+	const (
+		readMarker    = "secret-read-42"
+		settingMarker = "token matches"
+		refused       = "for a restored agent requires approval"
+	)
 
-	toolTurn := func(llm *core.LLM, prompt, callID, reply string) *core.LLM {
-		return llm.WithPrompt(prompt).
-			WithResponse([]core.LLMContentBlockInput{
-				{Kind: core.LLMContentBlockKindToolCall, CallID: callID, ToolName: "stdout"},
-			}).
-			// Placeholder: the replayer really dispatches the call, and tool
-			// results are excluded from its history matching.
-			WithToolResult(callID, "", false).
-			WithResponse([]core.LLMContentBlockInput{
-				{Kind: core.LLMContentBlockKindText, Text: reply},
-			})
+	toolTurn := func(tool, args string) func(llm *core.LLM, prompt, callID, reply string) *core.LLM {
+		return func(llm *core.LLM, prompt, callID, reply string) *core.LLM {
+			call := core.LLMContentBlockInput{Kind: core.LLMContentBlockKindToolCall, CallID: callID, ToolName: tool}
+			if args != "" {
+				call.Arguments = core.JSON(args)
+			}
+			return llm.WithPrompt(prompt).
+				WithResponse([]core.LLMContentBlockInput{call}).
+				// Placeholder: the replayer really dispatches the call, and
+				// tool results are excluded from its history matching.
+				WithToolResult(callID, "", false).
+				WithResponse([]core.LLMContentBlockInput{
+					{Kind: core.LLMContentBlockKindText, Text: reply},
+				})
+		}
 	}
 
 	serveHirer := func(c *dagger.Client) {
@@ -724,24 +755,69 @@ func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, 
 		return res.Hirer.AskAgent, err
 	}
 
-	source, sink := connectWithTrace(ctx, t)
+	source, sink := connectWorkspace()
 	serveHirer(source)
+	recording := func(tool, args string) string {
+		turn := toolTurn(tool, args)
+		return cannedRecordingModel(ctx, t, source,
+			turn(turn(core.NewQuery(source).LLM(), firstPrompt, "call_1", firstReply),
+				secondPrompt, "call_2", secondReply))
+	}
+	readToken := recording("stdout", "")
+
 	// The client evaluates the tool object (and thus mints the secret) before
 	// handing it to the worker, the way a chief's own toolset already holds
 	// its objects when staff passes them on.
-	toolID := checkSecret(source)
-	model := cannedRecordingModel(ctx, t, source,
-		toolTurn(toolTurn(core.NewQuery(source).LLM(), firstPrompt, "call_1", firstReply),
-			secondPrompt, "call_2", secondReply))
-	worker := spawnAgent(ctx, t, source, spawnOpts{model: model, name: "keeper", toolIDs: []core.ID{toolID}})
-	reply, err := askViaModule(source, worker.agentID, firstPrompt)
+	owned := spawnAgent(ctx, t, source, spawnOpts{model: readToken, name: "owned", toolIDs: []core.ID{checkSecret(source)}})
+	reply, err := askViaModule(source, owned.agentID, firstPrompt)
 	require.NoError(t, err)
 	require.Equal(t, firstReply, reply)
-	transcript, _ := worker.snapshot(ctx, t)
+	transcript, _ := owned.snapshot(ctx, t)
 	require.Equal(t, 1, strings.Count(transcript, readMarker),
 		"the worker could not read the host secret before the restore:\n%s", transcript)
 
-	sink.awaitRestorable(t, 1)
+	// The module mints its own secret, from the same path, into a tool object
+	// it builds: its function client has no host, so the secret reads as
+	// nothing for the worker bound to it.
+	var built struct {
+		Hirer struct {
+			SecretTool struct {
+				ID core.ID
+			}
+		}
+	}
+	require.NoError(t, source.Do(ctx, &dagger.Request{
+		Query: `query($image: String!, $uri: String!, $bust: String!, $script: String!) {
+			hirer { secretTool(image: $image, uri: $uri, bust: $bust, script: $script) { id } }
+		}`,
+		Variables: map[string]any{"image": alpineImage, "uri": "file://" + tokenPath, "bust": run, "script": checkScript},
+	}, &dagger.Response{Data: &built}))
+	minter := spawnAgent(ctx, t, source, spawnOpts{model: readToken, name: "minter", toolIDs: []core.ID{built.Hirer.SecretTool.ID}})
+	_, reply, err = minter.sendAndWait(ctx, t, firstPrompt)
+	require.NoError(t, err)
+	require.Equal(t, firstReply, reply)
+	transcript, _ = minter.snapshot(ctx, t)
+	require.Zero(t, strings.Count(transcript, readMarker),
+		"the module's own secret read the owner's host before the restore:\n%s", transcript)
+
+	// The workspace's keeper module, constructed with its configured token.
+	var keeper struct {
+		Keeper struct {
+			ID core.ID
+		}
+	}
+	require.NoError(t, source.Do(ctx, &dagger.Request{Query: `{ keeper { id } }`}, &dagger.Response{Data: &keeper}))
+	wantToken, err := json.Marshal(map[string]string{"want": keeperToken})
+	require.NoError(t, err)
+	configured := spawnAgent(ctx, t, source, spawnOpts{model: recording("tokenMatches", string(wantToken)), name: "configured", toolIDs: []core.ID{keeper.Keeper.ID}})
+	_, reply, err = configured.sendAndWait(ctx, t, firstPrompt)
+	require.NoError(t, err)
+	require.Equal(t, firstReply, reply)
+	transcript, _ = configured.snapshot(ctx, t)
+	require.Equal(t, 1, strings.Count(transcript, settingMarker),
+		"the worker could not read the configured setting before the restore:\n%s", transcript)
+
+	sink.awaitRestorable(t, 3)
 	require.NoError(t, source.Close())
 	traces, logs := sink.capture()
 
@@ -750,27 +826,54 @@ func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, 
 	// helpers above close over this test's context.
 	for _, driver := range []string{"client", "module"} {
 		db := importCapture(ctx, t, traces, logs)
-		plan := db.RestorePlan()
-		require.Len(t, plan, 1)
-		target, _ := connectWithTrace(ctx, t)
-		restored := restoreAgent(ctx, t, target, db, plan[0])
+		plan := planByName(t, db.RestorePlan())
+		require.Len(t, plan, 3)
+		target, _ := connectWorkspace()
+		restoredOwned := restoreAgent(ctx, t, target, db, plan["owned"])
+		restoredMinter := restoreAgent(ctx, t, target, db, plan["minter"])
+		restoredConfigured := restoreAgent(ctx, t, target, db, plan["configured"])
 
-		var reply string
-		var err error
-		switch driver {
-		case "client":
-			// The restoring client drives the loop itself: it owns the host
-			// the secret is read from.
-			_, reply, err = restored.sendAndWait(ctx, t, secondPrompt)
-		case "module":
-			serveHirer(target)
-			reply, err = askViaModule(target, restored.agentID, secondPrompt)
+		ask := func(h *agentHandle) string {
+			t.Helper()
+			var reply string
+			var err error
+			switch driver {
+			case "client":
+				// The restoring client drives the loop itself: it owns the
+				// host the secret is read from.
+				_, reply, err = h.sendAndWait(ctx, t, secondPrompt)
+			default:
+				reply, err = askViaModule(target, h.agentID, secondPrompt)
+			}
+			require.NoError(t, err, "driven by the %s", driver)
+			require.Equal(t, secondReply, reply, "driven by the %s", driver)
+			transcript, _ := h.snapshot(ctx, t)
+			return transcript
 		}
-		require.NoError(t, err, "driven by the %s", driver)
-		require.Equal(t, secondReply, reply, "driven by the %s", driver)
-		transcript, _ := restored.snapshot(ctx, t)
-		require.Equal(t, 2, strings.Count(transcript, readMarker),
-			"driven by the %s, the restored worker's tool could not read the host secret:\n%s", driver, transcript)
+		if driver == "module" {
+			serveHirer(target)
+		}
+
+		// Whoever minted a secret in a restored binding, the owner, a module,
+		// or the owner's workspace config, the restorer is asked before its
+		// host is read, and cannot prompt: the tool call fails rather than
+		// read the host. Each worker's marker counts only its read before the
+		// restore.
+		for _, tc := range []struct {
+			worker *agentHandle
+			marker string
+			before int
+		}{
+			{restoredOwned, readMarker, 1},
+			{restoredMinter, readMarker, 0},
+			{restoredConfigured, settingMarker, 1},
+		} {
+			transcript := ask(tc.worker)
+			require.Contains(t, transcript, refused,
+				"driven by the %s, the restorer was not asked:\n%s", driver, transcript)
+			require.Equal(t, tc.before, strings.Count(transcript, tc.marker),
+				"driven by the %s, a restored worker read a host secret unasked:\n%s", driver, transcript)
+		}
 		require.NoError(t, target.Close())
 	}
 }
