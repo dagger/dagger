@@ -761,7 +761,7 @@ func TestArchiveCollectedIsCleanMiss(t *testing.T) {
 }
 
 func TestArchiveHTTPBootstrapBeforeHistoryAndAuthentication(t *testing.T) {
-	srv, sess, _, _ := archiveFixture(t)
+	srv, sess, db, _ := archiveFixture(t)
 	require.NoError(t, srv.finalizeSessionArchive(t.Context(), sess, nil))
 	srv.daggerSessions = map[string]*daggerSession{"session": sess}
 	sess.state.Store(sessionStateInitialized)
@@ -788,6 +788,9 @@ func TestArchiveHTTPBootstrapBeforeHistoryAndAuthentication(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Positive(t, applied)
+	// Replay after the session released its last store handle. Full history
+	// must remain readable without rebuilding the store indexes.
+	require.NoError(t, db.Close())
 	// History re-delivers the bootstrap's call payload, which the frontend
 	// ignores by digest, but never its control record.
 	opts := archive.StreamOptions{HighWater: result.Header.HighWater.Logs}
