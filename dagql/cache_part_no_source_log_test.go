@@ -75,6 +75,7 @@ func TestPartWithoutSourceLogged(t *testing.T) {
 			require.Equal(t, "snapshot", line.fields["part"])
 			require.Equal(t, string(LazyGroupWhole), line.fields["group"])
 			require.Equal(t, tc.reason, line.fields["reason"])
+			require.Equal(t, map[string]uint64{tc.reason: 1}, f.cache.PartsWithoutSource(), "the part is counted by its reason")
 			require.Equal(t, tc.candidates, line.int(t, "candidates"))
 			require.Equal(t, tc.offers, line.int(t, "offers"))
 			require.Zero(t, line.int(t, "kept_parts"), "the receiver's one part is the rebuilt one")

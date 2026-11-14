@@ -1151,6 +1151,10 @@ type EngineStopEvent struct {
 	// Restores are what the engine did with each set file the remote cache
 	// service had it restore, in the order they ended.
 	Restores []EngineRestore `json:"restores,omitempty"`
+	// PartsWithoutSource counts, by reason, the parts work read with no
+	// source to read them from over the engine's life, each made again
+	// (dagql.Cache.PartsWithoutSource).
+	PartsWithoutSource map[string]uint64 `json:"partsWithoutSource,omitempty"`
 	// UncountedMisses counts the lookup misses the engine dropped before a
 	// restored part could count them as late (EngineRestorePart.Late): a
 	// run with any undercounts its late lookups.

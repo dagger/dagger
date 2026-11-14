@@ -198,11 +198,12 @@ func (srv *Server) stopEngineEvents(ctx context.Context, clean bool) {
 	}
 	if srv.engineCache != nil {
 		srv.engineEvents.Emit(telemetryattrs.EngineEventStop, srv.engineCache.Identity(), time.Now(), telemetryattrs.EngineStopEvent{
-			Clean:           clean,
-			SavedEntries:    srv.engineCache.PersistedResults(),
-			PeakResident:    remotecache.PeakResident(),
-			Restores:        srv.restoreEvents(),
-			UncountedMisses: srv.uncountedMisses(),
+			Clean:              clean,
+			SavedEntries:       srv.engineCache.PersistedResults(),
+			PeakResident:       remotecache.PeakResident(),
+			Restores:           srv.restoreEvents(),
+			PartsWithoutSource: srv.engineCache.PartsWithoutSource(),
+			UncountedMisses:    srv.uncountedMisses(),
 		})
 	}
 	shutdownCtx := context.WithoutCancel(ctx)

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -688,6 +690,7 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 	if record.Call != nil {
 		field = record.Call.Field
 	}
+	c.partsWithoutSource.count(reason)
 	slog.InfoContext(ctx, "remote cache part without a source",
 		"cache", c.Identity().ID,
 		"entry", uint64(row.id),
@@ -784,4 +787,30 @@ func (c *Cache) joinLazyEvaluation(ctx context.Context, res AnyResult, address P
 		return err
 	}
 	return partRefused("join: joined evaluation finished")
+}
+
+// partsWithoutSource counts the parts work read with no source to read them
+// from, by the reason logPartWithoutSource gives, over the cache's life.
+type partsWithoutSource struct {
+	mu     sync.Mutex
+	counts map[string]uint64
+}
+
+func (p *partsWithoutSource) count(reason string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.counts == nil {
+		p.counts = map[string]uint64{}
+	}
+	p.counts[reason]++
+}
+
+// PartsWithoutSource returns how many parts work read with no source over
+// the cache's life, by reason (no_offer, download_failed, offer_unavailable,
+// holder_busy): each a part the engine had to make again. It is nil when
+// there were none.
+func (c *Cache) PartsWithoutSource() map[string]uint64 {
+	c.partsWithoutSource.mu.Lock()
+	defer c.partsWithoutSource.mu.Unlock()
+	return maps.Clone(c.partsWithoutSource.counts)
 }
