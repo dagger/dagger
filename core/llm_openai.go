@@ -169,10 +169,8 @@ func convertHistoryToOpenAI(history []*LLMMessage) ([]openai.ChatCompletionMessa
 				if block.Kind != LLMContentToolCall {
 					continue
 				}
-				args := string(block.Arguments)
-				if args == "" {
-					args = "{}"
-				}
+				// Verbatim, with malformed arguments wrapped (see toolCallInput).
+				args := string(toolCallInput(block.Arguments))
 				call := &openai.ChatCompletionMessageFunctionToolCallParam{
 					ID: block.CallID,
 					Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{

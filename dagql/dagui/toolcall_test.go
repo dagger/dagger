@@ -1,14 +1,18 @@
 package dagui
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
 	telemetry "github.com/dagger/otel-go"
@@ -157,13 +161,23 @@ func TestToolCallArgsFromStreamedJSON(t *testing.T) {
 	// Nothing yet.
 	assert.Nil(t, db.ToolCallArgs(tool))
 
-	// Incomplete: not yet.
+	// Incomplete: what arrived so far. A Timeout presents as the call it
+	// wraps as soon as it's named, with its source as far as it got.
 	jsonLog(toolID, `{"duration":"2m","tool":"DangEval",`)
-	assert.Nil(t, db.ToolCallArgs(tool))
-	assert.False(t, db.ToolCallView(tool).Wrapped())
-
-	jsonLog(toolID, `"arguments":{"source":"1 + 1"}}`+"\n")
+	assert.Equal(t, map[string]any{"duration": "2m", "tool": "DangEval"}, db.ToolCallArgs(tool))
 	view := db.ToolCallView(tool)
+	assert.True(t, view.Wrapped())
+	assert.True(t, view.Streaming)
+	assert.Equal(t, "DangEval", view.Tool)
+
+	jsonLog(toolID, `"arguments":{"source":"1 + `)
+	view = db.ToolCallView(tool)
+	assert.True(t, view.Streaming)
+	assert.Equal(t, map[string]any{"source": "1 + "}, view.Args)
+
+	jsonLog(toolID, `1"}}`+"\n")
+	view = db.ToolCallView(tool)
+	assert.False(t, view.Streaming)
 	assert.Equal(t, "DangEval", view.Tool)
 	assert.Equal(t, "2m", view.Timeout)
 	assert.Equal(t, map[string]any{"source": "1 + 1"}, view.Args)
@@ -192,6 +206,67 @@ func TestToolCallArgsFromStreamedJSON(t *testing.T) {
 	assert.Equal(t, map[string]any{"source": "1"}, db.ToolCallArgs(db.Spans.Map[earlyEvalID]))
 }
 
+// TestToolCallArgsReadTwice covers arguments whose records arrive more than
+// once and out of order, as a frontend reading logs on demand gets them: the
+// first chunks, read before the span was known; all of them again, read once
+// it was requested; then the rest. The document is the one a live `dagger
+// agent` session streamed for a Timeout(DangEval), which, stitched in
+// arrival order, read as a Timeout with no arguments while it ran.
+func TestToolCallArgsReadTwice(t *testing.T) {
+	traceID := trace.TraceID{1}
+	toolID := SpanID{SpanID: trace.SpanID{2}}
+	start := time.Unix(100, 0)
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{{
+		ID: toolID, TraceID: TraceID{traceID}, Name: "Timeout",
+		LLMRole: "assistant", LLMTool: "Timeout", StartTime: start,
+	}})
+	tool := db.Spans.Map[toolID]
+
+	const source = "# UI test snippet\n# Builds an alpine container\n# and runs a long-ish command.\n\n# base image\nlet base = container.from(\"alpine\")\n\n# the command to run\nlet cmd = [\"sh\", \"-c\", \"echo run-p1; sleep 80\"]\n\n# run it\nlet ran = base.withExec(cmd)\n\n# collect output\nlet out = ran.stdout\n# return it\nout"
+	enc, err := json.Marshal(source)
+	require.NoError(t, err)
+	doc := `{"arguments": {"source":` + string(enc) + `}, "duration": "3m", "tool": "DangEval"}` + "\n"
+	type chunk struct {
+		at   time.Time
+		body string
+	}
+	var chunks []chunk
+	for i := 0; i < len(doc); i += 7 {
+		chunks = append(chunks, chunk{start.Add(time.Duration(i) * time.Millisecond), doc[i:min(i+7, len(doc))]})
+	}
+	ingest := func(cs []chunk) {
+		for _, c := range cs {
+			rec := newTestLogRecord(traceID, toolID.SpanID, c.body,
+				otellog.String(telemetry.ContentTypeAttr, "application/json"))
+			rec.SetTimestamp(c.at)
+			db.IngestLogs([]sdklog.Record{rec})
+		}
+	}
+	wantArgs := map[string]any{"source": source}
+	for _, cut := range []int{1, 3, len(chunks) / 2, len(chunks) - 3} {
+		t.Run(fmt.Sprintf("cut %d", cut), func(t *testing.T) {
+			delete(db.toolArgsJSON, toolID)
+			ingest(chunks[:cut])
+			ingest(chunks[:len(chunks)-1])
+			ingest(chunks[cut:])
+			view := db.ToolCallView(tool)
+			assert.Equal(t, "DangEval", view.Tool)
+			assert.Equal(t, "3m", view.Timeout)
+			assert.Equal(t, wantArgs, view.Args)
+			assert.False(t, view.Streaming)
+		})
+	}
+
+	// Chunks with no timestamp can't be placed: they keep arrival order.
+	delete(db.toolArgsJSON, toolID)
+	for _, c := range chunks {
+		db.IngestLogs([]sdklog.Record{newTestLogRecord(traceID, toolID.SpanID, c.body,
+			otellog.String(telemetry.ContentTypeAttr, "application/json"))})
+	}
+	assert.Equal(t, wantArgs, db.ToolCallView(tool).Args)
+}
+
 func TestToolCallArgsFallsBackToAttributes(t *testing.T) {
 	traceID := trace.TraceID{1}
 	toolID := SpanID{SpanID: trace.SpanID{2}}
@@ -215,4 +290,86 @@ func TestToolCallArgsFallsBackToAttributes(t *testing.T) {
 	var nilDB *DB
 	assert.Equal(t, "notes", nilDB.ToolCallArgs(tool)["at"])
 	assert.Nil(t, nilDB.ToolCallArgs(nil))
+}
+
+// TestToolCallArgsWhileStreaming covers what a call shows of arguments still
+// streaming in: nothing that could mislead, and attributes over a stream
+// that never completed.
+func TestToolCallArgsWhileStreaming(t *testing.T) {
+	traceID := trace.TraceID{1}
+	start := time.Unix(100, 0)
+	db := NewDB()
+	newCall := func(id byte, tool string) *Span {
+		spanID := SpanID{SpanID: trace.SpanID{id}}
+		db.ImportSnapshots([]SpanSnapshot{{
+			ID: spanID, TraceID: TraceID{traceID}, Name: tool,
+			LLMRole: "assistant", LLMTool: tool, StartTime: start,
+		}})
+		return db.Spans.Map[spanID]
+	}
+	jsonLog := func(span *Span, body string) {
+		db.IngestLogs([]sdklog.Record{newTestLogRecord(traceID, span.ID.SpanID, body,
+			otellog.String(telemetry.ContentTypeAttr, "application/json"))})
+	}
+
+	// A tool name cut short is no name at all: the Timeout presents as
+	// itself until it's whole.
+	timeout := newCall(2, "Timeout")
+	jsonLog(timeout, `{"duration":"5m","tool":"Dang`)
+	view := db.ToolCallView(timeout)
+	assert.False(t, view.Wrapped())
+	assert.Equal(t, "Timeout", view.Tool)
+	assert.True(t, view.Streaming)
+	jsonLog(timeout, `Eval","arguments":{"at":"no`)
+	view = db.ToolCallView(timeout)
+	assert.Equal(t, "DangEval", view.Tool)
+	assert.Equal(t, map[string]any{}, view.Args, "a partial scope is left out")
+
+	// So is a partial element of a list.
+	eval := newCall(3, "DangEval")
+	jsonLog(eval, `{"source":"1","tags":["a","b`)
+	assert.Equal(t, map[string]any{"source": "1", "tags": []any{"a"}}, db.ToolCallArgs(eval))
+
+	// Only a Dang snippet's source shows as it grows, not a wrapped tool's
+	// argument of the same name.
+	wrapsBuild := newCall(6, "Timeout")
+	jsonLog(wrapsBuild, `{"duration":"5m","tool":"go_build","arguments":{"source":"dag://wor`)
+	view = db.ToolCallView(wrapsBuild)
+	assert.Equal(t, "go_build", view.Tool)
+	assert.Equal(t, map[string]any{}, view.Args)
+	assert.Equal(t, "", view.ArgsFallback())
+
+	// A call that ended before its arguments did -- its request aborted --
+	// keeps what it got, but it isn't streaming anymore.
+	aborted := newCall(8, "Timeout")
+	jsonLog(aborted, `{"duration":"5m","tool":"DangEval","arguments":{"source":"let x = `)
+	assert.True(t, db.ToolCallView(aborted).Streaming)
+	snapshot := aborted.Snapshot()
+	snapshot.EndTime = start.Add(time.Second)
+	snapshot.Status = sdktrace.Status{Code: codes.Error, Description: "request failed"}
+	db.ImportSnapshots([]SpanSnapshot{snapshot})
+	view = db.ToolCallView(aborted)
+	assert.False(t, view.Streaming)
+	assert.Equal(t, map[string]any{"source": "let x = "}, view.Args)
+
+	// Once a call ends, its attributes have its whole arguments, whatever
+	// streamed.
+	broken := newCall(4, "DangEval")
+	jsonLog(broken, `{"source":"let x`)
+	assert.Equal(t, map[string]any{"source": "let x"}, db.ToolCallArgs(broken))
+	snapshot = broken.Snapshot()
+	snapshot.EndTime = start.Add(time.Second)
+	snapshot.LLMToolArgNames, snapshot.LLMToolArgValues = []string{"source"}, []string{"let x = 1"}
+	db.ImportSnapshots([]SpanSnapshot{snapshot})
+	view = db.ToolCallView(broken)
+	assert.False(t, view.Streaming)
+	assert.Equal(t, map[string]any{"source": "let x = 1"}, view.Args)
+
+	// What follows the arguments in their stream is not part of them.
+	trailing := newCall(5, "DangEval")
+	jsonLog(trailing, `{"source":"1"}`+"\n")
+	jsonLog(trailing, `{"oops":true}`+"\n")
+	view = db.ToolCallView(trailing)
+	assert.False(t, view.Streaming)
+	assert.Equal(t, map[string]any{"source": "1"}, view.Args)
 }

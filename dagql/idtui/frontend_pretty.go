@@ -383,6 +383,9 @@ type frontendPretty struct {
 	// dangHighlightPending is set once a Dang snippet rendered plain while
 	// Dang's highlighter warmed up; the rows re-render when it's ready.
 	dangHighlightPending bool
+	// dangStreams holds the highlights of Dang snippets streaming in, by
+	// tool-call span (see streamingDangHighlight).
+	dangStreams map[dagui.SpanID]*dangStreamHighlight
 
 	// rewindsKey fingerprints the set of messages rewinds have abandoned as
 	// of the last recalculation, so a change to it can bump renderVersion

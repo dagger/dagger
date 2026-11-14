@@ -98,6 +98,80 @@ func NewLLMToolSet() *LLMToolSet {
 	})
 }
 
+// ToolSchemaProperties is a tool schema's "properties" listed in a deliberate
+// order, which it keeps when marshaled: a map would have encoding/json sort
+// them by name. Models tend to write a call's arguments in the order its
+// schema offers them, so a tool whose arguments stream (see Timeout) lists
+// first the ones a frontend needs early. It goes in LLMTool.Schema as the
+// value of "properties", in place of a map; schemaPropertiesMap reads either.
+//
+// The order reaches every provider: Anthropic, OpenAI, Codex and MCP's
+// tools/list get the schema as JSON, written in order, and Gemini, whose
+// typed genai.Schema keeps properties in a map, gets it as PropertyOrdering.
+type ToolSchemaProperties []ToolSchemaProperty
+
+// ToolSchemaProperty is one of ToolSchemaProperties: an argument's name and
+// its JSON schema.
+type ToolSchemaProperty struct {
+	Name   string
+	Schema map[string]any
+}
+
+// MarshalJSON marshals the properties as a JSON object, in order.
+func (props ToolSchemaProperties) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, prop := range props {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		name, err := json.Marshal(prop.Name)
+		if err != nil {
+			return nil, err
+		}
+		schema, err := json.Marshal(prop.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("property %q: %w", prop.Name, err)
+		}
+		buf.Write(name)
+		buf.WriteByte(':')
+		buf.Write(schema)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// Map returns the properties by name, without their order.
+func (props ToolSchemaProperties) Map() map[string]any {
+	m := make(map[string]any, len(props))
+	for _, prop := range props {
+		m[prop.Name] = prop.Schema
+	}
+	return m
+}
+
+// Names returns the properties' names, in order.
+func (props ToolSchemaProperties) Names() []string {
+	names := make([]string, len(props))
+	for i, prop := range props {
+		names[i] = prop.Name
+	}
+	return names
+}
+
+// schemaPropertiesMap returns a schema's "properties" value by name, whether
+// it's a map or ToolSchemaProperties.
+func schemaPropertiesMap(properties any) (map[string]any, bool) {
+	switch props := properties.(type) {
+	case map[string]any:
+		return props, true
+	case ToolSchemaProperties:
+		return props.Map(), true
+	default:
+		return nil, false
+	}
+}
+
 // Internal implementation of the MCP standard,
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
@@ -3508,22 +3582,25 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Description: "Run one currently exposed tool with a timeout.",
 		Schema: map[string]any{
 			"type": "object",
-			"properties": map[string]any{
-				"duration": map[string]any{
-					"type":        "string",
-					"description": "Maximum duration for the nested tool as a Go duration string, for example \"30s\" or \"2m\".",
-				},
-				"tool": map[string]any{
+			// The wrapped tool first: a frontend can only show the call as
+			// the one it wraps once it has arrived, and the arguments, which
+			// can be long (a Dang snippet), stream in after it.
+			"properties": ToolSchemaProperties{
+				{Name: "tool", Schema: map[string]any{
 					"type":        "string",
 					"description": "Name of the currently exposed tool to invoke.",
-				},
-				"arguments": map[string]any{
+				}},
+				{Name: "duration", Schema: map[string]any{
+					"type":        "string",
+					"description": "Maximum duration for the nested tool as a Go duration string, for example \"30s\" or \"2m\".",
+				}},
+				{Name: "arguments", Schema: map[string]any{
 					"type":                 "object",
 					"description":          "Arguments to pass to the nested tool.",
 					"additionalProperties": true,
-				},
+				}},
 			},
-			"required":             []string{"duration", "tool", "arguments"},
+			"required":             []string{"tool", "duration", "arguments"},
 			"additionalProperties": false,
 		},
 		Call: m.timeoutTool(allTools),
