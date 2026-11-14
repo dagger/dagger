@@ -14,6 +14,7 @@ import (
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
+	strconv "strconv"
 	strings "strings"
 )
 
@@ -27,6 +28,33 @@ var _ = math.Inf
 // A compilation error at this line likely means your copy of the
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
+
+type ApprovalDecision int32
+
+const (
+	APPROVAL_DENY          ApprovalDecision = 0
+	APPROVAL_ALLOW_ONCE    ApprovalDecision = 1
+	APPROVAL_ALLOW_SESSION ApprovalDecision = 2
+	APPROVAL_ALLOW_FOREVER ApprovalDecision = 3
+)
+
+var ApprovalDecision_name = map[int32]string{
+	0: "APPROVAL_DENY",
+	1: "APPROVAL_ALLOW_ONCE",
+	2: "APPROVAL_ALLOW_SESSION",
+	3: "APPROVAL_ALLOW_FOREVER",
+}
+
+var ApprovalDecision_value = map[string]int32{
+	"APPROVAL_DENY":          0,
+	"APPROVAL_ALLOW_ONCE":    1,
+	"APPROVAL_ALLOW_SESSION": 2,
+	"APPROVAL_ALLOW_FOREVER": 3,
+}
+
+func (ApprovalDecision) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{0}
+}
 
 type BoolRequest struct {
 	// the prompt to display to the user
@@ -411,7 +439,249 @@ func (m *SelectResponse) GetChoice() string {
 	return ""
 }
 
+// ApprovalRequester is who asks: the agent and module whose code requests
+// access, and the function it was running. The engine resolves every value
+// itself, never taking the requester's word for it, but names may be chosen
+// by a module or by the code spawning the agent, so they arrive as literal
+// text escaped for terminals, like the prompt.
+type ApprovalRequester struct {
+	// the agent's display name, e.g. "engine-tools"
+	AgentName string `protobuf:"bytes,1,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
+	// the agent's unique runtime handle within the session
+	AgentHandle string `protobuf:"bytes,2,opt,name=agent_handle,json=agentHandle,proto3" json:"agent_handle,omitempty"`
+	// the requesting module's name
+	Module string `protobuf:"bytes,3,opt,name=module,proto3" json:"module,omitempty"`
+	// the requesting module's source reference, e.g. a git URL with a pin
+	ModuleRef string `protobuf:"bytes,4,opt,name=module_ref,json=moduleRef,proto3" json:"module_ref,omitempty"`
+	// the module function that made the request, e.g. "Contributor.gh"
+	Function string `protobuf:"bytes,5,opt,name=function,proto3" json:"function,omitempty"`
+}
+
+func (m *ApprovalRequester) Reset()      { *m = ApprovalRequester{} }
+func (*ApprovalRequester) ProtoMessage() {}
+func (*ApprovalRequester) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{7}
+}
+func (m *ApprovalRequester) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ApprovalRequester) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ApprovalRequester.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ApprovalRequester) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ApprovalRequester.Merge(m, src)
+}
+func (m *ApprovalRequester) XXX_Size() int {
+	return m.Size()
+}
+func (m *ApprovalRequester) XXX_DiscardUnknown() {
+	xxx_messageInfo_ApprovalRequester.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ApprovalRequester proto.InternalMessageInfo
+
+func (m *ApprovalRequester) GetAgentName() string {
+	if m != nil {
+		return m.AgentName
+	}
+	return ""
+}
+
+func (m *ApprovalRequester) GetAgentHandle() string {
+	if m != nil {
+		return m.AgentHandle
+	}
+	return ""
+}
+
+func (m *ApprovalRequester) GetModule() string {
+	if m != nil {
+		return m.Module
+	}
+	return ""
+}
+
+func (m *ApprovalRequester) GetModuleRef() string {
+	if m != nil {
+		return m.ModuleRef
+	}
+	return ""
+}
+
+func (m *ApprovalRequester) GetFunction() string {
+	if m != nil {
+		return m.Function
+	}
+	return ""
+}
+
+// ApprovalRequest asks the user to grant an agent access to something on
+// their behalf: pushing with their credentials, reading a host secret, ...
+type ApprovalRequest struct {
+	// what is being approved, e.g. "git-push", "git-force-push", "git-read",
+	// "secret", "git-identity". Frontends may style by kind.
+	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	// the question to display, as literal (already escaped) text
+	Prompt string `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	// the thing access is requested to (a remote, a secret URI, ...), as
+	// literal text; empty when the kind has no subject
+	Subject   string             `protobuf:"bytes,3,opt,name=subject,proto3" json:"subject,omitempty"`
+	Requester *ApprovalRequester `protobuf:"bytes,4,opt,name=requester,proto3" json:"requester,omitempty"`
+	// the call that requested approval, so a frontend can show the prompt
+	// where that call is rendered (e.g. under an agent's tool call)
+	TraceId string `protobuf:"bytes,5,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	SpanId  string `protobuf:"bytes,6,opt,name=span_id,json=spanId,proto3" json:"span_id,omitempty"`
+	// if set, the client may remember an APPROVAL_ALLOW_FOREVER decision
+	// under this key and answer later requests with it without prompting; if
+	// empty, APPROVAL_ALLOW_FOREVER is not offered
+	PersistentKey string `protobuf:"bytes,7,opt,name=persistent_key,json=persistentKey,proto3" json:"persistent_key,omitempty"`
+	// the operation is destructive (e.g. a force-push); frontends should
+	// highlight it
+	Danger bool `protobuf:"varint,8,opt,name=danger,proto3" json:"danger,omitempty"`
+}
+
+func (m *ApprovalRequest) Reset()      { *m = ApprovalRequest{} }
+func (*ApprovalRequest) ProtoMessage() {}
+func (*ApprovalRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{8}
+}
+func (m *ApprovalRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ApprovalRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ApprovalRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ApprovalRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ApprovalRequest.Merge(m, src)
+}
+func (m *ApprovalRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *ApprovalRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_ApprovalRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ApprovalRequest proto.InternalMessageInfo
+
+func (m *ApprovalRequest) GetKind() string {
+	if m != nil {
+		return m.Kind
+	}
+	return ""
+}
+
+func (m *ApprovalRequest) GetPrompt() string {
+	if m != nil {
+		return m.Prompt
+	}
+	return ""
+}
+
+func (m *ApprovalRequest) GetSubject() string {
+	if m != nil {
+		return m.Subject
+	}
+	return ""
+}
+
+func (m *ApprovalRequest) GetRequester() *ApprovalRequester {
+	if m != nil {
+		return m.Requester
+	}
+	return nil
+}
+
+func (m *ApprovalRequest) GetTraceId() string {
+	if m != nil {
+		return m.TraceId
+	}
+	return ""
+}
+
+func (m *ApprovalRequest) GetSpanId() string {
+	if m != nil {
+		return m.SpanId
+	}
+	return ""
+}
+
+func (m *ApprovalRequest) GetPersistentKey() string {
+	if m != nil {
+		return m.PersistentKey
+	}
+	return ""
+}
+
+func (m *ApprovalRequest) GetDanger() bool {
+	if m != nil {
+		return m.Danger
+	}
+	return false
+}
+
+type ApprovalResponse struct {
+	Decision ApprovalDecision `protobuf:"varint,1,opt,name=decision,proto3,enum=dagger.prompt.ApprovalDecision" json:"decision,omitempty"`
+}
+
+func (m *ApprovalResponse) Reset()      { *m = ApprovalResponse{} }
+func (*ApprovalResponse) ProtoMessage() {}
+func (*ApprovalResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2532b5caf780ac64, []int{9}
+}
+func (m *ApprovalResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ApprovalResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ApprovalResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ApprovalResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ApprovalResponse.Merge(m, src)
+}
+func (m *ApprovalResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *ApprovalResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_ApprovalResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ApprovalResponse proto.InternalMessageInfo
+
+func (m *ApprovalResponse) GetDecision() ApprovalDecision {
+	if m != nil {
+		return m.Decision
+	}
+	return APPROVAL_DENY
+}
+
 func init() {
+	proto.RegisterEnum("dagger.prompt.ApprovalDecision", ApprovalDecision_name, ApprovalDecision_value)
 	proto.RegisterType((*BoolRequest)(nil), "dagger.prompt.BoolRequest")
 	proto.RegisterType((*BoolResponse)(nil), "dagger.prompt.BoolResponse")
 	proto.RegisterType((*StringRequest)(nil), "dagger.prompt.StringRequest")
@@ -419,41 +689,70 @@ func init() {
 	proto.RegisterType((*SelectChoice)(nil), "dagger.prompt.SelectChoice")
 	proto.RegisterType((*SelectRequest)(nil), "dagger.prompt.SelectRequest")
 	proto.RegisterType((*SelectResponse)(nil), "dagger.prompt.SelectResponse")
+	proto.RegisterType((*ApprovalRequester)(nil), "dagger.prompt.ApprovalRequester")
+	proto.RegisterType((*ApprovalRequest)(nil), "dagger.prompt.ApprovalRequest")
+	proto.RegisterType((*ApprovalResponse)(nil), "dagger.prompt.ApprovalResponse")
 }
 
 func init() { proto.RegisterFile("prompt.proto", fileDescriptor_2532b5caf780ac64) }
 
 var fileDescriptor_2532b5caf780ac64 = []byte{
-	// 426 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x84, 0x93, 0x31, 0x6f, 0xda, 0x40,
-	0x14, 0xc7, 0x7d, 0x76, 0x6b, 0xe0, 0x61, 0x7b, 0x38, 0x55, 0xc8, 0x32, 0xe5, 0x84, 0xac, 0x56,
-	0xb2, 0xaa, 0xca, 0x03, 0x6d, 0xb7, 0x4e, 0x54, 0x9d, 0x58, 0x2a, 0x33, 0x54, 0xea, 0x52, 0x01,
-	0xbe, 0x10, 0x4b, 0x0e, 0x76, 0xec, 0x63, 0x88, 0xb2, 0xe4, 0x23, 0x64, 0xcf, 0x17, 0xc8, 0x47,
-	0xc9, 0xc8, 0xc8, 0x18, 0xcc, 0x92, 0x6c, 0x7c, 0x84, 0x08, 0xdf, 0x19, 0x1d, 0x10, 0x94, 0xed,
-	0xde, 0x7b, 0x77, 0xef, 0xff, 0x7b, 0xef, 0x6f, 0x83, 0x91, 0x66, 0xc9, 0x45, 0xca, 0xfc, 0x34,
-	0x4b, 0x58, 0x82, 0xcd, 0x70, 0x34, 0x9d, 0xd2, 0xcc, 0xe7, 0x49, 0xf7, 0x1a, 0x9a, 0xfd, 0x24,
-	0x89, 0x03, 0x7a, 0x39, 0xa7, 0x39, 0xc3, 0x2d, 0xd0, 0x79, 0xc1, 0x46, 0x5d, 0xe4, 0x35, 0x02,
-	0x11, 0xe1, 0x4f, 0x60, 0xa6, 0x34, 0xcb, 0xa3, 0x9c, 0xd1, 0x19, 0x1b, 0xd0, 0x2b, 0x5b, 0x2d,
-	0xcb, 0xfb, 0x49, 0x6c, 0x43, 0x2d, 0xa4, 0x67, 0xa3, 0x79, 0xcc, 0x6c, 0xad, 0x8b, 0xbc, 0x7a,
-	0x50, 0x85, 0xf8, 0x03, 0xbc, 0x67, 0x11, 0x8b, 0xa9, 0xfd, 0xae, 0x7c, 0xc7, 0x03, 0xf7, 0x0b,
-	0x18, 0x5c, 0x3c, 0x4f, 0x93, 0x59, 0x4e, 0xb1, 0x03, 0xf5, 0x4c, 0x9c, 0x4b, 0xfd, 0x7a, 0xb0,
-	0x8b, 0xdd, 0xbf, 0x60, 0x0e, 0x59, 0x16, 0xcd, 0xa6, 0x6f, 0xa1, 0x4a, 0x10, 0x1c, 0xf2, 0x18,
-	0x42, 0x93, 0x21, 0xbe, 0x82, 0x55, 0x35, 0x3e, 0x81, 0xd1, 0x90, 0x30, 0xbe, 0x83, 0x31, 0xa4,
-	0x31, 0x9d, 0xb0, 0x5f, 0xe7, 0x49, 0x34, 0xa1, 0xd8, 0x02, 0x35, 0x0a, 0xc5, 0x2d, 0x35, 0x0a,
-	0xb7, 0x1a, 0xf1, 0x68, 0x4c, 0x63, 0xa1, 0xcd, 0x03, 0xf7, 0x0e, 0x81, 0xc9, 0x9f, 0x55, 0xf4,
-	0x3b, 0x16, 0x24, 0xb1, 0x48, 0x33, 0xa9, 0x7b, 0x33, 0xfd, 0x80, 0xda, 0xa4, 0xd4, 0xcb, 0x6d,
-	0xad, 0xab, 0x79, 0xcd, 0x5e, 0xdb, 0xdf, 0xb3, 0xd1, 0x97, 0x99, 0x82, 0xea, 0x2e, 0xfe, 0x0c,
-	0x96, 0x98, 0xfd, 0x3f, 0x4f, 0x89, 0xf5, 0x9b, 0x22, 0xcb, 0xef, 0xbb, 0x1e, 0x58, 0x15, 0x9c,
-	0xd8, 0x40, 0x0b, 0x74, 0xf1, 0x40, 0xec, 0x96, 0x47, 0xbd, 0x67, 0x04, 0xfa, 0x1f, 0x8e, 0xf4,
-	0x1b, 0x80, 0x9f, 0xb6, 0x0e, 0x62, 0xe7, 0x80, 0x47, 0xfa, 0xa6, 0x9c, 0xf6, 0xab, 0x35, 0xa1,
-	0x34, 0x00, 0x83, 0xb7, 0xe1, 0x1e, 0xe0, 0x8f, 0x87, 0x83, 0xc9, 0x9e, 0x3b, 0x9d, 0x13, 0xd5,
-	0xa3, 0x66, 0xe5, 0x38, 0xc7, 0xcd, 0x64, 0x0b, 0x9c, 0xce, 0x89, 0x2a, 0x6f, 0xd6, 0xff, 0xb9,
-	0x58, 0x11, 0x65, 0xb9, 0x22, 0xca, 0x66, 0x45, 0xd0, 0x4d, 0x41, 0xd0, 0x7d, 0x41, 0xd0, 0x43,
-	0x41, 0xd0, 0xa2, 0x20, 0xe8, 0xb1, 0x20, 0xe8, 0xa9, 0x20, 0xca, 0xa6, 0x20, 0xe8, 0x76, 0x4d,
-	0x94, 0xc5, 0x9a, 0x28, 0xcb, 0x35, 0x51, 0xfe, 0x09, 0xc7, 0xc6, 0x7a, 0xf9, 0xb7, 0x7d, 0x7b,
-	0x19, 0x00, 0xa6, 0x8d, 0x16, 0x58, 0x7d, 0x03, 0x00, 0x00,
+	// 730 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x84, 0x55, 0xcd, 0x6e, 0xd3, 0x40,
+	0x10, 0xce, 0x26, 0x6d, 0x7e, 0x26, 0x3f, 0xa4, 0x0b, 0x4a, 0x4d, 0x4a, 0xb7, 0xc1, 0x02, 0x29,
+	0xaa, 0x50, 0x0e, 0x01, 0x4e, 0x20, 0xa4, 0xb4, 0x0d, 0xa2, 0x6a, 0x95, 0x14, 0x47, 0x6a, 0x05,
+	0x97, 0xc8, 0xb5, 0x37, 0xa9, 0xa9, 0x63, 0x1b, 0x7b, 0x53, 0xa9, 0xe2, 0xc2, 0x99, 0x13, 0x77,
+	0x5e, 0xa0, 0x0f, 0xc1, 0x03, 0x70, 0xec, 0xb1, 0x47, 0xea, 0x5e, 0x38, 0xf6, 0x11, 0x90, 0xbd,
+	0xeb, 0xd4, 0x4d, 0x1a, 0xb8, 0xed, 0x37, 0xdf, 0xce, 0xcc, 0x37, 0x33, 0x9e, 0x35, 0x14, 0x1c,
+	0xd7, 0x1e, 0x39, 0xac, 0xe1, 0xb8, 0x36, 0xb3, 0x71, 0x51, 0x57, 0x87, 0x43, 0xea, 0x36, 0xb8,
+	0x51, 0xfe, 0x02, 0xf9, 0x0d, 0xdb, 0x36, 0x15, 0xfa, 0x79, 0x4c, 0x3d, 0x86, 0x2b, 0x90, 0xe6,
+	0x84, 0x84, 0x6a, 0xa8, 0x9e, 0x53, 0x04, 0xc2, 0x4f, 0xa0, 0xe8, 0x50, 0xd7, 0x33, 0x3c, 0x46,
+	0x2d, 0xb6, 0x43, 0x4f, 0xa5, 0x64, 0x48, 0xdf, 0x36, 0x62, 0x09, 0x32, 0x3a, 0x1d, 0xa8, 0x63,
+	0x93, 0x49, 0xa9, 0x1a, 0xaa, 0x67, 0x95, 0x08, 0xe2, 0x07, 0xb0, 0xc8, 0x0c, 0x66, 0x52, 0x69,
+	0x21, 0xf4, 0xe3, 0x40, 0x5e, 0x87, 0x02, 0x4f, 0xee, 0x39, 0xb6, 0xe5, 0x51, 0x5c, 0x85, 0xac,
+	0x2b, 0xce, 0x61, 0xfe, 0xac, 0x32, 0xc1, 0xf2, 0x01, 0x14, 0x7b, 0xcc, 0x35, 0xac, 0xe1, 0xff,
+	0xa4, 0xc6, 0x44, 0x70, 0x91, 0xb3, 0x22, 0x52, 0x71, 0x11, 0xcf, 0xa0, 0x14, 0x05, 0x9e, 0x23,
+	0x23, 0x17, 0x93, 0xf1, 0x02, 0x0a, 0x3d, 0x6a, 0x52, 0x8d, 0x6d, 0x1e, 0xd9, 0x86, 0x46, 0x71,
+	0x09, 0x92, 0x86, 0x2e, 0x6e, 0x25, 0x0d, 0x3d, 0xc8, 0x61, 0xaa, 0x87, 0xd4, 0x14, 0xb9, 0x39,
+	0x90, 0x7f, 0x20, 0x28, 0x72, 0xb7, 0x48, 0xfd, 0x44, 0x0b, 0x8a, 0x69, 0x89, 0xd5, 0x94, 0xbc,
+	0x55, 0xd3, 0x4b, 0xc8, 0x68, 0x61, 0x3e, 0x4f, 0x4a, 0xd5, 0x52, 0xf5, 0x7c, 0x73, 0xa5, 0x71,
+	0x6b, 0x8c, 0x8d, 0xb8, 0x26, 0x25, 0xba, 0x8b, 0x9f, 0x42, 0x49, 0xd4, 0xde, 0xe7, 0x26, 0xd1,
+	0xfe, 0xa2, 0xb0, 0xf2, 0xfb, 0x72, 0x1d, 0x4a, 0x91, 0x38, 0xd1, 0x81, 0x0a, 0xa4, 0x85, 0x83,
+	0xe8, 0x2d, 0x47, 0xf2, 0x19, 0x82, 0xa5, 0x96, 0xe3, 0xb8, 0xf6, 0x89, 0x1a, 0x7d, 0x32, 0xd4,
+	0xc5, 0xab, 0x00, 0xea, 0x90, 0x5a, 0xac, 0x6f, 0xa9, 0xa3, 0xc8, 0x23, 0x17, 0x5a, 0x3a, 0xea,
+	0x88, 0xe2, 0xc7, 0x50, 0xe0, 0xf4, 0x91, 0x6a, 0xe9, 0x26, 0x15, 0xa5, 0xe5, 0x43, 0xdb, 0xbb,
+	0xd0, 0x14, 0xe4, 0x1b, 0xd9, 0xfa, 0x78, 0x32, 0x1a, 0x81, 0x82, 0xc8, 0xfc, 0xd4, 0x77, 0xe9,
+	0x40, 0x88, 0xcf, 0x71, 0x8b, 0x42, 0x07, 0xc1, 0xa0, 0x06, 0x63, 0x4b, 0x63, 0x86, 0x6d, 0x49,
+	0x8b, 0x7c, 0x50, 0x11, 0x96, 0xbf, 0x25, 0xe1, 0xde, 0x94, 0x54, 0x8c, 0x61, 0xe1, 0xd8, 0xb0,
+	0xa2, 0x71, 0x85, 0xe7, 0xb9, 0x2d, 0x97, 0x20, 0xe3, 0x8d, 0x0f, 0x3f, 0x51, 0x8d, 0x09, 0x4d,
+	0x11, 0xc4, 0x6f, 0x20, 0xe7, 0x46, 0xb5, 0x87, 0x9a, 0xf2, 0xcd, 0xda, 0xd4, 0x38, 0x66, 0x7a,
+	0xa4, 0xdc, 0xb8, 0xe0, 0x87, 0x90, 0x65, 0xae, 0xaa, 0xd1, 0xbe, 0xa1, 0x0b, 0xd5, 0x99, 0x10,
+	0x6f, 0xeb, 0x78, 0x19, 0x32, 0x9e, 0xa3, 0x5a, 0x01, 0x93, 0xe6, 0x6a, 0x02, 0xb8, 0xad, 0x07,
+	0x93, 0xbc, 0x59, 0xb5, 0xfe, 0x31, 0x3d, 0x95, 0x32, 0x77, 0x2d, 0x60, 0x05, 0xd2, 0xba, 0x6a,
+	0x0d, 0xa9, 0x2b, 0x65, 0xc3, 0xf5, 0x11, 0x48, 0xee, 0x42, 0xf9, 0x46, 0x92, 0x98, 0xf1, 0x2b,
+	0xc8, 0xea, 0x54, 0x33, 0xbc, 0xa0, 0x79, 0x41, 0x43, 0x4a, 0xcd, 0xb5, 0x39, 0x55, 0x6c, 0x89,
+	0x6b, 0xca, 0xc4, 0x61, 0xfd, 0x04, 0xca, 0xd3, 0x2c, 0x5e, 0x82, 0x62, 0x6b, 0x6f, 0x4f, 0xe9,
+	0xee, 0xb7, 0x76, 0xfb, 0x5b, 0xed, 0xce, 0x87, 0x72, 0x02, 0x2f, 0xc3, 0xfd, 0x89, 0xa9, 0xb5,
+	0xbb, 0xdb, 0x3d, 0xe8, 0x77, 0x3b, 0x9b, 0xed, 0x32, 0xc2, 0x55, 0xa8, 0x4c, 0x11, 0xbd, 0x76,
+	0xaf, 0xb7, 0xdd, 0xed, 0x94, 0x93, 0x77, 0x70, 0x6f, 0xbb, 0x4a, 0x7b, 0xbf, 0xad, 0x94, 0x53,
+	0xcd, 0x9f, 0x49, 0x48, 0xef, 0xf1, 0x01, 0xb5, 0x01, 0xf8, 0x29, 0x78, 0x42, 0x70, 0x75, 0x4a,
+	0x7b, 0xec, 0x51, 0xab, 0xae, 0xdc, 0xc9, 0x89, 0x36, 0xec, 0x40, 0x81, 0x87, 0xe1, 0x8f, 0x00,
+	0x7e, 0x34, 0xbd, 0x59, 0xf1, 0x47, 0xa7, 0xba, 0x3a, 0x87, 0x9d, 0x09, 0x16, 0xee, 0xd3, 0x6c,
+	0xb0, 0xf8, 0x1b, 0x50, 0x5d, 0x9d, 0xc3, 0x8a, 0x60, 0xef, 0xa1, 0xc4, 0x83, 0x45, 0x9d, 0xc6,
+	0xe4, 0xdf, 0x9f, 0x59, 0x75, 0x6d, 0x2e, 0xcf, 0x43, 0x6e, 0xbc, 0x3e, 0xbf, 0x24, 0x89, 0x8b,
+	0x4b, 0x92, 0xb8, 0xbe, 0x24, 0xe8, 0xab, 0x4f, 0xd0, 0x99, 0x4f, 0xd0, 0x2f, 0x9f, 0xa0, 0x73,
+	0x9f, 0xa0, 0xdf, 0x3e, 0x41, 0x7f, 0x7c, 0x92, 0xb8, 0xf6, 0x09, 0xfa, 0x7e, 0x45, 0x12, 0xe7,
+	0x57, 0x24, 0x71, 0x71, 0x45, 0x12, 0x1f, 0xc5, 0x4a, 0x1c, 0xa6, 0xc3, 0x3f, 0xc8, 0xf3, 0xbf,
+	0x03, 0x00, 0xd4, 0x0f, 0xb9, 0xe1, 0x51, 0x06, 0x00, 0x00,
 }
 
+func (x ApprovalDecision) String() string {
+	s, ok := ApprovalDecision_name[int32(x)]
+	if ok {
+		return s
+	}
+	return strconv.Itoa(int(x))
+}
 func (this *BoolRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -654,6 +953,111 @@ func (this *SelectResponse) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *ApprovalRequester) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ApprovalRequester)
+	if !ok {
+		that2, ok := that.(ApprovalRequester)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.AgentName != that1.AgentName {
+		return false
+	}
+	if this.AgentHandle != that1.AgentHandle {
+		return false
+	}
+	if this.Module != that1.Module {
+		return false
+	}
+	if this.ModuleRef != that1.ModuleRef {
+		return false
+	}
+	if this.Function != that1.Function {
+		return false
+	}
+	return true
+}
+func (this *ApprovalRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ApprovalRequest)
+	if !ok {
+		that2, ok := that.(ApprovalRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Kind != that1.Kind {
+		return false
+	}
+	if this.Prompt != that1.Prompt {
+		return false
+	}
+	if this.Subject != that1.Subject {
+		return false
+	}
+	if !this.Requester.Equal(that1.Requester) {
+		return false
+	}
+	if this.TraceId != that1.TraceId {
+		return false
+	}
+	if this.SpanId != that1.SpanId {
+		return false
+	}
+	if this.PersistentKey != that1.PersistentKey {
+		return false
+	}
+	if this.Danger != that1.Danger {
+		return false
+	}
+	return true
+}
+func (this *ApprovalResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*ApprovalResponse)
+	if !ok {
+		that2, ok := that.(ApprovalResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Decision != that1.Decision {
+		return false
+	}
+	return true
+}
 func (this *BoolRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -735,6 +1139,49 @@ func (this *SelectResponse) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *ApprovalRequester) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 9)
+	s = append(s, "&prompt.ApprovalRequester{")
+	s = append(s, "AgentName: "+fmt.Sprintf("%#v", this.AgentName)+",\n")
+	s = append(s, "AgentHandle: "+fmt.Sprintf("%#v", this.AgentHandle)+",\n")
+	s = append(s, "Module: "+fmt.Sprintf("%#v", this.Module)+",\n")
+	s = append(s, "ModuleRef: "+fmt.Sprintf("%#v", this.ModuleRef)+",\n")
+	s = append(s, "Function: "+fmt.Sprintf("%#v", this.Function)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *ApprovalRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 12)
+	s = append(s, "&prompt.ApprovalRequest{")
+	s = append(s, "Kind: "+fmt.Sprintf("%#v", this.Kind)+",\n")
+	s = append(s, "Prompt: "+fmt.Sprintf("%#v", this.Prompt)+",\n")
+	s = append(s, "Subject: "+fmt.Sprintf("%#v", this.Subject)+",\n")
+	if this.Requester != nil {
+		s = append(s, "Requester: "+fmt.Sprintf("%#v", this.Requester)+",\n")
+	}
+	s = append(s, "TraceId: "+fmt.Sprintf("%#v", this.TraceId)+",\n")
+	s = append(s, "SpanId: "+fmt.Sprintf("%#v", this.SpanId)+",\n")
+	s = append(s, "PersistentKey: "+fmt.Sprintf("%#v", this.PersistentKey)+",\n")
+	s = append(s, "Danger: "+fmt.Sprintf("%#v", this.Danger)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *ApprovalResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&prompt.ApprovalResponse{")
+	s = append(s, "Decision: "+fmt.Sprintf("%#v", this.Decision)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func valueToGoStringPrompt(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -759,6 +1206,7 @@ type PromptClient interface {
 	PromptBool(ctx context.Context, in *BoolRequest, opts ...grpc.CallOption) (*BoolResponse, error)
 	PromptString(ctx context.Context, in *StringRequest, opts ...grpc.CallOption) (*StringResponse, error)
 	PromptSelect(ctx context.Context, in *SelectRequest, opts ...grpc.CallOption) (*SelectResponse, error)
+	PromptApproval(ctx context.Context, in *ApprovalRequest, opts ...grpc.CallOption) (*ApprovalResponse, error)
 }
 
 type promptClient struct {
@@ -796,11 +1244,21 @@ func (c *promptClient) PromptSelect(ctx context.Context, in *SelectRequest, opts
 	return out, nil
 }
 
+func (c *promptClient) PromptApproval(ctx context.Context, in *ApprovalRequest, opts ...grpc.CallOption) (*ApprovalResponse, error) {
+	out := new(ApprovalResponse)
+	err := c.cc.Invoke(ctx, "/dagger.prompt.Prompt/PromptApproval", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PromptServer is the server API for Prompt service.
 type PromptServer interface {
 	PromptBool(context.Context, *BoolRequest) (*BoolResponse, error)
 	PromptString(context.Context, *StringRequest) (*StringResponse, error)
 	PromptSelect(context.Context, *SelectRequest) (*SelectResponse, error)
+	PromptApproval(context.Context, *ApprovalRequest) (*ApprovalResponse, error)
 }
 
 // UnimplementedPromptServer can be embedded to have forward compatible implementations.
@@ -815,6 +1273,9 @@ func (*UnimplementedPromptServer) PromptString(ctx context.Context, req *StringR
 }
 func (*UnimplementedPromptServer) PromptSelect(ctx context.Context, req *SelectRequest) (*SelectResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PromptSelect not implemented")
+}
+func (*UnimplementedPromptServer) PromptApproval(ctx context.Context, req *ApprovalRequest) (*ApprovalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PromptApproval not implemented")
 }
 
 func RegisterPromptServer(s *grpc.Server, srv PromptServer) {
@@ -875,6 +1336,24 @@ func _Prompt_PromptSelect_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Prompt_PromptApproval_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApprovalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PromptServer).PromptApproval(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/dagger.prompt.Prompt/PromptApproval",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PromptServer).PromptApproval(ctx, req.(*ApprovalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Prompt_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "dagger.prompt.Prompt",
 	HandlerType: (*PromptServer)(nil),
@@ -890,6 +1369,10 @@ var _Prompt_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PromptSelect",
 			Handler:    _Prompt_PromptSelect_Handler,
+		},
+		{
+			MethodName: "PromptApproval",
+			Handler:    _Prompt_PromptApproval_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -1182,6 +1665,179 @@ func (m *SelectResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *ApprovalRequester) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ApprovalRequester) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ApprovalRequester) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Function) > 0 {
+		i -= len(m.Function)
+		copy(dAtA[i:], m.Function)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Function)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if len(m.ModuleRef) > 0 {
+		i -= len(m.ModuleRef)
+		copy(dAtA[i:], m.ModuleRef)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.ModuleRef)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.Module) > 0 {
+		i -= len(m.Module)
+		copy(dAtA[i:], m.Module)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Module)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.AgentHandle) > 0 {
+		i -= len(m.AgentHandle)
+		copy(dAtA[i:], m.AgentHandle)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.AgentHandle)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.AgentName) > 0 {
+		i -= len(m.AgentName)
+		copy(dAtA[i:], m.AgentName)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.AgentName)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ApprovalRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ApprovalRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ApprovalRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Danger {
+		i--
+		if m.Danger {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x40
+	}
+	if len(m.PersistentKey) > 0 {
+		i -= len(m.PersistentKey)
+		copy(dAtA[i:], m.PersistentKey)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.PersistentKey)))
+		i--
+		dAtA[i] = 0x3a
+	}
+	if len(m.SpanId) > 0 {
+		i -= len(m.SpanId)
+		copy(dAtA[i:], m.SpanId)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.SpanId)))
+		i--
+		dAtA[i] = 0x32
+	}
+	if len(m.TraceId) > 0 {
+		i -= len(m.TraceId)
+		copy(dAtA[i:], m.TraceId)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.TraceId)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if m.Requester != nil {
+		{
+			size, err := m.Requester.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintPrompt(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.Subject) > 0 {
+		i -= len(m.Subject)
+		copy(dAtA[i:], m.Subject)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Subject)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.Prompt) > 0 {
+		i -= len(m.Prompt)
+		copy(dAtA[i:], m.Prompt)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Prompt)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Kind) > 0 {
+		i -= len(m.Kind)
+		copy(dAtA[i:], m.Kind)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Kind)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ApprovalResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ApprovalResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ApprovalResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Decision != 0 {
+		i = encodeVarintPrompt(dAtA, i, uint64(m.Decision))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintPrompt(dAtA []byte, offset int, v uint64) int {
 	offset -= sovPrompt(v)
 	base := offset
@@ -1320,6 +1976,87 @@ func (m *SelectResponse) Size() (n int) {
 	return n
 }
 
+func (m *ApprovalRequester) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.AgentName)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.AgentHandle)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.Module)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.ModuleRef)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.Function)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	return n
+}
+
+func (m *ApprovalRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Kind)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.Prompt)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.Subject)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	if m.Requester != nil {
+		l = m.Requester.Size()
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.TraceId)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.SpanId)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	l = len(m.PersistentKey)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
+	if m.Danger {
+		n += 2
+	}
+	return n
+}
+
+func (m *ApprovalResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Decision != 0 {
+		n += 1 + sovPrompt(uint64(m.Decision))
+	}
+	return n
+}
+
 func sovPrompt(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -1406,6 +2143,47 @@ func (this *SelectResponse) String() string {
 	}
 	s := strings.Join([]string{`&SelectResponse{`,
 		`Choice:` + fmt.Sprintf("%v", this.Choice) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ApprovalRequester) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ApprovalRequester{`,
+		`AgentName:` + fmt.Sprintf("%v", this.AgentName) + `,`,
+		`AgentHandle:` + fmt.Sprintf("%v", this.AgentHandle) + `,`,
+		`Module:` + fmt.Sprintf("%v", this.Module) + `,`,
+		`ModuleRef:` + fmt.Sprintf("%v", this.ModuleRef) + `,`,
+		`Function:` + fmt.Sprintf("%v", this.Function) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ApprovalRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ApprovalRequest{`,
+		`Kind:` + fmt.Sprintf("%v", this.Kind) + `,`,
+		`Prompt:` + fmt.Sprintf("%v", this.Prompt) + `,`,
+		`Subject:` + fmt.Sprintf("%v", this.Subject) + `,`,
+		`Requester:` + strings.Replace(this.Requester.String(), "ApprovalRequester", "ApprovalRequester", 1) + `,`,
+		`TraceId:` + fmt.Sprintf("%v", this.TraceId) + `,`,
+		`SpanId:` + fmt.Sprintf("%v", this.SpanId) + `,`,
+		`PersistentKey:` + fmt.Sprintf("%v", this.PersistentKey) + `,`,
+		`Danger:` + fmt.Sprintf("%v", this.Danger) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ApprovalResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ApprovalResponse{`,
+		`Decision:` + fmt.Sprintf("%v", this.Decision) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2237,6 +3015,583 @@ func (m *SelectResponse) Unmarshal(dAtA []byte) error {
 			}
 			m.Choice = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ApprovalRequester) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ApprovalRequester: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ApprovalRequester: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AgentName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.AgentName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AgentHandle", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.AgentHandle = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Module", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Module = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ModuleRef", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ModuleRef = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Function", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Function = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ApprovalRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ApprovalRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ApprovalRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Kind", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Kind = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Prompt", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Prompt = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Subject", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Subject = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Requester", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Requester == nil {
+				m.Requester = &ApprovalRequester{}
+			}
+			if err := m.Requester.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TraceId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TraceId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SpanId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SpanId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PersistentKey", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PersistentKey = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Danger", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Danger = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipPrompt(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ApprovalResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowPrompt
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ApprovalResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ApprovalResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Decision", wireType)
+			}
+			m.Decision = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Decision |= ApprovalDecision(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipPrompt(dAtA[iNdEx:])

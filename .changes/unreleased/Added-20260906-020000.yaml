@@ -1,5 +1,5 @@
 kind: Added
-body: Ask the owning client before module or agent Git pushes, once per session for each destination and ref, with separate force-push approval. Approved pushes can use the owner's Git credentials or SSH agent without exposing them to the module.
+body: Ask the owning client before module or agent Git pushes, with separate force-push approval. Approvals hold per module, for each destination and ref, and the owner chooses how long they last - once, for the session, or always for that module (remembered by the client, for modules loaded from Git; never for force-pushes); a plain yes/no prompt grants the session. Approved pushes can use the owner's Git credentials or SSH agent without exposing them to the module.
 time: 2026-09-06T02:00:00.000000000Z
 custom:
   Author: vito

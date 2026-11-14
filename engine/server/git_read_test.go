@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"net"
 	"strings"
 	"testing"
 
@@ -10,32 +9,11 @@ import (
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
 )
-
-type readPromptServer struct {
-	prompt.UnimplementedPromptServer
-	allow    map[string]bool
-	requests []*prompt.BoolRequest
-}
-
-func (p *readPromptServer) PromptBool(_ context.Context, req *prompt.BoolRequest) (*prompt.BoolResponse, error) {
-	p.requests = append(p.requests, req)
-	return &prompt.BoolResponse{Response: p.allow[req.Prompt]}, nil
-}
-
-func (p *readPromptServer) prompts() []string {
-	var prompts []string
-	for _, req := range p.requests {
-		prompts = append(prompts, req.Prompt)
-	}
-	return prompts
-}
 
 type gitReadTestSession struct {
 	srv                         *Server
-	questions                   *readPromptServer
+	questions                   *approvalPromptServer
 	owner                       *clientRuntime
 	ownerCtx, moduleCtx, nested context.Context
 	// otherCtx is another module the owner called; impostorCtx another module
@@ -45,19 +23,17 @@ type gitReadTestSession struct {
 
 // newGitReadTestSession is a session with an owner able to answer prompts, a
 // module client it called, that module's nested API client, and two other
-// module clients it called.
+// module clients it called. The owner grants the prompts allow maps to true
+// for the session, and denies the others.
 func newGitReadTestSession(t *testing.T, allow map[string]bool) *gitReadTestSession {
 	t.Helper()
-	listener := bufconn.Listen(1 << 20)
-	grpcServer := grpc.NewServer()
-	questions := &readPromptServer{allow: allow}
-	prompt.RegisterPromptServer(grpcServer, questions)
-	go func() { _ = grpcServer.Serve(listener) }()
-	t.Cleanup(grpcServer.Stop)
-	conn, err := grpc.NewClient("passthrough:///prompt", grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	questions := &approvalPromptServer{decide: func(req *prompt.ApprovalRequest) prompt.ApprovalDecision {
+		if allow[req.Prompt] {
+			return prompt.APPROVAL_ALLOW_SESSION
+		}
+		return prompt.APPROVAL_DENY
+	}}
+	conn := promptTestConn(t, func(srv *grpc.Server) { prompt.RegisterPromptServer(srv, questions) })
 	sess := &daggerSession{sessionID: "session", attachables: newSessionAttachableManager()}
 	sess.state.Store(sessionStateInitialized)
 	newClient := func(id string, parents ...string) *clientRuntime {
@@ -113,7 +89,7 @@ func TestGitReadApprovalOwnerBoundary(t *testing.T) {
 	md, err := s.srv.AuthorizeGitRead(s.ownerCtx, denied)
 	require.NoError(t, err)
 	require.Equal(t, s.owner.clientMetadata, md)
-	require.Empty(t, s.questions.requests)
+	require.Empty(t, s.questions.asked())
 
 	// A module-driven agent borrows the owner's credentials only once the
 	// owner approves that remote, asked once per session.
@@ -124,7 +100,15 @@ func TestGitReadApprovalOwnerBoundary(t *testing.T) {
 	}
 	require.Equal(t, []string{allowedPrompt}, s.questions.prompts(),
 		"the prompt names the module driving the agent, even from its nested client")
-	require.Empty(t, s.questions.requests[0].PersistentKey, "grants must not outlive the session")
+	req := s.questions.asked()[0]
+	require.Equal(t, approvalKindGitRead, req.Kind)
+	require.Equal(t, allowed, req.Subject)
+	require.Equal(t, &prompt.ApprovalRequester{
+		Module:    "staff",
+		ModuleRef: "https://github.com/org/staff@1111111111111111111111111111111111111111",
+	}, req.Requester)
+	require.Equal(t, `approval:v2:"git-read":"https://github.com/org/staff|staff":"`+allowed+`"`, req.PersistentKey,
+		"the owner's client may remember a forever grant for the module, whatever its pin")
 
 	// A denial holds only for that attempt: saying no to course-correct must
 	// not stop the agent from asking again later.
@@ -133,7 +117,7 @@ func TestGitReadApprovalOwnerBoundary(t *testing.T) {
 		require.ErrorContains(t, err, "denied by the owning client")
 		require.Nil(t, md)
 	}
-	require.Len(t, s.questions.requests, 3)
+	require.Len(t, s.questions.asked(), 3)
 }
 
 func TestGitReadApprovalPerModule(t *testing.T) {
@@ -165,7 +149,7 @@ func TestGitReadApprovalPerModule(t *testing.T) {
 		_, err := s.srv.AuthorizeGitRead(ctx, remote)
 		require.NoError(t, err)
 	}
-	require.Len(t, s.questions.requests, 3)
+	require.Len(t, s.questions.asked(), 3)
 }
 
 func TestGitReadApprovalNormalizesRemote(t *testing.T) {
@@ -182,7 +166,7 @@ func TestGitReadApprovalNormalizesRemote(t *testing.T) {
 		_, err := s.srv.AuthorizeGitRead(s.moduleCtx, remote)
 		require.NoError(t, err, remote)
 	}
-	require.Len(t, s.questions.requests, 1, "spellings of one repository share a grant")
+	require.Len(t, s.questions.asked(), 1, "spellings of one repository share a grant")
 
 	// Another scheme, host or path is another grant.
 	for _, remote := range []string{
@@ -193,7 +177,7 @@ func TestGitReadApprovalNormalizesRemote(t *testing.T) {
 		_, err := s.srv.AuthorizeGitRead(s.moduleCtx, remote)
 		require.ErrorContains(t, err, "denied by the owning client", remote)
 	}
-	require.Len(t, s.questions.requests, 4)
+	require.Len(t, s.questions.asked(), 4)
 }
 
 func TestGitReadApprovalRejectsRemote(t *testing.T) {
@@ -220,11 +204,15 @@ func TestGitReadApprovalRejectsRemote(t *testing.T) {
 			require.NotContains(t, err.Error(), "sensitive", "never echo a rejected remote")
 		}
 	}
-	require.Empty(t, s.questions.requests, "reject before prompting")
+	require.Empty(t, s.questions.asked(), "reject before prompting")
 }
 
 func TestGitReadPromptEscapes(t *testing.T) {
-	got := gitReadPrompt("https://example.com/\u202erepo", "mod\x1b[31m")
-	require.Equal(t, `Allow an agent to read https://example.com/\u202erepo with your Git credentials (requested by module "mod\x1b[31m")?`, got)
+	mod := sessionTestModuleResult(t, "mod\x1b[31m")
+	got := approvalPrompt(gitReadApproval("https://example.com/\u202erepo").Question, approvalRequester{
+		agentName: "agent\u202e", module: mod, function: "Mod.f\x00",
+	})
+	require.Equal(t, `Allow an agent to read https://example.com/\u202erepo with your Git credentials (requested by agent "agent\u202e", module "mod\x1b[31m", function "Mod.f\x00")?`, got)
 	require.True(t, strings.HasPrefix(got, gitReadPromptPrefix))
+	require.Equal(t, `https://example.com/\u202erepo`, gitReadApproval("https://example.com/\u202erepo").Subject)
 }
