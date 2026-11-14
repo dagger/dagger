@@ -646,8 +646,9 @@ func TestRestoreLogsHowItsDownloadBegan(t *testing.T) {
 
 // A complete file's reply names the entry each record it carries in full
 // landed on, in the file's order: part by part, each record at its first
-// appearance, held rows left out, and 0 for a record that landed nowhere.
-// A file that didn't complete names none.
+// appearance, held rows left out, and 0 for a record that landed nowhere;
+// and the parts each of those entries had complete, by its place. A file
+// that didn't complete names none.
 func TestRestoreRepliesWithEachRecordsEntry(t *testing.T) {
 	t.Parallel()
 	first := dagql.ValueBundle{Version: dagql.ValueBundleVersion, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{
@@ -673,7 +674,14 @@ func TestRestoreRepliesWithEachRecordsEntry(t *testing.T) {
 					if value.SenderNumber == 15 {
 						continue // landed nowhere
 					}
-					reply.Values = append(reply.Values, dagql.MergedValue{Ordinal: value.Ordinal, Number: value.SenderNumber * 10})
+					merged := dagql.MergedValue{Ordinal: value.Ordinal, Number: value.SenderNumber * 10}
+					if value.SenderNumber == 11 {
+						merged.Parts = []dagql.PersistedPartAddress{{Part: "metadata"}, {Part: "execMeta"}}
+					}
+					if value.SenderNumber == 13 {
+						merged.Parts = []dagql.PersistedPartAddress{{Part: "metadata"}}
+					}
+					reply.Values = append(reply.Values, merged)
 				}
 				// A merge answers in its own order, not the bundle's.
 				slices.Reverse(reply.Values)
@@ -687,10 +695,17 @@ func TestRestoreRepliesWithEachRecordsEntry(t *testing.T) {
 			if refuse {
 				require.False(t, file.Complete)
 				require.Empty(t, file.Entries, "a file that didn't complete names no entries")
+				require.Empty(t, file.CompleteParts)
 				return
 			}
 			require.True(t, file.Complete)
 			require.Equal(t, protocol.EntryNumbers{120, 110, 130, 0}, file.Entries)
+			complete, err := protocol.UnpackCompleteParts(file.PartsTable, file.CompleteParts)
+			require.NoError(t, err)
+			require.Equal(t, map[int][]dagql.PersistedPartAddress{
+				1: {{Part: "metadata"}, {Part: "execMeta"}},
+				2: {{Part: "metadata"}},
+			}, complete, "each entry's complete parts, at the place of its entry")
 		})
 	}
 }
