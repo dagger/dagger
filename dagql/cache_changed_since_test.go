@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -474,6 +475,7 @@ func TestChangedSinceABuildBetweenAPrunesDrops(t *testing.T) {
 	require.True(t, removed)
 	require.Nil(t, storedBundleTestEntry(cloud, b), "B is collected")
 	require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r), "R's bundle lost the part it borrowed")
+}
 
 // narrowTestMember merges another record, of a different recipe, into the
 // Cloud, with a stored part if stored, without joining it to any class. It
@@ -565,4 +567,57 @@ func TestChangedSinceAClassMatesWrite(t *testing.T) {
 		require.Empty(t, changedSinceTestRebuild(t, cloud, before, r))
 		require.False(t, changedSinceTestOne(t, cloud, r, before.Position), "nothing it can borrow came")
 	})
+}
+
+// narrowTestUnretained merges another record, of a different recipe, into
+// the Cloud from sender as an unretained root, with a stored part if stored,
+// without joining it to any class: it lives only through sender's holding.
+// It returns the member's number.
+func narrowTestUnretained(t *testing.T, ctx context.Context, cloud *Cache, sender CacheID, field string, stored bool) uint64 {
+	t.Helper()
+	bundle, _ := mergeTestSource(t, field, "member")
+	prepared, err := cloud.PrepareValueMerge(ctx, sender, bundle)
+	require.NoError(t, err)
+	prepared.Unretained(bundle.Roots[0].Ordinal)
+	reply, err := cloud.CommitValueMerge(ctx, prepared)
+	require.NoError(t, err)
+	require.Len(t, reply.Roots, 1)
+	member := reply.Roots[0].Number
+	if stored {
+		ok, _, err := cloud.SetStoredPart(ctx, member, testLiveOffer(), 0)
+		require.NoError(t, err)
+		require.True(t, ok)
+	}
+	return member
+}
+
+// Two class mates of a record that leave their class in one collection, one
+// storing no part and one storing the part the record borrows, change the
+// record's bundle whichever leaves first: the second, leaving after the
+// first walked the class, still takes the part the record borrows with it.
+func TestChangedSinceClassMatesLeaveTogether(t *testing.T) {
+	t.Parallel()
+	for _, plainFirst := range []bool{true, false} {
+		t.Run(fmt.Sprint("plain mate's holding first=", plainFirst), func(t *testing.T) {
+			t.Parallel()
+			ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+			plain := narrowTestUnretained(t, ctx, cloud, "cache-x", "narrow-leave-plain", false)
+			lending := narrowTestUnretained(t, ctx, cloud, "cache-y", "narrow-leave-lending", true)
+			narrowTestJoin(t, ctx, cloud, "narrow-leave", r, plain, lending)
+			before := changedSinceTestBuild(t, cloud, r)
+			require.Len(t, before.Bundle.Outputs, 1, "the record borrows the lending mate's part")
+
+			plainKeys := cloud.ReleaseRemoteCache(ctx, "cache-x").Candidates
+			lendingKeys := cloud.ReleaseRemoteCache(ctx, "cache-y").Candidates
+			candidates := slices.Concat(plainKeys, lendingKeys)
+			if !plainFirst {
+				candidates = slices.Concat(lendingKeys, plainKeys)
+			}
+			_, _, err := cloud.CollectRemoteHoldings(ctx, candidates)
+			require.NoError(t, err)
+			require.Nil(t, storedBundleTestEntry(cloud, plain), "the plain mate is collected")
+			require.Nil(t, storedBundleTestEntry(cloud, lending), "the lending mate is collected")
+			require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r), "the record's bundle lost the part it borrowed")
+		})
+	}
 }
