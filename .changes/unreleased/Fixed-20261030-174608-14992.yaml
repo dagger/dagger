@@ -1,0 +1,12 @@
+kind: Fixed
+body: |
+  A slow engine no longer breaks a module function's session or its SSH agent.
+  A function used to fail with "the Dagger session helper in this container
+  exited" when the engine took more than a few seconds to start talking to
+  it, and loading a module over SSH could fail with "failed to connect to
+  mounted SSH socket: ... i/o timeout" before the engine had asked the agent
+  anything.
+time: 2026-10-30T17:46:08Z
+custom:
+  Author: sipsma
+  PR: "14992"
