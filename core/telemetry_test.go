@@ -65,11 +65,19 @@ func (*mockServer) AuthorizeGitRead(context.Context, string) (*engine.ClientMeta
 	panic("unexpected AuthorizeGitRead")
 }
 
+func (*mockServer) AuthorizeSecret(context.Context, string) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
+
 func (ms *mockServer) RegisterNestedClientTransport(context.Context, *engine.ClientMetadata, string) (*engine.NestedClientTransport, error) {
 	return engine.NewNestedClientTransport(nil), nil
 }
 
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.NestedClientTransport, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed) {
+}
+
+func (*mockServer) WithHostlessClient(context.Context, func(context.Context) error) error {
+	panic("unexpected WithHostlessClient")
 }
 
 func (*mockServer) SharedCloudArtifactClient(context.Context, string) (*engineclient.Client, error) {

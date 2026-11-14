@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
@@ -690,6 +691,7 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	// WithComposingAgent): a spawn that runs during composition gets the
 	// composing agent as parent, while a cache-hit call that spawned when it
 	// first ran is not re-run and keeps naming that first child.
+	agentConcurrencyKey(ctx, req)
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
@@ -871,6 +873,24 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		return err
 	}
 	return req.SetImplicitInput(ctx, dagql.PerSessionInput.Name, session)
+}
+
+// agentConcurrencyKey keeps a module function call made on an agent's behalf
+// from sharing one in-flight execution with the same call made by another
+// agent, or by no agent. The calling agent decides what the call may do: a
+// host-less module reading its owner's secret asks the owner for that agent
+// and module (see Server.AuthorizeSecret), and another caller joining the
+// execution while the owner decides would get the approved result, or the
+// denial, without being asked about. Only joins are kept apart: the agent is
+// not part of the call's cache key, so recipes and cached results are
+// unchanged (see declineOwnerSecretReuse for those).
+func agentConcurrencyKey(ctx context.Context, req *dagql.CallRequest) {
+	if req == nil || req.ConcurrencyKey == "" {
+		return
+	}
+	if agent, ok := CallerAgent(ctx); ok && agent.Self().Handle != "" {
+		req.ConcurrencyKey += "\x00agent:" + agent.Self().Handle
+	}
 }
 
 // declaredGitClientsDigest digests the git clients that the config governing
@@ -1169,7 +1189,31 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}
 
+	declineOwnerSecretReuse(ctx, fnCall, returnValue)
 	return returnValue, nil
+}
+
+// declineOwnerSecretReuse keeps result, returned by the function call fnCall,
+// from being reused when the call read a secret through its owner's host for
+// one agent (see FunctionCall.MarkOwnerSecretRead): the result may be derived
+// from that secret, while the call's cache key only names its arguments, so
+// another session, agent or caller could otherwise get it without asking.
+// It must be called with the resolver's own context.
+//
+// A result the cache already holds (dagql.CacheBacked), such as a Container
+// the function built or loaded, is the very entry every other call reaching
+// it shares: expiring it would drop that build for everyone, so only a
+// result the call itself produced is expired. A held result that carries the
+// secret requires its session resource, so another session cannot reuse it
+// without holding the secret itself.
+func declineOwnerSecretReuse(ctx context.Context, fnCall *FunctionCall, result dagql.AnyResult) {
+	if !fnCall.OwnerSecretRead() {
+		return
+	}
+	dagql.DeclinePersistence(ctx)
+	if !dagql.CacheBacked(result) {
+		dagql.ExpireBy(ctx, time.Now().Unix())
+	}
 }
 
 // A receiver's SDK form depends on the receiver result and the active result

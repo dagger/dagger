@@ -1,0 +1,5 @@
+[modules.keeper]
+source = ".dagger/modules/keeper"
+
+[modules.keeper.settings]
+token = "env://KEEPER_TOKEN"
