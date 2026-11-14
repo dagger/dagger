@@ -116,10 +116,13 @@ func TestRowsSetTheLastUse(t *testing.T) {
 // scrape, outside its work lock, so the read is in pieces (readInPieces): it
 // lets egraphMu go every readPieceSteps values of the pool, and a writer
 // waiting for the lock waits for one piece, not a walk of the whole pool.
-// With no write during it, it counts what one hold would.
+// With no write during it, it counts what one hold would. The Cloud's body
+// worker is stopped: it takes egraphMu by itself, when it installs a body,
+// and the hook's TryLock would take its hold for the read's.
 func TestBlobCacheUsageGivesUpTheLockBetweenValues(t *testing.T) {
 	t.Parallel()
 	ctx, cloud, r, _ := storedPartServiceTestCloud(t)
+	storedTestHoldWhole(cloud)
 	p := storedPartTestDeps(cloud, r)[0]
 	for _, stored := range []struct {
 		number uint64
