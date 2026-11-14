@@ -156,7 +156,12 @@ var errValueMergeEnded = errors.New("commit value merge: the prepared merge has 
 // reserves the records' numbers, derives each record's identity, and decodes
 // and validates every payload the merge will install. It takes egraphMu only
 // to reserve the numbers and, on an engine, to read which records merge would
-// keep. input must not change until the prepared merge's terminal action.
+// keep. It reads input only while it runs, and keeps it only on an engine
+// whose preparation prepared light records, for the commit to prepare in
+// full again (PreparedValueMerge.input): that engine's caller leaves input
+// unchanged until the prepared merge's terminal action. The Cloud never keeps
+// it, and neither does an engine with no light record: their callers may
+// change or drop input once PrepareValueMerge returns.
 //
 // A preparation that fails, or whose context is cancelled, returns no
 // prepared merge.
@@ -658,7 +663,27 @@ func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input Value
 	if err := context.Cause(ctx); err != nil {
 		return nil, err
 	}
+	if !c.testKeepRecordCopies {
+		prep.dropRecordCopies(private)
+	}
 	return prep, nil
+}
+
+// dropRecordCopies lets go of the copies of the bundle's records that only
+// the preparation read, once every record is prepared: each row's record
+// but its offers, which the commit's closure reads (liveClosure), and each
+// private entry's envelope, which shares that record's payload. The commit
+// reads each record as prepared (records), each row's own fields, and of
+// each private entry its frame, description and record type, so it commits
+// the same merge; a prepared merge waiting for its commit holds only that.
+func (prep *valueMergePrep) dropRecordCopies(private *Cache) {
+	for i := range prep.bundle.Values {
+		row := &prep.bundle.Values[i]
+		row.Record = PersistedRecord{Envelope: PersistedResultEnvelope{PendingOffers: row.Record.Envelope.PendingOffers}}
+	}
+	for _, res := range private.resultsByID {
+		res.persistedEnvelope = nil
+	}
 }
 
 // prepareMergedCalls derives the identity of each of a bundle's calls from its
