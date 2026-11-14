@@ -187,7 +187,7 @@ type settings struct {
 	Config
 	dial       func(context.Context) (wsConn, error)
 	put        func(ctx context.Context, url string, body io.Reader, size int64) error
-	getFile    func(context.Context, protocol.SetFile) ([]byte, error)
+	getFile    func(context.Context, protocol.SetFile) ([]byte, fetchTiming, error)
 	peakRSS    func() int64
 	maxMessage int
 	jitter     func() float64
