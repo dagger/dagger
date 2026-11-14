@@ -675,6 +675,8 @@ func TestRestoreRepliesWithEachRecordsEntry(t *testing.T) {
 					}
 					reply.Values = append(reply.Values, dagql.MergedValue{Ordinal: value.Ordinal, Number: value.SenderNumber * 10})
 				}
+				// A merge answers in its own order, not the bundle's.
+				slices.Reverse(reply.Values)
 				return reply, nil
 			}
 			s, conn := restoreSession(t, adapter)
