@@ -1092,7 +1092,8 @@ func toolCallInput(args JSON) json.RawMessage {
 func toolCallInputMap(args JSON) map[string]any {
 	var input map[string]any
 	if err := json.Unmarshal(toolCallInput(args), &input); err != nil {
-		// Unreachable: toolCallInput always returns a JSON object.
+		// A valid object can still fail to decode, e.g. with a number out of
+		// float64's range: wrap it like malformed input.
 		return map[string]any{"INVALID_JSON": string(args)}
 	}
 	return input

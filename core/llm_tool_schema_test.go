@@ -160,14 +160,16 @@ func timeoutCallHistory(args string) []*LLMMessage {
 	}
 }
 
-// TestProviderReplaysToolCallArguments covers resubmitting a past tool call's
-// arguments exactly as the model wrote them, rather than re-marshaled with
-// sorted keys, which would show the model its own Timeout call rewritten
-// arguments-first.
-func TestProviderReplaysToolCallArguments(t *testing.T) {
-	t.Run("anthropic", func(t *testing.T) {
+// replayedToolArguments sends a history in which the model called Timeout
+// with args to a provider, and returns the arguments the request resubmits
+// for that call, as raw JSON.
+func replayedToolArguments(t *testing.T, provider, args string) string {
+	t.Helper()
+	history := timeoutCallHistory(args)
+	switch provider {
+	case "anthropic":
 		client, requests := mediaRequestClient(t, "anthropic")
-		request := sentMediaRequest(t, client, requests, timeoutCallHistory(timeoutCallArgs))
+		request := sentMediaRequest(t, client, requests, history)
 		var messages []struct {
 			Content []struct {
 				Input json.RawMessage `json:"input"`
@@ -175,10 +177,8 @@ func TestProviderReplaysToolCallArguments(t *testing.T) {
 		}
 		require.NoError(t, json.Unmarshal(request["messages"], &messages))
 		require.Len(t, messages, 3)
-		assert.Equal(t, timeoutCallArgs, string(messages[1].Content[0].Input))
-	})
-
-	t.Run("openai", func(t *testing.T) {
+		return string(messages[1].Content[0].Input)
+	case "openai":
 		bodies := make(chan []byte, 1)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body, _ := io.ReadAll(r.Body)
@@ -189,7 +189,7 @@ func TestProviderReplaysToolCallArguments(t *testing.T) {
 		t.Cleanup(srv.Close)
 		client := newOpenAIClient(&LLMEndpoint{Model: "gpt-5", Provider: OpenAI, BaseURL: srv.URL}, "", true)
 		// Only the request is under test.
-		_, _ = client.SendQuery(t.Context(), timeoutCallHistory(timeoutCallArgs), nil, &LLMCallOpts{})
+		_, _ = client.SendQuery(t.Context(), history, nil, &LLMCallOpts{})
 		var payload struct {
 			Messages []struct {
 				ToolCalls []struct {
@@ -206,15 +206,14 @@ func TestProviderReplaysToolCallArguments(t *testing.T) {
 				replayed = append(replayed, call.Function.Arguments)
 			}
 		}
-		assert.Equal(t, []string{timeoutCallArgs}, replayed)
-	})
-
-	t.Run("codex", func(t *testing.T) {
+		require.Len(t, replayed, 1)
+		return replayed[0]
+	case "codex":
 		srv, requests := codexStubServer(t, func(int) string { return "" })
 		client := newOpenAICodexClient(&LLMEndpoint{
 			Model: "openai-codex/gpt-5", Provider: OpenAICodex, BaseURL: srv.URL, AuthToken: "tok",
 		})
-		_, err := client.SendQuery(t.Context(), timeoutCallHistory(timeoutCallArgs), nil, &LLMCallOpts{})
+		_, err := client.SendQuery(t.Context(), history, nil, &LLMCallOpts{})
 		require.NoError(t, err)
 		seen := requests()
 		require.Len(t, seen, 1)
@@ -231,8 +230,30 @@ func TestProviderReplaysToolCallArguments(t *testing.T) {
 				replayed = append(replayed, item.Arguments)
 			}
 		}
-		assert.Equal(t, []string{timeoutCallArgs}, replayed)
-	})
+		require.Len(t, replayed, 1)
+		return replayed[0]
+	default:
+		t.Fatalf("unknown provider %q", provider)
+		return ""
+	}
+}
+
+// TestProviderReplaysToolCallArguments covers resubmitting a past tool call's
+// arguments exactly as the model wrote them, rather than re-marshaled with
+// sorted keys, which would show the model its own Timeout call rewritten
+// arguments-first. Malformed arguments, which the history keeps verbatim
+// (see anthropicToolArguments), are wrapped on every provider, so a
+// conversation that switches models doesn't fail every later turn.
+func TestProviderReplaysToolCallArguments(t *testing.T) {
+	malformed := `{"tool":"read","duration":"1m","arguments":{"path":"/x`
+	wrapped, err := json.Marshal(map[string]string{"INVALID_JSON": malformed})
+	require.NoError(t, err)
+	for _, provider := range []string{"anthropic", "openai", "codex"} {
+		t.Run(provider, func(t *testing.T) {
+			assert.Equal(t, timeoutCallArgs, replayedToolArguments(t, provider, timeoutCallArgs))
+			assert.JSONEq(t, string(wrapped), replayedToolArguments(t, provider, malformed))
+		})
+	}
 }
 
 func TestToolCallInput(t *testing.T) {
@@ -252,6 +273,8 @@ func TestToolCallInput(t *testing.T) {
 	}
 	assert.Equal(t, map[string]any{"INVALID_JSON": "[1]"}, toolCallInputMap(JSON(`[1]`)))
 	assert.Equal(t, map[string]any{}, toolCallInputMap(nil))
+	// Valid, but not decodable into a map: wrapped for Gemini.
+	assert.Equal(t, map[string]any{"INVALID_JSON": `{"n":1e400}`}, toolCallInputMap(JSON(`{"n":1e400}`)))
 }
 
 // TestMCPToolSchemaOrder covers Timeout's argument order reaching an MCP
