@@ -138,6 +138,17 @@ func Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func sessionProxyEnv(env []string, port, token string) []string {
+	// This is a CLI proxy, not the exec's attachable-capable endpoint, even
+	// when this command itself runs inside a privileged exec. os/exec keeps
+	// the last value of each variable when constructing the subprocess env.
+	return append(env,
+		"DAGGER_SESSION_PORT="+port,
+		"DAGGER_SESSION_TOKEN="+token,
+		engine.NestedClientIDEnv+"=",
+	)
+}
+
 func run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
@@ -165,10 +176,8 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 		defer sessionL.Close()
 
-		env := os.Environ()
 		sessionPort := fmt.Sprintf("%d", sessionL.Addr().(*net.TCPAddr).Port)
-		env = append(env, "DAGGER_SESSION_PORT="+sessionPort)
-		env = append(env, "DAGGER_SESSION_TOKEN="+sessionToken)
+		env := sessionProxyEnv(os.Environ(), sessionPort, sessionToken)
 		env = append(env, telemetry.PropagationEnv(ctx)...)
 		env = append(env, otelEnv...)
 
