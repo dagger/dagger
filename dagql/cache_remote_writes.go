@@ -139,6 +139,12 @@ func (w *RemoteWrites) HolderClosure(key HolderKey) []HolderKey {
 	return w.c.holderClosureLocked(key)
 }
 
+// HolderGraph is Cache.HolderGraph, in the hold.
+func (w *RemoteWrites) HolderGraph(cache CacheID, roots []uint64) map[uint64][]uint64 {
+	graph, _ := w.c.holderGraphLocked(cache, roots, nil)
+	return graph
+}
+
 // EntryClassEntries is Cache.EntryClassEntries, in the hold.
 func (w *RemoteWrites) EntryClassEntries(number uint64) (EntryClass, bool) {
 	return w.c.entryClassEntriesLocked(number)
