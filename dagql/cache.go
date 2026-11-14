@@ -1981,6 +1981,10 @@ func (c *Cache) removePrunedEdge(ctx context.Context, resultID sharedResultID) (
 		// The Cloud compacts its classes on collection, not in a prune.
 		c.eqClassRemoved = true
 	}
+	// A prune drops its edges each in a hold of its own and hands its marks
+	// back once it ends: this hold's stamps apply now, while the classes the
+	// drops changed still name their entries.
+	c.stampPendingLocked()
 	c.unlockGraphAs(step)
 	if c.testAfterRetentionDrop != nil {
 		c.testAfterRetentionDrop(resultID)
