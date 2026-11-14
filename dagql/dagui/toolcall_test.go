@@ -1,6 +1,8 @@
 package dagui
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -202,6 +204,67 @@ func TestToolCallArgsFromStreamedJSON(t *testing.T) {
 		LLMRole: "assistant", LLMTool: "DangEval", StartTime: start,
 	}})
 	assert.Equal(t, map[string]any{"source": "1"}, db.ToolCallArgs(db.Spans.Map[earlyEvalID]))
+}
+
+// TestToolCallArgsReadTwice covers arguments whose records arrive more than
+// once and out of order, as a frontend reading logs on demand gets them: the
+// first chunks, read before the span was known; all of them again, read once
+// it was requested; then the rest. The document is the one a live `dagger
+// agent` session streamed for a Timeout(DangEval), which, stitched in
+// arrival order, read as a Timeout with no arguments while it ran.
+func TestToolCallArgsReadTwice(t *testing.T) {
+	traceID := trace.TraceID{1}
+	toolID := SpanID{SpanID: trace.SpanID{2}}
+	start := time.Unix(100, 0)
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{{
+		ID: toolID, TraceID: TraceID{traceID}, Name: "Timeout",
+		LLMRole: "assistant", LLMTool: "Timeout", StartTime: start,
+	}})
+	tool := db.Spans.Map[toolID]
+
+	const source = "# UI test snippet\n# Builds an alpine container\n# and runs a long-ish command.\n\n# base image\nlet base = container.from(\"alpine\")\n\n# the command to run\nlet cmd = [\"sh\", \"-c\", \"echo run-p1; sleep 80\"]\n\n# run it\nlet ran = base.withExec(cmd)\n\n# collect output\nlet out = ran.stdout\n# return it\nout"
+	enc, err := json.Marshal(source)
+	require.NoError(t, err)
+	doc := `{"arguments": {"source":` + string(enc) + `}, "duration": "3m", "tool": "DangEval"}` + "\n"
+	type chunk struct {
+		at   time.Time
+		body string
+	}
+	var chunks []chunk
+	for i := 0; i < len(doc); i += 7 {
+		chunks = append(chunks, chunk{start.Add(time.Duration(i) * time.Millisecond), doc[i:min(i+7, len(doc))]})
+	}
+	ingest := func(cs []chunk) {
+		for _, c := range cs {
+			rec := newTestLogRecord(traceID, toolID.SpanID, c.body,
+				otellog.String(telemetry.ContentTypeAttr, "application/json"))
+			rec.SetTimestamp(c.at)
+			db.IngestLogs([]sdklog.Record{rec})
+		}
+	}
+	wantArgs := map[string]any{"source": source}
+	for _, cut := range []int{1, 3, len(chunks) / 2, len(chunks) - 3} {
+		t.Run(fmt.Sprintf("cut %d", cut), func(t *testing.T) {
+			delete(db.toolArgsJSON, toolID)
+			ingest(chunks[:cut])
+			ingest(chunks[:len(chunks)-1])
+			ingest(chunks[cut:])
+			view := db.ToolCallView(tool)
+			assert.Equal(t, "DangEval", view.Tool)
+			assert.Equal(t, "3m", view.Timeout)
+			assert.Equal(t, wantArgs, view.Args)
+			assert.False(t, view.Streaming)
+		})
+	}
+
+	// Chunks with no timestamp can't be placed: they keep arrival order.
+	delete(db.toolArgsJSON, toolID)
+	for _, c := range chunks {
+		db.IngestLogs([]sdklog.Record{newTestLogRecord(traceID, toolID.SpanID, c.body,
+			otellog.String(telemetry.ContentTypeAttr, "application/json"))})
+	}
+	assert.Equal(t, wantArgs, db.ToolCallView(tool).Args)
 }
 
 func TestToolCallArgsFallsBackToAttributes(t *testing.T) {

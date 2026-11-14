@@ -3,9 +3,11 @@ package dagui
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -69,14 +71,20 @@ func (db *DB) ingestToolArgs(record sdklog.Record, spanID SpanID, body string) {
 	if args.overflowed {
 		return
 	}
-	if args.buf.Len()+len(body) > maxToolArgsJSON {
-		// Too large to keep whole: a truncated document wouldn't parse, so
-		// drop it and let the attributes speak.
-		args.buf.Reset()
-		args.overflowed = true
+	at := record.Timestamp()
+	if at.IsZero() {
+		at = record.ObservedTimestamp()
+	}
+	if !args.add(at, body) {
+		// read again: kept already
 		return
 	}
-	args.buf.WriteString(body)
+	if args.size > maxToolArgsJSON {
+		// Too large to keep whole: a truncated document wouldn't parse, so
+		// drop it and let the attributes speak.
+		args.chunks, args.size = nil, 0
+		args.overflowed = true
+	}
 	db.update(span)
 }
 
@@ -96,17 +104,65 @@ func (db *DB) pruneToolArgs(span *Span) {
 
 // toolArgsJSON accumulates the JSON arguments a tool-call display span
 // streams.
+//
+// The chunks are kept in the order they were written, by their records'
+// timestamps, and a chunk that arrives twice is kept once. A frontend that
+// reads logs on demand can be handed a span's records more than once, and
+// out of order -- e.g. the first records read before the span was known,
+// then all of them again once it was requested -- and a document stitched
+// from them in arrival order would be garbled. Chunks without a timestamp
+// are appended as they arrive.
 type toolArgsJSON struct {
-	buf        strings.Builder
+	chunks     []toolArgsChunk
+	size       int
 	overflowed bool
+	// version counts changes to chunks.
+	version int
 
-	// decoded is buf decoded as of decodedLen bytes (see decodePartialJSON),
-	// for a call of decodedTool: arguments are re-read on every render, and
-	// decoding costs a pass over up to maxToolArgsJSON bytes, so it only runs
-	// again once buf grew.
-	decoded     partialJSON
-	decodedLen  int
-	decodedTool string
+	// decoded is the document decoded as of decodedVersion (see
+	// decodePartialJSON), for a call of decodedTool: arguments are re-read
+	// on every render, and decoding costs a pass over up to maxToolArgsJSON
+	// bytes, so it only runs again once the document changed.
+	decoded        partialJSON
+	decodedVersion int
+	decodedTool    string
+}
+
+// toolArgsChunk is one record's worth of a streamed document.
+type toolArgsChunk struct {
+	at   time.Time
+	body string
+}
+
+// add adds a record's chunk, written at at, reporting whether it was new.
+func (t *toolArgsJSON) add(at time.Time, body string) bool {
+	i := len(t.chunks)
+	if !at.IsZero() {
+		// After every chunk written before or at the same time (ties keep
+		// arrival order), unless it's one of those.
+		i = sort.Search(len(t.chunks), func(i int) bool {
+			return !t.chunks[i].at.IsZero() && t.chunks[i].at.After(at)
+		})
+		for j := i - 1; j >= 0 && t.chunks[j].at.Equal(at); j-- {
+			if t.chunks[j].body == body {
+				return false
+			}
+		}
+	}
+	t.chunks = slices.Insert(t.chunks, i, toolArgsChunk{at: at, body: body})
+	t.size += len(body)
+	t.version++
+	return true
+}
+
+// document returns the chunks joined.
+func (t *toolArgsJSON) document() string {
+	var b strings.Builder
+	b.Grow(t.size)
+	for _, c := range t.chunks {
+		b.WriteString(c.body)
+	}
+	return b.String()
 }
 
 // args returns the arguments a call of tool streamed so far, and whether
@@ -117,9 +173,9 @@ func (t *toolArgsJSON) args(tool string) (map[string]any, bool) {
 	if t.overflowed {
 		return nil, false
 	}
-	if t.buf.Len() != t.decodedLen || tool != t.decodedTool {
-		t.decodedLen, t.decodedTool = t.buf.Len(), tool
-		t.decoded = decodePartialJSON(t.buf.String())
+	if t.version != t.decodedVersion || tool != t.decodedTool {
+		t.decodedVersion, t.decodedTool = t.version, tool
+		t.decoded = decodePartialJSON(t.document())
 		if path := t.decoded.Truncated; len(path) > 0 && !streamsToolArg(tool, t.decoded.Value, path) {
 			t.decoded.Value = withoutPath(t.decoded.Value, path).(map[string]any)
 		}
