@@ -142,15 +142,16 @@ func TestInterjectHintClearsOnFocusSwitch(t *testing.T) {
 	require.Empty(t, fe.queuedMsgLabel.Message())
 }
 
-// TestRosterShowsStoppedAgents: a stopped agent stays on the roster.
-// Dismissing or stopping an agent must not make it silently vanish from the
-// strip -- an entry disappearing underneath the user is jarring, and the
-// stopped agent can still be read (it merely errors on send). The
-// duplicate-tombstone spam that once motivated hiding them is fixed at the
-// source: the CLI reseeds the one instance in place instead of stopping it
-// and spawning a successor on every wholesale LLM replacement (see
-// Agent.reseed).
-func TestRosterShowsStoppedAgents(t *testing.T) {
+// TestRosterKeepsStoppedAgentsReachable: a stopped agent never silently
+// vanishes. STOPPED means something real -- a dismissed worker, whose
+// snapshot can still be read (it merely errors on send) -- so the strip folds
+// it into a "+N done" chip rather than spending a tab on it, but it stays
+// counted there, the cycle still walks onto it, and focusing it brings its
+// tab back. It folds only once focus moves: stopping under the user's eyes
+// leaves its tab, and every number after it, where they were. (Hiding
+// stopped agents outright was tried, and reverted: see
+// hack/designs/resume-from-trace.md §6.)
+func TestRosterKeepsStoppedAgentsReachable(t *testing.T) {
 	handler := &focusShellHandler{target: "agent-chief"}
 	db := rosterDB(t)
 	fe := focusTestFrontend(t, db, handler)
@@ -162,14 +163,99 @@ func TestRosterShowsStoppedAgents(t *testing.T) {
 	})
 	fe.updateAgentRoster()
 
-	// Both entries remain: the stopped scout is still listed.
-	entries := fe.agentRosterEntries()
-	require.Len(t, entries, 2)
-	require.Equal(t, "chief", entries[0].Name)
-	require.Equal(t, "scout", entries[1].Name)
-	require.Equal(t, "STOPPED", entries[1].State)
+	// Focus has not moved, so neither has the strip.
+	view := fe.agentRosterView()
+	require.Equal(t, []string{"chief", "scout"}, rosterTabLabels(fe))
+	require.Equal(t, "STOPPED", view.Tabs[1].State)
+	require.Zero(t, view.Done)
 
-	// And the strip still shows it.
+	// Over to the scout and back: now it folds.
+	fe.enterNavMode()
+	pressNavKey(t, fe, ']')
+	require.Equal(t, "scout", focusedRosterName(t, fe))
+	pressNavKey(t, fe, ']')
+	require.Equal(t, "chief", focusedRosterName(t, fe))
+
+	// Folded, not gone: the chip counts it, and the roster still holds it.
+	view = fe.agentRosterView()
+	require.Len(t, view.Tabs, 1)
+	require.Equal(t, "chief", view.Tabs[0].Name)
+	require.Equal(t, 1, view.Done)
+	order := fe.agentRosterOrder()
+	require.Len(t, order, 2)
+	require.Equal(t, "scout", order[1].Name)
+	fe.updateAgentRoster()
 	frame := strings.Join(fe.tui.Step(), "\n")
-	require.Contains(t, frame, "scout")
+	require.Contains(t, frame, "+1 done")
+	require.True(t, fe.agentRoster.Switchable(), "a folded agent is still somewhere to switch to")
+
+	// The cycle walks onto it, and focus gives it its tab back.
+	pressNavKey(t, fe, ']')
+	require.Equal(t, "scout", focusedRosterName(t, fe))
+	view = fe.agentRosterView()
+	require.Len(t, view.Tabs, 2)
+	require.Zero(t, view.Done)
+}
+
+// TestRosterTabsHoldStillUntilFocusMoves: a worker that stops while the
+// user reads the strip keeps its tab, so the number they were about to
+// press still names the agent it named a moment ago.
+func TestRosterTabsHoldStillUntilFocusMoves(t *testing.T) {
+	runFocusTest(t, func(t *testing.T) {
+		db := dagui.NewDB()
+		calls, snapshots := rosterTraceFor("chief", "w1", "w2", "w3")
+		for digest, call := range calls {
+			db.Calls[digest] = call
+		}
+		db.ImportSnapshots(snapshots)
+		for _, w := range []string{"w1", "w2", "w3"} {
+			publishAgentControl(t, db, "agent-"+w, func(a *agentcontrol.Agent) { a.Parent = "agent-chief" })
+		}
+		handler := &focusShellHandler{target: "agent-chief"}
+		fe := focusTestFrontend(t, db, handler)
+		require.Equal(t, []string{"chief", "w1", "w2", "w3"}, rosterTabLabels(fe))
+
+		publishAgentControl(t, db, "agent-w1", func(a *agentcontrol.Agent) {
+			a.State, a.StopReason = "STOPPED", "EXPLICIT"
+		})
+		fe.updateAgentRoster()
+		require.Equal(t, []string{"chief", "w1", "w2", "w3"}, rosterTabLabels(fe))
+
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '3', Mod: uv.ModCtrl}))
+		awaitFocus(t, fe, handler, "agent-w2")
+
+		require.True(t, pressEditlineKey(t, fe, uv.Key{Code: '1', Mod: uv.ModCtrl}))
+		awaitFocus(t, fe, handler, "agent-w2", "agent-chief")
+		require.Equal(t, []string{"chief", "w2", "w3"}, rosterTabLabels(fe), "focus moved, so w1 folds")
+		require.Equal(t, 1, fe.agentRosterView().Done)
+	})
+}
+
+// TestRosterBrowsingDoesNotUnfoldStoppedAgents: a cycle passing a folded
+// STOPPED agent whose handle cannot be rebuilt marks it read-only -- which
+// must not give it a tab for good. It stays folded, and once its payload
+// arrives the cycle takes it again.
+func TestRosterBrowsingDoesNotUnfoldStoppedAgents(t *testing.T) {
+	db := rosterDB(t)
+	publishAgentControl(t, db, "agent-scout", func(a *agentcontrol.Agent) {
+		a.State, a.StopReason = "STOPPED", "EXPLICIT"
+	})
+	scoutCall := db.Calls["sha256:scout"]
+	delete(db.Calls, "sha256:scout")
+	handler := &focusShellHandler{target: "agent-chief"}
+	fe := focusTestFrontend(t, db, handler)
+	require.Equal(t, []string{"chief"}, rosterTabLabels(fe))
+	require.Equal(t, 1, fe.agentRosterView().Done)
+
+	require.True(t, fe.cycleAgent(1), "the first pass reports the failure")
+	require.Error(t, fe.promptErr)
+	fe.setPromptError(nil)
+	require.Equal(t, []string{"chief"}, rosterTabLabels(fe), "a failed rebuild is no reason to unfold")
+	require.Equal(t, 1, fe.agentRosterView().Done)
+	require.False(t, fe.cycleAgent(1), "and from then on the cycle passes it by")
+
+	db.Calls["sha256:scout"] = scoutCall
+	require.True(t, fe.cycleAgent(1))
+	require.Equal(t, "scout", focusedRosterName(t, fe), "the payload arrived, so the cycle retries it")
+	require.NoError(t, fe.promptErr)
 }

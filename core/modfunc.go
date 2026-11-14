@@ -1076,6 +1076,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	})
 	fnCall.ResultScope = dagql.CurrentResultScope(ctx)
 	fnCall.composingAgentHandle = composingAgentHandle(ctx)
+	fnCall.inheritedAgentHandle = inheritedAgentHandle(ctx)
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}

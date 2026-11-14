@@ -208,7 +208,7 @@ type Editor {
 	// tool listing can succeed without loading the receiver; the next turn must
 	// actually reconstruct it and invoke its module-defined method.
 	target := connect(ctx, t)
-	restored, err := rehydrateAgent(ctx, target, string(snapshot), rand.Text(), "restored", "IDLE", "")
+	restored, err := rehydrateAgent(ctx, t, target, string(snapshot), rand.Text(), "restored", "IDLE", "")
 	require.NoError(t, err)
 	_, reply, err := restored.sendAndWait(ctx, t, "read the marker")
 	require.NoError(t, err)

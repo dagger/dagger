@@ -111,7 +111,7 @@ func spawnComposed(ctx context.Context, t *testctx.T, c *dagger.Client, base *co
 	}, &dagger.Response{Data: &result}); err != nil {
 		return nil, nil, err
 	}
-	agent := &agentHandle{c: c, agentID: result.Node.Spawn}
+	agent := ownedAgent(ctx, t, c, result.Node.Spawn)
 	out, err := agent.run(ctx, t, "snapshot { id }")
 	if err != nil {
 		return nil, nil, err
@@ -275,7 +275,7 @@ func spawnURI(ctx context.Context, t *testctx.T, c *dagger.Client, ws *core.Work
 func restoreComposer(ctx context.Context, t *testctx.T, target *dagger.Client, agent *agentHandle, recipe core.ID) (*agentHandle, *core.LLM) {
 	t.Helper()
 	info := agent.mustRun(ctx, t, "handle name")
-	restored, err := rehydrateAgent(ctx, target, string(recipe), info.Get("handle").String(), info.Get("name").String(), "IDLE", "")
+	restored, err := rehydrateAgent(ctx, t, target, string(recipe), info.Get("handle").String(), info.Get("name").String(), "IDLE", "")
 	require.NoError(t, err)
 	seed := restored.mustRun(ctx, t, "snapshot { id }").Get("snapshot.id").String()
 	return restored, core.Ref[*core.LLM](core.NewQuery(target), core.ID(seed))
@@ -1485,11 +1485,11 @@ func (LLMSuite) TestRecomposeWorkerIdentity(ctx context.Context, t *testctx.T) {
 		target := connect(ctx, t)
 		restoredChiefSeed, err := core.Ref[*core.LLM](core.NewQuery(target), chiefRecipe).ID(ctx)
 		require.NoError(t, err)
-		_, err = rehydrateAgent(ctx, target, string(restoredChiefSeed), root.Get("handle").String(), "chief", "IDLE", "")
+		_, err = rehydrateAgent(ctx, t, target, string(restoredChiefSeed), root.Get("handle").String(), "chief", "IDLE", "")
 		require.NoError(t, err)
 		restoredWorkerSeed, err := core.Ref[*core.LLM](core.NewQuery(target), workerRecipe).ID(ctx)
 		require.NoError(t, err, "load the snapshot before spawning its owning worker")
-		restoredWorker, err := rehydrateAgentWithParent(ctx, target, string(restoredWorkerSeed), matches[1], "helper", "IDLE", "", root.Get("handle").String())
+		restoredWorker, err := rehydrateAgentWithParent(ctx, t, target, string(restoredWorkerSeed), matches[1], "helper", "IDLE", "", root.Get("handle").String())
 		require.NoError(t, err)
 		_, _, err = restoredWorker.sendAndWait(ctx, t, "restored worker")
 		require.NoError(t, err)
@@ -1535,7 +1535,7 @@ func spawnWithExpertise(ctx context.Context, t *testctx.T, c *dagger.Client, llm
 		Query:     `query($id: ID!, $name: String!, $entries: [ID!]!) { node(id: $id) { ... on LLM { spawn(name: $name, expertise: $entries) } } }`,
 		Variables: map[string]any{"id": id, "name": name, "entries": entries},
 	}, &dagger.Response{Data: &result}))
-	return &agentHandle{c: c, agentID: result.Node.Spawn}
+	return ownedAgent(ctx, t, c, result.Node.Spawn)
 }
 
 func (LLMSuite) TestComposeTransformURIIdentity(ctx context.Context, t *testctx.T) {
@@ -1762,15 +1762,63 @@ func (AgentRuntimeSuite) TestParentLineageAndRestore(ctx context.Context, t *tes
 	childRecipe, err := sink.captureLLMRecipe(ctx, t, c, childSnapshot)
 	require.NoError(t, err)
 	target := connect(ctx, t)
-	restoredRoot, err := rehydrateAgent(ctx, target, string(rootRecipe), rootHandle, "root", "IDLE", "")
+	restoredRoot, err := rehydrateAgent(ctx, t, target, string(rootRecipe), rootHandle, "root", "IDLE", "")
 	require.NoError(t, err)
-	restoredChild, err := rehydrateAgentWithParent(ctx, target, string(childRecipe), childInfo.Get("handle").String(), "child", "IDLE", "", rootHandle)
+	restoredChild, err := rehydrateAgentWithParent(ctx, t, target, string(childRecipe), childInfo.Get("handle").String(), "child", "IDLE", "", rootHandle)
 	require.NoError(t, err)
 	require.Nil(t, restoredRoot.mustRun(ctx, t, "parent { handle }").Get("parent").Value())
 	restored := restoredChild.mustRun(ctx, t, "parent { name handle parent { handle } }")
 	require.Equal(t, rootHandle, restored.Get("parent.handle").String())
 	require.Equal(t, "root", restored.Get("parent.name").String())
 	require.Nil(t, restored.Get("parent.parent").Value())
+}
+
+// An agent's tool that runs a nested client — here the dagger CLI in a
+// withExec with privileged nesting, standing in for a test binary or a CLI
+// connecting back to the engine — has no function call record of its own,
+// yet the agents that client spawns belong to the agent whose tool ran it.
+func (AgentRuntimeSuite) TestNestedExecClientSpawnLineage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	nestedQuery := fmt.Sprintf(`{ llm(model: %q) { spawn(name: "nested") } }`, emptyReplayModel)
+	source := fmt.Sprintf(`
+type Lineage {
+  agent(base: LLM!): LLM! @agent {
+    base.withTools(currentNode)
+  }
+
+  @cache(policy: FunctionCachePolicy.Never)
+  nest(ws: Workspace!): String! {
+    container.from(%q)
+      .withMountedFile(%q, ws.file("/bin/dagger"))
+      .withEnvVariable("CACHEBUST", UUID.v7)
+      .withExec(["dagger", "query"], stdin: %q, experimentalPrivilegedNesting: true)
+      .stdout
+  }
+}
+`, alpineImage, testCLIBinPath, nestedQuery)
+	ws := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.lineage]\nsource = \"lineage\"\n").
+		WithNewFile("lineage/dagger.json", `{"name":"lineage","engineVersion":"v1.0.0-0","sdk":"dang"}`).
+		WithNewFile("lineage/main.dang", source).
+		WithFile("bin/dagger", daggerCliFile(t, c)).
+		AsWorkspace()
+	model := cannedRecordingModel(ctx, t, c, recomposeRecordingTurn(core.NewQuery(c).LLM(), "nest", "nest"))
+	entries, err := uriExpertiseIDs(ctx, c, ws, "lineage/agent")
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	worker := spawnWithExpertise(ctx, t, c, core.NewQuery(c).LLM(core.LLMOpts{Model: model}).WithWorkspace(ws), "worker", entries)
+	workerHandle := worker.mustRun(ctx, t, "handle").Get("handle").String()
+
+	_, _, err = worker.sendAndWait(ctx, t, "nest")
+	require.NoError(t, err)
+	transcript := worker.mustRun(ctx, t, "snapshot { transcript }").Get("snapshot.transcript").String()
+	matches := regexp.MustCompile(`spawn\\?"\s*:\s*\\?"([A-Za-z0-9+/=_-]+)`).FindStringSubmatch(transcript)
+	require.Len(t, matches, 2, transcript)
+	nested := ownedAgent(ctx, t, c, matches[1])
+	lineage := nested.mustRun(ctx, t, "name parent { name handle }")
+	require.Equal(t, "nested", lineage.Get("name").String())
+	require.Equal(t, "worker", lineage.Get("parent.name").String(), transcript)
+	require.Equal(t, workerHandle, lineage.Get("parent.handle").String())
 }
 
 func (LLMSuite) TestSpawnExpertiseFailureCanRetry(ctx context.Context, t *testctx.T) {

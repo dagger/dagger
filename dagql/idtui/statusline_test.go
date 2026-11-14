@@ -43,9 +43,7 @@ func TestRenderContextBar(t *testing.T) {
 // roster and context meter stay at the left, while usage, cost, subscription,
 // and model form one right-aligned group in that order.
 func TestStatusLineRendersReorientedLayout(t *testing.T) {
-	roster := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry {
-		return []AgentRosterEntry{{Name: "interactive", State: "IDLE"}}
-	})
+	roster := NewAgentRoster(termenv.Ascii, rosterTabs([]AgentRosterEntry{{Name: "interactive", State: "IDLE"}}))
 	sl := &StatusLine{
 		profile: termenv.Ascii,
 		roster:  roster,
@@ -85,9 +83,7 @@ func TestStatusLineRendersReorientedLayout(t *testing.T) {
 // TestStatusLineRendersRosterWithoutModel keeps the roster visible during the
 // startup window before model metadata reaches the frontend.
 func TestStatusLineRendersRosterWithoutModel(t *testing.T) {
-	roster := NewAgentRoster(termenv.Ascii, func() []AgentRosterEntry {
-		return []AgentRosterEntry{{Name: "interactive", State: "RUNNING"}}
-	})
+	roster := NewAgentRoster(termenv.Ascii, rosterTabs([]AgentRosterEntry{{Name: "interactive", State: "RUNNING"}}))
 	sl := &StatusLine{profile: termenv.Ascii, roster: roster}
 
 	term := tuist.NewHeadlessTerminal(80, 1)

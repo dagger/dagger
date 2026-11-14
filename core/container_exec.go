@@ -2394,6 +2394,13 @@ func (state *ContainerExecState) evaluateOutputs(ctx context.Context, container 
 				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
 				EngineWork:            state.EngineWork,
 			}
+			// A plain exec's clients have no FunctionCall record to carry the
+			// agent this exec runs for, so its metadata does (lineage only;
+			// see inheritedAgentHandle). A function runtime's clients get it
+			// from their own call's record instead.
+			if state.FunctionCall == nil {
+				nestedClientMetadata.LineageAgent = lineageAgentHandle(ctx)
+			}
 		}
 
 		procInfo := executor.ProcessInfo{Meta: meta}

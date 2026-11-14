@@ -274,6 +274,14 @@ type ClientMetadata struct {
 	// the processes the entrypoint starts.
 	SDKEntrypoint bool `json:"-"`
 
+	// LineageAgent is the handle of the agent on whose behalf the exec or
+	// service that started this nested client ran. Agents the client
+	// spawns record it as their parent when nothing nearer claims them (see
+	// core's inheritedAgentHandle): lineage only, never message provenance.
+	// Engine-internal: never read from client headers, so a client cannot
+	// claim an agent it does not run for.
+	LineageAgent string `json:"-"`
+
 	// EngineWork marks the nested client of a process that does the engine's
 	// own work, such as one an SDK starts to build a module's runtime. Its
 	// calls are internal in telemetry. Engine-internal: never read from
