@@ -261,3 +261,34 @@ func TestEntriesHeldAnswersAsEntryInfo(t *testing.T) {
 		}
 	}
 }
+
+// EntriesFacts answers, for each entry, the entry's own facts as
+// RemoteHoldingInfo reports them for every holding on it, recipes
+// included, and skips a number with no entry.
+func TestEntriesFactsAnswersAsRemoteHoldingInfo(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	f := RemoteHolding{Recipe: testDigest("f"), Request: testDigest("f"), Field: "f"}
+	g := RemoteHolding{Recipe: testDigest("g"), Request: testDigest("g-other"), Field: "g"}
+	a.call(callRow{key: HolderKey{"cache-a", 1}, session: "cache-a", holding: f})
+	a.call(callRow{key: HolderKey{"cache-b", 2}, session: "cache-b", holding: f})
+	a.call(callRow{key: HolderKey{"cache-a", 3}, session: "cache-a", holding: g})
+	require.Empty(t, a.collect())
+
+	keys := []HolderKey{{"cache-a", 1}, {"cache-b", 2}, {"cache-a", 3}}
+	held := map[HolderKey]RemoteHeldEntry{}
+	for _, key := range keys {
+		h, ok := cloud.RemoteHoldingInfo(key)
+		require.True(t, ok)
+		held[key] = h
+	}
+	numbers := []uint64{held[keys[2]].Number, 1 << 40, held[keys[0]].Number}
+	facts := cloud.EntriesFacts(numbers)
+	require.Len(t, facts, 2, "the missing number is skipped")
+	for i, key := range []HolderKey{keys[2], keys[0]} {
+		want := held[key]
+		require.Equal(t, EntryFacts{Number: want.Number, Stored: want.Stored, StoredExpiresAtUnix: want.StoredExpiresAtUnix, Recipes: want.Recipes}, facts[i])
+	}
+	require.Equal(t, held[keys[0]].Number, held[keys[1]].Number, "both engines' f are one entry")
+}
