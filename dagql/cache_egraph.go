@@ -1573,8 +1573,11 @@ func (c *Cache) teachContentDigest(ctx context.Context, shared *sharedResult, co
 		if shared.storedRecordBytes != 0 {
 			shared.storedRecordBytes += grown
 		}
-		// A stored bundle of the entry carries the new frame.
+		// A stored bundle of the entry carries the new frame, and those of its
+		// class mates whatever the identity taught joined; this write hands
+		// back no marks.
 		c.stampEntryLocked(shared, StampFrame)
+		c.stampPendingLocked()
 		c.traceResultCallFrameUpdated(ctx, shared, "teach_content_digest", baseFrame, frame)
 		c.flushShareNotificationsLocked(ctx, notify, notifyOwner)
 		c.egraphMu.Unlock()
