@@ -54,9 +54,12 @@ func TestModuleSearchOutputSortedBySource(t *testing.T) {
 }
 
 func TestLoadSearchRegistryIncludesSDKsUnlessFiltered(t *testing.T) {
-	all, err := loadSearchRegistry(false)
+	// Search reads the same catalog as recommend.
+	loadTestdataModuleCatalog(t)
+
+	all, err := loadSearchRegistry(t.Context(), false)
 	require.NoError(t, err)
-	sdkOnly, err := loadSearchRegistry(true)
+	sdkOnly, err := loadSearchRegistry(t.Context(), true)
 	require.NoError(t, err)
 
 	repos := func(entries []registryModule) []string {
@@ -67,8 +70,10 @@ func TestLoadSearchRegistryIncludesSDKsUnlessFiltered(t *testing.T) {
 		return out
 	}
 	require.Contains(t, repos(all), "dagger.io/go")
+	require.Contains(t, repos(all), "dagger.io/skill")
 	require.Contains(t, repos(all), "dagger.io/sdk/go")
 	require.NotContains(t, repos(sdkOnly), "dagger.io/go")
+	require.NotContains(t, repos(sdkOnly), "dagger.io/skill")
 	require.Contains(t, repos(sdkOnly), "dagger.io/sdk/go")
 	for _, repo := range repos(all) {
 		require.Regexp(t, `^dagger\.io/`, repo)
