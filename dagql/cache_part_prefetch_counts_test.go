@@ -93,6 +93,55 @@ func TestPartPrefetchCountsDroppedJobs(t *testing.T) {
 	require.Zero(t, counts.Fetched)
 }
 
+// The bytes fetched and used are split by where their offer sits in the
+// order offers were accepted, in tenths: with ten offers, each its own tenth.
+func TestPartPrefetchCountsByOrderOfAcceptance(t *testing.T) {
+	var chains []chainFixture
+	for i := range 10 {
+		chains = append(chains, newChainFixture(t, fmt.Sprintf("order%d", i)))
+	}
+	f := newExhaustionFixture(t, chains...)
+	f.cache.partPrefetchConfig = &partPrefetchConfig{largeBlob: 1, budget: 1 << 30, ttl: time.Hour, queue: 16}
+	t.Cleanup(f.cache.closePartPrefetch)
+	key, err := partAddressKey(f.address)
+	require.NoError(t, err)
+	var offers []*partOffer
+	for i, chain := range chains {
+		row := f.receiver
+		if i > 0 {
+			row = persistedListTestResult(t, f.ctx, f.cache, f.srv, fmt.Sprintf("order-row-%d", i), &transferTestValue{Text: "pending"})
+		}
+		f.acceptOffer(t, row, chain)
+		f.cache.egraphMu.Lock()
+		offers = append(offers, row.cacheSharedResult().partOfferLocked(key))
+		f.cache.egraphMu.Unlock()
+	}
+	p := f.cache.partPrefetcher.Load()
+	require.NotNil(t, p)
+	for _, i := range []int{0, 4, 9} {
+		p.mu.Lock()
+		job := p.jobs[partPrefetchJobKey{offer: offers[i]}]
+		p.mu.Unlock()
+		require.NotNil(t, job)
+		p.run(f.ctx, job)
+	}
+	// An install of the first offer's part uses its bytes.
+	f.cache.partPrefetchConsumed(f.ctx, chains[0].chain.Layers)
+
+	counts := f.cache.PartPrefetchCounts()
+	require.Equal(t, int64(10), counts.Offers)
+	for i, tenth := range counts.ByTenth {
+		switch i {
+		case 0:
+			require.Equal(t, PartPrefetchTenth{Fetched: chainBytes(chains[0]), Used: chainBytes(chains[0])}, tenth, "tenth %d", i+1)
+		case 4, 9:
+			require.Equal(t, PartPrefetchTenth{Fetched: chainBytes(chains[i])}, tenth, "tenth %d", i+1)
+		default:
+			require.Zero(t, tenth, "tenth %d", i+1)
+		}
+	}
+}
+
 // chainBytes is the size of chain's blobs.
 func chainBytes(chain chainFixture) int64 {
 	var n int64
