@@ -28,9 +28,16 @@ type approvalSpec struct {
 	Subject string
 	// Question is the question to ask, as literal text already escaped for
 	// terminals (see literalText), without the trailing "?": the broker
-	// appends who asks. Frontends may match its leading words, so keep each
-	// kind's wording stable.
+	// appends who asks. It asks for permission ("Allow push to ..."), for
+	// frontends that show only text (the yes/no fallback). Frontends and
+	// tests may match its leading words, so keep each kind's wording stable.
 	Question string
+	// Action is the bare question frontends that render the requester and
+	// the grant choices themselves show verbatim: the action alone, as
+	// literal text escaped like Question, without "Allow" (the choices say
+	// that) or the trailing "?", e.g. "Push to <remote> @ <ref>". Empty
+	// falls back to Question.
+	Action string
 	// Danger marks a destructive operation, e.g. a force-push. Frontends
 	// highlight it, and it is never offered forever.
 	Danger bool
@@ -141,9 +148,14 @@ func (srv *Server) requestApproval(ctx context.Context, client, owner *clientRun
 		module:  resolvedModuleLoadIdentity(requester.module),
 		subject: spec.Subject,
 	}
+	action := spec.Action
+	if action == "" {
+		action = spec.Question
+	}
 	req := &prompt.ApprovalRequest{
 		Kind:      spec.Kind,
 		Prompt:    approvalPrompt(spec.Question, requester),
+		Question:  action + "?",
 		Subject:   spec.Subject,
 		Requester: requester.proto(),
 		Danger:    spec.Danger,

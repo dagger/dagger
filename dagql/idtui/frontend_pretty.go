@@ -359,6 +359,18 @@ type frontendPretty struct {
 	activeForm   *activePromptForm
 	pendingForms []*promptFormRequest
 
+	// Pending approvals, oldest first. Unlike forms they are not serialized
+	// and never take focus on arrival: each renders under the call that
+	// requested it (see approval.go).
+	approvals    []*pendingApproval
+	approvalSeq  uint64
+	approvalsGen uint64
+	// progressWindow is the [start, end) range of the last rendered progress
+	// lines that is on screen, and progressTopGaps the gaps between its top
+	// trees: together they tell whether an approval's row scrolled away.
+	progressWindow  [2]int
+	progressTopGaps []int
+
 	// track whether we've already spawned the run function
 	spawned bool
 
@@ -652,6 +664,9 @@ type SpanTreeView struct {
 	selfLineCount   int   // lines from self content (before children)
 	childGapCounts  []int // gap line count before each child
 	childLineCounts []int // total line count from each child's RenderChild
+	// approvalLines records where each inline approval's first line sits,
+	// relative to this tree's first line.
+	approvalLines map[*pendingApproval]int
 }
 
 var _ tuist.Component = (*SpanTreeView)(nil)
@@ -738,6 +753,13 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		// still renders (collapsed the same way), so the rows navigation
 		// walks are the rows on screen.
 		s.renderRowExtras(ctx, r, row, visualFocused)
+
+		// A pending approval this row's call is blocked on sits right
+		// beneath it, where the user navigates to answer it.
+		if approvals := s.renderInlineApprovals(ctx, r, row, s.selfLineCount); len(approvals) > 0 {
+			s.selfLineCount += len(approvals)
+			ctx.Lines(approvals...)
+		}
 	}
 
 	// Render children (already synced by syncSpanTreeState).
@@ -2132,6 +2154,8 @@ func (fe *frontendPretty) completePromptForm(active *activePromptForm, invokeRes
 	fe.tui.RemoveChild(active.spacer)
 	fe.tui.RemoveChild(active.trailer)
 	fe.activeForm = nil
+	// The form may have opened over an approval that has since gone away.
+	fe.repairFocus()
 	fe.syncHardwareCursor()
 
 	req := active.request
@@ -2910,6 +2934,10 @@ func (fe *frontendPretty) navigationFocused() bool {
 	if focused == fe {
 		return true
 	}
+	if v, ok := focused.(*ApprovalView); ok && !v.approval.finished {
+		// An approval holds focus only while navigating onto it.
+		return true
+	}
 	for _, tree := range fe.spanTrees {
 		if focused == tree {
 			return true
@@ -2919,6 +2947,9 @@ func (fe *frontendPretty) navigationFocused() bool {
 }
 
 func (fe *frontendPretty) navigationTarget() tuist.Component {
+	if a := fe.focusableApproval(); a != nil {
+		return a.view
+	}
 	if fe.FocusedSpan.IsValid() {
 		if tree := fe.spanTrees[fe.FocusedSpan]; tree != nil {
 			return tree
@@ -3418,6 +3449,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 	if fe.formFocused() {
 		return fe.activeForm.model.KeyBinds()
 	}
+	if binds := fe.approvalKeys(); binds != nil {
+		return binds
+	}
 	if view, ok := fe.commandView.(interface{ HideKeymap() bool }); ok && view.HideKeymap() {
 		return nil
 	}
@@ -3533,6 +3567,11 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		// Roster focus is shown only once there is more than one agent to
 		// switch between. A single-agent roster remains a state display.
 		bnds = append(bnds, fe.promptAgentBindings()...)
+		if len(fe.approvals) > 0 {
+			// First, so a truncated keymap still names it.
+			bnds = append([]key.Binding{key.NewBinding(key.WithKeys(approvalJumpKey),
+				key.WithHelp("alt+a", "answer approval"))}, bnds...)
+		}
 		if fe.acceptsPromptImages() {
 			bnds = append(bnds, key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste image")))
 		}
@@ -3608,6 +3647,12 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding { //nolint:goc
 		key.NewBinding(key.WithKeys("N"),
 			key.WithHelp("N", "prev"),
 			KeyEnabled(fe.searchQuery != "")),
+	}
+	if len(fe.approvals) > 0 {
+		// First, so a truncated keymap still says how to reach a blocked
+		// agent's approval.
+		binds = append([]key.Binding{key.NewBinding(key.WithKeys(approvalNavKey, approvalJumpKey),
+			key.WithHelp(approvalNavKey, "answer approval"))}, binds...)
 	}
 	// Roster focus uses unmodified keys because nav mode is the one place they
 	// are free, and is shown only once there is more than one agent to switch.
@@ -3805,13 +3850,32 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			chromeReserve = min(len(chrome)+1, avail/2)
 		}
 	}
-	progressLines := fe.renderProgressLines(r, ctx, reserved+len(zoomHeader)+chromeReserve)
+	// Approvals with no row to sit under yet render right below the rows,
+	// ahead of the chrome, so cropping never hides them.
+	floating := fe.renderFloatingApprovals(ctx)
+	progressReserve := reserved + len(zoomHeader) + chromeReserve + len(floating)
+	progressLines := fe.renderProgressLines(r, ctx, progressReserve)
+	// An approval whose row the window left off screen gets a one-line cue
+	// in the same place, so nothing blocked goes unseen. The cues take room
+	// from the rows, so render them again around it.
+	if cues := fe.renderApprovalCues(); len(cues) > 0 {
+		progressLines = fe.renderProgressLines(r, ctx, progressReserve+len(cues)+1)
+	}
+	approvalLines := fe.renderApprovalCues()
+	if len(approvalLines) > 0 && len(floating) > 0 {
+		approvalLines = append(approvalLines, "")
+	}
+	approvalLines = append(approvalLines, floating...)
 	var body []string
 	if len(progressLines) > 0 {
 		body = append(body, progressLines...)
-		if len(chrome) > 0 {
+		if len(chrome) > 0 || len(approvalLines) > 0 {
 			body = append(body, "") // separate tree from logs/tests
 		}
+	}
+	body = append(body, approvalLines...)
+	if len(approvalLines) > 0 && len(chrome) > 0 {
+		body = append(body, "")
 	}
 	// The keymap supplies its own leading gap; content sections only need
 	// separators between them, not a trailing blank line.
@@ -4669,6 +4733,8 @@ func (fe *frontendPretty) formHeight() int {
 //nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
+	// The rows (and their trees) decide where each pending approval renders.
+	defer fe.resolveApprovals()
 	if !fe.reportScopedSubtree && fe.RootFilter == nil {
 		// Promotion reshapes the trace around what the whole run was about: it
 		// hangs the surfaced checks/conversation/generators off the zoomed span
@@ -4907,6 +4973,7 @@ func (fe *frontendPretty) agentRosterEntries() []AgentRosterEntry {
 	}
 	focused := fe.focusedAgentID()
 	agents := fe.db.Agents()
+	awaiting := fe.approvalAgents()
 	entries := make([]AgentRosterEntry, 0, len(agents))
 	for _, agent := range agents {
 		name := agent.Name
@@ -4922,7 +4989,8 @@ func (fe *frontendPretty) agentRosterEntries() []AgentRosterEntry {
 			// addressable, and one whose handle failed to rebuild has been
 			// proven not to be. Either way the entry is watch-only, and says
 			// so rather than pretending it can be spoken to.
-			ReadOnly: agent.CallDigest == "" || fe.unaddressableAgents[agent.ID],
+			ReadOnly:         agent.CallDigest == "" || fe.unaddressableAgents[agent.ID],
+			AwaitingApproval: agent.ID != "" && awaiting[agent.ID],
 		})
 	}
 	return entries
@@ -5418,6 +5486,7 @@ func (fe *frontendPretty) updateAgentRoster() {
 		init:          true,
 		focused:       focused,
 		unaddressable: fe.unaddressableGen,
+		approvals:     fe.approvalsGen,
 	}
 	if fe.db != nil {
 		inputs.agents = fe.db.Agents()
@@ -5449,13 +5518,15 @@ type agentRosterInputs struct {
 	agents        []*dagui.AgentNode
 	focused       string
 	unaddressable uint64
+	approvals     uint64
 }
 
 func (in agentRosterInputs) same(other agentRosterInputs) bool {
 	return in.init == other.init &&
 		sameAgentNodes(in.agents, other.agents) &&
 		in.focused == other.focused &&
-		in.unaddressable == other.unaddressable
+		in.unaddressable == other.unaddressable &&
+		in.approvals == other.approvals
 }
 
 // sameAgentNodes reports whether two db.Agents() results are the same
@@ -5973,6 +6044,7 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 // components and returns the output as lines. Truncates below the focused
 // item so it stays onscreen.
 func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, chromeHeight int) []string {
+	fe.progressTopGaps = nil
 	if fe.rowsView == nil {
 		return nil
 	}
@@ -6005,6 +6077,11 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 	if len(allLines) == 0 {
 		return nil
 	}
+	// Until a crop below says otherwise, every line is on screen. The window
+	// is what lets an approval whose row scrolled away be cued (see
+	// offscreenApprovals).
+	fe.progressTopGaps = topGapCounts
+	fe.progressWindow = [2]int{0, len(allLines)}
 
 	// Find the focused line by walking up from the focused node.
 	focusLine := -1
@@ -6046,8 +6123,14 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 				// here, since the focus sits more than a viewport above the end.
 				end := flowingCropEnd(fe, focusLine, max(viewportHeight-1, 1), len(allLines))
 				below := len(allLines) - end
+				fe.progressWindow = [2]int{max(0, end-(viewportHeight-1)), end}
 				return append(allLines[:end:end], fe.cropHintLine(below))
 			}
+		}
+		if h := ctx.ScreenHeight(); h > 0 {
+			// Tuist shows the bottom of the flowing output; the rest has
+			// scrolled into the terminal's scrollback.
+			fe.progressWindow[0] = max(0, len(allLines)-max(h-chromeHeight, 1))
 		}
 		return allLines
 	}
@@ -6075,6 +6158,7 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		focusHeight = focused.selfLineCount
 	}
 	end := cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
+	fe.progressWindow = [2]int{max(0, end-viewportHeight), end}
 	return allLines[max(0, end-viewportHeight):end]
 }
 
@@ -6176,7 +6260,13 @@ func (s *SpanTreeView) totalLineCount() int {
 // through the entire tree (O(nodes)), it walks up from the focused
 // SpanTreeView to the root, accumulating offsets (O(depth × siblings)).
 func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
-	focused, ok := fe.spanTrees[fe.FocusedSpan]
+	return fe.findSpanLine(fe.FocusedSpan, topGapCounts)
+}
+
+// findSpanLine returns the line offset of a rendered span's tree within the
+// rendered progress output, or -1 if not found.
+func (fe *frontendPretty) findSpanLine(spanID dagui.SpanID, topGapCounts []int) int {
+	focused, ok := fe.spanTrees[spanID]
 	if !ok {
 		return -1
 	}
@@ -6320,6 +6410,10 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
 	}
+	// An approval holds focus only while the cursor is on it: one under
+	// another row loses it, and so does a floating one once the cursor moves
+	// at all (a search jump, say).
+	fe.disarmApprovals(newSpan, oldSpan != newSpan)
 	if moveKeyboard {
 		fe.focusNavigationTarget()
 	}
@@ -6339,6 +6433,9 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 // manualFocus is like focus but also deselects the current search match
 // so that n/N seek relative to the new position.
 func (fe *frontendPretty) manualFocus(row *dagui.TraceRow) {
+	// Navigating to a row leaves any approval the cursor was on: approvals
+	// are stops of their own (see stepApproval), never the row's.
+	fe.disarmApprovals(dagui.SpanID{}, true)
 	fe.focus(row)
 	if fe.searchQuery != "" {
 		fe.searchIdx = -1
@@ -6369,6 +6466,12 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 
 	// Let the completion menu handle keys when visible (up/down/esc/tab).
 	if fe.completionMenu != nil && fe.completionMenu.HandleKeyPress(ctx, ev) {
+		return true
+	}
+
+	// Answering an approval is a detour: focus returns here after. Only
+	// claimed while one is pending.
+	if keyStr == approvalJumpKey && fe.jumpToApproval() {
 		return true
 	}
 
@@ -6619,6 +6722,12 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 				fe.terminal()
 			}
 		}
+		return
+	}
+
+	if (keyStr == approvalNavKey || keyStr == approvalJumpKey) && fe.jumpToApproval() {
+		// Only claimed while an approval is pending; otherwise the key
+		// falls through to the shell like any unbound one.
 		return
 	}
 
@@ -7120,6 +7229,8 @@ func (fe *frontendPretty) exitSearchMode() {
 	fe.tui.RemoveChild(fe.searchInput)
 	fe.searchInput = nil
 	fe.searchFocus = nil
+	// Search may have opened over an approval that has since gone away.
+	fe.repairFocus()
 	fe.syncHardwareCursor()
 	fe.refreshKeymap()
 }
@@ -7155,6 +7266,12 @@ func (fe *frontendPretty) interceptSearchKey(_ tuist.Context, ev uv.KeyPressEven
 
 func (fe *frontendPretty) enterInsertMode() {
 	if fe.textInput != nil {
+		// Leaving for the prompt leaves any approval the cursor was on.
+		for _, a := range fe.approvals {
+			if a.armed {
+				fe.leaveApproval(a)
+			}
+		}
 		fe.syncPrompt()
 		fe.tui.SetFocus(fe.textInput)
 		fe.syncHardwareCursor()
@@ -7791,6 +7908,9 @@ func (fe *frontendPretty) goEnd() {
 
 func (fe *frontendPretty) goUp() {
 	fe.autoFocus = false
+	if fe.stepApproval(-1) {
+		return
+	}
 	newIdx := fe.focusedIndex() - 1
 	if newIdx < 0 || newIdx >= len(fe.rows.Order) {
 		return
@@ -7800,6 +7920,9 @@ func (fe *frontendPretty) goUp() {
 
 func (fe *frontendPretty) goDown() {
 	fe.autoFocus = false
+	if fe.stepApproval(1) {
+		return
+	}
 	newIdx := fe.focusedIndex() + 1
 	if newIdx >= len(fe.rows.Order) {
 		// at bottom
@@ -10020,11 +10143,14 @@ type TermOutput interface {
 }
 
 // The engine's git push approval (engine/server/git_push.go) asks "Allow
-// force-push to <remote> @ <ref>?" for forced updates. Matching only the
-// prefix keeps a remote or ref that happens to contain the phrase unflagged.
+// force-push to <remote> @ <ref>?" for forced updates, and its bare question
+// (what approvals render) reads "Force-push to <remote> @ <ref>?". Matching
+// only the prefix keeps a remote or ref that happens to contain the phrase
+// unflagged.
 const (
 	forcePushPhrase       = "force-push"
 	forcePushPromptPrefix = "Allow " + forcePushPhrase + " "
+	forcePushAction       = "Force-push"
 )
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
