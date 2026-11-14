@@ -66,7 +66,7 @@ func TestPreparedMergeHoldsNoCopyOfItsRecords(t *testing.T) {
 						require.Equal(t, PersistedRecord{Envelope: PersistedResultEnvelope{PendingOffers: row.Record.Envelope.PendingOffers}}, row.Record,
 							"row %d holds no copy of its record", row.Ordinal)
 						if !c.blobBacked {
-							require.Equal(t, len(bundleRow(bundle, row.Ordinal).Record.Envelope.PendingOffers), len(row.Record.Envelope.PendingOffers),
+							require.Equal(t, len(mergeTestBundleRow(bundle, row.Ordinal).Record.Envelope.PendingOffers), len(row.Record.Envelope.PendingOffers),
 								"an engine's row keeps its offers")
 						}
 					}
@@ -86,7 +86,7 @@ func TestPreparedMergeHoldsNoCopyOfItsRecords(t *testing.T) {
 	}
 }
 
-func bundleRow(bundle ValueBundle, ordinal TransferOrdinal) TransferredValue {
+func mergeTestBundleRow(bundle ValueBundle, ordinal TransferOrdinal) TransferredValue {
 	for _, row := range bundle.Values {
 		if row.Ordinal == ordinal {
 			return row
