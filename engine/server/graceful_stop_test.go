@@ -124,7 +124,9 @@ func TestGracefulStopWithDiscardedStateKeepsWhatOutlivesTheEngine(t *testing.T) 
 			stops = append(stops, decodeEngineEvent[telemetryattrs.EngineStopEvent](t, event))
 		}
 	}
-	require.Equal(t, []telemetryattrs.EngineStopEvent{{Clean: false, SavedEntries: 0}}, stops, "the stop reports that it saved nothing")
+	require.Len(t, stops, 1)
+	require.False(t, stops[0].Clean, "the stop reports that it saved nothing")
+	require.Zero(t, stops[0].SavedEntries, "the stop reports that it saved nothing")
 
 	require.True(t, store.Closed(), "the directory wasn't given up")
 	next, err := cachevolumedir.Open(dir, cachevolumedir.Options{EngineVersion: "test"})
