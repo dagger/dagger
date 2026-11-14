@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/prompt"
@@ -68,7 +69,12 @@ func newGitPushTestSession(t *testing.T, questions prompt.PromptServer, routing 
 		return ctx
 	}
 	return &gitPushTestSession{
-		srv:           &Server{daggerSessions: map[string]*daggerSession{"session": sess}},
+		srv: &Server{
+			daggerSessions: map[string]*daggerSession{"session": sess},
+			// No remote answers unless a test says so: every push asks as it
+			// did before default branches were told apart.
+			gitRemoteHead: func(context.Context, string) (string, error) { return "", core.ErrGitRemoteUnreachable },
+		},
 		sess:          sess,
 		owner:         owner,
 		ownerCtx:      clientContext(owner),
