@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"slices"
@@ -131,6 +132,7 @@ type restoreFile struct {
 	err          error
 	fetchStarted time.Time
 	fetchEnded   time.Time
+	timing       fetchTiming
 
 	// The rest is its lane's alone. unretained are each part's roots to
 	// merge with no retention edge, and releases the holds each committed
@@ -483,6 +485,12 @@ func (r *restorer) logFile(f *restoreFile, level string) {
 	}
 	if !f.report.Fetched.IsZero() {
 		args = append(args, "fetch", f.report.Fetched.Sub(f.report.FetchStarted))
+		if t := f.timing; t.connected {
+			args = append(args, "fetch_conn", t.conn, "fetch_new_conn", t.newConn)
+		}
+		if t := f.timing; t.firstByte {
+			args = append(args, "fetch_ttfb", t.ttfb)
+		}
 	}
 	if f.result.FirstCommit != 0 {
 		args = append(args, "first_commit", time.Unix(0, f.result.FirstCommit).Sub(f.report.Arrived))
@@ -519,7 +527,7 @@ func (r *restorer) reply(req *restoreRequest) {
 // fetch downloads a file whole, and checks its size and digest.
 func (r *restorer) fetch(f *restoreFile) {
 	f.fetchStarted = time.Now()
-	f.data, f.err = r.s.cfg.getFile(r.s.ctx, f.file)
+	f.data, f.timing, f.err = r.s.cfg.getFile(r.s.ctx, f.file)
 	f.fetchEnded = time.Now()
 	close(f.fetched)
 }
@@ -528,44 +536,75 @@ func (r *restorer) fetch(f *restoreFile) {
 // than idle, when it isn't file.Size bytes, or when its bytes aren't the
 // ones file.Digest names. Its errors never include the address, which
 // carries a signature.
-func getSetFile(client *http.Client, idle time.Duration) func(context.Context, protocol.SetFile) ([]byte, error) {
-	return func(ctx context.Context, file protocol.SetFile) ([]byte, error) {
+func getSetFile(client *http.Client, idle time.Duration) func(context.Context, protocol.SetFile) ([]byte, fetchTiming, error) {
+	return func(ctx context.Context, file protocol.SetFile) ([]byte, fetchTiming, error) {
+		// The transport may call the trace from its own goroutines.
+		var mu sync.Mutex
+		var traced fetchTiming
+		timing := func() fetchTiming {
+			mu.Lock()
+			defer mu.Unlock()
+			return traced
+		}
 		if err := file.Digest.Validate(); err != nil {
-			return nil, fmt.Errorf("fetch: %w", err)
+			return nil, timing(), fmt.Errorf("fetch: %w", err)
 		}
 		if file.Size < 0 {
-			return nil, fmt.Errorf("fetch: a size of %d bytes", file.Size)
+			return nil, timing(), fmt.Errorf("fetch: a size of %d bytes", file.Size)
 		}
 		ctx, cancel := context.WithCancelCause(ctx)
 		defer cancel(nil)
 		stalled := time.AfterFunc(idle, func() { cancel(errFetchStalled) })
 		defer stalled.Stop()
+		began := time.Now()
+		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+			GotConn: func(info httptrace.GotConnInfo) {
+				mu.Lock()
+				defer mu.Unlock()
+				traced.conn, traced.newConn, traced.connected = time.Since(began), !info.Reused, true
+			},
+			GotFirstResponseByte: func() {
+				mu.Lock()
+				defer mu.Unlock()
+				traced.ttfb, traced.firstByte = time.Since(began), true
+			},
+		})
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, file.Address.URL, nil)
 		if err != nil {
-			return nil, errors.New("fetch: invalid address")
+			return nil, timing(), errors.New("fetch: invalid address")
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			return nil, fetchError(ctx, err)
+			return nil, timing(), fetchError(ctx, err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("fetch: %s", resp.Status)
+			return nil, timing(), fmt.Errorf("fetch: %s", resp.Status)
 		}
 		buf := bytes.NewBuffer(make([]byte, 0, file.Size))
 		verifier := file.Digest.Verifier()
 		body := &idleBody{Reader: io.LimitReader(resp.Body, file.Size+1), timer: stalled, idle: idle}
 		if _, err := io.Copy(io.MultiWriter(buf, verifier), body); err != nil {
-			return nil, fetchError(ctx, err)
+			return nil, timing(), fetchError(ctx, err)
 		}
 		if int64(buf.Len()) != file.Size {
-			return nil, fmt.Errorf("fetch: %d bytes, the restore says %d", buf.Len(), file.Size)
+			return nil, timing(), fmt.Errorf("fetch: %d bytes, the restore says %d", buf.Len(), file.Size)
 		}
 		if !verifier.Verified() {
-			return nil, errors.New("fetch: the bytes don't match the file's digest")
+			return nil, timing(), errors.New("fetch: the bytes don't match the file's digest")
 		}
-		return buf.Bytes(), nil
+		return buf.Bytes(), timing(), nil
 	}
+}
+
+// fetchTiming is how a file's download began, for its restore's line: its
+// GET's wait for a connection and whether that connection was new, once it
+// had one (connected), and its time to the response's first byte, once that
+// came (firstByte), each from the GET's start.
+type fetchTiming struct {
+	conn, ttfb           time.Duration
+	newConn              bool
+	connected, firstByte bool
 }
 
 // errFetchStalled is the error of a download the store stopped sending.
