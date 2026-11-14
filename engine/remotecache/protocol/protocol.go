@@ -623,6 +623,13 @@ type Restored struct {
 // carried, and Rows what their merges did with them. FirstCommit is the
 // engine's clock, in Unix nanoseconds, when its first part committed, and
 // Error is what stopped it, if anything did.
+//
+// Entries, set when Complete and Already isn't, are the engine entries the
+// file's records landed on, by the numbers the engine's rows, replies and
+// prune events name them by: one for each record the file carries in full
+// (a value with no Held), in the file's order, part by part and within a
+// part in its bundle's Values order, at its first appearance only. A record
+// that landed on no entry, such as a root that had expired, is 0.
 type RestoredFile struct {
 	Digest      digest.Digest `json:"digest"`
 	Complete    bool          `json:"complete,omitempty"`
@@ -632,6 +639,7 @@ type RestoredFile struct {
 	Rows        RowCounts     `json:"rows"`
 	FirstCommit int64         `json:"firstCommit,omitempty"`
 	Error       string        `json:"error,omitempty"`
+	Entries     EntryNumbers  `json:"entries,omitempty"`
 }
 
 // RowCounts counts merged records by what their merge did with each
