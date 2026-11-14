@@ -16598,7 +16598,7 @@ class Prompt(Type):
     async def string(
         self,
         *,
-        default: str | None = None,
+        default: str | None = "",
         multiline: bool | None = False,
     ) -> str:
         """Ask for a text answer.
@@ -16607,8 +16607,7 @@ class Prompt(Type):
         ----------
         default:
             The text the answer starts with, and the answer when nobody can be
-            asked (the client is not interactive). Without one (or with an
-            empty one), that is an error.
+            asked (the client is not interactive).
         multiline:
             Accept several lines.
 
@@ -16627,7 +16626,7 @@ class Prompt(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("default", default, None),
+            Arg("default", default, ""),
             Arg("multiline", multiline, False),
         ]
         _ctx = self._select("string", _args)

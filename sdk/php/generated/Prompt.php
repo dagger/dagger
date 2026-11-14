@@ -39,7 +39,7 @@ class Prompt extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Ask for a text answer.
      */
-    public function string(?string $default = null, ?bool $multiline = false): string
+    public function string(?string $default = '', ?bool $multiline = false): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('string');
         if (null !== $default) {
