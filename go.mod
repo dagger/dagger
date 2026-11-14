@@ -154,7 +154,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.36
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
-	github.com/vito/dang/v2 v2.4.1
+	github.com/vito/dang/v2 v2.5.0
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5
@@ -205,8 +205,6 @@ require (
 	resenje.org/singleflight v0.4.3
 	sigs.k8s.io/knftables v0.0.18
 )
-
-require github.com/mattn/go-pointer v0.0.1 // indirect
 
 require (
 	cloud.google.com/go v0.123.0 // indirect
@@ -340,7 +338,6 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/vbatts/tar-split v0.12.3 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
