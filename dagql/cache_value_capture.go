@@ -907,6 +907,18 @@ type ExportPhases struct {
 	// building the bundle of the kept roots' rows.
 	Copy   time.Duration
 	Bundle time.Duration
+	// The bundle phase's steps, summed over its passes: holding the known
+	// rows, checking the copied records, settling the roots, deriving the
+	// held rows' recipes, and building the bundle's values. BundlePasses
+	// counts the captures: each one after the first carries in full the
+	// held rows whose recipe a row of the bundle shares, and copies the
+	// closure again.
+	BundleKnown   time.Duration
+	BundleCheck   time.Duration
+	BundleSettle  time.Duration
+	BundleRecipes time.Duration
+	BundleValues  time.Duration
+	BundlePasses  int
 	// RetriedStale is 1 when obsolete offers were retired and the closure
 	// captured again.
 	RetriedStale int
@@ -1231,14 +1243,22 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		if capture, err = c.captureCopied(ctx, selection, carried, &phases); err != nil {
 			return err
 		}
+		phases.BundlePasses++
 		passStart = time.Now()
 		_, bundleOp = wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.bundle", wcprof.OpOpts{})
 		capture.holdKnownRows(selection, carried)
+		known := time.Now()
+		phases.BundleKnown += known.Sub(passStart)
 		capture.checkRecords()
+		checked := time.Now()
+		phases.BundleCheck += checked.Sub(known)
 		leftOut, err = capture.settle(selection)
+		settled := time.Now()
+		phases.BundleSettle += settled.Sub(checked)
 		var shared []sharedResultID
 		if err == nil {
 			shared, err = capture.deriveHeldRecipes()
+			phases.BundleRecipes += time.Since(settled)
 		}
 		if err == nil && len(shared) == 0 {
 			break
@@ -1259,6 +1279,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		}
 	}
 	defer func() { rerr = errors.Join(rerr, capture.Release(ctx)) }()
+	valuesStart := time.Now()
 	if len(capture.roots) == 0 || (selection.EveryRoot && len(leftOut) > 0) {
 		err = &RootsLeftOutError{Roots: leftOut}
 		bundleOp.EndErr(err)
@@ -1315,6 +1336,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		bundle.Values = append(bundle.Values, value)
 	}
 	bundleOp.End(wcprof.OutcomeOK)
+	phases.BundleValues = time.Since(valuesStart)
 	phases.Bundle = bundleNS + time.Since(passStart)
 	chainStart := time.Now()
 	chainsCtx, chainsOp := wcprof.BeginOp(ctx, wcprof.OpKindRemoteCache, "remotecache.export.chains", wcprof.OpOpts{})
