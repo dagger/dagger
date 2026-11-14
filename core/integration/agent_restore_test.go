@@ -651,21 +651,22 @@ func (AgentRestoreSuite) TestRestoreNotificationGraph(ctx context.Context, t *te
 }
 
 // TestRestoredWorkerReadsHostSecret is the staff shape across a restore:
-// workers bound to tool objects that hold HOST secrets, whose loops are driven
-// by a module function (staff's sendTo: resume, send, response) or by the
-// client that owns the host.
+// agents bound to tool objects that hold HOST secrets or files, whose loops
+// are driven by a module function (staff's sendTo: resume, send, response) or
+// by the restoring client itself, as a restored chief's is.
 //
 // Before the restore a binding loads from the recipe the session already
 // evaluated. After it, nothing in the new session has, and the lazily bound
-// tool object is rebuilt from its recipe under the restoring client —
-// including the Query.secret(uri:) calls that read a host. No approval
-// carries over a resume, and the recipe cannot tell who minted a secret: so
-// every such secret is asked of the restorer, which here cannot prompt and
-// refuses, whether the owner minted it (the "owned" worker's tool), a module
+// tool object is rebuilt from its recipe — in a host-less client of its own,
+// whichever client drives the loop: nothing gains access by being resumed. So
+// every secret in it is asked of the owner, which here cannot prompt and
+// refuses, whether the owner minted it (the "owned" agent's tool), a module
 // built it into its own tool object (the "minter" worker's), or the owner's
 // workspace config set it for a module (the "configured" worker's keeper,
-// whose recipe records the setting's secret as its constructor's argument).
-// Resuming someone else's trace must never read your secrets unasked.
+// whose recipe records the setting's secret as its constructor's argument);
+// and a host file is never read from the restorer's disk (the "host-file"
+// agent's). Resuming someone else's trace must never read your secrets or
+// files unasked.
 func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, t *testctx.T) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
 	defer cancel()
@@ -713,7 +714,9 @@ func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, 
 	const (
 		readMarker    = "secret-read-42"
 		settingMarker = "token matches"
+		fileMarker    = "file-read-42"
 		refused       = "for a restored agent requires approval"
+		hostDenied    = "SDK client access to host session attachables is denied"
 	)
 
 	toolTurn := func(tool, args string) func(llm *core.LLM, prompt, callID, reply string) *core.LLM {
@@ -817,9 +820,32 @@ func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, 
 	require.Equal(t, 1, strings.Count(transcript, settingMarker),
 		"the worker could not read the configured setting before the restore:\n%s", transcript)
 
-	sink.awaitRestorable(t, 3)
+	// A tool object that is a file on the client's host, not a secret: the
+	// File itself, whose recipe is host.file. A restored binding loads
+	// host-less, so the recipe cannot read the restorer's disk: on another
+	// engine, host.file is denied. On this one, though, the content read in
+	// the recorded session is still in the engine's cache under the recipe's
+	// key, and a cache hit reads no host at all, so the test only checks that
+	// the restorer's disk, changed since, is not read.
+	filePath := filepath.Join(t.TempDir(), "marker")
+	require.NoError(t, os.WriteFile(filePath, []byte(fileMarker), 0o600))
+	fileToolID, err := core.NewQuery(source).Host().File(filePath).ID(ctx)
+	require.NoError(t, err)
+	hostFile := spawnAgent(ctx, t, source, spawnOpts{model: recording("contents", ""), name: "host-file", toolIDs: []core.ID{fileToolID}})
+	_, reply, err = hostFile.sendAndWait(ctx, t, firstPrompt)
+	require.NoError(t, err)
+	require.Equal(t, firstReply, reply)
+	transcript, _ = hostFile.snapshot(ctx, t)
+	require.Equal(t, 1, strings.Count(transcript, fileMarker),
+		"the worker could not read the host file before the restore:\n%s", transcript)
+
+	sink.awaitRestorable(t, 4)
 	require.NoError(t, source.Close())
 	traces, logs := sink.capture()
+	// What the restorer's disk holds now, which a restored binding must not
+	// read.
+	const fileChanged = "file-changed-on-disk"
+	require.NoError(t, os.WriteFile(filePath, []byte(fileChanged), 0o600))
 
 	// Each driver restores the same capture into a session of its own, so
 	// neither can warm the other's cache. Sequential, not subtests: the
@@ -827,11 +853,12 @@ func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, 
 	for _, driver := range []string{"client", "module"} {
 		db := importCapture(ctx, t, traces, logs)
 		plan := planByName(t, db.RestorePlan())
-		require.Len(t, plan, 3)
+		require.Len(t, plan, 4)
 		target, _ := connectWorkspace()
 		restoredOwned := restoreAgent(ctx, t, target, db, plan["owned"])
 		restoredMinter := restoreAgent(ctx, t, target, db, plan["minter"])
 		restoredConfigured := restoreAgent(ctx, t, target, db, plan["configured"])
+		restoredHostFile := restoreAgent(ctx, t, target, db, plan["host-file"])
 
 		ask := func(h *agentHandle) string {
 			t.Helper()
@@ -839,8 +866,8 @@ func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, 
 			var err error
 			switch driver {
 			case "client":
-				// The restoring client drives the loop itself: it owns the
-				// host the secret is read from.
+				// The restoring client drives the loop itself, as for a
+				// restored chief: its host lends the bindings nothing.
 				_, reply, err = h.sendAndWait(ctx, t, secondPrompt)
 			default:
 				reply, err = askViaModule(target, h.agentID, secondPrompt)
@@ -854,11 +881,11 @@ func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, 
 			serveHirer(target)
 		}
 
-		// Whoever minted a secret in a restored binding, the owner, a module,
-		// or the owner's workspace config, the restorer is asked before its
-		// host is read, and cannot prompt: the tool call fails rather than
-		// read the host. Each worker's marker counts only its read before the
-		// restore.
+		// Restored bindings load host-less. Whoever minted a secret in one,
+		// the owner, a module, or the owner's workspace config, the owner is
+		// asked before its host is read, and cannot prompt: the tool call
+		// fails rather than read the host. Each worker's marker counts only
+		// its read before the restore.
 		for _, tc := range []struct {
 			worker *agentHandle
 			marker string
@@ -870,10 +897,17 @@ func (AgentRestoreSuite) TestRestoredWorkerReadsHostSecret(ctx context.Context, 
 		} {
 			transcript := ask(tc.worker)
 			require.Contains(t, transcript, refused,
-				"driven by the %s, the restorer was not asked:\n%s", driver, transcript)
+				"driven by the %s, the restored binding was not host-less:\n%s", driver, transcript)
 			require.Equal(t, tc.before, strings.Count(transcript, tc.marker),
-				"driven by the %s, a restored worker read a host secret unasked:\n%s", driver, transcript)
+				"driven by the %s, a restored worker read the host unasked:\n%s", driver, transcript)
 		}
+		// The host file is denied, or found in this engine's cache as the
+		// recorded session read it; never read from the restorer's disk.
+		transcript := ask(restoredHostFile)
+		require.NotContains(t, transcript, fileChanged,
+			"driven by the %s, a restored worker read the restorer's disk:\n%s", driver, transcript)
+		require.True(t, strings.Contains(transcript, hostDenied) || strings.Count(transcript, fileMarker) == 2,
+			"driven by the %s:\n%s", driver, transcript)
 		require.NoError(t, target.Close())
 	}
 }

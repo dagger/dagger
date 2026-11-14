@@ -67,6 +67,11 @@ type Server interface {
 	// than inherited from the parent or awaited on the synthetic client.
 	ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, transport *engine.NestedClientTransport, metadata *engine.ClientMetadata, callerClientID string, inertAttachables bool, moduleContext dagql.AnyObjectResult, functionCall dagql.Typed)
 
+	// WithHostlessClient runs fn as a fresh host-less (inert) child of the
+	// client whose scope ctx holds, closed when fn returns: host access is
+	// denied there, and a secret read for an agent asks its owner.
+	WithHostlessClient(ctx context.Context, fn func(context.Context) error) error
+
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, main bool) error
 
@@ -115,9 +120,10 @@ type Server interface {
 	// AuthorizeSecret returns the trusted owner whose host Query.secret(uri:)
 	// reads its secret from, once the owner approved the read for the agent
 	// driving a module client that has no host of its own; nil when the
-	// calling client reads its own secret, as always. In a restored agent's
-	// binding load (see IsRestoredBindingLoad), every read is asked of the
-	// restoring client first: no approval carries over a resume.
+	// calling client reads its own secret, as always. A restored agent's
+	// bindings load in a host-less client (see LoadBoundObject), so their
+	// secrets take that same approval, never allowed forever there (see
+	// IsRestoredBindingLoad): no approval carries over a resume.
 	AuthorizeSecret(context.Context, string) (*engine.ClientMetadata, error)
 
 	// The cached workspace result from ensureWorkspaceLoaded.

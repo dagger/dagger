@@ -686,10 +686,6 @@ func (ars *AgentRuntimes) create(ctx context.Context, agent dagql.ObjectResult[*
 	rt.controlNamespace = agentcontrol.Namespace{Trace: trace.SpanContextFromContext(ctx).TraceID().String(), Incarnation: ars.incarnation}
 	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
 		rt.controlNamespace.Session, rt.controlOrigin = md.SessionID, md.ClientID
-		if restored {
-			restorer := *md
-			rt.restorerMetadata = &restorer
-		}
 	}
 	if composing := composingAgentHandle(ctx); composing != "" && composing != key {
 		rt.parentHandle = composing
@@ -1351,10 +1347,6 @@ type AgentRuntime struct {
 	// Notify's level check must not announce again.
 	restored  bool
 	activated bool
-	// restorerMetadata is the client that restored this entry, for a restored
-	// one: the client its restored bindings' host inputs are routed to (see
-	// restoredBindingContext).
-	restorerMetadata *engine.ClientMetadata
 }
 
 // Name returns the agent's display name.
@@ -2023,16 +2015,16 @@ func agentLoopContext(ctx context.Context, self dagql.ObjectResult[*Agent]) cont
 	return WithComposingAgent(AgentToContext(ctx, self), "")
 }
 
-// restoredBindingContext routes the loads of the tool bindings a restored
-// agent was restored with to the client that restored it, whichever client
-// drives the loop (see withRestoredBindingRouting). The bindings are read from
-// the seed, which a restore fixes as the restored conversation; bindings the
-// agent gains later load in the loop's own client, as for a fresh agent.
+// restoredBindingContext marks the tool bindings a restored agent was
+// restored with, so they load host-less (see LoadBoundObject), whichever
+// client drives the loop. The bindings are read from the seed, which a
+// restore fixes as the restored conversation; bindings the agent gains later
+// load in the loop's own client, as for a fresh agent.
 func (rt *AgentRuntime) restoredBindingContext(ctx context.Context) context.Context {
 	rt.mu.Lock()
-	restorer, seed := rt.restorerMetadata, rt.seed
+	restored, seed := rt.restored, rt.seed
 	rt.mu.Unlock()
-	if restorer == nil || seed.Self() == nil || seed.Self().mcp == nil {
+	if !restored || seed.Self() == nil || seed.Self().mcp == nil {
 		return ctx
 	}
 	bindings, err := seed.Self().mcp.BoundToolBindings()
@@ -2048,7 +2040,7 @@ func (rt *AgentRuntime) restoredBindingContext(ctx context.Context) context.Cont
 			recipes[binding.ID] = struct{}{}
 		}
 	}
-	return withRestoredBindingRouting(ctx, restorer, recipes)
+	return withRestoredBindings(ctx, recipes)
 }
 
 // loop is the agent's evaluation loop, run on a goroutine under a detached
