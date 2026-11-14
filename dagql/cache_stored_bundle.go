@@ -191,37 +191,11 @@ func (c *Cache) storedBundle(roots []uint64, nowUnix int64, held *HeldBy) (Store
 	if len(rootEntries) == 0 {
 		return out, nil, nil
 	}
-	build, err := c.storedBundleWalkLocked(rootEntries, nowUnix, held, nil)
+	build, notWhole, err := c.storedBundleWholeWalkLocked(rootEntries, nowUnix, held)
 	if err != nil {
 		return StoredBundleResult{}, nil, err
 	}
-	if held != nil && held.Whole {
-		// Walked again while it holds a held row that isn't whole, which
-		// then goes in full, as a caller building again would walk it.
-		whole := &wholeHolds{cache: held.Cache, known: map[uint64]bool{}}
-		var notWhole map[sharedResultID]bool
-		for {
-			var found []uint64
-			for _, res := range build.order {
-				if build.held[res.id] && !c.holdsWholeLocked(whole, res) {
-					found = append(found, uint64(res.id))
-				}
-			}
-			if len(found) == 0 {
-				break
-			}
-			if notWhole == nil {
-				notWhole = map[sharedResultID]bool{}
-			}
-			for _, number := range found {
-				notWhole[sharedResultID(number)] = true
-			}
-			out.NotWhole = append(out.NotWhole, found...)
-			if build, err = c.storedBundleWalkLocked(rootEntries, nowUnix, held, notWhole); err != nil {
-				return StoredBundleResult{}, nil, err
-			}
-		}
-	}
+	out.NotWhole = notWhole
 	rootEntries = append(rootEntries, build.callRoots...)
 	var frames map[TransferOrdinal]entryFrame
 	waiting := false
@@ -304,6 +278,42 @@ func (c *Cache) storedBundleWalkLocked(rootEntries []*sharedResult, nowUnix int6
 		}
 	}
 	return build, nil
+}
+
+// storedBundleWholeWalkLocked walks the roots' closures into a build
+// (storedBundleWalkLocked) and, with held.Whole, walks them again while the
+// build holds a held row the recipient doesn't hold whole, which then goes
+// in full, as a caller building again would walk it. It returns the last
+// build and those rows, in the order found. Requires egraphMu.
+func (c *Cache) storedBundleWholeWalkLocked(rootEntries []*sharedResult, nowUnix int64, held *HeldBy) (*storedBundleBuild, []uint64, error) {
+	build, err := c.storedBundleWalkLocked(rootEntries, nowUnix, held, nil)
+	if err != nil || held == nil || !held.Whole {
+		return build, nil, err
+	}
+	whole := &wholeHolds{cache: held.Cache, known: map[uint64]bool{}}
+	var all []uint64
+	var notWhole map[sharedResultID]bool
+	for {
+		var found []uint64
+		for _, res := range build.order {
+			if build.held[res.id] && !c.holdsWholeLocked(whole, res) {
+				found = append(found, uint64(res.id))
+			}
+		}
+		if len(found) == 0 {
+			return build, all, nil
+		}
+		if notWhole == nil {
+			notWhole = map[sharedResultID]bool{}
+		}
+		for _, number := range found {
+			notWhole[sharedResultID(number)] = true
+		}
+		all = append(all, found...)
+		if build, err = c.storedBundleWalkLocked(rootEntries, nowUnix, held, notWhole); err != nil {
+			return nil, nil, err
+		}
+	}
 }
 
 // wholeHolds is what a build has found of which holdings of one engine
