@@ -159,8 +159,9 @@ type RemoteHoldingUpdate struct {
 //   - Entries: every entry of which any of these may differ: whether it
 //     exists; its own facts, Stored, StoredExpiresAtUnix and Recipes; the
 //     keys of its holdings; the entries of its classes (EntryClassEntries);
-//     and any AvailablePart answer at one clock. A holding's description is
-//     asked again when its entry is named too.
+//     and any AvailablePart answer at one clock. A holding's description
+//     doesn't change with its entry: a holding whose description changes is
+//     in Holdings, whatever entries are named.
 //
 // Neither covers the digests, class digests, terms or field of an entry,
 // which only EntryInfo returns.
@@ -1918,6 +1919,38 @@ func (c *Cache) EntriesHeld(numbers []uint64, limit int) []EntryHeld {
 			}
 		}
 		out = append(out, held)
+	}
+	return out
+}
+
+// EntryFacts is an entry's own facts, as RemoteHoldingInfo reports them with
+// any holding on it: its number, whether it stores a record and that
+// record's expiry, and its recipes, sorted.
+type EntryFacts struct {
+	Number              uint64
+	Stored              bool
+	StoredExpiresAtUnix int64
+	Recipes             []digest.Digest
+}
+
+// EntriesFacts returns, for each of numbers the cache has an entry for, in
+// their order, the entry's own facts (EntryFacts), read under one hold. A
+// number the cache has no entry for is skipped: a caller matches the results
+// by Number. It describes no holding, so a reader that keeps holdings'
+// descriptions reads only what an entry named by a change (RemoteChange's
+// Entries) can have changed of them.
+func (c *Cache) EntriesFacts(numbers []uint64) []EntryFacts {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	out := make([]EntryFacts, 0, len(numbers))
+	for _, number := range numbers {
+		entry := c.resultsByID[sharedResultID(number)]
+		if entry == nil {
+			continue
+		}
+		var facts EntryFacts
+		facts.Number, facts.Stored, facts.StoredExpiresAtUnix, facts.Recipes = entryFactsLocked(entry)
+		out = append(out, facts)
 	}
 	return out
 }
