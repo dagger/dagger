@@ -21,10 +21,11 @@ type Asker {
   }
 
   """
-  Ask for some text, answered with otherwise when nobody can be asked.
+  Ask for some text, answered with otherwise when nobody can be asked, and
+  return it in brackets, so an empty answer shows.
   """
-  text(message: String!, key: String = null, otherwise: String = null): String! {
-    prompt(message: message, key: key).string(default: otherwise)
+  text(message: String!, key: String = null, otherwise: String! = ""): String! {
+    "[" + prompt(message: message, key: key).string(default: otherwise) + "]"
   }
 
   """
