@@ -292,3 +292,43 @@ func TestEntriesFactsAnswersAsRemoteHoldingInfo(t *testing.T) {
 	}
 	require.Equal(t, held[keys[0]].Number, held[keys[1]].Number, "both engines' f are one entry")
 }
+
+// EntryRecipe names, for an entry, a recipe its engine holdings attach by:
+// a holding attached by it for a cache that had none lands on that entry, in
+// the cache's own read and in a hold's. It reports false for a number the
+// cache has no entry for.
+func TestEntryRecipeAttachesAHoldingToItsEntry(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engineA, engineB, engineC := CacheID("cache-a"), CacheID("cache-b"), CacheID("cache-c")
+	desc := RemoteHolding{Recipe: testDigest("recipe-r"), Request: testDigest("request-r"), Field: "r"}
+	a.call(callRow{key: HolderKey{engineA, 7}, session: "a", holding: desc})
+	info, ok := cloud.RemoteEntryInfo(HolderKey{engineA, 7})
+	require.True(t, ok)
+
+	recipe, ok := cloud.EntryRecipe(info.Number)
+	require.True(t, ok)
+	_, err := cloud.AttachRemoteHolding(ctx, HolderKey{engineB, 3}, RemoteHolding{Recipe: recipe, Field: "r"})
+	require.NoError(t, err)
+	number, ok := cloud.HolderEntry(HolderKey{engineB, 3})
+	require.True(t, ok)
+	require.Equal(t, info.Number, number, "a holding attached by the entry's recipe lands on the entry")
+
+	w := cloud.HoldRemoteWrites()
+	held, ok := w.EntryRecipe(info.Number)
+	require.True(t, ok)
+	require.Equal(t, recipe, held, "a hold answers as the cache")
+	_, err = w.AttachRemoteHolding(ctx, HolderKey{engineC, 4}, RemoteHolding{Recipe: held, Field: "r"})
+	require.NoError(t, err)
+	number, ok = w.HolderEntry(HolderKey{engineC, 4})
+	require.True(t, ok)
+	require.Equal(t, info.Number, number)
+	_, ok = w.EntryRecipe(1 << 40)
+	require.False(t, ok)
+	require.NoError(t, w.Release(ctx))
+
+	_, ok = cloud.EntryRecipe(1 << 40)
+	require.False(t, ok, "no entry, no recipe")
+}

@@ -3,6 +3,8 @@ package dagql
 import (
 	"context"
 	"slices"
+
+	"github.com/opencontainers/go-digest"
 )
 
 // RemoteWrites is a Cloud cache held for writing (HoldRemoteWrites), for a
@@ -132,6 +134,11 @@ func (w *RemoteWrites) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) 
 // HolderEntry is Cache.HolderEntry, in the hold.
 func (w *RemoteWrites) HolderEntry(key HolderKey) (uint64, bool) {
 	return w.c.holderEntryLocked(key)
+}
+
+// EntryRecipe is Cache.EntryRecipe, in the hold.
+func (w *RemoteWrites) EntryRecipe(number uint64) (digest.Digest, bool) {
+	return w.c.entryRecipeLocked(number)
 }
 
 // HolderClosure is Cache.HolderClosure, in the hold.
