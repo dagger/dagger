@@ -3,9 +3,14 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
 	"dagger.io/dagger/core"
+	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -86,9 +91,11 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorFromModule(ctx context.Con
 	repoURL = strings.TrimSpace(repoURL)
 	// A module's SDK client holds no host session attachables (an in-engine
 	// dang client is even denied them outright), so resolving the omitted
-	// author identity must hop to the nearest non-module ancestor client's Git
-	// config — the flow of an agent's commit tool — rather than failing with a
-	// PermissionDenied attachables error.
+	// author identity hops to the owning client — the flow of an agent's
+	// commit tool — rather than failing with a PermissionDenied attachables
+	// error. Sharing the owner's identity with a module takes the owner's
+	// approval, which this non-interactive CLI cannot give: the commit is
+	// attributed to the module that asked, at this trace, and still made.
 	out, err := base.
 		WithNewFile("dagger.toml", "[modules.prober]\nsource = \"modules/prober\"\n").
 		WithNewFile("modules/prober/dagger.json", `{"name":"prober","engineVersion":"latest","sdk":{"source":"dang"}}`).
@@ -103,7 +110,81 @@ func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorFromModule(ctx context.Con
 }`, repoURL)).
 		With(daggerCallAt("modules/prober", "commit-author")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "Module Caller <module-caller@example.com>", strings.TrimSpace(out))
+	require.Regexp(t, `^prober <prober@[0-9a-f]{32}>$`, strings.TrimSpace(out))
+}
+
+// TestWorkspaceWithCommitGitAuthorApproval covers an interactive owner
+// answering a module's request for its Git identity, shown in the prompt: an
+// approval commits as the owner, a denial as the module that asked.
+func (WorkspaceSuite) TestWorkspaceWithCommitGitAuthorApproval(ctx context.Context, t *testctx.T) {
+	// Answering the prompt takes a terminal, so run the CLI on the host under
+	// a PTY, in a checkout whose identity is the one initGitRepo configures.
+	// The module commits to a repository of its own: only the owning client
+	// may snapshot the host checkout.
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	for path, contents := range map[string]string{
+		"dagger.toml":                "[modules.prober]\nsource = \"modules/prober\"\n",
+		"modules/prober/dagger.json": `{"name":"prober","engineVersion":"latest","sdk":{"source":"dang"}}`,
+		"modules/prober/main.dang": fmt.Sprintf(`type Prober {
+  commitAuthor: String! {
+    let repo = container.from(%q)
+      .withExec(["apk", "add", "git"])
+      .withExec(["sh", "-ec", "git init -q -b main /repo && git -C /repo -c user.name=Base -c user.email=base@example.com commit -q --allow-empty -m base"])
+      .directory("/repo")
+    let ws = repo.asGit.head.asWorkspace.withNewFile("authored.txt", "authored")
+    let commit = ws.withCommit(ws.git.uncommitted, "authored", date: "2026-09-05T12:00:00Z")
+      .git.head.targetCommit
+    `+"`author: ${commit.authorName} <${commit.authorEmail}>`"+`
+  }
+}`, alpineImage),
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(workdir, path)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, path), []byte(contents), 0o644))
+	}
+
+	for _, tc := range []struct{ answer, author string }{
+		{"y", regexp.QuoteMeta("author: Dagger Tests <dagger@example.com>")},
+		// Not sharing still commits, as the module that asked, at this
+		// trace. The module reads two fields of the commit, each
+		// re-evaluating withCommit: one answer covers both, so the owner is
+		// asked once.
+		{"n", `author: prober <prober@[0-9a-f]{32}>`},
+	} {
+		func() {
+			// Answer through the plain frontend's yes/no prompt (the fallback
+			// for frontends without an approval UI, where a yes grants the
+			// session), not the pretty TUI's inline approvals, whose keys
+			// need focus. A missed prompt must fail, not hang: the console
+			// times out each expectation, and the deadline kills the CLI.
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+			defer cancel()
+			console, err := newTUIConsole(t, 60*time.Second)
+			require.NoError(t, err)
+			defer console.Close()
+			tty := console.Tty()
+			require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 200}))
+			cmd := hostDaggerCommand(ctx, t, workdir, "--progress=plain", "call", "-m", "modules/prober", "commit-author")
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
+			require.NoError(t, cmd.Start())
+			_, err = console.ExpectString(`Allow using your Git identity "Dagger Tests <dagger@example.com>"`)
+			require.NoError(t, err)
+			_, err = console.SendLine(tc.answer)
+			require.NoError(t, err)
+			_, _, err = console.MatchLine(ctx, tc.author)
+			require.NoError(t, err)
+			go console.ExpectEOF()
+			waited := make(chan error, 1)
+			go func() { waited <- cmd.Wait() }()
+			select {
+			case err := <-waited:
+				require.NoError(t, err)
+			case <-ctx.Done():
+				_ = cmd.Process.Kill()
+				t.Fatalf("dagger call did not exit: %v", context.Cause(ctx))
+			}
+		}()
+	}
 }
 
 func (WorkspaceSuite) TestWorkspaceWithCommitResolvedIdentityReplay(ctx context.Context, t *testctx.T) {
