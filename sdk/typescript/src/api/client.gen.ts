@@ -3584,7 +3584,7 @@ export type PortForward = {
 
 export type PromptBooleanOpts = {
   /**
-   * The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.
+   * The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive).
    */
   default?: boolean
 }
@@ -3598,7 +3598,7 @@ export type PromptSecretOpts = {
 
 export type PromptStringOpts = {
   /**
-   * The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.
+   * The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one (or with an empty one), that is an error.
    */
   default?: string
 
@@ -17055,7 +17055,7 @@ export class Prompt extends BaseClient {
 
   /**
    * Ask for a yes or no answer.
-   * @param opts.default The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.
+   * @param opts.default The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive).
    */
   boolean_ = async (opts?: PromptBooleanOpts): Promise<boolean> => {
     if (this._boolean) {
@@ -17082,7 +17082,7 @@ export class Prompt extends BaseClient {
 
   /**
    * Ask for a text answer.
-   * @param opts.default The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one, that is an error.
+   * @param opts.default The text the answer starts with, and the answer when nobody can be asked (the client is not interactive). Without one (or with an empty one), that is an error.
    * @param opts.multiline Accept several lines.
    */
   string_ = async (opts?: PromptStringOpts): Promise<string> => {

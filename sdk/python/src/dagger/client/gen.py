@@ -16404,15 +16404,14 @@ class Prompt(Type):
     running the session.  Select the kind of answer wanted to ask it: each
     selection asks, unless the answer is remembered."""
 
-    async def boolean(self, *, default: bool | None = None) -> bool:
+    async def boolean(self, *, default: bool | None = False) -> bool:
         """Ask for a yes or no answer.
 
         Parameters
         ----------
         default:
             The answer selected to begin with, and the answer when nobody can
-            be asked (the client is not interactive). Without one, that is an
-            error.
+            be asked (the client is not interactive).
 
         Returns
         -------
@@ -16427,7 +16426,7 @@ class Prompt(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("default", default, None),
+            Arg("default", default, False),
         ]
         _ctx = self._select("boolean", _args)
         return await _ctx.execute(bool)
@@ -16489,8 +16488,8 @@ class Prompt(Type):
         ----------
         default:
             The text the answer starts with, and the answer when nobody can be
-            asked (the client is not interactive). Without one, that is an
-            error.
+            asked (the client is not interactive). Without one (or with an
+            empty one), that is an error.
         multiline:
             Accept several lines.
 
