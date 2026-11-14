@@ -154,7 +154,9 @@ func (l *liveToolCalls) frame() string {
 	return strings.Join(l.fe.tui.Step(), "\n")
 }
 
-const liveTimeoutArgs = `{"duration":"5m","tool":"DangEval","arguments":{"source":"let greeting = shout(\"hi\")\ngreeting + \"!\""}}`
+// liveTimeoutArgs are a Timeout's arguments in the order models write them,
+// the order its schema offers them in: the wrapped tool first.
+const liveTimeoutArgs = `{"tool":"DangEval","duration":"5m","arguments":{"source":"let greeting = shout(\"hi\")\ngreeting + \"!\""}}`
 
 // TestRunningTimeoutRendersItsCall covers a Timeout once its arguments are
 // in, while it runs: they are only known from what its display span
@@ -235,7 +237,12 @@ func TestStreamingToolCallRendersSoFar(t *testing.T) {
 			return
 		}
 		named = true
-		require.Contains(t, plain, "• DangEval timeout=5m", plain)
+		if !strings.Contains(plain, "• DangEval timeout=5m") {
+			// Named, but its duration is still on its way.
+			require.Contains(t, plain, "• DangEval timeout=?", plain)
+			require.NotContains(t, plain, "1 │", plain)
+			return
+		}
 		if strings.Contains(plain, `2 │ greeting + "!"`) {
 			// the source is whole: the document may be too
 			return

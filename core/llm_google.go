@@ -646,6 +646,10 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) (*genai.Schema, error) {
 				return nil, err
 			}
 			schema.Properties = props
+			if ordered, ok := param.(ToolSchemaProperties); ok {
+				// Gemini keeps properties in a map; this keeps their order.
+				schema.PropertyOrdering = ordered.Names()
+			}
 		case "default": // just setting Nullable=true. Genai Schema does not have Default
 			yes := true
 			schema.Nullable = &yes
@@ -714,7 +718,7 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) (*genai.Schema, error) {
 }
 
 func bbiPropertiesToGenaiSchemas(param any) (map[string]*genai.Schema, error) {
-	props, ok := param.(map[string]any)
+	props, ok := schemaPropertiesMap(param)
 	if !ok {
 		return nil, fmt.Errorf("properties must be a map, got %T", param)
 	}
