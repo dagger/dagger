@@ -110,9 +110,12 @@ type Adapter interface {
 	TakeRenewalRequest(ctx context.Context) (*dagql.RenewalRequest, error)
 	ReplyRenewal(dagql.RenewalReply) dagql.RenewalReplyDisposition
 	// RestorePart merges one part of a set file (protocol.Restore) into the
-	// cache, through the path Merge takes, and returns what its commit left.
-	// known are as for Merge: the rows the part lands on join them.
-	RestorePart(ctx context.Context, part dagql.ValueBundle, known *dagql.KnownRows) (dagql.MergeReply, error)
+	// cache, through the path Merge takes, with the roots in unretained given
+	// no retention edge, and returns what its commit left. The commit holds
+	// every entry it lands on until the reply's Release
+	// (dagql.Cache.RestoreValues). known are as for Merge: the rows the part
+	// lands on join them.
+	RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows) (dagql.MergeReply, error)
 	// LateMisses returns the cache's lookup misses on this connection before
 	// before, not returned already, whose lookup now finds one of entries,
 	// by the engine's numbers (dagql.Cache.LateRemoteMisses).

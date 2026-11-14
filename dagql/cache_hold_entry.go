@@ -59,3 +59,27 @@ func (c *Cache) HoldEntry(ctx context.Context, number uint64) (AnyResult, func(c
 	}
 	return Result[Typed]{shared: res}, release, nil
 }
+
+// releaseHeld returns a function that releases, once, the holds a commit
+// took on entries (incrementIncomingOwnershipLocked), and collects what then
+// has no owner, under one hold of egraphMu.
+func (c *Cache) releaseHeld(held []*sharedResult) func(context.Context) error {
+	var once sync.Once
+	return func(ctx context.Context) error {
+		var err error
+		once.Do(func() {
+			ctx = context.WithoutCancel(ctx)
+			wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
+			var queue collectionQueue
+			for _, res := range held {
+				var decErr error
+				queue, decErr = c.decrementIncomingOwnershipLocked(ctx, res, queue)
+				err = errors.Join(err, decErr)
+			}
+			releases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
+			c.egraphMu.Unlock()
+			err = errors.Join(err, collectErr, runOnReleaseFuncs(ctx, releases))
+		})
+		return err
+	}
+}
