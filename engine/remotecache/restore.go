@@ -148,6 +148,7 @@ type restoreFile struct {
 	report     RestoreReport
 	releases   []func(context.Context) error
 	entries    protocol.EntryNumbers
+	complete   [][]dagql.PersistedPartAddress
 	placed     map[uint64]struct{}
 }
 
@@ -378,14 +379,15 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 
 // noteEntries records, for a committed part, the entry each record it
 // carries in full landed on, at the record's first appearance in the file,
-// and 0 for one its merge landed nowhere.
+// and 0 for one its merge landed nowhere, with the parts that entry had
+// complete as the merge left it.
 func (f *restoreFile) noteEntries(part dagql.ValueBundle, reply dagql.MergeReply) {
 	if f.placed == nil {
 		f.placed = map[uint64]struct{}{}
 	}
-	landed := make(map[dagql.TransferOrdinal]uint64, len(reply.Values))
+	landed := make(map[dagql.TransferOrdinal]dagql.MergedValue, len(reply.Values))
 	for _, value := range reply.Values {
-		landed[value.Ordinal] = value.Number
+		landed[value.Ordinal] = value
 	}
 	for _, value := range part.Values {
 		if value.Held != "" {
@@ -395,7 +397,9 @@ func (f *restoreFile) noteEntries(part dagql.ValueBundle, reply dagql.MergeReply
 			continue
 		}
 		f.placed[value.SenderNumber] = struct{}{}
-		f.entries = append(f.entries, landed[value.Ordinal])
+		merged := landed[value.Ordinal]
+		f.entries = append(f.entries, merged.Number)
+		f.complete = append(f.complete, merged.Parts)
 	}
 }
 
@@ -440,6 +444,11 @@ func (r *restorer) finish(f *restoreFile, err error) {
 	if err == nil && f.next == len(f.parts) {
 		f.result.Complete = true
 		f.result.Entries = f.entries
+		if table, packed, err := protocol.PackCompleteParts(f.complete); err != nil {
+			r.s.cfg.Logger.Warn("remote cache restore: packing complete parts failed", "digest", f.file.Digest.String(), "error", err)
+		} else {
+			f.result.PartsTable, f.result.CompleteParts = table, packed
+		}
 		r.s.cfg.restored.add(f.file.Digest)
 	}
 	if err != nil {
@@ -449,7 +458,7 @@ func (r *restorer) finish(f *restoreFile, err error) {
 		f.report.PeakAfter = r.s.cfg.peakRSS()
 	}
 	f.report.Complete, f.report.Error = f.result.Complete, f.result.Error
-	f.data, f.parts, f.placed = nil, nil, nil
+	f.data, f.parts, f.placed, f.complete = nil, nil, nil, nil
 	r.release(f)
 	r.s.adapter.Restored(f.report)
 	level := "info"

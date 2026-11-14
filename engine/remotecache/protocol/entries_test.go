@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/dagql"
 )
 
 // Entry numbers survive JSON unchanged, zeros and decreases included, and
@@ -43,4 +45,39 @@ func TestEntryNumbersRefusesATruncatedList(t *testing.T) {
 	require.Error(t, json.Unmarshal([]byte(`"gA=="`), &numbers), "a varint cut off")
 	require.Error(t, json.Unmarshal([]byte(`"not base64!"`), &numbers))
 	require.Error(t, json.Unmarshal([]byte(`"/////////////wE="`), &numbers), "a varint too large for 64 bits")
+}
+
+// A restored file's complete parts pack sparsely, each distinct address
+// once, and unpack to the same parts at the same positions.
+func TestCompletePartsRoundTrip(t *testing.T) {
+	t.Parallel()
+	meta := dagql.PersistedPartAddress{Part: "metadata"}
+	exec := dagql.PersistedPartAddress{Part: "execMeta"}
+	nested := dagql.PersistedPartAddress{OutputPath: dagql.PersistedRefPath{}.Field("rootfs"), Part: "fs"}
+	parts := [][]dagql.PersistedPartAddress{nil, {meta, exec}, nil, nil, {meta}, {nested, meta}, nil}
+	table, packed, err := PackCompleteParts(parts)
+	require.NoError(t, err)
+	require.Len(t, table, 3, "each distinct address once")
+	got, err := UnpackCompleteParts(table, packed)
+	require.NoError(t, err)
+	require.Equal(t, map[int][]dagql.PersistedPartAddress{1: {meta, exec}, 4: {meta}, 5: {nested, meta}}, got)
+
+	table, packed, err = PackCompleteParts(make([][]dagql.PersistedPartAddress, 5))
+	require.NoError(t, err)
+	require.Empty(t, table)
+	require.Empty(t, packed, "no complete part takes no bytes")
+	got, err = UnpackCompleteParts(table, packed)
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
+// Packed parts that name a part the table lacks, or end mid-record, are
+// refused.
+func TestCompletePartsRefusesAMalformedList(t *testing.T) {
+	t.Parallel()
+	table := []dagql.PersistedPartAddress{{Part: "metadata"}}
+	_, err := UnpackCompleteParts(table, []byte{0, 1, 1})
+	require.Error(t, err, "index 1 of a table of 1")
+	_, err = UnpackCompleteParts(table, []byte{0, 2, 0})
+	require.Error(t, err, "two parts announced, one given")
 }
