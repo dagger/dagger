@@ -3041,6 +3041,9 @@ type Cache struct {
 	// testMergeCommitLocked observes a merge's commit each time it has taken
 	// the graph lock.
 	testMergeCommitLocked func()
+	// testMergeGraphVisited, nil but in tests, runs for each entry a merge's
+	// cycle check visits (checkMergeGraphLocked).
+	testMergeGraphVisited func(sharedResultID)
 	// testOfferBeforeDecision runs in offerPart between the capture of the
 	// offered row and the lock that decides the outcome.
 	testOfferBeforeDecision func(*sharedResult)
