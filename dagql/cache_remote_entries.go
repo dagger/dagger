@@ -1317,10 +1317,17 @@ func (c *Cache) ApplyHeldValueState(ctx context.Context, key HolderKey, obs Held
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
+	change, found := c.applyHeldValueStateOfLocked(ctx, key, obs, parts, offered)
+	return change, found, nil
+}
+
+// applyHeldValueStateOfLocked is ApplyHeldValueState's change, with the
+// state's parts already keyed. Requires egraphMu for writing.
+func (c *Cache) applyHeldValueStateOfLocked(ctx context.Context, key HolderKey, obs HeldValueState, parts, offered []string) (change RemoteChange, _ bool) {
 	defer c.takeChangesLocked(&change)
 	entry, h := c.holdingLocked(key)
 	if h == nil {
-		return change, false, nil
+		return change, false
 	}
 	joined := c.trackJoinsLocked()
 	candidates, changed := c.applyHeldValueStateLocked(ctx, c.remoteCacheLocked(key.Cache), key, entry, h, obs, parts, offered)
@@ -1329,7 +1336,7 @@ func (c *Cache) ApplyHeldValueState(ctx context.Context, key HolderKey, obs Held
 		change.addRecipeOf(entry)
 	}
 	joined(&change)
-	return change, true, nil
+	return change, true
 }
 
 // addHoldingDepsLocked adds dependency numbers to a holding of the same cache:
