@@ -115,7 +115,9 @@ type Server interface {
 	// AuthorizeSecret returns the trusted owner whose host Query.secret(uri:)
 	// reads its secret from, once the owner approved the read for the agent
 	// driving a module client that has no host of its own; nil when the
-	// calling client reads its own secret, as always.
+	// calling client reads its own secret, as always. In a restored agent's
+	// binding load (see IsRestoredBindingLoad), every read is asked of the
+	// restoring client first: no approval carries over a resume.
 	AuthorizeSecret(context.Context, string) (*engine.ClientMetadata, error)
 
 	// The cached workspace result from ensureWorkspaceLoaded.
