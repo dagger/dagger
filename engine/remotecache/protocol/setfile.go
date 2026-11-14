@@ -43,10 +43,15 @@ type SetFileHeader struct {
 }
 
 // SetFilePart is one part of a set file: its length in the file, compressed,
-// and how many records its bundle carries.
+// how many records its bundle carries, and those of its bundle's roots the
+// engine merges unretained (PreparedValueMerge.Unretained): records a part
+// carries ahead of the root whose closure they are in, which a later part
+// of the file carries, and which live meanwhile only as long as the
+// restore holds them.
 type SetFilePart struct {
-	Bytes   int64 `json:"bytes"`
-	Records int   `json:"records"`
+	Bytes      int64                   `json:"bytes"`
+	Records    int                     `json:"records"`
+	Unretained []dagql.TransferOrdinal `json:"unretained,omitempty"`
 }
 
 // EncodeSetFilePart encodes a bundle as a set file's part with enc, and

@@ -52,6 +52,7 @@ func TestSetFileRoundTrip(t *testing.T) {
 		part, entry, err := EncodeSetFilePart(enc, bundle)
 		require.NoError(t, err)
 		require.Equal(t, len(bundle.Values), entry.Records)
+		entry.Unretained = []dagql.TransferOrdinal{bundle.Values[0].Ordinal}
 		parts = append(parts, part)
 		header.Parts = append(header.Parts, entry)
 	}
