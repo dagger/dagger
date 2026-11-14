@@ -280,6 +280,31 @@ type ClientMetadata struct {
 	// client headers.
 	EngineWork bool `json:"-"`
 
+	// ServedDeps, set on an in-engine nested client (such as a DangEval
+	// snippet's), is a *core.SchemaBuilder of what it serves. Without a
+	// module, it serves it instead of the core API alone: the API of the
+	// conversation the snippet runs for, installed modules included. With
+	// one, its modules are served beside the module's own API (the
+	// conversation's bound tool objects'). It is opaque here, since this
+	// package can't name core's types. Engine-internal: never read from
+	// client headers.
+	ServedDeps any `json:"-"`
+
+	// CallerAgent, set on an in-engine nested client (such as a DangEval
+	// snippet's), is the *core.Agent result whose turn the client acts for:
+	// what core.CallerAgent resolves for its calls, as a module function's
+	// calls resolve their FunctionCall's, for message provenance and the
+	// waits-for guard. It is opaque here, like ServedDeps. Engine-internal:
+	// never read from client headers.
+	CallerAgent any `json:"-"`
+
+	// InertAttachables marks an in-engine nested client the server denies
+	// every host session attachable (see ServeHTTPToNestedClient), so
+	// operations that read the caller's host, such as finding its outer
+	// .env, know there is none. Set by the server, never read from client
+	// headers.
+	InertAttachables bool `json:"-"`
+
 	// Profile enables engine wall-clock profiling (wcprof) for the duration
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.

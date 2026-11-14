@@ -1408,6 +1408,12 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 	if inModule {
 		return &EnvFile{}, "", nil
 	}
+	// A host-inert in-engine client (e.g. a DangEval snippet loading the
+	// workspace's modules) has no host session either: there is no outer
+	// .env to find, so it gets an empty one, as module code does.
+	if current, err := engine.ClientMetadataFromContext(ctx); err == nil && current.InertAttachables {
+		return &EnvFile{}, "", nil
+	}
 
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
