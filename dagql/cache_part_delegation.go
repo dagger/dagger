@@ -234,18 +234,20 @@ func (c *Cache) demandDelegatedParent(ctx context.Context, pending *PartSourceLe
 // Boot/decoding performs no parent load, body, provider or snapshot operation.
 // Each payload's pending parts are routed together, so a payload is decoded
 // once, not once per part: a container with n pending mounts would otherwise
-// decode its record n times each time it's decoded.
+// decode its record n times each time it's decoded. A payload whose parts
+// can't be mapped keeps the record from being marked, wherever it is.
 func markRestoredPartDelegation(row *sharedResult, envelope PersistedResultEnvelope, frame *ResultCall, links []PersistedSnapshotRefLink) {
-	if _, err := mapTransferredOutputs(PersistedRecord{Envelope: envelope, Call: frame, SnapshotLinks: links}); err != nil {
-		return
-	}
 	found := false
-	_ = walkTransferPayloads(&envelope, frame, links, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
-		if found || f.Transfer == nil {
+	err := walkTransferPayloads(&envelope, frame, links, func(f PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
+		if f.Transfer == nil {
 			return v.Payload, nil
 		}
 		mapped, err := f.Transfer.MapSnapshotParts(v)
 		if err != nil {
+			return nil, err
+		}
+		router, ok := f.Transfer.(PersistedPartRouter)
+		if found || !ok {
 			return v.Payload, nil
 		}
 		var pending []PartKey
@@ -254,8 +256,7 @@ func markRestoredPartDelegation(row *sharedResult, envelope PersistedResultEnvel
 				pending = append(pending, output.Address.Part)
 			}
 		}
-		router, ok := f.Transfer.(PersistedPartRouter)
-		if len(pending) == 0 || !ok {
+		if len(pending) == 0 {
 			return v.Payload, nil
 		}
 		routes, errs := routeEachPart(router, v, pending)
@@ -267,7 +268,7 @@ func markRestoredPartDelegation(row *sharedResult, envelope PersistedResultEnvel
 		}
 		return v.Payload, nil
 	})
-	if found {
+	if err == nil && found {
 		row.partGate.restoredDelegation.Store(true)
 	}
 }
