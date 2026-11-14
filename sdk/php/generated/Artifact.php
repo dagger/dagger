@@ -23,6 +23,18 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
+     */
+    public function dimensionKeys(?bool $all = false): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
+        if (true === $all) {
+        $leafQueryBuilder->setArgument('all', $all);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
+    }
+
+    /**
      * A module load failure, or an empty string if discovery succeeded.
      */
     public function loadError(): string
@@ -69,13 +81,13 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     public function uri(?bool $absolute = false, ?bool $dimensionKeys = true, ?bool $typeAssertion = false): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('uri');
-        if (null !== $absolute) {
+        if (true === $absolute) {
         $leafQueryBuilder->setArgument('absolute', $absolute);
         }
         if (null !== $dimensionKeys) {
         $leafQueryBuilder->setArgument('dimensionKeys', $dimensionKeys);
         }
-        if (null !== $typeAssertion) {
+        if (true === $typeAssertion) {
         $leafQueryBuilder->setArgument('typeAssertion', $typeAssertion);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'uri');
@@ -97,15 +109,6 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
         return (array)$this->queryLeaf($leafQueryBuilder, 'path');
-    }
-
-    /**
-     * The module name, collection keys, and full path key in the artifact type dimension.
-     */
-    public function dimensionKeys(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensionKeys');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'dimensionKeys');
     }
 
     /**

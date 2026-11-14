@@ -17,6 +17,7 @@ import (
 
 	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/core/artifact"
+	"github.com/dagger/dagger/core/artifact/flattening"
 
 	"github.com/charmbracelet/huh"
 	"github.com/opencontainers/go-digest"
@@ -73,11 +74,6 @@ var (
 )
 
 const collectionCallSelectorFlag = "dagger.io/collection-call-selector"
-
-type functionCommandPath struct {
-	Module string
-	Fields []string
-}
 
 type collectionCallRoute struct {
 	Dimension *artifact.Dimension
@@ -763,7 +759,6 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, p
 	commandNames := map[string]bool{}
 	for _, fn := range fns {
 		child := fn.commandClone()
-		child.commandPath = fc.childCommandPath(parentFn, child, typeDef.AsCollection != nil)
 		child.collectionRoutes = slices.Clone(parentFn.collectionRoutes)
 		subCmd := fc.makeSubCmd(ctx, child)
 		cmd.AddCommand(subCmd)
@@ -787,42 +782,6 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, p
 	return nil
 }
 
-func (fc *FuncCommand) childCommandPath(parent, child *modFunction, collectionProjection bool) *functionCommandPath {
-	if parent.commandPath == nil {
-		module := child.SourceModuleName
-		if module == "" && child.ReturnType != nil && child.ReturnType.AsObject != nil {
-			module = child.ReturnType.AsObject.SourceModuleName
-		}
-		if module == "" {
-			module = fc.mod.Name
-		}
-		path := &functionCommandPath{Module: cliName(module)}
-		// The constructor is spelled by the module's rules, legacy or current.
-		if !slices.Contains(fieldNameCandidates(module), child.Name) {
-			path.Fields = []string{cliName(child.Name)}
-		}
-		return path
-	}
-
-	path := &functionCommandPath{
-		Module: parent.commandPath.Module,
-		Fields: slices.Clone(parent.commandPath.Fields),
-	}
-	if !collectionProjection || !isCollectionProjectionFunction(child.Name) {
-		path.Fields = append(path.Fields, cliName(child.Name))
-	}
-	return path
-}
-
-func isCollectionProjectionFunction(name string) bool {
-	switch name {
-	case "keys", "list", "get", "subset":
-		return true
-	default:
-		return false
-	}
-}
-
 func (fc *FuncCommand) addCollectionFunctionCommands(
 	ctx context.Context,
 	cmd *cobra.Command,
@@ -830,9 +789,6 @@ func (fc *FuncCommand) addCollectionFunctionCommands(
 	collection *modCollection,
 	reserved map[string]bool,
 ) error {
-	if parentFn.commandPath == nil {
-		return nil
-	}
 	for _, typeDef := range []*modTypeDef{collection.KeyType, collection.ValueType} {
 		if typeDef != nil {
 			if err := fc.mod.LoadTypeDef(typeDef); err != nil {
@@ -841,7 +797,7 @@ func (fc *FuncCommand) addCollectionFunctionCommands(
 		}
 	}
 
-	dimension, err := collectionCommandDimension(parentFn.commandPath, parentFn.ReturnType, collection)
+	dimension, err := collectionCommandDimension(parentFn.ReturnType, collection)
 	if err != nil {
 		return err
 	}
@@ -859,10 +815,6 @@ func (fc *FuncCommand) addCollectionFunctionCommands(
 		}
 		route := &collectionCallRoute{Dimension: dimension, KeyType: collection.KeyType}
 		child := function.commandClone()
-		child.commandPath = &functionCommandPath{
-			Module: parentFn.commandPath.Module,
-			Fields: append(slices.Clone(parentFn.commandPath.Fields), cliName(child.Name)),
-		}
 		child.collectionRoute = route
 		child.collectionRoutes = append(slices.Clone(parentFn.collectionRoutes), route)
 		cmd.AddCommand(fc.makeSubCmd(ctx, child))
@@ -870,24 +822,12 @@ func (fc *FuncCommand) addCollectionFunctionCommands(
 	return nil
 }
 
-func collectionCommandDimension(path *functionCommandPath, collectionType *modTypeDef, collection *modCollection) (*artifact.Dimension, error) {
-	if path == nil || path.Module == "" || collectionType == nil || collection.ValueType == nil || collection.KeyType == nil {
+func collectionCommandDimension(collectionType *modTypeDef, collection *modCollection) (*artifact.Dimension, error) {
+	if collectionType == nil || collection.ValueType == nil || collection.KeyType == nil {
 		return nil, errors.New("collection command is missing selector metadata")
 	}
-	itemType := collection.ValueType.Name()
-	identifier := "/" + strings.Join(append([]string{path.Module}, path.Fields...), "/")
-	dimension := &artifact.Dimension{
-		Kind:           "COLLECTION",
-		CollectionType: collectionType.Name(),
-		Identifier:     identifier,
-		Name:           cliName(itemType),
-		ItemType:       itemType,
-		KeyName:        "key",
-	}
-	qualified := append([]string{path.Module}, path.Fields...)
-	itemName := strings.TrimPrefix(dimension.Name, path.Module+"-")
-	dimension.QualifiedName = strings.Join(append(qualified, itemName), "-")
-	return dimension, nil
+	c := flattening.Collection{Type: collectionType.Name(), ItemType: collection.ValueType.Name(), KeyName: "key"}
+	return (*artifact.Dimension)(c.CanonicalDimension()), nil
 }
 
 // makeSubCmd creates a sub-command for a function definition.

@@ -1,0 +1,12 @@
+ID            NAME
+Dependencies  dependencies
+Packages      packages
+Tests         test
+module        module
+name          name
+
+TYPE   dependencies  packages  test  module  name
+Check  -             -         unit  app     before.check
+Check  -             -         unit  app     after.check
+Check  -             lib       -     app     packages.check
+Check  base          -         -     app     dependencies.check

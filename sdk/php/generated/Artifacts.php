@@ -76,10 +76,10 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
         ?string $dimension = null,
     ): array {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pathDefinitions');
-        if (null !== $absolute) {
+        if (true === $absolute) {
         $leafQueryBuilder->setArgument('absolute', $absolute);
         }
-        if (null !== $typeAssertion) {
+        if (true === $typeAssertion) {
         $leafQueryBuilder->setArgument('typeAssertion', $typeAssertion);
         }
         if (null !== $dimension) {
@@ -122,7 +122,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDirectives');
         $innerQueryBuilder->setArgument('directives', $directives);
-        if (null !== $exclude) {
+        if (true === $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -135,7 +135,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterParentTypes');
         $innerQueryBuilder->setArgument('types', $types);
-        if (null !== $exclude) {
+        if (true === $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -148,7 +148,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterParentDirectives');
         $innerQueryBuilder->setArgument('directives', $directives);
-        if (null !== $exclude) {
+        if (true === $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -171,7 +171,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterTypes');
         $innerQueryBuilder->setArgument('types', $types);
-        if (null !== $exclude) {
+        if (true === $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -200,10 +200,13 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Keep artifacts selected through any listed dimension.
      */
-    public function filterDimensions(array $dimensions): Artifacts
+    public function filterDimensions(array $dimensions, ?bool $exclude = false): Artifacts
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filterDimensions');
         $innerQueryBuilder->setArgument('dimensions', $dimensions);
+        if (true === $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
         return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -233,11 +236,14 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * List dimension identifiers represented in this selection, sorted with no duplicates.
+     * List dimensions whose cells differ across selected rows. Missing cells differ from present keys.
      */
-    public function dimensions(): array
+    public function dimensions(?bool $all = false): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dimensions');
+        if (true === $all) {
+        $leafQueryBuilder->setArgument('all', $all);
+        }
         return (array)$this->queryLeaf($leafQueryBuilder, 'dimensions');
     }
 
@@ -252,7 +258,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
+     * List collection items represented in this selection. Retain the source selection’s visible dimensions without evaluating item values.
      */
     public function dimensionItems(string $dimension): array
     {
@@ -271,7 +277,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
+     * Require exactly one artifact from the selected items snapshot; fail if there are zero or multiple matches.
      */
     public function one(): Artifact
     {

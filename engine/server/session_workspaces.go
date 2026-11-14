@@ -1145,6 +1145,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 		kept := make([]pendingModule, 0, len(demand))
 		for _, mod := range demand {
 			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
+				client.reportFailedModuleLocked(ctx, mod, err, mode)
 				loadFailures = append(loadFailures, moduleLoadFailure(mod, err))
 				continue
 			}
@@ -1182,7 +1183,7 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 			loadErr := moduleLoadErr(load, resolveErrs[i])
 			client.recordFailedModule(load.mod, loadErr)
 			if mode.BestEffort() {
-				reportSkippedModule(ctx, moduleProgressName(load.mod), core.LoadFailureCause("", loadErr, mode))
+				client.reportFailedModuleLocked(ctx, load.mod, loadErr, mode)
 				loadFailures = append(loadFailures, moduleLoadFailure(load.mod, loadErr))
 				continue
 			}
@@ -1360,6 +1361,24 @@ func (client *clientRuntime) recordFailedModule(mod pendingModule, err error) {
 		client.failedModules = make(map[string]error)
 	}
 	client.failedModules[moduleProgressName(mod)] = err
+}
+
+func (client *clientRuntime) reportFailedModuleLocked(ctx context.Context, mod pendingModule, err error, mode core.ModuleLoadMode) {
+	if mode == core.ModuleLoadMetadata || !mode.BestEffort() {
+		return
+	}
+	name := moduleProgressName(mod)
+	if client.reportedFailedModules[name] {
+		return
+	}
+	reportSkippedModule(ctx, name, core.LoadFailureCause("", err, mode))
+
+	if _, cached := client.failedModules[name]; cached {
+		if client.reportedFailedModules == nil {
+			client.reportedFailedModules = make(map[string]bool)
+		}
+		client.reportedFailedModules[name] = true
+	}
 }
 
 // removePendingModules drops served modules from the pending set and records

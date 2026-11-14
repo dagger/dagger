@@ -1,0 +1,165 @@
+[
+  {
+    "module": "docs",
+    "type": "Check",
+    "localPath": [
+      "check"
+    ],
+    "collections": [],
+    "items": [
+      []
+    ]
+  },
+  {
+    "module": "docs",
+    "type": "Check",
+    "localPath": [
+      "references",
+      "stale"
+    ],
+    "collections": [],
+    "items": [
+      []
+    ]
+  },
+  {
+    "module": "python-client",
+    "type": "Check",
+    "localPath": [
+      "python310",
+      "unit"
+    ],
+    "collections": [],
+    "items": [
+      []
+    ]
+  },
+  {
+    "module": "python-client",
+    "type": "Check",
+    "localPath": [
+      "python310",
+      "slow"
+    ],
+    "collections": [],
+    "items": [
+      []
+    ]
+  },
+  {
+    "module": "golang",
+    "type": "Generator",
+    "localPath": [
+      "generate"
+    ],
+    "collections": [
+      {
+        "fields": [
+          "modules"
+        ],
+        "type": "GolangModules",
+        "itemType": "GolangModule",
+        "keyName": "key"
+      },
+      {
+        "fields": [
+          "packages"
+        ],
+        "type": "GolangPackages",
+        "itemType": "GolangPackage",
+        "keyName": "key"
+      }
+    ],
+    "items": [
+      [
+        ".",
+        "cmd/codegen"
+      ],
+      [
+        ".",
+        "cmd/codegen/generator/go"
+      ]
+    ]
+  },
+  {
+    "module": "golang",
+    "type": "Check",
+    "localPath": [
+      "generate",
+      "stale"
+    ],
+    "collections": [
+      {
+        "fields": [
+          "modules"
+        ],
+        "type": "GolangModules",
+        "itemType": "GolangModule",
+        "keyName": "key"
+      },
+      {
+        "fields": [
+          "packages"
+        ],
+        "type": "GolangPackages",
+        "itemType": "GolangPackage",
+        "keyName": "key"
+      }
+    ],
+    "items": [
+      [
+        ".",
+        "cmd/codegen"
+      ],
+      [
+        ".",
+        "cmd/codegen/generator/go"
+      ]
+    ]
+  },
+  {
+    "module": "golang",
+    "type": "Check",
+    "localPath": [
+      "test"
+    ],
+    "collections": [
+      {
+        "fields": [
+          "modules"
+        ],
+        "type": "GolangModules",
+        "itemType": "GolangModule",
+        "keyName": "key"
+      },
+      {
+        "fields": [
+          "packages"
+        ],
+        "type": "GolangPackages",
+        "itemType": "GolangPackage",
+        "keyName": "key"
+      },
+      {
+        "fields": [
+          "tests"
+        ],
+        "type": "GolangTests",
+        "itemType": "GolangTest",
+        "keyName": "key"
+      }
+    ],
+    "items": [
+      [
+        "e2e/helm",
+        "e2e/helm",
+        "TestCustomProbes"
+      ],
+      [
+        "e2e/helm",
+        "e2e/helm",
+        "TestInstallK3S"
+      ]
+    ]
+  }
+]

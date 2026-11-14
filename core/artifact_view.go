@@ -109,9 +109,10 @@ func artifactViewOrigin(id *call.ID) string {
 // Paths identify collection dimensions across calls on scoped receivers.
 // Arguments select instances within a dimension, so they are not part of a path.
 type artifactViewPath struct {
-	Dimension string
-	Root      string
-	Fields    []artifactViewPathField
+	CollectionType string
+	Dimension      string
+	Root           string
+	Fields         []artifactViewPathField
 }
 
 type artifactViewPathField struct {
@@ -137,7 +138,7 @@ func (p artifactViewPath) matches(id *call.ID) bool {
 
 func (v *ArtifactView) addPaths(ctx context.Context, roots []*Artifact) error {
 	for _, root := range roots {
-		path := artifactViewPath{Dimension: root.Node.CollectionDimension.Identifier}
+		path := artifactViewPath{Dimension: root.Node.CollectionDimension.Identifier, CollectionType: root.Node.CollectionDimension.CollectionType}
 		for node := root.Node.Parent; node != nil; node = node.Parent {
 			if node.RootValue != nil {
 				id, err := node.RootValue.RecipeID(ctx)
@@ -406,7 +407,7 @@ func applyModuleObjectView(ctx context.Context, self dagql.ObjectResult[*ModuleO
 				}
 				// Known unfiltered paths must not use another dimension's rule.
 				for _, rule := range view.state.Rules {
-					if rule.Dimension == path.Dimension {
+					if rule.Dimension == path.Dimension || rule.Dimension == path.CollectionType {
 						selected, bound = rule.Keys, true
 						break
 					}
@@ -520,7 +521,7 @@ func (d *artifactViewDiscovery) record(receiver *Artifact, result dagql.AnyObjec
 	var selected []string
 	filtered := false
 	for _, rule := range d.view.state.Rules {
-		if rule.Dimension == dimension.Identifier {
+		if dimensionMatches(dimension, rule.Dimension) {
 			filtered = true
 			for _, key := range keys {
 				if slices.Contains(rule.Keys, key.text) {
@@ -574,7 +575,7 @@ func (a *Artifacts) viewDiscovery() (*artifactViewDiscovery, error) {
 			continue
 		}
 		for _, dimension := range a.AllDimensions {
-			if dimension.Identifier == filter.Dimension {
+			if dimensionMatches(dimension, filter.Dimension) {
 				keys := slices.Clone(filter.Keys)
 				slices.Sort(keys)
 				sameType := 0
@@ -585,7 +586,7 @@ func (a *Artifacts) viewDiscovery() (*artifactViewDiscovery, error) {
 				}
 				d.view.state.Rules = append(d.view.state.Rules, artifactViewRule{
 					Dimension: filter.Dimension, Type: dimension.CollectionType,
-					Keys: slices.Compact(keys), UniqueType: sameType == 1,
+					Keys: slices.Compact(keys), UniqueType: filter.Dimension == dimension.CollectionType || sameType == 1,
 				})
 				break
 			}

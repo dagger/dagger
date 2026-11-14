@@ -84,6 +84,8 @@ class ArtifactDimensionKind(Enum):
 
     MODULE = "MODULE"
 
+    NAME = "NAME"
+
     TYPE = "TYPE"
 
 
@@ -1576,11 +1578,20 @@ class Artifact(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def dimension_keys(self) -> list["ArtifactDimensionKey"]:
-        """The module name, collection keys, and full path key in the artifact
-        type dimension.
+    async def dimension_keys(
+        self, *, all: bool | None = False
+    ) -> list["ArtifactDimensionKey"]:
+        """The artifact coordinates in its source selection's visible dimensions.
+        Without a source selection, return all coordinates.
+
+        Parameters
+        ----------
+        all:
+            Return all artifact coordinates, including constant dimensions.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("all", all, False),
+        ]
         _ctx = self._select("dimensionKeys", _args)
         return await _ctx.execute_object_list(ArtifactDimensionKey)
 
@@ -2276,9 +2287,14 @@ class Artifacts(Type):
         _ctx = self._select("dimensionKeys", _args)
         return await _ctx.execute(list[str])
 
-    async def dimensions(self) -> list[str]:
-        """List dimension identifiers represented in this selection, sorted with
-        no duplicates.
+    async def dimensions(self, *, all: bool | None = False) -> list[str]:
+        """List dimensions whose cells differ across selected rows. Missing cells
+        differ from present keys.
+
+        Parameters
+        ----------
+        all:
+            List all workspace schema dimensions without runtime discovery.
 
         Returns
         -------
@@ -2294,7 +2310,9 @@ class Artifacts(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("all", all, False),
+        ]
         _ctx = self._select("dimensions", _args)
         return await _ctx.execute(list[str])
 
@@ -2310,10 +2328,23 @@ class Artifacts(Type):
         _ctx = self._select("filterDimensionKeys", _args)
         return Artifacts(_ctx)
 
-    def filter_dimensions(self, dimensions: list[str]) -> Self:
-        """Keep artifacts selected through any listed dimension."""
+    def filter_dimensions(
+        self,
+        dimensions: list[str],
+        *,
+        exclude: bool | None = False,
+    ) -> Self:
+        """Keep artifacts selected through any listed dimension.
+
+        Parameters
+        ----------
+        dimensions:
+        exclude:
+            Remove artifacts with any listed dimension.
+        """
         _args = [
             Arg("dimensions", dimensions),
+            Arg("exclude", exclude, False),
         ]
         _ctx = self._select("filterDimensions", _args)
         return Artifacts(_ctx)
@@ -2490,8 +2521,8 @@ class Artifacts(Type):
         return await _ctx.execute_object_list(Module)
 
     def one(self) -> Artifact:
-        """Require exactly one artifact; fail if there are zero or multiple
-        matches. Several matches are listed, one address per line.
+        """Require exactly one artifact from the selected items snapshot; fail if
+        there are zero or multiple matches.
         """
         _args: list[Arg] = []
         _ctx = self._select("one", _args)

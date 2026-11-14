@@ -50,12 +50,16 @@ defmodule Dagger.Artifact do
   end
 
   @doc """
-  The module name, collection keys, and full path key in the artifact type dimension.
+  The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
   """
-  @spec dimension_keys(t()) :: {:ok, [Dagger.ArtifactDimensionKey.t()]} | {:error, term()}
-  def dimension_keys(%__MODULE__{} = artifact) do
+  @spec dimension_keys(t(), [{:all, boolean() | nil}]) ::
+          {:ok, [Dagger.ArtifactDimensionKey.t()]} | {:error, term()}
+  def dimension_keys(%__MODULE__{} = artifact, optional_args \\ []) do
     query_builder =
-      artifact.query_builder |> QB.select("dimensionKeys") |> QB.select("id")
+      artifact.query_builder
+      |> QB.select("dimensionKeys")
+      |> QB.maybe_put_arg("all", optional_args[:all])
+      |> QB.select("id")
 
     with {:ok, items} <- Client.execute(artifact.client, query_builder) do
       {:ok,

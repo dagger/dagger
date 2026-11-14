@@ -498,6 +498,8 @@ type clientRuntime struct {
 	// load failures by moduleProgressName; failed modules stay pending to keep
 	// reporting their error
 	failedModules map[string]error
+
+	reportedFailedModules map[string]bool
 	// configErr is a workspace config that could not be made effective — a
 	// failed [[include]], or a module left without a source — for a client
 	// that does not auto-load modules. The workspace still binds, so a config
@@ -608,6 +610,7 @@ func (client *clientRuntime) releaseHeavyState() {
 	client.extraModulesLoaded = false
 	client.extraModulesErr = nil
 	client.failedModules = nil
+	client.reportedFailedModules = nil
 	client.configErr = nil
 	client.mainServed = false
 	client.servedModuleKeys = nil

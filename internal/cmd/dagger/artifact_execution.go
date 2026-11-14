@@ -38,14 +38,14 @@ type artifactValueResult struct {
 }
 
 type artifactExecutionItem struct {
-	ID            core.ID
-	URI           string
-	Path          []string
-	Directives    []string
-	LoadError     string
-	CheckGroup    string
-	Workspace     *struct{ ID core.ID }
-	DimensionKeys []struct{ Dimension string }
+	ID         core.ID
+	URI        string
+	Path       []string
+	Directives []string
+	LoadError  string
+	CheckGroup string
+	Workspace  *struct{ ID core.ID }
+	TypeURI    string
 }
 
 type artifactExecutionError struct {
@@ -67,7 +67,7 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 		Selection struct{ Items []artifactExecutionItem }
 	}
 	query := `query($id: ID!) { selection: node(id: $id) { ... on Artifacts {
-		 items: __evaluationItems { id uri(dimensionKeys: true) path directives loadError checkGroup: __checkGroup workspace { id } dimensionKeys { dimension } }
+		 items: __evaluationItems { id uri(dimensionKeys: true) typeURI: uri(dimensionKeys: false, typeAssertion: true) path directives loadError checkGroup: __checkGroup workspace { id } }
 		} } }`
 	err = dag.Do(preparationCtx, &dagger.Request{Query: query, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
 	if isMissingCheckGroupField(err) {
@@ -95,7 +95,7 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 	var syncFields sync.Map
 	for i, item := range response.Selection.Items {
 		results[i].Artifact.URI, results[i].Artifact.Path = item.URI, item.Path
-		isCheck := slices.ContainsFunc(item.DimensionKeys, func(key struct{ Dimension string }) bool { return key.Dimension == "type:Check" })
+		isCheck := strings.HasPrefix(item.TypeURI, "dag+check://")
 		remote := isCheck && checksScaleOut && item.LoadError == "" && item.Workspace != nil
 		var attrs []attribute.KeyValue
 		isGenerator := slices.Contains(item.Directives, "generate")
@@ -364,7 +364,18 @@ func sharedArtifactFilters(addresses []*dagaddress.Address) (*dagaddress.Address
 			slices.Sort(filters[i].Keys)
 			filters[i].Keys = slices.Compact(filters[i].Keys)
 		}
-		slices.SortFunc(filters, func(a, b dagaddress.DimensionFilter) int { return strings.Compare(a.Dimension, b.Dimension) })
+		slices.SortFunc(filters, func(a, b dagaddress.DimensionFilter) int {
+			if order := strings.Compare(a.Dimension, b.Dimension); order != 0 {
+				return order
+			}
+			if a.Absent == b.Absent {
+				return 0
+			}
+			if a.Absent {
+				return 1
+			}
+			return -1
+		})
 		encoded, err := json.Marshal(struct {
 			Types      []string
 			Dimensions []dagaddress.DimensionFilter
@@ -384,7 +395,9 @@ func requireArtifactModules(ctx context.Context, dag *dagger.Client, selection *
 	// A failed module has no schema. Module selectors can exclude it; type
 	// and collection selectors cannot prove that it has no matching artifacts.
 	for _, filter := range filters {
-		if filter.Dimension == artifact.ModuleDimension && filter.Keys != nil {
+		if filter.Dimension == artifact.ModuleDimension && filter.Absent {
+			selection = selection.FilterURI("dag://?!module")
+		} else if filter.Dimension == artifact.ModuleDimension && filter.Keys != nil {
 			selection = selection.FilterDimensionKeys(filter.Dimension, filter.Keys)
 		}
 	}
@@ -486,6 +499,21 @@ func checkArtifactListFlags(cmd *cobra.Command, changed func(string) bool, value
 // Preserve explicit check selection policy when a listed row is copied.
 func artifactListReplayArgs(cmd *cobra.Command) []string {
 	var args []string
+	workspace, selected := "", false
+	if flag := cmd.Flag("workspace"); flag != nil && flag.Changed {
+		workspace, selected = flag.Value.String(), true
+	}
+	if addresses, err := parseArtifactAddresses(cmd.Flags().Args()); err == nil {
+		for _, address := range addresses {
+			if address.Absolute {
+				workspace, selected = address.Workspace+"@"+address.Version, true
+				break
+			}
+		}
+	}
+	if selected {
+		args = append(args, "-W", workspace)
+	}
 	if cmd.Flags().Changed("generated") {
 		args = append(args, "--generated="+cmd.Flag("generated").Value.String())
 	}

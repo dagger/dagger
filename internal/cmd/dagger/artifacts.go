@@ -86,6 +86,13 @@ func registerArtifactDimensionHelp(cmd *cobra.Command, dimensions, selected arti
 		if dimension.Kind == "MODULE" {
 			continue
 		}
+		if dimension.Kind == "NAME" {
+			if cmd.Flag(allocated.Key) == nil {
+				cmd.Flags().StringArray(allocated.Key, nil, "Select artifacts by their full local field path `NAME`")
+				cmd.Flags().Lookup(allocated.Key).Annotations = map[string][]string{artifactDimensionFlag: {dimension.Identifier}}
+			}
+			continue
+		}
 		if cmd.Flag(allocated.Key) == nil {
 			key := cliName(dimension.KeyName)
 			if key == "" {
@@ -190,6 +197,9 @@ func artifactPaths(addresses []*dagaddress.Address, keys ...dagaddress.Pair) []s
 				if pair.Dimension != artifact.ModuleDimension {
 					return nil // Preserve the schema scope used to bind other dimensions.
 				}
+				if pair.Absent {
+					return nil
+				}
 				if pair.HasKey {
 					modules = append(modules, pair.Key)
 				}
@@ -231,7 +241,9 @@ func filterArtifactAddress(artifacts *core.Artifacts, addr *dagaddress.Address) 
 		artifacts = artifacts.FilterURI((&dagaddress.Address{Types: addr.Types}).String())
 	}
 	for _, filter := range addr.DimensionFilters() {
-		if filter.Keys == nil {
+		if filter.Absent {
+			artifacts = artifacts.FilterURI((&dagaddress.Address{Query: []dagaddress.Pair{{Dimension: filter.Dimension, Absent: true}}}).String())
+		} else if filter.Keys == nil {
 			artifacts = artifacts.FilterDimensions([]string{filter.Dimension})
 		} else {
 			artifacts = artifacts.FilterDimensionKeys(filter.Dimension, filter.Keys)
@@ -351,13 +363,29 @@ func artifactDimensions(ctx context.Context, dag *dagger.Client, artifacts *core
 		return nil, err
 	}
 	var res struct {
-		Node struct{ DimensionDefinitions artifact.Dimensions }
+		Node struct {
+			DimensionDefinitions artifact.Dimensions
+			Types                []struct{ Name string }
+		}
 	}
 	err = dag.Do(ctx, &dagger.Request{
-		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { dimensionDefinitions { kind identifier name qualifiedName collectionType itemType keyName keyDescription } } } }`,
+		Query:     `query($id: ID!) { node(id: $id) { ... on Artifacts { dimensionDefinitions { kind identifier name qualifiedName collectionType itemType keyName keyDescription } types { name } } } }`,
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &res})
-	return res.Node.DimensionDefinitions, err
+	if err != nil {
+		return nil, err
+	}
+	definitions := res.Node.DimensionDefinitions
+	for _, typ := range res.Node.Types {
+		id := "type:" + typ.Name
+		if !slices.ContainsFunc(definitions, func(d *artifact.Dimension) bool { return d.Identifier == id }) {
+			definitions = append(definitions, &artifact.Dimension{
+				Identifier: id, Kind: "TYPE", Name: cliName(typ.Name),
+				QualifiedName: "artifact-" + cliName(typ.Name), ItemType: typ.Name,
+			})
+		}
+	}
+	return definitions, nil
 }
 
 func validateArtifactDimensionFlags(cmd *cobra.Command, defs artifact.Dimensions) error {
@@ -428,7 +456,7 @@ func artifactTypeNames(types []commandListItem) []string {
 
 // artifactURIs prints one address per artifact, in the form filterUri accepts.
 func artifactURIs(ctx context.Context, dag *dagger.Client, artifacts *core.Artifacts, absolute bool) ([]string, error) {
-	items, err := readListedArtifacts(ctx, dag, artifacts, absolute, false)
+	items, err := readListedArtifactsMetadata(ctx, dag, artifacts, absolute, false)
 	if err != nil {
 		return nil, err
 	}
@@ -443,24 +471,28 @@ type listedArtifact struct {
 	ModuleFlag       string            `json:"-"`
 	OmitTypeKey      bool              `json:"-"`
 	OmitCLITypeKey   bool              `json:"-"`
-	Presence         []string          `json:"-"`
+	CLIPath          string            `json:"-"`
+	Presence         []string          `json:"presence,omitempty"`
 	DisplayKeys      map[string]string `json:"-"`
 	PresenceNames    map[string]string `json:"-"`
 	CollectionItem   bool              `json:"-"`
 	URI, Description string
 	ModuleName       string
+	LoadError        string
+	Name             string
+	Coordinates      []struct{ Dimension, Key string }
 	Path             []string
 	DimensionKeys    []struct{ Dimension, Key string }
 }
 
-// The address already carries every runtime key. Read the row's static path
-// and module alongside it instead of loading an object per dimension key.
 func (item *listedArtifact) keysFromAddress(definitions artifact.Dimensions) error {
+	if item.DimensionKeys != nil {
+		return nil
+	}
 	address, err := dagaddress.Parse(item.URI)
 	if err != nil {
 		return err
 	}
-	item.DimensionKeys = nil
 	if item.ModuleName != "" {
 		item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{artifact.ModuleDimension, item.ModuleName})
 	}
@@ -491,6 +523,9 @@ func (item listedArtifact) fullPath() string {
 		if strings.HasPrefix(key.Dimension, "type:") {
 			return key.Key
 		}
+	}
+	if len(item.Path) > 0 {
+		return strings.Join(item.Path, "/")
 	}
 	if addr, err := dagaddress.Parse(item.URI); err == nil {
 		return addr.ArtifactPath(addr.Types...)
@@ -540,6 +575,41 @@ func isMissingArtifactListingField(err error) bool {
 	return gqlErr != nil && len(gqlErr.Path) == 0 && gqlErr.Extensions["code"] == "GRAPHQL_VALIDATION_FAILED" && strings.HasPrefix(gqlErr.Message, missing)
 }
 
+func isMissingArtifactSchemaListing(err error) bool {
+	if isMissingArtifactListingField(err) {
+		return true
+	}
+	var httpErr *graphql.HTTPError
+	if !errors.As(err, &httpErr) || len(httpErr.Response.Errors) != 1 {
+		return false
+	}
+	gqlErr := httpErr.Response.Errors[0]
+	return gqlErr != nil && len(gqlErr.Path) == 0 && gqlErr.Extensions["code"] == "GRAPHQL_VALIDATION_FAILED" &&
+		strings.HasPrefix(gqlErr.Message, `Unknown argument "schema" on field "Artifacts.__listing".`)
+}
+
+func readArtifactSchemaListing(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute bool) ([]listedArtifact, bool, error) {
+	id, err := selection.ID(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	var response struct{ Node struct{ Listing string } }
+	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $absolute: Boolean!) {
+  node(id:$id) { ... on Artifacts { listing:__listing(schema:true, absolute:$absolute, typeAssertion:true) } }
+}`, Variables: map[string]any{"id": id, "absolute": absolute}}, &dagger.Response{Data: &response})
+	if isMissingArtifactSchemaListing(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	var items []listedArtifact
+	if err := json.Unmarshal([]byte(response.Node.Listing), &items); err != nil {
+		return nil, true, err
+	}
+	return items, true, nil
+}
+
 func readListedArtifactsMetadata(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, absolute, typed bool) ([]listedArtifact, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
@@ -575,26 +645,60 @@ func readListedArtifactsMetadata(ctx context.Context, dag *dagger.Client, select
 	return items, nil
 }
 
-func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, dimension string, absolute, expand bool) ([]listedArtifact, error) {
-	if !expand {
-		return readListedArtifactPaths(ctx, dag, selection, absolute, dimension)
-	}
+func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, dimension string, absolute bool) ([]listedArtifact, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
+	definitions, err := artifactDimensions(ctx, dag, selection)
+	if err != nil {
+		return nil, err
+	}
+	var itemType string
+	for _, definition := range definitions {
+		if definition.Identifier == dimension {
+			itemType = definition.ItemType
+			break
+		}
+	}
 	var response struct {
 		Node struct{ Items []listedArtifact }
 	}
-	err = dag.Do(ctx, &dagger.Request{Query: `query($id: ID!, $dimension: String!, $absolute: Boolean!) {
+	query := `query($id: ID!, $dimension: String!, $absolute: Boolean!) {
   node(id: $id) { ... on Artifacts {
-    items: dimensionItems(dimension: $dimension) { uri(absolute: $absolute, typeAssertion: true) description dimensionKeys { dimension key } }
+    items: dimensionItems(dimension: $dimension) { uri(absolute: $absolute, typeAssertion: true) description moduleName path coordinates:dimensionKeys(all:true) { dimension key } }
   } }
- }`, Variables: map[string]any{"id": id, "dimension": dimension, "absolute": absolute}}, &dagger.Response{Data: &response})
-	for i := range response.Node.Items {
-		response.Node.Items[i].CollectionItem = true
+ }`
+	variables := map[string]any{"id": id, "dimension": dimension, "absolute": absolute}
+	err = dag.Do(ctx, &dagger.Request{Query: query, Variables: variables}, &dagger.Response{Data: &response})
+	if err != nil && strings.Contains(err.Error(), "Unknown argument") && strings.Contains(err.Error(), "all") {
+		query = strings.Replace(query, "dimensionKeys(all:true)", "dimensionKeys", 1)
+		err = dag.Do(ctx, &dagger.Request{Query: query, Variables: variables}, &dagger.Response{Data: &response})
 	}
-	return response.Node.Items, err
+	if err != nil {
+		return nil, err
+	}
+	for i := range response.Node.Items {
+		item := &response.Node.Items[i]
+		item.CollectionItem = true
+		legacy := slices.ContainsFunc(item.Coordinates, func(k struct{ Dimension, Key string }) bool { return strings.HasPrefix(k.Dimension, "type:") })
+		if legacy {
+			item.DimensionKeys = item.Coordinates
+			item.Coordinates = nil
+			continue
+		}
+		for _, coordinate := range item.Coordinates {
+			if coordinate.Dimension == "name" {
+				item.Name = coordinate.Key
+				continue
+			}
+			item.DimensionKeys = append(item.DimensionKeys, coordinate)
+		}
+		if itemType != "" {
+			item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{"type:" + itemType, strings.Join(item.Path, "/")})
+		}
+	}
+	return response.Node.Items, nil
 }
 
 func registerArtifactFilters(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, dimensions, selected artifact.Dimensions, all *core.Artifacts) error {
@@ -608,7 +712,7 @@ func registerArtifactFilters(ctx context.Context, dag *dagger.Client, cmd *cobra
 		types = append(types, typ)
 	}
 	for _, d := range dimensions {
-		if slices.Contains(types, d.ItemType) && !slices.ContainsFunc(selected, func(s *artifact.Dimension) bool { return s.Identifier == d.Identifier }) {
+		if (d.Identifier == artifact.NameDimension || slices.Contains(types, d.ItemType)) && !slices.ContainsFunc(selected, func(s *artifact.Dimension) bool { return s.Identifier == d.Identifier }) {
 			selected = append(selected, d)
 		}
 	}

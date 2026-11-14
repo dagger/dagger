@@ -191,12 +191,14 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  List dimension identifiers represented in this selection, sorted with no duplicates.
+  List dimensions whose cells differ across selected rows. Missing cells differ from present keys.
   """
-  @spec dimensions(t()) :: {:ok, [String.t()]} | {:error, term()}
-  def dimensions(%__MODULE__{} = artifacts) do
+  @spec dimensions(t(), [{:all, boolean() | nil}]) :: {:ok, [String.t()]} | {:error, term()}
+  def dimensions(%__MODULE__{} = artifacts, optional_args \\ []) do
     query_builder =
-      artifacts.query_builder |> QB.select("dimensions")
+      artifacts.query_builder
+      |> QB.select("dimensions")
+      |> QB.maybe_put_arg("all", optional_args[:all])
 
     Client.execute(artifacts.client, query_builder)
   end
@@ -221,12 +223,14 @@ defmodule Dagger.Artifacts do
   @doc """
   Keep artifacts selected through any listed dimension.
   """
-  @spec filter_dimensions(t(), [String.t()]) :: Dagger.Artifacts.t()
-  def filter_dimensions(%__MODULE__{} = artifacts, dimensions) do
+  @spec filter_dimensions(t(), [String.t()], [{:exclude, boolean() | nil}]) ::
+          Dagger.Artifacts.t()
+  def filter_dimensions(%__MODULE__{} = artifacts, dimensions, optional_args \\ []) do
     query_builder =
       artifacts.query_builder
       |> QB.select("filterDimensions")
       |> QB.put_arg("dimensions", dimensions)
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
 
     %Dagger.Artifacts{
       query_builder: query_builder,
@@ -409,7 +413,7 @@ defmodule Dagger.Artifacts do
   end
 
   @doc """
-  Require exactly one artifact; fail if there are zero or multiple matches. Several matches are listed, one address per line.
+  Require exactly one artifact from the selected items snapshot; fail if there are zero or multiple matches.
   """
   @spec one(t()) :: Dagger.Artifact.t()
   def one(%__MODULE__{} = artifacts) do

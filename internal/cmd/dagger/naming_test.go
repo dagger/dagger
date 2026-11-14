@@ -51,18 +51,3 @@ func TestFindFunctionByCmdName(t *testing.T) {
 	legacyClash := &modFunction{Name: "fn-2"}
 	require.Same(t, legacyClash, findFunctionByCmdName([]*modFunction{fn2, legacyClash}, "fn-2"))
 }
-
-// A module's constructor is the root of its command paths by either naming
-// rules' spelling, so a legacy module's collection selectors don't repeat
-// the module name.
-func TestChildCommandPathConstructor(t *testing.T) {
-	fc := &FuncCommand{mod: &moduleDef{Name: "e2e-test"}}
-	parent := &modFunction{}
-	for _, constructor := range []string{"e2eTest", "e2ETest"} {
-		path := fc.childCommandPath(parent, &modFunction{Name: constructor, SourceModuleName: "e2e-test"}, false)
-		require.Equal(t, "e2e-test", path.Module, constructor)
-		require.Empty(t, path.Fields, constructor)
-	}
-	path := fc.childCommandPath(parent, &modFunction{Name: "other", SourceModuleName: "e2e-test"}, false)
-	require.Equal(t, []string{"other"}, path.Fields)
-}

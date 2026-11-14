@@ -1,0 +1,30 @@
+[
+  {
+    "module": "app",
+    "type": "Check",
+    "localPath": ["check"],
+    "collections": [{"fields": ["before"], "type": "Tests", "itemType": "Test"}],
+    "items": [["unit"]]
+  },
+  {
+    "module": "app",
+    "type": "Check",
+    "localPath": ["check"],
+    "collections": [{"fields": ["after"], "type": "Tests", "itemType": "Test"}],
+    "items": [["unit"]]
+  },
+  {
+    "module": "app",
+    "type": "Check",
+    "localPath": ["check"],
+    "collections": [{"fields": ["packages"], "type": "Packages", "itemType": "Package"}],
+    "items": [["lib"]]
+  },
+  {
+    "module": "app",
+    "type": "Check",
+    "localPath": ["check"],
+    "collections": [{"fields": ["dependencies"], "type": "Dependencies", "itemType": "Package"}],
+    "items": [["base"]]
+  }
+]
