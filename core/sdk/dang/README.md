@@ -15,7 +15,7 @@ A Dang module has two versions, both on its `ModuleSource`:
 
 - `EngineVersion`, its Dagger version: API view, naming rules, default
   function caching.
-- `DangVersion`, its Dang language version, e.g. `"1.0"`, `"2.1"` or `"2.4"`.
+- `DangVersion`, its Dang language version, e.g. `"1.0"`, `"2.1"` or `"2.5"`.
 
 Both come from the `dang.toml` governing the module's source, which the engine
 reads itself (the runtime presets the Dagger import, so Dang skips the file's
@@ -31,8 +31,8 @@ reads itself (the runtime presets the Dagger import, so Dang skips the file's
   | engine version                                               | Dang |
   | ------------------------------------------------------------ | ---- |
   | before `engine.MinimumDangV2ModuleVersion` (v0.21.5)         | 1.0  |
-  | before `Dang24ModuleVersion` (v1.0.0-beta.28)                | 2.1  |
-  | `Dang24ModuleVersion` and later                              | 2.4  |
+  | before `Dang25ModuleVersion` (v1.0.0-beta.28)                | 2.1  |
+  | `Dang25ModuleVersion` and later                              | 2.5  |
 
   Dang 1.0 (`.{ }` is selection) is the language of the Dang v1 line these
   modules were written for. A manifest v2 entrypoint that declares no `dang`
@@ -84,7 +84,14 @@ type is Dang's builtin JSON-text scalar, not Dagger's `JSON` scalar, which is
 `Dagger.JSON` (convert between them with a cast). The module entrypoint
 contract keeps bare `JSON`, as released engines declare it. Values display as
 Dang literals (a Dagger object as its lazy query, not its ID) in `toString`,
-interpolation and `print`.
+interpolation and `print`. From vito/dang v2.5.0, interfaces declared in Dang
+are structural, so a `case` or `rescue` arm after an arm on such an interface
+may now be unreachable (an error), and a string holding `${` displays with the
+`$` escaped inside a collection.
+
+The Dang tools (`DangEval`, `DangCheck`) parse a snippet in the workspace
+scope as `dang.CurrentVersion`, so their language moves with every bump; a
+snippet in a module's scope is that module's version.
 
 A new Dang major that breaks the v2 line's compatibility would need its own
 package again; prefer a language version gate upstream.

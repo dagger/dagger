@@ -1231,15 +1231,16 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 		// Enumerating all generators loads modules best-effort: the broken
 		// module is still loaded (unlike the narrowed cases above, which never
 		// touch it) but its failure is tolerated, so listing still succeeds and
-		// shows the healthy generator instead of aborting. The skip itself is
-		// surfaced as a span on the run path (asserted below), not in the list
-		// table.
+		// shows the healthy generator instead of aborting. The skip is reported
+		// beside the list (SKIPPED MODULES), with the load error, which quotes
+		// the broken source, so unlike the narrowed cases this one can't assert
+		// the source never shows up.
 		out, err := base.
 			With(daggerExec("generate", "-l", "-f=link")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "good/generate")
-		require.NotContains(t, out, "intentionally invalid")
+		require.Contains(t, out, "SKIPPED MODULES")
 	})
 
 	t.Run("unscoped generate runs healthy generators despite a broken module", func(ctx context.Context, t *testctx.T) {

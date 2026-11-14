@@ -318,11 +318,11 @@ func versionMutationSource(t *testing.T, caching *bool) (context.Context, *modul
 }
 
 func TestDangSourceVersionMutations(t *testing.T) {
-	// Run as the engine of Dang24ModuleVersion: an earlier engine caps a
+	// Run as the engine of Dang25ModuleVersion: an earlier engine caps a
 	// module's view, and so its default Dang version, at its own. Not
 	// parallel, as it sets engine.Version.
 	oldVersion := engine.Version
-	engine.Version = dangv2.Dang24ModuleVersion
+	engine.Version = dangv2.Dang25ModuleVersion
 	t.Cleanup(func() { engine.Version = oldVersion })
 
 	ctx, s, original := versionMutationSource(t, nil)
@@ -354,7 +354,7 @@ func TestDangSourceVersionMutations(t *testing.T) {
 	require.Equal(t, "v0.19.0", original.EngineVersion, "mutators do not modify the receiver")
 
 	// Equal-valued overrides still carry provenance and survive later changes.
-	for _, override := range []string{"v0.19.0", "v1.0.0-beta.27", dangv2.Dang24ModuleVersion} {
+	for _, override := range []string{"v0.19.0", "v1.0.0-beta.27", dangv2.Dang25ModuleVersion} {
 		for _, path := range []string{"b", "none", "default"} {
 			t.Run(override+"/"+path, func(t *testing.T) {
 				before, err := s.moduleSourceWithEngineVersion(ctx, original, struct{ Version string }{override})
@@ -375,10 +375,10 @@ func TestDangSourceVersionMutations(t *testing.T) {
 				} else if override == "v0.19.0" {
 					require.Equal(t, "1.0", before.DangVersion)
 				} else if override == "v1.0.0-beta.27" {
-					// The last version before Dang24ModuleVersion.
+					// The last version before Dang25ModuleVersion.
 					require.Equal(t, "2.1", before.DangVersion, "grammar default follows final API version")
 				} else {
-					require.Equal(t, "2.4", before.DangVersion, "grammar default follows final API version")
+					require.Equal(t, "2.5", before.DangVersion, "grammar default follows final API version")
 				}
 			})
 		}
