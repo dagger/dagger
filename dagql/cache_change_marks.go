@@ -45,6 +45,10 @@ type changeMarks struct {
 	// stamped counts the class marks, from the first, whose entries' stamps
 	// a write applied before handing them back (stampPendingLocked).
 	stamped int
+	// lends says, for each class mark, whether the marked entry had a stored
+	// part at the mark, or the mark is a stored part's own write: whether
+	// the write can change what its class mates borrow (stampEntryLocked).
+	lends []bool
 	// left are the classes whose entries a leaving entry has marked, so
 	// collecting a whole class walks it once, not once per entry.
 	left map[eqClassID]struct{}
@@ -69,6 +73,24 @@ func (c *Cache) markEntryClassLocked(id sharedResultID, cause StampCause) {
 	}
 	c.changes.classes = append(c.changes.classes, id)
 	c.changes.causes = append(c.changes.causes, cause)
+	// Whether the entry has a stored part is read now, before a replacement
+	// or a prune empties it.
+	lends := cause == StampPartStored || cause == StampPartDropped
+	if res := c.resultsByID[id]; res != nil && len(res.storedParts) > 0 {
+		lends = true
+	}
+	c.changes.lends = append(c.changes.lends, lends)
+}
+
+// classLendsLocked reports whether an entry of the class rooted at root
+// stores a part, which its class mates can borrow. Requires egraphMu.
+func (c *Cache) classLendsLocked(root eqClassID) bool {
+	for member := range c.outputEqClassResults[root] {
+		if res := c.resultsByID[member]; res != nil && len(res.storedParts) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // markLeavingLocked marks an entry that is leaving its classes, before it
@@ -79,7 +101,10 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 		return
 	}
 	c.changes.entries = append(c.changes.entries, id)
-	c.stampEntryLocked(c.resultsByID[id], StampLeft)
+	leaving := c.resultsByID[id]
+	c.stampEntryLocked(leaving, StampLeft)
+	// Its class mates' bundles change only if it could lend them a part.
+	lends := leaving != nil && len(leaving.storedParts) > 0
 	for eqID := range c.resultOutputEqClasses[id] {
 		root := c.eqClassRootLocked(eqID)
 		if root == 0 {
@@ -94,7 +119,7 @@ func (c *Cache) markLeavingLocked(id sharedResultID) {
 		c.changes.left[root] = struct{}{}
 		for member := range c.outputEqClassResults[root] {
 			c.changes.entries = append(c.changes.entries, member)
-			if member != id {
+			if member != id && lends {
 				c.stampEntryLocked(c.resultsByID[member], StampLeft|StampViaClass)
 			}
 		}
@@ -149,18 +174,25 @@ func (c *Cache) takeChangesLocked(change *RemoteChange) {
 	change.Holdings = append(change.Holdings, marks.holdings...)
 	slices.SortFunc(change.Holdings, compareChangedHoldings)
 	change.Holdings = slices.CompactFunc(change.Holdings, func(a, b HolderKey) bool { return a == b })
-	marks.entries, marks.classes, marks.causes, marks.holdings = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.holdings[:0]
+	marks.entries, marks.classes, marks.causes, marks.lends, marks.holdings = marks.entries[:0], marks.classes[:0], marks.causes[:0], marks.lends[:0], marks.holdings[:0]
 	marks.stamped = 0
 	marks.left = nil
 }
 
 // stampClassMarksLocked applies the stamps of the class marks from the from'th
-// (stampEntryLocked): each marked entry's own, with its cause, and each other
-// entry's of its classes, as a write to its class. Requires egraphMu for
-// writing.
+// (stampEntryLocked): each marked entry's own, with its cause, and, as a
+// write to its class, each other entry's of its classes when the write can
+// change what they borrow. A class mate's bundle reads the class only to
+// borrow a stored part, so its stamp moves only when the marked entry had a
+// stored part, the write is a stored part's own, or a join brought a class
+// that stores one. Requires egraphMu for writing.
 func (c *Cache) stampClassMarksLocked(from int) {
 	marks := c.changes
-	var widened map[eqClassID]struct{}
+	// widened has each class reached, and whether its entries' stamps moved:
+	// a later mark of the class that can lend still moves them. classLends
+	// has, for each class a join's marks reached, whether it stores a part,
+	// read once.
+	var widened, classLends map[eqClassID]bool
 	for i := from; i < len(marks.classes); i++ {
 		id, cause := marks.classes[i], marks.causes[i]
 		c.stampEntryLocked(c.resultsByID[id], cause)
@@ -169,13 +201,32 @@ func (c *Cache) stampClassMarksLocked(from int) {
 			if root == 0 {
 				continue
 			}
-			if _, ok := widened[root]; ok {
+			stamped, seen := widened[root]
+			if seen && stamped {
+				continue
+			}
+			lends := marks.lends[i]
+			if !lends && cause == StampJoin {
+				v, ok := classLends[root]
+				if !ok {
+					v = c.classLendsLocked(root)
+					if classLends == nil {
+						classLends = map[eqClassID]bool{}
+					}
+					classLends[root] = v
+				}
+				lends = v
+			}
+			if seen && !lends {
 				continue
 			}
 			if widened == nil {
-				widened = map[eqClassID]struct{}{}
+				widened = map[eqClassID]bool{}
 			}
-			widened[root] = struct{}{}
+			widened[root] = lends
+			if !lends {
+				continue
+			}
 			for member := range c.outputEqClassResults[root] {
 				if member != id {
 					c.stampEntryLocked(c.resultsByID[member], cause|StampViaClass)

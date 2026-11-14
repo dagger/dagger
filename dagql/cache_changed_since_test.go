@@ -474,4 +474,95 @@ func TestChangedSinceABuildBetweenAPrunesDrops(t *testing.T) {
 	require.True(t, removed)
 	require.Nil(t, storedBundleTestEntry(cloud, b), "B is collected")
 	require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r), "R's bundle lost the part it borrowed")
+
+// narrowTestMember merges another record, of a different recipe, into the
+// Cloud, with a stored part if stored, without joining it to any class. It
+// returns the member's number and the bundle that made it.
+func narrowTestMember(t *testing.T, ctx context.Context, cloud *Cache, field string, stored bool) (uint64, ValueBundle) {
+	t.Helper()
+	bundle, _ := mergeTestSource(t, field, "member")
+	reply, err := cloud.MergeValues(ctx, "cache-b", bundle)
+	require.NoError(t, err)
+	member := reply.Imported()[0].ResultID
+	if stored {
+		ok, _, err := cloud.SetStoredPart(ctx, member, testLiveOffer(), 0)
+		require.NoError(t, err)
+		require.True(t, ok)
+	}
+	return member, bundle
+}
+
+// narrowTestJoin joins entries in one class by a content digest, and waits
+// for the body worker to have given each its frame.
+func narrowTestJoin(t *testing.T, ctx context.Context, cloud *Cache, content string, numbers ...uint64) {
+	t.Helper()
+	for _, number := range numbers {
+		require.NoError(t, cloud.TeachContentDigest(ctx, Result[Typed]{shared: storedBundleTestEntry(cloud, number)}, testDigest(content)))
+	}
+	for _, number := range numbers {
+		storedContentTestWait(t, cloud, number, testDigest(content))
+	}
+}
+
+// A record's bundle reads its class only to borrow a part a class mate
+// stores, so a write to a class mate moves the record's position only when
+// it can change what the record borrows. A class mate's value replaced while
+// it stores no part, or a join with a class that stores none, leaves the
+// record current; a class mate's value replaced while it stores a part the
+// record borrows, or a join that brings a stored part, doesn't. The rebuild
+// judges each.
+func TestChangedSinceAClassMatesWrite(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a class mate's value replaced, storing no part", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		member, bundle := narrowTestMember(t, ctx, cloud, "narrow-plain-mate", false)
+		narrowTestJoin(t, ctx, cloud, "narrow-plain", r, member)
+		mergeTestExpire(cloud, storedBundleTestEntry(cloud, member))
+		before := changedSinceTestBuild(t, cloud, r)
+		reply, err := cloud.MergeValues(ctx, "cache-b", bundle)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), reply.Values[0].Replacements, "the mate's value replaced in place")
+		require.True(t, changedSinceTestOne(t, cloud, member, before.Position), "the mate itself changed")
+		require.False(t, changedSinceTestOne(t, cloud, r, before.Position), "the record borrows nothing from it")
+		require.Empty(t, changedSinceTestRebuild(t, cloud, before, r))
+	})
+
+	t.Run("a class mate's value replaced, storing a part the record borrows", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		member, bundle := narrowTestMember(t, ctx, cloud, "narrow-lending-mate", true)
+		narrowTestJoin(t, ctx, cloud, "narrow-lending", r, member)
+		before := changedSinceTestBuild(t, cloud, r)
+		require.Len(t, before.Bundle.Outputs, 1, "the record borrows the mate's part")
+		mergeTestExpire(cloud, storedBundleTestEntry(cloud, member))
+		_, err := cloud.MergeValues(ctx, "cache-b", bundle)
+		require.NoError(t, err)
+		require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r), "the replacement dropped the part it borrowed")
+	})
+
+	t.Run("a join with a class that stores a part", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		member, _ := narrowTestMember(t, ctx, cloud, "narrow-join-lending", true)
+		// The record's own frame takes the digest before the build: only the
+		// mate's taking it, the join, comes after.
+		narrowTestJoin(t, ctx, cloud, "narrow-join-lending", r)
+		before := changedSinceTestBuild(t, cloud, r)
+		require.Empty(t, before.Bundle.Outputs)
+		narrowTestJoin(t, ctx, cloud, "narrow-join-lending", member)
+		require.Equal(t, []uint64{r}, changedSinceTestRebuild(t, cloud, before, r), "the record now borrows the mate's part")
+	})
+
+	t.Run("a join with a class that stores none", func(t *testing.T) {
+		t.Parallel()
+		ctx, cloud, r, _ := storedBundleTestCloud(t, "root")
+		member, _ := narrowTestMember(t, ctx, cloud, "narrow-join-plain", false)
+		narrowTestJoin(t, ctx, cloud, "narrow-join-plain", r)
+		before := changedSinceTestBuild(t, cloud, r)
+		narrowTestJoin(t, ctx, cloud, "narrow-join-plain", member)
+		require.Empty(t, changedSinceTestRebuild(t, cloud, before, r))
+		require.False(t, changedSinceTestOne(t, cloud, r, before.Position), "nothing it can borrow came")
+	})
 }
