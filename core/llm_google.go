@@ -189,7 +189,9 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 						// unambiguously, even for parallel calls to the same tool.
 						ID:   block.CallID,
 						Name: block.ToolName,
-						Args: toolCallInput(block.Arguments),
+						// Args is a map, so unlike the other providers' history
+						// this can't keep the key order the model wrote.
+						Args: toolCallInputMap(block.Arguments),
 					},
 				}
 				// Gemini attaches a thought signature to the function-call part

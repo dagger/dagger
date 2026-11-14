@@ -147,6 +147,113 @@ func TestCodexToolSchemaOrder(t *testing.T) {
 	assertTimeoutOrder(t, toolSchemaOf(t, seen[0].body, timeoutToolName, "", "parameters"))
 }
 
+// timeoutCallArgs is a Timeout call the model wrote in the order the schema
+// offers, which sorting would turn around.
+const timeoutCallArgs = `{"tool":"read","duration":"1m","arguments":{"path":"/x","offset":2}}`
+
+// timeoutCallHistory is a conversation in which the model called Timeout.
+func timeoutCallHistory(args string) []*LLMMessage {
+	return []*LLMMessage{
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "read it"}}},
+		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{{Kind: LLMContentToolCall, CallID: "call-1", ToolName: timeoutToolName, Arguments: JSON(args)}}},
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentToolResult, CallID: "call-1", Text: "contents"}}},
+	}
+}
+
+// TestProviderReplaysToolCallArguments covers resubmitting a past tool call's
+// arguments exactly as the model wrote them, rather than re-marshaled with
+// sorted keys, which would show the model its own Timeout call rewritten
+// arguments-first.
+func TestProviderReplaysToolCallArguments(t *testing.T) {
+	t.Run("anthropic", func(t *testing.T) {
+		client, requests := mediaRequestClient(t, "anthropic")
+		request := sentMediaRequest(t, client, requests, timeoutCallHistory(timeoutCallArgs))
+		var messages []struct {
+			Content []struct {
+				Input json.RawMessage `json:"input"`
+			} `json:"content"`
+		}
+		require.NoError(t, json.Unmarshal(request["messages"], &messages))
+		require.Len(t, messages, 3)
+		assert.Equal(t, timeoutCallArgs, string(messages[1].Content[0].Input))
+	})
+
+	t.Run("openai", func(t *testing.T) {
+		bodies := make(chan []byte, 1)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			bodies <- body
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":"test","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}`)
+		}))
+		t.Cleanup(srv.Close)
+		client := newOpenAIClient(&LLMEndpoint{Model: "gpt-5", Provider: OpenAI, BaseURL: srv.URL}, "", true)
+		// Only the request is under test.
+		_, _ = client.SendQuery(t.Context(), timeoutCallHistory(timeoutCallArgs), nil, &LLMCallOpts{})
+		var payload struct {
+			Messages []struct {
+				ToolCalls []struct {
+					Function struct {
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"messages"`
+		}
+		require.NoError(t, json.Unmarshal(<-bodies, &payload))
+		var replayed []string
+		for _, msg := range payload.Messages {
+			for _, call := range msg.ToolCalls {
+				replayed = append(replayed, call.Function.Arguments)
+			}
+		}
+		assert.Equal(t, []string{timeoutCallArgs}, replayed)
+	})
+
+	t.Run("codex", func(t *testing.T) {
+		srv, requests := codexStubServer(t, func(int) string { return "" })
+		client := newOpenAICodexClient(&LLMEndpoint{
+			Model: "openai-codex/gpt-5", Provider: OpenAICodex, BaseURL: srv.URL, AuthToken: "tok",
+		})
+		_, err := client.SendQuery(t.Context(), timeoutCallHistory(timeoutCallArgs), nil, &LLMCallOpts{})
+		require.NoError(t, err)
+		seen := requests()
+		require.Len(t, seen, 1)
+		var payload struct {
+			Input []struct {
+				Type      string `json:"type"`
+				Arguments string `json:"arguments"`
+			} `json:"input"`
+		}
+		require.NoError(t, json.Unmarshal(seen[0].body, &payload))
+		var replayed []string
+		for _, item := range payload.Input {
+			if item.Type == "function_call" {
+				replayed = append(replayed, item.Arguments)
+			}
+		}
+		assert.Equal(t, []string{timeoutCallArgs}, replayed)
+	})
+}
+
+func TestToolCallInput(t *testing.T) {
+	for _, tc := range []struct {
+		name, args, want string
+	}{
+		{"object keeps its key order", timeoutCallArgs, timeoutCallArgs},
+		{"surrounding whitespace is trimmed", " \n" + timeoutCallArgs + "\n", timeoutCallArgs},
+		{"no arguments resubmit as an empty object", "", `{}`},
+		{"truncated object is wrapped", `{"tool":"re`, `{"INVALID_JSON":"{\"tool\":\"re"}`},
+		{"array is wrapped", `[1]`, `{"INVALID_JSON":"[1]"}`},
+		{"null is wrapped", `null`, `{"INVALID_JSON":"null"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, string(toolCallInput(JSON(tc.args))))
+		})
+	}
+	assert.Equal(t, map[string]any{"INVALID_JSON": "[1]"}, toolCallInputMap(JSON(`[1]`)))
+	assert.Equal(t, map[string]any{}, toolCallInputMap(nil))
+}
+
 // TestMCPToolSchemaOrder covers Timeout's argument order reaching an MCP
 // client, in tools/list.
 func TestMCPToolSchemaOrder(t *testing.T) {

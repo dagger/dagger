@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -1058,18 +1059,40 @@ type LLMToolCall struct {
 	Arguments JSON   `json:"arguments"`
 }
 
-// toolCallInput decodes a tool call's recorded arguments into the object a
-// provider resubmits in the conversation history. Arguments that are not a
-// JSON object, such as a streamed tool input the model never finished, are
-// wrapped as {"INVALID_JSON": "<raw arguments>"}, as Anthropic recommends: the
-// call already failed with a tool error the model saw, and failing here would
-// make every later turn of the conversation fail too.
-func toolCallInput(args JSON) map[string]any {
-	if len(args) == 0 {
-		return nil
+// toolCallInput returns a tool call's recorded arguments as the object a
+// provider resubmits in the conversation history. A JSON object is returned
+// verbatim, keeping the key order the model wrote: decoding it into a map
+// would re-marshal it with sorted keys, so the model would see its own past
+// calls rewritten (a Timeout written tool-first coming back arguments-first)
+// and learn that order in context. No arguments at all resubmit as {}.
+//
+// Arguments that are not a JSON object, such as a streamed tool input the
+// model never finished, are wrapped as {"INVALID_JSON": "<raw arguments>"}, as
+// Anthropic recommends: the call already failed with a tool error the model
+// saw, and failing here would make every later turn of the conversation fail
+// too.
+func toolCallInput(args JSON) json.RawMessage {
+	raw := bytes.TrimSpace(args.Bytes())
+	if len(raw) == 0 {
+		return json.RawMessage(`{}`)
 	}
+	if raw[0] == '{' && json.Valid(raw) {
+		return json.RawMessage(raw)
+	}
+	wrapped, err := json.Marshal(map[string]string{"INVALID_JSON": string(args)})
+	if err != nil {
+		// Unreachable: a map of strings always marshals.
+		return json.RawMessage(`{}`)
+	}
+	return wrapped
+}
+
+// toolCallInputMap is toolCallInput decoded into a map, for providers whose
+// SDK only takes the arguments as one. The key order is lost.
+func toolCallInputMap(args JSON) map[string]any {
 	var input map[string]any
-	if err := json.Unmarshal(args.Bytes(), &input); err != nil {
+	if err := json.Unmarshal(toolCallInput(args), &input); err != nil {
+		// Unreachable: toolCallInput always returns a JSON object.
 		return map[string]any{"INVALID_JSON": string(args)}
 	}
 	return input
