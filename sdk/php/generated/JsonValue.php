@@ -25,7 +25,7 @@ class JsonValue extends Client\AbstractObject implements Client\IdAble, Node
     public function contents(?bool $pretty = false, ?string $indent = '  '): Json
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contents');
-        if (null !== $pretty) {
+        if (true === $pretty) {
         $leafQueryBuilder->setArgument('pretty', $pretty);
         }
         if (null !== $indent) {
