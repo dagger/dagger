@@ -196,13 +196,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				}
 				blocks = append(blocks, anthropic.NewTextBlock(text))
 			case LLMContentToolCall:
-				var args map[string]any
-				if len(block.Arguments) > 0 {
-					if err := json.Unmarshal(block.Arguments.Bytes(), &args); err != nil {
-						return nil, fmt.Errorf("failed to unmarshal tool arguments: %w", err)
-					}
-				}
-				blocks = append(blocks, anthropic.NewToolUseBlock(block.CallID, args, block.ToolName))
+				blocks = append(blocks, anthropic.NewToolUseBlock(block.CallID, toolCallInput(block.Arguments), block.ToolName))
 			case LLMContentToolResult:
 				result := &anthropic.ToolResultBlockParam{
 					ToolUseID: block.CallID,
@@ -326,6 +320,13 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				Name:        tool.Name,
 				Description: anthropic.Opt(tool.Description),
 				InputSchema: inputSchema,
+				// Stream the input as the model generates it. By default the
+				// API buffers each value and only sends a key once its value is
+				// complete, so a long argument (a file's contents, a script)
+				// shows nothing until it lands in one burst. The flip side: the
+				// streamed input is not validated, so it can end up malformed;
+				// see anthropicToolArguments.
+				EagerInputStreaming: anthropic.Bool(true),
 				// CacheControl: ephemeral,
 			},
 		})
@@ -360,6 +361,9 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	}
 
 	acc := new(anthropic.Message)
+	// The raw tool input streamed for each tool_use block, by block index; see
+	// anthropicToolArguments.
+	toolInputs := map[int64]*strings.Builder{}
 	for stream.Next() {
 		event := stream.Current()
 		acc.Accumulate(event)
@@ -389,6 +393,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			case "text":
 				dp.StartText(ev.Index)
 			case "tool_use":
+				toolInputs[ev.Index] = new(strings.Builder)
 				dp.StartToolCall(ev.Index, ev.ContentBlock.ID, ev.ContentBlock.Name)
 			}
 		case anthropic.ContentBlockDeltaEvent:
@@ -407,6 +412,9 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 					fmt.Fprint(p.MarkdownW, ev.Delta.Text)
 				}
 			case "input_json_delta":
+				if in := toolInputs[ev.Index]; in != nil {
+					in.WriteString(ev.Delta.PartialJSON)
+				}
 				if p := dp.Phase(ev.Index); p != nil {
 					p.writeToolArgs(ev.Delta.PartialJSON)
 				}
@@ -438,7 +446,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 
 	// Process the accumulated content into content blocks.
 	var contentBlocks []*LLMContentBlock
-	for _, block := range acc.Content {
+	for i, block := range acc.Content {
 		switch b := block.AsAny().(type) {
 		case anthropic.TextBlock:
 			contentBlocks = append(contentBlocks, &LLMContentBlock{
@@ -450,7 +458,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				Kind:      LLMContentToolCall,
 				CallID:    b.ID,
 				ToolName:  b.Name,
-				Arguments: JSON(b.Input),
+				Arguments: anthropicToolArguments(toolInputs[int64(i)], b.Input),
 			})
 		case anthropic.ThinkingBlock:
 			contentBlocks = append(contentBlocks, &LLMContentBlock{
@@ -619,6 +627,21 @@ func anthropicInputBlock(block *LLMContentBlock) (anthropic.ContentBlockParamUni
 	default:
 		return anthropic.ContentBlockParamUnion{}, fmt.Errorf("anthropic: unsupported input content kind %q", block.Kind)
 	}
+}
+
+// anthropicToolArguments returns a tool call's arguments exactly as they
+// streamed. With eager input streaming the API doesn't validate the input it
+// streams, so it can end up malformed. The SDK's accumulator quietly replaces
+// such input with {} (see anthropic.Message.Accumulate), which would run the
+// tool as if it had been called with no arguments. Keeping the raw text instead
+// makes the call fail as a tool error the model sees and can retry ("failed to
+// parse tool arguments", from MCP.CallContent). A block that streamed no input
+// keeps what the accumulator has (the {} of its start event).
+func anthropicToolArguments(streamed *strings.Builder, accumulated json.RawMessage) JSON {
+	if streamed == nil || streamed.Len() == 0 {
+		return JSON(accumulated)
+	}
+	return JSON(streamed.String())
 }
 
 // anthropicStoppedCleanly reports whether a stop reason means the model

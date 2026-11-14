@@ -1058,6 +1058,23 @@ type LLMToolCall struct {
 	Arguments JSON   `json:"arguments"`
 }
 
+// toolCallInput decodes a tool call's recorded arguments into the object a
+// provider resubmits in the conversation history. Arguments that are not a
+// JSON object, such as a streamed tool input the model never finished, are
+// wrapped as {"INVALID_JSON": "<raw arguments>"}, as Anthropic recommends: the
+// call already failed with a tool error the model saw, and failing here would
+// make every later turn of the conversation fail too.
+func toolCallInput(args JSON) map[string]any {
+	if len(args) == 0 {
+		return nil
+	}
+	var input map[string]any
+	if err := json.Unmarshal(args.Bytes(), &input); err != nil {
+		return map[string]any{"INVALID_JSON": string(args)}
+	}
+	return input
+}
+
 const (
 	OpenAI      LLMProvider = "openai"
 	OpenAICodex LLMProvider = "openai-codex"
