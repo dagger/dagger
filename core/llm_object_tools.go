@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/core/dagaddress"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -195,7 +194,7 @@ func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName s
 		return nil, false, nil
 	}
 
-	obj, err := srv.Load(restoredBindingLoadContext(ctx, toLoad), toLoad)
+	obj, err := LoadBoundObject(ctx, srv, toLoad)
 	if err != nil {
 		return nil, true, fmt.Errorf("load bound object of type %q: %w", typeName, err)
 	}
@@ -224,88 +223,62 @@ func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName s
 	return obj, true, nil
 }
 
-type restoredBindingRoutingKey struct{}
+type restoredBindingsKey struct{}
 
-// restoredBindingRouting names the client that restored an agent, and the
-// recipes of the bindings it restored the agent with: the very IDs the
-// restored conversation holds, compared by identity. A digest would not do:
-// an ID's digest is whatever its encoding claims, so an ID built elsewhere
-// could carry a restored recipe's digest over different calls.
-type restoredBindingRouting struct {
-	metadata *engine.ClientMetadata
-	recipes  map[*call.ID]struct{}
-}
-
-// withRestoredBindingRouting routes host access while loading any of recipes
-// as a bound tool object to the client described by metadata: the client that
-// restored the agent holding them.
-//
-// A bound object is loaded lazily, by recipe, in whatever client drives the
-// agent's loop — for a staff worker, the module client of the staff call that
-// woke it, which has no host. In the session that composed the binding, the
-// recipe was already evaluated where its host inputs were read (by the chief,
-// or by composition routed to the main client), so the load is a cache hit.
-// A restored session has evaluated none of it, so the load re-executes host
-// reads such as Query.secret(uri:) in that host-less client, minting a secret
-// nothing can read. The restoring client vouches for exactly the recipes it
-// restored, as it does for its own agents' bindings, so their loads are routed
-// to it. Like a Workspace owner's routing, this replaces only client metadata,
-// not the held ClientScope that is the execution authority.
-func withRestoredBindingRouting(ctx context.Context, metadata *engine.ClientMetadata, recipes map[*call.ID]struct{}) context.Context {
-	if metadata == nil || len(recipes) == 0 {
+// withRestoredBindings marks recipes as the bindings a restored agent was
+// restored with: the very IDs the restored conversation holds, compared by
+// identity. A digest would not do: an ID's digest is whatever its encoding
+// claims, so an ID built elsewhere could carry a restored recipe's digest
+// over different calls.
+func withRestoredBindings(ctx context.Context, recipes map[*call.ID]struct{}) context.Context {
+	if len(recipes) == 0 {
 		return ctx
 	}
-	return context.WithValue(ctx, restoredBindingRoutingKey{}, restoredBindingRouting{
-		metadata: metadata,
-		recipes:  recipes,
+	return context.WithValue(ctx, restoredBindingsKey{}, recipes)
+}
+
+// LoadBoundObject loads a lazily bound object's recipe with srv.
+//
+// The bindings a restored agent was restored with (see withRestoredBindings)
+// load in a fresh host-less client instead of whichever client drives the
+// agent's loop (see Server.WithHostlessClient), marked as such (see
+// IsRestoredBindingLoad). Nothing gains access by being resumed: in the
+// session that composed a binding, its recipe was evaluated where its host
+// inputs were read, but a resume re-evaluates it, and the client driving the
+// loop now (the CLI that restored a chief, say) must lend it none of its own
+// host. IDs are recipes, not authority. So a host.* call in the recipe is
+// denied, as for a module client, and a secret asks the owner, for the agent
+// (see Server.AuthorizeSecret), never forever: no approval of the recorded
+// session carries over. Bindings the agent gains after the restore load as
+// for a fresh agent.
+func LoadBoundObject(ctx context.Context, srv *dagql.Server, id *call.ID) (dagql.AnyObjectResult, error) {
+	recipes, _ := ctx.Value(restoredBindingsKey{}).(map[*call.ID]struct{})
+	if _, restored := recipes[id]; !restored || id == nil {
+		return srv.Load(ctx, id)
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var obj dagql.AnyObjectResult
+	err = query.WithHostlessClient(ctx, func(ctx context.Context) error {
+		var err error
+		obj, err = srv.Load(ContextWithRestoredBindingLoad(ctx), id)
+		return err
 	})
-}
-
-// restoredBindingLoadContext returns the context to load a lazily bound
-// object's recipe in: routed to the restoring client if the recipe is one it
-// restored (see withRestoredBindingRouting), else ctx unchanged.
-//
-// The route is marked too (see IsRestoredBindingLoad): the restorer vouches
-// for the recipe, not for every host read in it. Re-evaluating the recipe
-// mints its secrets again, now under the restorer, and nothing approved in
-// the session the recipe was recorded in carries over to a resume: each read
-// of the restorer's host is asked of the restorer first, as a module asks for
-// an agent (see Server.AuthorizeSecret).
-func restoredBindingLoadContext(ctx context.Context, id *call.ID) context.Context {
-	routing, ok := ctx.Value(restoredBindingRoutingKey{}).(restoredBindingRouting)
-	if !ok || id == nil {
-		return ctx
-	}
-	if _, restored := routing.recipes[id]; !restored {
-		return ctx
-	}
-	ctx = ContextWithRestoredBindingLoad(ctx)
-	return engine.ContextWithClientMetadata(ctx, routing.metadata)
+	return obj, err
 }
 
 type restoredBindingLoadKey struct{}
 
 // ContextWithRestoredBindingLoad marks ctx as loading a restored agent's
-// binding (see restoredBindingLoadContext).
+// binding (see LoadBoundObject).
 func ContextWithRestoredBindingLoad(ctx context.Context) context.Context {
 	return context.WithValue(ctx, restoredBindingLoadKey{}, true)
 }
 
-// WithoutRestoredBindingLoad clears the mark of ContextWithRestoredBindingLoad,
-// for the engine's own work on the owner's behalf within such a load: a module
-// setting resolved freshly from the restorer's current config while the load
-// runs is the restorer's own. It does not cover a setting's secret the
-// restored recipe already records (as a constructor's argument, say): that is
-// re-evaluated from the recipe like any other secret in it, and asks.
-func WithoutRestoredBindingLoad(ctx context.Context) context.Context {
-	if !IsRestoredBindingLoad(ctx) {
-		return ctx
-	}
-	return context.WithValue(ctx, restoredBindingLoadKey{}, false)
-}
-
 // IsRestoredBindingLoad reports whether ctx is loading a restored agent's
-// binding (see restoredBindingLoadContext).
+// binding (see LoadBoundObject).
 func IsRestoredBindingLoad(ctx context.Context) bool {
 	restored, _ := ctx.Value(restoredBindingLoadKey{}).(bool)
 	return restored

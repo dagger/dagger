@@ -250,25 +250,41 @@ func TestSecretApprovalPrompt(t *testing.T) {
 	require.Equal(t, `Run "echo \u202e\x1b[31m" on your machine to read a secret`, spec.Action)
 }
 
-// restoredLoadCtx is a restored agent's binding load driven by the module
-// client (staff's sendTo after a resume), routed to the owner that restored
-// the agent.
-func (s *secretTestSession) restoredLoadCtx() context.Context {
-	return engine.ContextWithClientMetadata(core.ContextWithRestoredBindingLoad(s.agentCtx()), s.owner.clientMetadata)
+// restoredLoadCtxs are a restored agent's binding loads, each in a host-less
+// client of its own (see Server.WithHostlessClient): under the owner, as when
+// the CLI that restored a chief drives its loop, and under a module client, as
+// when staff's sendTo drives a worker's after a resume.
+func (s *secretTestSession) restoredLoadCtxs() []context.Context {
+	none := dagql.ObjectResult[*core.Module]{}
+	underOwner := s.client("restored-under-owner", none, nil, "owner")
+	underOwner.inertAttachables = true
+	underModule := s.client("restored-under-module", none, nil, "owner", "module")
+	underModule.inertAttachables = true
+	var ctxs []context.Context
+	for _, client := range []*clientRuntime{underOwner, underModule} {
+		ctxs = append(ctxs, core.ContextWithRestoredBindingLoad(core.AgentToContext(s.ctx(client), s.worker)))
+	}
+	return ctxs
 }
 
 func TestSecretApprovalRestoredBinding(t *testing.T) {
 	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_ONCE))
-	// No approval carries over a resume, and a recipe cannot say who minted
-	// its secrets: every secret a restored binding reads from the restorer's
-	// host asks the restorer first, naming the agent, whoever minted it, and
-	// however the restorer itself would have read it outside the load.
-	for i, uri := range []string{"env://OWNERS", "file:///home/me/.token", "cmd://gh auth token", "cmd://gh auth token"} {
-		md, err := s.srv.AuthorizeSecret(s.restoredLoadCtx(), uri)
-		require.NoError(t, err)
-		require.Equal(t, "owner", md.ClientID, "an approved secret is read through the restorer's host, once")
-		require.Len(t, s.questions.asked(), i+1, "allowed once, so asked every time")
-		require.Empty(t, s.questions.asked()[i].PersistentKey, "a restored read is never allowed forever")
+	// Whichever client drives the loop, a restored binding's secret asks the
+	// owner, naming the agent alone, whoever minted it in the recorded
+	// session, and is never allowed forever.
+	asked := 0
+	for _, ctx := range s.restoredLoadCtxs() {
+		for _, uri := range []string{"env://OWNERS", "file:///home/me/.token", "cmd://gh auth token", "cmd://gh auth token"} {
+			md, err := s.srv.AuthorizeSecret(ctx, uri)
+			require.NoError(t, err)
+			require.Equal(t, "owner", md.ClientID, "an approved secret is read through the owner's host, once")
+			asked++
+			require.Len(t, s.questions.asked(), asked, "allowed once, so asked every time")
+			req := s.questions.asked()[asked-1]
+			require.Empty(t, req.PersistentKey, "a restored read is never allowed forever")
+			require.Equal(t, &prompt.ApprovalRequester{AgentName: "worker", AgentHandle: "agent-1"}, req.Requester,
+				"the module driving the loop did not build the recipe")
+		}
 	}
 	req := s.questions.asked()[2]
 	require.Equal(t, approvalKindSecret, req.Kind)
@@ -276,26 +292,19 @@ func TestSecretApprovalRestoredBinding(t *testing.T) {
 	require.Equal(t, `Run "gh auth token" on your machine to read a secret?`, req.Question)
 	require.True(t, req.Danger)
 
-	// The engine's own work for the owner within the load (a module setting
-	// resolved freshly from the current config) is the owner's, as is the
-	// same read outside a load.
-	for _, ctx := range []context.Context{
-		core.WithoutRestoredBindingLoad(s.restoredLoadCtx()),
-		engine.ContextWithClientMetadata(s.agentCtx(), s.owner.clientMetadata),
-	} {
-		md, err := s.srv.AuthorizeSecret(ctx, "cmd://gh auth token")
-		require.NoError(t, err)
-		require.Nil(t, md, "read as the owner it is routed to")
-	}
-	require.Len(t, s.questions.asked(), 4)
+	// The same read by a fresh agent's host-less module asks as before.
+	md, err := s.srv.AuthorizeSecret(s.agentCtx(), "env://OWNERS")
+	require.NoError(t, err)
+	require.Equal(t, "owner", md.ClientID)
+	require.NotEmpty(t, s.questions.asked()[asked].PersistentKey, "outside a resume, forever is offered")
 }
 
 func TestSecretApprovalRestoredBindingSession(t *testing.T) {
-	// The restorer may allow a read for the rest of its own session: that is
-	// a grant of the new session, not one carried over from the recorded one.
+	// The owner may allow a read for the rest of its own session: that is a
+	// grant of the new session, not one carried over from the recorded one.
 	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_ALLOW_FOREVER))
-	for range 2 {
-		md, err := s.srv.AuthorizeSecret(s.restoredLoadCtx(), "env://OWNERS")
+	for _, ctx := range s.restoredLoadCtxs() {
+		md, err := s.srv.AuthorizeSecret(ctx, "env://OWNERS")
 		require.NoError(t, err)
 		require.Equal(t, "owner", md.ClientID)
 	}
@@ -304,17 +313,16 @@ func TestSecretApprovalRestoredBindingSession(t *testing.T) {
 
 func TestSecretApprovalRestoredBindingDenied(t *testing.T) {
 	s := newSecretTestSession(t, allowSecret(prompt.APPROVAL_DENY))
-	md, err := s.srv.AuthorizeSecret(s.restoredLoadCtx(), "file:///home/me/.token")
+	md, err := s.srv.AuthorizeSecret(s.restoredLoadCtxs()[0], "file:///home/me/.token")
 	require.EqualError(t, err, `reading secret "file:///home/me/.token" for a restored agent was denied by the owning client`)
 	require.Nil(t, md)
 }
 
 func TestSecretApprovalRestoredBindingNotInteractive(t *testing.T) {
 	s := newApprovalTestSession(t, func(*grpc.Server) {})
-	module := s.client("module", sessionTestModuleResult(t, "staff"), nil, "owner")
-	module.inertAttachables = true
-	ctx := core.AgentToContext(s.ctx(module), testAgent(t, "agent-1", "worker"))
-	ctx = engine.ContextWithClientMetadata(core.ContextWithRestoredBindingLoad(ctx), s.owner.clientMetadata)
+	restored := s.client("restored", dagql.ObjectResult[*core.Module]{}, nil, "owner")
+	restored.inertAttachables = true
+	ctx := core.ContextWithRestoredBindingLoad(core.AgentToContext(s.ctx(restored), testAgent(t, "agent-1", "worker")))
 	_, err := s.srv.AuthorizeSecret(ctx, "file:///home/me/.token")
 	require.ErrorIs(t, err, errApprovalNotInteractive)
 	require.ErrorContains(t, err, `reading secret "file:///home/me/.token" for a restored agent requires approval`)
