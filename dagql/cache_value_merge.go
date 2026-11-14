@@ -676,6 +676,8 @@ func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input Value
 // reads each record as prepared (records), each row's own fields, and of
 // each private entry its frame, description and record type, so it commits
 // the same merge; a prepared merge waiting for its commit holds only that.
+// After preparation, read a row's record, its call and payload, from records,
+// never from the bundle's row.
 func (prep *valueMergePrep) dropRecordCopies(private *Cache) {
 	for i := range prep.bundle.Values {
 		row := &prep.bundle.Values[i]
