@@ -6484,17 +6484,17 @@ type Prompt implements Node {
   """Ask for a yes or no answer."""
   boolean(
     """
-    The answer selected to begin with, and the answer when nobody can be asked
-    (the client is not interactive). Without one, that is an error.
+    The answer selected to begin with, and the answer when nobody can be asked (the client is not interactive).
     """
-    default: Boolean
+    default: Boolean = false
   ): Boolean! @reevaluate
 
   """Ask for a text answer."""
   string(
     """
     The text the answer starts with, and the answer when nobody can be asked
-    (the client is not interactive). Without one, that is an error.
+    (the client is not interactive). Without one (or with an empty one), that is
+    an error.
     """
     default: String
 

@@ -27,7 +27,7 @@ class Prompt extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Ask for a yes or no answer.
      */
-    public function boolean(?bool $default = null): bool
+    public function boolean(?bool $default = false): bool
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('boolean');
         if (null !== $default) {
