@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -512,4 +514,74 @@ func TestRestoreStopsWithItsConnection(t *testing.T) {
 	require.Equal(t, errRestoreConnectionEnded.Error(), left.Error)
 	conn.none(t)
 	require.False(t, s.cfg.restored.has(whole.Digest))
+}
+
+// setFileOf is a set file of the parts with their header entries' unretained
+// roots, as the service cuts a root's closure into parts of its own.
+func setFileOf(t *testing.T, parts []dagql.ValueBundle, unretained [][]dagql.TransferOrdinal) []byte {
+	t.Helper()
+	enc, err := zstd.NewWriter(nil)
+	require.NoError(t, err)
+	defer enc.Close()
+	header := protocol.SetFileHeader{Version: dagql.ValueBundleVersion}
+	var raw [][]byte
+	for i, part := range parts {
+		data, entry, err := protocol.EncodeSetFilePart(enc, part)
+		require.NoError(t, err)
+		entry.Unretained = unretained[i]
+		raw = append(raw, data)
+		header.Parts = append(header.Parts, entry)
+	}
+	var buf bytes.Buffer
+	require.NoError(t, protocol.WriteSetFile(&buf, header, raw))
+	return buf.Bytes()
+}
+
+// Each part is merged with the roots its header entry leaves unretained,
+// and the hold each committed part's merge took is released only when the
+// file ends: after its last part, whether the file completed or a part
+// stopped it, so that a later part's held rows find an earlier part's
+// records.
+func TestRestoreHoldsEachPartUntilTheFileEnds(t *testing.T) {
+	t.Parallel()
+	for _, stop := range []bool{false, true} {
+		t.Run(fmt.Sprint("stopped=", stop), func(t *testing.T) {
+			t.Parallel()
+			adapter := newFakeAdapter()
+			var released atomic.Int32
+			second := make(chan struct{})
+			adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+				if part.Values[0].SenderNumber == 2 {
+					<-second
+					if stop {
+						return dagql.MergeReply{}, errors.New("refused: a held row is stale")
+					}
+				}
+				reply := merged(part, time.Now())
+				reply.Release = func(context.Context) error {
+					released.Add(1)
+					return nil
+				}
+				return reply, nil
+			}
+			s, conn := restoreSession(t, adapter)
+			files := newFileServer(t)
+			whole := files.add("whole", setFileOf(t, []dagql.ValueBundle{part(1), part(2)}, [][]dagql.TransferOrdinal{{1}, nil}))
+			s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("c", nil, &whole)))
+
+			require.Equal(t, []dagql.TransferOrdinal{1}, <-adapter.unretainedSeen, "the first part's root is merged unretained")
+			require.Empty(t, <-adapter.unretainedSeen)
+			require.Equal(t, []uint64{1, 2}, seen(t, adapter, 2))
+			require.Zero(t, released.Load(), "the first part stays held while the second merges")
+			close(second)
+			file := decode[protocol.Restored](t, conn.next(t)).Files[0]
+			require.Equal(t, !stop, file.Complete)
+			nextReport(t, adapter)
+			want := int32(2)
+			if stop {
+				want = 1
+			}
+			require.Equal(t, want, released.Load(), "every committed part's hold is released when the file ends")
+		})
+	}
 }

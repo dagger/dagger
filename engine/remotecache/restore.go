@@ -132,12 +132,16 @@ type restoreFile struct {
 	fetchStarted time.Time
 	fetchEnded   time.Time
 
-	// The rest is its lane's alone.
-	opened bool
-	parts  [][]byte
-	next   int
-	result protocol.RestoredFile
-	report RestoreReport
+	// The rest is its lane's alone. unretained are each part's roots to
+	// merge with no retention edge, and releases the holds each committed
+	// part's merge took on what it landed, kept until the file ends.
+	opened     bool
+	parts      [][]byte
+	unretained [][]dagql.TransferOrdinal
+	next       int
+	result     protocol.RestoredFile
+	report     RestoreReport
+	releases   []func(context.Context) error
 }
 
 // restoreRequest is one Restore, answered once its files are done. left
@@ -325,6 +329,9 @@ func (r *restorer) open(f *restoreFile) error {
 		return fmt.Errorf("unsupported value bundle version %d", header.Version)
 	}
 	f.parts = parts
+	for _, part := range header.Parts {
+		f.unretained = append(f.unretained, part.Unretained)
+	}
 	f.report.PeakBefore = r.s.cfg.peakRSS()
 	return nil
 }
@@ -339,7 +346,10 @@ func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
 	}
 	fillAddresses(&bundle, f.file.Table)
 	records := len(bundle.Values)
-	reply, err := r.s.adapter.RestorePart(ctx, bundle, r.s.known)
+	reply, err := r.s.adapter.RestorePart(ctx, bundle, f.unretained[f.next], r.s.known)
+	if reply.Release != nil {
+		f.releases = append(f.releases, reply.Release)
+	}
 	if err != nil {
 		return fmt.Errorf("part %d: %w", f.next, err)
 	}
@@ -408,6 +418,7 @@ func (r *restorer) finish(f *restoreFile, err error) {
 	}
 	f.report.Complete, f.report.Error = f.result.Complete, f.result.Error
 	f.data, f.parts = nil, nil
+	r.release(f)
 	r.s.adapter.Restored(f.report)
 	level := "info"
 	if err != nil {
@@ -421,6 +432,18 @@ func (r *restorer) finish(f *restoreFile, err error) {
 	if last {
 		r.reply(f.req)
 	}
+}
+
+// release releases the holds a file's parts took on what they landed, once
+// the file is done: what its roots retain stays, and the rest, such as the
+// closure of a root no part of it landed, goes as unowned values do.
+func (r *restorer) release(f *restoreFile) {
+	for _, release := range f.releases {
+		if err := release(context.WithoutCancel(r.s.ctx)); err != nil {
+			r.s.cfg.Logger.Warn("remote cache restore: releasing a part's hold failed", "digest", f.file.Digest.String(), "error", err)
+		}
+	}
+	f.releases = nil
 }
 
 // abandon ends the files left when the connection ends: what merged of
@@ -440,6 +463,7 @@ func (r *restorer) abandon() {
 		default:
 		}
 		f.parts = nil
+		r.release(f)
 		r.s.adapter.Restored(f.report)
 		r.logFile(f, "warn")
 	}
