@@ -2609,6 +2609,9 @@ type Cache struct {
 	// timing its warming (CommitValueMerge, MergeReply.Warm).
 	testWarmStarted func()
 
+	// partsWithoutSource counts the parts read with no source.
+	partsWithoutSource partsWithoutSource
+
 	// testBetweenLateMissHolds, nil but in tests, runs between
 	// LateRemoteMisses's two holds of the lookups' lock.
 	testBetweenLateMissHolds func()
