@@ -498,8 +498,7 @@ type clientRuntime struct {
 	// load failures by moduleProgressName; failed modules stay pending to keep
 	// reporting their error
 	failedModules map[string]error
-	// Reporting is deferred for metadata loads and happens once when selected.
-	// Guarded by modulesMu, like failedModules.
+
 	reportedFailedModules map[string]bool
 	// configErr is a workspace config that could not be made effective — a
 	// failed [[include]], or a module left without a source — for a client

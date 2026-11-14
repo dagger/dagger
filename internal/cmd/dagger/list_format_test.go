@@ -2,7 +2,6 @@ package daggercmd
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,8 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
-	"mvdan.cc/sh/v3/interp"
-	"mvdan.cc/sh/v3/syntax"
 )
 
 func TestArtifactListFormats(t *testing.T) {
@@ -131,7 +128,6 @@ func TestArtifactListColumnSelection(t *testing.T) {
 	require.Regexp(t, `(?m)^"" +tools +generate\.stale`, out.String())
 	require.NotContains(t, out.String(), "VARIANT")
 	require.NotContains(t, out.String(), "linux")
-	// Rendering must not modify metadata used by the resolver or CLI output.
 	require.Equal(t, "", rows[0].Coordinates[1].Key)
 	require.Equal(t, "generate.stale", rows[0].Coordinates[3].Key)
 }
@@ -188,20 +184,11 @@ func TestArtifactListCLIReplay(t *testing.T) {
 	cmd.SetOut(&output)
 	require.NoError(t, writeArtifactList(cmd, []listedArtifact{item}, map[string]string{"/tools/items": "item"}))
 	require.NotContains(t, strings.TrimSuffix(output.String(), "\n"), "\n")
-	program, err := syntax.NewParser().Parse(strings.NewReader(output.String()), "")
-	require.NoError(t, err)
-	var argv []string
-	shell, err := interp.New(interp.ExecHandler(func(_ context.Context, args []string) error {
-		argv = append(argv, args...)
-		return nil
-	}))
-	require.NoError(t, err)
-	require.NoError(t, shell.Run(t.Context(), program))
-	require.Equal(t, []string{"dagger", "check", "--module=tools", "--item=" + key, "--generated=false", "--skip=other/*"}, argv)
+	require.Equal(t, [][]string{{"dagger", "check", "--module=tools", "--item=" + key, "--generated=false", "--skip=other/*"}}, canonicalCLICommands(t, output.String()))
 }
 
-// recordedWrites keeps each write separately, as stdout emits each write as
-// its own log record.
+// recordedWrites keeps each write separately, as a command's stdout emits
+// each one as its own log record.
 type recordedWrites []string
 
 func (w *recordedWrites) Write(p []byte) (int, error) {
@@ -238,16 +225,7 @@ func TestArtifactListWorkspaceReplay(t *testing.T) {
 			cmd.SetOut(&output)
 			require.NoError(t, writeArtifactList(cmd, []listedArtifact{item}, map[string]string{"type:Check": "check"}))
 			require.NotContains(t, strings.TrimSuffix(output.String(), "\n"), "\n")
-			program, err := syntax.NewParser().Parse(strings.NewReader(output.String()), "")
-			require.NoError(t, err)
-			var argv []string
-			shell, err := interp.New(interp.ExecHandler(func(_ context.Context, args []string) error {
-				argv = append(argv, args...)
-				return nil
-			}))
-			require.NoError(t, err)
-			require.NoError(t, shell.Run(t.Context(), program))
-			require.Equal(t, []string{"dagger", "check", "-W", tc.workspace, "--check=verify"}, argv)
+			require.Equal(t, [][]string{{"dagger", "check", "-W", tc.workspace, "--check=verify"}}, canonicalCLICommands(t, output.String()))
 		})
 	}
 }

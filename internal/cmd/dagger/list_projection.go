@@ -178,10 +178,6 @@ func canOmitArtifactCLITypeKey(item listedArtifact, index artifactNameIndex, typ
 	return matched
 }
 
-// Canonical names are relative to the nearest collection item. The same name
-// can therefore occur at a deeper path that also has every selected dimension.
-// Use schema metadata, including empty collections, to retain an exact route
-// whenever positive coordinate filters alone cannot identify the target path.
 func prepareCanonicalArtifactCLIPaths(items []listedArtifact, paths []artifactListPath, types []string) error {
 	addresses := make([]*dagaddress.Address, len(paths))
 	for i, path := range paths {
@@ -219,50 +215,57 @@ func prepareCanonicalArtifactCLIPaths(items []listedArtifact, paths []artifactLi
 			}
 		}
 		fullPath := item.fullPath()
+		selector := canonicalArtifactCLISelector{module: module, name: name, typ: typ, fullPath: fullPath, dimensions: dimensions}
 		encoded, _ := json.Marshal([]any{module, name, typ, fullPath, dimensions})
 		key := string(encoded)
 		needPath, cached := cache[key]
 		if !cached {
-			matched := false
-			for j, path := range paths {
-				if module != "" && path.ModuleName != "" && path.ModuleName != module {
-					continue
-				}
-				if slices.ContainsFunc(dimensions, func(id string) bool { return !slices.Contains(path.Dimensions, id) }) {
-					continue
-				}
-				var candidateType string
-				for _, id := range path.Dimensions {
-					if strings.HasPrefix(id, "type:") {
-						candidateType = strings.TrimPrefix(id, "type:")
-					}
-				}
-				if len(types) > 0 && candidateType != "" && !slices.Contains(types, candidateType) {
-					continue
-				}
-				if path.Name != "" && path.Name != name {
-					continue
-				}
-				candidate := addresses[j].ArtifactPath(addresses[j].Types...)
-				if path.Name == "" || path.ModuleName != module || candidateType != typ || candidate != fullPath {
-					needPath = true
-					break
-				}
-				matched = true
-			}
-			needPath = needPath || !matched
+			needPath = selector.needsPath(paths, addresses, types)
 			cache[key] = needPath
 		}
 		if needPath {
 			if typ == "" {
 				return fmt.Errorf("artifact %q has no type for an exact CLI selector", item.URI)
 			}
-			// CLI path inputs include descendants. The exact legacy type-path query
-			// constrains this exceptional fallback without changing input semantics.
 			item.CLIPath = (&dagaddress.Address{Types: []string{cliName(typ)}, Path: fullPath, Query: []dagaddress.Pair{{Dimension: "type:" + typ, Key: "/" + fullPath, HasKey: true}}}).String()
 		}
 	}
 	return nil
+}
+
+type canonicalArtifactCLISelector struct {
+	module, name, typ, fullPath string
+	dimensions                  []string
+}
+
+func (selector canonicalArtifactCLISelector) needsPath(paths []artifactListPath, addresses []*dagaddress.Address, types []string) bool {
+	matched := false
+	for j, path := range paths {
+		if selector.module != "" && path.ModuleName != "" && path.ModuleName != selector.module {
+			continue
+		}
+		if slices.ContainsFunc(selector.dimensions, func(id string) bool { return !slices.Contains(path.Dimensions, id) }) {
+			continue
+		}
+		var candidateType string
+		for _, id := range path.Dimensions {
+			if strings.HasPrefix(id, "type:") {
+				candidateType = strings.TrimPrefix(id, "type:")
+			}
+		}
+		if len(types) > 0 && candidateType != "" && !slices.Contains(types, candidateType) {
+			continue
+		}
+		if path.Name != "" && path.Name != selector.name {
+			continue
+		}
+		candidate := addresses[j].ArtifactPath(addresses[j].Types...)
+		if path.Name == "" || path.ModuleName != selector.module || candidateType != selector.typ || candidate != selector.fullPath {
+			return true
+		}
+		matched = true
+	}
+	return !matched
 }
 
 func artifactRowsFormProduct(items []listedArtifact) bool {

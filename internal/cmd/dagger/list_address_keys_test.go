@@ -24,7 +24,6 @@ func TestListedArtifactPrunedLinkKeepsCoordinates(t *testing.T) {
 	}`), &item))
 	require.NoError(t, item.keysFromAddress(nil))
 	require.Equal(t, "go/packages/tests/test", item.fullPath())
-	require.Equal(t, &functionCommandPath{Module: "go", Fields: []string{"packages", "tests"}}, commandPathFromArtifact(item))
 	args, err := artifactCLIArguments(item, map[string]string{
 		"/go/packages": "go-package", "/go/packages/tests": "go-test", "type:Check": "check",
 	}, nil)

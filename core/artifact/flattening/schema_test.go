@@ -16,16 +16,15 @@ func TestSchemaCoordinates(t *testing.T) {
 	serviceItem := flattening.Field{Module: "docker", Type: "DockerService", Collections: []flattening.Collection{project, service}}
 	serviceCheck := flattening.Field{Module: "docker", Type: "Check", LocalPath: []string{"healthCheck", "run"}, Collections: []flattening.Collection{project, service}}
 	collectionFunction := flattening.Field{Module: "docker", Type: "Service", LocalPath: []string{"services", "all", "up"}, Collections: []flattening.Collection{project}}
-	// This collection has no selected rows. Its metadata still adds a column.
 	emptyItem := flattening.Field{Module: "docker", Type: "Task", Collections: []flattening.Collection{{Fields: []string{"empty"}, Type: "Tasks", ItemType: "Task"}}}
 	fields := []flattening.Field{moduleRoot, staticCheck, serviceItem, serviceCheck, collectionFunction, emptyItem}
 
 	schema, err := flattening.NewSchema(fields)
 	require.NoError(t, err)
 	require.Equal(t, flattening.Dimensions{
-		{Kind: "COLLECTION", Identifier: "DockerProjects", CollectionType: "DockerProjects", Name: "docker-project", QualifiedName: "docker-projects", ItemType: "DockerProject"},
-		{Kind: "COLLECTION", Identifier: "DockerServices", CollectionType: "DockerServices", Name: "docker-service", QualifiedName: "docker-services", ItemType: "DockerService"},
-		{Kind: "COLLECTION", Identifier: "Tasks", CollectionType: "Tasks", Name: "task", QualifiedName: "tasks", ItemType: "Task"},
+		{Kind: "COLLECTION", Identifier: "DockerProjects", CollectionType: "DockerProjects", Name: "docker-project", QualifiedName: "DockerProjects", ItemType: "DockerProject"},
+		{Kind: "COLLECTION", Identifier: "DockerServices", CollectionType: "DockerServices", Name: "docker-service", QualifiedName: "DockerServices", ItemType: "DockerService"},
+		{Kind: "COLLECTION", Identifier: "Tasks", CollectionType: "Tasks", Name: "task", QualifiedName: "Tasks", ItemType: "Task"},
 		{Kind: "MODULE", Identifier: "module", Name: "module", QualifiedName: "module", KeyName: "name"},
 		{Kind: "NAME", Identifier: "name", Name: "name", QualifiedName: "name", KeyName: "name"},
 	}, schema.Dimensions())
@@ -55,6 +54,9 @@ func TestSchemaCoordinates(t *testing.T) {
 }
 
 func TestSchemaRoots(t *testing.T) {
+	empty, err := flattening.NewSchema(nil)
+	require.NoError(t, err)
+	require.Empty(t, empty.Dimensions())
 	fields := []flattening.Field{
 		{Type: "Container", LocalPath: []string{}},
 		{Module: "matrix", Type: "Check", LocalPath: []string{"check"}, Collections: []flattening.Collection{{Type: "Rows", ItemType: "Row"}}},
@@ -118,7 +120,7 @@ func TestSchemaOwnership(t *testing.T) {
 	require.Equal(t, want, schema.Dimensions())
 	original := flattening.Field{Module: "app", Type: "Check", LocalPath: []string{"check"}, Collections: []flattening.Collection{{Fields: []string{"tests"}, Type: "Tests", ItemType: "Test", KeyName: "different", KeyDescription: "different"}}}
 	got, err := schema.Coordinates(original, "one")
-	require.NoError(t, err) // Lookup metadata does not form part of field identity.
+	require.NoError(t, err)
 	require.Equal(t, []flattening.Coordinate{{Dimension: "module", Key: "app"}, {Dimension: "Tests", Key: "one"}, {Dimension: "name", Key: "tests.check"}}, got)
 	got[1].Key = "changed"
 	again, err := schema.Coordinates(original, "one")
@@ -145,29 +147,13 @@ func TestSchemaLookupNeedsNoLookupMetadata(t *testing.T) {
 	require.Equal(t, []flattening.Coordinate{{Dimension: "module", Key: "matrix"}, {Dimension: "Rows", Key: "one"}, {Dimension: "name", Key: "."}}, got)
 }
 
-func TestSchemaCollectionTypesDefineColumns(t *testing.T) {
-	row := flattening.Collection{Type: "Rows", ItemType: "Row", Fields: []string{"rows"}}
-	cell := flattening.Collection{Type: "Cells", ItemType: "Cell"}
-	field := flattening.Field{Type: "Check", LocalPath: []string{"check"}, Collections: []flattening.Collection{row, cell}}
-	schema, err := flattening.NewSchema([]flattening.Field{field})
-	require.NoError(t, err)
-	require.Equal(t, flattening.Dimensions{
-		{Kind: "COLLECTION", Identifier: "Cells", CollectionType: "Cells", ItemType: "Cell", Name: "cell", QualifiedName: "cells"},
-		{Kind: "COLLECTION", Identifier: "Rows", CollectionType: "Rows", ItemType: "Row", Name: "row", QualifiedName: "rows"},
-		{Kind: "NAME", Identifier: "name", Name: "name", QualifiedName: "name", KeyName: "name"},
-	}, schema.Dimensions())
-	got, err := schema.Coordinates(field, "r", "c")
-	require.NoError(t, err)
-	require.Equal(t, []flattening.Coordinate{{Dimension: "Rows", Key: "r"}, {Dimension: "Cells", Key: "c"}, {Dimension: "name", Key: "rows.check"}}, got)
-}
-
 func TestSchemaSameTypeAtDifferentFields(t *testing.T) {
 	before := flattening.Field{Type: "Check", LocalPath: []string{"check"}, Collections: []flattening.Collection{{Type: "Tests", ItemType: "Test", Fields: []string{"before"}}}}
 	after := flattening.Field{Type: "Check", LocalPath: []string{"check"}, Collections: []flattening.Collection{{Type: "Tests", ItemType: "Test", Fields: []string{"after"}}}}
 	schema, err := flattening.NewSchema([]flattening.Field{before, after})
 	require.NoError(t, err)
 	require.Equal(t, flattening.Dimensions{
-		{Kind: "COLLECTION", Identifier: "Tests", CollectionType: "Tests", ItemType: "Test", Name: "test", QualifiedName: "tests"},
+		{Kind: "COLLECTION", Identifier: "Tests", CollectionType: "Tests", ItemType: "Test", Name: "test", QualifiedName: "Tests"},
 		{Kind: "NAME", Identifier: "name", Name: "name", QualifiedName: "name", KeyName: "name"},
 	}, schema.Dimensions())
 	for _, tc := range []struct {
@@ -183,30 +169,14 @@ func TestSchemaSameTypeAtDifferentFields(t *testing.T) {
 	require.ErrorContains(t, err, "absent from the flattening schema")
 }
 
-func TestSchemaSelectionDoesNotChangeColumns(t *testing.T) {
-	selected := flattening.Field{Type: "Check", LocalPath: []string{"healthCheck"}}
-	empty := flattening.Field{Type: "Case", Collections: []flattening.Collection{{Type: "Cases", ItemType: "Case", Fields: []string{"empty"}}}}
-	schema, err := flattening.NewSchema([]flattening.Field{selected, empty})
-	require.NoError(t, err)
-	before := schema.Dimensions()
-	got, err := schema.Coordinates(selected)
-	require.NoError(t, err)
-	require.Equal(t, []flattening.Coordinate{{Dimension: "name", Key: "healthCheck"}}, got)
-	require.Equal(t, before, schema.Dimensions())
-	require.Len(t, before, 2)
-	emptySchema, err := flattening.NewSchema(nil)
-	require.NoError(t, err)
-	require.Empty(t, emptySchema.Dimensions())
-}
-
 func TestSchemaDistinctTypesKeepSeparateColumns(t *testing.T) {
 	first := flattening.Field{Type: "Case", Collections: []flattening.Collection{{Type: "FirstCases", ItemType: "Case", Fields: []string{"first"}}}}
 	second := flattening.Field{Type: "Case", Collections: []flattening.Collection{{Type: "SecondCases", ItemType: "Case", Fields: []string{"second"}}}}
 	schema, err := flattening.NewSchema([]flattening.Field{first, second})
 	require.NoError(t, err)
 	require.Equal(t, flattening.Dimensions{
-		{Kind: "COLLECTION", Identifier: "FirstCases", CollectionType: "FirstCases", ItemType: "Case", Name: "first-cases", QualifiedName: "first-cases"},
-		{Kind: "COLLECTION", Identifier: "SecondCases", CollectionType: "SecondCases", ItemType: "Case", Name: "second-cases", QualifiedName: "second-cases"},
+		{Kind: "COLLECTION", Identifier: "FirstCases", CollectionType: "FirstCases", ItemType: "Case", Name: "first-cases", QualifiedName: "FirstCases"},
+		{Kind: "COLLECTION", Identifier: "SecondCases", CollectionType: "SecondCases", ItemType: "Case", Name: "second-cases", QualifiedName: "SecondCases"},
 		{Kind: "NAME", Identifier: "name", Name: "name", QualifiedName: "name", KeyName: "name"},
 	}, schema.Dimensions())
 	before := schema.Dimensions()

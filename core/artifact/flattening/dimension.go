@@ -1,4 +1,3 @@
-// Package flattening defines artifact dimension and path flattening.
 package flattening
 
 import (
@@ -17,19 +16,12 @@ func IsStaticDimension(identifier string) bool {
 
 // Dimension describes a schema axis, independent of its runtime keys.
 type Dimension struct {
-	// Kind is MODULE, NAME, COLLECTION, or legacy TYPE.
-	Kind string
-	// CollectionType is the collection object type, not its item type.
+	Kind           string
 	CollectionType string
-	// Identifier is the full identity. Names below are selector aliases.
-	Identifier    string
-	Name          string
-	QualifiedName string
-	// ItemType is the collection item or legacy artifact type. Static module
-	// and name dimensions have none.
-	ItemType string
-	// KeyName and KeyDescription describe the authored lookup argument.
-	// Static dimensions use "name" and an empty description.
+	Identifier     string
+	Name           string
+	QualifiedName  string
+	ItemType       string
 	KeyName        string
 	KeyDescription string
 }
@@ -52,11 +44,6 @@ func Union(sets ...Dimensions) Dimensions {
 	return result
 }
 
-// NameDimensions labels the complete canonical column set. Collections use
-// their item type name until it conflicts with another column or a fixed name.
-// Every conflicting collection then uses its collection type name. Repeat for
-// new conflicts; fail when no further fallback is possible. Legacy dimensions
-// retain their names. The result owns its metadata and is sorted by identifier.
 func NameDimensions(dimensions Dimensions) (Dimensions, error) {
 	result := make(Dimensions, len(dimensions))
 	canonical := make([]bool, len(dimensions))
@@ -67,6 +54,7 @@ func NameDimensions(dimensions Dimensions) (Dimensions, error) {
 		canonical[i] = copy.Kind == "COLLECTION" && copy.CollectionType != "" && copy.Identifier == copy.CollectionType
 		if canonical[i] {
 			copy.Name = latestName(copy.ItemType)
+			copy.QualifiedName = copy.Identifier
 		}
 	}
 	for {
@@ -93,8 +81,6 @@ func NameDimensions(dimensions Dimensions) (Dimensions, error) {
 			}
 		}
 		if len(conflicts) == 0 {
-			// Exact identifiers remain valid selectors. A label must not
-			// select another column through that identifier precedence.
 			for i, dimension := range result {
 				if !canonical[i] {
 					continue

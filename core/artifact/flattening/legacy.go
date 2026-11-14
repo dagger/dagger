@@ -6,14 +6,9 @@ import (
 	"strings"
 )
 
-// Artifact is a legacy selector path, including paths whose collections are empty.
-// Use Field for canonical flattening.
-// Path is the public field path; a main module can omit its module prefix.
-// Collections lists boundaries from the module root towards this artifact.
 type Artifact struct {
-	Module string
-	Path   []string
-	// Type is the concrete artifact type, such as Check or Container.
+	Module      string
+	Path        []string
 	Type        string
 	Collections []Collection
 }
@@ -28,8 +23,6 @@ func (a Artifact) dimensions() Dimensions {
 	return ArtifactDimensions(a.Module, a.Type, collections)
 }
 
-// ArtifactDimensions adds legacy module and type dimensions.
-// Collection dimensions remain in parent-to-child order.
 func ArtifactDimensions(module, typ string, collections Dimensions) Dimensions {
 	dims := slices.Clone(collections)
 	if module != "" {
@@ -42,10 +35,6 @@ func ArtifactDimensions(module, typ string, collections Dimensions) Dimensions {
 	return dims
 }
 
-// Coordinates retains legacy type-path coordinates for selector compatibility.
-// Use Schema.Coordinates for canonical flattening.
-// Type coordinates always hold the full field path, even when display can use
-// an unambiguous suffix. Module names retain their configured spelling.
 func Coordinates(module string, path []string, typ string, keys []Coordinate) []Coordinate {
 	coordinates := make([]Coordinate, 0, len(keys)+2)
 	if module != "" {
@@ -62,16 +51,11 @@ func Coordinates(module string, path []string, typ string, keys []Coordinate) []
 	return coordinates
 }
 
-// Plan retains the legacy type-path selector schema.
-// Use Schema for canonical dimensions and coordinates.
 type Plan struct {
 	dimensions Dimensions
 	paths      Paths
 }
 
-// New builds the legacy type-path selector plan.
-//
-// Deprecated: use NewSchema for canonical flattening.
 func New(schema []Artifact) *Plan {
 	var sets []Dimensions
 	var paths Paths
@@ -92,7 +76,6 @@ func New(schema []Artifact) *Plan {
 	return &Plan{dimensions: Union(sets...), paths: UnionPaths(paths)}
 }
 
-// Dimensions returns schema columns in identifier order. Callers own the copy.
 func (p *Plan) Dimensions() Dimensions {
 	result := make(Dimensions, len(p.dimensions))
 	for i, d := range p.dimensions {
@@ -102,7 +85,6 @@ func (p *Plan) Dimensions() Dimensions {
 	return result
 }
 
-// Names returns the current shortest unambiguous dimension names.
 func (p *Plan) Names() map[string]string {
 	names := make(map[string]string, len(p.dimensions))
 	for _, d := range p.dimensions {
@@ -111,8 +93,6 @@ func (p *Plan) Names() map[string]string {
 	return names
 }
 
-// ShortKey keeps the full path without collection coordinates. With them, it
-// finds the shortest unique suffix among all paths with those dimensions.
 func ShortKey(paths Paths, typ string, path []string, dimensions []string) string {
 	full := strings.Join(path, "/")
 	if typ == "" || len(dimensions) == 0 {
@@ -121,15 +101,11 @@ func ShortKey(paths Paths, typ string, path []string, dimensions []string) strin
 	return ShortTypeKey(paths.Candidates("type:"+typ, dimensions, nil), full)
 }
 
-// Row contains full identity coordinates and the separately shortened type key.
-// A short type key is valid only alongside this row's collection dimensions.
 type Row struct {
 	Coordinates []Coordinate
 	TypeKey     string
 }
 
-// Flatten supplies one key per collection boundary, in parent-to-child order.
-// The artifact must have a type and be in the complete schema passed to New.
 func (p *Plan) Flatten(a Artifact, keys ...string) (Row, error) {
 	if a.Type == "" {
 		return Row{}, fmt.Errorf("artifact %s has no type", strings.Join(a.Path, "/"))

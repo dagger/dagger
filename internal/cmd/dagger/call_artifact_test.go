@@ -75,6 +75,10 @@ func TestCallSelectionType(t *testing.T) {
 		{Identifier: "/runner/projects/suites", Name: "runner-suite", ItemType: "RunnerSuite", CollectionType: "RunnerSuites", KeyName: "file"},
 		{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check", KeyName: "name"},
 	}
+	paths := []artifactListPath{
+		{Dimensions: []string{"/runner/projects", "type:RunnerProject"}},
+		{Dimensions: []string{"/runner/projects", "/runner/projects/suites", "type:RunnerSuite"}},
+	}
 	for _, tc := range []struct {
 		name string
 		keys []dagaddress.Pair
@@ -101,7 +105,24 @@ func TestCallSelectionType(t *testing.T) {
 		{name: "module alone names no item", keys: []dagaddress.Pair{{Dimension: artifact.ModuleDimension, Key: "runner", HasKey: true}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, artifactSelectionType(tc.keys, dimensions))
+			require.Equal(t, tc.want, artifactSelectionType(tc.keys, dimensions, paths))
 		})
 	}
+}
+
+func TestCallSelectionTypeCanonicalCollections(t *testing.T) {
+	dimensions := artifact.Dimensions{
+		{Identifier: "RunnerProjects", ItemType: "RunnerProject"},
+		{Identifier: "RunnerSuites", ItemType: "RunnerSuite"},
+	}
+	paths := []artifactListPath{
+		{Dimensions: []string{"RunnerProjects", "type:RunnerProject"}},
+		{Dimensions: []string{"RunnerProjects", "RunnerSuites", "type:RunnerSuite"}},
+	}
+	keys := []dagaddress.Pair{
+		{Dimension: "RunnerProjects", Key: "./api", HasKey: true},
+		{Dimension: "RunnerSuites", Key: "unit.test.ts", HasKey: true},
+	}
+	require.Equal(t, "RunnerSuite", artifactSelectionType(keys, dimensions, paths))
+	require.Equal(t, "RunnerProject", artifactSelectionType(keys[:1], dimensions, paths))
 }

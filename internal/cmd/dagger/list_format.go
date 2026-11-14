@@ -129,7 +129,6 @@ func (c *lineChunks) Flush() error {
 	return err
 }
 
-// artifactTableCoordinates keeps table identity separate from legacy selectors.
 func artifactTableCoordinates(item listedArtifact) []flattening.Coordinate {
 	var coordinates []flattening.Coordinate
 	if item.Coordinates != nil {
@@ -137,7 +136,6 @@ func artifactTableCoordinates(item listedArtifact) []flattening.Coordinate {
 			coordinates = append(coordinates, flattening.Coordinate{Dimension: key.Dimension, Key: key.Key})
 		}
 	} else {
-		// Older engines supply only legacy coordinates. Keep their full field path.
 		for _, key := range item.DimensionKeys {
 			if !strings.HasPrefix(key.Dimension, "type:") {
 				coordinates = append(coordinates, flattening.Coordinate{Dimension: key.Dimension, Key: key.Key})
@@ -219,7 +217,6 @@ func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]
 	return writer.Flush()
 }
 
-// Collections precede module and name, in that order.
 func compareArtifactDimensions(a, b string) int {
 	rank := func(id string) int {
 		switch id {
@@ -254,8 +251,6 @@ func artifactDimensionCell(item listedArtifact, dimension string) string {
 	return strings.Join(values, ", ")
 }
 
-// artifactCLICommand uses the command's selected type or collection subcommand.
-// Execution commands omit --list so a copied command executes the selected row.
 func artifactCLICommand(cmd *cobra.Command) string {
 	path := strings.Fields(cmd.CommandPath())
 	if len(path) == 0 || path[0] != "dagger" {
@@ -284,49 +279,16 @@ func artifactCLIArguments(item listedArtifact, names map[string]string, options 
 	if err != nil {
 		return "", err
 	}
-	var args, replay []string
-	workspace, selected := "", false
-	if addr.Absolute {
-		workspace, selected = addr.Workspace+"@"+addr.Version, true
+	args, replay, err := artifactCLIWorkspaceArguments(addr, options)
+	if err != nil {
+		return "", err
 	}
-	for i := 0; i < len(options); i++ {
-		if options[i] == "-W" && i+1 < len(options) {
-			if !addr.Absolute {
-				workspace, selected = options[i+1], true
-			}
-			i++
-			continue
-		}
-		replay = append(replay, options[i])
+	selector, err := artifactCLIPathArgument(item, addr)
+	if err != nil {
+		return "", err
 	}
-	if selected {
-		quoted, err := quoteArtifactArgument(workspace)
-		if err != nil {
-			return "", err
-		}
-		args = append(args, "-W", quoted)
-	}
-	selector := &dagaddress.Address{}
-	if item.CLIPath != "" {
-		var err error
-		selector, err = dagaddress.Parse(item.CLIPath)
-		if err != nil {
-			return "", err
-		}
-	}
-	if address, err := dagaddress.Parse(item.URI); err == nil {
-		for _, pair := range address.Query {
-			if pair.Absent && !slices.Contains(selector.Query, pair) {
-				selector.Query = append(selector.Query, pair)
-			}
-		}
-	}
-	if item.CLIPath != "" || len(selector.Query) > 0 {
-		quoted, err := quoteArtifactArgument(selector.String())
-		if err != nil {
-			return "", err
-		}
-		args = append(args, quoted)
+	if selector != "" {
+		args = append(args, selector)
 	}
 	coordinates := item.DimensionKeys
 	modern := item.Coordinates != nil
@@ -391,6 +353,52 @@ func artifactCLIArguments(item listedArtifact, names map[string]string, options 
 		args = append(args, quoted)
 	}
 	return strings.Join(args, " "), nil
+}
+
+func artifactCLIWorkspaceArguments(addr *dagaddress.Address, options []string) ([]string, []string, error) {
+	var args, replay []string
+	workspace, selected := "", false
+	if addr.Absolute {
+		workspace, selected = addr.Workspace+"@"+addr.Version, true
+	}
+	for i := 0; i < len(options); i++ {
+		if options[i] == "-W" && i+1 < len(options) {
+			if !addr.Absolute {
+				workspace, selected = options[i+1], true
+			}
+			i++
+			continue
+		}
+		replay = append(replay, options[i])
+	}
+	if selected {
+		quoted, err := quoteArtifactArgument(workspace)
+		if err != nil {
+			return nil, nil, err
+		}
+		args = append(args, "-W", quoted)
+	}
+	return args, replay, nil
+}
+
+func artifactCLIPathArgument(item listedArtifact, addr *dagaddress.Address) (string, error) {
+	selector := &dagaddress.Address{}
+	if item.CLIPath != "" {
+		var err error
+		selector, err = dagaddress.Parse(item.CLIPath)
+		if err != nil {
+			return "", err
+		}
+	}
+	for _, pair := range addr.Query {
+		if pair.Absent && !slices.Contains(selector.Query, pair) {
+			selector.Query = append(selector.Query, pair)
+		}
+	}
+	if item.CLIPath != "" || len(selector.Query) > 0 {
+		return quoteArtifactArgument(selector.String())
+	}
+	return "", nil
 }
 
 func quoteArtifactArgument(value string) (string, error) {

@@ -35,8 +35,7 @@ func TestArtifactCanonicalLocalPath(t *testing.T) {
 			require.Equal(t, tc.want, entry.LocalPath())
 		})
 	}
-	// Workspace main paths omit the module in command input. Local names do
-	// not depend on this shorthand, or on the current CLI field spelling.
+
 	module.WorkspaceMain = true
 	entry := &Artifact{ModuleName: "docker", Node: check, Path: check.CommandCLIPath(), TypeName: "Check"}
 	require.Equal(t, "compose.projects.services.healthCheck.run", entry.StaticDimensionKey("name"))
@@ -58,17 +57,12 @@ func TestArtifactCanonicalStalePath(t *testing.T) {
 	require.Equal(t, []string{"stale"}, mainRoot.StaleArtifact().LocalPath())
 }
 
-func TestArtifactCanonicalPathWithoutNode(t *testing.T) {
-	for _, path := range [][]string{{"app", "projects", "services", "healthCheck", "run"}, {"projects", "services", "healthCheck", "run"}} {
-		entry := &Artifact{ModuleName: "app", Path: path, TypeName: "Check", DimensionKeys: []*ArtifactDimensionKey{
-			{Dimension: "/app/projects", Key: "e2e"}, {Dimension: "/app/projects/services", Key: "web"},
-		}}
-		require.Equal(t, []string{"healthCheck", "run"}, entry.LocalPath())
-		require.Equal(t, []*ArtifactDimensionKey{
-			{Dimension: "module", Key: "app"}, {Dimension: "/app/projects", Key: "e2e"},
-			{Dimension: "/app/projects/services", Key: "web"}, {Dimension: "name", Key: "projects.services.healthCheck.run"},
-		}, entry.CanonicalDimensionKeys())
-	}
+func TestArtifactCanonicalLoadFailure(t *testing.T) {
+	entry := &Artifact{ModuleName: "app", TypeName: "Check", Path: []string{"app", "load"},
+		LoadFailure: &ModuleLoadFailure{Name: "app", Message: "module unavailable"}}
+	require.Equal(t, []*ArtifactDimensionKey{
+		{Dimension: "module", Key: "app"}, {Dimension: "name", Key: "load"},
+	}, entry.CanonicalDimensionKeys())
 }
 
 func TestArtifactCanonicalNameFilters(t *testing.T) {

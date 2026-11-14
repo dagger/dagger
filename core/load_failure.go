@@ -42,8 +42,7 @@ const (
 	// unloadable modules, `dagger generate`, whose failure messages must not
 	// advise running the command already running.
 	ModuleLoadRepairing
-	// ModuleLoadMetadata reads schemas outside the selected command scope.
-	// Return load failures without adding skipped modules to the command report.
+
 	ModuleLoadMetadata
 )
 

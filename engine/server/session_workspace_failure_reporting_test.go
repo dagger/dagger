@@ -19,8 +19,7 @@ func TestCachedMetadataModuleFailureReportsWhenSelected(t *testing.T) {
 			recorder := tracetest.NewSpanRecorder()
 			provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 			t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
-			// core.Tracer inherits this span's provider. Keep the parent open
-			// so only completed skipped-module reports appear in the recorder.
+
 			ctx, parent := provider.Tracer("test").Start(context.Background(), "command")
 			defer parent.End()
 			mod := pendingModule{Name: "broken", WorkspaceDir: "modules/broken"}

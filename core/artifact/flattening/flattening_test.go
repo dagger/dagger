@@ -10,8 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Both paths return a Service. Only the first passes through a service item.
-// The second is a function on the services collection itself.
 func composeSchema() []flattening.Artifact {
 	projects := flattening.Collection{Fields: []string{"compose", "projects"}, Type: "DockerComposeProjects", ItemType: "DockerComposeProject", KeyName: "name"}
 	services := flattening.Collection{Fields: []string{"services"}, Type: "DockerComposeServices", ItemType: "DockerComposeService", KeyName: "name"}
@@ -102,8 +100,6 @@ func TestSchemaScopeSurvivesRowSelection(t *testing.T) {
 		{Dimension: "type:Check", Key: "app/linux/tests/check"},
 	}, selected.Coordinates)
 	require.Equal(t, "app-linux-test", p.Names()["/app/linux/tests"])
-	// A smaller schema would change the name. Selection must retain the full
-	// schema, including paths for which no runtime item was supplied.
 	require.Equal(t, "app-test", flattening.New(schema[:1]).Names()["/app/linux/tests"])
 	reverse := slices.Clone(schema)
 	slices.Reverse(reverse)
@@ -117,9 +113,9 @@ func TestSchemaScopeSurvivesRowSelection(t *testing.T) {
 
 func TestStaticAndBoundArtifacts(t *testing.T) {
 	schema := []flattening.Artifact{
-		{Module: "app", Path: []string{"test"}, Type: "Check"}, // Main module shorthand.
+		{Module: "app", Path: []string{"test"}, Type: "Check"},
 		{Module: "tools", Path: []string{"tools", "test"}, Type: "Check"},
-		{Path: []string{"bound", "container"}, Type: "Container"}, // No workspace module.
+		{Path: []string{"bound", "container"}, Type: "Container"},
 	}
 	p := flattening.New(schema)
 	for i, want := range [][]flattening.Coordinate{
@@ -150,7 +146,6 @@ func TestModuleRootCollection(t *testing.T) {
 
 func TestCoordinatesCoverIdentity(t *testing.T) {
 	schema := composeSchema()
-	// Same object type and same collection keys, reached through another field.
 	other := schema[0]
 	other.Path = []string{"docker", "compose", "projects", "services", "backup", "up"}
 	schema = append(schema, other)
@@ -194,9 +189,6 @@ func TestPlanOwnsMetadata(t *testing.T) {
 	require.Equal(t, "docker-compose-project", p.Names()["/docker/compose/projects"])
 }
 
-// Capture a current limitation: a collection item can itself be a collection.
-// There is no intervening object field, so both boundaries get the same ID.
-// A dimension-key selector cannot distinguish these two coordinate positions.
 func TestCollectionItemIsAnotherCollection(t *testing.T) {
 	schema := []flattening.Artifact{{
 		Module: "matrix", Path: []string{"matrix", "rows"}, Type: "Cell",
@@ -214,7 +206,6 @@ func TestCollectionItemIsAnotherCollection(t *testing.T) {
 		{Dimension: "/matrix/rows", Key: "column-1"},
 		{Dimension: "type:Cell", Key: "matrix/rows"},
 	}, row.Coordinates)
-	// Union collapses the two collection columns to one definition.
 	require.Len(t, p.Dimensions(), 3)
 }
 

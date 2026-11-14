@@ -2,10 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -18,19 +16,7 @@ type legacyInputArtifact struct {
 	Items [][]string `json:"items"`
 }
 
-func runLegacy(args []string, input io.Reader, output io.Writer) error {
-	flags := flag.NewFlagSet("flatten", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	only := flags.String("only", "", "Show rows with this exact slash-joined artifact path")
-	if err := flags.Parse(args); err != nil {
-		if err == flag.ErrHelp {
-			return nil
-		}
-		return err
-	}
-	if flags.NArg() != 0 {
-		return fmt.Errorf("unexpected argument %q", flags.Arg(0))
-	}
+func runLegacy(only string, input io.Reader, output io.Writer) error {
 	var entries []legacyInputArtifact
 	decoder := json.NewDecoder(input)
 	decoder.DisallowUnknownFields()
@@ -55,7 +41,7 @@ func runLegacy(args []string, input io.Reader, output io.Writer) error {
 	var rows [][]string
 	for _, entry := range entries {
 		path := strings.Join(entry.Path, "/")
-		if *only != "" && path != *only {
+		if only != "" && path != only {
 			continue
 		}
 		for _, keys := range entry.Items {

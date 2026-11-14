@@ -206,6 +206,8 @@ A fallback can conflict with another column. Apply the same rule to that column.
 
 Compute names from the complete workspace schema before filtering, including source filters. Empty collections contribute columns. Legacy type selectors and CLI flags do not change column names. A reserved CLI flag can use another flag name while the API column keeps its name.
 
+For a collection column, `qualifiedName` is its exact collection type identifier. Both `name` and `qualifiedName` must select that column.
+
 Exact column identifiers remain valid selectors. Reject a column name that equals another collection's identifier. This can occur with lower-case schema type names.
 
 #### Artifact API
@@ -236,14 +238,14 @@ type ArtifactDimension implements Node {
   identifier: String!
   name: String!
   qualifiedName: String!
-  collectionType: String!
+  collectionType: String
   itemType: String!
   keyName: String!
   keyDescription: String!
 }
 ```
 
-`dimensionDefinitions` lists dimensions on the selected schema paths. It does not read collection values. Empty collections still appear here. The CLI uses this metadata to register dimension flags.
+`dimensionDefinitions` lists dimensions on the selected schema paths. It does not read collection values. Empty collections still appear here. Modern dimension and path definitions list only canonical columns. Legacy type selectors are not columns. The CLI keeps their compatibility metadata separate.
 
 The key name and description come from the argument of the author's `@get` function. Flag help uses an uppercase argument placeholder and the item type name. An argument description appears on a second line. The discovery hint names the actual collection type: `--go-test NAME` points to `dagger list go-tests`. `dagger list` uses plural names for artifact type shortcuts, such as `containers`. Collection names use the declared collection type, such as `go-tests`. If a collection name is also an item type's plural, the command lists collection keys. Use `dagger list -a --type=go-test` to list those item artifacts.
 
@@ -358,7 +360,7 @@ Find the smallest set of selectors. Among sets of the same size, prefer fewer ab
 
 For example, `dag+check://?golang-test=TestCloseAndReopen` is sufficient when that test names one Check in the full workspace. A package item can use `dag+golang-package://?golang-package=cmd/codegen` when that package key is unique across Go modules.
 
-Filtering must not change an artifact's link. Compute the proof against the source workspace with all selection filters cleared. The scheme supplies the type constraint. An untyped address needs a proof across all artifact types. Cache the unfiltered discovery snapshot. Never use the displayed rows as the address reference set.
+Filtering must not change an artifact's link. Compute the proof against the source workspace with all selection filters cleared. The scheme supplies the type constraint. Types with the same scheme spelling belong to the same address proof. An untyped address needs a proof across all artifact types. Cache the unfiltered discovery snapshot. Never use the displayed rows as the address reference set.
 
 Present keys can also match artifacts with extra collection coordinates. An absence test excludes those artifacts. For example, a parent check can use `dag+check://?row=top&!cell`, while a child uses `dag+check://?cell=left`.
 

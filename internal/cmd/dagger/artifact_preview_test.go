@@ -148,12 +148,12 @@ func TestArtifactPreviewFilteredChecksKeepEachItem(t *testing.T) {
 func TestArtifactPreviewLinkFallback(t *testing.T) {
 	entry := artifactPreviewEntry{Artifact: flattening.Artifact{Module: "app", Path: []string{"app", "items", "verify"}, Type: "Check"}, LocalPath: []string{"verify"}}
 	coordinates := []flattening.Coordinate{{Dimension: "module", Key: "app"}, {Dimension: "AppItems", Key: "a"}, {Dimension: "name", Key: "verify"}}
-	target := artifact.AddressRow{Type: "Check", Coordinates: coordinates}
+	target := artifact.AddressRow{Type: "check", Coordinates: coordinates}
 	for _, index := range []*artifact.AddressIndex{
 		artifact.NewAddressIndex([]artifact.AddressRow{target}, false),
 		artifact.NewAddressIndex([]artifact.AddressRow{target, target}, true),
 	} {
-		require.Equal(t, "dag+check://app/items/verify?item=a", artifactPreviewLink(entry, coordinates, index, map[string]string{"AppItems": "item"}))
+		require.Equal(t, "dag+check://app/items/verify?item=a", artifactPreviewLink(entry, coordinates, index, map[string]string{"AppItems": "item"}, nil))
 	}
 }
 
@@ -347,10 +347,10 @@ func TestArtifactPreviewFallbackExcludesChildDimension(t *testing.T) {
 		Collections: []flattening.Collection{{Type: "Rows"}},
 	}}
 	coordinates := []flattening.Coordinate{{Dimension: "Rows", Key: "top"}}
-	index := artifact.NewAddressIndex([]artifact.AddressRow{{Type: "Check", Coordinates: coordinates}}, false)
+	index := artifact.NewAddressIndex([]artifact.AddressRow{{Type: "check", Coordinates: coordinates}}, false)
 	paths := artifact.Paths{
-		{Module: "grid", Type: "type:Check", Key: "grid/rows/check", Dimensions: []string{"Rows"}},
-		{Module: "grid", Type: "type:Check", Key: "grid/rows/check", Dimensions: []string{"Rows", "Row"}},
+		{Module: "grid", Type: "type:check", Key: "grid/rows/check", Dimensions: []string{"Rows"}},
+		{Module: "grid", Type: "type:check", Key: "grid/rows/check", Dimensions: []string{"Rows", "Row"}},
 	}
 	link := artifactPreviewLink(entry, coordinates, index, map[string]string{"Rows": "row", "Row": "cell"}, paths)
 	require.Equal(t, "dag+check://grid/rows/check?row=top&!Row", link)
@@ -400,7 +400,6 @@ func TestArtifactPreviewCrossModuleSharedPath(t *testing.T) {
 				selected := strings.TrimSpace(replay.String())
 				require.Contains(t, links, selected)
 			}
-
 		})
 	}
 }
@@ -410,8 +409,8 @@ func TestArtifactPreviewFallbackScopesModule(t *testing.T) {
 		t.Run("module="+module, func(t *testing.T) {
 			entry := artifactPreviewEntry{Artifact: flattening.Artifact{Module: module, Path: []string{"foo", "check", "unit"}, Type: "Check"}}
 			paths := artifact.Paths{
-				{Module: module, Type: "type:Check", Key: "foo/check/unit"},
-				{Module: "foo", Type: "type:Check", Key: "foo/check/unit", Dimensions: []string{"FooTests"}},
+				{Module: module, Type: "type:check", Key: "foo/check/unit"},
+				{Module: "foo", Type: "type:check", Key: "foo/check/unit", Dimensions: []string{"FooTests"}},
 			}
 			link := artifactPreviewLink(entry, nil, artifact.NewAddressIndex(nil, false), nil, paths)
 			address, err := dagaddress.Parse(link)
@@ -419,4 +418,26 @@ func TestArtifactPreviewFallbackScopesModule(t *testing.T) {
 			require.Equal(t, []dagaddress.Pair{artifactPreviewModuleSelector(module)}, address.Query)
 		})
 	}
+}
+
+func TestArtifactPreviewTypesWithSameScheme(t *testing.T) {
+	const input = `[
+		{"Module":"app","Path":["first"],"Type":"HTTPClient","LocalPath":["first"],"Items":[{"Keys":[]}]},
+		{"Module":"app","Path":["second"],"Type":"HttpClient","LocalPath":["second"],"Items":[{"Keys":[]}]}
+	]`
+	for _, tc := range []struct{ typ, name string }{{"HTTPClient", "first"}, {"HttpClient", "second"}} {
+		var output, diagnostics bytes.Buffer
+		require.NoError(t, PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, []string{"list", tc.typ, "-a", "-f=link"}))
+		require.Equal(t, "dag+http-client://?name="+tc.name+"\n", output.String())
+	}
+}
+
+func TestArtifactPreviewSchemaTypesWithSameScheme(t *testing.T) {
+	const input = `[
+		{"Module":"one","Path":["client"],"Type":"HTTPClient","LocalPath":["client"],"Items":[]},
+		{"Module":"two","Path":["client"],"Type":"HttpClient","LocalPath":["client"],"Items":[]}
+	]`
+	var output, diagnostics bytes.Buffer
+	require.NoError(t, PreviewArtifacts(strings.NewReader(input), &output, &diagnostics, []string{"list", "HTTPClient", "-f=link"}))
+	require.Equal(t, "dag+http-client://client?module=one\n", output.String())
 }
