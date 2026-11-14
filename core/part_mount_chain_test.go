@@ -267,16 +267,16 @@ func restoredMountChainCost(t *testing.T, n int) mountChainCost {
 
 // requireMountChainLinear checks that demanding the chain's mounts costs
 // about n, not n²: a bounded number of tasks and record captures per mount,
-// and less than six times the work for four times the mounts, where n²
-// would be sixteen. Before the walk went through merged layers and a row's
+// and at most eight times the work for four times the mounts, where n would
+// be about four and n² sixteen; scheduling moves the counts somewhat. Before the walk went through merged layers and a row's
 // source scans took turns, 64 merged mounts took 48,654 tasks and 69,669
 // captures, 47 times those of 16.
 func requireMountChainLinear(t *testing.T, small, large mountChainCost, n int) {
 	t.Helper()
 	require.Less(t, large.tasks, 12*n, "lazy tasks grow with n, not n²")
 	require.Less(t, large.captures(), 48*n, "record captures grow with n, not n²")
-	require.Less(t, large.tasks, 6*small.tasks)
-	require.LessOrEqual(t, large.captures(), 6*small.captures())
+	require.LessOrEqual(t, large.tasks, 8*small.tasks)
+	require.LessOrEqual(t, large.captures(), 8*small.captures())
 }
 
 // An exec over a chain of n mounts merged from another engine demands every
@@ -296,4 +296,44 @@ func TestImportedMountChainCopiesFromWriter(t *testing.T) {
 func TestRestoredMountChainCopiesFromWriter(t *testing.T) {
 	t.Parallel()
 	requireMountChainLinear(t, restoredMountChainCost(t, 16), restoredMountChainCost(t, 64), 64)
+}
+
+// A container merged from another engine's record passes a part through to
+// its receiver only where a demand of the part routes it to the part's own
+// copy step. An operation that makes every part at once, such as an import,
+// passes nothing through: walking past it would copy the parts it replaced.
+func TestTransferredContainerPassesThroughWhatItsOperationCopies(t *testing.T) {
+	t.Parallel()
+	view := func(lazyJSON string) *containerAcquiredOutput {
+		return &containerAcquiredOutput{Payload: persistedContainerPayload{
+			Metadata: persistedContainerMetadata{Consumed: true, Value: persistedContainerMetadataValue{
+				Mounts: []persistedContainerMountPayload{{Target: "/a", Kind: persistedContainerMountKindDirectory}, {Target: "/b", Kind: persistedContainerMountKindDirectory}},
+			}},
+			Parts: map[dagql.PartKey]persistedContainerPart{
+				ContainerPartFS:          {Kind: containerPartPending},
+				ContainerPartExecMeta:    {Kind: containerPartAbsent},
+				ContainerPartMount("/a"): {Kind: containerPartPending},
+				ContainerPartMount("/b"): {Kind: containerPartPending},
+			},
+			LazyJSON: []byte(lazyJSON),
+		}}
+	}
+	call := func(field string) *dagql.ResultCall {
+		return &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: field, Receiver: &dagql.ResultCallRef{ResultID: 1}}
+	}
+	for _, tc := range []struct {
+		field, lazyJSON string
+		passes          map[dagql.PartKey]bool
+	}{
+		{"import", `{}`, map[dagql.PartKey]bool{ContainerPartFS: false, ContainerPartMount("/a"): false, ContainerPartMount("/b"): false}},
+		{"_builtinContainer", `{}`, map[dagql.PartKey]bool{ContainerPartFS: false, ContainerPartMount("/a"): false}},
+		{"withEnvVariable", `{}`, map[dagql.PartKey]bool{ContainerPartFS: true, ContainerPartMount("/a"): true, ContainerPartMount("/b"): true}},
+		{"withMountedDirectory", `{"target":"/b"}`, map[dagql.PartKey]bool{ContainerPartFS: true, ContainerPartMount("/a"): true, ContainerPartMount("/b"): false}},
+	} {
+		v := view(tc.lazyJSON)
+		for part, want := range tc.passes {
+			require.Equal(t, want, v.passesThrough(call(tc.field), part), "%s passes %s through", tc.field, part)
+		}
+		require.False(t, view("").passesThrough(call(tc.field), ContainerPartFS), "%s without its recorded operation", tc.field)
+	}
 }
