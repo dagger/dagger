@@ -58,7 +58,7 @@ func (e *EntryNumbers) UnmarshalJSON(data []byte) error {
 // distinct address once, in the order first named, and the positions that
 // have any, packed as varints: the position's difference from the last such
 // position, the number of its parts, then each part's index in the table.
-func PackCompleteParts(parts [][]dagql.PersistedPartAddress) ([]dagql.PersistedPartAddress, []byte, error) {
+func PackCompleteParts(parts [][]dagql.PersistedPartAddress) ([]dagql.PersistedPartAddress, []byte) {
 	var table []dagql.PersistedPartAddress
 	index := map[string]uint64{}
 	var packed []byte
@@ -71,20 +71,19 @@ func PackCompleteParts(parts [][]dagql.PersistedPartAddress) ([]dagql.PersistedP
 		last = position
 		packed = binary.AppendUvarint(packed, uint64(len(addresses)))
 		for _, address := range addresses {
-			key, err := json.Marshal(address)
-			if err != nil {
-				return nil, nil, err
-			}
-			i, ok := index[string(key)]
+			// Go syntax quotes every string, so two addresses share a key
+			// only when they are equal.
+			key := fmt.Sprintf("%#v", address)
+			i, ok := index[key]
 			if !ok {
 				i = uint64(len(table))
-				index[string(key)] = i
+				index[key] = i
 				table = append(table, address)
 			}
 			packed = binary.AppendUvarint(packed, i)
 		}
 	}
-	return table, packed, nil
+	return table, packed
 }
 
 // UnpackCompleteParts returns, for each position of a restored file's
@@ -110,6 +109,10 @@ func UnpackCompleteParts(table []dagql.PersistedPartAddress, packed []byte) (map
 		count, err := next()
 		if err != nil {
 			return nil, err
+		}
+		if count > uint64(len(packed)) {
+			// Each index takes at least a byte.
+			return nil, fmt.Errorf("complete parts: %d parts announced, with %d bytes left", count, len(packed))
 		}
 		addresses := make([]dagql.PersistedPartAddress, 0, count)
 		for range count {

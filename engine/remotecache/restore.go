@@ -444,11 +444,7 @@ func (r *restorer) finish(f *restoreFile, err error) {
 	if err == nil && f.next == len(f.parts) {
 		f.result.Complete = true
 		f.result.Entries = f.entries
-		if table, packed, err := protocol.PackCompleteParts(f.complete); err != nil {
-			r.s.cfg.Logger.Warn("remote cache restore: packing complete parts failed", "digest", f.file.Digest.String(), "error", err)
-		} else {
-			f.result.PartsTable, f.result.CompleteParts = table, packed
-		}
+		f.result.PartsTable, f.result.CompleteParts = protocol.PackCompleteParts(f.complete)
 		r.s.cfg.restored.add(f.file.Digest)
 	}
 	if err != nil {
