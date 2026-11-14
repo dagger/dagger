@@ -210,14 +210,21 @@ func TestRunningTimeoutBorrowsItsCallsName(t *testing.T) {
 
 // TestStreamingToolCallRendersSoFar covers a Timeout while the model is still
 // writing its arguments: from the moment it names the call it wraps, its row
-// presents as that call, its source growing line by line -- plain until it's
-// whole, then highlighted.
+// presents as that call, its source growing line by line, each line
+// highlighted once it's whole.
 func TestStreamingToolCallRendersSoFar(t *testing.T) {
 	<-warmDangHighlighter()
+	// Never hold a highlight back for being too soon after the last.
+	now := time.Unix(0, 0)
+	dangStreamClock = func() time.Time {
+		now = now.Add(time.Second)
+		return now
+	}
+	t.Cleanup(func() { dangStreamClock = time.Now })
 	l := newLiveToolCalls(t, termenv.ANSI)
 	l.toolCall(liveTimeout, liveReply, "Timeout")
 
-	var named, partial bool
+	var named, partial, highlighted bool
 	l.stream(liveTimeout, liveTimeoutArgs, 7, func(frame string) {
 		plain := stripANSICodes(frame)
 		if !strings.Contains(plain, "• DangEval") {
@@ -233,18 +240,31 @@ func TestStreamingToolCallRendersSoFar(t *testing.T) {
 			// the source is whole: the document may be too
 			return
 		}
-		if strings.Contains(plain, "1 │ let gree") {
+		if strings.Contains(plain, "1 │ let gree") && !strings.Contains(plain, "2 │") {
 			partial = true
+			// The line being written: plain.
+			require.False(t, containsStyledLine(frame, "let gree", "\x1b[35mlet"),
+				"highlighted an unfinished line:\n%s", visibleEscapes(frame))
 		}
-		require.False(t, containsStyledLine(frame, "let gree", "\x1b[35mlet"),
-			"highlighted while streaming:\n%s", visibleEscapes(frame))
+		if strings.Contains(plain, "2 │ gree") {
+			// The first line is whole: highlighted, while the second,
+			// still being written, is plain.
+			highlighted = true
+			require.True(t, containsStyledLine(frame, "let greeting", "\x1b[35mlet"),
+				"didn't highlight a whole line while streaming:\n%s", visibleEscapes(frame))
+			require.False(t, containsStyledLine(frame, "2 │ gree", "\x1b[35m"),
+				"highlighted an unfinished line:\n%s", visibleEscapes(frame))
+		}
 	})
 	require.True(t, named, "never presented as the call it wraps")
 	require.True(t, partial, "never showed the source as it streamed")
+	require.True(t, highlighted, "never showed a highlighted line while streaming")
 
-	// Whole: highlighted.
+	// Whole: all of it highlighted.
 	l.closeArgs(liveTimeout)
 	frame := l.frame()
 	require.Contains(t, stripANSICodes(frame), `2 │ greeting + "!"`)
 	require.True(t, containsStyledLine(frame, "let greeting", "\x1b[35mlet"), visibleEscapes(frame))
+	require.True(t, containsStyledLine(frame, `2 │ greeting + "!"`, "\x1b[35m+"), visibleEscapes(frame))
+	require.Empty(t, l.fe.dangStreams)
 }

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -137,10 +138,9 @@ func (fe *frontendPretty) toolBlockIndent(r *renderer, row *dagui.TraceRow) stri
 // plain, and the view re-renders once it is -- unless wait is set, for a
 // one-shot render that would never be redrawn.
 //
-// Source still streaming in renders plain too: it changes with every chunk,
-// and highlighting each version would thrash dangHighlights (and run the
-// highlighter on every frame) for code that's about to change again. It
-// highlights once whole, which doubles as the cue that it is.
+// Source still streaming in highlights as it grows, line by line (see
+// streamingDangHighlight): the line being written renders plain until it's
+// done.
 func (fe *frontendPretty) dangSourceLines(span *dagui.Span, width, maxLines int, wait bool) []string {
 	if !isToolCallDisplay(span) || !dagui.RendersToolArgs(span.LLMTool) {
 		return nil
@@ -150,8 +150,102 @@ func (fe *frontendPretty) dangSourceLines(span *dagui.Span, width, maxLines int,
 	if !ok || strings.TrimSpace(snippet.Source) == "" {
 		return nil
 	}
-	highlight := fe.profile != termenv.Ascii && !view.Streaming && fe.dangHighlighterReady(wait)
-	return renderDangSourceWith(fe.profile, highlight, snippet.Source, width, maxLines)
+	// dangStreams belongs to the render loop: a one-shot render (wait)
+	// leaves it be, and highlights what it has as if it were whole.
+	streaming := view.Streaming && !wait
+	if !view.Streaming && !wait {
+		delete(fe.dangStreams, span.ID)
+	}
+	source := normalizeDangSource(snippet.Source)
+	var spans []dang.HighlightSpan
+	switch {
+	case fe.profile == termenv.Ascii || !fe.dangHighlighterReady(wait):
+	case streaming:
+		spans = fe.streamingDangHighlight(span.ID, source, maxLines)
+	default:
+		spans = highlightDang(source)
+	}
+	return renderDangSourceSpans(fe.profile, spans, source, width, maxLines)
+}
+
+// dangStreamHighlight is a streaming Dang snippet's highlight (see
+// streamingDangHighlight): the prefix of its source last highlighted, its
+// spans, and when that was and how long it took.
+type dangStreamHighlight struct {
+	source string
+	spans  []dang.HighlightSpan
+	at     time.Time
+	cost   time.Duration
+}
+
+// Highlighting a streaming snippet runs Dang's highlighter on the render
+// loop, which takes about 15µs a line (3ms for 200 lines, 30ms for 2000), so
+// it's held to at most once per dangStreamHighlightInterval, and at most a
+// quarter of the time since the last one.
+const dangStreamHighlightInterval = 100 * time.Millisecond
+
+// maxDangStreams bounds frontendPretty.dangStreams, against snippets that
+// stopped streaming without rendering again; it's cleared when full.
+const maxDangStreams = 32
+
+// dangStreamClock is the clock streamingDangHighlight throttles by; tests
+// stand in for it.
+var dangStreamClock = time.Now
+
+// streamingDangHighlight highlights a streaming snippet's (normalized)
+// source as it grows: the lines of it that are whole, and that a row
+// showing maxLines lines (0: all) shows, re-highlighting when a line
+// completes -- at most so often (see dangStreamHighlightInterval). In
+// between, it returns the last highlight, which covers a prefix of source:
+// what came after renders plain until the next. Each span keeps its own
+// highlight, rather than filling dangHighlights with every prefix.
+func (fe *frontendPretty) streamingDangHighlight(id dagui.SpanID, source string, maxLines int) []dang.HighlightSpan {
+	whole := wholeDangLines(source, maxLines)
+	if whole == "" {
+		return nil
+	}
+	last := fe.dangStreams[id]
+	if last != nil && !strings.HasPrefix(source, last.source) {
+		// The source changed under it, rather than grew: start over, but
+		// keep to the schedule.
+		last = &dangStreamHighlight{at: last.at, cost: last.cost}
+		fe.dangStreams[id] = last
+	}
+	if last != nil && len(whole) <= len(last.source) {
+		return last.spans
+	}
+	now := dangStreamClock()
+	if last != nil && now.Sub(last.at) < max(dangStreamHighlightInterval, 4*last.cost) {
+		return last.spans
+	}
+	if fe.dangStreams == nil || len(fe.dangStreams) >= maxDangStreams {
+		fe.dangStreams = map[dagui.SpanID]*dangStreamHighlight{}
+	}
+	start := time.Now()
+	spans := highlightDangUncached(whole)
+	fe.dangStreams[id] = &dangStreamHighlight{
+		source: whole,
+		spans:  spans,
+		at:     now,
+		cost:   time.Since(start),
+	}
+	return spans
+}
+
+// wholeDangLines returns the prefix of source its whole lines make up --
+// the ones a newline ends -- up to maxLines of them (0: all).
+func wholeDangLines(source string, maxLines int) string {
+	end, lines := 0, 0
+	for i := 0; i < len(source); i++ {
+		if source[i] != '\n' {
+			continue
+		}
+		end, lines = i, lines+1
+		if maxLines > 0 && lines == maxLines {
+			break
+		}
+	}
+	return source[:end]
 }
 
 // dangHighlighterReady reports whether Dang's highlighter is ready, warming
@@ -191,13 +285,25 @@ func (fe *frontendPretty) dangHighlighterReady(wait bool) bool {
 // renderDangSource renders Dang source as dangSourceLines describes,
 // highlighted unless the profile has no color.
 func renderDangSource(profile termenv.Profile, source string, width, maxLines int) []string {
-	return renderDangSourceWith(profile, profile != termenv.Ascii, source, width, maxLines)
+	source = normalizeDangSource(source)
+	var spans []dang.HighlightSpan
+	if profile != termenv.Ascii {
+		spans = highlightDang(source)
+	}
+	return renderDangSourceSpans(profile, spans, source, width, maxLines)
 }
 
-func renderDangSourceWith(profile termenv.Profile, highlight bool, source string, width, maxLines int) []string {
+// normalizeDangSource returns source with Windows line endings made Unix
+// ones: the form it's highlighted and rendered in.
+func normalizeDangSource(source string) string {
+	return strings.ReplaceAll(source, "\r\n", "\n")
+}
+
+// renderDangSourceSpans renders normalized Dang source, styled by spans
+// (dang.Highlight's, of source or a prefix of it).
+func renderDangSourceSpans(profile termenv.Profile, spans []dang.HighlightSpan, source string, width, maxLines int) []string {
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(profile))
-	source = strings.TrimRight(strings.ReplaceAll(source, "\r\n", "\n"), "\n")
-	lines := styledDangLines(highlight, source)
+	lines := styledDangLines(spans, strings.TrimRight(source, "\n"))
 
 	shown := lines
 	if maxLines > 0 && len(lines) > maxLines {
@@ -268,13 +374,9 @@ func (runes styledRunes) render(out TermOutput) string {
 
 // styledDangLines splits source into lines of classified runes: tabs become
 // two spaces and other control characters are dropped, so a line's width is
-// what the terminal shows. Classification is best-effort: source that
-// doesn't highlight (or isn't asked to) is all unclassified.
-func styledDangLines(highlight bool, source string) []styledRunes {
-	var spans []dang.HighlightSpan
-	if highlight {
-		spans = highlightDang(source)
-	}
+// what the terminal shows. Classification is best-effort, by spans (rune
+// offsets into source): source they don't cover is unclassified.
+func styledDangLines(spans []dang.HighlightSpan, source string) []styledRunes {
 	runes := []rune(source)
 	classes := make([]string, len(runes))
 	for _, span := range spans {
@@ -364,9 +466,6 @@ func highlightDang(source string) (spans []dang.HighlightSpan) {
 		return cached
 	}
 	defer func() {
-		if recover() != nil {
-			spans = nil
-		}
 		if len(dangHighlights.spans) >= maxDangHighlights {
 			dangHighlights.spans = nil
 		}
@@ -374,6 +473,16 @@ func highlightDang(source string) (spans []dang.HighlightSpan) {
 			dangHighlights.spans = map[string][]dang.HighlightSpan{}
 		}
 		dangHighlights.spans[source] = spans
+	}()
+	return highlightDangUncached(source)
+}
+
+// highlightDangUncached is highlightDang without dangHighlights.
+func highlightDangUncached(source string) (spans []dang.HighlightSpan) {
+	defer func() {
+		if recover() != nil {
+			spans = nil
+		}
 	}()
 	return dang.Highlight(source)
 }
