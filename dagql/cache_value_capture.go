@@ -780,7 +780,8 @@ const (
 )
 
 // RootsLeftOutError is a capture's error when it left out every root of
-// its selection: none was consumed.
+// its selection, or any root of a selection of EveryRoot: none was
+// consumed.
 type RootsLeftOutError struct {
 	Roots []LeftOutRoot
 }
@@ -789,7 +790,7 @@ func (err *RootsLeftOutError) Error() string {
 	if len(err.Roots) == 1 {
 		return err.Roots[0].Err.Error()
 	}
-	return fmt.Sprintf("all %d roots left out: %v", len(err.Roots), err.Roots[0].Err)
+	return fmt.Sprintf("%d roots left out: %v", len(err.Roots), err.Roots[0].Err)
 }
 
 // Unwrap is every left-out root's error, so that errors.Is finds
@@ -1098,8 +1099,8 @@ func (capture *HeldCapturedClosure) checkRecords() {
 // evaluation, a part installation, a sharing slot), or a row whose record it
 // refuses, and lends consume the bundle of the others, naming the roots it
 // left out (ExportedValues.LeftOut): the caller asks for those again later.
-// With every root left out, it consumes nothing and returns a
-// RootsLeftOutError. An offer it finds on an output the value already
+// With every root left out, or any root of a selection of EveryRoot, it
+// consumes nothing and returns a RootsLeftOutError. An offer it finds on an output the value already
 // completed is obsolete: it retires the offer, as boot does, and captures
 // once more. It sends each row its Known knows as a held row, unless a row
 // the bundle carries in full has its recipe; in a selection of outputs, a
@@ -1162,7 +1163,7 @@ func (c *Cache) WithExportedValues(ctx context.Context, selection ValueSelection
 		}
 	}
 	defer func() { rerr = errors.Join(rerr, capture.Release(ctx)) }()
-	if len(capture.roots) == 0 {
+	if len(capture.roots) == 0 || (selection.EveryRoot && len(leftOut) > 0) {
 		err = &RootsLeftOutError{Roots: leftOut}
 		bundleOp.EndErr(err)
 		return err

@@ -2,6 +2,7 @@ package blobstore
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -261,4 +262,80 @@ func TestUnderMetadataStore(t *testing.T) {
 		return nil
 	}))
 	require.Empty(t, refs)
+}
+
+// unreadable is a blob's source that a copy may seek to its end, as the
+// engine's section readers allow, but must never read a byte of.
+type unreadable struct {
+	t         *testing.T
+	pos, size int64
+}
+
+func (u *unreadable) Read([]byte) (int, error) {
+	if u.pos >= u.size {
+		return 0, io.EOF
+	}
+	u.t.Error("the blob was read from its source")
+	return 0, errdefs.ErrFailedPrecondition
+}
+
+func (u *unreadable) Seek(offset int64, whence int) (int64, error) {
+	if whence != io.SeekStart {
+		return 0, errdefs.ErrNotImplemented
+	}
+	u.pos = offset
+	return offset, nil
+}
+
+// A store with the image's blobs holds them in place: containerd's metadata
+// store records one without a byte read or written, it reads back from the
+// image, and neither collection nor Delete removes it, since the store never
+// wrote it.
+func TestImageBlobsInPlace(t *testing.T) {
+	dir := t.TempDir()
+	image := filepath.Join(dir, "image")
+	desc := descOf("hello")
+	blob := filepath.Join(image, "blobs", "sha256", desc.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(blob), 0o755))
+	require.NoError(t, os.WriteFile(blob, []byte("hello"), 0o444))
+	s, err := New(filepath.Join(dir, "content"), WithImageBlobs(image))
+	require.NoError(t, err)
+	bdb, err := bolt.Open(filepath.Join(dir, "metadata.db"), 0o644, &bolt.Options{NoSync: true})
+	require.NoError(t, err)
+	t.Cleanup(func() { bdb.Close() })
+	db := metadata.NewDB(bdb, s, map[string]ctdsnapshots.Snapshotter{})
+	require.NoError(t, db.Init(t.Context()))
+	ctx := namespaces.WithNamespace(context.Background(), "test")
+	lm := metadata.NewLeaseManager(db)
+	lease, err := lm.Create(ctx, leases.WithRandomID())
+	require.NoError(t, err)
+	leased := leases.WithLease(ctx, lease.ID)
+	cs := db.ContentStore()
+
+	require.NoError(t, content.WriteBlob(leased, cs, "import-1", &unreadable{t: t, size: desc.Size}, desc))
+	info, err := cs.Info(ctx, desc.Digest)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), info.Size)
+	got, err := content.ReadBlob(ctx, cs, desc)
+	require.NoError(t, err)
+	require.Equal(t, "hello", string(got))
+	_, err = os.Stat(filepath.Join(dir, "content", "blobs", "sha256", desc.Digest.Encoded()))
+	require.ErrorIs(t, err, os.ErrNotExist, "the store wrote no copy")
+	var walked []digest.Digest
+	require.NoError(t, s.Walk(ctx, func(info content.Info) error {
+		walked = append(walked, info.Digest)
+		return nil
+	}))
+	require.Empty(t, walked, "Walk lists only what the store wrote")
+
+	require.NoError(t, lm.Delete(ctx, lease))
+	_, err = db.GarbageCollect(ctx)
+	require.NoError(t, err)
+	_, err = cs.Info(ctx, desc.Digest)
+	require.True(t, errdefs.IsNotFound(err), "the record is collected: %v", err)
+	require.True(t, errdefs.IsNotFound(s.Delete(ctx, desc.Digest)))
+	data, err := os.ReadFile(blob)
+	require.NoError(t, err)
+	require.Equal(t, "hello", string(data), "the image's blob stays")
+	require.Equal(t, "hello", read(t, s, desc))
 }

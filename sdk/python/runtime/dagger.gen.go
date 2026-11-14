@@ -3,35 +3,28 @@
 package main
 
 import (
+	core "dagger.io/dagger/core"
+
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"os"
-	"sort"
 
-	telemetry "github.com/dagger/otel-go"
-	"github.com/vektah/gqlparser/v2/gqlerror"
+	"github.com/dagger/querybuilder"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"python-sdk/internal/dagger"
-
-	"github.com/dagger/querybuilder"
 )
 
+// Deprecated: use explicit core constructors and generated module clients.
 var dag = dagger.Connect()
 
 func Tracer() trace.Tracer {
 	return otel.Tracer("dagger.io/sdk.go")
 }
 
-// used for local MarshalJSON implementations
 var marshalCtx = context.Background()
 
-// called by main()
 func setMarshalContext(ctx context.Context) {
 	marshalCtx = ctx
 	dagger.SetMarshalContext(ctx)
@@ -44,13 +37,8 @@ type DaggerObject interface {
 
 type ExecError = dagger.ExecError
 
-// ptr returns a pointer to the given value.
-func ptr[T any](v T) *T {
-	return &v
-}
+func ptr[T any](v T) *T { return &v }
 
-// convertSlice converts a slice of one type to a slice of another type using a
-// converter function
 func convertSlice[I any, O any](in []I, f func(I) O) []O {
 	out := make([]O, len(in))
 	for i, v := range in {
@@ -135,124 +123,21 @@ func (r *PythonSdk) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func main() {
-	ctx := context.Background()
-
-	// Direct slog to the new stderr. This is only for dev time debugging, and
-	// runtime errors/warnings.
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	})))
-
-	if err := dispatch(ctx); err != nil {
-		os.Exit(2)
-	}
-}
-
-func convertError(rerr error) *dagger.Error {
-	if gqlErr := findSingleGQLError(rerr); gqlErr != nil {
-		dagErr := dag.Error(gqlErr.Message)
-		if gqlErr.Extensions != nil {
-			keys := make([]string, 0, len(gqlErr.Extensions))
-			for k := range gqlErr.Extensions {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				val, err := json.Marshal(gqlErr.Extensions[k])
-				if err != nil {
-					fmt.Println("failed to marshal error value:", err)
-				}
-				dagErr = dagErr.WithValue(k, dagger.JSON(val))
-			}
-		}
-		return dagErr
-	}
-	return dag.Error(rerr.Error())
-}
-
-func findSingleGQLError(rerr error) *gqlerror.Error {
-	switch x := rerr.(type) {
-	case *gqlerror.Error:
-		return x
-	case interface{ Unwrap() []error }:
-		return nil
-	case interface{ Unwrap() error }:
-		return findSingleGQLError(x.Unwrap())
-	default:
-		return nil
-	}
-}
-func dispatch(ctx context.Context) (rerr error) {
-	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("dagger-go-sdk"),
-		// TODO version?
-	))
-	defer telemetry.Close()
-
-	// A lot of the "work" actually happens when we're marshalling the return
-	// value, which entails getting object IDs, which happens in MarshalJSON,
-	// which has no ctx argument, so we use this lovely global variable.
+func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	setMarshalContext(ctx)
-
-	fnCall := dag.CurrentFunctionCall()
-	defer func() {
-		if rerr != nil {
-			if err := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
-				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
-			}
-		}
-	}()
-
-	parentName, err := fnCall.ParentName(ctx)
-	if err != nil {
-		return fmt.Errorf("get parent name: %w", err)
-	}
-	fnName, err := fnCall.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn name: %w", err)
-	}
-	parentJson, err := fnCall.Parent(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn parent: %w", err)
-	}
-	fnArgs, err := fnCall.InputArgs(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn args: %w", err)
-	}
-
-	inputArgs := map[string][]byte{}
-	for _, fnArg := range fnArgs {
-		argName, err := fnArg.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg name: %w", err)
-		}
-		argValue, err := fnArg.Value(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg value: %w", err)
-		}
-		inputArgs[argName] = []byte(argValue)
-	}
-
-	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
-	if err != nil {
-		return err
-	}
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-
-	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		return fmt.Errorf("store return value: %w", err)
-	}
-	return nil
-}
-func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	_ = inputArgs
+	if parentName == "" {
+		switch fnName {
+		case "PythonSdk", "pythonSdk":
+			parentName = "PythonSdk"
+			fnName = ""
+		}
+	}
 	switch parentName {
 	case "PythonSdk":
+		if fnName == "New" {
+			fnName = ""
+		}
 		switch fnName {
 		case "AddDirectory":
 			var parent PythonSdk
@@ -267,7 +152,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
 				}
 			}
-			var dir *dagger.Directory
+			var dir *core.Directory
 			if inputArgs["dir"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["dir"]), &dir)
 				if err != nil {
@@ -289,7 +174,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
 				}
 			}
-			var file *dagger.File
+			var file *core.File
 			if inputArgs["file"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["file"]), &file)
 				if err != nil {
@@ -333,14 +218,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var modSource *dagger.ModuleSource
+			var modSource *core.ModuleSource
 			if inputArgs["modSource"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["modSource"]), &modSource)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg modSource", err))
 				}
 			}
-			var introspectionJson *dagger.File
+			var introspectionJson *core.File
 			if inputArgs["introspectionJSON"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
 				if err != nil {
@@ -354,14 +239,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var modSource *dagger.ModuleSource
+			var modSource *core.ModuleSource
 			if inputArgs["modSource"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["modSource"]), &modSource)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg modSource", err))
 				}
 			}
-			var introspectionJson *dagger.File
+			var introspectionJson *core.File
 			if inputArgs["introspectionJSON"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
 				if err != nil {
@@ -403,7 +288,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var modSource *dagger.ModuleSource
+			var modSource *core.ModuleSource
 			if inputArgs["modSource"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["modSource"]), &modSource)
 				if err != nil {
@@ -417,14 +302,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var modSource *dagger.ModuleSource
+			var modSource *core.ModuleSource
 			if inputArgs["modSource"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["modSource"]), &modSource)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg modSource", err))
 				}
 			}
-			var introspectionJson *dagger.File
+			var introspectionJson *core.File
 			if inputArgs["introspectionJSON"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
 				if err != nil {
@@ -494,7 +379,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var ctr *dagger.Container
+			var ctr *core.Container
 			if inputArgs["ctr"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["ctr"]), &ctr)
 				if err != nil {
@@ -515,7 +400,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var introspectionJson *dagger.File
+			var introspectionJson *core.File
 			if inputArgs["introspectionJSON"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
 				if err != nil {
@@ -585,7 +470,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var sdkSourceDir *dagger.Directory
+			var sdkSourceDir *core.Directory
 			if inputArgs["sdkSourceDir"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["sdkSourceDir"]), &sdkSourceDir)
 				if err != nil {
@@ -596,187 +481,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
-	case "":
-		return dag.Module().
-			WithDescription("Runtime module for the Python SDK\n").
-			WithObject(
-				dag.TypeDef().WithObject("PythonSdk", dagger.TypeDefWithObjectOpts{Description: "Functions for building the runtime module for the Python SDK.\n\nThe server interacts directly with the ModuleRuntime and Codegen functions.\nThe others were built to be composable and chainable to facilitate the\ncreation of extension modules (custom SDKs that depend on this one).", SourceMap: dag.SourceMap("main.go", 88, 6)}).
-					WithFunction(
-						dag.Function("AddDirectory",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("AddDirectory adds a directory to the module's source.").
-							WithSourceMap(dag.SourceMap("discovery.go", 157, 1)).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("discovery.go", 157, 34)}).
-							WithArg("dir", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("discovery.go", 157, 47)})).
-					WithFunction(
-						dag.Function("AddFile",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("AddFile adds a file to the module's source.").
-							WithSourceMap(dag.SourceMap("discovery.go", 141, 1)).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("discovery.go", 141, 29)}).
-							WithArg("file", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("discovery.go", 141, 42)})).
-					WithFunction(
-						dag.Function("AddNewFile",
-							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
-							WithDescription("AddNewFile adds a new file, with contents, to the module's source.").
-							WithSourceMap(dag.SourceMap("discovery.go", 136, 1)).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("discovery.go", 136, 32)}).
-							WithArg("contents", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("discovery.go", 136, 38)})).
-					WithFunction(
-						dag.Function("BaseImage",
-							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("Image reference for the base container").
-							WithSourceMap(dag.SourceMap("extension.go", 35, 1))).
-					WithFunction(
-						dag.Function("Codegen",
-							dag.TypeDef().WithObject("GeneratedCode")).
-							WithDescription("Generated code for the Python module").
-							WithSourceMap(dag.SourceMap("main.go", 156, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 158, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 159, 2)})).
-					WithFunction(
-						dag.Function("Common",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Common steps for the ModuleRuntime and Codegen functions").
-							WithSourceMap(dag.SourceMap("main.go", 270, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 272, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 274, 2)})).
-					WithFunction(
-						dag.Function("ExtraIndexURL",
-							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("Uv's \"extra-index-url\" setting").
-							WithSourceMap(dag.SourceMap("extension.go", 112, 1))).
-					WithFunction(
-						dag.Function("GetFile",
-							dag.TypeDef().WithObject("File")).
-							WithDescription("GetFile returns a file from the module's source.").
-							WithSourceMap(dag.SourceMap("discovery.go", 146, 1)).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("discovery.go", 146, 29)})).
-					WithFunction(
-						dag.Function("IndexURL",
-							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("Uv's default index URL setting").
-							WithSourceMap(dag.SourceMap("extension.go", 99, 1))).
-					WithFunction(
-						dag.Function("Load",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Get all the needed information from the module's metadata and source files").
-							WithSourceMap(dag.SourceMap("main.go", 300, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 300, 47)})).
-					WithFunction(
-						dag.Function("ModuleRuntime",
-							dag.TypeDef().WithObject("Container")).
-							WithDescription("Container for executing the Python module runtime").
-							WithSourceMap(dag.SourceMap("main.go", 186, 1)).
-							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 188, 2)}).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 190, 2)})).
-					WithFunction(
-						dag.Function("Source",
-							dag.TypeDef().WithObject("Directory")).
-							WithDescription("We could use modSource.Directory(\"\") but we'll need to use the\ncontext directory in GeneratedCode later, so rather than trying\nto replace the source directory in the context directory, we'll\njust use the context directory with subpath everywhere.").
-							WithSourceMap(dag.SourceMap("discovery.go", 165, 1))).
-					WithFunction(
-						dag.Function("UseUv",
-							dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)).
-							WithDescription("Check whether to use uv or not").
-							WithSourceMap(dag.SourceMap("extension.go", 77, 1))).
-					WithFunction(
-						dag.Function("UseUvLock",
-							dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)).
-							WithDescription("UseUvLock returns true if the runtime should expect a uv.lock file.").
-							WithSourceMap(dag.SourceMap("discovery.go", 151, 1))).
-					WithFunction(
-						dag.Function("UvImage",
-							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("Image reference where uv is fetched from").
-							WithSourceMap(dag.SourceMap("extension.go", 40, 1))).
-					WithFunction(
-						dag.Function("UvVersion",
-							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
-							WithDescription("Version to use for uv").
-							WithSourceMap(dag.SourceMap("extension.go", 94, 1))).
-					WithFunction(
-						dag.Function("WithBase",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Initialize the base Python container\n\nWorkdir is set to the module's source directory.").
-							WithSourceMap(dag.SourceMap("main.go", 319, 1))).
-					WithFunction(
-						dag.Function("WithBaseImage",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Override the base container's image\n\nNeeds to be called before Load.").
-							WithSourceMap(dag.SourceMap("extension.go", 47, 1)).
-							WithArg("ref", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The image reference", SourceMap: dag.SourceMap("extension.go", 49, 2)})).
-					WithFunction(
-						dag.Function("WithContainer",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Replace the underlying container\n\nSince all steps change this container, it's possible to extract it in one\nstep, change it, and then set it with this function. Can be useful, for\nexample, to add system packages between the WithBase() and WithSource()\nsteps.").
-							WithSourceMap(dag.SourceMap("extension.go", 26, 1)).
-							WithArg("ctr", dag.TypeDef().WithObject("Container"), dagger.FunctionWithArgOpts{Description: "The container to use", SourceMap: dag.SourceMap("extension.go", 28, 2)})).
-					WithFunction(
-						dag.Function("WithInstall",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Install the module's package and dependencies").
-							WithSourceMap(dag.SourceMap("main.go", 559, 1))).
-					WithFunction(
-						dag.Function("WithSDK",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Add the SDK package to the source directory\n\nThis includes regenerating the client bindings for the current API schema\n(codegen).").
-							WithSourceMap(dag.SourceMap("main.go", 453, 1)).
-							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 453, 29)})).
-					WithFunction(
-						dag.Function("WithSource",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Add the module's source code").
-							WithSourceMap(dag.SourceMap("main.go", 505, 1))).
-					WithFunction(
-						dag.Function("WithTemplate",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Add the template files to skaffold a new module\n\nThe following files are added:\n- /runtime\n- <source>/pyproject.toml\n- <source>/src/<package_name>/__init__.py\n- <source>/src/<package_name>/main.py").
-							WithSourceMap(dag.SourceMap("main.go", 381, 1))).
-					WithFunction(
-						dag.Function("WithUpdates",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Make any updates to current source").
-							WithSourceMap(dag.SourceMap("main.go", 522, 1))).
-					WithFunction(
-						dag.Function("WithUv",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Enable the use of uv").
-							WithSourceMap(dag.SourceMap("extension.go", 82, 1))).
-					WithFunction(
-						dag.Function("WithUvVersion",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Override the uv version\n\nNeeds to be called before Load. Enables uv if not already enabled.").
-							WithSourceMap(dag.SourceMap("extension.go", 63, 1)).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The uv version", SourceMap: dag.SourceMap("extension.go", 65, 2)})).
-					WithFunction(
-						dag.Function("WithoutUserConfig",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Disable the discovery of custom configuration\n\nIf it's not necessary, it's faster without it.").
-							WithSourceMap(dag.SourceMap("extension.go", 15, 1))).
-					WithFunction(
-						dag.Function("WithoutUv",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithDescription("Disable the use of uv").
-							WithSourceMap(dag.SourceMap("extension.go", 88, 1))).
-					WithField("SdkSourceDir", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "Directory with the Python SDK source code", SourceMap: dag.SourceMap("main.go", 90, 2)}).
-					WithField("Container", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{Description: "Resulting container after each composing step", SourceMap: dag.SourceMap("main.go", 93, 2)}).
-					WithField("Debug", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "Whether the module runtime should run in debug mode.", SourceMap: dag.SourceMap("main.go", 96, 2)}).
-					WithField("ModName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The original module's name", SourceMap: dag.SourceMap("main.go", 99, 2)}).
-					WithField("ProjectName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The normalized python distribution package name (in pyproject.toml)", SourceMap: dag.SourceMap("main.go", 102, 2)}).
-					WithField("PackageName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The normalized python import package name (in the filesystem)", SourceMap: dag.SourceMap("main.go", 105, 2)}).
-					WithField("MainObjectName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The normalized main object name in Python", SourceMap: dag.SourceMap("main.go", 108, 2)}).
-					WithField("ModSource", dag.TypeDef().WithObject("ModuleSource"), dagger.TypeDefWithFieldOpts{Description: "The source needed to load and run a module", SourceMap: dag.SourceMap("main.go", 111, 2)}).
-					WithField("ContextDir", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "ContextDir is a copy of the context directory from the module source\n\nWe add files to this directory, always joining paths with the source's\nsubpath. We could use modSource.Directory(\"\") for that if it was read-only,\nbut since we have to mount the context directory in the end, rather than\nmounting the context dir and then mounting the forked source dir on top,\nwe fork the context dir instead so there's only one mount in the end.", SourceMap: dag.SourceMap("main.go", 120, 2)}).
-					WithField("ContextDirPath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "ContextDirPath is a unique host path for the module being loaded\n\nHACK: this property is computed as a unique value for a ModuleSource to\nprovide a unique path on the filesystem. This is because the uv cache\nuses hashes of source paths - so we need to have something unique, or we\ncan get very real conflicts in the uv cache.", SourceMap: dag.SourceMap("main.go", 128, 2)}).
-					WithField("SubPath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "Relative path from the context directory to the source directory", SourceMap: dag.SourceMap("main.go", 131, 2)}).
-					WithField("VendorPath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "Relative path to vendor client library into", SourceMap: dag.SourceMap("main.go", 134, 2)}).
-					WithField("IsInit", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "True if the module is new and we need to create files from the template\n\nIt's assumed that this is the case if there's no pyproject.toml file.", SourceMap: dag.SourceMap("main.go", 139, 2)}).
-					WithConstructor(
-						dag.Function("New",
-							dag.TypeDef().WithObject("PythonSdk")).
-							WithSourceMap(dag.SourceMap("main.go", 49, 1)).
-							WithArg("sdkSourceDir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Directory with the Python SDK source code.", SourceMap: dag.SourceMap("main.go", 53, 2), DefaultPath: "..", Ignore: []string{"**", "!pyproject.toml", "!uv.lock", "!src/**/*.py", "!src/**/*.typed", "!codegen/pyproject.toml", "!codegen/**/*.py", "!LICENSE", "!README.md", "!dist/*"}}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

@@ -705,13 +705,20 @@ func (c *Cache) heldRowStaleLocked(cur *sharedResult, expiresAtUnix, now int64) 
 // references validateTransferRecordContent checks, are relocated apart.
 func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocate PersistedRefVisitor) error {
 	row := prep.index[id]
-	direct, err := validateTransferRecordContent(row.Record, row.DependencyIDs)
+	// The record's payloads are decoded once for its validation, its part
+	// mapping and its part description, which all read them as sent; the
+	// visit below checks and relocates its references.
+	memos := payloadMemos{}
+	direct, err := validateMemoTransferRecordContent(row.Record, row.DependencyIDs, memos)
 	if err != nil {
 		return fmt.Errorf("row %d: %w", id, err)
 	}
-	if _, err := mapTransferredOutputs(row.Record); err != nil {
+	if _, err := mapMemoTransferredOutputs(row.Record, memos); err != nil {
 		return err
 	}
+	// The complete parts are read from the parts' addresses and states,
+	// which relocation leaves as sent, so they're described as sent.
+	completeParts := memoRecordCompletePartKeys(row.Record, memos)
 	var refs []uint64
 	collect := func(ref *PersistedRef) error {
 		if err := relocate(ref); err != nil {
@@ -748,7 +755,7 @@ func (prep *valueMergePrep) prepareRecordPayload(id uint64, relocate PersistedRe
 	// The record shares its call with the private cache's entry, whose
 	// identity merge applies.
 	rec.Call = prep.records[id].Call
-	prep.completeParts[id] = recordCompletePartKeys(rec)
+	prep.completeParts[id] = completeParts
 	prep.records[id] = rec
 	// A blob-backed cache prepares every record so: skipKept applies to an
 	// engine only.
@@ -1913,11 +1920,11 @@ func (c *Cache) mergedCompletePartKeysLocked(commit *valueMergeCommit, res *shar
 	return commit.prep.completeParts[row.ordinal]
 }
 
-// recordCompletePartKeys returns the part keys record proves complete: the
+// memoRecordCompletePartKeys returns the part keys record proves complete: the
 // part probe's LocalComplete over it, sorted, or none if the record doesn't
 // describe its parts.
-func recordCompletePartKeys(record PersistedRecord) []string {
-	probes, err := describePartRecord(record)
+func memoRecordCompletePartKeys(record PersistedRecord, memos payloadMemos) []string {
+	probes, err := describeMemoPartRecord(record, memos)
 	if err != nil {
 		return nil
 	}

@@ -1,6 +1,6 @@
 module dagger.io/dagger
 
-go 1.26.1
+go 1.27
 
 retract (
 	// retract SDK releases with known issues

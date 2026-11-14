@@ -45,6 +45,64 @@ func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// describedEntrypoint is a module entrypoint whose description member, spliced
+// in with %s, gives the module's description.
+const describedEntrypoint = `type Entrypoint implements ModuleEntrypoint {
+  pub sources(workspace: Workspace!): Directory! {
+    directory.withDirectory(workspace.cwd, workspace.directory(".", gitignore: true))
+  }
+%s
+  pub types: [TypeDef!]! {
+    [
+      typeDef
+        .withObject("M", description: "Test object, short description")
+        .withConstructor(function("", typeDef.withObject("M"))),
+    ]
+  }
+
+  pub call(receiverType: String!, receiverValue: JSON, fnName: String!, fnArgs: JSON!): JSON! {
+    ("{}" :: JSON!)
+  }
+}
+`
+
+// A module entrypoint's description member gives the module's description, as
+// a module runtime's Module.withDescription does; without the member, the
+// module has none.
+func (ModuleSuite) TestModuleEntrypointDescription(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name        string
+		member      string
+		description string
+	}{
+		{
+			name: "declared",
+			member: `
+  pub description: String! {
+    "Test module, short description\n\nLong description, with full sentences."
+  }
+`,
+			description: "Test module, short description\n\nLong description, with full sentences.",
+		},
+		{
+			name: "not declared",
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			mod := inspectModule(ctx, t, goGitBase(t, c).
+				WithNewFile("dagger-module.toml", sourcesModuleManifest).
+				WithNewFile("entrypoint/main.dang", fmt.Sprintf(describedEntrypoint, tc.member)))
+
+			require.Equal(t, tc.description, mod.Get("description").String())
+			require.Equal(t,
+				"Test object, short description",
+				mod.Get("objects.#.asObject|#(name=M).description").String(),
+			)
+		})
+	}
+}
+
 func (ModuleSuite) TestDescription(ctx context.Context, t *testctx.T) {
 	for i, tc := range []struct {
 		sdk     string

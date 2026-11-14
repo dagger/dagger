@@ -22,6 +22,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/blobstore"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
+	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	bolt "go.etcd.io/bbolt"
@@ -46,16 +47,19 @@ type Store struct {
 	BeforeSnapshotUpdate func(context.Context, ctdsnapshots.Info) error
 	// BeforeStat runs before each snapshot Stat the manager makes.
 	BeforeStat func(ctx context.Context, key string)
+	// AfterInfo runs after each content Info the manager makes, with its
+	// digest and its error.
+	AfterInfo func(ctx context.Context, dgst digest.Digest, err error)
 	// LeaseCommitErr, when set, rolls back each transaction the manager
 	// makes through SnapshotManagerOpt.MetadataDB and returns it.
 	LeaseCommitErr error
-	// Builtin, when set before the manager is (re)opened, plays the engine's
-	// builtin image store for chain imports.
-	Builtin     content.InfoReaderProvider
-	BeforeAdd   func(context.Context, leases.Lease, leases.Resource) error
-	AfterAdd    func(context.Context, leases.Lease, leases.Resource)
-	AfterCreate func(leases.Lease)
-	root        string
+	BeforeAdd      func(context.Context, leases.Lease, leases.Resource) error
+	AfterAdd       func(context.Context, leases.Lease, leases.Resource)
+	AfterCreate    func(leases.Lease)
+	root           string
+	rawContent     *blobstore.Store
+	// engineApplier makes the manager unpack with the engine's own applier.
+	engineApplier bool
 
 	// SharedMountLinger and MaxIdleSharedMounts, when set before the manager
 	// is (re)opened, bound its idle shared read-only mounts.
@@ -77,17 +81,26 @@ func NewStore(t testing.TB) *Store {
 	return newStore(t, t.TempDir(), "native", native.NewSnapshotter)
 }
 
-func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error)) *Store {
+// NewStoreWithImageBlobs is NewStore with a content store that holds the
+// blobs under dir in place, as the engine holds its image's.
+func NewStoreWithImageBlobs(t testing.TB, dir string) *Store {
+	t.Helper()
+	return newStore(t, t.TempDir(), "native", native.NewSnapshotter, blobstore.WithImageBlobs(dir))
+}
+
+func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error), contentOpts ...blobstore.Option) *Store {
 	t.Helper()
 	s := &Store{root: root, snapshotter: snapshotter}
-	rawContent, err := blobstore.New(filepath.Join(s.root, "content"))
+	rawContent, err := blobstore.New(filepath.Join(s.root, "content"), contentOpts...)
 	require.NoError(t, err)
+	s.rawContent = rawContent
 	rawSnapshots, err := newSnapshotter(filepath.Join(s.root, "snapshots"))
 	require.NoError(t, err)
 	db, err := bolt.Open(filepath.Join(s.root, "metadata.db"), 0600, nil)
 	require.NoError(t, err)
 	s.DB = metadata.NewDB(db, rawContent, map[string]ctdsnapshots.Snapshotter{snapshotter: rawSnapshots})
 	require.NoError(t, s.DB.Init(context.Background()))
+	s.StartImage(t)
 	s.Leases = bkcache.NewLeaseManager(metadata.NewLeaseManager(s.DB), Namespace)
 	s.Content = containerdsnapshot.NewContentStore(s.DB.ContentStore(), Namespace)
 	s.Snapshots = containerdsnapshot.NewSnapshotter(snapshotter, s.DB.Snapshotter(snapshotter), Namespace)
@@ -108,6 +121,9 @@ func (s *Store) openManager(t testing.TB) {
 	// diff's blob writes as it sees the manager's own.
 	observed := observedContent{Store: s.Content, owner: s}
 	applierFrom := func(provider content.Provider) diff.Applier {
+		if s.engineApplier {
+			return &observedApplier{Applier: bkcache.NewLayerApplier(provider), store: s}
+		}
 		if s.snapshotter == "overlayfs" {
 			return &observedApplier{Applier: apply.NewFileSystemApplier(provider), store: s}
 		}
@@ -120,8 +136,8 @@ func (s *Store) openManager(t testing.TB) {
 		ApplyFrom:      applierFrom,
 		Differ:         &observedDiffer{Comparer: inPlaceDiffer{store: observed}, store: s},
 		MountPoolRoot:  filepath.Join(s.root, "mounts"),
-		BuiltinContent: s.Builtin,
 		MetadataDB:     observedTransactor{DB: s.DB, store: s},
+		InPlaceContent: s.rawContent.InPlace,
 		LocalMounter: func(ms []mount.Mount) bkcache.Mounter {
 			return &inPlaceMounter{store: s, mounts: ms}
 		},
@@ -129,14 +145,6 @@ func (s *Store) openManager(t testing.TB) {
 		MaxIdleSharedMounts: s.MaxIdleSharedMounts,
 	})
 	require.NoError(t, err)
-}
-
-// WithBuiltin reopens the manager with provider as the builtin image store,
-// keeping the persistent metadata.
-func (s *Store) WithBuiltin(t testing.TB, provider content.InfoReaderProvider) {
-	t.Helper()
-	s.Builtin = provider
-	s.Reload(t)
 }
 
 // WithSharedMounts reopens the manager with the given bounds on its idle
@@ -153,6 +161,21 @@ func (s *Store) Reload(t testing.TB) {
 	require.NoError(t, s.Manager.Close())
 	s.openManager(t)
 	require.NoError(t, s.Manager.LoadPersistentMetadata(rows))
+}
+
+// UseEngineApplier reopens the manager unpacking layers with the engine's
+// own applier, keeping the persistent metadata.
+func (s *Store) UseEngineApplier(t testing.TB) {
+	t.Helper()
+	s.engineApplier = true
+	s.Reload(t)
+}
+
+// StartImage does what an engine does with its image's blobs at start: it
+// forgets the records of those a previous image held and this one doesn't.
+func (s *Store) StartImage(t testing.TB) {
+	t.Helper()
+	require.NoError(t, s.rawContent.ForgetLostImageBlobs(namespaces.WithNamespace(context.Background(), Namespace), s.DB.ContentStore()))
 }
 
 func (s *Store) GC(t testing.TB) {
@@ -340,6 +363,15 @@ func (l *observedLeases) Create(ctx context.Context, opts ...leases.Opt) (leases
 type observedContent struct {
 	content.Store
 	owner *Store
+}
+
+// Info runs the owner's AfterInfo.
+func (s observedContent) Info(ctx context.Context, dgst digest.Digest) (content.Info, error) {
+	info, err := s.Store.Info(ctx, dgst)
+	if s.owner.AfterInfo != nil {
+		s.owner.AfterInfo(ctx, dgst, err)
+	}
+	return info, err
 }
 
 // ReaderAt counts the bytes read from the content store in ContentRead.

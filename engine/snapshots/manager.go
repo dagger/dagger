@@ -43,13 +43,14 @@ type SnapshotManagerOpt struct {
 	ApplyFrom     func(provider content.Provider) diff.Applier
 	Differ        diff.Comparer
 	MountPoolRoot string
-	// BuiltinContent is the engine's builtin image store, consulted by
-	// chain imports for a layer blob before the chain's provider. Nil means
-	// no such store.
-	BuiltinContent content.InfoReaderProvider
 	// MetadataDB is the containerd metadata database behind LeaseManager.
 	// When set, AttachLease makes its lease writes in one transaction.
 	MetadataDB metadata.Transactor
+	// InPlaceContent reports whether ContentStore holds a blob in place,
+	// without disk of its own: the engine image's blobs. A snapshot's size
+	// leaves such a blob out, since releasing the snapshot frees none of it.
+	// Nil means none is.
+	InPlaceContent func(digest.Digest) bool
 	// LocalMounter mounts a snapshot's mounts on a local directory for
 	// shared read-only mounts; nil means LocalMounterWithMounts. Tests use
 	// one that needs no privileges.
@@ -67,12 +68,6 @@ type ImportedImage struct {
 	ConfigDesc   ocispecs.Descriptor
 	Layers       []ocispecs.Descriptor
 	Nonlayers    []ocispecs.Descriptor
-}
-
-// BuiltinContent is the builtin image store chain imports consult, nil
-// when there is none.
-func (cm *snapshotManager) BuiltinContent() content.InfoReaderProvider {
-	return cm.builtinContent
 }
 
 // Blobs lists every blob of the image: manifest, config, layers and the
@@ -119,7 +114,6 @@ type SnapshotManager interface {
 	SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error)
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
 	RemoveLease(ctx context.Context, leaseID string) error
-	PinContent(ctx context.Context, leaseID string, descs []ocispecs.Descriptor) error
 	// LoadPersistentMetadata takes ownership of the content-hash data buffers.
 	// Callers must not modify them after loading.
 	LoadPersistentMetadata(rows PersistentMetadataRows) error
@@ -144,10 +138,10 @@ type snapshotManager struct {
 	applyFrom     func(content.Provider) diff.Applier
 	Differ        diff.Comparer
 	metadataStore *metadataStore
-	// builtinContent is SnapshotManagerOpt.BuiltinContent.
-	builtinContent content.InfoReaderProvider
 	// metadataDB is SnapshotManagerOpt.MetadataDB.
 	metadataDB metadata.Transactor
+	// inPlaceContent is SnapshotManagerOpt.InPlaceContent.
+	inPlaceContent func(digest.Digest) bool
 
 	snapshotContentDigests map[string]map[digest.Digest]struct{}
 	// snapshotContentOwned holds, of each snapshot's recorded blobs, those
@@ -202,8 +196,8 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		Applier:                opt.Applier,
 		applyFrom:              opt.ApplyFrom,
 		Differ:                 opt.Differ,
-		builtinContent:         opt.BuiltinContent,
 		metadataDB:             opt.MetadataDB,
+		inPlaceContent:         opt.InPlaceContent,
 		metadataStore:          newMetadataStore(),
 		records:                make(map[string]*cacheRecord),
 		snapshotContentDigests: make(map[string]map[digest.Digest]struct{}),
@@ -269,6 +263,15 @@ func (cm *snapshotManager) GetBySnapshotID(ctx context.Context, snapshotID strin
 	return cm.get(ctx, snapshotID, opts...)
 }
 
+// contentSize is what a blob adds to the size of a snapshot that holds it:
+// nothing for a blob the content store holds in place.
+func (cm *snapshotManager) contentSize(info content.Info) int64 {
+	if cm.inPlaceContent != nil && cm.inPlaceContent(info.Digest) {
+		return 0
+	}
+	return info.Size
+}
+
 func (cm *snapshotManager) SnapshotSize(ctx context.Context, snapshotID string) (int64, error) {
 	if snapshotID == "" {
 		return 0, errors.New("snapshot size: empty snapshot ID")
@@ -300,7 +303,7 @@ func (cm *snapshotManager) SnapshotSize(ctx context.Context, snapshotID string) 
 		}
 		if _, ok := added[dgst]; !ok {
 			if info, err := cm.ContentStore.Info(ctx, dgst); err == nil {
-				usage.Size += info.Size
+				usage.Size += cm.contentSize(info)
 				added[dgst] = struct{}{}
 			}
 		}
@@ -309,7 +312,7 @@ func (cm *snapshotManager) SnapshotSize(ctx context.Context, snapshotID string) 
 				return true
 			}
 			if info, err := cm.ContentStore.Info(ctx, desc.Digest); err == nil {
-				usage.Size += info.Size
+				usage.Size += cm.contentSize(info)
 				added[desc.Digest] = struct{}{}
 			}
 			return true

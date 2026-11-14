@@ -41,6 +41,8 @@ type functionSpec struct {
 var functions = []functionSpec{
 	{Name: "engineDev", Receiver: "EngineDev", FnName: "", Args: map[string]argumentSpec{"ws": {Required: false, Default: "", Encoding: "string"}, "subnetNumber": {Required: false, Default: "89", Encoding: "json"}, "clientDockerConfig": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "container", Receiver: "EngineDev", FnName: "Container", Args: map[string]argumentSpec{"platform": {Required: false, Default: "", Encoding: "string"}, "gpuSupport": {Required: false, Default: "", Encoding: "json"}, "version": {Required: false, Default: "", Encoding: "string"}}},
+	{Name: "exportDriver", Receiver: "EngineDev", FnName: "ExportDriver", Args: map[string]argumentSpec{}},
+	{Name: "goEnv", Receiver: "EngineDev", FnName: "GoEnv", Args: map[string]argumentSpec{"source": {Required: false, Default: "", Encoding: "string"}, "cgo": {Required: false, Default: "", Encoding: "json"}}},
 	{Name: "graphqlSchema", Receiver: "EngineDev", FnName: "GraphqlSchema", Args: map[string]argumentSpec{"version": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "imageEntriesAfterPrune", Receiver: "EngineDev", FnName: "ImageEntriesAfterPrune", Args: map[string]argumentSpec{}},
 	{Name: "incrementSubnet", Receiver: "EngineDev", FnName: "IncrementSubnet", Args: map[string]argumentSpec{}},
@@ -51,8 +53,10 @@ var functions = []functionSpec{
 	{Name: "networkCidr", Receiver: "EngineDev", FnName: "NetworkCidr", Args: map[string]argumentSpec{}},
 	{Name: "publish", Receiver: "EngineDev", FnName: "Publish", Args: map[string]argumentSpec{"image": {Required: false, Default: "\"ghcr.io/dagger/engine\"", Encoding: "string"}, "tag": {Required: true, Default: "", Encoding: "json"}, "dryRun": {Required: false, Default: "", Encoding: "json"}, "registryUsername": {Required: false, Default: "", Encoding: "string"}, "registryPassword": {Required: false, Default: "", Encoding: "string"}}},
 	{Name: "releaseDryRun", Receiver: "EngineDev", FnName: "ReleaseDryRun", Args: map[string]argumentSpec{}},
+	{Name: "reproducibleBuild", Receiver: "EngineDev", FnName: "ReproducibleBuild", Args: map[string]argumentSpec{}},
 	{Name: "service", Receiver: "EngineDev", FnName: "Service", Args: map[string]argumentSpec{"name": {Required: true, Default: "", Encoding: "string"}, "gpuSupport": {Required: false, Default: "", Encoding: "json"}, "sharedCache": {Required: false, Default: "", Encoding: "json"}, "metrics": {Required: false, Default: "", Encoding: "json"}}},
 	{Name: "test", Receiver: "EngineDev", FnName: "Test", Args: map[string]argumentSpec{"run": {Required: false, Default: "", Encoding: "string"}, "skip": {Required: false, Default: "", Encoding: "string"}, "pkg": {Required: false, Default: "\"./...\"", Encoding: "string"}, "failFast": {Required: false, Default: "", Encoding: "json"}, "parallel": {Required: false, Default: "", Encoding: "json"}, "timeout": {Required: false, Default: "", Encoding: "string"}, "race": {Required: false, Default: "", Encoding: "json"}, "count": {Required: false, Default: "1", Encoding: "json"}, "envFile": {Required: false, Default: "", Encoding: "string"}, "testVerbose": {Required: false, Default: "", Encoding: "json"}, "update": {Required: false, Default: "", Encoding: "json"}, "ebpfProgs": {Required: false, Default: "", Encoding: "json"}, "ebpf": {Required: false, Default: "", Encoding: "json"}, "dumpAfter": {Required: false, Default: "", Encoding: "json"}}},
+	{Name: "testModule", Receiver: "EngineDev", FnName: "TestModule", Args: map[string]argumentSpec{"container": {Required: false, Default: "", Encoding: "string"}, "source": {Required: false, Default: "", Encoding: "string"}, "module": {Required: true, Default: "", Encoding: "string"}, "run": {Required: false, Default: "", Encoding: "string"}, "skip": {Required: false, Default: "", Encoding: "string"}, "pkg": {Required: false, Default: "\"./...\"", Encoding: "string"}, "testVerbose": {Required: false, Default: "", Encoding: "json"}}},
 	{Name: "testProfile", Receiver: "EngineDev", FnName: "TestProfile", Args: map[string]argumentSpec{"run": {Required: false, Default: "", Encoding: "string"}, "skip": {Required: false, Default: "", Encoding: "string"}, "pkg": {Required: false, Default: "\"./...\"", Encoding: "string"}, "failFast": {Required: false, Default: "", Encoding: "json"}, "parallel": {Required: false, Default: "", Encoding: "json"}, "timeout": {Required: false, Default: "", Encoding: "string"}, "race": {Required: false, Default: "", Encoding: "json"}, "count": {Required: false, Default: "1", Encoding: "json"}, "envFile": {Required: false, Default: "", Encoding: "string"}, "testVerbose": {Required: false, Default: "", Encoding: "json"}, "ebpfProgs": {Required: false, Default: "", Encoding: "json"}}},
 	{Name: "testTelemetry", Receiver: "EngineDev", FnName: "TestTelemetry", Args: map[string]argumentSpec{"run": {Required: false, Default: "", Encoding: "string"}, "skip": {Required: false, Default: "", Encoding: "string"}, "update": {Required: false, Default: "", Encoding: "json"}, "failFast": {Required: false, Default: "", Encoding: "json"}, "parallel": {Required: false, Default: "", Encoding: "json"}, "timeout": {Required: false, Default: "", Encoding: "string"}, "race": {Required: false, Default: "", Encoding: "json"}, "count": {Required: false, Default: "1", Encoding: "json"}, "envFile": {Required: false, Default: "", Encoding: "string"}, "testVerbose": {Required: false, Default: "", Encoding: "json"}, "ebpfProgs": {Required: false, Default: "", Encoding: "json"}}},
 	{Name: "tests", Receiver: "EngineDev", FnName: "Tests", Args: map[string]argumentSpec{}},
@@ -96,6 +100,7 @@ func main() {
 	default:
 		err = fmt.Errorf("unknown mode %q", os.Args[1])
 	}
+
 	// fatalf exits without running deferred calls, so spans are flushed first.
 	telemetry.Close()
 	if err != nil {
@@ -114,6 +119,7 @@ func fatalf(format string, args ...any) {
 	}
 	encoded, _ := json.Marshal(reported)
 	fmt.Fprintf(os.Stderr, "%s\n%s%s\n", message, "::dagger-function-error::", encoded)
+
 	os.Exit(2)
 }
 

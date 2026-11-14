@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,13 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/mount"
-	"github.com/containerd/containerd/v2/plugins/content/local"
-	"github.com/opencontainers/go-digest"
-	"github.com/opencontainers/image-spec/specs-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core"
@@ -214,9 +208,6 @@ func (m *resolverOutputManager) PinSnapshot(ctx context.Context, id string) (bkc
 	return m.GetBySnapshotID(ctx, id)
 }
 func (m *resolverOutputManager) RemoveLease(context.Context, string) error { return nil }
-func (m *resolverOutputManager) PinContent(context.Context, string, []ocispecs.Descriptor) error {
-	return nil
-}
 
 func (m *resolverOutputManager) DeleteStaleDaggerOwnerLeases(context.Context, map[string]struct{}) error {
 	return nil
@@ -285,7 +276,6 @@ type resolverOutputServer struct {
 func (s *resolverOutputServer) DNS() *oci.DNSConfig                      { return &oci.DNSConfig{} }
 func (s *resolverOutputServer) SnapshotManager() bkcache.SnapshotManager { return s.manager }
 func (s *resolverOutputServer) OCIStore() content.Store                  { return s.content }
-func (s *resolverOutputServer) BuiltinOCIStore() content.Store           { return s.content }
 func resolverOutputFixture(t *testing.T) (context.Context, *dagql.Server, *dagql.Cache, *resolverOutputServer) {
 	t.Helper()
 	server := &resolverOutputServer{currentTypeDefsTestServer: &currentTypeDefsTestServer{}, manager: &resolverOutputManager{t: t}}
@@ -455,32 +445,6 @@ func testLazyOperationResolverOutputs(t *testing.T, recorded bool) {
 		if recorded {
 			require.NoError(t, err)
 			assertResolverLazyOperation(t, ctx, cache, result.Self(), "file.blob")
-			require.NoError(t, result.Self().OnRelease(ctx))
-			return
-		}
-		require.ErrorContains(t, err, "call is nil")
-		require.Empty(t, server.manager.outputs)
-	})
-	t.Run("builtin wrapping", func(t *testing.T) {
-		ctx, srv, cache, server := resolverOutputFixture(t)
-		store, err := local.NewStore(t.TempDir())
-		require.NoError(t, err)
-		server.content = store
-		config := []byte(`{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}`)
-		configDesc := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageConfig, Digest: digest.FromBytes(config), Size: int64(len(config))}
-		require.NoError(t, content.WriteBlob(ctx, store, "config", bytes.NewReader(config), configDesc))
-		manifest, err := json.Marshal(ocispecs.Manifest{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispecs.MediaTypeImageManifest, Config: configDesc, Layers: []ocispecs.Descriptor{}})
-		require.NoError(t, err)
-		desc := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageManifest, Digest: digest.FromBytes(manifest), Size: int64(len(manifest))}
-		require.NoError(t, content.WriteBlob(ctx, store, "manifest", bytes.NewReader(manifest), desc))
-		if recorded {
-			ctx = operationResolverCall(ctx, "_builtinContainer", &core.Container{})
-		}
-		result, callErr := (&hostSchema{}).builtinContainer(ctx, srv.Root().(dagql.ObjectResult[*core.Query]), builtinContainerArgs{Digest: desc.Digest.String()})
-		err = callErr
-		if recorded {
-			require.NoError(t, err)
-			assertResolverLazyOperation(t, ctx, cache, result.Self(), "")
 			require.NoError(t, result.Self().OnRelease(ctx))
 			return
 		}

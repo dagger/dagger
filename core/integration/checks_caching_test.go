@@ -16,6 +16,7 @@ import (
 	"context"
 	"crypto/rand"
 	"strings"
+	"testing"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
@@ -146,139 +147,35 @@ func checkCachingRemote(ctx context.Context, t *testctx.T, c *dagger.Client) str
 // planningCollectionModule is the main module of a Git workspace whose
 // collection gets a new key each time its producer runs, cached as policy
 // says, or by default when it's empty. Each item's check records its key, so
-// a test can tell which items a run checked.
-func planningCollectionModule(c *dagger.Client, policy string) *core.Directory {
-	cache := ""
+// a test can tell which items a run checked. Its runs log to a cache volume
+// named by a nonce of its own.
+func planningCollectionModule(t testing.TB, c *dagger.Client, policy string) *core.Directory {
+	fixture := "go/planning-collection"
 	if policy != "" {
-		cache = "// +cache=\"" + policy + "\"\n"
+		fixture += "-" + policy
 	}
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\n").
-		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
-		WithNewFile("probe/main.go", `package main
-
-import (
-	"context"
-	"crypto/rand"
-	"strings"
-
-	"dagger/probe/internal/dagger"
-)
-
-const nonce = "`+rand.Text()+`"
-
-type Probe struct{}
-
-`+cache+`func (*Probe) Batches() *Batches { return &Batches{Names: []string{rand.Text()}} }
-
-// +collection
-type Batches struct {
-	// +keys
-	Names []string
-}
-
-// +get
-func (*Batches) Batch(name string) *Batch { return &Batch{Name: name} }
-
-type Batch struct{ Name string }
-
-// +check
-func (b *Batch) Verify(ctx context.Context) error {
-	_, err := runLog().
-		WithEnvVariable("NONCE", rand.Text()).
-		WithExec([]string{"sh", "-c", "echo '" + b.Name + "' >> /runs/log"}).
-		Sync(ctx)
-	return err
-}
-
-// Checked lists the keys of the items whose check ran, once each.
-// +cache="never"
-func (*Probe) Checked(ctx context.Context) (string, error) {
-	out, err := runLog().
-		WithEnvVariable("NONCE", rand.Text()).
-		WithExec([]string{"sh", "-c", "sort -u /runs/log"}).
-		Stdout(ctx)
-	return strings.TrimSpace(out), err
-}
-
-func runLog() *dagger.Container {
-	return dag.Container().
-		From("alpine:3").
-		WithMountedCache("/runs", dag.CacheVolume("planning-collection-"+nonce))
-}
-`)
+		WithDirectory("probe", core.NewQuery(c).Host().Directory(testDataPath(t, "modules", fixture))).
+		WithNewFile("probe/nonce.go", "package main\n\nconst nonce = \""+rand.Text()+"\"\n")
 }
 
 // planningImageCollectionModule is the main module of a Git workspace whose
 // constructor takes an image from a module setting set to a tag, and whose
 // collection is cached by default.
-func planningImageCollectionModule(c *dagger.Client) *core.Directory {
+func planningImageCollectionModule(t testing.TB, c *dagger.Client) *core.Directory {
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\nsettings.base = \"alpine:latest\"\n").
-		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
-		WithNewFile("probe/main.go", `package main
-
-import "dagger/probe/internal/dagger"
-
-type Probe struct {
-	// +private
-	Base *dagger.Container
-}
-
-func New(base *dagger.Container) *Probe { return &Probe{Base: base} }
-
-func (*Probe) Batches() *Batches { return &Batches{Names: []string{"a", "b"}} }
-
-// +collection
-type Batches struct {
-	// +keys
-	Names []string
-}
-
-// +get
-func (*Batches) Batch(name string) *Batch { return &Batch{Name: name} }
-
-type Batch struct{ Name string }
-
-// +check
-func (*Batch) Verify() error { return nil }
-`)
+		WithDirectory("probe", core.NewQuery(c).Host().Directory(testDataPath(t, "modules", "go/planning-image-collection")))
 }
 
 // planningDirectoryCollectionModule is the main module of a Git workspace
 // whose constructor takes a directory from a module setting set to a remote
 // Git branch, and whose collection is cached by default.
-func planningDirectoryCollectionModule(c *dagger.Client, branch string) *core.Directory {
+func planningDirectoryCollectionModule(t testing.TB, c *dagger.Client, branch string) *core.Directory {
 	return core.NewQuery(c).Directory().
 		WithNewFile("dagger.toml", "[modules.probe]\nsource = \"./probe\"\nmain = true\nsettings.src = \""+branch+"\"\n").
-		WithNewFile("probe/dagger.json", `{"name":"probe","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
-		WithNewFile("probe/main.go", `package main
-
-import "dagger/probe/internal/dagger"
-
-type Probe struct {
-	// +private
-	Src *dagger.Directory
-}
-
-func New(src *dagger.Directory) *Probe { return &Probe{Src: src} }
-
-func (*Probe) Batches() *Batches { return &Batches{Names: []string{"a", "b"}} }
-
-// +collection
-type Batches struct {
-	// +keys
-	Names []string
-}
-
-// +get
-func (*Batches) Batch(name string) *Batch { return &Batch{Name: name} }
-
-type Batch struct{ Name string }
-
-// +check
-func (*Batch) Verify() error { return nil }
-`)
+		WithDirectory("probe", core.NewQuery(c).Host().Directory(testDataPath(t, "modules", "go/planning-directory-collection")))
 }
 
 // planningListingOutcomes lists the checks of the Git workspace at remoteRef
@@ -350,7 +247,7 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 	// across sessions gives the same items, so the next session's listing is
 	// a cache hit. The engine reports each call's cache outcome to Cloud.
 	t.Run("items of a collection cached by default are listed once across sessions", func(ctx context.Context, t *testctx.T) {
-		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(c, ""))
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(t, c, ""))
 		require.Contains(t, planningListingOutcomes(ctx, t, c, remoteRef), "hit", "the second session must reuse the listing")
 	})
 
@@ -364,12 +261,12 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 		require.True(t, found, "expected an image ref with a digest: %q", imageRef)
 
 		t.Run("pinned by the lock is reused in the next session", func(ctx context.Context, t *testctx.T) {
-			remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningImageCollectionModule(c).
+			remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningImageCollectionModule(t, c).
 				WithNewFile(workspace.LockFileName, mustMarshalOCISHALock(t, pin)))
 			require.Contains(t, planningListingOutcomes(ctx, t, c, remoteRef), "hit", "a pinned tag must not keep the listing from being reused")
 		})
 		t.Run("without a pin is listed again", func(ctx context.Context, t *testctx.T) {
-			remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningImageCollectionModule(c))
+			remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningImageCollectionModule(t, c))
 			outcomes := planningListingOutcomes(ctx, t, c, remoteRef)
 			require.NotEmpty(t, outcomes)
 			require.NotContains(t, outcomes, "hit", "an unpinned tag may move, so the listing must not be reused")
@@ -381,7 +278,7 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 	t.Run("a listing over a remote branch is listed again", func(ctx context.Context, t *testctx.T) {
 		branchRepo := workspaceSelectionRemoteRef(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README", "branch"))
 		branch := strings.TrimSuffix(branchRepo, "@main") + "#main"
-		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningDirectoryCollectionModule(c, branch))
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningDirectoryCollectionModule(t, c, branch))
 		outcomes := planningListingOutcomes(ctx, t, c, remoteRef)
 		require.NotEmpty(t, outcomes)
 		require.NotContains(t, outcomes, "hit", "a branch may move, so the listing must not be reused")
@@ -392,7 +289,7 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 	// then, not the ones listed before.
 	for _, policy := range []string{"session", "never"} {
 		t.Run("items of a collection cached per "+policy+" are listed again", func(ctx context.Context, t *testctx.T) {
-			remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(c, policy))
+			remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(t, c, policy))
 			first := workspaceIdentityExec(ctx, t, ctr, true, "check", "-W", remoteRef, "-l", "--all", "-f=cli")
 			second := workspaceIdentityExec(ctx, t, ctr, true, "check", "-W", remoteRef, "-l", "--all", "-f=cli")
 			require.Contains(t, first, "--probe-batch=")
@@ -404,7 +301,7 @@ func (ChecksSuite) TestCheckPlanningFromGitAcrossSessions(ctx context.Context, t
 	// cached for the session can be checked: one never cached returns other
 	// keys.
 	t.Run("items of a collection cached per session are checked again", func(ctx context.Context, t *testctx.T) {
-		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(c, "session"))
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, planningCollectionModule(t, c, "session"))
 		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef)
 		checkCachingRun(ctx, t, ctr, core.ReturnTypeSuccess, "check", "-W", remoteRef)
 		out, err := ctr.

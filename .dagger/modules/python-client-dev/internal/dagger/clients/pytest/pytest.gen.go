@@ -56,7 +56,7 @@ func (r *Pytest) Container(ctx context.Context) (*Container, error) { // pytest 
 	if objectID == nil {
 		return nil, nil
 	}
-	return new(Container).WithGraphQLQuery(selectNode(q.Root(), *objectID, "Container")), nil
+	return loaded[*Container](q, *objectID), nil
 }
 
 // From a configless subdirectory, automatic testing skips a failing ancestor

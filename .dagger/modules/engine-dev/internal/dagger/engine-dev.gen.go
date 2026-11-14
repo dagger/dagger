@@ -21,6 +21,7 @@ type EngineDev struct { // engine-dev (../../:0:0)
 	networkCidr *string
 	publish     *Void
 	test        *Void
+	testModule  *Void
 	tests       *string
 }
 type WithEngineDevFunc func(r *EngineDev) *EngineDev
@@ -71,6 +72,44 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container {
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
+		}
+	}
+
+	return new(Container).WithGraphQLQuery(q)
+}
+
+// Build the export driver the Go SDK's code generation loads packages
+// through: a GOPACKAGESDRIVER that serves the export data of what they import
+// from dagger/go's archives, so the go command compiles none of it.
+func (r *EngineDev) ExportDriver() *File {
+	q := r.query.Select("exportDriver")
+
+	return new(File).WithGraphQLQuery(q)
+}
+
+// EngineDevGoEnvOpts contains options for EngineDev.GoEnv
+type EngineDevGoEnvOpts struct {
+	// The source to work in; the engine's source by default
+	Source *Directory
+	// Enable cgo
+	Cgo bool
+}
+
+// GoEnv is a Go environment for working on dagger/dagger: wolfi with the Go
+// toolchain, a C toolchain, and what the engine's tests use, with dagger/go's
+// Go caches, and source as its working directory. It is for running Go code
+// and the go command; dagger/dagger's own binaries and test binaries are
+// built with dagger/go's per-package build, not here.
+func (r *EngineDev) GoEnv(opts ...EngineDevGoEnvOpts) *Container {
+	q := r.query.Select("goEnv")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `cgo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cgo) {
+			q = q.Arg("cgo", opts[i].Cgo)
 		}
 	}
 
@@ -195,7 +234,9 @@ func (r *EngineDev) InstallClient(opts ...EngineDevInstallClientOpts) *Container
 }
 
 // Introspect the engine API schema, and return it as a json-encoded file.
-// This file is used by SDKs to generate clients.
+// This file is used by SDKs to generate clients. It is the engine's answer to
+// an introspection query from a client of its own version, computed
+// in-process by the introspect tool, so no engine is built or started.
 func (r *EngineDev) IntrospectionJSON() *File {
 	q := r.query.Select("introspectionJson")
 
@@ -303,6 +344,16 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 
 func (r *EngineDev) ReleaseDryRun() *Check {
 	q := r.query.Select("releaseDryRun")
+
+	return new(Check).WithGraphQLQuery(q)
+}
+
+// The build steps that have built to different bytes before build to the
+// same bytes when they run twice: QEMU's emulators, crun and the Go SDK's
+// files. Two engines that each build the image then hold the same
+// image, and the cache can serve what one built on it to the other.
+func (r *EngineDev) ReproducibleBuild() *Check {
+	q := r.query.Select("reproducibleBuild")
 
 	return new(Check).WithGraphQLQuery(q)
 }
@@ -442,6 +493,56 @@ func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error {
 			q = q.Arg("dumpAfter", opts[i].DumpAfter)
 		}
 	}
+
+	return q.Execute(ctx)
+}
+
+// EngineDevTestModuleOpts contains options for EngineDev.TestModule
+type EngineDevTestModuleOpts struct {
+	// Only run these tests
+	Run string
+	// Skip these tests
+	Skip string
+	// Package patterns, relative to the module
+	//
+	// Default: "./..."
+	Pkg string
+	// Enable verbose output
+	TestVerbose bool
+}
+
+// Run the tests of another Go module, such as the Go SDK's, in the caller's
+// container, as Test runs the engine's: each package's test binary is built
+// by dagger/go's per-package build and run with otelgotest from its package's
+// directory, several packages at once.
+func (r *EngineDev) TestModule(ctx context.Context, container *Container, source *Directory, module string, opts ...EngineDevTestModuleOpts) error {
+	assertNotNil("container", container)
+	assertNotNil("source", source)
+	if r.testModule != nil {
+		return nil
+	}
+	q := r.query.Select("testModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `run` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Run) {
+			q = q.Arg("run", opts[i].Run)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
+		}
+		// `pkg` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pkg) {
+			q = q.Arg("pkg", opts[i].Pkg)
+		}
+		// `testVerbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestVerbose) {
+			q = q.Arg("testVerbose", opts[i].TestVerbose)
+		}
+	}
+	q = q.Arg("container", container)
+	q = q.Arg("source", source)
+	q = q.Arg("module", module)
 
 	return q.Execute(ctx)
 }
@@ -651,11 +752,11 @@ func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev {
 	}
 }
 
-// Build the engine with the cache entries its image ships, as a release
-// does. Making them starts a separate engine of the build and costs minutes,
-// while an engine that serves many clients, such as a test run's, builds the
-// same results once for its first client, and one that loads no Go module
-// never needs them; so an engine built for anything else goes without.
+// Build the engine with the Go builds its image's entries ship, as a release
+// does. They are calls on the engine the build runs on, so a build whose Go
+// builds' inputs haven't changed finds them already made and only exports
+// them. An engine built without ships only the built-in SDKs' files in its
+// entries.
 func (r *EngineDev) WithImageEntries() *EngineDev {
 	q := r.query.Select("withImageEntries")
 

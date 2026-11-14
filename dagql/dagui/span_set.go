@@ -3,6 +3,7 @@ package dagui
 import (
 	"iter"
 	"slices"
+	"sort"
 )
 
 // SpanSet is a set of spans ordered by start time, spans that start
@@ -116,13 +117,30 @@ func (set *SpanSet) remove(span *Span) bool {
 			return false
 		}
 	}
-	i := slices.IndexFunc(set.order, func(s *Span) bool { return s.ID == span.ID })
+	i := set.indexOf(span)
 	if i < 0 {
 		return false
 	}
 	set.order = slices.Delete(set.order, i, i+1)
 	delete(set.index, span.ID)
 	return true
+}
+
+// indexOf returns span's position in order, or -1. order is sorted by start
+// time, so it looks among the spans that start when span does; an ancestor's
+// RunningSpans can hold thousands of spans, and each leaves it when it ends.
+// A span whose start time changed after it joined isn't where its start time
+// says, so it falls back to a scan.
+func (set *SpanSet) indexOf(span *Span) int {
+	i := sort.Search(len(set.order), func(i int) bool {
+		return !set.order[i].StartTime.Before(span.StartTime)
+	})
+	for ; i < len(set.order) && set.order[i].StartTime.Equal(span.StartTime); i++ {
+		if set.order[i].ID == span.ID {
+			return i
+		}
+	}
+	return slices.IndexFunc(set.order, func(s *Span) bool { return s.ID == span.ID })
 }
 
 // addToSpanSet adds span to *set, allocating the set if it's nil. It reports

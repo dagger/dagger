@@ -212,28 +212,27 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.Equal(t, "saved HTTP body\n", body)
 		fileID, err := file.ID(ctx)
 		require.NoError(t, err)
-		manifest, err := devEngineContainer(c).EnvVariable(ctx, distconsts.GoSDKManifestDigestEnvName)
+		goSDK, err := devEngineContainer(c).EnvVariable(ctx, distconsts.GoSDKDigestEnvName)
 		require.NoError(t, err)
-		require.NotEmpty(t, manifest)
+		require.NotEmpty(t, goSDK)
 		var sdk struct {
-			Builtin struct {
+			Bundled struct {
 				ID core.ID `json:"id"`
-			} `json:"_builtinContainer"`
+			} `json:"__bundledDirectory"`
 			Schema struct {
 				ID       core.ID `json:"id"`
 				Contents string  `json:"contents"`
 			} `json:"__schemaJSONFile"`
 		}
-		require.NoError(t, a.Do(ctx, &dagger.Request{Query: `query($digest: String!) { _builtinContainer(digest: $digest) { id } __schemaJSONFile { id contents } }`, Variables: map[string]any{"digest": manifest}}, &dagger.Response{Data: &sdk}))
+		require.NoError(t, a.Do(ctx, &dagger.Request{Query: `query($digest: String!) { __bundledDirectory(digest: $digest) { id } __schemaJSONFile { id contents } }`, Variables: map[string]any{"digest": goSDK}}, &dagger.Response{Data: &sdk}))
 		require.NotEmpty(t, sdk.Schema.Contents)
 		rowsA := readSnapshotRows(ctx, t, c, upA)
 		fileRowID := snapshotResultID(t, string(fileID))
 		schemaRowID := snapshotResultID(t, string(sdk.Schema.ID))
-		builtinRowID := snapshotResultID(t, string(sdk.Builtin.ID))
+		bundledRowID := snapshotResultID(t, string(sdk.Bundled.ID))
 		require.Equal(t, "__httpFile", rowsA[fileRowID].Call.Field)
 		require.Equal(t, "__schemaJSONFile", rowsA[schemaRowID].Call.Field)
-		require.Equal(t, "_builtinContainer", rowsA[builtinRowID].Call.Field)
-		require.Empty(t, rowsA[builtinRowID].Links, "unused builtin must remain pending across the first shutdown")
+		require.Empty(t, rowsA[bundledRowID].Links, "an unread bundled directory installs nothing before the first shutdown")
 		requestsBefore := requests.Load()
 		stopEngine(ctx, t, upA, tunnelA, a)
 		upA = nil
@@ -249,15 +248,14 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		body, err = schemaB.Contents(ctx, core.FileContentsOpts{LimitLines: 1})
 		require.NoError(t, err)
 		require.Equal(t, sdk.Schema.Contents, body)
-		entries, err := core.Ref[*core.Container](core.NewQuery(b), sdk.Builtin.ID).Rootfs().Entries(ctx)
+		entries, err := core.Ref[*core.Directory](core.NewQuery(b), sdk.Bundled.ID).Entries(ctx, core.DirectoryEntriesOpts{Path: "sdk/runtime"})
 		require.NoError(t, err)
-		require.NotEmpty(t, entries)
+		require.Contains(t, entries, "main.dang", "the bundled directory installs from the image after restart")
 		require.Equal(t, requestsBefore, requests.Load(), "ready HTTP snapshot contacted its origin")
 		rowsB := readSnapshotRows(ctx, t, c, upB)
 		require.EqualValues(t, 1, rowsB[fileRowID].Value.Counts["storedOpen"])
 		require.EqualValues(t, 1, rowsB[schemaRowID].Value.Counts["storedOpen"])
-		require.Zero(t, rowsB[builtinRowID].Value.Counts["storedOpen:fs"], "pending builtin evaluates its saved operation after restart")
-		require.NotEmpty(t, rowsB[builtinRowID].Links)
+		require.NotEmpty(t, rowsB[bundledRowID].Links)
 	})
 
 	t.Run("changeset merge operation survives restart", func(ctx context.Context, t *testctx.T) {

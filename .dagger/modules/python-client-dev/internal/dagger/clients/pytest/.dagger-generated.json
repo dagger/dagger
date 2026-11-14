@@ -1,7 +1,7 @@
 {
   "version": 1,
   "files": {
-    "dagger.gen.go": "471c31c90249c0b88cb2e793844d765634b6bfc1e04654189018b13f529b8fc9",
-    "pytest.gen.go": "6cb68cf71854d79499b43c0cecf092e0e29152f76dddaf6f945405c74a213421"
+    "dagger.gen.go": "40a9d9dcf1c134c2cb75da4dfd7d0e6ad8e8888df01eb45ff673cfa3daa25ffa",
+    "pytest.gen.go": "e70427d3a36dc868fcec6eae49cc61b9bb4a470b81ac0ca11dabafe5156e029e"
   }
 }

@@ -1,13 +1,15 @@
 package schema
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
@@ -20,38 +22,78 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 )
 
-func builtinLazyFixture(t *testing.T, missing, fallback bool) (context.Context, *dagql.Server, *dagql.Cache, *resolverOutputServer, dagql.ObjectResult[*core.Container]) {
+// importLazyFixture is a lazy container Container.import makes of an image
+// tarball in a file, on a scratch container, and the image's manifest digest.
+// The image has only a config, with a platform unless fallback. With missing,
+// the file holds no image, and the import fails.
+func importLazyFixture(t *testing.T, missing, fallback bool) (context.Context, *dagql.Server, *dagql.Cache, *resolverOutputServer, dagql.ObjectResult[*core.Container], digest.Digest) {
 	t.Helper()
 	ctx, srv, cache, server := resolverOutputFixture(t)
 	server.platform = core.Platform{OS: "linux", Architecture: "arm64"}
 	packaged, err := local.NewStore(t.TempDir())
 	require.NoError(t, err)
 	server.content = packaged
-	dgst := digest.FromString("missing manifest")
+	var tarball bytes.Buffer
+	var manifest digest.Digest
 	if !missing {
 		config := ocispec.Image{Platform: ocispec.Platform{OS: "linux", Architecture: "x86_64"}, RootFS: ocispec.RootFS{Type: "layers"}, Config: ocispec.ImageConfig{Env: []string{"PREFIX=/go"}, WorkingDir: "/workspace", User: "123:456", Entrypoint: []string{"echo"}, Cmd: []string{"default"}}}
 		if fallback {
 			config.Platform = ocispec.Platform{}
 		}
-		raw, err := json.Marshal(config)
+		configJSON, err := json.Marshal(config)
 		require.NoError(t, err)
-		cfg := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageConfig, Digest: digest.FromBytes(raw), Size: int64(len(raw))}
-		require.NoError(t, content.WriteBlob(ctx, packaged, "config", bytes.NewReader(raw), cfg))
-		raw, err = json.Marshal(ocispec.Manifest{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispec.MediaTypeImageManifest, Config: cfg, Layers: []ocispec.Descriptor{}})
+		cfg := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageConfig, Digest: digest.FromBytes(configJSON), Size: int64(len(configJSON))}
+		manifestJSON, err := json.Marshal(ocispec.Manifest{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispec.MediaTypeImageManifest, Config: cfg, Layers: []ocispec.Descriptor{}})
 		require.NoError(t, err)
-		desc := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: digest.FromBytes(raw), Size: int64(len(raw))}
-		require.NoError(t, content.WriteBlob(ctx, packaged, "manifest", bytes.NewReader(raw), desc))
-		dgst = desc.Digest
+		desc := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: digest.FromBytes(manifestJSON), Size: int64(len(manifestJSON))}
+		indexJSON, err := json.Marshal(ocispec.Index{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispec.MediaTypeImageIndex, Manifests: []ocispec.Descriptor{desc}})
+		require.NoError(t, err)
+		tw := tar.NewWriter(&tarball)
+		for _, f := range []struct {
+			name string
+			data []byte
+		}{
+			{ocispec.ImageLayoutFile, []byte(`{"imageLayoutVersion":"1.0.0"}`)},
+			{"index.json", indexJSON},
+			{"blobs/sha256/" + cfg.Digest.Encoded(), configJSON},
+			{"blobs/sha256/" + desc.Digest.Encoded(), manifestJSON},
+		} {
+			require.NoError(t, tw.WriteHeader(&tar.Header{Name: f.name, Mode: 0o644, Size: int64(len(f.data)), Typeflag: tar.TypeReg}))
+			_, err := tw.Write(f.data)
+			require.NoError(t, err)
+		}
+		require.NoError(t, tw.Close())
+		manifest = desc.Digest
 	}
-	dagql.Fields[*core.Query]{dagql.NodeFunc("_builtinContainer", (&hostSchema{}).builtinContainer).IsPersistable().WithInput(engineDefaultPlatformInput)}.Install(srv)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "image.tar"), tarball.Bytes(), 0o644))
+	file := &core.File{File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File])}
+	file.File.SetValue("image.tar")
+	file.Snapshot.SetValue(&resolverOutputRef{root: dir, id: "image-tarball"})
+	source := persistableAttach(t, ctx, srv, cache, "imageTarball", file)
+	scratch := persistableAttach(t, ctx, srv, cache, "container", core.NewContainer(server.platform))
+	sourceID, err := source.ID()
+	require.NoError(t, err)
+	dagql.Fields[*core.Container]{dagql.NodeFunc("import", (&containerSchema{}).import_)}.Install(srv)
 	var parent dagql.ObjectResult[*core.Container]
-	require.NoError(t, srv.Select(ctx, srv.Root(), &parent, dagql.Selector{Field: "_builtinContainer", Args: []dagql.NamedInput{{Name: "digest", Value: dagql.String(dgst)}}}))
+	require.NoError(t, srv.Select(ctx, scratch, &parent, dagql.Selector{Field: "import", Args: []dagql.NamedInput{{Name: "source", Value: dagql.NewID[*core.File](sourceID)}}}))
 	require.False(t, parent.Self().Lazy.IsEvaluated())
 	require.Empty(t, server.manager.outputs)
-	return ctx, srv, cache, server, parent
+	return ctx, srv, cache, server, parent, manifest
 }
 
-func TestBuiltinMetadataSelectors(t *testing.T) {
+// persistableAttach is resolverAttach for a result whose record is kept.
+func persistableAttach[T dagql.Typed](t *testing.T, ctx context.Context, srv *dagql.Server, cache *dagql.Cache, field string, value T) dagql.ObjectResult[T] {
+	t.Helper()
+	call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: field, Type: dagql.NewResultCallType(value.Type())}
+	result, err := cache.GetOrInitCall(ctx, "cleanup", srv, &dagql.CallRequest{ResultCall: call, IsPersistable: true}, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewObjectResultForCall(value, srv, call)
+	})
+	require.NoError(t, err)
+	return result.(dagql.ObjectResult[T])
+}
+
+func TestImportMetadataSelectors(t *testing.T) {
 	for _, test := range []struct {
 		name, path               string
 		file, relative, fallback bool
@@ -61,7 +103,7 @@ func TestBuiltinMetadataSelectors(t *testing.T) {
 		{name: "platform fallback", path: "$PREFIX/pkg", fallback: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			ctx, srv, cache, server, parent := builtinLazyFixture(t, false, test.fallback)
+			ctx, srv, cache, server, parent, _ := importLazyFixture(t, false, test.fallback)
 			store := testutil.NewStore(t)
 			server.manager.SnapshotManager = store.Manager
 			ref, _ := store.Build(t, nil, "go/pkg/data", "saved")
@@ -106,20 +148,15 @@ func TestBuiltinMetadataSelectors(t *testing.T) {
 				require.Equal(t, wantPlatform, output.Self().Platform.Format())
 			}
 			// Reading the selected bytes evaluates the output through a read-only
-			// mount; native TestPipeline/Cold reads them. Here the builtin parent
+			// mount; native TestPipeline/Cold reads them. Here the imported parent
 			// is evaluated directly.
 			require.NoError(t, cache.Evaluate(ctx, parent))
 			require.True(t, parent.Self().Lazy.IsEvaluated())
-			record, err := cache.CapturePersistedRecord(ctx, parent)
-			require.NoError(t, err)
-			require.Len(t, record.Call.ImplicitInputs, 1)
-			require.Equal(t, "engineDefaultPlatform", record.Call.ImplicitInputs[0].Name)
-			require.Equal(t, "linux/arm64", record.Call.ImplicitInputs[0].Value.StringValue)
 		})
 	}
 }
 
-func TestBuiltinMetadataConsumersStopOnFailure(t *testing.T) {
+func TestImportMetadataConsumersStopOnFailure(t *testing.T) {
 	s := &containerSchema{}
 	for _, test := range []struct {
 		name string
@@ -258,18 +295,18 @@ func TestBuiltinMetadataConsumersStopOnFailure(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			ctx, _, _, server, parent := builtinLazyFixture(t, true, false)
-			require.ErrorContains(t, test.run(ctx, parent), "lookup builtin image manifest")
+			ctx, _, _, server, parent, _ := importLazyFixture(t, true, false)
+			require.ErrorContains(t, test.run(ctx, parent), "image archive import")
 			require.False(t, parent.Self().Lazy.IsEvaluated())
 			require.Empty(t, server.manager.outputs)
 		})
 	}
 }
 
-func TestBuiltinLegacyServiceMetadata(t *testing.T) {
+func TestImportLegacyServiceMetadata(t *testing.T) {
 	for _, exec := range []bool{false, true} {
 		t.Run(map[bool]string{false: "default command", true: "saved exec expansion"}[exec], func(t *testing.T) {
-			ctx, srv, cache, _, parent := builtinLazyFixture(t, false, false)
+			ctx, srv, cache, _, parent, _ := importLazyFixture(t, false, false)
 			srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.Service]{}))
 			dagql.Fields[*core.Container]{dagql.NodeFunc("asService", (&serviceSchema{}).containerAsServiceLegacy)}.Install(srv)
 			if exec {
@@ -299,8 +336,8 @@ func TestBuiltinLegacyServiceMetadata(t *testing.T) {
 	}
 }
 
-func TestBuiltinCacheOwnerDynamicInput(t *testing.T) {
-	ctx, srv, cache, _, parent := builtinLazyFixture(t, false, false)
+func TestImportCacheOwnerDynamicInput(t *testing.T) {
+	ctx, srv, cache, _, parent, _ := importLazyFixture(t, false, false)
 	core.CacheSharingModes.Install(srv)
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.CacheVolume]{}))
 	// The real dynamic-input hook selects this frame; snapshot creation is not
@@ -460,17 +497,16 @@ func TestMountConstructionLeavesParentBytesPending(t *testing.T) {
 
 // A container an image fills isn't the scratch container From may give a
 // content digest: From keeps its environment (PREFIX here), so sharing a
-// scratch parent's From would serve results without it. A builtin isn't
+// scratch parent's From would serve results without it. An import isn't
 // scratch before its image fills it either.
 func TestImageFilledContainerIsNoScratchForFrom(t *testing.T) {
-	ctx, _, cache, server, parent := builtinLazyFixture(t, false, false)
-	require.False(t, parent.Self().CanUseFromContentDigest(), "unevaluated builtin")
-	manifest := parent.Self().Lazy.(*core.ContainerBuiltinLazy).ManifestDigest
+	ctx, _, cache, server, parent, manifest := importLazyFixture(t, false, false)
+	require.False(t, parent.Self().CanUseFromContentDigest(), "unevaluated import")
 	store := testutil.NewStore(t)
 	server.manager.SnapshotManager = store.Manager
 	server.manager.imageRef, _ = store.Build(t, nil, "go/pkg/data", "saved")
 	require.NoError(t, cache.Evaluate(ctx, parent))
-	require.False(t, parent.Self().CanUseFromContentDigest(), "evaluated builtin")
+	require.False(t, parent.Self().CanUseFromContentDigest(), "evaluated import")
 
 	info, err := server.content.Info(ctx, manifest)
 	require.NoError(t, err)

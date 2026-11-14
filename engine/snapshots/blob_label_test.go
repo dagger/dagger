@@ -255,48 +255,6 @@ func TestDiffedBlobIsBoundToItsSnapshot(t *testing.T) {
 	require.False(t, blobPresent(t, store, blob))
 }
 
-// A builtin image's blobs are held by one persistent lease with no
-// snapshot at all: written under a temporary lease, pinned, the temporary
-// lease deleted, they survive the collector and a second pin is a no-op;
-// the startup sweeps leave the lease alone; deleting it releases them.
-func TestBuiltinImageBlobsArePinned(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	store := testutil.NewStore(t)
-	tmp, err := store.Leases.Create(ctx, leases.WithRandomID())
-	require.NoError(t, err)
-	var descs []ocispecs.Descriptor
-	for _, data := range [][]byte{[]byte("builtin layer one"), []byte("builtin config")} {
-		desc := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayer, Digest: digest.FromBytes(data), Size: int64(len(data))}
-		require.NoError(t, content.WriteBlob(leases.WithLease(ctx, tmp.ID), store.Content, "write-"+desc.Digest.Encoded(), bytes.NewReader(data), desc))
-		descs = append(descs, desc)
-	}
-	const lease = "dagger/builtin-image/test"
-	require.NoError(t, store.Manager.PinContent(ctx, lease, descs))
-	require.NoError(t, store.Manager.PinContent(ctx, lease, descs), "pinning again is a no-op")
-	require.NoError(t, store.Leases.Delete(ctx, tmp))
-	store.GC(t)
-	for _, desc := range descs {
-		require.True(t, blobPresent(t, store, desc.Digest), "%s survives with only the builtin lease", desc.Digest)
-	}
-	pinned, _, contents := leaseResources(t, store, lease)
-	require.Equal(t, "true", pinned.Labels[bkcache.BuiltinImageLeaseLabel])
-	require.Len(t, contents, 2)
-
-	require.NoError(t, store.Manager.DeleteStaleDaggerOwnerLeases(ctx, nil))
-	require.NoError(t, bkcache.ReleaseTransferLeasesAfterRestart(ctx, store.Leases))
-	store.GC(t)
-	for _, desc := range descs {
-		require.True(t, blobPresent(t, store, desc.Digest), "%s survives the startup sweeps", desc.Digest)
-	}
-
-	require.NoError(t, store.Manager.RemoveLease(ctx, lease))
-	store.GC(t)
-	for _, desc := range descs {
-		require.False(t, blobPresent(t, store, desc.Digest), "%s is released with the lease", desc.Digest)
-	}
-}
-
 // A label update that fails leaves no reusable blob record behind: the
 // export fails before the metadata commit, the retry diffs again, labels
 // the snapshot and commits, and the blob is then held by the owner lease.
@@ -388,4 +346,185 @@ func TestForcedVariantKeepsTheRecordedBlob(t *testing.T) {
 	require.Equal(t, recorded, exported, "the next ordinary export reuses the recorded blob")
 	require.Zero(t, writes, "without writing anything")
 	require.NoError(t, consumer.Manager.RemoveLease(ctx, owner))
+}
+
+// unreadProvider supplies blobs whose bytes must never be read.
+type unreadProvider struct {
+	content.InfoReaderProvider
+	t *testing.T
+}
+
+func (p unreadProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	ra, err := p.InfoReaderProvider.ReaderAt(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	return unreadReaderAt{ReaderAt: ra, t: p.t}, nil
+}
+
+type unreadReaderAt struct {
+	content.ReaderAt
+	t *testing.T
+}
+
+func (r unreadReaderAt) ReadAt([]byte, int64) (int, error) {
+	r.t.Error("the import read the blob from its provider")
+	return 0, errors.New("read from the provider")
+}
+
+// A chain whose blob the engine image holds imports with no byte read from
+// its provider, reads the blob from the image, and the snapshot's size leaves
+// the blob out: releasing the snapshot frees none of it.
+func TestImageBlobImportsInPlace(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer := testutil.NewStore(t)
+	built, _ := producer.Build(t, nil, "a.txt", "shipped in the image")
+	chain, err := built.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer chain.Release(context.Background())
+	layer := chain.Layers[0].Descriptor
+	blob, err := content.ReadBlob(ctx, chain.Provider, layer)
+	require.NoError(t, err)
+	image := t.TempDir()
+	name := filepath.Join(image, "blobs", layer.Digest.Algorithm().String(), layer.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+	require.NoError(t, os.WriteFile(name, blob, 0o444))
+
+	sizeOf := func(store *testutil.Store, provider content.InfoReaderProvider) int64 {
+		imported, err := store.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: provider})
+		require.NoError(t, err)
+		defer imported.Release(context.Background())
+		require.True(t, blobPresent(t, store, layer.Digest))
+		size, err := store.Manager.SnapshotSize(ctx, imported.SnapshotID())
+		require.NoError(t, err)
+		return size
+	}
+	inPlace := sizeOf(testutil.NewStoreWithImageBlobs(t, image), unreadProvider{InfoReaderProvider: chain.Provider, t: t})
+	copied := sizeOf(testutil.NewStore(t), chain.Provider)
+	require.Equal(t, copied-layer.Size, inPlace, "the snapshot's size leaves out the blob it holds in place")
+}
+
+// An engine restarted on the same state with an image that no longer holds a
+// blob it read in place forgets the blob's record, so a snapshot kept from
+// that blob still exports: its layer is made again instead of being read from
+// bytes that went with the old image.
+func TestLostImageBlobIsMadeAgain(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer := testutil.NewStore(t)
+	built, _ := producer.Build(t, nil, "a.txt", "shipped in the old image")
+	chain, err := built.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer chain.Release(context.Background())
+	layer := chain.Layers[0].Descriptor
+	blob, err := content.ReadBlob(ctx, chain.Provider, layer)
+	require.NoError(t, err)
+	image := t.TempDir()
+	name := filepath.Join(image, "blobs", layer.Digest.Algorithm().String(), layer.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+	require.NoError(t, os.WriteFile(name, blob, 0o444))
+
+	consumer := testutil.NewStoreWithImageBlobs(t, image)
+	imported, err := consumer.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: unreadProvider{InfoReaderProvider: chain.Provider, t: t}})
+	require.NoError(t, err)
+	snapshotID := imported.SnapshotID()
+	const owner = "dagql/result/owner-1"
+	require.NoError(t, consumer.Manager.AttachLease(ctx, owner, snapshotID))
+	require.NoError(t, imported.Release(ctx))
+
+	// The engine restarts with an image that doesn't hold the blob.
+	require.NoError(t, os.Remove(name))
+	consumer.StartImage(t)
+	consumer.Reload(t)
+	require.False(t, blobPresent(t, consumer, layer.Digest), "the lost blob's record is gone")
+
+	kept, err := consumer.Manager.GetBySnapshotID(ctx, snapshotID, bkcache.NoUpdateLastUsed)
+	require.NoError(t, err)
+	defer kept.Release(context.Background())
+	exported, err := kept.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer exported.Release(context.Background())
+	require.NotEmpty(t, exported.Layers)
+	top := exported.Layers[len(exported.Layers)-1].Descriptor
+	data, err := content.ReadBlob(ctx, exported.Provider, top)
+	require.NoError(t, err, "the exported layer reads")
+	require.Equal(t, top.Digest, digest.FromBytes(data))
+}
+
+// The engine unpacks its own image's blobs without hashing them: their layers
+// were checked when the image was pulled. A blob whose bytes changed on disk
+// since, at the same size, therefore unpacks from the image, while the same
+// bytes from anywhere else are refused.
+func TestImageBlobsUnpackUnhashed(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer := testutil.NewStore(t)
+	built, _ := producer.Build(t, nil, "a.txt", "shipped in the image")
+	chain, err := built.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer chain.Release(context.Background())
+	layer := chain.Layers[0].Descriptor
+	blob, err := content.ReadBlob(ctx, chain.Provider, layer)
+	require.NoError(t, err)
+	changed := bytes.Replace(blob, []byte("shipped in the image"), []byte("shipped in the IMAGE"), 1)
+	require.NotEqual(t, blob, changed)
+	require.Len(t, changed, len(blob))
+	image := t.TempDir()
+	name := filepath.Join(image, "blobs", layer.Digest.Algorithm().String(), layer.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+	require.NoError(t, os.WriteFile(name, changed, 0o444))
+
+	fromImage := testutil.NewStoreWithImageBlobs(t, image)
+	fromImage.UseEngineApplier(t)
+	imported, err := fromImage.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: unreadProvider{InfoReaderProvider: chain.Provider, t: t}})
+	require.NoError(t, err, "the image's blob unpacks unhashed")
+	require.NoError(t, imported.Release(ctx))
+
+	elsewhere := testutil.NewStore(t)
+	elsewhere.UseEngineApplier(t)
+	_, err = elsewhere.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: chain.Layers, Provider: changedProvider{InfoReaderProvider: chain.Provider, data: changed}})
+	require.Error(t, err, "the same bytes from a provider are refused")
+}
+
+// changedProvider serves data for any blob, at the blob's offered size.
+type changedProvider struct {
+	content.InfoReaderProvider
+	data []byte
+}
+
+func (p changedProvider) ReaderAt(context.Context, ocispecs.Descriptor) (content.ReaderAt, error) {
+	return bytesReaderAt{Reader: bytes.NewReader(p.data)}, nil
+}
+
+type bytesReaderAt struct{ *bytes.Reader }
+
+func (bytesReaderAt) Close() error { return nil }
+
+// A layer that names one of the image's blobs but claims another diff ID is
+// checked like any other: unpacked unhashed, it would be recorded under a
+// diff ID its content isn't, and a later import of that diff ID would reuse
+// the wrong snapshot.
+func TestImageBlobUnderAnotherDiffIDIsChecked(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer := testutil.NewStore(t)
+	built, _ := producer.Build(t, nil, "a.txt", "shipped in the image")
+	chain, err := built.ExportChain(ctx, uncompressed)
+	require.NoError(t, err)
+	defer chain.Release(context.Background())
+	layer := chain.Layers[0].Descriptor
+	blob, err := content.ReadBlob(ctx, chain.Provider, layer)
+	require.NoError(t, err)
+	image := t.TempDir()
+	name := filepath.Join(image, "blobs", layer.Digest.Algorithm().String(), layer.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+	require.NoError(t, os.WriteFile(name, blob, 0o444))
+
+	claimed := chain.Layers[0]
+	claimed.Descriptor.Annotations = map[string]string{"containerd.io/uncompressed": digest.FromString("other content").String()}
+	store := testutil.NewStoreWithImageBlobs(t, image)
+	store.UseEngineApplier(t)
+	_, err = store.Manager.ImportChain(ctx, &bkcache.ExportChain{Layers: []bkcache.ExportLayer{claimed}, Provider: chain.Provider})
+	require.ErrorContains(t, err, "wrong diff id", "the claimed diff ID is checked")
 }

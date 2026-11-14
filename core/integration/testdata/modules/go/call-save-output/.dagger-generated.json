@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "files": {
+    "dagger.dispatch.gen.go": "2369140ed837ab808d296823e1bf5ac34621344224e89361695e5e172334b319",
+    "dagger.gen.go": "e4392191319a5ab6471227abdc23ce567c373ead1c265cc5bbb5bd8cba9fd114",
+    "internal/dagger/dagger.gen.go": "3e584c3e9d539a9a4f6f041446b15857eb91c30dfa085f461bcf960424601458",
+    "internal/dagger/entrypoint/main.dang": "a75652f9a3ddb9ef07fbd943cc1ecef5e4430f38ac01eabdd091f50ec66a59d9",
+    "internal/dagger/test.gen.go": "9df4ac65e6f18709160c3db7bf82be01f99017980dcaf0ec428b2881a4ba121e"
+  }
+}

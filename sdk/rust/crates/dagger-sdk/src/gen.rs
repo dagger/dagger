@@ -2932,6 +2932,9 @@ pub struct ContainerWithMountedFilesOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedTempOpts {
+    /// Keep the temporary directory on the engine's disk instead of in memory, for contents too large for memory. Each process gets an empty directory of its own, removed once the process ends. It can't be combined with size.
+    #[builder(setter(into, strip_option), default)]
+    pub disk: Option<bool>,
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
@@ -4363,6 +4366,9 @@ impl Container {
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        if let Some(disk) = opts.disk {
+            query = query.arg("disk", disk);
         }
         Container {
             proc: self.proc.clone(),

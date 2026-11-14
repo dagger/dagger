@@ -38,7 +38,10 @@ type pruneSnapshotResult struct {
 	callFrame                *ResultCall
 	hasPersistedEdge         bool
 	persistedEdgeUnpruneable bool
-	expiresAtUnix            int64
+	// imageHeld is that the engine's image ships the result: its merge at
+	// start gave the result an image holding.
+	imageHeld     bool
+	expiresAtUnix int64
 }
 
 type pruneSnapshotOwner struct {
@@ -609,6 +612,7 @@ func (c *Cache) snapshotPruneStateLocked(
 		}
 
 		edge, hasPersistedEdge := c.persistedEdgesByResult[resID]
+		_, image := res.imageHoldingLocked()
 		snapshotResult := pruneSnapshotResult{
 			resultID:      resID,
 			incomingCount: incoming,
@@ -620,6 +624,7 @@ func (c *Cache) snapshotPruneStateLocked(
 			},
 			hasPersistedEdge:         hasPersistedEdge,
 			persistedEdgeUnpruneable: edge.unpruneable,
+			imageHeld:                image != nil,
 			expiresAtUnix:            edge.expiresAtUnix,
 		}
 		if mode == pruneSnapshotMetadata {
@@ -859,6 +864,15 @@ func (c *Cache) collectPruneCandidatesCancelable(
 		}
 		if res.persistedEdgeUnpruneable {
 			c.tracePruneCandidateSkipped(ctx, policyIndex, "unpruneable", res)
+			continue
+		}
+		// What the engine's image ships is part of the engine: the built-in
+		// SDKs' files can't be made again, and the pre-built builds would cost
+		// every later module load their compile. The image's merge gives
+		// them their holding at every start; it isn't saved, so an older
+		// image's results, which no merge holds, prune as any other.
+		if res.imageHeld {
+			c.tracePruneCandidateSkipped(ctx, policyIndex, "image_entry", res)
 			continue
 		}
 		switch {

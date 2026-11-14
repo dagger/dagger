@@ -1,7 +1,0 @@
-{
-  "name": "caller",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  }
-}

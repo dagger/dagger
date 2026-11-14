@@ -4210,9 +4210,9 @@ func (s *workspaceSchema) materializeWorkspaceGitUncommitted(
 	if err != nil {
 		return inst, false, err
 	}
-	// Pin the reconstruction to the session's cached view of the checkout,
-	// keyed by the read epoch so an export that moved the working tree is
-	// re-read rather than served from the pre-export materialization.
+	// Pin the session's view of the checkout to the read epoch, so an export
+	// that moved the working tree is re-read rather than served from the
+	// pre-export materialization.
 	epoch, err := core.WorkspaceReadEpoch(clientCtx)
 	if err != nil {
 		return inst, false, err
@@ -4265,7 +4265,10 @@ func (s *workspaceSchema) materializeWorkspaceGitUncommitted(
 		return inst, false, err
 	}
 
-	if err := srv.Select(clientCtx, clean, &inst, dagql.Selector{
+	// The checkout's HEAD tree is shared across epochs and sessions; its
+	// uncommitted changes are read again in each epoch, as an export may have
+	// changed them without moving HEAD.
+	if err := srv.Select(dagql.WithNamedPerClientCacheScope(clientCtx, epoch), clean, &inst, dagql.Selector{
 		Field: "__withGitUncommitted",
 		Args: []dagql.NamedInput{
 			{Name: "checkoutPath", Value: dagql.NewString(ws.HostPath())},

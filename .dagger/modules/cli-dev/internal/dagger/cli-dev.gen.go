@@ -275,9 +275,10 @@ type CliDevOpts struct {
 	Version string
 	// Workspace whose git info stamps the CLI's VCS metadata and pins the
 	// default engine tag on commit builds. Auto-injected when cli-dev is
-	// called directly; a parent toolchain (e.g. engine-dev) instead resolves
-	// it to the scalar vcsCommit/vcsDirty below and forwards those, so the
-	// session-scoped Workspace never makes the build cache key session-specific.
+	// called directly; a parent toolchain such as engine-dev passes its own.
+	// Only the commit and dirty state resolved from it reach the build, never
+	// the session-scoped Workspace, so the build's cache key isn't
+	// session-specific.
 	Ws *Workspace
 	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
 	// precedence over ws.

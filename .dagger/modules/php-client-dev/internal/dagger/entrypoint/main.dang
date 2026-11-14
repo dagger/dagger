@@ -7,25 +7,20 @@ type Entrypoint implements ModuleEntrypoint {
       .withDirectory(workspace.cwd, workspace.directory(".", exclude: ["**/.git"], gitignore: true))
   }
 
-  let dispatch: File! {
-    container
-      .from("golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83")
-      .withMountedCache("/go/pkg/mod", cacheVolume("go-sdk-v2-mod"))
-      .withMountedCache("/root/.cache/go-build", cacheVolume("go-sdk-v2-build"))
-      .withMountedDirectory("/workspace", currentModule.contextDirectory)
-      .withWorkdir("/workspace/" + currentModule.sourceSubpath)
-      .withEnvVariable("CGO_ENABLED", "0")
-      .withEnvVariable("GOWORK", "off")
-      .withExec(["sh", "-c", "go build -o /tmp/dispatch . 2>/tmp/build.log && exit 0; cat /tmp/build.log >&2; grep -q -e 'no required module provides package' -e 'replacement directory' -e 'no matching files found' /tmp/build.log && echo 'The build misses files outside the module directory: run dagger generate after changing go.mod replace directives, the imports from a replace target or their embeds.' >&2; exit 1"])
-      .file("/tmp/dispatch")
+  let dispatch(platform: Platform!): File! {
+    let ws = currentModule.contextDirectory.asWorkspace
+    let src = currentModule.sourceSubpath
+    let root = src
+    let pkg = src
+    go.module(ws, path: root, findUp: false).packages(ws).get(pkg).platforms.get(`${platform}`.split("/").takeFirst(2).join("/")).binary(ws)
   }
 
-  pub prebuild: File! {
-    dispatch
+  pub prebuild(platform: Platform): File! {
+    dispatch(platform ?? defaultPlatform)
   }
 
   pub runtimeImage(platform: Platform): Container! {
-    container(platform: platform ?? defaultPlatform).from("alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8")
+    container(platform: platform ?? defaultPlatform).from("alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f")
   }
 
   pub types: [TypeDef!]! {
@@ -34,7 +29,7 @@ type Entrypoint implements ModuleEntrypoint {
         .withFunction(
           function("API", typeDef.withObject("Changeset"))
             .withDescription("Regenerate the PHP SDK API")
-            .withSourceMap(sourceMap("main.go", 140, 1))
+            .withSourceMap(sourceMap("main.go", 155, 1))
             .withGenerator
         )
         .withFunction(
@@ -43,63 +38,63 @@ type Entrypoint implements ModuleEntrypoint {
         )
         .withFunction(
           function("Changes", typeDef.withObject("Changeset"))
-            .withSourceMap(sourceMap("main.go", 144, 1))
+            .withSourceMap(sourceMap("main.go", 159, 1))
         )
         .withFunction(
           function("DevContainer", typeDef.withObject("Container"))
-            .withDescription("Returns the PHP SDK workspace mounted in a dev container,\nand working directory set to the SDK source")
+            .withDescription("Returns the PHP SDK workspace mounted in a dev container, with a client of a\ndev engine built from the workspace, and working directory set to the SDK source")
             .withSourceMap(sourceMap("main.go", 83, 1))
             .withArg("runInstall", typeDef.withKind(TypeDefKind.BOOLEAN_KIND), description: "Run composer install before returning the container", defaultValue: ("\"false\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 86, 2))
         )
         .withFunction(
           function("PhpCodeSniffer", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)")
-            .withSourceMap(sourceMap("main.go", 110, 1))
+            .withSourceMap(sourceMap("main.go", 125, 1))
             .withCheck
         )
         .withFunction(
           function("PhpStan", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Analyze the PHP code with PHPStan (https://phpstan.org)")
-            .withSourceMap(sourceMap("main.go", 120, 1))
+            .withSourceMap(sourceMap("main.go", 135, 1))
             .withCheck
         )
         .withFunction(
           function("Release", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Publish the PHP SDK")
-            .withSourceMap(sourceMap("main.go", 197, 1))
-            .withArg("sourceRepo", typeDef.withObject("GitRepository").withOptional(true), description: "The source git repository to release", defaultPath: "/", sourceMap: sourceMap("main.go", 202, 2))
-            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The source git tag to release", sourceMap: sourceMap("main.go", 205, 2))
-            .withArg("dest", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), defaultValue: ("\"https://github.com/dagger/dagger-php-sdk.git\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 209, 2))
-            .withArg("githubToken", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 211, 2))
+            .withSourceMap(sourceMap("main.go", 212, 1))
+            .withArg("sourceRepo", typeDef.withObject("GitRepository").withOptional(true), description: "The source git repository to release", defaultPath: "/", sourceMap: sourceMap("main.go", 217, 2))
+            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The source git tag to release", sourceMap: sourceMap("main.go", 220, 2))
+            .withArg("dest", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), defaultValue: ("\"https://github.com/dagger/dagger-php-sdk.git\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 224, 2))
+            .withArg("githubToken", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 226, 2))
         )
         .withFunction(
           function("ReleaseDryRun", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Test the publishing process")
-            .withSourceMap(sourceMap("main.go", 166, 1))
-            .withArg("sourceRepo", typeDef.withObject("GitRepository").withOptional(true), description: "Source git repository to fake-release", defaultPath: "/", sourceMap: sourceMap("main.go", 170, 2))
-            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to fake-release", defaultValue: ("\"HEAD\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 173, 2))
-            .withArg("destRemote", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Target git remote to fake-release *to*", defaultValue: ("\"https://github.com/dagger/dagger-php-sdk.git\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 176, 2))
+            .withSourceMap(sourceMap("main.go", 181, 1))
+            .withArg("sourceRepo", typeDef.withObject("GitRepository").withOptional(true), description: "Source git repository to fake-release", defaultPath: "/", sourceMap: sourceMap("main.go", 185, 2))
+            .withArg("sourceTag", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Source git tag to fake-release", defaultValue: ("\"HEAD\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 188, 2))
+            .withArg("destRemote", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Target git remote to fake-release *to*", defaultValue: ("\"https://github.com/dagger/dagger-php-sdk.git\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 191, 2))
         )
         .withFunction(
           function("Source", typeDef.withObject("Directory"))
             .withDescription("Source returns the source directory for the PHP SDK")
-            .withSourceMap(sourceMap("main.go", 104, 1))
+            .withSourceMap(sourceMap("main.go", 119, 1))
         )
         .withFunction(
           function("Test", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Test the PHP SDK with PHPUnit (https://phpunit.de/)")
-            .withSourceMap(sourceMap("main.go", 131, 1))
+            .withSourceMap(sourceMap("main.go", 146, 1))
             .withCheck
         )
         .withFunction(
           function("VersionFromTag", typeDef.withKind(TypeDefKind.STRING_KIND))
             .withDescription("Get v1.2.3 from sdk/php/v1.2.3")
-            .withSourceMap(sourceMap("main.go", 191, 1))
-            .withArg("tag", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 191, 38))
+            .withSourceMap(sourceMap("main.go", 206, 1))
+            .withArg("tag", typeDef.withKind(TypeDefKind.STRING_KIND), sourceMap: sourceMap("main.go", 206, 38))
         )
         .withFunction(
           function("WithGeneratedClient", typeDef.withObject("PhpClientDev"))
-            .withSourceMap(sourceMap("main.go", 148, 1))
+            .withSourceMap(sourceMap("main.go", 163, 1))
         )
         .withConstructor(
           function("", typeDef.withObject("PhpClientDev"))
@@ -127,13 +122,13 @@ type Entrypoint implements ModuleEntrypoint {
       fnArgs: fnArgs,
     }})
     # A build failure stays out of the rescue below, so it surfaces unchanged.
-    let binary = dispatch.sync
+    let binary = dispatch(defaultPlatform).sync
     let result = runtimeImage(defaultPlatform)
       .withFile("/usr/local/bin/dispatch", binary, permissions: 755)
       .withMountedDirectory("/workspace", currentModule.contextDirectory)
       .withWorkdir("/workspace/" + currentModule.sourceSubpath)
       .withEnvVariable("DAGGER_MODULE_CALL_DIGEST", callDigest ?? "")
-      .withEnvVariable("DAGGER_CLIENT_VERSION", "v1.0.0-beta.25")
+      .withEnvVariable("DAGGER_CLIENT_VERSION", "v1.0.0-beta.26")
       .withExec(
         ["/usr/local/bin/dispatch", "engine-call", "/dagger/result.json"],
         stdin: request,

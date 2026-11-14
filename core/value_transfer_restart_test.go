@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
+	"github.com/dagger/dagger/internal/testutil/cachetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,6 +52,7 @@ func TestValueTransferPersistenceFinalOfferRestart(t *testing.T) {
 	record, err := b.CapturePersistedRecord(bCtx, installed)
 	require.NoError(t, err)
 	require.Len(t, record.Envelope.PendingOffers, 1)
+	require.Len(t, b.DebugEGraphSnapshot().OfferOwners, 1)
 	require.Len(t, record.SnapshotLinks, 1)
 	assertTypedSnapshotOwners(t, bStore, acquired.SnapshotID(), 1)
 	require.NoError(t, b.ReleaseSession(bCtx, "b"))
@@ -58,12 +61,14 @@ func TestValueTransferPersistenceFinalOfferRestart(t *testing.T) {
 	// The new cache restores durable snapshot owners before ending the offer.
 	bCtx, b, bServer = transferCache(t, bStore, path, "restarted")
 	require.Equal(t, dagql.CachePersistenceResetNone, b.PersistenceResetReason())
-	report, err := b.TransferFixtureSnapshot(bCtx, "restarted", nil)
+	require.Empty(t, b.DebugEGraphSnapshot().OfferOwners, "the restart ended the final offer")
+	probeCtx := engine.ContextWithClientMetadata(bCtx, &engine.ClientMetadata{ClientID: "probe", SessionID: "probe"})
+	probe, err := b.LoadResultByResultID(probeCtx, "probe", bServer, values[0].ResultID)
 	require.NoError(t, err)
-	require.Empty(t, report.Owners)
-	for _, row := range report.Rows {
-		require.Empty(t, row.Offers)
-	}
+	record, err = b.CapturePersistedRecord(probeCtx, probe)
+	require.NoError(t, err)
+	require.Empty(t, record.Envelope.PendingOffers, "the restart ended the final offer")
+	cachetest.ReleaseSessionAndWait(t, probeCtx, b, "probe")
 	assertTypedSnapshotOwners(t, bStore, acquired.SnapshotID(), 1)
 	require.NoError(t, bkcache.ReleaseTransferLeasesAfterRestart(bCtx, bStore.Leases))
 	bStore.GC(t)

@@ -36,17 +36,15 @@ func cacheOwnershipError(c *Cache, activeHolds ...*ongoingCall) error {
 		}
 	}
 	for resultID, shared := range c.resultsByID {
-		if shared.depParents != nil {
-			expected[resultID] += int64(shared.depParents.Size())
-			for parentID := range shared.depParents.Items() {
-				parent := c.resultsByID[parentID]
-				if parent == nil {
-					return fmt.Errorf("result %d references missing parent %d", resultID, parentID)
-				}
-				_, found := parent.deps[resultID]
-				if !found {
-					return fmt.Errorf("parent %d is missing dependency %d", parentID, resultID)
-				}
+		expected[resultID] += int64(len(shared.depParents))
+		for parentID := range shared.depParents {
+			parent := c.resultsByID[parentID]
+			if parent == nil {
+				return fmt.Errorf("result %d references missing parent %d", resultID, parentID)
+			}
+			_, found := parent.deps[resultID]
+			if !found {
+				return fmt.Errorf("parent %d is missing dependency %d", parentID, resultID)
 			}
 		}
 		if _, found := c.persistedEdgesByResult[resultID]; found {
@@ -66,7 +64,7 @@ func cacheOwnershipError(c *Cache, activeHolds ...*ongoingCall) error {
 			if dep == nil {
 				return fmt.Errorf("result %d references missing dependency %d", resultID, depID)
 			}
-			if dep.depParents == nil || !dep.depParents.Contains(resultID) {
+			if _, found := dep.depParents[resultID]; !found {
 				return fmt.Errorf("dependency %d is missing parent %d", depID, resultID)
 			}
 		}

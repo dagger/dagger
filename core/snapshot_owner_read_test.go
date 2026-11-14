@@ -172,7 +172,7 @@ func TestSnapshotOwnerCompletedReaders(t *testing.T) {
 			var nonblocking dagql.PersistedOutputVersion
 			var store func() dagql.PreparedPartStore
 			if family == "Container" {
-				op := &ContainerBuiltinLazy{LazyState: NewLazyState()}
+				op := &ContainerImportLazy{LazyState: NewLazyState()}
 				ctr := NewContainer(Platform{})
 				ctr.Lazy = op
 				ctr.FS.setValue(containerPersistenceTestDirectory("owned", "/"))
@@ -288,7 +288,7 @@ func TestSnapshotOwnerWaitsForBody(t *testing.T) {
 }
 
 type snapshotOwnerEncodingOp struct {
-	ContainerBuiltinLazy
+	ContainerImportLazy
 	encode func()
 }
 
@@ -301,7 +301,7 @@ func TestSnapshotOwnerWaitsForEncoder(t *testing.T) {
 	entered, allow := make(chan struct{}), make(chan struct{})
 	release := sync.OnceFunc(func() { close(allow) })
 	defer release()
-	op := &snapshotOwnerEncodingOp{ContainerBuiltinLazy: ContainerBuiltinLazy{LazyState: NewLazyState()}, encode: func() { close(entered); <-allow }}
+	op := &snapshotOwnerEncodingOp{ContainerImportLazy: ContainerImportLazy{LazyState: NewLazyState()}, encode: func() { close(entered); <-allow }}
 	ctr := NewContainer(Platform{})
 	ctr.Lazy = op
 	ctr.FS.setValue(containerPersistenceTestDirectory("owned", "/"))

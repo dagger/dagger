@@ -1,7 +1,7 @@
 {
   "version": 1,
   "files": {
-    "dagger.gen.go": "1d1c20fa7dacc68b49c412aa5d040f5e68f9cf15e71202a768ce7de5e934bc8b",
-    "php-client-dev.gen.go": "26f1f8d1b718314bc6b369a911ea80b1942a13374541004fa1a1e3f9c4c36337"
+    "dagger.gen.go": "7e9477bfec22b2edbead75cbd2dabeb54582d6a79ab3f1fb30c26e500ee265a3",
+    "php-client-dev.gen.go": "4bc4478bcbf8e663cc567697359aaae4b6252a252b33881aa6b769e80992b8f9"
   }
 }

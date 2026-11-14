@@ -102,7 +102,7 @@ func (cli *CliDev) releaseDist(tag, commit string) (*dagger.Directory, error) {
 func (cli *CliDev) releaseArchive(label string, target cliReleaseTarget) *dagger.File {
 	name := cliReleaseArchiveName(label, target)
 	input := core.NewDirectory().
-		WithFile("LICENSE", cli.Go.Source().File("LICENSE"), dagger.DirectoryWithFileOpts{
+		WithFile("LICENSE", cli.Source.File("LICENSE"), dagger.DirectoryWithFileOpts{
 			Permissions: 0o644,
 		}).
 		WithFile(target.Binary, cli.releaseBinary(target), dagger.DirectoryWithFileOpts{

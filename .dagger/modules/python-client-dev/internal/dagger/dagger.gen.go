@@ -40,7 +40,7 @@ type Client struct{ *Query }
 type Query struct {
 	query     *querybuilder.Selection
 	refetchID bool
-	*core.Query
+	coreQuery *core.Query
 }
 type DaggerObject = core.DaggerObject
 type ExecError = dagger.ExecError
@@ -59,7 +59,7 @@ func Connect(connections ...*dagger.Client) *Client {
 		connection = connections[0]
 	}
 	q := querybuilder.Query().Client(defaultOrExplicit(connection))
-	return &Client{Query: &Query{query: q, Query: new(core.Query).WithGraphQLQuery(q)}}
+	return &Client{Query: &Query{query: q, coreQuery: new(core.Query).WithGraphQLQuery(q)}}
 }
 
 func defaultOrExplicit(client *dagger.Client) graphql.Client {
@@ -82,6 +82,11 @@ func Ref[T core.Loadable[T]](client *Client, id core.ID) T {
 }
 func Load[T core.Loadable[T]](ctx context.Context, client *Client, id core.ID) (T, error) {
 	return core.Load[T](ctx, new(core.Query).WithGraphQLQuery(client.query), id)
+}
+
+// loaded is the core object q's request returned as id, knowing that ID.
+func loaded[T core.LoadedNode[T]](q *querybuilder.Selection, id core.ID) T {
+	return core.Loaded[T](new(core.Query).WithGraphQLQuery(q.Root()), id)
 }
 
 // idMemo holds the ID fetched for one object query.
@@ -141,4 +146,195 @@ func memoizedID[T ~string](ctx context.Context, q *querybuilder.Selection, fetch
 	m.mu.Unlock()
 	close(fetching)
 	return id, err
+}
+
+// Resolve external references only.
+func (r *Query) Address(value string) *core.Address {
+	return r.coreQuery.Address(value)
+}
+
+// Creates a file from arbitrary binary contents.
+func (r *Query) Blob(name string, contents core.Bytes, opts ...core.BlobOpts) *core.File {
+	return r.coreQuery.Blob(name, contents, opts...)
+}
+
+// Constructs a cache volume for a given cache key.
+func (r *Query) CacheVolume(key string, opts ...core.CacheVolumeOpts) *core.CacheVolume {
+	return r.coreQuery.CacheVolume(key, opts...)
+}
+
+// Creates an empty changeset
+func (r *Query) Changeset() *core.Changeset {
+	return r.coreQuery.Changeset()
+}
+
+// Dagger Cloud configuration and state
+func (r *Query) Cloud() *core.Cloud {
+	return r.coreQuery.Cloud()
+}
+
+// Creates a scratch container, with no image or metadata.
+//
+// To pull an image, follow up with the "from" function.
+func (r *Query) Container(opts ...core.ContainerOpts) *core.Container {
+	return r.coreQuery.Container(opts...)
+}
+
+// The FunctionCall context that the SDK caller is currently executing in.
+//
+// If the caller is not currently executing in a function, this will return an error.
+func (r *Query) CurrentFunctionCall() *core.FunctionCall {
+	return r.coreQuery.CurrentFunctionCall()
+}
+
+// The module currently being served in the session, if any.
+func (r *Query) CurrentModule() *core.CurrentModule {
+	return r.coreQuery.CurrentModule()
+}
+
+// The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
+func (r *Query) CurrentNode() core.Node {
+	return r.coreQuery.CurrentNode()
+}
+
+// The current UTC time in RFC3339 format. Never cached.
+func (r *Query) CurrentTimestamp(ctx context.Context) (string, error) {
+	return r.coreQuery.CurrentTimestamp(ctx)
+}
+
+// The TypeDef representations of the objects currently being served in the session.
+func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...core.CurrentTypeDefsOpts) ([]core.TypeDef, error) {
+	return r.coreQuery.CurrentTypeDefs(ctx, opts...)
+}
+
+// The default platform of the engine.
+func (r *Query) DefaultPlatform(ctx context.Context) (core.Platform, error) {
+	return r.coreQuery.DefaultPlatform(ctx)
+}
+
+// Creates an empty directory.
+func (r *Query) Directory() *core.Directory {
+	return r.coreQuery.Directory()
+}
+
+// Initialize an environment file
+func (r *Query) EnvFile(opts ...core.EnvFileOpts) *core.EnvFile {
+	return r.coreQuery.EnvFile(opts...)
+}
+
+// Create a new error.
+func (r *Query) Error(message string) *core.Error {
+	return r.coreQuery.Error(message)
+}
+
+// Creates a file with the specified contents.
+func (r *Query) File(name string, contents string, opts ...core.FileOpts) *core.File {
+	return r.coreQuery.File(name, contents, opts...)
+}
+
+// Creates a function.
+func (r *Query) Function(name string, returnType *core.TypeDef) *core.Function {
+	return r.coreQuery.Function(name, returnType)
+}
+
+// Create a code generation result, given a directory containing the generated code.
+func (r *Query) GeneratedCode(code *core.Directory) *core.GeneratedCode {
+	return r.coreQuery.GeneratedCode(code)
+}
+
+// Queries a Git repository.
+func (r *Query) Git(url string, opts ...core.GitOpts) *core.GitRepository {
+	return r.coreQuery.Git(url, opts...)
+}
+
+// Returns a file containing an http remote url content.
+func (r *Query) HTTP(url string, opts ...core.HTTPOpts) *core.File {
+	return r.coreQuery.HTTP(url, opts...)
+}
+
+// A unique identifier for this Query.
+func (r *Query) ID(ctx context.Context) (core.ID, error) {
+	return r.coreQuery.ID(ctx)
+}
+
+// Initialize a JSON value
+func (r *Query) JSON() *core.JSONValue {
+	return r.coreQuery.JSON()
+}
+
+// Initialize a new LLM conversation.
+//
+// Experimental: LLM support is not yet stabilized
+func (r *Query) LLM(opts ...core.LLMOpts) *core.LLM {
+	return r.coreQuery.LLM(opts...)
+}
+
+// Start an empty run of text and media content, independent of any conversation.
+//
+// Add blocks with withText, withFile, and withData. A function exposed as an LLM tool can return the content to give the model text and media as the tool's result, e.g. a caption and a screenshot for the model to look at.
+//
+// Experimental: LLM support is not yet stabilized
+func (r *Query) LLMContent() *core.LLMContent {
+	return r.coreQuery.LLMContent()
+}
+
+// Create a new module.
+func (r *Query) Module() *core.Module {
+	return r.coreQuery.Module()
+}
+
+// Create a new module source instance from a source ref string
+func (r *Query) ModuleSource(refString string, opts ...core.ModuleSourceOpts) *core.ModuleSource {
+	return r.coreQuery.ModuleSource(refString, opts...)
+}
+
+// The engine's identifier naming rules at an engine version.
+//
+// Experimental: Identifier casing APIs are likely to change.
+func (r *Query) Naming(opts ...core.NamingOpts) *core.Naming {
+	return r.coreQuery.Naming(opts...)
+}
+
+// Load any object by its ID.
+func (r *Query) Node(ctx context.Context, id core.ID) (core.Node, error) {
+	return r.coreQuery.Node(ctx, id)
+}
+
+// Load a GraphQL introspection schema for merging.
+func (r *Query) Schema(json core.JSON) *core.Schema {
+	return r.coreQuery.Schema(json)
+}
+
+// Creates a new secret.
+func (r *Query) Secret(uri string, opts ...core.SecretOpts) *core.Secret {
+	return r.coreQuery.Secret(uri, opts...)
+}
+
+// Load the module at the given address and serve its API in the current session.
+//
+// A local address resolves against the caller's workspace, so a generated client can serve the module it is bound to without reaching for the workspace itself.
+func (r *Query) ServeModule(ctx context.Context, address string, opts ...core.ServeModuleOpts) error {
+	return r.coreQuery.ServeModule(ctx, address, opts...)
+}
+
+// Sets a secret given a user defined name to its plaintext and returns the secret.
+//
+// The plaintext value is limited to a size of 128000 bytes.
+func (r *Query) SetSecret(name string, plaintext string) *core.Secret {
+	return r.coreQuery.SetSecret(name, plaintext)
+}
+
+// Creates source map metadata.
+func (r *Query) SourceMap(filename string, line int, column int) *core.SourceMap {
+	return r.coreQuery.SourceMap(filename, line, column)
+}
+
+// Create a new TypeDef.
+func (r *Query) TypeDef() *core.TypeDef {
+	return r.coreQuery.TypeDef()
+}
+
+// Get the current Dagger Engine version.
+func (r *Query) Version(ctx context.Context) (string, error) {
+	return r.coreQuery.Version(ctx)
 }

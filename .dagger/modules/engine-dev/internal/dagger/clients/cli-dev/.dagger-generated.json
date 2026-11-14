@@ -1,7 +1,7 @@
 {
   "version": 1,
   "files": {
-    "cli-dev.gen.go": "3fcc4df74a56f3b2dd33b981935c7c02b0619d3e993ce9c17df99330040192c8",
-    "dagger.gen.go": "d31c59b546e6db8e4bfd723a90575c404e9222621323af8e420a8ff7046f26ff"
+    "cli-dev.gen.go": "5491c652f81959251e0cee47c68cfe32dc74f4d0826f0466a1cfbb81bf311684",
+    "dagger.gen.go": "8a65297abb8a49ca1c168094fed3bf4e7153c50929fc3e6dc0ad51369e93e142"
   }
 }

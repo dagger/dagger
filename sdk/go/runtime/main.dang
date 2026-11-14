@@ -108,9 +108,15 @@ type GoSdk {
   """
   pub moduleRuntime(modSource: ModuleSource!, introspectionJson: File = null): Container! {
     let prepared = if (introspectionJson == null) {
-      withoutAccess(committed(modSource).withExec(["codegen", "prepare-go-runtime"]))
+      let source = committed(modSource)
+      withoutAccess(
+        withoutExportDriver(
+          withExportDriver(source, archives(modSource, source.directory(contextPath)))
+            .withExec(["codegen", "prepare-go-runtime"]),
+        ),
+      )
     } else {
-      generated(modSource, introspectionJson!).withExec(["codegen", "prepare-go-runtime"])
+      generated(modSource, introspectionJson!, prepare: true)
     }
     let ws = prepared.directory(contextPath).asWorkspace
     let modPath = cleanPath(modSource.sourceSubpath)
@@ -209,39 +215,54 @@ type GoSdk {
     if (modSource.configExists) { args } else { args + ["--is-init"] }
   }
 
+  # What codegen type-checks the module's root package against, in the
+  # module's context directory dir: its imports from other modules and the
+  # standard library, without tests.
+  let archives(modSource: ModuleSource!, dir: Directory!): Directory! {
+    let ws = dir.asWorkspace
+    goTool.module(ws, path: cleanPath(modSource.sourceSubpath), findUp: false).archives(ws, dependencies: true, packages: ["."], noTests: true)
+  }
+
+  # ctr with codegen loading packages through the export driver, which
+  # serves it the export data in archives, which dagger/go compiles as it
+  # compiles the runtime: the go command compiles none of it. Codegen
+  # type-checks the module's own packages from source: the driver compiles
+  # none of them.
+  let withExportDriver(ctr: Container!, archives: Directory!): Container! {
+    ctr
+      .withMountedDirectory(archivesPath, archives)
+      .withEnvVariable("GOPACKAGESDRIVER", "/usr/local/bin/export-driver")
+      .withEnvVariable("GOLANGCI_EXPORT_ARCHIVES", archivesPath)
+      .withEnvVariable("GOLANGCI_EXPORT_WORKDIR", "/tmp/export-driver")
+      .withEnvVariable("GOLANGCI_EXPORT_COMPILE", "never")
+  }
+
+  let withoutExportDriver(ctr: Container!): Container! {
+    ctr
+      .withoutEnvVariable("GOPACKAGESDRIVER")
+      .withoutEnvVariable("GOLANGCI_EXPORT_ARCHIVES")
+      .withoutEnvVariable("GOLANGCI_EXPORT_WORKDIR")
+      .withoutEnvVariable("GOLANGCI_EXPORT_COMPILE")
+      .withoutMount(archivesPath)
+  }
+
   # The container codegen ran in, with the module's generated code in its
   # context directory. Codegen's first pass bootstraps the module: its
   # go.mod, tidied, and its initial bindings. Loading its package, in the
-  # pass after, type-checks it against what it imports, whose export data
-  # dagger/go compiles from that, as it compiles the runtime, and the export
-  # driver serves: the go command compiles none of it.
-  let generated(modSource: ModuleSource!, introspectionJson: File!): Container! {
+  # pass after, type-checks it against what it imports, through the export
+  # driver. With prepare, the module's runtime source is prepared after,
+  # through the driver too.
+  let generated(modSource: ModuleSource!, introspectionJson: File!, prepare: Boolean! = false): Container! {
     let setup = withAccess(base)
       .withMountedFile("/schema.json", introspectionJson)
       .withMountedDirectory(contextPath, modSource.contextDirectory.withoutFile(sourceFile(modSource, "dagger.gen.go")))
       .withWorkdir(sourcePath(modSource))
       .withoutDefaultArgs
     let bootstrapped = setup.withExec(codegenArgs(modSource) + ["--bootstrap"]).directory(contextPath)
-    let ws = bootstrapped.asWorkspace
-    # What codegen type-checks the module's root package against: its
-    # imports from other modules and the standard library, without tests.
-    let archives = goTool.module(ws, path: cleanPath(modSource.sourceSubpath), findUp: false).archives(ws, dependencies: true, packages: ["."], noTests: true)
-    withoutAccess(
-      setup
-        .withMountedDirectory(contextPath, bootstrapped)
-        .withMountedDirectory(archivesPath, archives)
-        .withEnvVariable("GOPACKAGESDRIVER", "/usr/local/bin/export-driver")
-        .withEnvVariable("GOLANGCI_EXPORT_ARCHIVES", archivesPath)
-        .withEnvVariable("GOLANGCI_EXPORT_WORKDIR", "/tmp/export-driver")
-        # Codegen type-checks the module's own packages from source, with
-        # their function bodies left out: the driver compiles none of them.
-        .withEnvVariable("GOLANGCI_EXPORT_COMPILE", "never")
-        .withExec(codegenArgs(modSource))
-        .withoutEnvVariable("GOPACKAGESDRIVER")
-        .withoutEnvVariable("GOLANGCI_EXPORT_ARCHIVES")
-        .withoutEnvVariable("GOLANGCI_EXPORT_WORKDIR")
-        .withoutEnvVariable("GOLANGCI_EXPORT_COMPILE")
-        .withoutMount(archivesPath),
+    let ran = withoutAccess(
+      withExportDriver(setup.withMountedDirectory(contextPath, bootstrapped), archives(modSource, bootstrapped))
+        .withExec(codegenArgs(modSource)),
     )
+    withoutExportDriver(if (prepare) { ran.withExec(["codegen", "prepare-go-runtime"]) } else { ran })
   }
 }

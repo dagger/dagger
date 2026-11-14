@@ -13,9 +13,10 @@ Use this checklist when asked to bump Go.
 
 - `GolangVersion = "X.Y.Z"`
 
-1. Update the Go default version string in `.dagger/modules/go/main.go`:
+1. Update the Go version that dagger/go builds dagger/dagger's own CLI and codegen with:
 
-- `// +default="X.Y.Z"` on the `version` argument in `New(...)`
+- `const goVersion = "X.Y"` in `.dagger/modules/cli-dev/main.go`
+- `go(version: "X.Y", ...)` in `cmd/codegen/.dagger/main.dang`
 
 1. Use a short commit message in this format:
 

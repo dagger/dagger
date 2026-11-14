@@ -1,0 +1,10 @@
+name = "fresh"
+include = []
+
+[entrypoint]
+  kind = "dang"
+  source = "./internal/dagger/entrypoint"
+
+[[dependencies]]
+  name = "go"
+  source = "github.com/dagger/go@4674a1f6d8df9704c03aa6589e621ae0625836d6"

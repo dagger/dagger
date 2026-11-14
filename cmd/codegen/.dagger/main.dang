@@ -11,9 +11,16 @@ type Codegen {
     "!**/*.tmpl",
   ])
 
-  let ws: Workspace!
-
   pub binary: File! {
-    go(ws: self.ws, source: source).binary("./cmd/codegen", noSymbols: true, noDwarf: true)
+    # The source is the build's workspace, so the build is keyed by its
+    # content and never by the caller's session. Nothing codegen does reads
+    # the commit, so it isn't stamped in: a stamp would rebuild codegen, and
+    # regenerate every client generated with it, on every commit.
+    let src = source.asWorkspace
+    go(version: "1.27", buildFlags: ["-ldflags=-s -w"])
+      .module(ws: src, path: "cmd/codegen")
+      .packages(ws: src)
+      .get(key: "cmd/codegen")
+      .binary(ws: src)
   }
 }

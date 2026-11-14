@@ -41,7 +41,7 @@ func (r *PhpClientDev) WithGraphQLQuery(q *querybuilder.Selection) *PhpClientDev
 }
 
 // Regenerate the PHP SDK API
-func (r *PhpClientDev) API() *Changeset { // php-client-dev (../../main.go:140:1)
+func (r *PhpClientDev) API() *Changeset { // php-client-dev (../../main.go:155:1)
 	q := r.query.Select("api")
 
 	return new(Changeset).WithGraphQLQuery(q)
@@ -53,7 +53,7 @@ func (r *PhpClientDev) BaseContainer() *Container { // php-client-dev (../../mai
 	return new(Container).WithGraphQLQuery(q)
 }
 
-func (r *PhpClientDev) Changes() *Changeset { // php-client-dev (../../main.go:144:1)
+func (r *PhpClientDev) Changes() *Changeset { // php-client-dev (../../main.go:159:1)
 	q := r.query.Select("changes")
 
 	return new(Changeset).WithGraphQLQuery(q)
@@ -67,8 +67,8 @@ type PhpClientDevDevContainerOpts struct {
 	RunInstall bool // php-client-dev (../../main.go:86:2)
 }
 
-// Returns the PHP SDK workspace mounted in a dev container,
-// and working directory set to the SDK source
+// Returns the PHP SDK workspace mounted in a dev container, with a client of a
+// dev engine built from the workspace, and working directory set to the SDK source
 func (r *PhpClientDev) DevContainer(opts ...PhpClientDevDevContainerOpts) *Container { // php-client-dev (../../main.go:83:1)
 	q := r.query.Select("devContainer")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -137,14 +137,14 @@ func (r *PhpClientDev) UnmarshalJSON(bs []byte) error {
 }
 
 // Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
-func (r *PhpClientDev) PhpCodeSniffer() *Check { // php-client-dev (../../main.go:110:1)
+func (r *PhpClientDev) PhpCodeSniffer() *Check { // php-client-dev (../../main.go:125:1)
 	q := r.query.Select("phpCodeSniffer")
 
 	return new(Check).WithGraphQLQuery(q)
 }
 
 // Analyze the PHP code with PHPStan (https://phpstan.org)
-func (r *PhpClientDev) PhpStan() *Check { // php-client-dev (../../main.go:120:1)
+func (r *PhpClientDev) PhpStan() *Check { // php-client-dev (../../main.go:135:1)
 	q := r.query.Select("phpStan")
 
 	return new(Check).WithGraphQLQuery(q)
@@ -155,16 +155,16 @@ type PhpClientDevReleaseOpts struct {
 	//
 	// The source git repository to release
 	//
-	SourceRepo *GitRepository // php-client-dev (../../main.go:202:2)
+	SourceRepo *GitRepository // php-client-dev (../../main.go:217:2)
 
 	// Default: "https://github.com/dagger/dagger-php-sdk.git"
-	Dest string // php-client-dev (../../main.go:209:2)
+	Dest string // php-client-dev (../../main.go:224:2)
 
-	GithubToken *Secret // php-client-dev (../../main.go:211:2)
+	GithubToken *Secret // php-client-dev (../../main.go:226:2)
 }
 
 // Publish the PHP SDK
-func (r *PhpClientDev) Release(ctx context.Context, sourceTag string, opts ...PhpClientDevReleaseOpts) error { // php-client-dev (../../main.go:197:1)
+func (r *PhpClientDev) Release(ctx context.Context, sourceTag string, opts ...PhpClientDevReleaseOpts) error { // php-client-dev (../../main.go:212:1)
 	if r.release != nil {
 		return nil
 	}
@@ -193,23 +193,23 @@ type PhpClientDevReleaseDryRunOpts struct {
 	//
 	// Source git repository to fake-release
 	//
-	SourceRepo *GitRepository // php-client-dev (../../main.go:170:2)
+	SourceRepo *GitRepository // php-client-dev (../../main.go:185:2)
 	//
 	// Source git tag to fake-release
 	//
 	//
 	// Default: "HEAD"
-	SourceTag string // php-client-dev (../../main.go:173:2)
+	SourceTag string // php-client-dev (../../main.go:188:2)
 	//
 	// Target git remote to fake-release *to*
 	//
 	//
 	// Default: "https://github.com/dagger/dagger-php-sdk.git"
-	DestRemote string // php-client-dev (../../main.go:176:2)
+	DestRemote string // php-client-dev (../../main.go:191:2)
 }
 
 // Test the publishing process
-func (r *PhpClientDev) ReleaseDryRun(ctx context.Context, opts ...PhpClientDevReleaseDryRunOpts) error { // php-client-dev (../../main.go:166:1)
+func (r *PhpClientDev) ReleaseDryRun(ctx context.Context, opts ...PhpClientDevReleaseDryRunOpts) error { // php-client-dev (../../main.go:181:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -233,21 +233,21 @@ func (r *PhpClientDev) ReleaseDryRun(ctx context.Context, opts ...PhpClientDevRe
 }
 
 // Source returns the source directory for the PHP SDK
-func (r *PhpClientDev) Source() *Directory { // php-client-dev (../../main.go:104:1)
+func (r *PhpClientDev) Source() *Directory { // php-client-dev (../../main.go:119:1)
 	q := r.query.Select("source")
 
 	return new(Directory).WithGraphQLQuery(q)
 }
 
 // Test the PHP SDK with PHPUnit (https://phpunit.de/)
-func (r *PhpClientDev) Test() *Check { // php-client-dev (../../main.go:131:1)
+func (r *PhpClientDev) Test() *Check { // php-client-dev (../../main.go:146:1)
 	q := r.query.Select("test")
 
 	return new(Check).WithGraphQLQuery(q)
 }
 
 // Get v1.2.3 from sdk/php/v1.2.3
-func (r *PhpClientDev) VersionFromTag(ctx context.Context, tag string) (string, error) { // php-client-dev (../../main.go:191:1)
+func (r *PhpClientDev) VersionFromTag(ctx context.Context, tag string) (string, error) { // php-client-dev (../../main.go:206:1)
 	if r.versionFromTag != nil {
 		return *r.versionFromTag, nil
 	}
@@ -260,7 +260,7 @@ func (r *PhpClientDev) VersionFromTag(ctx context.Context, tag string) (string, 
 	return response, q.Execute(ctx)
 }
 
-func (r *PhpClientDev) WithGeneratedClient() *PhpClientDev { // php-client-dev (../../main.go:148:1)
+func (r *PhpClientDev) WithGeneratedClient() *PhpClientDev { // php-client-dev (../../main.go:163:1)
 	q := r.query.Select("withGeneratedClient")
 
 	return &PhpClientDev{

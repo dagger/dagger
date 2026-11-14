@@ -119,6 +119,15 @@ func (sdk *dangSDK) Runtime(
 	return dangImpl.Runtime(ctx, deps, source)
 }
 
+// PrebuildRuntime parses the module's Dang source while its dependencies
+// load.
+func (sdk *dangSDK) PrebuildRuntime(
+	ctx context.Context,
+	source dagql.ObjectResult[*core.ModuleSource],
+) error {
+	return dangImpl.PrebuildRuntime(ctx, source)
+}
+
 func (sdk *dangSDK) ModuleTypes(
 	ctx context.Context,
 	deps *core.SchemaBuilder,

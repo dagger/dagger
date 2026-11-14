@@ -1,7 +1,0 @@
-{
-  "name": "playground",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  }
-}

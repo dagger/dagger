@@ -1,0 +1,3 @@
+[modules.starter]
+source = "."
+main = true

@@ -25,6 +25,7 @@ import (
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	ctdsnapshot "github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/sys"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
@@ -138,7 +139,6 @@ type Server struct {
 	snapshotGarbage      *snapshotGarbage
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
-	builtinContentStore  content.Store
 
 	// cacheVolumeDir is the cache volume directory this engine owns, when
 	// cache volumes are directories (cacheVolumes.dir); nil otherwise.
@@ -349,18 +349,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 
-	// Opened before the local cache state: the snapshot manager takes the
-	// builtin store at construction, for chain imports of builtin layers.
-	srv.builtinContentStore, err = openBuiltinOCIStore()
-	if err != nil {
-		return nil, fmt.Errorf("failed to open builtin content store: %w", err)
-	}
-
 	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
 		return nil, err
 	}
 	srv.startEngineEvents()
 
+	moveDiskTempMountsToTrash(srv.rootDir)
 	// Sweep any worker state moved aside by a cache reset — this startup's or
 	// an interrupted sweep from a previous one — in the background.
 	srv.startLocalCacheTrashSweeper()
@@ -575,7 +569,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	defer func() {
 		time.AfterFunc(time.Second, srv.gc)
 	}()
-	srv.startLocalCachePressureGCMonitor()
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
@@ -598,6 +591,16 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := srv.mergeImageEntries(ctx, distconsts.EngineContainerImageEntriesDir); err != nil {
 		return nil, err
 	}
+	var sdkDigests []string
+	for _, name := range builtinSDKDigestEnvNames {
+		sdkDigests = append(sdkDigests, os.Getenv(name))
+	}
+	if err := srv.checkImageDirectories(sdkDigests); err != nil {
+		return nil, err
+	}
+	// A prune never deletes what the image ships, which it knows by the
+	// image's merge: one that planned before the merge could still delete it.
+	srv.startLocalCachePressureGCMonitor()
 
 	// The integration attaches after local cache initialization and before
 	// the server dispatches any request.
@@ -697,7 +700,6 @@ func (srv *Server) initRecursiveReadOnlyMounts(ctx context.Context) {
 }
 
 func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) error {
-	var bootReset core.RemoteCacheFixturePersistence
 	for attempt := 0; attempt < 2; attempt++ {
 		resetReason, err := srv.initLocalCacheStateOnce(ctx, cfg, ociCfg)
 		if srv.engineCache != nil {
@@ -713,10 +715,7 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 				// start resets as before.
 				return errors.Join(err, srv.closeLocalCacheStateForReset())
 			}
-			return srv.updateRemoteCacheFixturePersistence(func(report *core.RemoteCacheFixturePersistence) {
-				report.PersistenceResetReason = bootReset.PersistenceResetReason
-				report.LocalCacheResetReason = bootReset.LocalCacheResetReason
-			})
+			return nil
 		}
 		if attempt == 1 {
 			if err != nil {
@@ -727,10 +726,6 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 
 		if resetReason == localCacheStateResetBoltDBInitFailed {
 			srv.corruptDBReset = true
-		}
-		bootReset.LocalCacheResetReason = string(resetReason)
-		if srv.engineCache != nil {
-			bootReset.PersistenceResetReason = srv.engineCache.PersistenceResetReason()
 		}
 		slog.Warn("local cache state invalid; resetting worker and dagql persistence state", "reason", resetReason, "error", err)
 		if closeErr := srv.closeLocalCacheStateForReset(); closeErr != nil {
@@ -753,9 +748,6 @@ func (srv *Server) noteWipedCacheID(id string) {
 }
 
 func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) (localCacheStateResetReason, error) {
-	if srv.builtinContentStore == nil {
-		return localCacheStateResetNone, errors.New("builtin content store must be opened before the local cache state")
-	}
 	if err := srv.mkdirBaseDirs(); err != nil {
 		return localCacheStateResetNone, err
 	}
@@ -783,16 +775,25 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		}
 	}
 
-	srv.localContentStore, err = blobstore.New(srv.contentStoreRootDir)
+	// The image's entries name their parts' blobs, which the image holds:
+	// the store reads them in place rather than copying each one in.
+	blobs, err := blobstore.New(srv.contentStoreRootDir, blobstore.WithImageBlobs(distconsts.EngineContainerImageEntriesDir))
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create content store: %w", err)
 	}
+	srv.localContentStore = blobs
 
 	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
 		srv.snapshotterName: srv.snapshotter,
 	})
 	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to init metadata db: %w", err)
+	}
+
+	// Records of image blobs a previous image held in place, and this one
+	// doesn't, name bytes that are gone: drop them before anything reads them.
+	if err := blobs.ForgetLostImageBlobs(namespaces.WithNamespace(ctx, "dagger"), srv.containerdMetaDB.ContentStore()); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("failed to reconcile the image's blobs: %w", err)
 	}
 
 	srv.leaseManager = bkcache.NewLeaseManager(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")
@@ -815,10 +816,10 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		},
 		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
 		MountPoolRoot: srv.buildkitMountPoolDir,
-		// Chain imports take a builtin image's layers from the engine's own
-		// files rather than the remote cache.
-		BuiltinContent: srv.builtinContentStore,
-		MetadataDB:     srv.containerdMetaDB,
+		MetadataDB:    srv.containerdMetaDB,
+		// The image's blobs, which the store holds in place, take no disk
+		// a snapshot's release would free.
+		InPlaceContent: blobs.InPlace,
 	})
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create snapshot manager: %w", err)

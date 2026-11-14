@@ -406,13 +406,13 @@ func (ModuleSuite) TestCrossSessionContextDirectoryDefaultPath(ctx context.Conte
 
 	c1 := connect(ctx, t)
 	entries1 := callEntries(c1, rand.Text())
-	require.Contains(t, entries1, "dagger.json")
+	require.Contains(t, entries1, "dagger-module.toml")
 	require.Contains(t, entries1, "foo.txt")
 	require.NoError(t, c1.Close())
 
 	c2 := connect(ctx, t)
 	entries2 := callEntries(c2, rand.Text())
-	require.Contains(t, entries2, "dagger.json")
+	require.Contains(t, entries2, "dagger-module.toml")
 	require.Contains(t, entries2, "foo.txt")
 }
 

@@ -15,13 +15,13 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-type CacheVolume = core.CacheVolume
 type Changeset = core.Changeset
 type Check = core.Check
 type Container = core.Container
 type Directory = core.Directory
 type File = core.File
 type ID = core.ID
+type Module = core.Module
 type Node = core.Node
 type NodeClient = core.NodeClient
 type Platform = core.Platform
@@ -50,7 +50,7 @@ func Connect(connections ...*dagger.Client) *Client {
 	if len(connections) == 1 {
 		connection = connections[0]
 	}
-	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "/.dagger/modules/go", ""))
+	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "github.com/dagger/go@4674a1f6d8df9704c03aa6589e621ae0625836d6", "4674a1f6d8df9704c03aa6589e621ae0625836d6"))
 	return &Client{Query: &Query{query: q}}
 }
 
@@ -74,6 +74,11 @@ func Ref[T core.Loadable[T]](client *Client, id core.ID) T {
 }
 func Load[T core.Loadable[T]](ctx context.Context, client *Client, id core.ID) (T, error) {
 	return core.Load[T](ctx, new(core.Query).WithGraphQLQuery(client.query), id)
+}
+
+// loaded is the core object q's request returned as id, knowing that ID.
+func loaded[T core.LoadedNode[T]](q *querybuilder.Selection, id core.ID) T {
+	return core.Loaded[T](new(core.Query).WithGraphQLQuery(q.Root()), id)
 }
 
 // idMemo holds the ID fetched for one object query.

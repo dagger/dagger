@@ -32,7 +32,7 @@ type ElixirClientDev {
   Lint the SDK
   """
   pub lint: Void @check {
-    devContainer
+    withBase(source)
       .withExec(["mix", "credo"])
       .sync
 
@@ -47,7 +47,8 @@ type ElixirClientDev {
     let before = directory
       .withDirectory(sourcePath, source)
 
-    let gen = withCodegen(devContainer)
+    # Generating needs no engine: the introspection JSON is computed without one.
+    let gen = withCodegen(withBase(source))
       .withMountedFile("/schema.json", daggerEngine(ws: self.ws).introspectionJson)
       .withExec(["mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"])
       .withExec(["mix", "format", "gen/*.ex"])
@@ -77,7 +78,7 @@ type ElixirClientDev {
   Run dagger_codegen tests
   """
   pub codegenTest: Void @check {
-    withCodegen(devContainer)
+    withCodegen(withBase(source))
       .withEnvVariable("CI", "true")
       .withExec(["mix", "test"])
       .sync
@@ -198,14 +199,20 @@ type ElixirClientDev {
       .withExec(["mix", "deps.get"])
   }
 
+  # Whether version is a valid semantic version with a leading v, as
+  # golang.org/x/mod/semver's IsValid has it: vMAJOR, vMAJOR.MINOR, or
+  # vMAJOR.MINOR.PATCH with an optional pre-release and build.
   let isSemver(version: String!): Boolean! {
-    let binary = go(ws: self.ws, source: currentModule.source.directory("is-semver")).binary("is-semver")
-    let exitCode = container
-      .from("alpine:3")
-      .withFile("/bin/is-semver", binary)
-      .withExec(["is-semver", version], expect: ReturnType.ANY)
-      .exitCode
-    exitCode == 0
+    let number = `(0|[1-9][0-9]*)`
+    let prereleaseIdentifier =
+      `([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*|0|[1-9][0-9]*)`
+    let prerelease =
+      `(-${prereleaseIdentifier}(\.${prereleaseIdentifier})*)?`
+    let buildIdentifier = `[0-9A-Za-z-]+`
+    let build = `(\+${buildIdentifier}(\.${buildIdentifier})*)?`
+    let pattern: Regexp! =
+      `^v${number}(\.${number}(\.${number}${prerelease}${build})?)?$`
+    version.containsMatch(pattern)
   }
 
   let versionFromTag(tag: String!): String! {

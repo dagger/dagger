@@ -258,48 +258,6 @@ func TestLazyOperationCodecs(t *testing.T) {
 			require.Error(t, err)
 		}
 	})
-	t.Run("builtin field pairing", func(t *testing.T) {
-		operation := &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: Platform{OS: "linux", Architecture: "arm64"}, ManifestDigest: digest.FromString("manifest")}
-		for _, call := range []*dagql.ResultCall{nil, {Field: "from"}} {
-			_, err := operation.EncodePersisted(f.ctx, dagql.NewPersistEncodeContext(f.cache, 0, call))
-			require.ErrorContains(t, err, "_builtinContainer")
-		}
-		call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: "_builtinContainer", Type: dagql.NewResultCallType((&Container{}).Type())}
-		raw, err := operation.EncodePersisted(f.ctx, dagql.NewPersistEncodeContext(f.cache, 0, call))
-		require.NoError(t, err)
-		decoded, err := decodePersistedContainerRecipe(f.ctx, dagql.NewPersistDecodeContext(f.srv, 0, call), call, raw)
-		require.NoError(t, err)
-		got := decoded.(*ContainerBuiltinLazy)
-		require.Equal(t, operation.Platform, got.Platform)
-		require.Equal(t, operation.ManifestDigest, got.ManifestDigest)
-		require.NotSame(t, operation.LazyMu, got.LazyMu)
-		for _, ready := range []bool{false, true} {
-			fixture := newLazyOperationFixture(t)
-			container := NewContainer(operation.Platform)
-			if ready {
-				container.FS.setValue(containerPersistenceTestDirectory("builtin-codec", "/"))
-				require.NoError(t, evaluatedLazyFixture(container, operation))
-			} else {
-				container.Lazy = operation
-			}
-			result := fixture.env.attach(t, fixture.ctx, fixture.cache, fixture.srv, "_builtinContainer", container)
-			rowID := persistedRowID(t, fixture.cache, result)
-			encoded, err := container.EncodePersistedObject(fixture.ctx, dagql.NewPersistEncodeContext(fixture.cache, rowID, call))
-			require.NoError(t, err)
-			require.True(t, requireDescribedAsEncoded(t, fixture.ctx, dagql.NewPersistEncodeContext(fixture.cache, rowID, call), container))
-			value, err := container.DecodePersistedObject(fixture.ctx, dagql.NewPersistDecodeContext(fixture.srv, rowID, call), encoded.JSON)
-			require.NoError(t, err)
-			restored := value.(*Container)
-			if ready {
-				require.JSONEq(t, string(raw), string(restored.lazyJSON))
-			} else {
-				require.IsType(t, operation, restored.Lazy)
-				require.NotSame(t, operation, restored.Lazy)
-			}
-		}
-		_, err = persistedContainerRecipeVisitors[call.Field](raw, newPersistedRefWalker(func(*dagql.PersistedRef) error { t.Fatal("builtin recipe declared a child"); return nil }, dagql.PersistedRefPath{}))
-		require.NoError(t, err)
-	})
 	t.Run("exact equivalent input", func(t *testing.T) {
 		original := f.recipes[0].(*DirectoryGitCleanedLazy).Repo
 		local := original.Self().Backend.(*LocalGitRepository)
@@ -416,13 +374,6 @@ func TestLazyOperationSaveReopen(t *testing.T) {
 	rec, err = f.cache.CapturePersistedRecord(f.ctx, schemaRes)
 	require.NoError(t, err)
 	records = append(records, rec)
-	builtin := NewContainer(Platform{OS: "linux", Architecture: "amd64"})
-	builtin.FS.setValue(containerPersistenceTestDirectory("saved-builtin", "/"))
-	require.NoError(t, evaluatedLazyFixture(builtin, &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: Platform{OS: "linux", Architecture: "arm64"}, ManifestDigest: digest.FromString("saved-manifest")}))
-	builtinRes := f.env.attach(t, f.ctx, f.cache, f.srv, "_builtinContainer", builtin)
-	rec, err = f.cache.CapturePersistedRecord(f.ctx, builtinRes)
-	require.NoError(t, err)
-	records = append(records, rec)
 
 	for range 2 {
 		f.ctx, f.cache, f.srv = f.env.restart(t, f.ctx, f.cache)
@@ -442,10 +393,6 @@ func TestLazyOperationSaveReopen(t *testing.T) {
 				require.NotNil(t, value.Lazy)
 				require.NotEmpty(t, value.lazyJSON)
 				require.Zero(t, f.env.manager.openCount(value.stored.SnapshotID))
-			case *Container:
-				require.NotNil(t, value.Lazy)
-				require.NotEmpty(t, value.lazyJSON)
-				require.Zero(t, f.env.manager.openCount("saved-builtin"))
 			default:
 				t.Fatalf("unexpected output %T", value)
 			}

@@ -35,9 +35,21 @@ func (t *TestForPythonVersion) Run(
 	// Arguments to pass to pytest
 	args []string,
 ) error {
-	return pytest.New(ws, pytest.PytestOpts{
-		Container:  t.Container.WithEnvVariable("UV_PYTHON", t.Version),
-		SourcePath: "sdk/python",
-		Args:       args,
-	}).Test(ctx)
+	ctr := pytest.New(ws, pytest.PytestOpts{SourcePath: "sdk/python"}).
+		InstallPytestOtel(
+			// Make the venv for this Python version before the plugin goes in:
+			// otherwise `uv run` replaces the venv, and the plugin with it.
+			t.Container.
+				WithEnvVariable("UV_PYTHON", t.Version).
+				WithExec(uv("sync")),
+			pytest.PytestInstallPytestOtelOpts{
+				Runner:    pytest.PytestRunnerUv,
+				EnvTarget: pytest.PytestEnvTargetVenv,
+			})
+	// The tests must reach the dev engine that DevContainer configures, not
+	// the engine running this exec: unset the session it gives every exec.
+	_, err := ctr.
+		WithExec(append([]string{"env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "uv", "run", "pytest"}, args...)).
+		Sync(ctx)
+	return err
 }

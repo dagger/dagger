@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"go/format"
 	"go/token"
 	"go/version"
 	"os"
@@ -22,6 +21,8 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/cmd/codegen/trace"
+	telemetry "github.com/dagger/otel-go"
 )
 
 const (
@@ -74,6 +75,23 @@ type GoGenerator struct {
 // so that they can expose those constructors to callers.
 var fullSchemaTemplates = map[string]bool{
 	"dag/dag.gen.go": true,
+}
+
+// generateCodeTraced is generateCode in a span of its own.
+func generateCodeTraced(
+	ctx context.Context,
+	cfg generator.Config,
+	schema *introspection.Schema,
+	schemaVersion string,
+	mfs *memfs.FS,
+	pkgInfo *PackageInfo,
+	pkg *packages.Package,
+	fset *token.FileSet,
+	pass int,
+) (rerr error) {
+	ctx, span := trace.Tracer().Start(ctx, "generate code")
+	defer telemetry.EndWithCause(span, &rerr)
+	return generateCode(ctx, cfg, schema, schemaVersion, mfs, pkgInfo, pkg, fset, pass)
 }
 
 func generateCode(
@@ -286,15 +304,11 @@ func renderFile(
 		return nil, nil
 	}
 
-	formatted, err := format.Source(source)
+	// goimports formats the file as gofmt does, after fixing its imports.
+	formatted, err := imports.Process(filepath.Join(outputDir, "dummy.go"), source, nil)
 	if err != nil {
 		os.Stderr.Write(source)
 		return nil, fmt.Errorf("error formatting generated code: %w", err)
-	}
-	formatted, err = imports.Process(filepath.Join(outputDir, "dummy.go"), formatted, nil)
-	if err != nil {
-		os.Stderr.Write(source)
-		return nil, fmt.Errorf("error processing imports in generated code: %w", err)
 	}
 	return formatted, nil
 }

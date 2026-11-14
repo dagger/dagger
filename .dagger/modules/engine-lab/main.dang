@@ -486,11 +486,12 @@ type EngineLab {
       file,
     ]
 
-    let out = goEnv(source)
-      # The build is deliberately NOT nonce-busted: it is a pure function of
-      # the mounted source, so an unchanged tree replays from the exec cache
-      # and only the run below actually re-executes.
-      .withExec(["go", "build", "-o", "/usr/local/bin/dump-id", "./cmd/dump-id"])
+    let out = container
+      .from("alpine:3.20")
+      .withFile("/usr/local/bin/dump-id", dumpIdBin(source))
+      .withMountedDirectory(defaultWorkdir, source.directory("/"))
+      .withWorkdir(defaultWorkdir)
+      # Only the run is nonce-busted: the build is keyed by the source alone.
       .withEnvVariable("ENGINE_LAB_NONCE", Random.string)
       .withExec(["dump-id"] + args)
       .stdout
@@ -989,8 +990,23 @@ type EngineLab {
   Test the wcprof-report helper, in the same tree it is built in.
   """
   wcprofReportTest(source: Workspace!): Void @check {
-    goEnvAt(wcprofReportTree(source))
-      .withExec(["go", "test", "-race", "-v", "./" + wcprofReportPkg])
+    let tree = wcprofReportTree(source)
+    let ws = tree.asWorkspace
+    # The race detector needs cgo, so the test binary is built, and run, in
+    # Go's Debian image, which has a C toolchain.
+    let base = container.from("golang:1.27").withEnvVariable("CGO_ENABLED", "1")
+    let test = go(base: base, buildFlags: ["-race"])
+      .module(ws: ws, path: wcprofReportPkg)
+      .packages(ws: ws)
+      .get(key: wcprofReportPkg)
+      .testBinary(ws: ws)
+    # Run as go test runs it: from the package's directory, with its default
+    # timeout.
+    base
+      .withMountedDirectory(defaultWorkdir, tree)
+      .withWorkdir(defaultWorkdir + "/" + wcprofReportPkg)
+      .withFile("/usr/local/bin/wcprofreport.test", test)
+      .withExec(["wcprofreport.test", "-test.v", "-test.timeout=10m"])
       .sync
     null
   }
@@ -1034,34 +1050,36 @@ type EngineLab {
     "http://dagger-engine:" + toString(debugPort) + path
   }
 
-  # A Go toolchain with the caller's CURRENT workspace mounted at /src, for
-  # building the repo's own commands (cmd/dump-id today).
-  #
-  # Share go-cli's Go toolchain and module/build caches with the other dev
-  # tools, so repeated builds can reuse their downloaded modules and objects.
-  let goEnv(source: Workspace!): Container! {
-    goEnvAt(source.directory("/"))
-  }
-
-  let goEnvAt(dir: Directory!): Container! {
-    goCli
-      .base
-      .withMountedDirectory(defaultWorkdir, dir)
-      .withWorkdir(defaultWorkdir)
+  # cmd/dump-id, built from the CURRENT workspace's tree, without .git. That
+  # tree is the build's workspace, so the build is keyed by its content and
+  # never by the caller's session. The build image has no C toolchain, so the
+  # binary is static and runs in Alpine.
+  let dumpIdBin(source: Workspace!): File! {
+    let src = source.directory("/", exclude: [".git"], gitignore: true).asWorkspace
+    # No tests: a binary build reads none of the module's test records.
+    go(version: "1.27", test: ["!**"])
+      .module(ws: src, path: "cmd/dump-id")
+      .packages(ws: src)
+      .get(key: "cmd/dump-id")
+      .binary(ws: src)
   }
 
   # The wcprof-report helper (wcprof-report/ in this module), built against
   # the CURRENT workspace's engine/wcprof so it always reads the dump format
   # of the engine being profiled. The offline analyzer moved out of the repo
   # in #13588, so the helper ships with this module and is grafted into a
-  # minimal build tree (go.mod/go.sum + engine/wcprof, both stdlib-only): the
-  # build only re-runs when those or the helper change. Static, so it runs
-  # in the alpine+jq runner.
+  # minimal build tree (go.mod/go.sum + engine/wcprof, both stdlib-only),
+  # which is the build's workspace: the build only re-runs when those or the
+  # helper change, and never with the caller's session. The build image has
+  # no C toolchain, so the binary is static and runs in the alpine+jq runner.
   let wcprofReportBin(source: Workspace!): File! {
-    goEnvAt(wcprofReportTree(source))
-      .withEnvVariable("CGO_ENABLED", "0")
-      .withExec(["go", "build", "-o", "/out/wcprof-report", "./" + wcprofReportPkg])
-      .file("/out/wcprof-report")
+    let tree = wcprofReportTree(source).asWorkspace
+    # No tests: a binary build reads none of the module's test records.
+    go(version: "1.27", test: ["!**"])
+      .module(ws: tree, path: wcprofReportPkg)
+      .packages(ws: tree)
+      .get(key: wcprofReportPkg)
+      .binary(ws: tree)
   }
 
   let wcprofReportTree(source: Workspace!): Directory! {

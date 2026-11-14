@@ -17,6 +17,10 @@ type ValueSelection struct {
 	// LeaveOutOutputsOutsideClosure leaves out a selected output whose entry
 	// the captured closure doesn't hold, instead of refusing the selection.
 	LeaveOutOutputsOutsideClosure bool
+	// EveryRoot sends every root or none: a capture that would leave a root
+	// out consumes nothing, and returns a RootsLeftOutError naming the roots
+	// it left out, before it opens any chain.
+	EveryRoot bool
 	// Known are the rows the recipient has merged: the bundle sends each one
 	// that hasn't changed as a held row.
 	Known *KnownRows
@@ -144,6 +148,12 @@ type ImportedValue struct {
 }
 
 const valueBundleVersion = 7
+
+// ValueBundleVersion is the version of the bundles an engine of this source
+// writes, and the only one it merges. cmd/engine-image-entries compares an
+// exported bundle's with it, to know whether an engine built from this source
+// starts from those entries.
+const ValueBundleVersion = valueBundleVersion
 
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.

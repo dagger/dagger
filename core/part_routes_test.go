@@ -60,7 +60,7 @@ func TestPartPureRoutes(t *testing.T) {
 			}
 		})
 	}
-	for _, field := range []string{"_builtinContainer", "import"} {
+	for _, field := range []string{"import"} {
 		payload, err := json.Marshal(persistedContainerPayload{Metadata: persistedContainerMetadata{Consumed: true, Value: metadata}, LazyJSON: json.RawMessage(`{}`)})
 		require.NoError(t, err)
 		route, err := foreignFamilyCodec("Container").RouteParts(dagql.PersistedPayloadVisit{Path: path, Call: &dagql.ResultCall{Field: field}, Payload: payload}, ContainerPartFS)

@@ -122,12 +122,6 @@ func TestLazyStoredResultsWithoutBacking(t *testing.T) {
 		require.ErrorIs(t, err, dagql.ErrUnavailablePart)
 		_, err = containerParent.Select(bctx, bsrv, dagql.Selector{Field: "stderr"})
 		require.ErrorIs(t, err, dagql.ErrUnavailablePart)
-		report, err := b.TransferFixtureSnapshot(bctx, "stored-b", nil)
-		require.NoError(t, err)
-		for _, event := range report.Parts {
-			require.NotEqual(t, "lazy-enter", event.Kind)
-			require.NotEqual(t, "provider-read", event.Kind)
-		}
 		t.Log("stored contents/search/stdout hits returned saved values with no backing; absent calls demanded missing parts and failed")
 		return nil
 	}))
