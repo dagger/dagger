@@ -2039,6 +2039,18 @@ func toolArgHeaderValue(name string, value any) (string, bool) {
 			parts = append(parts, fmt.Sprint(value))
 		}
 		return strings.Join(parts, " "), true
+	case "arguments":
+		// A wrapper's arguments for the tool it runs (Timeout): frontends
+		// present the wrapper as that call (see dagui.ToolCallView).
+		obj, ok := value.(map[string]any)
+		if !ok {
+			return "", false
+		}
+		enc, err := json.Marshal(obj)
+		if err != nil {
+			return "", false
+		}
+		return string(enc), true
 	default:
 		return "", false
 	}
@@ -2092,6 +2104,13 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 	// argv arrays are useful context even though they are not required args.
 	for _, arg := range []string{"offset", "limit", "args"} {
 		appendToolArg(arg)
+	}
+	// The Dang builtins' snippet and scope are the call: frontends show
+	// them in full (see dagui.ToolCallView).
+	if tool.Name == dangCheckToolName || tool.Name == dangEvalToolName {
+		for _, arg := range []string{"at", "search", "source"} {
+			appendToolArg(arg)
+		}
 	}
 	span := trace.SpanFromContext(ctx)
 	attrs := append(toolSpanAttrs(tool),

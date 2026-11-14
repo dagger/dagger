@@ -123,6 +123,61 @@ func TestCallPreservesHeaderArgs(t *testing.T) {
 	require.Equal(t, []string{"main.go", "20", "10", "foo bar"}, values.AsStringSlice())
 }
 
+// TestCallRecordsRenderedToolArgs covers the arguments frontends render a
+// call from (dagui.ToolCallView): a Dang builtin's optional scope and search
+// beside its snippet, and a Timeout wrapper's arguments for the tool it runs,
+// as JSON.
+func TestCallRecordsRenderedToolArgs(t *testing.T) {
+	for _, tc := range []struct {
+		tool, args   string
+		required     []string
+		names, value []string
+	}{
+		{
+			tool:     dangEvalToolName,
+			args:     `{"source":"1 + 1","at":"notes"}`,
+			required: []string{"source"},
+			names:    []string{"source", "at"},
+			value:    []string{"1 + 1", "notes"},
+		},
+		{
+			tool:     dangCheckToolName,
+			args:     `{"search":"sort"}`,
+			required: []string{},
+			names:    []string{"search"},
+			value:    []string{"sort"},
+		},
+		{
+			tool:     timeoutToolName,
+			args:     `{"duration":"2m","tool":"DangEval","arguments":{"source":"1"}}`,
+			required: []string{"duration", "tool", "arguments"},
+			names:    []string{"duration", "tool", "arguments"},
+			value:    []string{"2m", "DangEval", `{"source":"1"}`},
+		},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			sr, ctx := recordingTestRecorder(t)
+			_, failed := newMCP().Call(ctx, []LLMTool{{
+				Name:   tc.tool,
+				Schema: map[string]any{"required": tc.required},
+				Call:   func(context.Context, any) (any, error) { return "ok", nil },
+			}}, &LLMToolCall{Name: tc.tool, Arguments: JSON(tc.args)})
+			require.False(t, failed)
+			trace.SpanFromContext(ctx).End()
+
+			ended := sr.Ended()
+			require.NotEmpty(t, ended)
+			span := ended[len(ended)-1]
+			names, ok := spanAttr(span, telemetry.LLMToolArgNamesAttr)
+			require.True(t, ok)
+			values, ok := spanAttr(span, telemetry.LLMToolArgValuesAttr)
+			require.True(t, ok)
+			require.Equal(t, tc.names, names.AsStringSlice())
+			require.Equal(t, tc.value, values.AsStringSlice())
+		})
+	}
+}
+
 func TestToolResultContentType(t *testing.T) {
 	patch := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n"
 	require.Equal(t, gitDiffContentType, toolResultContentType(patch))
