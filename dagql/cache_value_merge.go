@@ -82,12 +82,19 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 // restore attaches wait in the prefetcher's backlog, in the order the commit
 // attaches them, which for a file is the order its records were first used,
 // and never push out the offers of other merges (partOfferRestored).
-func (c *Cache) RestoreValues(ctx context.Context, bundle ValueBundle) (MergeReply, error) {
+//
+// The commit also holds every entry the part lands on, until the reply's
+// Release: a set file's later parts name its earlier parts' records as held
+// rows, and a part's roots in unretained, the closure of a root that a later
+// part carries, are merged with no retention edge (Unretained), so that only
+// the hold keeps them until the root lands.
+func (c *Cache) RestoreValues(ctx context.Context, bundle ValueBundle, unretained []TransferOrdinal) (MergeReply, error) {
 	p, err := c.PrepareValueMerge(ctx, cloudCacheID, bundle)
 	if err != nil {
 		return MergeReply{}, err
 	}
-	p.restore = true
+	p.restore, p.hold = true, true
+	p.Unretained(unretained...)
 	return c.CommitValueMerge(ctx, p)
 }
 
@@ -111,8 +118,10 @@ type PreparedValueMerge struct {
 	// retention edge (Unretained).
 	unretained map[TransferOrdinal]bool
 	// restore is set for a restore's merge (RestoreValues): its commit
-	// queues the offers it attaches in the prefetcher's backlog.
+	// queues the offers it attaches in the prefetcher's backlog, and hold
+	// has it hold every entry it lands on until the reply's Release.
 	restore bool
+	hold    bool
 	// ended is set once, by the terminal action.
 	ended atomic.Bool
 }
@@ -197,7 +206,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 		return MergeReply{}, errValueMergeEnded
 	}
 	defer p.op.finish(false)
-	from, input, prep, restore := p.from, p.input, p.prep, p.restore
+	from, input, prep, restore, hold := p.from, p.input, p.prep, p.restore, p.hold
 	p.input, p.prep = ValueBundle{}, nil
 	prep.unretained = p.unretained
 	if len(prep.stale) > 0 {
@@ -256,7 +265,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 			c.egraphMu.Unlock()
 			return MergeReply{}, err
 		}
-		commit.restore = restore
+		commit.restore, commit.hold = restore, hold
 		reply, finish := c.commitValueMergeLocked(ctx, commit)
 		reply.Committed, reply.CommitHold, reply.Warm = true, time.Since(locked), warmed
 		reply.LockWait = locked.Sub(asked)
@@ -320,6 +329,10 @@ type MergeReply struct {
 	// releasing it, and LockWait how long the commit waited to take it.
 	CommitHold time.Duration
 	LockWait   time.Duration
+	// Release, on a restore's reply (RestoreValues), releases the commit's
+	// hold of the entries it landed on; it does something once. Nil on any
+	// other merge's.
+	Release func(context.Context) error
 	// Rows counts the bundle's records by what the commit did with each.
 	Rows MergeRowCounts
 	// Warm is how long the commit took to capture its targets' complete
@@ -1194,8 +1207,10 @@ type valueMergeCommit struct {
 	// commit's finish queues for prefetch once egraphMu is released.
 	attached []mergeAttachedOffer
 	// restore is set for a restore's merge: its finish queues the attached
-	// offers in the prefetcher's backlog, not its lanes.
+	// offers in the prefetcher's backlog, not its lanes. hold has the commit
+	// hold every entry it lands on (RestoreValues).
 	restore bool
+	hold    bool
 	roots   []MergedRoot
 	now     int64
 }
@@ -1947,6 +1962,21 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 			}
 		}
 	}
+	// A restore's commit holds every entry it lands on, before anything
+	// unowned is collected: a root it leaves unretained lives through the
+	// hold alone.
+	var held []*sharedResult
+	if commit.hold && errs == nil {
+		seen := map[*sharedResult]bool{}
+		for _, row := range commit.rows {
+			if row.res == nil || seen[row.res] || row.res.noValueLocked() {
+				continue
+			}
+			seen[row.res] = true
+			c.incrementIncomingOwnershipLocked(ctx, row.res)
+			held = append(held, row.res)
+		}
+	}
 	// An entry the merge created that nothing owns, such as a dependency
 	// only a kept record's bundle needed, is collected now, before a sharing
 	// pass could hold it; the reply leaves it out. Roots are retained, and an
@@ -1965,6 +1995,9 @@ func (c *Cache) commitValueMergeLocked(ctx context.Context, commit *valueMergeCo
 	reply := c.mergeReplyLocked(commit)
 	c.takeChangesLocked(&change)
 	reply.Change = change
+	if commit.hold {
+		reply.Release = c.releaseHeld(held)
+	}
 	attached := commit.attached
 	finish := func(ctx context.Context) error {
 		cleanupCtx := context.WithoutCancel(ctx)
