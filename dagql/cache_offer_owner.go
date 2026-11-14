@@ -16,7 +16,9 @@ type offerOwnerID uint64
 type collectionQueue = []*sharedResult
 
 // offerOwner owns exact rows independently of result dependency membership.
-// All fields and the registry are guarded by egraphMu. Origin is diagnostic.
+// All fields and the registry are guarded by egraphMu. While the owner holds
+// a slot, origin and address name the entry and part whose offer it is: a
+// merge's cycle check walks up through them (offerHolderLocked).
 type offerOwner struct {
 	id      offerOwnerID
 	record  PersistedOfferOwner
