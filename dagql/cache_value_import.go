@@ -112,15 +112,16 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 	if len(bundle.Roots) == 0 {
 		return nil, fmt.Errorf("bundle has no roots")
 	}
-	rows := map[uint64]TransferredValue{}
+	rows := make(bundleRows, len(bundle.Values)+1)
 	senders := transferSenders(bundle)
-	sent := map[uint64]bool{}
-	for _, row := range bundle.Values {
+	sent := make(map[uint64]bool, len(bundle.Values))
+	for i := range bundle.Values {
+		row := &bundle.Values[i]
 		id := uint64(row.Ordinal)
 		if id == 0 || id > uint64(len(bundle.Values)) {
 			return nil, fmt.Errorf("invalid ordinal %d", id)
 		}
-		if _, exists := rows[id]; exists {
+		if rows[id] != nil {
 			return nil, fmt.Errorf("duplicate ordinal %d", id)
 		}
 		if row.SenderNumber == 0 {
@@ -135,7 +136,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 			return nil, fmt.Errorf("row %d: record %d is not its sender number %d", id, row.Record.ResultID, row.SenderNumber)
 		}
 		if row.Held != "" {
-			if err := validateHeldRow(row); err != nil {
+			if err := validateHeldRow(*row); err != nil {
 				return nil, fmt.Errorf("row %d: %w", id, err)
 			}
 			rows[id] = row
@@ -160,7 +161,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 		if transferred.Call == "" {
 			return nil, fmt.Errorf("call %d: no call", i)
 		}
-		if _, ok := rows[uint64(transferred.Value)]; !ok {
+		if _, ok := rows.get(uint64(transferred.Value)); !ok {
 			return nil, fmt.Errorf("call %d: value %d is no row", i, transferred.Value)
 		}
 	}
@@ -172,16 +173,17 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 	// slot may replace the descriptor, but cannot change the part's existence.
 	// Checking the shape only, a payload is mapped only for a row an offer or
 	// an output names.
+	// A row carried compressed is checked against its declared parts in
+	// place (storedMapped).
 	addresses := map[uint64]map[string]CapturedCodecOutput{}
-	for id, row := range rows {
-		if row.Held != "" || shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
+	storedMapped := make([]bool, len(rows))
+	for i, row := range rows {
+		id := uint64(i)
+		if row == nil || row.Held != "" || shapeOnly && !named[id] && len(row.Record.Envelope.PendingOffers) == 0 {
 			continue
 		}
-		if parts, ok := stored[id]; ok {
-			addresses[id] = make(map[string]CapturedCodecOutput, len(parts))
-			for _, part := range parts {
-				addresses[id][part.key] = part.output()
-			}
+		if _, ok := stored[id]; ok {
+			storedMapped[id] = true
 			continue
 		}
 		outputs, err := mapTransferredOutputs(row.Record)
@@ -197,13 +199,29 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 			addresses[id][key] = output
 		}
 	}
+	// partAt returns the part a row's record has at an address key, as
+	// mapped above: the last of its declared parts at the key, for a row
+	// carried compressed.
+	partAt := func(id uint64, key string) (CapturedCodecOutput, bool) {
+		if id < uint64(len(storedMapped)) && storedMapped[id] {
+			parts := stored[id]
+			for i := len(parts) - 1; i >= 0; i-- {
+				if parts[i].key == key {
+					return parts[i].output(), true
+				}
+			}
+			return CapturedCodecOutput{}, false
+		}
+		part, ok := addresses[id][key]
+		return part, ok
+	}
 	slots := map[string]bool{}
 	validateSlot := func(id uint64, address PersistedPartAddress) error {
 		key, err := partAddressKey(address)
 		if err != nil {
 			return err
 		}
-		part, ok := addresses[id][key]
+		part, ok := partAt(id, key)
 		if !ok {
 			return fmt.Errorf("row %d has no output at %s", id, key)
 		}
@@ -217,13 +235,18 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 		slots[key] = true
 		return nil
 	}
-	for id, row := range rows {
+	for i, row := range rows {
+		if row == nil {
+			continue
+		}
+		id := uint64(i)
 		for _, offer := range row.Record.Envelope.PendingOffers {
 			if err := validateSlot(id, offer.Address); err != nil {
 				return nil, err
 			}
 			key, _ := partAddressKey(offer.Address)
-			if err := validateTransferOffer(offer, addresses[id][key]); err != nil {
+			part, _ := partAt(id, key)
+			if err := validateTransferOffer(offer, part); err != nil {
 				return nil, err
 			}
 		}
@@ -232,7 +255,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 	described := map[string]bool{}
 	for _, output := range bundle.Outputs {
 		id := uint64(output.Ordinal)
-		row, ok := rows[id]
+		row, ok := rows.get(id)
 		if !ok {
 			return nil, fmt.Errorf("output names missing ordinal %d", id)
 		}
@@ -249,7 +272,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 			return nil, fmt.Errorf("duplicate output %s", composite)
 		}
 		described[composite] = true
-		part, ok := addresses[id][key]
+		part, ok := partAt(id, key)
 		if !ok && !held {
 			return nil, fmt.Errorf("unknown output address %s", composite)
 		}
@@ -271,7 +294,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 				return nil, err
 			}
 			for _, service := range output.Value.Services {
-				if _, ok := rows[service.ServiceResultID]; !ok {
+				if _, ok := rows.get(service.ServiceResultID); !ok {
 					return nil, fmt.Errorf("output refers to missing service %d", service.ServiceResultID)
 				}
 			}
@@ -299,7 +322,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 	var order []uint64
 	var walk func(uint64) error
 	walk = func(id uint64) error {
-		row, ok := rows[id]
+		row, ok := rows.get(id)
 		if !ok {
 			return fmt.Errorf("missing dependency ordinal %d", id)
 		}
@@ -335,7 +358,7 @@ func checkValueBundle(bundle ValueBundle, shapeOnly bool, stored map[uint64][]de
 			return nil, err
 		}
 	}
-	if len(seen) != len(rows) {
+	if len(seen) != len(bundle.Values) {
 		return nil, fmt.Errorf("bundle contains rows outside its root closure")
 	}
 	return order, nil
@@ -404,4 +427,16 @@ func (s transferSenderNumbers) dependencies(deps []uint64) []uint64 {
 		out[i] = s[dep]
 	}
 	return out
+}
+
+// bundleRows are a bundle's rows by ordinal, as checkValueBundle checks
+// them: the row of each ordinal it has checked so far, at that index.
+type bundleRows []*TransferredValue
+
+// get returns the row of ordinal id, if checked.
+func (rows bundleRows) get(id uint64) (*TransferredValue, bool) {
+	if id >= uint64(len(rows)) || rows[id] == nil {
+		return nil, false
+	}
+	return rows[id], true
 }
