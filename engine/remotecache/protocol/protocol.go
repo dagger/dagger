@@ -630,6 +630,10 @@ type Restored struct {
 // (a value with no Held), in the file's order, part by part and within a
 // part in its bundle's Values order, at its first appearance only. A record
 // that landed on no entry, such as a root that had expired, is 0.
+// CompleteParts, with PartsTable, are the parts each of those entries had
+// complete as the merge of the part that first carried its record left it
+// (PackCompleteParts): the engine's own parts for a record it kept. Both
+// are set when Entries is, and empty when no entry has a complete part.
 type RestoredFile struct {
 	Digest      digest.Digest `json:"digest"`
 	Complete    bool          `json:"complete,omitempty"`
@@ -640,6 +644,9 @@ type RestoredFile struct {
 	FirstCommit int64         `json:"firstCommit,omitempty"`
 	Error       string        `json:"error,omitempty"`
 	Entries     EntryNumbers  `json:"entries,omitempty"`
+
+	PartsTable    []dagql.PersistedPartAddress `json:"partsTable,omitempty"`
+	CompleteParts []byte                       `json:"completeParts,omitempty"`
 }
 
 // RowCounts counts merged records by what their merge did with each
