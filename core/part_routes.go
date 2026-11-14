@@ -58,7 +58,9 @@ func (family foreignFamilyCodec) RouteParts(v dagql.PersistedPayloadVisit, deman
 }
 
 // RouteEachPart routes parts of one payload with one router, so the payload
-// is decoded once: each route and error is what RouteParts gives for it.
+// is decoded once: each route and error is what RouteParts gives for it,
+// without its write set, whose enumeration would read every part of the
+// payload for each part routed.
 func (family foreignFamilyCodec) RouteEachPart(v dagql.PersistedPayloadVisit, parts []dagql.PartKey) ([]dagql.LazyOperationRoute, []error) {
 	routes, errs := make([]dagql.LazyOperationRoute, len(parts)), make([]error, len(parts))
 	router, err := family.newPartRouter(v)
@@ -67,7 +69,7 @@ func (family foreignFamilyCodec) RouteEachPart(v dagql.PersistedPayloadVisit, pa
 			routes[i], errs[i] = dagql.LazyOperationRoute{Group: dagql.LazyGroupAddress{OutputPath: slices.Clone(v.Path)}}, err
 			continue
 		}
-		routes[i], errs[i] = router.route(part, true)
+		routes[i], errs[i] = router.route(part, false)
 	}
 	return routes, errs
 }
