@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"path/filepath"
 	"runtime"
@@ -1765,4 +1766,95 @@ func TestHolderClosureInPiecesIsOneState(t *testing.T) {
 	require.Positive(t, pieces)
 	require.Contains(t, [][]HolderKey{before, after}, got, "the closure is one state's, whole")
 	require.Equal(t, after, cloud.HolderClosure(root))
+}
+
+// HolderGraph reads the closures of several holdings as one graph: each
+// holding in any of them once, with its dependencies that are holdings,
+// so that each root's closure (HolderClosure) is what it reaches. Here
+// two roots share a chain, one holding's dependency was never attached,
+// two holdings an engine turned around depend on each other, and one root
+// is held nowhere.
+func TestHolderGraphIsTheClosuresTogether(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	a.call(callRow{key: HolderKey{engine, 1}, session: "s", holding: holdingOf("graph-leaf")})
+	a.call(callRow{key: HolderKey{engine, 2}, session: "s", holding: holdingOf("graph-mid", 1, 99)})
+	a.call(callRow{key: HolderKey{engine, 3}, session: "s", holding: holdingOf("graph-left", 2)})
+	a.call(callRow{key: HolderKey{engine, 4}, session: "s", holding: holdingOf("graph-right", 2, 5)})
+	a.call(callRow{key: HolderKey{engine, 5}, session: "s", holding: holdingOf("graph-turned")})
+	a.call(callRow{key: HolderKey{engine, 6}, session: "s", holding: holdingOf("graph-around", 5)})
+	a.call(callRow{key: HolderKey{engine, 5}, session: "s", holding: holdingOf("graph-turned", 6)})
+	a.call(callRow{key: HolderKey{"cache-b", 7}, session: "s", holding: holdingOf("graph-other", 1)})
+
+	graph := cloud.HolderGraph(engine, []uint64{3, 4, 42})
+	require.Equal(t, map[uint64][]uint64{1: nil, 2: {1}, 3: {2}, 4: {2, 5}, 5: {6}, 6: {5}}, graph)
+	for _, root := range []uint64{3, 4, 42} {
+		var reached []HolderKey
+		seen := map[uint64]bool{}
+		var reach func(uint64)
+		reach = func(n uint64) {
+			if seen[n] {
+				return
+			}
+			if _, ok := graph[n]; !ok {
+				return
+			}
+			seen[n] = true
+			reached = append(reached, HolderKey{engine, n})
+			for _, dep := range graph[n] {
+				reach(dep)
+			}
+		}
+		reach(root)
+		slices.SortFunc(reached, compareHolderKeys)
+		require.Equal(t, cloud.HolderClosure(HolderKey{engine, root}), reached, "root %d reaches its closure", root)
+	}
+	require.Empty(t, cloud.HolderGraph("cache-none", []uint64{1}))
+}
+
+// HolderGraph reads in pieces, letting the graph lock go between them, and
+// is still one state's graph, as HolderClosure is
+// (TestHolderClosureInPiecesIsOneState).
+func TestHolderGraphInPiecesIsOneState(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	const chain = 10
+	before := map[uint64][]uint64{}
+	for n := uint64(1); n <= chain; n++ {
+		var deps []uint64
+		if n > 1 {
+			deps = []uint64{n - 1}
+		}
+		a.call(callRow{key: HolderKey{engine, n}, session: "s", holding: holdingOf(fmt.Sprintf("graph-chain-%d", n), deps...)})
+		before[n] = deps
+	}
+	underRoot, underLeaf := uint64(100), uint64(101)
+	after := maps.Clone(before)
+	after[chain] = []uint64{chain - 1, underRoot}
+	after[1] = []uint64{underLeaf}
+	after[underRoot], after[underLeaf] = nil, nil
+	require.Equal(t, before, cloud.HolderGraph(engine, []uint64{chain}))
+
+	cloud.readPieceSize = 3
+	pieces, wrote := 0, false
+	cloud.testReadPieceYielded = func() {
+		pieces++
+		if wrote {
+			return
+		}
+		wrote = true
+		a.call(callRow{key: HolderKey{engine, underRoot}, session: "s", holding: holdingOf("graph-under-root")})
+		a.call(callRow{key: HolderKey{engine, underLeaf}, session: "s", holding: holdingOf("graph-under-leaf")})
+		a.call(callRow{key: HolderKey{engine, chain}, session: "s", holding: holdingOf(fmt.Sprintf("graph-chain-%d", chain), chain-1, underRoot)})
+		a.call(callRow{key: HolderKey{engine, 1}, session: "s", holding: holdingOf("graph-chain-1", underLeaf)})
+	}
+	got := cloud.HolderGraph(engine, []uint64{chain})
+	require.True(t, wrote, "the walk let go between its pieces")
+	require.Positive(t, pieces)
+	require.Contains(t, []map[uint64][]uint64{before, after}, got, "the graph is one state's, whole")
+	require.Equal(t, after, cloud.HolderGraph(engine, []uint64{chain}))
 }

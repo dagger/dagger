@@ -1675,6 +1675,73 @@ func (c *Cache) holderClosureLocked(key HolderKey) []HolderKey {
 	return keys
 }
 
+// HolderGraph returns the holdings in the closures of an engine cache's
+// holdings numbered roots (HolderClosure), each with its dependencies that
+// are holdings of the cache: the closures' graph, read in one walk however
+// much they overlap. A holding in the closures of a thousand roots is read
+// once, where a HolderClosure of each would read it a thousand times. A
+// root the cache holds nothing for adds nothing. Like HolderClosure, it
+// reads in pieces, and its answer is still one state's.
+func (c *Cache) HolderGraph(cache CacheID, roots []uint64) map[uint64][]uint64 {
+	for range holderClosureTries {
+		r := c.readInPieces()
+		graph, ok := c.holderGraphLocked(cache, roots, r)
+		r.done()
+		if ok {
+			return graph
+		}
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	graph, _ := c.holderGraphLocked(cache, roots, nil)
+	return graph
+}
+
+// holderGraphLocked is HolderGraph's walk, in the pieces of r, or in one
+// hold when r is nil. It reports false when the cache's holdings changed
+// between two pieces: its graph would mix two states. Requires egraphMu,
+// which r holds when it isn't nil.
+func (c *Cache) holderGraphLocked(cache CacheID, roots []uint64, r *readPieces) (map[uint64][]uint64, bool) {
+	graph := map[uint64][]uint64{}
+	state := c.remoteCaches[cache]
+	if state == nil {
+		return graph, true
+	}
+	version := state.graphVersion
+	seen := make(map[uint64]bool, len(roots))
+	var stack []uint64
+	for _, root := range roots {
+		if !seen[root] {
+			seen[root] = true
+			stack = append(stack, root)
+		}
+	}
+	for len(stack) > 0 {
+		number := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if _, h := c.holdingLocked(HolderKey{Cache: cache, Number: number}); h != nil {
+			graph[number] = slices.Clone(h.deps)
+			for _, dep := range h.deps {
+				if !seen[dep] {
+					seen[dep] = true
+					stack = append(stack, dep)
+				}
+			}
+		}
+		if r != nil && len(stack) > 0 && r.step() && (c.remoteCaches[cache] != state || state.graphVersion != version) {
+			return nil, false
+		}
+	}
+	// A dependency with no holding is skipped, as HolderClosure skips it.
+	for number, deps := range graph {
+		graph[number] = slices.DeleteFunc(deps, func(dep uint64) bool {
+			_, held := graph[dep]
+			return !held
+		})
+	}
+	return graph, true
+}
+
 // RemoteEntryInfo describes an entry and every holding on it.
 type RemoteEntryInfo struct {
 	// Number is the entry's number in this cache.

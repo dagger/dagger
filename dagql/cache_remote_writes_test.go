@@ -23,6 +23,7 @@ type remoteWriteOps interface {
 	CollectRemoteHoldings(context.Context, []HolderKey) ([]HolderKey, RemoteChange, error)
 	RemoteHoldingInfo(HolderKey) (RemoteHeldEntry, bool)
 	HolderClosure(HolderKey) []HolderKey
+	HolderGraph(CacheID, []uint64) map[uint64][]uint64
 	EntryClassEntries(uint64) (EntryClass, bool)
 }
 
@@ -134,6 +135,9 @@ func remoteWritesScript(t *testing.T, ctx context.Context, ops remoteWriteOps) [
 				class, ok := ops.EntryClassEntries(held.Number)
 				note(fmt.Sprintf("%s class %v", name, key), class, ok)
 			}
+		}
+		for _, cache := range []CacheID{a, b, c} {
+			note(fmt.Sprintf("%s graph %v", name, cache), ops.HolderGraph(cache, []uint64{1, 2, 3, 4, 5, 6}))
 		}
 	}
 	read("held")
