@@ -293,7 +293,7 @@ func TestLateRemoteMisses(t *testing.T) {
 // its oldest, so a merge that lands late on a long-lived connection is still
 // counted against the recent misses.
 func TestLateRemoteMissesKeepTheRecentMisses(t *testing.T) {
-	_, c, _, _, bridge := lookupTestCache(t)
+	_, c, _, _, bridge := lookupTestCache(t) //nolint:dogsled // the test reads only the cache and its bridge
 	bridge.StartRemoteLookups()
 	l := &bridge.lookups
 	miss := func(i int) RemoteMiss {
