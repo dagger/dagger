@@ -234,6 +234,7 @@ func (c *Cache) ensureEqClassForDigestLocked(ctx context.Context, dig string) eq
 	}
 	id := c.allocEqClassLocked()
 	c.egraphDigestToClass[dig] = id
+	c.forgetCallTermsLocked(dig)
 	digests := c.eqClassToDigests[id]
 	if digests == nil {
 		digests = make(map[string]struct{}, 1)
@@ -313,6 +314,7 @@ func (c *Cache) mergeEqClassesNoRepairLocked(a, b eqClassID) (root eqClassID, ab
 		}
 		for dig := range srcDigests {
 			dstDigests[dig] = struct{}{}
+			c.forgetCallTermsLocked(dig)
 		}
 		delete(c.eqClassToDigests, rb)
 	}
@@ -2351,6 +2353,7 @@ func (c *Cache) maybeResetEgraphLocked() {
 	}
 
 	c.egraphDigestToClass = nil
+	c.callInputEntries = nil
 	c.egraphParents = nil
 	c.egraphRanks = nil
 	c.eqClassToDigests = nil
@@ -2565,6 +2568,8 @@ func (c *Cache) compactEqClassesModeLocked(force, freeAll bool) (changed bool, o
 	c.outputEqClassResults = newOutputEqClassResults
 	c.egraphTermsByTermDigest = newEgraphTermsByTermDigest
 	c.freeEqClassIDs = newFree
+	// Classes have new numbers, which the terms of kept calls name.
+	c.forgetAllCallTermsLocked()
 
 	return true, oldSlots, newSlots
 }
