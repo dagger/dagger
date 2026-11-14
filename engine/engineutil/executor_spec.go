@@ -1428,7 +1428,12 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				http.Error(resp, err.Error(), status)
 				return
 			}
-			c.SessionHandler.ServeHTTPToNestedClient(resp, transports.hostedRequest(req), transport, metadata, transports.parentClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
+			req = transports.hostedRequest(req)
+			if state.execMD != nil && state.execMD.CallerRecipe != "" {
+				// The process's calls are made under the exec's call.
+				req = req.WithContext(dagql.ContextWithCallerRecipe(req.Context(), state.execMD.CallerRecipe))
+			}
+			c.SessionHandler.ServeHTTPToNestedClient(resp, req, transport, metadata, transports.parentClientID, false, state.nestedClientModule, state.nestedClientFunctionCall)
 		}),
 		Protocols: protocols,
 	}
