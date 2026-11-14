@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -324,9 +326,15 @@ func (a *RemoteCacheAdapter) Stop(ctx context.Context) error {
 // logPartPrefetchCounts logs, as the engine stops, what fetching parts ahead
 // of use did over its life: the bytes it downloaded, the part an install then
 // used, the part released unread and the part still held unread, and its
-// jobs by outcome.
+// jobs by outcome. The offers accepted for it, and the bytes downloaded and
+// used by tenth of the order they were accepted in, follow.
 func logPartPrefetchCounts(counts dagql.PartPrefetchCounts) {
-	args := []any{"fetched", counts.Fetched, "used", counts.Used, "unread", counts.Unread, "held", counts.Held}
+	fetched, used := make([]string, len(counts.ByTenth)), make([]string, len(counts.ByTenth))
+	for i, tenth := range counts.ByTenth {
+		fetched[i], used[i] = strconv.FormatInt(tenth.Fetched, 10), strconv.FormatInt(tenth.Used, 10)
+	}
+	args := []any{"fetched", counts.Fetched, "used", counts.Used, "unread", counts.Unread, "held", counts.Held,
+		"offers", counts.Offers, "fetched_by_tenth", strings.Join(fetched, ","), "used_by_tenth", strings.Join(used, ",")}
 	for _, outcome := range slices.Sorted(maps.Keys(counts.Jobs)) {
 		args = append(args, "jobs_"+outcome, counts.Jobs[outcome])
 	}

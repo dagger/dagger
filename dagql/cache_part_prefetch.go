@@ -191,6 +191,12 @@ type partPrefetcher struct {
 	// used and unread are the bytes of downloaded blobs that an install
 	// then used, and that were released unread.
 	used, unread int64
+	// offers counts the offers accepted, which numbers each offer's place
+	// in the order of acceptance; placeFetched and placeUsed are the
+	// downloaded bytes, and the part of them an install then used, by the
+	// place of the offer whose job downloaded them.
+	offers                  int64
+	placeFetched, placeUsed map[int64]int64
 
 	// countMu guards outcomes and fetched, which log counts outside mu.
 	countMu sync.Mutex
@@ -233,6 +239,8 @@ type partPrefetchJob struct {
 	lane     partPrefetchLane
 	record   PersistedPartOffer
 	accepted time.Time
+	// place is its offer's place in the order offers were accepted, from 1.
+	place int64
 	// size is the offer's chain size, and ahead whether the job waits in
 	// the ahead queue.
 	size  int64
@@ -264,6 +272,9 @@ type partPrefetchHold struct {
 	// downloaded is set when prefetching downloaded the blob, rather than
 	// holding one already in the content store.
 	downloaded bool
+	// place is the place, in the order of acceptance, of the offer whose
+	// job downloaded it.
+	place int64
 }
 
 // jobKey is the job's current key. Requires p.mu: a replacement passes the
@@ -296,7 +307,7 @@ func (c *Cache) partPrefetch(ctx context.Context) *partPrefetcher {
 		cfg = *c.partPrefetchConfig
 	}
 	base, cancel := context.WithCancel(context.Background())
-	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, outcomes: map[string]int64{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, changed: make(chan struct{}), consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}, aheadLayers: map[digest.Digest]int{}}
+	p := &partPrefetcher{cache: c, cfg: cfg, snapshot: snapshot, importer: importer, ctx: base, cancel: cancel, logger: slog.FromContext(ctx), wake: make(chan struct{}, 1), jobs: map[partPrefetchJobKey]*partPrefetchJob{}, outcomes: map[string]int64{}, placeFetched: map[int64]int64{}, placeUsed: map[int64]int64{}, holds: map[digest.Digest]*partPrefetchHold{}, fetching: map[digest.Digest]*partPrefetchDownload{}, changed: make(chan struct{}), consumed: map[digest.Digest]time.Time{}, aheads: map[*partOffer]*partPrefetchAhead{}, rows: map[*partOffer]sharedResultID{}, aheadBytes: map[digest.Digest]int64{}, aheadLayers: map[digest.Digest]int{}}
 	p.cond = sync.NewCond(&p.mu)
 	p.wg.Add(cfg.workers + cfg.smallWorkers + 1)
 	for range cfg.workers {
@@ -397,10 +408,12 @@ func (c *Cache) partOfferAccepted(ctx context.Context, row *sharedResult, key st
 		return
 	}
 	p.rows[offer] = row.id
+	p.offers++
 	for _, job := range jobs {
 		if p.jobs[job.jobKey()] != nil {
 			continue
 		}
+		job.place = p.offers
 		// The cap is read under the mutex the worker takes offers under.
 		if job.ahead && p.aheadFullLocked() {
 			job.ahead = false
@@ -640,6 +653,18 @@ type PartPrefetchCounts struct {
 	Unread int64
 	// Held is the part still held, unread so far.
 	Held int64
+	// Offers is how many offers were accepted for prefetch. ByTenth splits
+	// the downloaded bytes, and the part an install then used, by where
+	// their offer sits in the order of acceptance: the first tenth of the
+	// offers, the second, and so on.
+	Offers  int64
+	ByTenth [10]PartPrefetchTenth
+}
+
+// PartPrefetchTenth is the bytes prefetching downloaded for the offers of one
+// tenth of the order of acceptance, and the part of them an install used.
+type PartPrefetchTenth struct {
+	Fetched, Used int64
 }
 
 // PartPrefetchCounts returns what prefetching has done since the cache
@@ -656,6 +681,16 @@ func (c *Cache) PartPrefetchCounts() PartPrefetchCounts {
 	p.countMu.Unlock()
 	p.mu.Lock()
 	counts.Used, counts.Unread = p.used, p.unread
+	counts.Offers = p.offers
+	if p.offers > 0 {
+		tenth := func(place int64) int { return int((place - 1) * 10 / p.offers) }
+		for place, n := range p.placeFetched {
+			counts.ByTenth[tenth(place)].Fetched += n
+		}
+		for place, n := range p.placeUsed {
+			counts.ByTenth[tenth(place)].Used += n
+		}
+	}
 	for _, h := range p.holds {
 		if h.downloaded {
 			counts.Held += h.bytes
@@ -695,6 +730,7 @@ func (c *Cache) partPrefetchConsumed(ctx context.Context, layers []snapshots.Exp
 			p.held -= h.bytes
 			if h.downloaded {
 				p.used += h.bytes
+				p.placeUsed[h.place] += h.bytes
 			}
 			p.dropped = append(p.dropped, h)
 			idle = true
@@ -1269,17 +1305,21 @@ func (p *partPrefetcher) settle(job *partPrefetchJob, desc ocispecs.Descriptor, 
 	p.cancelUnwantedLocked(job)
 	_, consumed := p.consumed[desc.Digest]
 	delete(p.consumed, desc.Digest)
+	if downloaded {
+		p.placeFetched[job.place] += desc.Size
+	}
 	if !fetched || len(offers) == 0 || consumed || p.closed {
 		p.held -= desc.Size
 		switch {
 		case downloaded && consumed:
 			p.used += desc.Size
+			p.placeUsed[job.place] += desc.Size
 		case downloaded:
 			p.unread += desc.Size
 		}
 		return release
 	}
-	p.holds[desc.Digest] = &partPrefetchHold{bytes: desc.Size, release: release, offers: offers, expires: job.accepted.Add(p.cfg.ttl), downloaded: downloaded}
+	p.holds[desc.Digest] = &partPrefetchHold{bytes: desc.Size, release: release, offers: offers, expires: job.accepted.Add(p.cfg.ttl), downloaded: downloaded, place: job.place}
 	for offer := range offers {
 		p.checkAheadLocked(offer)
 	}
