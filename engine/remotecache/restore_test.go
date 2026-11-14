@@ -593,3 +593,51 @@ func TestRestoreHoldsEachPartUntilTheFileEnds(t *testing.T) {
 		})
 	}
 }
+
+// A file's restore line says how its download began: how long the GET
+// waited for a connection, whether that connection was new, and its time to
+// the response's first byte. A head fetched in 1.1 s where its engine's
+// other heads took 21 ms made a check miss its own results, and the line
+// gave the download's total alone.
+func TestRestoreLogsHowItsDownloadBegan(t *testing.T) {
+	t.Parallel()
+	adapter := newFakeAdapter()
+	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+		return merged(part, time.Now()), nil
+	}
+	s, conn, logs := loggedSession(t, adapter)
+	s.cfg.peakRSS = func() int64 { return 0 }
+	// A transport of its own: the default one's idle connections are
+	// shared with every test, which can close this one's.
+	transport := &http.Transport{}
+	t.Cleanup(transport.CloseIdleConnections)
+	s.cfg.getFile = getSetFile(&http.Client{Transport: transport}, restoreIdleTimeout)
+	s.go_(s.restorer.run)
+	files := newFileServer(t)
+	slow := files.add("slow", setFile(t, dagql.ValueBundleVersion, part(1)))
+	gate := files.gate("slow")
+	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("c", &slow, nil)))
+	// The store holds its first byte from the GET's arrival for held, so
+	// the first byte comes at least held after the GET began.
+	require.Eventually(t, func() bool { return files.getsOf("slow") == 1 }, 10*time.Second, time.Millisecond)
+	const held = 200 * time.Millisecond
+	time.Sleep(held)
+	close(gate)
+	require.True(t, decode[protocol.Restored](t, conn.next(t)).Files[0].Complete)
+
+	fast := files.add("fast", setFile(t, dagql.ValueBundleVersion, part(2)))
+	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("d", &fast, nil)))
+	require.True(t, decode[protocol.Restored](t, conn.next(t)).Files[0].Complete)
+
+	lines := logs.waitLines(t, "remote cache restore", 2)
+	byCheck := map[string]map[string]any{}
+	for _, line := range lines {
+		byCheck[line["check"].(string)] = line
+	}
+	first, second := byCheck["c"], byCheck["d"]
+	require.GreaterOrEqual(t, logDuration(t, first, "fetch_ttfb"), held, "the first byte waited for the store")
+	require.LessOrEqual(t, logDuration(t, first, "fetch_ttfb"), logDuration(t, first, "fetch"))
+	require.Equal(t, true, first["fetch_new_conn"], "the store's first GET opens a connection")
+	require.Equal(t, false, second["fetch_new_conn"], "the next GET reuses it")
+	require.LessOrEqual(t, logDuration(t, second, "fetch_conn"), logDuration(t, second, "fetch_ttfb"))
+}
