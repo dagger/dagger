@@ -252,12 +252,6 @@ func (r *restorer) lane(heads bool) {
 	if heads {
 		queued = r.headQueued
 	}
-	var dec *zstd.Decoder
-	defer func() {
-		if dec != nil {
-			dec.Close()
-		}
-	}()
 	for ctx.Err() == nil {
 		f := r.pick(heads)
 		if f == nil {
@@ -273,15 +267,8 @@ func (r *restorer) lane(heads bool) {
 		case <-ctx.Done():
 			return
 		}
-		if dec == nil {
-			var err error
-			if dec, err = zstd.NewReader(nil, zstd.WithDecoderConcurrency(1)); err != nil {
-				r.finish(f, err)
-				continue
-			}
-		}
 		if ctx.Err() == nil {
-			r.step(ctx, dec, f)
+			r.step(ctx, f)
 		}
 	}
 }
@@ -302,7 +289,7 @@ func (r *restorer) pick(heads bool) *restoreFile {
 
 // step opens a fetched file, or merges its next part, and finishes it once
 // it has no part left or something stopped it.
-func (r *restorer) step(ctx context.Context, dec *zstd.Decoder, f *restoreFile) {
+func (r *restorer) step(ctx context.Context, f *restoreFile) {
 	if !f.opened {
 		if err := r.open(f); err != nil {
 			r.finish(f, err)
@@ -313,7 +300,7 @@ func (r *restorer) step(ctx context.Context, dec *zstd.Decoder, f *restoreFile) 
 			return
 		}
 	}
-	if err := r.mergePart(ctx, dec, f); err != nil {
+	if err := r.mergePart(ctx, f); err != nil {
 		r.finish(f, err)
 		return
 	}
@@ -345,8 +332,8 @@ func (r *restorer) open(f *restoreFile) error {
 // mergePart decodes the file's next part, fills in its download addresses
 // from the file's table, merges it, and counts the misses it would have
 // served.
-func (r *restorer) mergePart(ctx context.Context, dec *zstd.Decoder, f *restoreFile) error {
-	bundle, err := protocol.DecodeSetFilePart(dec, f.parts[f.next])
+func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
+	bundle, err := decodePart(f.parts[f.next])
 	if err != nil {
 		return fmt.Errorf("part %d: %w", f.next, err)
 	}
@@ -369,6 +356,19 @@ func (r *restorer) mergePart(ctx context.Context, dec *zstd.Decoder, f *restoreF
 	r.lateMisses(reply, &part)
 	f.report.Parts = append(f.report.Parts, part)
 	return nil
+}
+
+// decodePart decodes one part of a set file with a decoder of its own,
+// closed once the part is decoded: a decoder kept from one part to the next
+// keeps the last part's decompressed bytes, 236 MB for test-base's whole
+// set.
+func decodePart(part []byte) (dagql.ValueBundle, error) {
+	dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
+	if err != nil {
+		return dagql.ValueBundle{}, err
+	}
+	defer dec.Close()
+	return protocol.DecodeSetFilePart(dec, part)
 }
 
 // lateMisses counts, for a committed part, the misses before its commit
