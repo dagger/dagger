@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -186,6 +187,7 @@ func TestRestoreMergesAFilesParts(t *testing.T) {
 		Records:     2,
 		Rows:        protocol.RowCounts{Created: 2},
 		FirstCommit: commit.UnixNano(),
+		Entries:     protocol.EntryNumbers{11, 12},
 	}}, restored.Files)
 
 	report := nextReport(t, adapter)
@@ -640,4 +642,53 @@ func TestRestoreLogsHowItsDownloadBegan(t *testing.T) {
 	require.Equal(t, true, first["fetch_new_conn"], "the store's first GET opens a connection")
 	require.Equal(t, false, second["fetch_new_conn"], "the next GET reuses it")
 	require.LessOrEqual(t, logDuration(t, second, "fetch_conn"), logDuration(t, second, "fetch_ttfb"))
+}
+
+// A complete file's reply names the entry each record it carries in full
+// landed on, in the file's order: part by part, each record at its first
+// appearance, held rows left out, and 0 for a record that landed nowhere.
+// A file that didn't complete names none.
+func TestRestoreRepliesWithEachRecordsEntry(t *testing.T) {
+	t.Parallel()
+	first := dagql.ValueBundle{Version: dagql.ValueBundleVersion, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{
+		{Ordinal: 1, SenderNumber: 12},
+		{Ordinal: 2, SenderNumber: 11},
+	}}
+	second := dagql.ValueBundle{Version: dagql.ValueBundleVersion, Roots: []dagql.TransferredRoot{{Ordinal: 1}}, Values: []dagql.TransferredValue{
+		{Ordinal: 1, SenderNumber: 13},
+		{Ordinal: 2, SenderNumber: 11},
+		{Ordinal: 3, SenderNumber: 14, Held: "xxh3:14"},
+		{Ordinal: 4, SenderNumber: 15},
+	}}
+	for _, refuse := range []bool{false, true} {
+		t.Run(fmt.Sprint("refused=", refuse), func(t *testing.T) {
+			t.Parallel()
+			adapter := newFakeAdapter()
+			adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
+				if refuse && part.Values[0].SenderNumber == 13 {
+					return dagql.MergeReply{}, errors.New("refused")
+				}
+				reply := dagql.MergeReply{Committed: true, EngineTimeUnixNano: time.Now().UnixNano()}
+				for _, value := range part.Values {
+					if value.SenderNumber == 15 {
+						continue // landed nowhere
+					}
+					reply.Values = append(reply.Values, dagql.MergedValue{Ordinal: value.Ordinal, Number: value.SenderNumber * 10})
+				}
+				return reply, nil
+			}
+			s, conn := restoreSession(t, adapter)
+			files := newFileServer(t)
+			whole := files.add("whole", setFile(t, dagql.ValueBundleVersion, first, second))
+			s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("c", nil, &whole)))
+			file := decode[protocol.Restored](t, conn.next(t)).Files[0]
+			if refuse {
+				require.False(t, file.Complete)
+				require.Empty(t, file.Entries, "a file that didn't complete names no entries")
+				return
+			}
+			require.True(t, file.Complete)
+			require.Equal(t, protocol.EntryNumbers{120, 110, 130, 0}, file.Entries)
+		})
+	}
 }
