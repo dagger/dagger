@@ -322,6 +322,7 @@ func init() {
 
 	for _, cmd := range []*cobra.Command{
 		apiFunctionsCmd,
+		apiSchemaCmd,
 		functionsAliasCmd,
 		moduleUpdateCmd,
 		moduleVersionCmd,
