@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  A check selection such as `dagger check --go-package=lib` no longer narrows collections read while resolving a module setting or default address (e.g. `base = "dag://repro/base"`), or while an SDK builds a module's runtime. These failed with `does not contain key "…" in the current subset` whenever any selection was active.
+time: 2026-11-15T02:15:00Z
+custom:
+  Author: vito
+  PR: "15185"
