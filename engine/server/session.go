@@ -3135,9 +3135,11 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
-	if client.fnCall != nil && client.fnCall.ResultScope != nil {
-		ctx = dagql.WithResultScope(ctx, client.fnCall.ResultScope)
-	}
+	// A function's requests start outside its caller's result scope. An
+	// artifact view rides on the objects the function receives (its receiver,
+	// its arguments and what it reaches through them), so the function sees
+	// the selection it was handed; what it builds itself, or asks of other
+	// modules, is not narrowed.
 
 	// A module client's typedef constructors name the module's declarations
 	// by the module's rules, even when the client declared a core view of
