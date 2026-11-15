@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  A check selection such as `dagger check --go-package=lib` no longer narrows collections that module code builds or asks other modules for, such as those read while resolving a setting like `base = "dag://repro/base"` or while an SDK builds a module's runtime. These failed with `does not contain key "…" in the current subset` whenever any selection was active. Functions still see the selection through the objects they receive.
+time: 2026-11-15T22:45:00Z
+custom:
+  Author: vito
+  PR: "15188"
