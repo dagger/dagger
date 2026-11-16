@@ -739,9 +739,11 @@ func (GoSuite) TestGoProxyDefault(ctx context.Context, t *testctx.T) {
 	}
 }
 
-// A fresh engine takes the built-in Go SDK's container from its image's
-// entries, as the image's build made it: its first Go module load runs none
-// of the calls that made it, such as installing git and SSH.
+// A fresh engine takes what a Go module load needs from its image's entries:
+// its first load of a small module runs none of the calls that made them. It
+// doesn't install git and SSH for the Go SDK's container, build a tool such
+// as gobuild's, or download a dependency into the module cache; it only
+// compiles the module's own packages.
 func (GoSuite) TestBuiltinSDKFromImageEntries(ctx context.Context, t *testctx.T) {
 	outer := connect(ctx, t)
 	logs := core.NewQuery(outer).CacheVolume("go-sdk-image-entries-log-" + rand.Text())
@@ -775,5 +777,16 @@ func (GoSuite) TestBuiltinSDKFromImageEntries(ctx context.Context, t *testctx.T)
 		WithExec([]string{"cat", "/log/engine.log"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, log, `msg="starting container"`, "the log records the load's containers")
-	require.NotContains(t, log, `args="[/.init apk add`, "the Go SDK's container comes from the image's entries")
+	var made []string
+	for _, line := range strings.Split(log, "\n") {
+		if !strings.Contains(line, `msg="starting container"`) {
+			continue
+		}
+		if strings.Contains(line, `args="[/.init apk add`) || // the Go SDK's container
+			strings.Contains(line, `args="[go build -o `) || // a tool
+			strings.Contains(line, `mkdir -p '/gobuild/modcache/`) { // a dependency's download into its module@version directory
+			made = append(made, line)
+		}
+	}
+	require.Empty(t, made, "the load made again what the image's entries hold")
 }
