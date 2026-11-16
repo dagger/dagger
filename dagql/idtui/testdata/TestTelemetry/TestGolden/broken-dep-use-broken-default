@@ -2,6 +2,7 @@ Expected stderr:
 
 ✔ connect X.Xs
 ✘ load workspace: . X.Xs ERROR
+  ✔ uploading /tmp/gobuild-dependencies-XXXXXXXXXX X.Xs ████████████ X.X B
 ┇ loading type definitions › load extra module: ./viztest/broken-dep › ModuleSource.asModule › load dep modules › ModuleSource.asModule › module SDK: load runtime ›
 ✘ withExec sh /gobuild/build.sh dagger/broken (disableDaggerInDagger: true, noInit: true) X.Xs ERROR
 ./main.go:6:6: undefined: ctx
