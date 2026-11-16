@@ -1059,9 +1059,9 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	require.Equal(t, http.StatusOK, status, "%s", body)
 	require.Eventually(t, func() bool {
 		_, body := request(http.MethodGet, "/screen", "")
-		last = body
+		last.Store(body)
 		return strings.Contains(body, execText)
-	}, time.Minute, 100*time.Millisecond, "restored history span did not show its output: %s", last)
+	}, time.Minute, 100*time.Millisecond, "restored history span did not show its output")
 
 	// Ctrl+D on the empty prompt leaves the session: quietly, and pointing at
 	// how to come back to it.
