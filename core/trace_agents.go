@@ -379,7 +379,7 @@ func (r *agentRoster) transcript(ctx context.Context, c conversation) (idtui.Tra
 	} else {
 		// No control record named a checkpoint: the decode infers one from
 		// the calls traced under the agent's own loop spans.
-		if _, err := r.loadSubtreeConversation(ctx, agent.SpanIDs, agent.ID); err != nil {
+		if _, err := r.loadSubtreeConversation(ctx, agent.SpanIDs); err != nil {
 			return agent, idtui.TraceTranscript{}, err
 		}
 	}
@@ -466,7 +466,7 @@ func (r *agentRoster) loadCalls(ctx context.Context, digests ...string) error {
 // loadSpanConversation loads the conversation traced beneath span outside
 // any agent, reporting whether there is one.
 func (r *agentRoster) loadSpanConversation(ctx context.Context, spanID string) (bool, error) {
-	found, err := r.loadSubtreeConversation(ctx, []string{spanID}, "")
+	found, err := r.loadSubtreeConversation(ctx, []string{spanID})
 	if err != nil || !found {
 		return false, err
 	}
@@ -477,7 +477,7 @@ func (r *agentRoster) loadSpanConversation(ctx context.Context, spanID string) (
 // into other agents' loop spans, and bounded by transcriptInferMaxSpans --
 // and the spines of the LLM message calls they traced, which is what
 // inferring a conversation tip needs. It reports whether any were found.
-func (r *agentRoster) loadSubtreeConversation(ctx context.Context, roots []string, agentID string) (bool, error) {
+func (r *agentRoster) loadSubtreeConversation(ctx context.Context, roots []string) (bool, error) {
 	if len(roots) == 0 {
 		return false, nil
 	}

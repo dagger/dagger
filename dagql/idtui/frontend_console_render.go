@@ -29,7 +29,7 @@ const (
 func consoleText(w http.ResponseWriter, text string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(text))
+	_, _ = w.Write([]byte(text)) //nolint:gosec // G705: plain text, never rendered as HTML.
 }
 
 // renderConsoleAgents renders the roster as an indented tree, one agent per
