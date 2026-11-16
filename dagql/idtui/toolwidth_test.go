@@ -155,18 +155,22 @@ func TestToolOutputFitsItsRow(t *testing.T) {
 				return strings.Join(fe.tui.Frame(), "\n")
 			}
 
-			// Collapsed, the CHECKS rollup nests the test's whole log.
+			// Collapsed, the CHECKS rollup nests the test's whole log, in place
+			// of the call's output (see hidesToolResult).
 			collapsed := []string{output}
 			if c.rollup {
-				collapsed = append(collapsed, testLog)
+				collapsed = []string{testLog}
 			}
 			fits("collapsed", frame(), collapsed...)
 
-			// Expanded, the check's own row tails its test's log.
+			// Expanded, the output shows, and the check's own row tails its
+			// test's log.
 			fe.setExpanded(toolID, true)
+			fe.syncAfterExpandToggle(toolID)
 			fits("expanded", frame(), output)
 
 			fe.setExpanded(toolID, false)
+			fe.syncAfterExpandToggle(toolID)
 			fe.shell = nil
 			var buf bytes.Buffer
 			if err := fe.FinalRender(&buf); err != nil {

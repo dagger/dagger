@@ -135,7 +135,33 @@ func isToolCallDisplay(span *dagui.Span) bool {
 	return span != nil && span.LLMRole != "" && span.LLMTool != ""
 }
 
-func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dagui.TraceRow, focused bool) []string {
+// hidesToolResult reports whether a tool call leaves its raw result -- the
+// logs on its span, as the model received them -- out of its collapsed row,
+// because the row already renders it, richer: Read's and Grep's header (see
+// DB.CollapsesToolOutput), a DangCheck's, with its status (see
+// renderToolOutputSummary), the file a Write wrote, as its code body, or,
+// rolledUp, rollups of what the call ran (its CHECKS, TESTS or GENERATORS).
+// Expanding the row shows it. A call that errored always shows
+// it, and so does a DangEval: its body is the snippet, and its result the
+// value nothing else shows.
+func (fe *frontendPretty) hidesToolResult(span *dagui.Span, rolledUp bool) bool {
+	if !isToolCallDisplay(span) || span.IsFailed() {
+		return false
+	}
+	if fe.db.CollapsesToolOutput(span) {
+		return true
+	}
+	view := fe.db.ToolCallView(span)
+	if snippet, isDang := view.DangSnippet(); isDang {
+		return snippet.Check
+	}
+	if file, isWrite := view.WriteFile(); isWrite && strings.TrimSpace(file.Contents) != "" {
+		return true
+	}
+	return rolledUp
+}
+
+func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dagui.TraceRow, focused, rolledUp bool) []string {
 	span := row.Span
 	if span.Message != "" || (!row.Expanded && span.LLMTool == "") {
 		return nil
@@ -173,16 +199,18 @@ func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dag
 	logPrefix, trimPrefix := s.fe.logLinePrefixes(styleOut, r, row, "", focused)
 
 	var lines []string
-	// A Dang snippet is the call, as Write's contents are: show it as code,
-	// in place of its JSON arguments.
+	// A Dang snippet is the call, as Write's contents are: show it as code.
 	source := s.fe.toolBodyRows(r, row)
 	lines = append(lines, source...)
-	if !s.fe.hasToolBody(span) && isToolCallDisplay(span) && s.fe.spanVerbosity(span) >= toolArgsVerbosity {
+	// Its JSON arguments, as the model wrote them, show beneath, at a
+	// verbosity for looking under the hood -- every call's, rendered richer
+	// or not.
+	if isToolCallDisplay(span) && s.fe.spanVerbosity(span) >= toolArgsVerbosity {
 		argsView := s.fe.getOrCreateLogsView(span.ID, true)
 		argsView.sync(logPrefix, trimPrefix, limit, s.fe.finalRender, false)
 		lines = append(lines, s.RenderChildResult(ctx, argsView).Lines...)
 	}
-	if s.fe.db.CollapsesToolOutput(span) && !row.Expanded {
+	if !row.Expanded && s.fe.hidesToolResult(span, rolledUp) {
 		return lines
 	}
 

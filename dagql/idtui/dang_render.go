@@ -69,6 +69,13 @@ func (r *renderer) renderToolCallTitle(out TermOutput, span *dagui.Span) bool {
 		if at := dagui.SanitizeInline(firstLineOf(snippet.At)); at != "" {
 			fmt.Fprint(out, " ", out.String(at).Foreground(termenv.ANSICyan))
 		}
+		if snippet.Check {
+			// A check is its snippet's first line: its body shows only
+			// expanded (see toolBodyRows).
+			if source := dangCheckSummary(snippet.Source); source != "" {
+				fmt.Fprint(out, " ", source)
+			}
+		}
 		if search := dagui.SanitizeInline(firstLineOf(snippet.Search)); search != "" {
 			fmt.Fprint(out, " ", out.String("search "+strconv.Quote(search)).Faint())
 		}
@@ -95,28 +102,49 @@ func firstLineOf(s string) string {
 	return strings.TrimSpace(line)
 }
 
+// dangCheckSummaryWidth bounds the source a DangCheck's header shows.
+const dangCheckSummaryWidth = 60
+
+// dangCheckSummary is the source a DangCheck's header shows: its first line
+// with text on it, cut to dangCheckSummaryWidth cells, and an ellipsis if
+// there is more.
+func dangCheckSummary(source string) string {
+	source = strings.TrimSpace(normalizeSource(source))
+	line, rest, _ := strings.Cut(source, "\n")
+	line = dagui.SanitizeInline(strings.TrimSpace(line))
+	if ansi.StringWidth(line) > dangCheckSummaryWidth {
+		return ansi.Truncate(line, dangCheckSummaryWidth, "…")
+	}
+	if strings.TrimSpace(rest) != "" {
+		return line + " …"
+	}
+	return line
+}
+
 // codeBodyCollapsedLines is how many lines of a code body a collapsed tool
 // call shows; expanding the call shows the rest.
 const codeBodyCollapsedLines = 16
 
 // codeBody is code a tool call shows as its body: a Dang snippet's source,
-// or the contents Write writes (file), and how it's highlighted.
+// or the contents Write writes (file), and how it's highlighted. A
+// DangCheck's (check) shows only expanded: its header has its first line.
 type codeBody struct {
 	source string
 	lang   codeLang
 	file   bool
+	check  bool
 }
 
-// toolCodeBody returns the code a tool-call span shows as its body, in place
-// of its JSON arguments, if it is a call that has one -- even before any of
-// it has arrived -- and whether it's still streaming in.
+// toolCodeBody returns the code a tool-call span shows as its body, if it is
+// a call that has one -- even before any of it has arrived -- and whether
+// it's still streaming in.
 func (fe *frontendPretty) toolCodeBody(span *dagui.Span) (body codeBody, streaming, ok bool) {
 	if !isToolCallDisplay(span) || !dagui.RendersToolArgs(span.LLMTool) {
 		return codeBody{}, false, false
 	}
 	view := fe.db.ToolCallView(span)
 	if snippet, isDang := view.DangSnippet(); isDang {
-		body = codeBody{source: snippet.Source, lang: dangCode}
+		body = codeBody{source: snippet.Source, lang: dangCode, check: snippet.Check}
 	} else if file, isWrite := view.WriteFile(); isWrite {
 		body = codeBody{source: file.Contents, lang: codeLangForPath(file.Path), file: true}
 	} else {
@@ -125,19 +153,15 @@ func (fe *frontendPretty) toolCodeBody(span *dagui.Span) (body codeBody, streami
 	return body, view.Streaming, true
 }
 
-// hasToolBody reports whether a tool-call span shows a code body (see
-// toolCodeBody) in place of its JSON arguments.
-func (fe *frontendPretty) hasToolBody(span *dagui.Span) bool {
-	_, _, ok := fe.toolCodeBody(span)
-	return ok
-}
-
 // toolBodyRows renders a tool-call row's code body (toolBodyLines) beneath
 // its title, indented to line up with the call, and sized to the width the
 // row's logs wrap to. A collapsed row shows the first codeBodyCollapsedLines
-// lines.
+// lines, or, for a DangCheck, none.
 func (fe *frontendPretty) toolBodyRows(r *renderer, row *dagui.TraceRow) []string {
 	if !isToolCallDisplay(row.Span) || !dagui.RendersToolArgs(row.Span.LLMTool) {
+		return nil
+	}
+	if body, _, ok := fe.toolCodeBody(row.Span); ok && body.check && !row.Expanded {
 		return nil
 	}
 	if parent := row.Span.ParentSpan; parent != nil && fe.db.WrappedCallSpan(parent) == row.Span {

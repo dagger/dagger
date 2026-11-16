@@ -818,6 +818,29 @@ func (term *Vterm) PrintTail(n int) ([]string, int) {
 	return lines, rows
 }
 
+// RawTail returns the last n lines of the bytes written to the log, as text:
+// unwrapped, escape sequences stripped, without the final newline's empty
+// line. Only the tail of the log is read.
+func (term *Vterm) RawTail(n int) []string {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	raw := bytes.TrimRight(term.rawBuf.Bytes(), "\n")
+	start := len(raw)
+	for range n {
+		i := bytes.LastIndexByte(raw[:start], '\n')
+		if i < 0 {
+			start = 0
+			break
+		}
+		start = i
+	}
+	tail := strings.TrimPrefix(ansi.Strip(string(raw[start:])), "\n")
+	if tail == "" {
+		return nil
+	}
+	return strings.Split(tail, "\n")
+}
+
 // PrintRaw prints the bytes written to the log terminal without applying any
 // terminal wrapping or markdown rendering.
 func (term *Vterm) PrintRaw(w io.Writer) error {

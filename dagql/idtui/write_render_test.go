@@ -177,7 +177,7 @@ func TestConversationReportRendersWrite(t *testing.T) {
 	fe.profile = termenv.Ascii
 	report := func() string {
 		var buf strings.Builder
-		fe.renderMessageLogs(NewOutput(&buf, termenv.WithProfile(termenv.Ascii)), db.Spans.Map[toolID], 0)
+		fe.renderMessageLogs(NewOutput(&buf, termenv.WithProfile(termenv.Ascii)), db.Spans.Map[toolID], 0, false)
 		return buf.String()
 	}
 	got := report()
@@ -195,9 +195,10 @@ func TestConversationReportRendersWrite(t *testing.T) {
 // TestStreamingWriteRendersItsContents covers a Write while the model writes
 // its arguments, at a verbosity that shows tool calls' JSON arguments: its
 // header names the file once its path is whole, and its contents grow
-// beneath it as code, each line highlighted once it's whole, in place of
-// its JSON arguments. Once it ends, its result shows beneath them, and its
-// header and body are what they were.
+// beneath it as code, each line highlighted once it's whole, its JSON
+// arguments beneath them. Once it ends, its header and body are what they
+// were, and its result, which the body already shows, shows beneath them
+// once the row is expanded.
 func TestStreamingWriteRendersItsContents(t *testing.T) {
 	// Never hold a highlight back for being too soon after the last.
 	now := time.Unix(0, 0)
@@ -214,7 +215,6 @@ func TestStreamingWriteRendersItsContents(t *testing.T) {
 	var named, partial, highlighted bool
 	l.stream(liveTimeout, liveWriteArgs, 6, func(frame string) {
 		plain := stripANSICodes(frame)
-		require.NotContains(t, plain, `{"filePath"`, "JSON arguments shown:\n%s", plain)
 		header := lineWith(plain, "editor Write")
 		require.NotEmpty(t, header, plain)
 		if !strings.Contains(header, "tmp/stream-test.go") {
@@ -257,10 +257,15 @@ func TestStreamingWriteRendersItsContents(t *testing.T) {
 	require.Contains(t, got, "• editor Write tmp/stream-test.go", got)
 	require.Contains(t, lineWith(got, "editor Write"), "42.0s", got)
 	require.Contains(t, got, "6 │ }", got)
+	require.NotContains(t, got, "tmp/stream-test.go +6", "collapsed, the body is the result:\n%s", got)
+	require.True(t, containsStyledLine(frame, "package stream", goKeyword()+"package"), visibleEscapes(frame))
+	require.Less(t, strings.Index(got, "6 │ }"), strings.Index(got, `{"filePath"`),
+		"JSON arguments beneath the body:\n%s", got)
+	require.Empty(t, l.fe.codeStreams)
+
+	l.expand(liveTimeout)
+	got = stripANSICodes(l.frame())
 	require.Contains(t, got, "tmp/stream-test.go +6", got)
 	require.Less(t, strings.Index(got, "6 │ }"), strings.Index(got, "tmp/stream-test.go +6"),
 		"result beneath the body:\n%s", got)
-	require.True(t, containsStyledLine(frame, "package stream", goKeyword()+"package"), visibleEscapes(frame))
-	require.NotContains(t, got, `{"filePath"`, got)
-	require.Empty(t, l.fe.codeStreams)
 }

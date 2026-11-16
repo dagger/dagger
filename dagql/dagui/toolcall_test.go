@@ -121,7 +121,7 @@ func TestDangSnippet(t *testing.T) {
 
 	snippet, ok = NewToolCallView("DangCheck", map[string]any{"search": "sort"}).DangSnippet()
 	require.True(t, ok)
-	assert.Equal(t, DangSnippet{Search: "sort"}, snippet)
+	assert.Equal(t, DangSnippet{Search: "sort", Check: true}, snippet)
 
 	_, ok = NewToolCallView("Read", map[string]any{"source": "x"}).DangSnippet()
 	assert.False(t, ok)

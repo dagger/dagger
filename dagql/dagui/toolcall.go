@@ -557,6 +557,8 @@ type DangSnippet struct {
 	At string
 	// Search is DangCheck's search, if any.
 	Search string
+	// Check reports a DangCheck's snippet: checked, not run.
+	Check bool
 }
 
 // DangSnippet returns the call's Dang snippet, if it is a call of a Dang
@@ -569,7 +571,12 @@ func (view ToolCallView) DangSnippet() (DangSnippet, bool) {
 		s, _ := view.Args[name].(string)
 		return s
 	}
-	return DangSnippet{Source: str("source"), At: str("at"), Search: str("search")}, true
+	return DangSnippet{
+		Source: str("source"),
+		At:     str("at"),
+		Search: str("search"),
+		Check:  ToolNameIs(view.Tool, dangCheckTool),
+	}, true
 }
 
 // Write's arguments: the file it writes, what it writes there, and whether

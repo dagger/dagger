@@ -836,7 +836,13 @@ func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagu
 		testsExclude.commit()
 	}
 
+	// Whether the row rolls up what it ran -- its checks, tests or
+	// generators: a tool call's raw result, which reports the same, then
+	// stays out of its collapsed row. A SERVICES rollup doesn't: what a call
+	// returns of the services it started (an endpoint, say) isn't in it.
+	var rolledUp bool
 	if inlineTests := s.renderInlineTests(ctx, r, row, testsExclude); len(inlineTests) > 0 {
+		rolledUp = true
 		s.selfLineCount += len(inlineTests)
 		ctx.Lines(inlineTests...)
 	}
@@ -845,11 +851,13 @@ func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagu
 		inlineChecks = s.renderInlineChecks(ctx, r, row)
 	}
 	if len(inlineChecks) > 0 {
+		rolledUp = true
 		s.selfLineCount += len(inlineChecks)
 		ctx.Lines(inlineChecks...)
 	}
 
 	if inlineGenerators := s.renderInlineGenerators(ctx, r, row); len(inlineGenerators) > 0 {
+		rolledUp = true
 		s.selfLineCount += len(inlineGenerators)
 		ctx.Lines(inlineGenerators...)
 	}
@@ -861,7 +869,7 @@ func (s *SpanTreeView) renderRowExtras(ctx tuist.Context, r *renderer, row *dagu
 
 	// Render this row's own inline logs via its memoized LogsView child, so the
 	// expensive Vterm.View() is skipped on unrelated parent repaints.
-	if inlineLogs := s.renderInlineLogs(ctx, r, row, visualFocused); len(inlineLogs) > 0 {
+	if inlineLogs := s.renderInlineLogs(ctx, r, row, visualFocused, rolledUp); len(inlineLogs) > 0 {
 		s.selfLineCount += len(inlineLogs)
 		ctx.Lines(inlineLogs...)
 	}
@@ -9125,7 +9133,9 @@ func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Sp
 		// a Timeout summarizes as the call it wraps
 		tool = fe.db.ToolCallView(span).Tool
 	}
-	if !dagui.ToolNameIs(tool, "grep") {
+	grep := dagui.ToolNameIs(tool, "grep")
+	dangCheck := dagui.ToolNameIs(tool, "DangCheck")
+	if !grep && !dangCheck {
 		return
 	}
 	logs := fe.logs.Logs[span.ID]
@@ -9135,10 +9145,46 @@ func (fe *frontendPretty) renderToolOutputSummary(out TermOutput, span *dagui.Sp
 	if logs == nil {
 		return
 	}
+	if dangCheck {
+		renderDangCheckStatus(out, logs)
+		return
+	}
 	summary := dagui.SanitizeInline(strings.TrimSpace(ansi.Strip(logs.LastLine())))
 	if summary != "" {
 		fmt.Fprint(out, out.String(" - "+summary).Faint())
 	}
+}
+
+// renderDangCheckStatus renders a DangCheck's status in its header, from its
+// report's footer (e.g. "1 error · workspace scope · nothing ran"), so a
+// check that failed shows while its row is collapsed: its errors in red,
+// else its warnings in yellow. A check that passed says nothing more.
+func renderDangCheckStatus(out TermOutput, logs *Vterm) {
+	status := dangCheckStatus(logs)
+	if status == "" || status == "ok" {
+		return
+	}
+	color := termenv.ANSIYellow
+	if strings.Contains(status, "error") {
+		color = termenv.ANSIRed
+	}
+	fmt.Fprint(out, out.String(" - ").Faint().String()+out.String(dagui.SanitizeInline(status)).Foreground(color).String())
+}
+
+// dangCheckStatus returns the status a DangCheck's report ends with: its
+// footer's first field, "ok", "1 error" or "2 errors, 1 warning". The footer
+// is among the report's last lines (a nudge to read the Dang skill can
+// follow it), read as written: a footer naming a long scope can be wider
+// than the log's rows. "" when there's none.
+func dangCheckStatus(logs *Vterm) string {
+	lines := logs.RawTail(4)
+	for i := len(lines) - 1; i >= 0; i-- {
+		fields := strings.Split(strings.TrimSpace(lines[i]), " · ")
+		if len(fields) >= 2 && fields[len(fields)-1] == "nothing ran" {
+			return fields[0]
+		}
+	}
+	return ""
 }
 
 func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool, abridged bool) error {
