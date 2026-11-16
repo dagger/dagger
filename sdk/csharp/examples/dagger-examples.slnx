@@ -13,4 +13,6 @@
   <Project Path="./consumer-example/ConsumerExample.csproj" />
   <!-- standalone client -->
   <Project Path="./standalone-client/StandaloneClient.csproj" />
+  <!-- integration tests that start their dependencies through the client -->
+  <Project Path="./integration-test-example/IntegrationTestExample.csproj" />
 </Solution>
