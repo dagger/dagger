@@ -15,10 +15,11 @@ public class GraphQLError
     public string Message { get; set; } = string.Empty;
 
     /// <summary>
-    /// The path to the field that caused the error.
+    /// The path to the field that caused the error. Each segment is a JSON
+    /// string (field name) or number (list index).
     /// </summary>
     [JsonPropertyName("path")]
-    public List<string>? Path { get; set; }
+    public List<JsonElement>? Path { get; set; }
 
     /// <summary>
     /// The locations in the query where the error occurred.

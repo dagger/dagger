@@ -15,7 +15,7 @@ public class DaggerExceptionTest
             new GraphQLError
             {
                 Message = "Test error",
-                Path = new List<string> { "container", "from" },
+                Path = JsonSerializer.Deserialize<List<JsonElement>>("[\"container\",\"from\"]"),
             },
         };
 

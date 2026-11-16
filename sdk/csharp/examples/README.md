@@ -108,6 +108,19 @@ cd standalone-client
 dagger run dotnet run
 ```
 
+### [integration-test-example](./integration-test-example/)
+
+An xUnit test project that starts PostgreSQL as a Dagger service from a test fixture.
+
+- Plain `dotnet test`, also from an IDE: the client starts its own session
+- The same tests run inside a Dagger container and use the session of that exec
+- `Dag.Host().Tunnel(service)` gives the tests a free local port
+
+```bash
+cd integration-test-example
+dotnet test
+```
+
 ## Comparison
 
 | Feature | Module | Client Library |

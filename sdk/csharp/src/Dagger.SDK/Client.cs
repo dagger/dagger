@@ -7,13 +7,26 @@ namespace Dagger;
 /// </summary>
 public static class Client
 {
-    private static readonly Lazy<Query> _query = new(valueFactory: static () =>
-    {
-        return new Query(QueryBuilder.Builder(), new GraphQLClient());
-    });
+    private static readonly Lock Gate = new();
+    private static volatile Query? _query;
 
     /// <summary>
     /// Gets a singleton <see cref="Query"/> instance for building DAG operations.
+    /// The connection is made on first use; a failed attempt is retried on the next access.
     /// </summary>
-    public static Query Dag => _query.Value;
+    public static Query Dag
+    {
+        get
+        {
+            if (_query is { } query)
+            {
+                return query;
+            }
+
+            lock (Gate)
+            {
+                return _query ??= new Query(QueryBuilder.Builder(), new GraphQLClient());
+            }
+        }
+    }
 }
