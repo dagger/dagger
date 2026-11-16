@@ -2093,41 +2093,40 @@ func toolSpanAttrs(tool *LLMTool) []attribute.KeyValue {
 	return attrs
 }
 
-func toolArgHeaderValue(name string, value any) (string, bool) {
-	if value == nil {
-		return "", false
+// toolHeaderArgNames returns the names of the arguments a call of tool
+// summarizes in its header, in order: its required arguments, Read's
+// pagination controls and generic argv arrays (useful context even though
+// they are not required), and the Dang builtins' snippet and scope, which
+// frontends show in full (see dagui.ToolCallView).
+//
+// The tool-call display span records them when it starts (see
+// displayPhases.StartToolCall), and MCP.CallContent records their values,
+// formatted by dagui.ToolArgHeaderValue, when the call runs: a live frontend
+// fills in the same values from the arguments the span streams in between,
+// so the header doesn't change when the span ends.
+func toolHeaderArgNames(tool *LLMTool) []string {
+	var names []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
 	}
-	if str, ok := value.(string); ok {
-		return str, true
+	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
+		for _, arg := range requiredArgs {
+			add(arg)
+		}
 	}
-	switch name {
-	case "offset", "limit":
-		return fmt.Sprint(value), true
-	case "args":
-		values, ok := value.([]any)
-		if !ok {
-			return "", false
-		}
-		parts := make([]string, 0, len(values))
-		for _, value := range values {
-			parts = append(parts, fmt.Sprint(value))
-		}
-		return strings.Join(parts, " "), true
-	case "arguments":
-		// A wrapper's arguments for the tool it runs (Timeout): frontends
-		// present the wrapper as that call (see dagui.ToolCallView).
-		obj, ok := value.(map[string]any)
-		if !ok {
-			return "", false
-		}
-		enc, err := json.Marshal(obj)
-		if err != nil {
-			return "", false
-		}
-		return string(enc), true
-	default:
-		return "", false
+	for _, arg := range []string{"offset", "limit", "args"} {
+		add(arg)
 	}
+	if tool.Name == dangCheckToolName || tool.Name == dangEvalToolName {
+		for _, arg := range []string{"at", "search", "source"} {
+			add(arg)
+		}
+	}
+	return names
 }
 
 // Call returns the plain-text projection for callers that only need text.
@@ -2154,38 +2153,7 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 		}
 	}
 
-	var toolArgNames []string
-	var toolArgValues []string
-	seenToolArgs := map[string]bool{}
-	appendToolArg := func(name string) {
-		if seenToolArgs[name] {
-			return
-		}
-		val, ok := toolArgHeaderValue(name, args[name])
-		if !ok {
-			return
-		}
-		toolArgNames = append(toolArgNames, name)
-		toolArgValues = append(toolArgValues, val)
-		seenToolArgs[name] = true
-	}
-	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
-		for _, arg := range requiredArgs {
-			appendToolArg(arg)
-		}
-	}
-	// Header-specific optional values: Read's pagination controls and generic
-	// argv arrays are useful context even though they are not required args.
-	for _, arg := range []string{"offset", "limit", "args"} {
-		appendToolArg(arg)
-	}
-	// The Dang builtins' snippet and scope are the call: frontends show
-	// them in full (see dagui.ToolCallView).
-	if tool.Name == dangCheckToolName || tool.Name == dangEvalToolName {
-		for _, arg := range []string{"at", "search", "source"} {
-			appendToolArg(arg)
-		}
-	}
+	toolArgNames, toolArgValues := dagui.ToolHeaderArgs(toolHeaderArgNames(tool), args)
 	span := trace.SpanFromContext(ctx)
 	attrs := append(toolSpanAttrs(tool),
 		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),

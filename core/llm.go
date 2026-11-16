@@ -27,6 +27,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -2771,7 +2772,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 							if !ok {
 								continue
 							}
-							if str, ok := toolArgHeaderValue(name, val); ok {
+							if str, ok := dagui.ToolArgHeaderValue(name, val); ok {
 								toolArgNames = append(toolArgNames, name)
 								toolArgValues = append(toolArgValues, str)
 							}

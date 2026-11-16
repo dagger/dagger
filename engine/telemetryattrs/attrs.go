@@ -229,6 +229,15 @@ const (
 	// withResponse digest before they end. (string)
 	LLMCallDigestAttr = "dagger.io/llm.call.digest"
 
+	// LLMToolHeaderArgNamesAttr is set on a tool call's display span when it
+	// starts: the names of the arguments its header summarizes, in order,
+	// without their values -- the tool's required arguments, then a few
+	// optional ones worth showing (see core's toolHeaderArgNames). Its
+	// values arrive with llm.tool.arg_values once the call ends; until then,
+	// a live frontend fills them in from the arguments the span streams, so
+	// a running call's header is the one it ends with. ([]string)
+	LLMToolHeaderArgNamesAttr = "dagger.io/llm.tool.header_arg_names"
+
 	// LLMToolResultTokensAttr is set on a tool-call telemetry span with an
 	// estimated token count for the result the tool fed back into the model's
 	// context. It lets the TUI flag tool calls whose (often huge) output is

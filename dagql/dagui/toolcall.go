@@ -3,6 +3,7 @@ package dagui
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -15,24 +16,27 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-// This file extends toolargs.go for the tool calls whose arguments, not just
-// a header summary, shape how they're shown: the Dang builtins, whose
-// snippet is the call, and Timeout, which presents as the call it wraps.
+// This file extends toolargs.go for the arguments a tool call streams: every
+// call's header summarizes them as they arrive (see DB.ToolArgsSummary), and
+// some calls render from them whole: the Dang builtins, whose snippet is the
+// call, Write, whose contents are, and Timeout, which presents as the call it
+// wraps.
 
 // Tool names whose calls render from their full arguments.
 const (
 	dangEvalTool  = "DangEval"
 	dangCheckTool = "DangCheck"
 	timeoutTool   = "Timeout"
+	writeTool     = "write"
 )
 
-// RendersToolArgs reports whether a tool's calls render from their full
-// arguments (see DB.ToolCallView), so the DB keeps the JSON arguments its
-// display span streams.
+// RendersToolArgs reports whether a tool's calls may render from their full
+// arguments (see DB.ToolCallView), not just a header summary of them.
 func RendersToolArgs(tool string) bool {
 	return ToolNameIs(tool, dangEvalTool) ||
 		ToolNameIs(tool, dangCheckTool) ||
-		ToolNameIs(tool, timeoutTool)
+		ToolNameIs(tool, timeoutTool) ||
+		ToolNameIs(tool, writeTool)
 }
 
 // maxToolArgsJSON bounds the streamed JSON arguments kept per tool call.
@@ -40,11 +44,14 @@ func RendersToolArgs(tool string) bool {
 // attributes.
 const maxToolArgsJSON = 256 << 10
 
-// ingestToolArgs keeps the JSON arguments a tool-call display span streams,
-// for tools that render from them. A span's attributes only reach a live
-// client when it starts and ends, so the arguments the tool recorded on its
-// span arrive only once the call is over; its streamed arguments are how a
-// running call shows what it runs.
+// ingestToolArgs keeps the JSON arguments a tool-call display span streams.
+// A span's attributes only reach a live client when it starts and ends, so
+// the arguments the tool recorded on its span arrive only once the call is
+// over; its streamed arguments are how a running call shows what it runs.
+//
+// They're kept while the call runs, each call's to maxToolArgsJSON, and
+// dropped once its attributes take over (see keepsToolArgs), so the DB
+// holds the arguments of the calls running, not of every call so far.
 func (db *DB) ingestToolArgs(record sdklog.Record, spanID SpanID, body string) {
 	if !isJSONRecord(record) {
 		return
@@ -54,10 +61,10 @@ func (db *DB) ingestToolArgs(record sdklog.Record, spanID SpanID, body string) {
 		return
 	}
 	if span.Received && !keepsToolArgs(span) {
-		// Not a tool call that renders from its arguments. A span not
-		// received yet is a placeholder whose tool isn't known: keep its
-		// arguments in case it is one, until it turns out not to be (see
-		// pruneToolArgs).
+		// Not a tool call, or one whose attributes have its arguments. A
+		// span not received yet is a placeholder whose tool isn't known:
+		// keep its arguments in case it is one, until it turns out not to
+		// be (see pruneToolArgs).
 		return
 	}
 	if db.toolArgsJSON == nil {
@@ -85,20 +92,43 @@ func (db *DB) ingestToolArgs(record sdklog.Record, spanID SpanID, body string) {
 		args.chunks, args.size = nil, 0
 		args.overflowed = true
 	}
+	if span.Received {
+		// Records can arrive after their call ended: kept only while
+		// they're cut short (see pruneToolArgs).
+		db.pruneToolArgs(span)
+	}
 	db.update(span)
 }
 
 // keepsToolArgs reports whether the DB keeps the arguments a span streams:
-// it's a tool call that renders from them.
+// it's a tool call, and its attributes don't have them -- they only do once
+// it ends (see SpanSnapshot.LLMToolArgNames).
 func keepsToolArgs(span *Span) bool {
-	return span.LLMRole != "" && RendersToolArgs(span.LLMTool)
+	if span.LLMRole == "" || span.LLMTool == "" {
+		return false
+	}
+	return span.IsRunning() || len(span.LLMToolArgNames) == 0
 }
 
-// pruneToolArgs drops the arguments kept for a span that arrived before it
-// did, once it turns out not to render from them.
+// pruneToolArgs drops the arguments kept for a span once they're no longer
+// needed: it arrived after them and isn't a tool call, or it ended. An ended
+// call's attributes have its header and arguments; one that has none
+// recorded none worth a header (a tool with no header arguments), or never
+// ran. Only arguments cut short stay, from a call whose request aborted
+// mid-stream: nothing else has them.
 func (db *DB) pruneToolArgs(span *Span) {
-	if _, kept := db.toolArgsJSON[span.ID]; kept && !keepsToolArgs(span) {
+	args, kept := db.toolArgsJSON[span.ID]
+	if !kept {
+		return
+	}
+	if !keepsToolArgs(span) {
 		delete(db.toolArgsJSON, span.ID)
+		return
+	}
+	if !span.IsRunning() {
+		if _, complete, _ := args.args(span.LLMTool); complete {
+			delete(db.toolArgsJSON, span.ID)
+		}
 	}
 }
 
@@ -167,35 +197,40 @@ func (t *toolArgsJSON) document() string {
 
 // args returns the arguments a call of tool streamed so far, and whether
 // they are complete. While they stream, a string cut short is left out -- a
-// partial tool name or path would only mislead -- unless it's a Dang
-// snippet's source, which is the call (see streamsToolArg).
-func (t *toolArgsJSON) args(tool string) (map[string]any, bool) {
+// partial tool name or path would only mislead -- unless it's code the call
+// shows as it grows (see streamsToolArg), whose path truncated is then.
+func (t *toolArgsJSON) args(tool string) (args map[string]any, complete bool, truncated []string) {
 	if t.overflowed {
-		return nil, false
+		return nil, false, nil
 	}
 	if t.version != t.decodedVersion || tool != t.decodedTool {
 		t.decodedVersion, t.decodedTool = t.version, tool
 		t.decoded = decodePartialJSON(t.document())
 		if path := t.decoded.Truncated; len(path) > 0 && !streamsToolArg(tool, t.decoded.Value, path) {
 			t.decoded.Value = withoutPath(t.decoded.Value, path).(map[string]any)
+			t.decoded.Truncated = nil
 		}
 	}
-	return t.decoded.Value, t.decoded.Complete
+	return t.decoded.Value, t.decoded.Complete, t.decoded.Truncated
 }
 
 // streamsToolArg reports whether a call of tool with args shows the string
-// at path as it streams in: a Dang snippet's source, which is the call --
-// a Dang builtin's own, or that of the Dang builtin a Timeout wraps.
+// at path as it streams in: code that is the call's body -- a Dang snippet's
+// source or a written file's contents -- of its own, or of the call a
+// Timeout wraps.
 func streamsToolArg(tool string, args map[string]any, path []string) bool {
-	isDang := func(tool string) bool {
-		return ToolNameIs(tool, dangEvalTool) || ToolNameIs(tool, dangCheckTool)
+	if ToolNameIs(tool, timeoutTool) {
+		inner, _ := args["tool"].(string)
+		return len(path) == 2 && path[0] == "arguments" && streamsToolArg(inner, nil, path[1:])
+	}
+	if len(path) != 1 {
+		return false
 	}
 	switch {
-	case isDang(tool):
-		return len(path) == 1 && path[0] == "source"
-	case ToolNameIs(tool, timeoutTool):
-		inner, _ := args["tool"].(string)
-		return isDang(inner) && len(path) == 2 && path[0] == "arguments" && path[1] == "source"
+	case ToolNameIs(tool, dangEvalTool), ToolNameIs(tool, dangCheckTool):
+		return path[0] == "source"
+	case ToolNameIs(tool, writeTool):
+		return path[0] == writeContentsArg
 	}
 	return false
 }
@@ -260,7 +295,7 @@ func (db *DB) toolCallArgs(span *Span) (args map[string]any, streaming bool) {
 	var partial map[string]any
 	if db != nil {
 		if streamed := db.toolArgsJSON[span.ID]; streamed != nil {
-			args, complete := streamed.args(span.LLMTool)
+			args, complete, _ := streamed.args(span.LLMTool)
 			if complete {
 				return args, false
 			}
@@ -273,6 +308,56 @@ func (db *DB) toolCallArgs(span *Span) (args map[string]any, streaming bool) {
 		return attrs, false
 	}
 	return partial, partial != nil && span.IsRunning()
+}
+
+// ToolArgsSummary is SpanSnapshot.ToolArgsSummary for a tool call that may
+// still be running: its header arguments (see ToolHeaderArgs).
+func (db *DB) ToolArgsSummary(span *Span) []ToolArgPart {
+	if span == nil {
+		return nil
+	}
+	names, values := db.ToolHeaderArgs(span)
+	return toolArgsSummary(span.LLMTool, names, values)
+}
+
+// ToolArgsFallback is SpanSnapshot.ToolArgsFallback for a tool call that may
+// still be running: the first line of its first header argument (see
+// ToolHeaderArgs).
+func (db *DB) ToolArgsFallback(span *Span) string {
+	if span == nil {
+		return ""
+	}
+	_, values := db.ToolHeaderArgs(span)
+	return toolArgsFallback(values)
+}
+
+// ToolHeaderArgs returns the names and values of the arguments a tool call's
+// header summarizes. Once it ends, they're the ones its attributes recorded
+// (SpanSnapshot.LLMToolArgNames and LLMToolArgValues). Until then, they're
+// the arguments its header will summarize (LLMToolHeaderArgs), filled in
+// from what its display span streamed so far and formatted as the engine
+// formats them (ToolArgHeaderValue), so its header shows as it ends: an
+// argument shows once its value is whole, and a list with its whole
+// elements so far.
+func (db *DB) ToolHeaderArgs(span *Span) (names, values []string) {
+	if span == nil {
+		return nil, nil
+	}
+	if len(span.LLMToolArgNames) > 0 || len(span.LLMToolHeaderArgs) == 0 || db == nil {
+		return span.LLMToolArgNames, span.LLMToolArgValues
+	}
+	streamed := db.toolArgsJSON[span.ID]
+	if streamed == nil {
+		return span.LLMToolArgNames, span.LLMToolArgValues
+	}
+	args, _, truncated := streamed.args(span.LLMTool)
+	if len(truncated) > 0 {
+		// Code the call shows as it grows: not a value its header shows
+		// until it's whole.
+		args = maps.Clone(args)
+		delete(args, truncated[0])
+	}
+	return ToolHeaderArgs(span.LLMToolHeaderArgs, args)
 }
 
 func (snapshot *SpanSnapshot) toolArgsFromAttrs() map[string]any {
@@ -485,4 +570,35 @@ func (view ToolCallView) DangSnippet() (DangSnippet, bool) {
 		return s
 	}
 	return DangSnippet{Source: str("source"), At: str("at"), Search: str("search")}, true
+}
+
+// Write's arguments: the file it writes, and what it writes there.
+const (
+	writeFilePathArg = "filePath"
+	writeContentsArg = "contents"
+)
+
+// WriteFile is a Write call's arguments: the file it writes, and its
+// contents, as far as they've streamed in.
+type WriteFile struct {
+	Path     string
+	Contents string
+}
+
+// WriteFile returns the file the call writes, if it is a call of a Write
+// tool (one named "write", whatever its server) that names its file
+// (filePath) and writes it whole (contents, which may still be on its way).
+func (view ToolCallView) WriteFile() (WriteFile, bool) {
+	if !ToolNameIs(view.Tool, writeTool) {
+		return WriteFile{}, false
+	}
+	path, ok := view.Args[writeFilePathArg].(string)
+	if !ok || strings.TrimSpace(path) == "" {
+		return WriteFile{}, false
+	}
+	contents, ok := view.Args[writeContentsArg].(string)
+	if !ok && view.Args[writeContentsArg] != nil {
+		return WriteFile{}, false
+	}
+	return WriteFile{Path: path, Contents: contents}, true
 }

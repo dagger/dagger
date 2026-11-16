@@ -3,6 +3,7 @@ package idtui
 import (
 	"context"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -82,11 +83,20 @@ func newLiveToolCalls(t *testing.T, profile termenv.Profile) *liveToolCalls {
 // span exports a span as it starts.
 func (l *liveToolCalls) span(id, parent byte, name string, attrs ...attribute.KeyValue) {
 	l.t.Helper()
+	l.export(id, parent, name, false, attrs...)
+}
+
+// export exports a span as it starts, or as it ends.
+func (l *liveToolCalls) export(id, parent byte, name string, ended bool, attrs ...attribute.KeyValue) {
+	l.t.Helper()
 	stub := tracetest.SpanStub{
 		Name:        name,
 		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: liveTraceID, SpanID: trace.SpanID{id}}),
 		StartTime:   l.start.Add(time.Duration(id) * time.Millisecond),
 		Attributes:  attrs,
+	}
+	if ended {
+		stub.EndTime = stub.StartTime.Add(42 * time.Second)
 	}
 	if parent != 0 {
 		stub.Parent = trace.NewSpanContext(trace.SpanContextConfig{TraceID: liveTraceID, SpanID: trace.SpanID{parent}})
@@ -97,13 +107,38 @@ func (l *liveToolCalls) span(id, parent byte, name string, attrs ...attribute.Ke
 // toolCall exports a tool call's display span as displayPhases.StartToolCall
 // opens it.
 func (l *liveToolCalls) toolCall(id, parent byte, tool string) {
-	l.span(id, parent, tool,
+	l.span(id, parent, tool, liveToolCallAttrs(tool)...)
+}
+
+func liveToolCallAttrs(tool string) []attribute.KeyValue {
+	return []attribute.KeyValue{
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 		attribute.Bool(telemetry.UIBoundaryAttr, true),
 		attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 		attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-		attribute.String(telemetry.LLMToolAttr, tool))
+		attribute.String(telemetry.LLMToolAttr, tool),
+	}
+}
+
+// moduleToolCall exports a module tool's call's display span as
+// displayPhases.StartToolCall opens it once it knows the tool: its bare
+// name, its server, and the names of its header's arguments.
+func (l *liveToolCalls) moduleToolCall(id, parent byte, server, tool string, headerArgs ...string) []attribute.KeyValue {
+	attrs := append(liveToolCallAttrs(tool),
+		attribute.String(telemetry.LLMToolServerAttr, server),
+		attribute.StringSlice(telemetryattrs.LLMToolHeaderArgNamesAttr, headerArgs))
+	l.span(id, parent, server+"_"+tool, attrs...)
+	return attrs
+}
+
+// endToolCall ends a tool call's display span as MCP.CallContent does, with
+// the header values it recorded.
+func (l *liveToolCalls) endToolCall(id, parent byte, name string, attrs []attribute.KeyValue, names, values []string) {
+	l.t.Helper()
+	l.export(id, parent, name, true, append(slices.Clone(attrs),
+		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, names),
+		attribute.StringSlice(telemetry.LLMToolArgValuesAttr, values))...)
 }
 
 // stream streams a display span's JSON arguments in chunks of n bytes, as a
@@ -274,4 +309,56 @@ func TestStreamingToolCallRendersSoFar(t *testing.T) {
 	require.True(t, containsStyledLine(frame, "let greeting", "\x1b[35mlet"), visibleEscapes(frame))
 	require.True(t, containsStyledLine(frame, `2 │ greeting + "!"`, "\x1b[35m+"), visibleEscapes(frame))
 	require.Empty(t, l.fe.dangStreams)
+}
+
+// lineWith returns the frame's line containing s, or "".
+func lineWith(frame, s string) string {
+	for line := range strings.SplitSeq(frame, "\n") {
+		if strings.Contains(line, s) {
+			return line
+		}
+	}
+	return ""
+}
+
+// TestStreamingModuleToolCallHeader covers a module tool's call while the
+// model writes its arguments and while it runs: its header summarizes them
+// as they arrive -- an argv list one whole element at a time, never a
+// partial one -- and is the header it ends with, which then comes from its
+// attributes.
+func TestStreamingModuleToolCallHeader(t *testing.T) {
+	l := newLiveToolCalls(t, termenv.Ascii)
+	attrs := l.moduleToolCall(liveTimeout, liveReply, "goCli", "go", "args", "offset", "limit")
+	got := stripANSICodes(l.frame())
+	require.Contains(t, got, "• goCli Go", got)
+
+	elems := []string{"vet", "./engine/clientdb/", "./engine/server/", "./dagql/dagui/"}
+	const args = `{"args": ["vet", "./engine/clientdb/", "./engine/server/", "./dagql/dagui/"]}`
+	shown := 0
+	l.stream(liveTimeout, args, 5, func(frame string) {
+		line := lineWith(stripANSICodes(frame), "goCli Go")
+		require.NotEmpty(t, line, frame)
+		_, rest, _ := strings.Cut(line, "goCli Go")
+		fields := strings.Fields(rest)
+		n := 0
+		for n < len(fields) && n < len(elems) && fields[n] == elems[n] {
+			n++
+		}
+		if n < len(fields) && n < len(elems) {
+			require.False(t, strings.HasPrefix(elems[n], fields[n]),
+				"showed a partial element %q:\n%s", fields[n], line)
+		}
+		require.GreaterOrEqual(t, n, shown, "an element went away:\n%s", line)
+		shown = n
+	})
+	require.Equal(t, len(elems), shown, "never showed the whole argv")
+	l.closeArgs(liveTimeout)
+	want := "• goCli Go " + strings.Join(elems, " ")
+	require.Contains(t, stripANSICodes(l.frame()), want)
+
+	// It ends with the attributes the engine records: the same header.
+	l.endToolCall(liveTimeout, liveReply, "goCli_go", attrs, []string{"args"}, []string{strings.Join(elems, " ")})
+	got = stripANSICodes(l.frame())
+	require.Contains(t, got, want, got)
+	require.Contains(t, lineWith(got, want), "42.0s", got)
 }

@@ -182,18 +182,18 @@ func TestToolCallArgsFromStreamedJSON(t *testing.T) {
 	assert.Equal(t, "2m", view.Timeout)
 	assert.Equal(t, map[string]any{"source": "1 + 1"}, view.Args)
 
-	// Tools that don't render from their arguments keep nothing.
+	// Every running tool call keeps them, for its header.
 	jsonLog(plainID, `{"path":"main.go"}`)
-	assert.Nil(t, db.ToolCallArgs(db.Spans.Map[plainID]))
+	assert.Equal(t, map[string]any{"path": "main.go"}, db.ToolCallArgs(db.Spans.Map[plainID]))
 
 	// Arguments that arrive before their span are kept until the span
-	// turns out not to render from them...
+	// turns out not to be a tool call...
 	earlyID := SpanID{SpanID: trace.SpanID{4}}
 	jsonLog(earlyID, `{"path":"a.txt","contents":"big"}`)
 	assert.Contains(t, db.toolArgsJSON, earlyID)
 	db.ImportSnapshots([]SpanSnapshot{{
-		ID: earlyID, TraceID: TraceID{traceID}, Name: "write",
-		LLMRole: "assistant", LLMTool: "write", StartTime: start,
+		ID: earlyID, TraceID: TraceID{traceID}, Name: "exec",
+		StartTime: start,
 	}})
 	assert.NotContains(t, db.toolArgsJSON, earlyID)
 	// ...or does.

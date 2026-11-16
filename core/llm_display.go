@@ -234,11 +234,14 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 	}
 	// Identify the tool up front: live telemetry only exports a span at start
 	// and end, so a name and server set once the tool runs (MCP.CallContent)
-	// would show the raw model-facing name until the call finished.
+	// would show the raw model-facing name until the call finished. The
+	// names of its header's arguments come too, for a frontend to fill in
+	// from the arguments the span streams (see toolHeaderArgNames).
 	toolAttrs := []attribute.KeyValue{attribute.String(telemetry.LLMToolAttr, toolName)}
 	for i := range dp.tools {
 		if dp.tools[i].Name == toolName {
-			toolAttrs = toolSpanAttrs(&dp.tools[i])
+			toolAttrs = append(toolSpanAttrs(&dp.tools[i]),
+				attribute.StringSlice(telemetryattrs.LLMToolHeaderArgNamesAttr, toolHeaderArgNames(&dp.tools[i])))
 			break
 		}
 	}

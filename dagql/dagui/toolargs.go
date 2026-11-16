@@ -1,6 +1,8 @@
 package dagui
 
 import (
+	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -206,10 +208,75 @@ func toolArgsSummary(tool string, names, values []string) []ToolArgPart {
 // rest are likely to be noisy, and only the first line is kept so a large
 // multiline value (e.g. a commit message body) doesn't dominate the header.
 func (snapshot *SpanSnapshot) ToolArgsFallback() string {
-	if len(snapshot.LLMToolArgValues) == 0 {
+	return toolArgsFallback(snapshot.LLMToolArgValues)
+}
+
+func toolArgsFallback(values []string) string {
+	if len(values) == 0 {
 		return ""
 	}
-	return SanitizeInline(firstLine(snapshot.LLMToolArgValues[0]))
+	return SanitizeInline(firstLine(values[0]))
+}
+
+// ToolArgHeaderValue formats a tool call's argument, as decoded from its JSON
+// arguments, for its header (SpanSnapshot.LLMToolArgValues): strings as they
+// are, Read's offset and limit, an argv list joined by spaces, and a
+// wrapper's arguments (Timeout's) as JSON. It reports false for a value the
+// header leaves out.
+//
+// The engine records a finished call's header values with it, and frontends
+// format a running call's streamed arguments with it, so the header a call
+// shows while it runs is the one it ends with.
+func ToolArgHeaderValue(name string, value any) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	if str, ok := value.(string); ok {
+		return str, true
+	}
+	switch name {
+	case "offset", "limit":
+		return fmt.Sprint(value), true
+	case "args":
+		values, ok := value.([]any)
+		if !ok {
+			return "", false
+		}
+		parts := make([]string, 0, len(values))
+		for _, value := range values {
+			parts = append(parts, fmt.Sprint(value))
+		}
+		return strings.Join(parts, " "), true
+	case "arguments":
+		// A wrapper's arguments for the tool it runs (Timeout): frontends
+		// present the wrapper as that call (see ToolCallView).
+		obj, ok := value.(map[string]any)
+		if !ok {
+			return "", false
+		}
+		enc, err := json.Marshal(obj)
+		if err != nil {
+			return "", false
+		}
+		return string(enc), true
+	default:
+		return "", false
+	}
+}
+
+// ToolHeaderArgs returns a call's header arguments, named by names in that
+// order, from its JSON arguments args: the values ToolArgHeaderValue keeps,
+// and their names.
+func ToolHeaderArgs(names []string, args map[string]any) (headerNames, values []string) {
+	for _, name := range names {
+		val, ok := ToolArgHeaderValue(name, args[name])
+		if !ok {
+			continue
+		}
+		headerNames = append(headerNames, name)
+		values = append(values, val)
+	}
+	return headerNames, values
 }
 
 // CollapsesToolOutput reports whether the span is a tool call whose output
