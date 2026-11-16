@@ -7,4 +7,4 @@ include = []
 
 [[dependencies]]
   name = "go"
-  source = "github.com/dagger/go@a5c2efaf2c8a138c4810f011c19de73a1134c306"
+  source = "github.com/dagger/go@3fe256c459306277612fd28198097802cfb4cf4f"
