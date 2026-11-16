@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -149,10 +150,10 @@ func TestCallRecordsRenderedToolArgs(t *testing.T) {
 		},
 		{
 			tool:     timeoutToolName,
-			args:     `{"duration":"2m","tool":"DangEval","arguments":{"source":"1"}}`,
-			required: []string{"duration", "tool", "arguments"},
-			names:    []string{"duration", "tool", "arguments"},
-			value:    []string{"2m", "DangEval", `{"source":"1"}`},
+			args:     `{"tool":"DangEval","duration":"2m","arguments":{"source":"1"}}`,
+			required: []string{"tool", "duration", "arguments"},
+			names:    []string{"tool", "duration", "arguments"},
+			value:    []string{"DangEval", "2m", `{"source":"1"}`},
 		},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
@@ -318,11 +319,39 @@ func TestTimeoutTool(t *testing.T) {
 	t.Run("schema", func(t *testing.T) {
 		tool := timeoutToolForTest(t)
 		require.False(t, tool.ReadOnly)
-		require.Equal(t, []string{"duration", "tool", "arguments"}, tool.Schema["required"])
-		properties := tool.Schema["properties"].(map[string]any)
-		require.Equal(t, "string", properties["duration"].(map[string]any)["type"])
-		require.Equal(t, "string", properties["tool"].(map[string]any)["type"])
-		require.Equal(t, "object", properties["arguments"].(map[string]any)["type"])
+		// The wrapped tool first, so a frontend can present the call as the
+		// one it wraps while its arguments stream (see ToolSchemaProperties).
+		require.Equal(t, []string{"tool", "duration", "arguments"}, tool.Schema["required"])
+		properties := tool.Schema["properties"].(ToolSchemaProperties)
+		var names []string
+		for _, prop := range properties {
+			names = append(names, prop.Name)
+		}
+		require.Equal(t, []string{"tool", "duration", "arguments"}, names)
+		// Otherwise, the schema it always was: the same properties, and the
+		// same required ones.
+		schema, err := json.Marshal(tool.Schema)
+		require.NoError(t, err)
+		require.JSONEq(t, `{
+			"type": "object",
+			"properties": {
+				"duration": {
+					"type": "string",
+					"description": "Maximum duration for the nested tool as a Go duration string, for example \"30s\" or \"2m\"."
+				},
+				"tool": {
+					"type": "string",
+					"description": "Name of the currently exposed tool to invoke."
+				},
+				"arguments": {
+					"type": "object",
+					"description": "Arguments to pass to the nested tool.",
+					"additionalProperties": true
+				}
+			},
+			"required": ["tool", "duration", "arguments"],
+			"additionalProperties": false
+		}`, string(schema))
 	})
 
 	t.Run("success", func(t *testing.T) {
