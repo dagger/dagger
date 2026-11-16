@@ -47,7 +47,13 @@ public class GraphQLClient : IDisposable
         // they inject a never-exported ghost traceparent into request headers,
         // which the engine reads before our own header and mis-parents all
         // engine-side work into a foreign trace.
-        _httpClient = new HttpClient(new SocketsHttpHandler { ActivityHeadersPropagator = null });
+        //
+        // No request timeout: one query can wait for a long exec or a service, far beyond
+        // HttpClient's default of 100 seconds. Callers bound a call with its CancellationToken.
+        _httpClient = new HttpClient(new SocketsHttpHandler { ActivityHeadersPropagator = null })
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Basic",
             GetTokenHeaderValue(token)
