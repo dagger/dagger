@@ -20,7 +20,6 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/archive"
-	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tracesource"
 )
 
@@ -727,19 +726,6 @@ func liveLogsWanted(ctx context.Context) bool {
 	return len(withoutIndex(telemetry.LogProcessors, cliLocalTelemetry.logs)) == 1
 }
 
-// liveLogsSession is the session a live log reader reads.
-type liveLogsSession interface {
-	TelemetryBarrier(context.Context) error
-	WaitTelemetryIdle(context.Context, time.Duration)
-}
-
-// liveLogsSettle is how long the session's telemetry must stay quiet at exit,
-// with an engine that predates TelemetryBarrier, before the frontend chooses
-// what its final render reads: the spans of work that just ended, still on
-// their way through the engine's batching and the subscriptions' polling,
-// must be there to choose from.
-const liveLogsSettle = 300 * time.Millisecond
-
 // liveLogsPrimaryTimeout bounds the primary output's read at exit. It is
 // generous: the output is the command's result, usually small, and a slow
 // remote engine must not cut it short. liveLogsPrimaryAttempts bounds the
@@ -765,22 +751,6 @@ func (f flushableSpanForwarder) ForceFlush(ctx context.Context) error {
 		errs = errors.Join(errs, p.ForceFlush(ctx))
 	}
 	return errs
-}
-
-// settleLiveLogs waits until the session's telemetry for the work done so
-// far has reached the frontend: exactly, with TelemetryBarrier, or else
-// until it goes quiet.
-func settleLiveLogs(ctx context.Context, sess liveLogsSession) {
-	err := sess.TelemetryBarrier(ctx)
-	if err == nil || ctx.Err() != nil {
-		return
-	}
-	if !errors.Is(err, client.ErrTelemetryBarrierUnsupported) {
-		slog.Warn("error waiting for the session's telemetry", "err", err)
-	}
-	settleCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	sess.WaitTelemetryIdle(settleCtx, liveLogsSettle)
-	cancel()
 }
 
 // exitInterrupts returns a context canceled by an interrupt (SIGINT); it is
@@ -811,7 +781,7 @@ func exitContext(ctx context.Context) (context.Context, context.CancelFunc) {
 // requests for it, and the primary output. It must run before the session
 // closes, which ends its store's reads. An interrupt stops it promptly, and
 // the final render shows what was read by then (see exitContext).
-func finishLiveLogs(ctx context.Context, sess liveLogsSession, live *liveLogs) {
+func finishLiveLogs(ctx context.Context, sess engineTelemetrySession, live *liveLogs) {
 	lf := live.frontend
 	if lf == nil {
 		return
@@ -819,7 +789,10 @@ func finishLiveLogs(ctx context.Context, sess liveLogsSession, live *liveLogs) {
 	ctx, stop := exitContext(ctx)
 	defer stop()
 	finishCtx, cancel := context.WithTimeout(ctx, liveLogsFinishTimeout)
-	settleLiveLogs(finishCtx, sess)
+	// The spans of work that just ended, still on their way through the
+	// engine's batching and the subscriptions' polling, must be there for
+	// the frontend to choose what its final render reads.
+	settleEngineTelemetry(finishCtx, sess)
 	// Stop following first, so finish catches up the final requests itself,
 	// rather than a follow restart it would cut short.
 	live.stop()

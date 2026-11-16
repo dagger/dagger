@@ -208,7 +208,9 @@ func withEngineAction(
 		cleanup.Add("hand the command's telemetry to the engine", func() error {
 			// Take in what the engine has for the command so far, such as
 			// a session title for its span, before ending it.
-			settleEngineTelemetry(ctx, sess)
+			settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), engineTelemetrySettleTimeout)
+			settleEngineTelemetry(settleCtx, sess)
+			cancel()
 			// End the command first, so the engine stores its span and
 			// output whole before the session closes.
 			endCommand(rerr)
@@ -241,13 +243,12 @@ const engineTelemetryQuiet = 300 * time.Millisecond
 // so far has reached this process: exactly, with TelemetryBarrier, or else
 // until it goes quiet. Records the engine publishes for the command span,
 // such as the span-name record of Query.setSessionTitle, arrive through the
-// session's streams, so they must be in before the span ends.
+// session's streams, so they must be in before the span ends; the final
+// render's live log reads need them too. ctx bounds the wait: once it ends,
+// so does the wait, with no quiet wait after.
 func settleEngineTelemetry(ctx context.Context, sess engineTelemetrySession) {
-	ctx = context.WithoutCancel(ctx)
-	barrierCtx, cancel := context.WithTimeout(ctx, engineTelemetrySettleTimeout)
-	err := sess.TelemetryBarrier(barrierCtx)
-	cancel()
-	if err == nil {
+	err := sess.TelemetryBarrier(ctx)
+	if err == nil || ctx.Err() != nil {
 		return
 	}
 	if !errors.Is(err, client.ErrTelemetryBarrierUnsupported) {
