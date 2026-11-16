@@ -1,0 +1,6 @@
+kind: Fixed
+body: Recover from bbolt corruption during engine startup by resetting the local cache and retrying once.
+time: 2026-11-16T16:30:01.358996-08:00
+custom:
+  Author: tiborvass
+  PR: "15191"

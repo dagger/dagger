@@ -24,6 +24,7 @@ import (
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	localcontentstore "github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
+	"github.com/containerd/errdefs"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/schema"
@@ -174,6 +175,7 @@ type NewServerOpts struct {
 	Name           string
 	Config         *config.Config
 	BuildkitConfig *bkconfig.Config
+	CorruptDBReset bool
 }
 
 //nolint:gocyclo // NewServer performs the engine's existing linear initialization sequence.
@@ -183,7 +185,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	ociCfg := bkcfg.Workers.OCI
 
 	srv := &Server{
-		engineName: opts.Name,
+		engineName:     opts.Name,
+		corruptDBReset: opts.CorruptDBReset,
 
 		rootDir: bkcfg.Root,
 
@@ -502,6 +505,15 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		return localCacheStateResetNone, fmt.Errorf("failed to create snapshotter: %w", err)
 	}
 
+	if ociCfg.ProxySnapshotterPath == "" {
+		// Local snapshotters open their metadata lazily. Open it during
+		// startup so a bbolt panic happens before the engine accepts clients.
+		// This missing-key lookup does not scan or modify snapshot records.
+		if _, err := srv.snapshotter.Stat(ctx, ""); err != nil && !errdefs.IsNotFound(err) {
+			return localCacheStateResetBoltDBInitFailed, fmt.Errorf("failed to open snapshotter metadata: %w", err)
+		}
+	}
+
 	srv.localContentStore, err = localcontentstore.NewStore(srv.contentStoreRootDir)
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create content store: %w", err)
@@ -600,10 +612,16 @@ func (srv *Server) closeLocalCacheStateForReset() error {
 }
 
 func (srv *Server) removeLocalCacheStateOnDisk() error {
-	if err := os.RemoveAll(srv.workerRootDir); err != nil {
+	return RemoveLocalCacheState(srv.rootDir)
+}
+
+// RemoveLocalCacheState removes worker data and its dependent query cache.
+// The caller must hold the engine state lock and ensure no engine uses the data.
+func RemoveLocalCacheState(rootDir string) error {
+	if err := os.RemoveAll(filepath.Join(rootDir, "worker")); err != nil {
 		return fmt.Errorf("remove worker state: %w", err)
 	}
-	if err := dagql.RemoveCachePersistenceStore(filepath.Join(srv.rootDir, "dagql-cache.db")); err != nil {
+	if err := dagql.RemoveCachePersistenceStore(filepath.Join(rootDir, "dagql-cache.db")); err != nil {
 		return fmt.Errorf("remove dagql persistence state: %w", err)
 	}
 	return nil
