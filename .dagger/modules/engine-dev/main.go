@@ -287,24 +287,24 @@ func (dev *EngineDev) goSDK(ctx context.Context) (*dagger.Directory, error) {
 // each build as made for the platform it compiles for (Directory.withPlatform),
 // so an engine of the image's platform finds the builds made for it here.
 //
-// An engine of the image's own build makes them, on fresh state: whatever
-// the engine running this build already holds is never exported. Its own
-// image's entries, made by another dagger/go, would carry their recipes into
-// the image, so that a fresh engine of it builds again what they name; and a
-// remote cache's offers would carry keys the image's engine refuses at start.
-// builder builds what runs here.
+// An engine of the image's own build makes them, inside one exec, on state
+// that starts empty (withSeedEngine): whatever the engine running this build
+// already holds is never exported. Its own image's entries, made by another
+// dagger/go, would carry their recipes into the image, so that a fresh engine
+// of it builds again what they name; and a remote cache's offers would carry
+// keys the image's engine refuses at start. builder builds what runs here.
 func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, platform string, sdks []build.SDKFiles, goBuilds bool) (*dagger.Directory, map[string]string, error) {
 	engine, err := dev.engine(ctx, builder, "", "")
 	if err != nil {
 		return nil, nil, err
 	}
-	client, exporter, err := dev.seedEngineClient(ctx, builder, engine, platform, "dagger-image-entries", sdks, goBuilds)
+	ctr, exporter, err := dev.entriesTool(ctx, builder, engine, platform, sdks, goBuilds)
 	if err != nil {
 		return nil, nil, err
 	}
 	const out = "/entries"
 	const sdkDigests = "/sdk-digests.json"
-	ran := client.WithExec(withoutOuterSession(append(exporter, "-out", out, "-sdk-digests", sdkDigests)...))
+	ran := dev.withSeedEngine(ctr, append(exporter, "-out", out, "-sdk-digests", sdkDigests))
 	if err := entriesExported(ctx, ran, exporter); err != nil {
 		return nil, nil, err
 	}
@@ -372,37 +372,57 @@ func (dev *EngineDev) entriesTool(ctx context.Context, builder *build.Builder, c
 	), nil
 }
 
-// seedEngineClient is a client of a new engine service of engine's build, on
-// fresh state of its own, named state and a random suffix as a test engine's
-// is, with what cmd/engine-image-entries needs to make an image of
-// platform's entries on it, with the built-in SDKs' files, sdks, and with
-// goBuilds the Go builds, and the command that makes them, but for its -out
-// and -sdk-digests. builder builds what runs here.
-func (dev *EngineDev) seedEngineClient(ctx context.Context, builder *build.Builder, engine *dagger.Container, platform, state string, sdks []build.SDKFiles, goBuilds bool) (*dagger.Container, []string, error) {
+// withSeedEngine is ctr, a container of an engine's build, after an exec
+// that starts that engine, runs cmd as its client once it listens, and stops
+// it. The engine's state is a mounted empty directory: a snapshot with no
+// parent, which the outer engine mounts as a plain directory on its disk, so
+// the engine inside can put its overlays on it, and which has no name, so the
+// exec is cached exactly when its inputs are the same.
+func (dev *EngineDev) withSeedEngine(ctr *dagger.Container, cmd []string) *dagger.Container {
 	// Its network is the one after this engine-dev's, without changing
 	// dev's: an engine that took another increment could land on a network
 	// an engine above it uses.
 	nested := *dev
 	nested.IncrementSubnet()
-	service := engine.
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume(state+"-"+rand.Text())).
-		AsService(dagger.ContainerAsServiceOpts{
-			Args: []string{
-				"--addr", "tcp://0.0.0.0:1234",
-				// Its bridge is the name and "0": at most 15 characters.
-				"--network-name", "dagger-seed",
-				"--network-cidr", nested.NetworkCidr(),
-			},
-			UseEntrypoint:            true,
-			InsecureRootCapabilities: true,
-		})
-	client, err := dev.InstallClient(ctx, wolfi.New().Container(), service)
-	if err != nil {
-		return nil, nil, err
-	}
-	return dev.entriesTool(ctx, builder, client, platform, sdks, goBuilds)
+	return ctr.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
+		WithMountedDirectory(distconsts.EngineDefaultStateDir, core.NewDirectory()).
+		WithExec(
+			withoutOuterSession(append([]string{"sh", "-c", seedEngineScript, "seed-engine", nested.NetworkCidr()}, cmd...)...),
+			dagger.ContainerWithExecOpts{InsecureRootCapabilities: true},
+		)
 }
+
+// seedEngineScript starts the container's engine on network $1, waits until
+// its socket is there, runs the rest of its arguments as its client, and stops
+// the engine. A failure shows the end of the engine's log.
+const seedEngineScript = `set -eu
+network_cidr=$1
+shift
+log=/var/log/seed-engine.log
+mkdir -p /var/log
+# Its bridge is the name and "0": at most 15 characters.
+dagger-entrypoint.sh --network-name dagger-seed --network-cidr "$network_cidr" >"$log" 2>&1 &
+engine=$!
+stop() {
+	kill "$engine" 2>/dev/null || :
+	wait "$engine" 2>/dev/null || :
+}
+failed() {
+	echo "$1; the engine's log ends:" >&2
+	tail -n 40 "$log" >&2
+	stop
+	exit 1
+}
+started=$(date +%s)
+until [ -S /run/dagger/engine.sock ]; do
+	kill -0 "$engine" 2>/dev/null || failed "the engine exited before it listened"
+	[ $(($(date +%s) - started)) -lt 120 ] || failed "the engine didn't listen within 120 s"
+	sleep 0.1
+done
+"$@" || failed "$1 exited $?"
+stop
+`
 
 // entriesExported is nil when ran, an exec that makes an image's entries
 // with exporter, succeeded, and otherwise says why it didn't, such as dagger/go
@@ -437,19 +457,19 @@ func (dev *EngineDev) ImageEntriesAfterPrune(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// An engine of this build, on a state of its own, which it prunes.
-	client, exporter, err := dev.seedEngineClient(ctx, builder, engine, builder.Platform(), "dagger-image-entries-after-prune", sdks, true)
+	// An engine of this build, on state of its own, which it prunes.
+	ctr, exporter, err := dev.entriesTool(ctx, builder, engine, builder.Platform(), sdks, true)
 	if err != nil {
 		return err
 	}
-	ran := client.WithExec(withoutOuterSession(append([]string{"sh", "-c", `set -e
+	ran := dev.withSeedEngine(ctr, append([]string{"sh", "-c", `set -e
 "$@" -out /entries-before -sdk-digests /sdk-digests-before.json
 size=$(echo '{ engine { localCache { entrySet { diskSpaceBytes } } } }' | dagger query | grep -o '"diskSpaceBytes": *[0-9]*' | grep -o '[0-9]*$')
 half=$((size / 2 / 1048576))MB
 echo "pruning the cache of $size bytes to $half"
 echo "{ engine { localCache { prune(maxUsedSpace: \"$half\", targetSpace: \"$half\") } } }" | dagger query
 "$@" -out /entries -sdk-digests /sdk-digests.json
-`, "sh"}, exporter...)...))
+`, "sh"}, exporter...))
 	return entriesExported(ctx, ran, exporter)
 }
 
