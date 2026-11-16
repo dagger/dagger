@@ -79,6 +79,9 @@ public class StringValue(string value) : Value
                 case '"':
                     sb.Append("\\\"");
                     break;
+                case < ' ':
+                    sb.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+                    break;
                 default:
                     sb.Append(c);
                     break;
@@ -105,7 +108,7 @@ public class IntValue(int n) : Value
     /// <returns>The formatted integer value.</returns>
     public override ValueTask<string> FormatAsync(CancellationToken cancellationToken = default)
     {
-        _cached ??= n.ToString();
+        _cached ??= n.ToString(CultureInfo.InvariantCulture);
         return new ValueTask<string>(_cached);
     }
 }

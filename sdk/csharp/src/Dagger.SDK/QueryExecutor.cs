@@ -77,28 +77,42 @@ public static class QueryExecutor
     {
         var query = await queryBuilder.BuildAsync(cancellationToken).ConfigureAwait(false);
 
+        using var response = await client
+            .RequestAsync(query, cancellationToken)
+            .ConfigureAwait(false);
+        var data = await response
+            .Content.ReadAsStringAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        GraphQLResponse? graphQLResponse;
         try
         {
-            var response = await client.RequestAsync(query, cancellationToken);
-            var data = await response.Content.ReadAsStringAsync(cancellationToken);
-            var graphQLResponse = JsonSerializer.Deserialize<GraphQLResponse>(
+            graphQLResponse = JsonSerializer.Deserialize<GraphQLResponse>(
                 data,
                 DeserializerOptions
             );
-
-            // Check for GraphQL errors in the response
-            if (graphQLResponse?.Errors != null && graphQLResponse.Errors.Count > 0)
-            {
-                ThrowAppropriateException(graphQLResponse.Errors, query);
-            }
-
-            return graphQLResponse?.Data ?? new JsonElement();
         }
-        catch (Exception)
+        catch (JsonException ex) when (!response.IsSuccessStatusCode)
         {
-            throw;
+            throw new DaggerException(HttpErrorMessage(response, data), ex);
         }
+
+        // Check for GraphQL errors in the response
+        if (graphQLResponse?.Errors != null && graphQLResponse.Errors.Count > 0)
+        {
+            ThrowAppropriateException(graphQLResponse.Errors, query);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new DaggerException(HttpErrorMessage(response, data));
+        }
+
+        return graphQLResponse?.Data ?? new JsonElement();
     }
+
+    private static string HttpErrorMessage(HttpResponseMessage response, string body) =>
+        $"Dagger engine returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {body.Trim()}";
 
     private static void ThrowAppropriateException(List<GraphQLError> errors, string query)
     {
