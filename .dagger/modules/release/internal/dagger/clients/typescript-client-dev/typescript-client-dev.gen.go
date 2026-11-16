@@ -20,6 +20,10 @@ type TypescriptClientDevOpts struct {
 	WorkspaceDir *Directory // typescript-client-dev (../../:0:0)
 
 	SourcePath string // typescript-client-dev (../../:0:0)
+	//
+	// Where @dagger.io/core lives, relative to the workspace root.
+	//
+	CorePath string // typescript-client-dev (../../:0:0)
 }
 
 func (r *Query) TypescriptClientDev(ws *Workspace, opts ...TypescriptClientDevOpts) *TypescriptClientDev { // typescript-client-dev (../../:0:0)
@@ -46,6 +50,10 @@ func (r *Query) TypescriptClientDev(ws *Workspace, opts ...TypescriptClientDevOp
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
+		// `corePath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CorePath) {
+			q = q.Arg("corePath", opts[i].CorePath)
+		}
 	}
 	q = q.Arg("ws", ws)
 
@@ -64,11 +72,13 @@ type TypescriptClientDev struct { // typescript-client-dev (../../:0:0)
 	query *querybuilder.Selection
 
 	bunVersion         *string
+	corePath           *string
 	id                 *ID
 	isSemver           *bool
 	nodeVersionLts     *string
 	nodeVersionPrevLts *string
 	release            *Void
+	releaseCore        *Void
 	sourcePath         *string
 	testNodejs         *Void
 }
@@ -108,6 +118,19 @@ func (r *TypescriptClientDev) ClientLibrary() *Changeset { // typescript-client-
 	q := r.query.Select("clientLibrary")
 
 	return new(Changeset).WithGraphQLQuery(q)
+}
+
+// Where @dagger.io/core lives, relative to the workspace root.
+func (r *TypescriptClientDev) CorePath(ctx context.Context) (string, error) { // typescript-client-dev (../../:0:0)
+	if r.corePath != nil {
+		return *r.corePath, nil
+	}
+	q := r.query.Select("corePath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Format the SDK source with prettier via eslint --fix
@@ -300,6 +323,62 @@ func (r *TypescriptClientDev) Release(ctx context.Context, sourceTag string, opt
 	q = q.Arg("sourceTag", sourceTag)
 
 	return q.Execute(ctx)
+}
+
+// TypescriptClientDevReleaseCoreOpts contains options for TypescriptClientDev.ReleaseCore
+type TypescriptClientDevReleaseCoreOpts struct {
+	//
+	// NPM authentication token
+	//
+	NpmToken *Secret // typescript-client-dev (../../:0:0)
+	//
+	// Execute a dry-run release, with no side effects
+	//
+	DryRun bool // typescript-client-dev (../../:0:0)
+	//
+	// NPM registry URL to publish to.
+	//
+	NpmRegistryURL string // typescript-client-dev (../../:0:0)
+}
+
+// Publish @dagger.io/core.
+//
+// Its version is the **engine** release, not the SDK's, which is why the tag is
+// taken as-is rather than through versionFromTag: core is the generated bindings
+// for one engine, so the two move together and nothing else here does.
+//
+// @dagger.io/session is a published dependency, so `npm install` below fetches it
+// from the registry. That is deliberate — it is the only thing that proves the
+// package boundary holds before the tarball is built.
+func (r *TypescriptClientDev) ReleaseCore(ctx context.Context, sourceTag string, opts ...TypescriptClientDevReleaseCoreOpts) error { // typescript-client-dev (../../:0:0)
+	if r.releaseCore != nil {
+		return nil
+	}
+	q := r.query.Select("releaseCore")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `npmToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NpmToken) {
+			q = q.Arg("npmToken", opts[i].NpmToken)
+		}
+		// `dryRun` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DryRun) {
+			q = q.Arg("dryRun", opts[i].DryRun)
+		}
+		// `npmRegistryUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NpmRegistryURL) {
+			q = q.Arg("npmRegistryUrl", opts[i].NpmRegistryURL)
+		}
+	}
+	q = q.Arg("sourceTag", sourceTag)
+
+	return q.Execute(ctx)
+}
+
+// Rehearse a core release with no side effects.
+func (r *TypescriptClientDev) ReleaseCoreDryRun() *Check { // typescript-client-dev (../../:0:0)
+	q := r.query.Select("releaseCoreDryRun")
+
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *TypescriptClientDev) ReleaseDryRun() *Check { // typescript-client-dev (../../:0:0)
