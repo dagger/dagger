@@ -366,7 +366,7 @@ func agentInspectStore(t *testing.T) (*clientdb.DB, map[string]string) {
 			attrs = append(attrs, &otlpcommonv1.KeyValue{Key: kv.Key, Value: telemetry.LogValueToPB(kv.Value)})
 			return true
 		})
-		encoded, err := clientdb.MarshalProtoJSONs(attrs)
+		encoded, err := clientdb.MarshalProtoList(attrs)
 		require.NoError(t, err)
 		body, err := proto.Marshal(telemetry.LogValueToPB(rec.Body()))
 		require.NoError(t, err)

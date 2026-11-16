@@ -143,7 +143,7 @@ func controlLog(t *testing.T, a agentcontrol.Agent) clientdb.Log {
 		attrs = append(attrs, &otlpcommonv1.KeyValue{Key: kv.Key, Value: telemetry.LogValueToPB(kv.Value)})
 		return true
 	})
-	encoded, err := clientdb.MarshalProtoJSONs(attrs)
+	encoded, err := clientdb.MarshalProtoList(attrs)
 	require.NoError(t, err)
 	body, err := proto.Marshal(telemetry.LogValueToPB(rec.Body()))
 	require.NoError(t, err)
