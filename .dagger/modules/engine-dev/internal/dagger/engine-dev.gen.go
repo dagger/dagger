@@ -753,10 +753,8 @@ func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev {
 }
 
 // Build the engine with the Go builds its image's entries ship, as a release
-// does. They are calls on the engine the build runs on, so a build whose Go
-// builds' inputs haven't changed finds them already made and only exports
-// them. An engine built without ships only the built-in SDKs' files in its
-// entries.
+// does. An engine of the image's own build makes them (imageEntries). An
+// engine built without ships only the built-in SDKs' files in its entries.
 func (r *EngineDev) WithImageEntries() *EngineDev {
 	q := r.query.Select("withImageEntries")
 

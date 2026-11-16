@@ -19,7 +19,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger/engine-dev/build"
-	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
 	clidev "dagger/engine-dev/internal/dagger/clients/cli-dev"
 	"dagger/engine-dev/internal/dagger/clients/wolfi"
@@ -154,10 +153,8 @@ func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
 }
 
 // Build the engine with the Go builds its image's entries ship, as a release
-// does. They are calls on the engine the build runs on, so a build whose Go
-// builds' inputs haven't changed finds them already made and only exports
-// them. An engine built without ships only the built-in SDKs' files in its
-// entries.
+// does. An engine of the image's own build makes them (imageEntries). An
+// engine built without ships only the built-in SDKs' files in its entries.
 func (dev *EngineDev) WithImageEntries() *EngineDev {
 	dev.ImageEntries = true
 	return dev
@@ -195,14 +192,16 @@ func (dev *EngineDev) Container(
 	if err != nil {
 		return nil, err
 	}
-	// What makes the entries runs here, on this engine's platform: every
-	// build the entries hold compiles for any platform.
+	// The entries are made by an engine of this build that runs here, for
+	// the image's platform: an engine runs its own platform's binaries, and
+	// every build the entries hold compiles for any platform.
 	native, err := dev.builder(ctx, "")
 	if err != nil {
 		return nil, err
 	}
-	// The engine and its CLI build while the entries are made: making them
-	// waits for the exporter, and nothing in the engine waits for them.
+	native = native.WithRace(dev.Race)
+	// The image's engine and its CLI build while the entries are made, and
+	// nothing in them waits for the entries.
 	var engineBuilt errgroup.Group
 	engineBuilt.Go(func() error {
 		_, err := ctr.Sync(ctx)
@@ -284,44 +283,30 @@ func (dev *EngineDev) goSDK(ctx context.Context) (*dagger.Directory, error) {
 // module code imports, the built-in Go SDK's (GoImageEntriesSeed) and
 // go-sdk's (GoSDKImageEntriesSeed), gobuild's binary, which dagger/go builds
 // every runtime with, and what a fresh engine would fetch to build with them
-// (dagger/go's tree and the two images the builds run in). They are calls on
-// this engine, made by cmd/engine-image-entries as a client of it and cached
-// by their inputs like any other: an image whose builds' inputs haven't
-// changed finds them already built, whatever else changed in the engine. An
-// entry is found by its call, which no engine build's own code is part of.
-// dagger/go declares each build as made for the platform it compiles for
-// (Directory.withPlatform), so an engine of the image's platform finds the
-// builds made for it here. When this engine writes another bundle version
-// than the image's engine merges, as one released before or after a change
-// of the version does, an engine of the image's build makes them instead. builder builds what runs here.
+// (dagger/go's tree and the two images the builds run in). dagger/go declares
+// each build as made for the platform it compiles for (Directory.withPlatform),
+// so an engine of the image's platform finds the builds made for it here.
+//
+// An engine of the image's own build makes them, on fresh state: whatever
+// the engine running this build already holds is never exported. Its own
+// image's entries, made by another dagger/go, would carry their recipes into
+// the image, so that a fresh engine of it builds again what they name; and a
+// remote cache's offers would carry keys the image's engine refuses at start.
+// builder builds what runs here.
 func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, platform string, sdks []build.SDKFiles, goBuilds bool) (*dagger.Directory, map[string]string, error) {
-	client, exporter, err := dev.entriesTool(ctx, builder, wolfi.New().Container(), platform, sdks, goBuilds)
+	engine, err := dev.engine(ctx, builder, "", "")
+	if err != nil {
+		return nil, nil, err
+	}
+	client, exporter, err := dev.seedEngineClient(ctx, builder, engine, platform, "dagger-image-entries", sdks, goBuilds)
 	if err != nil {
 		return nil, nil, err
 	}
 	const out = "/entries"
 	const sdkDigests = "/sdk-digests.json"
-	ran := client.WithExec(append(exporter, "-out", out, "-sdk-digests", sdkDigests))
-	if _, err := ran.Sync(ctx); err != nil {
-		var execErr *dagger.ExecError
-		if !errors.As(err, &execErr) || execErr.ExitCode != entriesUnreadable {
-			return nil, nil, entriesNotExported(err, exporter)
-		}
-		// This engine writes another bundle version than the image's
-		// engine merges: an engine of this build makes them, on a state
-		// named by its binary and the image's platform.
-		engine, err := dev.engine(ctx, builder, "", "")
-		if err != nil {
-			return nil, nil, err
-		}
-		seedClient, seedExporter, err := dev.seedEngineClient(ctx, builder, engine, platform, "dagger-image-entries", sdks, goBuilds)
-		if err != nil {
-			return nil, nil, err
-		}
-		ran = seedClient.WithExec(withoutOuterSession(append(seedExporter, "-out", out, "-sdk-digests", sdkDigests)...))
-		if err := entriesExported(ctx, ran, seedExporter); err != nil {
-			return nil, nil, err
-		}
+	ran := client.WithExec(withoutOuterSession(append(exporter, "-out", out, "-sdk-digests", sdkDigests)...))
+	if err := entriesExported(ctx, ran, exporter); err != nil {
+		return nil, nil, err
 	}
 	raw, err := ran.File(sdkDigests).Contents(ctx)
 	if err != nil {
@@ -388,16 +373,12 @@ func (dev *EngineDev) entriesTool(ctx context.Context, builder *build.Builder, c
 }
 
 // seedEngineClient is a client of a new engine service of engine's build, on
-// a state named state, the engine binary's content and platform, with what
-// cmd/engine-image-entries needs to make an image of platform's entries on
-// it, with the built-in SDKs' files, sdks, and with goBuilds the Go builds,
-// and the command that makes them, but for its -out and -sdk-digests.
-// builder builds what runs here.
+// fresh state of its own, named state and a random suffix as a test engine's
+// is, with what cmd/engine-image-entries needs to make an image of
+// platform's entries on it, with the built-in SDKs' files, sdks, and with
+// goBuilds the Go builds, and the command that makes them, but for its -out
+// and -sdk-digests. builder builds what runs here.
 func (dev *EngineDev) seedEngineClient(ctx context.Context, builder *build.Builder, engine *dagger.Container, platform, state string, sdks []build.SDKFiles, goBuilds bool) (*dagger.Container, []string, error) {
-	engineDigest, err := engine.File(consts.EngineServerPath).Digest(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("the engine binary: %w", err)
-	}
 	// Its network is the one after this engine-dev's, without changing
 	// dev's: an engine that took another increment could land on a network
 	// an engine above it uses.
@@ -405,9 +386,7 @@ func (dev *EngineDev) seedEngineClient(ctx context.Context, builder *build.Build
 	nested.IncrementSubnet()
 	service := engine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume(state+"-"+engineDigest+"-"+strings.ReplaceAll(platform, "/", "-")), dagger.ContainerWithMountedCacheOpts{
-			Sharing: dagger.CacheSharingModeLocked,
-		}).
+		WithMountedCache(distconsts.EngineDefaultStateDir, core.NewCacheVolume(state+"-"+rand.Text())).
 		AsService(dagger.ContainerAsServiceOpts{
 			Args: []string{
 				"--addr", "tcp://0.0.0.0:1234",
@@ -432,23 +411,12 @@ func (dev *EngineDev) seedEngineClient(ctx context.Context, builder *build.Build
 // later build runs the exporter again rather than being served the failure.
 func entriesExported(ctx context.Context, ran *dagger.Container, exporter []string) error {
 	_, err := ran.Sync(ctx)
-	return entriesNotExported(err, exporter)
-}
-
-// entriesNotExported is err, from an exec that makes an image's entries with
-// exporter, with why it failed when the exec did.
-func entriesNotExported(err error, exporter []string) error {
 	var execErr *dagger.ExecError
 	if errors.As(err, &execErr) {
 		return fmt.Errorf("make the engine image's entries, with %s (exit code %d):\n%s", strings.Join(exporter, " "), execErr.ExitCode, tailLines(execErr.Stdout+"\n"+execErr.Stderr, 40))
 	}
 	return err
 }
-
-// entriesUnreadable is cmd/engine-image-entries' exit code when the engine
-// it is a client of can't make entries an engine of this source starts from
-// (its exitUnreadable).
-const entriesUnreadable = 3
 
 // The entries an engine image ships can be made again on the state an
 // earlier making left after a prune cut part of it, as a later release's
