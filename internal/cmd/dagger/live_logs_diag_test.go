@@ -191,9 +191,11 @@ func TestLiveLogsUnclaimedBounded(t *testing.T) {
 	require.Contains(t, lines()[0], "live logs: replay span "+liveTestSpan(2).String())
 }
 
-// TestLiveLogsReplayFollowed: in runUnplacedReply's scenario, the reply's
-// first rows render twice, and the warning names them, and the opened check
-// followed with its descendants, whose query returned them unplaced.
+// TestLiveLogsReplayFollowed: in runUnplacedReply's scenario, the read
+// claiming the reply returns its first rows again, and the warning names
+// them, and the opened check followed with its descendants, whose query
+// returned them unplaced. The rows carry their row IDs, so the reply still
+// renders them once.
 func TestLiveLogsReplayFollowed(t *testing.T) {
 	var lines func() []string
 	reply, check := liveTestSpan(7).String(), liveTestSpan(5).String()
@@ -201,9 +203,9 @@ func TestLiveLogsReplayFollowed(t *testing.T) {
 		lines = diagLines(l)
 		l.running = fe.LiveLogsRunning
 	})
-	require.Equal(t, 2, strings.Count(strings.Join(exported, ""), "Hello there"), "the scenario no longer replays: %q", exported)
+	require.Equal(t, 1, strings.Count(strings.Join(exported, ""), "Hello there"), "the replayed rows were not skipped by row ID: %q", exported)
 	got := lines()
-	require.NotEmpty(t, got)
+	require.NotEmpty(t, got, "the scenario no longer replays")
 	for _, line := range got {
 		require.True(t, strings.HasPrefix(line, "live logs: replay span "+reply+" "), "%q", got)
 	}
