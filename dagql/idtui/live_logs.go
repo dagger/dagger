@@ -67,16 +67,42 @@ type LiveLogsFrontend interface {
 // exporter returned by SetLiveLogs runs it on the event loop immediately before
 // applying the records, so a cache sweep cannot drop their terminals between
 // validation and append. The filter must not wait on the event loop. It may
-// remove records in place; it must not modify the records themselves.
+// remove records in place; it must not modify the records themselves. It is
+// handed placement, telling where each record would render as of then.
 //
 // The check travels with the batch rather than its read: queued exports can
 // outlive the read that selected them, including a drop and a new request for
 // the same span.
-func WithLiveLogsFilter(ctx context.Context, filter func([]sdklog.Record) []sdklog.Record) context.Context {
+func WithLiveLogsFilter(ctx context.Context, filter LiveLogsFilterFunc) context.Context {
 	return context.WithValue(ctx, liveLogsFilterKey{}, filter)
 }
 
+// LiveLogsFilterFunc is a batch's validity check (WithLiveLogsFilter).
+type LiveLogsFilterFunc func(records []sdklog.Record, placement func(sdklog.Record) LogPlacement) []sdklog.Record
+
+// LogPlacement is where a frontend renders a record as it applies it.
+type LogPlacement struct {
+	// Span is the span whose logs the record joins; zero while the
+	// frontend holds it back (a digest whose creator it has not received).
+	Span dagui.SpanID
+	// RollUp is the span rolling up Span's logs that shows a copy of the
+	// record too; zero for none. A span whose ancestors the frontend has
+	// not received yet has none until they arrive.
+	RollUp dagui.SpanID
+	// ToolArgs: the record joins the span's tool call arguments rather
+	// than its output (a JSON chunk of a tool call's span, once received).
+	ToolArgs bool
+}
+
 type liveLogsFilterKey struct{}
+
+// LiveLogsFilter returns the check WithLiveLogsFilter attached to ctx, or
+// nil: an exporter standing in for SetLiveLogs's applies it the same way,
+// immediately before taking the records.
+func LiveLogsFilter(ctx context.Context) LiveLogsFilterFunc {
+	filter, _ := ctx.Value(liveLogsFilterKey{}).(LiveLogsFilterFunc)
+	return filter
+}
 
 // LogActivity is whether a span's display text may still grow.
 type LogActivity struct {

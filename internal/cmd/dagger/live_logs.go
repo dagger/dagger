@@ -1,6 +1,7 @@
 package daggercmd
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"log/slog"
@@ -22,6 +23,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/archive"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/tracesource"
 )
 
@@ -72,6 +74,18 @@ const (
 // followed, so each (span, digest) pair -- the unit a query selects rows by
 // -- is owned by the read that first imported it: a catch-up imports
 // nothing of a pair it does not own, which the follow already did.
+//
+// A row of a span the frontend has not placed yet (idtui.LogUnknown) is
+// imported without claiming its pair, so the read that later claims it
+// imports all of it -- including that row, again. Records carry their row
+// IDs in the store (telemetryattrs.LogRowAttr), so the rows of each
+// unclaimed pair the frontend holds are remembered (seen), and a read that
+// returns one again skips it. A record without an ID can't be told apart:
+// it is imported, as a duplicate rather than a loss. So is a row the
+// frontend would render elsewhere now than it did -- its span since placed
+// under a roll-up or received as a tool call, where only importing it again
+// shows it -- or that it held back (a digest's row, its creator not
+// received), as it does not tell where the held-back copy went since.
 //
 // When the frontend lets go of spans (release), they leave the set -- or,
 // retired, stop being watched -- and the pairs routing to the spans whose
@@ -134,8 +148,6 @@ type liveLogs struct {
 	// the read imports nothing more for it.
 	gen      uint64
 	released map[dagui.SpanID]uint64
-	finished bool
-	wake     chan struct{}
 	// With diag: unclaimed remembers the pairs imported unclaimed, up to
 	// liveLogsUnclaimedMax of them, oldest first in unclaimedOrder; rollUps,
 	// the spans followed with their descendants. imports numbers the
@@ -144,6 +156,20 @@ type liveLogs struct {
 	unclaimedOrder []logOwner
 	rollUps        map[string]liveLogsRollUp
 	imports        uint64
+	// seen are the row IDs of each pair imported unclaimed that the
+	// frontend holds, recorded as it applies them (see importLogs), and
+	// seenOrder the pairs, oldest first. Their IDs number seenRows, at most
+	// seenMax: past it the oldest pairs are forgotten.
+	seen      map[logOwner]*liveLogRows
+	seenOrder *list.List
+	seenRows  int
+	seenMax   int
+	// deduped counts the records skipped as rows the frontend holds;
+	// replayed, those it held but imported again, as it would render them
+	// elsewhere now (liveLogRows.places).
+	deduped, replayed uint64
+	finished          bool
+	wake              chan struct{}
 
 	stop func()
 }
@@ -177,6 +203,119 @@ type retiredLogSpan struct {
 	imported uint64
 }
 
+// liveLogsSeenMax bounds the rows liveLogs.seen holds, 1.5 MiB of them. A
+// pair stays there only until a read claims it, once the frontend places its
+// span, so it holds a handful at a time.
+const liveLogsSeenMax = 1 << 16
+
+// liveLogRows are the rows of a pair imported unclaimed that the frontend
+// holds (liveLogs.seen).
+type liveLogRows struct {
+	// ids are the rows' IDs, ascending, and places where the frontend
+	// rendered each.
+	ids    []int64
+	places []idtui.LogPlacement
+	elem   *list.Element
+}
+
+// noteRowLocked records that the frontend holds row id of the pair key,
+// imported unclaimed, applied at place(). When it held the row already, it
+// reports so, and whether to skip it (see shownAt). The caller holds l.mu.
+func (l *liveLogs) noteRowLocked(key logOwner, id int64, place func() idtui.LogPlacement) (held, skip bool) {
+	rows := l.seen[key]
+	if rows == nil {
+		rows = &liveLogRows{}
+		rows.elem = l.seenOrder.PushBack(key)
+		l.seen[key] = rows
+	}
+	// IDs come ascending but for the rows a read skipped and another
+	// returns later.
+	i, found := len(rows.ids), false
+	if i > 0 && id <= rows.ids[i-1] {
+		i, found = slices.BinarySearch(rows.ids, id)
+	}
+	now := place()
+	if found {
+		if skip = shownAt(rows.places[i], now); !skip {
+			// Imported again: shown where it would be now.
+			rows.places[i] = now
+		}
+		return true, skip
+	}
+	rows.ids = slices.Insert(rows.ids, i, id)
+	rows.places = slices.Insert(rows.places, i, now)
+	l.seenRows++
+	for l.seenRows > l.seenMax {
+		// Forgetting a pair costs a duplicate row should a read return
+		// it again; never a lost one.
+		oldest := l.seenOrder.Front().Value.(logOwner)
+		slog.Debug("live logs: forgetting the row IDs of an unclaimed pair past the cap",
+			"span", trace.SpanID(oldest.span).String(), "digest", oldest.digest, "rows", len(l.seen[oldest].ids))
+		l.forgetRowsLocked(oldest)
+	}
+	return false, false
+}
+
+// shownAt reports whether a row the frontend rendered at then shows
+// wherever it would render now: in the same span's logs, and the same
+// roll-up's -- or, held back then and now (its digest's creator unknown),
+// wherever the copy held back goes. A row held back then and placed now
+// went wherever the frontend resolved it, a service's exec span or the
+// creator, which it does not tell: it is not known to show now. Skipping a
+// row that is not shown would leave where it goes now without it; importing
+// it again repeats it where it was, a duplicate rather than a loss.
+func shownAt(then, now idtui.LogPlacement) bool {
+	return then == now
+}
+
+// takeRowLocked forgets row id of the pair key, imported unclaimed, if the
+// frontend holds it: the read returning it now owns the pair, and returns it
+// only once. It reports whether it held it, and whether to skip it, applied
+// at place() (see shownAt). The caller holds l.mu.
+func (l *liveLogs) takeRowLocked(key logOwner, id int64, place func() idtui.LogPlacement) (held, skip bool) {
+	rows := l.seen[key]
+	if rows == nil {
+		return false, false
+	}
+	i, found := slices.BinarySearch(rows.ids, id)
+	if !found {
+		return false, false
+	}
+	skip = shownAt(rows.places[i], place())
+	rows.ids = slices.Delete(rows.ids, i, i+1)
+	rows.places = slices.Delete(rows.places, i, i+1)
+	l.seenRows--
+	if len(rows.ids) == 0 {
+		l.forgetRowsLocked(key)
+	}
+	return true, skip
+}
+
+// forgetDroppedRowsLocked forgets the rows of the pairs the frontend
+// rendered in a span it dropped (or in its roll-up), or held back -- those
+// may have gone with any span. The caller holds l.mu.
+func (l *liveLogs) forgetDroppedRowsLocked(dropped map[dagui.SpanID]bool) {
+	for key, rows := range l.seen {
+		for _, p := range rows.places {
+			if !p.Span.IsValid() || dropped[p.Span] || dropped[p.RollUp] {
+				l.forgetRowsLocked(key)
+				break
+			}
+		}
+	}
+}
+
+// forgetRowsLocked forgets the rows of pair key. The caller holds l.mu.
+func (l *liveLogs) forgetRowsLocked(key logOwner) {
+	rows := l.seen[key]
+	if rows == nil {
+		return
+	}
+	l.seenOrder.Remove(rows.elem)
+	l.seenRows -= len(rows.ids)
+	delete(l.seen, key)
+}
+
 func newLiveLogs(reader tracesource.LogReader, traceID string, export sdklog.Exporter, follow bool) *liveLogs {
 	return &liveLogs{
 		reader:      reader,
@@ -197,6 +336,9 @@ func newLiveLogs(reader tracesource.LogReader, traceID string, export sdklog.Exp
 		released:    map[dagui.SpanID]uint64{},
 		unclaimed:   map[logOwner]liveLogsUnclaimed{},
 		rollUps:     map[string]liveLogsRollUp{},
+		seen:        map[logOwner]*liveLogRows{},
+		seenOrder:   list.New(),
+		seenMax:     liveLogsSeenMax,
 		wake:        make(chan struct{}, 1),
 		stop:        func() {},
 	}
@@ -314,6 +456,11 @@ func (l *liveLogs) release(r idtui.LogRelease) {
 		l.forgetUnclaimedLocked(func(key logOwner) bool {
 			return key.digest != "" || dropped[dagui.SpanID{SpanID: key.span}]
 		})
+	}
+	// So are the rows of an unclaimed pair it held, which the next read
+	// imports again.
+	if len(dropped) > 0 {
+		l.forgetDroppedRowsLocked(dropped)
 	}
 	var left bool
 	for _, id := range r.Spans {
@@ -849,28 +996,61 @@ func (l *liveLogs) importRead(ctx context.Context, req *collogspb.ExportLogsServ
 	if kept == 0 {
 		return nil
 	}
-	ctx = idtui.WithLiveLogsFilter(ctx, func(records []sdklog.Record) []sdklog.Record {
+	ctx = idtui.WithLiveLogsFilter(ctx, func(records []sdklog.Record, placement func(sdklog.Record) idtui.LogPlacement) []sdklog.Record {
 		// This runs on the frontend event loop, atomically with append
-		// relative to a sweep. No reader holds mu while waiting for it.
+		// relative to a sweep and a release. No reader holds mu while
+		// waiting for it.
 		l.mu.Lock()
 		defer l.mu.Unlock()
-		return slices.DeleteFunc(records, func(rec sdklog.Record) bool {
-			key := logOwner{span: rec.SpanID()}
-			rec.WalkAttributes(func(kv log.KeyValue) bool {
-				if kv.Key == telemetry.DagDigestAttr {
-					key.digest = kv.Value.AsString()
-					return false
-				}
-				return true
-			})
+		var deduped, replayed int
+		records = slices.DeleteFunc(records, func(rec sdklog.Record) bool {
+			key, row := logOwnerOfRecord(rec)
 			generation, claimed := claims[key]
 			if !claimed {
-				// Unknown routes were imported without claiming their pair.
-				return false
+				// Unknown routes were imported without claiming their
+				// pair: the frontend holds the row unless it did already.
+				if row <= 0 {
+					return false
+				}
+				held, skip := l.noteRowLocked(key, row, func() idtui.LogPlacement { return placement(rec) })
+				switch {
+				case skip:
+					deduped++
+				case held:
+					replayed++
+				}
+				return skip
 			}
-			claim, held := l.owned[key]
-			return !held || claim.generation != generation
+			claim, owned := l.owned[key]
+			if !owned || claim.generation != generation {
+				return true
+			}
+			if row > 0 && l.seen[key] != nil {
+				// Imported unclaimed before this read claimed the pair?
+				held, skip := l.takeRowLocked(key, row, func() idtui.LogPlacement { return placement(rec) })
+				switch {
+				case skip:
+					deduped++
+					return true
+				case held:
+					replayed++
+				}
+			}
+			if read == 0 && claim.read == 0 {
+				// The follow owns the pair: no other read returns its
+				// rows. (A catch-up claiming it may still be returning
+				// the ones held.)
+				l.forgetRowsLocked(key)
+			}
+			return false
 		})
+		if deduped > 0 || replayed > 0 {
+			l.deduped += uint64(deduped)
+			l.replayed += uint64(replayed)
+			slog.Debug("live logs: rows imported already", "read", read,
+				"skipped", deduped, "again", replayed, "skippedTotal", l.deduped, "againTotal", l.replayed)
+		}
+		return records
 	})
 	return telemetry.ReexportLogsFromPB(ctx, l.export, req)
 }
@@ -885,6 +1065,28 @@ func logOwnerOf(rec *otlplogsv1.LogRecord) logOwner {
 		}
 	}
 	return key
+}
+
+// logOwnerOfRecord is logOwnerOf for an imported record, along with its row
+// ID (telemetryattrs.LogRowAttr); 0 when it has none.
+func logOwnerOfRecord(rec sdklog.Record) (logOwner, int64) {
+	key := logOwner{span: rec.SpanID()}
+	var row int64
+	var digest, hasRow bool
+	rec.WalkAttributes(func(kv log.KeyValue) bool {
+		switch kv.Key {
+		case telemetry.DagDigestAttr:
+			if !digest {
+				key.digest, digest = kv.Value.AsString(), true
+			}
+		case telemetryattrs.LogRowAttr:
+			if !hasRow && kv.Value.Kind() == log.KindInt64 {
+				row, hasRow = kv.Value.AsInt64(), true
+			}
+		}
+		return !digest || !hasRow
+	})
+	return key, row
 }
 
 // finish stops following and reads everything followed up to the store's

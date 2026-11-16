@@ -3507,10 +3507,10 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 	// Copy the slice — the OTel SDK reuses it after Export returns.
 	logsCopy := make([]sdklog.Record, len(logs))
 	copy(logsCopy, logs)
-	filter, _ := ctx.Value(liveLogsFilterKey{}).(func([]sdklog.Record) []sdklog.Record)
+	filter := LiveLogsFilter(ctx)
 	fe.dispatch(func() {
 		if fe.read && filter != nil {
-			logsCopy = filter(logsCopy)
+			logsCopy = filter(logsCopy, fe.logs.placement)
 		}
 		logSpanIDs := make(map[dagui.SpanID]struct{})
 		for _, log := range logsCopy {
@@ -10313,6 +10313,24 @@ func (l *prettyLogs) extractSpanContext(span *dagui.Span) string {
 }
 
 func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, dagui.SpanID, bool) {
+	id, ok := l.rollUpSpanOf(origID)
+	if !ok {
+		return nil, dagui.SpanID{}, false
+	}
+	// Found a roll-up span; find-or-create a prefixed writer for it.
+	pw, found := l.PrefixWriters[id]
+	if !found {
+		vterm := l.spanLogs(id)
+		pw = multiprefixw.New(vterm)
+		l.PrefixWriters[id] = pw
+	}
+	return pw, id, true
+}
+
+// rollUpSpanOf finds the span rolling up origID's logs, if any: origID or
+// its nearest RollUpLogs ancestor, short of a boundary, an encapsulating or
+// internal span, or a span it does not know yet.
+func (l *prettyLogs) rollUpSpanOf(origID dagui.SpanID) (dagui.SpanID, bool) {
 	id := origID
 	for {
 		span := l.DB.Spans.Map[id]
@@ -10323,14 +10341,7 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 			break
 		}
 		if span.RollUpLogs {
-			// Found a roll-up span; find-or-create a prefixed writer for it.
-			pw, found := l.PrefixWriters[id]
-			if !found {
-				vterm := l.spanLogs(id)
-				pw = multiprefixw.New(vterm)
-				l.PrefixWriters[id] = pw
-			}
-			return pw, id, true
+			return id, true
 		}
 		if span.ParentID.IsValid() {
 			// Keep walking upward
@@ -10339,7 +10350,38 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 			break
 		}
 	}
-	return nil, dagui.SpanID{}, false
+	return dagui.SpanID{}, false
+}
+
+// placement is where Export renders rec (see LogPlacement).
+func (l *prettyLogs) placement(rec sdklog.Record) LogPlacement {
+	spanID := l.DB.LogTargetSpanID(rec)
+	if !spanID.IsValid() {
+		return LogPlacement{}
+	}
+	p := LogPlacement{Span: spanID}
+	var verbose, global bool
+	var contentType string
+	for attr := range rec.WalkAttributes {
+		switch attr.Key {
+		case telemetry.ContentTypeAttr:
+			contentType, _ = dagui.LogValueString(attr.Value)
+		case telemetry.LogsGlobalAttr:
+			global, _ = dagui.LogValueBool(attr.Value)
+		case telemetry.LogsVerboseAttr:
+			verbose, _ = dagui.LogValueBool(attr.Value)
+		}
+	}
+	if rollUp, ok := l.rollUpSpanOf(spanID); ok && rollUp != spanID && !verbose && !global {
+		p.RollUp = rollUp
+	}
+	if contentType == "application/json" {
+		if span := l.DB.Spans.Map[spanID]; span != nil && span.LLMRole != "" && span.LLMTool != "" {
+			_, isMedia := dagui.ParseMediaRecord(rec)
+			p.ToolArgs = !isMedia
+		}
+	}
+	return p
 }
 
 func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {

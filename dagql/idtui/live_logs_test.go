@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
@@ -32,6 +33,49 @@ func vtermText(fe *frontendPretty, id dagui.SpanID) string {
 	var buf strings.Builder
 	_ = vt.Print(&buf)
 	return buf.String()
+}
+
+// TestLogPlacement: a live batch's check is told where each record renders
+// as of now -- its span, and the roll-up showing a copy of it, which a span
+// whose ancestors have not arrived has none of yet -- matching what Export
+// writes.
+func TestLogPlacement(t *testing.T) {
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), tuist.NewHeadlessTerminal(80, 24))
+	fe.reportOnly = true // apply inline
+	live := dagui.TraceID{TraceID: trace.TraceID{2}}
+	root, rollUp, kid, orphan := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3), prettyTestSpanID(4)
+	start := time.Unix(100, 0)
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: root, TraceID: live, Name: "root", StartTime: start, Final: true},
+		{ID: rollUp, TraceID: live, ParentID: root, Name: "rollup", RollUpLogs: true, StartTime: start, Final: true},
+		{ID: kid, TraceID: live, ParentID: rollUp, Name: "kid", StartTime: start, Final: true},
+	})
+	unknown := prettyTestSpanID(9)
+	tool := prettyTestSpanID(5)
+	fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: tool, TraceID: live, ParentID: root, Name: "tool", LLMRole: "assistant", LLMTool: "Read", StartTime: start, Final: true}})
+	json := otellog.String(telemetry.ContentTypeAttr, "application/json")
+	for _, tc := range []struct {
+		name string
+		rec  sdklog.Record
+		want LogPlacement
+	}{
+		{"rolled up", liveTestLog(live, kid, "x"), LogPlacement{Span: kid, RollUp: rollUp}},
+		{"the roll-up's own", liveTestLog(live, rollUp, "x"), LogPlacement{Span: rollUp}},
+		{"verbose", liveTestLog(live, kid, "x", otellog.Bool(telemetry.LogsVerboseAttr, true)), LogPlacement{Span: kid}},
+		{"outside a roll-up", liveTestLog(live, root, "x"), LogPlacement{Span: root}},
+		{"not received", liveTestLog(live, unknown, "x"), LogPlacement{Span: unknown}},
+		{"parked", liveTestLog(live, orphan, "x", otellog.String(telemetry.DagDigestAttr, "xxh3:nobody")), LogPlacement{}},
+		{"tool args", liveTestLog(live, tool, "{}", json), LogPlacement{Span: tool, ToolArgs: true}},
+		{"tool output", liveTestLog(live, tool, "x"), LogPlacement{Span: tool}},
+		{"JSON of a span not received", liveTestLog(live, unknown, "{}", json), LogPlacement{Span: unknown}},
+	} {
+		require.Equal(t, tc.want, fe.logs.placement(tc.rec), tc.name)
+	}
+	fe.logs.Export(t.Context(), []sdklog.Record{liveTestLog(live, kid, "copied\n")})
+	require.Contains(t, vtermText(fe, rollUp), "copied", "Export copies what placement says")
+	fe.logs.Export(t.Context(), []sdklog.Record{liveTestLog(live, tool, `{"path":"x"}`, json)})
+	require.NotContains(t, vtermText(fe, tool), "path", "Export writes tool args where placement says")
+	require.Contains(t, fe.logs.ToolArgs, tool)
 }
 
 // TestLiveLogsReadOnDemand: once a live session reads display text on
@@ -133,10 +177,13 @@ func TestLiveLogsFilterAtApplication(t *testing.T) {
 	fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: step, TraceID: live, Name: "step", StartTime: time.Unix(100, 0), Final: true}})
 	read := fe.SetLiveLogs(live, func(LogRequest) {})
 	valid, checked := true, false
-	ctx := WithLiveLogsFilter(t.Context(), func(records []sdklog.Record) []sdklog.Record {
+	ctx := WithLiveLogsFilter(t.Context(), func(records []sdklog.Record, placement func(sdklog.Record) LogPlacement) []sdklog.Record {
 		checked = true
 		if !valid {
 			return nil
+		}
+		for _, rec := range records {
+			require.Equal(t, LogPlacement{Span: step}, placement(rec))
 		}
 		return records
 	})

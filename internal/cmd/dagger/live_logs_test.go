@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/internal/tracesource"
 	"github.com/dagger/dagger/util/cleanups"
 )
@@ -35,6 +37,9 @@ type liveLogRow struct {
 	span   uint16
 	body   string
 	digest string
+	// id is the row's ID in the store (telemetryattrs.LogRowAttr); none
+	// when 0.
+	id int64
 }
 
 type liveLogBatch struct {
@@ -99,6 +104,12 @@ func liveLogRequest(rows []liveLogRow) *collogspb.ExportLogsServiceRequest {
 				Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: r.digest}},
 			})
 		}
+		if r.id > 0 {
+			rec.Attributes = append(rec.Attributes, &otlpcommonv1.KeyValue{
+				Key:   telemetryattrs.LogRowAttr,
+				Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_IntValue{IntValue: r.id}},
+			})
+		}
 		records = append(records, rec)
 	}
 	return &collogspb.ExportLogsServiceRequest{ResourceLogs: []*otlplogsv1.ResourceLogs{{
@@ -107,12 +118,24 @@ func liveLogRequest(rows []liveLogRow) *collogspb.ExportLogsServiceRequest {
 	}}}
 }
 
+// bodyCollector collects the bodies of the records exported to it, after
+// the batch's check (idtui.LiveLogsFilter), as the frontend applies it,
+// placing each record in its own span -- but for a digest's, held back as
+// if its creator were unknown.
 type bodyCollector struct {
 	mu     sync.Mutex
 	bodies []string
 }
 
-func (c *bodyCollector) Export(_ context.Context, records []sdklog.Record) error {
+func (c *bodyCollector) Export(ctx context.Context, records []sdklog.Record) error {
+	if filter := idtui.LiveLogsFilter(ctx); filter != nil {
+		records = filter(slices.Clone(records), func(rec sdklog.Record) idtui.LogPlacement {
+			if key, _ := logOwnerOfRecord(rec); key.digest != "" {
+				return idtui.LogPlacement{}
+			}
+			return idtui.LogPlacement{Span: dagui.SpanID{SpanID: rec.SpanID()}}
+		})
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, rec := range records {
@@ -195,18 +218,19 @@ func TestLiveLogsFollowCatchesUpJoiningSpans(t *testing.T) {
 	}, seen[join:])
 }
 
-// TestLiveLogsUnknownSpansStayUnclaimed: a follow over a subtree also returns
+// TestLiveLogsUnknownSpansImportedOnce: a follow over a subtree also returns
 // rows of a span the engine has not placed yet, then stops once it is placed
 // elsewhere. Those rows are imported without claiming the span, so rendering
-// it later catches up all its rows rather than only the ones the follow saw;
-// rows the frontend did not ask for are dropped.
-func TestLiveLogsUnknownSpansStayUnclaimed(t *testing.T) {
+// it later catches up all its rows rather than only the ones the follow saw
+// -- skipping, by their row IDs, the ones the follow imported; rows the
+// frontend did not ask for are dropped.
+func TestLiveLogsUnknownSpansImportedOnce(t *testing.T) {
 	reader := &fakeLogReader{respond: func(q tracesource.LogQuery) []liveLogBatch {
 		switch {
 		case q.Follow && q.Cursor == "":
-			return []liveLogBatch{{rows: []liveLogRow{{span: 1, body: "p1"}, {span: 9, body: "u1"}, {span: 7, body: "noise"}}, cursor: "3"}}
+			return []liveLogBatch{{rows: []liveLogRow{{span: 1, body: "p1", id: 1}, {span: 9, body: "u1", id: 2}, {span: 7, body: "noise", id: 3}}, cursor: "3"}}
 		case q.Through == "3":
-			return []liveLogBatch{{rows: []liveLogRow{{span: 9, body: "u1"}, {span: 9, body: "u2"}}, cursor: "3"}}
+			return []liveLogBatch{{rows: []liveLogRow{{span: 9, body: "u1", id: 2}, {span: 9, body: "u2", id: 4}}, cursor: "3"}}
 		}
 		return nil
 	}}
@@ -241,8 +265,381 @@ func TestLiveLogsUnknownSpansStayUnclaimed(t *testing.T) {
 	requested[9] = true
 	mu.Unlock()
 	l.subscribe(idtui.LogRequest{Span: liveTestSpan(9)})
-	require.Eventually(t, func() bool { return len(out.got()) == 4 }, 5*time.Second, 10*time.Millisecond)
-	require.Equal(t, []string{"p1", "u1", "u1", "u2"}, out.got(), "the race repeats a line rather than losing the rest")
+	require.Eventually(t, func() bool { return slices.Contains(out.got(), "u2") }, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, []string{"p1", "u1", "u2"}, out.got(), "every row once")
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	require.EqualValues(t, 1, l.deduped)
+	require.Empty(t, l.seen, "the catch-up took the row it skipped")
+	require.Zero(t, l.seenRows)
+}
+
+// rowIDLogs is a reader without a store, whose reads the test imports
+// itself (importLogs), routing each span as coverage says: covered spans to
+// themselves, unknown ones without a span, as the frontend does before it
+// received them.
+func rowIDLogs(coverage map[uint16]idtui.LogCoverage) (*liveLogs, *bodyCollector) {
+	out := &bodyCollector{}
+	l := newLiveLogs(nil, "trace", out, true)
+	l.coverage = func(targets []idtui.LogTarget) []idtui.LogRoute {
+		routes := make([]idtui.LogRoute, len(targets))
+		for i, target := range targets {
+			span := uint16(target.Span.SpanID[6])<<8 | uint16(target.Span.SpanID[7])
+			routes[i] = idtui.LogRoute{Coverage: coverage[span], Span: target.Span}
+			if coverage[span] == idtui.LogUnknown {
+				routes[i].Span = dagui.SpanID{}
+			}
+		}
+		return routes
+	}
+	return l, out
+}
+
+// importRows imports rows as the read numbered read does (0 for the
+// follow).
+func importRows(t *testing.T, l *liveLogs, read uint64, rows ...liveLogRow) {
+	t.Helper()
+	require.NoError(t, l.importLogs(t.Context(), liveLogRequest(rows), read, l.beginRead()))
+}
+
+// TestLiveLogsUnclaimedReplayOnce: a roll-up's catch-up returns rows of a
+// span still not placed that the follow imported, unclaimed both times:
+// each is imported once. A read claiming the pair once it is placed imports
+// only the rows it did not.
+func TestLiveLogsUnclaimedReplayOnce(t *testing.T) {
+	coverage := map[uint16]idtui.LogCoverage{9: idtui.LogUnknown}
+	l, out := rowIDLogs(coverage)
+	importRows(t, l, 0, liveLogRow{span: 9, body: "u1", id: 1}, liveLogRow{span: 9, body: "u2", id: 3})
+	importRows(t, l, 1, liveLogRow{span: 9, body: "u1", id: 1}, liveLogRow{span: 9, body: "u2", id: 3}, liveLogRow{span: 9, body: "u3", id: 4})
+	require.Equal(t, []string{"u1", "u2", "u3"}, out.got())
+	require.Equal(t, []int64{1, 3, 4}, l.seen[logOwner{span: liveTestSpan(9).SpanID}].ids)
+
+	coverage[9] = idtui.LogCovered
+	importRows(t, l, 2, liveLogRow{span: 9, body: "u1", id: 1}, liveLogRow{span: 9, body: "u2", id: 3}, liveLogRow{span: 9, body: "u3", id: 4}, liveLogRow{span: 9, body: "u4", id: 6})
+	require.Equal(t, []string{"u1", "u2", "u3", "u4"}, out.got())
+	require.EqualValues(t, 5, l.deduped)
+	require.Empty(t, l.seen)
+	require.Zero(t, l.seenRows)
+}
+
+// TestLiveLogsUnclaimedGapCaughtUp: the follow can skip a pair's rows
+// between two it imports -- its set lost the roll-up that selected the
+// unplaced span, then got it back -- so the catch-up claiming the pair
+// imports exactly the row in between.
+func TestLiveLogsUnclaimedGapCaughtUp(t *testing.T) {
+	coverage := map[uint16]idtui.LogCoverage{9: idtui.LogUnknown}
+	l, out := rowIDLogs(coverage)
+	importRows(t, l, 0, liveLogRow{span: 9, body: "u1", id: 1})
+	importRows(t, l, 0, liveLogRow{span: 9, body: "u3", id: 5})
+	coverage[9] = idtui.LogCovered
+	importRows(t, l, 1, liveLogRow{span: 9, body: "u1", id: 1}, liveLogRow{span: 9, body: "u2", id: 3}, liveLogRow{span: 9, body: "u3", id: 5})
+	require.Equal(t, []string{"u1", "u3", "u2"}, out.got(), "every row once")
+	require.Empty(t, l.seen)
+}
+
+// TestLiveLogsFollowClaimForgetsRows: once the follow claims a pair it
+// imported rows of unclaimed, no other read returns them: they are
+// forgotten.
+func TestLiveLogsFollowClaimForgetsRows(t *testing.T) {
+	coverage := map[uint16]idtui.LogCoverage{9: idtui.LogUnknown}
+	l, out := rowIDLogs(coverage)
+	importRows(t, l, 0, liveLogRow{span: 9, body: "u1", id: 1})
+	require.Len(t, l.seen, 1)
+	coverage[9] = idtui.LogCovered
+	importRows(t, l, 0, liveLogRow{span: 9, body: "u2", id: 2})
+	require.Equal(t, []string{"u1", "u2"}, out.got())
+	require.Empty(t, l.seen)
+	require.Zero(t, l.seenRows)
+}
+
+// TestLiveLogsFollowDuringCatchUp: the follow imports rows of a pair a
+// catch-up claimed while the catch-up is still returning its older rows --
+// a reply streaming on -- so the rows held stay held until the catch-up
+// returns them.
+func TestLiveLogsFollowDuringCatchUp(t *testing.T) {
+	coverage := map[uint16]idtui.LogCoverage{9: idtui.LogUnknown}
+	l, out := rowIDLogs(coverage)
+	importRows(t, l, 0, liveLogRow{span: 9, body: "u5", id: 5})
+	coverage[9] = idtui.LogCovered
+	importRows(t, l, 1, liveLogRow{span: 9, body: "u2", id: 2})
+	importRows(t, l, 0, liveLogRow{span: 9, body: "u7", id: 7})
+	importRows(t, l, 1, liveLogRow{span: 9, body: "u5", id: 5})
+	require.Equal(t, []string{"u5", "u2", "u7"}, out.got(), "every row once")
+	require.EqualValues(t, 1, l.deduped)
+	require.Empty(t, l.seen)
+}
+
+// TestLiveLogsReleaseForgetsRows: the rows the frontend dropped are
+// forgotten with it -- those of a pair routing to a span it dropped, and of
+// a digest whose route it could not tell -- so the next read imports them
+// again; the others stay, and so does everything when it drops nothing.
+func TestLiveLogsReleaseForgetsRows(t *testing.T) {
+	coverage := map[uint16]idtui.LogCoverage{7: idtui.LogUnknown, 8: idtui.LogUnknown, 9: idtui.LogUnknown}
+	l, out := rowIDLogs(coverage)
+	importRows(t, l, 0,
+		liveLogRow{span: 7, body: "kept", id: 1},
+		liveLogRow{span: 8, body: "svc", digest: "xxh3:svc", id: 2},
+		liveLogRow{span: 9, body: "u1", id: 3},
+	)
+	require.Len(t, l.seen, 3)
+	l.release(idtui.LogRelease{Spans: []dagui.SpanID{liveTestSpan(9)}})
+	require.Len(t, l.seen, 3, "released without dropping its text")
+	l.release(idtui.LogRelease{Spans: []dagui.SpanID{liveTestSpan(9)}, Dropped: []dagui.SpanID{liveTestSpan(9)}})
+	require.Equal(t, []logOwner{{span: liveTestSpan(7).SpanID}}, slices.Collect(maps.Keys(l.seen)))
+	require.Equal(t, 1, l.seenRows)
+	require.Equal(t, 1, l.seenOrder.Len())
+
+	coverage[9] = idtui.LogCovered
+	importRows(t, l, 1, liveLogRow{span: 9, body: "u1", id: 3}, liveLogRow{span: 9, body: "u2", id: 4})
+	importRows(t, l, 2, liveLogRow{span: 7, body: "kept", id: 1})
+	require.Equal(t, []string{"kept", "svc", "u1", "u1", "u2"}, out.got(), "a dropped row is imported again")
+}
+
+// TestLiveLogsQueuedUnclaimedAfterRelease: an unclaimed batch the frontend
+// applies only after it dropped the span -- recreating its text -- is
+// recorded then, so the read claiming the pair skips it.
+func TestLiveLogsQueuedUnclaimedAfterRelease(t *testing.T) {
+	coverage := map[uint16]idtui.LogCoverage{9: idtui.LogUnknown}
+	l, out := rowIDLogs(coverage)
+	var queued []func() error
+	l.export = exporterFunc(func(ctx context.Context, records []sdklog.Record) error {
+		records = slices.Clone(records)
+		queued = append(queued, func() error { return out.Export(ctx, records) })
+		return nil
+	})
+	importRows(t, l, 0, liveLogRow{span: 9, body: "u1", id: 1})
+	l.release(idtui.LogRelease{Spans: []dagui.SpanID{liveTestSpan(9)}, Dropped: []dagui.SpanID{liveTestSpan(9)}})
+	require.NoError(t, queued[0]())
+	coverage[9] = idtui.LogCovered
+	importRows(t, l, 1, liveLogRow{span: 9, body: "u1", id: 1}, liveLogRow{span: 9, body: "u2", id: 2})
+	require.NoError(t, queued[1]())
+	require.Equal(t, []string{"u1", "u2"}, out.got())
+}
+
+// TestLiveLogsSeenCap: past the cap, the oldest pairs' rows are forgotten,
+// so a read returning them again imports them twice -- a duplicate, never a
+// lost row -- while the newer pairs' are still skipped.
+func TestLiveLogsSeenCap(t *testing.T) {
+	coverage := map[uint16]idtui.LogCoverage{7: idtui.LogUnknown, 8: idtui.LogUnknown, 9: idtui.LogUnknown}
+	l, out := rowIDLogs(coverage)
+	l.seenMax = 3
+	importRows(t, l, 0, liveLogRow{span: 7, body: "a1", id: 1}, liveLogRow{span: 7, body: "a2", id: 2})
+	importRows(t, l, 0, liveLogRow{span: 8, body: "b1", id: 3})
+	require.Equal(t, 3, l.seenRows)
+	importRows(t, l, 0, liveLogRow{span: 9, body: "c1", id: 4})
+	require.Equal(t, 2, l.seenRows)
+	require.NotContains(t, l.seen, logOwner{span: liveTestSpan(7).SpanID}, "the oldest pair goes first")
+
+	coverage[7], coverage[8], coverage[9] = idtui.LogCovered, idtui.LogCovered, idtui.LogCovered
+	importRows(t, l, 1,
+		liveLogRow{span: 7, body: "a1", id: 1}, liveLogRow{span: 7, body: "a2", id: 2},
+		liveLogRow{span: 8, body: "b1", id: 3}, liveLogRow{span: 9, body: "c1", id: 4})
+	require.Equal(t, []string{"a1", "a2", "b1", "c1", "a1", "a2"}, out.got())
+	require.Empty(t, l.seen)
+	require.Zero(t, l.seenRows)
+}
+
+// TestLiveLogsNoRowIDs: records without row IDs (a store that sends none)
+// can't be told apart: a row imported unclaimed is imported again by the
+// read claiming its pair, as a duplicate rather than a loss.
+func TestLiveLogsNoRowIDs(t *testing.T) {
+	coverage := map[uint16]idtui.LogCoverage{9: idtui.LogUnknown}
+	l, out := rowIDLogs(coverage)
+	importRows(t, l, 0, liveLogRow{span: 9, body: "u1"})
+	importRows(t, l, 1, liveLogRow{span: 9, body: "u1"})
+	coverage[9] = idtui.LogCovered
+	importRows(t, l, 2, liveLogRow{span: 9, body: "u1"}, liveLogRow{span: 9, body: "u2"})
+	require.Equal(t, []string{"u1", "u1", "u1", "u2"}, out.got())
+	require.Empty(t, l.seen)
+	require.Zero(t, l.deduped)
+}
+
+// TestLiveLogsUnplacedReplyRendersOnce drives the headless frontend: an
+// agent's reply starts streaming before the frontend received its span,
+// so the follow of the conversation imports its first row unclaimed; once
+// the reply is placed and read on its own, its catch-up returns that row
+// again, and the reply renders it once.
+func TestLiveLogsUnplacedReplyRendersOnce(t *testing.T) {
+	for _, withIDs := range []bool{true, false} {
+		t.Run(fmt.Sprintf("row IDs %v", withIDs), func(t *testing.T) {
+			live := dagui.TraceID{TraceID: trace.TraceID{15: 1}}
+			root, reply := liveTestSpan(1), liveTestSpan(2)
+			start := time.Unix(100, 0)
+			fe := idtui.NewASCIIReporterWithDB(io.Discard, dagui.NewDB())
+			l := newLiveLogs(nil, live.String(), nil, true)
+			l.coverage = fe.LiveLogsCoverage
+			l.export = fe.SetLiveLogs(live, l.subscribe)
+			fe.SetLogRelease(live, l.release)
+			fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: root, TraceID: live, Name: "agent", StartTime: start, Final: true}})
+			fe.SetPrimary(root)
+			fe.RequestSurfacedLogs()
+			require.NoError(t, l.catchUp(t.Context()))
+			row := func(body string, id int64) liveLogRow {
+				r := liveLogRow{span: 2, body: body}
+				if withIDs {
+					r.id = id
+				}
+				return r
+			}
+			importRows(t, l, 0, row("Hello there, ", 1))
+			fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: reply, TraceID: live, ParentID: root, Name: "reply", LLMRole: "assistant", Message: "received", StartTime: start, Final: true}})
+			fe.RequestSurfacedLogs()
+			l.mu.Lock()
+			l.catchUps++
+			read := l.catchUps
+			l.mu.Unlock()
+			importRows(t, l, read, row("Hello there, ", 1), row("general Kenobi\n", 3))
+			var rendered strings.Builder
+			require.NoError(t, fe.FinalRender(&rendered))
+			text := rendered.String()
+			want := 1
+			if !withIDs {
+				want = 2 // the duplicate this fixes
+			}
+			require.Equal(t, want, strings.Count(text, "Hello there"), text)
+			require.Equal(t, 1, strings.Count(text, "general Kenobi"), text)
+		})
+	}
+}
+
+// TestLiveLogsRollUpPlacedLater drives the headless frontend: the follow
+// imports a row before its span arrived, so no roll-up shows it. The span
+// then turns out to roll up into a span the frontend requests: the read
+// claiming it imports the row again rather than skip it, or the roll-up
+// would never show it.
+func TestLiveLogsRollUpPlacedLater(t *testing.T) {
+	live := dagui.TraceID{TraceID: trace.TraceID{15: 1}}
+	root, rollUp, kid := liveTestSpan(1), liveTestSpan(2), liveTestSpan(3)
+	start := time.Unix(100, 0)
+	fe := idtui.NewASCIIReporterWithDB(io.Discard, dagui.NewDB())
+	l := newLiveLogs(nil, live.String(), nil, true)
+	l.coverage = fe.LiveLogsCoverage
+	l.export = fe.SetLiveLogs(live, l.subscribe)
+	fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: root, TraceID: live, Name: "root", StartTime: start, Final: true}})
+	fe.SetPrimary(root)
+	importRows(t, l, 0, liveLogRow{span: 3, body: "line one\n", id: 1})
+	fe.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rollUp, TraceID: live, ParentID: root, Name: "rollup", RollUpLogs: true, StartTime: start, EndTime: start.Add(time.Second), Final: true},
+		{ID: kid, TraceID: live, ParentID: rollUp, Name: "kid", StartTime: start, EndTime: start.Add(time.Second), Final: true},
+	})
+	fe.ZoomToSpan(rollUp)
+	fe.RequestSurfacedLogs()
+	require.NoError(t, l.catchUp(t.Context()))
+	l.mu.Lock()
+	l.catchUps++
+	read := l.catchUps
+	l.mu.Unlock()
+	importRows(t, l, read, liveLogRow{span: 3, body: "line one\n", id: 1}, liveLogRow{span: 3, body: "line two\n", id: 2})
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	require.EqualValues(t, 1, l.replayed, "imported again")
+	require.Zero(t, l.deduped)
+	require.Empty(t, l.seen)
+}
+
+// TestLiveLogsUnplacedToolArgs drives the headless frontend: a tool call's
+// arguments stream before the frontend received its span, so the follow's
+// first chunk lands in the span's output; once the span arrives, the chunk
+// belongs in its arguments, and the read claiming it imports it again
+// rather than skip it.
+func TestLiveLogsUnplacedToolArgs(t *testing.T) {
+	live := dagui.TraceID{TraceID: trace.TraceID{15: 1}}
+	root, tool := liveTestSpan(1), liveTestSpan(2)
+	start := time.Unix(100, 0)
+	fe := idtui.NewASCIIReporterWithDB(io.Discard, dagui.NewDB())
+	l := newLiveLogs(nil, live.String(), nil, true)
+	l.coverage = fe.LiveLogsCoverage
+	l.export = fe.SetLiveLogs(live, l.subscribe)
+	fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: root, TraceID: live, Name: "agent", StartTime: start, Final: true}})
+	fe.SetPrimary(root)
+	fe.RequestSurfacedLogs()
+	require.NoError(t, l.catchUp(t.Context()))
+	chunk := func(body string, id int64) *collogspb.ExportLogsServiceRequest {
+		req := liveLogRequest([]liveLogRow{{span: 2, body: body, id: id}})
+		rec := req.ResourceLogs[0].ScopeLogs[0].LogRecords[0]
+		rec.Attributes = append(rec.Attributes, &otlpcommonv1.KeyValue{
+			Key:   telemetry.ContentTypeAttr,
+			Value: &otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: "application/json"}},
+		})
+		return req
+	}
+	require.NoError(t, l.importLogs(t.Context(), chunk(`{"path":`, 1), 0, l.beginRead()))
+	fe.ImportSnapshots([]dagui.SpanSnapshot{{ID: tool, TraceID: live, ParentID: root, Name: "Read", LLMRole: "assistant", LLMTool: "Read", StartTime: start, Final: true}})
+	fe.RequestSurfacedLogs()
+	l.mu.Lock()
+	l.catchUps++
+	read := l.catchUps
+	l.mu.Unlock()
+	require.NoError(t, l.importLogs(t.Context(), chunk(`{"path":`, 1), read, l.beginRead()))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	require.EqualValues(t, 1, l.replayed, "imported again into the arguments")
+	require.Zero(t, l.deduped)
+}
+
+// placedLogs is rowIDLogs whose frontend renders each record where places
+// says, by its span (its own span, without a roll-up, when absent).
+func placedLogs(coverage map[uint16]idtui.LogCoverage, places map[uint16]idtui.LogPlacement) (*liveLogs, *bodyCollector) {
+	l, out := rowIDLogs(coverage)
+	l.export = exporterFunc(func(ctx context.Context, records []sdklog.Record) error {
+		records = idtui.LiveLogsFilter(ctx)(slices.Clone(records), func(rec sdklog.Record) idtui.LogPlacement {
+			span := uint16(rec.SpanID()[6])<<8 | uint16(rec.SpanID()[7])
+			if p, ok := places[span]; ok {
+				return p
+			}
+			return idtui.LogPlacement{Span: dagui.SpanID{SpanID: rec.SpanID()}}
+		})
+		return out.Export(context.Background(), records)
+	})
+	return l, out
+}
+
+// TestLiveLogsRowRenderedElsewhere: a held row the frontend would render
+// elsewhere now is imported again -- or where it goes now would never show
+// it -- once per place: a service's stdio rendered on its exec span until
+// the digest's creator arrived, a row whose span was placed under a roll-up
+// since.
+func TestLiveLogsRowRenderedElsewhere(t *testing.T) {
+	rollUp, creator := liveTestSpan(5), liveTestSpan(6)
+	coverage := map[uint16]idtui.LogCoverage{8: idtui.LogUnknown, 9: idtui.LogUnknown}
+	places := map[uint16]idtui.LogPlacement{}
+	l, out := placedLogs(coverage, places)
+	importRows(t, l, 0, liveLogRow{span: 8, body: "svc", digest: "xxh3:svc", id: 1}, liveLogRow{span: 9, body: "kid", id: 2})
+
+	// Unclaimed again, the kid since under a roll-up: shown there once.
+	places[9] = idtui.LogPlacement{Span: liveTestSpan(9), RollUp: rollUp}
+	importRows(t, l, 1, liveLogRow{span: 9, body: "kid", id: 2})
+	importRows(t, l, 2, liveLogRow{span: 9, body: "kid", id: 2})
+	require.Equal(t, []string{"svc", "kid", "kid"}, out.got())
+
+	// Claimed: the service's creator arrived; the kid is where it was.
+	places[8] = idtui.LogPlacement{Span: creator}
+	coverage[8], coverage[9] = idtui.LogCovered, idtui.LogCovered
+	importRows(t, l, 3, liveLogRow{span: 8, body: "svc", digest: "xxh3:svc", id: 1}, liveLogRow{span: 9, body: "kid", id: 2}, liveLogRow{span: 9, body: "kid 2", id: 3})
+	require.Equal(t, []string{"svc", "kid", "kid", "svc", "kid 2"}, out.got())
+	require.EqualValues(t, 2, l.deduped)
+	require.EqualValues(t, 2, l.replayed)
+	require.Empty(t, l.seen)
+}
+
+// TestLiveLogsHeldBackRowPlaced: a digest's row held back while its creator
+// was unknown went wherever the frontend resolved it once it could -- the
+// creator, or a service's exec span arriving first -- which it does not
+// tell: the read claiming it once it is placed imports it again. Held back
+// still, it is skipped: the copy held back goes wherever it goes.
+func TestLiveLogsHeldBackRowPlaced(t *testing.T) {
+	coverage := map[uint16]idtui.LogCoverage{8: idtui.LogUnknown}
+	places := map[uint16]idtui.LogPlacement{8: {}}
+	l, out := placedLogs(coverage, places)
+	importRows(t, l, 0, liveLogRow{span: 8, body: "svc", digest: "xxh3:svc", id: 1})
+	importRows(t, l, 1, liveLogRow{span: 8, body: "svc", digest: "xxh3:svc", id: 1})
+	require.Equal(t, []string{"svc"}, out.got(), "held back still")
+	places[8] = idtui.LogPlacement{Span: liveTestSpan(6)}
+	coverage[8] = idtui.LogCovered
+	importRows(t, l, 2, liveLogRow{span: 8, body: "svc", digest: "xxh3:svc", id: 1})
+	require.Equal(t, []string{"svc", "svc"}, out.got())
+	require.EqualValues(t, 1, l.deduped)
+	require.EqualValues(t, 1, l.replayed)
 }
 
 // TestLiveLogsReadAtFinish: without following (the report), requests only
@@ -420,10 +817,10 @@ func (f exporterFunc) Export(ctx context.Context, records []sdklog.Record) error
 func (exporterFunc) Shutdown(context.Context) error   { return nil }
 func (exporterFunc) ForceFlush(context.Context) error { return nil }
 
-// fakeLogStore is a live store: rows are appended, a query selects them by
-// span (with its descendants, by parents) or digest, a cursor is a row
-// number, and a follow polls for the rows stored since until it is
-// cancelled.
+// fakeLogStore is a live store: rows are appended, numbered from 1 as their
+// row IDs, a query selects them by span (with its descendants, by parents)
+// or digest, a cursor is a row number, and a follow polls for the rows
+// stored since until it is cancelled.
 type fakeLogStore struct {
 	parents map[uint16]uint16
 	// placing makes the store answer like the engine's (clientdb's
@@ -441,7 +838,10 @@ type fakeLogStore struct {
 func (s *fakeLogStore) add(rows ...liveLogRow) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.rows = append(s.rows, rows...)
+	for _, r := range rows {
+		r.id = int64(len(s.rows) + 1)
+		s.rows = append(s.rows, r)
+	}
 }
 
 // snapshot stores span's snapshot, placing it beneath parent (0: a root).
@@ -695,7 +1095,7 @@ func TestLiveLogsQueuedExportAfterRealEviction(t *testing.T) {
 		if intercept {
 			<-unblock
 		}
-		if err := out.Export(ctx, records); err != nil {
+		if err := out.Export(context.Background(), records); err != nil {
 			return err
 		}
 		if err := export.Export(ctx, records); err != nil {
