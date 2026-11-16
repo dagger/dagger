@@ -6573,7 +6573,10 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 			// Add lines from siblings before this node.
 			idx := node.indexInParent
 			if len(parent.childGapCounts) != len(parent.children) ||
-				len(parent.childLineCounts) != len(parent.children) {
+				len(parent.childLineCounts) != len(parent.children) ||
+				idx >= len(parent.children) || parent.children[idx] != node {
+				// Stale: the node isn't among its parent's children
+				// anymore, e.g. since the parent collapsed.
 				return -1
 			}
 			for s := range idx {
