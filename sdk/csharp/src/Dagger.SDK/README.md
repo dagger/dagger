@@ -14,7 +14,7 @@ The Dagger .NET SDK contains everything you need to develop CI/CD pipelines in C
 - .NET 10.0 or later
 - [Docker](https://docs.docker.com/engine/install/), or another OCI-compatible container runtime
 
-A compatible version of the [Dagger CLI](https://docs.dagger.io/cli) is automatically downloaded and run by the SDK for you.
+A compatible version of the [Dagger CLI](https://docs.dagger.io/cli) is automatically downloaded and run by the SDK for you. Set `_EXPERIMENTAL_DAGGER_CLI_BIN` to use a CLI you installed yourself. Under `dagger run` and inside Dagger containers the client uses the session it is given.
 
 ## Installation
 

@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Dagger.Exceptions;
 using Dagger.Telemetry;
 
 namespace Dagger.GraphQL;
@@ -10,24 +11,57 @@ namespace Dagger.GraphQL;
 /// </summary>
 public class GraphQLClient : IDisposable
 {
+    internal const string SessionPortVariable = "DAGGER_SESSION_PORT";
+    internal const string SessionTokenVariable = "DAGGER_SESSION_TOKEN";
+
     private readonly HttpClient _httpClient;
+    private readonly CliSession? _session;
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a new GraphQL client using environment variables.
+    /// Initializes a new GraphQL client for the session the environment provides
+    /// (<c>DAGGER_SESSION_PORT</c> and <c>DAGGER_SESSION_TOKEN</c>, as set by <c>dagger run</c>
+    /// and inside Dagger containers). Without one it starts <c>dagger session</c> itself, with
+    /// the CLI named by <c>_EXPERIMENTAL_DAGGER_CLI_BIN</c> or else the CLI release this SDK is
+    /// built for, which is downloaded on first use. That session ends when this client is
+    /// disposed or the process exits.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when required environment variables are not set.</exception>
+    /// <exception cref="Dagger.Exceptions.DaggerException">Thrown when no session is provided and none can be started.</exception>
     public GraphQLClient()
+        : this(ProvidedSession() ? null : CliSession.Start()) { }
+
+    private GraphQLClient(CliSession? session)
         : this(
-            Environment.GetEnvironmentVariable("DAGGER_SESSION_PORT")
-                ?? throw new InvalidOperationException(
-                    "DAGGER_SESSION_PORT environment variable is not set."
-                ),
-            Environment.GetEnvironmentVariable("DAGGER_SESSION_TOKEN")
-                ?? throw new InvalidOperationException(
-                    "DAGGER_SESSION_TOKEN environment variable is not set."
-                )
-        ) { }
+            session?.Port ?? Environment.GetEnvironmentVariable(SessionPortVariable)!,
+            session?.Token ?? Environment.GetEnvironmentVariable(SessionTokenVariable)!,
+            host: "127.0.0.1"
+        )
+    {
+        _session = session;
+    }
+
+    private static bool ProvidedSession()
+    {
+        var port = Environment.GetEnvironmentVariable(SessionPortVariable);
+        if (string.IsNullOrEmpty(port))
+        {
+            return false;
+        }
+
+        if (!int.TryParse(port, out _))
+        {
+            throw new DaggerException($"{SessionPortVariable} is not a port number: {port}");
+        }
+
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(SessionTokenVariable)))
+        {
+            throw new DaggerException(
+                $"{SessionTokenVariable} must be set when using {SessionPortVariable}."
+            );
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Initializes a new GraphQL client with specified connection details.
@@ -110,6 +144,7 @@ public class GraphQLClient : IDisposable
         }
 
         _httpClient?.Dispose();
+        _session?.Dispose();
         _disposed = true;
     }
 }

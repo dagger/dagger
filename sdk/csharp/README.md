@@ -106,7 +106,7 @@ Build custom pipelines by importing the SDK and calling the Dagger API directly.
 - .NET 10.0 LTS or later
 - [Docker](https://docs.docker.com/engine/install/), or another OCI-compatible container runtime
 
-A compatible version of the [Dagger CLI](https://docs.dagger.io/cli) is automatically downloaded and run by the SDK for you, although it's possible to manage it manually.
+A compatible version of the [Dagger CLI](https://docs.dagger.io/cli) is automatically downloaded and run by the SDK for you, although it's possible to manage it manually: set `_EXPERIMENTAL_DAGGER_CLI_BIN` to the CLI to use. Under `dagger run` and inside Dagger containers the client uses the session it is given (`DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN`) and starts nothing.
 
 ---
 
@@ -356,11 +356,19 @@ Console.WriteLine(result);
 
 ### Running Your Client App
 
-Use `dagger run` to ensure a Dagger session is available:
+Run it directly, and the client starts a session itself:
+
+```bash
+dotnet run
+```
+
+Or run it under `dagger run` to get the CLI's progress output and a session it manages:
 
 ```bash
 dagger run dotnet run
 ```
+
+The same holds for tests: `dotnet test` and the test runner of an IDE work without a wrapper.
 
 See the [standalone-client example](./examples/standalone-client/) for more detailed usage patterns.
 

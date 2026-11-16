@@ -20,7 +20,7 @@ public class GraphQLClientTest
     [TestMethod]
     public async Task TestRequest_WithError()
     {
-        var client = new GraphQLClient();
+        using var client = new GraphQLClient();
         var query = "query{invalid}";
 
         var response = await client.RequestAsync(query);
