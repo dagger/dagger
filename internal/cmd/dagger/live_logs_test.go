@@ -996,7 +996,7 @@ func (f *fakeExitFrontend) SetPrimaryOutput(records []sdklog.Record) {
 	}
 }
 func (f *fakeExitFrontend) LiveLogsCoverage([]idtui.LogTarget) []idtui.LogCoverage { return nil }
-func (f *fakeExitFrontend) LiveLogsActivity([]dagui.SpanID) []idtui.LogActivity { return nil }
+func (f *fakeExitFrontend) LiveLogsActivity([]dagui.SpanID) []idtui.LogActivity    { return nil }
 
 // TestFinishLiveLogsInterrupted: against a hung engine, an interrupt during
 // the exit ends it promptly -- the TUI's Ctrl-C canceling the run's context,
