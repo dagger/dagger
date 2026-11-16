@@ -926,11 +926,8 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, r
 	})
 }
 
-// fetchLogStreamBatch is fetchTraceStreamBatch for log records.
-func fetchLogStreamBatch(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
-	return fetchLogStreamBatchFiltered(ctx, db, since, limit, nil)
-}
-
+// fetchLogStreamBatchFiltered is fetchTraceStreamBatch for the log records
+// keep accepts.
 func fetchLogStreamBatchFiltered(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Log) bool) (int64, streamEncoder, int, error) {
 	next, logs, rows, err := fetchLogRows(ctx, db, since, limit, keep)
 	if err != nil || rows == 0 {
