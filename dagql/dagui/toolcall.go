@@ -3,8 +3,11 @@ package dagui
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -68,14 +71,20 @@ func (db *DB) ingestToolArgs(record sdklog.Record, spanID SpanID, body string) {
 	if args.overflowed {
 		return
 	}
-	if args.buf.Len()+len(body) > maxToolArgsJSON {
-		// Too large to keep whole: a truncated document wouldn't parse, so
-		// drop it and let the attributes speak.
-		args.buf.Reset()
-		args.overflowed = true
+	at := record.Timestamp()
+	if at.IsZero() {
+		at = record.ObservedTimestamp()
+	}
+	if !args.add(at, body) {
+		// read again: kept already
 		return
 	}
-	args.buf.WriteString(body)
+	if args.size > maxToolArgsJSON {
+		// Too large to keep whole: a truncated document wouldn't parse, so
+		// drop it and let the attributes speak.
+		args.chunks, args.size = nil, 0
+		args.overflowed = true
+	}
 	db.update(span)
 }
 
@@ -95,30 +104,126 @@ func (db *DB) pruneToolArgs(span *Span) {
 
 // toolArgsJSON accumulates the JSON arguments a tool-call display span
 // streams.
+//
+// The chunks are kept in the order they were written, by their records'
+// timestamps, and a chunk that arrives twice is kept once. A frontend that
+// reads logs on demand can be handed a span's records more than once, and
+// out of order -- e.g. the first records read before the span was known,
+// then all of them again once it was requested -- and a document stitched
+// from them in arrival order would be garbled. Chunks without a timestamp
+// are appended as they arrive.
 type toolArgsJSON struct {
-	buf        strings.Builder
+	chunks     []toolArgsChunk
+	size       int
 	overflowed bool
+	// version counts changes to chunks.
+	version int
 
-	// parsed is buf decoded as of parsedLen bytes; nil while it doesn't
-	// parse (still streaming).
-	parsed    map[string]any
-	parsedLen int
+	// decoded is the document decoded as of decodedVersion (see
+	// decodePartialJSON), for a call of decodedTool: arguments are re-read
+	// on every render, and decoding costs a pass over up to maxToolArgsJSON
+	// bytes, so it only runs again once the document changed.
+	decoded        partialJSON
+	decodedVersion int
+	decodedTool    string
 }
 
-// args returns the arguments, once the streamed document is complete.
-func (t *toolArgsJSON) args() map[string]any {
-	if t.overflowed {
-		return nil
-	}
-	if t.buf.Len() != t.parsedLen {
-		t.parsedLen = t.buf.Len()
-		t.parsed = nil
-		var args map[string]any
-		if err := json.Unmarshal([]byte(t.buf.String()), &args); err == nil {
-			t.parsed = args
+// toolArgsChunk is one record's worth of a streamed document.
+type toolArgsChunk struct {
+	at   time.Time
+	body string
+}
+
+// add adds a record's chunk, written at at, reporting whether it was new.
+func (t *toolArgsJSON) add(at time.Time, body string) bool {
+	i := len(t.chunks)
+	if !at.IsZero() {
+		// After every chunk written before or at the same time (ties keep
+		// arrival order), unless it's one of those.
+		i = sort.Search(len(t.chunks), func(i int) bool {
+			return !t.chunks[i].at.IsZero() && t.chunks[i].at.After(at)
+		})
+		for j := i - 1; j >= 0 && t.chunks[j].at.Equal(at); j-- {
+			if t.chunks[j].body == body {
+				return false
+			}
 		}
 	}
-	return t.parsed
+	t.chunks = slices.Insert(t.chunks, i, toolArgsChunk{at: at, body: body})
+	t.size += len(body)
+	t.version++
+	return true
+}
+
+// document returns the chunks joined.
+func (t *toolArgsJSON) document() string {
+	var b strings.Builder
+	b.Grow(t.size)
+	for _, c := range t.chunks {
+		b.WriteString(c.body)
+	}
+	return b.String()
+}
+
+// args returns the arguments a call of tool streamed so far, and whether
+// they are complete. While they stream, a string cut short is left out -- a
+// partial tool name or path would only mislead -- unless it's a Dang
+// snippet's source, which is the call (see streamsToolArg).
+func (t *toolArgsJSON) args(tool string) (map[string]any, bool) {
+	if t.overflowed {
+		return nil, false
+	}
+	if t.version != t.decodedVersion || tool != t.decodedTool {
+		t.decodedVersion, t.decodedTool = t.version, tool
+		t.decoded = decodePartialJSON(t.document())
+		if path := t.decoded.Truncated; len(path) > 0 && !streamsToolArg(tool, t.decoded.Value, path) {
+			t.decoded.Value = withoutPath(t.decoded.Value, path).(map[string]any)
+		}
+	}
+	return t.decoded.Value, t.decoded.Complete
+}
+
+// streamsToolArg reports whether a call of tool with args shows the string
+// at path as it streams in: a Dang snippet's source, which is the call --
+// a Dang builtin's own, or that of the Dang builtin a Timeout wraps.
+func streamsToolArg(tool string, args map[string]any, path []string) bool {
+	isDang := func(tool string) bool {
+		return ToolNameIs(tool, dangEvalTool) || ToolNameIs(tool, dangCheckTool)
+	}
+	switch {
+	case isDang(tool):
+		return len(path) == 1 && path[0] == "source"
+	case ToolNameIs(tool, timeoutTool):
+		inner, _ := args["tool"].(string)
+		return isDang(inner) && len(path) == 2 && path[0] == "arguments" && path[1] == "source"
+	}
+	return false
+}
+
+// withoutPath returns value without the member or element at path (object
+// keys and array indexes, as partialJSON.Truncated names it).
+func withoutPath(value any, path []string) any {
+	if len(path) == 0 {
+		return value
+	}
+	switch v := value.(type) {
+	case map[string]any:
+		if len(path) == 1 {
+			delete(v, path[0])
+		} else if child, ok := v[path[0]]; ok {
+			v[path[0]] = withoutPath(child, path[1:])
+		}
+	case []any:
+		i, err := strconv.Atoi(path[0])
+		if err != nil || i < 0 || i >= len(v) {
+			return v
+		}
+		if len(path) == 1 {
+			return append(v[:i:i], v[i+1:]...)
+		}
+		v[i] = withoutPath(v[i], path[1:])
+	}
+	return value
 }
 
 func isJSONRecord(record sdklog.Record) bool {
@@ -136,19 +241,38 @@ func isJSONRecord(record sdklog.Record) bool {
 
 // ToolCallArgs returns a tool call's arguments: the JSON its display span
 // streamed once it is complete, else the string values its span attributes
-// recorded (see SpanSnapshot.LLMToolArgNames). Nil when neither is known.
+// recorded (see SpanSnapshot.LLMToolArgNames), else the JSON streamed so
+// far. Nil when none is known.
 func (db *DB) ToolCallArgs(span *Span) map[string]any {
+	args, _ := db.toolCallArgs(span)
+	return args
+}
+
+// toolCallArgs is ToolCallArgs, also reporting whether the arguments are
+// still streaming: decoded from an incomplete JSON document, for a call that
+// is still running. A call that ended without completing its document (an
+// aborted request, say) keeps the arguments it got, but they no longer
+// stream.
+func (db *DB) toolCallArgs(span *Span) (args map[string]any, streaming bool) {
 	if span == nil {
-		return nil
+		return nil, false
 	}
+	var partial map[string]any
 	if db != nil {
 		if streamed := db.toolArgsJSON[span.ID]; streamed != nil {
-			if args := streamed.args(); args != nil {
-				return args
+			args, complete := streamed.args(span.LLMTool)
+			if complete {
+				return args, false
 			}
+			partial = args
 		}
 	}
-	return span.toolArgsFromAttrs()
+	if attrs := span.toolArgsFromAttrs(); attrs != nil {
+		// The span ended: its attributes have the whole arguments, even if
+		// what streamed never made a whole document.
+		return attrs, false
+	}
+	return partial, partial != nil && span.IsRunning()
 }
 
 func (snapshot *SpanSnapshot) toolArgsFromAttrs() map[string]any {
@@ -174,6 +298,9 @@ type ToolCallView struct {
 	Args map[string]any
 	// Timeout is the duration a Timeout wrapper runs it under, or "".
 	Timeout string
+	// Streaming reports that the arguments are still streaming in: they are
+	// what arrived so far (see decodePartialJSON).
+	Streaming bool
 }
 
 // ToolCallView returns how a tool-call span presents (see ToolCallView).
@@ -181,7 +308,10 @@ func (db *DB) ToolCallView(span *Span) ToolCallView {
 	if span == nil {
 		return ToolCallView{}
 	}
-	return NewToolCallView(span.LLMTool, db.ToolCallArgs(span))
+	args, streaming := db.toolCallArgs(span)
+	view := NewToolCallView(span.LLMTool, args)
+	view.Streaming = streaming
+	return view
 }
 
 // NewToolCallView returns how a call of tool with args presents, unwrapping
