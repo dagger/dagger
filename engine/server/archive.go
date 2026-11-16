@@ -651,23 +651,9 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
 		return fmt.Errorf("invalid archive payload limit %d", maxPayloadSize)
 	}
-	cursor := int64(0)
-	if s := r.Header.Get(enginetel.LiveCursorHeader); s != "" {
-		var err error
-		cursor, err = strconv.ParseInt(s, 10, 64)
-		if err != nil || cursor < 0 {
-			return httpErr(errors.New("invalid archive cursor"), http.StatusBadRequest)
-		}
-	}
-	high := cut.Spans
-	switch signal {
-	case "logs":
-		high = cut.Logs
-	case "metrics":
-		high = cut.Metrics
-	}
-	if cursor > high {
-		return httpErr(errors.New("cursor exceeds archive cut"), http.StatusBadRequest)
+	cursor, high, err := archiveSignalRange(r, cut, signal)
+	if err != nil {
+		return err
 	}
 	spanSelection, logSelection, err := archive.ParseSelection(signal, r.URL.Query())
 	if err != nil {
@@ -755,6 +741,28 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 		batchLimit = otlpBatchSize
 	}
 	return enginetel.WriteLiveTerminal(w, high)
+}
+
+// archiveSignalRange reads the request's resume cursor and the signal's high
+// water at cut, which the cursor may not exceed.
+func archiveSignalRange(r *http.Request, cut archive.HighWater, signal string) (cursor, high int64, err error) {
+	if s := r.Header.Get(enginetel.LiveCursorHeader); s != "" {
+		cursor, err = strconv.ParseInt(s, 10, 64)
+		if err != nil || cursor < 0 {
+			return 0, 0, httpErr(errors.New("invalid archive cursor"), http.StatusBadRequest)
+		}
+	}
+	high = cut.Spans
+	switch signal {
+	case "logs":
+		high = cut.Logs
+	case "metrics":
+		high = cut.Metrics
+	}
+	if cursor > high {
+		return 0, 0, httpErr(errors.New("cursor exceeds archive cut"), http.StatusBadRequest)
+	}
+	return cursor, high, nil
 }
 
 // archiveLogQuery decodes a POSTed multi-span log query, which replaces the
