@@ -910,6 +910,9 @@ func fetchTraceStreamBatch(ctx context.Context, db *clientdb.DB, since int64, li
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	if r.URL.Query().Get(enginetel.LiveDisplayParam) == enginetel.LiveDisplayPresence {
+		return ps.serveLiveStream(w, r, record, presenceLogFetcher(), enginetel.MaxLivePayloadSize, liveStreamOptions{indexed: true})
+	}
 	return ps.streamHandler(w, r, record, fetchLogStreamBatch)
 }
 
@@ -1433,6 +1436,24 @@ func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *
 	return ps.streamHandlerWithPayloadLimit(w, r, record, fetcher, enginetel.MaxLivePayloadSize)
 }
 
+// liveTelemetryFeatures is the LiveFeaturesHeader value of every live
+// subscription response.
+var liveTelemetryFeatures = strings.Join([]string{
+	enginetel.LiveFeatureLogQuery,
+	enginetel.LiveFeatureLogPresence,
+	enginetel.LiveFeatureLogSearch,
+}, ",")
+
+// liveStreamOptions vary a live stream.
+type liveStreamOptions struct {
+	// indexed enables selected reads over the store’s span and log indexes.
+	indexed bool
+	// oneShot ends the stream with a terminal frame as soon as the fetcher
+	// has nothing more, instead of polling until the client's telemetry
+	// drains. The fetcher bounds what "more" means.
+	oneShot bool
+}
+
 func acceptsBinaryTelemetry(accept string) bool {
 	for _, value := range strings.Split(accept, ",") {
 		mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(value))
@@ -1457,8 +1478,12 @@ func legacyTelemetryEventName(path string) string {
 	return strings.TrimPrefix(path, "/v1/")
 }
 
-//nolint:gocyclo // Keep framing, cursor advancement, and drain handling in one stream state machine.
 func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher, maxPayloadSize int) error {
+	return ps.serveLiveStream(w, r, record, fetcher, maxPayloadSize, liveStreamOptions{})
+}
+
+//nolint:gocyclo // Keep framing, cursor advancement, and drain handling in one stream state machine.
+func (ps *PubSub) serveLiveStream(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher, maxPayloadSize int, opts liveStreamOptions) error {
 	logger := slog.With("client", record.clientID, "path", r.URL.Path)
 	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
 		return fmt.Errorf("invalid live telemetry payload limit %d", maxPayloadSize)
@@ -1496,13 +1521,18 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		// never written to a store of its own.
 		return httpErr(fmt.Errorf("client %q has no telemetry store to subscribe to", record.clientID), http.StatusForbidden)
 	}
-	db, err := record.telemetryStore(r.Context())
+	open := record.telemetryStore
+	if opts.indexed {
+		open = record.TelemetryDB
+	}
+	db, err := open(r.Context())
 	if err != nil {
 		return fmt.Errorf("open client db: %w", err)
 	}
 	defer db.Close()
 
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set(enginetel.LiveFeaturesHeader, liveTelemetryFeatures)
 	if sess := record.daggerSession; sess != nil && sess.publishesToCloud() {
 		w.Header().Set(engine.CloudTelemetryPublisherHeader, engine.CloudTelemetryPublisherEngine)
 	}
@@ -1532,7 +1562,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	streamCtx, stopStream := context.WithCancel(r.Context())
 	defer stopStream()
 	streamEnd := record.telemetryStreamEnd(streamCtx)
-	terminating := false
+	terminating := opts.oneShot
 	batchLimit := otlpBatchSize
 	// Each batch is encoded into the buffer the last written one used: a
 	// frame's bytes are written out before the next batch is fetched.

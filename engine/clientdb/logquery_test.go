@@ -128,7 +128,10 @@ func TestLogsWithoutDisplayReportsPresence(t *testing.T) {
 		require.NoError(t, err)
 		cursor = next
 		rows = append(rows, logIDs(batch)...)
-		presence = append(presence, p...)
+		for _, entry := range p {
+			entry.key = [3]uint32{}
+			presence = append(presence, entry)
+		}
 	}
 	require.Equal(t, []int64{3, 6}, rows)
 	require.Equal(t, []LogPresence{
