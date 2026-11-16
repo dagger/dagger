@@ -1,2 +1,2 @@
 # For dependabot
-FROM ghcr.io/astral-sh/ruff:0.15.16@sha256:5ce0d995232e7e81324b6f8554f93510a8b877fbee64628b056362247e843b9c
+FROM ghcr.io/astral-sh/ruff:0.17.5@sha256:3abcaeec575bf06baac8e28f2462e75d7093a7740ecf61c5f833b0a827abac10
