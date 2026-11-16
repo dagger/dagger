@@ -308,6 +308,14 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 					return nil, fmt.Errorf("tool must accept object, got %q", v)
 				}
 				inputSchema.Type = "object"
+			case "required":
+				// The typed field, rather than ExtraFields: the SDK writes
+				// those in map order, which varies from request to request.
+				required, err := toStringSlice(v)
+				if err != nil {
+					return nil, fmt.Errorf("tool %s: required: %w", tool.Name, err)
+				}
+				inputSchema.Required = required
 			default:
 				if inputSchema.ExtraFields == nil {
 					inputSchema.ExtraFields = make(map[string]any)
