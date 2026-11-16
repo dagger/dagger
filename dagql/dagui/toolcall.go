@@ -572,10 +572,12 @@ func (view ToolCallView) DangSnippet() (DangSnippet, bool) {
 	return DangSnippet{Source: str("source"), At: str("at"), Search: str("search")}, true
 }
 
-// Write's arguments: the file it writes, and what it writes there.
+// Write's arguments: the file it writes, what it writes there, and whether
+// it overwrites a conflicted file.
 const (
 	writeFilePathArg = "filePath"
 	writeContentsArg = "contents"
+	writeForceArg    = "force"
 )
 
 // WriteFile is a Write call's arguments: the file it writes, and its
@@ -588,16 +590,32 @@ type WriteFile struct {
 // WriteFile returns the file the call writes, if it is a call of a Write
 // tool (one named "write", whatever its server) that names its file
 // (filePath) and writes it whole (contents, which may still be on its way).
+//
+// While its arguments stream in, a call is told apart from another tool's
+// write by the arguments it has so far, as its path may not be whole yet:
+// only Write's, as strings.
 func (view ToolCallView) WriteFile() (WriteFile, bool) {
 	if !ToolNameIs(view.Tool, writeTool) {
 		return WriteFile{}, false
 	}
-	path, ok := view.Args[writeFilePathArg].(string)
-	if !ok || strings.TrimSpace(path) == "" {
-		return WriteFile{}, false
+	path, hasPath := view.Args[writeFilePathArg].(string)
+	contents, hasContents := view.Args[writeContentsArg].(string)
+	for name, value := range view.Args {
+		switch name {
+		case writeFilePathArg:
+			if !hasPath {
+				return WriteFile{}, false
+			}
+		case writeContentsArg:
+			if !hasContents && value != nil {
+				return WriteFile{}, false
+			}
+		case writeForceArg:
+		default:
+			return WriteFile{}, false
+		}
 	}
-	contents, ok := view.Args[writeContentsArg].(string)
-	if !ok && view.Args[writeContentsArg] != nil {
+	if !view.Streaming && strings.TrimSpace(path) == "" {
 		return WriteFile{}, false
 	}
 	return WriteFile{Path: path, Contents: contents}, true

@@ -7,8 +7,8 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// renderToolArgsSummary renders a compact, styled summary of an LLM tool
-// call's recognized arguments (dagui's ToolArgsSummary) for the span header
+// renderToolArgParts renders a compact, styled summary of an LLM tool call's
+// recognized arguments (dagui's DB.ToolArgsSummary) for the span header
 // line, e.g.
 //
 //	Read path/to/file
@@ -23,12 +23,6 @@ import (
 // It returns true if it rendered anything, in which case the caller should
 // skip the default first-arg rendering. Unrecognized tools/args return false
 // so the fallback rendering is preserved.
-func renderToolArgsSummary(out TermOutput, span *dagui.Span) bool {
-	return renderToolArgParts(out, span.ToolArgsSummary())
-}
-
-// renderToolArgParts renders a tool call's header summary parts, as
-// renderToolArgsSummary describes, and reports whether there were any.
 func renderToolArgParts(out TermOutput, parts []dagui.ToolArgPart) bool {
 	for _, part := range parts {
 		fmt.Fprint(out, " ")

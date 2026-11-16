@@ -253,11 +253,11 @@ func TestStreamingToolCallRendersSoFar(t *testing.T) {
 	<-warmDangHighlighter()
 	// Never hold a highlight back for being too soon after the last.
 	now := time.Unix(0, 0)
-	dangStreamClock = func() time.Time {
+	codeStreamClock = func() time.Time {
 		now = now.Add(time.Second)
 		return now
 	}
-	t.Cleanup(func() { dangStreamClock = time.Now })
+	t.Cleanup(func() { codeStreamClock = time.Now })
 	l := newLiveToolCalls(t, termenv.ANSI)
 	l.toolCall(liveTimeout, liveReply, "Timeout")
 
@@ -308,7 +308,7 @@ func TestStreamingToolCallRendersSoFar(t *testing.T) {
 	require.Contains(t, stripANSICodes(frame), `2 │ greeting + "!"`)
 	require.True(t, containsStyledLine(frame, "let greeting", "\x1b[35mlet"), visibleEscapes(frame))
 	require.True(t, containsStyledLine(frame, `2 │ greeting + "!"`, "\x1b[35m+"), visibleEscapes(frame))
-	require.Empty(t, l.fe.dangStreams)
+	require.Empty(t, l.fe.codeStreams)
 }
 
 // lineWith returns the frame's line containing s, or "".

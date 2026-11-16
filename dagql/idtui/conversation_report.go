@@ -245,23 +245,31 @@ func (fe *frontendPretty) indentMessageNodeLogs(span *dagui.Span, width int) {
 	}
 }
 
-// renderMessageLogs renders a tool-call node's arguments at verbose levels and,
-// beneath them, the result (or error) the LLM saw. Read and Grep keep their
-// regular result bodies collapsed; Grep's final summary line is in the header.
-// The arguments are the tool-call display span's application/json records; the
-// output is on that span or on the nested execution span. Cloud's descendant
-// roll-up doesn't return nested execution output here (it crosses the tool call's
-// RollUpLogs boundary), so the report fetches the exec span's own logs directly
-// (recalculateViewLocked).
+// renderMessageLogs renders a tool-call node's arguments at verbose levels (or
+// its code body, see toolCodeBody) and, beneath them, the result (or error)
+// the LLM saw. Read and Grep keep their regular result bodies collapsed;
+// Grep's final summary line is in the header. The arguments are the
+// tool-call display span's application/json records; the output is on that
+// span or on the nested execution span. Cloud's descendant roll-up doesn't
+// return nested execution output here (it crosses the tool call's
+// RollUpLogs boundary), so the report fetches the exec span's own logs
+// directly (recalculateViewLocked).
 func (fe *frontendPretty) renderMessageLogs(out TermOutput, span *dagui.Span, width int) {
-	// A Dang snippet is the call: show it as code, in full, in place of its
-	// JSON arguments, lined up under the call as the live row has it.
+	// A Dang snippet is the call, as Write's contents are: show it as code,
+	// in place of its JSON arguments, lined up under the call as the live
+	// row has it. A snippet shows in full; a written file, which can run to
+	// thousands of lines, as a collapsed row shows it, unless the report
+	// shows tool calls' arguments.
 	indent := ""
 	if fe.shellTranscript() && span.LLMTool != "" {
 		indent = "  "
 	}
-	if source := fe.dangSourceLines(span, width-len(indent), 0, true); len(source) > 0 {
-		for _, line := range source {
+	if body, _, ok := fe.toolCodeBody(span); ok {
+		maxLines := 0
+		if body.file && fe.spanVerbosity(span) < toolArgsVerbosity {
+			maxLines = codeBodyCollapsedLines
+		}
+		for _, line := range fe.toolBodyLines(span, width-len(indent), maxLines, true) {
 			fmt.Fprintln(out, indent+line)
 		}
 	} else if fe.spanVerbosity(span) >= toolArgsVerbosity {

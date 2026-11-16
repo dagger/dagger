@@ -210,7 +210,23 @@ func TestWriteFile(t *testing.T) {
 	assert.False(t, ok)
 	_, ok = NewToolCallView("write", map[string]any{"filePath": "a.go", "contents": 3.0}).WriteFile()
 	assert.False(t, ok)
+	_, ok = NewToolCallView("write", map[string]any{"contents": "x"}).WriteFile()
+	assert.False(t, ok, "a finished Write names its file")
 	assert.True(t, RendersToolArgs("editor_write"))
+
+	// While its arguments stream in, before its path is whole, a call is a
+	// Write if what it has so far is Write's.
+	streaming := NewToolCallView("editor_write", map[string]any{})
+	streaming.Streaming = true
+	file, ok = streaming.WriteFile()
+	require.True(t, ok)
+	assert.Equal(t, WriteFile{}, file)
+	streaming.Args = map[string]any{"force": true, "contents": "x"}
+	_, ok = streaming.WriteFile()
+	assert.True(t, ok)
+	streaming.Args = map[string]any{"path": "a.go"}
+	_, ok = streaming.WriteFile()
+	assert.False(t, ok)
 }
 
 // TestWriteContentsStreamInsideTimeout covers a Timeout wrapping Write: the
