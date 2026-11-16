@@ -12,6 +12,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/dang/v2/pkg/dang"
 	"github.com/vito/tuist"
 
 	"github.com/dagger/dagger/dagql/dagui"
@@ -417,6 +418,78 @@ func TestDangSourceRendersPlainUntilHighlighterWarm(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return containsStyledLine(frame(), "let x", "\x1b[35mlet")
 	}, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestWholeDangLines(t *testing.T) {
+	for _, c := range []struct {
+		source   string
+		maxLines int
+		want     string
+	}{
+		{"", 0, ""},
+		{"let a", 0, ""},
+		{"let a\n", 0, "let a"},
+		{"let a\nlet b", 0, "let a"},
+		{"let a\nlet b\nlet c\nlet", 0, "let a\nlet b\nlet c"},
+		{"let a\nlet b\nlet c\nlet", 2, "let a\nlet b"},
+		{"let a\nlet b", 2, "let a"},
+	} {
+		assert.Equal(t, c.want, wholeDangLines(c.source, c.maxLines), "%q (max %d)", c.source, c.maxLines)
+	}
+}
+
+// TestStreamingDangHighlight covers how a streaming snippet highlights: its
+// whole lines, again as more complete, but no sooner than
+// dangStreamHighlightInterval after the last time, and never through
+// dangHighlights, which every prefix would flood.
+func TestStreamingDangHighlight(t *testing.T) {
+	<-warmDangHighlighter()
+	now := time.Unix(100, 0)
+	dangStreamClock = func() time.Time { return now }
+	t.Cleanup(func() { dangStreamClock = time.Now })
+	fe := &frontendPretty{}
+	id := prettyTestSpanID(1)
+	// how far into the source the highlight reaches
+	reach := func(spans []dang.HighlightSpan) int {
+		end := 0
+		for _, span := range spans {
+			end = max(end, span.End)
+		}
+		return end
+	}
+	const line1 = `let streamA = "a"`
+	const line2 = `let streamB = "b"`
+
+	// Only whole lines: none yet.
+	assert.Empty(t, fe.streamingDangHighlight(id, "let stream", 0))
+	assert.Empty(t, fe.streamingDangHighlight(id, line1, 0))
+
+	// A whole line highlights at once.
+	spans := fe.streamingDangHighlight(id, line1+"\nlet", 0)
+	assert.Equal(t, len(line1), reach(spans))
+
+	// Another, too soon after: the last highlight stands.
+	grown := line1 + "\n" + line2 + "\nlet"
+	assert.Equal(t, spans, fe.streamingDangHighlight(id, grown, 0))
+
+	// Once it's been long enough, it catches up.
+	now = now.Add(dangStreamHighlightInterval)
+	spans = fe.streamingDangHighlight(id, grown, 0)
+	assert.Equal(t, len(line1)+1+len(line2), reach(spans))
+
+	// A row showing fewer lines takes what it has.
+	assert.Equal(t, spans, fe.streamingDangHighlight(id, grown, 1))
+
+	// Source that changed rather than grew starts over, on schedule.
+	changed := "print(1)\nprint(2)\n"
+	assert.Empty(t, fe.streamingDangHighlight(id, changed, 0))
+	now = now.Add(dangStreamHighlightInterval)
+	assert.NotEmpty(t, fe.streamingDangHighlight(id, changed, 0))
+
+	dangHighlights.Lock()
+	defer dangHighlights.Unlock()
+	assert.NotContains(t, dangHighlights.spans, line1, "streaming source cached")
+	assert.NotContains(t, dangHighlights.spans, line1+"\n"+line2, "streaming source cached")
 }
 
 // TestConversationReportRendersDangSource covers the final report: a Dang
