@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Fixed git ref glob matching when a POSIX character class is combined with
+  other characters or classes in the same bracket, such as `[7[:digit:]]` or
+  `[[:lower:][:digit:]]`. These patterns now match the same refs that git does.
+time: 2026-11-16T03:04:46.000000000+00:00
+custom:
+    Author: amalsaidov
+    PR: "15189"
