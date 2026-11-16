@@ -35,7 +35,7 @@ import (
 // liveLogs.catchUp), over a real HTTP server, decoded the way the client's
 // consumeLogQuery decodes it. The store has the shape of clientdb's
 // BenchmarkLiveLogCatchUp (engine/clientdb/logquery_bench_test.go), which
-// times the scan alone; the difference is the per-window framing.
+// times the store's read alone; the difference is the framing.
 //
 //	go test ./engine/server -run '^$' -bench LiveLogCatchUpHTTP -benchmem
 

@@ -234,6 +234,69 @@ func TestLiveLogQueryThrough(t *testing.T) {
 	require.EqualValues(t, 3, last.cursor)
 }
 
+// A one-shot read of a few spans in a long store reads them by index: its
+// frames jump over the rows outside the scope, and it ends at the read's end
+// (not its last row), so a resume rescans nothing. The frames are what the
+// client's consumeLogQuery accepts: increasing cursors, and a terminal frame
+// at the last one.
+func TestLiveLogQueryOneShotReadsByIndex(t *testing.T) {
+	f := newLogQueryFixture(t, "client")
+	rows := []clientdb.Log{logQueryRow(t, lqRoot, "root")}
+	for i := range 3000 {
+		if i == 2000 {
+			rows = append(rows, logQueryRow(t, lqKid, "kid"))
+			continue
+		}
+		rows = append(rows, logQueryRow(t, lqOther, "other"))
+	}
+	f.append(t, "client", []clientdb.Span{logQuerySpanRow(lqRoot, ""), logQuerySpanRow(lqKid, lqRoot), logQuerySpanRow(lqOther, "")}, rows...)
+	ts := f.serve(t, "client")
+	read := func(q archive.LogQuery, cursor int64) ([]string, []int64) {
+		body, err := json.Marshal(q)
+		require.NoError(t, err)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/v1/logs/query", bytes.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Accept", enginetel.LiveContentType)
+		if cursor > 0 {
+			req.Header.Set(enginetel.LiveCursorHeader, strconv.FormatInt(cursor, 10))
+		}
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, enginetel.LiveFrameHello, readLogFrame(t, resp.Body).kind)
+		var bodies []string
+		var cursors []int64
+		for {
+			frame := readLogFrame(t, resp.Body)
+			if frame.kind == enginetel.LiveFrameTerminal {
+				require.Equal(t, cursor, frame.cursor, "the terminal frame is at the last cursor")
+				return bodies, cursors
+			}
+			require.Greater(t, frame.cursor, cursor)
+			cursor = frame.cursor
+			cursors = append(cursors, frame.cursor)
+			bodies = append(bodies, frame.bodies...)
+		}
+	}
+	spans := []archive.LogSpan{{SpanID: lqRoot, Descendants: true}}
+
+	bodies, cursors := read(archive.LogQuery{Spans: spans, Through: 2500}, 0)
+	require.Equal(t, []string{"root", "kid"}, bodies)
+	require.Equal(t, []int64{2500}, cursors, "one batch, ending at the read's end")
+
+	bodies, cursors = read(archive.LogQuery{Spans: spans, Through: 2500}, 1)
+	require.Equal(t, []string{"kid"}, bodies, "resumed after the first row")
+	require.Equal(t, []int64{2500}, cursors)
+
+	bodies, cursors = read(archive.LogQuery{Spans: []archive.LogSpan{{SpanID: lqKid}}}, 0)
+	require.Equal(t, []string{"kid"}, bodies)
+	require.Equal(t, []int64{3001}, cursors)
+
+	bodies, cursors = read(archive.LogQuery{Spans: []archive.LogSpan{{SpanID: "00000000000000c1"}}}, 0)
+	require.Empty(t, bodies)
+	require.Equal(t, []int64{3001}, cursors, "a read with no rows still ends at its end")
+}
+
 func TestLiveLogQueryResumesAndValidates(t *testing.T) {
 	f := newLogQueryFixture(t, "client")
 	f.append(t, "client", []clientdb.Span{logQuerySpanRow(lqRoot, "")},
