@@ -130,21 +130,23 @@ func matchChunk(chunk, s string) (rest string, ok bool, err error) {
 			// handle character class types
 			match := false
 			nrange := 0
-			if len(chunk) > 1 && chunk[0] == '[' && chunk[1] == ':' {
-				// look for closing ]
-				for i := 2; i < len(chunk); i++ {
-					if chunk[i] == ']' && chunk[i-1] == ':' {
-						class := chunk[2 : i-1]
-						match = matchClass(r, class)
-						chunk = chunk[i+1:]
-						goto check
-					}
-				}
-			}
-			// parse all ranges
+			// parse all ranges, posix classes, and literals until the closing ]
 			for {
 				if len(chunk) > 0 && chunk[0] == ']' && nrange > 0 {
 					break
+				}
+				// A posix class like [:alnum:] may appear on its own or
+				// alongside other characters and ranges in the same bracket,
+				// e.g. [[:digit:]x] or [a[:space:]].
+				if len(chunk) > 1 && chunk[0] == '[' && chunk[1] == ':' {
+					if end := posixClassEnd(chunk); end >= 0 {
+						if matchClass(r, chunk[2:end]) {
+							match = true
+						}
+						chunk = chunk[end+2:]
+						nrange++
+						continue
+					}
 				}
 				var lo, hi rune
 				if lo, chunk, err = getEsc(chunk); err != nil {
@@ -161,7 +163,6 @@ func matchChunk(chunk, s string) (rest string, ok bool, err error) {
 				}
 				nrange++
 			}
-		check:
 			chunk = chunk[1:]
 			if match == negated {
 				failed = true
@@ -219,6 +220,19 @@ func getEsc(chunk string) (r rune, nchunk string, err error) {
 		err = ErrBadPattern
 	}
 	return
+}
+
+// posixClassEnd reports where a leading posix class ends in chunk, which must
+// start with "[:". It returns the index of the ":" that closes the class, so
+// the class name is chunk[2:end] and chunk[end:end+2] is ":]"; it returns -1
+// when chunk does not open a complete posix class (e.g. an unterminated "[:").
+func posixClassEnd(chunk string) int {
+	for i := 2; i < len(chunk); i++ {
+		if chunk[i] == ']' && chunk[i-1] == ':' {
+			return i - 1
+		}
+	}
+	return -1
 }
 
 // matchClass checks whether r is in the given character class

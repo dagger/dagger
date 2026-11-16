@@ -210,6 +210,45 @@ func TestGlob(t *testing.T) {
 				"refs/tags/sdk/python/v0.18.18",
 			},
 		},
+
+		{
+			// posix class followed by a literal in the same bracket
+			pattern: "refs/tags/sdk/python/v0.18.1[[:digit:]x]",
+			matches: []string{
+				"refs/tags/sdk/python/v0.18.17",
+				"refs/tags/sdk/python/v0.18.18",
+			},
+		},
+		{
+			// literal preceding a posix class in the same bracket
+			pattern: "refs/tags/sdk/python/v0.18.1[7[:digit:]]",
+			matches: []string{
+				"refs/tags/sdk/python/v0.18.17",
+				"refs/tags/sdk/python/v0.18.18",
+			},
+		},
+		{
+			// two posix classes in the same bracket
+			pattern: "refs/tags/sdk/python/v0.18.1[[:lower:][:digit:]]",
+			matches: []string{
+				"refs/tags/sdk/python/v0.18.17",
+				"refs/tags/sdk/python/v0.18.18",
+			},
+		},
+		{
+			// literal honored alongside a posix class that matches nothing here
+			pattern: "refs/tags/sdk/pytho[n[:space:]]/v0.18.17",
+			matches: []string{
+				"refs/tags/sdk/python/v0.18.17",
+			},
+		},
+		{
+			// negated bracket mixing a literal and a posix class
+			pattern: "refs/tags/sdk/python/v0.18.1[!8[:alpha:]]",
+			matches: []string{
+				"refs/tags/sdk/python/v0.18.17",
+			},
+		},
 	}
 
 	for _, test := range tests {
