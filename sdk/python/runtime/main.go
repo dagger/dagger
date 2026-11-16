@@ -300,16 +300,11 @@ func (m *PythonSdk) Common(
 func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*PythonSdk, error) {
 	m.ModSource = modSource
 	m.ContextDir = modSource.ContextDirectory()
-	sdk, err := modSource.SDK(ctx)
+	debug, err := modSource.SDK().Debug(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("runtime module load: %w", err)
 	}
-	if sdk != nil {
-		m.Debug, err = sdk.Debug(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("runtime module load: %w", err)
-		}
-	}
+	m.Debug = debug
 
 	if err := m.Discovery.Load(ctx, m); err != nil {
 		return nil, fmt.Errorf("runtime module load: %w", err)

@@ -1,10 +1,7 @@
 name = "typescript-sdk"
-include = []
+engineVersion = "v0.21.9"
 
-[entrypoint]
-  kind = "dang"
-  source = "./internal/dagger/entrypoint"
-
-[[dependencies]]
-  name = "go"
-  source = "github.com/dagger/go@a5c2efaf2c8a138c4810f011c19de73a1134c306"
+# The engine packages this module with its generated Go bindings. Build those
+# files directly instead of regenerating the SDK's own runtime on first use.
+[runtime]
+source = "go"
