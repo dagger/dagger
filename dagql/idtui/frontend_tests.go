@@ -102,6 +102,13 @@ type TestView struct {
 	SummaryIndent int
 	// SummaryLogLines caps inline logs per failing/skipped summary entry.
 	SummaryLogLines int
+	// FitWidth keeps an uncapped summary (SummaryLogLines < 0) to its width:
+	// its lines clipped, and its log windows wrapped as the log's screen
+	// lays them out, rather than raw lines left whole. For a summary framed
+	// in a tree -- the live view, or the transcript a shell session reprints
+	// on exit -- where a raw line would run past the edge of the screen, and
+	// its escapes move the cursor.
+	FitWidth bool
 	// ShowTestViewerHint renders the pretty-live "T inspect" affordance next to
 	// the TESTS summary heading. Final/non-pretty reports leave it disabled.
 	ShowTestViewerHint bool
@@ -682,7 +689,7 @@ type testSummaryBlock struct {
 }
 
 func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView, width, height int) []string {
-	if tv.testSummaryFinal() {
+	if tv.testSummaryFinal() && !tv.FitWidth {
 		width = 0
 	}
 	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
@@ -946,7 +953,8 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 	}
 	final := tv.testSummaryFinal()
 	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+8)
-	if !final {
+	wrap := !final || (tv.FitWidth && width > 0)
+	if wrap {
 		logs.SetWidth(max(width-lipgloss.Width(indent), 1))
 	}
 	usedHeight := logs.UsedHeight()
@@ -956,6 +964,19 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 	limit := tv.SummaryLogLines
 	if limit < 0 || limit > usedHeight {
 		limit = usedHeight
+	}
+	if final && wrap {
+		// The rows the log's screen wraps it into, as plain text, then the
+		// same error-anchored window.
+		rows, _ := logs.PrintTail(usedHeight + 2)
+		for len(rows) > 0 && strings.TrimSpace(rows[len(rows)-1]) == "" {
+			rows = rows[:len(rows)-1]
+		}
+		lines := errorWindowLines(out, rows, indent, tv.TraceCommand, traceLogsHintTarget(entry.span))
+		for i, line := range lines {
+			lines[i] = clipTestSummaryLine(line, width)
+		}
+		return lines
 	}
 	if final {
 		var buf strings.Builder
@@ -1895,6 +1916,12 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	}
 	if tv.SummaryLogLines != summaryLogLines {
 		tv.SummaryLogLines = summaryLogLines
+		tv.Update()
+	}
+	// The transcript a shell reprints on exit frames the rollup too: its
+	// uncapped log windows wrap beside the frame.
+	if fit := s.framesInlineRollups(); tv.FitWidth != fit {
+		tv.FitWidth = fit
 		tv.Update()
 	}
 	showHint := !s.fe.finalRender
