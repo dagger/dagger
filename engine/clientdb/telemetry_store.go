@@ -741,7 +741,8 @@ func (l *spanLookup) beneathLocked(spanID string, scope map[string]bool, memo *p
 	}
 	memo.walk++
 	visited := memo.visited[:0]
-	queue := append(memo.queue[:0], spanID)
+	queue := memo.queue[:0]
+	queue = append(queue, spanID)
 	defer func() { memo.visited, memo.queue = visited[:0], queue[:0] }()
 	for i := 0; i < len(queue); i++ {
 		id := queue[i]
@@ -805,8 +806,8 @@ func (l *spanLookup) placeArrivals(tree map[string]bool, arrivals int, memo *pla
 			seeds = append(seeds, id)
 		}
 	}
-	added = append(seeds, l.closeFromLocked(tree, seeds)...)
-	return added, len(l.arrivals), l.stillUnplacedLocked(unplaced)
+	seeds = append(seeds, l.closeFromLocked(tree, seeds)...)
+	return seeds, len(l.arrivals), l.stillUnplacedLocked(unplaced)
 }
 
 // closeFromLocked adds to tree the spans beneath seeds (see closeBeneath),
