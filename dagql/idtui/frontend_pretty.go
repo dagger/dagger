@@ -4833,11 +4833,15 @@ func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
 func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 	fe.requestLogsOnRender(fe.ZoomedSpan)
 	logs := fe.logs.Logs[fe.ZoomedSpan]
-	if logs == nil || logs.UsedHeight() == 0 || fe.claims.hasLog(fe.ZoomedSpan) || fe.hasShownRootError() {
+	if logs == nil || fe.claims.hasLog(fe.ZoomedSpan) || fe.hasShownRootError() {
+		return nil
+	}
+	// Prefix first: the screen is laid out at the width the prefix leaves.
+	logs.SetPrefix(prefix)
+	if logs.UsedHeight() == 0 {
 		return nil
 	}
 	logs.SetHeight(fe.window.Height / 3)
-	logs.SetPrefix(prefix)
 	view := logs.View()
 	if view == "" {
 		return nil

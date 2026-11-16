@@ -196,10 +196,15 @@ func (lv *LogsView) Render(ctx tuist.Context) {
 	if lv.toolArgs {
 		logs = lv.fe.logs.ToolArgs[lv.spanID]
 	}
-	if logs == nil || logs.UsedHeight() == 0 {
+	if logs == nil {
 		return
 	}
+	// Prefix first: the screen is laid out at the width the prefix leaves,
+	// and UsedHeight builds it.
 	logs.SetPrefix(lv.logPrefix)
+	if logs.UsedHeight() == 0 {
+		return
+	}
 	height := lv.height
 	if height <= 0 {
 		height = logs.UsedHeight()

@@ -79,9 +79,10 @@ func (p *LogPagerView) Render(ctx tuist.Context) {
 	}
 	height = max(height, 1)
 
-	if p.Logs != nil && p.Logs.UsedHeight() > 0 {
+	if p.Logs != nil {
 		// The header includes scroll percentage, so size the pager before
-		// rendering it. The log area starts after the title and divider.
+		// rendering it, and before reading the log, which lays it out at
+		// its width. The log area starts after the title and divider.
 		p.Logs.SetPrefix("")
 		p.Logs.SetWidth(width)
 		p.Logs.SetHeight(max(height-2, 1))

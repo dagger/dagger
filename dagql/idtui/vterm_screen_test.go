@@ -45,12 +45,12 @@ var vtermScreenCases = []vtermScreenCase{
 		writes: []string{`{"schema":"` + strings.Repeat("x", 100_000) + `"}`},
 	},
 	{
-		// midterm doesn't reflow rows already written, so a resize keeps
-		// the earlier layout and the carriage return lands on the second row
-		name:   "resized after writing",
-		width:  8,
+		// a width too narrow for its rows lays the log out again, so the
+		// carriage return lands on the second row the line now takes
+		name:   "narrowed after writing",
+		width:  16,
 		writes: []string{"abcdefgh12345678\r", "OK"},
-		widths: map[int]int{1: 16},
+		widths: map[int]int{1: 8},
 	},
 	{
 		name:     "prefix and width change between writes",
@@ -140,6 +140,100 @@ func TestVtermScreenBuiltOnDemand(t *testing.T) {
 			require.Equal(t, readVtermScreen(t, eager, 3), readVtermScreen(t, lazy, 3))
 		})
 	}
+}
+
+// TestVtermReflowsOnResize checks that a log shown at one width and then a
+// narrower one -- its row re-indented, say -- wraps at the new one rather
+// than keeping rows laid out for the old width, which the new prefix would
+// push past the edge, and that a wider one keeps its rows, losing nothing.
+func TestVtermReflowsOnResize(t *testing.T) {
+	line := strings.Repeat("0123456789", 3)
+	term := NewVterm(termenv.Ascii)
+	term.SetWidth(17)
+	_, err := term.Write([]byte(line + "\n"))
+	require.NoError(t, err)
+	shown := func() []string {
+		term.SetHeight(term.UsedHeight())
+		lines := strings.Split(strings.TrimSuffix(term.View(), "\n"), "\n")
+		for i, l := range lines {
+			lines[i] = strings.TrimRight(l, " ")
+		}
+		return lines
+	}
+	require.Equal(t, []string{"01234567890123456", "7890123456789"}, shown())
+
+	term.SetPrefix("│ ")
+	require.Equal(t, []string{"│ 012345678901234", "│ 567890123456789"}, shown())
+
+	term.SetWidth(12)
+	require.Equal(t, []string{"│ 0123456789", "│ 0123456789", "│ 0123456789"}, shown())
+
+	term.SetWidth(40)
+	require.Equal(t, []string{"│ 0123456789", "│ 0123456789", "│ 0123456789"}, shown())
+
+	// Not built yet, a log is laid out at the width it ends up with.
+	lazy := NewVterm(termenv.Ascii)
+	lazy.SetWidth(12)
+	_, err = lazy.Write([]byte(line + "\n"))
+	require.NoError(t, err)
+	lazy.SetWidth(40)
+	lazy.SetHeight(lazy.UsedHeight())
+	require.Equal(t, line, strings.TrimSpace(lazy.View()))
+}
+
+// TestVtermReflowsDiffs checks that a highlighted diff, whose screen isn't
+// its raw log, still wraps at the width its row leaves it.
+func TestVtermReflowsDiffs(t *testing.T) {
+	line := "+" + strings.Repeat("0123456789", 6)
+	term := NewVterm(termenv.Ascii)
+	term.SetWidth(40)
+	_, err := term.WriteDiff([]byte(line + "\n"))
+	require.NoError(t, err)
+	term.SetHeight(term.UsedHeight())
+	require.Equal(t, line, strings.ReplaceAll(strings.TrimSpace(term.View()), "\n", ""))
+
+	term.SetPrefix("│ ")
+	term.SetHeight(term.UsedHeight())
+	var got strings.Builder
+	for l := range strings.SplitSeq(strings.TrimSuffix(term.View(), "\n"), "\n") {
+		got.WriteString(strings.TrimRight(strings.TrimPrefix(l, "│ "), " "))
+	}
+	require.Equal(t, line, got.String())
+	var raw bytes.Buffer
+	require.NoError(t, term.PrintRaw(&raw))
+	require.Equal(t, line+"\n", raw.String())
+}
+
+// TestVtermReflowKeepsItsPlace checks what a narrowed log shows: the end,
+// if it followed the end; where its reader scrolled, as near as rows allow,
+// even past its current search match.
+func TestVtermReflowKeepsItsPlace(t *testing.T) {
+	newLog := func() *Vterm {
+		term := NewVterm(termenv.Ascii)
+		term.SetWidth(100)
+		for i := range 30 {
+			fmt.Fprintf(term, "line %02d %s\n", i, strings.Repeat("x", 80))
+		}
+		fmt.Fprintln(term, "ERROR: the failure")
+		term.SetHeight(4)
+		_ = term.View()
+		return term
+	}
+
+	tail := newLog()
+	tail.SetWidth(60)
+	tail.SetHeight(4)
+	require.Contains(t, tail.View(), "ERROR: the failure")
+
+	scrolled := newLog()
+	_, row := scrolled.Search("line 02", 0)
+	scrolled.ScrollToRow(row)
+	scrolled.ScrollBy(10)
+	require.Contains(t, scrolled.View(), "line 1")
+	scrolled.SetWidth(60)
+	view := scrolled.View()
+	require.NotContains(t, view, "line 02", view)
+	require.NotContains(t, view, "ERROR", view)
 }
 
 // TestVtermScreenBeforeMarkdown checks that a log of plain writes followed by

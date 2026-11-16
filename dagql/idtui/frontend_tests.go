@@ -1298,7 +1298,7 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 		}
 	}
 
-	logNeed := tv.detailLogLineCount(span)
+	logNeed := tv.detailLogLineCount(span, width)
 	hasSplitter := logNeed > 0 && len(childLines) > 0 && contentHeight >= 3
 	sectionHeight := contentHeight
 	if hasSplitter {
@@ -1409,12 +1409,17 @@ func visibleCellAt(s string, col int) string {
 	return ""
 }
 
-func (tv *TestView) detailLogLineCount(span *dagui.Span) int {
+func (tv *TestView) detailLogLineCount(span *dagui.Span, width int) int {
 	if span == nil {
 		return 0
 	}
 	logs := tv.Logs[span.ID]
-	if logs == nil || logs.UsedHeight() == 0 {
+	if logs == nil {
+		return 0
+	}
+	// Count the rows at the width renderDetailLogLines lays them out at.
+	logs.SetWidth(width)
+	if logs.UsedHeight() == 0 {
 		return 0
 	}
 	return logs.UsedHeight() + 1
