@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/cleanups"
@@ -62,6 +63,36 @@ func (e *countingMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric
 
 func (e *countingMetricExporter) Shutdown(context.Context) error   { return nil }
 func (e *countingMetricExporter) ForceFlush(context.Context) error { return nil }
+
+type fakeTelemetrySession struct {
+	barrier error
+	quiet   []time.Duration
+}
+
+func (s *fakeTelemetrySession) TelemetryBarrier(context.Context) error { return s.barrier }
+func (s *fakeTelemetrySession) WaitTelemetryIdle(_ context.Context, quiet time.Duration) {
+	s.quiet = append(s.quiet, quiet)
+}
+
+// TestSettleEngineTelemetry: the barrier settles the session's telemetry
+// exactly; an engine without it, or a failed barrier, gets the quiet wait.
+func TestSettleEngineTelemetry(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		barrier error
+		quiet   []time.Duration
+	}{
+		{name: "barrier", quiet: nil},
+		{name: "older engine", barrier: fmt.Errorf("wrapped: %w", client.ErrTelemetryBarrierUnsupported), quiet: []time.Duration{engineTelemetryQuiet}},
+		{name: "failed barrier", barrier: fmt.Errorf("flush telemetry: boom"), quiet: []time.Duration{engineTelemetryQuiet}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sess := &fakeTelemetrySession{barrier: tc.barrier}
+			settleEngineTelemetry(t.Context(), sess)
+			require.Equal(t, tc.quiet, sess.quiet)
+		})
+	}
+}
 
 func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	oldFrontend := Frontend

@@ -196,6 +196,9 @@ func withEngineAction(
 		cleanup.Add("close dagger session", sess.Close)
 		detach := cliLocalTelemetry.attach(ctx, sess)
 		cleanup.Add("hand the command's telemetry to the engine", func() error {
+			// Take in what the engine has for the command so far, such as
+			// a session title for its span, before ending it.
+			settleEngineTelemetry(ctx, sess)
 			// End the command first, so the engine stores its span and
 			// output whole before the session closes.
 			endCommand(rerr)
@@ -207,6 +210,42 @@ func withEngineAction(
 
 		return cleanup.Run, fn(ctx, sess)
 	})
+}
+
+// engineTelemetrySession is the session settleEngineTelemetry waits on: a
+// *client.Client.
+type engineTelemetrySession interface {
+	TelemetryBarrier(context.Context) error
+	WaitTelemetryIdle(context.Context, time.Duration)
+}
+
+// engineTelemetrySettleTimeout bounds the telemetry barrier at exit, so a
+// stuck engine never holds up the command's exit.
+const engineTelemetrySettleTimeout = 10 * time.Second
+
+// engineTelemetryQuiet is how long the session's telemetry must stay quiet,
+// with an engine that predates TelemetryBarrier, for it to count as settled.
+const engineTelemetryQuiet = 300 * time.Millisecond
+
+// settleEngineTelemetry waits until the engine's telemetry for the work done
+// so far has reached this process: exactly, with TelemetryBarrier, or else
+// until it goes quiet. Records the engine publishes for the command span,
+// such as the span-name record of Query.setSessionTitle, arrive through the
+// session's streams, so they must be in before the span ends.
+func settleEngineTelemetry(ctx context.Context, sess engineTelemetrySession) {
+	ctx = context.WithoutCancel(ctx)
+	barrierCtx, cancel := context.WithTimeout(ctx, engineTelemetrySettleTimeout)
+	err := sess.TelemetryBarrier(barrierCtx)
+	cancel()
+	if err == nil {
+		return
+	}
+	if !errors.Is(err, client.ErrTelemetryBarrierUnsupported) {
+		slog.Warn("error waiting for the session's telemetry", "err", err)
+	}
+	quietCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	sess.WaitTelemetryIdle(quietCtx, engineTelemetryQuiet)
+	cancel()
 }
 
 // engineClientParams adds the session settings the global flags select.
