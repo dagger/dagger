@@ -196,6 +196,38 @@ func (a *Store) SearchLogs(ctx context.Context, traceID string, search archive.L
 	return searcher.SearchLogs(ctx, traceID, a.unsealed, search)
 }
 
+// CallClosureReader is the archive client's call-closure read
+// (archive.Client.CallClosure).
+type CallClosureReader interface {
+	CallClosure(ctx context.Context, traceID string, unsealed bool, digests, known []string, consume func(*collogspb.ExportLogsServiceRequest) error) error
+}
+
+var _ CallClosureReader = (*archive.Client)(nil)
+
+// FetchCallClosure reads the call payloads of digests' recipe closures, up to
+// the archive's cut, best-effort (archive.Client.CallClosure), in requests of
+// at most archive.MaxCallClosureDigests digests, leaving out the closures of
+// known calls (at most as many). A reader without the read fails with
+// archive.ErrCallClosureUnsupported.
+func (a *Store) FetchCallClosure(ctx context.Context, traceID string, digests, known []string, cb func(context.Context, *collogspb.ExportLogsServiceRequest) error) error {
+	reader, ok := a.reader.(CallClosureReader)
+	if !ok {
+		return archive.ErrCallClosureUnsupported
+	}
+	if _, err := a.options(traceID, a.manifest.HighWater.Logs); err != nil {
+		return err
+	}
+	known = known[:min(len(known), archive.MaxCallClosureDigests)]
+	for len(digests) > 0 {
+		chunk := digests[:min(len(digests), archive.MaxCallClosureDigests)]
+		digests = digests[len(chunk):]
+		if err := reader.CallClosure(ctx, traceID, a.unsealed, chunk, known, func(req *collogspb.ExportLogsServiceRequest) error { return cb(ctx, req) }); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (a *Store) FetchTrace(ctx context.Context, traceID string, sink cloud.TraceImportSink) (rerr error) {
 	// Match Cloud's sink contract: even a failed display import seals the spans
 	// it received, without claiming success or changing to another source.

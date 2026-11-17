@@ -223,6 +223,23 @@ type TraceFrontend interface {
 // a signature drift here would otherwise silently disable them.
 var _ TraceFrontend = (*frontendPretty)(nil)
 
+// CallFetcher is the optional interface of a frontend that can fetch call
+// payloads it lacks, for a trace it loaded only part of (a conversation-only
+// restore): an action that rebuilds an ID -- branching or editing from a
+// message, a terminal on an old container, focusing an agent -- or a rewind
+// marker whose abandoned messages it cannot place, asks for the recipe
+// closures of the digests involved, then tries again.
+type CallFetcher interface {
+	// SetCallProvider registers the fetcher of the recipe closures of
+	// digests, leaving out the closures of known calls, which the frontend
+	// holds. It is called off the event loop, blocks until the payloads it
+	// found have been applied, and fails when its source cannot serve them.
+	// A digest is asked for once.
+	SetCallProvider(func(digests, known []string) error)
+}
+
+var _ CallFetcher = (*frontendPretty)(nil)
+
 // AgentRestorer is the optional interface `dagger agent -r` drives to
 // read a restore plan out of the frontend's DB
 // (hack/designs/resume-from-trace.md §5.1, "Reading the DB back").

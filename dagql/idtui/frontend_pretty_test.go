@@ -3,9 +3,11 @@ package idtui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"io"
+	"maps"
 	"reflect"
 	"regexp"
 	"slices"
@@ -2506,6 +2508,133 @@ func TestPromptEditTarget(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 }
 
+// TestEditPromptFetchesMissingCallHistory: in a trace loaded only in part, a
+// prompt whose call payloads never arrived asks the call provider for them,
+// once, then edits as usual; a failed fetch says why above the prompt.
+func TestEditPromptFetchesMissingCallHistory(t *testing.T) {
+	db := dagui.NewDB()
+	base := &callpbv1.Call{Digest: "xxh3:fetch-base", Field: "llm", Type: &callpbv1.Type{NamedType: "LLM"}}
+	prompt := &callpbv1.Call{
+		Digest: "xxh3:fetch-prompt", Field: "withPrompt", Type: &callpbv1.Type{NamedType: "LLM"}, ReceiverDigest: base.Digest,
+		Args: []*callpbv1.Argument{{Name: "prompt", Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "fetched words"}}}},
+	}
+	start := time.Unix(100, 0)
+	chiefID := prettyTestSpanID(120)
+	promptID := prettyTestSpanID(121)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: chiefID, Agent: true, AgentID: "chief", StartTime: start},
+		{ID: promptID, ParentID: chiefID, LLMRole: "user", LLMCallDigest: prompt.Digest, StartTime: start.Add(time.Second)},
+	})
+	db.SetPrimarySpan(chiefID)
+	handler := &focusedEditShellHandler{target: "chief", called: make(chan string, 1)}
+	live := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(100, 12))
+	live.setupTUI()
+	live.startShell(context.Background(), handler)
+	live.enterNavMode()
+	live.FocusedSpan = promptID
+
+	requested := make(chan []string, 4)
+	var fail error
+	var release chan struct{}
+	live.callProvider = func(digests, _ []string) error {
+		requested <- digests
+		if fail != nil {
+			return fail
+		}
+		if release != nil {
+			<-release
+		}
+		applied := make(chan struct{})
+		live.dispatch(func() {
+			db.Calls[base.Digest], db.Calls[prompt.Digest] = base, prompt
+			close(applied)
+		})
+		<-applied
+		return nil
+	}
+	step := func(until func() bool) {
+		t.Helper()
+		require.Eventually(t, func() bool {
+			live.tui.Step()
+			return until()
+		}, time.Second, 10*time.Millisecond)
+	}
+
+	fail = errors.New("archive gone")
+	live.editPrompt()
+	require.Equal(t, []string{prompt.Digest}, <-requested)
+	step(func() bool { return live.promptErr != nil })
+	require.ErrorContains(t, live.promptErr, "archive gone")
+	require.ErrorContains(t, live.promptErr, "--backfill")
+
+	// Asked for once: a digest whose fetch failed is not asked for again.
+	live.editPrompt()
+	select {
+	case digests := <-requested:
+		t.Fatalf("asked again for %v", digests)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	fail = nil
+	release = make(chan struct{})
+	live.requestedCalls = nil
+	live.clearPromptError()
+	live.editPrompt()
+	require.Equal(t, []string{prompt.Digest}, <-requested)
+	// Pressed again while the fetch is out: it waits for that fetch rather
+	// than failing or asking again.
+	live.editPrompt()
+	live.tui.Step()
+	require.NoError(t, live.promptErr)
+	select {
+	case digests := <-requested:
+		t.Fatalf("asked again for %v", digests)
+	default:
+	}
+	close(release)
+	step(func() bool { return len(handler.called) > 0 })
+	want, err := encodedIDForCallDigest(db, base.Digest)
+	require.NoError(t, err)
+	require.Equal(t, want, <-handler.called, "the edit runs once the payloads apply")
+	step(func() bool { return live.textInput.Value() == "fetched words" })
+}
+
+// TestEditPromptFetchesOnlyMissingCallHistory: e on a prompt the editor
+// cannot hold (an image prompt), whose payloads are all here, fetches
+// nothing and says nothing, as without a call provider.
+func TestEditPromptFetchesOnlyMissingCallHistory(t *testing.T) {
+	db := dagui.NewDB()
+	base := &callpbv1.Call{Digest: "xxh3:img-base", Field: "llm", Type: &callpbv1.Type{NamedType: "LLM"}}
+	content := &callpbv1.Call{Digest: "xxh3:img-content", Field: "withContent", Type: &callpbv1.Type{NamedType: "LLM"}, ReceiverDigest: base.Digest}
+	db.Calls[base.Digest], db.Calls[content.Digest] = base, content
+	start := time.Unix(100, 0)
+	chiefID := prettyTestSpanID(130)
+	promptID := prettyTestSpanID(131)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: chiefID, Agent: true, AgentID: "chief", StartTime: start},
+		{ID: promptID, ParentID: chiefID, LLMRole: "user", LLMCallDigest: content.Digest, StartTime: start.Add(time.Second)},
+	})
+	db.SetPrimarySpan(chiefID)
+	live := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(100, 12))
+	live.setupTUI()
+	live.startShell(context.Background(), &focusedEditShellHandler{target: "chief", called: make(chan string, 1)})
+	live.enterNavMode()
+	live.FocusedSpan = promptID
+	requested := make(chan []string, 1)
+	live.callProvider = func(digests, _ []string) error {
+		requested <- digests
+		return nil
+	}
+	live.editPrompt()
+	live.tui.Step()
+	select {
+	case digests := <-requested:
+		t.Fatalf("fetched %v for a prompt whose history is here", digests)
+	default:
+	}
+	require.NoError(t, live.promptErr)
+}
+
 // branchShellHandler records which rewind path a branch took.
 type branchShellHandler struct {
 	stubShellHandler
@@ -3243,6 +3372,51 @@ func TestConversationTranscriptRewindRepaintsAbandonedRows(t *testing.T) {
 	}
 	if !containsStyledLine(frame, "run the linter instead", "\x1b[48;2;30;30;30m") {
 		t.Errorf("resumed prompt lost its shaded card:\n%s", visibleEscapes(frame))
+	}
+}
+
+// TestRewindFetchesItsAbandonedConversation: in a trace loaded only in part,
+// a rewind marker whose abandoned conversation's payloads never arrived asks
+// the call provider for them, once, and the messages collapse when they apply.
+func TestRewindFetchesItsAbandonedConversation(t *testing.T) {
+	f := newRewindFixture()
+	abandoned := map[string]*callpbv1.Call{}
+	for _, digest := range []string{"xxh3:old", "xxh3:old-tool", "xxh3:old-result", "xxh3:tip"} {
+		abandoned[digest] = f.db.Calls[digest]
+		delete(f.db.Calls, digest)
+	}
+	fe := newWithTerminal(io.Discard, f.db, tuist.NewHeadlessTerminal(120, 40))
+	fe.setupTUI()
+	fe.shell = stubShellHandler{}
+	requested := make(chan []string, 4)
+	knownCalls := make(chan []string, 4)
+	fe.callProvider = func(digests, known []string) error {
+		requested <- digests
+		knownCalls <- known
+		applied := make(chan struct{})
+		fe.dispatch(func() {
+			maps.Copy(f.db.Calls, abandoned)
+			// Payloads reach the DB as a mutation, as the log exporter's do.
+			f.db.ImportSnapshots([]dagui.SpanSnapshot{f.marker})
+			close(applied)
+		})
+		<-applied
+		return nil
+	}
+
+	fe.recalculateViewLocked()
+	require.Nil(t, f.db.SupersededBy(f.db.Spans.Map[f.oldPromptID]), "the abandoned chain cannot be walked yet")
+	require.Equal(t, []string{"xxh3:tip"}, <-requested)
+	require.Equal(t, []string{"xxh3:kept-reply"}, <-knownCalls, "the adopted state bounds the abandoned conversation")
+	require.Eventually(t, func() bool {
+		fe.tui.Step()
+		fe.recalculateViewLocked()
+		return f.db.SupersededBy(f.db.Spans.Map[f.oldPromptID]) != nil
+	}, time.Second, 10*time.Millisecond, "the abandoned messages collapse once their payloads apply")
+	select {
+	case digests := <-requested:
+		t.Fatalf("asked again for %v", digests)
+	default:
 	}
 }
 

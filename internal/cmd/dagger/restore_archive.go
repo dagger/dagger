@@ -205,9 +205,10 @@ func archiveStore(source archiveRestoreSource, traceHex string, cut enginetel.Ar
 // at a time.
 //
 // Of the metrics, only the LLM token counts the cost and token totals sum are
-// imported (importLLMTokenMetrics). What only the whole-trace streams carry is
-// lost: the other metrics, and call payloads beyond the bootstrap's recipe
-// closure and the loaded spans' own, so e.g. rewound turns are not collapsed.
+// imported (importLLMTokenMetrics), and the other metrics are lost. Call
+// payloads beyond the bootstrap's recipe closure and the loaded spans' own
+// load as the frontend needs them (idtui.CallFetcher): to place a rewind's
+// abandoned turns, or to branch, edit, open a terminal or focus an agent.
 // What a tool call ran, and its rolled-up output, shows only as its spans are
 // expanded.
 //
@@ -246,6 +247,19 @@ func restoreConversationOnly(ctx context.Context, source archiveRestoreSource, f
 		_ = loader.wait()
 		_ = logFg.Wait()
 	})
+	// Call payloads beyond the bootstrap's closure load as an action needs
+	// them (idtui.CallFetcher).
+	var callFg fetchGroup
+	if cf, ok := fe.(idtui.CallFetcher); ok {
+		cf.SetCallProvider(func(digests, known []string) error {
+			result := make(chan error, 1)
+			callFg.Go(func() error {
+				result <- fetchCallClosure(historyCtx, store, traceHex, loader.importer, fe, digests, known)
+				return nil
+			})
+			return <-result
+		})
+	}
 	stop := startHistoricalImport(historyCtx, func(ctx context.Context) error {
 		var metricsErr error
 		var metrics sync.WaitGroup
@@ -280,7 +294,23 @@ func restoreConversationOnly(ctx context.Context, source archiveRestoreSource, f
 		stop()
 		_ = loader.wait()
 		_ = logFg.Wait()
+		_ = callFg.Wait()
 	}
+}
+
+// fetchCallClosure imports the recipe closures of digests from the archive
+// into fe, except those of known calls, and waits until they are applied, for
+// an action that rebuilds an ID from payloads a conversation-only history did
+// not load.
+func fetchCallClosure(ctx context.Context, store *tracesource.Store, traceHex string, importer *enginetel.TraceImporter, fe idtui.AgentRestorer, digests, known []string) error {
+	err := store.FetchCallClosure(ctx, traceHex, digests, known, importer.ImportLogs)
+	if errors.Is(err, archive.ErrCallClosureUnsupported) {
+		return errors.New("the engine predates loading it on demand")
+	}
+	if err != nil {
+		return err
+	}
+	return fe.WaitForEventLoop(ctx)
 }
 
 func archiveRestoreError(traceID string, err error) error {

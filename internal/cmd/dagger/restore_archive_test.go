@@ -37,6 +37,7 @@ import (
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 type restoreTestFrontend struct {
@@ -546,13 +547,15 @@ type lazyRestoreFrontend struct {
 	provider func(dagui.SpanID, bool)
 	spans    func(dagui.SpanID)
 	wait     func()
+	calls    func(digests, known []string) error
 }
 
 func (fe *lazyRestoreFrontend) SetTraceLogProvider(traceID dagui.TraceID, f func(dagui.SpanID, bool)) {
 	fe.traceID, fe.provider = traceID, f
 }
-func (fe *lazyRestoreFrontend) SetSpanProvider(f func(dagui.SpanID)) { fe.spans = f }
-func (fe *lazyRestoreFrontend) SetFetchWaiter(f func())              { fe.wait = f }
+func (fe *lazyRestoreFrontend) SetSpanProvider(f func(dagui.SpanID))                  { fe.spans = f }
+func (fe *lazyRestoreFrontend) SetFetchWaiter(f func())                               { fe.wait = f }
+func (fe *lazyRestoreFrontend) SetCallProvider(f func(digests, known []string) error) { fe.calls = f }
 
 // lazyRestoreArchive reports every history and selected read.
 type lazyRestoreArchive struct {
@@ -677,6 +680,20 @@ type noBackfillArchive struct {
 	fail error
 	// metricsErr fails metric reads, after delivering nothing.
 	metricsErr error
+	// calls records the call closures asked for, and serves closure.
+	calls   chan archive.CallClosureQuery
+	closure *collogspb.ExportLogsServiceRequest
+}
+
+func (s *noBackfillArchive) CallClosure(_ context.Context, _ string, unsealed bool, digests, known []string, consume func(*collogspb.ExportLogsServiceRequest) error) error {
+	if unsealed {
+		return errors.New("a sealed archive's closure was read unsealed")
+	}
+	s.calls <- archive.CallClosureQuery{Digests: digests, Known: known}
+	if s.closure == nil {
+		return archive.ErrCallClosureUnsupported
+	}
+	return consume(s.closure)
 }
 
 func newNoBackfillArchive() *noBackfillArchive {
@@ -691,6 +708,7 @@ func newNoBackfillArchive() *noBackfillArchive {
 		logs:               make(chan archive.StreamOptions, 8),
 		served:             make(chan struct{}, 8),
 		metrics:            make(chan archive.StreamOptions, 8),
+		calls:              make(chan archive.CallClosureQuery, 8),
 	}
 }
 
@@ -863,6 +881,42 @@ func TestArchiveRestoreNoBackfill(t *testing.T) {
 		t.Fatalf("a second metric read: %+v", opts.Metrics)
 	default:
 	}
+}
+
+// TestArchiveRestoreNoBackfillFetchesCallClosures: a conversation-only
+// restore lets the frontend ask for the call payloads an action needs: the
+// recipe closures of the digests it names, from the archive, applied before
+// the request returns. An engine that cannot serve them says so.
+func TestArchiveRestoreNoBackfillFetchesCallClosures(t *testing.T) {
+	noBackfillPrimaries(t)
+	source := newNoBackfillArchive()
+	frame := &callpbv1.Call{Digest: "xxh3:fetched", Field: "llm", Type: &callpbv1.Type{NamedType: "LLM"}}
+	data, err := proto.Marshal(frame)
+	require.NoError(t, err)
+	var payload log.Record
+	payload.SetBody(log.BytesValue(data))
+	payload.AddAttributes(log.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	source.closure = controlLogs(payload)
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), restoreRequest())
+	require.NoError(t, err)
+	defer cleanup()
+	require.NotNil(t, fe.calls, "the frontend can ask for call payloads")
+	// The test frontend applies imports in the caller's goroutine, not an
+	// event loop: let the initial imports finish first.
+	receiveOpts(t, source.traces, "the conversation view")
+	<-source.served
+	receiveOpts(t, source.metrics, "the cost metrics")
+	require.Eventually(t, func() bool { return len(fe.db.LLMTokenMetrics.Snapshot()) > 0 }, 5*time.Second, 10*time.Millisecond)
+	fe.wait()
+
+	require.NoError(t, fe.calls([]string{frame.Digest}, []string{"xxh3:held"}))
+	require.Equal(t, archive.CallClosureQuery{Digests: []string{frame.Digest}, Known: []string{"xxh3:held"}}, <-source.calls)
+	require.NotNil(t, fe.db.Call(frame.Digest), "the closure is applied before the request returns")
+
+	source.closure = nil
+	err = fe.calls([]string{"xxh3:other"}, nil)
+	require.ErrorContains(t, err, "predates")
 }
 
 // TestImportLLMTokenMetricsWithoutMetricSelection: an engine that cannot

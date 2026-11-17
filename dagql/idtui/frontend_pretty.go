@@ -266,6 +266,14 @@ type frontendPretty struct {
 	spanProvider   func(dagui.SpanID)
 	requestedSpans map[dagui.SpanID]bool
 
+	// callProvider fetches the recipe closures of call digests this client
+	// lacks (CallFetcher); nil unless the trace was loaded only in part.
+	// requestedCalls dedups so each digest is asked for once, and
+	// fetchingCalls holds those still being fetched.
+	callProvider   func(digests, known []string) error
+	requestedCalls map[string]bool
+	fetchingCalls  map[string]bool
+
 	// fetchWaiter, when set, blocks until in-flight background span/log fetches
 	// have completed. The console settle calls it so a request reflects fetches
 	// a zoom/expand triggered instead of returning mid-round-trip; nil for the
@@ -2758,6 +2766,117 @@ func (fe *frontendPretty) SetSpanProvider(provider func(dagui.SpanID)) {
 	})
 }
 
+// SetCallProvider registers the fetcher for call payloads this client lacks
+// (CallFetcher).
+func (fe *frontendPretty) SetCallProvider(provider func(digests, known []string) error) {
+	fe.dispatch(func() {
+		fe.callProvider = provider
+	})
+}
+
+// requestCalls asks the call provider, off the event loop, for the recipe
+// closures of the digests not asked for before (leaving out those of known
+// calls, which this client holds), then runs then on the event loop with the
+// fetch's error. It reports true while any of the digests is still being
+// fetched: an action repeated meanwhile waits for the first fetch's
+// continuation rather than failing. It reports false, running nothing, when
+// there is no provider or every digest's fetch has finished: whatever failed
+// for want of the payloads stands as it is.
+func (fe *frontendPretty) requestCalls(digests, known []string, then func(error)) bool {
+	if fe.callProvider == nil {
+		return false
+	}
+	var fresh []string
+	var inflight bool
+	for _, digest := range digests {
+		if digest == "" {
+			continue
+		}
+		if fe.requestedCalls[digest] {
+			inflight = inflight || fe.fetchingCalls[digest]
+			continue
+		}
+		if fe.requestedCalls == nil {
+			fe.requestedCalls = make(map[string]bool)
+			fe.fetchingCalls = make(map[string]bool)
+		}
+		fe.requestedCalls[digest] = true
+		fe.fetchingCalls[digest] = true
+		fresh = append(fresh, digest)
+	}
+	if len(fresh) == 0 {
+		return inflight
+	}
+	provider := fe.callProvider
+	go func() {
+		err := provider(fresh, known)
+		fe.dispatch(func() {
+			for _, digest := range fresh {
+				delete(fe.fetchingCalls, digest)
+			}
+			if then != nil {
+				then(err)
+			}
+			fe.Update()
+		})
+	}()
+	return true
+}
+
+// messageCallDigests are the digests whose recipe closures an action on a
+// conversation row needs: the LLM state the row carries, and the abandoned
+// conversations of the rewinds not placed yet, through which alone a message
+// they abandoned reaches its neighbors; and the calls whose closures bound
+// those (see unplacedRewindDigests). The row's state is left out when this
+// client can already rebuild it.
+func (fe *frontendPretty) messageCallDigests(span *dagui.Span) (digests, known []string) {
+	if fe.callHistoryMissing(span) {
+		digests = append(digests, dagui.LLMCallCarrier(span).LLMCallDigest)
+	}
+	abandoned, adopted := fe.unplacedRewindDigests()
+	return append(digests, abandoned...), adopted
+}
+
+// callHistoryMissing reports whether this client lacks part of the recipe
+// of the LLM state span's row carries, so an action on the row that failed
+// may succeed once it is fetched -- and one that failed for another reason
+// (an image prompt, which the editor cannot hold) fetches nothing.
+func (fe *frontendPretty) callHistoryMissing(span *dagui.Span) bool {
+	carrier := dagui.LLMCallCarrier(span)
+	if carrier == nil {
+		return false
+	}
+	_, err := fe.db.CallIDForDigest(carrier.LLMCallDigest)
+	return err != nil
+}
+
+// retryOnSpan continues an action on the row id once the call payloads it
+// asked for have been fetched: a failed fetch says why; otherwise, while the
+// row is still focused, the action runs again if check now passes, or says
+// why it still cannot.
+func (fe *frontendPretty) retryOnSpan(id dagui.SpanID, what string, action func(), check func() error) func(error) {
+	return func(err error) {
+		if err != nil {
+			fe.setPromptError(callHistoryError("cannot "+what+" from here", err))
+			return
+		}
+		if fe.FocusedSpan != id {
+			return
+		}
+		if err := check(); err != nil {
+			fe.setPromptError(fmt.Errorf("cannot %s from here: %w", what, err))
+			return
+		}
+		action()
+	}
+}
+
+// callHistoryError explains a failed fetch of the call payloads an action
+// needed, and how to get them.
+func callHistoryError(what string, err error) error {
+	return fmt.Errorf("%s: the call history it needs could not be loaded (%w); resuming with --backfill loads all of it", what, err)
+}
+
 // SetFetchWaiter registers a callback that blocks until in-flight background
 // fetches (issued via the span/log providers) have completed. The console uses
 // it so a single HTTP request reflects the result of fetches a zoom/expand
@@ -5128,12 +5247,17 @@ func (fe *frontendPretty) focusAgentIndex(n int) bool {
 // well; see cycleAgent for why that does not make this key redundant.)
 // Returns focusAgent's (claimed, moved) pair.
 func (fe *frontendPretty) focusLastAgent() (claimed, moved bool) {
+	return fe.focusLastAgentThen(nil)
+}
+
+// focusLastAgentThen is focusLastAgent with focusAgentThen's onMoved.
+func (fe *frontendPretty) focusLastAgentThen(onMoved func()) (claimed, moved bool) {
 	if fe.lastFocusedAgent == "" {
 		return false, false
 	}
 	for _, entry := range fe.agentRosterEntries() {
 		if entry.ID == fe.lastFocusedAgent {
-			return fe.focusAgent(entry)
+			return fe.focusAgentThen(entry, onMoved)
 		}
 	}
 	return false, false
@@ -5179,7 +5303,7 @@ func (fe *frontendPretty) navFocusAgent(n int) bool {
 	if n < 0 || n >= len(entries) {
 		return false
 	}
-	claimed, moved := fe.focusAgent(entries[n])
+	claimed, moved := fe.focusAgentThen(entries[n], fe.returnToPromptAfterFocus)
 	if moved {
 		fe.returnToPromptAfterFocus()
 	}
@@ -5257,7 +5381,7 @@ func (fe *frontendPretty) navFocusLastAgent() bool {
 	if len(fe.navRosterEntries()) == 0 {
 		return false
 	}
-	claimed, moved := fe.focusLastAgent()
+	claimed, moved := fe.focusLastAgentThen(fe.returnToPromptAfterFocus)
 	if !claimed {
 		return false
 	}
@@ -5296,6 +5420,14 @@ func (fe *frontendPretty) returnToPromptAfterFocus() {
 // Focus moves only by a keypress -- never by an event -- so this is only ever
 // called from a key handler, or from settleFocus finishing what one started.
 func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved bool) {
+	return fe.focusAgentThen(entry, nil)
+}
+
+// focusAgentThen is focusAgent for a key that does more once focus moves
+// (returnToPromptAfterFocus): when the move waits for call history to be
+// fetched, onMoved runs once it happens, as the caller would have run it on a
+// move reported at once.
+func (fe *frontendPretty) focusAgentThen(entry AgentRosterEntry, onMoved func()) (claimed, moved bool) {
 	if entry.ID == "" || entry.Focused {
 		return false, false
 	}
@@ -5319,6 +5451,30 @@ func (fe *frontendPretty) focusAgent(entry AgentRosterEntry) (claimed, moved boo
 	// value, and that call's payload is on a span like any other (§9).
 	encodedID, err := encodedIDForCallDigest(fe.db, fe.agentCallDigest(entry.ID))
 	if err != nil {
+		// A partly loaded trace may lack the agent's recipe: fetch it, then
+		// try again, unless focus has moved on meanwhile.
+		from := fe.focusedAgentID()
+		if fe.requestCalls([]string{fe.agentCallDigest(entry.ID)}, nil, func(err error) {
+			if err != nil {
+				fe.markAgentUnaddressable(entry.ID)
+				fe.setPromptError(callHistoryError(fmt.Sprintf("agent %q cannot be addressed", entry.Name), err))
+				return
+			}
+			if fe.focusedAgentID() != from {
+				return
+			}
+			for _, retry := range fe.agentRosterEntries() {
+				if retry.ID == entry.ID {
+					if _, moved := fe.focusAgentThen(retry, onMoved); moved && onMoved != nil {
+						onMoved()
+					}
+					fe.updateAgentRoster()
+					return
+				}
+			}
+		}) {
+			return true, false
+		}
 		// A frame whose span never reached this client cannot be rebuilt; the
 		// entry is read-only from here on, and says so.
 		fe.markAgentUnaddressable(entry.ID)
@@ -5811,6 +5967,31 @@ func (fe *frontendPretty) syncRewindsLocked() {
 		fe.rewindsKey = fingerprint
 		fe.renderVersion++
 	}
+	// A marker whose abandoned conversation this client cannot walk -- its
+	// payloads were never loaded -- asks for them; once they apply, the
+	// rewinds rebuild and the fingerprint above repaints the rows.
+	abandoned, adopted := fe.unplacedRewindDigests()
+	fe.requestCalls(abandoned, adopted, func(err error) {
+		if err != nil {
+			slog.Debug("could not load the calls a rewind abandoned", "err", err)
+		}
+	})
+}
+
+// unplacedRewindDigests are the abandoned conversations of the rewind
+// markers this client could not walk yet -- an action on a message they may
+// have abandoned needs their payloads too -- and the adopted states it holds,
+// which bound those conversations from the prefix they share.
+func (fe *frontendPretty) unplacedRewindDigests() (abandoned, adopted []string) {
+	for _, rewind := range fe.db.Rewinds() {
+		if len(rewind.Abandoned) == 0 && rewind.Span.AgentRewindFrom != "" {
+			abandoned = append(abandoned, rewind.Span.AgentRewindFrom)
+			if to := rewind.Span.AgentRewindTo; to != "" && fe.db.Call(to) != nil {
+				adopted = append(adopted, to)
+			}
+		}
+	}
+	return abandoned, adopted
 }
 
 // conversationToPromote is the transcript the live tree should show, and the
@@ -7329,12 +7510,7 @@ func (fe *frontendPretty) editablePrompt(span *dagui.Span) bool {
 // payload-only so the key-help hot path does not rebuild and encode a full ID on
 // every render; promptEditTarget pays for that only after e is pressed.
 func (fe *frontendPretty) promptEditCall(span *dagui.Span) *callpbv1.Call {
-	if fe.shell == nil || fe.serialRunning || span == nil || !fe.spanBelongsToFocusedAgent(span) {
-		return nil
-	}
-	if span.LLMRole != telemetry.LLMRoleUser || span.Internal || span.LLMEventOriginMessage() {
-		// Not a prompt the user submitted: a reply, a tool call, the system
-		// prompt, or an engine event (a rewind marker included).
+	if !fe.promptEditCandidate(span) {
 		return nil
 	}
 	promptCall := fe.db.LLMMessageCall(span)
@@ -7343,6 +7519,17 @@ func (fe *frontendPretty) promptEditCall(span *dagui.Span) *callpbv1.Call {
 		return nil
 	}
 	return promptCall
+}
+
+// promptEditCandidate reports whether span is a prompt the user submitted to
+// the focused agent, which e may edit once its call is known.
+func (fe *frontendPretty) promptEditCandidate(span *dagui.Span) bool {
+	if fe.shell == nil || fe.serialRunning || span == nil || !fe.spanBelongsToFocusedAgent(span) {
+		return false
+	}
+	// Not a prompt the user submitted: a reply, a tool call, the system
+	// prompt, or an engine event (a rewind marker included).
+	return span.LLMRole == telemetry.LLMRoleUser && !span.Internal && !span.LLMEventOriginMessage()
 }
 
 // promptEditTarget returns the originating submitted prompt and the encoded LLM
@@ -7392,8 +7579,20 @@ func (fe *frontendPretty) editPrompt() {
 	if !fe.FocusedSpan.IsValid() || fe.shell == nil {
 		return
 	}
-	prompt, encoded, ok := fe.promptEditTarget(fe.db.Spans.Map[fe.FocusedSpan])
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	prompt, encoded, ok := fe.promptEditTarget(focused)
 	if !ok {
+		if fe.promptEditCandidate(focused) && fe.callHistoryMissing(focused) {
+			// A partly loaded trace may lack the prompt's payloads: fetch
+			// them, then try again from the same row.
+			_, known := fe.unplacedRewindDigests()
+			fe.requestCalls([]string{dagui.LLMCallCarrier(focused).LLMCallDigest}, known, fe.retryOnSpan(focused.ID, "edit", fe.editPrompt, func() error {
+				if _, _, ok := fe.promptEditTarget(fe.db.Spans.Map[focused.ID]); !ok {
+					return errors.New("the prompt's call history is incomplete")
+				}
+				return nil
+			}))
+		}
 		return
 	}
 	work := fe.shell.EditFromID(fe.shellCtx, encoded)
@@ -7481,6 +7680,15 @@ func (fe *frontendPretty) branch() {
 
 	target, err := fe.branchTargetFor(focused)
 	if err != nil {
+		// A partly loaded trace may lack the payloads: fetch them, then try
+		// again from the same row.
+		digests, known := fe.messageCallDigests(focused)
+		if fe.requestCalls(digests, known, fe.retryOnSpan(focused.ID, "branch", fe.branch, func() error {
+			_, err := fe.branchTargetFor(fe.db.Spans.Map[focused.ID])
+			return err
+		})) {
+			return
+		}
 		slog.Warn("could not resolve the LLM state to branch to", "digest", focused.LLMCallDigest, "err", err)
 		return
 	}
@@ -7571,6 +7779,20 @@ func (fe *frontendPretty) terminal() {
 
 	callback := fe.terminalCallback(focused)
 	if callback != nil {
+		if _, err := focused.CallID(); err != nil {
+			// A partly loaded trace may lack the call's recipe: fetch it,
+			// then try again from the same row.
+			if fe.requestCalls([]string{focused.CallDigest}, nil, fe.retryOnSpan(focused.ID, "open a terminal", fe.terminal, func() error {
+				span := fe.db.Spans.Map[focused.ID]
+				if span == nil {
+					return errors.New("the span is gone")
+				}
+				_, err := span.CallID()
+				return err
+			})) {
+				return
+			}
+		}
 		go func() {
 			err := callback()
 			if err != nil {
