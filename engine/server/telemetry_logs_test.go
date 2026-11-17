@@ -446,7 +446,9 @@ func TestLiveLogQueryRowIDs(t *testing.T) {
 			}
 		}
 	}
-	query := func(q archive.LogQuery, cursor string) *http.Response {
+	// query opens a log query and returns its frames, past the hello; the
+	// response is closed when the test ends.
+	query := func(q archive.LogQuery, cursor string) io.Reader {
 		body, err := json.Marshal(q)
 		require.NoError(t, err)
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/v1/logs/query", bytes.NewReader(body))
@@ -460,22 +462,22 @@ func TestLiveLogQueryRowIDs(t *testing.T) {
 		t.Cleanup(func() { resp.Body.Close() })
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Equal(t, enginetel.LiveFrameHello, readLogFrame(t, resp.Body).kind)
-		return resp
+		return resp.Body
 	}
 
-	got, _ := readRows(query(archive.LogQuery{Spans: spans}, "").Body, 0)
+	got, _ := readRows(query(archive.LogQuery{Spans: spans}, ""), 0)
 	require.Equal(t, []row{{"root 1", 1}, {"kid 1", 3}, {"root 2", 4}}, got, "a one-shot read")
-	got, _ = readRows(query(archive.LogQuery{Spans: spans, Through: 3}, "1").Body, 0)
+	got, _ = readRows(query(archive.LogQuery{Spans: spans, Through: 3}, "1"), 0)
 	require.Equal(t, []row{{"kid 1", 3}}, got, "a resumed, bounded read")
 
 	follow := query(archive.LogQuery{Spans: spans, Follow: true}, "2")
-	got, _ = readRows(follow.Body, 2)
+	got, _ = readRows(follow, 2)
 	require.Equal(t, []row{{"kid 1", 3}, {"root 2", 4}}, got, "a resumed follow")
 	f.append(t, "client", nil,
 		logQueryRow(t, lqOther, "other 2"), // 5
 		logQueryRow(t, lqKid, "kid 2"),     // 6
 	)
-	got, _ = readRows(follow.Body, 1)
+	got, _ = readRows(follow, 1)
 	require.Equal(t, []row{{"kid 2", 6}}, got, "followed rows")
 
 	// The pushes are not log query responses: they carry no row IDs.
