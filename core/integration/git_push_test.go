@@ -258,28 +258,41 @@ func (GitSuite) TestPushCallerURLRewrite(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	pushService, pushURL := gitPushHTTPService(ctx, t, c)
 	fetchRepo := core.NewQuery(c).Git(fetchURL, core.GitOpts{ExperimentalServiceHost: fetchService})
-	head := fetchRepo.Branch("main").AsWorkspace().WithNewFile("change", "committed").With(func(ws *core.Workspace) *core.Workspace {
-		return ws.WithCommit(ws.Git().Uncommitted(), "push rewrite", workspaceCommitDate)
-	}).Git().Head()
+	commit := func(repo *core.GitRepository) *core.GitRef {
+		return repo.Branch("main").AsWorkspace().WithNewFile("change", "committed").With(func(ws *core.Workspace) *core.Workspace {
+			return ws.WithCommit(ws.Git().Uncommitted(), "push rewrite", workspaceCommitDate)
+		}).Git().Head()
+	}
+	head := commit(fetchRepo)
 	sha, err := head.CommitSHA(ctx)
+	require.NoError(t, err)
+	// A registered origin without a push URL, as a checkout's own
+	// remote.origin.url reads back: git rewrites it for push, and so must we.
+	registered := commit(fetchRepo.WithRemote("origin", fetchURL))
+	registeredSHA, err := registered.CommitSHA(ctx)
 	require.NoError(t, err)
 	// The fetch transport needs no credentials, while the rewritten push URL
 	// requires the caller's HTTP helper. Routing must happen before auth setup.
 	configText := fmt.Sprintf("[url %q]\n pushInsteadOf = %s\n[credential]\n helper = \"!f() { echo username=writer; echo password=push-test-password; }; f\"\n", pushURL, fetchURL)
 	require.NoError(t, os.WriteFile(config, []byte(configText), 0o600))
-	for _, explicit := range []bool{false, true} {
-		branch := fmt.Sprintf("rewrite-%v", explicit)
-		var to *core.GitRepository
-		if explicit {
-			// No explicit service/auth capability: use owner push routing just
-			// like an explicit HTTPS destination supplied by a contributor tool.
-			to = core.NewQuery(c).Git(fetchURL)
-		}
-		result, err := pushGitRef(ctx, c, head, to, branch, nil)
-		require.NoError(t, err)
-		require.Equal(t, "CREATED", result.Disposition)
-		require.Equal(t, sha, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/"+branch))
-		require.Empty(t, pushRemoteSHA(ctx, t, c, fetchService, fetchURL, "refs/heads/"+branch))
+	for _, tc := range []struct {
+		name string
+		head *core.GitRef
+		sha  string
+		to   *core.GitRepository
+	}{
+		{name: "implicit", head: head, sha: sha},
+		{name: "registered", head: registered, sha: registeredSHA},
+		// No explicit service/auth capability: use owner push routing just
+		// like an explicit HTTPS destination supplied by a contributor tool.
+		{name: "explicit", head: head, sha: sha, to: core.NewQuery(c).Git(fetchURL)},
+	} {
+		branch := "rewrite-" + tc.name
+		result, err := pushGitRef(ctx, c, tc.head, tc.to, branch, nil)
+		require.NoError(t, err, tc.name)
+		require.Equal(t, "CREATED", result.Disposition, tc.name)
+		require.Equal(t, tc.sha, pushRemoteSHA(ctx, t, c, pushService, pushURL, "refs/heads/"+branch), tc.name)
+		require.Empty(t, pushRemoteSHA(ctx, t, c, fetchService, fetchURL, "refs/heads/"+branch), tc.name)
 	}
 }
 
