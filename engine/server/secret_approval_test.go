@@ -259,6 +259,11 @@ func TestGitPushOwnerBoundaries(t *testing.T) {
 			bound(s.client("self-bound", none, nil, "owner", "module"), "self-bound"), "owner", true, ""},
 		{"an inert client cannot own a host",
 			inert(owns(s.client("inert-owner", none, nil, "owner", "module"))), "owner", true, ""},
+		// E.g. a CLI in a debug terminal of a module's runtime container.
+		{"a module client serving its own attachables asks its caller",
+			owns(s.client("owning-module", mod, nil, "owner")), "owner", true, ""},
+		{"a client under a module serving its own attachables asks the module's caller",
+			s.client("owning-module-sdk", none, nil, "owner", "owning-module"), "owner", true, ""},
 		{"a nested owner under an inert root owns itself",
 			owns(s.client("owner-under-inert-root", none, nil, "inert-root")), "owner-under-inert-root", false, ""},
 	} {
