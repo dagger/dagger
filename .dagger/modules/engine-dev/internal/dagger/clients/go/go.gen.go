@@ -480,7 +480,7 @@ func (r *GoArchiveBuilds) UnmarshalJSON(bs []byte) error {
 }
 
 // The source write-manifest is built from, golangci-lint's manifest module at
-// gobuild's pin, which a fresh engine would otherwise fetch to find its build.
+// gomod's pin, which a fresh engine would otherwise fetch to find its build.
 func (r *GoArchiveBuilds) ManifestSource() *Directory { // go (../../:0:0)
 	q := r.query.Select("manifestSource")
 
@@ -488,15 +488,15 @@ func (r *GoArchiveBuilds) ManifestSource() *Directory { // go (../../:0:0)
 }
 
 // golangci-lint's write-manifest, which writes the archives' manifest, for
-// every machine an engine runs on.
+// every machine an engine runs on (Gomod.writeManifest).
 func (r *GoArchiveBuilds) ManifestTool() *Directory { // go (../../:0:0)
 	q := r.query.Select("manifestTool")
 
 	return new(Directory).WithGraphQLQuery(q)
 }
 
-// gobuild's gohdr, the tool the builds' execs run, for every machine an
-// engine runs on.
+// gohdr, the tool the builds' execs run, for every machine an engine runs
+// on (Gomod.gohdr).
 func (r *GoArchiveBuilds) Tool() *Directory { // go (../../:0:0)
 	q := r.query.Select("tool")
 
