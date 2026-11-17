@@ -56,6 +56,12 @@ func New(n int) *Trace {
 		epoch:   time.Unix(1_700_000_000, 0),
 		parents: make([]int32, n),
 	}
+	// Spans come in call trees, like the work of one tool call: a tree's
+	// first span hangs off an agent loop, the rest off a recent span of the
+	// same tree. Bounding a tree's size bounds its depth, as in a real trace
+	// (chains that ran through the whole trace would make walks over a
+	// span's ancestors cost O(n) apiece).
+	var tree, treeEnd int
 	for i := 1; i < n; i++ {
 		h := hash(i, 0)
 		var p int
@@ -64,15 +70,21 @@ func New(n int) *Trace {
 			p = 0 // agent loops under the root
 		case r < 2:
 			p = 0
-		case r < 10:
+		case i >= treeEnd || r < 10:
 			p = 1 + int(h>>8)%(LongLived-1) // a wide agent loop
+			if i >= treeEnd {
+				tree, treeEnd = i, i+maxTreeSize/16+int(h>>32)%maxTreeSize
+			}
 		default:
-			p = max(0, i-1-int(h>>8)%48) // deep, narrow call chains
+			p = max(tree, i-1-int(h>>8)%48) // deep, narrow call chains
 		}
 		tr.parents[i] = int32(p)
 	}
 	return tr
 }
+
+// maxTreeSize bounds the size of a call tree (see New).
+const maxTreeSize = 2048
 
 // hash is a splitmix64 hash of a span index and a salt, so every span's
 // random choices are reproducible without keeping generator state.
@@ -284,19 +296,25 @@ func (tr *Trace) Export(ctx context.Context, exp sdktrace.SpanExporter, batch in
 	return exp.ExportSpans(ctx, final)
 }
 
-// Sizes returns the trace sizes a footprint benchmark should measure: 100k
-// spans, or the comma-separated sizes in $DAGGER_SPAN_FOOTPRINT_SIZES (e.g.
-// "100000,1000000").
-func Sizes() ([]int, error) {
-	env := os.Getenv("DAGGER_SPAN_FOOTPRINT_SIZES")
-	if env == "" {
+// SizesFlag is the usage of the test flag footprint benchmarks take their
+// sizes from (see Sizes).
+const SizesFlag = "comma-separated trace sizes for the span footprint benchmarks (default 100000, or $DAGGER_SPAN_FOOTPRINT_SIZES)"
+
+// Sizes returns the trace sizes a footprint benchmark should measure: the
+// comma-separated sizes in spec (e.g. "100000,1000000"), else in
+// $DAGGER_SPAN_FOOTPRINT_SIZES, else 100k spans.
+func Sizes(spec string) ([]int, error) {
+	if spec == "" {
+		spec = os.Getenv("DAGGER_SPAN_FOOTPRINT_SIZES")
+	}
+	if spec == "" {
 		return []int{100_000}, nil
 	}
 	var sizes []int
-	for _, s := range strings.Split(env, ",") {
+	for _, s := range strings.Split(spec, ",") {
 		n, err := strconv.Atoi(strings.TrimSpace(s))
 		if err != nil {
-			return nil, fmt.Errorf("DAGGER_SPAN_FOOTPRINT_SIZES: %w", err)
+			return nil, fmt.Errorf("span footprint sizes: %w", err)
 		}
 		sizes = append(sizes, n)
 	}

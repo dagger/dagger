@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"context"
+	"flag"
 	"runtime"
 	"strconv"
 	"testing"
@@ -17,6 +18,8 @@ type footprint struct {
 }
 
 var footprintDB *DB
+
+var footprintSizes = flag.String("footprint.sizes", "", spanfootprint.SizesFlag)
 
 // measureFootprint ingests an n-span spanfootprint.Trace into a fresh DB and
 // reports the live heap the DB holds per span, measured after a GC.
@@ -51,10 +54,10 @@ func measureFootprint(tb testing.TB, n int) footprint {
 //	go test ./dagql/dagui -run '^$' -bench SpanFootprint -benchtime 1x
 //
 // For a breakdown, add -memprofile mem.out -memprofilerate 512 and read it
-// with go tool pprof -sample_index=inuse_space. Set
-// DAGGER_SPAN_FOOTPRINT_SIZES (e.g. "100000,1000000") to measure other sizes.
+// with go tool pprof -sample_index=inuse_space. Pass -footprint.sizes (e.g.
+// 100000,1000000) to measure other sizes.
 func BenchmarkSpanFootprint(b *testing.B) {
-	sizes, err := spanfootprint.Sizes()
+	sizes, err := spanfootprint.Sizes(*footprintSizes)
 	if err != nil {
 		b.Fatal(err)
 	}
