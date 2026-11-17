@@ -15,9 +15,17 @@ type promptSchema struct{}
 
 var _ SchemaResolvers = &promptSchema{}
 
+// promptVersion is the first engine version with the prompt API.
+const promptVersion = "v1.0.0-beta.28"
+
 func (s *promptSchema) Install(srv *dagql.Server) {
+	view := AfterVersion(promptVersion)
+
+	srv.InstallObject(dagql.NewClass[*core.Prompt](srv).View(view))
+
 	dagql.Fields[*core.Query]{
 		dagql.Func("prompt", s.prompt).
+			View(view).
 			Doc(`Ask the user a question.`,
 				`Nothing is asked until an answer is selected from the returned Prompt, in the terminal of the client running the session, which shows who asks: the agent, module and function, as the engine knows them.`,
 				`Answers are remembered for the session, per asking module, message and kind of answer.`,

@@ -48,7 +48,7 @@ type Asker {
   object built from an answer declares itself cached per session at most:
   another session asks again, and gets its own build.
   """
-  build(message: String!): Directory! @cache(policy: FunctionCachePolicy.PerSession) {
+  build(message: String!): Directory! @cache(policy: FunctionCachePolicy.PER_SESSION) {
     let answer = if (prompt(message: message).boolean) { "yes" } else { "no" }
     directory.withNewFile("answer", answer)
   }

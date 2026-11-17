@@ -85,6 +85,7 @@ var persistedObjectFamilies = []dagql.PersistedObjectFamily{
 	{Name: "core.LLMTokenUsage", Typed: (*LLMTokenUsage)(nil), Visitor: dagql.PersistedNoReferences{}},
 	{Name: "core.LLMContent", Typed: (*LLMContent)(nil), Visitor: dagql.PersistedNoReferences{}, BackgroundDecode: true},
 	{Name: "core.LLMVariable", Typed: (*LLMVariable)(nil), Visitor: dagql.PersistedNoReferences{}},
+	{Name: "core.Prompt", Typed: (*Prompt)(nil), Visitor: dagql.PersistedNoReferences{}},
 }
 
 func init() {
