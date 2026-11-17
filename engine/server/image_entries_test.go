@@ -74,9 +74,9 @@ func imageEntriesDirOf(t *testing.T, names ...string) (string, dagql.ValueBundle
 }
 
 // expireImageRoot gives the image's root for the file name an expiry that has
-// passed, on the root and on its value, as an image's build writes the expiry
-// a module function's result got (a function's default lifetime is a week),
-// and rewrites the image's bundle.
+// passed, on the root and on its value, as the bundle of an image built more
+// than a week ago holds the expiry a module function's result got (a
+// function's default lifetime is a week), and rewrites the image's bundle.
 func expireImageRoot(t *testing.T, dir string, bundle dagql.ValueBundle, name string) {
 	t.Helper()
 	past := time.Now().Add(-time.Hour).Unix()
@@ -100,9 +100,10 @@ func expireImageRoot(t *testing.T, dir string, bundle dagql.ValueBundle, name st
 }
 
 // An engine merges its image's entries at start, and the start never depends
-// on them. An image without entries starts as before; an entry that has
-// expired since the image was built is left out; a bundle that names a blob
-// the image doesn't hold is left out whole.
+// on them. An image without entries starts as before; an entry whose expiry
+// has passed since the image was built merges all the same, since the merge
+// drops the expiries the image's build gave its entries; a bundle that names
+// a blob the image doesn't hold is left out whole.
 func TestMergeImageEntries(t *testing.T) {
 	t.Run("merges", func(t *testing.T) {
 		dir, _ := imageEntriesDir(t)
@@ -117,14 +118,16 @@ func TestMergeImageEntries(t *testing.T) {
 		require.NoError(t, srv.mergeImageBundle(e.ctx, filepath.Join(t.TempDir(), "absent")))
 		require.NoError(t, srv.mergeImageBundle(e.ctx, t.TempDir()))
 	})
-	t.Run("an expired entry is left out", func(t *testing.T) {
+	t.Run("an entry whose expiry has passed merges", func(t *testing.T) {
 		dir, bundle := imageEntriesDirOf(t, "shipped", "lapsed")
 		expireImageRoot(t, dir, bundle, "lapsed")
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
 		require.NoError(t, srv.mergeImageBundle(e.ctx, dir))
-		require.True(t, e.cache.FromImage(e.file(t, "shipped")), "the unexpired entry merged")
-		require.False(t, e.cache.FromImage(e.file(t, "lapsed")), "the expired entry was left out")
+		require.True(t, e.cache.FromImage(e.file(t, "shipped")))
+		// The lookup finds the image's entry: it merged, and it hasn't
+		// expired since.
+		require.True(t, e.cache.FromImage(e.file(t, "lapsed")), "the entry whose expiry passed merged")
 	})
 	t.Run("a missing blob leaves the entries out", func(t *testing.T) {
 		dir, _ := imageEntriesDir(t)
