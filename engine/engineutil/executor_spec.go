@@ -1382,8 +1382,6 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+state.nestedClientMetadata.ClientSecretToken)
 	state.spec.Process.Env = append(state.spec.Process.Env, engine.NestedClientIDEnv+"="+state.nestedClientMetadata.ClientID)
-	// Logical clients may serve their own attachables (see transportForRequest).
-	state.spec.Process.Env = append(state.spec.Process.Env, engine.NestedClientAttachablesEnv+"=1")
 
 	state.nestedClientMetadata.ClientStableID = rand.Text()
 
@@ -1468,6 +1466,9 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		return fmt.Errorf("unexpected listener address type: %T", httpListener.Addr())
 	}
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
+	// Logical clients of this port may serve their own attachables (see
+	// transportForRequest); a proxy a process starts on another port may not.
+	state.spec.Process.Env = append(state.spec.Process.Env, engine.NestedClientAttachablesEnv+"="+strconv.Itoa(tcpAddr.Port))
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerEngineNumCPUEnv+"="+strconv.Itoa(runtime.NumCPU()))
 
 	protocols := new(http.Protocols)

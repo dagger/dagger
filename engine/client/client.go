@@ -409,10 +409,13 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 		// The exec's bootstrap attachables serve SDKs, but cannot handle a CLI's
 		// interactive prompts. Give an interactive CLI its own channel before
 		// init seals its logical client to the bootstrap channel. Do not do this
-		// for `dagger run` proxies, which share the outer client's attachables,
-		// nor for an engine that would not bind the channel to this client.
-		if c.PromptHandler != nil && os.Getenv(engine.NestedClientIDEnv) != "" &&
-			os.Getenv(engine.NestedClientAttachablesEnv) != "" {
+		// for session proxies (`dagger run`, `dagger session`, ...), which
+		// share their own client's attachables, nor for an engine that would
+		// not bind the channel to this client: only the exec's own session
+		// port, as the engine advertises it, does.
+		if port := os.Getenv(nestedSessionPortEnv); c.PromptHandler != nil &&
+			os.Getenv(engine.NestedClientIDEnv) != "" &&
+			port != "" && os.Getenv(engine.NestedClientAttachablesEnv) == port {
 			if err := c.startSession(connectCtx); err != nil {
 				return nil, fmt.Errorf("start nested session: %w", err)
 			}
