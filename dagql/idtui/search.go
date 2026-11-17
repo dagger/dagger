@@ -275,14 +275,16 @@ func (fe *frontendPretty) searchNameMatches(query string) []*dagui.Span {
 
 // searchNext moves to the next match after the current one (wrapping).
 // If no match is selected (searchIdx == -1), seeks forward from focus.
-// Returns true if a match was navigated to.
-func (fe *frontendPretty) searchNext() bool {
+func (fe *frontendPretty) searchNext() {
+	// A render may have laid a log out again since the matches were
+	// gathered, moving their rows.
+	fe.refreshSearchMatches()
 	if len(fe.searchMatches) == 0 {
-		return false
+		return
 	}
 	if fe.searchIdx < 0 {
 		fe.searchFirstForward()
-		return fe.searchIdx >= 0
+		return
 	}
 	fe.searchIdx++
 	if fe.searchIdx >= len(fe.searchMatches) {
@@ -290,19 +292,18 @@ func (fe *frontendPretty) searchNext() bool {
 	}
 	fe.goToSearchMatch(fe.searchIdx)
 	fe.syncSearchState()
-	return true
 }
 
 // searchPrev moves to the previous match before the current one (wrapping).
 // If no match is selected (searchIdx == -1), seeks backward from focus.
-// Returns true if a match was navigated to.
-func (fe *frontendPretty) searchPrev() bool {
+func (fe *frontendPretty) searchPrev() {
+	fe.refreshSearchMatches()
 	if len(fe.searchMatches) == 0 {
-		return false
+		return
 	}
 	if fe.searchIdx < 0 {
 		fe.searchFirstBackward()
-		return fe.searchIdx >= 0
+		return
 	}
 	fe.searchIdx--
 	if fe.searchIdx < 0 {
@@ -310,7 +311,6 @@ func (fe *frontendPretty) searchPrev() bool {
 	}
 	fe.goToSearchMatch(fe.searchIdx)
 	fe.syncSearchState()
-	return true
 }
 
 // syncSearchState pushes the search query to all vterms (incrementally
@@ -337,6 +337,17 @@ func (fe *frontendPretty) refreshSearchMatches() {
 	// Try to preserve the current match position. A remote match whose logs
 	// arrived gives way to the first of the span's lines that match.
 	if oldMatch != (searchMatch{}) {
+		// A log laid out again at a new width moves its rows: its vterm
+		// knows the row its current match is on now.
+		if oldMatch.logRow >= 0 {
+			logs := fe.logs.Logs[oldMatch.spanID]
+			if oldMatch.toolArgs {
+				logs = fe.logs.ToolArgs[oldMatch.spanID]
+			}
+			if logs != nil && logs.SearchCurrentRow >= 0 {
+				oldMatch.logRow = logs.SearchCurrentRow
+			}
+		}
 		fe.searchIdx = 0
 		for i, m := range fe.searchMatches {
 			if m == oldMatch {

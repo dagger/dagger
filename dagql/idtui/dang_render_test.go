@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -9,23 +10,33 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/dang/v2/pkg/dang"
 	"github.com/vito/tuist"
+	"go.opentelemetry.io/otel/attribute"
+	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/dagui"
 )
+
+// renderDang renders Dang source as a tool call's code body.
+func renderDang(profile termenv.Profile, source string, width, maxLines int) []string {
+	return renderCode(profile, dangCode, source, width, maxLines)
+}
 
 func TestRenderDangSource(t *testing.T) {
 	source := "let greeting = shout(\"hi\") # loud\n\tgreeting + \"!\"\n"
 	assert.Equal(t, []string{
 		`1 │ let greeting = shout("hi") # loud`,
 		`2 │   greeting + "!"`,
-	}, renderDangSource(termenv.Ascii, source, 0, 0))
+	}, renderDang(termenv.Ascii, source, 0, 0))
 
 	// Narrow: lines wrap under a blank line number, never past width.
-	got := renderDangSource(termenv.Ascii, source, 16, 0)
+	got := renderDang(termenv.Ascii, source, 16, 0)
 	assert.Equal(t, []string{
 		`1 │ let greeting`,
 		`  │  = shout("hi`,
@@ -38,7 +49,7 @@ func TestRenderDangSource(t *testing.T) {
 	}
 
 	// Too narrow to wrap usefully: lines keep a minimum width.
-	assert.Equal(t, `1 │ let gree`, renderDangSource(termenv.Ascii, source, 3, 0)[0])
+	assert.Equal(t, `1 │ let gree`, renderDang(termenv.Ascii, source, 3, 0)[0])
 
 	// Long: the first lines, then how many are left; line numbers are as
 	// wide as the shown ones need.
@@ -58,20 +69,20 @@ func TestRenderDangSource(t *testing.T) {
 		` 9 │ print(8)`,
 		`10 │ print(9)`,
 		`   ┆ … 2 more lines`,
-	}, renderDangSource(termenv.Ascii, strings.Join(long, "\n"), 0, 10))
-	assert.Len(t, renderDangSource(termenv.Ascii, strings.Join(long, "\n"), 0, 0), 12)
-	assert.Equal(t, `  ┆ … 1 more line`, renderDangSource(termenv.Ascii, "1\n2", 0, 1)[1])
+	}, renderDang(termenv.Ascii, strings.Join(long, "\n"), 0, 10))
+	assert.Len(t, renderDang(termenv.Ascii, strings.Join(long, "\n"), 0, 0), 12)
+	assert.Equal(t, `  ┆ … 1 more line`, renderDang(termenv.Ascii, "1\n2", 0, 1)[1])
 }
 
 func TestRenderDangSourceHighlights(t *testing.T) {
-	got := strings.Join(renderDangSource(termenv.ANSI, `let x = "hi" # c`, 0, 0), "\n")
+	got := strings.Join(renderDang(termenv.ANSI, `let x = "hi" # c`, 0, 0), "\n")
 	assert.Contains(t, got, "\x1b[35mlet\x1b[0m", "keyword: magenta")
 	assert.Contains(t, got, "\x1b[32m\"hi\"\x1b[0m", "string: green")
 	assert.Contains(t, got, "\x1b[90m# c\x1b[0m", "comment: bright black")
 	assert.Contains(t, got, "\x1b[90;2m1 │ \x1b[0m", "gutter: faint")
 
 	// No color: no escapes at all.
-	plain := renderDangSource(termenv.Ascii, `let x = "hi" # c`, 0, 0)
+	plain := renderDang(termenv.Ascii, `let x = "hi" # c`, 0, 0)
 	assert.NotContains(t, strings.Join(plain, "\n"), "\x1b")
 }
 
@@ -90,8 +101,8 @@ func TestRenderDangSourceNeverChangesText(t *testing.T) {
 		"",
 	} {
 		for _, width := range []int{0, 12, 40} {
-			plain := renderDangSource(termenv.Ascii, source, width, 0)
-			styled := renderDangSource(termenv.ANSI, source, width, 0)
+			plain := renderDang(termenv.Ascii, source, width, 0)
+			styled := renderDang(termenv.ANSI, source, width, 0)
 			require.Len(t, styled, len(plain), "%q at %d", source, width)
 			for i := range plain {
 				assert.Equal(t, plain[i], ansi.Strip(styled[i]), "%q at %d", source, width)
@@ -180,15 +191,125 @@ func TestDangToolCallTranscript(t *testing.T) {
 		`  2 │ greeting + "!"`,
 		`  • DangEval notes 1.0s`,
 		`  1 │ shout("dang")`,
-		`  • DangCheck 1.0s`,
-		`  1 │ ["a"].reduce`,
+		// A check is one line: its snippet's in its header.
+		`  • DangCheck ["a"].reduce 1.0s`,
 		`  • DangCheck notes 1.0s`,
 		`  • DangCheck search "sort" 1.0s`,
-		`  • DangCheck .dagger/modules/notes/main.dang:12:5 search "escape html" 1.0s`,
-		`  1 │ prefix + name`,
+		`  • DangCheck .dagger/modules/notes/main.dang:12:5 prefix + name search "escape html" 1.0s`,
 		`  • DangEval 1.0s`,
 	}, lines)
 }
+
+func TestDangCheckSummary(t *testing.T) {
+	assert.Equal(t, "ws", dangCheckSummary("ws"))
+	assert.Equal(t, "ws", dangCheckSummary("\n  ws  \n\n"))
+	assert.Equal(t, "let x = 1 …", dangCheckSummary("let x = 1\nx + 1"))
+	assert.Equal(t, `a b`, dangCheckSummary("a\tb"))
+	long := strings.Repeat("abcdefghij", 10)
+	got := dangCheckSummary(long + "\nmore")
+	assert.Equal(t, dangCheckSummaryWidth, ansi.StringWidth(got), got)
+	assert.True(t, strings.HasSuffix(got, "…"), got)
+	assert.True(t, strings.HasPrefix(long, strings.TrimSuffix(got, "…")), got)
+}
+
+// TestDangCheckRow covers a DangCheck's row: collapsed, it is one line, its
+// snippet's first line in its header and, when the check found problems,
+// its report's status; no snippet and no report beneath it. Expanded, both
+// show. A check that errored shows its result collapsed too.
+func TestDangCheckRow(t *testing.T) {
+	report := func(status string) string {
+		return "ws: Workspace!\n  check(...)\n  directory(...)\n" + status + " · workspace scope · nothing ran\n"
+	}
+	for _, c := range []struct {
+		name, source, report, header string
+		failed                       bool
+	}{
+		{name: "ok", source: "ws", report: report("ok"), header: "• DangCheck ws 42.0s"},
+		{
+			name:   "errors",
+			source: "let x = nope\nx.sync",
+			report: report("1 error") + dangNudgeForTest,
+			header: "• DangCheck let x = nope … 42.0s - 1 error",
+		},
+		{
+			name:   "warnings",
+			source: "ws.directory",
+			report: report("1 warning"),
+			header: "• DangCheck ws.directory 42.0s - 1 warning",
+		},
+		{
+			name:   "tool error",
+			source: "ws",
+			report: "error: at \"nope\": not a module\n1 error · nothing ran\n",
+			header: "• DangCheck nope ws 42.0s - 1 error",
+			failed: true,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			l := newLiveToolCalls(t, termenv.Ascii)
+			l.toolCall(liveTimeout, liveReply, "DangCheck")
+			args := map[string]any{"source": c.source}
+			if c.failed {
+				args["at"] = "nope"
+			}
+			argsJSON, err := json.Marshal(args)
+			require.NoError(t, err)
+			l.stream(liveTimeout, string(argsJSON), 1<<10, nil)
+			l.closeArgs(liveTimeout)
+			l.logs(frontendTestLogRecord(trace.SpanID{liveTimeout}, otellog.StringValue(c.report)))
+			// It ends with the arguments the engine records.
+			var names, values []string
+			for _, name := range []string{"at", "source"} {
+				if v, ok := args[name].(string); ok {
+					names, values = append(names, name), append(values, v)
+				}
+			}
+			attrs := append(liveToolCallAttrs("DangCheck"),
+				attribute.StringSlice(telemetry.LLMToolArgNamesAttr, names),
+				attribute.StringSlice(telemetry.LLMToolArgValuesAttr, values))
+			if c.failed {
+				l.failToolCall(liveTimeout, liveReply, "DangCheck", attrs, "not a module")
+			} else {
+				l.export(liveTimeout, liveReply, "DangCheck", true, attrs...)
+			}
+			l.fe.viewDirty = true
+			collapsed := stripANSICodes(l.frame())
+			require.Contains(t, collapsed, c.header, collapsed)
+			assert.NotContains(t, collapsed, "1 │", "collapsed, no snippet:\n%s", collapsed)
+			if c.failed {
+				assert.Contains(t, collapsed, "not a module", "errored, its result:\n%s", collapsed)
+			} else {
+				assert.NotContains(t, collapsed, "nothing ran", "collapsed, no report:\n%s", collapsed)
+			}
+
+			l.expand(liveTimeout)
+			expanded := stripANSICodes(l.frame())
+			assert.Contains(t, expanded, "1 │ "+firstLineOf(c.source), expanded)
+			assert.Contains(t, expanded, "nothing ran", expanded)
+		})
+	}
+}
+
+// TestDangCheckStatus covers reading a DangCheck's status off its report's
+// footer: after the nudge that can follow it, and wider than the log's rows,
+// which a long module scope makes it.
+func TestDangCheckStatus(t *testing.T) {
+	const footer = "1 error · module helper (github.com/acme/widgets/tools@main) · 1 file · nothing ran\n"
+	for _, width := range []int{200, 80, 60, 30} {
+		logs := NewVterm(termenv.Ascii)
+		logs.SetWidth(width)
+		_, _ = logs.Write([]byte("<check>:1:1: error: nope\n" + footer + dangNudgeForTest))
+		assert.Equal(t, "1 error", dangCheckStatus(logs), "at %d", width)
+	}
+	logs := NewVterm(termenv.Ascii)
+	_, _ = logs.Write([]byte("[String!]!\nok · workspace scope · nothing ran\n"))
+	assert.Equal(t, "ok", dangCheckStatus(logs))
+	logs = NewVterm(termenv.Ascii)
+	_, _ = logs.Write([]byte("no footer here\n"))
+	assert.Equal(t, "", dangCheckStatus(logs))
+}
+
+const dangNudgeForTest = "See the dang-language skill (ReadSkill) for Dang's syntax and semantics.\n"
 
 func TestTimeoutToolCallTranscript(t *testing.T) {
 	lines, _ := dangTranscript(t, 100, termenv.Ascii,
@@ -232,14 +353,14 @@ func TestDangToolCallTranscriptNarrowAndColor(t *testing.T) {
 
 func TestDangToolCallTranscriptCollapsesLongSnippets(t *testing.T) {
 	var long []string
-	for i := range dangSourceCollapsedLines + 4 {
+	for i := range codeBodyCollapsedLines + 4 {
 		long = append(long, fmt.Sprintf("print(%d)", i))
 	}
 	lines, _ := dangTranscript(t, 100, termenv.Ascii,
 		toolCallSnapshot("DangEval", "source", strings.Join(long, "\n")))
-	require.Len(t, lines, 1+dangSourceCollapsedLines+1)
-	assert.Equal(t, `  16 │ print(15)`, lines[dangSourceCollapsedLines])
-	assert.Equal(t, `     ┆ … 4 more lines`, lines[dangSourceCollapsedLines+1])
+	require.Len(t, lines, 1+codeBodyCollapsedLines+1)
+	assert.Equal(t, `  16 │ print(15)`, lines[codeBodyCollapsedLines])
+	assert.Equal(t, `     ┆ … 4 more lines`, lines[codeBodyCollapsedLines+1])
 }
 
 // timeoutWithNestedCall builds a conversation of Timeout calls as the engine
@@ -419,14 +540,92 @@ func TestDangSourceRendersPlainUntilHighlighterWarm(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 }
 
+func TestWholeDangLines(t *testing.T) {
+	for _, c := range []struct {
+		source   string
+		maxLines int
+		want     string
+	}{
+		{"", 0, ""},
+		{"let a", 0, ""},
+		{"let a\n", 0, "let a"},
+		{"let a\nlet b", 0, "let a"},
+		{"let a\nlet b\nlet c\nlet", 0, "let a\nlet b\nlet c"},
+		{"let a\nlet b\nlet c\nlet", 2, "let a\nlet b"},
+		{"let a\nlet b", 2, "let a"},
+	} {
+		assert.Equal(t, c.want, wholeLines(c.source, c.maxLines), "%q (max %d)", c.source, c.maxLines)
+	}
+}
+
+// TestStreamingDangHighlight covers how a streaming snippet highlights: its
+// whole lines, again as more complete, but no sooner than
+// codeStreamHighlightInterval after the last time, and never through
+// codeHighlights, which every prefix would flood.
+func TestStreamingDangHighlight(t *testing.T) {
+	<-warmDangHighlighter()
+	now := time.Unix(100, 0)
+	codeStreamClock = func() time.Time { return now }
+	t.Cleanup(func() { codeStreamClock = time.Now })
+	fe := &frontendPretty{}
+	id := prettyTestSpanID(1)
+	// how far into the source the highlight reaches
+	reach := func(spans []dang.HighlightSpan) int {
+		end := 0
+		for _, span := range spans {
+			end = max(end, span.End)
+		}
+		return end
+	}
+	const line1 = `let streamA = "a"`
+	const line2 = `let streamB = "b"`
+
+	// Only whole lines: none yet.
+	assert.Empty(t, fe.streamingHighlight(id, dangCode, "let stream", 0))
+	assert.Empty(t, fe.streamingHighlight(id, dangCode, line1, 0))
+
+	// A whole line highlights at once.
+	spans := fe.streamingHighlight(id, dangCode, line1+"\nlet", 0)
+	assert.Equal(t, len(line1), reach(spans))
+
+	// Another, too soon after: the last highlight stands.
+	grown := line1 + "\n" + line2 + "\nlet"
+	assert.Equal(t, spans, fe.streamingHighlight(id, dangCode, grown, 0))
+
+	// Once it's been long enough, it catches up.
+	now = now.Add(codeStreamHighlightInterval)
+	spans = fe.streamingHighlight(id, dangCode, grown, 0)
+	assert.Equal(t, len(line1)+1+len(line2), reach(spans))
+
+	// A row showing fewer lines takes what it has.
+	assert.Equal(t, spans, fe.streamingHighlight(id, dangCode, grown, 1))
+
+	// Source that changed rather than grew starts over, on schedule.
+	changed := "print(1)\nprint(2)\n"
+	assert.Empty(t, fe.streamingHighlight(id, dangCode, changed, 0))
+	now = now.Add(codeStreamHighlightInterval)
+	assert.NotEmpty(t, fe.streamingHighlight(id, dangCode, changed, 0))
+
+	// So does source in another language.
+	goCode := codeLangForPath("main.go")
+	now = now.Add(codeStreamHighlightInterval)
+	assert.NotEqual(t, spans, fe.streamingHighlight(id, goCode, changed, 0))
+
+	codeHighlights.Lock()
+	defer codeHighlights.Unlock()
+	assert.NotContains(t, codeHighlights.spans, codeHighlightKey(dangCode, line1), "streaming source cached")
+	assert.NotContains(t, codeHighlights.spans, codeHighlightKey(dangCode, line1+"\n"+line2), "streaming source cached")
+}
+
 // TestConversationReportRendersDangSource covers the final report: a Dang
-// call shows its whole snippet as code, in place of its JSON arguments.
+// call shows its whole snippet as code, and, where the report shows tool
+// calls' arguments, its JSON arguments beneath.
 func TestConversationReportRendersDangSource(t *testing.T) {
 	db := dagui.NewDB()
 	toolID := prettyTestSpanID(2)
 	start := time.Unix(100, 0)
 	var long []string
-	for i := range dangSourceCollapsedLines + 4 {
+	for i := range codeBodyCollapsedLines + 4 {
 		long = append(long, fmt.Sprintf("print(%d)", i))
 	}
 	db.ImportSnapshots([]dagui.SpanSnapshot{{
@@ -444,10 +643,11 @@ func TestConversationReportRendersDangSource(t *testing.T) {
 	fe.logs.ToolArgs[toolID] = args
 
 	var buf strings.Builder
-	fe.renderMessageLogs(NewOutput(&buf, termenv.WithProfile(termenv.Ascii)), db.Spans.Map[toolID], 0)
+	fe.renderMessageLogs(NewOutput(&buf, termenv.WithProfile(termenv.Ascii)), db.Spans.Map[toolID], 0, false)
 	got := buf.String()
 	assert.Contains(t, got, " 1 │ print(0)\n")
 	assert.Contains(t, got, "20 │ print(19)\n")
 	assert.NotContains(t, got, "more lines")
-	assert.NotContains(t, got, `{"source"`)
+	// It shows tool calls' arguments: the JSON follows the snippet.
+	assert.Less(t, strings.Index(got, "20 │ print(19)"), strings.Index(got, `{"source":"print(0)"}`), got)
 }

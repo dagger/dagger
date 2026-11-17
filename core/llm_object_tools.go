@@ -854,8 +854,13 @@ func isExpectedTypeArg(arg *ast.ArgumentDefinition, typeName string) bool {
 // strings annotated with their expected type; liftable object arguments
 // (required or optional) render as address strings instead, with the type's
 // syntax hint.
+//
+// Its properties keep the order the field declares its arguments in (see
+// ToolSchemaProperties), which models tend to write a call's arguments in:
+// a module's author leads with what says what a call does -- Write's file
+// before its contents -- and frontends show calls as their arguments stream.
 func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition, implicit implicitToolArgs) (map[string]any, error) {
-	properties := map[string]any{}
+	properties := ToolSchemaProperties{}
 	var required []string
 	for _, arg := range field.Arguments {
 		if implicit.supplies(arg) || isInternalToolArg(arg) {
@@ -897,7 +902,7 @@ func objectMethodSchema(schema *ast.Schema, field *ast.FieldDefinition, implicit
 			}
 			argSchema["default"] = val
 		}
-		properties[arg.Name] = argSchema
+		properties = append(properties, ToolSchemaProperty{Name: arg.Name, Schema: argSchema})
 		if arg.Type.NonNull && arg.DefaultValue == nil {
 			required = append(required, arg.Name)
 		}

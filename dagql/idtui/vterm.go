@@ -26,10 +26,22 @@ type Vterm struct {
 	Profile termenv.Profile
 
 	vt *midterm.Terminal
-	// Resizes made before the screen exists, each at the length the raw log
-	// had then: midterm doesn't reflow rows already written, so the screen
-	// replays them where they happened.
-	pendingResizes []vtermResize
+	// cols is the width the screen lays the log out at, 0 while it sizes
+	// itself to its content.
+	cols int
+	// replayable holds while the screen can be rebuilt from its bytes: until
+	// media takes the log over.
+	replayable bool
+	// screenBuf holds the bytes the screen shows once they differ from the
+	// raw log's (see screenBytes); nil until then.
+	screenBuf *bytes.Buffer
+	// keepOffset makes the next screen built keep the place someone
+	// scrolled to, offsetFrac of the way through the log, or the current
+	// search match if showedMatch, rather than follow the end: a rebuild of
+	// a log someone scrolled.
+	keepOffset  bool
+	offsetFrac  float64
+	showedMatch bool
 
 	// Media uses ordered blocks; text-only terminals retain their legacy path.
 	images      *kittyImages
@@ -52,6 +64,11 @@ type Vterm struct {
 	// which gets a brighter highlight.
 	SearchQuery      string
 	SearchCurrentRow int
+	// searchCurrent is the current match's index among the matches, which
+	// a rebuild of the screen keeps, unlike its row; searchMovedFrom is the
+	// row the last rebuild moved it from, for callers still naming that.
+	searchCurrent   int
+	searchMovedFrom int
 
 	mu *sync.Mutex
 }
@@ -62,7 +79,12 @@ func NewVterm(profile termenv.Profile) *Vterm {
 		viewBuf:     new(bytes.Buffer),
 		rawBuf:      new(bytes.Buffer),
 		markdownBuf: new(bytes.Buffer),
+		replayable:  true,
 		mu:          new(sync.Mutex),
+
+		SearchCurrentRow: -1,
+		searchCurrent:    -1,
+		searchMovedFrom:  -1,
 	}
 }
 
@@ -75,44 +97,101 @@ func (term *Vterm) Term() *midterm.Terminal {
 // screen returns the terminal screen that lays out and renders the log. A
 // screen keeps each character as a rune and its format, several times the
 // size of the log itself, and most logs are never shown: a run of tests can
-// stream hundreds of megabytes into logs nobody opens. So a log of plain
-// writes keeps only its raw bytes until something first needs its screen,
-// which then replays them. Callers hold term.mu, or are the frontend's own
-// render path.
+// stream hundreds of megabytes into logs nobody opens. So a log keeps only
+// its bytes until something first needs its screen, which then replays
+// them, laid out at the screen's current width. Callers hold term.mu, or
+// are the frontend's own render path.
 func (term *Vterm) screen() *midterm.Terminal {
 	if term.vt == nil {
 		vt := midterm.NewAutoResizingTerminal()
-		raw := term.rawBuf.Bytes()
-		var at int
-		for _, resize := range term.pendingResizes {
-			_, _ = vt.Write(raw[at:resize.at])
-			vt.ResizeX(resize.cols)
-			at = resize.at
+		if term.cols > 0 {
+			vt.ResizeX(term.cols)
 		}
-		_, _ = vt.Write(raw[at:])
+		_, _ = vt.Write(term.screenBytes())
 		term.vt = vt
-		term.pendingResizes = nil
-		// Nothing scrolls a log before its screen exists, so it follows the
-		// end of the log, as each Write would have.
-		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+		if term.keepOffset {
+			used := vt.UsedHeight()
+			term.Offset = min(int(term.offsetFrac*float64(used)), max(0, used-term.Height))
+		} else {
+			// Nothing scrolls a log before its screen exists, so it follows
+			// the end of the log, as each Write would have.
+			term.Offset = max(0, vt.UsedHeight()-term.Height)
+		}
+		if term.SearchQuery != "" {
+			// A rebuild moves rows, so the current match is found again by
+			// its place among the matches, not by its row.
+			vt.Search(term.SearchQuery)
+			if row, _ := vt.SearchSetCurrent(term.searchCurrent); row >= 0 {
+				if term.searchMovedFrom < 0 {
+					term.searchMovedFrom = term.SearchCurrentRow
+				}
+				term.SearchCurrentRow = row
+				if term.keepOffset && term.showedMatch {
+					// Scrolled to the match: still show it.
+					term.Offset = max(0, row-term.Height/2)
+					term.clampOffsetLocked()
+				}
+			}
+		}
+		term.keepOffset = false
+		term.showedMatch = false
 	}
 	return term.vt
 }
 
-type vtermResize struct {
-	at   int
-	cols int
+// screenBytes are the bytes the screen shows: the raw log, unless Markdown
+// (which the screen never sees) or a highlighted diff made them differ.
+func (term *Vterm) screenBytes() []byte {
+	if term.screenBuf != nil {
+		return term.screenBuf.Bytes()
+	}
+	return term.rawBuf.Bytes()
 }
 
-// resizeScreen sets the screen's width, or notes it for the screen to replay
-// once it's built.
+// divergeScreen starts keeping the screen's bytes apart from the raw log's,
+// which are about to differ. Callers hold term.mu.
+func (term *Vterm) divergeScreen() {
+	if term.screenBuf == nil {
+		term.screenBuf = bytes.NewBuffer(bytes.Clone(term.rawBuf.Bytes()))
+	}
+}
+
+// resizeScreen sets the width the screen lays the log out at. midterm
+// doesn't reflow rows already written, and a log's width changes after
+// they are: its first render sets the prefix of the row showing it (the
+// tree's indent and gutter) on a log written before, and a zoom or the
+// final report re-indents it. A screen not built yet is simply built at the
+// new width. A built one with rows wider than the new width would clip
+// them, losing text at every wrap, so it is rebuilt, the next time
+// something reads it. Otherwise -- a wider width, rows that fit, media, or
+// a log too long to replay on every resize -- its rows stay as they are.
 func (term *Vterm) resizeScreen(cols int) {
-	if term.vt != nil {
+	term.cols = cols
+	if term.vt == nil {
+		return
+	}
+	if !term.vt.AutoResizeX && term.vt.Width == cols {
+		return
+	}
+	if term.vt.UsedWidth() <= cols || !term.replayable || len(term.screenBytes()) > maxReflowBytes {
 		term.vt.ResizeX(cols)
 		return
 	}
-	term.pendingResizes = append(term.pendingResizes, vtermResize{at: term.rawBuf.Len(), cols: cols})
+	if used := term.vt.UsedHeight(); term.Offset+term.Height < used {
+		// Scrolled: keep the place, as a fraction of the log, or the
+		// current search match if it was in view.
+		term.keepOffset = true
+		term.offsetFrac = float64(term.Offset) / float64(used)
+		row := term.SearchCurrentRow
+		term.showedMatch = row >= term.Offset && row < term.Offset+max(term.Height, 1)
+	}
+	term.vt = nil
 }
+
+// maxReflowBytes bounds the logs resizeScreen lays out again: a rebuild
+// replays the whole log, and a window being dragged to a new size resizes
+// every shown log on each step.
+const maxReflowBytes = 1 << 20
 
 // screenAutoResizesX reports whether the screen still sizes its width to its
 // content: it does until its first resize.
@@ -120,7 +199,7 @@ func (term *Vterm) screenAutoResizesX() bool {
 	if term.vt != nil {
 		return term.vt.AutoResizeX
 	}
-	return len(term.pendingResizes) == 0
+	return term.cols == 0
 }
 
 func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
@@ -130,9 +209,8 @@ func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
 	if term.segments != nil {
 		return term.writeMediaText(p, true, false), nil
 	}
-	// The raw log is about to hold bytes the screen never sees, so it can no
-	// longer be replayed into one.
-	term.screen()
+	// The raw log is about to hold bytes the screen never sees.
+	term.divergeScreen()
 	n, err := term.markdownBuf.Write(p)
 	if err != nil {
 		return n, err
@@ -152,18 +230,26 @@ func (term *Vterm) WriteDiff(p []byte) (int, error) {
 	if term.segments != nil {
 		return term.writeMediaText(p, false, true), nil
 	}
+	highlighted := highlightDiff(term.Profile, string(p))
+	// The screen gets the highlighted diff, the raw log the diff itself.
+	term.divergeScreen()
+	if term.vt == nil {
+		// No screen yet: keep the bytes for it to replay when it's needed.
+		_, _ = term.screenBuf.WriteString(highlighted)
+		_, _ = term.rawBuf.Write(p)
+		term.needsRedraw = true
+		return len(p), nil
+	}
 	atBottom := term.Offset+term.Height >= term.usedHeightLocked()
 	if term.Height == 0 {
 		atBottom = true
 	}
 
-	highlighted := highlightDiff(term.Profile, string(p))
-	if _, err := term.screen().Write([]byte(highlighted)); err != nil {
+	if _, err := term.vt.Write([]byte(highlighted)); err != nil {
 		return 0, err
 	}
-	if _, err := term.rawBuf.Write(p); err != nil {
-		return 0, err
-	}
+	_, _ = term.screenBuf.WriteString(highlighted)
+	_, _ = term.rawBuf.Write(p)
 
 	if atBottom {
 		term.Offset = max(0, term.usedHeightLocked()-term.Height)
@@ -182,6 +268,9 @@ func (term *Vterm) Write(p []byte) (int, error) {
 	if term.vt == nil {
 		// No screen yet: keep the bytes for it to replay when it's needed.
 		term.needsRedraw = true
+		if term.screenBuf != nil {
+			_, _ = term.screenBuf.Write(p)
+		}
 		return term.rawBuf.Write(p)
 	}
 	atBottom := term.Offset+term.Height >= term.usedHeightLocked()
@@ -194,6 +283,9 @@ func (term *Vterm) Write(p []byte) (int, error) {
 		return n, err
 	}
 	_, _ = term.rawBuf.Write(p)
+	if term.screenBuf != nil {
+		_, _ = term.screenBuf.Write(p)
+	}
 
 	if atBottom {
 		term.Offset = max(0, term.usedHeightLocked()-term.Height)
@@ -326,11 +418,20 @@ func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 		}
 		term.SearchQuery = ""
 		term.SearchCurrentRow = -1
+		term.searchCurrent = -1
+		term.searchMovedFrom = -1
 		return
 	}
 
 	// Always re-run search to pick up new content.
 	term.screen().Search(query)
+
+	// A caller naming the row a rebuild moved the current match from
+	// means the match, wherever it is now.
+	if currentRow >= 0 && currentRow == term.searchMovedFrom {
+		currentRow = term.SearchCurrentRow
+	}
+	term.searchMovedFrom = -1
 
 	// Mark the current match by row.
 	if currentRow >= 0 {
@@ -338,6 +439,7 @@ func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 	} else {
 		// Clear any previous current highlight.
 		term.screen().SearchSetCurrent(-1)
+		term.searchCurrent = -1
 	}
 
 	if term.SearchQuery != query || term.SearchCurrentRow != currentRow {
@@ -354,9 +456,11 @@ func (term *Vterm) setCurrentMatchByRow(row int) {
 	for i, m := range screen.SearchMatches {
 		if m.Row == row {
 			screen.SearchSetCurrent(i)
+			term.searchCurrent = i
 			return
 		}
 	}
+	term.searchCurrent = -1
 }
 
 // ScrollToRow scrolls the viewport so that the given row is centered
@@ -432,6 +536,7 @@ func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
 		term.screen().SearchClear()
 		term.SearchQuery = ""
 		term.SearchCurrentRow = -1
+		term.searchCurrent = -1
 		term.needsRedraw = true
 		return 0, -1
 	}
@@ -440,8 +545,10 @@ func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
 	count = screen.Search(query)
 	if currentIdx < 0 || currentIdx >= count {
 		row, _ = screen.SearchSetCurrent(-1)
+		term.searchCurrent = -1
 	} else {
 		row, _ = screen.SearchSetCurrent(currentIdx)
+		term.searchCurrent = currentIdx
 	}
 	term.SearchQuery = query
 	term.SearchCurrentRow = row
@@ -470,6 +577,8 @@ func (term *Vterm) View() string {
 		return term.viewBuf.String()
 	}
 	if term.needsRedraw {
+		// Build the screen first: a rebuild moves the offset drawn from.
+		term.screen()
 		term.redraw()
 		term.needsRedraw = false
 	}
@@ -707,6 +816,29 @@ func (term *Vterm) PrintTail(n int) ([]string, int) {
 		lines = append(lines, strings.TrimRight(string(l), " "))
 	}
 	return lines, rows
+}
+
+// RawTail returns the last n lines of the bytes written to the log, as text:
+// unwrapped, escape sequences stripped, without the final newline's empty
+// line. Only the tail of the log is read.
+func (term *Vterm) RawTail(n int) []string {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	raw := bytes.TrimRight(term.rawBuf.Bytes(), "\n")
+	start := len(raw)
+	for range n {
+		i := bytes.LastIndexByte(raw[:start], '\n')
+		if i < 0 {
+			start = 0
+			break
+		}
+		start = i
+	}
+	tail := strings.TrimPrefix(ansi.Strip(string(raw[start:])), "\n")
+	if tail == "" {
+		return nil
+	}
+	return strings.Split(tail, "\n")
 }
 
 // PrintRaw prints the bytes written to the log terminal without applying any

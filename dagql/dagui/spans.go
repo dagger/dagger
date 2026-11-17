@@ -417,7 +417,11 @@ type SpanSnapshot struct {
 	LLMToolServer    string   `json:",omitempty"`
 	LLMToolArgNames  []string `json:",omitempty"`
 	LLMToolArgValues []string `json:",omitempty"`
-	LLMCallDigest    string   `json:",omitempty"`
+	// LLMToolHeaderArgs names the arguments a tool call's header summarizes,
+	// recorded when its display span starts, before their values
+	// (LLMToolArgValues) arrive with its end (see DB.ToolArgsSummary).
+	LLMToolHeaderArgs []string `json:",omitempty"`
+	LLMCallDigest     string   `json:",omitempty"`
 
 	// LLM message origin: recorded provenance for a user-role message that
 	// arrived through an agent mailbox (engine/telemetryattrs' llm.origin.*
@@ -659,6 +663,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.LLMToolArgValuesAttr:
 		snapshot.LLMToolArgValues = sliceOf[string](val)
+
+	case telemetryattrs.LLMToolHeaderArgNamesAttr:
+		snapshot.LLMToolHeaderArgs = sliceOf[string](val)
 
 	case telemetryattrs.LLMCallDigestAttr:
 		snapshot.LLMCallDigest = val.(string)

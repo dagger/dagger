@@ -98,6 +98,80 @@ func NewLLMToolSet() *LLMToolSet {
 	})
 }
 
+// ToolSchemaProperties is a tool schema's "properties" listed in a deliberate
+// order, which it keeps when marshaled: a map would have encoding/json sort
+// them by name. Models tend to write a call's arguments in the order its
+// schema offers them, so a tool whose arguments stream (see Timeout) lists
+// first the ones a frontend needs early. It goes in LLMTool.Schema as the
+// value of "properties", in place of a map; schemaPropertiesMap reads either.
+//
+// The order reaches every provider: Anthropic, OpenAI, Codex and MCP's
+// tools/list get the schema as JSON, written in order, and Gemini, whose
+// typed genai.Schema keeps properties in a map, gets it as PropertyOrdering.
+type ToolSchemaProperties []ToolSchemaProperty
+
+// ToolSchemaProperty is one of ToolSchemaProperties: an argument's name and
+// its JSON schema.
+type ToolSchemaProperty struct {
+	Name   string
+	Schema map[string]any
+}
+
+// MarshalJSON marshals the properties as a JSON object, in order.
+func (props ToolSchemaProperties) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, prop := range props {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		name, err := json.Marshal(prop.Name)
+		if err != nil {
+			return nil, err
+		}
+		schema, err := json.Marshal(prop.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("property %q: %w", prop.Name, err)
+		}
+		buf.Write(name)
+		buf.WriteByte(':')
+		buf.Write(schema)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// Map returns the properties by name, without their order.
+func (props ToolSchemaProperties) Map() map[string]any {
+	m := make(map[string]any, len(props))
+	for _, prop := range props {
+		m[prop.Name] = prop.Schema
+	}
+	return m
+}
+
+// Names returns the properties' names, in order.
+func (props ToolSchemaProperties) Names() []string {
+	names := make([]string, len(props))
+	for i, prop := range props {
+		names[i] = prop.Name
+	}
+	return names
+}
+
+// schemaPropertiesMap returns a schema's "properties" value by name, whether
+// it's a map or ToolSchemaProperties.
+func schemaPropertiesMap(properties any) (map[string]any, bool) {
+	switch props := properties.(type) {
+	case map[string]any:
+		return props, true
+	case ToolSchemaProperties:
+		return props.Map(), true
+	default:
+		return nil, false
+	}
+}
+
 // Internal implementation of the MCP standard,
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
@@ -2019,41 +2093,40 @@ func toolSpanAttrs(tool *LLMTool) []attribute.KeyValue {
 	return attrs
 }
 
-func toolArgHeaderValue(name string, value any) (string, bool) {
-	if value == nil {
-		return "", false
+// toolHeaderArgNames returns the names of the arguments a call of tool
+// summarizes in its header, in order: its required arguments, Read's
+// pagination controls and generic argv arrays (useful context even though
+// they are not required), and the Dang builtins' snippet and scope, which
+// frontends show in full (see dagui.ToolCallView).
+//
+// The tool-call display span records them when it starts (see
+// displayPhases.StartToolCall), and MCP.CallContent records their values,
+// formatted by dagui.ToolArgHeaderValue, when the call runs: a live frontend
+// fills in the same values from the arguments the span streams in between,
+// so the header doesn't change when the span ends.
+func toolHeaderArgNames(tool *LLMTool) []string {
+	var names []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
 	}
-	if str, ok := value.(string); ok {
-		return str, true
+	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
+		for _, arg := range requiredArgs {
+			add(arg)
+		}
 	}
-	switch name {
-	case "offset", "limit":
-		return fmt.Sprint(value), true
-	case "args":
-		values, ok := value.([]any)
-		if !ok {
-			return "", false
-		}
-		parts := make([]string, 0, len(values))
-		for _, value := range values {
-			parts = append(parts, fmt.Sprint(value))
-		}
-		return strings.Join(parts, " "), true
-	case "arguments":
-		// A wrapper's arguments for the tool it runs (Timeout): frontends
-		// present the wrapper as that call (see dagui.ToolCallView).
-		obj, ok := value.(map[string]any)
-		if !ok {
-			return "", false
-		}
-		enc, err := json.Marshal(obj)
-		if err != nil {
-			return "", false
-		}
-		return string(enc), true
-	default:
-		return "", false
+	for _, arg := range []string{"offset", "limit", "args"} {
+		add(arg)
 	}
+	if tool.Name == dangCheckToolName || tool.Name == dangEvalToolName {
+		for _, arg := range []string{"at", "search", "source"} {
+			add(arg)
+		}
+	}
+	return names
 }
 
 // Call returns the plain-text projection for callers that only need text.
@@ -2080,38 +2153,7 @@ func (m *MCP) CallContent(ctx context.Context, tools []LLMTool, toolCall *LLMToo
 		}
 	}
 
-	var toolArgNames []string
-	var toolArgValues []string
-	seenToolArgs := map[string]bool{}
-	appendToolArg := func(name string) {
-		if seenToolArgs[name] {
-			return
-		}
-		val, ok := toolArgHeaderValue(name, args[name])
-		if !ok {
-			return
-		}
-		toolArgNames = append(toolArgNames, name)
-		toolArgValues = append(toolArgValues, val)
-		seenToolArgs[name] = true
-	}
-	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
-		for _, arg := range requiredArgs {
-			appendToolArg(arg)
-		}
-	}
-	// Header-specific optional values: Read's pagination controls and generic
-	// argv arrays are useful context even though they are not required args.
-	for _, arg := range []string{"offset", "limit", "args"} {
-		appendToolArg(arg)
-	}
-	// The Dang builtins' snippet and scope are the call: frontends show
-	// them in full (see dagui.ToolCallView).
-	if tool.Name == dangCheckToolName || tool.Name == dangEvalToolName {
-		for _, arg := range []string{"at", "search", "source"} {
-			appendToolArg(arg)
-		}
-	}
+	toolArgNames, toolArgValues := dagui.ToolHeaderArgs(toolHeaderArgNames(tool), args)
 	span := trace.SpanFromContext(ctx)
 	attrs := append(toolSpanAttrs(tool),
 		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
@@ -3550,22 +3592,25 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Description: "Run one currently exposed tool with a timeout.",
 		Schema: map[string]any{
 			"type": "object",
-			"properties": map[string]any{
-				"duration": map[string]any{
-					"type":        "string",
-					"description": "Maximum duration for the nested tool as a Go duration string, for example \"30s\" or \"2m\".",
-				},
-				"tool": map[string]any{
+			// The wrapped tool first: a frontend can only show the call as
+			// the one it wraps once it has arrived, and the arguments, which
+			// can be long (a Dang snippet), stream in after it.
+			"properties": ToolSchemaProperties{
+				{Name: "tool", Schema: map[string]any{
 					"type":        "string",
 					"description": "Name of the currently exposed tool to invoke.",
-				},
-				"arguments": map[string]any{
+				}},
+				{Name: "duration", Schema: map[string]any{
+					"type":        "string",
+					"description": "Maximum duration for the nested tool as a Go duration string, for example \"30s\" or \"2m\".",
+				}},
+				{Name: "arguments", Schema: map[string]any{
 					"type":                 "object",
 					"description":          "Arguments to pass to the nested tool.",
 					"additionalProperties": true,
-				},
+				}},
 			},
-			"required":             []string{"duration", "tool", "arguments"},
+			"required":             []string{"tool", "duration", "arguments"},
 			"additionalProperties": false,
 		},
 		Call: m.timeoutTool(allTools),

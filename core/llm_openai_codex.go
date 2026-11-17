@@ -496,12 +496,9 @@ func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, 
 						})
 					}
 				case LLMContentToolCall:
-					// The Responses API rejects an empty arguments string;
-					// normalize it to an empty JSON object, mirroring the chat path.
-					args := block.Arguments.String()
-					if args == "" {
-						args = "{}"
-					}
+					// Verbatim, with malformed arguments wrapped and empty ones
+					// as {}, which the Responses API requires (see toolCallInput).
+					args := string(toolCallInput(block.Arguments))
 					items = append(items, responses.ResponseInputItemUnionParam{
 						OfFunctionCall: &responses.ResponseFunctionToolCallParam{
 							CallID:    block.CallID,

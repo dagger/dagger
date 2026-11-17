@@ -87,8 +87,21 @@ func TestResetWorkspaceWaitsForBoundaryEdit(t *testing.T) {
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				reloadDone := make(chan error, 1)
-				go func() { reloadDone <- a.ResetWorkspace(ctx) }()
+				reload := func() { reloadDone <- a.ResetWorkspace(ctx) }
+				go reload()
 				require.Eventually(t, func() bool {
+					select {
+					case err := <-reloadDone:
+						if err == nil || !strings.Contains(err.Error(), "another save/reload") {
+							reloadDone <- err // reported as a bypass below
+							return true
+						}
+						// The TryLock probe below held syncOpL just as the
+						// reload tried to take it, so the reload was refused.
+						go reload()
+						return false
+					default:
+					}
 					if a.syncOpL.TryLock() {
 						a.syncOpL.Unlock()
 						return false

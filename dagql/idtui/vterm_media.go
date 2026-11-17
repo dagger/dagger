@@ -61,6 +61,9 @@ func (term *Vterm) WriteMedia(media dagui.MediaRecord, fallback string) {
 			term.segments = append(term.segments, newVtermTextSegment(snapshot.String(), false))
 		}
 		term.markdownBuf.Reset()
+		// The screen is the media layout's now, not the raw log's.
+		term.replayable = false
+		term.screenBuf = nil
 	}
 	fallback = strings.TrimSpace(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {

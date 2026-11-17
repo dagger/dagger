@@ -918,9 +918,10 @@ func (r *renderer) renderSpan(
 			// For recognized tools, render a styled summary of the meaningful
 			// args (paths in cyan, descriptions/content faint). Fall back to
 			// the first line of the first arg for tools we don't recognize.
-			if !renderToolArgsSummary(out, span) {
-				if len(span.LLMToolArgValues) > 0 {
-					fmt.Fprint(out, "(", span.ToolArgsFallback(), ")")
+			// A running call's come from the arguments it streamed so far.
+			if !renderToolArgParts(out, r.db.ToolArgsSummary(span)) {
+				if fallback := r.db.ToolArgsFallback(span); fallback != "" {
+					fmt.Fprint(out, "(", fallback, ")")
 				}
 			}
 			return nil

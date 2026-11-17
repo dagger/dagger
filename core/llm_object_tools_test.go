@@ -276,35 +276,49 @@ func TestObjectToolEligible(t *testing.T) {
 	require.False(t, objectToolEligible(fieldByName(doug, "old"), nil, conversationToolArgs))
 }
 
+// toolProps returns an object method tool's schema properties by name.
+func toolProps(t *testing.T, schema map[string]any) map[string]any {
+	t.Helper()
+	props, ok := schema["properties"].(ToolSchemaProperties)
+	require.True(t, ok, "properties are %T", schema["properties"])
+	return props.Map()
+}
+
 func TestObjectMethodSchema(t *testing.T) {
 	schema := objectToolsTestSchema(t)
 	doug := schema.Types["Doug"]
 
 	readSchema, err := objectMethodSchema(schema, fieldByName(doug, "read"), conversationToolArgs)
 	require.NoError(t, err)
-	props := readSchema["properties"].(map[string]any)
+	props := toolProps(t, readSchema)
+	// In the order the field declares them, which models tend to write
+	// them in: a map would have them sorted by name.
+	require.Equal(t, []string{"filePath", "offset", "date"}, readSchema["properties"].(ToolSchemaProperties).Names())
+	writeSchema, err := objectMethodSchema(schema, fieldByName(doug, "write"), conversationToolArgs)
+	require.NoError(t, err)
+	require.Equal(t, []string{"filePath", "contents"}, writeSchema["properties"].(ToolSchemaProperties).Names())
 
 	// Workspace remains contextual, while LLM and Agent arguments are filled
 	// directly by MCP. None are exposed to the model's tool schema.
 	require.NotContains(t, props, "source")
 	compactSchema, err := objectMethodSchema(schema, fieldByName(doug, "compact"), conversationToolArgs)
 	require.NoError(t, err)
-	require.NotContains(t, compactSchema["properties"], "llm")
+	require.NotContains(t, toolProps(t, compactSchema), "llm")
 	annotateSchema, err := objectMethodSchema(schema, fieldByName(doug, "annotate"), conversationToolArgs)
 	require.NoError(t, err)
-	require.NotContains(t, annotateSchema["properties"], "llm")
+	require.NotContains(t, toolProps(t, annotateSchema), "llm")
 	pokeSchema, err := objectMethodSchema(schema, fieldByName(doug, "poke"), agentToolArgs)
 	require.NoError(t, err)
-	require.NotContains(t, pokeSchema["properties"], "caller")
-	require.Contains(t, pokeSchema["properties"], "note")
+	require.NotContains(t, toolProps(t, pokeSchema), "caller")
+	require.Contains(t, toolProps(t, pokeSchema), "note")
 
 	// An Agent argument is never the model's to supply, required or optional,
 	// whether or not an agent will fill it.
 	for _, policy := range []implicitToolArgs{agentToolArgs, conversationToolArgs, standaloneToolArgs} {
 		nudgeSchema, err := objectMethodSchema(schema, fieldByName(doug, "nudge"), policy)
 		require.NoError(t, err)
-		require.NotContains(t, nudgeSchema["properties"], "caller", "%+v", policy)
-		require.Contains(t, nudgeSchema["properties"], "note")
+		require.NotContains(t, toolProps(t, nudgeSchema), "caller", "%+v", policy)
+		require.Contains(t, toolProps(t, nudgeSchema), "note")
 	}
 	// Engine-internal arguments are filled by the engine and skipped at
 	// dispatch, so no policy shows them to the model.
@@ -312,13 +326,13 @@ func TestObjectMethodSchema(t *testing.T) {
 		require.True(t, objectToolEligible(fieldByName(doug, "tag"), nil, policy))
 		tagSchema, err := objectMethodSchema(schema, fieldByName(doug, "tag"), policy)
 		require.NoError(t, err)
-		require.Equal(t, []string{"label"}, slices.Collect(maps.Keys(tagSchema["properties"].(map[string]any))), "%+v", policy)
+		require.Equal(t, []string{"label"}, slices.Collect(maps.Keys(toolProps(t, tagSchema))), "%+v", policy)
 	}
 	// Served without a conversation, MCP has nothing to fill an LLM argument
 	// from, so an optional one is exposed by ID like any other object.
 	annotateSchema, err = objectMethodSchema(schema, fieldByName(doug, "annotate"), standaloneToolArgs)
 	require.NoError(t, err)
-	annotateLLM := annotateSchema["properties"].(map[string]any)["llm"].(map[string]any)
+	annotateLLM := toolProps(t, annotateSchema)["llm"].(map[string]any)
 	require.Equal(t, "(LLM ID)", annotateLLM["description"])
 	require.Equal(t, "string", requireNullableJSONSchema(t, annotateLLM)["type"])
 
@@ -337,7 +351,7 @@ func TestObjectMethodSchema(t *testing.T) {
 	// A list arg with a default is optional and rendered as an array of scalars.
 	todoSchema, err := objectMethodSchema(schema, fieldByName(doug, "todoWrite"), conversationToolArgs)
 	require.NoError(t, err)
-	todoProps := todoSchema["properties"].(map[string]any)
+	todoProps := toolProps(t, todoSchema)
 	pending := todoProps["pending"].(map[string]any)
 	require.Equal(t, "array", pending["type"])
 	require.Equal(t, "string", pending["items"].(map[string]any)["type"])
@@ -352,7 +366,7 @@ func TestObjectMethodSchema(t *testing.T) {
 	require.Contains(t, containerHint, "or a Container ID from a prior tool result")
 	execSchema, err := objectMethodSchema(schema, fieldByName(doug, "exec"), conversationToolArgs)
 	require.NoError(t, err)
-	execProps := execSchema["properties"].(map[string]any)
+	execProps := toolProps(t, execSchema)
 	sandbox := execProps["sandbox"].(map[string]any)
 	require.Equal(t, "string", sandbox["type"])
 	require.Equal(t, containerHint, sandbox["description"])
@@ -362,7 +376,7 @@ func TestObjectMethodSchema(t *testing.T) {
 	// both.
 	debugSchema, err := objectMethodSchema(schema, fieldByName(doug, "debug"), conversationToolArgs)
 	require.NoError(t, err)
-	debugProperty := debugSchema["properties"].(map[string]any)["sandbox"].(map[string]any)
+	debugProperty := toolProps(t, debugSchema)["sandbox"].(map[string]any)
 	debug := requireNullableJSONSchema(t, debugProperty)
 	require.Equal(t, "string", debug["type"])
 	require.Equal(t, containerHint, debugProperty["description"])
@@ -379,7 +393,7 @@ func TestObjectMethodSchema(t *testing.T) {
 	} {
 		s, err := objectMethodSchema(schema, fieldByName(doug, field), conversationToolArgs)
 		require.NoError(t, err)
-		desc := s["properties"].(map[string]any)[want.arg].(map[string]any)["description"].(string)
+		desc := toolProps(t, s)[want.arg].(map[string]any)["description"].(string)
 		require.True(t, strings.HasPrefix(desc, "("+want.typeName+" address: "), desc)
 		require.Contains(t, desc, want.external)
 		require.Contains(t, desc, "dag://<module>/")
@@ -395,21 +409,21 @@ func TestObjectMethodSchema(t *testing.T) {
 	// (dispatch would refuse it anyway).
 	tokenSchema, err := objectMethodSchema(schema, fieldByName(doug, "maybeToken"), conversationToolArgs)
 	require.NoError(t, err)
-	tokenProperty := tokenSchema["properties"].(map[string]any)["token"].(map[string]any)
+	tokenProperty := toolProps(t, tokenSchema)["token"].(map[string]any)
 	require.Equal(t, "string", requireNullableJSONSchema(t, tokenProperty)["type"])
 	require.Equal(t, "(Secret ID)", tokenProperty["description"])
 
 	// A non-addressable object arg keeps the ID convention.
 	applySchema, err := objectMethodSchema(schema, fieldByName(doug, "apply"), conversationToolArgs)
 	require.NoError(t, err)
-	changes := applySchema["properties"].(map[string]any)["changes"].(map[string]any)
+	changes := toolProps(t, applySchema)["changes"].(map[string]any)
 	require.Equal(t, "(Changeset ID)", changes["description"])
 
 	// A LIST of liftable objects is an array of address strings, described
 	// as such with the element type's hint.
 	execAllSchema, err := objectMethodSchema(schema, fieldByName(doug, "execAll"), conversationToolArgs)
 	require.NoError(t, err)
-	sandboxes := execAllSchema["properties"].(map[string]any)["sandboxes"].(map[string]any)
+	sandboxes := toolProps(t, execAllSchema)["sandboxes"].(map[string]any)
 	require.Equal(t, "array", sandboxes["type"])
 	require.Equal(t, "string", sandboxes["items"].(map[string]any)["type"])
 	require.Equal(t, "(list of Container addresses, each "+addressableTypes["Container"].hint+")", sandboxes["description"])
@@ -418,7 +432,7 @@ func TestObjectMethodSchema(t *testing.T) {
 	// A list of blocklisted objects keeps the ID convention.
 	withTokensSchema, err := objectMethodSchema(schema, fieldByName(doug, "withTokens"), conversationToolArgs)
 	require.NoError(t, err)
-	tokens := withTokensSchema["properties"].(map[string]any)["tokens"].(map[string]any)
+	tokens := toolProps(t, withTokensSchema)["tokens"].(map[string]any)
 	require.Equal(t, "array", tokens["type"])
 	require.Equal(t, "(Secret ID)", tokens["description"])
 
@@ -431,7 +445,7 @@ func TestObjectMethodSchema(t *testing.T) {
 	} {
 		s, err := objectMethodSchema(schema, fieldByName(doug, field), conversationToolArgs)
 		require.NoError(t, err)
-		prop := s["properties"].(map[string]any)[want.arg].(map[string]any)
+		prop := toolProps(t, s)[want.arg].(map[string]any)
 		require.Equal(t, "string", prop["type"])
 		desc := prop["description"].(string)
 		require.True(t, strings.HasPrefix(desc, "("+want.typeName+" address: "), desc)
@@ -442,7 +456,7 @@ func TestObjectMethodSchema(t *testing.T) {
 	}
 	evalSchema, err := objectMethodSchema(schema, fieldByName(doug, "eval"), conversationToolArgs)
 	require.NoError(t, err)
-	require.Contains(t, evalSchema["properties"].(map[string]any)["target"].(map[string]any)["description"], "must select exactly one artifact")
+	require.Contains(t, toolProps(t, evalSchema)["target"].(map[string]any)["description"], "must select exactly one artifact")
 }
 
 func TestLiftableObjectArg(t *testing.T) {
@@ -846,7 +860,7 @@ func TestAgentToolArgsFollowOwner(t *testing.T) {
 		require.Len(t, toolsets, 1)
 		tools := map[string]LLMTool{}
 		for _, tool := range toolsets[0].tools {
-			require.NotContains(t, tool.Schema["properties"], "caller", "an Agent is never the model's to supply")
+			require.NotContains(t, toolProps(t, tool.Schema), "caller", "an Agent is never the model's to supply")
 			tools[tool.Name] = tool
 		}
 		return tools
@@ -858,7 +872,7 @@ func TestAgentToolArgsFollowOwner(t *testing.T) {
 			tools := listed(t, m)
 			require.NotContains(t, tools, "poke", "a required Agent hides its method")
 			require.Contains(t, tools, "nudge")
-			require.Contains(t, tools["nudge"].Schema["properties"], "note")
+			require.Contains(t, toolProps(t, tools["nudge"].Schema), "note")
 			out, err := call(t, m, nudgeField, map[string]any{"note": "hi"})
 			require.NoError(t, err)
 			require.Equal(t, "no agent: hi", out)

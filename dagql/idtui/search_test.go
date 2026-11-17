@@ -2,7 +2,9 @@ package idtui
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,4 +123,52 @@ func TestSearchFindsUnloadedLogs(t *testing.T) {
 	m := sess.fe.searchMatches[sess.fe.searchIdx]
 	require.Equal(t, loud, m.spanID)
 	require.GreaterOrEqual(t, m.logRow, 0, "the remote match gave way to the line")
+}
+
+// TestSearchMatchSurvivesReflow checks that going to a match in a log laid
+// out before its row showed it -- search lays it out at the full width, and
+// its row's prefix then narrows it, which lays it out again -- keeps that
+// match current and in view, though its row moved.
+func TestSearchMatchSurvivesReflow(t *testing.T) {
+	start := time.Unix(100, 0)
+	id := prettyTestSpanID
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: id(1), TraceID: prettyTestTraceID(), Name: "root", StartTime: start, EndTime: start.Add(time.Minute)},
+		{ID: id(2), TraceID: prettyTestTraceID(), Name: "build", ParentID: id(1), StartTime: start, EndTime: start.Add(time.Minute)},
+	})
+	db.SetPrimarySpan(id(1))
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 40))
+	fe.FrontendOpts.ZoomedSpan = id(1)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.setupTUI()
+	fe.tui.Step()
+	logs := fe.logs.spanLogs(id(2))
+	// Each line fits the screen, but not the row's gutter beside it.
+	for i := range 20 {
+		line := fmt.Sprintf("needle %02d ", i)
+		_, _ = logs.Write([]byte(line + strings.Repeat("x", 119-len(line)) + "\n"))
+	}
+	fe.recalculateViewLocked()
+
+	fe.confirmSearch("needle")
+	require.Len(t, fe.searchMatches, 20)
+	fe.searchIdx = 5
+	fe.goToSearchMatch(5)
+	fe.syncSearchState()
+	step := func() string {
+		return stripANSICodes(strings.Join(fe.tui.Step(), "\n"))
+	}
+	frame := step()
+	require.Contains(t, frame, "needle 05", frame)
+
+	// The next match is the next one, though the matches were gathered
+	// before the render moved their rows.
+	fe.searchNext()
+	for range 3 {
+		frame = step()
+	}
+	require.Equal(t, 6, fe.searchIdx)
+	require.Equal(t, fe.searchMatches[6].logRow, logs.SearchCurrentRow)
+	require.Contains(t, frame, "needle 06", frame)
 }
