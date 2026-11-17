@@ -266,7 +266,7 @@ func runSDKModuleGeneratorGraph(
 		}
 
 		before := current
-		current, err = s.generateSDKModuleScope(ctx, current, staged, selected, node.configScope, node.path, node.scope)
+		current, err = s.generateSDKModuleScope(ctx, current, staged, selected, node.configScope, node.path, node.scope, base.Self())
 		if err != nil {
 			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("generate SDK scope %q: %w", node.path, err)
 		}

@@ -2,9 +2,11 @@ package schema
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -12,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
@@ -149,7 +152,7 @@ func (s *workspaceSchema) withSDKModuleInitialized(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.generateSDKModuleScope(ctx, updated, staged, selected, configScopePath, scopePath, scope)
+	return s.generateSDKModuleScope(ctx, updated, staged, selected, configScopePath, scopePath, scope, nil)
 }
 
 func optionalInitControl(value dagql.Optional[dagql.Boolean]) *bool {
@@ -344,7 +347,7 @@ func (s *workspaceSchema) withSDKModuleClient(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.generateSDKModuleScope(ctx, updated, staged, currentScope.sdk, configScopePath, currentScope.scope, scope)
+	return s.generateSDKModuleScope(ctx, updated, staged, currentScope.sdk, configScopePath, currentScope.scope, scope, nil)
 }
 
 // withoutSDKModuleClient removes one client record and reconciles its SDK
@@ -434,6 +437,7 @@ func (s *workspaceSchema) withoutSDKModuleClient(
 		winner.configScopePath,
 		winner.scope,
 		scope,
+		nil,
 	)
 }
 
@@ -616,6 +620,7 @@ func (s *workspaceSchema) generateSDKModuleClientSelections(
 			selection.configScopePath,
 			selection.workspaceScope,
 			selection.scope,
+			nil,
 		)
 		telemetry.EndWithCause(scopeSpan, &err)
 		if err != nil {
@@ -984,6 +989,7 @@ func (s *workspaceSchema) generateSDKModuleScope(
 	configScopePath string,
 	workspaceScope string,
 	scope workspace.SDKScope,
+	sdkBase *core.Workspace,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	name := scope.Name
 	if scope.IsModule {
@@ -997,7 +1003,14 @@ func (s *workspaceSchema) generateSDKModuleScope(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	provider, err := s.loadWorkspaceSDKModule(ctx, ws.Self(), staged.ConfigDir, selected.ref, effectiveSettings)
+	// A local SDK module's identity hashes the whole workspace, so scopes share
+	// the module loaded from sdkBase; its contextDirectory and +defaultPath reads
+	// then see sdkBase rather than the earlier scopes' output.
+	sdkSource := cmp.Or(sdkBase, ws.Self())
+	provider, err := s.loadWorkspaceSDKModule(ctx, sdkSource, staged.ConfigDir, selected.ref, effectiveSettings)
+	if sdkSource != ws.Self() && (err != nil || !s.sdkModuleFilesUnchanged(ctx, provider.Module().Self().Source.Value.Self(), ws.Self())) {
+		provider, err = s.loadWorkspaceSDKModule(ctx, ws.Self(), staged.ConfigDir, selected.ref, effectiveSettings)
+	}
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -1023,6 +1036,62 @@ func (s *workspaceSchema) generateSDKModuleScope(
 		}
 	}
 	return generated, nil
+}
+
+// sdkModuleFilesUnchanged reports whether ws holds the same files at the source
+// root of a loaded local module and of its local dependencies. What the
+// comparison cannot follow counts as changed: a runtime SDK that is not builtin,
+// a source or include path outside the root, or a symlink under the root.
+func (s *workspaceSchema) sdkModuleFilesUnchanged(ctx context.Context, src *core.ModuleSource, ws *core.Workspace) bool {
+	if src.Kind != core.ModuleSourceKindDir {
+		return true
+	}
+	if src.SDK != nil && !sdk.IsBuiltinSDKName(src.SDK.Source) {
+		return false
+	}
+	if slices.ContainsFunc(append([]string{src.SourceSubpath}, src.RebasedIncludePaths...), func(p string) bool {
+		return p != "" && !strings.HasPrefix(p, "!") && !workspacePathContains(src.SourceRootSubpath, p)
+	}) {
+		return false
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false
+	}
+	root, err := s.filteredWorkspaceRootfs(ctx, ws)
+	if err != nil {
+		return false
+	}
+	sourceRoot := dagql.Selector{Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(src.SourceRootSubpath)}}}
+	var loaded dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, src.ContextDirectory, &loaded, sourceRoot); err != nil {
+		return false
+	}
+	loadedID, err := loaded.ID()
+	if err != nil {
+		return false
+	}
+	if loaded.Self().Mount(ctx, loaded, func(dir string) error {
+		return filepath.WalkDir(dir, func(_ string, entry fs.DirEntry, err error) error {
+			if err == nil && entry.Type()&fs.ModeSymlink != 0 {
+				return fs.ErrInvalid
+			}
+			return err
+		})
+	}) != nil {
+		return false
+	}
+	// Not Directory.digest: it also hashes metadata, which differs per snapshot.
+	var empty dagql.Boolean
+	if err := dag.Select(ctx, root, &empty, sourceRoot,
+		dagql.Selector{Field: "changes", Args: []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](loadedID)}}},
+		dagql.Selector{Field: "isEmpty"},
+	); err != nil || !empty.Bool() {
+		return false
+	}
+	return !slices.ContainsFunc(src.Dependencies, func(dep dagql.ObjectResult[*core.ModuleSource]) bool {
+		return !s.sdkModuleFilesUnchanged(ctx, dep.Self(), ws)
+	})
 }
 
 func (s *workspaceSchema) workspaceAtSDKModuleScope(
