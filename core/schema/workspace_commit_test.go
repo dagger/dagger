@@ -117,14 +117,14 @@ func TestWorkspaceGitAuthor(t *testing.T) {
 
 func TestGitEmailLocalPart(t *testing.T) {
 	for in, want := range map[string]string{
-		"worker":               "worker",
-		"keeper-worker":        "keeper-worker",
-		"Staff worker #1":      "Staff-worker-1",
-		"..a..b--c.-d..":       "a.b-c.d",
-		"bot+ci_1":             "bot+ci_1",
-		"<évil>@host":          "vil-host",
-		"":                     "",
-		"✨":                    "",
+		"worker":                "worker",
+		"keeper-worker":         "keeper-worker",
+		"Staff worker #1":       "Staff-worker-1",
+		"..a..b--c.-d..":        "a.b-c.d",
+		"bot+ci_1":              "bot+ci_1",
+		"<évil>@host":           "vil-host",
+		"":                      "",
+		"✨":                     "",
 		strings.Repeat("a", 70): strings.Repeat("a", 64),
 	} {
 		require.Equal(t, want, gitEmailLocalPart(in), "%q", in)
