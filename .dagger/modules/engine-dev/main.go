@@ -477,13 +477,12 @@ func (dev *EngineDev) withSeedEngine(ctr *dagger.Container, seed seedEntries, cm
 // its socket is there, runs the rest of its arguments as its client, and stops
 // the engine. The engine starts holding the release's entries mounted at
 // releaseEntriesPath as its own image's, when engine-image-entries finds their
-// bundle of the version it merges. A failure shows the end of the engine's
-// log.
+// bundle of the version it merges. The engine's log goes to the exec's
+// stderr as it is written, so the exec's output holds it whether the exec
+// succeeds, fails or is cancelled.
 const seedEngineScript = `set -eu
 network_cidr=$1
 shift
-log=/var/log/seed-engine.log
-mkdir -p /var/log
 entries=` + distconsts.EngineContainerImageEntriesDir + `
 release=` + releaseEntriesPath + `
 if [ -d "$release" ]; then
@@ -498,15 +497,14 @@ elif [ -n "${SEED_ENTRIES_NONE:-}" ]; then
 	echo "starting without a release's entries: $SEED_ENTRIES_NONE" >&2
 fi
 # Its bridge is the name and "0": at most 15 characters.
-dagger-entrypoint.sh --network-name dagger-seed --network-cidr "$network_cidr" >"$log" 2>&1 &
+dagger-entrypoint.sh --network-name dagger-seed --network-cidr "$network_cidr" >&2 &
 engine=$!
 stop() {
 	kill "$engine" 2>/dev/null || :
 	wait "$engine" 2>/dev/null || :
 }
 failed() {
-	echo "$1; the engine's log ends:" >&2
-	tail -n 40 "$log" >&2
+	echo "$1" >&2
 	stop
 	exit 1
 }
