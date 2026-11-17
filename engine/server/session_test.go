@@ -219,18 +219,23 @@ func TestNestedTransportRegistrationBindsExactExecAttachables(t *testing.T) {
 	// must not replace the exec bootstrap, an existing identity, or a channel
 	// that a logical SDK client was already sealed to.
 	cliMetadata := nestedTransportTestMetadata("interactive-cli")
-	cli, err := srv.RegisterNestedClientTransportForExec(ctx, cliMetadata, parent.clientID, cliMetadata.ClientID)
+	cli, err := srv.RegisterNestedCLITransportForExec(ctx, cliMetadata, parent.clientID)
 	require.NoError(t, err)
 	defer cli.Close()
+	sess.clientMu.RLock()
 	cliRecord := sess.clientRecords[cliMetadata.ClientID]
+	sess.clientMu.RUnlock()
 	require.Equal(t, cliMetadata.ClientID, cliRecord.attachablesClientID)
+	require.False(t, cliRecord.attachablesFromExecHelper, "the CLI, not the exec's session helper, registers them")
 	cliCaller := &sessionAttachableCaller{ctx: context.Background()}
 	sess.attachables.callers[cliMetadata.ClientID] = cliCaller
 	caller, err = srv.clientAttachableCaller(ctx, sess.sessionID, cliMetadata.ClientID, true)
 	require.NoError(t, err)
 	require.Same(t, cliCaller, caller)
-	_, err = srv.RegisterNestedClientTransportForExec(ctx, cliMetadata, parent.clientID, cliMetadata.ClientID)
+	_, err = srv.RegisterNestedCLITransportForExec(ctx, cliMetadata, parent.clientID)
 	require.ErrorContains(t, err, "already registered")
+	_, err = srv.RegisterNestedCLITransportForExec(ctx, logicalMetadata, parent.clientID)
+	require.ErrorContains(t, err, "already registered", "a bound SDK client cannot switch to its own channel")
 	req := httptest.NewRequest(http.MethodGet, engine.SessionAttachablesEndpoint, nil)
 	err = srv.serveSessionAttachables(httptest.NewRecorder(), req, cliRecord)
 	require.ErrorContains(t, err, "already exist")
@@ -266,6 +271,11 @@ func TestTelemetryStoresOnlyForClientsThatCanSubscribe(t *testing.T) {
 	require.NoError(t, err)
 	defer cliTransport.Close()
 
+	// An interactive CLI in that exec, serving its own attachables.
+	interactiveTransport, err := srv.RegisterNestedCLITransportForExec(ctx, nestedTransportTestMetadata("interactive-cli"), parent.clientID)
+	require.NoError(t, err)
+	defer interactiveTransport.Close()
+
 	// An in-engine SDK client.
 	sdkTransport, err := srv.RegisterNestedClientTransport(ctx, nestedTransportTestMetadata("sdk"), parent.clientID)
 	require.NoError(t, err)
@@ -287,6 +297,7 @@ func TestTelemetryStoresOnlyForClientsThatCanSubscribe(t *testing.T) {
 		"parent":           false,
 		"exec":             true,
 		"exec-cli":         false,
+		"interactive-cli":  false,
 		"sdk":              true,
 		"with-session-cli": false,
 	}, unread)
@@ -296,6 +307,7 @@ func TestTelemetryStoresOnlyForClientsThatCanSubscribe(t *testing.T) {
 		"exec":             {"parent"},
 		"sdk":              {"parent"},
 		"exec-cli":         {"exec-cli", "parent"},
+		"interactive-cli":  {"interactive-cli", "parent"},
 		"with-session-cli": {"with-session-cli", "parent"},
 	} {
 		route, err := sess.telemetryRouteOriginClientID(origin)
