@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"testing"
 	"time"
+	"unsafe"
 
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -323,6 +324,10 @@ func BenchmarkSpanFootprint(b *testing.B) {
 			}
 			b.ReportMetric(fp.bytesPerSpan, "B/span")
 			b.ReportMetric(fp.objectsPerSpan, "objs/span")
+			// Span's own size, for spotting it crossing a size class
+			// (1024 bytes, with the 8-byte malloc header of pointerful
+			// objects over 512, holds up to 1016).
+			b.ReportMetric(float64(unsafe.Sizeof(Span{})), "B/Span-struct")
 		})
 	}
 }
