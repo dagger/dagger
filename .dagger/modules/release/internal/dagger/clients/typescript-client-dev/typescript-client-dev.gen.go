@@ -77,7 +77,6 @@ type TypescriptClientDev struct { // typescript-client-dev (../../:0:0)
 	isSemver           *bool
 	nodeVersionLts     *string
 	nodeVersionPrevLts *string
-	release            *Void
 	releaseCore        *Void
 	sourcePath         *string
 	testNodejs         *Void
@@ -93,6 +92,19 @@ func (r *TypescriptClientDev) Binary() *File { // typescript-client-dev (../../:
 	q := r.query.Select("binary")
 
 	return new(File).WithGraphQLQuery(q)
+}
+
+// Build the SDK and check it produces a dist/.
+//
+// This is what `release` proved on the way to publishing `@dagger.io/dagger`,
+// kept after that publish went away: the aggregate is generated per scope by
+// dagger/typescript-sdk now, and `@dagger.io/core` is what this repo releases.
+// Nothing else here runs the build — the test checks run `yarn test:node` and
+// `bun test:bun` against the sources, and the lint check only lints them.
+func (r *TypescriptClientDev) BuildTypescript() *Check { // typescript-client-dev (../../:0:0)
+	q := r.query.Select("buildTypescript")
+
+	return new(Check).WithGraphQLQuery(q)
 }
 
 func (r *TypescriptClientDev) BunVersion(ctx context.Context) (string, error) { // typescript-client-dev (../../:0:0)
@@ -285,46 +297,6 @@ func (r *TypescriptClientDev) NodejsDevContainer(opts ...TypescriptClientDevNode
 	return new(Container).WithGraphQLQuery(q)
 }
 
-// TypescriptClientDevReleaseOpts contains options for TypescriptClientDev.Release
-type TypescriptClientDevReleaseOpts struct {
-	//
-	// NPM authentication token
-	//
-	NpmToken *Secret // typescript-client-dev (../../:0:0)
-	//
-	// Execute a dry-run release, with no side effects
-	//
-	DryRun bool // typescript-client-dev (../../:0:0)
-	//
-	// NPM registry URL to publish to.
-	//
-	NpmRegistryURL string // typescript-client-dev (../../:0:0)
-}
-
-func (r *TypescriptClientDev) Release(ctx context.Context, sourceTag string, opts ...TypescriptClientDevReleaseOpts) error { // typescript-client-dev (../../:0:0)
-	if r.release != nil {
-		return nil
-	}
-	q := r.query.Select("release")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `npmToken` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NpmToken) {
-			q = q.Arg("npmToken", opts[i].NpmToken)
-		}
-		// `dryRun` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DryRun) {
-			q = q.Arg("dryRun", opts[i].DryRun)
-		}
-		// `npmRegistryUrl` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NpmRegistryURL) {
-			q = q.Arg("npmRegistryUrl", opts[i].NpmRegistryURL)
-		}
-	}
-	q = q.Arg("sourceTag", sourceTag)
-
-	return q.Execute(ctx)
-}
-
 // TypescriptClientDevReleaseCoreOpts contains options for TypescriptClientDev.ReleaseCore
 type TypescriptClientDevReleaseCoreOpts struct {
 	//
@@ -343,9 +315,10 @@ type TypescriptClientDevReleaseCoreOpts struct {
 
 // Publish @dagger.io/core.
 //
-// Its version is the **engine** release, not the SDK's, which is why the tag is
-// taken as-is rather than through versionFromTag: core is the generated bindings
-// for one engine, so the two move together and nothing else here does.
+// Its version is the **engine** release, not the SDK's, so the tag is taken as
+// it comes rather than having the `sdk/typescript/` prefix stripped off it: core
+// is the generated bindings for one engine, so the two move together and nothing
+// else here does.
 //
 // @dagger.io/session is a published dependency, so `npm install` below fetches it
 // from the registry. That is deliberate — it is the only thing that proves the
@@ -377,12 +350,6 @@ func (r *TypescriptClientDev) ReleaseCore(ctx context.Context, sourceTag string,
 // Rehearse a core release with no side effects.
 func (r *TypescriptClientDev) ReleaseCoreDryRun() *Check { // typescript-client-dev (../../:0:0)
 	q := r.query.Select("releaseCoreDryRun")
-
-	return new(Check).WithGraphQLQuery(q)
-}
-
-func (r *TypescriptClientDev) ReleaseDryRun() *Check { // typescript-client-dev (../../:0:0)
-	q := r.query.Select("releaseDryRun")
 
 	return new(Check).WithGraphQLQuery(q)
 }
