@@ -114,6 +114,20 @@ func TestWorkspaceMetadataConstructorsDoNotRead(t *testing.T) {
 		}
 		return decoded
 	}
+	selectName := func(t *testing.T, value dagql.AnyObjectResult) dagql.String {
+		t.Helper()
+		// Generated scalar getters are trivial and uncached. Their returned
+		// scalar has no result row, so inspect the actual field contract instead.
+		spec, ok := value.ObjectType().FieldSpec("name", srv.View)
+		require.True(t, ok)
+		require.True(t, spec.Trivial)
+		require.NotEmpty(t, spec.DoNotCache)
+		name, err := value.Select(ctx, srv, dagql.Selector{Field: "name"})
+		require.NoError(t, err)
+		nameValue, ok := dagql.UnwrapAs[dagql.String](name)
+		require.True(t, ok)
+		return nameValue
+	}
 
 	for _, owner := range []string{"first-owner", "second-owner"} {
 		t.Run(owner, func(t *testing.T) {
@@ -172,15 +186,7 @@ func TestWorkspaceMetadataConstructorsDoNotRead(t *testing.T) {
 					for _, fact := range inspect(t, entry) {
 						require.Empty(t, fact.Retained, "SDK list metadata must not acquire its parent's Workspace capability")
 					}
-					name, err := entry.Select(ctx, srv, dagql.Selector{Field: "name"})
-					require.NoError(t, err)
-					nameValue, ok := dagql.UnwrapAs[dagql.String](name)
-					require.True(t, ok)
-					require.Equal(t, dagql.String(list.name), nameValue)
-					if use != 0 {
-						require.True(t, name.HitCache())
-					}
-					inspect(t, name)
+					require.Equal(t, dagql.String(list.name), selectName(t, entry))
 				}
 			}
 
@@ -196,12 +202,7 @@ func TestWorkspaceMetadataConstructorsDoNotRead(t *testing.T) {
 			require.Equal(t, workspaceID, frame.Receiver.ResultID)
 			inspect(t, module)
 			for _, value := range []dagql.AnyObjectResult{sdk, module} {
-				name, err := value.Select(ctx, srv, dagql.Selector{Field: "name"})
-				require.NoError(t, err)
-				nameValue, ok := dagql.UnwrapAs[dagql.String](name)
-				require.True(t, ok)
-				require.NotEmpty(t, nameValue)
-				inspect(t, name)
+				require.NotEmpty(t, selectName(t, value))
 			}
 		})
 	}
