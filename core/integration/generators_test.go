@@ -1237,17 +1237,6 @@ module = "bad"
 	require.Contains(t, out, "bad/generate")
 }
 
-// TestWorkspaceGenerateNarrowsToRequestedModule locks in that
-// `dagger generate <module>` only loads the named generator's module. The
-// workspace generators resolver loads modules on demand from its include
-// argument, so an unrelated broken/stale workspace module is never loaded just
-// to enumerate generators and cannot block regenerating a healthy module --
-// including the case where running generate is itself the fix for the broken
-// module.
-//
-// See also TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrokenModules
-// in workspace_test.go, which covers the root-field demand path for raw
-// queries.
 func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1275,8 +1264,7 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 
 	t.Run("listing across all modules enumerates the healthy generators despite a broken module", func(ctx context.Context, t *testctx.T) {
 		// Enumerating all generators loads modules best-effort: the broken
-		// module is still loaded (unlike the narrowed cases above, which never
-		// touch it) but its failure is tolerated, so listing still succeeds and
+		// module is still loaded but its failure is tolerated, so listing succeeds and
 		// shows the healthy generator instead of aborting. The skip is reported
 		// beside the list (SKIPPED MODULES), with the load error, which quotes
 		// the broken source, so unlike the narrowed cases this one can't assert

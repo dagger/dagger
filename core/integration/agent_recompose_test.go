@@ -1011,10 +1011,17 @@ type Inner {
 	ws := fixture.AsWorkspace()
 	_, llm := composeRecomposeFixture(ctx, t, c, ws, nil, "outer")
 	// The nested entry is recorded on its own, after the entry composing it.
-	entries := recordedExpertise(ctx, t, c, llm)
-	require.Len(t, entries, 2)
-	require.Equal(t, "dag://?module=outer", entries[0].Artifact.URI)
-	require.Equal(t, "dag://?module=inner", entries[1].Artifact.URI)
+	requireEntries := func(llm *core.LLM) {
+		t.Helper()
+		entries := recordedExpertise(ctx, t, c, llm)
+		require.Len(t, entries, 2)
+		for i, module := range []string{"outer", "inner"} {
+			path, err := ws.Artifacts().FilterURI(entries[i].Artifact.URI).One().Path(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{module, "agent"}, path)
+		}
+	}
+	requireEntries(llm)
 	expected := []string{"outer prompt", "inner prompt"}
 	require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm))
 	for range 2 {
@@ -1025,13 +1032,13 @@ type Inner {
 		// recorded and leaves it alone rather than appending it again.
 		require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm),
 			"nested compose of a recorded entry is not repeated")
-		require.Equal(t, entries, recordedExpertise(ctx, t, c, llm))
+		requireEntries(llm)
 	}
 	llm, err := composeLLM(ctx, c, ws, llm, "inner")
 	require.NoError(t, err)
 	require.ElementsMatch(t, expected, recomposeSystemPrompts(ctx, t, c, llm),
 		"composing the recorded Inner entry refreshes it in place")
-	require.Equal(t, entries, recordedExpertise(ctx, t, c, llm))
+	requireEntries(llm)
 }
 
 func (LLMSuite) TestRecomposePreservesManualContributions(ctx context.Context, t *testctx.T) {

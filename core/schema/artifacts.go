@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	telemetry "github.com/dagger/otel-go"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/artifact/flattening"
@@ -1006,7 +1008,10 @@ func (s *workspaceSchema) artifactDiscoveryInputs(ctx context.Context, parent da
 		return nil, err
 	}
 	if include != nil && core.Supports(ctx, artifactDimensionViewVersion) {
-		mods, failures, err = s.workspaceTargetModules(ctx, parent, nil, core.ModuleLoadMetadata)
+		metadataCtx, span := telemetry.Tracer(ctx, InstrumentationLibrary).Start(ctx, "load workspace schema",
+			telemetry.Internal(), telemetry.Encapsulate())
+		mods, failures, err = s.workspaceTargetModules(metadataCtx, parent, nil, core.ModuleLoadMetadata)
+		telemetry.EndWithCause(span, &err)
 		if err != nil {
 			return nil, err
 		}
