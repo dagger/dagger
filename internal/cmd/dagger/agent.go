@@ -273,7 +273,7 @@ func init() {
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With -r, focus this restored agent (runtime handle or name) instead of the top-level one")
 	agentCmd.Flags().BoolVar(&agentBackfill, "backfill", false,
-		"With -r, import the session's full telemetry history in the background, so every span, check and test is browsable as in the original session. By default only the agents' conversations load, and a span's children and logs load as it is expanded or shown, so a session too large to reload (e.g. one that ran out of memory) still resumes. Applies to sealed engine archives; unsealed archives and Dagger Cloud traces always load whole")
+		"With -r, import the session's full telemetry history in the background, so every span, check and test is browsable as in the original session. By default only the agents' conversations load, and a span's children and logs load as it is expanded or shown, so a session too large to reload (e.g. one that ran out of memory) still resumes, and /backfill loads the rest from inside it. Applies to sealed engine archives; unsealed archives and Dagger Cloud traces always load whole")
 	agentCmd.Flags().BoolVar(&agentNoBackfill, "no-backfill", false,
 		"With -r, load only the session's conversations (the default)")
 	_ = agentCmd.Flags().MarkHidden("no-backfill")

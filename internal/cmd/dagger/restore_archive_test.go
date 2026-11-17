@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -680,6 +681,11 @@ type noBackfillArchive struct {
 	fail error
 	// metricsErr fails metric reads, after delivering nothing.
 	metricsErr error
+	// metricBatches counts the metric batches applied.
+	metricBatches atomic.Int32
+	// noMetricSelection refuses metric selections, as an older engine's
+	// reads are.
+	noMetricSelection bool
 	// calls records the call closures asked for, and serves closure.
 	calls   chan archive.CallClosureQuery
 	closure *collogspb.ExportLogsServiceRequest
@@ -712,20 +718,26 @@ func newNoBackfillArchive() *noBackfillArchive {
 	}
 }
 
-// tokenMetrics is one LLM input-token gauge point on span.
+// tokenMetrics is one LLM input-token gauge series on span, recorded as a
+// streaming provider does: half the tokens, then all of them.
 func tokenMetrics(span dagui.SpanID, tokens int64) *colmetricspb.ExportMetricsServiceRequest {
 	str := func(key, val string) *commonpb.KeyValue {
 		return &commonpb.KeyValue{Key: key, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: val}}}
+	}
+	point := func(at, value int64) *metricspb.NumberDataPoint {
+		return &metricspb.NumberDataPoint{
+			Attributes:   []*commonpb.KeyValue{str("model", "test-model"), str(telemetry.MetricsSpanIDAttr, span.String())},
+			TimeUnixNano: uint64(time.Unix(at, 0).UnixNano()),
+			Value:        &metricspb.NumberDataPoint_AsInt{AsInt: value},
+		}
 	}
 	return &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: []*metricspb.ResourceMetrics{{
 		Resource: &resourcepb.Resource{},
 		ScopeMetrics: []*metricspb.ScopeMetrics{{Metrics: []*metricspb.Metric{{
 			Name: telemetry.LLMInputTokens,
-			Data: &metricspb.Metric_Gauge{Gauge: &metricspb.Gauge{DataPoints: []*metricspb.NumberDataPoint{{
-				Attributes:   []*commonpb.KeyValue{str("model", "test-model"), str(telemetry.MetricsSpanIDAttr, span.String())},
-				TimeUnixNano: uint64(time.Unix(10, 0).UnixNano()),
-				Value:        &metricspb.NumberDataPoint_AsInt{AsInt: tokens},
-			}}}},
+			Data: &metricspb.Metric_Gauge{Gauge: &metricspb.Gauge{DataPoints: []*metricspb.NumberDataPoint{
+				point(10, tokens/2), point(11, tokens),
+			}}},
 		}}}},
 	}}}
 }
@@ -780,7 +792,12 @@ func (s *noBackfillArchive) Metrics(_ context.Context, _ string, opts archive.St
 	if s.metricsErr != nil {
 		return 0, s.metricsErr
 	}
-	return opts.HighWater, consume(opts.HighWater, tokenMetrics(s.message, 42))
+	if s.noMetricSelection && opts.Metrics != nil {
+		return 0, archive.ErrSelectionUnsupported
+	}
+	err := consume(opts.HighWater, tokenMetrics(s.message, 42))
+	s.metricBatches.Add(1)
+	return opts.HighWater, err
 }
 
 // noBackfillPrimaries records the global frontend's SetPrimary calls, which
@@ -805,7 +822,8 @@ func noBackfillPrimaries(t *testing.T) func() []dagui.SpanID {
 // TestArchiveRestoreNoBackfill: by default (without --backfill), a restore
 // takes the agents from the verified bootstrap as usual, then loads only the
 // archive's conversation view instead of the whole history: no full span
-// stream, no whole-trace metadata stream, no metrics. Children load when
+// stream, no whole-trace metadata stream, and of the metrics only the LLM
+// token metrics the cost totals sum. Children load when
 // expanded and own logs when shown, and the live session's root stays
 // primary.
 func TestArchiveRestoreNoBackfill(t *testing.T) {
@@ -919,6 +937,82 @@ func TestArchiveRestoreNoBackfillFetchesCallClosures(t *testing.T) {
 	require.ErrorContains(t, err, "predates")
 }
 
+// TestArchiveRestoreNoBackfillOffersBackfill: a conversation-only restore
+// offers the whole-history import --backfill would have run, for /backfill:
+// once, in the background, with every span, the metadata records and every
+// metric -- but the token metrics the restore already summed, which a replay
+// would count again. When the engine could not select them, the restore took
+// none, and /backfill brings them.
+func TestArchiveRestoreNoBackfillOffersBackfill(t *testing.T) {
+	for _, selectable := range []bool{true, false} {
+		t.Run(fmt.Sprintf("selectable=%t", selectable), func(t *testing.T) {
+			noBackfillPrimaries(t)
+			source := newNoBackfillArchive()
+			source.noMetricSelection = !selectable
+			fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+			req := restoreRequest()
+			var backfill func() error
+			req.offerBackfill = func(f func() error) { backfill = f }
+			cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), req)
+			require.NoError(t, err)
+			defer cleanup()
+			require.NotNil(t, backfill)
+			receiveOpts(t, source.traces, "the conversation view")
+			<-source.served
+			receiveOpts(t, source.metrics, "the cost metrics")
+			if selectable {
+				require.Eventually(t, func() bool { return source.metricBatches.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
+			}
+
+			require.NoError(t, backfill())
+			require.ErrorContains(t, backfill(), "already loading", "the whole history loads once")
+			spans := receiveOpts(t, source.traces, "the whole span history")
+			require.Equal(t, &archive.SpanSelection{Full: true, DagUIView: true}, spans.Spans)
+			require.Equal(t, &archive.LogSelection{Records: archive.LogRecordsMetadata}, receiveOpts(t, source.logs, "the metadata history").Logs)
+			require.Nil(t, receiveOpts(t, source.metrics, "the metric history").Metrics, "every metric")
+			want := int32(1)
+			if selectable {
+				want = 2
+			}
+			require.Eventually(t, func() bool { return source.metricBatches.Load() == want }, 5*time.Second, 10*time.Millisecond)
+			snapshot := fe.db.LLMTokenMetrics.Snapshot()
+			require.Len(t, snapshot, 1)
+			require.EqualValues(t, 42, snapshot[0].InputTokens, "every token counted once")
+			require.Eventually(t, func() bool {
+				err := backfill()
+				return err != nil && strings.Contains(err.Error(), "already loaded")
+			}, 5*time.Second, 10*time.Millisecond, "a completed backfill says so")
+		})
+	}
+}
+
+// TestArchiveRestoreBackfillRetriesAfterFailure: a /backfill that failed may
+// run again; one that completed says so.
+func TestArchiveRestoreBackfillRetriesAfterFailure(t *testing.T) {
+	noBackfillPrimaries(t)
+	source := newNoBackfillArchive()
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	req := restoreRequest()
+	var backfill func() error
+	req.offerBackfill = func(f func() error) { backfill = f }
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), req)
+	require.NoError(t, err)
+	defer cleanup()
+	receiveOpts(t, source.traces, "the conversation view")
+	<-source.served
+	receiveOpts(t, source.metrics, "the cost metrics")
+	require.Eventually(t, func() bool { return source.metricBatches.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
+
+	source.metricsErr = archive.ErrCorrupt
+	require.NoError(t, backfill())
+	receiveOpts(t, source.metrics, "the failing metric history")
+	require.Eventually(t, func() bool {
+		err := backfill()
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond, "a failed backfill may run again")
+	receiveOpts(t, source.metrics, "the retried metric history")
+}
+
 // TestImportLLMTokenMetricsWithoutMetricSelection: an engine that cannot
 // select metrics by name would stream all of them; the restore goes without
 // the cost totals rather than read that, and does not report it as a failed
@@ -934,7 +1028,9 @@ func TestImportLLMTokenMetricsWithoutMetricSelection(t *testing.T) {
 	require.NoError(t, err)
 
 	source.metricsErr = fmt.Errorf("%w: metric names", archive.ErrSelectionUnsupported)
-	require.NoError(t, importLLMTokenMetrics(t.Context(), source, source.header.TraceID, importer, cut))
+	taken, err := importLLMTokenMetrics(t.Context(), source, source.header.TraceID, importer, cut)
+	require.NoError(t, err)
+	require.False(t, taken)
 	receiveOpts(t, source.metrics, "the cost metrics")
 	select {
 	case opts := <-source.metrics:
@@ -944,7 +1040,9 @@ func TestImportLLMTokenMetricsWithoutMetricSelection(t *testing.T) {
 	require.Empty(t, fe.db.LLMTokenMetrics.Snapshot())
 
 	source.metricsErr = archive.ErrCorrupt
-	require.ErrorIs(t, importLLMTokenMetrics(t.Context(), source, source.header.TraceID, importer, cut), archive.ErrCorrupt)
+	taken, err = importLLMTokenMetrics(t.Context(), source, source.header.TraceID, importer, cut)
+	require.ErrorIs(t, err, archive.ErrCorrupt)
+	require.True(t, taken, "a failure part way may have taken some")
 }
 
 // TestArchiveRestoreNoBackfillSealsAfterFailure: a conversation view that

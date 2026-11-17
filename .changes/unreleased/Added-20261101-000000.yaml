@@ -4,8 +4,9 @@ body: |
   history: only its agents' conversations load, and a span's children and logs
   load when it is expanded or shown, so a session too large to reload (e.g. one
   that ran out of memory) still resumes. Pass `--backfill` to import the whole
-  history in the background, as before. This applies to sealed engine
-  archives; an unsealed archive or a Dagger Cloud trace is still loaded whole.
+  history in the background, as before, or run `/backfill` in the resumed
+  session. This applies to sealed engine archives; an unsealed archive or a
+  Dagger Cloud trace is still loaded whole.
 time: 2026-11-01T00:00:00Z
 custom:
   Author: vito

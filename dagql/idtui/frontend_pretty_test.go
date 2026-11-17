@@ -2565,7 +2565,7 @@ func TestEditPromptFetchesMissingCallHistory(t *testing.T) {
 	require.Equal(t, []string{prompt.Digest}, <-requested)
 	step(func() bool { return live.promptErr != nil })
 	require.ErrorContains(t, live.promptErr, "archive gone")
-	require.ErrorContains(t, live.promptErr, "--backfill")
+	require.ErrorContains(t, live.promptErr, "/backfill")
 
 	// Asked for once: a digest whose fetch failed is not asked for again.
 	live.editPrompt()

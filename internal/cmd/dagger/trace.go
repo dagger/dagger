@@ -818,6 +818,26 @@ func (l *traceLoader) abandonInitial() {
 	l.listenAll(pending)
 }
 
+// loadWholeTree switches a conversation-only view to the whole trace, whose
+// spans are being imported after all (an in-session backfill): a roll-up's
+// logs are its subtree's again, imported under their own spans. A roll-up
+// whose own logs were already fetched keeps just those until the frontend
+// lets go of them.
+func (l *traceLoader) loadWholeTree() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.fullTree = true
+	l.ownLogsOnly = false
+}
+
+// treeLoaded marks every span of the trace loaded, so expanding a span is
+// local from here on.
+func (l *traceLoader) treeLoaded() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.partial = false
+}
+
 // listen fetches a span's children on demand, mirroring the web UI's "listen"
 // message. It's registered as the frontend's span provider and fired when a
 // span is expanded (or zoomed via --span). When the tree is partial it
@@ -903,11 +923,11 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 	if l.ctx.Err() != nil {
 		return
 	}
+	spanHex := id.String()
+	l.mu.Lock()
 	if l.ownLogsOnly {
 		descendants = false
 	}
-	spanHex := id.String()
-	l.mu.Lock()
 	if !id.IsValid() || l.logReq[spanHex] != 0 {
 		l.mu.Unlock()
 		return
@@ -917,11 +937,11 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 	l.logReq[spanHex] = fetch
 	start := l.logGen
 	l.logInflight++
-	l.mu.Unlock()
 	// Without the whole tree, a rolled-up span's descendants aren't loaded
 	// (the priority window doesn't include them), so their records would
 	// route to orphan buffers nothing renders: re-key them to the span.
 	rekey := descendants && !l.fullTree
+	l.mu.Unlock()
 	fg.Go(func() error {
 		defer l.endLogFetch()
 		select {

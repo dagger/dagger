@@ -2874,7 +2874,7 @@ func (fe *frontendPretty) retryOnSpan(id dagui.SpanID, what string, action func(
 // callHistoryError explains a failed fetch of the call payloads an action
 // needed, and how to get them.
 func callHistoryError(what string, err error) error {
-	return fmt.Errorf("%s: the call history it needs could not be loaded (%w); resuming with --backfill loads all of it", what, err)
+	return fmt.Errorf("%s: the call history it needs could not be loaded (%w); /backfill loads all of it", what, err)
 }
 
 // SetFetchWaiter registers a callback that blocks until in-flight background

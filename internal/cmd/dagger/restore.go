@@ -27,9 +27,13 @@ type traceRestore struct {
 	// backfill imports a sealed archive's whole telemetry history in the
 	// background. Without it, only the conversations load, the rest on
 	// demand (restoreConversationOnly).
-	backfill    bool
-	source      archiveRestoreSource
-	cloudSource cloudRestoreSource
+	backfill bool
+	// offerBackfill, when set, receives the in-session backfill of a
+	// restore that loaded only the conversations: a call that imports the
+	// whole history after all, in the background (/backfill).
+	offerBackfill func(backfill func() error)
+	source        archiveRestoreSource
+	cloudSource   cloudRestoreSource
 	// engineUnavailable, when set, skips the engine archive for Cloud: why
 	// the engine cannot serve this restore (see nestedEngineSession).
 	engineUnavailable error
@@ -73,6 +77,7 @@ func restoreFromTrace(ctx context.Context, handler *shellCallHandler, req traceR
 	ctx, span := Tracer().Start(ctx, "restoring trace "+req.traceID, telemetry.Reveal())
 	defer telemetry.EndWithCause(span, &rerr)
 	req.engineUnavailable = nestedEngineSession()
+	req.offerBackfill = func(backfill func() error) { handler.historyBackfill = backfill }
 	return restoreTraceSources(ctx, fe, &sessionRestore{dag: handler.dag, session: handler.llmSession}, req)
 }
 

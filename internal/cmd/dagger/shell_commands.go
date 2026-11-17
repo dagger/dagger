@@ -315,6 +315,22 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				return h.Print(ctx, url)
 			},
 		},
+		{
+			Use:         ".backfill",
+			Description: "Load a resumed session's whole history, as --backfill would have",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				if h.historyBackfill == nil {
+					return errors.New("nothing to backfill: only a session resumed from a sealed engine archive, without --backfill, loads just its conversations")
+				}
+				if err := h.historyBackfill(); err != nil {
+					return err
+				}
+				return h.Print(ctx, "Loading the session's whole history in the background.")
+			},
+		},
 	}
 }
 
