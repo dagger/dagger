@@ -272,7 +272,8 @@ func validateWorkspaceGitAuthor(name, email string) error {
 // author: the owning client's effective Git configuration at its working
 // directory. Outside a checkout, Git uses system/global config.
 //
-// The owner is the trusted client before the first module boundary: module
+// The owner is the trusted client before the first module boundary below the
+// nearest client owning its host (see Server.AuthorizeGitIdentity): module
 // and SDK clients run with inert session attachables (the engine denies them
 // host access by design), so a commit made from module code — an agent's
 // commit tool, for example — samples the identity of the client that called
