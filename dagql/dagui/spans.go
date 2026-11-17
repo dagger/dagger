@@ -163,10 +163,12 @@ func (span *Span) Snapshot() SpanSnapshot {
 	// indicating that the span has children but we didn't fetch them
 	// (incremental loading).
 	span.ChildCount = max(span.ChildCount, countChildren(span.ChildSpans, FrontendOpts{}))
-	span.Failed_, span.FailedReason_ = span.FailedReason()
-	span.Cached_, span.CachedReason_ = span.CachedReason()
-	span.Pending_, span.PendingReason_ = span.PendingReason()
-	span.Canceled_, span.CanceledReason_ = span.CanceledReason()
+	reasons := &SpanReasons{}
+	span.Failed_, reasons.FailedReason_ = span.FailedReason()
+	span.Cached_, reasons.CachedReason_ = span.CachedReason()
+	span.Pending_, reasons.PendingReason_ = span.PendingReason()
+	span.Canceled_, reasons.CanceledReason_ = span.CanceledReason()
+	span.SpanReasons = reasons
 	snapshot := span.SpanSnapshot
 	snapshot.Final = true // NOTE: applied to copy
 	snapshot.Progress = span.Progress.Clone()
@@ -283,11 +285,10 @@ type SpanSnapshot struct {
 	Status sdktrace.Status `json:",omitzero"`
 
 	// reasons for the statuses derived from the span and any causal
-	// continuations (Failed_, Cached_, Pending_ and Canceled_ below)
-	FailedReason_   []string `json:",omitempty"`
-	CachedReason_   []string `json:",omitempty"`
-	PendingReason_  []string `json:",omitempty"`
-	CanceledReason_ []string `json:",omitempty"`
+	// continuations (Failed_, Cached_, Pending_ and Canceled_ below); nil
+	// unless the span was snapshotted (see Span.Snapshot) or arrived as a
+	// snapshot carrying them. Read them with Reasons.
+	*SpanReasons
 
 	// Indicates that this snapshot is in its final state and should be trusted
 	// over any state derived from the local state.
@@ -338,6 +339,10 @@ type SpanSnapshot struct {
 	// Check status (see CheckName)
 	CheckPassed bool `json:",omitempty"`
 
+	// CheckCollectionGroup marks the check that groups a collection's item
+	// checks. It isn't a re-runnable unit itself: its items are.
+	CheckCollectionGroup bool `json:",omitempty"`
+
 	// Set on a span reporting a workspace module that best-effort generate
 	// skipped because it could not be loaded.
 	GenerateSkipped bool `json:",omitempty"`
@@ -370,10 +375,6 @@ type SpanSnapshot struct {
 	// CheckGenerator is the address of the generator a stale staleness check
 	// covers: running it fixes the check. Empty when the generator failed.
 	CheckGenerator string `json:",omitempty"`
-
-	// CheckCollectionGroup marks the check that groups a collection's item
-	// checks. It isn't a re-runnable unit itself: its items are.
-	CheckCollectionGroup bool `json:",omitempty"`
 
 	// Generator name
 	GeneratorName string `json:",omitempty"`
@@ -460,6 +461,31 @@ type SpanSnapshot struct {
 	Progress *SpanProgress `json:",omitempty"`
 
 	ExtraAttributes SpanAttributes `json:",omitempty"`
+}
+
+// SpanReasons are the reasons a snapshot gives for its derived statuses.
+//
+// Only snapshots handed to or received from a remote frontend carry them,
+// so SpanSnapshot embeds a pointer: four slices on every span would cost 96
+// bytes apiece (see BenchmarkSpanFootprint). Its fields marshal inline, as
+// they did when SpanSnapshot held them directly.
+type SpanReasons struct {
+	FailedReason_   []string `json:",omitempty"`
+	CachedReason_   []string `json:",omitempty"`
+	PendingReason_  []string `json:",omitempty"`
+	CanceledReason_ []string `json:",omitempty"`
+}
+
+// noReasons is what Reasons returns for a snapshot without any.
+var noReasons SpanReasons
+
+// Reasons returns the snapshot's status reasons, never nil. The result
+// must not be modified.
+func (snapshot *SpanSnapshot) Reasons() *SpanReasons {
+	if snapshot.SpanReasons == nil {
+		return &noReasons
+	}
+	return snapshot.SpanReasons
 }
 
 type SpanLink struct {
@@ -1032,7 +1058,7 @@ func (span *Span) FailedReason() (bool, []string) {
 		reasons = append(reasons, "span has failed link: "+failed.Name)
 	}
 	if len(reasons) == 0 && span.Final && span.Failed_ {
-		reasons = append(reasons, span.FailedReason_...)
+		reasons = append(reasons, span.Reasons().FailedReason_...)
 	}
 	return len(reasons) > 0, reasons
 }
@@ -1043,7 +1069,7 @@ func (span *Span) IsCanceled() bool {
 
 func (span *Span) CanceledReason() (bool, []string) {
 	if span.Final {
-		return span.Canceled_, span.CanceledReason_
+		return span.Canceled_, span.Reasons().CanceledReason_
 	}
 	var reasons []string
 	if span.LeftRunning {
@@ -1293,7 +1319,7 @@ func (span *Span) CachedReason() (bool, []string) {
 		return true, []string{"span says it is cached"}
 	}
 	if span.Final && span.Cached_ {
-		return true, span.CachedReason_
+		return true, span.Reasons().CachedReason_
 	}
 	return false, []string{"span is not cached"}
 }
