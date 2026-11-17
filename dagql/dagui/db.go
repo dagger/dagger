@@ -165,7 +165,8 @@ type DB struct {
 
 	CreatorSpans map[string]*SpanSet
 
-	// Map of call digest -> metric name -> data points
+	// Map of call digest -> metric name -> data points. Only the latest
+	// point of each metric is kept (see exportDataPoints).
 	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
 	// needs generalization as more metric types get added
 	MetricsByCall map[string]map[string][]metricdata.DataPoint[int64]
@@ -919,7 +920,18 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 			continue
 		}
 
-		metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
+		// Keep only the latest point of each metric: every reader shows the
+		// last one, and a long session exports a point per series every few
+		// seconds, so a history here grows without bound. Exemplars are
+		// dropped too; nothing displays them, and they cost more than the
+		// point itself. (Exporters to Cloud and collectors convert their own
+		// copy of the data, so they keep them.)
+		point.Exemplars = nil
+		if points := metricsByName[metric.Name]; len(points) > 0 {
+			points[len(points)-1] = point
+		} else {
+			metricsByName[metric.Name] = []metricdata.DataPoint[int64]{point}
+		}
 
 		// Aggregate LLM token metrics across all spans/models for the status
 		// line's cost/context display.
