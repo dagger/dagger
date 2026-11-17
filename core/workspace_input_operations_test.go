@@ -103,8 +103,11 @@ func TestWorkspaceInputOperationCapture(t *testing.T) {
 	require.Empty(t, viewFact.Reads)
 
 	for i := 0; i < 2; i++ {
-		var result dagql.Result[dagql.String]
-		require.NoError(t, srv.Select(ctx, ws, &result, dagql.Selector{Field: "moduleSource", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String("mod")}}}))
+		result, err := ws.Select(ctx, srv, dagql.Selector{Field: "moduleSource", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String("mod")}}})
+		require.NoError(t, err)
+		text, ok := dagql.UnwrapAs[dagql.String](result)
+		require.True(t, ok)
+		require.Equal(t, dagql.String("module"), text)
 		fact := workspaceOperationFact(t, ctx, cache, result)
 		require.True(t, fact.Complete)
 		require.Empty(t, fact.Issues)
@@ -124,20 +127,20 @@ func TestWorkspaceInputOperationCapture(t *testing.T) {
 		require.False(t, match, "compound capture must not invent a workspace-wide read")
 	}
 	require.Equal(t, 1, bodies, "exact cache reuse must preserve discarded nested reads")
-	var full dagql.Result[dagql.String]
-	require.NoError(t, srv.Select(ctx, ws, &full, dagql.Selector{Field: "moduleSource", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String("full")}}}))
+	full, err := ws.Select(ctx, srv, dagql.Selector{Field: "moduleSource", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String("full")}}})
+	require.NoError(t, err)
 	fullFact := workspaceOperationFact(t, ctx, cache, full)
 	require.True(t, fullFact.Complete)
 	require.Len(t, fullFact.Reads, 1)
 	require.Equal(t, "/", fullFact.Reads[0].Source.Selectors[0].Path)
 
-	var unknown dagql.Result[dagql.String]
-	require.NoError(t, srv.Select(ctx, ws, &unknown, dagql.Selector{Field: "futureRead"}))
+	unknown, err := ws.Select(ctx, srv, dagql.Selector{Field: "futureRead"})
+	require.NoError(t, err)
 	unknownFact := workspaceOperationFact(t, ctx, cache, unknown)
 	require.False(t, unknownFact.Complete)
 	require.Contains(t, unknownFact.Prepared.Issues, "Workspace.futureRead has unclassified source effects")
-	var config dagql.Result[dagql.String]
-	require.NoError(t, srv.Select(ctx, ws, &config, dagql.Selector{Field: "configRead"}))
+	config, err := ws.Select(ctx, srv, dagql.Selector{Field: "configRead"})
+	require.NoError(t, err)
 	configFact := workspaceOperationFact(t, ctx, cache, config)
 	require.True(t, configFact.Complete)
 	require.NotEmpty(t, configFact.Reads, "direct I/O must remain a source read")
@@ -175,18 +178,27 @@ func TestWorkspaceInputRetainedCapabilities(t *testing.T) {
 		var err error
 		boundaries[i], err = workspaceResultBoundary(ctx, owners[i])
 		require.NoError(t, err)
+		// Structural reuse is selected from equivalent input contents before
+		// the constructor runs. Equating only outputs would not force reuse.
+		owners[i], err = owners[i].WithContentDigest(ctx, digest.FromString("equal Workspace input contents"))
+		require.NoError(t, err)
 	}
 	for _, field := range []string{"__workspaceSDK", "__workspaceModule", "moduleSource"} {
 		t.Run(field, func(t *testing.T) {
 			var firstPayload dagql.Typed
+			var firstID uint64
 			for i, owner := range owners {
 				for repeat := 0; repeat < 2; repeat++ {
 					result, err := owner.Select(ctx, srv, dagql.Selector{Field: field})
 					require.NoError(t, err)
+					id, err := result.ID()
+					require.NoError(t, err)
 					if firstPayload == nil {
 						firstPayload = result.Unwrap()
+						firstID = id.EngineResultID()
 					} else if i == 1 {
 						require.Same(t, firstPayload, result.Unwrap(), "the test must exercise a borrowed equal payload")
+						require.NotEqual(t, firstID, id.EngineResultID(), "each producer retains its own facts")
 					}
 					fact := workspaceOperationFact(t, ctx, cache, result)
 					require.True(t, fact.Complete)
@@ -225,6 +237,17 @@ func TestWorkspaceInputRetainedCapabilities(t *testing.T) {
 		match, err := provenance.AffectedByFile(selectors, "/README.md", nil)
 		require.NoError(t, err)
 		require.True(t, match)
+	})
+
+	t.Run("absent nullable has no capability", func(t *testing.T) {
+		value := dagql.Nullable[*WorkspaceSDK]{}
+		result, err := dagql.NewResultForCall(value, moduleObjectTestSyntheticCall("absent-sdk", value))
+		require.NoError(t, err)
+		collector, err := newWorkspaceInputCollector(ctx)
+		require.NoError(t, err)
+		collector.retainedValue(result)
+		require.Empty(t, collector.result.Sources)
+		require.Empty(t, collector.result.Issues)
 	})
 
 }

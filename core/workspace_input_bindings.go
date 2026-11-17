@@ -76,6 +76,11 @@ func (c *workspaceInputCollector) workspaceValues(value any, path workspaceInput
 			if result == nil || result.Unwrap() == nil {
 				return nil
 			}
+			var present bool
+			result, present = result.DerefValue()
+			if !present || result == nil || result.Unwrap() == nil {
+				return nil
+			}
 			if c.valueVisitor != nil {
 				if err := c.valueVisitor(result); err != nil {
 					return err

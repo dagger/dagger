@@ -458,7 +458,9 @@ func TestWorkspaceInputHostOperations(t *testing.T) {
 		var prepared dagql.ObjectResult[*ModuleObject]
 		require.NoError(t, srv.Select(ctx, srv.Root(), &prepared, dagql.Selector{Field: "prepareLoadedSource"}))
 		before, beforeIssues := body.forWorkspace(boundary)
-		require.Empty(t, beforeIssues)
+		// The nested call imports an external ID, outside this parent's
+		// prepared inputs. Completion checks it before the body snapshot.
+		require.Equal(t, []string{`body input has a source origin not bound to prepared inputs or recorded source operations: ["","","","Workspace","directory"]`}, beforeIssues)
 		require.Empty(t, body.reads, "loading an existing origin does not issue a new Workspace query")
 		beforeMatch, err := provenance.AffectedByFile(before, "/loaded/input.txt", nil)
 		require.NoError(t, err)

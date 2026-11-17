@@ -685,6 +685,11 @@ func (c *workspaceInputCollector) retainedValue(value dagql.AnyResult) {
 	if value == nil || value.Unwrap() == nil {
 		return
 	}
+	var present bool
+	value, present = value.DerefValue()
+	if !present || value == nil || value.Unwrap() == nil {
+		return
+	}
 	if id, err := value.ID(); err == nil && id != nil && id.EngineResultID() != 0 {
 		if c.retained[id.EngineResultID()] {
 			return

@@ -172,9 +172,11 @@ func TestWorkspaceMetadataConstructorsDoNotRead(t *testing.T) {
 					for _, fact := range inspect(t, entry) {
 						require.Empty(t, fact.Retained, "SDK list metadata must not acquire its parent's Workspace capability")
 					}
-					var name dagql.Result[dagql.String]
-					require.NoError(t, srv.Select(ctx, entry, &name, dagql.Selector{Field: "name"}))
-					require.Equal(t, dagql.String(list.name), name.Self())
+					name, err := entry.Select(ctx, srv, dagql.Selector{Field: "name"})
+					require.NoError(t, err)
+					nameValue, ok := dagql.UnwrapAs[dagql.String](name)
+					require.True(t, ok)
+					require.Equal(t, dagql.String(list.name), nameValue)
 					if use != 0 {
 						require.True(t, name.HitCache())
 					}
@@ -194,9 +196,11 @@ func TestWorkspaceMetadataConstructorsDoNotRead(t *testing.T) {
 			require.Equal(t, workspaceID, frame.Receiver.ResultID)
 			inspect(t, module)
 			for _, value := range []dagql.AnyObjectResult{sdk, module} {
-				var name dagql.Result[dagql.String]
-				require.NoError(t, srv.Select(ctx, value, &name, dagql.Selector{Field: "name"}))
-				require.NotEmpty(t, name.Self())
+				name, err := value.Select(ctx, srv, dagql.Selector{Field: "name"})
+				require.NoError(t, err)
+				nameValue, ok := dagql.UnwrapAs[dagql.String](name)
+				require.True(t, ok)
+				require.NotEmpty(t, nameValue)
 				inspect(t, name)
 			}
 		})
