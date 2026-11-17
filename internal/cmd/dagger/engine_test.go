@@ -50,6 +50,13 @@ func TestSessionProxyEnvClearsInheritedExecIdentity(t *testing.T) {
 	require.NotContains(t, env, "DAGGER_SESSION_TOKEN=exec-token")
 }
 
+func TestFrontendCanPrompt(t *testing.T) {
+	t.Parallel()
+	// A nested CLI only serves its own prompts when it can answer them.
+	require.False(t, frontendCanPrompt(idtui.NewReporter(io.Discard)))
+	require.True(t, frontendCanPrompt(idtui.NewPlain(io.Discard)))
+}
+
 type countingLogExporter struct {
 	exports atomic.Int64
 }

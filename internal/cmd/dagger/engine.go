@@ -310,6 +310,16 @@ func (open *openSession) run(ctx context.Context, action string, params client.P
 	return fn(ctx, sess)
 }
 
+// frontendCanPrompt reports whether fe can ask the user anything: not a
+// pretty frontend that only reports (e.g. under an agent, or with
+// DAGGER_PROGRESS=report), which fails every prompt.
+func frontendCanPrompt(fe idtui.Frontend) bool {
+	if live, ok := fe.(interface{ Live() bool }); ok {
+		return live.Live()
+	}
+	return true
+}
+
 // finalizeEngineParams fills in the run-scoped client params that depend on the
 // frontend and telemetry being set up. Must be called inside Frontend.Run,
 // after initEngineTelemetry. Shared by withEngine and withSetupSessions.
@@ -370,7 +380,14 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	params.InteractiveCommand = shellCommandOnErrorParsed
 
 	if hasTTY {
-		params.PromptHandler = Frontend
+		if frontendCanPrompt(Frontend) || os.Getenv(engine.NestedClientIDEnv) == "" {
+			// A CLI in a privileged exec with a prompt handler serves its own
+			// attachables and so owns its container (see client.Connect): it
+			// is then asked, instead of the client that started the exec.
+			// One that only reports could only fail every question, so it
+			// leaves them to that client, as a headless CLI does.
+			params.PromptHandler = Frontend
+		}
 		var err error
 		params.SSHAskpassExecutable, err = os.Executable()
 		if err != nil {
