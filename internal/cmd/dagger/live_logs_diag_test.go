@@ -192,25 +192,23 @@ func TestLiveLogsUnclaimedBounded(t *testing.T) {
 }
 
 // TestLiveLogsReplayFollowed: in runUnplacedReply's scenario, the read
-// claiming the reply returns its first rows again, and the warning names
-// them, and the opened check followed with its descendants, whose query
-// returned them unplaced. The rows carry their row IDs, so the reply still
-// renders them once.
+// claiming the reply returns its first rows again, imported unclaimed under
+// the opened check followed with its descendants. The rows carry their row
+// IDs, so the reply renders them once, and that is no replay to warn about.
 func TestLiveLogsReplayFollowed(t *testing.T) {
 	var lines func() []string
-	reply, check := liveTestSpan(7).String(), liveTestSpan(5).String()
+	var live *liveLogs
 	exported, _ := runUnplacedReply(t, func(l *liveLogs, fe idtui.LiveLogsRunningFrontend) {
 		lines = diagLines(l)
+		live = l
 		l.running = fe.LiveLogsRunning
 	})
 	require.Equal(t, 1, strings.Count(strings.Join(exported, ""), "Hello there"), "the replayed rows were not skipped by row ID: %q", exported)
-	got := lines()
-	require.NotEmpty(t, got, "the scenario no longer replays")
-	for _, line := range got {
-		require.True(t, strings.HasPrefix(line, "live logs: replay span "+reply+" "), "%q", got)
-	}
-	require.Contains(t, got[0], "unclaimedRecords 1 unclaimedRead 0 claimedRecords 1 claimedRead ")
-	require.Regexp(t, `rollUps (\w+,)*`+check+`\b`, got[0])
+	live.mu.Lock()
+	deduped := live.deduped
+	live.mu.Unlock()
+	require.NotZero(t, deduped, "the scenario no longer returns rows again")
+	require.Empty(t, lines(), "rows skipped by their IDs are no replay")
 }
 
 // runUnplacedReply drives an agent conversation through the running headless

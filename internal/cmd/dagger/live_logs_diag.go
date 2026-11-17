@@ -23,7 +23,8 @@ import (
 //     (idtui.LogUnknown) was claimed by another read over the same rows (a
 //     catch-up or finish's read of a pending span, from the store's start;
 //     a reactivated span's gap read, over what was imported since it
-//     retired), which imports its records again: they show twice.
+//     retired), which imports its records again: they show twice. Only rows
+//     without a row ID: the frontend skips the ones it holds by their IDs.
 //   - "live logs: unclaimed replay": likewise, but the other read imported
 //     them unclaimed again, their span still unplaced.
 //   - "live logs: long-lived roll-up": a span followed with its descendants

@@ -901,21 +901,10 @@ const liveLogsReadOn = math.MaxUint64
 // imported after its batch number since (liveLogs.imports): 0 for a read
 // from the store's start, the batch a span retired after for its gap read,
 // liveLogsReadOn for the follow. With diag, it warns about the rows imported
-// unclaimed it imports again (liveLogsReplay).
+// unclaimed it imports again (liveLogsReplay) -- only rows without a row ID:
+// the frontend skips the ones it holds by their IDs (see heldRowsFilter).
 func (l *liveLogs) importRead(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read, start, since uint64) error {
-	var targets []idtui.LogTarget
-	for _, rl := range req.GetResourceLogs() {
-		for _, sl := range rl.GetScopeLogs() {
-			for _, rec := range sl.GetLogRecords() {
-				key := logOwnerOf(rec)
-				var target idtui.LogTarget
-				copy(target.Trace.TraceID[:], rec.GetTraceId())
-				target.Span.SpanID = key.span
-				target.Digest = key.digest
-				targets = append(targets, target)
-			}
-		}
-	}
+	targets := logTargetsOf(req)
 	if len(targets) == 0 {
 		// Most batches of a read scan only rows of other spans, e.g. a
 		// catch-up reading the store from its start: asking the frontend
@@ -961,7 +950,7 @@ func (l *liveLogs) importRead(ctx context.Context, req *collogspb.ExportLogsServ
 				case idtui.LogUnknown:
 					// Its span is not placed yet: import it, but without
 					// claiming the pair this read may not keep selecting.
-					if l.diag != nil && !l.diag.own(key.span) {
+					if l.diag != nil && !l.diag.own(key.span) && logRowOf(rec) <= 0 {
 						if unclaimed == nil {
 							unclaimed = map[logOwner]int{}
 						}
@@ -977,7 +966,7 @@ func (l *liveLogs) importRead(ctx context.Context, req *collogspb.ExportLogsServ
 					return true
 				}
 				claims[key] = claim.generation
-				if remembered {
+				if remembered && logRowOf(rec) <= 0 {
 					l.claimUnclaimedLocked(key, read, since, &replays)
 				}
 				return false
@@ -996,7 +985,35 @@ func (l *liveLogs) importRead(ctx context.Context, req *collogspb.ExportLogsServ
 	if kept == 0 {
 		return nil
 	}
-	ctx = idtui.WithLiveLogsFilter(ctx, func(records []sdklog.Record, placement func(sdklog.Record) idtui.LogPlacement) []sdklog.Record {
+	ctx = idtui.WithLiveLogsFilter(ctx, l.heldRowsFilter(read, claims))
+	return telemetry.ReexportLogsFromPB(ctx, l.export, req)
+}
+
+// logTargetsOf lists what the frontend renders each record of req for, in
+// order.
+func logTargetsOf(req *collogspb.ExportLogsServiceRequest) []idtui.LogTarget {
+	var targets []idtui.LogTarget
+	for _, rl := range req.GetResourceLogs() {
+		for _, sl := range rl.GetScopeLogs() {
+			for _, rec := range sl.GetLogRecords() {
+				key := logOwnerOf(rec)
+				var target idtui.LogTarget
+				copy(target.Trace.TraceID[:], rec.GetTraceId())
+				target.Span.SpanID = key.span
+				target.Digest = key.digest
+				targets = append(targets, target)
+			}
+		}
+	}
+	return targets
+}
+
+// heldRowsFilter is importRead's check of the records read imports, as the
+// frontend applies them: it drops those of pairs the read no longer owns
+// (claims holds the claim generations it imported them under), and skips the
+// rows the frontend holds already (see liveLogs.seen).
+func (l *liveLogs) heldRowsFilter(read uint64, claims map[logOwner]uint64) func([]sdklog.Record, func(sdklog.Record) idtui.LogPlacement) []sdklog.Record {
+	return func(records []sdklog.Record, placement func(sdklog.Record) idtui.LogPlacement) []sdklog.Record {
 		// This runs on the frontend event loop, atomically with append
 		// relative to a sweep and a release. No reader holds mu while
 		// waiting for it.
@@ -1051,8 +1068,18 @@ func (l *liveLogs) importRead(ctx context.Context, req *collogspb.ExportLogsServ
 				"skipped", deduped, "again", replayed, "skippedTotal", l.deduped, "againTotal", l.replayed)
 		}
 		return records
-	})
-	return telemetry.ReexportLogsFromPB(ctx, l.export, req)
+	}
+}
+
+// logRowOf is a record's row ID in the store (telemetryattrs.LogRowAttr); 0
+// when it has none.
+func logRowOf(rec *otlplogsv1.LogRecord) int64 {
+	for _, kv := range rec.GetAttributes() {
+		if kv.GetKey() == telemetryattrs.LogRowAttr {
+			return kv.GetValue().GetIntValue()
+		}
+	}
+	return 0
 }
 
 func logOwnerOf(rec *otlplogsv1.LogRecord) logOwner {
