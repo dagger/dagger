@@ -42,6 +42,16 @@ func (handler *nestedTransportSessionHandler) RegisterNestedClientTransportForEx
 	return transport, nil
 }
 
+func (handler *nestedTransportSessionHandler) RegisterNestedCLITransportForExec(
+	_ context.Context,
+	_ *engine.ClientMetadata,
+	_ string,
+) (*engine.NestedClientTransport, error) {
+	handler.registered.Add(1)
+	transport := engine.NewNestedClientTransport(func() { handler.closed.Add(1) })
+	return transport, nil
+}
+
 func (handler *nestedTransportSessionHandler) ServeHTTPToNestedClient(
 	http.ResponseWriter,
 	*http.Request,
@@ -72,6 +82,17 @@ func (handler *recordingNestedTransportSessionHandler) RegisterNestedClientTrans
 	return handler.nestedTransportSessionHandler.RegisterNestedClientTransportForExec(ctx, metadata, parent, attachables, fromExecHelper)
 }
 
+// ownAttachables records a CLI that owns its attachables as bound to itself.
+const ownAttachables = "(own)"
+
+func (handler *recordingNestedTransportSessionHandler) RegisterNestedCLITransportForExec(
+	ctx context.Context, metadata *engine.ClientMetadata, parent string,
+) (*engine.NestedClientTransport, error) {
+	handler.bindings[metadata.ClientID] = ownAttachables
+	handler.parents[metadata.ClientID] = parent
+	return handler.nestedTransportSessionHandler.RegisterNestedCLITransportForExec(ctx, metadata, parent)
+}
+
 func TestNestedCLIRegistersOwnAttachablesWithoutRebindingSDK(t *testing.T) {
 	t.Parallel()
 	handler := &recordingNestedTransportSessionHandler{bindings: map[string]string{}, parents: map[string]string{}}
@@ -96,7 +117,7 @@ func TestNestedCLIRegistersOwnAttachablesWithoutRebindingSDK(t *testing.T) {
 	}
 
 	cli := request("cli", engine.SessionAttachablesEndpoint)
-	require.Equal(t, "cli", handler.bindings["cli"])
+	require.Equal(t, ownAttachables, handler.bindings["cli"])
 	require.Same(t, cli, request("cli", engine.InitEndpoint))
 	require.Same(t, cli, request("cli", engine.SessionAttachablesEndpoint))
 	require.Equal(t, int32(1), handler.registered.Load(), "another channel must not register another identity")
@@ -106,6 +127,12 @@ func TestNestedCLIRegistersOwnAttachablesWithoutRebindingSDK(t *testing.T) {
 	require.Same(t, sdk, request("sdk", engine.SessionAttachablesEndpoint))
 	require.Equal(t, "bootstrap", handler.bindings["sdk"], "an existing binding cannot switch to CLI-owned attachables")
 	require.Equal(t, int32(2), handler.registered.Load())
+
+	// The exec's session helper serves the bootstrap's own channel: that
+	// does not make the bootstrap a CLI that owns its host.
+	request("bootstrap", engine.SessionAttachablesEndpoint)
+	require.Equal(t, "bootstrap", handler.bindings["bootstrap"])
+	require.Equal(t, int32(3), handler.registered.Load())
 
 	cli.Close()
 	require.Same(t, cli, request("cli", engine.SessionAttachablesEndpoint))

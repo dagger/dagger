@@ -1592,36 +1592,47 @@ func (manager *nestedClientTransportManager) transportForRequest(req *http.Reque
 
 	// A CLI can supply its own local attachables (including interactive
 	// prompts) as its first request. Bind that fresh identity to its own
-	// channel, not the exec bootstrap's. Once registered, the cached transport
-	// above keeps this choice immutable; later requests cannot rebind it.
-	attachablesClientID := manager.baseMetadata.ClientID
-	if req.URL.Path == engine.SessionAttachablesEndpoint {
-		attachablesClientID = clientID
-	}
+	// channel, not the exec bootstrap's: it then owns the host those
+	// attachables serve (see RegisterNestedCLITransportForExec). Once
+	// registered, the cached transport above keeps this choice immutable;
+	// later requests cannot rebind it. The exec's own identity is the
+	// bootstrap, whose channel the exec's session helper serves.
+	ownAttachables := req.URL.Path == engine.SessionAttachablesEndpoint &&
+		clientID != manager.baseMetadata.ClientID
 
 	// The registration can wait for the exec's session helper, which starts
 	// alongside the command, so it runs for the exec rather than this request:
 	// a canceled request stops waiting without failing the registration for
 	// the requests that share it.
-	go manager.register(client, attachablesClientID)
+	go manager.register(client, ownAttachables)
 	return client.await(req.Context())
 }
 
 // register registers client's transport with the session and records the
 // outcome on client.
-func (manager *nestedClientTransportManager) register(client *nestedClientTransport, attachablesClientID string) {
+func (manager *nestedClientTransportManager) register(client *nestedClientTransport, ownAttachables bool) {
 	// Register without holding manager.mu. Close runs from exec cleanup, which
 	// can itself be waited on by the session that serves this registration, so
 	// the server call must never be able to block Close. Concurrent requests
 	// for the same ID wait on the pending entry instead of racing a second
 	// registration.
-	transport, err := manager.sessionHandler.RegisterNestedClientTransportForExec(
-		manager.registrationCtx,
-		client.metadata,
-		manager.parentClientID,
-		attachablesClientID,
-		manager.fromExecHelper,
-	)
+	var transport *engine.NestedClientTransport
+	var err error
+	if ownAttachables {
+		transport, err = manager.sessionHandler.RegisterNestedCLITransportForExec(
+			manager.registrationCtx,
+			client.metadata,
+			manager.parentClientID,
+		)
+	} else {
+		transport, err = manager.sessionHandler.RegisterNestedClientTransportForExec(
+			manager.registrationCtx,
+			client.metadata,
+			manager.parentClientID,
+			manager.baseMetadata.ClientID,
+			manager.fromExecHelper,
+		)
+	}
 
 	manager.mu.Lock()
 	if err != nil {

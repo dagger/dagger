@@ -116,6 +116,7 @@ type Client struct {
 
 type sessionHandler interface {
 	RegisterNestedClientTransportForExec(ctx context.Context, metadata *engine.ClientMetadata, parentClientID, attachablesClientID string, fromExecHelper bool) (*engine.NestedClientTransport, error)
+	RegisterNestedCLITransportForExec(ctx context.Context, metadata *engine.ClientMetadata, parentClientID string) (*engine.NestedClientTransport, error)
 	ExpectNestedExecAttachables(sessionID, attachablesClientID string) (fail func(error), done func(), err error)
 	ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, transport *engine.NestedClientTransport, metadata *engine.ClientMetadata, callerClientID string, inertAttachables bool, moduleContext dagql.AnyObjectResult, functionCall dagql.Typed)
 	ServeHTTPToNewSession(w http.ResponseWriter, r *http.Request)
