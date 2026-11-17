@@ -401,6 +401,13 @@ type clientRecord struct {
 	// Reject their attachable lookups instead of waiting or proxying to an ancestor.
 	inertAttachables bool
 
+	// ownsAttachables says that this nested client registers attachables of
+	// its own and owns the host they serve, as a root client owns its: an
+	// interactive CLI in an exec (see RegisterNestedCLITransportForExec). It
+	// is then a root of ownership for gitPushOwner. Sealed at transport
+	// registration by the engine, never taken from client metadata.
+	ownsAttachables bool
+
 	// children are the nested clients this client serves to its own child
 	// processes, by client ID (see serveChildClient). A closed child stays, so
 	// its ID is never bound again. Once childrenClosed is set, the client has
