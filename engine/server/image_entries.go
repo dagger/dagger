@@ -17,9 +17,13 @@ import (
 // mergeImageEntries merges the entries the engine image ships, from dir: the
 // bundle the image's build exported (schema.EngineImageBundleFile) and the
 // blobs of its parts, which the cache reads from dir when a part is first
-// used. An image without a bundle ships no entries. The start fails when the
-// bundle doesn't merge whole, or a blob it names isn't in the image, so an
-// engine that starts from the image has every entry before any request.
+// used. An image without a bundle ships no entries. An entry keeps the expiry
+// its cache gave it when the image was built, such as the lifetime of the
+// module function that returned it, and the image outlives that: a root that
+// has expired since is left out, with whatever only it needed, and the start
+// goes on. The start fails when the rest of the bundle doesn't merge whole, or
+// a blob it names isn't in the image, so an engine that starts from the image
+// has every unexpired entry before any request.
 func (srv *Server) mergeImageEntries(ctx context.Context, dir string) error {
 	root, err := os.OpenRoot(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -55,13 +59,18 @@ func (srv *Server) mergeImageEntries(ctx context.Context, dir string) error {
 	if len(reply.Stale) > 0 {
 		return fmt.Errorf("merge the engine image's entries: %d held rows are stale", len(reply.Stale))
 	}
+	expired := 0
 	for _, r := range reply.Roots {
-		if r.Expired || !r.Retained {
-			return fmt.Errorf("merge the engine image's entries: root %d did not merge (expired %t, retained %t)", r.Ordinal, r.Expired, r.Retained)
+		if r.Expired {
+			expired++
+			continue
+		}
+		if !r.Retained {
+			return fmt.Errorf("merge the engine image's entries: root %d did not merge (retained false)", r.Ordinal)
 		}
 	}
 	slog.Info("merged the engine image's entries",
-		"roots", len(reply.Roots), "values", len(reply.Values), "blobs", blobs, "blobBytes", size,
+		"roots", len(reply.Roots), "expiredRoots", expired, "values", len(reply.Values), "blobs", blobs, "blobBytes", size,
 		"duration", time.Since(start))
 	return nil
 }
