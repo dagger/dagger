@@ -495,8 +495,12 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 	// one built from the tree: that is the engine a real publish runs on.
 	// This replaces the image's default engine.json, so keep a docker.io
 	// mirror: without it the release engine pulls straight from Docker Hub.
+	// The cache entries the image ships are left out, with an empty directory
+	// in their place: the v1.0.0-beta.26 and v1.0.0-beta.27 engines refuse to
+	// start once one of those entries has expired, and start without them.
 	engineCtr := core.NewContainer().
 		From(env.releaseEngineImage).
+		WithMountedDirectory("/usr/local/share/dagger/entries", core.NewDirectory()).
 		WithNewFile("/etc/dagger/engine.json", `{
   "registries": {
     "docker.io": {

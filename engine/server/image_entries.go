@@ -14,13 +14,29 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-// mergeImageEntries merges the entries the engine image ships, from dir: the
+// mergeImageEntries merges the entries the engine image ships, from dir, so
+// that the first calls after the start find them. The entries only spare the
+// engine work it can do itself, so the start never depends on them: whatever
+// keeps them from merging is logged, and the engine starts without them, or
+// with the part that merged.
+func (srv *Server) mergeImageEntries(ctx context.Context, dir string) {
+	if err := srv.mergeImageBundle(ctx, dir); err != nil {
+		slog.Warn("starting without some or all of the engine image's entries", "error", err)
+	}
+}
+
+// mergeImageBundle merges the entries the engine image ships, from dir: the
 // bundle the image's build exported (schema.EngineImageBundleFile) and the
 // blobs of its parts, which the cache reads from dir when a part is first
-// used. An image without a bundle ships no entries. The start fails when the
-// bundle doesn't merge whole, or a blob it names isn't in the image, so an
-// engine that starts from the image has every entry before any request.
-func (srv *Server) mergeImageEntries(ctx context.Context, dir string) error {
+// used. An image without a bundle ships no entries. An entry keeps the expiry
+// its cache gave it when the image was built, such as the lifetime of the
+// module function that returned it, and the image outlives that: a root that
+// has expired since is left out, with whatever only it needed. It merges
+// nothing when the bundle can't be read or a blob it names isn't in the
+// image, so no entry reads a part the image doesn't hold, and a merge that
+// fails before its commit changes nothing. It returns what kept the bundle,
+// or part of it, from merging.
+func (srv *Server) mergeImageBundle(ctx context.Context, dir string) error {
 	root, err := os.OpenRoot(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -50,18 +66,25 @@ func (srv *Server) mergeImageEntries(ctx context.Context, dir string) error {
 	}
 	reply, err := srv.engineCache.MergeValues(ctx, dagql.ImageCacheID, bundle)
 	if err != nil {
-		return fmt.Errorf("merge the engine image's entries: %w", err)
+		return fmt.Errorf("merge the engine image's entries (committed %t): %w", reply.Committed, err)
 	}
 	if len(reply.Stale) > 0 {
-		return fmt.Errorf("merge the engine image's entries: %d held rows are stale", len(reply.Stale))
+		return fmt.Errorf("merge the engine image's entries: %d held rows are stale, so none merged", len(reply.Stale))
 	}
+	expired, unretained := 0, 0
 	for _, r := range reply.Roots {
-		if r.Expired || !r.Retained {
-			return fmt.Errorf("merge the engine image's entries: root %d did not merge (expired %t, retained %t)", r.Ordinal, r.Expired, r.Retained)
+		switch {
+		case r.Expired:
+			expired++
+		case !r.Retained:
+			unretained++
 		}
 	}
+	if unretained > 0 {
+		return fmt.Errorf("merge the engine image's entries: %d of %d roots merged without the image's retention", unretained, len(reply.Roots))
+	}
 	slog.Info("merged the engine image's entries",
-		"roots", len(reply.Roots), "values", len(reply.Values), "blobs", blobs, "blobBytes", size,
+		"roots", len(reply.Roots), "expiredRoots", expired, "values", len(reply.Values), "blobs", blobs, "blobBytes", size,
 		"duration", time.Since(start))
 	return nil
 }

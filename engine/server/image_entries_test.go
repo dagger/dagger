@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/core/schema"
@@ -45,42 +46,92 @@ func (d testImageDir) WriteBlob(_ context.Context, dgst digest.Digest, r content
 // image's entries, and returns their directory and bundle.
 func imageEntriesDir(t *testing.T) (string, dagql.ValueBundle) {
 	t.Helper()
+	return imageEntriesDirOf(t, "shipped")
+}
+
+// imageEntriesDirOf exports an evaluated file of a source engine for each
+// name as an engine image's entries, and returns their directory and bundle.
+func imageEntriesDirOf(t *testing.T, names ...string) (string, dagql.ValueBundle) {
+	t.Helper()
 	src := newAdapterTestEngine(t)
-	shipped := src.file(t, "shipped")
-	require.NoError(t, src.cache.Evaluate(src.ctx, shipped))
+	var outputs []dagql.SelectedValueOutput
+	for _, name := range names {
+		file := src.file(t, name)
+		require.NoError(t, src.cache.Evaluate(src.ctx, file))
+		outputs = append(outputs, dagql.SelectedValueOutput{Result: file, Address: snapshotPart})
+	}
 	dir := t.TempDir()
-	require.NoError(t, src.cache.ExportImageBundle(src.ctx, []dagql.SelectedValueOutput{{Result: shipped, Address: snapshotPart}}, exportRefConfig, testImageDir{dir}))
+	require.NoError(t, src.cache.ExportImageBundle(src.ctx, outputs, exportRefConfig, testImageDir{dir}))
 	raw, err := os.ReadFile(filepath.Join(dir, schema.EngineImageBundleFile))
 	require.NoError(t, err)
 	var bundle dagql.ValueBundle
 	require.NoError(t, json.Unmarshal(raw, &bundle))
-	require.Len(t, bundle.Roots, 1)
-	require.NotEmpty(t, bundle.Outputs, "the file's part is an output")
+	require.Len(t, bundle.Roots, len(names))
+	require.NotEmpty(t, bundle.Outputs, "the files' parts are outputs")
 	return dir, bundle
 }
 
-// An engine merges its image's entries at start. An image without entries
-// starts as before; one whose bundle names a blob the image doesn't hold
-// fails the start.
+// expireImageRoot gives the image's root for the file name an expiry that has
+// passed, on the root and on its value, as an image's build writes the expiry
+// a module function's result got (a function's default lifetime is a week),
+// and rewrites the image's bundle.
+func expireImageRoot(t *testing.T, dir string, bundle dagql.ValueBundle, name string) {
+	t.Helper()
+	past := time.Now().Add(-time.Hour).Unix()
+	var ordinal dagql.TransferOrdinal
+	for i, value := range bundle.Values {
+		if value.Record.Call != nil && value.Record.Call.Field == name {
+			ordinal = value.Ordinal
+			bundle.Values[i].ExpiresAtUnix = past
+		}
+	}
+	require.NotZero(t, ordinal, "the bundle holds %s", name)
+	expired := false
+	for i, root := range bundle.Roots {
+		if root.Ordinal == ordinal {
+			bundle.Roots[i].ExpiresAtUnix = past
+			expired = true
+		}
+	}
+	require.True(t, expired, "%s is a root of the bundle", name)
+	require.NoError(t, testImageDir{dir}.WriteBundle(t.Context(), bundle))
+}
+
+// An engine merges its image's entries at start, and the start never depends
+// on them. An image without entries starts as before; an entry that has
+// expired since the image was built is left out; a bundle that names a blob
+// the image doesn't hold is left out whole.
 func TestMergeImageEntries(t *testing.T) {
 	t.Run("merges", func(t *testing.T) {
 		dir, _ := imageEntriesDir(t)
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
-		require.NoError(t, srv.mergeImageEntries(e.ctx, dir))
+		srv.mergeImageEntries(e.ctx, dir)
+		require.True(t, e.cache.FromImage(e.file(t, "shipped")))
 	})
 	t.Run("no image entries", func(t *testing.T) {
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
-		require.NoError(t, srv.mergeImageEntries(e.ctx, filepath.Join(t.TempDir(), "absent")))
-		require.NoError(t, srv.mergeImageEntries(e.ctx, t.TempDir()))
+		require.NoError(t, srv.mergeImageBundle(e.ctx, filepath.Join(t.TempDir(), "absent")))
+		require.NoError(t, srv.mergeImageBundle(e.ctx, t.TempDir()))
 	})
-	t.Run("a missing blob fails the start", func(t *testing.T) {
+	t.Run("an expired entry is left out", func(t *testing.T) {
+		dir, bundle := imageEntriesDirOf(t, "shipped", "lapsed")
+		expireImageRoot(t, dir, bundle, "lapsed")
+		e := newAdapterTestEngine(t)
+		srv := &Server{engineCache: e.cache}
+		require.NoError(t, srv.mergeImageBundle(e.ctx, dir))
+		require.True(t, e.cache.FromImage(e.file(t, "shipped")), "the unexpired entry merged")
+		require.False(t, e.cache.FromImage(e.file(t, "lapsed")), "the expired entry was left out")
+	})
+	t.Run("a missing blob leaves the entries out", func(t *testing.T) {
 		dir, _ := imageEntriesDir(t)
 		require.NoError(t, os.RemoveAll(filepath.Join(dir, "blobs")))
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
-		require.ErrorContains(t, srv.mergeImageEntries(e.ctx, dir), "engine image entries: blob")
+		require.ErrorContains(t, srv.mergeImageBundle(e.ctx, dir), "engine image entries: blob")
+		srv.mergeImageEntries(e.ctx, dir)
+		require.False(t, e.cache.FromImage(e.file(t, "shipped")), "nothing merged")
 	})
 }
 
