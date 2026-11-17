@@ -96,7 +96,7 @@ func EntrypointModuleTypes(
 		},
 	)
 	if err != nil {
-		return inst, dangshared.ConvertError(err)
+		return inst, convertError(err)
 	}
 	if err := entrypoint.ValidateConstructors(typeDefs); err != nil {
 		return inst, err
@@ -129,7 +129,7 @@ func (r *entrypointRuntime) Call(
 ) (rerr error) {
 	defer func() {
 		if rerr != nil {
-			rerr = dangshared.ConvertError(rerr)
+			rerr = convertError(rerr)
 		}
 	}()
 
@@ -216,7 +216,7 @@ func (r *entrypointRuntime) Call(
 			}
 			result, err := callEntrypointMethod(ctx, env, entrypointName, "call", moduleContext, callArgs)
 			if err != nil {
-				return nil, fmt.Errorf("call module entrypoint: %w", err)
+				return nil, fmt.Errorf("call module entrypoint: %w", returnRaisedError(ctx, fnCall, err))
 			}
 			resultJSON, err = entrypointJSONResult(result)
 			return nil, err
@@ -294,7 +294,7 @@ func evalEntrypointMember(
 ) (declared bool, rerr error) {
 	defer func() {
 		if rerr != nil {
-			rerr = dangshared.ConvertError(rerr)
+			rerr = convertError(rerr)
 		}
 	}()
 	if !mod.Self().Source.Valid {

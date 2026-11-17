@@ -110,7 +110,7 @@ func (r *runtime) Call(
 ) (rerr error) {
 	defer func() {
 		if rerr != nil {
-			rerr = dangshared.ConvertError(rerr)
+			rerr = convertError(rerr)
 		}
 	}()
 
