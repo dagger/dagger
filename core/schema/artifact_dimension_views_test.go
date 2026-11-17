@@ -20,7 +20,7 @@ func TestArtifactDimensionViews(t *testing.T) {
 		version string
 		all     bool
 	}{
-		{"v1.0.0-beta.25", false}, {"v1.0.0-beta.26", false}, {"v1.0.0-beta.27", false},
+		{"v1.0.0-beta.25", false}, {"v1.0.0-beta.26", false}, {"v1.0.0-beta.27", false}, {"v1.0.0-beta.28", false},
 		{artifactDimensionViewVersion, true}, {"v1.0.0", true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
@@ -44,7 +44,7 @@ func TestArtifactDimensionViews(t *testing.T) {
 }
 
 func TestArtifactDimensionMetadataByView(t *testing.T) {
-	for _, version := range []string{"v1.0.0-beta.25", "v1.0.0-beta.26", "v1.0.0-beta.27", artifactDimensionViewVersion} {
+	for _, version := range []string{"v1.0.0-beta.25", "v1.0.0-beta.26", "v1.0.0-beta.27", "v1.0.0-beta.28", artifactDimensionViewVersion} {
 		t.Run(version, func(t *testing.T) {
 			ctx, srv := newNestingTestServer(t, call.View(engine.APIViewVersion(version)))
 			row := &core.Artifact{ModuleName: "app", Path: []string{"app", "build"}, TypeName: "Check",
@@ -219,6 +219,7 @@ func TestArtifactSchemaIncludesByView(t *testing.T) {
 		{call.View(engine.APIViewVersion("v1.0.0-beta.25")), false},
 		{call.View(engine.APIViewVersion("v1.0.0-beta.26")), false},
 		{call.View(engine.APIViewVersion("v1.0.0-beta.27")), false},
+		{call.View(engine.APIViewVersion("v1.0.0-beta.28")), false},
 		{call.View(artifactDimensionViewVersion), true},
 	} {
 		t.Run(string(tc.view), func(t *testing.T) {

@@ -825,7 +825,7 @@ check.skip = ["deferred/load"]
 }
 
 func (CollectionsSuite) TestArtifactsLegacyView(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t, dagger.WithVersionOverride("v1.0.0-beta.27"))
+	c := connect(ctx, t, dagger.WithVersionOverride("v1.0.0-beta.28"))
 	ws, err := goGitBase(t, c).
 		WithDirectory("/work", collectionSource(c)).
 		WithWorkdir("/work").
