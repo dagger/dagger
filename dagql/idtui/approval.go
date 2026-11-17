@@ -1035,14 +1035,14 @@ func (fe *frontendPretty) approvalLines(a *pendingApproval, focused bool, width 
 		agent = req.GetRequester().GetAgentName()
 	}
 	if !focused {
-		add("  " + faint(joinNonEmpty(" · ", agent, approvalModule(req), fe.approvalUnfocusedHint(a))))
+		add("  " + faint(joinNonEmpty(agent, approvalModule(req), fe.approvalUnfocusedHint(a))))
 		return lines
 	}
 	who := approvalRequester(req, false)
 	if full := approvalRequester(req, true); width <= 0 || ansi.StringWidth(full)+2 <= width {
 		who = full
 	}
-	if who = joinNonEmpty(" · ", agent, who); who != "" {
+	if who = joinNonEmpty(agent, who); who != "" {
 		add("  " + faint(who))
 	}
 	if subject := req.GetSubject(); subject != "" && !strings.Contains(question, subject) {
@@ -1099,15 +1099,16 @@ func approvalRequester(req *prompt.ApprovalRequest, withRef bool) string {
 	if ref := r.GetModuleRef(); withRef && ref != "" && ref != mod {
 		mod += " (" + ref + ")"
 	}
-	return joinNonEmpty(" · ", mod, r.GetFunction())
+	return joinNonEmpty(mod, r.GetFunction())
 }
 
-func joinNonEmpty(sep string, parts ...string) string {
+// joinNonEmpty joins the non-empty parts with a middle dot.
+func joinNonEmpty(parts ...string) string {
 	var kept []string
 	for _, p := range parts {
 		if p != "" {
 			kept = append(kept, p)
 		}
 	}
-	return strings.Join(kept, sep)
+	return strings.Join(kept, " · ")
 }
