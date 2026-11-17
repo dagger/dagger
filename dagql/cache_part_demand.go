@@ -58,15 +58,29 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	// the read lock.
 	c.egraphMu.RLock()
 	settled, uses := c.partAcquisitionSettledLocked(row)
+	imported := row.imported
 	c.egraphMu.RUnlock()
 	if settled {
 		return uses
 	}
+	// A value merged from another engine with its recipe, and no address for
+	// any part, runs that recipe as a restored value does (decodeArmsRecipe),
+	// unless another result is recorded as equivalent to it: part acquisition
+	// then takes its contents from that result when it holds them, before any
+	// recipe runs. Its identity is derived outside egraphMu, as the part
+	// source scan derives it.
+	var lookup partLookup
+	if imported && !row.lazyComplete() {
+		if l, err := c.partLookupFor(row); err == nil {
+			lookup = l
+		}
+	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	shell := transferShellLocked(res, row)
+	equivalent := !shell && lookup.frame != nil && !row.hasPartOffersLocked() && c.hasEquivalentLocked(row, lookup)
 	gate := row.partGate.gate.Load()
-	if !shell && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() && gate == nil {
+	if !shell && !equivalent && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() && gate == nil {
 		return false
 	}
 	if gate == nil {
@@ -77,7 +91,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if gate.managed {
 		return true
 	}
-	if !shell && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() {
+	if !shell && !equivalent && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() {
 		return false
 	}
 	for _, group := range gate.groups {
@@ -89,6 +103,25 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	row.partGate.active.Store(true)
 	gate.revision++
 	return true
+}
+
+// hasEquivalentLocked reports whether a result other than row is recorded as
+// equivalent to it, by the routes the part source scan follows
+// (collectPartCandidatesLocked). Requires egraphMu for writing.
+func (c *Cache) hasEquivalentLocked(row *sharedResult, lookup partLookup) bool {
+	for _, candidate := range c.collectPartCandidatesWithAdmissionLocked(row, lookup, func(*sharedResult) bool { return true }) {
+		if candidate.row != row {
+			return true
+		}
+	}
+	return false
+}
+
+// lazyComplete reports whether everything res deferred is settled.
+func (res *sharedResult) lazyComplete() bool {
+	res.lazyMu.Lock()
+	defer res.lazyMu.Unlock()
+	return res.lazyEvalComplete
 }
 
 // partAcquisitionSettledLocked answers usesPartAcquisition without writing
