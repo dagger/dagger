@@ -863,11 +863,13 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 type tuiConsole struct {
 	*expect.Console
 	expectLineTimeout time.Duration
-	output            *bytes.Buffer
+	// output is everything read from the terminal so far. Guarded: a test
+	// reads it while a background ExpectEOF may still be writing to it.
+	output *safeBuffer
 }
 
 func newTUIConsole(t *testctx.T, expectLineTimeout time.Duration) (*tuiConsole, error) {
-	output := bytes.NewBuffer(nil)
+	output := &safeBuffer{}
 	console, err := expect.NewConsole(
 		expect.WithStdout(io.MultiWriter(testutil.NewTWriter(t), output)),
 		expect.WithDefaultTimeout(expectLineTimeout),
