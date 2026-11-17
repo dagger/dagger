@@ -246,10 +246,11 @@ func TestNestedClientServesLocalPromptsBeforeInit(t *testing.T) {
 			server.Config.Protocols.SetUnencryptedHTTP2(true)
 			server.Start()
 			defer server.Close()
-			t.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(server.Listener.Addr().(*net.TCPAddr).Port))
+			port := strconv.Itoa(server.Listener.Addr().(*net.TCPAddr).Port)
+			t.Setenv("DAGGER_SESSION_PORT", port)
 			t.Setenv("DAGGER_SESSION_TOKEN", "nested-token")
 			t.Setenv(engine.NestedClientIDEnv, "bootstrap")
-			t.Setenv(engine.NestedClientAttachablesEnv, "1")
+			t.Setenv(engine.NestedClientAttachablesEnv, port)
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			c, err := Connect(ctx, Params{ID: "interactive-cli", PromptHandler: handler})
@@ -275,14 +276,18 @@ func TestNestedClientServesLocalPromptsBeforeInit(t *testing.T) {
 }
 
 func TestNestedClientPreservesBootstrapWithoutLocalPrompt(t *testing.T) {
+	const execPort = "(the exec's port)"
 	for _, test := range []struct {
 		name        string
 		execID      string
 		attachables string
 		handler     prompt.PromptHandler
 	}{
-		{name: "headless exec", execID: "bootstrap", attachables: "1"},
-		{name: "dagger run", attachables: "1", handler: &nestedPromptHandler{}},
+		{name: "headless exec", execID: "bootstrap", attachables: execPort},
+		{name: "dagger run", attachables: execPort, handler: &nestedPromptHandler{}},
+		// A proxy started in the exec (`dagger session`, `dagger listen`)
+		// serves its own port, and binds its children to its own channel.
+		{name: "session proxy", execID: "bootstrap", attachables: "1", handler: &nestedPromptHandler{}},
 		// An engine predating client-owned attachables would not bind them.
 		{name: "older engine", execID: "bootstrap", handler: &nestedPromptHandler{}},
 	} {
@@ -300,9 +305,14 @@ func TestNestedClientPreservesBootstrapWithoutLocalPrompt(t *testing.T) {
 			server.Config.Protocols.SetUnencryptedHTTP2(true)
 			server.Start()
 			defer server.Close()
-			t.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(server.Listener.Addr().(*net.TCPAddr).Port))
+			port := strconv.Itoa(server.Listener.Addr().(*net.TCPAddr).Port)
+			t.Setenv("DAGGER_SESSION_PORT", port)
 			t.Setenv(engine.NestedClientIDEnv, test.execID)
-			t.Setenv(engine.NestedClientAttachablesEnv, test.attachables)
+			attachables := test.attachables
+			if attachables == execPort {
+				attachables = port
+			}
+			t.Setenv(engine.NestedClientAttachablesEnv, attachables)
 			c, err := Connect(t.Context(), Params{PromptHandler: test.handler})
 			require.NoError(t, err)
 			require.Nil(t, c.sessionSrv)
