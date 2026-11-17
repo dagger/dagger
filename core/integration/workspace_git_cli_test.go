@@ -2,10 +2,12 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -15,6 +17,50 @@ import (
 // attachable together. No LLM or Cloud credentials are needed.
 func (WorkspaceSuite) TestNestedCLISnapshotApproval(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
+	out, err := nestedCLISnapshotApproval(ctx, t, c).
+		WithExec([]string{"python3", "/drive-console.py"}, core.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `"contents": "approved"`)
+	require.Contains(t, out, `"contents": "created"`)
+}
+
+// A CLI that serves its own attachables in a container a module runs owns
+// its host: the module above it does not take its prompts. The session's own
+// client cannot prompt at all, so the checkpoint only completes when the
+// nested CLI is asked.
+func (WorkspaceSuite) TestNestedCLISnapshotApprovalUnderModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr, err := nestedCLISnapshotApproval(ctx, t, c).ID(ctx)
+	require.NoError(t, err)
+	mod := core.NewQuery(c).Directory().
+		WithNewFile("dagger.json", `{"name":"runner","engineVersion":"latest","sdk":{"source":"dang"}}`).
+		WithNewFile("main.dang", `
+type Runner {
+  pub run(ctr: Container!): String! {
+    ctr.withExec(["python3", "/drive-console.py"], experimentalPrivilegedNesting: true).stdout
+  }
+}
+`)
+	require.NoError(t, mod.AsModule().Serve(ctx))
+	var res struct {
+		Runner struct {
+			Run string
+		}
+	}
+	err = c.Do(ctx, &dagger.Request{
+		Query:     `query($ctr: ID!) { runner { run(ctr: $ctr) } }`,
+		Variables: map[string]any{"ctr": ctr},
+	}, &dagger.Response{Data: &res})
+	require.NoError(t, err)
+	require.Contains(t, res.Runner.Run, `"contents": "approved"`)
+	require.Contains(t, res.Runner.Run, `"contents": "created"`)
+}
+
+// nestedCLISnapshotApproval is a container whose /drive-console.py runs a
+// nested interactive CLI taking a workspace snapshot, approves its untracked
+// files on the CLI's own console, and prints the query's result.
+func nestedCLISnapshotApproval(ctx context.Context, t *testctx.T, c *dagger.Client) *core.Container {
 	changes, err := core.NewQuery(c).Directory().WithNewFile("created.txt", "created").Changes(core.NewQuery(c).Directory()).ID(ctx)
 	require.NoError(t, err)
 	query := fmt.Sprintf(`{ currentWorkspace { snapshot {
@@ -26,7 +72,7 @@ func (WorkspaceSuite) TestNestedCLISnapshotApproval(ctx context.Context, t *test
 			}
 		}
 	} } }`, changes)
-	out, err := core.NewQuery(c).Container().From(alpineImage).
+	return core.NewQuery(c).Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "python3"}).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/repo").
@@ -66,11 +112,21 @@ with open("/stdout", "w+") as stdout, open("/stderr", "w+") as stderr:
             time.sleep(0.1)
         else:
             raise AssertionError("nested CLI never displayed approval")
+        def key(keys):
+            request = urllib.request.Request(url + "/key", data=keys, method="POST")
+            with urllib.request.urlopen(request, timeout=5) as response:
+                assert response.status == 200
+                return response.read().decode()
+        # The inline ask shows its question once answering it (a).
+        screen = key(b"a")
+        while "untracked.txt" not in screen and time.monotonic() < deadline:
+            time.sleep(0.1)
+            with urllib.request.urlopen(url + "/screen", timeout=5) as response:
+                screen = response.read().decode()
         assert "untracked.txt" in screen, screen
-        # Cancel is the safe default; explicitly select Include.
-        request = urllib.request.Request(url + "/key", data=b"up up enter", method="POST")
-        with urllib.request.urlopen(request, timeout=5) as response:
-            assert response.status == 200
+        # Cancel is the safe default; explicitly select Include, the first
+        # choice.
+        key(b"1")
         # The primary span ends during console cleanup, after SIGINT. Wait
         # for the query's result in its live logs instead of its span status.
         with urllib.request.urlopen(url + "/spans?q=api%20query", timeout=2) as response:
@@ -106,10 +162,8 @@ with open("/stdout", "w+") as stdout, open("/stderr", "w+") as stderr:
             print(stderr.read())
             print(screen)
 `).
-		WithExec([]string{"python3", "/drive-console.py"}, core.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, `"contents": "approved"`)
-	require.Contains(t, out, `"contents": "created"`)
+		// Never reuse an earlier run's result: the console must answer.
+		WithEnvVariable("NONCE", rand.Text())
 }
 
 func (WorkspaceSuite) TestGitCLI(ctx context.Context, t *testctx.T) {
