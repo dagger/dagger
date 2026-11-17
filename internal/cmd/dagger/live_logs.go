@@ -1,0 +1,1364 @@
+package daggercmd
+
+import (
+	"container/list"
+	"context"
+	"errors"
+	"log/slog"
+	"maps"
+	"math"
+	"os"
+	"os/signal"
+	"slices"
+	"sync"
+	"time"
+
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/trace"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
+
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/archive"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/internal/tracesource"
+)
+
+// liveLogsFinishTimeout bounds the exit's wait for the session's telemetry
+// and its read of the final logs, together, so a stuck engine never holds
+// up the command's exit for long. The primary output's read has its own
+// budget (liveLogsPrimaryTimeout).
+const liveLogsFinishTimeout = 10 * time.Second
+
+const (
+	// liveLogsPollInterval is how often a follow asks the frontend about
+	// its spans' activity (idtui.LiveLogsFrontend.LiveLogsActivity).
+	liveLogsPollInterval = time.Second
+	// liveLogsRetireGrace is how long a span stays followed once it went
+	// idle: its last rows may be stored a little after it ends.
+	liveLogsRetireGrace = 3 * time.Second
+)
+
+// liveLogs reads a live session's display text on demand, for the spans
+// its frontend renders (idtui.LiveLogsFrontend). Requested spans accumulate
+// into one set, read with one query at a time:
+//
+//   - Following (the TUI), one follow query reads the whole set from a
+//     cursor. A span joining the set is caught up with a one-shot read up to
+//     that cursor, then the grown set is read from it to the store's end,
+//     and followed from there, so every row is read once, and the cursor
+//     advances however often spans join.
+//   - Otherwise (the report), nothing is read until finish.
+//
+// Requests only accumulate -- an agent session's conversation is a
+// scrollback, whose every message keeps its logs -- but a span whose work
+// is over needs no following: once the frontend has reported it idle for
+// liveLogsRetireGrace, a follow restart reads it to the store's end one
+// last time and retires it from the set, keeping what was read. Otherwise
+// a long session's set outgrows what one query may select
+// (archive.MaxLogQuerySpans), and its logs stop; spans join a full set
+// only as others retire. A retired span can get rows again (an effect, a
+// service it installed restarting): it is watched, and once active again
+// -- or once work it includes ran since, however briefly -- read from
+// where it retired, like a catch-up, and followed again.
+//
+// finish, at exit, catches everything up to the store's end. Records are
+// imported under their own span IDs: the frontend routes them and copies
+// them into roll-ups itself, from the full span tree it has in a live run.
+//
+// A query may return rows outside its selection (rows of spans the engine
+// has not placed yet), and the spans of a catch-up may overlap the ones
+// followed, so each (span, digest) pair -- the unit a query selects rows by
+// -- is owned by the read that first imported it: a catch-up imports
+// nothing of a pair it does not own, which the follow already did.
+//
+// A row of a span the frontend has not placed yet (idtui.LogUnknown) is
+// imported without claiming its pair, so the read that later claims it
+// imports all of it -- including that row, again. Records carry their row
+// IDs in the store (telemetryattrs.LogRowAttr), so the rows of each
+// unclaimed pair the frontend holds are remembered (seen), and a read that
+// returns one again skips it. A record without an ID can't be told apart:
+// it is imported, as a duplicate rather than a loss. So is a row the
+// frontend would render elsewhere now than it did -- its span since placed
+// under a roll-up or received as a tool call, where only importing it again
+// shows it -- or that it held back (a digest's row, its creator not
+// received), as it does not tell where the held-back copy went since.
+//
+// When the frontend lets go of spans (release), they leave the set -- or,
+// retired, stop being watched -- and the pairs routing to the spans whose
+// display text it dropped are forgotten, so their next request reads them
+// again from the start.
+type liveLogs struct {
+	reader  tracesource.LogReader
+	traceID string
+	export  sdklog.Exporter
+	follow  bool
+	// coverage, when set, classifies records by the frontend's requests
+	// (idtui.LiveLogsFrontend.LiveLogsCoverage): a read imports only what
+	// the frontend asked for, and claims only pairs it knows it did.
+	coverage func([]idtui.LogTarget) []idtui.LogRoute
+	// activity, when set, tells which spans may still get rows
+	// (idtui.LiveLogsFrontend.LiveLogsActivity): a follow retires the
+	// others.
+	activity func([]dagui.SpanID) []idtui.LogActivity
+	// now, pollEvery and grace pace retirement: activity is asked about the
+	// set every pollEvery, and a span idle for grace is retired.
+	now              func() time.Time
+	pollEvery, grace time.Duration
+	// maxSpans bounds the set, as the engine bounds a query
+	// (archive.MaxLogQuerySpans): pending spans join only while it has room.
+	maxSpans int
+	// frontend is the frontend reading, which finishLiveLogs finishes.
+	frontend idtui.LiveLogsFrontend
+	// diag, when set, warns about replays and long-lived roll-ups
+	// (live_logs_diag.go); running, when set, tells what keeps a span
+	// active (idtui.LiveLogsRunningFrontend).
+	diag    *liveLogsDiag
+	running func([]dagui.SpanID) []idtui.LogRunning
+
+	mu sync.Mutex
+	// spans are followed (or, without following, read at finish);
+	// pending joined since and are not caught up yet.
+	spans, pending map[string]archive.LogSpan
+	// catching are the spans of the catch-up in flight.
+	catching map[string]archive.LogSpan
+	// idleSince is when a followed span was first seen idle; through, the
+	// LogActivity.Through it was last seen with.
+	idleSince, through map[string]time.Time
+	// retired spans are no longer followed, each read up to its cursor;
+	// reactivated ones were retired, then seen active again, and are read
+	// from that cursor to the follow's before they are followed again.
+	retired, reactivated map[string]retiredLogSpan
+	// reactivating is the reactivated span whose gap read is in flight;
+	// release clears it, so the read does not put the span back.
+	reactivating string
+	// cursor is where the follow of spans stands; "" before it read
+	// anything, when a newcomer needs no catch-up.
+	cursor string
+	// owned maps a (span, digest) pair to the read that imported it first:
+	// 0 for a follow (or finish's read), a catch-up's number otherwise. A
+	// retiring span's pairs nothing followed selects pass to its gap read.
+	owned    map[logOwner]logClaim
+	catchUps uint64
+	// gen counts releases (release); released maps each span the frontend
+	// dropped since the current read began to the release that dropped it:
+	// the read imports nothing more for it.
+	gen      uint64
+	released map[dagui.SpanID]uint64
+	// With diag: unclaimed remembers the pairs imported unclaimed, up to
+	// liveLogsUnclaimedMax of them, oldest first in unclaimedOrder; rollUps,
+	// the spans followed with their descendants. imports numbers the
+	// batches imported.
+	unclaimed      map[logOwner]liveLogsUnclaimed
+	unclaimedOrder []logOwner
+	rollUps        map[string]liveLogsRollUp
+	imports        uint64
+	// seen are the row IDs of each pair imported unclaimed that the
+	// frontend holds, recorded as it applies them (see importLogs), and
+	// seenOrder the pairs, oldest first. Their IDs number seenRows, at most
+	// seenMax: past it the oldest pairs are forgotten.
+	seen      map[logOwner]*liveLogRows
+	seenOrder *list.List
+	seenRows  int
+	seenMax   int
+	// deduped counts the records skipped as rows the frontend holds;
+	// replayed, those it held but imported again, as it would render them
+	// elsewhere now (liveLogRows.places).
+	deduped, replayed uint64
+	finished          bool
+	wake              chan struct{}
+
+	stop func()
+}
+
+type logOwner struct {
+	span   [8]byte
+	digest string
+}
+
+// logClaim is the read that owns a pair, and the span the frontend routes
+// its records to.
+type logClaim struct {
+	read   uint64
+	target dagui.SpanID
+	// generation identifies the lifetime of the retained text, independently
+	// of the read that owns it. Retirement transfers ownership without
+	// changing it; a drop and reclaim always gets a newer generation.
+	generation uint64
+}
+
+// retiredLogSpan is a span the follow no longer reads, the cursor it was
+// read up to, and the LogActivity.Through it retired with.
+type retiredLogSpan struct {
+	span    archive.LogSpan
+	cursor  string
+	through time.Time
+	// read numbers its gap read, should it reactivate (see liveLogs.owned).
+	read uint64
+	// imported is liveLogs.imports when it retired: its gap read reads again
+	// what the follow imported since.
+	imported uint64
+}
+
+// liveLogsSeenMax bounds the rows liveLogs.seen holds, 1.5 MiB of them. A
+// pair stays there only until a read claims it, once the frontend places its
+// span, so it holds a handful at a time.
+const liveLogsSeenMax = 1 << 16
+
+// liveLogRows are the rows of a pair imported unclaimed that the frontend
+// holds (liveLogs.seen).
+type liveLogRows struct {
+	// ids are the rows' IDs, ascending, and places where the frontend
+	// rendered each.
+	ids    []int64
+	places []idtui.LogPlacement
+	elem   *list.Element
+}
+
+// noteRowLocked records that the frontend holds row id of the pair key,
+// imported unclaimed, applied at place(). When it held the row already, it
+// reports so, and whether to skip it (see shownAt). The caller holds l.mu.
+func (l *liveLogs) noteRowLocked(key logOwner, id int64, place func() idtui.LogPlacement) (held, skip bool) {
+	rows := l.seen[key]
+	if rows == nil {
+		rows = &liveLogRows{}
+		rows.elem = l.seenOrder.PushBack(key)
+		l.seen[key] = rows
+	}
+	// IDs come ascending but for the rows a read skipped and another
+	// returns later.
+	i, found := len(rows.ids), false
+	if i > 0 && id <= rows.ids[i-1] {
+		i, found = slices.BinarySearch(rows.ids, id)
+	}
+	now := place()
+	if found {
+		if skip = shownAt(rows.places[i], now); !skip {
+			// Imported again: shown where it would be now.
+			rows.places[i] = now
+		}
+		return true, skip
+	}
+	rows.ids = slices.Insert(rows.ids, i, id)
+	rows.places = slices.Insert(rows.places, i, now)
+	l.seenRows++
+	for l.seenRows > l.seenMax {
+		// Forgetting a pair costs a duplicate row should a read return
+		// it again; never a lost one.
+		oldest := l.seenOrder.Front().Value.(logOwner)
+		slog.Debug("live logs: forgetting the row IDs of an unclaimed pair past the cap",
+			"span", trace.SpanID(oldest.span).String(), "digest", oldest.digest, "rows", len(l.seen[oldest].ids))
+		l.forgetRowsLocked(oldest)
+	}
+	return false, false
+}
+
+// shownAt reports whether a row the frontend rendered at then shows
+// wherever it would render now: in the same span's logs, and the same
+// roll-up's -- or, held back then and now (its digest's creator unknown),
+// wherever the copy held back goes. A row held back then and placed now
+// went wherever the frontend resolved it, a service's exec span or the
+// creator, which it does not tell: it is not known to show now. Skipping a
+// row that is not shown would leave where it goes now without it; importing
+// it again repeats it where it was, a duplicate rather than a loss.
+func shownAt(then, now idtui.LogPlacement) bool {
+	return then == now
+}
+
+// takeRowLocked forgets row id of the pair key, imported unclaimed, if the
+// frontend holds it: the read returning it now owns the pair, and returns it
+// only once. It reports whether it held it, and whether to skip it, applied
+// at place() (see shownAt). The caller holds l.mu.
+func (l *liveLogs) takeRowLocked(key logOwner, id int64, place func() idtui.LogPlacement) (held, skip bool) {
+	rows := l.seen[key]
+	if rows == nil {
+		return false, false
+	}
+	i, found := slices.BinarySearch(rows.ids, id)
+	if !found {
+		return false, false
+	}
+	skip = shownAt(rows.places[i], place())
+	rows.ids = slices.Delete(rows.ids, i, i+1)
+	rows.places = slices.Delete(rows.places, i, i+1)
+	l.seenRows--
+	if len(rows.ids) == 0 {
+		l.forgetRowsLocked(key)
+	}
+	return true, skip
+}
+
+// forgetDroppedRowsLocked forgets the rows of the pairs the frontend
+// rendered in a span it dropped (or in its roll-up), or held back -- those
+// may have gone with any span. The caller holds l.mu.
+func (l *liveLogs) forgetDroppedRowsLocked(dropped map[dagui.SpanID]bool) {
+	for key, rows := range l.seen {
+		for _, p := range rows.places {
+			if !p.Span.IsValid() || dropped[p.Span] || dropped[p.RollUp] {
+				l.forgetRowsLocked(key)
+				break
+			}
+		}
+	}
+}
+
+// forgetRowsLocked forgets the rows of pair key. The caller holds l.mu.
+func (l *liveLogs) forgetRowsLocked(key logOwner) {
+	rows := l.seen[key]
+	if rows == nil {
+		return
+	}
+	l.seenOrder.Remove(rows.elem)
+	l.seenRows -= len(rows.ids)
+	delete(l.seen, key)
+}
+
+func newLiveLogs(reader tracesource.LogReader, traceID string, export sdklog.Exporter, follow bool) *liveLogs {
+	return &liveLogs{
+		reader:      reader,
+		traceID:     traceID,
+		export:      export,
+		follow:      follow,
+		now:         time.Now,
+		pollEvery:   liveLogsPollInterval,
+		grace:       liveLogsRetireGrace,
+		maxSpans:    archive.MaxLogQuerySpans,
+		spans:       map[string]archive.LogSpan{},
+		pending:     map[string]archive.LogSpan{},
+		idleSince:   map[string]time.Time{},
+		through:     map[string]time.Time{},
+		retired:     map[string]retiredLogSpan{},
+		reactivated: map[string]retiredLogSpan{},
+		owned:       map[logOwner]logClaim{},
+		released:    map[dagui.SpanID]uint64{},
+		unclaimed:   map[logOwner]liveLogsUnclaimed{},
+		rollUps:     map[string]liveLogsRollUp{},
+		seen:        map[logOwner]*liveLogRows{},
+		seenOrder:   list.New(),
+		seenMax:     liveLogsSeenMax,
+		wake:        make(chan struct{}, 1),
+		stop:        func() {},
+	}
+}
+
+// startLiveLogs switches fe to reading the session's display text on
+// demand, when the session negotiated log presence, and returns the reader;
+// nil otherwise.
+func startLiveLogs(ctx context.Context, fe idtui.Frontend, client tracesource.LiveLogClient, presence bool, traceID dagui.TraceID) *liveLogs {
+	lf, ok := fe.(idtui.LiveLogsFrontend)
+	if !ok || !presence || !traceID.IsValid() {
+		return nil
+	}
+	_, follow := lf.LiveLogs()
+	l := newLiveLogs(tracesource.Live{Client: client}, traceID.String(), nil, follow)
+	l.frontend = lf
+	l.coverage = lf.LiveLogsCoverage
+	l.activity = lf.LiveLogsActivity
+	l.diag = startLiveLogsDiag(ctx)
+	if rf, ok := lf.(idtui.LiveLogsRunningFrontend); ok {
+		l.running = rf.LiveLogsRunning
+	}
+	l.export = lf.SetLiveLogs(traceID, l.subscribe)
+	if cf, ok := fe.(idtui.LogCacheFrontend); ok {
+		cf.SetLogRelease(traceID, l.release)
+		if searcher, ok := client.(liveLogSearcher); ok {
+			cf.SetLogSearch(traceID, logSearchFunc(searcher.SearchLogs))
+		}
+	}
+	if follow {
+		ctx, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			l.run(ctx)
+		}()
+		l.stop = func() { cancel(); <-done }
+	}
+	return l
+}
+
+// subscribe adds a span to the set. It runs on the frontend's event loop,
+// so it never blocks.
+func (l *liveLogs) subscribe(req idtui.LogRequest) {
+	span := archive.LogSpan{SpanID: req.Span.String(), Descendants: req.Descendants, Digests: req.Digests}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.finished {
+		return
+	}
+	if _, ok := l.spans[span.SpanID]; ok {
+		return
+	}
+	if _, ok := l.pending[span.SpanID]; ok {
+		return
+	}
+	// A retired span keeps what it read: the frontend's request is not new.
+	if _, ok := l.retired[span.SpanID]; ok {
+		return
+	}
+	if _, ok := l.reactivated[span.SpanID]; ok {
+		return
+	}
+	if l.reactivating == span.SpanID {
+		return
+	}
+	l.pending[span.SpanID] = span
+	l.notify()
+}
+
+// notify wakes run, without blocking.
+func (l *liveLogs) notify() {
+	select {
+	case l.wake <- struct{}{}:
+	default:
+	}
+}
+
+// release lets go of what the frontend dropped (idtui.LogRelease): the
+// spans it no longer requests leave the set, ending the follow so it
+// resumes without them, and the pairs routing to the spans it dropped are
+// forgotten, so a later request imports them again from the start. Like
+// subscribe, it runs on the frontend's event loop: it only takes l.mu,
+// which nothing holds while it waits on the frontend.
+//
+// A released span is let go of whether it is followed, retired or
+// reactivated: it is no longer watched for activity -- the gap read in
+// flight for it, if any, puts nothing back -- and a later request for it
+// is a new one, caught up from the start rather than resumed from where it
+// retired. Which of its pairs that catch-up imports again is up to Dropped,
+// as for a followed span: the pairs routing to a dropped span are forgotten
+// whichever read owns them, a retired span's gap read included; the others
+// stay claimed, their text still held by the frontend.
+func (l *liveLogs) release(r idtui.LogRelease) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.finished {
+		return
+	}
+	l.gen++
+	dropped := make(map[dagui.SpanID]bool, len(r.Dropped))
+	for _, id := range r.Dropped {
+		dropped[id] = true
+		l.released[id] = l.gen
+	}
+	for key, claim := range l.owned {
+		if dropped[claim.target] {
+			delete(l.owned, key)
+		}
+	}
+	if len(l.unclaimed) > 0 && len(dropped) > 0 {
+		// Their records are dropped: importing them again is no replay. A
+		// digest's may route to its creator, unknown when they were
+		// imported: rather than warn falsely, forget them all.
+		l.forgetUnclaimedLocked(func(key logOwner) bool {
+			return key.digest != "" || dropped[dagui.SpanID{SpanID: key.span}]
+		})
+	}
+	// So are the rows of an unclaimed pair it held, which the next read
+	// imports again.
+	if len(dropped) > 0 {
+		l.forgetDroppedRowsLocked(dropped)
+	}
+	var left bool
+	for _, id := range r.Spans {
+		hex := id.String()
+		if _, ok := l.spans[hex]; ok {
+			delete(l.spans, hex)
+			left = true
+		}
+		delete(l.pending, hex)
+		delete(l.catching, hex)
+		delete(l.idleSince, hex)
+		delete(l.through, hex)
+		delete(l.retired, hex)
+		delete(l.reactivated, hex)
+		if l.reactivating == hex {
+			l.reactivating = ""
+		}
+	}
+	if left {
+		l.notify()
+	}
+}
+
+// beginRead starts a read: no other read is in flight, so the spans
+// released before it no longer matter. It returns the release generation
+// the read starts at.
+func (l *liveLogs) beginRead() uint64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	clear(l.released)
+	return l.gen
+}
+
+// run follows the set until ctx ends, or the session's telemetry drains.
+func (l *liveLogs) run(ctx context.Context) {
+	if l.activity != nil {
+		pollCtx, cancel := context.WithCancel(ctx)
+		var wg sync.WaitGroup
+		wg.Go(func() { l.poll(pollCtx) })
+		defer wg.Wait()
+		defer cancel()
+	}
+	for ctx.Err() == nil {
+		// Whatever woke us is taken by the reads below; a span joining
+		// after them wakes us again.
+		select {
+		case <-l.wake:
+		default:
+		}
+		// Reactivated spans have work running: they join first.
+		if err := l.reactivate(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			slog.Warn("error reading reactivated live logs", "err", err)
+			l.pause(ctx)
+			continue
+		}
+		if err := l.catchUp(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			slog.Warn("error catching up live logs", "err", err)
+			l.pause(ctx)
+			continue
+		}
+		l.mu.Lock()
+		spans := slices.Collect(maps.Values(l.spans))
+		cursor := l.cursor
+		l.mu.Unlock()
+		if len(spans) == 0 {
+			select {
+			case <-ctx.Done():
+			case <-l.wake:
+			}
+			continue
+		}
+		// Read the set up to the store's end before following it. A span
+		// joining ends the follow below, and a catch-up reads the store from
+		// its start: when spans join faster than that -- a long session,
+		// parallel tool calls -- the follow is ended again before it reads
+		// anything, and without this read its cursor would never move,
+		// leaving everything stored since unread for every span.
+		readStart := l.now()
+		if err := l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed(l.beginRead())); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			slog.Warn("error reading live logs", "err", err)
+			l.pause(ctx)
+			continue
+		}
+		// Every row stored before readStart is read now: the spans idle
+		// since long enough before it get no more.
+		l.retire(readStart)
+		l.mu.Lock()
+		spans = slices.Collect(maps.Values(l.spans))
+		cursor = l.cursor
+		joining := (len(l.pending) > 0 || len(l.reactivated) > 0) && len(l.spans) < l.maxSpans
+		l.mu.Unlock()
+		if joining || len(spans) == 0 {
+			// Spans joined meanwhile, and there is room for them: catch
+			// them up first. Or every span retired or was released: wait
+			// for one to join.
+			continue
+		}
+		// A span joining the set ends this follow, to catch it up and
+		// follow the grown set; so does one to retire, or to reactivate,
+		// or one the frontend released, to follow the set without it.
+		followCtx, cancel := context.WithCancel(ctx)
+		woken := make(chan struct{})
+		go func() {
+			select {
+			case <-l.wake:
+				close(woken)
+				cancel()
+			case <-followCtx.Done():
+			}
+		}()
+		err := l.reader.ReadLogs(followCtx, l.traceID, tracesource.LogQuery{Spans: spans, Follow: true, Cursor: cursor}, l.importFollowed(l.beginRead()))
+		cancel()
+		select {
+		case <-woken:
+			continue
+		default:
+		}
+		switch {
+		case ctx.Err() != nil:
+			return
+		case err == nil:
+			// The session's telemetry drained: there is nothing more to
+			// follow, and finish reads what joins after.
+			return
+		default:
+			slog.Warn("error following live logs", "err", err)
+			l.pause(ctx)
+		}
+	}
+}
+
+func (l *liveLogs) pause(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+	}
+}
+
+// poll asks the frontend which spans are active, every pollEvery, until ctx
+// ends.
+func (l *liveLogs) poll(ctx context.Context) {
+	ticker := time.NewTicker(l.pollEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		l.pollActive()
+		l.reportLongRollUps()
+	}
+}
+
+// pollActive asks the frontend about the followed spans and the retired
+// ones. A followed span idle for grace wakes run to retire it; a retired one
+// active again, or whose work ran since it retired, wakes it to follow it
+// again.
+func (l *liveLogs) pollActive() {
+	l.mu.Lock()
+	ids := make([]string, 0, len(l.spans)+len(l.retired))
+	for id := range l.spans {
+		ids = append(ids, id)
+	}
+	for id := range l.retired {
+		ids = append(ids, id)
+	}
+	l.mu.Unlock()
+	if len(ids) == 0 {
+		return
+	}
+	spanIDs := make([]dagui.SpanID, len(ids))
+	for i, id := range ids {
+		// A span ID that does not parse is invalid, which the frontend
+		// does not know, so it stays active.
+		spanIDs[i].SpanID, _ = trace.SpanIDFromHex(id)
+	}
+	activity := l.activity(spanIDs)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	var wake bool
+	// Past what activity returns, the frontend quit: nothing tells.
+	for i, id := range ids[:min(len(ids), len(activity))] {
+		act := activity[i]
+		if _, ok := l.spans[id]; ok {
+			prev, seen := l.through[id]
+			l.through[id] = act.Through
+			if act.Active || (seen && act.Through.After(prev)) {
+				// Work its logs include runs, or ran since: its rows may
+				// still be stored.
+				delete(l.idleSince, id)
+				continue
+			}
+			since, ok := l.idleSince[id]
+			if !ok {
+				since = now
+				l.idleSince[id] = since
+			}
+			if !now.Before(since.Add(l.grace)) {
+				wake = true
+			}
+		} else if r, ok := l.retired[id]; ok && (act.Active || act.Through.After(r.through)) {
+			delete(l.retired, id)
+			r.through = act.Through
+			l.reactivated[id] = r
+			wake = true
+		}
+	}
+	if wake {
+		l.notify()
+	}
+}
+
+// retire takes out of the set the spans idle for grace by readStart, when a
+// read of the set from the cursor to the store's end started: every row
+// stored before then is read, and none comes after.
+//
+// The pairs a retiring span selects by its own ID or its digests, and no
+// followed span does, pass to its gap read: work it includes may store more
+// rows of them later -- a service it installed restarting writes its stdio
+// under the installing span's ID again -- which only that read imports.
+func (l *liveLogs) retire(readStart time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	retiring := map[[8]byte]uint64{}
+	retiringDigests := map[string]uint64{}
+	for id, since := range l.idleSince {
+		span, ok := l.spans[id]
+		if !ok {
+			delete(l.idleSince, id)
+			continue
+		}
+		if since.Add(l.grace).After(readStart) {
+			continue
+		}
+		l.catchUps++
+		r := retiredLogSpan{span: span, cursor: l.cursor, through: l.through[id], read: l.catchUps, imported: l.imports}
+		l.retired[id] = r
+		delete(l.idleSince, id)
+		delete(l.through, id)
+		delete(l.spans, id)
+		if sid, err := trace.SpanIDFromHex(id); err == nil {
+			retiring[sid] = r.read
+		}
+		for _, d := range span.Digests {
+			retiringDigests[d] = r.read
+		}
+	}
+	if len(retiring) == 0 {
+		return
+	}
+	followed := map[[8]byte]bool{}
+	followedDigests := map[string]bool{}
+	for id, span := range l.spans {
+		if sid, err := trace.SpanIDFromHex(id); err == nil {
+			followed[sid] = true
+		}
+		for _, d := range span.Digests {
+			followedDigests[d] = true
+		}
+	}
+	for key, claim := range l.owned {
+		if followed[key.span] || (key.digest != "" && followedDigests[key.digest]) {
+			continue
+		}
+		// The installing span is the one a service's restart reactivates:
+		// its exec span links it. The claim keeps its target, which a
+		// release that drops it forgets it by.
+		if read, ok := retiring[key.span]; ok {
+			claim.read = read
+			l.owned[key] = claim
+		} else if read, ok := retiringDigests[key.digest]; ok && key.digest != "" {
+			claim.read = read
+			l.owned[key] = claim
+		}
+	}
+}
+
+// reactivate reads the reactivated spans, while the set has room for them,
+// from where they retired up to the follow's cursor, then moves them back
+// into the set. Like a catch-up, a gap read imports only the pairs it owns:
+// the ones its span passed to it on retiring, and the work started since
+// that no other read imported -- the follow read what the spans it
+// followed meanwhile select. A read that fails resumes from the last batch
+// it imported the next time.
+func (l *liveLogs) reactivate(ctx context.Context) error {
+	var errs error
+	for {
+		l.mu.Lock()
+		if len(l.spans) >= l.maxSpans {
+			l.mu.Unlock()
+			return errs
+		}
+		var id string
+		var r retiredLogSpan
+		for id, r = range l.reactivated {
+			break
+		}
+		if id == "" {
+			l.mu.Unlock()
+			return errs
+		}
+		delete(l.reactivated, id)
+		l.reactivating = id
+		cursor := l.cursor
+		l.mu.Unlock()
+		var err error
+		if r.cursor != cursor {
+			start := l.beginRead()
+			err = l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{
+				Spans:   []archive.LogSpan{r.span},
+				Cursor:  r.cursor,
+				Through: cursor,
+			}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, next string) error {
+				if err := l.importRead(ctx, req, r.read, start, r.imported); err != nil {
+					return err
+				}
+				r.cursor = next
+				return nil
+			})
+		}
+		l.mu.Lock()
+		switch {
+		case l.reactivating != id:
+			// Released meanwhile (release): let it go. Rows of a span it
+			// dropped meanwhile were left out.
+			err = nil
+		case err != nil:
+			l.reactivated[id] = r
+		default:
+			l.spans[id] = r.span
+			l.through[id] = r.through
+		}
+		l.reactivating = ""
+		l.mu.Unlock()
+		if err != nil {
+			return errors.Join(errs, err)
+		}
+	}
+}
+
+// catchUp reads the pending spans' rows up to the follow's cursor, then
+// moves them into the set, as many as it has room for. Without a cursor
+// there is nothing to catch up: the next read starts from the beginning.
+func (l *liveLogs) catchUp(ctx context.Context) error {
+	l.mu.Lock()
+	batch := map[string]archive.LogSpan{}
+	for id, span := range l.pending {
+		if len(l.spans)+len(batch) >= l.maxSpans {
+			break
+		}
+		batch[id] = span
+		delete(l.pending, id)
+	}
+	l.catching = maps.Clone(batch)
+	cursor := l.cursor
+	l.catchUps++
+	read := l.catchUps
+	l.mu.Unlock()
+	if len(batch) == 0 {
+		return nil
+	}
+	start := l.beginRead()
+	var imported bool
+	var err error
+	if cursor != "" {
+		err = l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{
+			Spans:   slices.Collect(maps.Values(batch)),
+			Through: cursor,
+		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
+			imported = true
+			return l.importFromStart(ctx, req, read, start)
+		})
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	// What the frontend released meanwhile is left out.
+	batch, l.catching = l.catching, nil
+	if err != nil && !imported {
+		// Nothing landed: try these again.
+		for id, span := range batch {
+			if _, ok := l.pending[id]; !ok {
+				l.pending[id] = span
+			}
+		}
+		return err
+	}
+	// A partial catch-up is not retried, which would import its rows
+	// twice; the follow carries on from the cursor.
+	maps.Copy(l.spans, batch)
+	return err
+}
+
+// importFollowed returns the import of the set's own read, which started at
+// release generation start: each batch carries the cursor to resume after
+// it.
+func (l *liveLogs) importFollowed(start uint64) func(context.Context, *collogspb.ExportLogsServiceRequest, string) error {
+	return func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, cursor string) error {
+		if err := l.importLogs(ctx, req, 0, start); err != nil {
+			return err
+		}
+		l.mu.Lock()
+		l.cursor = cursor
+		l.mu.Unlock()
+		return nil
+	}
+}
+
+// importLogs exports the records of req that read owns (see liveLogs), of
+// those the frontend routes to what it requested, leaving out the spans it
+// dropped since the read started (at release generation start). It is the
+// follow's import, which reads on from its cursor; importFromStart and
+// importRead import reads that may read again what the follow imported.
+func (l *liveLogs) importLogs(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read, start uint64) error {
+	return l.importRead(ctx, req, read, start, liveLogsReadOn)
+}
+
+// importFromStart is importLogs for a read from the store's start: a
+// catch-up.
+func (l *liveLogs) importFromStart(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read, start uint64) error {
+	return l.importRead(ctx, req, read, start, 0)
+}
+
+// liveLogsReadOn is the since of a read that imports nothing again.
+const liveLogsReadOn = math.MaxUint64
+
+// importRead is importLogs for a read that imports again what the follow
+// imported after its batch number since (liveLogs.imports): 0 for a read
+// from the store's start, the batch a span retired after for its gap read,
+// liveLogsReadOn for the follow. With diag, it warns about the rows imported
+// unclaimed it imports again (liveLogsReplay) -- only rows without a row ID:
+// the frontend skips the ones it holds by their IDs (see heldRowsFilter).
+func (l *liveLogs) importRead(ctx context.Context, req *collogspb.ExportLogsServiceRequest, read, start, since uint64) error {
+	targets := logTargetsOf(req)
+	if len(targets) == 0 {
+		// Most batches of a read scan only rows of other spans, e.g. a
+		// catch-up reading the store from its start: asking the frontend
+		// about them, and exporting nothing, would cost its event loop a
+		// round trip each.
+		return nil
+	}
+	var routes []idtui.LogRoute
+	if l.coverage != nil {
+		routes = l.coverage(targets)
+	}
+	// Keep only this batch's claim lifetimes. The read may end, clearing
+	// released, before the frontend applies its queued export.
+	claims := make(map[logOwner]uint64)
+	// With diag, the records of each pair imported unclaimed, and the
+	// replays (liveLogsReplay): claims of remembered pairs are looked up
+	// only while some pair is.
+	var unclaimed map[logOwner]int
+	var replays map[logOwner]*liveLogsReplay
+	l.mu.Lock()
+	l.imports++
+	remembered := l.diag != nil && len(l.unclaimed) > 0
+	i, kept := 0, 0
+	for _, rl := range req.GetResourceLogs() {
+		for _, sl := range rl.GetScopeLogs() {
+			sl.LogRecords = slices.DeleteFunc(sl.LogRecords, func(rec *otlplogsv1.LogRecord) bool {
+				key := logOwnerOf(rec)
+				route := idtui.LogRoute{Coverage: idtui.LogCovered, Span: dagui.SpanID{SpanID: key.span}}
+				if i < len(routes) {
+					route = routes[i]
+				}
+				i++
+				if route.Span.IsValid() && l.released[route.Span] > start {
+					// Dropped while this read was in flight: a later
+					// request reads it again.
+					return true
+				}
+				switch route.Coverage {
+				case idtui.LogUncovered:
+					// Not asked for: the read of a span that asks for it
+					// later imports it then.
+					return true
+				case idtui.LogUnknown:
+					// Its span is not placed yet: import it, but without
+					// claiming the pair this read may not keep selecting.
+					if l.diag != nil && !l.diag.own(key.span) && logRowOf(rec) <= 0 {
+						if unclaimed == nil {
+							unclaimed = map[logOwner]int{}
+						}
+						unclaimed[key]++
+					}
+					return false
+				}
+				claim, ok := l.owned[key]
+				if !ok {
+					claim = logClaim{read: read, target: route.Span, generation: l.gen}
+					l.owned[key] = claim
+				} else if claim.read != read && read != 0 {
+					return true
+				}
+				claims[key] = claim.generation
+				if remembered && logRowOf(rec) <= 0 {
+					l.claimUnclaimedLocked(key, read, since, &replays)
+				}
+				return false
+			})
+			kept += len(sl.LogRecords)
+		}
+	}
+	l.rememberUnclaimedLocked(read, since, unclaimed, &replays)
+	var rollUps string
+	var rollUpCount int
+	if len(replays) > 0 {
+		rollUps, rollUpCount = l.rollUpsLocked()
+	}
+	l.mu.Unlock()
+	l.reportReplays(read, replays, rollUps, rollUpCount)
+	if kept == 0 {
+		return nil
+	}
+	ctx = idtui.WithLiveLogsFilter(ctx, l.heldRowsFilter(read, claims))
+	return telemetry.ReexportLogsFromPB(ctx, l.export, req)
+}
+
+// logTargetsOf lists what the frontend renders each record of req for, in
+// order.
+func logTargetsOf(req *collogspb.ExportLogsServiceRequest) []idtui.LogTarget {
+	var targets []idtui.LogTarget
+	for _, rl := range req.GetResourceLogs() {
+		for _, sl := range rl.GetScopeLogs() {
+			for _, rec := range sl.GetLogRecords() {
+				key := logOwnerOf(rec)
+				var target idtui.LogTarget
+				copy(target.Trace.TraceID[:], rec.GetTraceId())
+				target.Span.SpanID = key.span
+				target.Digest = key.digest
+				targets = append(targets, target)
+			}
+		}
+	}
+	return targets
+}
+
+// heldRowsFilter is importRead's check of the records read imports, as the
+// frontend applies them: it drops those of pairs the read no longer owns
+// (claims holds the claim generations it imported them under), and skips the
+// rows the frontend holds already (see liveLogs.seen).
+func (l *liveLogs) heldRowsFilter(read uint64, claims map[logOwner]uint64) func([]sdklog.Record, func(sdklog.Record) idtui.LogPlacement) []sdklog.Record {
+	return func(records []sdklog.Record, placement func(sdklog.Record) idtui.LogPlacement) []sdklog.Record {
+		// This runs on the frontend event loop, atomically with append
+		// relative to a sweep and a release. No reader holds mu while
+		// waiting for it.
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		var deduped, replayed int
+		records = slices.DeleteFunc(records, func(rec sdklog.Record) bool {
+			key, row := logOwnerOfRecord(rec)
+			generation, claimed := claims[key]
+			if !claimed {
+				// Unknown routes were imported without claiming their
+				// pair: the frontend holds the row unless it did already.
+				if row <= 0 {
+					return false
+				}
+				held, skip := l.noteRowLocked(key, row, func() idtui.LogPlacement { return placement(rec) })
+				switch {
+				case skip:
+					deduped++
+				case held:
+					replayed++
+				}
+				return skip
+			}
+			claim, owned := l.owned[key]
+			if !owned || claim.generation != generation {
+				return true
+			}
+			if row > 0 && l.seen[key] != nil {
+				// Imported unclaimed before this read claimed the pair?
+				held, skip := l.takeRowLocked(key, row, func() idtui.LogPlacement { return placement(rec) })
+				switch {
+				case skip:
+					deduped++
+					return true
+				case held:
+					replayed++
+				}
+			}
+			if read == 0 && claim.read == 0 {
+				// The follow owns the pair: no other read returns its
+				// rows. (A catch-up claiming it may still be returning
+				// the ones held.)
+				l.forgetRowsLocked(key)
+			}
+			return false
+		})
+		if deduped > 0 || replayed > 0 {
+			l.deduped += uint64(deduped)
+			l.replayed += uint64(replayed)
+			slog.Debug("live logs: rows imported already", "read", read,
+				"skipped", deduped, "again", replayed, "skippedTotal", l.deduped, "againTotal", l.replayed)
+		}
+		return records
+	}
+}
+
+// logRowOf is a record's row ID in the store (telemetryattrs.LogRowAttr); 0
+// when it has none.
+func logRowOf(rec *otlplogsv1.LogRecord) int64 {
+	for _, kv := range rec.GetAttributes() {
+		if kv.GetKey() == telemetryattrs.LogRowAttr {
+			return kv.GetValue().GetIntValue()
+		}
+	}
+	return 0
+}
+
+func logOwnerOf(rec *otlplogsv1.LogRecord) logOwner {
+	var key logOwner
+	copy(key.span[:], rec.GetSpanId())
+	for _, kv := range rec.GetAttributes() {
+		if kv.GetKey() == telemetry.DagDigestAttr {
+			key.digest = kv.GetValue().GetStringValue()
+			break
+		}
+	}
+	return key
+}
+
+// logOwnerOfRecord is logOwnerOf for an imported record, along with its row
+// ID (telemetryattrs.LogRowAttr); 0 when it has none.
+func logOwnerOfRecord(rec sdklog.Record) (logOwner, int64) {
+	key := logOwner{span: rec.SpanID()}
+	var row int64
+	var digest, hasRow bool
+	rec.WalkAttributes(func(kv log.KeyValue) bool {
+		switch kv.Key {
+		case telemetry.DagDigestAttr:
+			if !digest {
+				key.digest, digest = kv.Value.AsString(), true
+			}
+		case telemetryattrs.LogRowAttr:
+			if !hasRow && kv.Value.Kind() == log.KindInt64 {
+				row, hasRow = kv.Value.AsInt64(), true
+			}
+		}
+		return !digest || !hasRow
+	})
+	return key, row
+}
+
+// finish stops following and reads everything followed up to the store's
+// end: rows the follow had not reached yet, the spans the frontend
+// requested for its final render (idtui.LiveLogsFrontend.RequestFinalLogs),
+// and retired spans seen active again. Retired spans were read to the end
+// of their work already. What the set has no room for is read on its own,
+// like catch-ups. Nothing is read after it.
+func (l *liveLogs) finish(ctx context.Context) error {
+	l.stop()
+	l.mu.Lock()
+	if l.finished {
+		l.mu.Unlock()
+		return nil
+	}
+	l.mu.Unlock()
+	if l.activity != nil {
+		// Work that ran since the last poll may have rows for retired
+		// spans.
+		l.pollActive()
+	}
+	err := l.reactivate(ctx)
+	err = errors.Join(err, l.catchUp(ctx))
+	l.mu.Lock()
+	l.finished = true
+	spans := slices.Collect(maps.Values(l.spans))
+	cursor := l.cursor
+	reactivated := slices.Collect(maps.Values(l.reactivated))
+	pending := slices.Collect(maps.Values(l.pending))
+	l.mu.Unlock()
+	if len(spans) > 0 {
+		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: spans, Cursor: cursor}, l.importFollowed(l.beginRead())))
+	}
+	for _, r := range reactivated {
+		start := l.beginRead()
+		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{
+			Spans:  []archive.LogSpan{r.span},
+			Cursor: r.cursor,
+		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
+			return l.importRead(ctx, req, r.read, start, r.imported)
+		}))
+	}
+	for chunk := range slices.Chunk(pending, l.maxSpans) {
+		l.mu.Lock()
+		l.catchUps++
+		read := l.catchUps
+		l.mu.Unlock()
+		start := l.beginRead()
+		err = errors.Join(err, l.reader.ReadLogs(ctx, l.traceID, tracesource.LogQuery{Spans: chunk},
+			func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
+				return l.importFromStart(ctx, req, read, start)
+			}))
+	}
+	return err
+}
+
+// liveLogSearcher is an engine client's search of its own live store.
+type liveLogSearcher interface {
+	SearchLogs(context.Context, archive.LogSearch) (archive.LogSearchResult, error)
+}
+
+// logSearchPages bounds the pages of matches a frontend's search reads.
+const logSearchPages = 10
+
+// logSearchFunc is a frontend's search of a source's display text
+// (idtui.LogCacheFrontend.SetLogSearch): a case-insensitive substring, as
+// the frontend matches what it holds. It reads up to logSearchPages pages of
+// matches, and says when the store had more.
+func logSearchFunc(search func(context.Context, archive.LogSearch) (archive.LogSearchResult, error)) idtui.LogSearchFunc {
+	return func(ctx context.Context, pattern string) (idtui.LogSearchHits, error) {
+		var hits idtui.LogSearchHits
+		seen := map[idtui.LogTarget]bool{}
+		query := archive.LogSearch{Pattern: pattern, IgnoreCase: true, Limit: archive.MaxLogSearchLimit}
+		for page := 0; ; page++ {
+			result, err := search(ctx, query)
+			if err != nil {
+				return hits, err
+			}
+			for _, match := range result.Matches {
+				traceID, err1 := trace.TraceIDFromHex(match.TraceID)
+				spanID, err2 := trace.SpanIDFromHex(match.SpanID)
+				if err1 != nil || err2 != nil {
+					continue
+				}
+				target := idtui.LogTarget{
+					Trace:  dagui.TraceID{TraceID: traceID},
+					Span:   dagui.SpanID{SpanID: spanID},
+					Digest: match.Digest,
+				}
+				if !seen[target] {
+					seen[target] = true
+					hits.Targets = append(hits.Targets, target)
+				}
+			}
+			if !result.More {
+				return hits, nil
+			}
+			if page+1 >= logSearchPages || result.Next <= query.After {
+				hits.Partial = true
+				return hits, nil
+			}
+			query.After = result.Next
+		}
+	}
+}
+
+// liveLogsWanted reports whether to ask the engine for log presence: the
+// frontend reads display text on demand, and nothing else in this process
+// receives the session's logs -- exporters configured in the environment
+// need every body pushed. (A Cloud the engine does not publish to itself
+// needs them too; the client settles that with the engine.)
+func liveLogsWanted(ctx context.Context) bool {
+	lf, ok := Frontend.(idtui.LiveLogsFrontend)
+	if !ok || frontendTelemetryDisabled(ctx) || cliLocalTelemetry == nil {
+		return false
+	}
+	if onDemand, _ := lf.LiveLogs(); !onDemand {
+		return false
+	}
+	// The frontend's processor is the only one left once local telemetry's
+	// is taken out.
+	return len(withoutIndex(telemetry.LogProcessors, cliLocalTelemetry.logs)) == 1
+}
+
+// liveLogsPrimaryTimeout bounds the primary output's read at exit. It is
+// generous: the output is the command's result, usually small, and a slow
+// remote engine must not cut it short. liveLogsPrimaryAttempts bounds the
+// retries of a failed read.
+const (
+	liveLogsPrimaryTimeout  = time.Minute
+	liveLogsPrimaryAttempts = 3
+)
+
+// liveLogsRetryDelay is the pause before retrying the primary output's read.
+var liveLogsRetryDelay = 500 * time.Millisecond
+
+// flushableSpanForwarder is a telemetry.SpanForwarder that flushes its
+// processors, so client.TelemetryBarrier can see what the session delivered
+// through them, not just into them.
+type flushableSpanForwarder struct {
+	telemetry.SpanForwarder
+}
+
+func (f flushableSpanForwarder) ForceFlush(ctx context.Context) error {
+	var errs error
+	for _, p := range f.Processors {
+		errs = errors.Join(errs, p.ForceFlush(ctx))
+	}
+	return errs
+}
+
+// exitInterrupts returns a context canceled by an interrupt (SIGINT); it is
+// a variable for tests.
+var exitInterrupts = func(ctx context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(ctx, os.Interrupt)
+}
+
+// exitContext is the context of the reads at exit. What ended the command
+// does not cancel it -- an interrupt that canceled the run must not cost its
+// report -- but an interrupt during the reads does: ctx ending from then
+// on (the TUI's Ctrl-C), or another SIGINT.
+func exitContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	exitCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	stopAfter := func() bool { return false }
+	if ctx.Err() == nil {
+		stopAfter = context.AfterFunc(ctx, func() { cancel(context.Cause(ctx)) })
+	}
+	sigCtx, stopSignals := exitInterrupts(exitCtx)
+	return sigCtx, func() {
+		stopSignals()
+		stopAfter()
+		cancel(nil)
+	}
+}
+
+// finishLiveLogs reads what the final render shows: the logs the frontend
+// requests for it, and the primary output. It must run before the session
+// closes, which ends its store's reads. An interrupt stops it promptly, and
+// the final render shows what was read by then (see exitContext).
+func finishLiveLogs(ctx context.Context, sess engineTelemetrySession, live *liveLogs) {
+	lf := live.frontend
+	if lf == nil {
+		return
+	}
+	ctx, stop := exitContext(ctx)
+	defer stop()
+	finishCtx, cancel := context.WithTimeout(ctx, liveLogsFinishTimeout)
+	// The spans of work that just ended, still on their way through the
+	// engine's batching and the subscriptions' polling, must be there for
+	// the frontend to choose what its final render reads.
+	settleEngineTelemetry(finishCtx, sess)
+	// Stop following first, so finish catches up the final requests itself,
+	// rather than a follow restart it would cut short.
+	live.stop()
+	lf.RequestFinalLogs()
+	if err := live.finish(finishCtx); err != nil && ctx.Err() == nil {
+		slog.Warn("error reading the final logs", "err", err)
+	}
+	cancel()
+	primaryCtx, cancel := context.WithTimeout(ctx, liveLogsPrimaryTimeout)
+	defer cancel()
+	records, err := readPrimaryOutput(primaryCtx, live.reader, live.traceID, lf.PrimarySpan())
+	if err != nil && ctx.Err() == nil {
+		slog.Warn("error reading the primary output", "err", err)
+	}
+	lf.SetPrimaryOutput(records)
+	// Flush the warnings, for the caller to hand to the engine before the
+	// session closes.
+	live.diag.finish()
+}
+
+// readPrimaryOutput reads the primary span's output, the process's own
+// included, from the beginning. A failed read is retried whole, up to
+// liveLogsPrimaryAttempts times: it is the command's result.
+func readPrimaryOutput(ctx context.Context, reader tracesource.LogReader, traceID string, primary dagui.SpanID) ([]sdklog.Record, error) {
+	var err error
+	for attempt := 1; ; attempt++ {
+		var out recordCollector
+		err = reader.ReadLogs(ctx, traceID, tracesource.LogQuery{
+			Spans: []archive.LogSpan{{SpanID: primary.String()}},
+		}, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest, _ string) error {
+			return telemetry.ReexportLogsFromPB(ctx, &out, req)
+		})
+		if err == nil || attempt >= liveLogsPrimaryAttempts || ctx.Err() != nil {
+			return out.records, err
+		}
+		slog.Debug("retrying the primary output's read", "attempt", attempt, "err", err)
+		select {
+		case <-ctx.Done():
+			return out.records, err
+		case <-time.After(liveLogsRetryDelay):
+		}
+	}
+}
+
+type recordCollector struct {
+	records []sdklog.Record
+}
+
+func (c *recordCollector) Export(_ context.Context, records []sdklog.Record) error {
+	for _, rec := range records {
+		c.records = append(c.records, rec.Clone())
+	}
+	return nil
+}
+
+func (c *recordCollector) Shutdown(context.Context) error   { return nil }
+func (c *recordCollector) ForceFlush(context.Context) error { return nil }

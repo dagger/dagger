@@ -10,8 +10,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 func TestLogsToPBAllowsSchemalessResources(t *testing.T) {
@@ -251,6 +254,64 @@ func TestAppendLogsRequestPB(t *testing.T) {
 	want, err = proto.Marshal(&collogspb.ExportLogsServiceRequest{ResourceLogs: LogsToPB(append(slices.Clone(rows), bad))})
 	require.NoError(t, err)
 	require.Equal(t, want, got)
+}
+
+// TestLogsToPBWithRowIDs checks that the records of log queries carry their
+// row IDs, last among their attributes, and are otherwise the records
+// LogsToPB makes, which carry none: rows without an ID carry none either,
+// and the same rows are grouped and dropped.
+func TestLogsToPBWithRowIDs(t *testing.T) {
+	rows := sampleLogRows(t)
+	for i := range rows {
+		rows[i].ID = int64(100 + i)
+	}
+	rows[1].ID = 0 // no identity, like a synthesized row
+	plain := LogsToPB(rows)
+	withIDs := LogsToPBWithRowIDs(rows)
+
+	rowID := func(rec *otlplogsv1.LogRecord) (int64, bool) {
+		for _, kv := range rec.GetAttributes() {
+			if kv.GetKey() == telemetryattrs.LogRowAttr {
+				return kv.GetValue().GetIntValue(), true
+			}
+		}
+		return 0, false
+	}
+	var got []int64
+	for _, rl := range withIDs {
+		for _, sl := range rl.ScopeLogs {
+			for _, rec := range sl.LogRecords {
+				id, ok := rowID(rec)
+				if !ok {
+					continue
+				}
+				require.Equal(t, telemetryattrs.LogRowAttr, rec.Attributes[len(rec.Attributes)-1].GetKey(), "the row ID comes last")
+				got = append(got, id)
+				rec.Attributes = rec.Attributes[:len(rec.Attributes)-1]
+			}
+		}
+	}
+	// Row 1 has no ID, and rows 4-7 are dropped.
+	require.Equal(t, []int64{100, 108, 103, 102}, got, "in LogsToPB's order")
+	// Without the row IDs, the very same request.
+	require.True(t, proto.Equal(
+		&collogspb.ExportLogsServiceRequest{ResourceLogs: plain},
+		&collogspb.ExportLogsServiceRequest{ResourceLogs: withIDs},
+	))
+	for _, rl := range plain {
+		for _, sl := range rl.ScopeLogs {
+			for _, rec := range sl.LogRecords {
+				_, ok := rowID(rec)
+				require.False(t, ok, "LogsToPB sends no row IDs")
+			}
+		}
+	}
+	// The log stream's encoding still matches LogsToPB, with IDs set.
+	want, err := proto.Marshal(&collogspb.ExportLogsServiceRequest{ResourceLogs: LogsToPB(rows)})
+	require.NoError(t, err)
+	enc, err := AppendLogsRequestPB(nil, rows)
+	require.NoError(t, err)
+	require.Equal(t, want, enc)
 }
 
 // TestAppendLogsRequestPBAllocs checks that the log stream encodes a batch

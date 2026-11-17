@@ -70,6 +70,32 @@ func exportControls(t *testing.T, db *DB, agents ...agentcontrol.Agent) {
 	}
 }
 
+// TestAgentState: a loop span's agent state is the newest control revision of
+// that handle in the span's own trace -- never another trace's incarnation,
+// and nothing for a span that is not a loop span.
+func TestAgentState(t *testing.T) {
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		agentTestSpan(1, "root", SpanID{}),
+		agentLoopSnapshot(2, "agent-scout", "scout", spanID(1)),
+	})
+	loop := db.Spans.Map[spanID(2)]
+	if _, ok := db.AgentState(loop); ok {
+		t.Fatal("no control record yet, but a state was reported")
+	}
+	exportControls(t, db,
+		testControl(1, "agent-scout", "scout", 1, "RUNNING"),
+		testControl(1, "agent-scout", "scout", 2, "IDLE"),
+		testControl(2, "agent-scout", "scout", 3, "PAUSED"),
+	)
+	if state, ok := db.AgentState(loop); !ok || state != "IDLE" {
+		t.Fatalf("expected IDLE from the span's own trace, got %q (%v)", state, ok)
+	}
+	if _, ok := db.AgentState(db.Spans.Map[spanID(1)]); ok {
+		t.Fatal("a non-agent span reported an agent state")
+	}
+}
+
 // TestAgentsRosterIsFlatAndUncontained is the property that separates the
 // agent roster from the surfaced-services tree it is modelled on: a worker
 // agent spawned inside a chief's tool call sits under a Boundary span, and

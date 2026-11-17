@@ -888,14 +888,21 @@ func fetchLogRows(ctx context.Context, db *clientdb.DB, since int64, limit int, 
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, fetchTraceStreamBatch)
+	keep := streamedSpanRow(record.clientID)
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
+		return fetchTraceStreamBatchFiltered(ctx, db, since, limit, keep)
+	})
 }
 
 // fetchTraceStreamBatch is the trace stream's streamFetcher. Its binary
 // frames are written from the stored rows, without building the request's
 // messages first.
 func fetchTraceStreamBatch(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
-	next, spans, rows, err := fetchSpanRows(ctx, db, since, limit, nil)
+	return fetchTraceStreamBatchFiltered(ctx, db, since, limit, nil)
+}
+
+func fetchTraceStreamBatchFiltered(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Span) bool) (int64, streamEncoder, int, error) {
+	next, spans, rows, err := fetchSpanRows(ctx, db, since, limit, keep)
 	if err != nil || rows == 0 {
 		return next, nil, rows, err
 	}
@@ -910,12 +917,19 @@ func fetchTraceStreamBatch(ctx context.Context, db *clientdb.DB, since int64, li
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
-	return ps.streamHandler(w, r, record, fetchLogStreamBatch)
+	keep := streamedLogRow(record.clientID)
+	if r.URL.Query().Get(enginetel.LiveDisplayParam) == enginetel.LiveDisplayPresence {
+		return ps.serveLiveStream(w, r, record, presenceLogFetcher(keep), enginetel.MaxLivePayloadSize, liveStreamOptions{indexed: true})
+	}
+	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
+		return fetchLogStreamBatchFiltered(ctx, db, since, limit, keep)
+	})
 }
 
-// fetchLogStreamBatch is fetchTraceStreamBatch for log records.
-func fetchLogStreamBatch(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
-	next, logs, rows, err := fetchLogRows(ctx, db, since, limit, nil)
+// fetchLogStreamBatchFiltered is fetchTraceStreamBatch for the log records
+// keep accepts.
+func fetchLogStreamBatchFiltered(ctx context.Context, db *clientdb.DB, since int64, limit int, keep func(*clientdb.Log) bool) (int64, streamEncoder, int, error) {
+	next, logs, rows, err := fetchLogRows(ctx, db, since, limit, keep)
 	if err != nil || rows == 0 {
 		return next, nil, rows, err
 	}
@@ -930,6 +944,7 @@ func fetchLogStreamBatch(ctx context.Context, db *clientdb.DB, since int64, limi
 }
 
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, record *clientRecord) error {
+	keep := streamedMetricRow(record.clientID)
 	return ps.streamHandler(w, r, record, func(ctx context.Context, db *clientdb.DB, since int64, limit int) (int64, streamEncoder, int, error) {
 		metrics, err := db.Read().SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
 			ID:    since,
@@ -942,8 +957,14 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 			return since, nil, 0, nil
 		}
 		since = metrics[len(metrics)-1].ID
+		kept := make([]clientdb.Metric, 0, len(metrics))
+		for i := range metrics {
+			if keep(&metrics[i]) {
+				kept = append(kept, metrics[i])
+			}
+		}
 		return since, encodeMessage(&colmetricspb.ExportMetricsServiceRequest{
-			ResourceMetrics: clientdb.MetricsToPB(metrics),
+			ResourceMetrics: clientdb.MetricsToPB(kept),
 		}), len(metrics), nil
 	})
 }
@@ -1413,6 +1434,13 @@ func (record *clientRecord) telemetryStreamEnd(ctx context.Context) <-chan struc
 	return end
 }
 
+// streamFetcher reads the batch after the since cursor. next is the cursor
+// after it; next == since with rows == 0 means nothing more for now. rows is
+// the batch's size in the units of limit, at most limit: the rows a scanning
+// fetcher covered, or the rows an indexed read returned (whose cursor may
+// jump past rows it skipped, and may advance with no rows at all, e.g. to
+// the end of a one-shot read). A batch too large to send is refetched with a
+// limit of rows/2, so rows must shrink with limit.
 type streamFetcher func(ctx context.Context, db *clientdb.DB, since int64, limit int) (next int64, encode streamEncoder, rows int, err error)
 
 // streamEncoder appends a fetched batch to buf as one OTLP request: binary
@@ -1431,6 +1459,25 @@ func encodeMessage(msg proto.Message) streamEncoder {
 
 func (ps *PubSub) streamHandler(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher) error {
 	return ps.streamHandlerWithPayloadLimit(w, r, record, fetcher, enginetel.MaxLivePayloadSize)
+}
+
+// liveTelemetryFeatures is the LiveFeaturesHeader value of every live
+// subscription response.
+var liveTelemetryFeatures = strings.Join([]string{
+	enginetel.LiveFeatureLogQuery,
+	enginetel.LiveFeatureLogPresence,
+	enginetel.LiveFeatureLogSearch,
+	enginetel.LiveFeatureFlush,
+}, ",")
+
+// liveStreamOptions vary a live stream.
+type liveStreamOptions struct {
+	// indexed enables selected reads over the store’s span and log indexes.
+	indexed bool
+	// oneShot ends the stream with a terminal frame as soon as the fetcher
+	// has nothing more, instead of polling until the client's telemetry
+	// drains. The fetcher bounds what "more" means.
+	oneShot bool
 }
 
 func acceptsBinaryTelemetry(accept string) bool {
@@ -1457,8 +1504,12 @@ func legacyTelemetryEventName(path string) string {
 	return strings.TrimPrefix(path, "/v1/")
 }
 
-//nolint:gocyclo // Keep framing, cursor advancement, and drain handling in one stream state machine.
 func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher, maxPayloadSize int) error {
+	return ps.serveLiveStream(w, r, record, fetcher, maxPayloadSize, liveStreamOptions{})
+}
+
+//nolint:gocyclo // Keep framing, cursor advancement, and drain handling in one stream state machine.
+func (ps *PubSub) serveLiveStream(w http.ResponseWriter, r *http.Request, record *clientRecord, fetcher streamFetcher, maxPayloadSize int, opts liveStreamOptions) error {
 	logger := slog.With("client", record.clientID, "path", r.URL.Path)
 	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
 		return fmt.Errorf("invalid live telemetry payload limit %d", maxPayloadSize)
@@ -1496,13 +1547,19 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 		// never written to a store of its own.
 		return httpErr(fmt.Errorf("client %q has no telemetry store to subscribe to", record.clientID), http.StatusForbidden)
 	}
-	db, err := record.telemetryStore(r.Context())
+	open := record.telemetryStore
+	if opts.indexed {
+		open = record.TelemetryDB
+	}
+	db, err := open(r.Context())
 	if err != nil {
 		return fmt.Errorf("open client db: %w", err)
 	}
 	defer db.Close()
 
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set(enginetel.LiveFeaturesHeader, liveTelemetryFeatures)
+	w.Header().Set(engine.ClientTelemetryIngestHeader, engine.ClientTelemetryIngestStore)
 	if sess := record.daggerSession; sess != nil && sess.publishesToCloud() {
 		w.Header().Set(engine.CloudTelemetryPublisherHeader, engine.CloudTelemetryPublisherEngine)
 	}
@@ -1532,7 +1589,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 	streamCtx, stopStream := context.WithCancel(r.Context())
 	defer stopStream()
 	streamEnd := record.telemetryStreamEnd(streamCtx)
-	terminating := false
+	terminating := opts.oneShot
 	batchLimit := otlpBatchSize
 	// Each batch is encoded into the buffer the last written one used: a
 	// frame's bytes are written out before the next batch is fetched.
@@ -1571,7 +1628,7 @@ func (ps *PubSub) streamHandlerWithPayloadLimit(w http.ResponseWriter, r *http.R
 			logger.Warn("interrupting OTLP stream", "cursor", since, "err", err)
 			return nil
 		}
-		if rows == 0 {
+		if rows == 0 && next <= since {
 			if terminating {
 				if binary {
 					if err := enginetel.WriteLiveTerminal(w, since); err != nil {

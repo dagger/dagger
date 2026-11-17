@@ -12,7 +12,7 @@ import (
 func resolveTraceTarget(ctx context.Context, span string) (string, error) {
 	span = normalizeSpanArg(span)
 	if span == "" {
-		return "", fmt.Errorf("ReadTrace needs a span ID; use FindSpans first to find a check, test, or other step by name")
+		return "", fmt.Errorf("ReadTrace needs a span ID; use FindSpans first to find a check, test, or other step by name, or ReadTrace(view: %q) to list agents", traceViewAgents)
 	}
 	if _, err := trace.SpanIDFromHex(span); err != nil {
 		return "", fmt.Errorf("invalid span ID %q: %w", span, err)

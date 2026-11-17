@@ -122,7 +122,7 @@ func newTraceSession(t *testing.T, src traceSource, configure func(*dagui.Fronte
 	s.fe.setupTUI()
 
 	// Wire the real public seams, exactly like internal/cmd/dagger/trace.go.
-	s.fe.SetTraceID(src.traceID())
+	s.fe.SetTraceID(src.traceID(), "dagger cloud traces view")
 	s.fe.SetSpanProvider(s.serveSpans)
 	s.fe.SetLogProvider(s.serveLogs)
 

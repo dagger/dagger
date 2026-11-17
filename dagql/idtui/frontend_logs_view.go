@@ -48,8 +48,9 @@ type LogsView struct {
 }
 
 var (
-	_ tuist.Component = (*LogsView)(nil)
-	_ tuist.Mounter   = (*LogsView)(nil)
+	_ tuist.Component  = (*LogsView)(nil)
+	_ tuist.Mounter    = (*LogsView)(nil)
+	_ tuist.Dismounter = (*LogsView)(nil)
 )
 
 // getOrCreateLogsView returns the persistent LogsView for a span, creating it
@@ -86,10 +87,17 @@ func (lv *LogsView) Name() string {
 // failure pass before the render. (When report mode moves to a two-pass
 // discovery render, this guard is where mount-driven report fetching turns on.)
 func (lv *LogsView) OnMount(tuist.Context) {
+	lv.fe.mountLogs(lv.spanID)
 	if lv.fe.reportOnly {
 		return
 	}
 	lv.fe.requestLogsWith(lv.spanID, lv.descendants)
+}
+
+// OnDismount lets the span's logs go, once nothing else shows them (see
+// log_cache.go).
+func (lv *LogsView) OnDismount() {
+	lv.fe.dismountLogs(lv.spanID)
 }
 
 // sync updates the render inputs and bumps the tuist generation only when the

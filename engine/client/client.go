@@ -189,6 +189,18 @@ type Params struct {
 	CloudURL             string
 	CloudCredentialsPath string
 
+	// EngineLogsPresence asks the engine's log push to omit display text
+	// (GET /v1/logs?display=presence): EngineLogs then receives every other
+	// record plus one body-less presence record per span with logs, and the
+	// frontend reads display text on demand with QueryLogs. Set it only when
+	// nothing receiving EngineLogs needs display text but a frontend that
+	// reads it on demand. The client still asks only an engine that serves
+	// the mode and stores the client's own telemetry (IngestsTelemetry: the
+	// frontend reads the client's own display text from the store too), and,
+	// with EngineCloudTelemetry, only one that confirmed it publishes to
+	// Cloud itself; LogsPresence reports the outcome.
+	EngineLogsPresence bool
+
 	// Profile enables engine wall-clock profiling (wcprof) for this session.
 	Profile bool
 	// ProfileEBPF names the eBPF programs to profile the session with.
@@ -227,6 +239,27 @@ type Client struct {
 	hostPolicy *hostPolicyEnforcer
 
 	telemetry *errgroup.Group
+	// telemetryHTTP is the subscriptions' transport, which outlives Close's
+	// request cancellation; live log queries use it too.
+	telemetryHTTP *httpClient
+	// telemetryFeatures lists the live telemetry features the engine named
+	// on its trace subscription, and logsPresence whether the log push omits
+	// display text. Both are settled before Connect returns.
+	telemetryFeatures map[string]bool
+	// telemetryFrameAt is when the trace or log subscription last delivered
+	// a batch (UnixNano), for WaitTelemetryIdle.
+	telemetryFrameAt atomic.Int64
+	// traceDelivered and logsDelivered are how far the trace and log
+	// subscriptions have delivered, for TelemetryBarrier.
+	traceDelivered, logsDelivered deliveredCursor
+	logsPresence                  bool
+
+	// ingestsTelemetry and publishesTelemetry record what the engine
+	// answered on this client's trace stream: whether it stores the
+	// telemetry the client posts about itself (ExportSpans, ...), and
+	// whether it publishes the session's telemetry to Cloud.
+	ingestsTelemetry   bool
+	publishesTelemetry bool
 
 	httpClient *httpClient
 	bkClient   *bkclient.Client
@@ -668,6 +701,7 @@ func (c *Client) subscribeTelemetryWith(ctx context.Context, hc *httpClient) (re
 	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
 
 	c.telemetry = new(errgroup.Group)
+	c.telemetryHTTP = hc
 	// The three subscriptions don't depend on each other, so they're made at
 	// once: with a remote engine, each one waits a round trip for its answer.
 	// The first to fail cancels the others, so connecting reports its error
@@ -1185,9 +1219,11 @@ func (c *Client) CloseWithContext(ctx context.Context) (rerr error) {
 type otlpConsumer struct {
 	httpClient *httpClient
 	path       string
-	traceID    trace.TraceID
-	clientID   string
-	eg         *errgroup.Group
+	// query is the subscription's raw query string, if any.
+	query    string
+	traceID  trace.TraceID
+	clientID string
+	eg       *errgroup.Group
 
 	// reconnectDelay overrides telemetryReconnectDelay; zero uses the default.
 	reconnectDelay time.Duration
@@ -1199,6 +1235,27 @@ type otlpConsumer struct {
 	// Reconnects keep that answer, so forwarding never flips midway. Only
 	// the consuming goroutine touches it after the first connect.
 	enginePublishes bool
+	// features lists the optional live telemetry features (LiveFeature*)
+	// the engine named on the first response.
+	features map[string]bool
+	// engineIngests records whether the engine stores the telemetry the
+	// client posts about itself (engine.ClientTelemetryIngestHeader), from
+	// the stream's first response.
+	engineIngests bool
+	// delivered, when set, tracks the cursor of the last frame the
+	// callback returned from.
+	delivered *deliveredCursor
+}
+
+// liveTelemetryFeatures parses a subscription response's LiveFeaturesHeader.
+func liveTelemetryFeatures(resp *http.Response) map[string]bool {
+	features := map[string]bool{}
+	for _, f := range strings.Split(resp.Header.Get(enginetel.LiveFeaturesHeader), ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			features[f] = true
+		}
+	}
+	return features
 }
 
 // confirmsEnginePublishing reports whether a telemetry stream's response
@@ -1244,9 +1301,12 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 		return fmt.Errorf("connect to OTLP stream: %w", err)
 	}
 	c.enginePublishes = confirmsEnginePublishing(resp)
+	c.features = liveTelemetryFeatures(resp)
+	c.engineIngests = resp.Header.Get(engine.ClientTelemetryIngestHeader) == engine.ClientTelemetryIngestStore
 	span.SetAttributes(attribute.Bool("dagger.io/telemetry.engine_publishes", c.enginePublishes))
 
 	c.eg.Go(func() error {
+		defer c.delivered.end()
 		cursor := int64(0)
 		for {
 			current := resp
@@ -1255,7 +1315,9 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 			stopClose()
 			_ = current.Body.Close()
 			if complete || ctx.Err() != nil {
-				return nil //nolint:nilerr // Cancellation and terminal frames end the background consumer normally.
+				// Cancellation and terminal frames end the background
+				// consumer normally.
+				return nil
 			}
 			if errors.Is(err, enginetel.ErrInvalidLiveFrame) || errors.Is(err, enginetel.ErrLiveStream) {
 				return fmt.Errorf("decode OTLP stream: %w", err)
@@ -1263,7 +1325,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 			logger.Debug("reconnecting to OTLP stream", "cursor", cursor, "err", err)
 
 			if err := c.waitForReconnect(ctx); err != nil {
-				return nil //nolint:nilerr // Cancellation ends the background consumer normally.
+				return nil
 			}
 			resp, err = c.connect(ctx, cursor) //nolint:bodyclose // The outer loop closes every response after consumeResponse.
 			if ctx.Err() != nil {
@@ -1322,9 +1384,10 @@ func (c *otlpConsumer) connectOnce(ctx context.Context, cursor int64) (*http.Res
 	req := (&http.Request{
 		Method: http.MethodGet,
 		URL: &url.URL{
-			Scheme: "http",
-			Host:   "dagger",
-			Path:   c.path,
+			Scheme:   "http",
+			Host:     "dagger",
+			Path:     c.path,
+			RawQuery: c.query,
 		},
 		Header: make(http.Header),
 	}).WithContext(ctx)
@@ -1408,6 +1471,7 @@ func (c *otlpConsumer) consumeResponse(
 			if err := consumeTelemetryPayload(next, data, liveTelemetryBinary, cursor, cb, span, logger); err != nil {
 				return false, err
 			}
+			c.delivered.advance(*cursor)
 		}
 	}
 }
@@ -1438,6 +1502,7 @@ func (c *otlpConsumer) consumeSSEResponse(
 		if err := consumeTelemetryPayload(next, event.Data, liveTelemetryProtoJSON, cursor, cb, span, logger); err != nil {
 			return false, err
 		}
+		c.delivered.advance(*cursor)
 	}
 }
 
@@ -1512,9 +1577,11 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		clientID:   c.ID,
 		httpClient: httpClient,
 		eg:         c.telemetry,
+		delivered:  &c.traceDelivered,
 	}
 
-	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+	if err := exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+		c.telemetryFrameAt.Store(time.Now().UnixNano())
 		var req coltracepb.ExportTraceServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
@@ -1535,7 +1602,22 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		}
 
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// Consume reads the first response's answers before it returns; the
+	// consuming goroutine never changes them. The trace subscription
+	// connects first, so they settle the log subscription's mode.
+	c.ingestsTelemetry = exp.engineIngests && c.nestedSessionPort == 0
+	c.publishesTelemetry = c.forwardsWithoutCloud(exp.enginePublishes)
+	c.telemetryFeatures = exp.features
+	// The frontend reads all of the session's display text from the store,
+	// so it must hold this client's own too.
+	c.logsPresence = c.EngineLogsPresence &&
+		exp.features[enginetel.LiveFeatureLogPresence] &&
+		c.ingestsTelemetry &&
+		(!c.EngineCloudTelemetry || exp.enginePublishes)
+	return nil
 }
 
 func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
@@ -1545,9 +1627,14 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		clientID:   c.ID,
 		httpClient: httpClient,
 		eg:         c.telemetry,
+		delivered:  &c.logsDelivered,
+	}
+	if c.logsPresence {
+		exp.query = url.Values{enginetel.LiveDisplayParam: {enginetel.LiveDisplayPresence}}.Encode()
 	}
 
 	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+		c.telemetryFrameAt.Store(time.Now().UnixNano())
 		var req collogspb.ExportLogsServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
@@ -1902,7 +1989,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCau
 	clientConn, _, err := hij.Hijack()
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte("hijack: " + err.Error()))
+		w.Write([]byte("hijack: " + err.Error())) //nolint:gosec // G705: a plain-text proxy error, not rendered as HTML
 		return
 	}
 	go func() {

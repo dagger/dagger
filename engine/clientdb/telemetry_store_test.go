@@ -367,7 +367,7 @@ func spanRowIDs(rows []Span) []int64 {
 	return ids
 }
 
-func spanLink(t *testing.T, traceID, spanID, purpose string) sdktrace.Link {
+func spanLink(t testing.TB, traceID, spanID, purpose string) sdktrace.Link {
 	t.Helper()
 	tid, err := trace.TraceIDFromHex(traceID)
 	require.NoError(t, err)
@@ -387,7 +387,7 @@ func spanLink(t *testing.T, traceID, spanID, purpose string) sdktrace.Link {
 	return link
 }
 
-func linksJSON(t *testing.T, links ...sdktrace.Link) []byte {
+func linksJSON(t testing.TB, links ...sdktrace.Link) []byte {
 	t.Helper()
 	data, err := MarshalProtoList(telemetry.SpanLinksToPB(links))
 	require.NoError(t, err)

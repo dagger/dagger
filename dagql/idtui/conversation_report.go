@@ -17,7 +17,7 @@ import (
 // the caller can fall back to the progress tree. It is the message analog of
 // checksReport.
 func (fe *frontendPretty) conversationReport(ctx tuist.Context, r *renderer, zoomed bool) []string {
-	if zoomed {
+	if zoomed || fe.reportHideConversation {
 		return nil
 	}
 	convLines := fe.renderConversationSection(ctx, r)
@@ -203,7 +203,7 @@ func (fe *frontendPretty) renderMessageTests(ctx tuist.Context, span *dagui.Span
 		Logs:            fe.logs.Logs,
 		SummaryIndent:   2,
 		SummaryLogLines: -1,
-		TraceID:         fe.traceID,
+		TraceCommand:    fe.traceViewCommand(),
 	}
 	width := ctx.Width - outerIndent
 	if width <= 0 {
