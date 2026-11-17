@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -215,6 +216,52 @@ func (s *DB) CallPayload(ctx context.Context, traceID, digest string, cut HighWa
 		errs = fmt.Errorf("missing persisted call %s at cut (spans %d, logs %d)", digest, cut.Spans, cut.Logs)
 	}
 	return Log{}, errs
+}
+
+// CallClosure returns the call-payload rows (as CallPayload returns them) of
+// the recipe closures of roots, within the cut and traceID, each once. Unlike
+// a bootstrap's verified closure it is best-effort: a frame the store does not
+// hold is skipped along with what only it references, and missing reports
+// those digests. A frame that fails to decode is skipped likewise. The
+// closures of known calls, which the caller holds, are neither returned nor
+// walked.
+func (s *DB) CallClosure(ctx context.Context, traceID string, roots, known []string, cut HighWater) ([]Log, []string, error) {
+	var rows []Log
+	var missing []string
+	seen := map[string]bool{}
+	for _, digest := range known {
+		seen[digest] = true
+	}
+	stack := slices.Clone(roots)
+	for len(stack) > 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		digest := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if digest == "" || seen[digest] {
+			continue
+		}
+		seen[digest] = true
+		row, err := s.CallPayload(ctx, traceID, digest, cut)
+		if err != nil {
+			missing = append(missing, digest)
+			continue
+		}
+		frame, err := CallPayloadBody(row)
+		if err != nil {
+			missing = append(missing, digest)
+			continue
+		}
+		refs, err := call.RecipeReferences(frame)
+		if err != nil {
+			missing = append(missing, digest)
+			continue
+		}
+		rows = append(rows, row)
+		stack = append(stack, refs...)
+	}
+	return rows, missing, nil
 }
 
 func (s *DB) callPayloadLog(ctx context.Context, traceID, digest string, id int64) (Log, error) {

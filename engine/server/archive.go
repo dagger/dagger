@@ -501,7 +501,7 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	}
 	// Multi-span log reads and searches carry their selection in a POST
 	// body (archive.LogQuery, archive.LogSearch); every other read is a GET.
-	postable := len(parts) == 2 && (parts[1] == "logs" || parts[1] == archiveSearchResource)
+	postable := len(parts) == 2 && (parts[1] == "logs" || parts[1] == archiveSearchResource || parts[1] == archive.CallClosureResource)
 	if r.Method != http.MethodGet && (r.Method != http.MethodPost || !postable) {
 		return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
 	}
@@ -545,6 +545,11 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 			return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
 		}
 		return srv.serveArchiveSearch(w, r, m, cut)
+	case archive.CallClosureResource:
+		if r.Method != http.MethodPost {
+			return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
+		}
+		return srv.serveArchiveCallClosure(w, r, m, cut, enginetel.MaxLivePayloadSize)
 	default:
 		return httpErr(errors.New("unknown archive endpoint"), http.StatusNotFound)
 	}
@@ -621,6 +626,64 @@ func (srv *Server) serveArchiveSearch(w http.ResponseWriter, r *http.Request, m 
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
 	}
 	return writeLogSearchResult(w, result)
+}
+
+// serveArchiveCallClosure streams the call payloads of the recipe closures a
+// POSTed archive.CallClosureQuery names, up to the cut, best-effort (see
+// clientdb.DB.CallClosure), for a frontend that loaded only part of the trace
+// and needs to rebuild an ID. Frames count from 1; the terminal frame carries
+// the last one's cursor. A payload too large for any frame is skipped, as an
+// oversized history row is.
+func (srv *Server) serveArchiveCallClosure(w http.ResponseWriter, r *http.Request, m archive.Manifest, cut archive.HighWater, maxPayloadSize int) (rerr error) {
+	var q archive.CallClosureQuery
+	if err := archive.DecodeLogBody(r.Body, &q); err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	if err := q.Validate(); err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	db, err := srv.clientDBs.OpenHeld(r.Context(), m.MainClientID)
+	if err != nil {
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
+	}
+	defer db.Close()
+	rows, missing, err := db.CallClosure(r.Context(), m.TraceID, q.Digests, q.Known, clientdb.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics})
+	if err != nil {
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
+	}
+	if len(missing) > 0 {
+		slog.Debug("archive call closure is missing frames", "trace", m.TraceID, "missing", len(missing))
+	}
+	w.Header().Set("Content-Type", enginetel.LiveContentType)
+	w.Header().Set("Cache-Control", "no-store")
+	var frame int64
+	defer func() {
+		if rerr != nil {
+			_ = enginetel.WriteLiveError(w, frame, rerr)
+		}
+	}()
+	for start := 0; start < len(rows); {
+		end := min(start+otlpBatchSize, len(rows))
+		req := &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows[start:end])}
+		for proto.Size(req) > maxPayloadSize && end-start > 1 {
+			end = start + (end-start)/2
+			req = &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows[start:end])}
+		}
+		start = end
+		if proto.Size(req) > maxPayloadSize {
+			slog.WarnContext(r.Context(), "skipping oversized archive call payload", "trace", m.TraceID, "bytes", proto.Size(req), "maxBytes", maxPayloadSize)
+			continue
+		}
+		payload, err := proto.Marshal(req)
+		if err != nil {
+			return err
+		}
+		frame++
+		if err := enginetel.WriteLiveFrame(w, frame, payload); err != nil {
+			return err
+		}
+	}
+	return enginetel.WriteLiveTerminal(w, frame)
 }
 
 func serveArchiveBootstrap(w http.ResponseWriter, path string) error {

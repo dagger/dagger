@@ -289,6 +289,83 @@ func TestArchiveBootstrapPacksSpanCarriedFrames(t *testing.T) {
 	require.Equal(t, "llm", payloads[id.Receiver().Digest().String()])
 }
 
+// A call closure read serves every frame of the named calls' recipes the
+// store holds, whichever carrier delivered it, each once, and leaves out what
+// it does not hold rather than failing.
+func TestArchiveCallClosure(t *testing.T) {
+	srv, sess, db, _ := archiveFixture(t)
+	llm := call.New().Append(&ast.Type{NamedType: "LLM", NonNull: true}, "llm")
+	prompt := llm.Append(&ast.Type{NamedType: "LLM", NonNull: true}, "withPrompt",
+		call.WithArgs(call.NewArgument("prompt", call.NewLiteralString("hi"), false)))
+	response := prompt.Append(&ast.Type{NamedType: "LLM", NonNull: true}, "withResponse")
+	data, err := proto.Marshal(prompt.Call())
+	require.NoError(t, err)
+	rec := scopedLogRecord(t, "test", logapi.BytesValue(data), logapi.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	row, err := logRecordRow(&rec)
+	require.NoError(t, err)
+	_, err = db.AppendLogs([]clientdb.Log{row})
+	require.NoError(t, err)
+	encoded, err := response.Call().Encode()
+	require.NoError(t, err)
+	now := time.Now()
+	span := tracetest.SpanStub{
+		Name:        "LLM.withResponse",
+		SpanContext: trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{9}}),
+		StartTime:   now,
+		EndTime:     now.Add(time.Millisecond),
+		Attributes: []attribute.KeyValue{
+			attribute.String(telemetry.DagDigestAttr, response.Digest().String()),
+			attribute.String(telemetry.DagCallAttr, encoded),
+		},
+	}.Snapshot()
+	require.NoError(t, appendTestSpans(t.Context(), sess.telemetryPubSub, "main", []sdktrace.ReadOnlySpan{span}))
+	cut, err := db.Checkpoint(t.Context())
+	require.NoError(t, err)
+
+	read := func(q archive.CallClosureQuery) map[string]string {
+		t.Helper()
+		body, err := json.Marshal(q)
+		require.NoError(t, err)
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+		require.NoError(t, srv.serveArchiveCallClosure(resp, req, *sess.archiveManifest, archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, enginetel.MaxLivePayloadSize))
+		fields := map[string]string{}
+		var frames int64
+		for {
+			kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+			require.NoError(t, err)
+			if kind == enginetel.LiveFrameTerminal {
+				require.Equal(t, frames, cursor)
+				return fields
+			}
+			frames++
+			require.Equal(t, frames, cursor, "frames count from 1")
+			var logs collogspb.ExportLogsServiceRequest
+			require.NoError(t, proto.Unmarshal(payload, &logs))
+			for _, rl := range logs.GetResourceLogs() {
+				for _, sl := range rl.GetScopeLogs() {
+					for _, lr := range sl.GetLogRecords() {
+						var decoded callpbv1.Call
+						require.NoError(t, proto.Unmarshal(lr.GetBody().GetBytesValue(), &decoded))
+						_, dup := fields[decoded.GetDigest()]
+						require.False(t, dup, "each frame once")
+						fields[decoded.GetDigest()] = decoded.GetField()
+					}
+				}
+			}
+		}
+	}
+	require.Equal(t, map[string]string{
+		llm.Digest().String():      "llm",
+		prompt.Digest().String():   "withPrompt",
+		response.Digest().String(): "withResponse",
+	}, read(archive.CallClosureQuery{Digests: []string{response.Digest().String(), prompt.Digest().String(), "xxh3:missing"}}))
+	require.Equal(t, map[string]string{
+		response.Digest().String(): "withResponse",
+	}, read(archive.CallClosureQuery{Digests: []string{response.Digest().String()}, Known: []string{prompt.Digest().String()}}),
+		"a known call's closure is neither sent nor walked")
+}
+
 func TestArchiveHistorySplitsLargeBatches(t *testing.T) {
 	for _, signal := range []string{"traces", "logs", "metrics"} {
 		t.Run(signal, func(t *testing.T) {
