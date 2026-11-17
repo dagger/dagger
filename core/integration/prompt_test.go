@@ -84,9 +84,21 @@ func (s *promptSession) answer(line string) {
 func (s *promptSession) wait() (string, error) {
 	s.t.Helper()
 	// Drain the rest of the output (one reader at a time: only now).
-	go s.console.ExpectEOF()
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		s.console.ExpectEOF()
+	}()
 	err := <-s.done
 	s.stop()
+	// The CLI has exited: close the terminal's other end, so the drain ends
+	// once it has read everything, and read the output only after it.
+	_ = s.console.Tty().Close()
+	select {
+	case <-drained:
+	case <-time.After(10 * time.Second):
+		s.t.Log("the terminal output did not end; reading what arrived")
+	}
 	return s.console.output.String(), err
 }
 
