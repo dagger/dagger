@@ -398,8 +398,9 @@ type clientRecord struct {
 	// ownsAttachables says that this nested client registers attachables of
 	// its own and owns the host they serve, as a root client owns its: an
 	// interactive CLI in an exec (see RegisterNestedCLITransportForExec). It
-	// is then a root of ownership for gitPushOwner. Sealed at transport
-	// registration by the engine, never taken from client metadata.
+	// is then a root of ownership for gitPushOwner, unless it serves a
+	// module. Sealed at transport registration by the engine, from how the
+	// client first connected, never taken from client metadata.
 	ownsAttachables bool
 
 	// children are the nested clients this client serves to its own child

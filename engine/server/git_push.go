@@ -151,14 +151,16 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 //
 // Ownership starts at the deepest client in client's ancestry (client
 // included) that owns the host its attachables serve: the session's root
-// client, or a nested client that registered attachables of its own, such as
-// an interactive CLI in a container a module runs (see
-// clientRecord.ownsAttachables, which only the engine sets). Such a client
-// is asked in its own right, about its own host, so it is asked rather than
-// whoever started the container, and grants nothing of theirs: what it
-// approves is read through its own attachables. A client bound to its exec's
-// bootstrap attachables (an SDK in a container) owns nothing, and stays under
-// its ancestors' owner.
+// client, or a non-module nested client that registered attachables of its
+// own, such as an interactive CLI in a container a module runs (see
+// clientRecord.ownsAttachables, which only the engine records). Such a
+// client is asked in its own right, about its own host, rather than whoever
+// started the container, and its approvals grant nothing of theirs: what it
+// approves is read through its own attachables and metadata. Any process in
+// an exec can opt in this way, which is safe for that reason: it trades the
+// outer owner's approvals for authority over its own container only. A client
+// bound to its exec's bootstrap attachables (an SDK, or a headless CLI, in a
+// container) owns nothing, and stays under its ancestors' owner.
 //
 // Walking on from there, the owner is the last client before the first
 // boundary, where a boundary is a module client or an inert client (one
@@ -200,8 +202,10 @@ func gitPushOwner(client *clientRuntime) (*clientRuntime, bool, error) {
 
 // ownershipChain returns client's ancestry, root first, ending with client,
 // and the index in it of the client ownership starts at (see gitPushOwner):
-// the deepest one that owns its attachables' host and is not inert, or the
-// session's root client.
+// the deepest one that owns its attachables' host and is neither inert nor a
+// module client, or the session's root client. A module client is a boundary
+// whatever channel serves it, e.g. a CLI in a debug terminal of a module's
+// runtime container.
 func ownershipChain(client *clientRuntime) ([]*clientRuntime, int, error) {
 	sess := client.daggerSession
 	parents, err := sess.ancestorRuntimes(client.clientRecord)
@@ -212,7 +216,8 @@ func ownershipChain(client *clientRuntime) ([]*clientRuntime, int, error) {
 	sess.scopeMu.Lock()
 	defer sess.scopeMu.Unlock()
 	for i := len(chain) - 1; i > 0; i-- {
-		if chain[i].ownsAttachables && !chain[i].inertAttachables {
+		c := chain[i]
+		if c.ownsAttachables && !c.inertAttachables && c.mod.Self() == nil {
 			return chain, i, nil
 		}
 	}
