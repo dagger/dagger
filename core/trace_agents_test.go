@@ -430,11 +430,9 @@ func TestReadTraceReportSummarizesLongConversation(t *testing.T) {
 	require.NotContains(t, long.body, "MESSAGE-0")
 	require.NotContains(t, long.body, "sub-agent conversation omitted", "the summary, not the tool-result pointer, stands in")
 
-	// An explicitly hidden conversation keeps its one-line pointer.
+	// A tool result's hidden conversation keeps its one-line pointer.
 	session, root = build(traceReportInlineMessages + 1)
-	opts := toolCallReportOpts()
-	opts.HideConversation = true
-	tool, err := renderTraceReportSession(session, root.ID.String(), opts)
+	tool, err := renderTraceReportSession(session, root.ID.String(), toolCallReportOpts())
 	require.NoError(t, err)
 	require.Zero(t, tool.omittedMessages)
 	require.Contains(t, tool.body, subAgentConversationPointer(root.ID.String()))

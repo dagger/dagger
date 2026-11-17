@@ -91,12 +91,21 @@ type traceReportOpts struct {
 	//
 	// Everything the surfacing sections themselves show (CHECKS, CONVERSATION,
 	// SERVICES, GENERATORS) is now rolled up relative to the zoomed span, so
-	// none of them need this flag any more.
+	// none of them need this flag any more. In particular it does NOT keep a
+	// conversation that ran beneath root out of the report; HideConversation
+	// does.
 	Scoped bool
 
 	// HideConversation replaces the surfaced transcript with a pointer to
-	// ReadTrace. Callers opt in explicitly; ReadTrace summarizes long
-	// conversations instead.
+	// ReadTrace.
+	//
+	// Set for a tool call's own result. The enclosing agent's own transcript
+	// never surfaces there (it sits above root), but a tool that runs a nested
+	// LLM loop -- a module function that has a small model summarize a page, a
+	// delegated sub-agent -- would otherwise have that sub-agent's whole
+	// conversation, prompt included, rendered into the caller's context: the
+	// very context the tool was called to save. ReadTrace, which the pointer
+	// names, never sets it; it summarizes long conversations instead.
 	HideConversation bool
 
 	// SummarizeConversation keeps a long CONVERSATION out of the report:
