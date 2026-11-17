@@ -994,6 +994,12 @@ raw logs.
 
 Use --web (-w) to open the trace in the Dagger Cloud web UI.
 
+Use --work to show which operations did new work, which repeated work your
+organization already ran in the last 30 days, and which were cache hits: each
+span that did work is marked NEW or REPEAT, and a WORK section ends the
+report. Dagger Cloud computes the work when you ask for it, from the work of
+Dagger Cloud Engines, once the trace has ended.
+
 ```
 dagger cloud traces view [trace]
 ```
@@ -1006,6 +1012,7 @@ dagger cloud traces view --last --check build:lint
 dagger cloud traces view --last --log --test TestFoo
 dagger cloud traces view https://dagger.cloud/acme/traces/2f123ba77bf7bd2d4db2f70ed20613e8 -w
 dagger cloud traces view --last --log --check build:lint -o lint.log
+dagger cloud traces view --last --work
 ```
 
 ### Options
@@ -1019,6 +1026,7 @@ dagger cloud traces view --last --log --check build:lint -o lint.log
       --span string        Show only this span, by span ID
       --test string        Show only this test, by name
       --timeout duration   With --log, the maximum time to write logs, when the command does not open a pager (default 2m0s)
+      --work               Show the new, repeat and cached work of the trace
 ```
 
 ### Options inherited from parent commands

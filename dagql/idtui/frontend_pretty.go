@@ -45,6 +45,7 @@ import (
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 
@@ -366,6 +367,13 @@ type frontendPretty struct {
 	// the exact commit. Nil for live/local runs, where only a local 'dagger check'
 	// applies.
 	ciMeta *ciContext
+
+	// work is the trace's work, set by 'dagger trace --work': the NEW and
+	// REPEAT statuses of the spans that did work, by span (the run's span and,
+	// for a lazy evaluation, the call that returned its result), and the WORK
+	// section that ends the report.
+	work       *cloud.TraceWork
+	workBySpan map[dagui.SpanID]*cloud.WorkRun
 
 	// pinnedZoom is an explicitly requested zoom (e.g. 'dagger trace
 	// --span/--check/--test') that persists into the final, non-interactive
@@ -4480,6 +4488,12 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 			ctx.Line("")
 			ctx.Lines(suggLines...)
 		}
+	}
+
+	// 'dagger trace --work': the trace's work ends the report.
+	if workLines := fe.renderWorkSection(); len(workLines) > 0 {
+		ctx.Line("")
+		ctx.Lines(workLines...)
 	}
 }
 
@@ -10051,6 +10065,9 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 				out.String("jump ↴").Foreground(color),
 			)
 		}
+	} else if !span.IsRunningOrEffectsRunning() && renderWorkStatus(out, fe.spanWork(span.ID)) {
+		// The span did work: NEW or REPEAT, also when its call was a cache
+		// hit on a result whose work then ran.
 	} else if !span.IsRunningOrEffectsRunning() && span.IsCached() {
 		fmt.Fprint(out, out.String(" "))
 		fmt.Fprint(out, out.String("CACHED").Foreground(termenv.ANSIBlue))
