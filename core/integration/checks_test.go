@@ -527,7 +527,7 @@ source = "hello-with-generate-checks"
 		require.NoError(t, err, out)
 		require.Regexp(t, `(?m)^dagger check --hello-with-generate-checks --name=emptyGenerate\.stale '--generated=true'\s+# staleness check:`, out)
 		require.Regexp(t, `(?m)^dagger check --hello-with-generate-checks --name=nonEmptyGenerate\.stale '--generated=true'\s+# staleness check:`, out)
-		require.Contains(t, out, "passing-check")
+		require.Regexp(t, `(?m)^dagger check --hello-with-generate-checks --name=passingCheck '--generated=true'\s+# A regular passing check`, out)
 	})
 
 	t.Run("--generated=false flag matches the config default", func(ctx context.Context, t *testctx.T) {
