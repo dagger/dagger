@@ -12,7 +12,9 @@ const (
 )
 
 const (
-	RuntimePath    = "/usr/local/bin/crun"
+	// RuntimePath is the container runtime, crun, from the engine image's
+	// Wolfi package.
+	RuntimePath    = "/usr/bin/crun"
 	DaggerInitPath = "/usr/local/bin/dagger-init"
 	// RuntimeStateRoot is where the runtime keeps each container's state, in
 	// a directory named by the container's ID.
