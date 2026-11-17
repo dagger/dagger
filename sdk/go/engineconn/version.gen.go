@@ -2,4 +2,4 @@
 
 package engineconn
 
-const CLIVersion = "0.21.11"
+const CLIVersion = "0.21.12"
