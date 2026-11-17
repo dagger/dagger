@@ -1933,6 +1933,477 @@ daggerGo = true
 globalClient = true
 targetVersion = "v1.0.0-beta.27"
 
+[sdks.go.scopes."core/integration/testdata/modules/go/benchmark-parallel-dep"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/benchmark-parallel-dep/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/benchmark-parallel-dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/benchmark-parallel-dep/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/benchmark-parallel-dep/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-back-and-forth"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/call-socket-back-and-forth/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-back-and-forth".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-back-and-forth/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-back-and-forth/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-dep-container"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/call-socket-dep-container/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-dep-container".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-dep-container/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-dep-container/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-dep-sock"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/call-socket-dep-sock/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-dep-sock".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-dep-sock/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/call-socket-dep-sock/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-secret-same-name"]
+is-module = true
+name = "caller"
+clients = ["./core/integration/testdata/modules/go/cross-session-secret-same-name/secreter"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-secret-same-name".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-secret-same-name/secreter"]
+is-module = true
+name = "secreter"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-secret-same-name/secreter".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-services"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/cross-session-services/servicer"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-services".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-services/servicer"]
+is-module = true
+name = "servicer"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/cross-session-services/servicer".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/local-dep-parent"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/local-dep-parent/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/local-dep-parent".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/local-dep-parent/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/local-dep-parent/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/multi-dep-parent"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/multi-dep-parent/foo", "./core/integration/testdata/modules/go/multi-dep-parent/bar"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/multi-dep-parent".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/multi-dep-parent/bar"]
+is-module = true
+name = "bar"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/multi-dep-parent/bar".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/multi-dep-parent/foo"]
+is-module = true
+name = "foo"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/multi-dep-parent/foo".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/path-ignore-prefilters-explicit-directory-args-01"]
+is-module = true
+name = "test-mod"
+clients = ["./core/integration/testdata/modules/go/path-ignore-prefilters-explicit-directory-args-01/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/path-ignore-prefilters-explicit-directory-args-01".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/path-ignore-prefilters-explicit-directory-args-01/dep"]
+is-module = true
+name = "test"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/path-ignore-prefilters-explicit-directory-args-01/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/reevaluate-arg-reuse"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/reevaluate-arg-reuse/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/reevaluate-arg-reuse".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/reevaluate-arg-reuse/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/reevaluate-arg-reuse/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-float"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/runtime-float/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-float".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-float/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-float/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-cache-normal"]
+is-module = true
+name = "toplevel"
+clients = ["./core/integration/testdata/modules/go/runtime-secret-cache-normal/secreter"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-cache-normal".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-cache-normal/secreter"]
+is-module = true
+name = "secreter"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-cache-normal/secreter".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-cached"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/runtime-secret-cached/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-cached".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-cached/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-cached/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-arg"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/runtime-secret-embedded-arg/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-arg".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-arg/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-arg/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-field"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/runtime-secret-embedded-field/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-field".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-field/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-field/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-private-field"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/runtime-secret-embedded-private-field/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-private-field".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-private-field/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-private-field/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-return"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/runtime-secret-embedded-return/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-return".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-return/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-embedded-return/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-pass"]
+is-module = true
+name = "toplevel"
+clients = ["./core/integration/testdata/modules/go/runtime-secret-pass/secreter"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-pass".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-pass/secreter"]
+is-module = true
+name = "secreter"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/runtime-secret-pass/secreter".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/type-custom-conflicting-enum"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/type-custom-conflicting-enum/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/type-custom-conflicting-enum".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/type-custom-conflicting-enum/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/type-custom-conflicting-enum/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/type-custom-enum-type-04"]
+is-module = true
+name = "test"
+clients = ["./core/integration/testdata/modules/go/type-custom-enum-type-04/dep"]
+
+[sdks.go.scopes."core/integration/testdata/modules/go/type-custom-enum-type-04".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/type-custom-enum-type-04/dep"]
+is-module = true
+name = "dep"
+
+[sdks.go.scopes."core/integration/testdata/modules/go/type-custom-enum-type-04/dep".settings]
+dangEntrypoint = true
+unifiedClients = true
+daggerGo = true
+globalClient = true
+targetVersion = "v1.0.0-beta.27"
+
 [sdks.dang.scopes.".dagger/modules/dev"]
 clients = ["./.dagger/modules/engine-dev", "./.dagger/modules/cli-dev"]
 is-module = true
