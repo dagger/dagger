@@ -97,38 +97,41 @@ func expireImageRoot(t *testing.T, dir string, bundle dagql.ValueBundle, name st
 	require.NoError(t, testImageDir{dir}.WriteBundle(t.Context(), bundle))
 }
 
-// An engine merges its image's entries at start. An image without entries
-// starts as before; an entry that has expired since the image was built is
-// left out, and the start goes on; a bundle that names a blob the image
-// doesn't hold fails the start.
+// An engine merges its image's entries at start, and the start never depends
+// on them. An image without entries starts as before; an entry that has
+// expired since the image was built is left out; a bundle that names a blob
+// the image doesn't hold is left out whole.
 func TestMergeImageEntries(t *testing.T) {
 	t.Run("merges", func(t *testing.T) {
 		dir, _ := imageEntriesDir(t)
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
-		require.NoError(t, srv.mergeImageEntries(e.ctx, dir))
+		srv.mergeImageEntries(e.ctx, dir)
+		require.True(t, e.cache.FromImage(e.file(t, "shipped")))
 	})
 	t.Run("no image entries", func(t *testing.T) {
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
-		require.NoError(t, srv.mergeImageEntries(e.ctx, filepath.Join(t.TempDir(), "absent")))
-		require.NoError(t, srv.mergeImageEntries(e.ctx, t.TempDir()))
+		require.NoError(t, srv.mergeImageBundle(e.ctx, filepath.Join(t.TempDir(), "absent")))
+		require.NoError(t, srv.mergeImageBundle(e.ctx, t.TempDir()))
 	})
-	t.Run("an expired entry is left out and the start goes on", func(t *testing.T) {
+	t.Run("an expired entry is left out", func(t *testing.T) {
 		dir, bundle := imageEntriesDirOf(t, "shipped", "lapsed")
 		expireImageRoot(t, dir, bundle, "lapsed")
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
-		require.NoError(t, srv.mergeImageEntries(e.ctx, dir))
+		require.NoError(t, srv.mergeImageBundle(e.ctx, dir))
 		require.True(t, e.cache.FromImage(e.file(t, "shipped")), "the unexpired entry merged")
 		require.False(t, e.cache.FromImage(e.file(t, "lapsed")), "the expired entry was left out")
 	})
-	t.Run("a missing blob fails the start", func(t *testing.T) {
+	t.Run("a missing blob leaves the entries out", func(t *testing.T) {
 		dir, _ := imageEntriesDir(t)
 		require.NoError(t, os.RemoveAll(filepath.Join(dir, "blobs")))
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
-		require.ErrorContains(t, srv.mergeImageEntries(e.ctx, dir), "engine image entries: blob")
+		require.ErrorContains(t, srv.mergeImageBundle(e.ctx, dir), "engine image entries: blob")
+		srv.mergeImageEntries(e.ctx, dir)
+		require.False(t, e.cache.FromImage(e.file(t, "shipped")), "nothing merged")
 	})
 }
 
