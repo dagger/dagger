@@ -145,14 +145,28 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 
 // gitPushOwner returns the trusted client whose host and authority client's
 // request is made with, and whether client acts on its behalf (delegated), so
-// the request needs the owner's approval.
+// the request needs the owner's approval. Every prompt and approval asks this
+// owner, and what an approval grants comes from the owner's own host: a
+// client is only ever asked about the host it owns.
 //
-// Walking the ancestry root first, the owner is the last client before the
-// first boundary, where a boundary is a module client or an inert client (one
+// Ownership starts at the deepest client in client's ancestry (client
+// included) that owns the host its attachables serve: the session's root
+// client, or a nested client that registered attachables of its own, such as
+// an interactive CLI in a container a module runs (see
+// clientRecord.ownsAttachables, which only the engine sets). Such a client
+// is asked in its own right, about its own host, so it is asked rather than
+// whoever started the container, and grants nothing of theirs: what it
+// approves is read through its own attachables. A client bound to its exec's
+// bootstrap attachables (an SDK in a container) owns nothing, and stays under
+// its ancestors' owner.
+//
+// Walking on from there, the owner is the last client before the first
+// boundary, where a boundary is a module client or an inert client (one
 // without a host of its own, see clientRecord.inertAttachables, inherited by
 // its nested clients). It is not the nearest client with a host: a module
 // cannot regain implicit authorization by spawning a non-module nested client,
-// so no client after the first boundary ever counts.
+// so no client after the first boundary ever counts, unless it owns a host of
+// its own, and then only over that host.
 //
 // An inert client, e.g. an in-engine SDK client evaluating an agent's snippet,
 // is a boundary even when it serves no module: its host access ends there, so
@@ -161,26 +175,46 @@ func (srv *Server) AuthorizeGitPush(ctx context.Context, remote, ref string, for
 // gated as a module's request is: by the owner's approval, or for routine
 // pushes by the policy that stands in for it (see git_push_policy.go).
 func gitPushOwner(client *clientRuntime) (*clientRuntime, bool, error) {
-	sess := client.daggerSession
-	parents, err := sess.ancestorRuntimes(client.clientRecord)
+	chain, root, err := ownershipChain(client)
 	if err != nil {
 		return nil, false, err
 	}
-	chain := append(slices.Clip(parents), client)
+	sess := client.daggerSession
 	boundary := make([]bool, len(chain))
 	sess.scopeMu.Lock()
 	for i, c := range chain {
 		boundary[i] = c.inertAttachables
 	}
 	sess.scopeMu.Unlock()
-	for i, c := range chain {
-		if c.mod.Self() == nil && !boundary[i] {
+	for i := root; i < len(chain); i++ {
+		if chain[i].mod.Self() == nil && !boundary[i] {
 			continue
 		}
-		if i == 0 {
+		if i == root {
 			return nil, true, fmt.Errorf("no owning client for git push")
 		}
 		return chain[i-1], true, nil
 	}
 	return client, false, nil
+}
+
+// ownershipChain returns client's ancestry, root first, ending with client,
+// and the index in it of the client ownership starts at (see gitPushOwner):
+// the deepest one that owns its attachables' host and is not inert, or the
+// session's root client.
+func ownershipChain(client *clientRuntime) ([]*clientRuntime, int, error) {
+	sess := client.daggerSession
+	parents, err := sess.ancestorRuntimes(client.clientRecord)
+	if err != nil {
+		return nil, 0, err
+	}
+	chain := append(slices.Clip(parents), client)
+	sess.scopeMu.Lock()
+	defer sess.scopeMu.Unlock()
+	for i := len(chain) - 1; i > 0; i-- {
+		if chain[i].ownsAttachables && !chain[i].inertAttachables {
+			return chain, i, nil
+		}
+	}
+	return chain, 0, nil
 }

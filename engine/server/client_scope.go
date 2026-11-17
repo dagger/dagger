@@ -53,8 +53,11 @@ func (srv *Server) RegisterNestedClientTransportForExec(
 // RegisterNestedCLITransportForExec registers a nested client of an exec that
 // serves its own attachables rather than the exec bootstrap's: an interactive
 // CLI, whose first request registered them, so that it can answer prompts.
-// The executor decides this from the request that registered the identity;
-// nothing the client declares does.
+// It owns the host they serve (the exec's container), so it is the owner its
+// own requests, and those of the modules and agents it runs, are made on
+// behalf of (see gitPushOwner): it is asked, and what it approves uses its
+// host. The executor decides this from the request that registered the
+// identity; nothing the client declares does.
 func (srv *Server) RegisterNestedCLITransportForExec(
 	ctx context.Context,
 	metadata *engine.ClientMetadata,
@@ -99,8 +102,8 @@ type nestedClientRegistration struct {
 	// does, through the parent's attachables, instead of through
 	// attachablesClientID.
 	hostFromParent bool
-	// ownsAttachables says that the client itself registers its attachables
-	// (see RegisterNestedCLITransportForExec).
+	// ownsAttachables says that the client itself registers its attachables,
+	// and owns the host they serve (see RegisterNestedCLITransportForExec).
 	ownsAttachables bool
 }
 
@@ -251,6 +254,7 @@ func (srv *Server) registerNestedClientTransportWith(
 		attachablesFromExecHelper: fromExecHelper,
 		hostServiceProxyClientID:  hostServiceProxyClientID,
 		inertAttachables:          inertAttachables,
+		ownsAttachables:           reg.ownsAttachables,
 		accepting:                 true,
 		telemetryUnread:           telemetryUnread,
 	}

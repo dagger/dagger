@@ -226,7 +226,9 @@ func TestNestedTransportRegistrationBindsExactExecAttachables(t *testing.T) {
 	cliRecord := sess.clientRecords[cliMetadata.ClientID]
 	sess.clientMu.RUnlock()
 	require.Equal(t, cliMetadata.ClientID, cliRecord.attachablesClientID)
+	require.True(t, cliRecord.ownsAttachables, "the CLI owns the host its attachables serve")
 	require.False(t, cliRecord.attachablesFromExecHelper, "the CLI, not the exec's session helper, registers them")
+	require.False(t, logicalRecord.ownsAttachables)
 	cliCaller := &sessionAttachableCaller{ctx: context.Background()}
 	sess.attachables.callers[cliMetadata.ClientID] = cliCaller
 	caller, err = srv.clientAttachableCaller(ctx, sess.sessionID, cliMetadata.ClientID, true)
@@ -288,9 +290,16 @@ func TestTelemetryStoresOnlyForClientsThatCanSubscribe(t *testing.T) {
 
 	sess.clientMu.RLock()
 	unread := map[string]bool{}
+	var owners []string
 	for id, record := range sess.clientRecords {
 		unread[id] = record.telemetryUnread
+		if record.ownsAttachables {
+			owners = append(owners, id)
+		}
 	}
+	// Only the engine's own-attachables registration makes an owner: not an
+	// exec identity bound to itself, nor any nested client's declaration.
+	require.Equal(t, []string{"interactive-cli"}, owners)
 	execRuntime := sess.clientRuntimes["exec"]
 	sess.clientMu.RUnlock()
 	require.Equal(t, map[string]bool{
