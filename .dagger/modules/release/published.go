@@ -52,13 +52,13 @@ func pep440Version(version string) string {
 	return m[1] + map[string]string{"alpha": "a", "beta": "b", "rc": "rc"}[m[2]] + m[3]
 }
 
-// npmVersionURL returns the registry URL for an @dagger.io/dagger version.
+// npmVersionURL returns the registry URL for an @dagger.io/core version.
 func npmVersionURL(npmRegistryURL, version string) string {
 	base := strings.TrimSuffix(npmRegistryURL, "/")
 	if base == "" {
 		base = "https://registry.npmjs.org"
 	}
-	return base + "/@dagger.io%2fdagger/" + version
+	return base + "/@dagger.io%2fcore/" + version
 }
 
 // hexVersionURL returns the Hex API URL for a dagger package version.

@@ -335,15 +335,18 @@ func (r *Release) Publish( //nolint:gocyclo
 			name: "⬢ TypeScript SDK",
 			path: "sdk/typescript/",
 			tag:  "sdk/typescript/",
-			link: "https://www.npmjs.com/package/@dagger.io/dagger/v/" + strings.TrimPrefix(version, "v"),
+			link: "https://www.npmjs.com/package/@dagger.io/core/v/" + strings.TrimPrefix(version, "v"),
+			// @dagger.io/core, not @dagger.io/dagger: the aggregate is generated
+			// per scope by dagger/typescript-sdk now, and core is the half whose
+			// version is the engine release, so it is the half released here.
 			release: func(ctx context.Context) error {
-				return typescriptclientdev.New(r.Workspace).Release(ctx, tag, typescriptclientdev.TypescriptClientDevReleaseOpts{
+				return typescriptclientdev.New(r.Workspace).ReleaseCore(ctx, tag, typescriptclientdev.TypescriptClientDevReleaseCoreOpts{
 					NpmToken:       npmToken,
 					NpmRegistryURL: npmRegistryURL,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
-				return checkError(ctx, typescriptclientdev.New(r.Workspace).ReleaseDryRun())
+				return checkError(ctx, typescriptclientdev.New(r.Workspace).ReleaseCoreDryRun())
 			},
 			published: func(ctx context.Context) (bool, error) {
 				return registryHasVersion(ctx, npmVersionURL(npmRegistryURL, strings.TrimPrefix(version, "v")))
