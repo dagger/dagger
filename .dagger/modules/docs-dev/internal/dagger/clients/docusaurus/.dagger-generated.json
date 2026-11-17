@@ -1,7 +1,7 @@
 {
   "version": 1,
   "files": {
-    "dagger.gen.go": "f1952b1b697ba2e90d61bb4a8e80a12a1e29a5ae93fa3f818a649c1bf766c31d",
+    "dagger.gen.go": "e16472c2ca4f38a0082fc72792445cae54c6be2a67202537822bf5d84801594e",
     "docusaurus.gen.go": "5ea3ce97c00e0340e428a788669e10d7a7ecae95999a2891e09065572e5d4998"
   }
 }

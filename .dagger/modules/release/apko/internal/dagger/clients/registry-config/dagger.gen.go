@@ -43,7 +43,7 @@ func Connect(connections ...*dagger.Client) *Client {
 	if len(connections) == 1 {
 		connection = connections[0]
 	}
-	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "/.dagger/modules/release/registry-config", ""))
+	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "../registry-config", ""))
 	return &Client{Query: &Query{query: q}}
 }
 

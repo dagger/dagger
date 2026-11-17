@@ -45,7 +45,7 @@ func Connect(connections ...*dagger.Client) *Client {
 	if len(connections) == 1 {
 		connection = connections[0]
 	}
-	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "/modules/git-releaser", ""))
+	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "../../../modules/git-releaser", ""))
 	return &Client{Query: &Query{query: q}}
 }
 

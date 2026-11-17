@@ -50,7 +50,7 @@ func Connect(connections ...*dagger.Client) *Client {
 	if len(connections) == 1 {
 		connection = connections[0]
 	}
-	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "/.dagger/modules/docs-dev", ""))
+	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "../docs-dev", ""))
 	return &Client{Query: &Query{query: q}}
 }
 
