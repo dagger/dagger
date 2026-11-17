@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Resolving and pulling an image retry after a network error while reading the
+  image's manifest or config, and updating a lock retries its request for the
+  image's digest.
+time: 2026-11-12T08:58:36Z
+custom:
+  Author: sipsma
