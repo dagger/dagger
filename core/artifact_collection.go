@@ -875,38 +875,12 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		return err
 	}
 	if members != nil {
-		// Artifact dimensions use current CLI spelling, even when their
-		// backing collection's GraphQL names belong to an older view.
-		namer := LatestNamer
-		path := []string{}
-		parent := node
-		for parent.Parent != nil && parent.CollectionDimension == nil {
-			path = append(path, namer.CLIName(parent.Name))
-			parent = parent.Parent
+		dimension, err := artifactCollectionDimension(ctx, node, obj.Name, members.Get)
+		if err != nil {
+			return err
 		}
-		slices.Reverse(path)
-		var parentDimension *flattening.Dimension
-		if parent.CollectionDimension != nil {
-			parentDimension = (*flattening.Dimension)(parent.CollectionDimension)
-		}
-		collection := flattening.Collection{
-			Fields: path, Type: obj.Name,
-			ItemType:       members.Get.ReturnType.Self().AsObject.Value.Self().Name,
-			KeyName:        members.Get.Args[0].Self().Name,
-			KeyDescription: members.Get.Args[0].Self().Description,
-		}
-		dimension := collection.Dimension(node.Module.Self().Name(), parentDimension, nil)
-		if Supports(ctx, ArtifactTypeColumnsVersion) {
-			dimension = collection.CanonicalDimension()
-			for ancestor := node; ancestor != nil; ancestor = ancestor.Parent {
-				if ancestor.CollectionDimension != nil && ancestor.CollectionDimension.CollectionType == collection.Type {
-					return fmt.Errorf("collection type %s repeats on one artifact route", collection.Type)
-				}
-			}
-		}
-		dim := (*ArtifactDimension)(dimension)
 		item := &ModTreeNode{Parent: node, Name: "get", Type: members.Get.ReturnType, Description: members.Get.Description,
-			Module: node.Module, OriginalModule: node.OriginalModule, DagqlServer: node.DagqlServer, CollectionDimension: dim, types: node.types}
+			Module: node.Module, OriginalModule: node.OriginalModule, DagqlServer: node.DagqlServer, CollectionDimension: dimension, types: node.types}
 		if err := walkArtifactNodes(ctx, item, visit, visiting); err != nil {
 			return err
 		}
@@ -941,6 +915,33 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 		}
 	}
 	return nil
+}
+
+func artifactCollectionDimension(ctx context.Context, node *ModTreeNode, typ string, get *Function) (*ArtifactDimension, error) {
+	// Artifact dimensions use current CLI spelling, even when their
+	// backing collection's GraphQL names belong to an older view.
+	path := []string{}
+	parent := node
+	for parent.Parent != nil && parent.CollectionDimension == nil {
+		path = append(path, LatestNamer.CLIName(parent.Name))
+		parent = parent.Parent
+	}
+	slices.Reverse(path)
+	collection := flattening.Collection{
+		Fields: path, Type: typ,
+		ItemType:       get.ReturnType.Self().AsObject.Value.Self().Name,
+		KeyName:        get.Args[0].Self().Name,
+		KeyDescription: get.Args[0].Self().Description,
+	}
+	if Supports(ctx, ArtifactTypeColumnsVersion) {
+		for ancestor := node; ancestor != nil; ancestor = ancestor.Parent {
+			if ancestor.CollectionDimension != nil && ancestor.CollectionDimension.CollectionType == collection.Type {
+				return nil, fmt.Errorf("collection type %s repeats on one artifact route", collection.Type)
+			}
+		}
+		return (*ArtifactDimension)(collection.CanonicalDimension()), nil
+	}
+	return (*ArtifactDimension)(collection.Dimension(node.Module.Self().Name(), (*flattening.Dimension)(parent.CollectionDimension), nil)), nil
 }
 
 // Projection changes workspace metadata, not the module function's contract.

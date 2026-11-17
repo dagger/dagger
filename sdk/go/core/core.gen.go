@@ -1422,7 +1422,7 @@ func (r *ArtifactDimension) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+// Collection schema type name, module, name, or a legacy selector identifier.
 func (r *ArtifactDimension) Identifier(ctx context.Context) (string, error) {
 	if r.identifier != nil {
 		return *r.identifier, nil
@@ -2010,7 +2010,7 @@ func (r *Artifacts) DimensionDefinitions(ctx context.Context) ([]ArtifactDimensi
 	return convert(response), nil
 }
 
-// List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
+// List collection items represented in this selection. Retain the source selection’s visible dimensions without evaluating item values.
 func (r *Artifacts) DimensionItems(ctx context.Context, dimension string) ([]Artifact, error) {
 	q := r.query.Select("dimensionItems")
 	q = q.Arg("dimension", dimension)

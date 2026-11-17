@@ -212,21 +212,21 @@ func (WorkspaceSuite) TestValueBackedWorkspaceLoadsModulesFromTree(ctx context.C
 			require.Len(t, checks, 1)
 			checkName, err := checks[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dag://?check=git-agent/verify", checkName)
+			require.Equal(t, "dag://?name=verify", checkName)
 
 			generators, err := ws.Artifacts().FilterTypes([]string{"Generator"}).Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, generators, 1)
 			generatorName, err := generators[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dag://?generator=git-agent/generate", generatorName)
+			require.Equal(t, "dag://?name=generate", generatorName)
 
 			services, err := ws.Artifacts().FilterTypes([]string{"Service"}).Items(ctx)
 			require.NoError(t, err)
 			require.Len(t, services, 1)
 			serviceName, err := services[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dag://?service=git-agent/web", serviceName)
+			require.Equal(t, "dag://?name=web", serviceName)
 
 			terminals, err := ws.Artifacts().FilterTypes([]string{"Container", "Directory"}).Items(ctx)
 			require.NoError(t, err)
@@ -279,7 +279,7 @@ source = "./modules/bad"
 		require.NoError(t, err)
 		generators = append(generators, uri)
 	}
-	require.Equal(t, []string{"dag://?generator=good/generate"}, generators)
+	require.Equal(t, []string{"dag://good/generate?type:Generator=/good/generate&module=good"}, generators)
 	require.Len(t, loadFailures, 1)
 	require.Contains(t, loadFailures[0], `module "bad"`)
 
@@ -294,7 +294,7 @@ source = "./modules/bad"
 		require.NoError(t, err)
 		checkNames = append(checkNames, checkName)
 	}
-	require.Contains(t, checkNames, "dag://?check=bad/load")
+	require.Contains(t, checkNames, "dag://bad/load?type:Check=/bad/load")
 
 	selected, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: []string{"good"}}).FilterTypes([]string{"Generator"}).Items(ctx)
 	require.NoError(t, err)

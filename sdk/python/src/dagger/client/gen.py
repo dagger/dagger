@@ -1827,8 +1827,8 @@ class ArtifactDimension(Type):
         return await _ctx.execute(str)
 
     async def identifier(self) -> str:
-        """Stable identifier: collection schema path, type:TypeName for an
-        artifact type, or module.
+        """Collection schema type name, module, name, or a legacy selector
+        identifier.
 
         Returns
         -------
@@ -2253,9 +2253,8 @@ class Artifacts(Type):
         return await _ctx.execute_object_list(ArtifactDimension)
 
     async def dimension_items(self, dimension: str) -> list[Artifact]:
-        """List collection items represented in this selection for the given
-        dimension. Preserve parent keys and remove duplicate item addresses.
-        Does not evaluate item values.
+        """List collection items represented in this selection. Retain the source
+        selection’s visible dimensions without evaluating item values.
         """
         _args = [
             Arg("dimension", dimension),

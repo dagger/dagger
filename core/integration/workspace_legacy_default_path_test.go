@@ -192,7 +192,7 @@ legacy-default-path = true
 			require.Len(t, checks, 1)
 			name, err := checks[0].URI(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dag://?check=reader/check-marker", name)
+			require.Equal(t, "dag://?name=checkMarker", name)
 
 			passed, err := artifactValue[*core.Check](ctx, t, c, &checks[0]).Pass(ctx)
 			require.NoError(t, err)

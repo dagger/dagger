@@ -12,17 +12,21 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: artifact-preview INPUT.json check -l [FLAGS] | generate -l [FLAGS] | list TYPE [FLAGS]")
 		os.Exit(2)
 	}
-	input := os.Stdin
-	var err error
-	if os.Args[1] != "-" {
-		input, err = os.Open(os.Args[1])
-	}
-	if err == nil {
-		defer input.Close()
-		err = daggercmd.PreviewArtifacts(input, os.Stdout, os.Stderr, os.Args[2:])
-	}
-	if err != nil {
+	if err := preview(os.Args[1], os.Args[2:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func preview(path string, args []string) error {
+	input := os.Stdin
+	if path != "-" {
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		input = file
+	}
+	return daggercmd.PreviewArtifacts(input, os.Stdout, os.Stderr, args)
 }

@@ -420,18 +420,18 @@ func (*Probe) Frozen() error { return nil }
 	var got struct {
 		Node struct {
 			Artifacts struct {
-				Checks struct{ List []struct{ Name string } }
+				Checks struct{ List []struct{ Path []string } }
 			}
 		}
 	}
 	require.NoError(t, c.Do(ctx, &dagger.Request{
 		Query: `query($id: ID!) { node(id: $id) { ... on Workspace {
-   artifacts { checks: filterTypes(types: ["Check"]) { list: items { name: uri } } }
+   artifacts { checks: filterTypes(types: ["Check"]) { list: items { path } } }
   } } }`,
 		Variables: map[string]any{"id": id},
 	}, &dagger.Response{Data: &got}))
 	require.Len(t, got.Node.Artifacts.Checks.List, 1)
-	require.Equal(t, "dag://?check=probe/frozen", got.Node.Artifacts.Checks.List[0].Name)
+	require.Equal(t, []string{"probe", "frozen"}, got.Node.Artifacts.Checks.List[0].Path)
 }
 
 // TestWorkspaceFromBranchIsPinned covers a Git workspace addressed by a
