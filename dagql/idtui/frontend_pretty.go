@@ -4266,16 +4266,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// progress rows, so cropping it away entirely would leave a failing test's
 	// detail rendered nowhere -- suppressed in the tree by a section that never
 	// appears.
-	var chrome []string
-	if len(logsLines) > 0 {
-		chrome = append(chrome, logsLines...)
-	}
-	if len(globalTestLines) > 0 {
-		if len(chrome) > 0 {
-			chrome = append(chrome, "")
-		}
-		chrome = append(chrome, globalTestLines...)
-	}
+	chrome := joinSections(logsLines, globalTestLines)
 	chromeReserve := 0
 	if h := ctx.ScreenHeight(); h > 0 && len(chrome) > 0 {
 		if avail := h - reserved - len(zoomHeader); avail > 0 {
@@ -4294,25 +4285,13 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	if cues := fe.renderApprovalCues(); len(cues) > 0 {
 		progressLines = fe.renderProgressLines(r, ctx, progressReserve+len(cues)+1)
 	}
-	approvalLines := fe.renderApprovalCues()
-	if len(approvalLines) > 0 && len(floating) > 0 {
-		approvalLines = append(approvalLines, "")
-	}
-	approvalLines = append(approvalLines, floating...)
-	var body []string
-	if len(progressLines) > 0 {
-		body = append(body, progressLines...)
-		if len(chrome) > 0 || len(approvalLines) > 0 {
-			body = append(body, "") // separate tree from logs/tests
-		}
-	}
-	body = append(body, approvalLines...)
-	if len(approvalLines) > 0 && len(chrome) > 0 {
-		body = append(body, "")
-	}
 	// The keymap supplies its own leading gap; content sections only need
 	// separators between them, not a trailing blank line.
-	body = append(body, chrome...)
+	body := joinSections(
+		progressLines,
+		joinSections(fe.renderApprovalCues(), floating),
+		chrome,
+	)
 
 	// Crop the bottom to the rows available for the body: the screen minus the
 	// always-shown siblings and the pinned zoom header. A non-positive
@@ -4336,6 +4315,22 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// NOTE: textInput, active forms, and keymapBar are rendered as siblings in the
 	// TUI container, not here (accounted for in reserved above). Their cursors
 	// propagate through tuist automatically.
+}
+
+// joinSections joins the non-empty sections in order, separated by one blank
+// line each.
+func joinSections(sections ...[]string) []string {
+	var out []string
+	for _, section := range sections {
+		if len(section) == 0 {
+			continue
+		}
+		if len(out) > 0 {
+			out = append(out, "")
+		}
+		out = append(out, section...)
+	}
+	return out
 }
 
 // renderZoomHeader renders the zoomed span as a full-width title bar, matching

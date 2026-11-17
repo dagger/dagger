@@ -141,11 +141,11 @@ func awaitApproval(t *testing.T, fe *frontendPretty, results <-chan approvalResu
 	return res
 }
 
-func pressKeys(fe *frontendPretty, keys ...string) []string {
+func pressKeys(fe *frontendPretty, keys ...string) {
 	for _, k := range keys {
 		fe.tui.Inject(tuist.ParseKey(k))
 	}
-	return fe.tui.Step()
+	fe.tui.Step()
 }
 
 func frameText(lines []string) string {

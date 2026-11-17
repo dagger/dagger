@@ -580,7 +580,7 @@ func (fe *frontendPretty) handleApprovalKey(a *pendingApproval, keyStr string) b
 		return false
 	}
 	pick := func(decision prompt.ApprovalDecision) bool {
-		if _, ok := approvalChoiceIndex(a, decision); ok {
+		if approvalOffers(a, decision) {
 			fe.finishApproval(a, decision, nil)
 		}
 		// Claimed even when not on offer: an answer key must never fall
@@ -630,7 +630,7 @@ func (fe *frontendPretty) approvalKeys() []key.Binding {
 	if a == nil {
 		return nil
 	}
-	_, always := approvalChoiceIndex(a, prompt.APPROVAL_ALLOW_FOREVER)
+	always := approvalOffers(a, prompt.APPROVAL_ALLOW_FOREVER)
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("↑↓", "up", "down", "j", "k"), key.WithHelp("↑↓", "choose")),
 		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
@@ -644,13 +644,13 @@ func (fe *frontendPretty) approvalKeys() []key.Binding {
 	}
 }
 
-func approvalChoiceIndex(a *pendingApproval, decision prompt.ApprovalDecision) (int, bool) {
-	for i, c := range a.choices {
+func approvalOffers(a *pendingApproval, decision prompt.ApprovalDecision) bool {
+	for _, c := range a.choices {
 		if c.decision == decision {
-			return i, true
+			return true
 		}
 	}
-	return -1, false
+	return false
 }
 
 // renderApprovalCues renders a one-line cue for each anchored approval whose
