@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -17,6 +18,8 @@ const (
 	// blockingLogWarnInterval spaces the warnings of a batch that keeps
 	// failing, for example against an organization Cloud refuses.
 	blockingLogWarnInterval = time.Minute
+	// droppingLogExportTimeout is the SDK BatchProcessor's default.
+	droppingLogExportTimeout = 30 * time.Second
 )
 
 // BlockingLogProcessor batches log records to an exporter without ever
@@ -31,6 +34,11 @@ type BlockingLogProcessor struct {
 	limit     int
 	batchSize int
 	interval  time.Duration
+	// dropping selects DroppingLogProcessor's policy: a full queue drops
+	// its oldest record, and a failed export is not retried. Each export
+	// then gives up after exportTimeout.
+	dropping      bool
+	exportTimeout time.Duration
 
 	mu      sync.Mutex
 	queue   []sdklog.Record
@@ -53,28 +61,59 @@ type BlockingLogProcessor struct {
 // records, at most interval after the first record of a batch arrives, with
 // at most queueSize records waiting.
 func NewBlockingLogProcessor(exporter sdklog.Exporter, queueSize, batchSize int, interval time.Duration) *BlockingLogProcessor {
+	return newLogProcessor(exporter, queueSize, batchSize, interval, false, 0)
+}
+
+func newLogProcessor(exporter sdklog.Exporter, queueSize, batchSize int, interval time.Duration, dropping bool, exportTimeout time.Duration) *BlockingLogProcessor {
 	runCtx, cancel := context.WithCancel(context.Background())
 	p := &BlockingLogProcessor{
-		exporter:     exporter,
-		limit:        max(queueSize, 1),
-		batchSize:    max(batchSize, 1),
-		interval:     interval,
-		space:        make(chan struct{}),
-		wake:         make(chan struct{}, 1),
-		flush:        make(chan chan struct{}),
-		stop:         make(chan struct{}),
-		done:         make(chan struct{}),
-		runCtx:       runCtx,
-		cancelRun:    cancel,
-		shutdownDone: make(chan struct{}),
+		exporter:      exporter,
+		limit:         max(queueSize, 1),
+		batchSize:     max(batchSize, 1),
+		interval:      interval,
+		dropping:      dropping,
+		exportTimeout: exportTimeout,
+		space:         make(chan struct{}),
+		wake:          make(chan struct{}, 1),
+		flush:         make(chan chan struct{}),
+		stop:          make(chan struct{}),
+		done:          make(chan struct{}),
+		runCtx:        runCtx,
+		cancelRun:     cancel,
+		shutdownDone:  make(chan struct{}),
 	}
 	go p.run()
 	return p
 }
 
-// OnEmit queues a copy of the record, waiting while the queue is full. It
-// returns ctx's error if ctx ends first, and drops nothing otherwise; after
-// Shutdown it discards the record.
+// DroppingLogProcessor is a drop-in for the SDK's BatchProcessor, with the
+// same loss policy — when its queue is full it drops the oldest record, and a
+// batch whose export fails is reported to otel.Handle and dropped — but
+// without its idle cost. The SDK's poll loop wakes every interval and clones
+// its whole batch-sized []Record buffer (432 bytes a record) on every wake,
+// records or not, so a 512-record batch at 100ms allocates over 2 MiB/s for
+// as long as the process lives. This one only wakes when a record arrives,
+// and exports at most interval after the first record of a batch, or as soon
+// as a batch is full.
+type DroppingLogProcessor struct {
+	*BlockingLogProcessor
+}
+
+// NewDroppingLogProcessor exports to exporter in batches of at most batchSize
+// records, at most interval after the first record of a batch arrives, with
+// at most queueSize records waiting.
+func NewDroppingLogProcessor(exporter sdklog.Exporter, queueSize, batchSize int, interval time.Duration) *DroppingLogProcessor {
+	return newDroppingLogProcessor(exporter, queueSize, batchSize, interval, droppingLogExportTimeout)
+}
+
+func newDroppingLogProcessor(exporter sdklog.Exporter, queueSize, batchSize int, interval, exportTimeout time.Duration) *DroppingLogProcessor {
+	return &DroppingLogProcessor{newLogProcessor(exporter, queueSize, batchSize, interval, true, exportTimeout)}
+}
+
+// OnEmit queues a copy of the record, waiting while the queue is full (a
+// DroppingLogProcessor drops its oldest record instead). It returns ctx's
+// error if ctx ends first, and drops nothing otherwise; after Shutdown it
+// discards the record.
 func (p *BlockingLogProcessor) OnEmit(ctx context.Context, record *sdklog.Record) error {
 	if record == nil {
 		return nil
@@ -85,6 +124,10 @@ func (p *BlockingLogProcessor) OnEmit(ctx context.Context, record *sdklog.Record
 		if p.stopped {
 			p.mu.Unlock()
 			return nil
+		}
+		if p.dropping && len(p.queue) >= p.limit {
+			// Overwrite the oldest record, like the SDK's ring buffer.
+			p.queue = p.queue[len(p.queue)-p.limit+1:]
 		}
 		if len(p.queue) < p.limit {
 			p.queue = append(p.queue, cloned)
@@ -124,10 +167,14 @@ func (p *BlockingLogProcessor) ForceFlush(ctx context.Context) error {
 	}
 	select {
 	case <-reply:
-		return nil
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
+	if p.dropping {
+		// Like the SDK BatchProcessor, flush the exporter too.
+		return p.exporter.ForceFlush(ctx)
+	}
+	return nil
 }
 
 // Shutdown stops accepting records and drains the queue within ctx. It returns
@@ -249,12 +296,22 @@ func (p *BlockingLogProcessor) exportWithRetry(batch []sdklog.Record) bool {
 		if p.runCtx.Err() != nil {
 			return false
 		}
-		err := p.exporter.Export(p.runCtx, batch)
+		exportCtx, cancel := p.runCtx, context.CancelFunc(func() {})
+		if p.dropping {
+			// Like the SDK BatchProcessor, give up on a stuck export.
+			exportCtx, cancel = context.WithTimeout(p.runCtx, p.exportTimeout)
+		}
+		err := p.exporter.Export(exportCtx, batch)
+		cancel()
 		if err == nil {
 			return p.runCtx.Err() == nil
 		}
 		if p.runCtx.Err() != nil {
 			return false
+		}
+		if p.dropping {
+			otel.Handle(err)
+			return true
 		}
 		failures++
 		if time.Since(warned) >= blockingLogWarnInterval {
