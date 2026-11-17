@@ -510,6 +510,14 @@ type Artifact implements Node {
   """A unique identifier for this Artifact."""
   id: ID!
 
+  """
+  The artifact coordinates in its source selection's visible dimensions. Without a source selection, return all coordinates.
+  """
+  dimensionKeys(
+    """Return all artifact coordinates, including constant dimensions."""
+    all: Boolean = false
+  ): [ArtifactDimensionKey!]!
+
   """A module load failure, or an empty string if discovery succeeded."""
   loadError: String!
 
@@ -552,11 +560,6 @@ type Artifact implements Node {
   """
   path: [String!]!
 
-  """
-  The module name, collection keys, and full path key in the artifact type dimension.
-  """
-  dimensionKeys: [ArtifactDimensionKey!]!
-
   """The directives carried by this artifact."""
   directives: [String!]!
 
@@ -578,7 +581,7 @@ type ArtifactDimension implements Node {
   collectionType: String
 
   """
-  Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+  Collection schema type name, module, name, or a legacy selector identifier.
   """
   identifier: String!
 
@@ -617,6 +620,7 @@ enum ArtifactDimensionKind {
   COLLECTION
   MODULE
   TYPE
+  NAME
 }
 
 """
@@ -780,7 +784,12 @@ type Artifacts implements Node {
   filterPathPattern(pattern: String!): Artifacts!
 
   """Keep artifacts selected through any listed dimension."""
-  filterDimensions(dimensions: [String!]!): Artifacts!
+  filterDimensions(
+    dimensions: [String!]!
+
+    """Remove artifacts with any listed dimension."""
+    exclude: Boolean = false
+  ): Artifacts!
 
   """
   Keep artifacts with any listed key in this dimension. Replace collection
@@ -803,9 +812,12 @@ type Artifacts implements Node {
   ): Artifacts!
 
   """
-  List dimension identifiers represented in this selection, sorted with no duplicates.
+  List dimensions whose cells differ across selected rows. Missing cells differ from present keys.
   """
-  dimensions: [String!]!
+  dimensions(
+    """List all workspace schema dimensions without runtime discovery."""
+    all: Boolean = false
+  ): [String!]!
 
   """
   List keys represented in this selection for the given dimension, sorted with no duplicates.
@@ -813,9 +825,8 @@ type Artifacts implements Node {
   dimensionKeys(dimension: String!): [String!]!
 
   """
-  List collection items represented in this selection for the given dimension.
-  Preserve parent keys and remove duplicate item addresses. Does not evaluate
-  item values.
+  List collection items represented in this selection. Retain the source
+  selection’s visible dimensions without evaluating item values.
   """
   dimensionItems(dimension: String!): [Artifact!]!
 
@@ -825,8 +836,7 @@ type Artifacts implements Node {
   items: [Artifact!]!
 
   """
-  Require exactly one artifact; fail if there are zero or multiple matches.
-  Several matches are listed, one address per line.
+  Require exactly one artifact from the selected items snapshot; fail if there are zero or multiple matches.
   """
   one: Artifact!
 

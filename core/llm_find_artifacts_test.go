@@ -61,11 +61,11 @@ Modules that failed to load (they may hide artifacts of any type):
     syntax error
 
 Narrow with type (e.g. type: "Check"), address (e.g. address: "<module>/**") or keys. view: "items" lists every fully keyed address; dimension: "<collection>" lists its keys.`,
-		renderArtifactOverview(artifactOverviewOf(scope, tag)))
+		renderArtifactOverview(artifactOverviewOf(scope, tag, false)))
 
 	require.Equal(t,
 		"No artifacts in scope: neither the workspace's modules nor your bound tool modules have any.",
-		renderArtifactOverview(artifactOverviewOf(&Artifacts{}, tag)))
+		renderArtifactOverview(artifactOverviewOf(&Artifacts{}, tag, false)))
 }
 
 func TestFindArtifactsPathRows(t *testing.T) {
@@ -74,7 +74,7 @@ func TestFindArtifactsPathRows(t *testing.T) {
 		t.Helper()
 		selection, err := selection.SchemaSelection()
 		require.NoError(t, err)
-		rows, err := artifactPathRows(scope, selection, tag)
+		rows, err := artifactPathRows(scope, selection, tag, false)
 		require.NoError(t, err)
 		return renderArtifactRows(rows, nil)
 	}
@@ -127,13 +127,39 @@ func TestFindArtifactsItemRows(t *testing.T) {
 		keyed(scope.Entries[4], "worker one"),
 	}}
 	expanded.AllDimensions = expanded.DimensionDefinitions()
-	rows, err := artifactItemRows(expanded, tag)
+	rows, err := artifactItemRows(expanded, tag, false)
 	require.NoError(t, err)
 	require.Equal(t, `dag+check://?check=broken/load — LOAD ERROR: loading module "broken": boom
     syntax error
 dag+git-ref://?git-ref=roster/members/head&member=chief — The member's committed history. [tool Roster, live]
 dag+git-ref://?git-ref=roster/members/head&member=worker%20one — The member's committed history. [tool Roster, live]`,
 		renderArtifactRows(rows, nil))
+}
+
+func TestFindArtifactsCanonicalRows(t *testing.T) {
+	scope, tag := findArtifactsFixture()
+	scope.Entries = scope.Entries[4:]
+	dimension := scope.Entries[0].Node.Parent.CollectionDimension
+	dimension.Identifier = dimension.CollectionType
+	dimension.Name = "roster-member"
+	dimension.QualifiedName = dimension.CollectionType
+	scope.AllDimensions = scope.DimensionDefinitions()
+	scope.AllPaths = scope.PathIndex()
+	require.NoError(t, scope.NameEntries())
+
+	rows, err := artifactPathRows(scope, scope, tag, true)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "dag+git-ref://roster/members/head?roster-member=<name>", rows[0].Address)
+	require.Equal(t, "RosterMembers", rows[0].Needs[0].Identifier)
+
+	key := "worker one"
+	entry := scope.Entries[0].Clone()
+	entry.Node.Parent.CollectionKey = &key
+	rows, err = artifactItemRows(&Artifacts{Entries: []*Artifact{entry}}, tag, true)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "dag+git-ref://roster/members/head?RosterMembers=worker%20one", rows[0].Address)
 }
 
 func TestFindArtifactsInlineKeys(t *testing.T) {
@@ -156,7 +182,7 @@ func TestFindArtifactsInlineKeys(t *testing.T) {
 		t.Helper()
 		selection, err := selection.SchemaSelection()
 		require.NoError(t, err)
-		rows, err := artifactPathRows(scope, selection, tag)
+		rows, err := artifactPathRows(scope, selection, tag, false)
 		require.NoError(t, err)
 		keys, err := enumerateDimensionKeys(t.Context(), selection, rowDimensionIDs(rows), collectionKeys)
 		require.NoError(t, err)

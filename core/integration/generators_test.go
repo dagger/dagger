@@ -216,7 +216,7 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 					}).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
-				require.Regexp(t, `changeset-failure.*ERROR`, out)
+				require.Regexp(t, `dag://\?name=changesetFailure.*ERROR`, out)
 				require.Contains(t, out, "could not generate the changeset")
 			})
 		})
@@ -419,8 +419,8 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 					With(daggerExec("generate", "-l", "-f=link")).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
-				require.Contains(t, out, "dag+generator://?generator="+tc.path+"/generate-files")
-				require.Contains(t, out, "dag+generator://?generator="+tc.path+"/generate-other-files")
+				require.Contains(t, out, "dag+generator://"+tc.path+"/generate-files")
+				require.Contains(t, out, "dag+generator://"+tc.path+"/generate-other-files")
 			})
 
 			t.Run("generate", func(ctx context.Context, t *testctx.T) {

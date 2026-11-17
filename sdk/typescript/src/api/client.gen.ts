@@ -5627,7 +5627,7 @@ export class ArtifactDimension extends BaseClient {
   }
 
   /**
-   * Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+   * Collection schema type name, module, name, or a legacy selector identifier.
    */
   identifier = async (): Promise<string> => {
     if (this._identifier) {
@@ -6045,7 +6045,7 @@ export class Artifacts extends BaseClient {
   }
 
   /**
-   * List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
+   * List collection items represented in this selection. Retain the source selection’s visible dimensions without evaluating item values.
    */
   dimensionItems = async (dimension: string): Promise<Artifact[]> => {
     type dimensionItems = {

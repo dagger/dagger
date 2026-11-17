@@ -1363,7 +1363,7 @@ impl ArtifactDimension {
         let query = self.selection.select("collectionType");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+    /// Collection schema type name, module, name, or a legacy selector identifier.
     pub async fn identifier(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("identifier");
         query.execute(self.graphql_client.clone()).await
@@ -1541,12 +1541,6 @@ pub struct ArtifactsPathDefinitionsOpts<'a> {
     pub type_assertion: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ArtifactsFilterDimensionsOpts {
-    /// Remove artifacts with any listed dimension.
-    #[builder(setter(into, strip_option), default)]
-    pub exclude: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsFilterDirectivesOpts {
     /// Remove the matching artifacts instead.
     #[builder(setter(into, strip_option), default)]
@@ -1567,6 +1561,12 @@ pub struct ArtifactsFilterParentDirectivesOpts {
 #[derive(Builder, Debug, PartialEq)]
 pub struct ArtifactsFilterTypesOpts {
     /// Remove the matching artifacts instead.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ArtifactsFilterDimensionsOpts {
+    /// Remove artifacts with any listed dimension.
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<bool>,
 }
@@ -2006,7 +2006,9 @@ impl Artifacts {
     }
     /// Keep artifacts selected through any listed dimension.
     ///
-    /// Use [`Self::filter_dimensions_opts`] to set optional arguments.
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn filter_dimensions(&self, dimensions: Vec<impl Into<String>>) -> Artifacts {
         let mut query = self.selection.select("filterDimensions");
         query = query.arg(
@@ -2024,6 +2026,9 @@ impl Artifacts {
     }
     /// Keep artifacts selected through any listed dimension.
     ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn filter_dimensions_opts(
         &self,
         dimensions: Vec<impl Into<String>>,
@@ -2113,7 +2118,7 @@ impl Artifacts {
         query = query.arg("dimension", dimension.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values.
+    /// List collection items represented in this selection. Retain the source selection’s visible dimensions without evaluating item values.
     pub async fn dimension_items(
         &self,
         dimension: impl Into<String>,

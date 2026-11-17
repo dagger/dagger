@@ -38,7 +38,7 @@ defmodule Dagger.ArtifactDimension do
   end
 
   @doc """
-  Stable identifier: collection schema path, type:TypeName for an artifact type, or module.
+  Collection schema type name, module, name, or a legacy selector identifier.
   """
   @spec identifier(t()) :: {:ok, String.t()} | {:error, term()}
   def identifier(%__MODULE__{} = artifact_dimension) do

@@ -1,6 +1,5 @@
 # Legacy artifact selectors
 
-
 `New`, `Plan.Flatten`, `Coordinates`, and `ArtifactDimensions` retain the legacy
 type-path algorithm for existing schema and selector compatibility. The
 following sections describe that algorithm.

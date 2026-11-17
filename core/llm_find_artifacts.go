@@ -222,7 +222,7 @@ func (m *MCP) findArtifacts(ctx context.Context, srv *dagql.Server, args findArt
 	if !args.filtered() && args.View == "" {
 		// The overview is the cheap first call: it reads no runtime state,
 		// not even collection keys. Narrowed listings show those.
-		return renderArtifactOverview(artifactOverviewOf(scope, boundArtifactTag)), nil
+		return renderArtifactOverview(artifactOverviewOf(scope, boundArtifactTag, Supports(ctx, ArtifactTypeColumnsVersion))), nil
 	}
 
 	selection := scope
@@ -256,7 +256,7 @@ func (m *MCP) findArtifacts(ctx context.Context, srv *dagql.Server, args findArt
 		if err != nil {
 			return "", err
 		}
-		rows, err := artifactItemRows(expanded, boundArtifactTag)
+		rows, err := artifactItemRows(expanded, boundArtifactTag, Supports(ctx, ArtifactTypeColumnsVersion))
 		if err != nil {
 			return "", err
 		}
@@ -266,7 +266,7 @@ func (m *MCP) findArtifacts(ctx context.Context, srv *dagql.Server, args findArt
 		if err != nil {
 			return "", err
 		}
-		rows, err := artifactPathRows(scope, schemaSelection, boundArtifactTag)
+		rows, err := artifactPathRows(scope, schemaSelection, boundArtifactTag, Supports(ctx, ArtifactTypeColumnsVersion))
 		if err != nil {
 			return "", err
 		}
@@ -533,8 +533,8 @@ func (d artifactRowDimension) placeholder() string {
 // Artifacts.pathDefinitions(typeAssertion: true) does), each with the
 // dimensions it needs. Dimension names are chosen in the whole scope, as
 // Artifact.uri names them, so a filled-in address resolves.
-func artifactPathRows(scope, selection *Artifacts, tag func(*Artifact) string) ([]artifactRow, error) {
-	opts := ArtifactURIOpts{TypeAssertion: true}
+func artifactPathRows(scope, selection *Artifacts, tag func(*Artifact) string, canonical bool) ([]artifactRow, error) {
+	opts := ArtifactURIOpts{TypeAssertion: true, Canonical: canonical}
 	paths, err := selection.PathDefinitions(opts)
 	if err != nil {
 		return nil, err
@@ -603,10 +603,10 @@ func artifactPathRows(scope, selection *Artifacts, tag func(*Artifact) string) (
 
 // artifactItemRows renders expanded artifacts by their complete addresses,
 // as Artifact.uri(typeAssertion: true) prints them.
-func artifactItemRows(expanded *Artifacts, tag func(*Artifact) string) ([]artifactRow, error) {
+func artifactItemRows(expanded *Artifacts, tag func(*Artifact) string, canonical bool) ([]artifactRow, error) {
 	rows := make([]artifactRow, 0, len(expanded.Entries))
 	for _, entry := range expanded.Entries {
-		uri, err := entry.URI(ArtifactURIOpts{DimensionKeys: true, TypeAssertion: true})
+		uri, err := entry.URI(ArtifactURIOpts{DimensionKeys: true, TypeAssertion: true, Canonical: canonical})
 		if err != nil {
 			return nil, err
 		}
@@ -726,7 +726,7 @@ type artifactOverviewCollection struct {
 // artifactOverviewOf counts the scope's schema paths per type, with the
 // modules (in CLI case, as addresses spell them) that have them. It reads no
 // runtime values.
-func artifactOverviewOf(scope *Artifacts, tag func(*Artifact) string) artifactOverview {
+func artifactOverviewOf(scope *Artifacts, tag func(*Artifact) string, canonical bool) artifactOverview {
 	var overview artifactOverview
 	counts := map[string]int{}
 	modules := map[string][]string{}
@@ -734,7 +734,7 @@ func artifactOverviewOf(scope *Artifacts, tag func(*Artifact) string) artifactOv
 		module := ArtifactTypeName(entry.ModuleName)
 		if entry.LoadFailure != nil {
 			row := artifactRow{Description: entry.Description(), LoadError: entry.LoadFailure.Message, Tag: tag(entry)}
-			row.Address, _ = entry.URI(ArtifactURIOpts{TypeAssertion: true})
+			row.Address, _ = entry.URI(ArtifactURIOpts{TypeAssertion: true, Canonical: canonical})
 			overview.LoadErrors = append(overview.LoadErrors, row)
 			continue
 		}

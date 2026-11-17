@@ -141,30 +141,12 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 	var keys []dagaddress.Pair
 	var dimensions []string
 	if opts.DimensionKeys {
-		coordinates := a.DimensionKeys
-		if opts.Canonical {
-			coordinates = a.CanonicalDimensionKeys()
-		}
-		for _, key := range coordinates {
-			if artifact.IsStaticDimension(key.Dimension) {
-				continue
-			}
-			keys = append(keys, dagaddress.Pair{Dimension: a.dimensionName(key.Dimension), Key: key.Key, HasKey: true})
-			if !slices.Contains(dimensions, key.Dimension) {
-				dimensions = append(dimensions, key.Dimension)
-			}
-		}
+		keys, dimensions = a.uriDimensionKeys(opts.Canonical)
 	}
 	addr := &dagaddress.Address{HasScheme: true}
 	path := strings.Join(a.Path, "/")
-	var link *artifact.Link
-	if opts.Canonical && a.links != nil {
-		link = a.links.Untyped
-		if opts.TypeAssertion {
-			link = a.links.Typed
-		}
-	}
-	usePlan := opts.Canonical && opts.DimensionKeys && !opts.Full && a.addressPlan(opts.TypeAssertion) != nil
+	shortCanonical := opts.Canonical && !opts.Full
+	usePlan := shortCanonical && opts.DimensionKeys && a.addressPlan(opts.TypeAssertion) != nil
 	switch {
 	case usePlan:
 		for _, selector := range a.addressPlan(opts.TypeAssertion).Selectors {
@@ -172,8 +154,15 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 			addr.Query = append(addr.Query, selector)
 		}
 		keys = nil
-	case opts.Canonical && !opts.Full:
+	case shortCanonical:
 		addr.Path = path
+		var link *artifact.Link
+		if a.links != nil {
+			link = a.links.Untyped
+			if opts.TypeAssertion {
+				link = a.links.Typed
+			}
+		}
 		if !opts.TypeAssertion && a.TypeName != "" && (link == nil || link.TypeKey != "") {
 			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: "type:" + a.TypeName, Key: "/" + path, HasKey: true})
 		}
@@ -185,7 +174,6 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 	case a.TypeName == "":
 		addr.Path = path
 	default:
-
 		key := path
 		if !opts.Full && a.TypeKeyName != "" && len(dimensions) > 0 && slices.Equal(dimensions, a.projectedDimensions()) {
 			key = a.TypeKeyName
@@ -193,21 +181,7 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 		addr.Query = append(addr.Query, dagaddress.Pair{Dimension: a.dimensionName("type:" + a.TypeName), Key: key, HasKey: true})
 	}
 	if opts.Canonical && !usePlan && a.links != nil {
-		absent, presence, module := a.links.UntypedAbsent, a.links.UntypedPresence, a.links.UntypedModule
-		if opts.TypeAssertion {
-			absent, presence, module = a.links.TypedAbsent, a.links.TypedPresence, a.links.TypedModule
-		}
-		if module {
-			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: artifact.ModuleDimension, Key: a.ModuleName, HasKey: a.ModuleName != "", Absent: a.ModuleName == ""})
-		}
-		if !opts.DimensionKeys {
-			for _, id := range presence {
-				addr.Query = append(addr.Query, dagaddress.Pair{Dimension: id})
-			}
-		}
-		for _, id := range absent {
-			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: id, Absent: true})
-		}
+		a.addCanonicalURIQualifiers(addr, opts)
 	}
 	addr.Query = append(addr.Query, keys...)
 	if opts.TypeAssertion {
@@ -226,6 +200,43 @@ func (a *Artifact) URI(opts ArtifactURIOpts) (string, error) {
 		addr.Version = commit
 	}
 	return addr.String(), nil
+}
+
+func (a *Artifact) uriDimensionKeys(canonical bool) ([]dagaddress.Pair, []string) {
+	var keys []dagaddress.Pair
+	var dimensions []string
+	coordinates := a.DimensionKeys
+	if canonical {
+		coordinates = a.CanonicalDimensionKeys()
+	}
+	for _, key := range coordinates {
+		if artifact.IsStaticDimension(key.Dimension) {
+			continue
+		}
+		keys = append(keys, dagaddress.Pair{Dimension: a.dimensionName(key.Dimension), Key: key.Key, HasKey: true})
+		if !slices.Contains(dimensions, key.Dimension) {
+			dimensions = append(dimensions, key.Dimension)
+		}
+	}
+	return keys, dimensions
+}
+
+func (a *Artifact) addCanonicalURIQualifiers(addr *dagaddress.Address, opts ArtifactURIOpts) {
+	absent, presence, module := a.links.UntypedAbsent, a.links.UntypedPresence, a.links.UntypedModule
+	if opts.TypeAssertion {
+		absent, presence, module = a.links.TypedAbsent, a.links.TypedPresence, a.links.TypedModule
+	}
+	if module {
+		addr.Query = append(addr.Query, dagaddress.Pair{Dimension: artifact.ModuleDimension, Key: a.ModuleName, HasKey: a.ModuleName != "", Absent: a.ModuleName == ""})
+	}
+	if !opts.DimensionKeys {
+		for _, id := range presence {
+			addr.Query = append(addr.Query, dagaddress.Pair{Dimension: id})
+		}
+	}
+	for _, id := range absent {
+		addr.Query = append(addr.Query, dagaddress.Pair{Dimension: id, Absent: true})
+	}
 }
 
 // StaleArtifact is the staleness check of a generator artifact: a Check at the
