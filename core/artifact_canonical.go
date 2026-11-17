@@ -7,7 +7,7 @@ import (
 	"github.com/dagger/dagger/core/artifact/flattening"
 )
 
-const ArtifactTypeColumnsVersion = "v1.0.0-beta.28"
+const ArtifactTypeColumnsVersion = "v1.0.0-beta.29"
 
 func (a *Artifact) ProjectionField() flattening.Field {
 	field := flattening.Field{Module: a.ModuleName, Type: a.TypeName,
