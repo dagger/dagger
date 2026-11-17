@@ -34,10 +34,6 @@ var agentTrace string
 var agentFocus string
 var agentBackfill bool
 
-// agentNoBackfill is the hidden --no-backfill, kept so scripts written when
-// conversation-only history was opt-in keep working: it is now the default.
-var agentNoBackfill bool
-
 var agentCmd = &cobra.Command{
 	Use:   "agent [FILTERS] [OPTIONS]",
 	Short: "Compose your installed agent modules and drop into an interactive prompt.",
@@ -70,7 +66,7 @@ Use /help for everyday commands and advanced options.`,
 		if err := validateArchiveFlags(traceID, agentFocus, listArchives, agentListMode, args); err != nil {
 			return err
 		}
-		if err := validateBackfillFlags(agentBackfill, agentNoBackfill, traceID != "" || listArchives); err != nil {
+		if err := validateBackfillFlags(agentBackfill, traceID != "" || listArchives); err != nil {
 			return err
 		}
 		// A bare -r offers a picker whenever the frontend can prompt, then
@@ -274,21 +270,12 @@ func init() {
 		"With -r, focus this restored agent (runtime handle or name) instead of the top-level one")
 	agentCmd.Flags().BoolVar(&agentBackfill, "backfill", false,
 		"With -r, import the session's full telemetry history in the background, so every span, check and test is browsable as in the original session. By default only the agents' conversations load, and a span's children and logs load as it is expanded or shown, so a session too large to reload (e.g. one that ran out of memory) still resumes, and /backfill loads the rest from inside it. Applies to sealed engine archives; unsealed archives and Dagger Cloud traces always load whole")
-	agentCmd.Flags().BoolVar(&agentNoBackfill, "no-backfill", false,
-		"With -r, load only the session's conversations (the default)")
-	_ = agentCmd.Flags().MarkHidden("no-backfill")
 }
 
-// validateBackfillFlags refuses --backfill without a restore, and with the
-// hidden --no-backfill, which names the default.
-func validateBackfillFlags(backfill, noBackfill, restoring bool) error {
-	switch {
-	case backfill && noBackfill:
-		return errors.New("--backfill and --no-backfill are mutually exclusive")
-	case backfill && !restoring:
+// validateBackfillFlags refuses --backfill without a restore.
+func validateBackfillFlags(backfill, restoring bool) error {
+	if backfill && !restoring {
 		return errors.New("--backfill requires -r/--resume")
-	case noBackfill && !restoring:
-		return errors.New("--no-backfill requires -r/--resume")
 	}
 	return nil
 }
