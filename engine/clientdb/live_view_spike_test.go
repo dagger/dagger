@@ -3,6 +3,7 @@ package clientdb
 import (
 	"database/sql"
 	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -98,7 +99,8 @@ func TestSpikeSpanViewFollowsLiveStore(t *testing.T) {
 // BenchmarkSpikeSpanViewPerCut measures what following a live store with
 // SpanViewAt costs: every new cut misses the topology cache and rebuilds it
 // from every span row, so a follower polling it pays O(spans) per poll, and
-// O(spans^2) over a session.
+// O(spans^2) over a session. It also reports the heap one topology retains:
+// the cache keeps one per recent cut.
 func BenchmarkSpikeSpanViewPerCut(b *testing.B) {
 	for _, n := range []int{10_000, 100_000} {
 		b.Run(fmt.Sprint(n), func(b *testing.B) {
@@ -120,6 +122,15 @@ func BenchmarkSpikeSpanViewPerCut(b *testing.B) {
 			}
 			_, err = db.AppendSpans(rows)
 			require.NoError(b, err)
+			// The heap one cached topology retains (the topology cache keeps
+			// up to spanTopologyCacheSize of them, one per cut).
+			before, _ := footprintHeap()
+			view, err := db.SpanViewAt(b.Context(), selectionTrace, db.HighWater(), &archive.SpanSelection{DagUIView: true})
+			require.NoError(b, err)
+			after, _ := footprintHeap()
+			runtime.KeepAlive(view)
+			topology := float64(int64(after)-int64(before)) / float64(n)
+			defer b.ReportMetric(topology, "B/span-topology")
 			next := n
 			for b.Loop() {
 				// One new span, so the view is at a new cut, as a poll of a
