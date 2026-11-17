@@ -1556,6 +1556,8 @@ func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src 
 // already holds the included files, and an engine that predates include runs
 // sources instead, so one module can carry both.
 func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *core.ModuleSource) (rerr error) {
+	src.EntrypointSources = false
+	src.EntrypointInputsKey = ""
 	if src.Entrypoint == nil {
 		return nil
 	}
@@ -1580,6 +1582,7 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	if err != nil {
 		return fmt.Errorf("scan module entrypoint source: %w", err)
 	}
+	src.EntrypointSources = declared
 	if !declared {
 		return nil
 	}
@@ -1641,6 +1644,10 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 		}
 	}
 	contextDir, err := mergeEntrypointSources(ctx, dag, sources, moduleContext)
+	if err != nil {
+		return fail(err)
+	}
+	contextDir, err = core.CaptureWorkspaceInputDirectory(ctx, contextDir, sources)
 	if err != nil {
 		return fail(err)
 	}

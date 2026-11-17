@@ -319,6 +319,9 @@ func decodeContainerRecipeRoute(field string, raw json.RawMessage) (containerRec
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return route, err
 		}
+		if err := p.validate(); err != nil {
+			return route, err
+		}
 		route.volatileCacheHit = p.VolatileCacheHitParentResultID != 0
 	case "withMountedDirectory", "withMountedFile", "__withMountedPathDockerfileCompat":
 		var p struct {

@@ -277,7 +277,7 @@ func TestPrivateCollectionSDKInputKeepsDistinctStoredPaths(t *testing.T) {
 	var previous map[string]uint64
 	for range 2 {
 		scope.results = nil
-		got, err := moduleObjectFieldsToSDKInput(ctx, parent, frame, input)
+		got, err := moduleObjectFieldsToSDKInput(ctx, parent, frame, input, dagql.ObjectResult[*ModuleObject]{})
 		require.NoError(t, err)
 		check := func(value any, key string) {
 			fields := value.(map[string]any)

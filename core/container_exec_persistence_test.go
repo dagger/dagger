@@ -125,3 +125,24 @@ func TestContainerExecRecipeRoutesAsEncoded(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, route.volatileCacheHit)
 }
+
+func TestPersistedContainerExecRejectsMixedReferences(t *testing.T) {
+	raw, err := json.Marshal(persistedContainerExecLazy{
+		ParentResultID:                 1,
+		ModuleContextResultID:          2,
+		VolatileCacheHitParentResultID: 3,
+	})
+	require.NoError(t, err)
+	const invalid = "mixes regular and volatile cache-hit references"
+
+	_, err = decodePersistedContainerExecLazy(t.Context(), nil, raw)
+	require.ErrorContains(t, err, invalid)
+	_, err = decodeContainerRecipeRoute("withExec", raw)
+	require.ErrorContains(t, err, invalid)
+	walker := newPersistedRefWalker(func(*dagql.PersistedRef) error {
+		t.Fatal("mixed recipe reported a child reference")
+		return nil
+	}, nil)
+	_, err = persistedContainerRecipeVisitors["withExec"](raw, walker)
+	require.ErrorContains(t, err, invalid)
+}

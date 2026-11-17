@@ -154,6 +154,7 @@ type AnyObjectResult interface {
 	//
 	// Any Nullable values are automatically unwrapped.
 	Select(context.Context, *Server, Selector) (AnyResult, error)
+	Plan(context.Context, *Server, Selector) (*CallRequest, error)
 }
 
 // A type that has a callback attached that needs to always run when the result is removed
@@ -255,6 +256,9 @@ type HasResultReference interface {
 // DependencyResult is an attached dependency result with a kind flag.
 type DependencyResult struct {
 	Result AnyResult
+	// ImmutableInput marks a reference stored in the payload's recipe and
+	// fixed for that recipe while its outputs are evaluated.
+	ImmutableInput bool
 	// Owned is true when the parent's install span should also be attributed
 	// to this dep for lazy failure causality. False marks the edge as
 	// liveness-only — the dep is kept alive by the parent and preflighted

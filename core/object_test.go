@@ -1415,7 +1415,7 @@ func TestModuleObjectAttachmentRetainsRewrittenInlineFields(t *testing.T) {
 	assert.Equal(t, handle.Unwrap().(dagql.String), dagql.String("relocated"))
 	// The owner's state refers to the handle, so the owner depends on it.
 	assert.Equal(t, len(deps), 1)
-	assert.Assert(t, deps[0] == handle, "the dependency is the inline field's handle, got %T", deps[0].Unwrap())
+	assert.Assert(t, deps[0].Result == handle, "the dependency is the inline field's handle, got %T", deps[0].Result.Unwrap())
 	assert.Equal(t, original["handle"], any("old-engine-id"), "attachment must not change the caller's map")
 }
 
@@ -1448,7 +1448,7 @@ func TestModuleObjectAttachmentRetainsInlineCollectionBase(t *testing.T) {
 	assert.Assert(t, ok, "inline collections must retain their attached base")
 	assert.Assert(t, base.Unwrap() == original, "the base must remain unfiltered")
 	assert.Equal(t, len(deps), 1)
-	assert.Assert(t, deps[0] == base, "the owner depends on the inline collection's base")
+	assert.Assert(t, deps[0].Result == base, "the owner depends on the inline collection's base")
 
 	decoded, err := typ.ConvertFromSDKResult(ctx, fields)
 	assert.NilError(t, err)

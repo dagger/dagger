@@ -20,6 +20,7 @@ type captureTestValue struct {
 	encode      func(context.Context) error
 	release     func(context.Context) error
 	attach      func(context.Context) error
+	input       AnyResult
 	links       []PersistedSnapshotRefLink
 	encodeCalls atomic.Int32
 }
@@ -35,11 +36,19 @@ func (v *captureTestValue) OnRelease(ctx context.Context) error {
 	}
 	return nil
 }
-func (v *captureTestValue) AttachDependencyResults(ctx context.Context, _ AnyResult, _ func(AnyResult) (AnyResult, error)) ([]AnyResult, error) {
+func (v *captureTestValue) AttachDependencyResultsKinds(ctx context.Context, _ AnyResult, attach func(AnyResult) (AnyResult, error)) ([]DependencyResult, error) {
 	if v.attach != nil {
 		return nil, v.attach(ctx)
 	}
-	return nil, nil
+	if v.input == nil {
+		return nil, nil
+	}
+	input, err := attach(v.input)
+	if err != nil {
+		return nil, err
+	}
+	v.input = input
+	return []DependencyResult{{Result: input, ImmutableInput: true}}, nil
 }
 func (v *captureTestValue) EncodePersistedObject(ctx context.Context, _ *PersistEncodeContext) (PersistedObjectEncoding, error) {
 	v.encodeCalls.Add(1)
@@ -67,12 +76,13 @@ func init() {
 	RegisterPersistedObjectFamily(PersistedObjectFamily{Name: "dagql_test.CaptureTestPartsValue", Typed: (*captureTestPartsValue)(nil), Visitor: persistTestSnapshotRoleVisitor{}})
 }
 
-func attachCaptureTestValue(t *testing.T, ctx context.Context, c *Cache, value Typed) AnyResult {
+func attachCaptureTestValue(t *testing.T, ctx context.Context, c *Cache, value Typed, args ...*ResultCallArg) AnyResult {
 	t.Helper()
 	srv := newDagqlServerForTest(t, &persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*captureTestValue]{}))
 	srv.InstallObject(NewClass(srv, ClassOpts[*captureTestPartsValue]{}))
 	frame := persistCodecFrame("capture-value", value)
+	frame.Args = args
 	res, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
 		class, _ := srv.ObjectType(value.Type().Name())
 		res, err := NewResultForCall(value, frame)
@@ -146,7 +156,14 @@ func TestCapturePersistedRecordLazyReadiness(t *testing.T) {
 				ctx, c := newPartsTestCache(t, nil)
 				defer c.CloseDiscardingPersistence()
 				started, finish := make(chan struct{}), make(chan struct{})
-				obj := &captureTestValue{text: "original inputs"}
+				srv := newDagqlServerForTest(t, &persistCodecRoot{})
+				input := persistedListTestResult(t, ctx, c, srv, "recipe-input", String("input"))
+				history := persistedListTestResult(t, ctx, c, srv, "call-input", String("history"))
+				inputID, err := c.PersistedResultID(input)
+				require.NoError(t, err)
+				historyID, err := c.PersistedResultID(history)
+				require.NoError(t, err)
+				obj := &captureTestValue{text: "original inputs", input: input}
 				obj.lazy = func(context.Context) error {
 					close(started)
 					<-finish
@@ -157,7 +174,12 @@ func TestCapturePersistedRecordLazyReadiness(t *testing.T) {
 				if parts {
 					value = &captureTestPartsValue{obj}
 				}
-				res := attachCaptureTestValue(t, ctx, c, value)
+				res := attachCaptureTestValue(t, ctx, c, value, &ResultCallArg{Name: "history", Value: &ResultCallLiteral{
+					Kind: ResultCallLiteralKindResultRef, ResultRef: &ResultCallRef{ResultID: historyID},
+				}})
+				id, err := c.PersistedResultID(res)
+				require.NoError(t, err)
+				require.Contains(t, res.cacheSharedResult().deps, sharedResultID(historyID))
 				before := obj.encodeCalls.Load()
 				rec, err := c.CapturePersistedRecord(ctx, res)
 				require.NoError(t, err)
@@ -173,6 +195,9 @@ func TestCapturePersistedRecordLazyReadiness(t *testing.T) {
 				<-started
 				_, err = c.CapturePersistedRecord(ctx, res)
 				require.ErrorIs(t, err, ErrPersistStateNotReady)
+				inputs, err := c.ResultPayloadInputIDs(ctx, cacheTestSessionID(t, ctx), id)
+				require.NoError(t, err)
+				require.Equal(t, []uint64{inputID}, inputs, "only the declared recipe input is available while the body runs")
 				require.Equal(t, before+1, obj.encodeCalls.Load(), "running body must not reach the codec")
 				close(finish)
 				require.NoError(t, <-done)

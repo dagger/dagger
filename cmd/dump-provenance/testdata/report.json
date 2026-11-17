@@ -1,0 +1,84 @@
+{
+  "collection": {
+    "mode": "engine-backed",
+    "snapshot": true,
+    "artifactType": "Check",
+    "source": "Tiny09 sample: Host.findUp and one conservative issue per artifact"
+  },
+  "artifacts": [
+    {
+      "path": [
+        "golang",
+        "modules",
+        "packages",
+        "generate",
+        "stale"
+      ],
+      "provenance": {
+        "issues": [
+          "receiver: Directory input has incomplete source origins for [\"gomod\",\"github.com/dagger/go/gomod@dade46ab46d7b9fff51898016830e770b7d4caff\",\"dade46ab46d7b9fff51898016830e770b7d4caff\",\"Gomod\",\"scan\"]"
+        ],
+        "selectors": [
+          {
+            "conservative": false,
+            "exclude": [
+              ".env/*"
+            ],
+            "include": [
+              ".env"
+            ],
+            "kind": "WORKSPACE_READ",
+            "origin": "receiver: Host.findUp",
+            "path": "/"
+          },
+          {
+            "conservative": true,
+            "exclude": [],
+            "include": [],
+            "kind": "WORKSPACE_READ",
+            "origin": "receiver: Directory input has incomplete source origins for [\"gomod\",\"github.com/dagger/go/gomod@dade46ab46d7b9fff51898016830e770b7d4caff\",\"dade46ab46d7b9fff51898016830e770b7d4caff\",\"Gomod\",\"scan\"]",
+            "path": "/"
+          }
+        ]
+      },
+      "uri": "dag://?check=stale&golang-module=.&golang-package=."
+    },
+    {
+      "path": [
+        "golang",
+        "modules",
+        "packages",
+        "tests",
+        "test"
+      ],
+      "provenance": {
+        "issues": [
+          "argument selection: Directory input has incomplete source origins for [\"gomod\",\"github.com/dagger/go/gomod@dade46ab46d7b9fff51898016830e770b7d4caff\",\"dade46ab46d7b9fff51898016830e770b7d4caff\",\"Gomod\",\"scan\"]"
+        ],
+        "selectors": [
+          {
+            "conservative": false,
+            "exclude": [
+              ".env/*"
+            ],
+            "include": [
+              ".env"
+            ],
+            "kind": "WORKSPACE_READ",
+            "origin": "receiver: Host.findUp",
+            "path": "/"
+          },
+          {
+            "conservative": true,
+            "exclude": [],
+            "include": [],
+            "kind": "WORKSPACE_READ",
+            "origin": "argument selection: Directory input has incomplete source origins for [\"gomod\",\"github.com/dagger/go/gomod@dade46ab46d7b9fff51898016830e770b7d4caff\",\"dade46ab46d7b9fff51898016830e770b7d4caff\",\"Gomod\",\"scan\"]",
+            "path": "/"
+          }
+        ]
+      },
+      "uri": "dag://?check=test&golang-module=.&golang-package=.&golang-test=TestValue"
+    }
+  ]
+}

@@ -125,6 +125,7 @@ func (*Module) TypeDescription() string {
 var _ dagql.PersistedObject = (*Module)(nil)
 var _ dagql.PersistedObjectDecoder = (*Module)(nil)
 var _ dagql.HasDependencyResults = (*Module)(nil)
+var _ dagql.HasDependencyResultsKinds = (*Module)(nil)
 
 func (mod *Module) Name() string {
 	return mod.NameField
@@ -646,11 +647,11 @@ func (mod *Module) objectTypeDefResultByName(name string) (dagql.ObjectResult[*T
 }
 
 func (mod *Module) mainObjectTypeDefResult() (dagql.ObjectResult[*TypeDef], bool) {
-	name := mod.OriginalName
-	if name == "" {
-		name = mod.NameField
+	main, ok := mod.MainObject()
+	if !ok {
+		return dagql.ObjectResult[*TypeDef]{}, false
 	}
-	return mod.objectTypeDefResultByOriginalName(name)
+	return mod.objectTypeDefResultByName(main.Name)
 }
 
 func (mod *Module) customizationTarget(path []string) (dagql.ObjectResult[*TypeDef], dagql.ObjectResult[*Function], bool) {
@@ -907,6 +908,16 @@ func (mod *Module) Evaluate(context.Context) error {
 
 func (mod *Module) Sync(ctx context.Context) error {
 	return mod.Evaluate(ctx)
+}
+
+// AttachDependencyResultsKinds declares the module's stored recipe references.
+// The cache excludes self edges, as the persisted dependency lists do.
+func (mod *Module) AttachDependencyResultsKinds(
+	ctx context.Context,
+	self dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.DependencyResult, error) {
+	return immutableInputDependencies(mod.AttachDependencyResults(ctx, self, attach))
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity

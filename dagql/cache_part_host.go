@@ -23,7 +23,7 @@ type PartHost struct {
 }
 
 func (c *Cache) bindPartHost(row *sharedResult, result AnyResult) {
-	if row.inlineBorrow != nil {
+	if row.inlineBorrow != nil || row.valueSource != nil {
 		return
 	}
 	if value, ok := UnwrapAs[HasPartHost](result); ok {
@@ -228,7 +228,7 @@ func (host *PartHost) at(path PersistedRefPath) *PartHost {
 }
 
 func (c *Cache) attachInlineHosts(row *sharedResult, res AnyResult) error {
-	if row.inlineBorrow != nil {
+	if row.inlineBorrow != nil || row.valueSource != nil {
 		return nil
 	}
 	if _, ok := UnwrapAs[Enumerable](res); !ok {

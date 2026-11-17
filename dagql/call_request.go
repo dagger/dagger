@@ -13,6 +13,32 @@ type CallRequest struct {
 	DoNotCache     bool
 	IsPersistable  bool
 
+	// Prepared facts are attached during publication, before readers or
+	// snapshot sharing can observe the result. They are not cache identity.
+	ResultFacts           []ResultFact
+	ResultFactsIncomplete bool
+	// ResultFactsPrepared says these facts fully describe the operation,
+	// without needing facts from a reused payload producer. It never clears
+	// an explicit ResultFactsIncomplete flag. It is not cache identity.
+	ResultFactsPrepared bool
+	// CaptureResultFacts observes a successful resolver return, including a
+	// null result, before facts are snapshotted for publication. It may update
+	// this request's facts and coverage. It runs outside cache graph locks.
+	CaptureResultFacts func(context.Context, AnyResult) error
+	// RebindResultFacts replaces a reused producer's facts with facts for
+	// this request. It receives the old frame, value, facts and coverage;
+	// this request is available through the callback's closure. Facts remain
+	// opaque to the cache. It runs outside graph locks before alias publication.
+	RebindResultFacts func(context.Context, *ResultCall, AnyResult, []ResultFact, bool) ([]ResultFact, bool, error)
+	// omitValueFacts separates unrelated output-equivalent producers.
+	omitValueFacts bool
+	// successfulJoinedResult distinguishes reused shared work from this
+	// invocation's cold publication. HitCache covers completed lookup reuse.
+	successfulJoinedResult bool
+	// forceResultFactsAlias preserves invocation-owned replacement facts even
+	// when the borrowed result has the same recipe as the current request.
+	forceResultFactsAlias bool
+
 	// ListItem marks a read of item Nth of the receiver, a cache-backed list
 	// whose value holds the item inline. Such a read is answered only by the
 	// item the receiver recorded for that position (sharedResult.listItems):
@@ -60,15 +86,20 @@ func (req *CallRequest) Clone() *CallRequest {
 		frame = &ResultCall{}
 	}
 	return &CallRequest{
-		ResultCall:           frame,
-		ConcurrencyKey:       req.ConcurrencyKey,
-		TTL:                  req.TTL,
-		DoNotCache:           req.DoNotCache,
-		IsPersistable:        req.IsPersistable,
-		ListItem:             req.ListItem,
-		DeduplicateTelemetry: req.DeduplicateTelemetry,
-		PassthroughTelemetry: req.PassthroughTelemetry,
-		ReceiverTypeName:     req.ReceiverTypeName,
+		ResultCall:            frame,
+		ConcurrencyKey:        req.ConcurrencyKey,
+		TTL:                   req.TTL,
+		DoNotCache:            req.DoNotCache,
+		IsPersistable:         req.IsPersistable,
+		ResultFacts:           cloneResultFacts(req.ResultFacts),
+		ResultFactsIncomplete: req.ResultFactsIncomplete,
+		ResultFactsPrepared:   req.ResultFactsPrepared,
+		ListItem:              req.ListItem,
+		DeduplicateTelemetry:  req.DeduplicateTelemetry,
+		PassthroughTelemetry:  req.PassthroughTelemetry,
+		ReceiverTypeName:      req.ReceiverTypeName,
+		// Fact callbacks capture invocation-owned state. A clone carries the
+		// finalized records, not callbacks into the original invocation.
 		// CacheEvidence is deliberately NOT carried over: it is per-invocation
 		// state owned by the one AroundFunc-wrapped invocation that allocated
 		// it; a cloned request is a different (or internal) invocation and

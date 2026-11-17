@@ -210,6 +210,26 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	resA, err := srvA.root.Select(rootCtxA, srvA, Selector{Field: "obj"})
 	assert.NilError(t, err)
 	assert.Assert(t, resA != nil)
+
+	nullableValue := DynamicNullable{
+		Elem:  &persistCodecObj{},
+		Value: &persistCodecObj{Name: "nullable"},
+		Valid: true,
+	}
+	nullableCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(nullableValue.Type()),
+		Field: "persist-import-nullable-object",
+	}
+	nullableA, err := cA.GetOrInitCall(rootCtxA, "test-session", srvA, &CallRequest{ResultCall: nullableCall, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		return NewResultForCall(nullableValue, nullableCall)
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !nullableA.Type().NonNull)
+	nullableType := nullableA.Type().String()
+	nullableID, err := cA.PersistedResultID(nullableA)
+	assert.NilError(t, err)
+
 	cacheTestReleaseSession(t, cacheA, rootCtxA)
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
@@ -235,9 +255,26 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, resB != nil)
 	assert.Assert(t, resB.HitCache())
+	assert.Assert(t, resB.cacheSharedResult().loadPayloadState().isObject)
+	_, ok := resB.(AnyObjectResult)
+	assert.Assert(t, ok, "restored objects retain their object result shape")
 	obj, ok := UnwrapAs[*persistCodecObj](resB.Unwrap())
 	assert.Assert(t, ok)
 	assert.Equal(t, "x", obj.Name)
+
+	nullableB, err := cB.LoadResultByResultID(rootCtxB, "test-session", srvB, nullableID)
+	assert.NilError(t, err)
+	assert.Equal(t, nullableB.Type().String(), nullableType)
+	assert.Assert(t, !nullableB.cacheSharedResult().loadPayloadState().isObject)
+	_, ok = nullableB.Unwrap().(DynamicNullable)
+	assert.Assert(t, ok, "restored nullable objects keep their nullable view")
+	inner, valid := nullableB.DerefValue()
+	assert.Assert(t, valid)
+	assert.Assert(t, inner.Type().NonNull)
+	assert.Assert(t, inner.cacheSharedResult() == nullableB.cacheSharedResult())
+	obj, ok = UnwrapAs[*persistCodecObj](inner.Unwrap())
+	assert.Assert(t, ok)
+	assert.Equal(t, "nullable", obj.Name)
 	cacheTestReleaseSession(t, cacheB, rootCtxB)
 }
 

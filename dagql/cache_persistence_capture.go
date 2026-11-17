@@ -183,6 +183,7 @@ func (c *Cache) describeHeldParts(ctx context.Context, shared *sharedResult, imp
 func capturedRowValue(shared *sharedResult, payload sharedResultPayloadState, frame *ResultCall) Result[Typed] {
 	captured := &sharedResult{
 		id:                    shared.id,
+		valueSource:           payload.valueSource,
 		self:                  payload.self,
 		isObject:              payload.isObject,
 		hasValue:              payload.hasValue,
@@ -229,6 +230,7 @@ func (c *Cache) capturePartRecord(ctx context.Context, shared *sharedResult, imp
 		return PersistedRecord{}, err
 	}
 	encoding.Envelope.Imported, encoding.Envelope.PendingOffers = imported, offers
+	setEnvelopeResultFacts(&encoding.Envelope, payload.resultFacts, payload.resultFactsIncomplete)
 	encoding.Envelope.PersistDeclined = false
 	envelope, err := clonePersistedEnvelope(encoding.Envelope)
 	if err != nil {
@@ -244,6 +246,7 @@ func (c *Cache) capturePartRecord(ctx context.Context, shared *sharedResult, imp
 
 func clonePersistedEnvelope(env PersistedResultEnvelope) (PersistedResultEnvelope, error) {
 	var err error
+	env.ResultFacts = cloneResultFacts(env.ResultFacts)
 	env.PendingOffers, err = clonePartOffers(env.PendingOffers)
 	if err != nil {
 		return PersistedResultEnvelope{}, err

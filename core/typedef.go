@@ -2544,6 +2544,11 @@ type FunctionCall struct {
 	// received the call. Nil for top-level / constructor calls.
 	parentTyped dagql.AnyResult
 
+	workspaceInputs *workspaceInputReads
+	// The immutable runtime proof belongs to this invocation, including when
+	// a direct call shares its parent's body-read accumulator.
+	workspaceRuntimeInputs *workspaceInputSummary
+
 	// callerAgent is the agent whose turn dispatched this function call,
 	// carried engine-side only (not persisted, not sent to the module), like
 	// parentTyped. It backs core.CallerAgent for the nested API calls the

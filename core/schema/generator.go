@@ -27,7 +27,7 @@ func (generatorSchema) changeset(ctx context.Context, parent dagql.ObjectResult[
 	if parent.Self().Result.Self() != nil {
 		return parent.Self().Result, nil
 	}
-	inputs, err := artifactInputs(ctx, parent.Self().Artifact, parent.Self().Arguments)
+	inputs, err := parent.Self().Artifact.CallInputs(parent.Self().Arguments)
 	if err != nil {
 		return result, err
 	}

@@ -44,6 +44,7 @@ type Server struct {
 
 	root           AnyObjectResult
 	telemetry      AroundFunc
+	callObserver   CallObserver
 	objects        map[string]ObjectType
 	interfaces     map[string]*Interface
 	scalars        map[string]ScalarType
@@ -252,6 +253,7 @@ func newBlankServer() *Server {
 func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	out := newBlankServer()
 	out.telemetry = s.telemetry
+	out.callObserver = s.callObserver
 	out.View = s.View
 	out.canonical = s.canonical
 	out.nodeLoader = s.nodeLoader

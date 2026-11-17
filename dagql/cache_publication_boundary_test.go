@@ -231,7 +231,13 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 	assert.Assert(t, hit)
 	assert.Equal(t, replacement.cacheSharedResult().id, digestHit.cacheSharedResult().id)
 
-	idHit, err := c.LoadResultByResultID(t.Context(), "id-load", srv, uint64(attachFailedResult.id))
+	// The old producer retains its attachment failure. Only call and digest
+	// lookup may find the replacement; an ID must not change producers.
+	failedLoad, err := c.LoadResultByResultID(t.Context(), "id-load", srv, uint64(attachFailedResult.id))
+	assert.ErrorIs(t, err, attachErr)
+	assert.Assert(t, failedLoad == nil)
+	assert.NilError(t, c.ReleaseSession(t.Context(), "id-load"))
+	idHit, err := c.LoadResultByResultID(t.Context(), "replacement-id-load", srv, uint64(replacement.cacheSharedResult().id))
 	assert.NilError(t, err)
 	assert.Equal(t, replacement.cacheSharedResult().id, idHit.cacheSharedResult().id)
 
@@ -242,7 +248,7 @@ func TestCacheErroredAttachmentIsSkippedAndReexecuted(t *testing.T) {
 	assert.Assert(t, collected)
 	assert.NilError(t, c.ReleaseSession(t.Context(), "replacement"))
 	assert.NilError(t, c.ReleaseSession(t.Context(), "digest"))
-	assert.NilError(t, c.ReleaseSession(t.Context(), "id-load"))
+	assert.NilError(t, c.ReleaseSession(t.Context(), "replacement-id-load"))
 }
 
 // A persistable call whose fn returns an already-attached result must not

@@ -351,6 +351,8 @@ func (*TerminalLegacy) DecodePersistedObject(context.Context, *dagql.PersistDeco
 // persistedMetadataFamilies registers the ordinary metadata and report
 // families alongside the existing inventory.
 var persistedMetadataFamilies = []dagql.PersistedObjectFamily{
+	{Name: "core.WorkspaceProvenance", Typed: (*WorkspaceProvenance)(nil), Visitor: dagql.PersistedNoReferences{}},
+	{Name: "core.WorkspaceSelector", Typed: (*WorkspaceSelector)(nil), Visitor: dagql.PersistedNoReferences{}},
 	{Name: "core.EnvVariable", Typed: EnvVariable{}, Visitor: dagql.PersistedNoReferences{}},
 	{Name: "core.Port", Typed: Port{}, Visitor: dagql.PersistedNoReferences{}},
 	{Name: "core.SDKConfig", Typed: (*SDKConfig)(nil), Visitor: dagql.PersistedNoReferences{}},

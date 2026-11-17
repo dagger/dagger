@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -81,7 +82,7 @@ func TestCacheReadPathsShareEgraphLock(t *testing.T) {
 
 	t.Run("id load", func(t *testing.T) {
 		runWhileEgraphReadLocked(t, c, func() error {
-			lookup, err := c.sharedResultByResultID(ctx, "load", seededID, sharedResultLookupCanonicalEquivalentForSession)
+			lookup, err := c.sharedResultByResultID(ctx, "load", seededID, sharedResultLookupExactForSession)
 			if err != nil {
 				return err
 			}
@@ -135,8 +136,33 @@ func TestCacheReadPathsShareEgraphLock(t *testing.T) {
 		})
 	})
 
+	t.Run("observed hit", func(t *testing.T) {
+		req := &CallRequest{
+			ResultCall:            cacheTestIntCall("shared-lock"),
+			IsPersistable:         true,
+			ResultFacts:           []ResultFact{{Namespace: "source-test", Payload: json.RawMessage(`{"path":"/source.go"}`)}},
+			ResultFactsIncomplete: true,
+		}
+		_, err := c.GetOrInitCall(ctx, "observed-seed", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+			return nil, fmt.Errorf("observed seed hit executed the call")
+		})
+		assert.NilError(t, err)
+		runWhileEgraphReadLocked(t, c, func() error {
+			res, err := c.GetOrInitCall(ctx, "observed-hit", noopTypeResolver{}, req.Clone(), func(context.Context) (AnyResult, error) {
+				return nil, fmt.Errorf("observed hit executed the call")
+			})
+			if err != nil {
+				return err
+			}
+			if !res.HitCache() || res.cacheSharedResult().id != seededID {
+				return fmt.Errorf("expected a hit on result %d, got hit=%v result %d", seededID, res.HitCache(), res.cacheSharedResult().id)
+			}
+			return nil
+		})
+	})
+
 	assertCacheOwnershipExact(t, c)
-	for _, sessionID := range []string{"seed", "hit", "miss", "track", "load", "persistable", "persistable-again"} {
+	for _, sessionID := range []string{"seed", "hit", "miss", "track", "load", "persistable", "persistable-again", "observed-seed", "observed-hit"} {
 		assert.NilError(t, c.ReleaseSession(ctx, sessionID))
 	}
 	assertCacheOwnershipExact(t, c)
@@ -237,7 +263,7 @@ func TestCacheConcurrentSharedClaimsKeepOwnershipExact(t *testing.T) {
 							return
 						}
 					case 2:
-						if _, err := c.sharedResultByResultID(ctx, sessionID, seeded[i].cacheSharedResult().id, sharedResultLookupCanonicalEquivalentForSession); err != nil {
+						if _, err := c.sharedResultByResultID(ctx, sessionID, seeded[i].cacheSharedResult().id, sharedResultLookupExactForSession); err != nil {
 							errs <- err
 							return
 						}

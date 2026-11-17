@@ -22,6 +22,18 @@ func newPersistedRefWalker(visit dagql.PersistedRefVisitor, path dagql.Persisted
 	return &persistedRefWalker{visit: visit, path: path, changed: new(bool)}
 }
 
+// withImmutableInputs annotates the existing stored-reference inventory.
+func (w *persistedRefWalker) withImmutableInputs() *persistedRefWalker {
+	fixed := *w
+	fixed.visit = func(ref *dagql.PersistedRef) error {
+		if ref.Kind == dagql.PersistedRefChild {
+			ref.ImmutableInput = true
+		}
+		return w.visit(ref)
+	}
+	return &fixed
+}
+
 func (w *persistedRefWalker) at(field string) *persistedRefWalker {
 	return &persistedRefWalker{visit: w.visit, path: w.path.Field(field), changed: w.changed}
 }
@@ -86,6 +98,12 @@ func (w *persistedRefWalker) lazy(field string, raw *json.RawMessage, visitor pe
 		return nil
 	}
 	sub := w.at(field)
+	sub.visit = func(ref *dagql.PersistedRef) error {
+		if ref.Kind == dagql.PersistedRefChild {
+			ref.ImmutableInput = true
+		}
+		return w.visit(ref)
+	}
 	rewritten, err := visitor(*raw, sub)
 	if err != nil {
 		return err
@@ -378,6 +396,9 @@ var persistedContainerRecipeVisitors = map[string]persistedLazyVisitor{
 	"withoutUnixSocket": parentOnly(func(p *persistedContainerWithoutUnixSocketLazy) *uint64 { return &p.ParentResultID }),
 	"import":            parentAndSource("sourceResultID", func(p *persistedContainerImportLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerImportLazy) *uint64 { return &p.SourceResultID }),
 	"withExec": persistedLazyStructVisitor(func(p *persistedContainerExecLazy, w *persistedRefWalker) error {
+		if err := p.validate(); err != nil {
+			return err
+		}
 		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
 			return err
 		}
@@ -557,6 +578,7 @@ var persistedGeneratedCodeVisitor = persistedStructVisitor("", func(p *persisted
 })
 
 var persistedModuleVisitor = persistedStructVisitor("", func(p *persistedModulePayload, w *persistedRefWalker) error {
+	w = w.withImmutableInputs()
 	if err := w.child("sourceResultID", &p.SourceResultID); err != nil {
 		return err
 	}
@@ -585,6 +607,7 @@ var persistedModuleVisitor = persistedStructVisitor("", func(p *persistedModuleP
 })
 
 var persistedModuleSourceVisitor = persistedStructVisitor("", func(p *persistedModuleSourcePayload, w *persistedRefWalker) error {
+	w = w.withImmutableInputs()
 	if err := w.children("dependencyResultIDs", p.DependencyResultIDs); err != nil {
 		return err
 	}
@@ -604,7 +627,11 @@ var persistedModuleSourceVisitor = persistedStructVisitor("", func(p *persistedM
 		return err
 	}
 	if p.DirSrc != nil {
-		return w.at("dirSrc").child("originalContextDirResultID", &p.DirSrc.OriginalContextDirResultID)
+		dir := w.at("dirSrc")
+		if err := dir.child("originalContextDirResultID", &p.DirSrc.OriginalContextDirResultID); err != nil {
+			return err
+		}
+		return dir.child("originGitResultID", &p.DirSrc.OriginGitResultID)
 	}
 	return nil
 })
@@ -664,15 +691,28 @@ func visitPersistedModTreeRefs(w *persistedRefWalker, tree *persistedModTree) er
 }
 
 var persistedArtifactsVisitor = persistedStructVisitor("", func(p *persistedArtifacts, w *persistedRefWalker) error {
+	w = w.withImmutableInputs()
 	if err := visitPersistedModTreeRefs(w.at("Tree"), &p.Tree); err != nil {
 		return err
 	}
-	for i := range p.Entries {
-		if err := w.at("Entries").index(i).child("Workspace", &p.Entries[i].Workspace); err != nil {
-			return err
-		}
-		if err := w.at("Entries").index(i).child("ContextWorkspace", &p.Entries[i].ContextWorkspace); err != nil {
-			return err
+	for _, group := range []struct {
+		field string
+		items []persistedArtifact
+	}{{"Entries", p.Entries}, {"CollectionRoots", p.CollectionRoots}} {
+		for i := range group.items {
+			item := &group.items[i]
+			entry := w.at(group.field).index(i)
+			if err := entry.child("Workspace", &item.Workspace); err != nil {
+				return err
+			}
+			if err := entry.child("ContextWorkspace", &item.ContextWorkspace); err != nil {
+				return err
+			}
+			if item.View != nil {
+				if err := entry.at("View").children("Sources", item.View.Sources); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
@@ -714,8 +754,20 @@ func visitPersistedModuleObjectValue(w *persistedRefWalker, val *persistedModule
 }
 
 var persistedModuleObjectVisitor = persistedStructVisitor("", func(p *persistedModuleObjectPayload, w *persistedRefWalker) error {
+	visit := w.visit
+	w.visit = func(ref *dagql.PersistedRef) error {
+		if ref.Kind == dagql.PersistedRefChild {
+			ref.ImmutableInput = true
+		}
+		return visit(ref)
+	}
 	if err := w.child("collectionBase", &p.CollectionBase); err != nil {
 		return err
+	}
+	if p.ArtifactView != nil {
+		if err := w.at("artifactView").children("Sources", p.ArtifactView.Sources); err != nil {
+			return err
+		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(p.Fields)) {
 		field := p.Fields[name]

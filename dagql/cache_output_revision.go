@@ -64,6 +64,7 @@ func (version *capturedRowRevision) check(row *sharedResult) error {
 	}
 	row.payloadMu.RLock()
 	same := row.payloadRevision == version.payload.payloadRevision &&
+		row.resultFactsRevision == version.payload.resultFactsRevision &&
 		row.persistedEnvelope == version.payload.persistedEnvelope &&
 		row.hasValue == version.payload.hasValue && row.isObject == version.payload.isObject
 	row.payloadMu.RUnlock()

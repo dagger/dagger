@@ -220,6 +220,9 @@ func (*Expertise) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 	}
 	return &Expertise{Artifact: artifact.(*Artifact)}, nil
 }
+func (a *Expertise) AttachDependencyResultsKinds(ctx context.Context, owner dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.DependencyResult, error) {
+	return a.Artifact.AttachDependencyResultsKinds(ctx, owner, attach)
+}
 func (a *Expertise) AttachDependencyResults(ctx context.Context, owner dagql.AnyResult, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
 	return a.Artifact.AttachDependencyResults(ctx, owner, attach)
 }

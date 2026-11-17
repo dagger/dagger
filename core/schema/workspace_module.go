@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/provenance"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 )
@@ -182,6 +183,7 @@ func (s *workspaceSchema) moduleSource(
 		}
 	}
 
+	core.RecordWorkspaceRead(ctx, parent, provenance.Selector{Path: "/", Kind: provenance.WorkspaceRead, Origin: "Workspace.moduleSource"})
 	root, err := s.workspaceOverlayRootfs(ctx, ws)
 	if err != nil {
 		return inst, err

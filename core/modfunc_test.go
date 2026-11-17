@@ -145,7 +145,7 @@ func TestCallerInModuleFunction(t *testing.T) {
 			Local: &LocalModuleSource{ContextDirectoryPath: "."},
 		},
 	}})
-	got, err := callerInModuleFunction(moduleOnly)
+	got, err := CallerInModuleFunction(moduleOnly)
 	require.NoError(t, err)
 	require.False(t, got)
 
@@ -153,7 +153,7 @@ func TestCallerInModuleFunction(t *testing.T) {
 	inFn := ContextWithQuery(t.Context(), &Query{Server: &mockServer{
 		functionCall: &FunctionCall{Name: "caller"},
 	}})
-	got, err = callerInModuleFunction(inFn)
+	got, err = CallerInModuleFunction(inFn)
 	require.NoError(t, err)
 	require.True(t, got)
 }
@@ -203,6 +203,55 @@ type runtimeLessTestSDK struct {
 }
 
 func (*runtimeLessTestSDK) HasNoRuntime() bool { return true }
+
+func TestModuleFunctionRuntimeInputObservationOwnership(t *testing.T) {
+	f := newModuleOwnershipTest(t)
+	ctx := f.session("workspace-input-dispatch")
+	mod := f.module(ctx, "fixture", moduleOwnershipModuleOpts{})
+	obj := mod.Self().ObjectDefs[0].Self().AsObject.Value.Self()
+	fn, err := NewModFunction(ctx, mod, obj, obj.Functions[0].Self())
+	require.NoError(t, err)
+	scoped, err := ImplementationScopedModule(ctx, mod)
+	require.NoError(t, err)
+	scopedID, err := scoped.ID()
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name     string
+		field    string
+		invoke   func(context.Context, *CallOpts) (dagql.AnyResult, error)
+		ownsCall bool
+	}{
+		{name: "renamed resolver", field: "get", invoke: fn.callFromResolver, ownsCall: true},
+		{name: "direct call under matching observer", field: fn.metadata.Name, invoke: fn.Call},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &dagql.CallRequest{
+				ResultCall: &dagql.ResultCall{
+					Kind:   dagql.ResultCallKindField,
+					Field:  tc.field,
+					Type:   dagql.NewResultCallType(dagql.String("").Type()),
+					Module: &dagql.ResultCallModule{ResultRef: &dagql.ResultCallRef{ResultID: scopedID.EngineResultID()}},
+				},
+				ReceiverTypeName: obj.Name,
+			}
+			reads := &workspaceInputReads{summary: workspaceInputSummary{reads: []workspaceInputSource{{Workspace: "setup"}}}}
+			callCtx := dagql.ContextWithCall(ctx, req.ResultCall)
+			callCtx = context.WithValue(callCtx, workspaceInputCallKey{}, &workspaceInputCall{request: req, reads: reads})
+			callCtx = context.WithValue(callCtx, workspaceInputReadsKey{}, reads)
+
+			_, err := tc.invoke(callCtx, &CallOpts{Inputs: []CallInput{{Name: "label", Value: dagql.String("ok")}}})
+			require.NoError(t, err)
+			_, captured := reads.runtimeSnapshot()
+			require.Equal(t, tc.ownsCall, captured)
+			if tc.ownsCall {
+				require.Empty(t, reads.snapshot().reads)
+			} else {
+				require.Len(t, reads.snapshot().reads, 1)
+			}
+		})
+	}
+}
 
 func TestModuleFunctionLoadRuntimeSpan(t *testing.T) {
 	for _, tc := range []struct {

@@ -371,9 +371,15 @@ func TestCacheCanonicalEquivalentReadsOutputEqClassResults(t *testing.T) {
 			canonicalIDs := func() []sharedResultID {
 				ids := make([]sharedResultID, 0, len(members))
 				for _, id := range members {
-					lookup, err := c.sharedResultByResultID(loadCtx, loadSession, id, sharedResultLookupCanonicalEquivalent)
+					lookup, err := c.sharedResultByResultID(loadCtx, loadSession, id, sharedResultLookupExactForSession)
 					assert.NilError(t, err)
-					ids = append(ids, lookup.res.id)
+					assert.Equal(t, id, lookup.res.id, "ordinary ID lookup must retain its producer")
+					// Schema recovery and publication use explicit value
+					// equivalence, separately from producer ID lookup.
+					c.egraphMu.RLock()
+					canonical := c.canonicalEquivalentSharedResultLocked(loadSession, lookup.res, time.Now().Unix(), true)
+					ids = append(ids, canonical.id)
+					c.egraphMu.RUnlock()
 				}
 				return ids
 			}
