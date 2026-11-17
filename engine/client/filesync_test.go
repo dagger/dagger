@@ -389,3 +389,26 @@ func TestFilesyncSourceFindUp(t *testing.T) {
 		".env":        filepath.ToSlash(root),
 	}, resp.Found)
 }
+
+// A local import's stats carry what the engine's Linux mirror can hold. A
+// symlink there is always 0777, so the bits a host such as macOS records for
+// a link are not sent. A file's and a directory's bits are.
+func TestNormalizeLocalImportStatSymlinkPermissions(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		mode os.FileMode
+		want os.FileMode
+	}{
+		{"symlink created under umask 022 on macOS", os.ModeSymlink | 0o755, os.ModeSymlink | 0o777},
+		{"symlink created under umask 077 on macOS", os.ModeSymlink | 0o700, os.ModeSymlink | 0o777},
+		{"symlink on Linux", os.ModeSymlink | 0o777, os.ModeSymlink | 0o777},
+		{"file", 0o640, 0o640},
+		{"directory", os.ModeDir | 0o750, os.ModeDir | 0o750},
+	} {
+		st := &fstypes.Stat{Mode: uint32(tc.mode)}
+		normalizeLocalImportStat(st)
+		require.Equal(t, tc.want, os.FileMode(st.Mode), tc.name)
+	}
+}

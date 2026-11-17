@@ -265,6 +265,12 @@ func normalizeLocalImportStat(st *fstypes.Stat) {
 	st.Uid = 0
 	st.Gid = 0
 	st.Xattrs = nil
+	// A symlink has permission bits of its own on some hosts (on macOS, those
+	// of the umask it was created under). On Linux it is always 0777, which is
+	// what the engine's mirror holds whatever was sent, so send that.
+	if os.FileMode(st.Mode)&os.ModeSymlink != 0 {
+		st.Mode |= uint32(os.ModePerm)
+	}
 }
 
 type FilesyncTarget Filesyncer
