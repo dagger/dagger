@@ -1382,6 +1382,8 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+state.nestedClientMetadata.ClientSecretToken)
 	state.spec.Process.Env = append(state.spec.Process.Env, engine.NestedClientIDEnv+"="+state.nestedClientMetadata.ClientID)
+	// Logical clients may serve their own attachables (see transportForRequest).
+	state.spec.Process.Env = append(state.spec.Process.Env, engine.NestedClientAttachablesEnv+"=1")
 
 	state.nestedClientMetadata.ClientStableID = rand.Text()
 

@@ -249,6 +249,7 @@ func TestNestedClientServesLocalPromptsBeforeInit(t *testing.T) {
 			t.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(server.Listener.Addr().(*net.TCPAddr).Port))
 			t.Setenv("DAGGER_SESSION_TOKEN", "nested-token")
 			t.Setenv(engine.NestedClientIDEnv, "bootstrap")
+			t.Setenv(engine.NestedClientAttachablesEnv, "1")
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			c, err := Connect(ctx, Params{ID: "interactive-cli", PromptHandler: handler})
@@ -275,12 +276,15 @@ func TestNestedClientServesLocalPromptsBeforeInit(t *testing.T) {
 
 func TestNestedClientPreservesBootstrapWithoutLocalPrompt(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		execID  string
-		handler prompt.PromptHandler
+		name        string
+		execID      string
+		attachables string
+		handler     prompt.PromptHandler
 	}{
-		{name: "headless exec", execID: "bootstrap"},
-		{name: "dagger run", handler: &nestedPromptHandler{}},
+		{name: "headless exec", execID: "bootstrap", attachables: "1"},
+		{name: "dagger run", attachables: "1", handler: &nestedPromptHandler{}},
+		// An engine predating client-owned attachables would not bind them.
+		{name: "older engine", execID: "bootstrap", handler: &nestedPromptHandler{}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -298,6 +302,7 @@ func TestNestedClientPreservesBootstrapWithoutLocalPrompt(t *testing.T) {
 			defer server.Close()
 			t.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(server.Listener.Addr().(*net.TCPAddr).Port))
 			t.Setenv(engine.NestedClientIDEnv, test.execID)
+			t.Setenv(engine.NestedClientAttachablesEnv, test.attachables)
 			c, err := Connect(t.Context(), Params{PromptHandler: test.handler})
 			require.NoError(t, err)
 			require.Nil(t, c.sessionSrv)
