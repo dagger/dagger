@@ -28,7 +28,7 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
     public function releaseTag(?bool $includePreRelease = false): ?GitRef
     {
         $objectQueryBuilder = new \Dagger\Client\QueryBuilder('releaseTag');
-        if (true === $includePreRelease) {
+        if (null !== $includePreRelease) {
         $objectQueryBuilder->setArgument('includePreRelease', $includePreRelease);
         }
         $objectQueryBuilder->selectField('id');
@@ -45,7 +45,7 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
     public function ancestorReleaseTag(?bool $includePreRelease = false): ?GitRef
     {
         $objectQueryBuilder = new \Dagger\Client\QueryBuilder('ancestorReleaseTag');
-        if (true === $includePreRelease) {
+        if (null !== $includePreRelease) {
         $objectQueryBuilder->setArgument('includePreRelease', $includePreRelease);
         }
         $objectQueryBuilder->selectField('id');
@@ -62,13 +62,13 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
     public function tree(?bool $discardGitDir = false, ?int $depth = 1, ?bool $includeTags = false): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tree');
-        if (true === $discardGitDir) {
+        if (null !== $discardGitDir) {
         $innerQueryBuilder->setArgument('discardGitDir', $discardGitDir);
         }
         if (null !== $depth) {
         $innerQueryBuilder->setArgument('depth', $depth);
         }
-        if (true === $includeTags) {
+        if (null !== $includeTags) {
         $innerQueryBuilder->setArgument('includeTags', $includeTags);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));

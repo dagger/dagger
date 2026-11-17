@@ -81,13 +81,13 @@ class Artifact extends Client\AbstractObject implements Client\IdAble, Node
     public function uri(?bool $absolute = false, ?bool $dimensionKeys = true, ?bool $typeAssertion = false): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('uri');
-        if (true === $absolute) {
+        if (null !== $absolute) {
         $leafQueryBuilder->setArgument('absolute', $absolute);
         }
         if (null !== $dimensionKeys) {
         $leafQueryBuilder->setArgument('dimensionKeys', $dimensionKeys);
         }
-        if (true === $typeAssertion) {
+        if (null !== $typeAssertion) {
         $leafQueryBuilder->setArgument('typeAssertion', $typeAssertion);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'uri');

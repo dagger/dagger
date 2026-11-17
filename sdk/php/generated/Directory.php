@@ -89,25 +89,25 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $globs) {
         $leafQueryBuilder->setArgument('globs', $globs);
         }
-        if (true === $literal) {
+        if (null !== $literal) {
         $leafQueryBuilder->setArgument('literal', $literal);
         }
-        if (true === $multiline) {
+        if (null !== $multiline) {
         $leafQueryBuilder->setArgument('multiline', $multiline);
         }
-        if (true === $dotall) {
+        if (null !== $dotall) {
         $leafQueryBuilder->setArgument('dotall', $dotall);
         }
-        if (true === $insensitive) {
+        if (null !== $insensitive) {
         $leafQueryBuilder->setArgument('insensitive', $insensitive);
         }
-        if (true === $skipIgnored) {
+        if (null !== $skipIgnored) {
         $leafQueryBuilder->setArgument('skipIgnored', $skipIgnored);
         }
-        if (true === $skipHidden) {
+        if (null !== $skipHidden) {
         $leafQueryBuilder->setArgument('skipHidden', $skipHidden);
         }
-        if (true === $filesOnly) {
+        if (null !== $filesOnly) {
         $leafQueryBuilder->setArgument('filesOnly', $filesOnly);
         }
         if (null !== $limit) {
@@ -210,7 +210,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $expectedType) {
         $leafQueryBuilder->setArgument('expectedType', $expectedType);
         }
-        if (true === $doNotFollowSymlinks) {
+        if (null !== $doNotFollowSymlinks) {
         $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
         }
         return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
@@ -223,7 +223,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     {
         $objectQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
         $objectQueryBuilder->setArgument('path', $path);
-        if (true === $doNotFollowSymlinks) {
+        if (null !== $doNotFollowSymlinks) {
         $objectQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
         }
         $objectQueryBuilder->selectField('id');
@@ -241,7 +241,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         $innerQueryBuilder->setArgument('path', $path);
-        if (true === $resolveBrokenSymlinks) {
+        if (null !== $resolveBrokenSymlinks) {
         $innerQueryBuilder->setArgument('resolveBrokenSymlinks', $resolveBrokenSymlinks);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -268,7 +268,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        if (true === $gitignore) {
+        if (null !== $gitignore) {
         $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         if (null !== $owner) {
@@ -292,7 +292,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        if (true === $gitignore) {
+        if (null !== $gitignore) {
         $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -371,7 +371,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
-        if (true === $wipe) {
+        if (null !== $wipe) {
         $leafQueryBuilder->setArgument('wipe', $wipe);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'export');
@@ -405,7 +405,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $secrets) {
         $innerQueryBuilder->setArgument('secrets', $secrets);
         }
-        if (true === $noInit) {
+        if (null !== $noInit) {
         $innerQueryBuilder->setArgument('noInit', $noInit);
         }
         if (null !== $ssh) {
@@ -502,7 +502,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $cmd) {
         $innerQueryBuilder->setArgument('cmd', $cmd);
         }
-        if (true === $disableDaggerInDagger) {
+        if (null !== $disableDaggerInDagger) {
         $innerQueryBuilder->setArgument('disableDaggerInDagger', $disableDaggerInDagger);
         }
         if (null !== $experimentalPrivilegedNesting) {
