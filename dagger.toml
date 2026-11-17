@@ -34,7 +34,7 @@ source = ".dagger/modules/go-client-dev"
 legacy-default-path = true
 
 [modules.golang]
-source = "github.com/dagger/go@4beea52956d2b2dfa6cf55dd8cc3725b82915aae"
+source = "github.com/dagger/go@f1d5c0b3f867c4ced57c2e615a14d23ec4633f36"
 legacy-default-path = true
 
 [modules.golang.settings]
@@ -147,7 +147,7 @@ source = "dagger.io/sdk/dang@main"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk]
-source = "github.com/dagger/go-sdk@145ef1d44f5801f222857d3fa1b3f7b3465d70f7"
+source = "github.com/dagger/go-sdk@7dec21e43856e1189c2b4a3fc6a2ee459752bef8"
 
 [modules.go-sdk.settings]
 lock = true
@@ -216,7 +216,7 @@ is-module = true
 clients = ["./.dagger/modules/engine-dev"]
 
 [sdks.dang.scopes.".dagger/modules/engine-lab"]
-clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@4beea52956d2b2dfa6cf55dd8cc3725b82915aae"]
+clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@f1d5c0b3f867c4ced57c2e615a14d23ec4633f36"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/go-cli"]
@@ -224,10 +224,10 @@ is-module = true
 
 [sdks.dang.scopes.".dagger/modules/sdl-diff"]
 is-module = true
-clients = ["github.com/dagger/go@4beea52956d2b2dfa6cf55dd8cc3725b82915aae"]
+clients = ["github.com/dagger/go@f1d5c0b3f867c4ced57c2e615a14d23ec4633f36"]
 
 [sdks.dang.scopes.".dagger/modules/mcp-lab"]
-clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@4beea52956d2b2dfa6cf55dd8cc3725b82915aae"]
+clients = ["./.dagger/modules/cli-dev", "./.dagger/modules/engine-dev", "github.com/dagger/go@f1d5c0b3f867c4ced57c2e615a14d23ec4633f36"]
 is-module = true
 
 [sdks.dang.scopes.".dagger/modules/tui-qa"]
@@ -236,7 +236,7 @@ is-module = true
 
 [sdks.dang.scopes.".dagger/modules/go-client-dev"]
 is-module = true
-clients = ["./cmd/codegen", "./.dagger/modules/engine-dev", "./modules/git-releaser", "github.com/dagger/go@4beea52956d2b2dfa6cf55dd8cc3725b82915aae"]
+clients = ["./cmd/codegen", "./.dagger/modules/engine-dev", "./modules/git-releaser", "github.com/dagger/go@f1d5c0b3f867c4ced57c2e615a14d23ec4633f36"]
 
 [sdks.dang.scopes.".dagger/modules/java-client-dev"]
 is-module = true
@@ -256,7 +256,7 @@ clients = ["./cmd/codegen", "./.dagger/modules/engine-dev"]
 
 [sdks.dang.scopes."cmd/codegen"]
 is-module = true
-clients = ["github.com/dagger/go@4beea52956d2b2dfa6cf55dd8cc3725b82915aae"]
+clients = ["github.com/dagger/go@f1d5c0b3f867c4ced57c2e615a14d23ec4633f36"]
 
 [sdks.dang.scopes."modules/markdownlint"]
 is-module = true
@@ -267,7 +267,7 @@ module = "go-sdk"
 
 [sdks.go.scopes.".dagger/modules/cli-dev"]
 is-module = true
-clients = ["github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a", "github.com/dagger/go@4beea52956d2b2dfa6cf55dd8cc3725b82915aae"]
+clients = ["github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a", "github.com/dagger/go@f1d5c0b3f867c4ced57c2e615a14d23ec4633f36"]
 
 [sdks.go.scopes.".dagger/modules/cli-dev".settings]
 dangEntrypoint = true
@@ -296,7 +296,7 @@ targetVersion = "v1.0.0-beta.26"
 
 [sdks.go.scopes.".dagger/modules/engine-dev"]
 is-module = true
-clients = ["github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a", "./.dagger/modules/cli-dev", "github.com/dagger/go@4beea52956d2b2dfa6cf55dd8cc3725b82915aae", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04", "./.dagger/modules/engine-dev/notify"]
+clients = ["github.com/dagger/alpine@e746b9763b6f4d004954deb35f66e693edfd854a", "./.dagger/modules/cli-dev", "github.com/dagger/go@f1d5c0b3f867c4ced57c2e615a14d23ec4633f36", "github.com/dagger/wolfi@fdec349f9aad840f2853bc2e6534f2555788da04", "./.dagger/modules/engine-dev/notify"]
 
 [sdks.go.scopes.".dagger/modules/engine-dev".settings]
 dangEntrypoint = true
