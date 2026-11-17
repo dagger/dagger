@@ -933,7 +933,9 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	require.NotEmpty(t, bin)
 	commandCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	cmd := exec.CommandContext(commandCtx, bin, "agent", "-r", traceID)
+	// --backfill imports the whole history, so the exec span zoomed below --
+	// outside any conversation -- is known to the TUI.
+	cmd := exec.CommandContext(commandCtx, bin, "agent", "-r", traceID, "--backfill")
 	cmd.Dir = destination
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")

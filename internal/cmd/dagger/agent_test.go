@@ -60,6 +60,15 @@ func TestResumeServable(t *testing.T) {
 	}
 }
 
+func TestValidateBackfillFlags(t *testing.T) {
+	require.NoError(t, validateBackfillFlags(false, false, false))
+	require.NoError(t, validateBackfillFlags(true, false, true))
+	require.NoError(t, validateBackfillFlags(false, true, true), "--no-backfill stays accepted: it names the default")
+	require.ErrorContains(t, validateBackfillFlags(true, false, false), "--backfill requires -r/--resume")
+	require.ErrorContains(t, validateBackfillFlags(false, true, false), "--no-backfill requires -r/--resume")
+	require.ErrorContains(t, validateBackfillFlags(true, true, true), "mutually exclusive")
+}
+
 func TestRestoreSessionInitializationNeedsNoProvider(t *testing.T) {
 	// A nil engine client makes any destination LLM/workspace query a failure.
 	// Restoring client plumbing must not evaluate either before bootstrap.

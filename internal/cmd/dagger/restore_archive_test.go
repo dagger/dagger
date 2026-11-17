@@ -334,10 +334,18 @@ func TestArchiveLabelTruncatesLongTitles(t *testing.T) {
 	require.Equal(t, "2026-09-01 12:34  "+strings.Repeat("x", archiveLabelTitleMax-1)+"…  t", label)
 }
 
+// backfillRequest is restoreRequest with --backfill: the whole history
+// imports in the background.
+func backfillRequest() traceRestore {
+	req := restoreRequest()
+	req.backfill = true
+	return req
+}
+
 func TestArchivePromptDoesNotWaitForHistory(t *testing.T) {
 	source, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
 	fe, target := newRestoreTestFrontend(), newFakeRestoreTarget()
-	cleanup, err := restoreArchive(t.Context(), source, fe, target, restoreRequest())
+	cleanup, err := restoreArchive(t.Context(), source, fe, target, backfillRequest())
 	require.NoError(t, err)
 	require.Equal(t, "chief", target.focused)
 	for range 3 {
@@ -586,15 +594,16 @@ func receiveOpts(t *testing.T, ch chan archive.StreamOptions, what string) archi
 	}
 }
 
-// TestArchiveRestoreLoadsDisplayLogsOnDemand: an interactive frontend gets
-// the history's whole span tree, with the dagui view's hints, and only its
-// semantic log records in the background; display logs are read per span on
-// request, pinned to the cut, from the provider for the restored trace.
+// TestArchiveRestoreLoadsDisplayLogsOnDemand: with --backfill, an interactive
+// frontend gets the history's whole span tree, with the dagui view's hints,
+// and only its semantic log records in the background; display logs are read
+// per span on request, pinned to the cut, from the provider for the restored
+// trace.
 func TestArchiveRestoreLoadsDisplayLogsOnDemand(t *testing.T) {
 	source := newLazyRestoreArchive()
 	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
 	target := newFakeRestoreTarget()
-	cleanup, err := restoreArchive(t.Context(), source, fe, target, restoreRequest())
+	cleanup, err := restoreArchive(t.Context(), source, fe, target, backfillRequest())
 	require.NoError(t, err)
 	defer cleanup()
 	require.Equal(t, "chief", target.focused, "verified bootstrap still restores before history")
@@ -627,7 +636,7 @@ func TestArchiveRestoreCleanupCancelsLazyFetches(t *testing.T) {
 	source := newLazyRestoreArchive()
 	source.blockSelected = true
 	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
-	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), restoreRequest())
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), backfillRequest())
 	require.NoError(t, err)
 	receiveOpts(t, source.logs, "log history")
 	for i := range 20 {
@@ -749,18 +758,18 @@ func noBackfillPrimaries(t *testing.T) func() []dagui.SpanID {
 	}
 }
 
-// TestArchiveRestoreNoBackfill: --no-backfill restores the agents from the
-// verified bootstrap as usual, then loads only the archive's conversation
-// view instead of the whole history: no full span stream, no whole-trace
-// metadata stream, no metrics. Children load when expanded and own logs when
-// shown, and the live session's root stays primary.
+// TestArchiveRestoreNoBackfill: by default (without --backfill), a restore
+// takes the agents from the verified bootstrap as usual, then loads only the
+// archive's conversation view instead of the whole history: no full span
+// stream, no whole-trace metadata stream, no metrics. Children load when
+// expanded and own logs when shown, and the live session's root stays
+// primary.
 func TestArchiveRestoreNoBackfill(t *testing.T) {
 	primaries := noBackfillPrimaries(t)
 	source := newNoBackfillArchive()
 	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
 	target := newFakeRestoreTarget()
 	req := restoreRequest()
-	req.noBackfill = true
 	cleanup, err := restoreArchive(t.Context(), source, fe, target, req)
 	require.NoError(t, err)
 	defer cleanup()
@@ -827,9 +836,7 @@ func TestArchiveRestoreNoBackfillSealsAfterFailure(t *testing.T) {
 	source := newNoBackfillArchive()
 	source.fail = archive.ErrTransient
 	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
-	req := restoreRequest()
-	req.noBackfill = true
-	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), req)
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), restoreRequest())
 	require.NoError(t, err)
 	defer cleanup()
 

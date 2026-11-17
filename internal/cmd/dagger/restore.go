@@ -24,9 +24,10 @@ import (
 type traceRestore struct {
 	traceID string
 	agent   string
-	// noBackfill skips importing the trace's whole telemetry history: only
-	// its conversations load, the rest on demand (restoreConversationOnly).
-	noBackfill  bool
+	// backfill imports a sealed archive's whole telemetry history in the
+	// background. Without it, only the conversations load, the rest on
+	// demand (restoreConversationOnly).
+	backfill    bool
 	source      archiveRestoreSource
 	cloudSource cloudRestoreSource
 	// engineUnavailable, when set, skips the engine archive for Cloud: why

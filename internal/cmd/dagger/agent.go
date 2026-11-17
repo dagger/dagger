@@ -32,6 +32,10 @@ var agentListMode bool
 var agentResume agentResumeFlag
 var agentTrace string
 var agentFocus string
+var agentBackfill bool
+
+// agentNoBackfill is the hidden --no-backfill, kept so scripts written when
+// conversation-only history was opt-in keep working: it is now the default.
 var agentNoBackfill bool
 
 var agentCmd = &cobra.Command{
@@ -66,8 +70,8 @@ Use /help for everyday commands and advanced options.`,
 		if err := validateArchiveFlags(traceID, agentFocus, listArchives, agentListMode, args); err != nil {
 			return err
 		}
-		if agentNoBackfill && traceID == "" && !listArchives {
-			return errors.New("--no-backfill requires -r/--resume")
+		if err := validateBackfillFlags(agentBackfill, agentNoBackfill, traceID != "" || listArchives); err != nil {
+			return err
 		}
 		// A bare -r offers a picker whenever the frontend can prompt, then
 		// resumes the chosen session; otherwise it prints the table.
@@ -137,10 +141,10 @@ Use /help for everyday commands and advanced options.`,
 					return err
 				}
 				restore := traceRestore{
-					source:     source,
-					traceID:    traceID,
-					agent:      agentFocus,
-					noBackfill: agentNoBackfill,
+					source:   source,
+					traceID:  traceID,
+					agent:    agentFocus,
+					backfill: agentBackfill,
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
 					restore:              restore,
@@ -268,8 +272,25 @@ func init() {
 	_ = agentCmd.Flags().MarkDeprecated("trace", "use -r/--resume <trace-id> instead")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With -r, focus this restored agent (runtime handle or name) instead of the top-level one")
+	agentCmd.Flags().BoolVar(&agentBackfill, "backfill", false,
+		"With -r, import the session's full telemetry history in the background, so every span, check and test is browsable as in the original session. By default only the agents' conversations load, and a span's children and logs load as it is expanded or shown, so a session too large to reload (e.g. one that ran out of memory) still resumes. Applies to sealed engine archives; unsealed archives and Dagger Cloud traces always load whole")
 	agentCmd.Flags().BoolVar(&agentNoBackfill, "no-backfill", false,
-		"With -r, skip importing the session's full telemetry history, for a session too large to reload (e.g. one that ran out of memory): show only its conversations, and load a span's children and logs when it is expanded or shown, so tool output appears as it is expanded. Cost totals restart at zero and rewound turns are not collapsed. Applies to sealed engine archives only")
+		"With -r, load only the session's conversations (the default)")
+	_ = agentCmd.Flags().MarkHidden("no-backfill")
+}
+
+// validateBackfillFlags refuses --backfill without a restore, and with the
+// hidden --no-backfill, which names the default.
+func validateBackfillFlags(backfill, noBackfill, restoring bool) error {
+	switch {
+	case backfill && noBackfill:
+		return errors.New("--backfill and --no-backfill are mutually exclusive")
+	case backfill && !restoring:
+		return errors.New("--backfill requires -r/--resume")
+	case noBackfill && !restoring:
+		return errors.New("--no-backfill requires -r/--resume")
+	}
+	return nil
 }
 
 func validateArchiveFlags(traceID, focus string, listArchives, listAgents bool, args []string) error {

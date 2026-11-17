@@ -136,7 +136,7 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 	if err := executeRestoreGraph(ctx, plan, target, req, subscriptions); err != nil {
 		return nil, err
 	}
-	if req.noBackfill {
+	if !req.backfill {
 		return restoreConversationOnly(ctx, source, fe, req.traceID, cut), nil
 	}
 
@@ -193,8 +193,9 @@ func archiveStore(source archiveRestoreSource, traceHex string, cut enginetel.Ar
 	})
 }
 
-// restoreConversationOnly is --no-backfill's history, for a session whose
-// telemetry outgrew the CLI (e.g. it ran out of memory). Instead of importing
+// restoreConversationOnly is a sealed archive's history unless --backfill
+// asks for all of it, so a session whose telemetry outgrew the CLI (e.g. it
+// ran out of memory) can be resumed at all. Instead of importing
 // every archived span, call payload and metadata record, and the metrics, it
 // loads the agents' loop and message spans with their direct children --
 // enough to render the conversations -- through the loader `dagger trace`
