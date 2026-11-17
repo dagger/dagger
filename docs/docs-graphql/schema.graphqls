@@ -826,7 +826,7 @@ type Artifacts implements Node {
 
   """
   List collection items represented in this selection. Retain the source
-  selection’s visible dimensions without evaluating item values.
+  selection's visible dimensions without evaluating item values.
   """
   dimensionItems(dimension: String!): [Artifact!]!
 

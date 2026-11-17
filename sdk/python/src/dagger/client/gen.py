@@ -2254,7 +2254,7 @@ class Artifacts(Type):
 
     async def dimension_items(self, dimension: str) -> list[Artifact]:
         """List collection items represented in this selection. Retain the source
-        selection’s visible dimensions without evaluating item values.
+        selection's visible dimensions without evaluating item values.
         """
         _args = [
             Arg("dimension", dimension),

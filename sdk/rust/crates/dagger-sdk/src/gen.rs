@@ -2096,7 +2096,7 @@ impl Artifacts {
         query = query.arg("dimension", dimension.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// List collection items represented in this selection. Retain the source selection’s visible dimensions without evaluating item values.
+    /// List collection items represented in this selection. Retain the source selection's visible dimensions without evaluating item values.
     pub async fn dimension_items(
         &self,
         dimension: impl Into<String>,
