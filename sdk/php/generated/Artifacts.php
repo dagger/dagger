@@ -258,7 +258,7 @@ class Artifacts extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * List collection items represented in this selection. Retain the source selection’s visible dimensions without evaluating item values.
+     * List collection items represented in this selection. Retain the source selection's visible dimensions without evaluating item values.
      */
     public function dimensionItems(string $dimension): array
     {

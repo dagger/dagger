@@ -98,7 +98,7 @@ func (s *artifactsSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("dimensions", s.selectionDimensions).View(AfterVersion(artifactDimensionViewVersion)).Doc("List dimensions whose cells differ across selected rows. Missing cells differ from present keys.").Args(dagql.Arg("all").Doc("List all workspace schema dimensions without runtime discovery.")),
 		dagql.Func("dimensionKeys", s.dimensionKeys).Doc("List keys represented in this selection for the given dimension, sorted with no duplicates."),
 		dagql.Func("dimensionItems", s.dimensionItems).View(BeforeVersion(artifactDimensionViewVersion)).Doc("List collection items represented in this selection for the given dimension. Preserve parent keys and remove duplicate item addresses. Does not evaluate item values."),
-		dagql.NodeFunc("dimensionItems", s.selectionDimensionItems).View(AfterVersion(artifactDimensionViewVersion)).Doc("List collection items represented in this selection. Retain the source selection’s visible dimensions without evaluating item values."),
+		dagql.NodeFunc("dimensionItems", s.selectionDimensionItems).View(AfterVersion(artifactDimensionViewVersion)).Doc("List collection items represented in this selection. Retain the source selection's visible dimensions without evaluating item values."),
 		keptFromContent(dagql.Func("__evaluationItems", func(ctx context.Context, parent *core.Artifacts, _ struct{}) (core.ArtifactItems, error) {
 			items, err := keptExpansion(ctx, parent.EvaluationItems)
 			return core.ArtifactItems{Array: items}, err

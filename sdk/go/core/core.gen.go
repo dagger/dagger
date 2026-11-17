@@ -2010,7 +2010,7 @@ func (r *Artifacts) DimensionDefinitions(ctx context.Context) ([]ArtifactDimensi
 	return convert(response), nil
 }
 
-// List collection items represented in this selection. Retain the source selection’s visible dimensions without evaluating item values.
+// List collection items represented in this selection. Retain the source selection's visible dimensions without evaluating item values.
 func (r *Artifacts) DimensionItems(ctx context.Context, dimension string) ([]Artifact, error) {
 	q := r.query.Select("dimensionItems")
 	q = q.Arg("dimension", dimension)
