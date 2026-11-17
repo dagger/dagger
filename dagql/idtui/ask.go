@@ -324,14 +324,14 @@ func (fe *frontendPretty) askLines(a *pendingApproval, focused bool, width int) 
 		agent = req.GetRequester().GetAgentName()
 	}
 	if !focused {
-		add("  " + faint(joinNonEmpty(" · ", agent, approvalModule(a.req), fe.approvalUnfocusedHint(a))))
+		add("  " + faint(joinNonEmpty(agent, approvalModule(a.req), fe.approvalUnfocusedHint(a))))
 		return lines
 	}
 	who := approvalRequester(a.req, false)
 	if full := approvalRequester(a.req, true); width <= 0 || ansi.StringWidth(full)+2 <= width {
 		who = full
 	}
-	if who = joinNonEmpty(" · ", agent, who); who != "" {
+	if who = joinNonEmpty(agent, who); who != "" {
 		add("  " + faint(who))
 	}
 
