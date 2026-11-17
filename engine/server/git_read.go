@@ -20,17 +20,17 @@ const gitReadPromptPrefix = "Allow an agent to read "
 // AuthorizeGitRead returns the client whose Git credentials may authenticate
 // a read of remote, an address an agent's model supplied as a tool argument.
 //
-// The owner is the trusted caller before the first module or inert boundary,
-// as for push (see gitPushOwner). When the caller is that owner itself (the
-// user's own conversation), its credentials apply as they would to any of its
-// reads. When a module drives the agent (e.g. a worker spawned by a module),
-// or the agent's code runs in a host-less client (e.g. a snippet it
-// evaluates), the owner approves each remote, in its canonical spelling
-// (see canonicalGitReadRemote), for that agent and module first (see
-// requestApproval): another module, even one only named like it, asks again,
-// as the prompt naming the module implies. A denial holds only for that
-// attempt. Otherwise any module could read whatever the user can, by
-// prompting a model.
+// The owner is the trusted caller before the first module or inert boundary
+// below the nearest client owning its host, as for push (see gitPushOwner).
+// When the caller is that owner itself (the user's own conversation), its
+// credentials apply as they would to any of its reads. When a module drives
+// the agent (e.g. a worker spawned by a module), or the agent's code runs in
+// a host-less client (e.g. a snippet it evaluates), the owner approves each
+// remote, in its canonical spelling (see canonicalGitReadRemote), for that
+// agent and module first (see requestApproval): another module, even one only
+// named like it, asks again, as the prompt naming the module implies. A
+// denial holds only for that attempt. Otherwise any module could read
+// whatever the user can, by prompting a model.
 //
 // What "allow once" covers: Query.git asks here once per credentialed lookup,
 // and that lookup is cached per calling client and URL as spelled

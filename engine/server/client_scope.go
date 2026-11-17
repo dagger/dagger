@@ -56,8 +56,9 @@ func (srv *Server) RegisterNestedClientTransportForExec(
 // It owns the host they serve (the exec's container), so it is the owner its
 // own requests, and those of the modules and agents it runs, are made on
 // behalf of (see gitPushOwner): it is asked, and what it approves uses its
-// host. The executor decides this from the request that registered the
-// identity; nothing the client declares does.
+// host. The executor decides this from how a fresh identity first connects,
+// never from its metadata: any process in the exec may opt in, which only
+// ever gives it authority over its own container.
 func (srv *Server) RegisterNestedCLITransportForExec(
 	ctx context.Context,
 	metadata *engine.ClientMetadata,
