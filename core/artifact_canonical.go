@@ -38,12 +38,16 @@ func (a *Artifact) LocalPath() []string {
 	}
 	var route []flattening.PathStep
 	for node := a.Node; node != nil; node = node.Parent {
-		route = append(route, flattening.PathStep{
+		step := flattening.PathStep{
 			Field:          node.Name,
 			CollectionItem: node.CollectionDimension != nil,
 			ModuleRoot: node.Parent == nil ||
 				a.ModuleName != "" && SameCLIName(node.Name, a.ModuleName) && len(node.Path()) == 1,
-		})
+		}
+		route = append(route, step)
+		if step.CollectionItem || step.ModuleRoot {
+			break
+		}
 	}
 	slices.Reverse(route)
 	path := flattening.LocalFieldPath(route)

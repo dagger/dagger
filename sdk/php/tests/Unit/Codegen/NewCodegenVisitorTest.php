@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Dagger\Tests\Unit\Codegen;
 
+use Dagger\Client\AbstractClient;
+use Dagger\Codegen\CodeWriter;
 use Dagger\Codegen\Introspection\IntrospectionType;
 use Dagger\Codegen\Introspection\NewCodegenVisitor;
+use Dagger\GraphQl\QueryBuilderChain;
 use Nette\PhpGenerator\ClassType;
+use org\bovigo\vfs\vfsStream;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -47,43 +51,59 @@ class NewCodegenVisitorTest extends TestCase
     }
 
     #[Test]
-    #[DataProvider('booleanDefaults')]
-    public function itOmitsOnlyFalseDefaultBooleanArguments(?string $default, bool $required, string $comparison): void
-    {
-        $argumentType = ['kind' => 'SCALAR', 'name' => 'Boolean'];
-        if ($required) {
-            $argumentType = ['kind' => 'NON_NULL', 'ofType' => $argumentType];
-        }
+    #[DataProvider('falseDefaultArguments')]
+    public function itGeneratesQueriesWithTheExpectedFalseArguments(
+        string $typeName,
+        string $fieldName,
+        string $argumentName,
+        string $expectedQuery,
+    ): void {
+        $booleanType = ['kind' => 'SCALAR', 'name' => 'Boolean'];
         $type = IntrospectionType::fromArray([
             'kind' => 'OBJECT',
-            'name' => 'Example',
+            'name' => $typeName,
             'fields' => [[
-                'name' => 'enabled',
-                'type' => ['kind' => 'SCALAR', 'name' => 'Boolean'],
-                'args' => [['name' => 'value', 'type' => $argumentType, 'defaultValue' => $default]],
+                'name' => $fieldName,
+                'type' => $booleanType,
+                'args' => [[
+                    'name' => $argumentName,
+                    'type' => ['kind' => 'NON_NULL', 'ofType' => $booleanType],
+                    'defaultValue' => 'false',
+                ]],
             ]],
         ]);
+        $directory = vfsStream::setup()->url();
+        $className = 'Generated' . $typeName . ucfirst($fieldName);
+        $writer = new CodeWriter($directory);
         $visitor = $this->getMockBuilder(NewCodegenVisitor::class)
-            ->setConstructorArgs(['unused'])
+            ->setConstructorArgs([$directory])
             ->onlyMethods(['write'])
             ->getMock();
-        $visitor->expects(self::once())->method('write')->with(self::callback(
-            static function (ClassType $class) use ($comparison): bool {
-                self::assertStringContainsString('if (' . $comparison . ' $value)', $class->getMethod('enabled')->getBody());
-                return true;
-            },
-        ));
+        $visitor->expects(self::once())->method('write')->willReturnCallback(
+            static fn (ClassType $class) => $writer->write($class->setName($className))
+        );
 
         $visitor->visitObject($type);
+        require $directory . '/' . $className . '.php';
+        $class = CodeWriter::NAMESPACE . '\\' . $className;
+        $client = $this->createMock(AbstractClient::class);
+        $client->expects(self::once())->method('queryLeaf')->willReturnCallback(
+            static function ($query) use ($expectedQuery): bool {
+                self::assertSame($expectedQuery, (string) $query);
+                return false;
+            }
+        );
+
+        $object = new $class($client, new QueryBuilderChain());
+        $object->$fieldName(false);
     }
 
-    public static function booleanDefaults(): iterable
+    public static function falseDefaultArguments(): iterable
     {
-        yield 'false default' => ['false', false, 'true ==='];
-        yield 'non-null false default' => ['false', true, 'true ==='];
-        yield 'true default' => ['true', false, 'null !=='];
-        yield 'no default' => [null, false, 'null !=='];
-        yield 'null default' => ['null', false, 'null !=='];
+        yield ['Artifact', 'dimensionKeys', 'all', 'query { dimensionKeys }'];
+        yield ['Artifacts', 'dimensions', 'all', 'query { dimensions }'];
+        yield ['Artifacts', 'filterDimensions', 'exclude', 'query { filterDimensions }'];
+        yield ['Container', 'withExec', 'useEntrypoint', 'query { withExec(useEntrypoint: false) }'];
     }
 
     public static function inputLists(): iterable

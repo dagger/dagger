@@ -153,7 +153,7 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     public function pause(?bool $interrupt = false): Agent
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pause');
-        if (true === $interrupt) {
+        if (null !== $interrupt) {
         $leafQueryBuilder->setArgument('interrupt', $interrupt);
         }
         $id = $this->queryLeaf($leafQueryBuilder, 'pause');
@@ -214,7 +214,7 @@ class Agent extends Client\AbstractObject implements Client\IdAble, Node
     public function stop(?bool $kill = false): Agent
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stop');
-        if (true === $kill) {
+        if (null !== $kill) {
         $leafQueryBuilder->setArgument('kill', $kill);
         }
         $id = $this->queryLeaf($leafQueryBuilder, 'stop');

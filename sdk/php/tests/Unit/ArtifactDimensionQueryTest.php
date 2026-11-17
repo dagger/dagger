@@ -21,7 +21,7 @@ class ArtifactDimensionQueryTest extends TestCase
             ->onlyMethods(['queryLeaf'])
             ->getMock();
         $queries = [];
-        $client->expects(self::exactly(12))->method('queryLeaf')->willReturnCallback(
+        $client->expects(self::exactly(13))->method('queryLeaf')->willReturnCallback(
             static function ($query) use (&$queries): array {
                 $queries[] = (string) $query;
                 return [];
@@ -46,11 +46,13 @@ class ArtifactDimensionQueryTest extends TestCase
         $artifacts->filterDimensions(['Tests'], false)->dimensions();
         $artifacts->filterDimensions(['Tests'], null)->dimensions();
         $artifacts->filterDimensions(['Tests'], true)->dimensions();
+        $artifacts->filterTypes(['Container'], false)->dimensions();
         self::assertSame([
             'query { filterDimensions(dimensions: ["Tests"]) { dimensions } }',
             'query { filterDimensions(dimensions: ["Tests"]) { dimensions } }',
             'query { filterDimensions(dimensions: ["Tests"]) { dimensions } }',
             'query { filterDimensions(dimensions: ["Tests"] exclude: true) { dimensions } }',
+            'query { filterTypes(types: ["Container"] exclude: false) { dimensions } }',
         ], $queries);
     }
 }

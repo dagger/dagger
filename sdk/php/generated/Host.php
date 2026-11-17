@@ -40,10 +40,10 @@ class Host extends Client\AbstractObject implements Client\IdAble, Node
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        if (true === $noCache) {
+        if (null !== $noCache) {
         $innerQueryBuilder->setArgument('noCache', $noCache);
         }
-        if (true === $gitignore) {
+        if (null !== $gitignore) {
         $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -56,7 +56,7 @@ class Host extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
         $innerQueryBuilder->setArgument('path', $path);
-        if (true === $noCache) {
+        if (null !== $noCache) {
         $innerQueryBuilder->setArgument('noCache', $noCache);
         }
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -69,7 +69,7 @@ class Host extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findUp');
         $leafQueryBuilder->setArgument('name', $name);
-        if (true === $noCache) {
+        if (null !== $noCache) {
         $leafQueryBuilder->setArgument('noCache', $noCache);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'findUp');
@@ -92,7 +92,7 @@ class Host extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tunnel');
         $innerQueryBuilder->setArgument('service', $service);
-        if (true === $native) {
+        if (null !== $native) {
         $innerQueryBuilder->setArgument('native', $native);
         }
         if (null !== $ports) {

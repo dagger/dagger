@@ -645,21 +645,10 @@ func readListedArtifactsMetadata(ctx context.Context, dag *dagger.Client, select
 	return items, nil
 }
 
-func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, dimension string, absolute bool) ([]listedArtifact, error) {
+func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection *core.Artifacts, dimension *artifact.Dimension, absolute bool) ([]listedArtifact, error) {
 	id, err := selection.ID(ctx)
 	if err != nil {
 		return nil, err
-	}
-	definitions, err := artifactDimensions(ctx, dag, selection)
-	if err != nil {
-		return nil, err
-	}
-	var itemType string
-	for _, definition := range definitions {
-		if definition.Identifier == dimension {
-			itemType = definition.ItemType
-			break
-		}
 	}
 	var response struct {
 		Node struct{ Items []listedArtifact }
@@ -669,7 +658,7 @@ func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection
     items: dimensionItems(dimension: $dimension) { uri(absolute: $absolute, typeAssertion: true) description moduleName path coordinates:dimensionKeys(all:true) { dimension key } }
   } }
  }`
-	variables := map[string]any{"id": id, "dimension": dimension, "absolute": absolute}
+	variables := map[string]any{"id": id, "dimension": dimension.Identifier, "absolute": absolute}
 	err = dag.Do(ctx, &dagger.Request{Query: query, Variables: variables}, &dagger.Response{Data: &response})
 	if err != nil && strings.Contains(err.Error(), "Unknown argument") && strings.Contains(err.Error(), "all") {
 		query = strings.Replace(query, "dimensionKeys(all:true)", "dimensionKeys", 1)
@@ -694,8 +683,8 @@ func readListedDimensionItems(ctx context.Context, dag *dagger.Client, selection
 			}
 			item.DimensionKeys = append(item.DimensionKeys, coordinate)
 		}
-		if itemType != "" {
-			item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{"type:" + itemType, strings.Join(item.Path, "/")})
+		if dimension.ItemType != "" {
+			item.DimensionKeys = append(item.DimensionKeys, struct{ Dimension, Key string }{"type:" + dimension.ItemType, strings.Join(item.Path, "/")})
 		}
 	}
 	return response.Node.Items, nil

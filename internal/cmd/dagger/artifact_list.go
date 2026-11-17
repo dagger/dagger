@@ -81,7 +81,7 @@ func listArtifactSelection(ctx context.Context, dag *dagger.Client, selection *c
 			if dimension.CollectionType != collectionType {
 				continue
 			}
-			projected, err := readListedDimensionItems(ctx, dag, selection, dimension.Identifier, absolute)
+			projected, err := readListedDimensionItems(ctx, dag, selection, dimension, absolute)
 			if err != nil {
 				return err
 			}
