@@ -130,75 +130,22 @@ type TypescriptClientDev {
       .changes(workspaceDir)
   }
 
-  pub releaseDryRun: Void @check {
-    release(
-      dryRun: true,
-      sourceTag: "HEAD",
-      npmToken: null,
-      npmRegistryURL: "",
-    )
-  }
+  """
+  Build the SDK and check it produces a dist/.
 
-  pub release(
-    """
-    Source git tag to release
-    """
-    sourceTag: String!,
-    """
-    NPM authentication token
-    """
-    npmToken: Secret,
-    """
-    Execute a dry-run release, with no side effects
-    """
-    dryRun: Boolean,
-    """
-    NPM registry URL to publish to.
-    """
-    npmRegistryURL: String! = "",
-  ): Void {
-    let version = versionFromTag(sourceTag)
-    let versionFlag = if (isSemver(version)) {
-      version.trimPrefix("v")
-    } else {
-      "prepatch"
-    }
-    let prerelease = if (isSemver(version)) {
-      prereleaseFromVersion(version)
-    } else {
-      ""
-    }
-    let build = nodejsDevContainer
+  This is what `release` proved on the way to publishing `@dagger.io/dagger`,
+  kept after that publish went away: the aggregate is generated per scope by
+  dagger/typescript-sdk now, and `@dagger.io/core` is what this repo releases.
+  Nothing else here runs the build — the test checks run `yarn test:node` and
+  `bun test:bun` against the sources, and the lint check only lints them.
+  """
+  pub buildTypescript: Void @check {
+    nodejsDevContainer
       .withWorkdir(sourcePath)
       .withExec(["npm", "run", "build"])
-      .withExec(["npm", "version", versionFlag])
-    # Check that dist/ exists in the build
-    build.directory("dist").entries
-    let publishArgs = ["npm", "publish", "--access", "public"]
-    if (prerelease != "") {
-      publishArgs += ["--tag", prerelease]
-    }
-    if (dryRun == true) {
-      publishArgs += ["--dry-run"]
-      # TODO(vito): in dang, if exprs have to have same return type on all
-      # branches, which gets awkward here
-      null
-    } else if (npmToken != null) {
-      let registry = if (npmRegistryURL != "") {
-        npmRegistryURL.trimRight("/") + "/"
-      } else {
-        "https://registry.npmjs.org/"
-      }
-      let registryAuthHost = registry.trimPrefix("https://").trimPrefix("http://")
-      let npmrc = [
-        "//" + registryAuthHost + ":_authToken=" + npmToken.plaintext,
-        "registry=" + registry,
-        "always-auth=true",
-      ].join("\n")
-      build = build.withMountedSecret(".npmrc", setSecret("npmrc", npmrc))
-      null
-    }
-    build.withExec(publishArgs).sync
+      .directory("dist")
+      .entries
+
     null
   }
 
@@ -222,9 +169,10 @@ type TypescriptClientDev {
   """
   Publish @dagger.io/core.
 
-  Its version is the **engine** release, not the SDK's, which is why the tag is
-  taken as-is rather than through versionFromTag: core is the generated bindings
-  for one engine, so the two move together and nothing else here does.
+  Its version is the **engine** release, not the SDK's, so the tag is taken as
+  it comes rather than having the `sdk/typescript/` prefix stripped off it: core
+  is the generated bindings for one engine, so the two move together and nothing
+  else here does.
 
   @dagger.io/session is a published dependency, so `npm install` below fetches it
   from the registry. That is deliberate — it is the only thing that proves the
@@ -331,10 +279,6 @@ type TypescriptClientDev {
       let channel = prerelease.captures[0]
       if (channel == null) { "" } else { channel }
     }
-  }
-
-  let versionFromTag(tag: String!): String! {
-    tag.trimPrefix(sourcePath.trimRight("/") + "/")
   }
 
   # Build a nodejs dev environment, with the SDK source code mounted and its dependencies installed
