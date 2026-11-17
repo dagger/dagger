@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"context"
+	"flag"
 	"io"
 	"runtime"
 	"strconv"
@@ -15,6 +16,8 @@ import (
 
 var footprintFrontend *frontendPretty
 
+var footprintSizes = flag.String("footprint.sizes", "", spanfootprint.SizesFlag)
+
 // BenchmarkFrontendSpanFootprint reports the live pretty frontend's retained
 // heap per span (its DB included) after a large synthetic agent-session
 // trace streams through its span exporter, rendering a frame every few
@@ -22,10 +25,10 @@ var footprintFrontend *frontendPretty
 //
 //	go test ./dagql/idtui -run '^$' -bench FrontendSpanFootprint -benchtime 1x
 //
-// Compare dagui's BenchmarkSpanFootprint for the DB alone. Set
-// DAGGER_SPAN_FOOTPRINT_SIZES (e.g. "100000,1000000") to measure other sizes.
+// Compare dagui's BenchmarkSpanFootprint for the DB alone. Pass
+// -footprint.sizes (e.g. 100000,1000000) to measure other sizes.
 func BenchmarkFrontendSpanFootprint(b *testing.B) {
-	sizes, err := spanfootprint.Sizes()
+	sizes, err := spanfootprint.Sizes(*footprintSizes)
 	if err != nil {
 		b.Fatal(err)
 	}
