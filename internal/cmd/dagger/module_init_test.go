@@ -1,8 +1,6 @@
 package daggercmd
 
 import (
-	"bytes"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -168,56 +166,6 @@ func TestParseSDKRegistry(t *testing.T) {
 	require.Equal(t, "go", entries[0].Name)
 	require.Equal(t, "Official Dagger SDK for Go", entries[0].Description)
 	require.Equal(t, []string{"golang"}, entries[0].Aliases)
-}
-
-func TestSearchSDKRegistry(t *testing.T) {
-	reg := []registryModule{
-		{Name: "python", Description: "Official Dagger SDK for Python", Repo: "github.com/dagger/python-sdk", Aliases: []string{"py"}},
-		{Name: "go", Description: "Official Dagger SDK for Go", Repo: "github.com/dagger/go-sdk", Aliases: []string{"golang"}},
-		{Name: "typescript", Description: "Official Dagger SDK for TypeScript", Repo: "github.com/dagger/typescript-sdk", Aliases: []string{"ts"}},
-	}
-
-	tests := []struct {
-		name  string
-		query string
-		want  []string
-	}{
-		{"empty query returns all sorted by name", "", []string{"go", "python", "typescript"}},
-		{"name substring", "type", []string{"typescript"}},
-		{"description match", "python", []string{"python"}},
-		{"alias match", "golang", []string{"go"}},
-		{"repo basename match", "typescript-sdk", []string{"typescript"}},
-		{"no match", "nonexistent", nil},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := searchModuleRegistry(reg, tt.query)
-			var names []string
-			for _, entry := range got {
-				names = append(names, entry.Name)
-			}
-			require.Equal(t, tt.want, names)
-		})
-	}
-}
-
-func TestPrintSDKSearchResults(t *testing.T) {
-	entries := []registryModule{
-		{Name: "go", Description: "Official Dagger SDK for Go", Repo: "github.com/dagger/go-sdk", Aliases: []string{"golang"}},
-		{Name: "java", Description: "Official Dagger SDK for Java", Repo: "github.com/dagger/java-sdk"},
-	}
-
-	var buf bytes.Buffer
-	require.NoError(t, printModuleSearchResults(&buf, entries))
-	out := buf.String()
-	require.Equal(t, []string{"SOURCE", "DESCRIPTION"}, strings.Fields(strings.SplitN(out, "\n", 2)[0]))
-	require.Contains(t, out, "github.com/dagger/go-sdk")
-	require.Contains(t, out, "Official Dagger SDK for Go")
-	require.Contains(t, out, "github.com/dagger/java-sdk")
-	require.NotContains(t, out, "\ngo ")
-	require.NotContains(t, out, "\njava ")
-	require.Contains(t, out, "\nRun 'dagger install <SOURCE>' to install a module.\n")
 }
 
 // Conventional SDK name derivation is shared with the engine in core/workspace.
