@@ -83,9 +83,7 @@ func init() {
 	apicaps.ExportedProduct = "dagger-engine"
 	stack.SetVersionInfo(version.Version, version.Revision)
 
-	if reexec.Init() {
-		os.Exit(0)
-	}
+	reexec.Register(engineChildCommand, runSupervisedEngine)
 }
 
 func enabledEbpfPrograms(loadDefaults bool) []ebpfProgram {
@@ -297,7 +295,7 @@ func addFlags(app *cli.App) {
 	}
 }
 
-func main() { //nolint:gocyclo
+func runEngine() { //nolint:gocyclo
 	engineVersion := fmt.Sprintf("%s %s %s", engine.Version, engine.Tag, platforms.DefaultString())
 	cli.VersionPrinter = func(c *cli.Context) {
 		fmt.Println(engineVersion)
@@ -308,17 +306,21 @@ func main() { //nolint:gocyclo
 
 	addFlags(app)
 
-	ctx, cancel := context.WithCancelCause(appcontext.Context())
+	var ctx context.Context
 	var resourceMetrics *sdkmetric.MeterProvider
 
 	app.Action = func(c *cli.Context) error {
-		bklog.G(ctx).Info("starting dagger engine version:", engineVersion)
-		defer cancel(errors.New("main done"))
-		// TODO: On Windows this always returns -1. The actual "are you admin" check is very Windows-specific.
-		// See https://github.com/golang/go/issues/28804#issuecomment-505326268 for the "short" version.
+		// The engine needs a mapped root user for its mounts and namespaces.
 		if os.Geteuid() > 0 {
 			return errors.New("rootless mode requires to be executed as the mapped root in a user namespace; you may use RootlessKit for setting up the namespace")
 		}
+		if engineStatusPipe == nil {
+			return superviseEngineCommand()
+		}
+		var cancel context.CancelCauseFunc
+		ctx, cancel = context.WithCancelCause(appcontext.Context())
+		defer cancel(errors.New("main done"))
+		bklog.G(ctx).Info("starting dagger engine version:", engineVersion)
 
 		// install CA certs in case the user has a custom engine w/ extra certs installed to
 		// /usr/local/share/ca-certificates
@@ -469,11 +471,16 @@ func main() { //nolint:gocyclo
 			os.RemoveAll(lockPath)
 		}()
 
+		if err := reportEngineStatus(engineStatus{Root: root}); err != nil {
+			return fmt.Errorf("report engine state root: %w", err)
+		}
+
 		bklog.G(ctx).Debug("creating engine server")
 		srv, err := server.NewServer(ctx, &server.NewServerOpts{
 			Name:           engineName,
 			Config:         &cfg,
 			BuildkitConfig: &bkcfg,
+			CorruptDBReset: os.Getenv(engineCacheResetEnv) == "1",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
@@ -568,9 +575,8 @@ func main() { //nolint:gocyclo
 		cancelNetworking(errors.New("shutdown"))
 
 		bklog.G(context.WithoutCancel(ctx)).Infof("stopping server")
-		if os.Getenv("NOTIFY_SOCKET") != "" {
-			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
-			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
+		if err := reportEngineStatus(engineStatus{Notify: sddaemon.SdNotifyStopping}); err != nil {
+			bklog.G(ctx).WithError(err).Warn("report engine stopping")
 		}
 
 		srvStopCtx, srvStopCancel := context.WithTimeout(context.WithoutCancel(ctx), gracefulStopTimeout)
@@ -581,6 +587,9 @@ func main() { //nolint:gocyclo
 	}
 
 	app.After = func(*cli.Context) error {
+		if ctx == nil {
+			return nil
+		}
 		fmt.Println("shutting down telemetry...")
 		defer fmt.Println("telemetry shut down complete")
 		closeResourceMetrics(ctx, resourceMetrics)
@@ -622,9 +631,8 @@ func serveAPI(
 		listeners = append(listeners, l)
 	}
 
-	if os.Getenv("NOTIFY_SOCKET") != "" {
-		notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyReady)
-		logrus.Debugf("SdNotifyReady notified=%v, err=%v", notified, notifyErr)
+	if err := reportEngineStatus(engineStatus{Notify: sddaemon.SdNotifyReady}); err != nil {
+		return fmt.Errorf("report engine ready: %w", err)
 	}
 	for _, l := range listeners {
 		func(l net.Listener) {
