@@ -35,9 +35,12 @@ const gitIdentityPromptPrefix = "Allow using your Git identity "
 // functions, for that identity (see gitIdentityApproval), once, for the
 // session or forever.
 //
-// A client serving its own attachables below a module boundary (a dagger CLI
-// in a container a module runs) has its own Git config, the module's to set:
-// that identity is returned as is, as it was before approvals.
+// An interactive CLI serving its own attachables in a container a module runs
+// owns that host (see gitPushOwner): it shares its own identity, and is asked
+// to when its agents and modules ask. Another client served by its exec's
+// attachables below a module boundary (e.g. an SDK or a headless CLI in that
+// container) has the container's Git config too, the module's to set: that
+// identity is returned as is, as it was before approvals.
 //
 // An unconfigured identity has nothing to share and is returned empty without
 // asking. When the owner denies, or no answer can be had (the owner cannot
