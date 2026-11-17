@@ -2296,21 +2296,21 @@ scope=$(llm | with-workspace --workspace $(current-workspace) | with-tools $rost
 			return out
 		}
 		// The collection's keys come from the bound roster's state...
-		require.Equal(t, "roster\nmembers\ndir\n",
-			run(ctx, t, `$scope | filter-uri "dag://roster/members/dir" | items | path`))
+		require.Equal(t, "roster\nmembers\ndir",
+			strings.TrimSpace(run(ctx, t, `$scope | filter-uri "dag://roster/members/dir" | items | path`)))
 		// ...and so does the value.
 		require.Equal(t, "hello from the roster",
 			run(ctx, t, `addr=$($scope | filter-uri "dag://roster/members/dir?roster-member=a" | one | uri)
 $scope | filter-uri "$addr" | one | value | file f | contents`))
 		// The workspace's other modules are in scope, constructed fresh.
-		require.Equal(t, "notes\ndocs\n",
-			run(ctx, t, `$scope | filter-uri "dag://notes/**" | items | path`))
+		require.Equal(t, "notes\ndocs",
+			strings.TrimSpace(run(ctx, t, `$scope | filter-uri "dag://notes/**" | items | path`)))
 		require.Equal(t, "README\n",
 			run(ctx, t, `$scope | filter-uri "dag://notes/docs" | one | value | entries`))
 		// The workspace's own roster is shadowed by the bound one: the
 		// collection is listed once, not once per roster.
-		require.Equal(t, "roster\nmembers\n",
-			run(ctx, t, `$scope | filter-uri "dag+roster-members://roster/members" | items | path`))
+		require.Equal(t, "roster\nmembers",
+			strings.TrimSpace(run(ctx, t, `$scope | filter-uri "dag+roster-members://roster/members" | items | path`)))
 	})
 
 	t.Run("the LLM scope's workspace part is the bound workspace's", func(ctx context.Context, t *testctx.T) {
