@@ -127,6 +127,35 @@ func (srv *Server) registerNestedClientTransport(
 	})
 }
 
+// nestedRegistrationScope validates a nested client registration's metadata
+// against its parent, and returns the parent client scope ctx holds.
+func nestedRegistrationScope(ctx context.Context, metadata *engine.ClientMetadata, parentClientID string) (engine.ClientScope, error) {
+	var none engine.ClientScope
+	if metadata == nil {
+		return none, errors.New("nested client metadata is nil")
+	}
+	if metadata.SessionID == "" || metadata.ClientID == "" {
+		return none, errors.New("nested client metadata is missing session or client ID")
+	}
+	if parentClientID == "" {
+		return none, errors.New("nested client transport is missing parent client ID")
+	}
+	scope, ok := engine.ClientScopeFromContext(ctx)
+	if !ok {
+		return none, errors.New("nested client transport requires a held parent client scope")
+	}
+	if scope.SessionID() != metadata.SessionID || scope.ClientID() != parentClientID {
+		return none, fmt.Errorf(
+			"parent client scope %q/%q does not match nested registration %q/%q",
+			scope.SessionID(), scope.ClientID(), metadata.SessionID, parentClientID,
+		)
+	}
+	if metadata.ClientID == parentClientID {
+		return none, fmt.Errorf("client ancestry cycle: client %q cannot be its own parent", metadata.ClientID)
+	}
+	return scope, nil
+}
+
 // registerNestedClientTransportWith registers a nested client of the client
 // whose scope ctx holds, reaching the host as reg says.
 func (srv *Server) registerNestedClientTransportWith(
@@ -136,27 +165,9 @@ func (srv *Server) registerNestedClientTransportWith(
 	reg nestedClientRegistration,
 ) (_ *engine.NestedClientTransport, rerr error) {
 	attachablesClientID, fromExecHelper, hostFromParent := reg.attachablesClientID, reg.fromExecHelper, reg.hostFromParent
-	if metadata == nil {
-		return nil, errors.New("nested client metadata is nil")
-	}
-	if metadata.SessionID == "" || metadata.ClientID == "" {
-		return nil, errors.New("nested client metadata is missing session or client ID")
-	}
-	if parentClientID == "" {
-		return nil, errors.New("nested client transport is missing parent client ID")
-	}
-	scope, ok := engine.ClientScopeFromContext(ctx)
-	if !ok {
-		return nil, errors.New("nested client transport requires a held parent client scope")
-	}
-	if scope.SessionID() != metadata.SessionID || scope.ClientID() != parentClientID {
-		return nil, fmt.Errorf(
-			"parent client scope %q/%q does not match nested registration %q/%q",
-			scope.SessionID(), scope.ClientID(), metadata.SessionID, parentClientID,
-		)
-	}
-	if metadata.ClientID == parentClientID {
-		return nil, fmt.Errorf("client ancestry cycle: client %q cannot be its own parent", metadata.ClientID)
+	scope, err := nestedRegistrationScope(ctx, metadata, parentClientID)
+	if err != nil {
+		return nil, err
 	}
 	telemetryUnread := nestedTelemetryUnread(metadata.ClientID, reg)
 

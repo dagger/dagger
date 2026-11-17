@@ -18,7 +18,7 @@ import (
 func (WorkspaceSuite) TestNestedCLISnapshotApproval(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	out, err := nestedCLISnapshotApproval(ctx, t, c).
-		WithExec([]string{"python3", "/drive-console.py"}, core.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		WithExec([]string{"python3", "/drive-console.py"}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, `"contents": "approved"`)
