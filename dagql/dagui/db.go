@@ -226,6 +226,13 @@ type DB struct {
 	// new span data.
 	mutations uint64
 
+	// breakdowns memoizes Span.TimeBreakdown for the rows rendered since
+	// the DB last changed, at mutation count breakdownsAt, and
+	// blockerLabels the labels they name their blockers by.
+	breakdowns    map[*Span]breakdownMemo
+	blockerLabels map[*Span]string
+	breakdownsAt  uint64
+
 	// The surfacing memos below key on BOTH db.mutations and the root the walk
 	// was relative to (see surfaceRoot): a zoom change doesn't bump mutations,
 	// so without the root in the key a render zoomed to one span would be
