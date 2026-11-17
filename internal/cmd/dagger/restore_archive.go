@@ -198,16 +198,18 @@ func archiveStore(source archiveRestoreSource, traceHex string, cut enginetel.Ar
 // asks for all of it, so a session whose telemetry outgrew the CLI (e.g. it
 // ran out of memory) can be resumed at all. Instead of importing
 // every archived span, call payload and metadata record, and the metrics, it
-// loads the agents' loop and message spans with their direct children --
-// enough to render the conversations -- through the loader `dagger trace`
-// uses, and fetches a span's children when it is expanded and its own logs
-// when shown, one level at a time.
+// loads the agents' loop and message spans with their direct children, and
+// each tool call's execution span, which holds its result -- enough to render
+// the conversations -- through the loader `dagger trace` uses, and fetches a
+// span's children when it is expanded and its own logs when shown, one level
+// at a time.
 //
 // Of the metrics, only the LLM token counts the cost and token totals sum are
 // imported (importLLMTokenMetrics). What only the whole-trace streams carry is
 // lost: the other metrics, and call payloads beyond the bootstrap's recipe
 // closure and the loaded spans' own, so e.g. rewound turns are not collapsed.
-// A tool call's rolled-up output shows only as its spans are expanded.
+// What a tool call ran, and its rolled-up output, shows only as its spans are
+// expanded.
 //
 // A frontend that cannot load lazily gets no history at all. The returned
 // cleanup cancels and joins the fetches.

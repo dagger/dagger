@@ -298,14 +298,22 @@ func TestSelectedConversationView(t *testing.T) {
 		3: {selectionAttr(telemetry.LLMRoleAttr, "assistant"), agentID},
 		// The engine stamps the agent's identity on its tool calls too.
 		4: {selectionAttr(telemetry.LLMToolAttr, "tool"), selectionAttr(telemetry.LLMRoleAttr, "assistant"), agentID},
+		// The tool's execution: the tool alone, no role.
+		5: {selectionAttr(telemetry.LLMToolAttr, "tool")},
 		6: {selectionAttr(telemetry.CheckNameAttr, "check")},
+		// A tool's span beneath the check: not a tool call's execution.
+		9: {selectionAttr(telemetry.LLMToolAttr, "tool")},
 	}
-	// 1 root > 2 loop > 3 message > 4 tool call > 5 exec > 6 check > 7 > 8 failed
+	// 1 root > 2 loop > 3 message > 4 tool call > 5 exec > 6 check > 7 > 8 failed,
+	// and 6 check > 9
 	var rows []Span
-	for i := 1; i <= 8; i++ {
+	for i := 1; i <= 9; i++ {
 		row := Span{TraceID: selectionTrace, SpanID: fmt.Sprint(i)}
 		if i > 1 {
 			row.ParentSpanID = sql.NullString{String: fmt.Sprint(i - 1), Valid: true}
+		}
+		if i == 9 {
+			row.ParentSpanID = sql.NullString{String: "6", Valid: true}
 		}
 		if a, ok := attrs[i]; ok {
 			row.Attributes, err = MarshalProtoList(a)
@@ -324,17 +332,17 @@ func TestSelectedConversationView(t *testing.T) {
 		v, err := db.SpanViewAt(t.Context(), selectionTrace, cut, sel)
 		require.NoError(t, err)
 		var ids []string
-		for i := 1; i <= 8; i++ {
+		for i := 1; i <= 9; i++ {
 			if v.selected[fmt.Sprint(i)] {
 				ids = append(ids, fmt.Sprint(i))
 			}
 		}
 		return ids
 	}
-	require.Equal(t, []string{"1", "2", "3", "4", "5", "6", "7", "8"}, selected(&archive.SpanSelection{DagUIView: true}),
+	require.Equal(t, []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}, selected(&archive.SpanSelection{DagUIView: true}),
 		"the priority view reaches the check and the failure")
-	require.Equal(t, []string{"1", "2", "3", "4"}, selected(&archive.SpanSelection{Conversation: true, DagUIView: true}),
-		"the conversation view stops at the message's children, its tool calls")
+	require.Equal(t, []string{"1", "2", "3", "4", "5"}, selected(&archive.SpanSelection{Conversation: true, DagUIView: true}),
+		"the conversation view stops at the message's children, its tool calls, and their executions, which hold their results")
 	require.Equal(t, []string{"1", "2", "3", "4", "5"}, selected(&archive.SpanSelection{NoRoot: true, Listen: []string{"4"}, DagUIView: true}),
 		"a listen loads one level")
 	require.Equal(t, []string{"1", "2", "3", "4", "5"}, selected(&archive.SpanSelection{Conversation: true, Listen: []string{"4"}, DagUIView: true}),

@@ -45,9 +45,10 @@ func NewStore(reader StoreReader, manifest archive.Manifest) *Store {
 
 // ConversationOnly narrows the priority view, for a trace too large to load
 // broadly: its priority spans are only the agents' conversations (loop and
-// message spans), not checks, tests or failures, which load as their
-// ancestors are expanded. An engine that predates the selection ignores it
-// and serves the broader view.
+// message spans, and each tool call's execution span, which holds its
+// result), not checks, tests or failures, which load as their ancestors are
+// expanded. An engine that predates the selection ignores it and serves the
+// broader view.
 func (a *Store) ConversationOnly() *Store {
 	a.conversation = true
 	return a

@@ -19,9 +19,10 @@ type SpanSelection struct {
 	NoRoot bool
 	Listen []string
 	// Conversation narrows the root view's priority spans to agent
-	// conversations (loop and message spans), leaving out checks, tests,
-	// revealed and failed spans. An engine that predates it ignores it and
-	// serves the broader priority view.
+	// conversations (loop and message spans, and each tool call's execution
+	// span, which holds its result), leaving out checks, tests, revealed and
+	// failed spans. An engine that predates it ignores it and serves the
+	// broader priority view.
 	Conversation bool
 	DagUIView    bool
 }

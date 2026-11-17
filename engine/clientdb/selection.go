@@ -226,7 +226,10 @@ type spanNode struct {
 	priority, passthrough bool
 	// agent marks an agent conversation span: the only priority spans a
 	// conversation view keeps.
-	agent   bool
+	agent bool
+	// tool marks a tool call's display and execution spans: a
+	// conversation view keeps each tool call's execution span.
+	tool    toolSpanKind
 	causes  []string
 	hasLogs bool
 }
@@ -271,7 +274,7 @@ func (s *DB) buildSpanTopology(ctx context.Context, traceID string, cut HighWate
 			if err := UnmarshalProtoList(row.Attributes, &commonpb.KeyValue{}, &attrs); err != nil {
 				return nil, err
 			}
-			node.priority, node.agent, node.passthrough = spanViewClass(attrs)
+			node.priority, node.agent, node.passthrough, node.tool = spanViewClass(attrs)
 			node.priority = node.priority || row.StatusCode == int64(codes.Error)
 			v.nodes[row.SpanID] = node
 		}
@@ -417,14 +420,21 @@ func (c *spanTopologyCache) get(ctx context.Context, key spanTopologyKey, build 
 // call spans carry it too; a conversation view keeps them as the messages'
 // children, not as conversation spans of their own, so what a tool call ran
 // loads as it is expanded.
-func spanViewClass(attrs []*commonpb.KeyValue) (priority, agent, passthrough bool) {
-	var tool bool
+//
+// A tool call is also classified by its role: the tool-call display span a
+// message shows carries the tool and the assistant role, and the span that
+// executed the tool, directly beneath it, carries the tool alone. Its own logs
+// are the result the LLM received (idtui's toolCallExecSpan).
+func spanViewClass(attrs []*commonpb.KeyValue) (priority, agent, passthrough bool, tool toolSpanKind) {
+	var hasTool, hasRole bool
 	for _, a := range attrs {
 		switch a.GetKey() {
 		case string(semconv.GenAIAgentIDKey):
 			priority, agent = true, true
 		case telemetry.LLMToolAttr:
-			tool = true
+			hasTool = true
+		case telemetry.LLMRoleAttr:
+			hasRole = a.GetValue().GetStringValue() != ""
 		case telemetry.CheckNameAttr, string(semconv.TestCaseNameKey), string(semconv.TestSuiteNameKey):
 			priority = true
 		case telemetry.UIPassthroughAttr, telemetry.UIInternalAttr:
@@ -433,8 +443,22 @@ func spanViewClass(attrs []*commonpb.KeyValue) (priority, agent, passthrough boo
 			priority = priority || a.GetValue().GetBoolValue()
 		}
 	}
-	return priority, agent && !tool, passthrough
+	switch {
+	case hasTool && hasRole:
+		tool = toolCallSpan
+	case hasTool:
+		tool = toolExecSpan
+	}
+	return priority, agent && !hasTool, passthrough, tool
 }
+
+// toolSpanKind tells a tool call's display span from its execution span.
+type toolSpanKind uint8
+
+const (
+	toolCallSpan toolSpanKind = iota + 1
+	toolExecSpan
+)
 
 // selectSpans applies presentation selection only after the fixed-cut topology
 // and log-presence metadata have been collected.
@@ -484,6 +508,25 @@ func (v *SpanView) selectSpans(sel *archive.SpanSelection) {
 			if !hasParent || priority {
 				ancestors(id)
 				visibleChildren(id, map[string]bool{})
+			}
+		}
+		if sel.Conversation {
+			// Each tool call's execution span, whose own logs are the
+			// result the LLM received: one span per tool call, so the
+			// conversation shows its results without expanding them. What
+			// the tool ran beneath it still loads as it is expanded.
+			var calls []string
+			for id := range v.selected {
+				if v.nodes[id].tool == toolCallSpan {
+					calls = append(calls, id)
+				}
+			}
+			for _, id := range calls {
+				for _, kid := range v.children[id] {
+					if node := v.nodes[kid]; node.tool == toolExecSpan && node.parent == id {
+						ancestors(kid)
+					}
+				}
 			}
 		}
 	}
