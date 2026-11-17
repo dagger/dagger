@@ -138,6 +138,7 @@ func (observation *workspaceInputCall) capture(ctx context.Context, value dagql.
 	observation.reads.mu.Unlock()
 	fact.Issues = append(fact.Issues, observation.summary().Issues...)
 	validateWorkspaceRetainedBindings(&fact)
+	observation.recordTelemetry(fact, fact.Complete)
 	return fact, nil
 }
 
@@ -274,6 +275,7 @@ func (observation *workspaceInputCall) rebindFacts(ctx context.Context, previous
 	fact.Complete = fact.Complete && !live.incomplete
 	fact.Issues = append(fact.Issues, live.Issues...)
 	validateWorkspaceRetainedBindings(&fact)
+	observation.recordTelemetry(fact, complete && fact.Complete)
 	return replaceWorkspaceInputFact(observation.request.ResultFacts, fact), complete && fact.Complete, nil
 }
 
@@ -289,6 +291,10 @@ func (observation *workspaceInputCall) rebindExactFacts(ctx context.Context, sto
 	facts := slices.Clone(stored)
 	summary := workspaceInputSummary{incomplete: !complete}
 	found := false
+	var wire *workspaceInputTelemetry
+	if observation.telemetryEnabled.Load() {
+		wire = newWorkspaceInputTelemetry()
+	}
 	for i, record := range facts {
 		if record.Namespace != workspaceInputsNamespace {
 			continue
@@ -311,6 +317,9 @@ func (observation *workspaceInputCall) rebindExactFacts(ctx context.Context, sto
 		summary.mergeContextInputEvents(&fact.ContextInputs)
 		summary.findUps = append(summary.findUps, fact.FindUps...)
 		complete = complete && fact.Complete
+		if wire != nil {
+			wire.fact(fact, observation.bindings)
+		}
 		facts[i].Payload, err = json.Marshal(fact)
 		if err != nil {
 			return nil, false, false, err
@@ -319,6 +328,10 @@ func (observation *workspaceInputCall) rebindExactFacts(ctx context.Context, sto
 	if found {
 		current := summary.normalized()
 		observation.reused = &current
+		if wire != nil {
+			wire.complete = wire.complete && complete
+			observation.telemetry.Store(wire)
+		}
 	}
 	return facts, complete, found, nil
 }

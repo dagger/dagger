@@ -88,16 +88,18 @@ func (r *workspaceInputReads) runtimeSnapshot() (workspaceInputSummary, bool) {
 }
 
 type workspaceInputCall struct {
-	request     *dagql.CallRequest
-	reads       *workspaceInputReads
-	view        *workspaceInputSummary
-	reused      *workspaceInputSummary
-	prepared    bool
-	storedField bool
-	resolved    atomic.Bool
-	initial     workspaceInputSummary
-	bindings    []workspaceInputBinding
-	boundary    string
+	telemetryEnabled atomic.Bool
+	telemetry        atomic.Pointer[workspaceInputTelemetry]
+	request          *dagql.CallRequest
+	reads            *workspaceInputReads
+	view             *workspaceInputSummary
+	reused           *workspaceInputSummary
+	prepared         bool
+	storedField      bool
+	resolved         atomic.Bool
+	initial          workspaceInputSummary
+	bindings         []workspaceInputBinding
+	boundary         string
 }
 
 func (c *workspaceInputCall) summary() workspaceInputSummary {

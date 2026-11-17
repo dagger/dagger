@@ -4317,10 +4317,12 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	if zoomed {
 		zoomBuf := new(strings.Builder)
 		zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
-		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
+		zoomRow := &dagui.TraceRow{
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
-		}, fe, false)
+		}
+		fe.renderStep(ctx, zoomOut, r, zoomRow, fe, false)
+		fe.renderWorkspaceInputs(ctx, zoomOut, r, zoomRow, "", false, true)
 		linesFromView(ctx, zoomBuf.String())
 		ctx.Line("") // separate the header from its content
 	}
@@ -6483,6 +6485,14 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 	// We render everything (for caching), then truncate below the focused
 	// item so it stays onscreen. Content above scrolls into scrollback.
 	var allLines []string
+	if !fe.finalRender && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
+		var detail strings.Builder
+		detailOut := NewOutput(&detail, termenv.WithProfile(fe.profile))
+		fe.renderWorkspaceInputs(ctx, detailOut, r, &dagui.TraceRow{Span: fe.rowsView.Zoomed}, "", false, true)
+		allLines = append(allLines, strings.Split(strings.TrimSuffix(detail.String(), "\n"), "\n")...)
+		allLines = append(allLines, "")
+	}
+	detailHeight := len(allLines)
 	topGapCounts := make([]int, len(fe.topTrees))
 	for i, treeView := range fe.topTrees {
 		childCtx := ctx
@@ -6510,6 +6520,9 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 	focusLine := -1
 	if fe.FocusedSpan.IsValid() {
 		focusLine = fe.findFocusLine(topGapCounts)
+		if focusLine >= 0 {
+			focusLine += detailHeight
+		}
 	}
 
 	if fe.finalRender {
@@ -8531,6 +8544,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	if len(span.ProgressSpans.Spans()) > 0 && (!row.Expanded || !row.HasChildren) {
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
+	fe.renderWorkspaceInputs(ctx, out, r, row, prefix, focused, false)
 	if fe.rollsUpSubChecks(row) {
 		// A check deferring to its inline CHECKS rollup: the failure is explained
 		// by the failed sub-checks rendered in the rollup above, so don't also dump
