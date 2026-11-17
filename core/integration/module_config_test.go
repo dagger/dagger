@@ -744,7 +744,7 @@ var vcsTestCases = []vcsTestCase{
 	// BitBucket private repository using SCP-like SSH reference format
 	{
 		name:                     "SSH Private BitBucket",
-		gitTestRepoRef:           "git@bitbucket.org:dagger-modules/private-modules-test.git",
+		gitTestRepoRef:           "git@ssh.bitbucket.org:dagger-modules/private-modules-test.git",
 		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/private-modules-test",

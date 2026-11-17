@@ -1657,7 +1657,7 @@ func (DockerfileSuite) TestCrossSessionDockerbuildSockets(ctx context.Context, t
 }
 
 func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T) {
-	tc := getVCSTestCase(t, "git@bitbucket.org:dagger-modules/private-modules-test.git")
+	tc := getVCSTestCase(t, "git@ssh.bitbucket.org:dagger-modules/private-modules-test.git")
 	url := tc.gitTestRepoRef
 	ref := tc.gitTestRepoCommit
 
