@@ -1205,8 +1205,13 @@ func (activity *Activity) Add(span *Span) bool {
 	// optimization: if the new interval is wholly subsumed by an existing
 	// interval we can skip adding it. this is also handled by mergeIntervals,
 	// but it's harder to return false after the fact.
+	//
+	// Containment is inclusive: a span's own interval is added again every
+	// time its status propagates (integrateSpan, then
+	// PropagateStatusToParentsAndLinks), and inserting the duplicate would
+	// grow the slice to twice the room it keeps holding after the merge.
 	for _, existing := range activity.CompletedIntervals {
-		if ival.Start.After(existing.Start) && ival.End.Before(existing.End) {
+		if !ival.Start.Before(existing.Start) && !ival.End.After(existing.End) {
 			return changed
 		}
 	}
@@ -1258,6 +1263,12 @@ func (activity *Activity) mergeIntervals() {
 
 	// Resize the slice to only include the merged intervals.
 	activity.CompletedIntervals = activity.CompletedIntervals[:lastIndex+1]
+	if merged := len(activity.CompletedIntervals); cap(activity.CompletedIntervals) > 2*merged+4 {
+		// A span whose causes ran one after another holds an interval
+		// apiece until its own interval merges them into one; don't keep
+		// room for all of them once it has.
+		activity.CompletedIntervals = slices.Clone(activity.CompletedIntervals)
+	}
 }
 
 // integrateSpan takes a possibly newly created span and updates
