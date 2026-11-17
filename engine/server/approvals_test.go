@@ -399,7 +399,9 @@ func TestApprovalForeverNotOffered(t *testing.T) {
 }
 
 func TestApprovalFallsBackToBoolPrompt(t *testing.T) {
-	questions := &boolPromptServer{answer: func(req *prompt.BoolRequest) bool { return req.Prompt == `Allow reading yes (requested by module "staff")?` }}
+	questions := &boolPromptServer{answer: func(req *prompt.BoolRequest) bool {
+		return req.Prompt == `Allow reading yes (requested by module "staff")?`
+	}}
 	s := newApprovalTestSession(t, func(srv *grpc.Server) { prompt.RegisterPromptServer(srv, questions) })
 	module := s.client("module", sessionTestModuleResultWithGitSource(t, "staff", "https://github.com/org/staff", testStaffPin), nil, "owner")
 	ctx := s.ctx(module)
