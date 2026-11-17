@@ -287,12 +287,14 @@ func (dev *EngineDev) goSDK(ctx context.Context) (*dagger.Directory, error) {
 // each build as made for the platform it compiles for (Directory.withPlatform),
 // so an engine of the image's platform finds the builds made for it here.
 //
-// An engine of the image's own build makes them, inside one exec, on state
-// that starts empty (withSeedEngine): whatever the engine running this build
-// already holds is never exported. Its own image's entries, made by another
-// dagger/go, would carry their recipes into the image, so that a fresh engine
-// of it builds again what they name; and a remote cache's offers would carry
-// keys the image's engine refuses at start. builder builds what runs here.
+// An engine of the image's own build makes them, inside one exec, on state of
+// its own (withSeedEngine): whatever the engine running this build holds is
+// never exported, and a remote cache's offers, which carry keys the image's
+// engine refuses at start, never reach the image. With the Go builds, that
+// engine starts holding the entries of the release the engine running this
+// build is (releaseEntries), and builds whatever they don't hold; what it
+// takes from them through an equivalent result it exports under its own
+// recipe or with its contents. builder builds what runs here.
 func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, platform string, sdks []build.SDKFiles, goBuilds bool) (*dagger.Directory, map[string]string, error) {
 	engine, err := dev.engine(ctx, builder, "", "")
 	if err != nil {
@@ -302,9 +304,13 @@ func (dev *EngineDev) imageEntries(ctx context.Context, builder *build.Builder, 
 	if err != nil {
 		return nil, nil, err
 	}
+	var seed seedEntries
+	if goBuilds {
+		seed = releaseEntries(ctx, platform)
+	}
 	const out = "/entries"
 	const sdkDigests = "/sdk-digests.json"
-	ran := dev.withSeedEngine(ctr, append(exporter, "-out", out, "-sdk-digests", sdkDigests))
+	ran := dev.withSeedEngine(ctr, seed, append(exporter, "-out", out, "-sdk-digests", sdkDigests))
 	if err := entriesExported(ctx, ran, exporter); err != nil {
 		return nil, nil, err
 	}
@@ -372,18 +378,92 @@ func (dev *EngineDev) entriesTool(ctx context.Context, builder *build.Builder, c
 	), nil
 }
 
+// seedEntries are the entries an engine that makes an image's entries starts
+// holding, as its own image's (entries), or why it starts without any (none).
+type seedEntries struct {
+	entries *dagger.Directory
+	none    string
+}
+
+// releaseEntriesPath is where the engine that makes an image's entries finds
+// the release's entries it may start holding.
+const releaseEntriesPath = "/release-entries"
+
+// releaseEntries are the entries the image of the release the engine running
+// this build is ships for platform: what that engine started from. They hold
+// the Go builds of the release's dagger/go, which the builds of another
+// dagger/go mostly find through equivalent results. When that engine is no
+// release, or its image ships no entries, there are none, and why.
+func releaseEntries(ctx context.Context, platform string) seedEntries {
+	version, err := core.Version(ctx)
+	if err != nil {
+		return seedEntries{none: fmt.Sprintf("the engine running this build has no version: %v", err)}
+	}
+	tag, _, _ := strings.Cut(version, "+")
+	if !releaseVersion(tag) {
+		return seedEntries{none: fmt.Sprintf("the engine running this build, %s, is no release", version)}
+	}
+	image := engineImageRepo + ":" + tag
+	entries, err := core.NewContainer(dagger.ContainerOpts{Platform: dagger.Platform(platform)}).
+		From(image).
+		Directory(distconsts.EngineContainerImageEntriesDir).
+		Sync(ctx)
+	if err != nil {
+		return seedEntries{none: fmt.Sprintf("no entries from %s: %s", image, firstLine(err.Error()))}
+	}
+	return seedEntries{entries: entries}
+}
+
+// engineImageRepo is where releases' engine images are.
+const engineImageRepo = "registry.dagger.io/engine"
+
+// releaseVersion reports whether version has the shape of a release's tag,
+// such as v0.19.1 or v1.0.0-beta.27, rather than of a build from source
+// between releases. A build whose version is a release's tag with build
+// metadata, as an engine built from that release's source reports, starts
+// from that release's entries too: they are only what its builds can find.
+func releaseVersion(version string) bool {
+	if !semver.IsValid(version) || semver.Build(version) != "" {
+		return false
+	}
+	pre := semver.Prerelease(version)
+	if pre == "" {
+		return true
+	}
+	kind, n, ok := strings.Cut(strings.TrimPrefix(pre, "-"), ".")
+	if !ok || (kind != "alpha" && kind != "beta" && kind != "rc") {
+		return false
+	}
+	_, err := strconv.Atoi(n)
+	return err == nil
+}
+
+// firstLine is s up to its first newline.
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return line
+}
+
 // withSeedEngine is ctr, a container of an engine's build, after an exec
 // that starts that engine, runs cmd as its client once it listens, and stops
 // it. The engine's state is a mounted empty directory: a snapshot with no
 // parent, which the outer engine mounts as a plain directory on its disk, so
 // the engine inside can put its overlays on it, and which has no name, so the
-// exec is cached exactly when its inputs are the same.
-func (dev *EngineDev) withSeedEngine(ctr *dagger.Container, cmd []string) *dagger.Container {
+// exec is cached exactly when its inputs are the same. The engine starts
+// holding seed's entries as its own image's when ctr's engine-image-entries
+// finds their bundle of the version it merges, and otherwise, or with none,
+// starts without any and says why.
+func (dev *EngineDev) withSeedEngine(ctr *dagger.Container, seed seedEntries, cmd []string) *dagger.Container {
 	// Its network is the one after this engine-dev's, without changing
 	// dev's: an engine that took another increment could land on a network
 	// an engine above it uses.
 	nested := *dev
 	nested.IncrementSubnet()
+	if seed.entries != nil {
+		ctr = ctr.WithMountedDirectory(releaseEntriesPath, seed.entries, core.ContainerWithMountedDirectoryOpts{ReadOnly: true})
+	} else if seed.none != "" {
+		ctr = ctr.WithEnvVariable("SEED_ENTRIES_NONE", seed.none)
+	}
 	return ctr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithMountedDirectory(distconsts.EngineDefaultStateDir, core.NewDirectory()).
@@ -395,12 +475,28 @@ func (dev *EngineDev) withSeedEngine(ctr *dagger.Container, cmd []string) *dagge
 
 // seedEngineScript starts the container's engine on network $1, waits until
 // its socket is there, runs the rest of its arguments as its client, and stops
-// the engine. A failure shows the end of the engine's log.
+// the engine. The engine starts holding the release's entries mounted at
+// releaseEntriesPath as its own image's, when engine-image-entries finds their
+// bundle of the version it merges. A failure shows the end of the engine's
+// log.
 const seedEngineScript = `set -eu
 network_cidr=$1
 shift
 log=/var/log/seed-engine.log
 mkdir -p /var/log
+entries=` + distconsts.EngineContainerImageEntriesDir + `
+release=` + releaseEntriesPath + `
+if [ -d "$release" ]; then
+	if engine-image-entries -check-bundle "$release/bundle.json"; then
+		mkdir -p "${entries%/*}"
+		ln -s "$release" "$entries"
+		echo "starting from the release's entries" >&2
+	else
+		echo "starting without the release's entries" >&2
+	fi
+elif [ -n "${SEED_ENTRIES_NONE:-}" ]; then
+	echo "starting without a release's entries: $SEED_ENTRIES_NONE" >&2
+fi
 # Its bridge is the name and "0": at most 15 characters.
 dagger-entrypoint.sh --network-name dagger-seed --network-cidr "$network_cidr" >"$log" 2>&1 &
 engine=$!
@@ -462,7 +558,7 @@ func (dev *EngineDev) ImageEntriesAfterPrune(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	ran := dev.withSeedEngine(ctr, append([]string{"sh", "-c", `set -e
+	ran := dev.withSeedEngine(ctr, seedEntries{}, append([]string{"sh", "-c", `set -e
 "$@" -out /entries-before -sdk-digests /sdk-digests-before.json
 size=$(echo '{ engine { localCache { entrySet { diskSpaceBytes } } } }' | dagger query | grep -o '"diskSpaceBytes": *[0-9]*' | grep -o '[0-9]*$')
 half=$((size / 2 / 1048576))MB

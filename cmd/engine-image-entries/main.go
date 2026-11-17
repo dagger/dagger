@@ -26,6 +26,11 @@
 // own, as go-sdk's entrypoints build; gobuild's binary and the image its
 // calls run in, which its entrypoint declares (Module._prebuild and
 // Module._runtimeImage); and exports them with their blobs into -out.
+//
+// With -check-bundle, it only checks that the bundle at that path, another
+// engine image's, is of the version an engine of this source merges, and
+// exits 3 (exitOtherBundleVersion) with the reason when it isn't, so that an
+// engine of this source starts without those entries rather than failing.
 package main
 
 import (
@@ -39,6 +44,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
@@ -66,7 +72,19 @@ func main() {
 	goVersion := flag.String("go-version", "", "the Go version the Go SDK builds with")
 	out := flag.String("out", "", "where to export the entries")
 	platform := flag.String("platform", "", "the platform of the engine image the entries are for (default: the engine's)")
+	checkBundle := flag.String("check-bundle", "", "only check that the bundle at this path is of the version an engine of this source merges")
 	flag.Parse()
+	if *checkBundle != "" {
+		if err := mergeableBundle(*checkBundle); err != nil {
+			fmt.Fprintln(os.Stderr, "engine-image-entries:", err)
+			var other otherBundleVersionError
+			if errors.As(err, &other) {
+				os.Exit(exitOtherBundleVersion)
+			}
+			os.Exit(1)
+		}
+		return
+	}
 	if len(sdks) == 0 || *sdkDigests == "" || *goVersion == "" || *out == "" || (len(seeds) > 0 && *builtinGoSDK == "") {
 		flag.Usage()
 		os.Exit(2)
@@ -75,6 +93,38 @@ func main() {
 		fmt.Fprintln(os.Stderr, "engine-image-entries:", err)
 		os.Exit(1)
 	}
+}
+
+// exitOtherBundleVersion is the exit code of -check-bundle when the bundle is
+// of another version than an engine of this source merges.
+const exitOtherBundleVersion = 3
+
+// otherBundleVersionError says that a bundle is of another version than an
+// engine of this source merges (dagql.ValueBundleVersion), as one an engine
+// released before or after a change of the version writes.
+type otherBundleVersionError struct{ version int }
+
+func (e otherBundleVersionError) Error() string {
+	return fmt.Sprintf("the bundle is version %d, and an engine of this source merges only version %d", e.version, dagql.ValueBundleVersion)
+}
+
+// mergeableBundle is an otherBundleVersionError unless the bundle at path is
+// of the version an engine of this source merges.
+func mergeableBundle(path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var bundle struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if bundle.Version != dagql.ValueBundleVersion {
+		return otherBundleVersionError{bundle.Version}
+	}
+	return nil
 }
 
 // builtinGoSDKModule selects the built-in Go SDK module's source from its

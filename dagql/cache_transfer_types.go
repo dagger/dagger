@@ -149,6 +149,12 @@ type ImportedValue struct {
 
 const valueBundleVersion = 7
 
+// ValueBundleVersion is the version of the bundles an engine of this source
+// writes, and the only one it merges. cmd/engine-image-entries compares
+// another engine image's bundle with it, to know whether an engine of this
+// source can start from those entries.
+const ValueBundleVersion = valueBundleVersion
+
 // PersistedTransferCodec operates only on encoded copies, without resolving
 // schemas, operations, result references or storage.
 type PersistedTransferCodec interface {
