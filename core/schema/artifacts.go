@@ -1029,6 +1029,7 @@ func (s *workspaceSchema) sdkArtifactNodes(ctx context.Context, parent dagql.Obj
 		if displayName := map[string]string{
 			"go": "Go", "python": "Python", "typescript": "TypeScript",
 			"php": "PHP", "dang": "Dang", "java": "Java", "elixir": "Elixir",
+			"csharp": "C#",
 		}[sdkName]; displayName != "" {
 			sdkName = displayName
 		}

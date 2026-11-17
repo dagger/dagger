@@ -1,0 +1,8 @@
+{
+  "name": "interface-example",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "../.."
+  },
+  "disableDefaultFunctionCaching": true
+}

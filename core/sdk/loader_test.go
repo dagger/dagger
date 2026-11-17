@@ -151,6 +151,12 @@ func TestWorkspaceModuleForRuntime(t *testing.T) {
 			wantOK:  true,
 		},
 		{
+			name:    "csharp defaults to engine tag",
+			runtime: "csharp",
+			want:    WorkspaceModule{Name: "dagger-csharp-sdk", Source: "github.com/dagger/dagger/sdk/csharp@v0.12.6"},
+			wantOK:  true,
+		},
+		{
 			name:    "dang",
 			runtime: "dang",
 			want:    WorkspaceModule{Name: "dagger-dang-sdk", Source: "github.com/dagger/dang-sdk"},

@@ -1,0 +1,11 @@
+{
+  "name": "csharp-sdk",
+  "engineVersion": "v0.21.7",
+  "sdk": {
+    "source": "go"
+  },
+  "source": "runtime",
+  "codegen": {
+    "automaticGitignore": false
+  }
+}

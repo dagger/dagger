@@ -1,0 +1,201 @@
+pub description = "Develop the Dagger C# SDK (experimental)"
+
+type CsharpClientDev {
+  """
+  Base image to create a dev container for the C# SDK.
+  Keep in sync with DotnetImage in sdk/csharp/runtime/main.go.
+  """
+  let dotnetSdkImage = "mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb"
+
+  """
+  A directory with all the files needed to develop the SDK.
+  """
+  pub workspaceDir: Directory!
+    @defaultPath(path: "/")
+    @ignorePatterns(patterns: [
+      "*",
+      "!sdk/csharp/",
+      "sdk/csharp/**/bin/",
+      "sdk/csharp/**/obj/",
+      "sdk/csharp/examples/",
+    ])
+
+  """
+  The path of the SDK in the workspace.
+  """
+  pub sourcePath: String! = "sdk/csharp"
+
+  """
+  Workspace path in the dev container.
+  """
+  let workspacePath: String! = "/src"
+
+  """
+  Workspace
+  """
+  let ws: Workspace!
+
+  pub source: Directory! {
+    workspaceDir.directory(sourcePath)
+  }
+
+  """
+  The C# SDK workspace mounted in a .NET container, with the working
+  directory set to the SDK solution.
+  """
+  pub baseContainer: Container! {
+    container
+      .from(dotnetSdkImage)
+      .withDirectory(workspacePath, workspaceDir)
+      .withWorkdir(workspacePath + "/" + sourcePath + "/src")
+  }
+
+  """
+  The base container with the dev engine's API schema and a dagger CLI
+  connected to the dev engine.
+  """
+  pub devContainer: Container! {
+    daggerEngine(ws: self.ws)
+      .installClient(
+        baseContainer.withFile("introspection.json", daggerEngine(ws: self.ws).introspectionJson),
+      )
+  }
+
+  """
+  Build the C# code generator.
+  """
+  let codegenBinary: Directory! {
+    baseContainer
+      .withWorkdir(workspacePath + "/" + sourcePath + "/codegen")
+      .withExec(["dotnet", "publish", "Codegen.csproj", "-c", "Release", "-o", "/codegen-bin"])
+      .directory("/codegen-bin")
+  }
+
+  """
+  Generate the C# API client from the dev engine's schema.
+  """
+  let generatedClient: File! {
+    baseContainer
+      .withDirectory("/codegen", codegenBinary)
+      .withFile("/schema.json", daggerEngine(ws: self.ws).introspectionJson)
+      .withExec(["dotnet", "/codegen/dagger-codegen.dll", "/schema.json", "/generated.cs"])
+      .file("/generated.cs")
+  }
+
+  """
+  Regenerate the API schema and the generated C# API client.
+  """
+  pub clientLibrary: Changeset! @generate {
+    let before = directory.withDirectory(sourcePath, source)
+    let after = before
+      .withFile(sourcePath + "/src/introspection.json", daggerEngine(ws: self.ws).introspectionJson)
+      .withFile(sourcePath + "/src/Dagger.SDK/Dagger.SDK.g.cs", generatedClient)
+    after.changes(before)
+  }
+
+  """
+  Build and test the C# SDK
+  """
+  pub test: Void @check {
+    devContainer
+      .withExec(["dotnet", "restore"])
+      .withExec(["dotnet", "build", "--no-restore"])
+      .withExec(["dotnet", "test", "--no-build"], experimentalPrivilegedNesting: true)
+      .sync
+
+    null
+  }
+
+  """
+  Lint the C# SDK with CSharpier (https://csharpier.com)
+  """
+  pub lint: Void @check {
+    baseContainer
+      .withExec(["dotnet", "tool", "restore"])
+      .withExec(["dotnet", "csharpier", "check", "."])
+      .sync
+
+    null
+  }
+
+  """
+  Format the C# SDK with CSharpier (https://csharpier.com)
+  """
+  pub fmt: Changeset! {
+    let before = baseContainer.directory(workspacePath)
+    baseContainer
+      .withExec(["dotnet", "tool", "restore"])
+      .withExec(["dotnet", "csharpier", "format", "."])
+      .directory(workspacePath)
+      .changes(before)
+  }
+
+  """
+  Pack Dagger.SDK into a NuGet package
+  """
+  pub pack(
+    """
+    Build configuration
+    """
+    configuration: String! = "Release",
+    """
+    Package version
+    """
+    version: String! = "",
+  ): Directory! {
+    let args = ["dotnet", "pack", "Dagger.SDK/Dagger.SDK.csproj", "-c", configuration, "-o", "/packages"]
+    if (version != "") {
+      args += ["-p:Version=" + version]
+    }
+    devContainer
+      .withFile("Dagger.SDK/Dagger.SDK.g.cs", generatedClient)
+      .withExec(args)
+      .directory("/packages")
+  }
+
+  """
+  Check that packing for release works, without publishing
+  """
+  pub releaseDryRun: Void @check {
+    publish(version: "0.0.0-dev", dryRun: true)
+  }
+
+  """
+  Publish Dagger.SDK to NuGet
+  """
+  pub publish(
+    """
+    Package version
+    """
+    version: String!,
+    """
+    NuGet API key
+    """
+    nugetToken: Secret,
+    """
+    Pack the package without publishing it
+    """
+    dryRun: Boolean! = false,
+  ): Void {
+    let ctr = container
+      .from(dotnetSdkImage)
+      .withDirectory("/packages", pack(version: version))
+      .withExec(["sh", "-c", "ls /packages/*.nupkg"])
+
+    if (dryRun) {
+      ctr.sync
+    } else if (nugetToken != null) {
+      ctr
+        .withSecretVariable("NUGET_API_KEY", nugetToken)
+        .withExec([
+          "sh",
+          "-c",
+          "dotnet nuget push /packages/*.nupkg --api-key \"$NUGET_API_KEY\" --source https://api.nuget.org/v3/index.json",
+        ])
+        .sync
+    } else {
+      ctr.withError("nugetToken is required for publishing").sync
+    }
+    null
+  }
+}

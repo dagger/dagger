@@ -1,0 +1,8 @@
+{
+  "name": "factory-example",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "../.."
+  },
+  "disableDefaultFunctionCaching": true
+}

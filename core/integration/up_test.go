@@ -53,6 +53,7 @@ func (UpSuite) TestUpDirectSDK(ctx context.Context, t *testctx.T) {
 		{"typescript", "hello-with-services-ts"},
 		{"python", "hello-with-services-py"},
 		{"java", "hello-with-services-java"},
+		{"csharp", "hello-with-services-cs"},
 		{"dang", "hello-with-services-dang"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -720,6 +721,7 @@ func (UpSuite) TestUpAsToolchain(ctx context.Context, t *testctx.T) {
 		{"typescript", "hello-with-services-ts"},
 		{"python", "hello-with-services-py"},
 		{"java", "hello-with-services-java"},
+		{"csharp", "hello-with-services-cs"},
 		{"dang", "hello-with-services-dang"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {

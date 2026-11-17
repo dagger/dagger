@@ -1,0 +1,8 @@
+{
+  "name": "processor-impl",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "../.."
+  },
+  "disableDefaultFunctionCaching": true
+}

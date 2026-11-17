@@ -1,0 +1,9 @@
+kind: Added
+body: |-
+    Add the experimental C# SDK for writing Dagger modules and clients in C#.
+
+    Modules register objects, interfaces, enums and functions with attributes such as `[Object]`, `[Function]`, `[Interface]`, `[Check]`, `[Generate]`, `[Up]` and `[DefaultPath]`, and Roslyn analyzers report contract violations at compile time. Checks return `void` or `Task` and fail by throwing; await `Sync()` to run a container as a check. The API client is generated from the engine's schema, and is also packaged as `DaggerIO` on NuGet for standalone use.
+time: 2026-11-15T16:11:56.755564632Z
+custom:
+    Author: pjmagee
+    PR: "15187"
