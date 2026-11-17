@@ -9,8 +9,6 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/content"
-	"github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -226,87 +224,4 @@ func (c *Cache) FromImage(result AnyResult) bool {
 	defer c.egraphMu.RUnlock()
 	_, image := res.imageHoldingLocked()
 	return image != nil
-}
-
-// ImageBundleWriter receives an engine image's bundle as ExportImageBundle
-// makes it: the bundle, then each blob its offers name, once each, by digest.
-type ImageBundleWriter interface {
-	WriteBundle(context.Context, ValueBundle) error
-	WriteBlob(ctx context.Context, d digest.Digest, r content.ReaderAt) error
-}
-
-// ExportImageBundle exports results for an engine image to ship: each
-// output's result, with its record and its closure's, and the output's part,
-// whose blobs the image holds (ImageBlobAddress). An engine built from the image merges the
-// bundle at start (MergeValues from imageCacheID). Every result must be
-// captured: a result left out fails the export. It is built for the image's
-// build, and nothing in the engine's runtime calls it.
-func (c *Cache) ExportImageBundle(ctx context.Context, outputs []SelectedValueOutput, cfg config.RefConfig, w ImageBundleWriter) error {
-	if len(outputs) == 0 {
-		return errors.New("export image bundle: no results")
-	}
-	// Each result is one root, though several of its parts are outputs.
-	var results []AnyResult
-	seen := map[*sharedResult]bool{}
-	for _, output := range outputs {
-		res := output.Result.cacheSharedResult()
-		if res == nil || seen[res] {
-			continue
-		}
-		seen[res] = true
-		results = append(results, output.Result)
-	}
-	selection := ValueSelection{Roots: results, Outputs: outputs}
-	return c.WithExportedValues(ctx, selection, cfg, func(ctx context.Context, values *ExportedValues) error {
-		if len(values.LeftOut) > 0 {
-			left := values.LeftOut[0]
-			return fmt.Errorf("export image bundle: %d of %d results left out, the first (row %d): %w", len(values.LeftOut), len(results), left.Row, left.Err)
-		}
-		bundle := values.Bundle
-		address := func(addresses map[digest.Digest]BlobAddress, layers []snapshots.ExportLayer) map[digest.Digest]BlobAddress {
-			if addresses == nil {
-				addresses = map[digest.Digest]BlobAddress{}
-			}
-			for _, layer := range layers {
-				addresses[layer.Descriptor.Digest] = ImageBlobAddress(layer.Descriptor.Digest)
-			}
-			return addresses
-		}
-		if len(bundle.Layers) > 0 {
-			bundle.Addresses = address(bundle.Addresses, bundle.Layers)
-		}
-		for i := range bundle.Outputs {
-			if chain := bundle.Outputs[i].Chain; chain != nil && len(chain.Layers) > 0 {
-				chain.Addresses = address(chain.Addresses, chain.Layers)
-			}
-		}
-		if err := w.WriteBundle(ctx, bundle); err != nil {
-			return err
-		}
-		written := map[digest.Digest]bool{}
-		for _, entry := range values.Chains.Entries {
-			for _, layer := range entry.Layers {
-				d := layer.Descriptor.Digest
-				if written[d] {
-					continue
-				}
-				written[d] = true
-				if err := d.Validate(); err != nil {
-					return err
-				}
-				r, err := entry.Provider.ReaderAt(ctx, layer.Descriptor)
-				if err != nil {
-					return fmt.Errorf("export image bundle: blob %s: %w", d, err)
-				}
-				err = w.WriteBlob(ctx, d, r)
-				if closeErr := r.Close(); err == nil {
-					err = closeErr
-				}
-				if err != nil {
-					return fmt.Errorf("export image bundle: blob %s: %w", d, err)
-				}
-			}
-		}
-		return nil
-	})
 }

@@ -68,6 +68,29 @@ func GoSDKBuildFlags() []string {
 	return []string{"-ldflags=-s -w", "-gcflags=all=-dwarf=false", "-gcflags=std=", "-gcflags=./internal/dagger/...=-dwarf=false -l"}
 }
 
+// GoSDKSharedImports are what every module's generated code imports. The
+// built-in Go SDK builds each runtime with them as dagger/go's shared imports:
+// the packages they reach are compiled in dependency calls of their own, the
+// standard library's and the rest's, which are the same calls in every
+// module that keeps the SDK's versions of those packages' modules, whatever
+// else it imports. The engine image ships those calls whole. The third-party
+// ones are sdk/go/internal/codegendeps', which pins their versions.
+func GoSDKSharedImports() []string {
+	return []string{
+		"context", "encoding/json", "errors", "fmt", "log/slog", "net", "net/http", "os", "reflect", "runtime",
+		"sort", "strconv", "sync", "weak",
+		"github.com/Khan/genqlient/graphql",
+		"github.com/dagger/otel-go",
+		"github.com/dagger/querybuilder",
+		"github.com/vektah/gqlparser/v2/gqlerror",
+		"go.opentelemetry.io/otel",
+		"go.opentelemetry.io/otel/propagation",
+		"go.opentelemetry.io/otel/sdk/resource",
+		"go.opentelemetry.io/otel/semconv/v1.40.0",
+		"go.opentelemetry.io/otel/trace",
+	}
+}
+
 const (
 	OCIVersionAnnotation = "org.opencontainers.image.version"
 )

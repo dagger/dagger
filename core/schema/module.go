@@ -433,14 +433,14 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			View(AfterVersion("v1.0.0-beta.26")).
 			Doc(`The file every call of the module builds on, such as its compiled binary, when its SDK declares one: the same result its calls build.`).
 			Args(
-				dagql.Arg("platform").Doc(`The platform of the engine whose calls build on it, when not this engine's, such as an engine image's of another platform.`),
+				dagql.Arg("platform").Doc(`Build it as an engine of this platform builds it for its calls, without running the module there. Defaults to this engine's platform.`),
 			),
 
 		dagql.NodeFunc("_runtimeImage", s.moduleRuntimeImage).
 			View(AfterVersion("v1.0.0-beta.26")).
 			Doc(`The image every call of the module runs its process in, when its SDK declares one: the same result its calls start from.`).
 			Args(
-				dagql.Arg("platform").Doc(`The platform of the engine whose calls start from it, when not this engine's, such as an engine image's of another platform.`),
+				dagql.Arg("platform").Doc(`Pull it as an engine of this platform pulls it for its calls, without running the module there. Defaults to this engine's platform.`),
 			),
 	}.Install(dag)
 

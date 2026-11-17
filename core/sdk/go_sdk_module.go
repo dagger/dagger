@@ -152,10 +152,15 @@ func goSDKConstructorArgs(ctx context.Context, root *core.Query, config map[stri
 	for _, flag := range distconsts.GoSDKBuildFlags() {
 		buildFlags = append(buildFlags, dagql.String(flag))
 	}
+	var sharedImports dagql.ArrayInput[dagql.String]
+	for _, imp := range distconsts.GoSDKSharedImports() {
+		sharedImports = append(sharedImports, dagql.String(imp))
+	}
 	args := []dagql.NamedInput{
 		{Name: "base", Value: dagql.NewID[*core.Container](baseID)},
 		{Name: "goVersion", Value: dagql.String(distconsts.GolangVersion)},
 		{Name: "buildFlags", Value: buildFlags},
+		{Name: "sharedImports", Value: sharedImports},
 		{Name: "libVersion", Value: dagql.String(goSDKLibVersion)},
 	}
 

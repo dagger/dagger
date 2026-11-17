@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/content"
-	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/remotecache"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
@@ -26,7 +25,7 @@ func (d testImageDir) WriteBundle(_ context.Context, bundle dagql.ValueBundle) e
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(d.dir, schema.EngineImageBundleFile), raw, 0o644)
+	return os.WriteFile(filepath.Join(d.dir, dagql.BundleFile), raw, 0o644)
 }
 
 func (d testImageDir) WriteBlob(_ context.Context, dgst digest.Digest, r content.ReaderAt) error {
@@ -49,8 +48,8 @@ func imageEntriesDir(t *testing.T) (string, dagql.ValueBundle) {
 	shipped := src.file(t, "shipped")
 	require.NoError(t, src.cache.Evaluate(src.ctx, shipped))
 	dir := t.TempDir()
-	require.NoError(t, src.cache.ExportImageBundle(src.ctx, []dagql.SelectedValueOutput{{Result: shipped, Address: snapshotPart}}, exportRefConfig, testImageDir{dir}))
-	raw, err := os.ReadFile(filepath.Join(dir, schema.EngineImageBundleFile))
+	require.NoError(t, src.cache.ExportBundle(src.ctx, src.srv, []dagql.AnyResult{shipped}, exportRefConfig, testImageDir{dir}))
+	raw, err := os.ReadFile(filepath.Join(dir, dagql.BundleFile))
 	require.NoError(t, err)
 	var bundle dagql.ValueBundle
 	require.NoError(t, json.Unmarshal(raw, &bundle))

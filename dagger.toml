@@ -149,7 +149,7 @@ source = "dagger.io/sdk/dang@main"
 check.skip = ["generate/stale"]
 
 [modules.go-sdk]
-source = "dagger.io/sdk/go@v1.6.0"
+source = "dagger.io/sdk/go@1c0168561997d1ee39629b4ff4e9d5bd6f5153b8"
 
 [modules.go-sdk.settings]
 lock = true
