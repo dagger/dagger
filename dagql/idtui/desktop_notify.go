@@ -477,11 +477,11 @@ func promptNotifyBody(title, prompt string) string {
 }
 
 // sendNotification is notify for the UI goroutine.
-func (fe *frontendPretty) sendNotification(when notifyWhen, title, body string) bool {
+func (fe *frontendPretty) sendNotification(when notifyWhen, title, body string) {
 	if !fe.notificationsEnabled() {
-		return false
+		return
 	}
-	return fe.notifier.send(when, title, body)
+	fe.notifier.send(when, title, body)
 }
 
 // notifyAgentTurns notifies when an agent the user is following finishes its
