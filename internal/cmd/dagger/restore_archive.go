@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
+	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/tracesource"
 	"go.opentelemetry.io/otel/trace"
@@ -137,7 +138,7 @@ func restoreArchive(ctx context.Context, source archiveRestoreSource, fe archive
 		return nil, err
 	}
 	if !req.backfill {
-		return restoreConversationOnly(ctx, source, fe, req.traceID, cut), nil
+		return restoreConversationOnly(ctx, source, fe, req.traceID, importer, cut), nil
 	}
 
 	warn := func(err error) {
@@ -202,14 +203,15 @@ func archiveStore(source archiveRestoreSource, traceHex string, cut enginetel.Ar
 // uses, and fetches a span's children when it is expanded and its own logs
 // when shown, one level at a time.
 //
-// What only the whole-trace streams carry is lost: metrics, so cost and token
-// totals restart at zero, and call payloads beyond the bootstrap's recipe
+// Of the metrics, only the LLM token counts the cost and token totals sum are
+// imported (importLLMTokenMetrics). What only the whole-trace streams carry is
+// lost: the other metrics, and call payloads beyond the bootstrap's recipe
 // closure and the loaded spans' own, so e.g. rewound turns are not collapsed.
 // A tool call's rolled-up output shows only as its spans are expanded.
 //
 // A frontend that cannot load lazily gets no history at all. The returned
 // cleanup cancels and joins the fetches.
-func restoreConversationOnly(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, traceHex string, cut enginetel.ArchiveCut) func() {
+func restoreConversationOnly(ctx context.Context, source archiveRestoreSource, fe archiveFrontend, traceHex string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut) func() {
 	tf, lazy := fe.(idtui.TraceFrontend)
 	if !lazy {
 		return func() {}
@@ -243,6 +245,13 @@ func restoreConversationOnly(ctx context.Context, source archiveRestoreSource, f
 		_ = logFg.Wait()
 	})
 	stop := startHistoricalImport(historyCtx, func(ctx context.Context) error {
+		var metricsErr error
+		var metrics sync.WaitGroup
+		metrics.Go(func() {
+			if err := importLLMTokenMetrics(ctx, source, traceHex, importer, cut); err != nil {
+				metricsErr = fmt.Errorf("cost totals: %w", err)
+			}
+		})
 		var err error
 		for attempt := 0; attempt < 3; attempt++ {
 			if err = loader.loadInitial(ctx); err == nil || ctx.Err() != nil || !errors.Is(err, archive.ErrTransient) {
@@ -259,7 +268,8 @@ func restoreConversationOnly(ctx context.Context, source archiveRestoreSource, f
 			err = errors.Join(err, loader.seal(ctx))
 			loader.abandonInitial()
 		}
-		return err
+		metrics.Wait()
+		return errors.Join(err, metricsErr)
 	}, func(err error) {
 		restoreNotice(ctx, fmt.Sprintf("conversation history import incomplete: %v; restored agents remain usable", err))
 	})
@@ -309,48 +319,15 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 			var opts archive.StreamOptions
 			switch signal {
 			case enginetel.ArchiveSpans:
-				opts.HighWater = cut.HighWater.Spans
 				if lazyLogs {
 					opts.Spans = &archive.SpanSelection{Full: true, DagUIView: true}
 				}
 			case enginetel.ArchiveLogs:
-				opts.HighWater = cut.HighWater.Logs
 				if lazyLogs {
 					opts.Logs = &archive.LogSelection{Records: archive.LogRecordsMetadata}
 				}
-			case enginetel.ArchiveMetrics:
-				opts.HighWater = cut.HighWater.Metrics
 			}
-			var err error
-			for attempt := 0; attempt < 3; attempt++ {
-				switch signal {
-				case enginetel.ArchiveSpans:
-					opts.Cursor, err = source.Traces(ctx, traceID, opts, func(cursor int64, batch *coltracepb.ExportTraceServiceRequest) error {
-						return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Spans: batch, Cursor: cursor})
-					})
-				case enginetel.ArchiveLogs:
-					opts.Cursor, err = source.Logs(ctx, traceID, opts, func(cursor int64, batch *collogspb.ExportLogsServiceRequest) error {
-						return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Logs: batch, Cursor: cursor})
-					})
-				case enginetel.ArchiveMetrics:
-					opts.Cursor, err = source.Metrics(ctx, traceID, opts, func(cursor int64, batch *colmetricspb.ExportMetricsServiceRequest) error {
-						return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Metrics: batch, Cursor: cursor})
-					})
-				}
-				if err == nil || ctx.Err() != nil || !errors.Is(err, archive.ErrTransient) {
-					break
-				}
-				select {
-				case <-ctx.Done():
-				case <-time.After(time.Duration(attempt+1) * 100 * time.Millisecond):
-				}
-			}
-			if err == nil {
-				err = importer.CompleteRemainder(ctx, signal, opts.Cursor)
-			} else if ctx.Err() == nil {
-				err = errors.Join(err, importer.AbandonRemainder(ctx, signal))
-			}
-			if err != nil {
+			if err := importArchiveSignal(ctx, source, traceID, importer, cut, signal, opts); err != nil {
 				mu.Lock()
 				resultErr = errors.Join(resultErr, fmt.Errorf("%s: %w", signal, err))
 				mu.Unlock()
@@ -359,4 +336,66 @@ func importArchiveRemainder(ctx context.Context, source archiveRestoreSource, tr
 	}
 	wg.Wait()
 	return resultErr
+}
+
+// importArchiveSignal streams one signal, with opts' selection, from cursor 0
+// to the cut, retrying transient failures, then completes or abandons that
+// signal's remainder on importer.
+func importArchiveSignal(ctx context.Context, source archiveRestoreSource, traceID string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut, signal enginetel.ArchiveSignal, opts archive.StreamOptions) error {
+	switch signal {
+	case enginetel.ArchiveSpans:
+		opts.HighWater = cut.HighWater.Spans
+	case enginetel.ArchiveLogs:
+		opts.HighWater = cut.HighWater.Logs
+	case enginetel.ArchiveMetrics:
+		opts.HighWater = cut.HighWater.Metrics
+	}
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		switch signal {
+		case enginetel.ArchiveSpans:
+			opts.Cursor, err = source.Traces(ctx, traceID, opts, func(cursor int64, batch *coltracepb.ExportTraceServiceRequest) error {
+				return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Spans: batch, Cursor: cursor})
+			})
+		case enginetel.ArchiveLogs:
+			opts.Cursor, err = source.Logs(ctx, traceID, opts, func(cursor int64, batch *collogspb.ExportLogsServiceRequest) error {
+				return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Logs: batch, Cursor: cursor})
+			})
+		case enginetel.ArchiveMetrics:
+			opts.Cursor, err = source.Metrics(ctx, traceID, opts, func(cursor int64, batch *colmetricspb.ExportMetricsServiceRequest) error {
+				return importer.ImportAndWait(ctx, enginetel.ArchiveImportBatch{Metrics: batch, Cursor: cursor})
+			})
+		}
+		if err == nil || ctx.Err() != nil || !errors.Is(err, archive.ErrTransient) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Duration(attempt+1) * 100 * time.Millisecond):
+		}
+	}
+	if err == nil {
+		return importer.CompleteRemainder(ctx, signal, opts.Cursor)
+	}
+	if ctx.Err() == nil {
+		err = errors.Join(err, importer.AbandonRemainder(ctx, signal))
+	}
+	return err
+}
+
+// importLLMTokenMetrics imports only the metrics a cost and token total sums,
+// for a history that otherwise skips its metrics (restoreConversationOnly): a
+// session's metric stream is mostly per-exec resource metrics. An engine that
+// predates metric selection would stream every metric instead; that read is
+// refused and the totals restart at zero, rather than pulling in the
+// whole-session volume a conversation-only restore exists to avoid.
+func importLLMTokenMetrics(ctx context.Context, source archiveRestoreSource, traceID string, importer *enginetel.ArchiveTraceImporter, cut enginetel.ArchiveCut) error {
+	err := importArchiveSignal(ctx, source, traceID, importer, cut, enginetel.ArchiveMetrics, archive.StreamOptions{
+		Metrics: &archive.MetricSelection{Names: dagui.LLMTokenMetricNames},
+	})
+	if errors.Is(err, archive.ErrSelectionUnsupported) {
+		slog.Debug("not restoring LLM cost totals: the engine cannot select metrics by name", "trace", traceID)
+		return nil
+	}
+	return err
 }

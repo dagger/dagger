@@ -1,6 +1,7 @@
 package archive
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -46,6 +47,31 @@ type LogSelection struct {
 	Records     string
 }
 
+// MetricSelection narrows a metric stream to the metrics with these names:
+// e.g. the LLM token counts a cost total sums, without every exec's resource
+// metrics. An engine that predates it ignores it and streams every metric, so
+// the response says whether it applied one (SelectionHeader), and the client
+// fails the read with ErrSelectionUnsupported before consuming any of it.
+type MetricSelection struct {
+	Names []string
+}
+
+// MaxMetricNames bounds the names one metric selection may name.
+const MaxMetricNames = 64
+
+// SelectionHeader is the response header in which an engine lists the
+// selections it applied that an older engine would ignore: "metrics" for a
+// MetricSelection.
+const SelectionHeader = "X-Dagger-Archive-Selection"
+
+// SelectionMetrics is the SelectionHeader value for an applied
+// MetricSelection.
+const SelectionMetrics = "metrics"
+
+// ErrSelectionUnsupported fails a read whose selection the engine did not
+// apply: it predates it, and would stream the unselected history instead.
+var ErrSelectionUnsupported = errors.New("engine archive does not support the selection")
+
 func (s StreamOptions) SelectionQuery(signal string) (url.Values, error) {
 	q := make(url.Values)
 	if s.Spans != nil {
@@ -77,8 +103,45 @@ func (s StreamOptions) SelectionQuery(signal string) (url.Values, error) {
 			q.Set("after", s.Logs.After.UTC().Format(time.RFC3339Nano))
 		}
 	}
-	_, _, err := ParseSelection(signal, q)
-	return q, err
+	if s.Metrics != nil {
+		if signal != "metrics" {
+			return nil, fmt.Errorf("metric selection requires metrics")
+		}
+		if len(s.Metrics.Names) == 0 {
+			return nil, fmt.Errorf("metric selection names no metrics")
+		}
+		for _, name := range s.Metrics.Names {
+			q.Add("metric", name)
+		}
+	}
+	if _, _, err := ParseSelection(signal, q); err != nil {
+		return nil, err
+	}
+	if _, err := ParseMetricSelection(signal, q); err != nil {
+		return nil, err
+	}
+	return q, nil
+}
+
+// ParseMetricSelection validates a metric stream's selection: nil when the
+// query selects none.
+func ParseMetricSelection(signal string, q url.Values) (*MetricSelection, error) {
+	if !q.Has("metric") {
+		return nil, nil
+	}
+	if signal != "metrics" {
+		return nil, fmt.Errorf("metric selection requires metrics")
+	}
+	names := q["metric"]
+	if len(names) > MaxMetricNames {
+		return nil, fmt.Errorf("too many selected metrics")
+	}
+	for _, name := range names {
+		if name == "" {
+			return nil, fmt.Errorf("empty metric name")
+		}
+	}
+	return &MetricSelection{Names: names}, nil
 }
 
 // ParseSelection validates the shared archive client/server query contract.

@@ -27,6 +27,13 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
+// LLMTokenMetricNames are the metrics LLMTokenMetrics sums: all a cost or
+// token total needs, e.g. for a history that skips the rest of its metrics.
+var LLMTokenMetricNames = []string{
+	telemetry.LLMInputTokens, telemetry.LLMOutputTokens,
+	telemetry.LLMInputTokensCacheReads, telemetry.LLMInputTokensCacheWrites,
+}
+
 // LLMTokenMetrics tracks token usage across all LLM calls.
 //
 // Aggregate runs on the UI goroutine (metric export is dispatched there), while
@@ -912,12 +919,8 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 
 		// Aggregate LLM token metrics across all spans/models for the status
 		// line's cost/context display.
-		switch metric.Name {
-		case telemetry.LLMInputTokens, telemetry.LLMOutputTokens,
-			telemetry.LLMInputTokensCacheReads, telemetry.LLMInputTokensCacheWrites:
-			if db.LLMTokenMetrics != nil {
-				db.LLMTokenMetrics.Aggregate(metric.Name, point)
-			}
+		if db.LLMTokenMetrics != nil && slices.Contains(LLMTokenMetricNames, metric.Name) {
+			db.LLMTokenMetrics.Aggregate(metric.Name, point)
 		}
 	}
 }

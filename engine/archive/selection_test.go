@@ -12,6 +12,7 @@ import (
 	"time"
 
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 )
 
 func TestArchiveSelectionProtocol(t *testing.T) {
@@ -36,10 +37,14 @@ func TestArchiveSelectionProtocol(t *testing.T) {
 		{Spans: &SpanSelection{Conversation: true, DagUIView: true}},
 		{Spans: &SpanSelection{Conversation: true, Listen: []string{id}, DagUIView: true}},
 		{Logs: &LogSelection{SpanID: id, Descendants: true, After: &after, Records: LogRecordsMetadata}},
+		{Metrics: &MetricSelection{Names: []string{"a", "b"}}},
 	} {
 		signal := "logs"
 		if opts.Spans != nil {
 			signal = "traces"
+		}
+		if opts.Metrics != nil {
+			signal = "metrics"
 		}
 		q, err := opts.SelectionQuery(signal)
 		if err != nil {
@@ -49,9 +54,25 @@ func TestArchiveSelectionProtocol(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(opts.Spans, spans) || !reflect.DeepEqual(opts.Logs, logs) {
-			t.Fatalf("roundtrip mismatch: %v %v", spans, logs)
+		metrics, err := ParseMetricSelection(signal, q)
+		if err != nil {
+			t.Fatal(err)
 		}
+		if !reflect.DeepEqual(opts.Spans, spans) || !reflect.DeepEqual(opts.Logs, logs) || !reflect.DeepEqual(opts.Metrics, metrics) {
+			t.Fatalf("roundtrip mismatch: %v %v %v", spans, logs, metrics)
+		}
+	}
+	for signal, raw := range map[string]string{"logs": "metric=a", "metrics": "metric="} {
+		q, err := url.ParseQuery(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ParseMetricSelection(signal, q); err == nil {
+			t.Errorf("accepted %s for %s", raw, signal)
+		}
+	}
+	if _, err := (StreamOptions{Metrics: &MetricSelection{}}).SelectionQuery("metrics"); err == nil {
+		t.Error("accepted a metric selection naming no metrics")
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("records") != LogRecordsMetadata || r.URL.Query().Get("span_id") != id {
@@ -64,6 +85,40 @@ func TestArchiveSelectionProtocol(t *testing.T) {
 	cursor, err := testArchiveClient(t, server).Logs(t.Context(), strings.Repeat("2", 32), StreamOptions{HighWater: 9, Logs: &LogSelection{SpanID: id, Records: LogRecordsMetadata}}, nil)
 	if err != nil || cursor != 9 {
 		t.Fatalf("cursor=%d err=%v", cursor, err)
+	}
+}
+
+// TestMetricSelectionRequiresEngineSupport: an engine that predates metric
+// selection ignores it and streams every metric, so a selected read is
+// refused unless the response says the selection was applied.
+func TestMetricSelectionRequiresEngineSupport(t *testing.T) {
+	for _, applied := range []bool{false, true} {
+		var frames int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if got := r.URL.Query()["metric"]; !reflect.DeepEqual(got, []string{"a", "b"}) {
+				t.Errorf("metric selection: %v", got)
+			}
+			w.Header().Set("Content-Type", enginetel.LiveContentType)
+			if applied {
+				w.Header().Set(SelectionHeader, SelectionMetrics)
+			}
+			_ = enginetel.WriteLiveFrame(w, 1, nil)
+			_ = enginetel.WriteLiveTerminal(w, 1)
+		}))
+		cursor, err := testArchiveClient(t, server).Metrics(t.Context(), strings.Repeat("2", 32), StreamOptions{HighWater: 1, Metrics: &MetricSelection{Names: []string{"a", "b"}}}, func(int64, *colmetricspb.ExportMetricsServiceRequest) error {
+			frames++
+			return nil
+		})
+		server.Close()
+		if applied {
+			if err != nil || cursor != 1 || frames != 1 {
+				t.Fatalf("applied: cursor=%d frames=%d err=%v", cursor, frames, err)
+			}
+			continue
+		}
+		if !errors.Is(err, ErrSelectionUnsupported) || errors.Is(err, ErrTransient) || frames != 0 {
+			t.Fatalf("ignored: frames=%d err=%v", frames, err)
+		}
 	}
 }
 

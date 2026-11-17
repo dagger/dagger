@@ -351,6 +351,40 @@ func TestArchiveHistorySplitsLargeBatches(t *testing.T) {
 	}
 }
 
+// A metric selection streams only the named metrics, still advancing the
+// cursor over every row, and says it applied the selection: a client refuses
+// a selected read without that, since an older engine would stream them all.
+func TestArchiveHistorySelectsMetricsByName(t *testing.T) {
+	srv := &Server{clientDBs: clientdb.NewDBs(t.TempDir())}
+	db, err := srv.clientDBs.Open(t.Context(), "main")
+	require.NoError(t, err)
+	defer db.Close()
+	for i, name := range []string{"dagger.io/exec.cpu", "llm.input_tokens", "dagger.io/exec.memory", "llm.output_tokens"} {
+		appendArchiveSignalRow(t, db, "metrics", i+1, archiveTestTrace, name)
+	}
+	manifest := archive.Manifest{TraceID: archiveTestTrace, MainClientID: "main", HighWater: archive.HighWater{Metrics: 4}}
+	read := func(query string) ([]string, http.Header) {
+		resp := httptest.NewRecorder()
+		require.NoError(t, srv.serveArchiveSignal(resp, httptest.NewRequest(http.MethodGet, "/?"+query, nil), manifest, manifest.HighWater, false, "metrics"))
+		var values []string
+		for {
+			kind, cursor, payload, err := enginetel.ReadLiveFrame(resp.Body)
+			require.NoError(t, err)
+			if kind == enginetel.LiveFrameTerminal {
+				require.Equal(t, int64(4), cursor)
+				return values, resp.Header()
+			}
+			values = append(values, archiveSignalValues(t, "metrics", payload)...)
+		}
+	}
+	values, header := read("metric=llm.input_tokens&metric=llm.output_tokens")
+	require.Equal(t, []string{"llm.input_tokens", "llm.output_tokens"}, values)
+	require.Equal(t, archive.SelectionMetrics, header.Get(archive.SelectionHeader))
+	values, header = read("")
+	require.Len(t, values, 4, "no selection streams every metric")
+	require.Empty(t, header.Get(archive.SelectionHeader))
+}
+
 // A row too large for any frame on its own must not make the whole history
 // unreadable: it is skipped with an empty frame that still advances the
 // cursor, and the rows after it are served.

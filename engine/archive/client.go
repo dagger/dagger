@@ -305,8 +305,9 @@ type StreamOptions struct {
 	HighWater int64
 	Unsealed  bool
 	// Selections are independent reads; resume a cursor only with the same selection.
-	Spans *SpanSelection
-	Logs  *LogSelection
+	Spans   *SpanSelection
+	Logs    *LogSelection
+	Metrics *MetricSelection
 }
 
 // Traces reads a finite framed trace stream. It returns the last safe resume
@@ -440,6 +441,11 @@ func (c *Client) streamBody(ctx context.Context, traceID, signal string, opts St
 	if err := expectContentType(resp, enginetel.LiveContentType); err != nil {
 		return cursor, corrupt(err)
 	}
+	if opts.Metrics != nil && !selectionApplied(resp, SelectionMetrics) {
+		// An older engine ignored the selection and is streaming every
+		// metric: stop before reading any of it.
+		return cursor, fmt.Errorf("%w: metric names", ErrSelectionUnsupported)
+	}
 
 	for {
 		kind, next, payload, err := enginetel.ReadLiveFrame(resp.Body)
@@ -555,6 +561,19 @@ func expectOK(resp *http.Response) error {
 		Kind: kind, Failure: failure.Failure, State: failure.State,
 		StatusCode: resp.StatusCode, Err: errors.New(message),
 	}
+}
+
+// selectionApplied reports whether the response lists selection in its
+// SelectionHeader.
+func selectionApplied(resp *http.Response, selection string) bool {
+	for _, value := range resp.Header.Values(SelectionHeader) {
+		for _, applied := range strings.Split(value, ",") {
+			if strings.TrimSpace(applied) == selection {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func expectContentType(resp *http.Response, want string) error {

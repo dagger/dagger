@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -21,6 +22,7 @@ import (
 	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -32,6 +34,7 @@ import (
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
+	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
@@ -668,10 +671,12 @@ type noBackfillArchive struct {
 	traces, logs         chan archive.StreamOptions
 	// served is signaled once each span read has delivered its batch.
 	served  chan struct{}
-	metrics chan struct{}
+	metrics chan archive.StreamOptions
 	// fail ends the initial view with this error, after delivering its
 	// spans still running.
 	fail error
+	// metricsErr fails metric reads, after delivering nothing.
+	metricsErr error
 }
 
 func newNoBackfillArchive() *noBackfillArchive {
@@ -685,8 +690,26 @@ func newNoBackfillArchive() *noBackfillArchive {
 		traces:             make(chan archive.StreamOptions, 8),
 		logs:               make(chan archive.StreamOptions, 8),
 		served:             make(chan struct{}, 8),
-		metrics:            make(chan struct{}, 8),
+		metrics:            make(chan archive.StreamOptions, 8),
 	}
+}
+
+// tokenMetrics is one LLM input-token gauge point on span.
+func tokenMetrics(span dagui.SpanID, tokens int64) *colmetricspb.ExportMetricsServiceRequest {
+	str := func(key, val string) *commonpb.KeyValue {
+		return &commonpb.KeyValue{Key: key, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: val}}}
+	}
+	return &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: []*metricspb.ResourceMetrics{{
+		Resource: &resourcepb.Resource{},
+		ScopeMetrics: []*metricspb.ScopeMetrics{{Metrics: []*metricspb.Metric{{
+			Name: telemetry.LLMInputTokens,
+			Data: &metricspb.Metric_Gauge{Gauge: &metricspb.Gauge{DataPoints: []*metricspb.NumberDataPoint{{
+				Attributes:   []*commonpb.KeyValue{str("model", "test-model"), str(telemetry.MetricsSpanIDAttr, span.String())},
+				TimeUnixNano: uint64(time.Unix(10, 0).UnixNano()),
+				Value:        &metricspb.NumberDataPoint_AsInt{AsInt: tokens},
+			}}}},
+		}}}},
+	}}}
 }
 
 func (s *noBackfillArchive) span(id, parent dagui.SpanID, attrs ...*commonpb.KeyValue) *tracepb.Span {
@@ -734,9 +757,12 @@ func (s *noBackfillArchive) Logs(_ context.Context, _ string, opts archive.Strea
 	return opts.HighWater, nil
 }
 
-func (s *noBackfillArchive) Metrics(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
-	s.metrics <- struct{}{}
-	return opts.HighWater, nil
+func (s *noBackfillArchive) Metrics(_ context.Context, _ string, opts archive.StreamOptions, consume func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
+	s.metrics <- opts
+	if s.metricsErr != nil {
+		return 0, s.metricsErr
+	}
+	return opts.HighWater, consume(opts.HighWater, tokenMetrics(s.message, 42))
 }
 
 // noBackfillPrimaries records the global frontend's SetPrimary calls, which
@@ -820,11 +846,51 @@ func TestArchiveRestoreNoBackfill(t *testing.T) {
 	root := fe.db.Spans.Map[source.root]
 	require.NotNil(t, root)
 	require.True(t, root.Passthrough, "the imported root gets out of the way")
+	metrics := receiveOpts(t, source.metrics, "the cost metrics")
+	require.Equal(t, &archive.MetricSelection{Names: dagui.LLMTokenMetricNames}, metrics.Metrics,
+		"only the metrics the cost totals sum")
+	require.EqualValues(t, 30, metrics.HighWater)
+	require.Eventually(t, func() bool {
+		for _, m := range fe.db.LLMTokenMetrics.Snapshot() {
+			if m.Model == "test-model" && m.InputTokens == 42 {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "the restored session's token totals carry over")
 	select {
-	case <-source.metrics:
-		t.Fatal("metrics were imported")
+	case opts := <-source.metrics:
+		t.Fatalf("a second metric read: %+v", opts.Metrics)
 	default:
 	}
+}
+
+// TestImportLLMTokenMetricsWithoutMetricSelection: an engine that cannot
+// select metrics by name would stream all of them; the restore goes without
+// the cost totals rather than read that, and does not report it as a failed
+// import. Any other failure is reported.
+func TestImportLLMTokenMetricsWithoutMetricSelection(t *testing.T) {
+	source := newNoBackfillArchive()
+	cut, err := archiveCut(source.header)
+	require.NoError(t, err)
+	fe := newRestoreTestFrontend()
+	importer, err := enginetel.NewArchiveTraceImporter(enginetel.TraceImportSinks{
+		Spans: fe.SpanExporter(), Logs: fe.LogExporter(), Metrics: fe.MetricExporter(), Barrier: fe,
+	}, cut)
+	require.NoError(t, err)
+
+	source.metricsErr = fmt.Errorf("%w: metric names", archive.ErrSelectionUnsupported)
+	require.NoError(t, importLLMTokenMetrics(t.Context(), source, source.header.TraceID, importer, cut))
+	receiveOpts(t, source.metrics, "the cost metrics")
+	select {
+	case opts := <-source.metrics:
+		t.Fatalf("an unsupported metric selection was retried: %+v", opts.Metrics)
+	default:
+	}
+	require.Empty(t, fe.db.LLMTokenMetrics.Snapshot())
+
+	source.metricsErr = archive.ErrCorrupt
+	require.ErrorIs(t, importLLMTokenMetrics(t.Context(), source, source.header.TraceID, importer, cut), archive.ErrCorrupt)
 }
 
 // TestArchiveRestoreNoBackfillSealsAfterFailure: a conversation view that

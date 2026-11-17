@@ -659,6 +659,10 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	if err != nil {
 		return httpErr(err, http.StatusBadRequest)
 	}
+	metricNames, err := archiveMetricNames(signal, r)
+	if err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
 	var logQuery *archive.LogQuery
 	if r.Method == http.MethodPost {
 		if logQuery, err = archiveLogQuery(r, logSelection); err != nil {
@@ -693,6 +697,11 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	displayScope := archiveDisplayScope(spanView, logQuery)
 	w.Header().Set("Content-Type", enginetel.LiveContentType)
 	w.Header().Set("Cache-Control", "no-store")
+	if metricNames != nil {
+		// The client refuses a selected metric read without this: an
+		// engine that predates it would stream every metric instead.
+		w.Header().Set(archive.SelectionHeader, archive.SelectionMetrics)
+	}
 	defer func() {
 		if rerr != nil {
 			_ = enginetel.WriteLiveError(w, cursor, rerr)
@@ -707,6 +716,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 		logSelection:   logSelection,
 		logScope:       logScope,
 		displayScope:   displayScope,
+		metricNames:    metricNames,
 	}
 	batchLimit := otlpBatchSize
 	for cursor < high {
@@ -741,6 +751,20 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 		batchLimit = otlpBatchSize
 	}
 	return enginetel.WriteLiveTerminal(w, high)
+}
+
+// archiveMetricNames reads the request's metric selection (see
+// archive.MetricSelection) as a set of names: nil when it selects none.
+func archiveMetricNames(signal string, r *http.Request) (map[string]bool, error) {
+	sel, err := archive.ParseMetricSelection(signal, r.URL.Query())
+	if err != nil || sel == nil {
+		return nil, err
+	}
+	names := make(map[string]bool, len(sel.Names))
+	for _, name := range sel.Names {
+		names[name] = true
+	}
+	return names, nil
 }
 
 // archiveSignalRange reads the request's resume cursor and the signal's high
@@ -799,6 +823,8 @@ type archiveSignalReader struct {
 	logScope       map[string]bool
 	// displayScope, when set, reads display text for a log query instead.
 	displayScope *clientdb.LogQueryScope
+	// metricNames, when set, keeps only the metrics with these names.
+	metricNames map[string]bool
 }
 
 // batch reads up to limit signal rows after cursor, through high. next is the
@@ -861,7 +887,7 @@ func (a archiveSignalReader) batch(ctx context.Context, signal string, cursor, h
 		if len(rows) == 0 {
 			return nil, 0, 0, errors.New("archive metric stream truncated before cut")
 		}
-		return &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: clientdb.MetricsToPB(rows)}, rows[len(rows)-1].ID, len(rows), nil
+		return &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: clientdb.NamedMetricsToPB(rows, a.metricNames)}, rows[len(rows)-1].ID, len(rows), nil
 	default:
 		return nil, 0, 0, fmt.Errorf("unknown archive signal %q", signal)
 	}
