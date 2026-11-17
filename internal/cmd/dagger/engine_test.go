@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	stdslog "log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -432,6 +434,51 @@ func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	for _, processor := range cfg.SpanProcessors {
 		require.NoError(t, processor.Shutdown(ctx))
 	}
+}
+
+// The CLI's long-lived log processors must not be the SDK's BatchProcessor,
+// whose poll loop clones its whole batch buffer every 100ms tick, logs or
+// not: in a TUI left open for hours that was half of all allocation.
+func TestInitEngineTelemetryAvoidsSDKBatchProcessors(t *testing.T) {
+	oldFrontend := Frontend
+	oldSkip := skipSharedTelemetryExporters
+	oldLogProcessors := telemetry.LogProcessors
+	oldSpanProcessors := telemetry.SpanProcessors
+	oldMetricExporters := telemetry.MetricExporters
+	oldLocal, oldCollector := cliLocalTelemetry, cliCollectorTelemetry
+	oldLogger := stdslog.Default()
+	oldTracerProvider := otel.GetTracerProvider()
+	t.Cleanup(func() {
+		stdslog.SetDefault(oldLogger)
+		otel.SetTracerProvider(oldTracerProvider)
+		Frontend = oldFrontend
+		skipSharedTelemetryExporters = oldSkip
+		telemetry.LogProcessors = oldLogProcessors
+		telemetry.SpanProcessors = oldSpanProcessors
+		telemetry.MetricExporters = oldMetricExporters
+		cliLocalTelemetry, cliCollectorTelemetry = oldLocal, oldCollector
+	})
+	skipSharedTelemetryExporters = false
+	Frontend = &idtui.FrontendMock{
+		SetPrimaryFunc: func(dagui.SpanID) {},
+	}
+	telemetry.LogProcessors = nil
+
+	_, _, closeTelemetry, _ := initEngineTelemetryWithExporters(withoutFrontendTelemetry(t.Context()),
+		func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+			return tracetest.NewInMemoryExporter(), new(countingLogExporter), new(countingMetricExporter), true
+		}, func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter) {
+			return nil, new(countingLogExporter), nil
+		})
+	t.Cleanup(func() { _ = closeTelemetry(nil) })
+
+	require.Len(t, telemetry.LogProcessors, 2, "the local telemetry sink and the collector each have a log processor")
+	for i, processor := range telemetry.LogProcessors {
+		require.IsType(t, &enginetel.DroppingLogProcessor{}, processor, "log processor %d", i)
+	}
+	require.NotNil(t, cliLocalTelemetry)
+	require.NotNil(t, cliLocalTelemetry.cloud)
+	require.IsType(t, &enginetel.DroppingLogProcessor{}, cliLocalTelemetry.cloud.forwardedLogs)
 }
 
 func TestConfiguredRunnerHost(t *testing.T) {
