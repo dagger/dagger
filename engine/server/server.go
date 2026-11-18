@@ -815,7 +815,10 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		},
 		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
 		MountPoolRoot: srv.buildkitMountPoolDir,
-		MetadataDB:    srv.containerdMetaDB,
+		// Content-hash trees, about a hundred bytes per file of every
+		// hashed snapshot, are kept on disk rather than in memory.
+		ContentHashDir: filepath.Join(srv.workerRootDir, "contenthash"),
+		MetadataDB:     srv.containerdMetaDB,
 		// The image's blobs, which the store holds in place, take no disk
 		// a snapshot's release would free.
 		InPlaceContent: blobs.InPlace,

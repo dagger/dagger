@@ -58,17 +58,84 @@ func buildEdits(t *testing.T, store *testutil.Store) []bkcache.ImmutableRef {
 	return refs
 }
 
-// Every derived snapshot is hashed from scratch and keeps a whole serialized
-// tree of its own: the memory the trees take grows with edits × files.
+// Every derived snapshot is hashed from scratch and has a whole serialized
+// tree of its own, so the trees grow with edits × files. They are kept on
+// disk, not in memory.
 func TestContentHashDerivedSnapshotsMemory(t *testing.T) {
 	store := testutil.NewStore(t)
 	before := bkcache.MetadataMemory(store.Manager)
 	refs := buildEdits(t, store)
 	after := bkcache.MetadataMemory(store.Manager)
 
-	perTree := (after.ExternalBytes - before.ExternalBytes) / len(refs)
-	t.Logf("%d snapshots (base + %d one-file edits) of %d files: %d bytes of trees in memory, %d per snapshot, %d per file",
-		len(refs), derivedEdits, derivedBaseFiles, after.ExternalBytes-before.ExternalBytes, perTree, perTree/derivedBaseFiles)
-	// The leak this documents: each one-file edit holds a full tree.
-	require.Greater(t, after.ExternalBytes-before.ExternalBytes, len(refs)*derivedBaseFiles*50)
+	trees := after.ContentHashBytes() - before.ContentHashBytes()
+	perTree := trees / len(refs)
+	t.Logf("%d snapshots (base + %d one-file edits) of %d files: %d bytes of trees (%d in memory, %d on disk), %d per snapshot, %d per file",
+		len(refs), derivedEdits, derivedBaseFiles, trees, after.ExternalBytes, after.ContentHashFileBytes, perTree, perTree/derivedBaseFiles)
+	require.Greater(t, trees, len(refs)*derivedBaseFiles*50)
+	require.Equal(t, len(refs), after.ContentHashFiles)
+	require.Zero(t, after.ExternalBytes, "no tree is held in memory")
+}
+
+// A tree kept on disk gives the digests a tree kept in memory gives, before
+// and after a checkpoint and restart: the cache context that parsed it is
+// dropped, and the next checksum reads the tree back.
+func TestContentHashFilesRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	refs := buildEdits(t, store)
+	want := make([]map[string]digest.Digest, len(refs))
+	paths := []string{"/", "/pkg03", "/pkg03/file153.go", "/pkg07"}
+	for i, ref := range refs {
+		want[i] = map[string]digest.Digest{}
+		for _, p := range paths {
+			dgst, err := contenthash.Checksum(ctx, ref, p, contenthash.ChecksumOpts{})
+			require.NoError(t, err)
+			want[i][p] = dgst
+		}
+	}
+	// Edits change digests: the base and each edit differ at the root.
+	require.NotEqual(t, want[0]["/"], want[1]["/"])
+
+	ids := make([]string, len(refs))
+	trees := make([][]byte, len(refs))
+	for i, ref := range refs {
+		ids[i] = ref.SnapshotID()
+		tree, err := ref.(bkcache.RefMetadata).GetExternal(bkcache.ContentHashMetadataKey)
+		require.NoError(t, err)
+		trees[i] = tree
+		require.NoError(t, ref.Release(ctx))
+	}
+
+	// Checkpoint and restart: the checkpoint has every tree, byte for byte.
+	rows := store.Manager.PersistentMetadataRows()
+	got := map[string][]byte{}
+	for _, row := range rows.ContentHashes {
+		got[row.SnapshotID] = row.Data
+	}
+	for i, id := range ids {
+		require.Equal(t, trees[i], got[id], "checkpointed tree of %s", id)
+	}
+	store.Reload(t)
+	reloaded := bkcache.MetadataMemory(store.Manager)
+	require.Equal(t, len(refs), reloaded.ContentHashFiles)
+	require.Zero(t, reloaded.ExternalBytes)
+
+	opCtx, release := operationLease(t, store)
+	defer release()
+	for i, id := range ids {
+		// Drop the parsed tree, so the checksums read it back from disk.
+		ref, err := store.Manager.LeaseExistingSnapshot(opCtx, id)
+		require.NoError(t, err)
+		md := ref.(bkcache.RefMetadata)
+		contenthash.ClearCacheContext(md)
+		tree, err := md.GetExternal(bkcache.ContentHashMetadataKey)
+		require.NoError(t, err)
+		require.Equal(t, trees[i], tree)
+		for _, p := range paths {
+			dgst, err := contenthash.Checksum(ctx, ref, p, contenthash.ChecksumOpts{})
+			require.NoError(t, err)
+			require.Equal(t, want[i][p], dgst, "digest of %s in snapshot %d after restart", p, i)
+		}
+		require.NoError(t, ref.Release(ctx))
+	}
 }

@@ -60,6 +60,10 @@ type SnapshotManagerOpt struct {
 	// DefaultSharedMountLinger and DefaultMaxIdleSharedMounts.
 	SharedMountLinger   time.Duration
 	MaxIdleSharedMounts int
+	// ContentHashDir, when set, is the directory the snapshots' content-hash
+	// trees are kept in, instead of in memory; see contentHashFiles. The
+	// manager owns it, and empties it when it is made.
+	ContentHashDir string
 }
 
 type ImportedImage struct {
@@ -214,6 +218,13 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 	}
 	if cm.localMounter == nil {
 		cm.localMounter = func(ms []mount.Mount) Mounter { return LocalMounterWithMounts(ms) }
+	}
+	if opt.ContentHashDir != "" {
+		files, err := newContentHashFiles(opt.ContentHashDir)
+		if err != nil {
+			return nil, err
+		}
+		cm.metadataStore.hashFiles = files
 	}
 	cm.sharedMounts = newSharedMounts(opt.SharedMountLinger, opt.MaxIdleSharedMounts, cm.backgroundReleases.run)
 

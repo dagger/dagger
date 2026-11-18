@@ -11,6 +11,7 @@ import (
 	"github.com/containerd/containerd/v2/core/metadata/boltutil"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/wcprof"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	digest "github.com/opencontainers/go-digest"
 	pkgerrors "github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
@@ -111,6 +112,9 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 	if cm.snapshotOwnerLeases == nil {
 		cm.snapshotOwnerLeases = make(map[string]map[string]struct{})
 	}
+	if files := cm.metadataStore.hashFiles; files != nil {
+		return cm.loadContentHashFiles(files, rows.ContentHashes)
+	}
 	cm.metadataStore.mu.Lock()
 	defer cm.metadataStore.mu.Unlock()
 	cm.metadataStore.pendingContentHashes = make(map[string][]byte, len(rows.ContentHashes))
@@ -128,7 +132,69 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 	return nil
 }
 
+// loadContentHashFiles is LoadPersistentMetadata's loading of hash records
+// into files: each record replaces its snapshot's tree, and the trees of
+// snapshots whose metadata has not been opened and that have no record are
+// dropped, as LoadPersistentMetadata replaces the pending records in memory.
+// Requires cm.mu.
+func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []SnapshotContentHashRow) error {
+	loaded := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if row.SnapshotID == "" || len(row.Data) == 0 {
+			continue
+		}
+		var gone func() bool
+		if md, ok := cm.metadataStore.get(row.SnapshotID); ok {
+			gone = func() bool { return md.contentHashGone }
+		}
+		if err := files.write(row.SnapshotID, row.Data, gone); err != nil {
+			return err
+		}
+		loaded[row.SnapshotID] = struct{}{}
+	}
+	for _, id := range files.list() {
+		if _, ok := loaded[id]; ok {
+			continue
+		}
+		if _, ok := cm.metadataStore.get(id); ok {
+			continue
+		}
+		files.remove(id, nil)
+	}
+	return nil
+}
+
 func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
+	rows, hashIDs := cm.persistentMetadataRows()
+	files := cm.metadataStore.hashFiles
+	if files == nil {
+		return rows
+	}
+	// The trees are read without the manager's locks: a checkpoint holds
+	// every tree, and reading them all takes a while.
+	for _, snapshotID := range hashIDs {
+		data, ok, err := files.read(snapshotID, nil)
+		if err != nil {
+			// A tree left out is lost to the next process: an imported
+			// snapshot's digests would then come from a rescan.
+			bklog.G(context.TODO()).WithError(err).WithField("snapshot", snapshotID).
+				Error("failed to read content hash records for checkpoint")
+			continue
+		}
+		if !ok || len(data) == 0 {
+			continue
+		}
+		rows.ContentHashes = append(rows.ContentHashes, SnapshotContentHashRow{
+			SnapshotID: snapshotID,
+			Data:       data,
+		})
+	}
+	return rows
+}
+
+// persistentMetadataRows returns the rows, and, when the trees are kept on
+// disk, the snapshots whose trees belong in them, to be read.
+func (cm *snapshotManager) persistentMetadataRows() (PersistentMetadataRows, []string) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -165,6 +231,8 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 
 	// Keep hash records only for owned immutable snapshots. Mutable mirrors
 	// and snapshots without owners do not belong in the durable checkpoint.
+	files := cm.metadataStore.hashFiles
+	var hashIDs []string
 	cm.metadataStore.mu.RLock()
 	defer cm.metadataStore.mu.RUnlock()
 	for snapshotID, owners := range cm.snapshotOwnerLeases {
@@ -172,6 +240,12 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 			continue
 		}
 		if rec, ok := cm.records[snapshotID]; ok && rec.mutable {
+			continue
+		}
+		if files != nil {
+			if files.has(snapshotID) {
+				hashIDs = append(hashIDs, snapshotID)
+			}
 			continue
 		}
 		data := cm.metadataStore.pendingContentHashes[snapshotID]
@@ -187,7 +261,7 @@ func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
 		})
 	}
 
-	return rows
+	return rows, hashIDs
 }
 
 func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID string) error {
