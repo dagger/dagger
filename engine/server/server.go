@@ -1411,6 +1411,24 @@ func (srv *Server) DagqlDebugSnapshot() *dagql.EGraphDebugSnapshot {
 	return srv.engineCache.DebugEGraphSnapshot()
 }
 
+// DehydrateDagqlResults dehydrates every eligible dagql result not used for
+// unusedFor (see dagql.Cache.DehydrateColdResults).
+func (srv *Server) DehydrateDagqlResults(ctx context.Context, unusedFor time.Duration) (dagql.DehydrateReport, error) {
+	if srv.engineCache == nil {
+		return dagql.DehydrateReport{}, fmt.Errorf("dagql cache not available")
+	}
+	return srv.engineCache.DehydrateColdResults(ctx, dagql.DehydrateOptions{UnusedFor: unusedFor})
+}
+
+// DebugDropAllDagqlValues is dagql.Cache.DebugDropAllValues: it breaks the
+// engine's cache, to measure on a throwaway engine.
+func (srv *Server) DebugDropAllDagqlValues() int {
+	if srv.engineCache == nil {
+		return 0
+	}
+	return srv.engineCache.DebugDropAllValues()
+}
+
 func (srv *Server) WriteDagqlCacheDebugSnapshot(w io.Writer) error {
 	if srv.engineCache == nil {
 		return fmt.Errorf("dagql cache not available")

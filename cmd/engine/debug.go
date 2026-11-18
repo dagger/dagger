@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"expvar"
@@ -13,8 +14,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	rpprof "runtime/pprof"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -35,6 +39,45 @@ import (
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/wcprof"
 )
+
+type dehydrateDebugResult struct {
+	dagql.DehydrateReport
+	Error           string `json:"error,omitempty"`
+	Elapsed         string `json:"elapsed"`
+	LiveHeapBefore  uint64 `json:"liveHeapBefore"`
+	LiveHeapAfter   uint64 `json:"liveHeapAfter"`
+	LiveHeapFreed   int64  `json:"liveHeapFreed"`
+	FreedPerResultB int64  `json:"freedPerDehydratedResult"`
+}
+
+// lastDehydrate is the last /debug/dagql/dehydrate?async=1 pass's result.
+var lastDehydrate atomic.Pointer[dehydrateDebugResult]
+
+var (
+	savedHeapProfilesMu sync.Mutex
+	savedHeapProfiles   = map[string][]byte{}
+)
+
+// saveHeapProfile keeps the heap profile as of the last collection under
+// name, for /debug/dagql/heapprofile.
+func saveHeapProfile(name string) {
+	var buf bytes.Buffer
+	if err := rpprof.Lookup("heap").WriteTo(&buf, 0); err != nil {
+		return
+	}
+	savedHeapProfilesMu.Lock()
+	savedHeapProfiles[name] = buf.Bytes()
+	savedHeapProfilesMu.Unlock()
+}
+
+// liveHeapBytes is the live heap after a full collection.
+func liveHeapBytes() uint64 {
+	runtime.GC()
+	runtime.GC()
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	return ms.HeapAlloc
+}
 
 func setupDebugHandlers(addr string, eng *server.Server) error {
 	m := http.NewServeMux()
@@ -123,6 +166,132 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 		if err := eng.WriteDagqlCacheDebugSnapshot(rw); err != nil {
 			logrus.WithError(err).Warn("failed streaming dagql cache debug snapshot")
 		}
+	}))
+	// Debug-only: dehydrate every eligible dagql result unused for
+	// ?unusedFor= (a Go duration, default 0), measuring the live heap after a
+	// full collection before and after. GET, so it can be driven by hand.
+	m.Handle("/debug/dagql/dehydrate", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if eng == nil {
+			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)
+			return
+		}
+		var unusedFor time.Duration
+		if v := req.URL.Query().Get("unusedFor"); v != "" {
+			var err error
+			unusedFor, err = time.ParseDuration(v)
+			if err != nil {
+				http.Error(rw, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		save := req.URL.Query().Get("save")
+		mode := req.URL.Query().Get("mode")
+		run := func(ctx context.Context) *dehydrateDebugResult {
+			before := liveHeapBytes()
+			if save != "" {
+				saveHeapProfile(save + "-before")
+			}
+			start := time.Now()
+			var (
+				report dagql.DehydrateReport
+				err    error
+			)
+			if mode == "dropall" {
+				// Measurement only: the upper bound of what dropping
+				// values can give back. Breaks the engine's cache.
+				report.Dehydrated = eng.DebugDropAllDagqlValues()
+			} else {
+				report, err = eng.DehydrateDagqlResults(ctx, unusedFor)
+			}
+			elapsed := time.Since(start)
+			after := liveHeapBytes()
+			if save != "" {
+				saveHeapProfile(save + "-after")
+			}
+			resp := &dehydrateDebugResult{
+				DehydrateReport: report,
+				Elapsed:         elapsed.String(),
+				LiveHeapBefore:  before,
+				LiveHeapAfter:   after,
+				LiveHeapFreed:   int64(before) - int64(after),
+			}
+			if err != nil {
+				resp.Error = err.Error()
+			}
+			if report.Dehydrated > 0 {
+				resp.FreedPerResultB = resp.LiveHeapFreed / int64(report.Dehydrated)
+			}
+			return resp
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(rw)
+		enc.SetIndent("", "  ")
+		if req.URL.Query().Get("async") != "" {
+			// Run detached from the request, so a pass driven from inside
+			// a session (an HTTP fetch) cannot wait on that session; with
+			// ?delay=, once the session has gone idle.
+			var delay time.Duration
+			if v := req.URL.Query().Get("delay"); v != "" {
+				delay, _ = time.ParseDuration(v)
+			}
+			lastDehydrate.Store(&dehydrateDebugResult{Error: "running since " + time.Now().Format(time.RFC3339Nano)})
+			go func() {
+				time.Sleep(delay)
+				res := run(context.Background())
+				res.Error += " finished at " + time.Now().Format(time.RFC3339Nano)
+				lastDehydrate.Store(res)
+				if data, err := json.Marshal(res); err == nil {
+					logrus.Infof("dagql dehydrate debug pass: %s", data)
+				}
+			}()
+			_ = enc.Encode(map[string]string{"started": "true"})
+			return
+		}
+		_ = enc.Encode(run(req.Context()))
+	}))
+	m.Handle("/debug/dagql/dehydrate/last", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(rw)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(lastDehydrate.Load())
+	}))
+	// Debug-only: the live heap after a full collection, and the dagql
+	// cache's entry counts.
+	m.Handle("/debug/dagql/heap", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if v := req.URL.Query().Get("rate"); v != "" {
+			// Sample later allocations at this rate (bytes), for finer
+			// heap profiles than the default 512 KiB.
+			if rate, err := strconv.Atoi(v); err == nil && rate > 0 {
+				runtime.MemProfileRate = rate
+			}
+		}
+		resp := struct {
+			LiveHeap uint64                `json:"liveHeap"`
+			Entries  dagql.CacheEntryStats `json:"entries"`
+		}{LiveHeap: liveHeapBytes()}
+		if eng != nil {
+			resp.Entries = eng.DagqlCacheEntryStats()
+		}
+		if name := req.URL.Query().Get("save"); name != "" {
+			saveHeapProfile(name)
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(rw)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(resp)
+	}))
+	// Debug-only: a heap profile saved by ?save= on /debug/dagql/heap or
+	// /debug/dagql/dehydrate (as <save>-before and <save>-after).
+	m.Handle("/debug/dagql/heapprofile", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		savedHeapProfilesMu.Lock()
+		data, ok := savedHeapProfiles[req.URL.Query().Get("name")]
+		savedHeapProfilesMu.Unlock()
+		if !ok {
+			http.Error(rw, "no such profile", http.StatusNotFound)
+			return
+		}
+		rw.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = rw.Write(data)
 	}))
 	m.Handle("/debug/client-lifecycle", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		if eng == nil {
