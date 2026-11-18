@@ -262,6 +262,23 @@ func TestExportImageBundleFailsOnARowBusyUntilALaterEvaluation(t *testing.T) {
 // A call's span reports that the engine image ships its result: an entry the
 // image's merge gave an image holding reports it, and one the engine made
 // itself doesn't.
+// The cache snapshot marks the entries the engine image ships: those its
+// merge at start gave an image holding, which every engine of the image has.
+// An entry the engine made is not marked.
+func TestDebugCacheSnapshotMarksImageEntries(t *testing.T) {
+	t.Parallel()
+	bundle := mergeTestImageOffered(t, "root", imageTestLayerOffer(ImageBlobAddress))
+	ctx, b, srv := transferTestCache(t)
+	reply, err := b.MergeValues(ctx, ImageCacheID, bundle)
+	require.NoError(t, err)
+	image := debugSnapshotEntry(t, b, reply.Imported()[0].ResultID)
+	require.True(t, image.FromImage, "the image ships the entry")
+
+	own := persistedListTestResult(t, ctx, b, srv, "own", &transferTestValue{Text: "own"})
+	entry := debugSnapshotEntry(t, b, uint64(own.cacheSharedResult().id))
+	require.False(t, entry.FromImage, "the engine made the entry")
+}
+
 func TestCacheResultStateImage(t *testing.T) {
 	t.Parallel()
 	bundle := mergeTestImageOffered(t, "root", imageTestLayerOffer(ImageBlobAddress))
