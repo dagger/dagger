@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/muesli/termenv"
@@ -329,47 +330,73 @@ func findCalls(ctx context.Context, re *regexp.Regexp, limit int, exclude string
 	return findCallsIn(ctx, clientDB.Read(), re, limit, exclude)
 }
 
-// findCallsIn is findCalls against an already-open store. The load is
-// session-wide -- one row per distinct call, seeded from the call index --
-// transient and linear in the number of calls rather than retained.
+// findCallsIn is findCalls against an already-open store.
+//
+// It searches every call of the session and of the traces loaded for
+// inspection, but never holds them all: the frames are read and decoded a
+// chunk at a time, in digest order (the order the result lists them in),
+// keeping only which ones match and, to leave out the caller's own
+// conversation, the receiver and owner of each LLM-typed one. A second pass
+// renders the lines shown from just their frames. A search over a whole
+// session held every frame of it at once before.
 func findCallsIn(ctx context.Context, read *clientdb.DB, re *regexp.Regexp, limit int, exclude string) (string, error) {
-	db := dagui.NewDB()
 	stores, release, err := read.InspectionStores(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer release()
-	for _, source := range stores {
-		frames, err := source.SelectCallFrames(ctx, source.CallDigests())
-		if err != nil {
-			return "", fmt.Errorf("select call frames: %w", err)
+	digests := callDigestsIn(stores)
+	total := 0
+	var matched []string
+	conversation := map[string]conversationFrame{}
+	err = scanCallFrames(ctx, stores, digests, func(dig string, frame *callpbv1.Call) (bool, error) {
+		total++
+		if exclude != "" && frame.GetType().GetNamedType() == "LLM" {
+			conversation[dig] = conversationFrameOf(frame)
 		}
-		for start := 0; start < len(frames); start += traceReportBatchSize {
-			if err := ingestCallFrames(ctx, db, frames[start:min(start+traceReportBatchSize, len(frames))]); err != nil {
-				return "", err
-			}
+		if re.MatchString(dagui.CallSearchText(frame)) {
+			matched = append(matched, dig)
 		}
+		return true, nil
+	})
+	if err != nil {
+		return "", err
 	}
-	if len(db.Calls) == 0 {
+	if total == 0 {
 		return "(no calls in this session)", nil
 	}
-	total := len(db.Calls)
 	hidden := 0
 	if exclude != "" {
-		// The DB is this search's own: dropping the caller's conversation
-		// frames from it is how the grep skips them.
-		for dig := range agentConversationCalls(db.Calls, exclude) {
-			if re.MatchString(dagui.CallSearchText(db.Calls[dig])) {
+		owned := ownedConversationCalls(conversation, exclude)
+		shown := matched[:0]
+		for _, dig := range matched {
+			if _, mine := owned[dig]; mine {
 				hidden++
+				continue
 			}
-			delete(db.Calls, dig)
+			shown = append(shown, dig)
 		}
+		matched = shown
 	}
 	var note string
 	if hidden > 0 {
 		note = fmt.Sprintf("(%d matching calls of your own conversation hidden; includeSelf: true lists them)", hidden)
 	}
-	lines := db.GrepCalls(re, limit)
+	grep := dagui.NewCallGrep(re, limit)
+	added := 0
+	err = scanCallFrames(ctx, stores, matched, func(_ string, frame *callpbv1.Call) (bool, error) {
+		if grep.Full() {
+			return false, nil
+		}
+		grep.Add(frame)
+		added++
+		return true, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	grep.Count(len(matched) - added)
+	lines := grep.Lines()
 	if len(lines) == 0 {
 		empty := fmt.Sprintf("(no calls matching /%s/ among the %d in this session)", re, total)
 		if note != "" {
@@ -383,14 +410,104 @@ func findCallsIn(ctx context.Context, read *clientdb.DB, re *regexp.Regexp, limi
 	return strings.Join(lines, "\n") + "\n", nil
 }
 
+// findCallsChunk is how many call frames a session-wide call search holds
+// decoded at once.
+const findCallsChunk = 512
+
+// callDigestsIn is every call digest any of stores holds a frame for, in
+// order.
+func callDigestsIn(stores []*clientdb.DB) []string {
+	seen := map[string]struct{}{}
+	for _, store := range stores {
+		for dig := range store.CallDigests() {
+			seen[dig] = struct{}{}
+		}
+	}
+	digests := make([]string, 0, len(seen))
+	for dig := range seen {
+		digests = append(digests, dig)
+	}
+	sort.Strings(digests)
+	return digests
+}
+
+// scanCallFrames decodes the frames of digests, a chunk at a time, and
+// calls fn with each one decoded, in the order of digests, until fn returns
+// false. Each digest's frame is the one a DB loading every store in order
+// would keep: the first store's that decodes (see ingestCallFrames).
+func scanCallFrames(ctx context.Context, stores []*clientdb.DB, digests []string, fn func(string, *callpbv1.Call) (bool, error)) error {
+	for start := 0; start < len(digests); start += findCallsChunk {
+		chunk := digests[start:min(start+findCallsChunk, len(digests))]
+		pending := make(map[string]struct{}, len(chunk))
+		for _, dig := range chunk {
+			pending[dig] = struct{}{}
+		}
+		db := dagui.NewDB()
+		for _, store := range stores {
+			frames, err := store.SelectCallFrames(ctx, pending)
+			if err != nil {
+				return fmt.Errorf("select call frames: %w", err)
+			}
+			if err := ingestCallFrames(ctx, db, frames); err != nil {
+				return err
+			}
+		}
+		for _, dig := range chunk {
+			frame := db.Calls[dig]
+			if frame == nil {
+				continue
+			}
+			more, err := fn(dig, frame)
+			if err != nil || !more {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// conversationFrame is what agentConversationCalls reads of an LLM-typed
+// frame.
+type conversationFrame struct {
+	receiver string
+	// stamped marks an ownership stamp (LLM.__withOwnerAgent), naming owner.
+	stamped bool
+	owner   string
+}
+
+func conversationFrameOf(frame *callpbv1.Call) conversationFrame {
+	c := conversationFrame{receiver: frame.GetReceiverDigest()}
+	if frame.GetField() == "__withOwnerAgent" {
+		c.stamped = true
+		for _, arg := range frame.GetArgs() {
+			if arg.GetName() == "handle" {
+				c.owner = arg.GetValue().GetString_()
+			}
+		}
+	}
+	return c
+}
+
 // agentConversationCalls returns the digests of the frames recording an
 // agent's own conversation: LLM-typed frames whose nearest ownership stamp
 // (LLM.__withOwnerAgent, which an agent puts on its committed conversation)
 // up the receiver chain names handle. Nearest, because a conversation an
 // agent hands on -- a worker's seed -- is re-stamped by its new owner.
 func agentConversationCalls(calls map[string]*callpbv1.Call, handle string) map[string]struct{} {
-	owners := make(map[string]string, len(calls))
-	for dig := range calls {
+	frames := map[string]conversationFrame{}
+	for dig, frame := range calls {
+		if frame != nil && frame.GetType().GetNamedType() == "LLM" {
+			frames[dig] = conversationFrameOf(frame)
+		}
+	}
+	return ownedConversationCalls(frames, handle)
+}
+
+// ownedConversationCalls is agentConversationCalls over the LLM-typed
+// frames alone, which are all its walk reads.
+func ownedConversationCalls(frames map[string]conversationFrame, handle string) map[string]struct{} {
+	owners := make(map[string]string, len(frames))
+	for dig := range frames {
 		var chain []string
 		owner := ""
 		for cur := dig; cur != "" && len(chain) < 1<<16; {
@@ -398,20 +515,16 @@ func agentConversationCalls(calls map[string]*callpbv1.Call, handle string) map[
 				owner = known
 				break
 			}
-			frame := calls[cur]
-			if frame == nil || frame.GetType().GetNamedType() != "LLM" {
+			frame, ok := frames[cur]
+			if !ok {
 				break
 			}
 			chain = append(chain, cur)
-			if frame.GetField() == "__withOwnerAgent" {
-				for _, arg := range frame.GetArgs() {
-					if arg.GetName() == "handle" {
-						owner = arg.GetValue().GetString_()
-					}
-				}
+			if frame.stamped {
+				owner = frame.owner
 				break
 			}
-			cur = frame.GetReceiverDigest()
+			cur = frame.receiver
 		}
 		for _, d := range chain {
 			owners[d] = owner
