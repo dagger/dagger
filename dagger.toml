@@ -6,6 +6,9 @@ check.skip = ["generate/stale"]
 [modules.cli]
 source = ".dagger/modules/cli-dev"
 legacy-default-path = true
+# release/publish-with-mock-endpoints runs this release, publishing to mock
+# registries.
+check.skip = ["release-dry-run"]
 
 [modules.dev]
 source = ".dagger/modules/dev"
@@ -26,6 +29,9 @@ legacy-default-path = true
 [modules.elixir-client]
 source = ".dagger/modules/elixir-client-dev"
 legacy-default-path = true
+# release/publish-with-mock-endpoints runs this release, publishing to mock
+# registries.
+check.skip = ["release-dry-run"]
 
 [modules.engine-dev]
 source = ".dagger/modules/engine-dev"
@@ -107,6 +113,9 @@ legacy-default-path = true
 [modules.python-client]
 source = ".dagger/modules/python-client-dev"
 legacy-default-path = true
+# release/publish-with-mock-endpoints runs this release, publishing to mock
+# registries.
+check.skip = ["release-dry-run"]
 
 [modules.release]
 source = ".dagger/modules/release"
@@ -115,6 +124,9 @@ legacy-default-path = true
 [modules.rust-client]
 source = ".dagger/modules/rust-client-dev"
 legacy-default-path = true
+# release/publish-with-mock-endpoints runs this release, publishing to mock
+# registries.
+check.skip = ["release-dry-run"]
 
 [modules.security]
 source = ".dagger/modules/security"
@@ -143,6 +155,9 @@ legacy-default-path = true
 [modules.typescript-client]
 source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
+# release/publish-with-mock-endpoints runs this release, publishing to mock
+# registries.
+check.skip = ["release-dry-run"]
 
 [modules.dang-sdk]
 source = "dagger.io/sdk/dang@main"
