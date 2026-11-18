@@ -132,10 +132,19 @@ func findSpans(ctx context.Context, search spanSearch) (string, error) {
 		return "", err
 	}
 	defer clientDB.Close()
-	stores := clientDB.InspectionStores()
 	if search.Root != "" {
-		return findSpanPageIn(ctx, inspectionStoreForSpan(clientDB, search.Root), search)
+		read, release, err := inspectionStoreForSpan(ctx, clientDB, search.Root)
+		if err != nil {
+			return "", err
+		}
+		defer release()
+		return findSpanPageIn(ctx, read, search)
 	}
+	stores, release, err := clientDB.InspectionStores(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	return findSpanPageIn(ctx, clientDB, search, stores[1:]...)
 }
 
@@ -428,7 +437,12 @@ func inspectSpan(ctx context.Context, spanID string) (string, error) {
 		return "", err
 	}
 	defer clientDB.Close()
-	return inspectSpanIn(ctx, inspectionStoreForSpan(clientDB, spanID), spanID)
+	read, release, err := inspectionStoreForSpan(ctx, clientDB, spanID)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	return inspectSpanIn(ctx, read, spanID)
 }
 
 // inspectSpanIn is inspectSpan against an already-open store.
@@ -469,7 +483,12 @@ func spanTimings(ctx context.Context, root string, minDuration time.Duration, li
 		return "", err
 	}
 	defer clientDB.Close()
-	return spanTimingsIn(ctx, inspectionStoreForSpan(clientDB, root), root, minDuration, limit, time.Now())
+	read, release, err := inspectionStoreForSpan(ctx, clientDB, root)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	return spanTimingsIn(ctx, read, root, minDuration, limit, time.Now())
 }
 
 // spanTimingsIn is spanTimings against an already-open store.

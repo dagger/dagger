@@ -229,7 +229,12 @@ func renderTraceReport(ctx context.Context, root string, opts traceReportOpts) (
 	}
 	defer clientDB.Close()
 
-	session, err := loadTraceReportSession(ctx, inspectionStoreForSpan(clientDB, root), root)
+	read, release, err := inspectionStoreForSpan(ctx, clientDB, root)
+	if err != nil {
+		return traceReportResult{}, err
+	}
+	defer release()
+	session, err := loadTraceReportSession(ctx, read, root)
 	if err != nil {
 		return traceReportResult{}, err
 	}
