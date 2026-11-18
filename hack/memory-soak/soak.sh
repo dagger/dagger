@@ -17,9 +17,9 @@
 #   go tool pprof -top -sample_index=inuse_space http://localhost:6060/debug/pprof/heap | head -25
 set -eu
 
-sessions=${1:-6}
-rounds=${2:-12}
-files=${3:-3000}
+sessions=${1:-10}
+rounds=${2:-40}
+files=${3:-5000}
 here=$(cd "$(dirname "$0")" && pwd)
 
 i=1

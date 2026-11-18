@@ -7,11 +7,11 @@
   "dependencies": [
     {
       "name": "soakgo",
-      "source": "../soakgo"
+      "source": "soakgo"
     },
     {
       "name": "soakdang",
-      "source": "../soakdang"
+      "source": "soakdang"
     }
   ],
   "disableDefaultFunctionCaching": true
