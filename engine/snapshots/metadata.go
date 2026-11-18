@@ -91,7 +91,7 @@ type metadataStore struct {
 	closed bool
 
 	// Persisted hash records for snapshots whose metadata has not been opened.
-	// Unused with hashFiles, which holds those records too.
+	// With hashFiles, only those that could not be written to disk.
 	pendingContentHashes map[string][]byte
 
 	// hashFiles, when set, keeps the content-hash trees on disk instead of
@@ -481,10 +481,10 @@ func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !ok {
-			return nil, ErrExternalNotFound
+		if ok {
+			return dt, nil
 		}
-		return dt, nil
+		// A loaded tree that could not be written is kept in memory.
 	}
 	md.store.mu.RLock()
 	defer md.store.mu.RUnlock()
@@ -499,7 +499,14 @@ func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 
 func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
 	if md.store.contentHashOnDisk(s) {
-		return md.store.hashFiles.write(md.id, dt, func() bool { return md.contentHashGone })
+		if err := md.store.hashFiles.write(md.id, dt, func() bool { return md.contentHashGone }); err != nil {
+			return err
+		}
+		// The tree on disk replaces one kept in memory when it was loaded.
+		md.store.mu.Lock()
+		delete(md.external, s)
+		md.store.mu.Unlock()
+		return nil
 	}
 	md.store.mu.Lock()
 	defer md.store.mu.Unlock()

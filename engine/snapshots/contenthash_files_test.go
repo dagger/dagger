@@ -26,16 +26,20 @@ func TestContentHashFilesStartEmpty(t *testing.T) {
 	require.Empty(t, entries)
 }
 
-// A tree that can't be written at load is left out, as one that can't be
-// read at a checkpoint is, rather than failing the load and with it the
-// whole persisted cache.
-func TestContentHashFilesLoadSkipsUnwritableTrees(t *testing.T) {
+// A tree that can't be written at load is kept in memory, rather than failing
+// the load, and with it the whole persisted cache, or being lost to a rescan
+// that gives an imported snapshot other digests.
+func TestContentHashFilesLoadKeepsUnwritableTreesInMemory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "contenthash")
 	s := newMetadataStore()
 	files, err := newContentHashFiles(dir)
 	require.NoError(t, err)
 	s.hashFiles = files
-	cm := &snapshotManager{metadataStore: s, records: map[string]*cacheRecord{}}
+	cm := &snapshotManager{
+		metadataStore:       s,
+		records:             map[string]*cacheRecord{},
+		snapshotOwnerLeases: map[string]map[string]struct{}{"a": {"owner": {}}},
+	}
 	require.NoError(t, os.RemoveAll(dir))
 	require.NoError(t, os.WriteFile(dir, nil, 0o600))
 
@@ -43,6 +47,13 @@ func TestContentHashFilesLoadSkipsUnwritableTrees(t *testing.T) {
 		ContentHashes: []SnapshotContentHashRow{{SnapshotID: "a", Data: []byte("tree a")}},
 	}))
 	require.Empty(t, files.list())
+	require.Equal(t, []SnapshotContentHashRow{{SnapshotID: "a", Data: []byte("tree a")}},
+		cm.PersistentMetadataRows().ContentHashes, "the next checkpoint keeps it")
+
+	md := s.getOrCreate("a")
+	dt, err := md.GetExternal(ContentHashMetadataKey)
+	require.NoError(t, err)
+	require.Equal(t, []byte("tree a"), dt)
 }
 
 // A tree saved after its metadata was dropped, as a background save can be,
