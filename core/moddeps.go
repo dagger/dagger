@@ -236,17 +236,27 @@ func (m *SchemaBuilderMemo) Get(b *SchemaBuilder) *SchemaBuilder {
 }
 
 // memoKey identifies b's root and entries: user modules by attached result,
-// anything else (core) by instance. Entry order and install options are part
-// of the key, since both shape the built schema.
+// core by its schema base and view (SchemaASTCacheKey), anything else by
+// instance. Entry order and install options are part of the key, since both
+// shape the built schema.
+//
+// Core is keyed by content because every module load wraps it in a CoreMod
+// of its own (CoreMod.WithView): keyed by instance, each reload of a module
+// built another server for its unchanged dependency schema. A CoreMod is its
+// base and view and nothing else, so two with the same key build the same
+// schema.
 func (b *SchemaBuilder) memoKey() (string, bool) {
-	entries, ok := schemaEntriesKey(b.entries, false)
+	entries, ok := schemaEntriesKey(b.entries, true)
 	if !ok {
 		return "", false
 	}
 	return fmt.Sprintf("r%p;%s", b.root, entries), true
 }
 
-func schemaEntriesKey(entries []modDepEntry, metadataOnly bool) (string, bool) {
+// schemaEntriesKey identifies entries: user modules by attached result, and
+// other modules by instance, or, with byContent, by their SchemaASTCacheKey
+// when they have one.
+func schemaEntriesKey(entries []modDepEntry, byContent bool) (string, bool) {
 	var key strings.Builder
 	for _, e := range entries {
 		switch mod := e.mod.(type) {
@@ -257,7 +267,7 @@ func schemaEntriesKey(entries []modDepEntry, metadataOnly bool) (string, bool) {
 			}
 			fmt.Fprintf(&key, "m%d", id.EngineResultID())
 		default:
-			if metadataOnly {
+			if byContent {
 				if stable, ok := mod.(interface{ SchemaASTCacheKey() string }); ok {
 					if identity := stable.SchemaASTCacheKey(); identity != "" {
 						fmt.Fprintf(&key, "c%d:%s", len(identity), identity)

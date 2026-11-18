@@ -30,19 +30,19 @@ func (s *memoGrowthServer) SessionSchemaBuilderMemo(context.Context) (*core.Sche
 //
 //   - reload: a module's Deps comes from defaultSchemaBuilderForEngineVersion,
 //     which wraps the core module in a fresh *CoreMod (CoreMod.WithView) on
-//     every asModule that executes. The memo keys core modules by pointer, so
-//     each reload of a module whose dependencies did not change builds and
-//     keeps another server for an identical schema.
-//   - nested clients: every client has its own query root, and the memo keys
-//     the root by pointer, so the same module set resolved from N nested
-//     clients builds and keeps N servers.
+//     every asModule that executes. The memo keys core by its base and view,
+//     so a reload of a module whose dependencies did not change reuses the
+//     server the session built.
+//   - nested clients: every client has its own query root, and a server is
+//     bound to its root, so the same module set resolved from N nested
+//     clients builds N servers.
 //   - control: the same builder identity resolves to one server.
 //
 // Each scenario resolves the dependency schema of a module that depends on
 // the core API alone (the common case: moduleTypesDefinition and the SDK
 // runtimes ask for it on every asModule) and describes it, as
-// SchemaIntrospectionJSONFileForModule does. It reports how many servers the
-// session holds and the heap they retain after a GC.
+// SchemaIntrospectionJSONFileForModule does. It reports how many servers were
+// built and the heap the session retains after a GC.
 func TestSessionSchemaMemoGrowth(t *testing.T) {
 	const loads = 40
 	ctx := context.Background()
@@ -64,10 +64,10 @@ func TestSessionSchemaMemoGrowth(t *testing.T) {
 	sharedCore := base.CoreMod(view)
 
 	type result struct {
-		servers  int
+		built    int
 		retained int64
 	}
-	run := func(name string, deps func(i int) *core.SchemaBuilder) result {
+	run := func(name string, loads int, deps func(i int) *core.SchemaBuilder) result {
 		t.Helper()
 		session := core.NewSchemaBuilderMemo()
 		srv.session = session
@@ -87,40 +87,37 @@ func TestSessionSchemaMemoGrowth(t *testing.T) {
 			seen[built] = struct{}{}
 		}
 		elapsed := time.Since(start)
-		servers := len(seen)
+		built := len(seen)
 		clear(seen)
 		retained := int64(liveHeap()) - int64(heapBefore)
 		runtime.KeepAlive(session)
 		srv.session = nil
-		t.Logf("%-16s %3d loads -> %3d servers kept by the session memo, %7.1f MiB retained (%6.1f KiB, %s per load)",
-			name, loads, servers, float64(retained)/(1<<20), float64(retained)/float64(loads)/(1<<10),
-			(elapsed / loads).Round(time.Microsecond))
-		return result{servers: servers, retained: retained}
+		t.Logf("%-20s %3d loads -> %3d servers built, %7.1f MiB retained by the session (%6.1f KiB, %s per load)",
+			name, loads, built, float64(retained)/(1<<20), float64(retained)/float64(loads)/(1<<10),
+			(elapsed / time.Duration(loads)).Round(time.Microsecond))
+		return result{built: built, retained: retained}
 	}
 
 	sameRoot := clientRoot
-	control := run("control", func(int) *core.SchemaBuilder {
+	control := run("control", loads, func(int) *core.SchemaBuilder {
 		return core.NewSchemaBuilder(sameRoot, []core.Mod{sharedCore})
 	})
-	reload := run("reload", func(int) *core.SchemaBuilder {
+	reload := run("reload", loads, func(int) *core.SchemaBuilder {
 		// What defaultSchemaBuilderForEngineVersion hands each asModule.
 		return core.NewSchemaBuilder(sameRoot, []core.Mod{sharedCore.WithView(view)})
 	})
-	nested := run("nested clients", func(int) *core.SchemaBuilder {
+	nested := run("nested clients", loads, func(int) *core.SchemaBuilder {
 		return core.NewSchemaBuilder(core.NewRoot(srv), []core.Mod{sharedCore})
 	})
 
-	require.Equal(t, 1, control.servers, "one builder identity, one server")
-	require.Equal(t, loads, reload.servers,
-		"each reload builds and keeps another server for the same schema (core module keyed by pointer)")
-	require.Equal(t, loads, nested.servers,
-		"each nested client builds and keeps another server for the same schema (root keyed by pointer)")
-	// A forked core schema is well over 64 KiB; the control keeps one.
-	perLoad := int64(loads-1) * (64 << 10)
-	require.Greater(t, reload.retained-control.retained, perLoad,
-		"the session retains a forked core schema per reload")
-	require.Greater(t, nested.retained-control.retained, perLoad,
-		"the session retains a forked core schema per nested client")
+	require.Equal(t, 1, control.built, "one builder identity, one server")
+	require.Equal(t, 1, reload.built,
+		"a reload whose dependencies did not change reuses the session's server")
+	require.Equal(t, loads, nested.built,
+		"servers are bound to their root, so each nested client builds its own")
+	// A forked core schema is well over 64 KiB.
+	require.Greater(t, nested.retained, int64(loads-1)*(64<<10),
+		"the session keeps the servers it built")
 }
 
 func liveHeap() uint64 {
