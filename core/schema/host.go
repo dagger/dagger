@@ -29,6 +29,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/filesync"
+	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/gitutil"
@@ -957,12 +958,51 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 	// Build on the last reconstruction of this checkout, when there is one:
-	// the client then sends only what the checkout gained since.
+	// the client then sends only what the checkout gained since. That only
+	// spares work, so whatever keeps it from working, from finding the
+	// earlier reconstruction to applying the pack on it, falls back to a
+	// pack of the whole checkout, as a checkout with no earlier
+	// reconstruction gets. A canceled call and a checkout that moved while
+	// it was packed fail as they would without it: the caller reads a
+	// moved checkout again.
 	_, base, haves, err := core.HostGitCheckoutBase(ctx, srv, args.Path, args.StateDigest)
+	if err != nil {
+		if ctx.Err() != nil {
+			return inst, ctx.Err()
+		}
+		slog.WarnContext(ctx, "packing the whole git checkout: its last reconstruction can't be built on", "path", args.Path, "error", err)
+		base, haves = nil, nil
+	}
+	dir, err := reconstructOnLastOrWhole(ctx, args.Path, base, haves, func(base bkcache.ImmutableRef, haves []string) (*core.Directory, error) {
+		return reconstructHostGitDir(ctx, bk, args, base, haves)
+	})
 	if err != nil {
 		return inst, err
 	}
+	if err := core.RecordHostGitCheckout(ctx, args.Path, args.StateDigest); err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
 
+// reconstructOnLastOrWhole reconstructs the checkout at path on base, its
+// last reconstruction, from a pack relative to haves, and when that fails,
+// from a pack of the whole checkout. Without haves it packs the whole
+// checkout once. A canceled call and a checkout that moved while it was
+// packed aren't retried.
+func reconstructOnLastOrWhole(ctx context.Context, path string, base bkcache.ImmutableRef, haves []string, reconstruct func(bkcache.ImmutableRef, []string) (*core.Directory, error)) (*core.Directory, error) {
+	dir, err := reconstruct(base, haves)
+	if err == nil || haves == nil || ctx.Err() != nil || errors.Is(err, engineutil.ErrGitCheckoutStateChanged) {
+		return dir, err
+	}
+	slog.WarnContext(ctx, "packing the whole git checkout: building on its last reconstruction failed", "path", path, "error", err)
+	return reconstruct(nil, nil)
+}
+
+// reconstructHostGitDir packs the client checkout at args.Path, relative to
+// haves when there are any, and reconstructs its canonical .git directory,
+// on base for a relative pack.
+func reconstructHostGitDir(ctx context.Context, bk *engineutil.Client, args hostGitDirArgs, base bkcache.ImmutableRef, haves []string) (*core.Directory, error) {
 	packCtx, packSpan := core.Tracer(ctx).Start(ctx, "pack host git checkout", telemetry.Internal())
 	pack, err := bk.PackGitCheckout(packCtx, args.Path, args.StateDigest, haves)
 	if pack != nil {
@@ -970,7 +1010,7 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 	}
 	packSpan.End()
 	if err != nil {
-		return inst, fmt.Errorf("failed to pack git checkout for %q: %w", args.Path, err)
+		return nil, fmt.Errorf("failed to pack git checkout for %q: %w", args.Path, err)
 	}
 	defer func() { _ = pack.Close() }()
 
@@ -978,12 +1018,9 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 	dir, err := core.MaterializeGitCheckoutPack(reconstructCtx, pack, hostCheckoutOriginURL(reconstructCtx, bk, args.Path), base)
 	reconstructSpan.End()
 	if err != nil {
-		return inst, fmt.Errorf("failed to materialize git checkout pack for %q: %w", args.Path, err)
+		return nil, fmt.Errorf("failed to materialize git checkout pack for %q: %w", args.Path, err)
 	}
-	if err := core.RecordHostGitCheckout(ctx, args.Path, args.StateDigest); err != nil {
-		return inst, err
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	return dir, nil
 }
 
 // hostCheckoutOriginURL resolves the origin remote of the client checkout at
