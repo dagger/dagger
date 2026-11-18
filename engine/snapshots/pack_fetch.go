@@ -351,6 +351,23 @@ func (cm *snapshotManager) writePackMember(ctx context.Context, r io.Reader, m p
 			_ = cm.ContentStore.Abort(context.WithoutCancel(ctx), ref)
 		}
 	}()
+	// The store can hold the member's bytes without a record of it here, as
+	// it holds the engine image's blobs in place. Its writer then starts with
+	// all of them written, and a write would copy them before the new bytes:
+	// the member is only recorded.
+	status, err := writer.Status()
+	if err != nil {
+		return false, err
+	}
+	if status.Offset == m.Size {
+		if _, err := io.CopyN(io.Discard, r, m.Size); err != nil {
+			return false, packReadError(err)
+		}
+		if err := writer.Commit(ctx, m.Size, m.Digest); err != nil && !cerrdefs.IsAlreadyExists(err) {
+			return false, fmt.Errorf("commit pack member %s: %w", m.Digest, err)
+		}
+		return false, nil
+	}
 	source := &packMemberReader{r: r, digester: digest.SHA256.Digester()}
 	if _, err := io.CopyN(writer, source, m.Size); err != nil {
 		if source.err != nil {
