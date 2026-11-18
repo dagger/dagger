@@ -125,6 +125,7 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 		if err := NewUserMod(mod).Install(ctx, srv); err != nil {
 			return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
 		}
+		countModuleServer()
 		return srv, nil
 	}
 	memo, err := q.SchemaBuilderMemo(ctx)
