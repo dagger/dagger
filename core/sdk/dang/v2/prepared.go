@@ -129,6 +129,9 @@ type preparedDangBuild struct {
 	done    chan struct{}
 	program *dang.PreparedDirectory
 	err     error
+	// joined counts the calls that found the compilation kept; guarded by
+	// preparedDangPrograms.mu.
+	joined int
 }
 
 func (p *preparedDangPrograms) get(ctx context.Context, key string, prepare func(context.Context) (*dang.PreparedDirectory, error)) (*dang.PreparedDirectory, error) {
@@ -182,6 +185,7 @@ func (p *preparedDangPrograms) acquire(key string) (*preparedDangBuild, bool) {
 		if build.key == key {
 			copy(p.builds[1:i+1], p.builds[:i])
 			p.builds[0] = build
+			build.joined++
 			return build, false
 		}
 	}
