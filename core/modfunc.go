@@ -1171,8 +1171,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 // A receiver's SDK form depends on the receiver result and the active result
 // scope, not on the function called. Each call on a collection item receives
-// the whole collection, so convert an attached receiver once per session and
-// scope; concurrent calls wait for the first conversion.
+// the whole collection, so a session keeps its recent conversions of attached
+// receivers by result and scope (see convertedReceivers); concurrent calls
+// wait for the first conversion.
 func moduleFunctionReceiverJSON(ctx context.Context, opts *CallOpts) ([]byte, error) {
 	convert := func(ctx context.Context) ([]byte, error) {
 		parentFields, err := moduleFunctionReceiverFields(ctx, opts)
@@ -1210,19 +1211,20 @@ func moduleFunctionReceiverJSON(ctx context.Context, opts *CallOpts) ([]byte, er
 		return nil, err
 	}
 	// The conversion attaches the receiver's inline objects to this session,
-	// so its handles are valid only here.
-	key := fmt.Sprintf("module-receiver-sdk-input:%q:%d:%q", metadata.SessionID, id.EngineResultID(), scopeKey)
-	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, key, func(ctx context.Context) (any, error) {
-		return convert(ctx)
+	// so its handles are valid only here. Arbitrary values are found by key
+	// alone, so the key carries the session.
+	key := fmt.Sprintf("module-receiver-sdk-input:%q", metadata.SessionID)
+	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, key, func(context.Context) (any, error) {
+		return newConvertedReceivers(maxConvertedReceiversWeight), nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	parentJSON, ok := res.Value().([]byte)
+	receivers, ok := res.Value().(*convertedReceivers)
 	if !ok {
-		return nil, fmt.Errorf("invalid converted receiver %T", res.Value())
+		return nil, fmt.Errorf("invalid converted receivers %T", res.Value())
 	}
-	return parentJSON, nil
+	return receivers.get(ctx, convertedReceiverKey{resultID: id.EngineResultID(), scope: scopeKey}, convert)
 }
 
 // Serialize receivers through the same scoped conversion as object arguments.
