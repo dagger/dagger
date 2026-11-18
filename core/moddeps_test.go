@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -153,6 +155,76 @@ func TestSchemaBuilderServerLivesInSessionMemo(t *testing.T) {
 	other, err := deps.Schema(client(NewSchemaBuilderMemo()))
 	require.NoError(t, err)
 	require.NotSame(t, srv, other, "another session builds its own")
+}
+
+// flakyCoreMod is a core module, identified by content, whose first fork
+// fails once it is released.
+type flakyCoreMod struct {
+	Mod
+	base    *dagql.Server
+	forks   atomic.Int32
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (*flakyCoreMod) Name() string              { return ModuleName }
+func (*flakyCoreMod) View() (call.View, bool)   { return "", false }
+func (*flakyCoreMod) SchemaASTCacheKey() string { return "flaky-core" }
+func (m *flakyCoreMod) ForkSchema(ctx context.Context, root *Query, _ call.View) (*dagql.Server, error) {
+	if m.forks.Add(1) == 1 {
+		close(m.entered)
+		<-m.release
+		return nil, errors.New("transient fork failure")
+	}
+	return m.base.Fork(ctx, root)
+}
+
+// Clients of a session share one server for a module set, whatever their
+// roots. A client that waited on another client's build that failed keeps
+// none of that failure: its next load builds the set again.
+func TestSchemaBuilderSharedAcrossRoots(t *testing.T) {
+	session := NewSchemaBuilderMemo()
+	facade := &memoTestServer{mockServer: &mockServer{}, client: NewSchemaBuilderMemo(), session: session}
+	base, err := dagql.NewServer(t.Context(), &Query{})
+	require.NoError(t, err)
+	coreMod := &flakyCoreMod{base: base, entered: make(chan struct{}), release: make(chan struct{})}
+	client := func() (context.Context, *SchemaBuilder) {
+		root := &Query{Server: facade}
+		return ContextWithQuery(t.Context(), root), NewSchemaBuilder(root, []Mod{coreMod}).ClientOwned()
+	}
+	ctxA, servedA := client()
+	ctxB, servedB := client()
+
+	failedA := make(chan error, 1)
+	go func() {
+		_, err := servedA.Schema(ctxA)
+		failedA <- err
+	}()
+	<-coreMod.entered
+	waitedB := make(chan error, 1)
+	go func() {
+		_, err := servedB.Schema(ctxB)
+		waitedB <- err
+	}()
+	time.Sleep(50 * time.Millisecond) // let b wait on a's build
+	close(coreMod.release)
+	require.ErrorContains(t, <-failedA, "transient fork failure")
+	if err := <-waitedB; err != nil {
+		require.ErrorContains(t, err, "transient fork failure", "b got a's failure")
+	}
+
+	srvB, err := servedB.Schema(ctxB)
+	require.NoError(t, err, "a failure b waited on does not stick to b")
+	srvA, err := servedA.Schema(ctxA)
+	require.NoError(t, err, "nor to a")
+	require.Same(t, srvA, srvB, "the clients share the server")
+	require.NotSame(t, ctxA.Value(queryKey{}), srvA.Root().Unwrap(), "it is built on neither client's root")
+	require.NotSame(t, ctxB.Value(queryKey{}), srvA.Root().Unwrap())
+
+	deps, err := NewSchemaBuilder(&Query{Server: facade}, []Mod{coreMod}).Schema(ctxA)
+	require.NoError(t, err)
+	require.Same(t, srvA, deps, "a builder that is not client-owned takes the session's server too")
+	require.Equal(t, int32(2), coreMod.forks.Load(), "built once more after the failure, and only once")
 }
 
 // With no session to hold it, the server is built for the one call.
