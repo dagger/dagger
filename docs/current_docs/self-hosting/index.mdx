@@ -57,15 +57,16 @@ In each CI job, set `DAGGER_ENGINE` to the engine for the checks of that job:
 |---|---|
 | Same Kubernetes node as the CI runner | `unix:///run/dagger/engine.sock` |
 | Kubernetes pod, and the CI runner can use `kubectl` | `kube-pod://POD?namespace=NAMESPACE` |
+| Kubernetes pod that the CLI starts with `kubectl` | `image+kubectl://?namespace=NAMESPACE` |
 | Other host on the network | `tcp://HOST:PORT` |
 | Other host, with client certificates | `tls://HOST:PORT?ca_path=CA&cert_path=CERT&key_path=KEY` |
 | Cloud Engines | `cloud` |
 
-Set `DAGGER_ENGINE` in every CI job. If it is not set, the CLI starts an engine on the CI runner. On an ephemeral runner, the cache of that engine is lost after each job.
+Set `DAGGER_ENGINE` in every CI job. If it is not set, the CLI starts an engine on the CI runner. If the runner has no container runtime, but `kubectl` on the runner can create pods, the CLI starts the engine as a pod in the current namespace instead. On an ephemeral runner, the cache of an engine on the runner is lost after each job.
 
 Install the CLI in the CI job at the same version as the engine.
 
-A `tcp://` address has no authentication. Any system that can connect to the port can run containers on the engine. Make the port available only on a private network that the CI runners use, or [require client certificates](#require-client-certificates). With `kube-pod://`, the Kubernetes permissions of the CI runner control access to the engine.
+A `tcp://` address has no authentication. Any system that can connect to the port can run containers on the engine. Make the port available only on a private network that the CI runners use, or [require client certificates](#require-client-certificates). With `kube-pod://` and `image+kubectl://`, the Kubernetes permissions of the CI runner control access to the engine.
 
 To run a check on Cloud Engines, set `DAGGER_ENGINE=cloud` and `DAGGER_CLOUD_TOKEN`. With this token, the CLI also sends the traces of the job to Dagger Cloud.
 
@@ -184,6 +185,53 @@ DAGGER_ENGINE='kube-pod://checks-dagger-helm-engine-0?namespace=dagger' dagger c
 
 To put more than one engine behind one address, use a TCP load balancer with source IP affinity. A CLI session opens more than one connection to the engine, and all of them must go to the same engine. Without affinity, the session fails. On Kubernetes, give the engines of the group a shared label with the chart's `engine.labels` value. Then create a Service that selects this label and sets `sessionAffinity: ClientIP`. If the CI runners connect through NAT with one source IP, all their jobs go to one engine.
 
+### Start the engine from the CI job
+
+Without the Helm chart, the CLI can start the engine itself. With `image+kubectl://`, the CLI in the CI job uses `kubectl` to run the engine image as a pod, then connects to the pod with `kubectl exec`:
+
+```shell
+DAGGER_ENGINE='image+kubectl://?namespace=dagger&volume=pvc:dagger-cache&requests=cpu=4,memory=16Gi' dagger check
+```
+
+The CLI names the pod `dagger-engine-VERSION`, after the engine version. Later jobs with the same CLI version reuse that pod and its cache. When the CLI version changes, the CLI starts a pod for the new version and deletes the engine pods of other versions in the namespace. To keep them, add `cleanup=false`. To choose the pod name, add `pod=NAME`.
+
+The image defaults to `registry.dagger.io/engine` at the version of the CLI. To pull from a mirror, give the image without a tag, for example `image+kubectl://mirror.example.com/dagger/engine?namespace=dagger`. The CLI adds its version as the tag if it is omitted.
+
+These URL parameters configure the pod:
+
+| Parameter | Value |
+|---|---|
+| `namespace`, `context`, `kubeconfig` | The cluster and namespace. They default to those of the current `kubectl` context |
+| `volume` | The volume for the cache: `emptyDir` (the default), `emptyDir:SIZE_LIMIT`, `pvc:CLAIM`, `hostPath:PATH`, or a JSON Kubernetes `VolumeSource` |
+| `requests`, `limits` | Resources for the engine container, as `NAME=QUANTITY` pairs separated by commas |
+| `env` | An environment variable for the engine, as `KEY=VALUE`. Repeat it for more variables |
+
+An `emptyDir` volume is lost when the pod is deleted. With a `pvc:` or `hostPath:` volume, the cache survives a new pod for the same engine version, for example after a change to `requests`. Each engine version uses its own directory on the volume, so the first job after an upgrade starts with an empty cache. The CLI does not delete the directories of old versions.
+
+The CLI checks that it may list and create pods, and create `pods/exec`, before it starts the engine. The complete set of permissions that the CI runner needs in the namespace is:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dagger-engine
+  namespace: dagger
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, patch, delete]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [configmaps, secrets]
+    verbs: [get, create, patch, delete]
+```
+
+The CLI stores `DAGGER_CLOUD_TOKEN`, if it is set, in a Secret with the name of the pod. It also stores [`engine.json`](#configure-the-engines) in a ConfigMap with that name.
+
+The engine pod runs as a privileged container, so the namespace must allow privileged pods.
+
 ## Deploy with Docker
 
 On a host without Kubernetes, run the engine image with Docker:
@@ -229,5 +277,6 @@ The engine reads [`engine.json`](../reference/config-files/engine-json.mdx) at s
 
 - **Helm chart:** set the `engine.configJson` value
 - **Docker:** mount the file at `/etc/dagger/engine.json`
+- **`image+kubectl://`:** put the file on the CI runner at `$XDG_CONFIG_HOME/dagger/engine.json`, by default `~/.config/dagger/engine.json`. The CLI copies it into a ConfigMap and mounts it in the engine pod
 
 A few settings, such as registry client certificates, are only available in `engine.toml`. See [Settings only in engine.toml](../reference/config-files/engine-json.mdx#settings-only-in-enginetoml).
