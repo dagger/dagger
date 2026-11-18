@@ -158,7 +158,7 @@ func TestModuleServerSharedAcrossClients(t *testing.T) {
 	dotenv.Self().Source.Value.Self().UserDefaults = NewEnvFile(true).WithVariable("UNUSED", "1")
 
 	const clients = 8
-	load := func(mod dagql.ObjectResult[*Module]) (map[*dagql.Server]struct{}, int64) {
+	load := func(mod dagql.ObjectResult[*Module], shared bool) (map[*dagql.Server]struct{}, int64) {
 		t.Helper()
 		before := SchemaBuilds().ModuleServers
 		servers := map[*dagql.Server]struct{}{}
@@ -180,8 +180,10 @@ func TestModuleServerSharedAcrossClients(t *testing.T) {
 				require.NoError(t, err)
 				servers[srv] = struct{}{}
 			}
-			if _, shared := servers[srv]; shared && len(servers) == 1 && i > 0 {
+			if shared {
 				require.NotSame(t, root, srv.Root().Unwrap(), "a shared server is on no client's root")
+			} else {
+				require.Same(t, root, srv.Root().Unwrap(), "a client's own server is on its root")
 			}
 			// The server serves the module to this client.
 			var out dagql.String
@@ -197,11 +199,11 @@ func TestModuleServerSharedAcrossClients(t *testing.T) {
 		return servers, built
 	}
 
-	servers, built := load(mod)
+	servers, built := load(mod, true)
 	require.Len(t, servers, 1, "the session's clients share the module's server")
 	require.Equal(t, int64(1), built)
 
-	servers, built = load(dotenv)
+	servers, built = load(dotenv, false)
 	require.Len(t, servers, clients, "a module with .env defaults keeps a server per client")
 	require.Equal(t, int64(clients), built)
 }
