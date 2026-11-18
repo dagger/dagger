@@ -60,8 +60,9 @@ func remountedDangDir(t testing.TB) string {
 // prepareRemounted prepares the same module, by the same source and schema
 // identity, at dir, the way runPreparedDangDir does.
 func prepareRemounted(ctx context.Context, dir string) (*dang.PreparedDirectory, error) {
-	key := preparedDangKey("schema-test", "source", "schema", "Counter", "Counter", dir)
-	return cachedPreparedDangDir(ctx, key, func(ctx context.Context) (*dang.PreparedDirectory, error) {
+	modKey := preparedDangKey("schema-test", "Counter", "Counter")
+	key := preparedDangKey("source", "schema", dir)
+	return cachedPreparedDangDir(ctx, modKey, key, func(ctx context.Context) (*dang.PreparedDirectory, error) {
 		return dang.PrepareDir(ctx, dir)
 	})
 }
@@ -86,10 +87,12 @@ func TestPreparedDangRemountRetention(t *testing.T) {
 	require.NoError(t, err)
 	baseEntries := cache.EntryStats().CompletedArbitrary
 
-	const remounts = 8
+	const remounts = 16
+	var dirs []string
 	before := liveHeap()
 	for range remounts {
 		dir := remountedDangDir(t)
+		dirs = append(dirs, dir)
 		program, err := prepareRemounted(ctx, dir)
 		require.NoError(t, err)
 		_, err = program.Evaluate(ctx)
@@ -97,6 +100,16 @@ func TestPreparedDangRemountRetention(t *testing.T) {
 	}
 	retained := int64(liveHeap()) - int64(before)
 	entries := cache.EntryStats().CompletedArbitrary - baseEntries
-	t.Logf("%d remounts of one unchanged module: %d prepared entries, %.1f MiB retained (%.1f MiB per remount)",
-		remounts, entries, float64(retained)/(1<<20), float64(retained)/(1<<20)/remounts)
+	kept := keptPreparedDangPrograms(t, ctx, preparedDangKey("schema-test", "Counter", "Counter"))
+	t.Logf("%d remounts of one unchanged module: %d prepared entries holding %d programs, %.2f MiB retained",
+		remounts, entries, kept, float64(retained)/(1<<20))
+	require.Equal(t, 1, entries, "the session keeps one entry per module")
+	require.Equal(t, maxPreparedDangPrograms, kept, "only the most recent mounts' programs are kept")
+
+	// The current mount's program is reused.
+	program, err := prepareRemounted(ctx, dirs[remounts-1])
+	require.NoError(t, err)
+	again, err := prepareRemounted(ctx, dirs[remounts-1])
+	require.NoError(t, err)
+	require.Same(t, program, again)
 }
