@@ -181,9 +181,10 @@ type SchemaBuilderMemo struct {
 	canonicalArgTypes *lru.Cache[string, *canonicalArgType]
 	modTypes          *lru.Cache[modTypeMemoKey, *modTypeMemoEntry]
 	gitClients        *lru.Cache[declaredGitClientsKey, *declaredGitClientsEntry]
-	// moduleServers holds the client's standalone server for each module
-	// whose artifacts it discovers, evaluates or checks
-	// (dagqlServerForModule).
+	// moduleServers holds the standalone server for each module whose
+	// artifacts a client discovers, evaluates or checks
+	// (dagqlServerForModule): in a session memo, shared by its clients; in
+	// a client memo, a module's that is not shared.
 	moduleServers *lru.Cache[string, *moduleServerEntry]
 	// builtModuleSets holds what this session built a schema server for, by
 	// module set, and builtServers how many it holds (countSchemaBuild). It
@@ -344,23 +345,52 @@ func (b *SchemaBuilder) memoKey() (string, bool) {
 // the building client, does that. A set with such defaults, or with a
 // module the memo can't vouch for, is never shared (clientIndependentSchema).
 func (m *SchemaBuilderMemo) sharedBuilder(b *SchemaBuilder) *SchemaBuilder {
-	if m == nil || b == nil || b.root == nil || !clientIndependentSchema(b.entries) {
-		return nil
-	}
-	facade := b.root.Server
-	if facade == nil || reflect.ValueOf(facade).Kind() != reflect.Pointer {
-		return nil
-	}
-	entries, ok := schemaEntriesKey(b.entries, true)
+	key, facade, ok := m.sharedKey(b)
 	if !ok {
 		return nil
 	}
-	key := fmt.Sprintf("s%p;%s", facade, entries)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if cached, ok := m.builders.Get(key); ok && !cached.loadSchemaFailed.Load() {
 		return cached
 	}
+	shared := &SchemaBuilder{
+		root:        m.neutralRootLocked(facade),
+		entries:     slices.Clone(b.entries),
+		clientOwned: true,
+		shared:      true,
+	}
+	m.builders.Add(key, shared)
+	return shared
+}
+
+// sharedKey identifies b's module set for every client of the memo, by the
+// engine Server facade of b's root and the set, or reports false when the
+// set's schema may depend on its client (see sharedBuilder).
+func (m *SchemaBuilderMemo) sharedKey(b *SchemaBuilder) (string, Server, bool) {
+	if m == nil || b == nil || b.root == nil || !clientIndependentSchema(b.entries) {
+		return "", nil, false
+	}
+	facade := b.root.Server
+	if facade == nil || reflect.ValueOf(facade).Kind() != reflect.Pointer {
+		return "", nil, false
+	}
+	entries, ok := schemaEntriesKey(b.entries, true)
+	if !ok {
+		return "", nil, false
+	}
+	return fmt.Sprintf("s%p;%s", facade, entries), facade, true
+}
+
+// neutralRoot returns the root the memo's shared servers build on for the
+// given engine Server facade.
+func (m *SchemaBuilderMemo) neutralRoot(facade Server) *Query {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.neutralRootLocked(facade)
+}
+
+func (m *SchemaBuilderMemo) neutralRootLocked(facade Server) *Query {
 	root, ok := m.neutralRoots[facade]
 	if !ok {
 		if m.neutralRoots == nil {
@@ -369,14 +399,7 @@ func (m *SchemaBuilderMemo) sharedBuilder(b *SchemaBuilder) *SchemaBuilder {
 		root = newSharedRoot(facade)
 		m.neutralRoots[facade] = root
 	}
-	shared := &SchemaBuilder{
-		root:        root,
-		entries:     slices.Clone(b.entries),
-		clientOwned: true,
-		shared:      true,
-	}
-	m.builders.Add(key, shared)
-	return shared
+	return root
 }
 
 // clientIndependentSchema reports whether installing entries builds the same

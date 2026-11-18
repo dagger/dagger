@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	goruntime "runtime"
 	"sync"
 	"testing"
 
@@ -101,6 +102,108 @@ func (r *clientStateRuntime) Call(ctx context.Context, _ *engineutil.ExecutionMe
 		return err
 	}
 	return fnCall.ReturnValue(ctx, JSON(payload))
+}
+
+// perClientDepsServer serves each client the core module on the client's
+// own root, as the engine's DefaultDeps does, and gives each client a memo
+// of its own, as the engine's SchemaBuilderMemo does.
+type perClientDepsServer struct {
+	*moduleObjectTestServer
+	core Mod
+
+	mu    sync.Mutex
+	memos map[*Query]*SchemaBuilderMemo
+}
+
+func (s *perClientDepsServer) DefaultDeps(ctx context.Context) (*SchemaBuilder, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return NewSchemaBuilder(q, []Mod{s.core}), nil
+}
+
+func (s *perClientDepsServer) SchemaBuilderMemo(ctx context.Context) (*SchemaBuilderMemo, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	memo, ok := s.memos[q]
+	if !ok {
+		memo = NewSchemaBuilderMemo()
+		s.memos[q] = memo
+	}
+	return memo, nil
+}
+
+// Artifact discovery, evaluation and checks select through a standalone
+// server for the module (dagqlServerForModule). The clients of a session
+// share one for a module, unless its .env defaults make its schema the
+// building client's.
+func TestModuleServerSharedAcrossClients(t *testing.T) {
+	f := newModuleOwnershipTest(t)
+	inner, ok := f.root.Server.(*moduleObjectTestServer)
+	require.True(t, ok)
+	inner.session = NewSchemaBuilderMemo()
+	facade := &perClientDepsServer{
+		moduleObjectTestServer: inner,
+		core:                   &sharedTestCoreMod{base: f.dag},
+		memos:                  map[*Query]*SchemaBuilderMemo{},
+	}
+	setupCtx := f.session("module-server-session")
+	mod := f.module(setupCtx, "example", moduleOwnershipModuleOpts{})
+	dotenv := f.module(setupCtx, "dotenv", moduleOwnershipModuleOpts{})
+	dotenv.Self().Source.Value.Self().UserDefaults = NewEnvFile(true).WithVariable("UNUSED", "1")
+
+	const clients = 8
+	load := func(mod dagql.ObjectResult[*Module]) (map[*dagql.Server]struct{}, int64) {
+		t.Helper()
+		before := SchemaBuilds().ModuleServers
+		servers := map[*dagql.Server]struct{}{}
+		var mem goruntime.MemStats
+		var allocated uint64
+		for i := range clients {
+			id := fmt.Sprintf("%s-client-%d", mod.Self().Name(), i)
+			root := NewRoot(facade)
+			ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{ClientID: id, SessionID: "module-server-session"})
+			ctx = ContextWithQuery(dagql.ContextWithCache(ctx, f.cache), root)
+			var srv *dagql.Server
+			for range 2 {
+				var err error
+				goruntime.ReadMemStats(&mem)
+				allocBefore := mem.TotalAlloc
+				srv, err = dagqlServerForModule(ctx, mod)
+				goruntime.ReadMemStats(&mem)
+				allocated += mem.TotalAlloc - allocBefore
+				require.NoError(t, err)
+				servers[srv] = struct{}{}
+			}
+			if _, shared := servers[srv]; shared && len(servers) == 1 && i > 0 {
+				require.NotSame(t, root, srv.Root().Unwrap(), "a shared server is on no client's root")
+			}
+			// The server serves the module to this client.
+			var out dagql.String
+			require.NoError(t, srv.Select(ctx, srv.Root(), &out,
+				dagql.Selector{Field: mod.Self().Name()},
+				dagql.Selector{Field: "check", Args: []dagql.NamedInput{{Name: "label", Value: dagql.NewString(id)}}},
+			))
+			require.Equal(t, id, out.String())
+		}
+		built := SchemaBuilds().ModuleServers - before
+		t.Logf("%-8s %d clients, 2 loads each -> %d module servers built, %.1f KiB allocated per load",
+			mod.Self().Name(), clients, built, float64(allocated)/float64(2*clients)/(1<<10))
+		return servers, built
+	}
+
+	servers, built := load(mod)
+	require.Len(t, servers, 1, "the session's clients share the module's server")
+	require.Equal(t, int64(1), built)
+
+	servers, built = load(dotenv)
+	require.Len(t, servers, clients, "a module with .env defaults keeps a server per client")
+	require.Equal(t, int64(clients), built)
 }
 
 // The session shares one server for a module set among its clients, built on
