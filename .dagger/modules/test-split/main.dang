@@ -183,9 +183,19 @@ type TestSplit {
   }
 
   """
-  Package tests outside core/integration, with the engine fixtures preserved
+  Package tests outside core/integration, with the engine fixtures preserved,
+  and internal/fastbolt's package tests, in a module of its own. The two run
+  at once.
   """
   pub testPackages: Void @check {
+    let ran = {{
+      packages: packageTests,
+      fastbolt: testFastbolt,
+    }}
+    null
+  }
+
+  let packageTests: Void {
     testSkip(
       # Preserve the old base exclusions: telemetry and CLI package suites
       # already have dedicated checks, while similarly named tests still run.
@@ -233,9 +243,9 @@ type TestSplit {
   internal/fastbolt, the engine's in-memory replacement for bbolt: its own
   tests with the race detector, a save to a full filesystem, a differential
   test against the real bbolt, and containerd's metadata and snapshot storage
-  tests run on it
+  tests run on it. testPackages runs it.
   """
-  pub testFastbolt: Void @check {
+  pub testFastbolt: Void {
     engineDev(ws: self.ws).goEnv(cgo: true)
       .withDirectory("hack/fastbolt-difftest", self.ws.directory("hack/fastbolt-difftest"))
       .withMountedTemp("/small", size: 1048576)
