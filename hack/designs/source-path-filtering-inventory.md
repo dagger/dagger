@@ -11,7 +11,7 @@ Suppose the root contains `README.md` and a module with only the older `tools/li
 1. The engine looks for a module manifest in `tools/lint`. The engine tests `dagger-module.toml` first, then finds `dagger.json`. Editing `dagger.json` or adding `dagger-module.toml` can affect the answer.
 2. If the engine finds a manifest, it reads it. It prepares the configured source directory and loads declared dependencies. An entrypoint can request other files. These steps have their own inputs.
 3. The result holds a directory. The next call, `sourceSubpath`, returns a string already on the result. Another caller could ask for `directory(".")` and take files from that directory.
-4. For a directory-backed workspace, the tracker records `/` as soon as `moduleSource` starts this branch. This makes a root README change match even if none of the steps above uses that file.
+4. The directory-backed loader records each manifest name it tests. For a root copy with literal includes, the tracker can record those includes and `**/.gitignore`. On this fixture, a change to the root README file matches neither rule.
 
 Holding a reference and using it have different effects. The review question is whether **any step in this call chain can depend on this path**. A manifest, a declared dependency, a directory filter, or an unrun check with access to the whole workspace can each supply a real reason to select the check.
 
@@ -21,7 +21,7 @@ The table covers all 81 field names in the native `Workspace` classifier, includ
 
 | Calls | Required effect | Current rule |
 |---|---|---|
-| `file`, `directory` | Resolve the path against the workspace working directory. Track the file or the directory region. Keep include and exclude patterns, even for an empty result. Changes to ignore rules, symbolic links, or mounted inputs can affect the result. | Records the path and directory filters. With `gitignore: true`, records all paths. For non-root paths, an unverified link or mount mapping keeps the check selected. |
+| `file`, `directory` | Resolve the path against the workspace working directory. Track the file or the directory region. Keep include and exclude patterns, even for an empty result. Changes to ignore rules, symbolic links, or mounted inputs can affect the result. | Records the path and directory filters. With `gitignore: true`, an unmounted directory snapshot can keep literal root includes and `**/.gitignore` after the tracker checks for symbolic links. Other cases keep all paths. A literal subtree query can still match a possible ignore file below it. For non-root paths, an unverified link or mount mapping keeps the check selected. |
 | `glob` | Track the pattern from the workspace root. A new matching file counts. | Records a root selector with the pattern as an include. Check that mount origins are covered when a mount supplies a match. |
 | `findUp` | Track the candidate at the start directory and at each ancestor through the workspace root. Include missing candidates. | Uses that bound for a literal name other than `.`. The special name `.` selects all paths. Invalid names can produce an issue. Check the candidate mapping when a mount supplies the result. |
 | `search`, `findRoots` | Track the search area, including possible new matches. | Records all paths. |
@@ -46,10 +46,10 @@ For example, `a.changes(from: b)` compares two workspaces. The tracker must keep
 
 | Step | Required effect | Current rule |
 |---|---|---|
-| Choose the backing source | Keep the identity of the workspace being inspected. | A local workspace and a Git workspace with a repository URL use the workspace loader. Other sources take the directory branch. Only the latter branch explicitly records a root read here. |
-| Locate the manifest | Track every candidate tested in the module directory, including a missing higher-priority candidate. | In the directory branch, `Directory.asModuleSource` uses `moduleConfigInDir` to test names directly on the directory. Removing the root record alone would leave these probes to account for. |
+| Choose the backing source | Keep the identity of the workspace being inspected. | A local workspace and a Git workspace with a repository URL use the workspace loader. Other sources take the directory branch. The directory branch records the names it tests on the original directory. |
+| Locate the manifest | Track every candidate tested in the module directory, including a missing higher-priority candidate. | In the directory branch, `Directory.asModuleSource` uses `moduleConfigInDir` to test names directly on the directory. It records each candidate before the test. An uncertain symbolic link or mount keeps a root selector. |
 | Load a configured module | Include the selected manifest, configured sources, and any other inputs used to load dependencies, check ignore rules, evaluate entrypoint sources, or load defaults. | `loadConfiguredModuleSource` does this work before returning. Workspace-bound file and directory loads can already produce narrower selectors. |
-| Return a source when the manifest is missing | Preserve the lookup and the origin of the context made available for later use. | In the directory branch, `allowNotExists: true` can return the original root directory as the context. A later consumer of the full context can depend on all paths. |
+| Return a source when the manifest is missing | Preserve the lookup and the origin of the context made available for later use. | In the directory branch, `allowNotExists: true` can return the original root directory as the context. The tracker records all paths for the missing-manifest branch. A later consumer of the full context can depend on all paths. |
 | Use the result | Account for what the caller does with it. | `ModuleSource.sourceSubpath` returns a stored string. `ModuleSource.directory` selects from the context. `ModuleSource.digest` computes the implementation digest. These calls inherit the producer's recorded inputs, including any root selector. |
 
 A change to this rule needs two independent checks on the same fixture. With a module confined to `tools/lint`, a root README edit must leave its check out. A change to a manifest candidate or a source that the module actually uses must select it. Also exercise the missing-manifest case with a consumer that requests the full context.

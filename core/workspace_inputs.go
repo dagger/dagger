@@ -1152,7 +1152,11 @@ func (c *workspaceInputCollector) sourceCall(req *dagql.CallRequest) {
 			gitignore = arg.Value.BoolValue
 		}
 		if gitignore {
-			selector = provenance.Selector{Path: "/", Kind: provenance.WorkspaceRead, Conservative: true, Origin: "Workspace.directory"}
+			if bounded, ok := c.boundDirectoryIgnoreRead(ws, selector); ok {
+				selector = bounded
+			} else {
+				selector = provenance.Selector{Path: "/", Kind: provenance.WorkspaceRead, Conservative: true, Origin: "Workspace.directory"}
+			}
 		}
 	}
 	if selector.Path != "/" {

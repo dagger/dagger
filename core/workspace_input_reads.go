@@ -374,6 +374,13 @@ func RecordWorkspaceRead(ctx context.Context, workspace dagql.ObjectResult[*Work
 		collector.issue("Workspace read has no attached source producer")
 	} else {
 		collector.sourceProducer = &dagql.ResultCallRef{ResultID: id.EngineResultID()}
+		if selector.Path != "/" && collector.unaliasedSourcePath(workspace.Self(), selector.Path) != nil {
+			// The spelling alone cannot account for a symlink target or mount.
+			selector.Path = "/"
+			selector.Include = nil
+			selector.Exclude = nil
+			selector.Conservative = true
+		}
 		collector.source(workspace.Self(), selector)
 	}
 	reads.add(collector.result)
