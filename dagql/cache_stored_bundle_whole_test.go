@@ -59,3 +59,26 @@ func TestStoredBundleCarriesOnlyWholeHeldRows(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, storedBundleTestJSON(t, without.Bundle), storedBundleTestJSON(t, got.Bundle), "as without Whole")
 }
+
+// With Whole, a holding's dependency on an entry its cache has no holding
+// of yet, but that the recipient holds by a file it merged (HeldBy.ByFile),
+// leaves the holding's closure whole: the held row stays held. A dependency
+// ByFile doesn't name still makes it not whole.
+func TestStoredBundleHeldWholeCountsADependencyHeldByFile(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	now := time.Now().Unix()
+	heldTestHoldOver(t, cloud, "cache-d", 7, p, []uint64{99})
+	heldTestHoldOver(t, cloud, "cache-e", 7, p, []uint64{99, 98})
+	byFile := func(number uint64) bool { return number == 99 }
+
+	got, err := cloud.StoredBundle(ctx, []uint64{r}, now, &HeldBy{Cache: "cache-d", Whole: true, ByFile: byFile})
+	require.NoError(t, err)
+	require.Equal(t, []uint64{p}, got.Held, "P's dependency is held by file: P is held whole")
+	require.Empty(t, got.NotWhole)
+
+	got, err = cloud.StoredBundle(ctx, []uint64{r}, now, &HeldBy{Cache: "cache-e", Whole: true, ByFile: byFile})
+	require.NoError(t, err)
+	require.Empty(t, got.Held, "98 is held neither by a holding nor by file")
+	require.Equal(t, []uint64{p}, got.NotWhole)
+}
