@@ -26,6 +26,25 @@ func TestContentHashFilesStartEmpty(t *testing.T) {
 	require.Empty(t, entries)
 }
 
+// A tree that can't be written at load is left out, as one that can't be
+// read at a checkpoint is, rather than failing the load and with it the
+// whole persisted cache.
+func TestContentHashFilesLoadSkipsUnwritableTrees(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "contenthash")
+	s := newMetadataStore()
+	files, err := newContentHashFiles(dir)
+	require.NoError(t, err)
+	s.hashFiles = files
+	cm := &snapshotManager{metadataStore: s, records: map[string]*cacheRecord{}}
+	require.NoError(t, os.RemoveAll(dir))
+	require.NoError(t, os.WriteFile(dir, nil, 0o600))
+
+	require.NoError(t, cm.LoadPersistentMetadata(PersistentMetadataRows{
+		ContentHashes: []SnapshotContentHashRow{{SnapshotID: "a", Data: []byte("tree a")}},
+	}))
+	require.Empty(t, files.list())
+}
+
 // A tree saved after its metadata was dropped, as a background save can be,
 // is discarded rather than left on disk with nothing to remove it.
 func TestContentHashFilesDiscardWritesForDroppedMetadata(t *testing.T) {

@@ -171,11 +171,12 @@ func (s *metadataStore) clear(id string) {
 }
 
 // CollectedSnapshotForgetter is a snapshot manager that keeps metadata for
-// snapshots in memory, and can drop it once the snapshots are gone.
+// snapshots, and can drop it once the snapshots are gone.
 type CollectedSnapshotForgetter interface {
-	// ForgetCollectedSnapshots drops the in-memory metadata, content-hash
-	// trees included, of the snapshots the snapshotter no longer has. Run it
-	// after garbage collection.
+	// ForgetCollectedSnapshots drops the metadata of the snapshots the
+	// snapshotter no longer has: what is kept in memory, and their
+	// content-hash trees, in memory or on disk. Run it after garbage
+	// collection.
 	ForgetCollectedSnapshots(ctx context.Context) error
 }
 
@@ -184,9 +185,10 @@ type CollectedSnapshotForgetter interface {
 // loaded hash records, their recorded blobs, and the imported layers that
 // name them. Nothing else tells the manager a snapshot is gone: only a later
 // Get of it notices, and most collected snapshots are never asked for again,
-// so without this their metadata, and the serialized content-hash tree each
-// hashed snapshot keeps there, would stay in memory for the life of the
-// engine, and the blob rows in every checkpoint.
+// so without this their metadata would stay in memory, and the serialized
+// content-hash tree each hashed snapshot keeps in memory or on disk would
+// stay there, for the life of the engine, and the blob rows in every
+// checkpoint.
 //
 // Every snapshot ID is a fresh random ID, or that of a snapshot that exists
 // when its metadata is made, and every snapshot is made before its metadata
@@ -469,6 +471,10 @@ func (md *cacheMetadata) GetCreatedAt() time.Time {
 	return md.getTime(keyCreatedAt)
 }
 
+// ErrExternalNotFound is GetExternal's error for a key with no value. Any
+// other error is a failure to read the value.
+var ErrExternalNotFound = errors.New("not found")
+
 func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 	if md.store.contentHashOnDisk(s) {
 		dt, ok, err := md.store.hashFiles.read(md.id, func() bool { return md.contentHashGone })
@@ -476,7 +482,7 @@ func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 			return nil, err
 		}
 		if !ok {
-			return nil, errors.New("not found")
+			return nil, ErrExternalNotFound
 		}
 		return dt, nil
 	}
@@ -484,7 +490,7 @@ func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 	defer md.store.mu.RUnlock()
 	dt, ok := md.external[s]
 	if !ok {
-		return nil, errors.New("not found")
+		return nil, ErrExternalNotFound
 	}
 	cpy := make([]byte, len(dt))
 	copy(cpy, dt)

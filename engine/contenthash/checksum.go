@@ -251,7 +251,13 @@ func newCacheContext(md cache.RefMetadata) (*cacheContext, error) {
 func (cc *cacheContext) load() error {
 	dt, err := cc.md.GetContentHash()
 	if err != nil {
-		return nil //nolint:nilerr // TODO: ??? this is how it was upstream?
+		if errors.Is(err, cache.ErrExternalNotFound) {
+			// Not hashed yet.
+			return nil
+		}
+		// A tree that can't be read is not the same as no tree: a rescan
+		// of an imported snapshot gives other digests.
+		return errors.Wrap(err, "load content hash records")
 	}
 
 	var l CacheRecords
