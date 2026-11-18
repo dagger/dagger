@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -102,6 +104,35 @@ func TestImportChainFromPack(t *testing.T) {
 	require.EqualValues(t, 1, provider.opens.Load(), "the pack is read once for both layers")
 	testutil.CheckFile(t, ref, "a.txt", "lower")
 	testutil.CheckFile(t, ref, "b.txt", "upper")
+}
+
+// A pack can hold a blob that the engine's image already holds in place,
+// such as a base layer the image's entries made. The store answers for that
+// blob before the engine has recorded it, so the import records it as it is
+// and reads past its bytes in the pack, and the chain imports whole.
+func TestImportChainFromPackHoldingAnImageBlob(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	producer := testutil.NewStore(t)
+	a, _ := producer.Build(t, nil, "a.txt", "lower, in the image")
+	ab, _ := producer.Build(t, a, "b.txt", "upper")
+	chain := exportChain(t, ab)
+	lower := chain.Layers[0].Descriptor
+	blob, err := content.ReadBlob(ctx, chain.Provider, lower)
+	require.NoError(t, err)
+	image := t.TempDir()
+	name := filepath.Join(image, "blobs", lower.Digest.Algorithm().String(), lower.Digest.Encoded())
+	require.NoError(t, os.MkdirAll(filepath.Dir(name), 0o755))
+	require.NoError(t, os.WriteFile(name, blob, 0o444))
+
+	consumer := testutil.NewStoreWithImageBlobs(t, image)
+	provider := newPackProvider(t, chain.Provider, lower, chain.Layers[1].Descriptor)
+	ref := importChain(t, consumer, supplied(chain, provider))
+	testutil.CheckFile(t, ref, "a.txt", "lower, in the image")
+	testutil.CheckFile(t, ref, "b.txt", "upper")
+	info, err := consumer.Content.Info(ctx, lower.Digest)
+	require.NoError(t, err, "the image's blob is recorded")
+	require.Equal(t, lower.Size, info.Size)
 }
 
 // A download of a packed blob that a sibling's read already stored, as one
