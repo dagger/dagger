@@ -160,34 +160,22 @@ func findSpanPageIn(ctx context.Context, read *clientdb.DB, search spanSearch, e
 	default:
 		return "", fmt.Errorf("invalid match %q: want %s or %s", search.Match, spanMatchName, spanMatchPath)
 	}
-	primary := read
-	db := dagui.NewDB()
-	searched := 0
-	eligible := map[string]bool{}
-	for _, read := range append([]*clientdb.DB{read}, extra...) {
-		var seed map[string]struct{}
-		if search.Root != "" {
-			if !read.HasSpan(search.Root) {
-				return "", fmt.Errorf("no span %q in this trace", search.Root)
-			}
-			seed = read.SpanLogScope(search.Root)
-		} else {
-			seed = read.SpanIDs()
-		}
-		searched += len(seed)
-		for id := range seed {
-			eligible[id] = true
-		}
-		if len(seed) > 0 {
-			if err := ingestInspectionSpanScope(ctx, primary, read, db, read.AncestorClosure(seed)); err != nil {
-				return "", err
-			}
-		}
-		if err := ingestAgentControl(ctx, read, db); err != nil {
-			return "", err
-		}
+	// Filter in the store first; see trace_search.go.
+	scan, err := scanSpanSearch(ctx, search, append([]*clientdb.DB{read}, extra...))
+	if err != nil {
+		return "", err
 	}
-	listing, hidden := renderSpanSearch(db, eligible, search)
+	searched := scan.searched
+	var listing string
+	var hidden int
+	if search.Status == "" {
+		listing, hidden, err = scan.renderPage(ctx)
+	} else {
+		listing, hidden, err = scan.renderLoaded(ctx)
+	}
+	if err != nil {
+		return "", err
+	}
 	if listing == "" {
 		var empty string
 		if search.Status != "" {
@@ -316,7 +304,7 @@ func spanNameMatches(sp *dagui.Span, tests *dagui.TestView, query string) bool {
 // renderSpanSearch lists the matching spans; hidden counts the matches left
 // out as the caller's own.
 func renderSpanSearch(db *dagui.DB, eligible map[string]bool, search spanSearch) (string, int) {
-	query, status, limit, offset := search.Query, search.Status, search.Limit, search.Offset
+	query, status := search.Query, search.Status
 	tests := db.TestView()
 	var matches []*dagui.Span
 	hidden := 0
@@ -352,11 +340,19 @@ func renderSpanSearch(db *dagui.DB, eligible map[string]bool, search spanSearch)
 		}
 		return strings.Compare(a.ID.String(), b.ID.String())
 	})
+	return renderSpanMatches(db, tests, matches, search), hidden
+}
+
+// renderSpanMatches renders the page of matches -- every match, in order --
+// that search asks for. Only the matches on the page are read: the others
+// may be nil.
+func renderSpanMatches(db *dagui.DB, tests *dagui.TestView, matches []*dagui.Span, search spanSearch) string {
+	status, limit, offset := search.Status, search.Limit, search.Offset
 	if len(matches) == 0 {
-		return "", hidden
+		return ""
 	}
 	if offset >= len(matches) {
-		return fmt.Sprintf("offset %d skips all %d matching spans; retry offset 0", offset, len(matches)), hidden
+		return fmt.Sprintf("offset %d skips all %d matching spans; retry offset 0", offset, len(matches))
 	}
 	end := len(matches) - offset
 	start := 0
@@ -394,7 +390,7 @@ func renderSpanSearch(db *dagui.DB, eligible map[string]bool, search spanSearch)
 		fmt.Fprintf(&out, "... %d earlier matching spans omitted; next: %s ...\n", start, next.call())
 	}
 	out.WriteString(strings.Join(rows, ""))
-	return out.String(), hidden
+	return out.String()
 }
 
 // call spells the FindSpans call that repeats this search, naming the
