@@ -206,8 +206,10 @@ func TestReceivedValuesKeepRecentlyUsed(t *testing.T) {
 
 	obj := func(name string) []byte { return []byte(`{"name":"` + name + `"}`) }
 	a, b, c := obj("a"), obj("b"), obj("c")
+	decodedA, err := decodeReceivedJSON(a)
+	require.NoError(t, err)
 	// Room for two of them.
-	values := newReceivedValues(2 * len(a))
+	values := newReceivedValues(2*receivedSize(decodedA) + 1)
 	decode := func(data []byte) *receivedObject {
 		val, err := values.decode(t.Context(), data)
 		require.NoError(t, err)
@@ -223,11 +225,14 @@ func TestReceivedValuesKeepRecentlyUsed(t *testing.T) {
 	require.NotSame(t, firstB, againB, "the least recently used value was dropped")
 	require.Equal(t, firstB.fields, againB.fields)
 
-	big := []byte(`{"name":"` + strings.Repeat("x", 4*len(a)) + `"}`)
-	val, err := values.decode(t.Context(), big)
-	require.NoError(t, err)
-	require.Equal(t, receivedJSON(t, big), plainReceived(val), "JSON beyond the bound is decoded, not kept")
-	require.Same(t, first, decode(a), "JSON beyond the bound drops nothing")
+	big := []byte(`{"name":"` + strings.Repeat("x", values.maxWeight) + `"}`)
+	bigVal := decode(big)
+	require.Equal(t, receivedJSON(t, big), plainReceived(bigVal))
+	require.Same(t, bigVal, decode(big), "the most recent value beyond the bound is kept apart")
+	require.Same(t, first, decode(a), "a value beyond the bound drops nothing")
+	bigger := []byte(`{"name":"` + strings.Repeat("y", values.maxWeight) + `"}`)
+	decode(bigger)
+	require.NotSame(t, bigVal, decode(big), "only the most recent value beyond the bound is kept")
 
 	_, err = values.decode(t.Context(), []byte(`{"name":`))
 	require.Error(t, err)
@@ -235,9 +240,13 @@ func TestReceivedValuesKeepRecentlyUsed(t *testing.T) {
 	defer values.mu.Unlock()
 	require.LessOrEqual(t, values.weight, values.maxWeight)
 	require.Len(t, values.entries, values.lru.Len())
+	weight := 0
 	for _, elem := range values.entries {
-		require.NoError(t, elem.Value.(*receivedEntry).err, "failures are not kept")
+		entry := elem.Value.(*receivedEntry)
+		require.NoError(t, entry.err, "failures are not kept")
+		weight += entry.weight
 	}
+	require.Equal(t, values.weight, weight)
 }
 
 func TestReceivedValuesConcurrentAndReleased(t *testing.T) {
