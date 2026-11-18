@@ -208,8 +208,11 @@ const (
 	maxMemoizedGitClients = 1024
 	// maxMemoizedWorkspaces bounds the modules loaded per value workspace:
 	// each keeps every Module result the workspace installs, and an agent's
-	// workspace is a new value at every edit.
-	maxMemoizedWorkspaces = 16
+	// workspace is a new value at every edit. Every agent of a session asks
+	// for its own workspace's modules at each step, so the bound sits well
+	// above the agents a session runs at once (a staff of dozens): fewer
+	// would reload, and rebuild the failing modules of, every agent in turn.
+	maxMemoizedWorkspaces = 256
 )
 
 func NewSchemaBuilderMemo() *SchemaBuilderMemo {
