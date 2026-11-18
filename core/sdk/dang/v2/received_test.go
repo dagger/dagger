@@ -228,11 +228,19 @@ func TestReceivedValuesKeepRecentlyUsed(t *testing.T) {
 	big := []byte(`{"name":"` + strings.Repeat("x", values.maxWeight) + `"}`)
 	bigVal := decode(big)
 	require.Equal(t, receivedJSON(t, big), plainReceived(bigVal))
-	require.Same(t, bigVal, decode(big), "the most recent value beyond the bound is kept apart")
+	require.Same(t, bigVal, decode(big), "a value beyond the bound is kept apart")
 	require.Same(t, first, decode(a), "a value beyond the bound drops nothing")
 	bigger := []byte(`{"name":"` + strings.Repeat("y", values.maxWeight) + `"}`)
-	decode(bigger)
-	require.NotSame(t, bigVal, decode(big), "only the most recent value beyond the bound is kept")
+	biggerVal := decode(bigger)
+	for range 3 {
+		require.Same(t, bigVal, decode(big), "values beyond the bound used in turn are kept")
+		require.Same(t, biggerVal, decode(bigger))
+	}
+	for i := range maxLargeReceivedValues - 1 {
+		decode([]byte(`{"name":"` + strings.Repeat(fmt.Sprint(i), values.maxWeight) + `"}`))
+	}
+	require.Same(t, biggerVal, decode(bigger))
+	require.NotSame(t, bigVal, decode(big), "only the most recently used values beyond the bound are kept")
 
 	_, err = values.decode(t.Context(), []byte(`{"name":`))
 	require.Error(t, err)
