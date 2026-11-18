@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
+	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -158,7 +159,8 @@ func TestForgetCollectedSnapshotsKeepsNewSnapshots(t *testing.T) {
 }
 
 // Hash records loaded at startup for snapshots nobody opened are dropped once
-// their snapshots are collected, too.
+// their snapshots are collected, too, and so are the blobs and imported
+// layers recorded for them.
 func TestContentHashPendingRecordsForgottenWhenCollected(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewStore(t)
@@ -168,7 +170,24 @@ func TestContentHashPendingRecordsForgottenWhenCollected(t *testing.T) {
 	require.NoError(t, kept.Release(ctx))
 	require.NoError(t, dropped.Release(ctx))
 
+	rows := store.Manager.PersistentMetadataRows()
+	require.Len(t, rows.ContentHashes, 2)
+	snapshotRows := func(id string) bkcache.PersistentMetadataRows {
+		blob := digest.FromString("blob of " + id)
+		diff := digest.FromString("diff of " + id)
+		return bkcache.PersistentMetadataRows{
+			SnapshotContent: []bkcache.SnapshotContentRow{{SnapshotID: id, Digest: blob}},
+			ImportedByBlob:  []bkcache.ImportedLayerBlobRow{{BlobDigest: blob, SnapshotID: id}},
+			ImportedByDiff:  []bkcache.ImportedLayerDiffRow{{DiffID: diff, SnapshotID: id}},
+		}
+	}
+	keptRows, droppedRows := snapshotRows(keptID), snapshotRows(droppedID)
+	rows.SnapshotContent = append(keptRows.SnapshotContent, droppedRows.SnapshotContent...)
+	rows.ImportedByBlob = append(keptRows.ImportedByBlob, droppedRows.ImportedByBlob...)
+	rows.ImportedByDiff = append(keptRows.ImportedByDiff, droppedRows.ImportedByDiff...)
+
 	store.Reload(t)
+	require.NoError(t, store.Manager.LoadPersistentMetadata(rows))
 	loaded := bkcache.MetadataMemory(store.Manager)
 	require.Equal(t, 2, loaded.PendingContentHashes)
 
@@ -179,6 +198,10 @@ func TestContentHashPendingRecordsForgottenWhenCollected(t *testing.T) {
 	got := bkcache.MetadataMemory(store.Manager)
 	require.Equal(t, 1, got.PendingContentHashes)
 	require.Less(t, got.ExternalBytes, loaded.ExternalBytes)
+	left := store.Manager.PersistentMetadataRows()
+	require.Equal(t, keptRows.SnapshotContent, left.SnapshotContent)
+	require.Equal(t, keptRows.ImportedByBlob, left.ImportedByBlob)
+	require.Equal(t, keptRows.ImportedByDiff, left.ImportedByDiff)
 
 	// The kept snapshot's loaded tree is still there when it is opened.
 	opCtx, release := operationLease(t, store)
