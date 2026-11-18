@@ -286,7 +286,9 @@ func (s *DB) buildSpanTopology(ctx context.Context, traceID string, cut HighWate
 	}
 	// A trace the index has never seen has no log rows to mark.
 	if trace, ok := s.logIdx.traceIndex[traceID]; ok {
-		spans := s.logIdx.spanIDs
+		// Collect the spans with text first, by interned ID: each is named
+		// once, not once per row.
+		withLogs := make([]bool, s.logIdx.spanCount())
 		for i, m := range s.logIdx.meta[:cut.Logs] {
 			if i%128 == 0 {
 				if err := ctx.Err(); err != nil {
@@ -297,9 +299,16 @@ func (s *DB) buildSpanTopology(ctx context.Context, traceID string, cut HighWate
 			if m.trace != trace || !m.flags.has(logText) || !m.flags.has(logNonempty) {
 				continue
 			}
-			if node, ok := v.nodes[spans[m.span]]; ok {
+			withLogs[m.span] = true
+		}
+		for span, has := range withLogs {
+			if !has {
+				continue
+			}
+			name := s.logIdx.spanName(uint32(span))
+			if node, ok := v.nodes[name]; ok {
 				node.hasLogs = true
-				v.nodes[spans[m.span]] = node
+				v.nodes[name] = node
 			}
 		}
 	}
@@ -606,7 +615,7 @@ func (s *DB) SelectLogsRangeMatching(ctx context.Context, p SelectLogsRangeParam
 			trace, traceKnown = idx.traceIndex[traceID]
 			traceResolved = true
 		}
-		if !traceKnown || m.trace != trace || (scope != nil && !scope[idx.spanIDs[m.span]]) {
+		if !traceKnown || m.trace != trace || (scope != nil && !idx.spans.in(m.span, scope)) {
 			return false, nil
 		}
 		if m.flags.has(logFailed) {
