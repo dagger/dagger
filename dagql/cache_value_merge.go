@@ -46,7 +46,9 @@ import (
 // record's replacement count. Unexpired roots are retained. An engine admits
 // the bundle's parts as offers by what the target kept; the Cloud admits none
 // until it has the bytes (SetStoredPart). An expired root is answered expired,
-// and only what the live roots need is merged.
+// and only what the live roots need is merged. An engine merges its image's
+// entries without the expiries the cache that built the image gave them, so
+// none is left out however old the image.
 //
 // A held row names by recipe a value the recipient holds: the Cloud's, in a
 // bundle the Cloud sends an engine, or the engine's own, in an export an
@@ -395,6 +397,18 @@ func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input Value
 	bundle, err := cloneValueBundle(input)
 	if err != nil {
 		return nil, err
+	}
+	if from == imageCacheID {
+		// An expiry the image's bundle carries is the one the cache that
+		// built the image gave an entry, such as the lifetime of the module
+		// function that returned it. The image outlives it, so the merge
+		// drops it.
+		for i := range bundle.Roots {
+			bundle.Roots[i].ExpiresAtUnix = 0
+		}
+		for i := range bundle.Values {
+			bundle.Values[i].ExpiresAtUnix = 0
+		}
 	}
 	// A prefix output becomes the offer of the chain layers it names.
 	if err := ResolveChainPrefixes(&bundle); err != nil {

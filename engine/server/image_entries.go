@@ -44,14 +44,12 @@ func (srv *Server) mergeImageEntries(ctx context.Context, dir string, sdkDigests
 // mergeImageBundle merges the entries the engine image ships, from dir: the
 // bundle the image's build exported (schema.EngineImageBundleFile) and the
 // blobs of its parts, which the cache reads from dir when a part is first
-// used. An image without a bundle ships no entries. An entry keeps the expiry
-// its cache gave it when the image was built, such as the lifetime of the
-// module function that returned it, and the image outlives that: a root that
-// has expired since is left out, with whatever only it needed. It merges
-// nothing when the bundle can't be read or a blob it names isn't in the
-// image, so no entry reads a part the image doesn't hold, and a merge that
-// fails before its commit changes nothing. It returns what kept the bundle,
-// or part of it, from merging.
+// used. An image without a bundle ships no entries. The merge drops the
+// expiries the cache that built the image gave its entries, so none is left
+// out however old the image. It merges nothing when the bundle can't be
+// read or a blob it names isn't in the image, so no entry reads a part the
+// image doesn't hold, and a merge that fails before its commit changes
+// nothing. It returns what kept the bundle, or part of it, from merging.
 func (srv *Server) mergeImageBundle(ctx context.Context, dir string) error {
 	root, err := os.OpenRoot(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -87,12 +85,9 @@ func (srv *Server) mergeImageBundle(ctx context.Context, dir string) error {
 	if len(reply.Stale) > 0 {
 		return fmt.Errorf("merge the engine image's entries: %d held rows are stale, so none merged", len(reply.Stale))
 	}
-	expired, unretained := 0, 0
+	unretained := 0
 	for _, r := range reply.Roots {
-		switch {
-		case r.Expired:
-			expired++
-		case !r.Retained:
+		if !r.Retained {
 			unretained++
 		}
 	}
@@ -100,7 +95,7 @@ func (srv *Server) mergeImageBundle(ctx context.Context, dir string) error {
 		return fmt.Errorf("merge the engine image's entries: %d of %d roots merged without the image's retention", unretained, len(reply.Roots))
 	}
 	slog.Info("merged the engine image's entries",
-		"roots", len(reply.Roots), "expiredRoots", expired, "values", len(reply.Values), "blobs", blobs, "blobBytes", size,
+		"roots", len(reply.Roots), "values", len(reply.Values), "blobs", blobs, "blobBytes", size,
 		"duration", time.Since(start))
 	return nil
 }

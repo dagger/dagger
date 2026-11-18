@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  A fresh engine now gets every cache entry its image ships, however old the
+  image. The engine merged each entry with the expiry the image's build gave
+  it, and the Go SDK's go-includes helper expired a week after the image was
+  built: a fresh engine from an older image left it out and built it again on
+  its first Go module call.
+time: 2026-11-17T16:28:00-08:00
+custom:
+  Author: sipsma
+  PR: 15201
