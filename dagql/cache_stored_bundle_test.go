@@ -702,7 +702,7 @@ func TestStoredPartKeepsTheEntriesItNames(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, stored)
 
-	_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates)
+	_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates, nil)
 	require.NoError(t, err)
 	require.NotNil(t, storedBundleTestEntry(cloud, service), "the service outlives its sender")
 	got, err := cloud.StoredBundle(ctx, []uint64{r}, time.Now().Unix(), nil)
@@ -728,7 +728,7 @@ func TestStoredPartDependenciesGoWithTheValue(t *testing.T) {
 	stored, _, err := cloud.SetStoredPart(ctx, r, storedPartNaming(service), 0)
 	require.NoError(t, err)
 	require.True(t, stored)
-	_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates)
+	_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates, nil)
 	require.NoError(t, err)
 	require.NotNil(t, storedBundleTestEntry(cloud, service))
 
@@ -816,7 +816,7 @@ func TestMergeLeavesAnUnretainedRootWithoutAnEdge(t *testing.T) {
 			require.True(t, info.Stored, "its record is stored")
 
 			collect := cloud.ReleaseRemoteCache(ctx, "cache-a")
-			_, _, err = cloud.CollectRemoteHoldings(ctx, collect.Candidates)
+			_, _, err = cloud.CollectRemoteHoldings(ctx, collect.Candidates, nil)
 			require.NoError(t, err)
 			_, ok = cloud.EntryInfo(number)
 			require.Equal(t, !unretained, ok, "an unretained root lives only through what holds it")

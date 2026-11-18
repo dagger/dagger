@@ -1058,7 +1058,11 @@ func (c *Cache) releaseRemoteCacheLocked(cache CacheID) (change RemoteChange) {
 
 // CollectRemoteHoldings collects every candidate left with no session hold,
 // no retention and no dependent, then the holdings only they owned, through
-// holding dependencies. Each collected holding releases its entry's ownership
+// holding dependencies. owned, when set, is asked of each holding before it
+// is removed, a candidate's or one the collection reaches through
+// dependencies: one it reports owned by what the caller keeps beside the
+// cache's holdings stays, as a holding with a dependent does. It is asked
+// under the cache's lock, and must take none of the cache's. Each collected holding releases its entry's ownership
 // unit, so entries left with no holding and no other owner are collected too.
 // It returns the collected holdings' keys, sorted, and what it changed.
 //
@@ -1067,9 +1071,9 @@ func (c *Cache) releaseRemoteCacheLocked(cache CacheID) (change RemoteChange) {
 // (compactEqClassesAfterCollectionLocked), which frees the dead ones. Only the
 // Cloud calls it, and never with snapshot sharing enabled, whose pending queue
 // keeps class IDs. Engines compact through prune.
-func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey) ([]HolderKey, RemoteChange, error) {
+func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey, owned func(HolderKey) bool) ([]HolderKey, RemoteChange, error) {
 	c.egraphMu.Lock()
-	collected, change, releases, err := c.collectRemoteHoldingsLocked(ctx, candidates)
+	collected, change, releases, err := c.collectRemoteHoldingsLocked(ctx, candidates, owned)
 	c.egraphMu.Unlock()
 	slices.SortFunc(collected, compareHolderKeys)
 	return collected, change, errors.Join(err, runOnReleaseFuncs(ctx, releases))
@@ -1078,7 +1082,7 @@ func (c *Cache) CollectRemoteHoldings(ctx context.Context, candidates []HolderKe
 // collectRemoteHoldingsLocked is CollectRemoteHoldings' change. It returns
 // the collected holdings unsorted, and what the collected entries release,
 // to run once egraphMu is released. Requires egraphMu for writing.
-func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []HolderKey) ([]HolderKey, RemoteChange, []OnReleaseFunc, error) {
+func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []HolderKey, owned func(HolderKey) bool) ([]HolderKey, RemoteChange, []OnReleaseFunc, error) {
 	var change RemoteChange
 	entriesBefore := len(c.resultsByID)
 	var (
@@ -1091,7 +1095,7 @@ func (c *Cache) collectRemoteHoldingsLocked(ctx context.Context, candidates []Ho
 		key := queue[len(queue)-1]
 		queue = queue[:len(queue)-1]
 		entry, h := c.holdingLocked(key)
-		if h == nil || h.owned() {
+		if h == nil || h.owned() || owned != nil && owned(key) {
 			continue
 		}
 		deps, more, err := c.removeHoldingLocked(ctx, c.remoteCaches[key.Cache], key, entry, h, entries)
