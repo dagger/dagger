@@ -62,7 +62,14 @@ func TestModuleFunctionReceiverRetention(t *testing.T) {
 		require.True(t, ok)
 		receivers = append(receivers, &CallOpts{ParentTyped: attached, ParentFields: attachedObj.Fields})
 	}
-	baseEntries := cache.EntryStats().CompletedArbitrary
+	// The session's store, with a bound well under the receivers' 33 MiB of
+	// JSON, for a small test.
+	const maxWeight = 4 << 20
+	_, err = cache.GetOrInitArbitrary(ctx, session, fmt.Sprintf("module-receiver-sdk-input:%q", session), func(context.Context) (any, error) {
+		return newConvertedReceivers(maxWeight), nil
+	})
+	require.NoError(t, err)
+	baseEntries := cache.EntryStats().CompletedArbitrary - 1
 
 	var jsonBytes int
 	before := liveHeapBytes()
@@ -81,8 +88,8 @@ func TestModuleFunctionReceiverRetention(t *testing.T) {
 	kept := res.Value().(*convertedReceivers)
 	kept.mu.Lock()
 	defer kept.mu.Unlock()
-	require.LessOrEqual(t, kept.weight, maxConvertedReceiversWeight)
-	require.Less(t, kept.lru.Len(), len(receivers), "the least recently used conversions were dropped")
+	require.LessOrEqual(t, kept.weight, maxWeight)
+	require.Less(t, kept.lru.Len()+len(kept.large), len(receivers)/2, "the least recently used conversions were dropped")
 }
 
 // TestConvertedReceiversBounded shows that what a session keeps stops growing
