@@ -510,9 +510,10 @@ func (link *SpanLink) ProcessAttribute(name string, val any) {
 	}
 	switch name {
 	case telemetry.LinkPurposeAttr:
-		link.Purpose = str
+		// A handful of purposes and reasons, on every link: share them.
+		link.Purpose = internAttrString(str)
 	case telemetryattrs.WcprofWaitReasonAttr:
-		link.WaitReason = str
+		link.WaitReason = internAttrString(str)
 	case telemetryattrs.WcprofWaitStartUnixNanoAttr:
 		if ns, err := strconv.ParseInt(str, 10, 64); err == nil {
 			link.WaitStart = time.Unix(0, ns)
