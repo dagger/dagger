@@ -1,0 +1,16 @@
+kind: Added
+body: |
+  New `image+kubectl://` engine driver runs the engine as a pod in a Kubernetes cluster
+  `image+kubectl://[IMAGE]` starts the engine in the cluster that `kubectl`
+  points at and connects to it as `kube-pod://` does. `?kubeconfig=`,
+  `?context=` and `?namespace=` select the cluster, `?requests=`, `?limits=`
+  and `?volume=` configure the pod, and `?pod=`, `?env=` and the cleanup
+  settings work as they do for the other image drivers. `image://` falls back
+  to it when no local container runtime is available.
+
+  `image://` without an image now runs `registry.dagger.io/engine`, and an
+  image without a tag or digest gets the CLI's version as its tag.
+time: 2026-11-18T19:52:56Z
+custom:
+  Author: frantjc
+  PR: "15207"
