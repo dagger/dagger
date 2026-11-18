@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -47,7 +48,7 @@ func TestSchemeHelpGroupsValues(t *testing.T) {
 
 // An unusable value must teach the usable ones.
 func TestGetDriverUnknownSchemeListsSchemes(t *testing.T) {
-	_, err := GetDriver(context.Background(), "")
+	_, err := GetDriver(context.Background(), &url.URL{})
 	require.ErrorContains(t, err, `no driver for scheme "" found`)
 	for _, name := range RegisteredSchemes() {
 		require.ErrorContains(t, err, name)
