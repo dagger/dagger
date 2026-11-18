@@ -29,7 +29,7 @@ func TestSnapshotGarbageCollectsReleasedSnapshots(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewStore(t)
 
-	garbage := newSnapshotGarbage(store.DB)
+	garbage := newSnapshotGarbage(store.DB, store.Manager)
 	require.True(t, garbage.pending.Load(), "deletions by an earlier process are unknown, so the first pass must collect")
 
 	kept, _ := store.Build(t, nil, "kept", "kept data")
@@ -43,10 +43,23 @@ func TestSnapshotGarbageCollectsReleasedSnapshots(t *testing.T) {
 	require.True(t, garbage.pending.Load(), "removing the last lease must mark garbage pending")
 	requireSnapshotExists(t, store, releasedID)
 
+	_, ok, err := store.Manager.SnapshotRecordMetadata(ctx, releasedID)
+	require.NoError(t, err)
+	require.True(t, ok)
+
 	require.NoError(t, garbage.CollectIfPending(ctx))
 	require.False(t, garbage.pending.Load())
 	requireSnapshotCollected(t, store, releasedID)
 	testutil.CheckFile(t, kept, "kept", "kept data")
+
+	// The collection also drops the manager's in-memory metadata of the
+	// collected snapshot, and only of it.
+	_, ok, err = store.Manager.SnapshotRecordMetadata(ctx, releasedID)
+	require.NoError(t, err)
+	require.False(t, ok, "metadata of a collected snapshot must be dropped")
+	_, ok, err = store.Manager.SnapshotRecordMetadata(ctx, kept.SnapshotID())
+	require.NoError(t, err)
+	require.True(t, ok)
 }
 
 // A GC pass whose policies remove nothing must still reclaim released
@@ -56,7 +69,7 @@ func TestGCLockedCollectsGarbageWhenPruneRemovesNothing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := testutil.NewStore(t)
-	garbage := newSnapshotGarbage(store.DB)
+	garbage := newSnapshotGarbage(store.DB, store.Manager)
 
 	kept, _ := store.Build(t, nil, "kept", "kept data")
 	released, releasedOwner := store.Build(t, nil, "released", "released data")
@@ -83,7 +96,7 @@ func TestGCLockedCollectsGarbageWithGCDisabled(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := testutil.NewStore(t)
-	garbage := newSnapshotGarbage(store.DB)
+	garbage := newSnapshotGarbage(store.DB, store.Manager)
 
 	released, releasedOwner := store.Build(t, nil, "released", "released data")
 	releasedID := released.SnapshotID()
@@ -106,7 +119,7 @@ func TestExplicitPruneCollectsReleasedSnapshots(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := testutil.NewStore(t)
-	garbage := newSnapshotGarbage(store.DB)
+	garbage := newSnapshotGarbage(store.DB, store.Manager)
 
 	released, releasedOwner := store.Build(t, nil, "released", "released data")
 	releasedID := released.SnapshotID()

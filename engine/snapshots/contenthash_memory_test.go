@@ -46,6 +46,17 @@ func buildHashed(t *testing.T, store *testutil.Store, i int) (bkcache.ImmutableR
 	return ref, owner
 }
 
+// collect does what a GC pass does to the store: release the idle shared
+// mounts, which hold their snapshots, collect, and forget what was collected.
+func collect(t *testing.T, store *testutil.Store) {
+	t.Helper()
+	require.NoError(t, mountReleaser(t, store).ReleaseIdleSharedMounts())
+	store.GC(t)
+	forgetter, ok := store.Manager.(bkcache.CollectedSnapshotForgetter)
+	require.True(t, ok)
+	require.NoError(t, forgetter.ForgetCollectedSnapshots(context.Background()))
+}
+
 // Each hashed snapshot keeps its serialized content-hash tree in the
 // manager's in-memory metadata. Releasing the refs and the owners, and
 // collecting the snapshots, must not leave those trees behind.
@@ -53,6 +64,14 @@ func TestContentHashMetadataMemory(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewStore(t)
 	before := bkcache.MetadataMemory(store.Manager)
+
+	// A snapshot that stays owned keeps its tree, and its digests.
+	kept, _ := buildHashed(t, store, -1)
+	keptDigest, err := contenthash.Checksum(ctx, kept, "/dir1", contenthash.ChecksumOpts{})
+	require.NoError(t, err)
+	keptTree, err := kept.(bkcache.RefMetadata).GetExternal(bkcache.ContentHashMetadataKey)
+	require.NoError(t, err)
+	withKept := bkcache.MetadataMemory(store.Manager)
 
 	refs := make([]bkcache.ImmutableRef, 0, hashedSnapshots)
 	owners := make([]string, 0, hashedSnapshots)
@@ -63,11 +82,11 @@ func TestContentHashMetadataMemory(t *testing.T) {
 	}
 	hashed := bkcache.MetadataMemory(store.Manager)
 	t.Logf("before: %+v", before)
-	t.Logf("hashed %d snapshots of %d files: %+v (%d tree bytes per snapshot)",
+	t.Logf("hashed %d more snapshots of %d files: %+v (%d tree bytes per snapshot)",
 		hashedSnapshots, hashedDirs*hashedFiles, hashed,
-		(hashed.ExternalBytes-before.ExternalBytes)/hashedSnapshots)
-	require.GreaterOrEqual(t, hashed.Metadata-before.Metadata, hashedSnapshots)
-	require.Greater(t, hashed.ExternalBytes, before.ExternalBytes)
+		(hashed.ExternalBytes-withKept.ExternalBytes)/hashedSnapshots)
+	require.Equal(t, withKept.Metadata+hashedSnapshots, hashed.Metadata)
+	require.Greater(t, hashed.ExternalBytes, withKept.ExternalBytes)
 
 	for i, ref := range refs {
 		require.NoError(t, ref.Release(ctx))
@@ -75,19 +94,98 @@ func TestContentHashMetadataMemory(t *testing.T) {
 	}
 	released := bkcache.MetadataMemory(store.Manager)
 	t.Logf("released refs and owners: %+v", released)
+	// The snapshots exist until they are collected, and so do their trees.
+	require.Equal(t, hashed, released)
 
-	// As a GC pass does: idle shared mounts hold their snapshots.
-	require.NoError(t, mountReleaser(t, store).ReleaseIdleSharedMounts())
-	store.GC(t)
+	collect(t, store)
 	for _, ref := range refs {
 		_, err := store.Snapshots.Stat(ctx, ref.SnapshotID())
 		require.Error(t, err, "snapshot %s should be collected", ref.SnapshotID())
 	}
 	collected := bkcache.MetadataMemory(store.Manager)
 	t.Logf("collected snapshots: %+v", collected)
+	require.Equal(t, withKept, collected)
 
-	// The leak: nothing drops the metadata of a collected snapshot, so every
-	// hashed snapshot's tree stays in memory for the life of the engine.
-	require.Equal(t, hashed.Metadata, collected.Metadata)
-	require.Equal(t, hashed.ExternalBytes, collected.ExternalBytes)
+	tree, err := kept.(bkcache.RefMetadata).GetExternal(bkcache.ContentHashMetadataKey)
+	require.NoError(t, err)
+	require.Equal(t, keptTree, tree)
+	dgst, err := contenthash.Checksum(ctx, kept, "/dir1", contenthash.ChecksumOpts{})
+	require.NoError(t, err)
+	require.Equal(t, keptDigest, dgst)
+	// The kept snapshot can still be opened by its ID.
+	reopened, err := store.Manager.GetBySnapshotID(ctx, kept.SnapshotID())
+	require.NoError(t, err)
+	require.NoError(t, reopened.Release(ctx))
+}
+
+// Forgetting runs while snapshots are made and committed, and drops none of
+// theirs: an entry it sees before its walk has its snapshot already.
+func TestForgetCollectedSnapshotsKeepsNewSnapshots(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	forgetter := store.Manager.(bkcache.CollectedSnapshotForgetter)
+
+	done := make(chan struct{})
+	errs := make(chan error, 1)
+	go func() {
+		defer close(errs)
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			if err := forgetter.ForgetCollectedSnapshots(ctx); err != nil {
+				errs <- err
+				return
+			}
+		}
+	}()
+	refs := make([]bkcache.ImmutableRef, 0, 20)
+	for i := range 20 {
+		ref, _ := store.Build(t, nil, fmt.Sprintf("f%d", i), "data")
+		refs = append(refs, ref)
+	}
+	close(done)
+	require.NoError(t, <-errs)
+
+	for i, ref := range refs {
+		_, ok, err := store.Manager.SnapshotRecordMetadata(ctx, ref.SnapshotID())
+		require.NoError(t, err)
+		require.True(t, ok, "metadata of live snapshot %s dropped", ref.SnapshotID())
+		testutil.CheckFile(t, ref, fmt.Sprintf("f%d", i), "data")
+	}
+}
+
+// Hash records loaded at startup for snapshots nobody opened are dropped once
+// their snapshots are collected, too.
+func TestContentHashPendingRecordsForgottenWhenCollected(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	kept, _ := buildHashed(t, store, 0)
+	dropped, droppedOwner := buildHashed(t, store, 1)
+	keptID, droppedID := kept.SnapshotID(), dropped.SnapshotID()
+	require.NoError(t, kept.Release(ctx))
+	require.NoError(t, dropped.Release(ctx))
+
+	store.Reload(t)
+	loaded := bkcache.MetadataMemory(store.Manager)
+	require.Equal(t, 2, loaded.PendingContentHashes)
+
+	require.NoError(t, store.Manager.RemoveLease(ctx, droppedOwner))
+	collect(t, store)
+	_, err := store.Snapshots.Stat(ctx, droppedID)
+	require.Error(t, err)
+	got := bkcache.MetadataMemory(store.Manager)
+	require.Equal(t, 1, got.PendingContentHashes)
+	require.Less(t, got.ExternalBytes, loaded.ExternalBytes)
+
+	// The kept snapshot's loaded tree is still there when it is opened.
+	opCtx, release := operationLease(t, store)
+	defer release()
+	reopened, err := store.Manager.LeaseExistingSnapshot(opCtx, keptID)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, reopened.Release(ctx)) }()
+	_, err = reopened.(bkcache.RefMetadata).GetExternal(bkcache.ContentHashMetadataKey)
+	require.NoError(t, err)
 }
