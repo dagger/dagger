@@ -8,8 +8,9 @@ import (
 	"sync"
 )
 
-// maxConvertedReceiversWeight bounds the receiver JSON, in bytes, that a
-// session keeps converted (see convertedReceivers).
+// maxConvertedReceiversWeight bounds the receiver conversions, in bytes, that
+// a session keeps in its LRU (see convertedReceivers). Up to
+// maxLargeConvertedReceivers large receivers are kept beside it.
 const maxConvertedReceiversWeight = 32 << 20
 
 // maxLargeConvertedReceivers bounds the large receivers, more than a quarter
@@ -63,10 +64,13 @@ type convertedReceiver struct {
 	// joined counts the calls that found the conversion kept; guarded by
 	// convertedReceivers.mu.
 	joined int
-	// done is closed once json and err are set.
+	// done is closed once json, err and ownerCanceled are set.
 	done chan struct{}
 	json []byte
 	err  error
+	// ownerCanceled says the conversion failed once the call running it was
+	// canceled.
+	ownerCanceled bool
 }
 
 func newConvertedReceivers(maxWeight int) *convertedReceivers {
@@ -97,9 +101,9 @@ func (r *convertedReceivers) get(ctx context.Context, key convertedReceiverKey, 
 		if entry.err == nil {
 			return entry.json, nil
 		}
-		// A conversion that ended with its own caller's cancellation says
-		// nothing about this call, which converts again.
-		if ctx.Err() == nil && (errors.Is(entry.err, context.Canceled) || errors.Is(entry.err, context.DeadlineExceeded)) {
+		// A conversion that failed once its own caller was canceled, with
+		// whatever cause, says nothing about this call, which converts again.
+		if ctx.Err() == nil && entry.ownerCanceled {
 			continue
 		}
 		return nil, entry.err
@@ -120,6 +124,7 @@ func (r *convertedReceivers) convert(ctx context.Context, entry *convertedReceiv
 		}
 	}()
 	entry.json, entry.err = convert(ctx)
+	entry.ownerCanceled = entry.err != nil && ctx.Err() != nil
 	r.mu.Lock()
 	r.removeLocked(entry)
 	// Keep it at its size, unless it was dropped meanwhile and another call
