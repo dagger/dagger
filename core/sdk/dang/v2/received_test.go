@@ -17,6 +17,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 )
 
 // A collection whose items each hold the same module, as dagger/go's package
@@ -226,6 +227,7 @@ func TestReceivedValuesKeepRecentlyUsed(t *testing.T) {
 	val, err := values.decode(t.Context(), big)
 	require.NoError(t, err)
 	require.Equal(t, receivedJSON(t, big), plainReceived(val), "JSON beyond the bound is decoded, not kept")
+	require.Same(t, first, decode(a), "JSON beyond the bound drops nothing")
 
 	_, err = values.decode(t.Context(), []byte(`{"name":`))
 	require.Error(t, err)
@@ -257,9 +259,28 @@ func TestReceivedValuesConcurrentAndReleased(t *testing.T) {
 	cache, err := dagql.EngineCache(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, cache.EntryStats().CompletedArbitrary)
+
+	// Another session keeps values of its own.
+	lease := engine.NewClientLifecycleLease(engine.ClientLeaseRequest, "other-session", func() {},
+		func(kind engine.ClientLeaseKind, owner string) (*engine.ClientLifecycleLease, error) {
+			return engine.NewClientLifecycleLease(kind, owner, func() {}, nil), nil
+		})
+	t.Cleanup(lease.Release)
+	scope, err := engine.NewClientScope(&engine.ClientMetadata{SessionID: "other-session", ClientID: "other-client"}, lease)
+	require.NoError(t, err)
+	otherCtx, err := engine.ContextWithClientScope(ctx, scope)
+	require.NoError(t, err)
+	other, err := decodeReceived(otherCtx, data)
+	require.NoError(t, err)
+	require.NotSame(t, results[0], other, "sessions do not share received values")
+	require.Equal(t, 2, cache.EntryStats().CompletedArbitrary)
+
 	require.NoError(t, cache.ReleaseSession(ctx, "schema-test"))
 	require.NoError(t, cache.WaitSessionRelease(ctx, "schema-test"))
-	require.Zero(t, cache.EntryStats().CompletedArbitrary, "received values leave with their session")
+	require.Equal(t, 1, cache.EntryStats().CompletedArbitrary, "received values leave with their session")
+	require.NoError(t, cache.ReleaseSession(ctx, "other-session"))
+	require.NoError(t, cache.WaitSessionRelease(ctx, "other-session"))
+	require.Zero(t, cache.EntryStats().CompletedArbitrary)
 }
 
 type namedClient struct{ name string }
