@@ -1007,6 +1007,9 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				return nil, err
 			}
 
+			if res.dehydrated.Load() {
+				res.resetLazyStateForDecode()
+			}
 			wcprof.WriteLock(ctx, &res.payloadMu, resultPayloadLockIdent)
 			if res.hasValue || res.persistedEnvelope == nil || res.payloadRevision != state.payloadRevision {
 				res.payloadMu.Unlock()
@@ -1037,6 +1040,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				// lookup filter, which reads the field under egraphMu.
 				res.persistedEnvelope = nil
 				res.payloadRevision++
+				res.dehydrated.Store(false)
 				res.onRelease = joinOnRelease(res.onRelease, decoded.cacheSharedResult().onRelease)
 				c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 			}

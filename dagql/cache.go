@@ -3038,6 +3038,26 @@ type sharedResult struct {
 	// deferred anywhere on this result is settled. It is the fast path;
 	// correctness derives from the group state.
 	lazyEvalComplete bool
+
+	// dehydrated is set when DehydrateColdResults traded the value for its
+	// envelope, and cleared when a decode installs a value again. The lazy
+	// state belongs to the value it was recorded for: the decode resets it
+	// first, as a restored row starts without any.
+	dehydrated atomic.Bool
+}
+
+// resetLazyStateForDecode forgets the lazy state recorded for a value the
+// row no longer has, before a decode installs a new one. An attempt still
+// in flight keeps it.
+func (res *sharedResult) resetLazyStateForDecode() {
+	res.lazyMu.Lock()
+	defer res.lazyMu.Unlock()
+	if lazyEvaluationInFlightLocked(res) != nil {
+		return
+	}
+	res.lazyWhole = lazyGroupState{}
+	res.lazyPartGroups = nil
+	res.lazyEvalComplete = false
 }
 
 // lazyGroupState is one evaluation group's cache-side lazy state. The

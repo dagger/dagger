@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -87,7 +88,7 @@ func (c *Cache) testDehydrate(ctx context.Context, res *sharedResult) error {
 		return fmt.Errorf("result %d attachment is not clean", res.id)
 	}
 	if res.depParents != nil {
-		for parentID := range res.depParents.Items() {
+		for parentID := range res.depParents {
 			if parent := c.resultsByID[parentID]; parent != nil && parent.loadPayloadState().hasValue {
 				c.egraphMu.RUnlock()
 				return fmt.Errorf("result %d: dependent %d: %w", res.id, parentID, errDependentHydrated)
@@ -229,6 +230,86 @@ func TestCacheSessionDehydrateColdResults(t *testing.T) {
 	again, err := cache.LoadResultByResultID(ctx, "test-session", srv, handles[5])
 	require.NoError(t, err)
 	require.Equal(t, "bulk-5", again.Unwrap().(*dehydrateBulkObj).Name)
+
+	require.NoError(t, cache.ReleaseSession(ctx, "test-session"))
+	require.NoError(t, cache.WaitSessionRelease(ctx, "test-session"))
+	require.Empty(t, cache.resultsByID)
+}
+
+// TestCacheDehydrateColdResultsPass drives the measurement pass
+// (DehydrateColdResults): it dehydrates a dependent before the result it holds
+// through a field, leaves recently used results alone, and every handle and
+// recipe lookup loads the same row with an equal value afterwards, with no
+// resolver run again, through a second cycle too.
+func TestCacheDehydrateColdResultsPass(t *testing.T) {
+	const calls = 200
+	path := filepath.Join(t.TempDir(), "cache.db")
+	ctx, cache, srv := persistedListTestCache(t, path)
+	srv.InstallObject(NewClass(srv, ClassOpts[*dehydrateBulkObj]{}))
+	srv.InstallObject(NewClass(srv, ClassOpts[*persistChildLoadObj]{}))
+
+	var executed int
+	handles := make([]uint64, calls)
+	var child AnyResult
+	for i := range calls {
+		frame := persistCodecFrame(fmt.Sprintf("pass-%d", i), &dehydrateBulkObj{})
+		res, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			executed++
+			return NewObjectResultForCall(newDehydrateBulkObj(fmt.Sprintf("pass-%d", i), dehydrateBulkLines(i)), srv, frame)
+		})
+		require.NoError(t, err)
+		handles[i] = uint64(res.cacheSharedResult().id)
+		if i == 0 {
+			child = res
+		}
+	}
+	parentFrame := persistCodecFrame("pass-parent", &persistChildLoadObj{})
+	parent, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: parentFrame}, func(context.Context) (AnyResult, error) {
+		executed++
+		return NewObjectResultForCall(&persistChildLoadObj{Child: child}, srv, parentFrame)
+	})
+	require.NoError(t, err)
+	parentHandle := uint64(parent.cacheSharedResult().id)
+	child, parent = nil, nil
+
+	// Everything was just used: an hour's threshold leaves it all.
+	report, err := cache.DehydrateColdResults(ctx, DehydrateOptions{UnusedFor: time.Hour})
+	require.NoError(t, err)
+	require.Zero(t, report.Dehydrated)
+	require.Equal(t, calls+1, report.Skipped[dehydrateSkipRecentlyUsed])
+
+	report, err = cache.DehydrateColdResults(ctx, DehydrateOptions{})
+	require.NoError(t, err)
+	require.Equal(t, calls+1, report.Dehydrated, "the child goes once its dependent has: %+v", report)
+	require.Equal(t, calls, report.DehydratedByType["DehydrateBulkObj"])
+
+	for cycle := range 2 {
+		loadedParent, err := cache.LoadResultByResultID(ctx, "test-session", srv, parentHandle)
+		require.NoError(t, err)
+		require.Equal(t, handles[0], uint64(loadedParent.Unwrap().(*persistChildLoadObj).Child.cacheSharedResult().id))
+		for i, id := range handles {
+			loaded, err := cache.LoadResultByResultID(ctx, "test-session", srv, id)
+			require.NoError(t, err)
+			require.Equal(t, id, uint64(loaded.cacheSharedResult().id))
+			obj := loaded.Unwrap().(*dehydrateBulkObj)
+			require.Equal(t, fmt.Sprintf("pass-%d", i), obj.Name)
+			require.Equal(t, dehydrateBulkLines(i), obj.Lines)
+		}
+		for i := 0; i < calls; i += 17 {
+			frame := persistCodecFrame(fmt.Sprintf("pass-%d", i), &dehydrateBulkObj{})
+			hit, err := cache.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+				return nil, errors.New("recomputed a dehydrated result")
+			})
+			require.NoError(t, err)
+			require.Equal(t, handles[i], uint64(hit.cacheSharedResult().id))
+		}
+		require.Equal(t, calls+1, executed, "cycle %d", cycle)
+		if cycle == 0 {
+			report, err = cache.DehydrateColdResults(ctx, DehydrateOptions{})
+			require.NoError(t, err)
+			require.Equal(t, calls+1, report.Dehydrated)
+		}
+	}
 
 	require.NoError(t, cache.ReleaseSession(ctx, "test-session"))
 	require.NoError(t, cache.WaitSessionRelease(ctx, "test-session"))
