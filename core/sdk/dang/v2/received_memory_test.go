@@ -67,6 +67,31 @@ func TestReceivedRetention(t *testing.T) {
 			entries := cache.EntryStats().CompletedArbitrary
 			t.Logf("%d calls: %d received entries for %.2f MiB of input JSON, %.2f MiB retained (%.1f KiB per call)",
 				calls, entries, float64(inputBytes)/(1<<20), float64(retained)/(1<<20), float64(retained)/1024/calls)
+			require.Equal(t, 1, entries, "a session keeps one entry for its received values")
 		})
 	}
+}
+
+// TestReceivedRetentionBounded shows that what a session keeps stops growing
+// at its bound, with a bound small enough for a quick test.
+func TestReceivedRetentionBounded(t *testing.T) {
+	const maxWeight = 2 << 20
+	values := newReceivedValues(maxWeight)
+	var inputBytes int
+	before := liveHeap()
+	for i := range 400 {
+		parent, args := receivedToolCall(t, i, i%64)
+		for _, data := range append([][]byte{parent}, args...) {
+			_, err := values.decode(t.Context(), data)
+			require.NoError(t, err)
+			inputBytes += len(data)
+		}
+	}
+	retained := int64(liveHeap()) - int64(before)
+	values.mu.Lock()
+	weight, kept := values.weight, values.lru.Len()
+	values.mu.Unlock()
+	t.Logf("400 calls: %.2f MiB of input JSON, %d values kept from %.2f MiB of it, %.2f MiB retained",
+		float64(inputBytes)/(1<<20), kept, float64(weight)/(1<<20), float64(retained)/(1<<20))
+	require.LessOrEqual(t, weight, maxWeight)
 }
