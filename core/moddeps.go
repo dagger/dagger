@@ -663,6 +663,22 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 	if b.loadSchemaErr != nil {
 		return nil, b.loadSchemaErr
 	}
+	if !b.shared {
+		// A client's own builder (its served modules, a handle load's module
+		// set) serves the server its session shares for the set, and keeps
+		// it: the session memo evicting it only stops sharing it. A failure
+		// is the shared builder's, possibly another client's build that
+		// this one waited on; the memo replaces a failed shared builder, so
+		// keep none of it here and ask the memo again next time.
+		if shared := currentSessionSchemaBuilderMemo(ctx).sharedBuilder(b); shared != nil {
+			srv, err := shared.lazilyLoadSchema(ctx)
+			if err != nil {
+				return nil, err
+			}
+			b.lazilyLoadedServer = srv
+			return srv, nil
+		}
+	}
 	defer func() {
 		if rerr != nil && ctx.Err() != nil {
 			// This caller gave up, which says nothing about the schema.
@@ -678,15 +694,6 @@ func (b *SchemaBuilder) lazilyLoadSchema(ctx context.Context) (loadedSchema *dag
 		b.loadSchemaErr = rerr
 		b.loadSchemaFailed.Store(rerr != nil)
 	}()
-
-	if !b.shared {
-		// A client's own builder (its served modules, a handle load's module
-		// set) serves the server its session shares for the set, and keeps
-		// it: the session memo evicting it only stops sharing it.
-		if shared := currentSessionSchemaBuilderMemo(ctx).sharedBuilder(b); shared != nil {
-			return shared.lazilyLoadSchema(ctx)
-		}
-	}
 
 	var nonMains, mains []modDepEntry
 	for _, e := range b.entries {
