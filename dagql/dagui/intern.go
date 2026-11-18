@@ -90,6 +90,7 @@ func (db *DB) internSnapshotStrings(snapshot *SpanSnapshot) {
 	for i, input := range snapshot.Inputs {
 		snapshot.Inputs[i] = db.internDigest(input)
 	}
+	db.shareAttrPairs(snapshot.ExtraAttributes)
 }
 
 // internCall interns a decoded call frame's digests and names, in place.
