@@ -205,7 +205,7 @@ func newCatchUpStore(b *testing.B, rows int) *catchUpStore {
 	for c := 7; c < catchUpSpansPerTurn && own == ""; c++ {
 		id := catchUpSpanID(turnBase(tt) + c)
 		for _, row := range db.logIdx.rowIDsForSpans(map[string]struct{}{id: {}}, 0) {
-			if db.logIdx.meta[row-1].flags.display() {
+			if db.logIdx.meta[row-1].flags().display() {
 				own = id
 				break
 			}

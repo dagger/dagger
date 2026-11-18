@@ -296,14 +296,11 @@ func (l *logLookup) addAll(rows []Log) {
 			l.metaErrs[int64(len(l.meta))] = errs[i]
 		}
 		spans := l.spans.count()
-		m := logMeta{
-			timestamp: row.Timestamp,
-			size:      logCodec.size(row),
-			trace:     internLocked(l.traceIndex, &l.traceIDs, row.TraceID.String),
-			span:      l.spans.intern(row.SpanID.String),
-			digest:    l.digests.intern(digests[i]),
-			flags:     flags[i],
-		}
+		m := newLogMeta(row.Timestamp, logCodec.size(row),
+			internLocked(l.traceIndex, &l.traceIDs, row.TraceID.String),
+			l.spans.intern(row.SpanID.String),
+			l.digests.intern(digests[i]),
+			flags[i])
 		l.meta = append(l.meta, m)
 		if l.spans.count() > spans {
 			l.rowsBySpan = append(l.rowsBySpan, nil)
@@ -311,7 +308,7 @@ func (l *logLookup) addAll(rows []Log) {
 				l.unplaced[m.span] = struct{}{}
 			}
 		}
-		if m.digest != 0 && m.flags.display() {
+		if m.digest != 0 && m.flags().display() {
 			l.displayByDigest[m.digest] = append(l.displayByDigest[m.digest], row.ID)
 		}
 	}

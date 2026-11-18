@@ -13,7 +13,7 @@ import (
 type refLogLookup struct {
 	mu          sync.RWMutex
 	rowsBySpan  map[string][]int64
-	meta        []logMeta
+	meta        []refLogMeta
 	metaErrs    map[int64]error
 	traceIDs    []string
 	traceIndex  map[string]uint32
@@ -28,6 +28,16 @@ type refLogLookup struct {
 	spanKnown       func(spanID string) bool
 
 	classifier *logLookup
+}
+
+// refLogMeta is logMeta as it was before it packed the size and flags.
+type refLogMeta struct {
+	timestamp int64
+	size      int64
+	trace     uint32
+	span      uint32
+	digest    uint32
+	flags     logFlags
 }
 
 func newRefLogLookup() *refLogLookup {
@@ -52,7 +62,7 @@ func (l *refLogLookup) addAll(rows []Log) {
 			l.metaErrs[int64(len(l.meta))] = errs[i]
 		}
 		spans := len(l.spanIDs)
-		m := logMeta{
+		m := refLogMeta{
 			timestamp: row.Timestamp,
 			size:      logCodec.size(row),
 			trace:     internLocked(l.traceIndex, &l.traceIDs, row.TraceID.String),
