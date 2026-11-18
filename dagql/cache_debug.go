@@ -79,6 +79,10 @@ type EGraphDebugResult struct {
 	ExplicitDeps               []uint64                   `json:"explicit_dep_ids,omitempty"`
 	HeldDependencyResults      int                        `json:"held_dependency_results_count"`
 	SnapshotLinks              []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
+	// FromImage reports that the engine image ships the entry: its merge at
+	// start gave it an image holding (FromImage), so every engine of the
+	// image has it, and the engine never exports it.
+	FromImage bool `json:"from_image,omitempty"`
 }
 
 type CacheDebugResult struct {
@@ -1065,6 +1069,7 @@ func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			ExplicitDeps:               depIDs,
 			HeldDependencyResults:      len(res.deps),
 			SnapshotLinks:              links,
+			FromImage:                  fromImageLocked(res),
 		})
 	}
 
@@ -1457,6 +1462,7 @@ func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					ExplicitDeps:               depIDs,
 					HeldDependencyResults:      len(res.deps),
 					SnapshotLinks:              links,
+					FromImage:                  fromImageLocked(res),
 				},
 				ResultCall:                            frame,
 				ResultCallRecipeDigest:                observed.recipeDigest,

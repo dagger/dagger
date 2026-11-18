@@ -226,6 +226,11 @@ func (c *Cache) FromImage(result AnyResult) bool {
 	}
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
+	return fromImageLocked(res)
+}
+
+// fromImageLocked is FromImage for res. Requires egraphMu.
+func fromImageLocked(res *sharedResult) bool {
 	_, image := res.imageHoldingLocked()
 	return image != nil
 }
