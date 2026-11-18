@@ -31,13 +31,38 @@ import (
 // the rare per-row decode error lives in a side map keyed by row index.
 type logMeta struct {
 	timestamp int64
-	size      int64
 	trace     uint32
 	span      uint32
 	// digest interns the row's dagger.io/dag.digest attribute; 0 is none.
 	digest uint32
-	flags  logFlags
+	// sizeFlags packs the row's encoded size, saturated at logMetaMaxSize,
+	// in its low 24 bits and its logFlags in its high 8: 24 bytes a row
+	// rather than 32, a quarter of the log index.
+	sizeFlags uint32
 }
+
+// logMetaMaxSize is where logMeta saturates a row's size. Sizes only bound
+// read batches (selectedLogBatchBytes), which a saturated size bounds alike:
+// a size past the batch budget never fits a batch, saturated or not.
+const logMetaMaxSize = 1<<24 - 1
+
+// A saturated size must still exceed any batch's remaining budget.
+var _ = [logMetaMaxSize - selectedLogBatchBytes - 1]struct{}{}
+
+func newLogMeta(timestamp, size int64, trace, span, digest uint32, flags logFlags) logMeta {
+	return logMeta{
+		timestamp: timestamp,
+		trace:     trace,
+		span:      span,
+		digest:    digest,
+		sizeFlags: uint32(min(max(size, 0), logMetaMaxSize)) | uint32(flags)<<24,
+	}
+}
+
+// size is the row's encoded size, saturated at logMetaMaxSize.
+func (m logMeta) size() int64 { return int64(m.sizeFlags & logMetaMaxSize) }
+
+func (m logMeta) flags() logFlags { return logFlags(m.sizeFlags >> 24) }
 
 type logFlags uint8
 
@@ -296,7 +321,7 @@ func (s *DB) buildSpanTopology(ctx context.Context, traceID string, cut HighWate
 					return nil, err
 				}
 			}
-			if m.trace != trace || !m.flags.has(logText) || !m.flags.has(logNonempty) {
+			if m.trace != trace || !m.flags().has(logText) || !m.flags().has(logNonempty) {
 				continue
 			}
 			withLogs[m.span] = true
@@ -618,10 +643,10 @@ func (s *DB) SelectLogsRangeMatching(ctx context.Context, p SelectLogsRangeParam
 		if !traceKnown || m.trace != trace || (scope != nil && !idx.spans.in(m.span, scope)) {
 			return false, nil
 		}
-		if m.flags.has(logFailed) {
+		if m.flags().has(logFailed) {
 			return false, idx.metaErrs[i]
 		}
-		if m.flags.has(logControl) && !includeControl {
+		if m.flags().has(logControl) && !includeControl {
 			return false, nil
 		}
 		if sel != nil {
@@ -630,11 +655,11 @@ func (s *DB) SelectLogsRangeMatching(ctx context.Context, p SelectLogsRangeParam
 			}
 			switch sel.Records {
 			case archive.LogRecordsLogs:
-				return m.flags.has(logText), nil
+				return m.flags().has(logText), nil
 			case archive.LogRecordsCallPayloads:
-				return m.flags.has(logCall), nil
+				return m.flags().has(logCall), nil
 			case archive.LogRecordsMetadata:
-				return m.flags.has(logMetadata), nil
+				return m.flags().has(logMetadata), nil
 			}
 		}
 		return true, nil
@@ -673,11 +698,11 @@ func (s *DB) scanLogs(ctx context.Context, p SelectLogsRangeParams, match func(i
 			continue
 		}
 		// Bound retained bodies by bytes as well as rows.
-		if len(ids) > 0 && m.size > selectedLogBatchBytes-bytes {
+		if len(ids) > 0 && m.size() > selectedLogBatchBytes-bytes {
 			next = i
 			break
 		}
-		bytes += m.size
+		bytes += m.size()
 		ids = append(ids, i+1)
 	}
 	idx.mu.RUnlock()

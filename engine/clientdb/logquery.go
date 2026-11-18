@@ -202,7 +202,7 @@ func (s *DB) SelectDisplayLogs(ctx context.Context, p SelectLogsRangeParams, tra
 		if traceID != "" && (!traceKnown || m.trace != trace) {
 			return false, nil
 		}
-		return m.flags.display() && scope.match(idx, m), nil
+		return m.flags().display() && scope.match(idx, m), nil
 	})
 }
 
@@ -271,7 +271,7 @@ func (s *DB) ReadDisplayLogs(ctx context.Context, p SelectLogsRangeParams, trace
 	idx := s.logIdx
 	idx.mu.RLock()
 	for _, id := range c.rows[start:] {
-		size := idx.meta[id-1].size
+		size := idx.meta[id-1].size()
 		// Bound retained bodies by bytes as well as rows, as scanLogs does.
 		if int64(len(ids)) == p.Limit || (len(ids) > 0 && size > selectedLogBatchBytes-bytes) {
 			next = id - 1
@@ -429,7 +429,7 @@ func (l *logLookup) displayRowsLocked(rows []int64, lists [][]int64, traceID str
 	for _, list := range lists {
 		for _, id := range list {
 			m := l.meta[id-1]
-			if m.flags.display() && (traceID == "" || m.trace == trace) {
+			if m.flags().display() && (traceID == "" || m.trace == trace) {
 				rows = append(rows, id)
 			}
 		}
@@ -479,7 +479,7 @@ func (s *LogPresenceSet) Forget(presence []LogPresence) {
 func (s *DB) SelectLogsWithoutDisplay(ctx context.Context, p SelectLogsRangeParams, seen *LogPresenceSet) ([]Log, []LogPresence, int64, error) {
 	var presence []LogPresence
 	rows, next, err := s.scanLogs(ctx, p, func(idx *logLookup, i int64, m logMeta) (bool, error) {
-		if !m.flags.display() {
+		if !m.flags().display() {
 			return true, nil
 		}
 		key := [3]uint32{m.trace, m.span, m.digest}

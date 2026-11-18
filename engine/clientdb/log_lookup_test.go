@@ -83,7 +83,16 @@ func TestLogLookupMatchesReference(t *testing.T) {
 				want.spansStored(stored)
 
 				msg := fmt.Sprintf("batch %d", batch)
-				require.Equal(t, want.meta, got.meta, msg)
+				require.Len(t, got.meta, len(want.meta), msg)
+				for i, w := range want.meta {
+					g := got.meta[i]
+					require.Equal(t, w.timestamp, g.timestamp, msg)
+					require.Equal(t, w.trace, g.trace, msg)
+					require.Equal(t, w.span, g.span, msg)
+					require.Equal(t, w.digest, g.digest, msg)
+					require.Equal(t, w.flags, g.flags(), msg)
+					require.Equal(t, min(w.size, logMetaMaxSize), g.size(), msg)
+				}
 				require.Equal(t, want.metaErrs, got.metaErrs, msg)
 				require.Equal(t, want.traceIDs, got.traceIDs, msg)
 				require.Equal(t, len(want.spanIDs), got.spanCount(), msg)

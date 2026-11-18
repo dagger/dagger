@@ -76,13 +76,31 @@ func referenceLogMetadata(row Log) referenceLogMeta {
 }
 
 func TestSelectedLogMetaIsCompactAndPointerFree(t *testing.T) {
-	require.LessOrEqual(t, unsafe.Sizeof(logMeta{}), uintptr(32))
+	require.LessOrEqual(t, unsafe.Sizeof(logMeta{}), uintptr(24))
 	typ := reflect.TypeFor[logMeta]()
 	for i := range typ.NumField() {
 		switch typ.Field(i).Type.Kind() {
 		case reflect.Int64, reflect.Uint32, reflect.Uint8:
 		default:
 			t.Fatalf("logMeta.%s is %s; the per-row index must stay pointer-free", typ.Field(i).Name, typ.Field(i).Type)
+		}
+	}
+}
+
+// TestLogMetaPacksSizeAndFlags checks that a packed size and flags read back
+// as given, sizes past logMetaMaxSize saturating, and every flag surviving.
+func TestLogMetaPacksSizeAndFlags(t *testing.T) {
+	all := logText | logNonempty | logCall | logMetadata | logControl | logFailed | logHidden
+	for _, size := range []int64{0, 1, selectedLogBatchBytes, logMetaMaxSize - 1, logMetaMaxSize, logMetaMaxSize + 1, 1 << 40} {
+		for _, flags := range []logFlags{0, logText, logFailed, all, 0xff} {
+			m := newLogMeta(7, size, 1, 2, 3, flags)
+			require.Equal(t, min(size, logMetaMaxSize), m.size(), "size %d", size)
+			require.Equal(t, flags, m.flags(), "size %d", size)
+			require.Equal(t, logMeta{timestamp: 7, trace: 1, span: 2, digest: 3, sizeFlags: m.sizeFlags}, m)
+			// A saturated size still never fits a batch's remaining budget.
+			if size > selectedLogBatchBytes {
+				require.Greater(t, m.size(), int64(selectedLogBatchBytes))
+			}
 		}
 	}
 }
@@ -131,14 +149,14 @@ func TestSelectedLogIndexMatchesReference(t *testing.T) {
 		got := referenceLogMeta{
 			trace:    idx.traceIDs[m.trace],
 			span:     idx.spanName(m.span),
-			text:     m.flags.has(logText),
-			nonempty: m.flags.has(logNonempty),
-			call:     m.flags.has(logCall),
-			metadata: m.flags.has(logMetadata),
-			control:  m.flags.has(logControl),
+			text:     m.flags().has(logText),
+			nonempty: m.flags().has(logNonempty),
+			call:     m.flags().has(logCall),
+			metadata: m.flags().has(logMetadata),
+			control:  m.flags().has(logControl),
 			err:      idx.metaErrs[int64(i)],
 		}
-		require.Equal(t, want.err != nil, m.flags.has(logFailed), "row %d", i)
+		require.Equal(t, want.err != nil, m.flags().has(logFailed), "row %d", i)
 		if want.err != nil {
 			require.EqualError(t, got.err, want.err.Error(), "row %d", i)
 			want.err, got.err = nil, nil
