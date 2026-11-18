@@ -2,12 +2,14 @@ package dangv2
 
 import (
 	"bytes"
+	"container/list"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
+	"sync"
 
 	"github.com/zeebo/xxh3"
 
@@ -21,43 +23,123 @@ import (
 // every item of a collection, such as the module each item belongs to, is
 // sent once per item but rebuilt once.
 //
-// A decoded value is shared by every call that receives the same JSON, and
-// must not be modified.
+// A decoded value is shared by the calls of a session that receive the same
+// JSON, and must not be modified.
 type receivedObject struct {
 	fields map[string]any
 }
 
 // decodeReceived decodes a function call's parent or argument JSON. Every
-// call on one collection item receives the whole collection, so the decoded
-// value is kept, keyed by the JSON's content, while a session that received it
-// is open. It is plain data, so sessions that receive the same JSON share it.
+// call on one collection item receives the whole collection, so the session
+// keeps decoded values, keyed by the JSON's content, for its later calls; see
+// receivedValues.
 func decodeReceived(ctx context.Context, data []byte) (any, error) {
 	cache, cacheErr := dagql.EngineCache(ctx)
 	metadata, metadataErr := engine.ClientMetadataFromContext(ctx)
 	if cacheErr != nil || metadataErr != nil {
 		return decodeReceivedJSON(data)
 	}
-	sum := xxh3.Hash128(data).Bytes()
-	key := fmt.Sprintf("native-dang-received:%d:%x", len(data), sum)
-	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, key, func(context.Context) (any, error) {
-		val, err := decodeReceivedJSON(data)
-		if err != nil {
-			return nil, err
-		}
-		return receivedValue{val}, nil
+	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, "native-dang-received-values", func(context.Context) (any, error) {
+		return newReceivedValues(maxReceivedValuesWeight), nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	val, ok := res.Value().(receivedValue)
+	values, ok := res.Value().(*receivedValues)
 	if !ok {
-		return nil, fmt.Errorf("invalid decoded value %T", res.Value())
+		return nil, fmt.Errorf("invalid received values %T", res.Value())
 	}
-	return val.v, nil
+	return values.decode(ctx, data)
 }
 
-// receivedValue boxes a decoded value, which may be nil, for the cache.
-type receivedValue struct{ v any }
+// maxReceivedValuesWeight bounds the JSON, in bytes, whose decoded values a
+// session keeps. A decoded value takes about one and a half times its JSON.
+const maxReceivedValuesWeight = 32 << 20
+
+// receivedValues holds a session's most recently received decoded values,
+// keyed by their JSON's content. Calls that receive the same JSON at once
+// share one decoding. Once the values kept come from more than maxWeight
+// bytes of JSON, the least recently used are dropped: a session's calls
+// receive ever new arguments, and an object's parent changes with its state,
+// so keeping every value would keep everything the session was ever sent. A
+// dropped value stays valid for the calls already using it; the next call to
+// receive its JSON decodes it again.
+type receivedValues struct {
+	maxWeight int
+
+	mu      sync.Mutex
+	entries map[receivedKey]*list.Element
+	// lru holds the kept *receivedEntry values, most recently used first.
+	lru    *list.List
+	weight int
+}
+
+// receivedKey identifies received JSON by its length and content hash.
+type receivedKey struct {
+	size int
+	sum  xxh3.Uint128
+}
+
+type receivedEntry struct {
+	key receivedKey
+	// done is closed once val and err are set.
+	done chan struct{}
+	val  any
+	err  error
+}
+
+func newReceivedValues(maxWeight int) *receivedValues {
+	return &receivedValues{maxWeight: maxWeight, entries: map[receivedKey]*list.Element{}, lru: list.New()}
+}
+
+func (r *receivedValues) decode(ctx context.Context, data []byte) (any, error) {
+	key := receivedKey{size: len(data), sum: xxh3.Hash128(data)}
+	r.mu.Lock()
+	if elem, ok := r.entries[key]; ok {
+		r.lru.MoveToFront(elem)
+		entry := elem.Value.(*receivedEntry)
+		r.mu.Unlock()
+		select {
+		case <-entry.done:
+			return entry.val, entry.err
+		case <-ctx.Done():
+			return nil, context.Cause(ctx)
+		}
+	}
+	entry := &receivedEntry{key: key, done: make(chan struct{})}
+	r.entries[key] = r.lru.PushFront(entry)
+	r.weight += key.size
+	r.evictLocked()
+	r.mu.Unlock()
+
+	// Decoding uses no context and always finishes, so the calls waiting on
+	// it never outlive it.
+	entry.val, entry.err = decodeReceivedJSON(data)
+	if entry.err != nil {
+		r.mu.Lock()
+		r.removeLocked(entry)
+		r.mu.Unlock()
+	}
+	close(entry.done)
+	return entry.val, entry.err
+}
+
+// evictLocked drops the least recently used values until the rest fit.
+func (r *receivedValues) evictLocked() {
+	for r.weight > r.maxWeight && r.lru.Len() > 0 {
+		r.removeLocked(r.lru.Back().Value.(*receivedEntry))
+	}
+}
+
+func (r *receivedValues) removeLocked(entry *receivedEntry) {
+	elem, ok := r.entries[entry.key]
+	if !ok || elem.Value.(*receivedEntry) != entry {
+		return
+	}
+	delete(r.entries, entry.key)
+	r.lru.Remove(elem)
+	r.weight -= entry.key.size
+}
 
 func decodeReceivedJSON(data []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
