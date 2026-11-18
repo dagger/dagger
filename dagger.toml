@@ -162,6 +162,8 @@ source = ".dagger/modules/tla-check"
 
 [modules.engine-lab]
 source = ".dagger/modules/engine-lab"
+# wcprof-report-test tests a dev-only helper: run it after changing the helper.
+check.skip = ["wcprof-report-test"]
 
 [modules.engine-lab.settings]
 cloudCredentials = "file://~/.config/dagger/credentials.json"
