@@ -37,6 +37,8 @@ func init() {
 		podmanImageDriver,
 		finchImageDriver,
 		nerdctlImageDriver,
+		// Last, as it starts the engine in a cluster instead of on this host.
+		kubectlImageDriver,
 	)
 	register("container",
 		dockerContainerDriver,
@@ -60,6 +62,8 @@ func init() {
 
 	register("image+nerdctl", nerdctlImageDriver)
 	register("container+nerdctl", nerdctlContainerDriver)
+
+	register("image+kubectl", kubectlImageDriver)
 }
 
 var (

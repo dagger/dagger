@@ -44,6 +44,7 @@ var schemeCatalog = []Scheme{
 	{Scheme: "image+podman", Value: "image+podman://IMAGE", Group: groupImage},
 	{Scheme: "image+finch", Value: "image+finch://IMAGE", Group: groupImage},
 	{Scheme: "image+nerdctl", Value: "image+nerdctl://IMAGE", Group: groupImage},
+	{Scheme: "image+kubectl", Value: "image+kubectl://IMAGE", Note: "runs the engine as a Kubernetes pod", Group: groupImage},
 
 	{Scheme: "container", Value: "container://NAME", Group: groupContainer, Primary: true},
 	{Scheme: "container+docker", Value: "container+docker://NAME", Group: groupContainer},
