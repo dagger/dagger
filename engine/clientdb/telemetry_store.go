@@ -238,9 +238,14 @@ func decodeCausalLinkTargets(row Span) []string {
 // SESSION size, paid per read, on paths that run per LLM tool call. The cost
 // is 8 bytes per log row plus per-span slice overhead; rows are appended with
 // monotonic IDs, so each span's slice is ascending by construction.
+//
+// Span IDs and digests are interned by their bytes (see idTable), and the
+// per-span row lists are indexed by the interned span: a string-keyed table
+// and map kept every span ID three times over.
 type logLookup struct {
-	mu         sync.RWMutex
-	rowsBySpan map[string][]int64
+	mu sync.RWMutex
+	// rowsBySpan holds, by interned span, the rows with a valid span ID.
+	rowsBySpan [][]int64
 	// meta holds one logMeta per log row, indexed by row ID - 1, for
 	// selected reads (see selection.go). Its trace and span fields index the
 	// intern tables below.
@@ -248,11 +253,9 @@ type logLookup struct {
 	metaErrs   map[int64]error
 	traceIDs   []string
 	traceIndex map[string]uint32
-	spanIDs    []string
-	spanIndex  map[string]uint32
+	spans      idTable
 	// digests interns logMeta.digest; index 0 is the empty digest.
-	digests     []string
-	digestIndex map[string]uint32
+	digests idTable
 
 	// For one-shot display reads by index (see ReadDisplayLogs), beside
 	// rowsBySpan: displayByDigest holds the display rows (logFlags.display)
@@ -273,17 +276,16 @@ type logLookup struct {
 }
 
 func newLogLookup() *logLookup {
-	return &logLookup{
-		rowsBySpan:      make(map[string][]int64),
+	l := &logLookup{
 		metaErrs:        make(map[int64]error),
 		traceIndex:      make(map[string]uint32),
-		spanIndex:       make(map[string]uint32),
-		digests:         []string{""},
-		digestIndex:     map[string]uint32{"": 0},
+		digests:         idTable{prefix: "xxh3:"},
 		displayByDigest: make(map[uint32][]int64),
 		unplaced:        make(map[uint32]struct{}),
 		attrMemo:        make(map[string]logAttrClassResult),
 	}
+	l.digests.intern("") // 0: no digest
+	return l
 }
 
 func (l *logLookup) addAll(rows []Log) {
@@ -293,32 +295,46 @@ func (l *logLookup) addAll(rows []Log) {
 		if errs != nil && errs[i] != nil {
 			l.metaErrs[int64(len(l.meta))] = errs[i]
 		}
-		spans := len(l.spanIDs)
+		spans := l.spans.count()
 		m := logMeta{
 			timestamp: row.Timestamp,
 			size:      logCodec.size(row),
 			trace:     internLocked(l.traceIndex, &l.traceIDs, row.TraceID.String),
-			span:      internLocked(l.spanIndex, &l.spanIDs, row.SpanID.String),
-			digest:    internLocked(l.digestIndex, &l.digests, digests[i]),
+			span:      l.spans.intern(row.SpanID.String),
+			digest:    l.digests.intern(digests[i]),
 			flags:     flags[i],
 		}
 		l.meta = append(l.meta, m)
-		if len(l.spanIDs) > spans && l.spanKnown != nil && !l.spanKnown(row.SpanID.String) {
-			l.unplaced[m.span] = struct{}{}
+		if l.spans.count() > spans {
+			l.rowsBySpan = append(l.rowsBySpan, nil)
+			if l.spanKnown != nil && !l.spanKnown(row.SpanID.String) {
+				l.unplaced[m.span] = struct{}{}
+			}
 		}
 		if m.digest != 0 && m.flags.display() {
 			l.displayByDigest[m.digest] = append(l.displayByDigest[m.digest], row.ID)
 		}
 	}
-	for _, row := range rows {
+	first := len(l.meta) - len(rows)
+	for i, row := range rows {
 		if !row.SpanID.Valid {
 			l.unspanned = append(l.unspanned, row.ID)
 			continue
 		}
-		l.rowsBySpan[row.SpanID.String] = append(l.rowsBySpan[row.SpanID.String], row.ID)
+		span := l.meta[first+i].span
+		l.rowsBySpan[span] = append(l.rowsBySpan[span], row.ID)
 	}
 	l.mu.Unlock()
 }
+
+// spanName is the span ID interned as span.
+func (l *logLookup) spanName(span uint32) string { return l.spans.name(span) }
+
+// spanCount is how many span IDs are interned.
+func (l *logLookup) spanCount() int { return l.spans.count() }
+
+// digestName is the digest interned as digest ("" for 0).
+func (l *logLookup) digestName(digest uint32) string { return l.digests.name(digest) }
 
 // spansStored takes the spans of rows, now in the span index, out of
 // unplaced. It runs after the span index added them, so that a log row
@@ -332,7 +348,7 @@ func (l *logLookup) spansStored(rows []Span) {
 	}
 	l.mu.Lock()
 	for _, row := range rows {
-		if span, ok := l.spanIndex[row.SpanID]; ok {
+		if span, ok := l.spans.lookup(row.SpanID); ok {
 			delete(l.unplaced, span)
 		}
 	}
@@ -342,8 +358,8 @@ func (l *logLookup) spansStored(rows []Span) {
 // spanRowsLocked returns the rows of span id: rowsBySpan's, and for "" the
 // rows with no span ID too, which a scan attributes to "" as well.
 func (l *logLookup) spanRowsLocked(id string, lists [][]int64) [][]int64 {
-	if rows := l.rowsBySpan[id]; len(rows) > 0 {
-		lists = append(lists, rows)
+	if span, ok := l.spans.lookup(id); ok && len(l.rowsBySpan[span]) > 0 {
+		lists = append(lists, l.rowsBySpan[span])
 	}
 	if id == "" && len(l.unspanned) > 0 {
 		lists = append(lists, l.unspanned)
@@ -357,7 +373,7 @@ func (l *logLookup) unplacedSpanIDs() []string {
 	defer l.mu.RUnlock()
 	ids := make([]string, 0, len(l.unplaced))
 	for span := range l.unplaced {
-		ids = append(ids, l.spanIDs[span])
+		ids = append(ids, l.spans.name(span))
 	}
 	return ids
 }
@@ -371,7 +387,11 @@ func (l *logLookup) rowIDsForSpans(ids map[string]struct{}, perSpanTail int) []i
 	var rowIDs []int64
 	l.mu.RLock()
 	for id := range ids {
-		rows := l.rowsBySpan[id]
+		span, ok := l.spans.lookup(id)
+		if !ok {
+			continue
+		}
+		rows := l.rowsBySpan[span]
 		if perSpanTail > 0 && len(rows) > perSpanTail {
 			rows = rows[len(rows)-perSpanTail:]
 		}

@@ -130,7 +130,7 @@ func TestSelectedLogIndexMatchesReference(t *testing.T) {
 		m := idx.meta[i]
 		got := referenceLogMeta{
 			trace:    idx.traceIDs[m.trace],
-			span:     idx.spanIDs[m.span],
+			span:     idx.spanName(m.span),
 			text:     m.flags.has(logText),
 			nonempty: m.flags.has(logNonempty),
 			call:     m.flags.has(logCall),
@@ -147,7 +147,7 @@ func TestSelectedLogIndexMatchesReference(t *testing.T) {
 	}
 	require.Len(t, idx.metaErrs, 4, "only failed rows have errors")
 	require.Len(t, idx.traceIDs, 2)
-	require.Len(t, idx.spanIDs, 5)
+	require.Equal(t, 5, idx.spanCount())
 }
 
 func TestSelectedLogsSurfaceMalformedRows(t *testing.T) {

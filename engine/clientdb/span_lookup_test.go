@@ -134,21 +134,29 @@ func TestSpanLookupMatchesReference(t *testing.T) {
 	}
 }
 
-// TestSpanIDTableRoundTrips checks that every span ID, canonical or not,
-// comes back exactly as interned.
-func TestSpanIDTableRoundTrips(t *testing.T) {
-	var table spanIDTable
-	ids := []string{"0123456789abcdef", "0123456789ABCDEF", "0123456789abcde", "0123456789abcdef0", "", "x", "0000000000000000", "ffffffffffffffff", "g123456789abcdef"}
-	for _, id := range ids {
-		n := table.intern(id)
-		require.Equal(t, n, table.intern(id), id)
-		got, ok := table.lookup(id)
-		require.True(t, ok, id)
-		require.Equal(t, n, got, id)
-		require.Equal(t, id, table.name(n), id)
-		require.True(t, table.in(n, map[string]bool{id: true}), id)
+// TestIDTableRoundTrips checks that every ID, canonical or not, comes back
+// exactly as interned, numbered in the order first seen.
+func TestIDTableRoundTrips(t *testing.T) {
+	for prefix, ids := range map[string][]string{
+		"": {"0123456789abcdef", "0123456789ABCDEF", "0123456789abcde", "0123456789abcdef0", "", "x",
+			"0000000000000000", "ffffffffffffffff", "g123456789abcdef", "xxh3:0123456789abcdef"},
+		"xxh3:": {"", "xxh3:0123456789abcdef", "0123456789abcdef", "xxh3:0123456789ABCDEF", "xxh4:0123456789abcdef",
+			"xxh3:0123456789abcde", "sha256:0123", "xxh3:ffffffffffffffff"},
+	} {
+		table := idTable{prefix: prefix}
+		for i, id := range ids {
+			n := table.intern(id)
+			require.Equal(t, uint32(i), n, id)
+			require.Equal(t, n, table.intern(id), id)
+			got, ok := table.lookup(id)
+			require.True(t, ok, id)
+			require.Equal(t, n, got, id)
+			require.Equal(t, id, table.name(n), id)
+			require.True(t, table.in(n, map[string]bool{id: true}), id)
+			require.False(t, table.in(n, map[string]bool{id + "0": true}), id)
+		}
+		require.Equal(t, len(ids), table.count())
+		_, ok := table.lookup(prefix + "fedcba9876543210")
+		require.False(t, ok)
 	}
-	require.Equal(t, len(ids), table.count())
-	_, ok := table.lookup("fedcba9876543210")
-	require.False(t, ok)
 }
