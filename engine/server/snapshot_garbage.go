@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 
 	ctdmetadata "github.com/containerd/containerd/v2/core/metadata"
 
 	"github.com/dagger/dagger/engine/slog"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
 
 // snapshotGarbage collects snapshot and content data that nothing references
@@ -22,10 +24,16 @@ import (
 type snapshotGarbage struct {
 	db      *ctdmetadata.DB
 	pending atomic.Bool
+	// forget drops the snapshot manager's in-memory metadata of the
+	// snapshots a collection removed; nil when it keeps none.
+	forget func(context.Context) error
 }
 
-func newSnapshotGarbage(db *ctdmetadata.DB) *snapshotGarbage {
+func newSnapshotGarbage(db *ctdmetadata.DB, sm bkcache.SnapshotManager) *snapshotGarbage {
 	g := &snapshotGarbage{db: db}
+	if f, ok := sm.(bkcache.CollectedSnapshotForgetter); ok {
+		g.forget = f.ForgetCollectedSnapshots
+	}
 	// containerd counts deletions in memory only, so garbage left by a
 	// previous engine process is invisible to it. Collect once regardless.
 	g.pending.Store(true)
@@ -39,7 +47,8 @@ func newSnapshotGarbage(db *ctdmetadata.DB) *snapshotGarbage {
 	return g
 }
 
-// Collect runs containerd garbage collection unconditionally.
+// Collect runs containerd garbage collection unconditionally, then drops the
+// in-memory metadata of the snapshots it removed.
 func (g *snapshotGarbage) Collect(ctx context.Context) error {
 	// Clear before collecting: a deletion that lands during the collection
 	// sets the flag again and is picked up by the next pass.
@@ -50,6 +59,11 @@ func (g *snapshotGarbage) Collect(ctx context.Context) error {
 		return err
 	}
 	slog.Debug("collected snapshot garbage", "stats", stats)
+	if g.forget != nil {
+		if err := g.forget(ctx); err != nil {
+			return fmt.Errorf("forget collected snapshots: %w", err)
+		}
+	}
 	return nil
 }
 
