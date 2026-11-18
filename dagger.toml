@@ -1,5 +1,7 @@
 [modules.changie]
 source = ".dagger/modules/changie"
+# The changelog is merged at release time.
+check.skip = ["generate/stale"]
 
 [modules.cli]
 source = ".dagger/modules/cli-dev"

@@ -157,7 +157,13 @@ to dagger.
 
 - [ ] CHANGELOG
 
-  TODO: Starting with v1.0, CHANGELOG updates should resume.
+  TODO: Starting with v1.0, CHANGELOG updates should resume. When they do,
+  merge the release notes into `CHANGELOG.md` and commit it with the release:
+  CI no longer checks that it is up to date.
+
+  ```console
+  dagger generate changie:generate -y
+  ```
 
 - [ ] Confirm that all checks on `$RELEASE_BRANCH` are green, for main you're basically [checking](https://github.com/dagger/dagger/commits/main/) that the merged prep commit is has a green check.
       Do not push tags until this is finished.
