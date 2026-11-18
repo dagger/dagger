@@ -62,6 +62,37 @@ func TestSnapshotGarbageCollectsReleasedSnapshots(t *testing.T) {
 	require.True(t, ok)
 }
 
+// Forgetting walks every snapshot, so a collection runs it only when it
+// removes a snapshot, and the first collection always.
+func TestSnapshotGarbageForgetsOnlyAfterRemovals(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	garbage := newSnapshotGarbage(store.DB, store.Manager)
+	forget := garbage.forget
+	forgets := 0
+	garbage.forget = func(ctx context.Context) error {
+		forgets++
+		return forget(ctx)
+	}
+
+	require.NoError(t, garbage.Collect(ctx))
+	require.Equal(t, 1, forgets, "the first collection forgets what an earlier process left")
+	require.NoError(t, garbage.Collect(ctx))
+	require.Equal(t, 1, forgets, "a collection that removes no snapshot has nothing to forget")
+
+	released, releasedOwner := store.Build(t, nil, "released", "released data")
+	releasedID := released.SnapshotID()
+	require.NoError(t, released.Release(ctx))
+	require.NoError(t, store.Manager.RemoveLease(ctx, releasedOwner))
+	require.NoError(t, garbage.Collect(ctx))
+	requireSnapshotCollected(t, store, releasedID)
+	require.Equal(t, 2, forgets)
+	_, ok, err := store.Manager.SnapshotRecordMetadata(ctx, releasedID)
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
 // A GC pass whose policies remove nothing must still reclaim released
 // snapshots. Before, collection only ran after a prune removed an entry, so
 // an engine whose policies never removed anything kept that data forever.

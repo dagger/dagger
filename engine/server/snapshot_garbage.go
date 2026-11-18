@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	ctdmetadata "github.com/containerd/containerd/v2/core/metadata"
+	"github.com/containerd/containerd/v2/pkg/gc"
 
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -27,6 +28,10 @@ type snapshotGarbage struct {
 	// forget drops the snapshot manager's in-memory metadata of the
 	// snapshots a collection removed; nil when it keeps none.
 	forget func(context.Context) error
+	// forgetPending is set when forget must run after the next collection
+	// even if it removes no snapshot: at first, since snapshots may have been
+	// removed before the manager was made, and after forget failed.
+	forgetPending atomic.Bool
 }
 
 func newSnapshotGarbage(db *ctdmetadata.DB, sm bkcache.SnapshotManager) *snapshotGarbage {
@@ -37,6 +42,7 @@ func newSnapshotGarbage(db *ctdmetadata.DB, sm bkcache.SnapshotManager) *snapsho
 	// containerd counts deletions in memory only, so garbage left by a
 	// previous engine process is invisible to it. Collect once regardless.
 	g.pending.Store(true)
+	g.forgetPending.Store(true)
 	db.RegisterMutationCallback(func(dirty bool) {
 		// This runs on the DB's write path while it holds the lock that
 		// GarbageCollect needs, so only record the signal here.
@@ -59,12 +65,24 @@ func (g *snapshotGarbage) Collect(ctx context.Context) error {
 		return err
 	}
 	slog.Debug("collected snapshot garbage", "stats", stats)
-	if g.forget != nil {
+	// Forgetting walks every snapshot, so it runs only when the collection
+	// removed some.
+	if g.forget != nil && (removedSnapshots(stats) || g.forgetPending.Load()) {
+		g.forgetPending.Store(false)
 		if err := g.forget(ctx); err != nil {
+			g.forgetPending.Store(true)
 			return fmt.Errorf("forget collected snapshots: %w", err)
 		}
 	}
 	return nil
+}
+
+// removedSnapshots reports whether a collection with stats removed any
+// snapshot: containerd times the cleanup of each snapshotter it removed
+// snapshots from, and only those.
+func removedSnapshots(stats gc.Stats) bool {
+	s, ok := stats.(ctdmetadata.GCStats)
+	return !ok || len(s.SnapshotD) > 0
 }
 
 // CollectIfPending runs garbage collection if anything was deleted since the
