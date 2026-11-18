@@ -1,6 +1,7 @@
 package clientdb
 
 import (
+	"errors"
 	"testing"
 
 	telemetry "github.com/dagger/otel-go"
@@ -40,6 +41,53 @@ func callPayloadLog(t *testing.T, frame *callpbv1.Call) Log {
 		SpanID:     validString("span"),
 		Body:       body,
 		Attributes: stringAttrsList(t, telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType),
+	}
+}
+
+// TestCallPayloadBodyInPlace checks that reading a payload's bytes in place
+// decodes exactly what decoding the AnyValue does, for every body shape.
+func TestCallPayloadBodyInPlace(t *testing.T) {
+	frame := &callpbv1.Call{Digest: "xxh3:1", Field: "container", Type: &callpbv1.Type{NamedType: "Container"}}
+	payload, err := proto.Marshal(frame)
+	require.NoError(t, err)
+	other, err := proto.Marshal(&callpbv1.Call{Digest: "xxh3:2", Field: "other"})
+	require.NoError(t, err)
+	enc := func(v *otlpcommonv1.AnyValue) []byte {
+		b, err := proto.Marshal(v)
+		require.NoError(t, err)
+		return b
+	}
+	bytesBody := enc(&otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: payload}})
+	for name, body := range map[string][]byte{
+		"bytes":       bytesBody,
+		"empty bytes": enc(&otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: []byte{}}}),
+		"string":      enc(&otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_StringValue{StringValue: string(payload)}}),
+		"empty":       nil,
+		"repeated":    append(enc(&otlpcommonv1.AnyValue{Value: &otlpcommonv1.AnyValue_BytesValue{BytesValue: other}}), bytesBody...),
+		"truncated":   bytesBody[:len(bytesBody)-3],
+	} {
+		t.Run(name, func(t *testing.T) {
+			row := Log{Body: body}
+			got, gotErr := CallPayloadBody(row)
+			// The reference: decode the AnyValue, then its bytes.
+			var want *callpbv1.Call
+			var wantErr error
+			var value otlpcommonv1.AnyValue
+			if wantErr = proto.Unmarshal(body, &value); wantErr == nil {
+				if raw, ok := value.GetValue().(*otlpcommonv1.AnyValue_BytesValue); ok {
+					want = new(callpbv1.Call)
+					if err := proto.Unmarshal(raw.BytesValue, want); err != nil {
+						want, wantErr = nil, err
+					}
+				} else {
+					wantErr = errors.New("call payload body is not bytes")
+				}
+			}
+			require.Equal(t, wantErr != nil, gotErr != nil, "%v / %v", wantErr, gotErr)
+			if wantErr == nil {
+				require.True(t, proto.Equal(want, got))
+			}
+		})
 	}
 }
 
