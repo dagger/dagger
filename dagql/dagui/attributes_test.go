@@ -97,6 +97,31 @@ func TestSpanAttributes(t *testing.T) {
 	}
 }
 
+// TestSpanAttributesSharePairs checks that spans share a low-cardinality
+// attribute's name and value, and that updating one span's never touches
+// another's.
+func TestSpanAttributesSharePairs(t *testing.T) {
+	var a, b SpanSnapshot
+	a.ProcessAttribute(telemetryattrs.CacheOutcomeAttr, string([]byte("hit")))
+	b.ProcessAttribute(telemetryattrs.CacheOutcomeAttr, string([]byte("hit")))
+	if a.ExtraAttributes[0] != b.ExtraAttributes[0] {
+		t.Fatal("equal low-cardinality attributes should share one spanAttribute")
+	}
+	a.ProcessAttribute(telemetryattrs.CacheOutcomeAttr, "miss")
+	if got, _ := a.ExtraAttributes.String(telemetryattrs.CacheOutcomeAttr); got != "miss" {
+		t.Fatalf("updated span reads %q", got)
+	}
+	if got, _ := b.ExtraAttributes.String(telemetryattrs.CacheOutcomeAttr); got != "hit" {
+		t.Fatalf("other span reads %q after an update elsewhere", got)
+	}
+	// A high-cardinality attribute stays the span's own.
+	a.ProcessAttribute("z.str", "x")
+	b.ProcessAttribute("z.str", "x")
+	if a.ExtraAttributes[a.ExtraAttributes.find("z.str")] == b.ExtraAttributes[b.ExtraAttributes.find("z.str")] {
+		t.Fatal("ordinary attributes should not be shared")
+	}
+}
+
 // testSpanAttributesRoundTrip checks that a snapshot's attributes survive
 // both JSON and gob round trips.
 func testSpanAttributesRoundTrip(t *testing.T, snapshot SpanSnapshot, want map[string]json.RawMessage) {
