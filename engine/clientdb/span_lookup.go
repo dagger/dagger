@@ -389,8 +389,10 @@ func eachInList(head, next []uint32, parent uint32, f func(uint32) bool) bool {
 	return true
 }
 
-// eachChildLocked calls f with each of parent's children, in the order they
-// were added, until f returns false.
+// eachChildLocked calls f with each of parent's children until f returns
+// false: those first added under it in the order they were, then those it
+// gained as the same span ID in another trace. Every caller treats the
+// children as a set.
 func (l *spanLookup) eachChildLocked(parent uint32, f func(uint32) bool) bool {
 	if !eachInList(l.childHead, l.childNext, parent, f) {
 		return false
@@ -411,7 +413,8 @@ func (l *spanLookup) isChildLocked(parent, span uint32) bool {
 	return slices.Contains(l.extraChildren[parent], span)
 }
 
-// childrenLocked lists parent's children by name, in order.
+// childrenLocked lists parent's children by name, in eachChildLocked's
+// order.
 func (l *spanLookup) childrenLocked(parent string) []string {
 	n, ok := l.lookupLocked(parent)
 	if !ok {
