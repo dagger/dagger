@@ -285,20 +285,21 @@ func spanCallDigest(ctx context.Context, read *clientdb.DB, spanID string) (stri
 }
 
 // findCalls content-searches every call the store holds a frame for; see
-// dagui.DB.GrepCalls for the line format.
-func findCalls(ctx context.Context, re *regexp.Regexp, limit int) (string, error) {
+// dagui.DB.GrepCalls for the line format. A non-empty exclude leaves out the
+// frames of that agent's own conversation (see agentConversationCalls).
+func findCalls(ctx context.Context, re *regexp.Regexp, limit int, exclude string) (string, error) {
 	clientDB, err := traceReportClientDB(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer clientDB.Close()
-	return findCallsIn(ctx, clientDB.Read(), re, limit)
+	return findCallsIn(ctx, clientDB.Read(), re, limit, exclude)
 }
 
 // findCallsIn is findCalls against an already-open store. The load is
 // session-wide -- one row per distinct call, seeded from the call index --
 // transient and linear in the number of calls rather than retained.
-func findCallsIn(ctx context.Context, read *clientdb.DB, re *regexp.Regexp, limit int) (string, error) {
+func findCallsIn(ctx context.Context, read *clientdb.DB, re *regexp.Regexp, limit int, exclude string) (string, error) {
 	db := dagui.NewDB()
 	for _, source := range read.InspectionStores() {
 		frames, err := source.SelectCallFrames(ctx, source.CallDigests())
@@ -314,9 +315,75 @@ func findCallsIn(ctx context.Context, read *clientdb.DB, re *regexp.Regexp, limi
 	if len(db.Calls) == 0 {
 		return "(no calls in this session)", nil
 	}
+	total := len(db.Calls)
+	hidden := 0
+	if exclude != "" {
+		// The DB is this search's own: dropping the caller's conversation
+		// frames from it is how the grep skips them.
+		for dig := range agentConversationCalls(db.Calls, exclude) {
+			if re.MatchString(dagui.CallSearchText(db.Calls[dig])) {
+				hidden++
+			}
+			delete(db.Calls, dig)
+		}
+	}
+	var note string
+	if hidden > 0 {
+		note = fmt.Sprintf("(%d matching calls of your own conversation hidden; includeSelf: true lists them)", hidden)
+	}
 	lines := db.GrepCalls(re, limit)
 	if len(lines) == 0 {
-		return fmt.Sprintf("(no calls matching /%s/ among the %d in this session)", re, len(db.Calls)), nil
+		empty := fmt.Sprintf("(no calls matching /%s/ among the %d in this session)", re, total)
+		if note != "" {
+			empty += "\n" + note
+		}
+		return empty, nil
+	}
+	if note != "" {
+		lines = append(lines, note)
 	}
 	return strings.Join(lines, "\n") + "\n", nil
+}
+
+// agentConversationCalls returns the digests of the frames recording an
+// agent's own conversation: LLM-typed frames whose nearest ownership stamp
+// (LLM.__withOwnerAgent, which an agent puts on its committed conversation)
+// up the receiver chain names handle. Nearest, because a conversation an
+// agent hands on -- a worker's seed -- is re-stamped by its new owner.
+func agentConversationCalls(calls map[string]*callpbv1.Call, handle string) map[string]struct{} {
+	owners := make(map[string]string, len(calls))
+	for dig := range calls {
+		var chain []string
+		owner := ""
+		for cur := dig; cur != "" && len(chain) < 1<<16; {
+			if known, ok := owners[cur]; ok {
+				owner = known
+				break
+			}
+			frame := calls[cur]
+			if frame == nil || frame.GetType().GetNamedType() != "LLM" {
+				break
+			}
+			chain = append(chain, cur)
+			if frame.GetField() == "__withOwnerAgent" {
+				for _, arg := range frame.GetArgs() {
+					if arg.GetName() == "handle" {
+						owner = arg.GetValue().GetString_()
+					}
+				}
+				break
+			}
+			cur = frame.GetReceiverDigest()
+		}
+		for _, d := range chain {
+			owners[d] = owner
+		}
+	}
+	owned := map[string]struct{}{}
+	for dig, owner := range owners {
+		if owner == handle {
+			owned[dig] = struct{}{}
+		}
+	}
+	return owned
 }

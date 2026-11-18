@@ -61,7 +61,7 @@ schema that client codegen consumes. It contains **core plus the single bound
 module, installed namespaced** (reached via `dag.<moduleName>`, never promoted to
 the `Query` root). The bound module's own **dependencies are deliberately
 excluded** — a client is generated for one module, not its whole dependency
-graph. (It starts from a core-only `SchemaBuilder` via `loadDefaultSchemaBuilder`
+graph. (It starts from a core-only `SchemaBuilder` via `defaultSchemaBuilderForEngineVersion`
 and installs only the bound module.)
 
 **How the generated client runs.** The bindings are consumed by ordinary,
@@ -407,7 +407,7 @@ Codegen (**separate**, TypeScript SDK — the client generator now lives there):
 | Whole-tree materialization + host routing | `core/schema/workspace.go` `workspaceOverlayRootfs` → `resolveRootfs` | routes host reads to the workspace owner |
 | `Query.currentWorkspace` (root field) | `core/schema/workspace.go` | reachable from a plain `connect()` session |
 | Plain-session workspace detection | `engine/server/session.go` (`pendingWorkspaceLoad`), `engine/server/session_workspaces.go` (`loadWorkspaceFromHost`) | detects workspace from host cwd regardless of `LoadWorkspaceModules` |
-| Client-facing schema (core + bound module, deps excluded) | `core/schema/modulesource.go` `clientSchemaIntrospectionJSONFile` ([#13646](https://github.com/dagger/dagger/pull/13646)) | starts from `loadDefaultSchemaBuilder` (core-only), installs bound module namespaced |
+| Client-facing schema (core + bound module, deps excluded) | `core/schema/modulesource.go` `clientSchemaIntrospectionJSONFile` ([#13646](https://github.com/dagger/dagger/pull/13646)) | starts from `defaultSchemaBuilderForEngineVersion` (core-only), installs bound module namespaced |
 | `ModuleSource.clientSchemaIntrospectionJSON` field | `core/schema/modulesource.go` (`v1.0.0-0`-gated, [#13646](https://github.com/dagger/dagger/pull/13646)) | the schema codegen consumes; hard prerequisite |
 | `CurrentModuleAsSDKClient.moduleSource` | `core/schema/module_as_sdk.go` `currentModuleAsSDKClientModuleSource` ([#13646](https://github.com/dagger/dagger/pull/13646)) | generation-time analog; only reachable from the current module |
 | `resolveClientTargetModule` | `core/schema/workspace_client.go:138` | shared local/remote resolver; **not** reused (its `IsLocalRef` branch-selection mis-routes dotted dir names) |

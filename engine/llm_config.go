@@ -9,7 +9,7 @@ package engine
 // the provider it actually routes — never values.
 type LLMConfig struct {
 	// DefaultProvider and DefaultModel are the configured default route, as
-	// chosen by `dagger llm setup` / `dagger llm set-default`. Either may be
+	// chosen by the agent's /setup and /set-default commands. Either may be
 	// empty, in which case the engine infers a default from the configured
 	// providers.
 	DefaultProvider string `json:"default_provider,omitempty"`
@@ -18,6 +18,14 @@ type LLMConfig struct {
 	// Providers is keyed by the engine's provider name: anthropic, openai,
 	// openai-codex, google, local.
 	Providers map[string]*LLMProviderConfig `json:"providers,omitempty"`
+}
+
+// LLMConfigStatus is the response from the internal session configuration
+// endpoint. Models contains only defaults and model names for configured
+// providers, never credential URIs, tokens, or endpoint addresses.
+type LLMConfigStatus struct {
+	Configured bool       `json:"configured"`
+	Models     *LLMConfig `json:"models"`
 }
 
 // LLMProviderConfig configures one provider.
@@ -67,6 +75,10 @@ func (c *LLMConfig) Clone() *LLMConfig {
 	if c.Providers != nil {
 		cp.Providers = make(map[string]*LLMProviderConfig, len(c.Providers))
 		for name, p := range c.Providers {
+			if p == nil {
+				cp.Providers[name] = nil
+				continue
+			}
 			pp := *p
 			if p.DisableStreaming != nil {
 				v := *p.DisableStreaming

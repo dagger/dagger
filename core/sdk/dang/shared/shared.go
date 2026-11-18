@@ -1,9 +1,10 @@
-// Package dangshared holds the Dang-version-agnostic plumbing shared by every
-// supported major version of the Dang runtime (core/sdk/dang/v1, v2, ...).
+// Package dangshared holds the plumbing of the Dang SDK that does not depend
+// on the Dang library (core/sdk/dang/v2): the nested-client server, client
+// metadata, error conversion and naming.
 //
-// Nothing in this package may import github.com/vito/dang (any major); that
-// keeps the per-version packages free to be pure copies of each other with
-// only their dang import paths rewritten. See core/sdk/dang/README.md.
+// Nothing in this package may import github.com/vito/dang (any major), so a
+// future Dang major can be linked beside the current one without a copy of
+// it. See core/sdk/dang/README.md.
 package dangshared
 
 import (

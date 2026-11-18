@@ -7,6 +7,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
+	"github.com/dagger/dagger/internal/tracesource"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -75,7 +76,7 @@ func (s spanSelector) validate() error {
 // checks and tests are priority spans, so they're present without fetching the
 // whole trace. The empty selector resolves to the root span with descendants,
 // i.e. the entire trace.
-func (s spanSelector) resolveSpan(ctx context.Context, client *cloudapi.OTLPClient, traceID string) (spanID string, descendants bool, err error) {
+func (s spanSelector) resolveSpan(ctx context.Context, client tracesource.Source, traceID string) (spanID string, descendants bool, err error) {
 	if s.span != "" {
 		return s.span, s.descendants, nil
 	}
@@ -100,14 +101,37 @@ func (s spanSelector) resolveSpan(ctx context.Context, client *cloudapi.OTLPClie
 		if db.RootSpan != nil {
 			return db.RootSpan.ID.String(), true, nil
 		}
+		// The engine's store never receives the spans only the CLI exports,
+		// such as the command span every other span of the trace descends
+		// from; the trace is still rooted at that one absent span.
+		if root := absentTraceRoot(db); root != nil {
+			return root.ID.String(), true, nil
+		}
 		return "", false, fmt.Errorf("no root span found in trace %s (no data yet?)", traceID)
 	}
+}
+
+// absentTraceRoot is the one parent the received spans descend from that was
+// never itself received, or nil if there is not exactly one.
+func absentTraceRoot(db *dagui.DB) *dagui.Span {
+	var root *dagui.Span
+	for _, span := range db.Spans.Map {
+		parent := span.ParentSpan
+		if !span.Received || parent == nil || parent.Received || parent.ParentID.IsValid() {
+			continue
+		}
+		if root != nil && root != parent {
+			return nil
+		}
+		root = parent
+	}
+	return root
 }
 
 // fetchPrioritySpans loads a trace's priority (root) spans into a private DB
 // via the incremental selection. For a completed trace the stream delivers
 // the priority set and returns.
-func fetchPrioritySpans(ctx context.Context, client *cloudapi.OTLPClient, traceID string) (*dagui.DB, error) {
+func fetchPrioritySpans(ctx context.Context, client tracesource.Source, traceID string) (*dagui.DB, error) {
 	db := dagui.NewDB()
 	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{Spans: db})
 	importer.KeepRoots = true

@@ -1,0 +1,14 @@
+kind: Changed
+body: |
+  API views are now per v1.0.0 prerelease, starting at v1.0.0-beta.22, so a
+  module or client declaring a beta gets that beta's API. Every earlier v1.0.0
+  prerelease (`v1.0.0-0` to `v1.0.0-beta.21`) shares one view and keeps the API
+  it had.
+
+  A module declaring a later prerelease than the engine, or `v1.0.0` itself, is
+  no longer refused: it loads and is served the engine's own view. A later base
+  version, such as `v1.1.0`, is still refused.
+time: 2026-10-29T12:00:00Z
+custom:
+  Author: vito
+  PR: "14810"

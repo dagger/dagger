@@ -210,9 +210,9 @@ func transferTestSalt(t *testing.T) []byte {
 // only through an extra digest: a secret or socket handle, a volatile
 // variable's call, or a content digest that a later one replaced. The content
 // of a file taken from a source that changed elsewhere needs native snapshot
-// mounts; TestUnchangedFileFromChangedSourceHitsOnAnotherEngine in
-// core/integration covers it. Engines of one organization share one secret
-// salt; under different salts a salted handle differs, and the call misses.
+// mounts, which this test's engines can't make, and is left out. Engines of
+// one organization share one secret salt; under different salts a salted
+// handle differs, and the call misses.
 func TestEquivalentResultHitsAfterMergeIntoAnotherEngine(t *testing.T) {
 	secretURI := withSecret(dagql.Selector{Field: "secret", Args: []dagql.NamedInput{
 		{Name: "uri", Value: dagql.NewString("env://TRANSFER_SECRET")},

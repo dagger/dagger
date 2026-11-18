@@ -133,12 +133,13 @@ func cacheSpanTestSession(t *testing.T, id string, traceID trace.TraceID, wcprof
 		cacheSpans:         &cacheSpanCounter{},
 		wcprofTraceID:      traceID,
 		wcprofRootSpanID:   trace.SpanID{1},
+		wcprofEnabled:      true,
 	}
 	sess.clientRecords = map[string]*clientRecord{
 		sess.mainClientCallerID: {clientID: sess.mainClientCallerID, clientMetadata: &engine.ClientMetadata{SessionID: id, ClientID: sess.mainClientCallerID}},
 	}
 	sess.tracerProvider = sdktrace.NewTracerProvider(
-		sdktrace.WithSpanProcessor(wcprof),
+		sdktrace.WithSpanProcessor(wcprofSpanMarker{counter: wcprof, sess: sess}),
 		sdktrace.WithSpanProcessor(sess.cacheSpans),
 		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: id}),
 		sdktrace.WithSpanProcessor(rec),
@@ -180,7 +181,7 @@ func carrierAttrs(rec *tracetest.SpanRecorder) (map[string]string, bool) {
 		}
 		attrs := map[string]string{}
 		for _, kv := range span.Attributes() {
-			attrs[string(kv.Key)] = kv.Value.Emit()
+			attrs[string(kv.Key)] = kv.Value.String()
 		}
 		return attrs, true
 	}

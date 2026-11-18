@@ -63,7 +63,7 @@ func (s *SpanTreeView) renderInlineServices(ctx tuist.Context, r *renderer, row 
 	if len(nodes) == 0 {
 		return nil
 	}
-	return s.frameInlineRollup(r, row, s.fe.servicesRollupLines(r, nodes, s.inlineRollupLimit(ctx)))
+	return s.frameInlineRollup(s.inlineRollupPrefix(r, row), s.fe.servicesRollupLines(r, nodes, s.inlineRollupLimit(ctx)))
 }
 
 // renderMessageServices is renderMessageChecks for the services an LLM tool

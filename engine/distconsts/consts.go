@@ -35,10 +35,18 @@ const (
 
 	EngineDefaultStateDir = "/var/lib/dagger"
 
-	EngineContainerBuiltinContentDir   = "/usr/local/share/dagger/content"
-	GoSDKManifestDigestEnvName         = "DAGGER_GO_SDK_MANIFEST_DIGEST"
-	PythonSDKManifestDigestEnvName     = "DAGGER_PYTHON_SDK_MANIFEST_DIGEST"
-	TypescriptSDKManifestDigestEnvName = "DAGGER_TYPESCRIPT_SDK_MANIFEST_DIGEST"
+	// The built-in SDKs' files reach the engine as directories its image's
+	// entries hold (EngineContainerImageEntriesDir), each named by its
+	// content digest (Directory.digest), which these variables of the engine
+	// image give.
+	GoSDKDigestEnvName         = "DAGGER_GO_SDK_DIGEST"
+	PythonSDKDigestEnvName     = "DAGGER_PYTHON_SDK_DIGEST"
+	TypescriptSDKDigestEnvName = "DAGGER_TYPESCRIPT_SDK_DIGEST"
+
+	// EngineContainerImageEntriesDir holds the entries the engine image ships,
+	// which the engine merges into its cache at start: their bundle and its
+	// blobs.
+	EngineContainerImageEntriesDir = "/usr/local/share/dagger/entries"
 )
 
 const (
@@ -51,6 +59,31 @@ const (
 	BusyboxVersion = "1.37.0"
 	BusyboxImage   = "busybox:" + BusyboxVersion
 )
+
+// GoSDKBuildFlags are the go build flags the built-in Go SDK builds every Go
+// module runtime with, which the engine gives it, and which the engine image's
+// entries are built with, so that its builds are the runtimes' own. The link
+// drops debug information, so compiles don't generate it, but for the
+// standard library, whose archives stay the ones every other build reads from
+// the engine image. The generated client compiles without inlining: it is
+// about half of its compile's CPU, on code that makes network calls.
+func GoSDKBuildFlags() []string {
+	return []string{"-ldflags=-s -w", "-gcflags=all=-dwarf=false", "-gcflags=std=", "-gcflags=./internal/dagger/...=-dwarf=false -l"}
+}
+
+// GoSDKGolangImage is the image the built-in Go SDK's container starts from:
+// the Go toolchain image dagger/go builds in at GolangVersion (its
+// go.image), named by digest, so the SDK's container and dagger/go's builds
+// share one image, which the engine image's entries ship.
+// cmd/engine-image-entries fails when dagger/go names another, so move them
+// together.
+const GoSDKGolangImage = "golang:1.27-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb"
+
+// GoSDKBasePackages are the Alpine packages the built-in Go SDK's container
+// adds to the Go toolchain image, for downloads of private modules: git and
+// SSH. The engine image's build installs them, and ships what they add with
+// the Go SDK's files.
+var GoSDKBasePackages = []string{"git", "openssh", "openssl"}
 
 const (
 	OCIVersionAnnotation = "org.opencontainers.image.version"

@@ -10,6 +10,7 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/metadata/boltutil"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/engine/wcprof"
 	digest "github.com/opencontainers/go-digest"
 	pkgerrors "github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
@@ -72,6 +73,9 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 	defer cm.mu.Unlock()
 
 	cm.snapshotContentDigests = make(map[string]map[digest.Digest]struct{}, len(rows.SnapshotContent))
+	// The loaded blobs are attached to the owners again as they are
+	// recorded, before any is known to be attached to every one.
+	cm.snapshotContentOwned = make(map[string]map[digest.Digest]struct{})
 	for _, row := range rows.SnapshotContent {
 		if row.SnapshotID == "" || row.Digest == "" {
 			continue
@@ -232,7 +236,7 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 	// lease becomes an owner of a snapshot only after the transaction, once
 	// the snapshot's blobs are attached, rechecking for blobs recorded
 	// meanwhile; see addSnapshotOwner.
-	blobs := cm.snapshotBlobs(snapshotIDs, labeledBlobs)
+	blobs := cm.snapshotBlobs(ctx, snapshotIDs, labeledBlobs)
 	attachedSnapshots := 0
 	committed, err := cm.writeLease(ctx, func(ctx context.Context) error {
 		if err := cm.createOwnerLease(ctx, leaseID); err != nil {
@@ -269,7 +273,7 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 			attached[dgst] = struct{}{}
 		}
 		for {
-			pending := cm.addSnapshotOwner(currentSnapshotID, leaseID, attached)
+			pending := cm.addSnapshotOwner(ctx, currentSnapshotID, leaseID, attached)
 			if len(pending) == 0 {
 				break
 			}
@@ -326,7 +330,7 @@ func (cm *snapshotManager) writeLease(ctx context.Context, fn func(context.Conte
 		return true, fn(ctx)
 	}
 	var fnErr error
-	err := cm.metadataDB.Update(func(tx *bolt.Tx) error {
+	err := cm.profiledUpdate(ctx, func(tx *bolt.Tx) error {
 		fnErr = fn(boltutil.WithTransaction(ctx, tx))
 		return nil
 	})
@@ -343,9 +347,20 @@ func (cm *snapshotManager) updateMetadata(ctx context.Context, fn func(context.C
 	if cm.metadataDB == nil {
 		return fn(ctx)
 	}
-	return cm.metadataDB.Update(func(tx *bolt.Tx) error {
+	return cm.profiledUpdate(ctx, func(tx *bolt.Tx) error {
 		return fn(boltutil.WithTransaction(ctx, tx))
 	})
+}
+
+// profiledUpdate runs fn in one metadata write transaction, recorded, when
+// ctx is profiled, as one snapshot.metadata.write op, as a containerd
+// snapshotter call is: the time from asking for the database's single
+// writer to the commit's end.
+func (cm *snapshotManager) profiledUpdate(ctx context.Context, fn func(*bolt.Tx) error) error {
+	_, op := wcprof.BeginOp(ctx, wcprof.OpKindInternal, "snapshot.metadata.write", wcprof.OpOpts{})
+	err := cm.metadataDB.Update(fn)
+	op.EndErr(err)
+	return err
 }
 
 func (cm *snapshotManager) createOwnerLease(ctx context.Context, leaseID string) error {
@@ -378,8 +393,8 @@ func (cm *snapshotManager) attachOwnerContent(ctx context.Context, leaseID, snap
 // process, and the one its label names, which survives a restart. The lease
 // is flat, so the collector will not follow the label itself; the resource is
 // what keeps the blob.
-func (cm *snapshotManager) snapshotBlobs(snapshotIDs []string, labeledBlobs map[string]digest.Digest) map[string][]digest.Digest {
-	cm.mu.Lock()
+func (cm *snapshotManager) snapshotBlobs(ctx context.Context, snapshotIDs []string, labeledBlobs map[string]digest.Digest) map[string][]digest.Digest {
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	defer cm.mu.Unlock()
 
 	blobs := make(map[string][]digest.Digest, len(snapshotIDs))
@@ -408,8 +423,8 @@ func (cm *snapshotManager) snapshotBlobs(snapshotIDs []string, labeledBlobs map[
 // recorded after the owner and attached to it by recordSnapshotContent. As
 // when all of AttachLease ran under cm.mu, a lease becomes an owner only once
 // the snapshot's blobs are attached to it.
-func (cm *snapshotManager) addSnapshotOwner(snapshotID, leaseID string, attached map[digest.Digest]struct{}) []digest.Digest {
-	cm.mu.Lock()
+func (cm *snapshotManager) addSnapshotOwner(ctx context.Context, snapshotID, leaseID string, attached map[digest.Digest]struct{}) []digest.Digest {
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	defer cm.mu.Unlock()
 
 	var pending []digest.Digest
@@ -436,6 +451,11 @@ func (cm *snapshotManager) addSnapshotOwner(snapshotID, leaseID string, attached
 	return nil
 }
 
+// managerMuProfIdent names cm.mu in the waits AttachLease and RemoveLease
+// record for it: one wait per acquisition another holder blocks, and only
+// when the work is profiled. An uncontended acquisition records nothing.
+const managerMuProfIdent = "snapshots.snapshotManager.mu"
+
 func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) error {
 	if leaseID == "" {
 		return nil
@@ -449,7 +469,7 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 		return pkgerrors.Wrapf(err, "delete owner lease %s", leaseID)
 	}
 
-	cm.mu.Lock()
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	for snapshotID := range cm.leaseOwnedSnapshots[leaseID] {
 		leaseIDs := cm.snapshotOwnerLeases[snapshotID]
 		delete(leaseIDs, leaseID)

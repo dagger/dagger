@@ -38,6 +38,16 @@ const cacheVolumeDirPath = "/var/lib/dagger-cache-volumes"
 func withCacheVolumeDir(ctx context.Context, t *testctx.T, dirVol *core.CacheVolume) func(*core.Container) *core.Container {
 	return func(ctr *core.Container) *core.Container {
 		t.Helper()
+		return withEngineConfig(ctx, t, func(cfg map[string]any) {
+			cfg["cacheVolumes"] = map[string]any{"dir": cacheVolumeDirPath}
+		})(ctr).WithMountedCache(cacheVolumeDirPath, dirVol)
+	}
+}
+
+// withEngineConfig edits the nested engine's config, whatever the image has.
+func withEngineConfig(ctx context.Context, t *testctx.T, edit func(cfg map[string]any)) func(*core.Container) *core.Container {
+	return func(ctr *core.Container) *core.Container {
+		t.Helper()
 		cfg := map[string]any{}
 		entries, err := ctr.Directory("/etc/dagger").Entries(ctx)
 		require.NoError(t, err)
@@ -46,12 +56,10 @@ func withCacheVolumeDir(ctx context.Context, t *testctx.T, dirVol *core.CacheVol
 			require.NoError(t, err)
 			require.NoError(t, json.Unmarshal([]byte(existing), &cfg))
 		}
-		cfg["cacheVolumes"] = map[string]any{"dir": cacheVolumeDirPath}
+		edit(cfg)
 		js, err := json.Marshal(cfg)
 		require.NoError(t, err)
-		return ctr.
-			WithMountedCache(cacheVolumeDirPath, dirVol).
-			WithNewFile("/etc/dagger/engine.json", string(js))
+		return ctr.WithNewFile("/etc/dagger/engine.json", string(js))
 	}
 }
 
@@ -154,6 +162,40 @@ func (CacheVolumeDirSuite) TestHandOff(ctx context.Context, t *testctx.T) {
 	// On disk: plain directories named by identity, each with metadata.
 	out = inspectDir(ctx, t, c, dirVol, `ls /dir/v1/volumes | wc -l; cat /dir/v1/volumes/*/fs/f 2>/dev/null; for v in /dir/v1/volumes/*; do test -f $v/meta.json || echo "no meta in $v"; done`)
 	require.Equal(t, "2\nfrom-a\n", out)
+}
+
+// An engine whose state is discarded, as a remote cache CI engine's is,
+// still hands the directory on: its stop skips the work on its state, but
+// collects the directory within its capacity and gives it up for the next
+// engine.
+func (CacheVolumeDirSuite) TestHandOffFromDiscardedState(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	dirVol := core.NewQuery(c).CacheVolume("cvdir-" + rand.Text())
+
+	// three volumes of 1 MiB, the oldest first, in a directory provisioned
+	// for 3 MiB: collections keep them within 80% of that
+	a := startCacheVolumeDirEngine(ctx, t, c, withCacheVolumeDir(ctx, t, dirVol), withEngineConfig(ctx, t, func(cfg map[string]any) {
+		cfg["cacheVolumes"].(map[string]any)["capacityBytes"] = 3 << 20
+		cfg["state"] = map[string]any{"discarded": true}
+	}))
+	qa := core.NewQuery(a.client)
+	for _, key := range []string{"old", "mid", "new"} {
+		_, err := a.shell(ctx, qa.CacheVolume("handoff-"+key), "head -c 1048576 /dev/zero > /cache/f")
+		require.NoError(t, err)
+	}
+	a.stop(ctx, t)
+
+	b := startCacheVolumeDirEngine(ctx, t, c, withCacheVolumeDir(ctx, t, dirVol))
+	qb := core.NewQuery(b.client)
+	for _, key := range []string{"new", "mid"} {
+		out, err := b.shell(ctx, qb.CacheVolume("handoff-"+key), "wc -c < /cache/f")
+		require.NoError(t, err)
+		require.Equal(t, "1048576\n", out, "the next engine lacks %s", key)
+	}
+	out, err := b.shell(ctx, qb.CacheVolume("handoff-old"), "test -f /cache/f && echo kept || echo collected")
+	require.NoError(t, err)
+	require.Equal(t, "collected\n", out, "the directory wasn't kept within its capacity")
+	b.stop(ctx, t)
 }
 
 func (CacheVolumeDirSuite) TestSourceAndOwnerParity(ctx context.Context, t *testctx.T) {

@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -40,6 +42,14 @@ type Module struct {
 	// comes from the current client's memo, and execution still requires the
 	// held ClientScope carried by the calling context.
 	Deps *SchemaBuilder
+
+	// EntrypointDeps, when the module's manifest lists its dependencies as
+	// its entrypoint's own (ModuleSource.EntrypointOnlyDependencies), is the
+	// schema the entrypoint runs with: the core's and those dependencies.
+	// Deps then holds the core's alone, so the module's own code, its
+	// callers and its generated code don't see them. Nil otherwise, and when
+	// the entrypoint has no dependencies of its own.
+	EntrypointDeps *SchemaBuilder
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime dagql.Nullable[dagql.ObjectResult[*Container]]
@@ -120,6 +130,25 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+// Namer normalizes the module's own names: the rules of the engine version
+// it declares (see ModuleSource.Namer), or of SourceOverrides' when set. A
+// module without a source is named by the latest rules.
+func (mod *Module) Namer() Namer {
+	if mod.SourceOverrides != nil {
+		return NamerForEngineVersion(mod.SourceOverrides.EngineVersion)
+	}
+	if src := mod.GetSource(); src != nil {
+		return src.Namer()
+	}
+	return LatestNamer
+}
+
+// ConstructorName is the name of the module's constructor field on Query:
+// its name in camelCase, by the module's naming rules.
+func (mod *Module) ConstructorName() string {
+	return mod.Namer().FieldName(mod.Name())
+}
+
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	if src := mod.GetSource(); src != nil && src.Entrypoint != nil {
 		for _, objDef := range mod.ObjectDefs {
@@ -145,24 +174,20 @@ func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 // This is needed because namespaceObject rewrites obj.Name to match the
 // module's final name, but obj.OriginalName always reflects the SDK name.
 func (mod *Module) ObjectByOriginalName(name string) (*ObjectTypeDef, bool) {
-	for _, objDef := range mod.ObjectDefs {
-		typeDef := objDef.Self()
-		if typeDef.AsObject.Valid {
-			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.OriginalName) == gqlObjectName(name) {
-				return obj, true
-			}
-		}
+	objDef, ok := mod.objectTypeDefResultByOriginalName(name)
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	return objDef.Self().AsObject.Value.Self(), true
 }
 
 func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
+	namer := mod.Namer()
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
 			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.Name) == gqlObjectName(name) {
+			if obj.Name == name || namer.ObjectName(obj.Name) == namer.ObjectName(name) {
 				return obj, true
 			}
 		}
@@ -568,45 +593,51 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *da
 	return nil
 }
 
-func functionResultByOriginalName(obj *ObjectTypeDef, name string) (dagql.ObjectResult[*Function], bool) {
+func functionResultByOriginalName(namer Namer, obj *ObjectTypeDef, name string) (dagql.ObjectResult[*Function], bool) {
 	for _, fn := range obj.Functions {
 		fnSelf := fn.Self()
-		if strings.EqualFold(fnSelf.OriginalName, name) || strings.EqualFold(fnSelf.Name, gqlFieldName(name)) {
+		if strings.EqualFold(fnSelf.OriginalName, name) || strings.EqualFold(fnSelf.Name, namer.FieldName(name)) {
 			return fn, true
 		}
 	}
 	return dagql.ObjectResult[*Function]{}, false
 }
 
-func functionArgResultByName(fn *Function, name string) (dagql.ObjectResult[*FunctionArg], bool) {
+func functionArgResultByName(namer Namer, fn *Function, name string) (dagql.ObjectResult[*FunctionArg], bool) {
 	for _, arg := range fn.Args {
 		argSelf := arg.Self()
-		if strings.EqualFold(argSelf.OriginalName, name) || strings.EqualFold(argSelf.Name, gqlFieldName(name)) {
+		if strings.EqualFold(argSelf.OriginalName, name) || strings.EqualFold(argSelf.Name, namer.ArgName(name)) {
 			return arg, true
 		}
 	}
 	return dagql.ObjectResult[*FunctionArg]{}, false
 }
 
+// objectTypeDefResultByOriginalName finds the object the SDK registered as
+// name, in any casing (see Namer.DeclaredNameIndex).
 func (mod *Module) objectTypeDefResultByOriginalName(name string) (dagql.ObjectResult[*TypeDef], bool) {
+	var objects []dagql.ObjectResult[*TypeDef]
+	var declared []string
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
-			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.OriginalName) == gqlObjectName(name) {
-				return objDef, true
-			}
+			objects = append(objects, objDef)
+			declared = append(declared, typeDef.AsObject.Value.Self().OriginalName)
 		}
+	}
+	if i := mod.Namer().DeclaredNameIndex(name, declared); i >= 0 {
+		return objects[i], true
 	}
 	return dagql.ObjectResult[*TypeDef]{}, false
 }
 
 func (mod *Module) objectTypeDefResultByName(name string) (dagql.ObjectResult[*TypeDef], bool) {
+	namer := mod.Namer()
 	for _, objDef := range mod.ObjectDefs {
 		typeDef := objDef.Self()
 		if typeDef.AsObject.Valid {
 			obj := typeDef.AsObject.Value.Self()
-			if gqlObjectName(obj.Name) == gqlObjectName(name) {
+			if obj.Name == name || namer.ObjectName(obj.Name) == namer.ObjectName(name) {
 				return objDef, true
 			}
 		}
@@ -635,7 +666,7 @@ func (mod *Module) customizationTarget(path []string) (dagql.ObjectResult[*TypeD
 		return objDef, obj.Constructor.Value, true
 	}
 	for i, segment := range path {
-		fn, ok := functionResultByOriginalName(obj, segment)
+		fn, ok := functionResultByOriginalName(mod.Namer(), obj, segment)
 		if !ok {
 			return dagql.ObjectResult[*TypeDef]{}, dagql.ObjectResult[*Function]{}, false
 		}
@@ -666,7 +697,7 @@ func (mod *Module) patchFunctionArg(
 	argName string,
 	patch func(dagql.ObjectResult[*FunctionArg]) (dagql.ObjectResult[*FunctionArg], error),
 ) (dagql.ObjectResult[*Function], bool, error) {
-	arg, ok := functionArgResultByName(fn.Self(), argName)
+	arg, ok := functionArgResultByName(mod.Namer(), fn.Self(), argName)
 	if !ok {
 		return fn, false, nil
 	}
@@ -999,22 +1030,34 @@ func (mod *Module) AttachDependencyResults(
 		return typed, typed, nil
 	}
 
-	if mod.Deps != nil {
-		for i, dep := range mod.Deps.entries {
+	// attachDeps attaches deps' modules, as kind ("dependency" or "entrypoint
+	// dependency").
+	attachDeps := func(deps *SchemaBuilder, kind string) error {
+		if deps == nil {
+			return nil
+		}
+		for i, dep := range deps.entries {
 			depInst := dep.mod.ModuleResult()
 			if depInst.Self() == nil {
 				continue
 			}
 			attachedInst, attachedRes, err := attachModuleRef(depInst)
 			if err != nil {
-				return nil, fmt.Errorf("attach module dependency %q: %w", dep.mod.Name(), err)
+				return fmt.Errorf("attach module %s %q: %w", kind, dep.mod.Name(), err)
 			}
 			if attachedRes == nil {
 				continue
 			}
-			mod.Deps.entries[i].mod = NewUserMod(attachedInst)
+			deps.entries[i].mod = NewUserMod(attachedInst)
 			owned = append(owned, attachedRes)
 		}
+		return nil
+	}
+	if err := attachDeps(mod.Deps, "dependency"); err != nil {
+		return nil, err
+	}
+	if err := attachDeps(mod.EntrypointDeps, "entrypoint dependency"); err != nil {
+		return nil, err
 	}
 	if mod.IncludeSelfInDeps {
 		if mod.Deps == nil {
@@ -1028,25 +1071,33 @@ func (mod *Module) AttachDependencyResults(
 		if err != nil {
 			return nil, fmt.Errorf("attach module self dependency: self ID: %w", err)
 		}
-		seenSelf := false
-		for i, dep := range mod.Deps.entries {
-			depInst := dep.mod.ModuleResult()
-			if depInst.Self() == nil {
-				continue
+		// withSelf is deps with its self entry, if it has one, replaced by the
+		// attached self, or the attached self appended.
+		withSelf := func(deps *SchemaBuilder) (*SchemaBuilder, error) {
+			for i, dep := range deps.entries {
+				depInst := dep.mod.ModuleResult()
+				if depInst.Self() == nil {
+					continue
+				}
+				depID, err := depInst.ID()
+				if err != nil {
+					return nil, fmt.Errorf("attach module self dependency %q: dep ID: %w", dep.mod.Name(), err)
+				}
+				if depID == nil || depID.EngineResultID() != attachedSelfID.EngineResultID() {
+					continue
+				}
+				deps.entries[i].mod = NewUserMod(attachedSelf)
+				return deps, nil
 			}
-			depID, err := depInst.ID()
-			if err != nil {
-				return nil, fmt.Errorf("attach module self dependency %q: dep ID: %w", dep.mod.Name(), err)
-			}
-			if depID == nil || depID.EngineResultID() != attachedSelfID.EngineResultID() {
-				continue
-			}
-			mod.Deps.entries[i].mod = NewUserMod(attachedSelf)
-			seenSelf = true
-			break
+			return deps.Append(NewUserMod(attachedSelf)), nil
 		}
-		if !seenSelf {
-			mod.Deps = mod.Deps.Append(NewUserMod(attachedSelf))
+		if mod.Deps, err = withSelf(mod.Deps); err != nil {
+			return nil, err
+		}
+		if mod.EntrypointDeps != nil {
+			if mod.EntrypointDeps, err = withSelf(mod.EntrypointDeps); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return owned, nil
@@ -1058,6 +1109,8 @@ type persistedModulePayload struct {
 	RuntimeResultID               uint64                          `json:"runtimeResultID,omitempty"`
 	DefinitionResultID            uint64                          `json:"definitionResultID,omitempty"`
 	DepModuleResultIDs            []uint64                        `json:"depModuleResultIDs,omitempty"`
+	HasEntrypointDeps             bool                            `json:"hasEntrypointDeps,omitempty"`
+	EntrypointDepModuleResultIDs  []uint64                        `json:"entrypointDepModuleResultIDs,omitempty"`
 	IncludeSelfInDeps             bool                            `json:"includeSelfInDeps,omitempty"`
 	NameField                     string                          `json:"nameField,omitempty"`
 	OriginalName                  string                          `json:"originalName,omitempty"`
@@ -1106,22 +1159,39 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, enc *dagql.Persist
 	}
 
 	persisted.IncludeSelfInDeps = mod.IncludeSelfInDeps
-	if mod.Deps != nil {
-		persisted.DepModuleResultIDs = make([]uint64, 0, len(mod.Deps.Mods()))
-		for _, dep := range mod.Deps.Mods() {
+	// encodeDeps is deps' modules, as kind, without the module itself.
+	encodeDeps := func(deps *SchemaBuilder, kind string) ([]uint64, error) {
+		ids := make([]uint64, 0, len(deps.Mods()))
+		for _, dep := range deps.Mods() {
 			depInst := dep.ModuleResult()
 			if depInst.Self() == nil {
 				continue
 			}
-			depResultID, err := encodePersistedObjectRef(enc, depInst, fmt.Sprintf("module dependency %q", dep.Name()))
+			depResultID, err := encodePersistedObjectRef(enc, depInst, fmt.Sprintf("module %s %q", kind, dep.Name()))
 			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
+				return nil, err
 			}
 			if mod.IncludeSelfInDeps && depInst.Self() == mod {
 				continue
 			}
-			persisted.DepModuleResultIDs = append(persisted.DepModuleResultIDs, depResultID)
+			ids = append(ids, depResultID)
 		}
+		return ids, nil
+	}
+	if mod.Deps != nil {
+		ids, err := encodeDeps(mod.Deps, "dependency")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		persisted.DepModuleResultIDs = ids
+	}
+	if mod.EntrypointDeps != nil {
+		ids, err := encodeDeps(mod.EntrypointDeps, "entrypoint dependency")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		persisted.HasEntrypointDeps = true
+		persisted.EntrypointDepModuleResultIDs = ids
 	}
 
 	persisted.NameField = mod.NameField
@@ -1208,6 +1278,20 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 		}
 		deps = deps.Append(NewUserMod(depRes))
 	}
+	var entrypointDeps *SchemaBuilder
+	if persisted.HasEntrypointDeps {
+		entrypointDeps, err = persistedDecodeDefaultDeps(ctx, dec, query)
+		if err != nil {
+			return nil, fmt.Errorf("decode persisted module default deps: %w", err)
+		}
+		for _, depID := range persisted.EntrypointDepModuleResultIDs {
+			depRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dec, depID, "module entrypoint dependency")
+			if err != nil {
+				return nil, err
+			}
+			entrypointDeps = entrypointDeps.Append(NewUserMod(depRes))
+		}
+	}
 
 	objectDefs := make(dagql.ObjectResultArray[*TypeDef], 0, len(persisted.ObjectDefResultIDs))
 	for _, defID := range persisted.ObjectDefResultIDs {
@@ -1239,6 +1323,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDeco
 		OriginalName:                  persisted.OriginalName,
 		SDKConfig:                     persisted.SDKConfig,
 		Deps:                          deps,
+		EntrypointDeps:                entrypointDeps,
 		Description:                   persisted.Description,
 		ObjectDefs:                    objectDefs,
 		InterfaceDefs:                 interfaceDefs,
@@ -1416,7 +1501,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 }
 
 func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, field *FieldTypeDef, state *moduleValidationState) error {
-	if gqlFieldName(field.Name) == "id" {
+	if mod.Namer().FieldName(field.Name) == "id" {
 		return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
 	}
 	// Workspace cannot be stored as a field on a module object
@@ -1442,7 +1527,7 @@ func (mod *Module) validateObjectField(ctx context.Context, obj *ObjectTypeDef, 
 }
 
 func (mod *Module) validateObjectFunction(ctx context.Context, obj *ObjectTypeDef, fn *Function, state *moduleValidationState) error {
-	if gqlFieldName(fn.Name) == "id" {
+	if mod.Namer().FieldName(fn.Name) == "id" {
 		return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 	}
 	if fn.IsCheck && fn.CheckReturnType.Self() == nil && fn.ReturnType.Self().Kind != TypeDefKindVoid &&
@@ -1535,7 +1620,7 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef dagql.O
 	}
 	for _, fnRes := range iface.Functions {
 		fn := fnRes.Self()
-		if gqlFieldName(fn.Name) == "id" {
+		if mod.Namer().FieldName(fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on interface %q", fn.Name, iface.Name)
 		}
 		if err := mod.validateTypeDef(ctx, fn.ReturnType, state); err != nil {
@@ -1743,7 +1828,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, fmt.Errorf("namespace object type lookup: %w", err)
 		}
 		if !ok {
-			targetName := namespaceObject(obj.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := mod.Namer().NamespaceObject(obj.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if obj.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
 					Field: "__withName",
@@ -1854,7 +1939,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, fmt.Errorf("namespace interface type lookup: %w", err)
 		}
 		if !ok {
-			targetName := namespaceObject(iface.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := mod.Namer().NamespaceObject(iface.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if iface.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedIface, &updatedIface, dagql.Selector{
 					Field: "__withName",
@@ -1932,7 +2017,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, nil
 		}
 		if !ok {
-			targetName := namespaceObject(enum.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := mod.Namer().NamespaceObject(enum.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if enum.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedEnum, &updatedEnum, dagql.Selector{
 					Field: "__withName",
@@ -2110,6 +2195,36 @@ func (mod *Module) sourceEngineVersionAfter(version string) bool {
 		return AfterVersion(version).Contains(call.View(mod.SourceOverrides.EngineVersion))
 	}
 	return mod.Source.Valid && AfterVersion(version).Contains(call.View(mod.Source.Value.Self().EngineVersion))
+}
+
+type sdkViewKey struct{}
+
+// contextWithSDKView records the API view of the module's source, the view
+// its SDK's generated code has, for values converted to its SDK's inputs
+// (SDKViewFromContext): the view of its engine version, capped at the
+// engine's (engine.ModuleAPIViewVersion), like ModuleSource.NamingView.
+func (mod *Module) contextWithSDKView(ctx context.Context) context.Context {
+	version := ""
+	switch {
+	case mod.SourceOverrides != nil:
+		version = mod.SourceOverrides.EngineVersion
+	case mod.Source.Valid && mod.Source.Value.Self() != nil:
+		version = mod.Source.Value.Self().EngineVersion
+	}
+	view := engine.ModuleAPIViewVersion(version)
+	if !semver.IsValid(view) {
+		return ctx
+	}
+	return context.WithValue(ctx, sdkViewKey{}, call.View(view))
+}
+
+// SDKViewFromContext is the API view of the module whose SDK inputs are being
+// converted, if any: enum values its schema spells differently, like a core
+// enum's old spellings in modules from before engine.IdentifierCasingVersion,
+// are spelled for it.
+func SDKViewFromContext(ctx context.Context) (call.View, bool) {
+	view, ok := ctx.Value(sdkViewKey{}).(call.View)
+	return view, ok
 }
 
 // modulePath gets the prefix for the file sourcemaps, so that the sourcemap is
@@ -2295,6 +2410,16 @@ func (mod *Module) Patch(ctx context.Context) error {
 	return nil
 }
 
+// SDKDeps is the schema the module's SDK runs it with: its entrypoint's
+// (EntrypointDeps) when the entrypoint has dependencies of its own, and the
+// module's (Deps) otherwise.
+func (mod *Module) SDKDeps() *SchemaBuilder {
+	if mod.EntrypointDeps != nil {
+		return mod.EntrypointDeps
+	}
+	return mod.Deps
+}
+
 func (mod *Module) LoadRuntime(ctx context.Context) (ModuleRuntime, error) {
 	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
 	if !ok {
@@ -2305,7 +2430,7 @@ func (mod *Module) LoadRuntime(ctx context.Context) (ModuleRuntime, error) {
 		return nil, fmt.Errorf("no source")
 	}
 
-	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.SDKDeps(), mod.Source.Value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
@@ -2728,6 +2853,7 @@ func (mod Module) Clone() *Module {
 	if mod.Deps != nil {
 		cp.Deps = mod.Deps.Clone()
 	}
+	cp.EntrypointDeps = mod.EntrypointDeps.Clone()
 
 	cp.ObjectDefs = append(dagql.ObjectResultArray[*TypeDef](nil), mod.ObjectDefs...)
 	cp.InterfaceDefs = append(dagql.ObjectResultArray[*TypeDef](nil), mod.InterfaceDefs...)

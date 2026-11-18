@@ -855,6 +855,14 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	_, reply, err := h.sendAndWait(sourceCtx, t, "before CLI restore")
 	require.NoError(t, err)
 	require.Equal(t, "source conversation retained", reply)
+	// Output of the source session's own work, which the restored display
+	// shows on demand: an engine archive's display logs are fetched per span
+	// when the span is opened, not imported with the history. The command
+	// line, which the span's title shows, must not contain the output.
+	const execText = "RESTORED-HISTORY-EXEC-OUTPUT"
+	_, err = core.NewQuery(source).Container().From(alpineImage).WithEnvVariable("RESTORE_DISPLAY_FIXTURE", rand.Text()).
+		WithExec([]string{"sh", "-c", `printf '%s-%s\n' RESTORED-HISTORY EXEC-OUTPUT`}).Sync(sourceCtx)
+	require.NoError(t, err)
 	nodes := sink.awaitRestorable(t, 2)
 	require.NotEmpty(t, nodes["dismissed"].Control.Failure)
 	node := nodes["cli-restored"]
@@ -862,6 +870,9 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	traceID := node.Control.Trace
 	require.NoError(t, source.Close())
 	sourceSpan.End()
+	_, captured := sink.capture()
+	execSpan := logSpanContaining(captured, execText)
+	require.NotEmpty(t, execSpan)
 
 	cloudURL := ""
 	var cloudRequests atomic.Int32
@@ -922,7 +933,9 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	require.NotEmpty(t, bin)
 	commandCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	cmd := exec.CommandContext(commandCtx, bin, "agent", "-r", traceID)
+	// --backfill imports the whole history, so the exec span zoomed below --
+	// outside any conversation -- is known to the TUI.
+	cmd := exec.CommandContext(commandCtx, bin, "agent", "-r", traceID, "--backfill")
 	cmd.Dir = destination
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
@@ -1007,37 +1020,50 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 		}
 		return res.StatusCode, string(data)
 	}
-	var last string
+	// Eventually can return on timeout while its callback is still running.
+	// Keep failure diagnostics safe even when an HTTP request finishes late.
+	var last atomic.Value
+	last.Store("")
 	defer func() {
 		if t.Failed() {
 			_, screen := request(http.MethodGet, "/screen", "")
-			t.Logf("Last console response: %s\nScreen:\n%s", last, screen)
+			t.Logf("Last console response: %s\nScreen:\n%s", last.Load(), screen)
 		}
 	}()
 	require.Eventually(t, func() bool {
 		status, body := request(http.MethodGet, "/toolset", "")
-		last = body
+		last.Store(body)
 		return status == http.StatusOK
-	}, time.Minute, 100*time.Millisecond, "interactive restored session never attached: %s", last)
+	}, time.Minute, 100*time.Millisecond, "interactive restored session never attached")
 	// The restored history is on screen before anything is sent: it hangs off
 	// the imported trace, which must not wait on the live one to surface.
 	require.Eventually(t, func() bool {
 		_, body := request(http.MethodGet, "/screen", "")
-		last = body
+		last.Store(body)
 		return strings.Contains(body, "source conversation retained")
-	}, time.Minute, 100*time.Millisecond, "restored history not shown before the first send: %s", last)
+	}, time.Minute, 100*time.Millisecond, "restored history not shown before the first send")
 	status, body := request(http.MethodPost, "/type", "after CLI restore")
 	require.Equal(t, http.StatusOK, status, "%s", body)
 	status, body = request(http.MethodPost, "/key", "enter")
 	require.Equal(t, http.StatusOK, status, "%s", body)
 	require.Eventually(t, func() bool {
 		_, body := request(http.MethodGet, "/screen", "")
-		last = body
+		last.Store(body)
 		return strings.Contains(body, "RESTORED-PROMPT-TURN-SUCCEEDED")
-	}, time.Minute, 100*time.Millisecond, "restored prompt did not complete a turn: %s", last)
+	}, time.Minute, 100*time.Millisecond, "restored prompt did not complete a turn")
 	if cloudOnly {
 		require.GreaterOrEqual(t, cloudRequests.Load(), int32(3), "CLI must fetch the Cloud trace on a local miss")
 	}
+
+	// Opening a span of the restored history shows its output, fetched on
+	// demand from the history's source while the live session keeps going.
+	status, body = request(http.MethodPost, "/zoom", execSpan)
+	require.Equal(t, http.StatusOK, status, "%s", body)
+	require.Eventually(t, func() bool {
+		_, body := request(http.MethodGet, "/screen", "")
+		last.Store(body)
+		return strings.Contains(body, execText)
+	}, time.Minute, 100*time.Millisecond, "restored history span did not show its output")
 
 	// Ctrl+D on the empty prompt leaves the session: quietly, and pointing at
 	// how to come back to it.
@@ -1057,6 +1083,23 @@ func testCLITraceResume(ctx context.Context, t *testctx.T, cloudOnly bool) {
 	data, err := os.ReadFile(filepath.Join(destination, "authority.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "destination only", string(data), "restore must not implicitly export")
+}
+
+// logSpanContaining is the hex ID of the span a log record containing text was
+// emitted under, or "".
+func logSpanContaining(captured []*collogspb.ExportLogsServiceRequest, text string) string {
+	for _, batch := range captured {
+		for _, resource := range batch.ResourceLogs {
+			for _, scope := range resource.ScopeLogs {
+				for _, record := range scope.LogRecords {
+					if strings.Contains(record.GetBody().GetStringValue(), text) {
+						return fmt.Sprintf("%x", record.SpanId)
+					}
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // withoutSpanCallPayloads strips the dagger.io/dag.call attribute from every

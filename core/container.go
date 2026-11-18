@@ -346,6 +346,7 @@ type ContainerWithRootFSLazy struct {
 }
 
 type ContainerDirectoryLazy struct {
+	ResolveBrokenSymlinks bool
 	LazyState
 	Parent dagql.ObjectResult[*Container]
 	Path   string
@@ -429,6 +430,7 @@ type ContainerWithMountedTempLazy struct {
 	Parent dagql.ObjectResult[*Container]
 	Target string
 	Size   int
+	Disk   bool
 }
 
 // ContainerWithMountedSecretLazy resolves named ownership in its metadata
@@ -533,6 +535,10 @@ type MountedFile struct {
 type TmpfsMountSource struct {
 	// Configure the size of the mounted tmpfs in bytes.
 	Size int
+	// Disk keeps the temporary directory on the engine's disk instead of in
+	// memory: an empty directory of its own for each process, removed in the
+	// background once the process ends. Size doesn't apply to it.
+	Disk bool
 }
 
 type ContainerMounts []ContainerMount
@@ -544,6 +550,7 @@ type persistedContainerMountPayload struct {
 	CacheSourceResultID  uint64 `json:"cacheSourceResultID,omitempty"`
 	VolumeSourceResultID uint64 `json:"volumeSourceResultID,omitempty"`
 	TmpfsSize            int    `json:"tmpfsSize,omitempty"`
+	TmpfsDisk            bool   `json:"tmpfsDisk,omitempty"`
 	// FilesSourceResultIDs and FilesSourceNames pair up, one per file.
 	FilesSourceResultIDs []uint64 `json:"filesSourceResultIDs,omitempty"`
 	FilesSourceNames     []string `json:"filesSourceNames,omitempty"`
@@ -614,6 +621,11 @@ type persistedContainerMetadataValue struct {
 	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
 	VolatileEnv        []string                            `json:"volatileEnv,omitempty"`
 	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
+
+	// FromContentDigestSafe keeps Container.fromContentDigestSafe: a scratch
+	// container read back from the cache is still one From may give a
+	// content digest.
+	FromContentDigestSafe bool `json:"fromContentDigestSafe,omitempty"`
 }
 
 type persistedContainerWithEntrypointLazy struct {
@@ -794,8 +806,9 @@ type persistedContainerWithDirectoryLazy struct {
 }
 
 type persistedContainerDirectoryLazy struct {
-	ParentResultID uint64 `json:"parentResultID"`
-	Path           string `json:"path"`
+	ResolveBrokenSymlinks bool   `json:"resolveBrokenSymlinks,omitempty"`
+	ParentResultID        uint64 `json:"parentResultID"`
+	Path                  string `json:"path"`
 }
 
 type persistedContainerWithFileLazy struct {
@@ -859,6 +872,7 @@ type persistedContainerWithMountedTempLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Target         string `json:"target"`
 	Size           int    `json:"size,omitempty"`
+	Disk           bool   `json:"disk,omitempty"`
 }
 
 type persistedContainerWithMountedSecretLazy struct {
@@ -1666,6 +1680,8 @@ func (container *Container) encodeContainerMetadata(enc *dagql.PersistEncodeCont
 		SystemEnvNames:     slices.Clone(container.SystemEnvNames),
 		VolatileEnv:        slices.Clone(container.VolatileEnv),
 		DefaultArgs:        container.DefaultArgs,
+
+		FromContentDigestSafe: container.fromContentDigestSafe,
 	}
 
 	for _, mnt := range container.Mounts {
@@ -1705,6 +1721,7 @@ func (container *Container) encodeContainerMetadata(enc *dagql.PersistEncodeCont
 		case mnt.TmpfsSource != nil:
 			encoded.Kind = persistedContainerMountKindTmpfs
 			encoded.TmpfsSize = mnt.TmpfsSource.Size
+			encoded.TmpfsDisk = mnt.TmpfsSource.Disk
 		default:
 			return persistedContainerMetadataValue{}, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
 		}
@@ -1772,7 +1789,7 @@ func decodePersistedContainerResources(ctx context.Context, dec *dagql.PersistDe
 			}
 			mnt.FilesSource = &FilesMountSource{Files: files}
 		case persistedContainerMountKindTmpfs:
-			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
+			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize, Disk: persistedMount.TmpfsDisk}
 		default:
 			return nil, nil, nil, fmt.Errorf("decode persisted container mount %q: unsupported kind %q", persistedMount.Target, persistedMount.Kind)
 		}
@@ -1807,10 +1824,65 @@ func decodePersistedContainerResources(ctx context.Context, dec *dagql.PersistDe
 	return mounts, secrets, sockets, nil
 }
 
+// containerHoldsAcquiredPart reports whether a transferred container's
+// record holds a part this engine acquired: transfer leaves every part it
+// carries pending or absent.
+func containerHoldsAcquiredPart(parts map[dagql.PartKey]persistedContainerPart) bool {
+	for _, part := range parts {
+		if part.Kind != containerPartPending && part.Kind != containerPartAbsent {
+			return true
+		}
+	}
+	return false
+}
+
+// armTransferredContainer reports whether a container record from another
+// engine decodes with its recipe armed, and if so validates its operation and
+// clears its transfer state. A record that holds no download address for any
+// part decodes as local persistence decodes a pending container: its recipe
+// armed, its parts pending. One that already acquired a part stays a shell: a
+// group's parts complete together locally, so a recipe can't keep one of them
+// and compute the rest.
+func armTransferredContainer(dec *dagql.PersistDecodeContext, envelope *persistedContainerPayload) (bool, error) {
+	if envelope.OperationState == "" || len(envelope.LazyJSON) == 0 || !dec.ArmRecipe() || containerHoldsAcquiredPart(envelope.Parts) {
+		return false, nil
+	}
+	kind := ""
+	if dec.Call() != nil {
+		kind = dec.Call().Field
+	}
+	if err := validateTransferOperation(envelope.OperationState, kind, envelope.LazyJSON); err != nil {
+		return false, err
+	}
+	envelope.OperationState = ""
+	return true, nil
+}
+
+// armedContainerParts gives the metadata state and parts a container decodes
+// with. An armed whole operation computes every part in one run: local
+// persistence saves it, before that run, with none of them.
+func armedContainerParts(armed bool, recipe Lazy[*Container], envelope persistedContainerPayload) (bool, map[dagql.PartKey]persistedContainerPart) {
+	if _, refined := recipe.(LazyContainerParts); armed && recipe != nil && !refined {
+		return false, nil
+	}
+	return envelope.Metadata.Consumed, envelope.Parts
+}
+
+// PartTransferShell reports whether the container decoded from another
+// engine's record without its recipe, so that its parts come only through
+// part acquisition.
+func (container *Container) PartTransferShell() bool {
+	return container.acquiredOutput.Load() != nil
+}
+
 func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistDecodeContext, payload json.RawMessage) (dagql.Typed, error) {
 	var envelope persistedContainerPayload
 	if err := json.Unmarshal(payload, &envelope); err != nil {
 		return nil, fmt.Errorf("decode persisted container payload: %w", err)
+	}
+	armed, err := armTransferredContainer(dec, &envelope)
+	if err != nil {
+		return nil, err
 	}
 	persisted := envelope.Metadata.Value
 	fs := new(LazyAccessor[*Directory, *Container])
@@ -1847,6 +1919,8 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
 		VolatileEnv:        slices.Clone(persisted.VolatileEnv),
 		DefaultArgs:        persisted.DefaultArgs,
+
+		fromContentDigestSafe: persisted.FromContentDigestSafe,
 	}
 	// Local persistence may contain an unchanged pending part without a recipe.
 	// Admit only the same closed, recorded-parent mapping used after transfer.
@@ -1899,7 +1973,8 @@ func (*Container) DecodePersistedObject(ctx context.Context, dec *dagql.PersistD
 			return nil, err
 		}
 	}
-	if err := container.installContainerParts(ctx, dec, envelope.Metadata.Consumed, envelope.Parts, links, recipe); err != nil {
+	metadataConsumed, parts := armedContainerParts(armed, recipe, envelope)
+	if err := container.installContainerParts(ctx, dec, metadataConsumed, parts, links, recipe); err != nil {
 		return nil, fmt.Errorf("decode persisted container: %w", err)
 	}
 	return container, nil
@@ -3532,6 +3607,10 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			return fmt.Errorf("container directory lazy: nil parent container")
 		}
 
+		if lazy.ResolveBrokenSymlinks {
+			return lazy.materializeSelection(ctx, dir)
+		}
+
 		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return err
@@ -3555,11 +3634,10 @@ func (lazy *ContainerDirectoryLazy) Evaluate(ctx context.Context, dir *Directory
 			if subpath == "" || subpath == "." || subpath == "/" {
 				resolved = rootfs
 			} else {
+				args := []dagql.NamedInput{{Name: "path", Value: dagql.String(subpath)}}
 				if err := srv.Select(ctx, rootfs, &resolved, dagql.Selector{
 					Field: "directory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(subpath)},
-					},
+					Args:  args,
 				}); err != nil {
 					return err
 				}
@@ -3673,8 +3751,9 @@ func (lazy *ContainerDirectoryLazy) EncodePersisted(ctx context.Context, enc *da
 		return nil, err
 	}
 	return json.Marshal(persistedContainerDirectoryLazy{
-		ParentResultID: parentID,
-		Path:           lazy.Path,
+		ResolveBrokenSymlinks: lazy.ResolveBrokenSymlinks,
+		ParentResultID:        parentID,
+		Path:                  lazy.Path,
 	})
 }
 
@@ -4458,7 +4537,7 @@ func (lazy *ContainerWithMountedTempLazy) ContainerLazyGroups(_ context.Context,
 
 func (lazy *ContainerWithMountedTempLazy) EvaluateContainerGroup(ctx context.Context, container *Container, group dagql.LazyGroupKey) error {
 	return evaluateTemplateAContainerGroup(ctx, lazy, "Container.withMountedTemp", container, lazy.Parent, group, func(ctx context.Context) error {
-		_, err := container.WithMountedTemp(ctx, lazy.Target, lazy.Size)
+		_, err := container.WithMountedTemp(ctx, lazy.Target, lazy.Size, lazy.Disk)
 		return err
 	})
 }
@@ -4481,6 +4560,7 @@ func (lazy *ContainerWithMountedTempLazy) EncodePersisted(ctx context.Context, e
 		ParentResultID: parentID,
 		Target:         lazy.Target,
 		Size:           lazy.Size,
+		Disk:           lazy.Disk,
 	})
 }
 
@@ -4803,9 +4883,6 @@ func decodePersistedContainerRecipe(
 	payload json.RawMessage,
 ) (Lazy[*Container], error) {
 	switch call.Field {
-	case "_builtinContainer":
-		return decodeContainerBuiltinLazy(payload)
-
 	case "withEntrypoint":
 		var persisted persistedContainerWithEntrypointLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -5082,7 +5159,9 @@ func decodePersistedContainerRecipe(
 			LazyState: NewLazyState(),
 			Parent:    parent,
 		}, nil
-	case "withGPU", "experimentalWithGPU", "experimentalWithAllGPUs":
+	case "withGPU", "experimentalWithGPU", "experimentalWithAllGPUs",
+		// spelled so from engine.IdentifierCasingVersion on
+		"withGpu", "experimentalWithGpu", "experimentalWithAllGpus":
 		var persisted persistedContainerSetGPUsLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted container setGPUs lazy payload: %w", err)
@@ -5447,6 +5526,7 @@ func decodePersistedContainerRecipe(
 			Parent:    parent,
 			Target:    persisted.Target,
 			Size:      persisted.Size,
+			Disk:      persisted.Disk,
 		}, nil
 	case "withMountedSecret":
 		var persisted persistedContainerWithMountedSecretLazy
@@ -6626,13 +6706,14 @@ func (container *Container) WithMountedFiles(
 }
 
 // mutates container caller must have handled cloning or creating a new child.
-func (container *Container) WithMountedTemp(ctx context.Context, target string, size int) (*Container, error) {
+func (container *Container) WithMountedTemp(ctx context.Context, target string, size int, disk bool) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
 	container.Mounts = container.Mounts.With(ContainerMount{
 		Target: target,
 		TmpfsSource: &TmpfsMountSource{
 			Size: size,
+			Disk: disk,
 		},
 	})
 
@@ -6855,9 +6936,11 @@ func locatePath(
 
 	// NB(vito): iterate in reverse order so we'll find deeper mounts first
 	for i := len(container.Mounts) - 1; i >= 0; i-- {
-		mnt := container.Mounts[i]
+		// Look at each mount in place: only the match is copied, so a
+		// container with many mounts costs no allocation per mount passed.
+		mnt := &container.Mounts[i]
 
-		if containerPath == mnt.Target || strings.HasPrefix(containerPath, mnt.Target+"/") {
+		if rest, ok := strings.CutPrefix(containerPath, mnt.Target); ok && (rest == "" || rest[0] == '/') {
 			if mnt.TmpfsSource != nil {
 				return nil, "", fmt.Errorf("%s: cannot retrieve path from tmpfs", containerPath)
 			}
@@ -6874,7 +6957,8 @@ func locatePath(
 			if err != nil {
 				return nil, "", err
 			}
-			return &mnt, relPath, nil
+			found := *mnt
+			return &found, relPath, nil
 		}
 	}
 
@@ -7877,15 +7961,23 @@ type ImageLayerCompression string
 
 var ImageLayerCompressions = dagql.NewEnum[ImageLayerCompression]()
 
+// ImageLayerCompression and ImageMediaTypes members are SCREAMING_SNAKE_CASE
+// (GZIP, OCI, ...), the spelling of their values, which every view since
+// enumView has. Their PascalCase spellings (Gzip, OCIMediaTypes, ...) are
+// only in views before engine.IdentifierCasingVersion, where they are still
+// listed as the members, and the SCREAMING_SNAKE_CASE spellings as their
+// aliases, as before the values were renamed (AliasViewPrimary). Either
+// spelling decodes to the same value in every view, so a value flowing out
+// to a caller or module is one every view since enumView has.
 var (
-	CompressionGzip         = ImageLayerCompressions.Register("Gzip")
-	_                       = ImageLayerCompressions.AliasView("GZIP", "Gzip", enumView)
-	CompressionZstd         = ImageLayerCompressions.Register("Zstd")
-	_                       = ImageLayerCompressions.AliasView("ZSTD", "Zstd", enumView)
-	CompressionEStarGZ      = ImageLayerCompressions.Register("EStarGZ")
-	_                       = ImageLayerCompressions.AliasView("ESTARGZ", "EStarGZ", enumView)
-	CompressionUncompressed = ImageLayerCompressions.Register("Uncompressed")
-	_                       = ImageLayerCompressions.AliasView("UNCOMPRESSED", "Uncompressed", enumView)
+	CompressionGzip         = ImageLayerCompressions.RegisterView("GZIP", enumView)
+	_                       = ImageLayerCompressions.AliasViewPrimary("Gzip", CompressionGzip, LegacyNamesView)
+	CompressionZstd         = ImageLayerCompressions.RegisterView("ZSTD", enumView)
+	_                       = ImageLayerCompressions.AliasViewPrimary("Zstd", CompressionZstd, LegacyNamesView)
+	CompressionEStarGZ      = ImageLayerCompressions.RegisterView("ESTARGZ", enumView)
+	_                       = ImageLayerCompressions.AliasViewPrimary("EStarGZ", CompressionEStarGZ, LegacyNamesView)
+	CompressionUncompressed = ImageLayerCompressions.RegisterView("UNCOMPRESSED", enumView)
+	_                       = ImageLayerCompressions.AliasViewPrimary("Uncompressed", CompressionUncompressed, LegacyNamesView)
 )
 
 func (proto ImageLayerCompression) Type() *ast.Type {
@@ -7907,15 +7999,44 @@ func (proto ImageLayerCompression) ToLiteral() call.Literal {
 	return ImageLayerCompressions.Literal(proto)
 }
 
+func (proto ImageLayerCompression) ViewLiteral(view call.View) call.Literal {
+	return ImageLayerCompressions.ViewLiteral(proto, view)
+}
+
+// UnmarshalJSON decodes either spelling to the value, so values recorded
+// with the old spelling (Gzip, in persisted results) still compare equal to
+// the members.
+func (proto *ImageLayerCompression) UnmarshalJSON(data []byte) error {
+	return unmarshalEnumJSON(data, ImageLayerCompressions, proto)
+}
+
+// unmarshalEnumJSON decodes a JSON string to the value of the member it
+// spells in enum, or as is if it spells none.
+func unmarshalEnumJSON[T interface {
+	dagql.Input
+	~string
+}](data []byte, enum *dagql.EnumValues[T], dest *T) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	if val, err := enum.Lookup(s); err == nil {
+		*dest = val
+		return nil
+	}
+	*dest = T(s)
+	return nil
+}
+
 type ImageMediaTypes string
 
 var ImageMediaTypesEnum = dagql.NewEnum[ImageMediaTypes]()
 
 var (
-	OCIMediaTypes    = ImageMediaTypesEnum.Register("OCIMediaTypes")
-	_                = ImageMediaTypesEnum.AliasView("OCI", "OCIMediaTypes", enumView)
-	DockerMediaTypes = ImageMediaTypesEnum.Register("DockerMediaTypes")
-	_                = ImageMediaTypesEnum.AliasView("DOCKER", "DockerMediaTypes", enumView)
+	OCIMediaTypes    = ImageMediaTypesEnum.RegisterView("OCI", enumView)
+	_                = ImageMediaTypesEnum.AliasViewPrimary("OCIMediaTypes", OCIMediaTypes, LegacyNamesView)
+	DockerMediaTypes = ImageMediaTypesEnum.RegisterView("DOCKER", enumView)
+	_                = ImageMediaTypesEnum.AliasViewPrimary("DockerMediaTypes", DockerMediaTypes, LegacyNamesView)
 )
 
 func (proto ImageMediaTypes) Type() *ast.Type {
@@ -7935,6 +8056,17 @@ func (proto ImageMediaTypes) Decoder() dagql.InputDecoder {
 
 func (proto ImageMediaTypes) ToLiteral() call.Literal {
 	return ImageMediaTypesEnum.Literal(proto)
+}
+
+func (proto ImageMediaTypes) ViewLiteral(view call.View) call.Literal {
+	return ImageMediaTypesEnum.ViewLiteral(proto, view)
+}
+
+// UnmarshalJSON decodes either spelling to the value, so values recorded
+// with the old spelling (OCIMediaTypes, in persisted results) still compare
+// equal to the members.
+func (proto *ImageMediaTypes) UnmarshalJSON(data []byte) error {
+	return unmarshalEnumJSON(data, ImageMediaTypesEnum, proto)
 }
 
 type ReturnTypes string

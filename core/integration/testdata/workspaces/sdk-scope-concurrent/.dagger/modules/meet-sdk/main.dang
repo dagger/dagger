@@ -1,0 +1,55 @@
+"""
+Test SDK whose left and right scopes generate only while the other one is
+generating too.
+
+Each of them marks itself on a shared cache volume and waits for the other's
+mark. The volume is keyed by the scope's bust.txt, so each run sees only its
+own marks. A scope with a fail.txt fails after meeting the other one.
+"""
+type MeetSdk {
+  findClientRoot(ws: Workspace!): String {
+    "."
+  }
+
+  generateScope(
+    ws: Workspace!,
+    isModule: Boolean!,
+    name: String!,
+    clients: [ModuleSource!]!,
+  ): Workspace! {
+    let other = if (name == "left") { "right" } else if (name == "right") { "left" } else { "" }
+    if (other != "") {
+      container
+        .from("alpine:3.20")
+        .withMountedCache("/sync", cacheVolume("sdk-scope-concurrent"))
+        .withEnvVariable("BUST", ws.file("bust.txt").contents)
+        .withEnvVariable("NAME", name)
+        .withEnvVariable("OTHER", other)
+        .withExec(["sh", "-c", "set -e; dir=/sync/$BUST; mkdir -p $dir; touch $dir/$NAME; i=0; while [ ! -e $dir/$OTHER ]; do i=$((i+1)); if [ $i -gt 150 ]; then echo \"$OTHER did not generate while $NAME did\" >&2; exit 1; fi; sleep 0.2; done"])
+        .sync
+      if (ws.directory(".").exists("fail.txt")) {
+        raise name + " cannot generate"
+      }
+    }
+
+    let generated = ws
+      .withNewFile(
+        "dagger-module.toml",
+        "name = " + JSON.encode(name) + "\n" +
+          "engineVersion = \"latest\"\n\n" +
+          "[runtime]\n" +
+          "  source = \"dang\"\n",
+      )
+      .withNewFile(
+        "main.dang",
+        "type Generated {\n  pub hello: String! {\n    \"hello\"\n  }\n}\n",
+      )
+
+    clients.reduce(generated) { current, target =>
+      current.withFile(
+        "generated/" + target.moduleOriginalName + ".schema.json",
+        target.clientSchemaIntrospectionJSON,
+      )
+    }
+  }
+}

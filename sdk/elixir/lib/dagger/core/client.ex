@@ -97,6 +97,9 @@ defmodule Dagger.Core.Client do
 
         {:error, error}
 
+      {:ok, %Response{errors: [_ | _]} = response} ->
+        {:error, response}
+
       {:ok, %Response{data: data}} ->
         {:ok, select(data, QB.path(query_builder))}
 
@@ -106,6 +109,8 @@ defmodule Dagger.Core.Client do
   end
 
   defp select(data, []), do: data
+
+  defp select(nil, _selectors), do: nil
 
   defp select(data, _selectors) when is_list(data) do
     data

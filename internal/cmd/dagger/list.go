@@ -3,9 +3,12 @@ package daggercmd
 import (
 	"bytes"
 	"context"
+	"errors"
+	"strconv"
 
 	"dagger.io/dagger/core"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
@@ -81,7 +84,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 				return nil, err
 			}
 			if d != nil {
-				d.root, d.rawArgs, d.action, d.discover = root, rawArgs, action, fn
+				d.action, d.discover = action, fn
 				return d, nil
 			}
 		}
@@ -123,25 +126,64 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 	if err != nil {
 		return nil, err
 	}
+	// Help and completion list every module's flags.
+	help, _ := helpFlag(cmd, rawCommandArgs)
+	narrow := !helpCommand && !completing && !help
 	return withDiscovery("Load "+cmd.Name()+" filters", params, func(ctx context.Context, ec *client.Client) error {
-		id, err := core.NewQuery(ec.Dagger()).CurrentWorkspace().Artifacts().ID(ctx)
-		if err != nil {
-			return err
-		}
-		all := core.Ref[*core.Artifacts](core.NewQuery(ec.Dagger()), id)
-		definitions, err := artifactDimensions(ctx, ec.Dagger(), all)
-		if err != nil {
-			return err
-		}
-		selected, err := artifactDimensions(ctx, ec.Dagger(), all.FilterTypes(commandArtifactTypes(cmd)))
-		if err != nil {
-			return err
-		}
-		if err := registerArtifactFilters(ctx, ec.Dagger(), cmd, definitions, selected, all); err != nil {
-			return err
-		}
-		return nil
+		return loadCommandArtifactFilters(ctx, ec.Dagger(), cmd, rawCommandArgs, narrow)
 	})
+}
+
+// loadCommandArtifactFilters registers cmd's flags for the workspace's
+// artifacts. When narrow, a command line that selects modules by flag gets
+// only the flags it can use.
+func loadCommandArtifactFilters(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, rawCommandArgs []string, narrow bool) error {
+	workspaceID, err := core.NewQuery(dag).CurrentWorkspace().ID(ctx)
+	if err != nil {
+		return err
+	}
+	ws := core.Ref[*core.Workspace](core.NewQuery(dag), workspaceID)
+	// A command line that selects modules by flag selects nothing outside
+	// them, so it needs only their flags, and the flags of the modules
+	// that name theirs.
+	var include []string
+	if narrow {
+		modules, err := workspaceModuleNames(ctx, ws)
+		if err != nil {
+			return err
+		}
+		if selected := artifactFlagModules(cmd, rawCommandArgs, modules); selected != nil {
+			include = artifactNamingModules(selected, modules)
+		}
+	}
+	if err := registerCommandArtifactFilters(ctx, dag, cmd, ws, include); err != nil {
+		return err
+	}
+	if include != nil && !acceptsArtifactArgs(cmd, rawCommandArgs) {
+		// Cobra rejects the command line with the command's usage, or
+		// another module's flag makes it valid: register them all.
+		return registerCommandArtifactFilters(ctx, dag, cmd, ws, nil)
+	}
+	return nil
+}
+
+// registerCommandArtifactFilters registers cmd's flags for the artifacts of
+// the include modules, or of every module when include is nil.
+func registerCommandArtifactFilters(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, ws *core.Workspace, include []string) error {
+	id, err := ws.Artifacts(core.WorkspaceArtifactsOpts{Include: include}).ID(ctx)
+	if err != nil {
+		return err
+	}
+	all := core.Ref[*core.Artifacts](core.NewQuery(dag), id)
+	definitions, err := artifactDimensions(ctx, dag, all)
+	if err != nil {
+		return err
+	}
+	selected, err := artifactDimensions(ctx, dag, all.FilterTypes(commandArtifactTypes(cmd)))
+	if err != nil {
+		return err
+	}
+	return registerArtifactFilters(ctx, dag, cmd, definitions, selected, all)
 }
 
 // artifactDiscovery discovers a command's artifact commands and flags as the
@@ -151,11 +193,7 @@ func prepareArtifactCommands(ctx context.Context, root *cobra.Command, args, raw
 // engine call takes the open session (see takeOpenSession), with the
 // workspace's modules already loaded.
 type artifactDiscovery struct {
-	cmd *cobra.Command
-	// root and rawArgs resolve the command again once discovery has
-	// registered its flags and commands.
-	root     *cobra.Command
-	rawArgs  []string
+	cmd      *cobra.Command
 	action   string
 	params   client.Params
 	discover runClientCallback
@@ -179,28 +217,25 @@ func (d *artifactDiscovery) execute(ctx context.Context, run func(context.Contex
 		termOut.Write(stdout.Bytes())
 		termErr.Write(stderr.Bytes())
 	}()
-	parsed := false
-	err := withEngine(ctx, d.params, func(ctx context.Context, ec *client.Client) (rerr error) {
+	params, err := engineClientParams(d.params)
+	if err != nil {
+		return err
+	}
+	return withEngine(ctx, params, func(ctx context.Context, ec *client.Client) (rerr error) {
 		discoverCtx, span := Tracer().Start(ctx, d.action, telemetry.Encapsulate())
 		err := d.discover(discoverCtx, ec)
 		telemetry.EndWithCause(span, &err)
 		if err != nil {
 			return err
 		}
-		if needsArtifactDiscovery(resolveCommand(d.root, d.rawArgs)) {
-			// Cobra will report the command line's error, after the frontend.
-			return nil
-		}
-		parsed = true
-		ctx = withOpenSession(ctx, d.params, ec, rootCmd.OutOrStdout(), rootCmd.ErrOrStderr())
+		// Cobra owns parsing after discovery, including parent-local flags.
+		// Keep it inside this frontend even if it rejects the arguments: its
+		// diagnostics are buffered until teardown, and the frontend is single-use.
+		ctx = withOpenSession(ctx, params, ec, rootCmd.OutOrStdout(), rootCmd.ErrOrStderr())
 		rootCmd.SetOut(&stdout)
 		rootCmd.SetErr(&stderr)
 		return run(ctx)
 	})
-	if err != nil || parsed {
-		return err
-	}
-	return run(ctx)
 }
 
 // runsInDiscoverySession reports whether cmd can run in the session that
@@ -333,6 +368,62 @@ func addListCommand(name, short, group, key, value string) *cobra.Command {
 	setCommandCapabilities(cmd, mayCallEngine, maySelectWorkspace, mayReadWorkspaceConfig)
 	listCmd.AddCommand(cmd)
 	return cmd
+}
+
+// acceptsArtifactArgs reports whether Cobra runs cmd with args and the flags
+// registered now, rather than printing an error and the usage, or the help:
+// they parse, their values parse, and they pass validateArtifactListFlags.
+func acceptsArtifactArgs(cmd *cobra.Command, args []string) bool {
+	if needsArtifactDiscovery(cmd, args) {
+		return false
+	}
+	flags := copyCommandFlags(cmd, "artifact arguments")
+	cmd.InheritedFlags().VisitAll(func(flag *pflag.Flag) {
+		if flags.Lookup(flag.Name) == nil {
+			clone := *flag
+			flags.AddFlag(&clone)
+		}
+	})
+	values := map[string]string{}
+	if err := flags.ParseAll(args, func(flag *pflag.Flag, value string) error {
+		if flag.Name == "help" || !flagValueParses(flag, value) {
+			return errors.New("not accepted")
+		}
+		values[flag.Name] = value
+		return nil
+	}); err != nil {
+		return false
+	}
+	changed := func(name string) bool {
+		_, ok := values[name]
+		return ok
+	}
+	return checkArtifactListFlags(cmd, changed, func(flag *pflag.Flag) string {
+		if value, ok := values[flag.Name]; ok {
+			return value
+		}
+		return flag.DefValue
+	}) == nil
+}
+
+// flagValueParses reports whether value is valid for flag's type. A type it
+// doesn't know counts as invalid.
+func flagValueParses(flag *pflag.Flag, value string) bool {
+	var err error
+	switch flag.Value.Type() {
+	case "string", "stringArray":
+	case "bool":
+		_, err = strconv.ParseBool(value)
+	case "int":
+		_, err = strconv.ParseInt(value, 0, 64)
+	case "count":
+		if value != "+1" {
+			_, err = strconv.ParseInt(value, 0, 0)
+		}
+	default:
+		return false
+	}
+	return err == nil
 }
 
 // Unknown flags require schema metadata before Cobra can distinguish keys from

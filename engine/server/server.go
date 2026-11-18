@@ -19,13 +19,14 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/diff/apply"
 	ctdmetadata "github.com/containerd/containerd/v2/core/metadata"
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	ctdsnapshot "github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/pkg/sys"
-	localcontentstore "github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
@@ -35,6 +36,7 @@ import (
 	"github.com/dagger/dagger/engine/cachevolumedir"
 	"github.com/dagger/dagger/engine/config"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/blobstore"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
@@ -53,10 +55,12 @@ import (
 	wlabel "github.com/dagger/dagger/internal/buildkit/worker/label"
 	"github.com/google/uuid"
 	"github.com/moby/locker"
+	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
@@ -136,7 +140,6 @@ type Server struct {
 	snapshotGarbage      *snapshotGarbage
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
-	builtinContentStore  content.Store
 
 	// cacheVolumeDir is the cache volume directory this engine owns, when
 	// cache volumes are directories (cacheVolumes.dir); nil otherwise.
@@ -180,9 +183,9 @@ type Server struct {
 
 	// wcprofSpanCount declares, per trace, how many engine spans the engine emitted
 	// — the producer half of the wcprof completeness checksum, so the
-	// loader can refuse a trace that silently dropped a leaf span. Registered on
-	// each session-owned tracer provider so nested-client spans count into the
-	// same trace.
+	// loader can refuse a trace that silently dropped a leaf span. Each
+	// session-owned tracer provider marks into it while wcprof records, so
+	// nested-client spans count into the same trace.
 	wcprofSpanCount *wcprofSpanCounter
 
 	// armed is the CPU profile armed for a phase's next run, if any
@@ -218,6 +221,9 @@ type Server struct {
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelCauseFunc
 	shuttingDown   atomic.Bool
+	// stateDiscarded is the config's state.discarded: the state directory
+	// doesn't outlive the engine, so its stop skips the work on it.
+	stateDiscarded bool
 
 	//
 	// dagql cache
@@ -229,7 +235,10 @@ type Server struct {
 	//
 	// session+client state
 	//
-	daggerSessions     map[string]*daggerSession // session id -> session state
+	daggerSessions map[string]*daggerSession // session id -> session state
+	// sessionLedger counts the live root sessions by client and claim, for
+	// the engine's status (ServeStatus).
+	sessionLedger      sessionLedger
 	releasedSessionIDs map[string]struct{}
 	daggerSessionsMu   sync.RWMutex
 	clientDBs          *clientdb.DBs
@@ -303,12 +312,14 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		daggerSessions:     make(map[string]*daggerSession),
 		releasedSessionIDs: make(map[string]struct{}),
 
+		stateDiscarded: cfg.State.Discarded,
+
 		locker: locker.New(),
 	}
 	if opts.EngineEvents != nil {
 		srv.engineEventExport = opts.EngineEvents
 		srv.engineEvents = newEngineEventEmitter(opts.EngineEvents.Logger())
-		srv.engineEventShutdownBudget = engineEventShutdownTimeout
+		srv.engineEventShutdownBudget = engineEventShutdownBudget(srv.stateDiscarded)
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
@@ -339,18 +350,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 
-	// Opened before the local cache state: the snapshot manager takes the
-	// builtin store at construction, for chain imports of builtin layers.
-	srv.builtinContentStore, err = openBuiltinOCIStore()
-	if err != nil {
-		return nil, fmt.Errorf("failed to open builtin content store: %w", err)
-	}
-
 	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
 		return nil, err
 	}
 	srv.startEngineEvents()
 
+	moveDiskTempMountsToTrash(srv.rootDir)
 	// Sweep any worker state moved aside by a cache reset — this startup's or
 	// an interrupted sweep from a previous one — in the background.
 	srv.startLocalCacheTrashSweeper()
@@ -519,6 +524,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create clean mount namespace: %w", err)
 	}
 
+	var parallelismSem *semaphore.Weighted
+	if ociCfg.MaxParallelism > 0 {
+		parallelismSem = semaphore.NewWeighted(int64(ociCfg.MaxParallelism))
+	}
+
 	srv.engineUtilOpts, err = engineutil.NewOpts(engineutil.Opts{
 		ID:               rand.Text(),
 		Labels:           baseLabels,
@@ -542,6 +552,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		SELinux:             srv.selinux,
 		Entitlements:        srv.entitlements,
 		OOMScoreAdj:         srv.execOOMScoreAdj,
+		ParallelismSem:      parallelismSem,
 
 		HostMntNS:  hostMntNS,
 		CleanMntNS: srv.cleanMntNS,
@@ -559,7 +570,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	defer func() {
 		time.AfterFunc(time.Second, srv.gc)
 	}()
-	srv.startLocalCachePressureGCMonitor()
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
@@ -576,6 +586,20 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if err := srv.initSnapshotSharing(ctx, opts); err != nil {
 		return nil, err
 	}
+
+	// The image's entries join the cache before the server dispatches any
+	// request, so the first module build already finds them. The start
+	// doesn't depend on them: an image without the built-in SDKs' files it
+	// names starts, and a module of a missing SDK fails when it loads, with
+	// why they're missing.
+	var sdkDigests []digest.Digest
+	for _, name := range builtinSDKDigestEnvNames {
+		sdkDigests = append(sdkDigests, digest.Digest(os.Getenv(name)))
+	}
+	srv.mergeImageEntries(ctx, distconsts.EngineContainerImageEntriesDir, sdkDigests)
+	// A prune never deletes what the image ships, which it knows by the
+	// image's merge: one that planned before the merge could still delete it.
+	srv.startLocalCachePressureGCMonitor()
 
 	// The integration attaches after local cache initialization and before
 	// the server dispatches any request.
@@ -675,7 +699,6 @@ func (srv *Server) initRecursiveReadOnlyMounts(ctx context.Context) {
 }
 
 func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) error {
-	var bootReset core.RemoteCacheFixturePersistence
 	for attempt := 0; attempt < 2; attempt++ {
 		resetReason, err := srv.initLocalCacheStateOnce(ctx, cfg, ociCfg)
 		if srv.engineCache != nil {
@@ -691,10 +714,7 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 				// start resets as before.
 				return errors.Join(err, srv.closeLocalCacheStateForReset())
 			}
-			return srv.updateRemoteCacheFixturePersistence(func(report *core.RemoteCacheFixturePersistence) {
-				report.PersistenceResetReason = bootReset.PersistenceResetReason
-				report.LocalCacheResetReason = bootReset.LocalCacheResetReason
-			})
+			return nil
 		}
 		if attempt == 1 {
 			if err != nil {
@@ -705,10 +725,6 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 
 		if resetReason == localCacheStateResetBoltDBInitFailed {
 			srv.corruptDBReset = true
-		}
-		bootReset.LocalCacheResetReason = string(resetReason)
-		if srv.engineCache != nil {
-			bootReset.PersistenceResetReason = srv.engineCache.PersistenceResetReason()
 		}
 		slog.Warn("local cache state invalid; resetting worker and dagql persistence state", "reason", resetReason, "error", err)
 		if closeErr := srv.closeLocalCacheStateForReset(); closeErr != nil {
@@ -731,9 +747,6 @@ func (srv *Server) noteWipedCacheID(id string) {
 }
 
 func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) (localCacheStateResetReason, error) {
-	if srv.builtinContentStore == nil {
-		return localCacheStateResetNone, errors.New("builtin content store must be opened before the local cache state")
-	}
 	if err := srv.mkdirBaseDirs(); err != nil {
 		return localCacheStateResetNone, err
 	}
@@ -761,16 +774,25 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 		}
 	}
 
-	srv.localContentStore, err = localcontentstore.NewStore(srv.contentStoreRootDir)
+	// The image's entries name their parts' blobs, which the image holds:
+	// the store reads them in place rather than copying each one in.
+	blobs, err := blobstore.New(srv.contentStoreRootDir, blobstore.WithImageBlobs(distconsts.EngineContainerImageEntriesDir))
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create content store: %w", err)
 	}
+	srv.localContentStore = blobs
 
 	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
 		srv.snapshotterName: srv.snapshotter,
 	})
 	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to init metadata db: %w", err)
+	}
+
+	// Records of image blobs a previous image held in place, and this one
+	// doesn't, name bytes that are gone: drop them before anything reads them.
+	if err := blobs.ForgetLostImageBlobs(namespaces.WithNamespace(ctx, "dagger"), srv.containerdMetaDB.ContentStore()); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("failed to reconcile the image's blobs: %w", err)
 	}
 
 	srv.leaseManager = bkcache.NewLeaseManager(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")
@@ -784,16 +806,19 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 
 	workerGCPolicies := getDagqlGCPolicy(cfg, ociCfg.GCConfig, srv.rootDir)
 	srv.workerCache, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
-		Snapshotter:   workerSnapshotter,
-		ContentStore:  srv.contentStore,
-		LeaseManager:  srv.leaseManager,
-		Applier:       winlayers.NewFileSystemApplierWithWindows(srv.contentStore, bkcache.NewLayerApplier(srv.contentStore)),
+		Snapshotter:  workerSnapshotter,
+		ContentStore: srv.contentStore,
+		LeaseManager: srv.leaseManager,
+		Applier:      winlayers.NewFileSystemApplierWithWindows(srv.contentStore, bkcache.NewLayerApplier(srv.contentStore)),
+		ApplyFrom: func(provider content.Provider) diff.Applier {
+			return winlayers.NewFileSystemApplierWithWindows(provider, bkcache.NewLayerApplier(provider))
+		},
 		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
 		MountPoolRoot: srv.buildkitMountPoolDir,
-		// Chain imports take a builtin image's layers from the engine's own
-		// files rather than the remote cache.
-		BuiltinContent: srv.builtinContentStore,
-		MetadataDB:     srv.containerdMetaDB,
+		MetadataDB:    srv.containerdMetaDB,
+		// The image's blobs, which the store holds in place, take no disk
+		// a snapshot's release would free.
+		InPlaceContent: blobs.InPlace,
 	})
 	if err != nil {
 		return localCacheStateResetNone, fmt.Errorf("failed to create snapshot manager: %w", err)
@@ -803,9 +828,10 @@ func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Confi
 
 	srv.snapshotGarbage = newSnapshotGarbage(srv.containerdMetaDB)
 	snapshotGC := srv.snapshotGarbage.Collect
-	cacheOpts := []dagql.CacheOption{dagql.WithEngineInstanceID(srv.engineInstanceID)}
+	cacheOpts := []dagql.CacheOption{dagql.WithEngineInstanceID(srv.engineInstanceID), dagql.WithPartPrefetchRoom(srv.partPrefetchRoom)}
 	if srv.engineEvents != nil {
 		cacheOpts = append(cacheOpts, dagql.WithSnapshotShareReport(srv.emitShareEvent))
+		cacheOpts = append(cacheOpts, dagql.WithPartReadReport(srv.emitReadEvent))
 	}
 	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC, cacheOpts...)
 	if err != nil {
@@ -1037,6 +1063,14 @@ func (srv *Server) Clients() []string {
 // DBs. The DBs run without syncing (bolt NoSync=true plus
 // NoFreelistSync/NoGrowSync, SQLite synchronous=OFF) for performance, and the
 // stop does not sync them either; see the comment at the end.
+//
+// When the state directory is discarded (stateDiscarded), nothing reads it
+// again, so the stop does only what outlives the engine: the remote cache
+// exports, the sessions' end and the telemetry flushes, and the cache volume
+// directory's collection and close. It doesn't wait for a garbage collection
+// that's running, which is abandoned, and it neither prunes, saves the cache,
+// closes the DBs, releases read-only mounts nor releases the network
+// namespaces.
 func (srv *Server) GracefulStop(ctx context.Context) error {
 	srv.BeginGracefulStop()
 
@@ -1051,7 +1085,8 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// it) as each phase begins and ends, so an engine killed in a phase, or
 	// between two, leaves a dump that shows where.
 	stopCtx, stopOp := wcprof.BeginOp(context.WithoutCancel(ctx), wcprof.OpKindInternal, "engine.stop", wcprof.OpOpts{})
-	stopPhase := func(name string, fn func()) {
+	// stopPhaseOutcome is stopPhase for a phase that says how it ended.
+	stopPhaseOutcome := func(name string, fn func() wcprof.Outcome) {
 		slog.Debug("graceful stop phase starting", "phase", name)
 		_, phaseOp := wcprof.BeginOp(stopCtx, wcprof.OpKindInternal, "engine.stop."+name, wcprof.OpOpts{})
 		srv.requestStopDump()
@@ -1062,11 +1097,17 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 			slog.Warn("graceful stop phase is slow", "phase", name, "elapsed", time.Since(start),
 				"threads", engineutil.DescribeUninterruptibleThreads("/proc/self"))
 		})
-		fn()
+		outcome := fn()
 		slow.Stop()
-		phaseOp.End(wcprof.OutcomeOK)
+		phaseOp.End(outcome)
 		srv.requestStopDump()
 		slog.Info("graceful stop phase done", "phase", name, "duration", time.Since(start))
+	}
+	stopPhase := func(name string, fn func()) {
+		stopPhaseOutcome(name, func() wcprof.Outcome {
+			fn()
+			return wcprof.OutcomeOK
+		})
 	}
 	defer func() {
 		stopOp.EndErr(err)
@@ -1088,16 +1129,22 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 
 	// Decide the integration's stop outcome before draining sessions or closing
 	// the cache, and join Run outside gcmu and every cache lock. A failed stop
-	// keeps the cache checkpoint dirty and is returned.
+	// keeps the cache checkpoint dirty and is returned. The phase ends
+	// canceled when the drain cut exports off.
 	var adapterStopErr error
-	stopPhase("stop remote cache integration", func() {
+	stopPhaseOutcome("stop remote cache integration", func() wcprof.Outcome {
 		adapterStopErr = srv.stopRemoteCacheIntegration(ctx)
+		if srv.remoteCacheExportsCut() {
+			return wcprof.OutcomeCanceled
+		}
+		return wcprof.OutcomeOK
 	})
 	if adapterStopErr != nil {
 		slog.Error("failed to stop remote cache integration", "error", adapterStopErr)
 	}
 
-	if srv.engineCache != nil {
+	discard := srv.stateDiscarded
+	if srv.engineCache != nil && !discard {
 		// A scheduled garbage collection holds gcmu while it runs.
 		stopPhase("wait for garbage collection", srv.gcmu.Lock)
 		defer srv.gcmu.Unlock()
@@ -1134,7 +1181,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		}
 	})
 
-	if srv.clientDBs != nil {
+	if srv.clientDBs != nil && !discard {
 		stopPhase("close client DBs", func() {
 			err = errors.Join(err, srv.clientDBs.Close())
 		})
@@ -1143,24 +1190,18 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// Shared read-only mounts nobody is using, and the releases running in
 	// the background, are released before the final collection and before
 	// the metadata DBs close.
-	if releaser, ok := srv.workerCache.(bkcache.ReadOnlyMountReleaser); ok {
+	if releaser, ok := srv.workerCache.(bkcache.ReadOnlyMountReleaser); ok && !discard {
 		stopPhase("wait for read-only mount releases", releaser.WaitForBackgroundReleases)
 	}
 
-	if srv.engineCache != nil && srv.localCacheGCEnabled {
-		stopPhase("prune local cache", func() {
-			if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
-				err = errors.Join(err, fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr))
-			}
-		})
-	}
+	err = errors.Join(err, srv.collectAtStop(ctx, stopPhase))
 
 	stopPhase("close cache volume directory", func() {
 		err = errors.Join(err, srv.closeCacheVolumeDir())
 	})
 
 	cleanCacheClose := false
-	if srv.engineCache != nil {
+	if srv.engineCache != nil && !discard {
 		stopPhase("close dagql cache", func() {
 			if closeErr := srv.engineCache.CloseWithShutdownError(ctx, adapterStopErr); closeErr != nil {
 				slog.Error("failed to close base dagql cache", "error", closeErr)
@@ -1174,12 +1215,18 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		srv.stopEngineEvents(ctx, cleanCacheClose)
 	})
 
-	stopPhase("close network providers", func() {
-		err = errors.Join(err, srv.engineUtilOpts.Close())
-	})
+	if !discard {
+		stopPhase("close network providers", func() {
+			err = errors.Join(err, srv.engineUtilOpts.Close())
+		})
+	}
 
 	// Shutdown the global namespace worker pool
 	stopPhase("stop namespace worker pool", engineutil.ShutdownGlobalNamespaceWorkerPool)
+
+	if discard {
+		return errors.Join(err, adapterStopErr)
+	}
 
 	var eg errgroup.Group
 	eg.Go(func() error {
@@ -1240,6 +1287,31 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		err = errors.Join(err, adapterStopErr, dbCloseErr)
 	case <-ctx.Done():
 		err = errors.Join(err, adapterStopErr, ctx.Err())
+	}
+	return err
+}
+
+// collectAtStop runs the stop's garbage collection, as one stop phase: the
+// prune, or, with the state discarded, only the part of it that outlives the
+// engine, the cache volume directory's collection, which keeps the volumes
+// handed to the next engine within their capacity.
+func (srv *Server) collectAtStop(ctx context.Context, stopPhase func(string, func())) (err error) {
+	if !srv.localCacheGCEnabled {
+		return nil
+	}
+	switch {
+	case !srv.stateDiscarded && srv.engineCache != nil:
+		stopPhase("prune local cache", func() {
+			if gcErr := srv.gcLocked(ctx, localCacheGCGracefulShutdown); gcErr != nil {
+				err = fmt.Errorf("failed to prune local cache during graceful shutdown: %w", gcErr)
+			}
+		})
+	case srv.stateDiscarded && srv.cacheVolumeDir != nil:
+		stopPhase("collect cache volume directory", func() {
+			if gcErr := srv.collectCacheVolumeDirAtShutdown(ctx); gcErr != nil {
+				err = fmt.Errorf("failed to collect cache volume directory during graceful shutdown: %w", gcErr)
+			}
+		})
 	}
 	return err
 }

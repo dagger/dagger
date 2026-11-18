@@ -20,6 +20,20 @@ type TestSplit {
   let ws: Workspace!
 
   """
+  The dev engine tests run against, with the Go builds its image's entries
+  ship, as a release's: every engine a test starts from it is as warm as a
+  user's. A shard that loads no Go module goes without them: they only make
+  its image larger.
+  """
+  let devEngine(imageEntries: Boolean! = true): EngineDev! {
+    if (imageEntries) {
+      engineDev(ws: self.ws).withImageEntries
+    } else {
+      engineDev(ws: self.ws)
+    }
+  }
+
+  """
   Lower-level API for running specific tests
   """
   pub testSpecific(
@@ -33,8 +47,12 @@ type TestSplit {
     Run the privileged eBPF tests (Linux 6.15 or newer)
     """
     ebpf: Boolean,
+    """
+    Run against an engine with the Go builds its image's entries ship
+    """
+    imageEntries: Boolean! = true,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    devEngine(imageEntries: imageEntries).test(parallel: parallel, timeout: timeout, race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, ebpf: ebpf, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   let testCliEngineSpecific(
@@ -42,8 +60,9 @@ type TestSplit {
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
     race: Boolean,
+    imageEntries: Boolean! = true,
   ): Void {
-    engineDev(ws: self.ws)
+    devEngine(imageEntries: imageEntries)
       .withEngineConfig("worker.oci", [
         "minFreeSpace = \"30%\"",
         "maxUsedSpace = \"50%\"",
@@ -57,8 +76,9 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
     parallel: Int,
+    imageEntries: Boolean! = true,
   ): Void {
-    engineDev(ws: self.ws).test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
+    devEngine(imageEntries: imageEntries).test(parallel: parallel, race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
   }
 
   """
@@ -84,7 +104,6 @@ type TestSplit {
         "^TestLocalCache$",
         "^TestModule$",
         "^TestModuleConfig$",
-        "^TestModuleDefinitionSuite$",
         "^TestModuleLoading$",
         "^TestPHP$",
         "^TestProvision$",
@@ -118,7 +137,6 @@ type TestSplit {
         "^TestListen$",
         "^TestLocalDir$",
         "^TestLockfile$",
-        "^TestRemoteCacheTransferSuite$",
         "^TestRuntimeCodegen$",
         "^TestSecretProvider$",
         "^TestSequential$",
@@ -154,7 +172,6 @@ type TestSplit {
         "^TestListen$",
         "^TestLocalDir$",
         "^TestLockfile$",
-        "^TestRemoteCacheTransferSuite$",
         "^TestRuntimeCodegen$",
         "^TestSecretProvider$",
         "^TestSequential$",
@@ -163,19 +180,6 @@ type TestSplit {
       race: true,
       parallel: 16,
     )
-  }
-
-  """
-  Package patterns covered by the package-test shard
-  """
-  pub packagePatterns: String! {
-    # Match the source tree used by engine-dev tests: workspace-only tools
-    # excluded from that tree must not become explicit package arguments.
-    go(ws: self.ws, source: engineDev(ws: self.ws).source, race: true, cgo: true).env.withExec([
-      "go", "list", "-race", "-f",
-      "{{if ne .ImportPath \"github.com/dagger/dagger/core/integration\"}}{{.ImportPath}}{{end}}",
-      "./...",
-    ]).stdout
   }
 
   """
@@ -201,7 +205,6 @@ type TestSplit {
         "^TestLocalCache$",
         "^TestModule$",
         "^TestModuleConfig$",
-        "^TestModuleDefinitionSuite$",
         "^TestModuleLoading$",
         "^TestPHP$",
         "^TestProvision$",
@@ -217,9 +220,12 @@ type TestSplit {
         "^TestWorkspaceModules$",
         "^TestWorkspaceSelection$",
       ],
-      pkg: self.packagePatterns,
+      # Every package of the engine's source with tests but core/integration
+      pkg: "./... !./core/integration",
       race: true,
       parallel: 4,
+      # It loads no Go module.
+      imageEntries: false,
     )
   }
 
@@ -230,7 +236,7 @@ type TestSplit {
   tests run on it
   """
   pub testFastbolt: Void @check {
-    go(ws: self.ws, source: engineDev(ws: self.ws).source, race: true, cgo: true).env
+    engineDev(ws: self.ws).goEnv(cgo: true)
       .withDirectory("hack/fastbolt-difftest", self.ws.directory("hack/fastbolt-difftest"))
       .withMountedTemp("/small", size: 1048576)
       .withEnvVariable("FASTBOLT_SMALL_FS", "/small")
@@ -276,7 +282,8 @@ type TestSplit {
   Test Provision
   """
   pub testProvision: Void @check {
-    testSpecific(["TestProvision"])
+    # It loads no Go module.
+    testSpecific(["TestProvision"], imageEntries: false)
   }
 
   """
@@ -284,7 +291,7 @@ type TestSplit {
   """
   pub testTelemetry: Void @check {
     # Rendering goldens require their warmup cache to survive session teardown.
-    engineDev(ws: self.ws)
+    devEngine
       .withEngineConfig("worker.oci", "gc = false")
       .test(run: "^TestTelemetry$", pkg: "./dagql/idtui", testVerbose: self.diagnostics, dumpAfter: self.dumpAfter)
     testSpecific(["^TestTelemetry$"])
@@ -320,7 +327,8 @@ type TestSplit {
   Test local cache
   """
   pub testLocalCache: Void @check {
-    testCliEngineSpecific(["TestLocalCache"])
+    # It loads no Go module.
+    testCliEngineSpecific(["TestLocalCache"], imageEntries: false)
   }
 
   """
@@ -359,14 +367,6 @@ type TestSplit {
   }
 
   """
-  Test module definition caching with the race detector.
-  This suite starts multiple engines and runs separately from the base shard.
-  """
-  pub testModuleDefinitions: Void @check {
-    testSpecific(["^TestModuleDefinitionSuite$"], race: true)
-  }
-
-  """
   Test Workspaces
   """
   pub testWorkspaces: Void @check {
@@ -374,11 +374,12 @@ type TestSplit {
   }
 
   """
-  Test eBPF network accounting of engine subprocesses and executor workloads
-  in a privileged test container
+  Test eBPF network accounting of engine subprocesses and executor workloads,
+  and the trees of chains imported onto overlayfs, whose whiteouts and opaque
+  directories need privileges, in a privileged test container
   """
   pub testEbpf: Void @check {
-    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$"], pkg: "./engine/ebpf/nettracer", ebpf: true)
+    testSpecific(["^TestCommandAccounting$", "^TestWorkloadAccounting$", "^TestImportChainOverlayTree$"], pkg: "./engine/ebpf/nettracer ./engine/snapshots", ebpf: true, imageEntries: false)
   }
 
   """
@@ -386,6 +387,6 @@ type TestSplit {
   test container
   """
   pub testEbpfExecSched: Void @check {
-    testSpecific(["^TestExecSched$"], pkg: "./engine/ebpf/execsched", ebpf: true)
+    testSpecific(["^TestExecSched$"], pkg: "./engine/ebpf/execsched", ebpf: true, imageEntries: false)
   }
 }

@@ -253,11 +253,9 @@ func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *core.Mo
 }
 
 func (v *enumValue) Set(s string) error {
-	for _, allow := range v.typedef.Members {
-		if strings.EqualFold(s, allow.Name) {
-			v.value = allow.Name
-			return nil
-		}
+	if name, ok := v.typedef.MemberName(s); ok {
+		v.value = name
+		return nil
 	}
 
 	return fmt.Errorf("value should be one of %s", v.Type())

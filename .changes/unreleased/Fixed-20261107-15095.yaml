@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Under Kubernetes, execs and the engine itself stay inside the engine pod's
+  cgroup, so the pod's CPU and memory limits apply to them. Before, the
+  privileged engine shared the node's cgroup namespace and its execs ran at the
+  node's cgroup root, outside those limits.
+time: 2026-11-07T03:45:00Z
+custom:
+  Author: sipsma
+  PR: 15095

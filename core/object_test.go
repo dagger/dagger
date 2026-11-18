@@ -361,6 +361,95 @@ func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
 	assert.Equal(t, expectedEnc, fields["ref"])
 }
 
+type inlineChildSDKInputScope struct {
+	children int
+}
+
+func (s *inlineChildSDKInputScope) Apply(_ context.Context, _ *dagql.Server, value dagql.AnyObjectResult) (dagql.AnyObjectResult, error) {
+	if value.Type().Name() == "InlineChild" {
+		// Scope application must receive the attached child, not a newly
+		// synthesized object that has lost its shared result identity.
+		if _, err := value.ID(); err != nil {
+			return nil, err
+		}
+		s.children++
+	}
+	return value, nil
+}
+
+func TestModuleObjectSDKInputInlineChild(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		optional bool
+		child    any
+	}{
+		{"required", false, map[string]any{"privateValue": "preserved"}},
+		{"nullable_populated", true, map[string]any{"privateValue": "preserved"}},
+		{"nullable_null", true, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			cache, err := dagql.NewCache(ctx, "", nil, nil)
+			assert.NilError(t, err)
+			root := &Query{}
+			testSrv := &moduleObjectTestServer{mockServer: &mockServer{}, root: root, cache: cache}
+			root.Server = testSrv
+			dag := newCoreDagqlServerForTest(t, root)
+			testSrv.dag = dag
+			ctx = ContextWithQuery(ctx, root)
+			ctx = dagql.ContextWithCache(ctx, cache)
+			ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+				ClientID: "inline-child-client", SessionID: "inline-child-session",
+			})
+			installModuleObjectTestModuleClass(dag)
+			installTypeDefTestClasses(dag)
+
+			childDef := NewObjectTypeDef("InlineChild", "", nil)
+			childDefResult := newTypeDefDetachedResult(t, dag, "inlineChildDef", childDef)
+			childType := newTypeDefDetachedResult(t, dag, "inlineChildType", (&TypeDef{}).WithObjectTypeDef(childDefResult))
+			fieldType := newTypeDefDetachedResult(t, dag, "inlineChildFieldType", childType.Self().WithOptional(tc.optional))
+			parentDef := NewObjectTypeDef("InlineParent", "", nil)
+			parentDef.Fields = append(parentDef.Fields, newTypeDefDetachedResult(t, dag, "inlineChildField", NewFieldTypeDef("child", fieldType, "", nil)))
+			parentDefResult := newTypeDefDetachedResult(t, dag, "inlineParentDef", parentDef)
+			parentType := newTypeDefDetachedResult(t, dag, "inlineParentType", (&TypeDef{}).WithObjectTypeDef(parentDefResult))
+			mod := &Module{
+				NameField:  "test",
+				Deps:       NewSchemaBuilder(root, nil),
+				ObjectDefs: dagql.ObjectResultArray[*TypeDef]{childType, parentType},
+			}
+			modResult, err := dagql.NewObjectResultForCall(mod, dag, moduleObjectTestSyntheticCall("inlineChildModule", mod))
+			assert.NilError(t, err)
+			dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{Typed: &ModuleObject{Module: modResult, TypeDef: childDef}}))
+			parent := &ModuleObject{Module: modResult, TypeDef: parentDef, Fields: map[string]any{"child": tc.child}}
+			dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{Typed: parent}))
+			parentCall := moduleObjectTestSyntheticCall("inlineParent", parent)
+			ctx = dagql.ContextWithCall(ctx, parentCall)
+			scope := &inlineChildSDKInputScope{}
+			ctx = dagql.WithResultScope(ctx, scope)
+
+			// Inline object arguments are reconstructed from SDK JSON, including
+			// nullable fields whose wrapping erases the ObjectResult view.
+			parentModType := &ModuleObjectType{mod: modResult, typeDef: parentDef}
+			argument, err := moduleObjectValueToSDKInput(ctx, parentModType, parent.Fields)
+			assert.NilError(t, err)
+			assert.DeepEqual(t, parent.Fields, argument)
+
+			parentResult, err := dagql.NewObjectResultForCall(parent, dag, parentCall)
+			assert.NilError(t, err)
+			attached, err := cache.AttachResult(ctx, "inline-child-session", dag, parentResult)
+			assert.NilError(t, err)
+			receiver, err := moduleFunctionReceiverFields(ctx, &CallOpts{ParentTyped: attached, ParentFields: parent.Fields})
+			assert.NilError(t, err)
+			assert.DeepEqual(t, parent.Fields, receiver)
+			if tc.child != nil {
+				assert.Assert(t, scope.children >= 2, "both argument and receiver conversion must scope the attached child")
+			} else {
+				assert.Equal(t, 0, scope.children)
+			}
+		})
+	}
+}
+
 func TestModuleObjectConvertFromSDKResultOwnsFields(t *testing.T) {
 	obj := NewObjectTypeDef("StoredSelection", "", nil)
 	ctx := dagql.ContextWithCall(t.Context(), moduleObjectTestSyntheticCall("storedSelection", &ModuleObject{TypeDef: obj}))

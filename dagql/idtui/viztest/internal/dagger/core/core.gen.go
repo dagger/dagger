@@ -40,6 +40,33 @@ func SetMarshalContext(ctx context.Context) {
 	marshalCtx = ctx
 }
 
+// DispatchInputs reads what a module's entrypoint dispatches the call with,
+// in one request: its parent object's type name, its name, its parent's JSON
+// value, and each argument's JSON value by name.
+func (r *FunctionCall) DispatchInputs(ctx context.Context) (parentName, name string, parent []byte, args map[string][]byte, rerr error) {
+	var resp struct {
+		ParentName string
+		Name       string
+		Parent     string
+		InputArgs  []struct {
+			Name  string
+			Value string
+		}
+	}
+	q := r.query.SelectMixed(
+		[]string{"parentName", "name", "parent"},
+		map[string]*querybuilder.Selection{"inputArgs": querybuilder.Query().SelectFields("name", "value")},
+	)
+	if err := q.Bind(&resp).Execute(ctx); err != nil {
+		return "", "", nil, nil, err
+	}
+	args = make(map[string][]byte, len(resp.InputArgs))
+	for _, arg := range resp.InputArgs {
+		args[arg.Name] = []byte(arg.Value)
+	}
+	return resp.ParentName, resp.Name, []byte(resp.Parent), args, nil
+}
+
 // assertNotNil panic if the given value is nil.
 // This function is used to validate that input with pointer type are not nil.
 // See https://github.com/dagger/dagger/issues/5696 for more context.
@@ -14231,6 +14258,10 @@ func getClientParams() (graphql.Client, error) {
 		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 			return net.Dial("tcp", host)
 		},
+		// Every request goes to this one host. Keep as many idle connections
+		// for it as Go's default transport keeps in all, not its default of
+		// 2 per host, so concurrent requests reuse them instead of dialing.
+		MaxIdleConnsPerHost: 100,
 	}
 	httpClient := &http.Client{
 		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
@@ -14365,4 +14396,20 @@ func Load[T Loadable[T]](ctx context.Context, root *Query, id ID) (T, error) {
 	}
 
 	return zero.WithGraphQLQuery(selectNode(root.query, id, expectedType)), nil
+}
+
+// LoadedNode is the constraint for objects Loaded can build: every generated
+// object client type with an ID.
+type LoadedNode[T any] interface {
+	Loadable[T]
+	withLoadedID(*querybuilder.Selection, ID) T
+}
+
+// Loaded returns the object whose ID is id, as Ref does, knowing that ID:
+// passing it as an argument passes id as it is, without asking the engine for
+// it again. id is one the engine returned, such as each ID a list field
+// returns: a handle to a result the engine already evaluated.
+func Loaded[T LoadedNode[T]](root *Query, id ID) T {
+	var zero T
+	return zero.withLoadedID(selectNode(root.query, id, zero.XXX_GraphQLType()), id)
 }

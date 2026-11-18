@@ -92,6 +92,12 @@ func (s *workspaceSchema) withInitialized(
 		}
 	}
 
+	// Initializing writes the workspace's own config, which must reach the
+	// source: a mount at its path would take the write instead, and keep it
+	// out of changes and export.
+	if ws.MountedPath(workspace.ConfigFileName) {
+		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("cannot initialize the workspace: %s is mounted; use withoutMount to unmount it first", workspace.ConfigFileName)
+	}
 	var staged dagql.ObjectResult[*core.Workspace]
 	if err := srv.Select(ctx, parent, &staged, dagql.Selector{
 		Field: "withNewFile",

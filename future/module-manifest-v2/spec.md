@@ -85,8 +85,9 @@ A version 2 read ignores the previous fields rather than rejecting them.
 This rule disappears once version 2 covers dependencies. The engine keeps it in
 `core/modules/config_fat_manifest.go`, which names the steps to remove it.
 
-A version 2 manifest accepts `name` and `entrypoint` and nothing else, so a
-`manifestVersion` key is rejected as an unsupported key. An earlier draft of
+A version 2 manifest accepts `name`, `include`, `entrypoint` and an
+entrypoint's `dependencies`, and nothing else, so a `manifestVersion` key is
+rejected as an unsupported key. An earlier draft of
 this design required that key, but no released engine ever read or wrote it,
 so no manifest in the wild carries it.
 
@@ -151,6 +152,36 @@ filesystem. Use a scheme when the value must be unambiguous.
 
 The manifest name is the module name. The entrypoint cannot replace it.
 
+### Files outside the module directory
+
+`include` lists the files outside the module directory that the module builds
+from, as patterns relative to the module directory. A pattern that starts with
+`!` excludes what the patterns before it include:
+
+```toml
+name = "engine-dev"
+include = ["../../../go.mod", "../../../util/parallel/*.go", "!../../../util/parallel/*_test.go"]
+```
+
+The engine loads these files with the module's own files when the module
+loads, as it loads a legacy module's `include`. They are part of
+`contextDirectory` and of the module digest, so they reach the cache key of
+every function call and of `types`. A pattern can't leave the context root.
+A directory module without `sources` keeps the whole directory its caller
+passed, which holds the included files already. A fixed list belongs here
+rather than in `sources`, which the engine has to run before it can know the
+list.
+
+A manifest that declares `include`, even as an empty list, replaces the
+entrypoint's `sources` member: the engine does not run `sources`, and a
+directory module keeps its own and included files of the directory, as
+`sources` would. An engine that predates `include` ignores the key and runs
+`sources`, so a module that carries both loads on either engine, with the same
+files when both list them. One difference remains: a Git or directory module's
+included files keep files that `.gitignore` ignores, which a `sources` read
+with `gitignore: true` drops. A fat manifest's `include` belongs to the pre-v2
+format too, so it does not replace `sources`.
+
 ## Module entrypoint
 
 Each entrypoint provides this interface to the engine:
@@ -198,7 +229,7 @@ workspace boundary can be above the module directory. Thus, the entrypoint can
 read a file such as `go.mod` above the module directory. A file that the
 entrypoint reads from the workspace is not part of the module digest, so a
 function result with the default cache policy does not follow a change to it.
-Return such files from `sources` instead.
+List such files in the manifest's `include`, or return them from `sources`.
 
 ### Module sources
 
@@ -225,7 +256,8 @@ interface ModuleEntrypoint {
 ```
 
 The engine calls `sources` while it loads the module source, before anything
-reads the module digest. The module context becomes the returned directory
+reads the module digest, unless the manifest declares `include` (see
+[Files outside the module directory](#files-outside-the-module-directory)). The module context becomes the returned directory
 plus the module's own files: its manifest, its source directory and its
 `include` paths, as the engine loads them without the member. When the
 returned directory and the module's own files hold the same path, the module's
@@ -310,9 +342,10 @@ it. The workspace cannot replace these fields: a Git or directory module is not
 in the workspace, and the module digest does not cover workspace files.
 
 For a local or Git module, `contextDirectory` holds the manifest, the module
-directory and the files that `sources` returns, at their paths from the context
-root. A local module context applies `.gitignore`. A directory module source
-without `sources` keeps the whole directory that its caller passed.
+directory, the files the manifest includes and the files that `sources`
+returns, at their paths from the context root. A local module context applies
+`.gitignore`. A directory module source without `sources` keeps the whole
+directory that its caller passed.
 
 ### Type rules
 
@@ -421,6 +454,96 @@ the Dang evaluator.
 
 The entrypoint does not receive an introspection file or an introspection
 argument.
+
+#### Versions
+
+A version 2 manifest has no `engineVersion`. The entrypoint declares what it is
+written against in a `dang.toml`, with the keys Dang defines:
+
+```toml
+dang = "2.1"
+
+[imports.Dagger]
+dagger = "v1.0.0-beta.26"
+```
+
+| Key | Meaning |
+| --- | --- |
+| `dang` | The Dang language version the entrypoint source is parsed as. |
+| `[imports.<name>] dagger` | The Dagger version the entrypoint is written against. |
+
+The Dagger version is the module's engine version, as `engineVersion` is for a
+previous-format module. It selects the core API view of the entrypoint and of
+the module's functions, the naming rules of the module's types, and the default
+function caching, through the same checks and view mapping as an
+`engineVersion`. The engine refuses a later base version than its own with
+`module requires dagger <version>, but you have <engine version>`, and a
+version older than the oldest module version it supports. A later prerelease
+of its own base version, or that release itself, loads and is served the
+engine's own view, the newest API it has (`engine.ModuleAPIViewVersion`). Two
+imports that declare different Dagger versions are an error.
+
+The engine reads the `dang.toml` that governs the entrypoint by Dang's rules,
+restricted to the module:
+
+- For a local entrypoint, the nearest `dang.toml` in the entrypoint directory
+  or above it, up to the module directory. A `dang.toml` above the module
+  directory never counts, even where Dang's own walk would reach it: a local
+  or Git module context does not hold it, while a directory module source may,
+  so honoring it would make the version depend on how the module was loaded.
+- For a module reference or an address, only the `dang.toml` of the named
+  directory. The engine resolves that directory when it loads the module
+  source, not only when it loads the module's types, so a metadata query such
+  as `ModuleSource.engineVersion` fetches it too and fails when it is
+  unreachable.
+
+The engine reads the versions when it loads the module source, before it
+evaluates `sources`. A `dang.toml` that `sources` returns does not change them.
+`sources` runs at the module's API view, as `types` and `call` do.
+`ModuleSource.engineVersion` reports the Dagger version, and
+`withEngineVersion` overrides it for that source, as for any module. The
+override is not written back: a version 2 manifest has no `engineVersion`, so
+the next load reads the `dang.toml` again, and changing the version is done
+there.
+
+Defaults:
+
+| Declared | Dagger version | Dang version |
+| --- | --- | --- |
+| No `dang.toml` | `v1.0.0-beta.25` | `2.1` |
+| No Dagger import, or `dagger = true` | `v1.0.0-beta.25` | as declared |
+| No `dang` key | as declared | `2.1` |
+
+**Decision: an undeclared Dagger version is v1.0.0-beta.25.** Entrypoints
+written before the key existed were served at the engine that ran them, from
+v1.0.0-beta.16 to v1.0.0-beta.25: the v1 API, Dang 2.1 and the naming rules
+from before the cut at v1.0.0-beta.26 (`engine.IdentifierCasingVersion`).
+The default is the last of those releases, so an entrypoint keeps the API
+they shipped, including what the releases from v1.0.0-beta.22
+(`engine.PrereleaseViewsVersion`, from which each release has a view of its
+own) added; it is pinned.
+It gets none of the API that changes at the cut, such as the renamed
+`FunctionCachePolicy` members that generated entrypoints spell the old way
+(`Never`, `PerSession`, `Default`), nor the new naming rules.
+Following the running engine would change the API and the type names of an
+entrypoint that declares nothing with every engine release.
+
+Dang's own tooling reads `dagger = true` differently: its LSP and CLI connect
+through `dagger session` without a version, and so type check the
+entrypoint against the API of the `dagger` CLI that runs them, while the
+engine serves it the pinned pre-cut view. Past the cut they disagree on the
+renamed API, so an entrypoint should declare its Dagger version.
+
+**Decision: an undeclared Dang version is 2.1.** That is Dang's
+`DefaultVersion`, which Dang uses for a `dang.toml` without the key. The
+engine uses it for an entrypoint without a `dang.toml` too, rather than Dang's
+`CurrentVersion`, for the same reason.
+
+The versions are part of the module digest, so a result built under one
+version, such as the module's type definitions, never answers for another.
+
+The engine does not run the `dang.toml` imports. It provides the `Dagger`
+import itself, at the declared version.
 
 ### Observability
 

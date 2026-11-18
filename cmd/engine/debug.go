@@ -29,6 +29,8 @@ import (
 	"golang.org/x/net/trace"
 	"golang.org/x/sys/unix"
 
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/ebpf/wcbpf"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/wcprof"
@@ -36,6 +38,14 @@ import (
 
 func setupDebugHandlers(addr string, eng *server.Server) error {
 	m := http.NewServeMux()
+	// Counts of repeated work, beside the runtime's memory statistics.
+	expvar.Publish("schemaBuilds", expvar.Func(func() any {
+		return struct {
+			core.SchemaBuildStats
+			// All descriptions built, through a shared cache or not.
+			AllDescriptions int64
+		}{core.SchemaBuilds(), dagql.SchemaASTBuilds()}
+	}))
 	m.Handle("/debug/vars", expvar.Handler())
 	m.Handle("/debug/pprof/", http.HandlerFunc(pprof.Index))
 	m.Handle("/debug/pprof/cmdline", http.HandlerFunc(pprof.Cmdline))

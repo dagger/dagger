@@ -1,7 +1,10 @@
 package idtui
 
 import (
+	"context"
+	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,4 +68,107 @@ func TestSearchFindsCollapsedMatches(t *testing.T) {
 	row := fe.rows.BySpan[id(6)]
 	require.NotNil(t, row)
 	require.Equal(t, id(5), row.Parent.Span.ID)
+}
+
+// TestSearchFindsUnloadedLogs: with a source that can search (an engine
+// store), a search finds lines in logs never loaded; going to the match reads
+// them and lands on the line. Without one (Cloud), the hint says the search
+// covers only loaded logs.
+func TestSearchFindsUnloadedLogs(t *testing.T) {
+	start := time.Unix(100, 0)
+	traceID := prettyTestTraceID()
+	rootID, quiet, loud := prettyTestSpanID(1), prettyTestSpanID(2), prettyTestSpanID(3)
+	src := &staticSource{
+		id: traceID.String(),
+		priority: []dagui.SpanSnapshot{
+			{ID: rootID, TraceID: traceID, Name: "root", StartTime: start, EndTime: start.Add(time.Hour), Final: true},
+			{ID: quiet, TraceID: traceID, ParentID: rootID, Name: "quiet", StartTime: start, EndTime: start.Add(time.Hour), HasLogs: true, Final: true},
+			{ID: loud, TraceID: traceID, ParentID: rootID, Name: "loud", StartTime: start.Add(time.Second), EndTime: start.Add(time.Hour), HasLogs: true, Final: true},
+		},
+		own: map[string][]traceLog{
+			quiet.String(): {{SpanID: quiet.String(), Body: "nothing here\n"}},
+			loud.String():  {{SpanID: loud.String(), Body: "first\n"}, {SpanID: loud.String(), Body: "the needle line\n"}},
+		},
+	}
+	sess := newTraceSession(t, src, nil)
+	sess.fe.dispatch(func() { sess.fe.confirmSearch("needle") })
+	sess.Render()
+	require.Contains(t, sess.fe.searchCountHint("next"), "loaded logs only")
+	require.False(t, sess.Network().fetchedLog(loud))
+
+	sess.fe.SetLogSearch(dagui.TraceID{}, func(_ context.Context, pattern string) (LogSearchHits, error) {
+		if pattern != "needle" {
+			return LogSearchHits{}, nil
+		}
+		// A hit in a span not loaded is counted, and a partial search said.
+		return LogSearchHits{Targets: []LogTarget{{Trace: traceID, Span: loud}, {Trace: traceID, Span: prettyTestSpanID(99)}}, Partial: true}, nil
+	})
+	sess.Render()
+	sess.fe.dispatch(func() { sess.fe.confirmSearch("needle") })
+	require.Eventually(t, func() bool {
+		sess.Render()
+		return len(sess.fe.searchMatches) > 0
+	}, 5*time.Second, 10*time.Millisecond)
+	hint := sess.fe.searchCountHint("next")
+	require.NotContains(t, hint, "loaded logs only")
+	require.Contains(t, hint, "more not searched")
+	require.Contains(t, hint, "1 in spans not loaded")
+
+	// The first match is selected as it arrives: the span expands and its
+	// logs are read, and the match becomes the line itself.
+	out := sess.Render()
+	require.True(t, sess.Network().fetchedLog(loud), "going to the match reads its logs")
+	require.Contains(t, out, "the needle line")
+	require.Len(t, sess.fe.searchMatches, 1)
+	m := sess.fe.searchMatches[sess.fe.searchIdx]
+	require.Equal(t, loud, m.spanID)
+	require.GreaterOrEqual(t, m.logRow, 0, "the remote match gave way to the line")
+}
+
+// TestSearchMatchSurvivesReflow checks that going to a match in a log laid
+// out before its row showed it -- search lays it out at the full width, and
+// its row's prefix then narrows it, which lays it out again -- keeps that
+// match current and in view, though its row moved.
+func TestSearchMatchSurvivesReflow(t *testing.T) {
+	start := time.Unix(100, 0)
+	id := prettyTestSpanID
+	db := dagui.NewDB()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: id(1), TraceID: prettyTestTraceID(), Name: "root", StartTime: start, EndTime: start.Add(time.Minute)},
+		{ID: id(2), TraceID: prettyTestTraceID(), Name: "build", ParentID: id(1), StartTime: start, EndTime: start.Add(time.Minute)},
+	})
+	db.SetPrimarySpan(id(1))
+	fe := newWithTerminal(io.Discard, db, tuist.NewHeadlessTerminal(120, 40))
+	fe.FrontendOpts.ZoomedSpan = id(1)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.setupTUI()
+	fe.tui.Step()
+	logs := fe.logs.spanLogs(id(2))
+	// Each line fits the screen, but not the row's gutter beside it.
+	for i := range 20 {
+		line := fmt.Sprintf("needle %02d ", i)
+		_, _ = logs.Write([]byte(line + strings.Repeat("x", 119-len(line)) + "\n"))
+	}
+	fe.recalculateViewLocked()
+
+	fe.confirmSearch("needle")
+	require.Len(t, fe.searchMatches, 20)
+	fe.searchIdx = 5
+	fe.goToSearchMatch(5)
+	fe.syncSearchState()
+	step := func() string {
+		return stripANSICodes(strings.Join(fe.tui.Step(), "\n"))
+	}
+	frame := step()
+	require.Contains(t, frame, "needle 05", frame)
+
+	// The next match is the next one, though the matches were gathered
+	// before the render moved their rows.
+	fe.searchNext()
+	for range 3 {
+		frame = step()
+	}
+	require.Equal(t, 6, fe.searchIdx)
+	require.Equal(t, fe.searchMatches[6].logRow, logs.SearchCurrentRow)
+	require.Contains(t, frame, "needle 06", frame)
 }

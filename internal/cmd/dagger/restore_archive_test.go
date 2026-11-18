@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,17 +22,23 @@ import (
 	"github.com/dagger/dagger/engine/agentcontrol"
 	"github.com/dagger/dagger/engine/archive"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
+	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 type restoreTestFrontend struct {
@@ -330,10 +339,18 @@ func TestArchiveLabelTruncatesLongTitles(t *testing.T) {
 	require.Equal(t, "2026-09-01 12:34  "+strings.Repeat("x", archiveLabelTitleMax-1)+"…  t", label)
 }
 
+// backfillRequest is restoreRequest with --backfill: the whole history
+// imports in the background.
+func backfillRequest() traceRestore {
+	req := restoreRequest()
+	req.backfill = true
+	return req
+}
+
 func TestArchivePromptDoesNotWaitForHistory(t *testing.T) {
 	source, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
 	fe, target := newRestoreTestFrontend(), newFakeRestoreTarget()
-	cleanup, err := restoreArchive(t.Context(), source, fe, target, restoreRequest())
+	cleanup, err := restoreArchive(t.Context(), source, fe, target, backfillRequest())
 	require.NoError(t, err)
 	require.Equal(t, "chief", target.focused)
 	for range 3 {
@@ -505,7 +522,7 @@ func TestArchiveHistoryRedeliveryIsIdempotent(t *testing.T) {
 	mutations := fe.db.MutationCount()
 
 	history := historyTestArchive{restoreTestArchive: source, historyLogs: source.logs}
-	require.NoError(t, importArchiveRemainder(t.Context(), history, source.header.TraceID, importer, cut))
+	require.NoError(t, importArchiveRemainder(t.Context(), history, source.header.TraceID, importer, cut, false))
 
 	after, afterEdges, err := appliedArchivePlan(fe, source.header.Completion)
 	require.NoError(t, err)
@@ -519,5 +536,548 @@ func TestArchiveHistoryRedeliveryIsIdempotent(t *testing.T) {
 	for _, entry := range after.plan {
 		_, err := fe.EncodedIDForCallDigest(entry.SnapshotDigest)
 		require.NoError(t, err)
+	}
+}
+
+// lazyRestoreFrontend is an interactive frontend: it takes the restored
+// trace's log provider.
+type lazyRestoreFrontend struct {
+	*restoreTestFrontend
+	idtui.TraceFrontend
+	traceID  dagui.TraceID
+	provider func(dagui.SpanID, bool)
+	spans    func(dagui.SpanID)
+	wait     func()
+	calls    func(digests, known []string) error
+}
+
+func (fe *lazyRestoreFrontend) SetTraceLogProvider(traceID dagui.TraceID, f func(dagui.SpanID, bool)) {
+	fe.traceID, fe.provider = traceID, f
+}
+func (fe *lazyRestoreFrontend) SetSpanProvider(f func(dagui.SpanID))                  { fe.spans = f }
+func (fe *lazyRestoreFrontend) SetFetchWaiter(f func())                               { fe.wait = f }
+func (fe *lazyRestoreFrontend) SetCallProvider(f func(digests, known []string) error) { fe.calls = f }
+
+// lazyRestoreArchive reports every history and selected read.
+type lazyRestoreArchive struct {
+	*restoreTestArchive
+	spans chan archive.StreamOptions
+	logs  chan archive.StreamOptions
+	// blockSelected makes selected (per-span) log reads block until
+	// cancelled.
+	blockSelected bool
+}
+
+func newLazyRestoreArchive() *lazyRestoreArchive {
+	base, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
+	base.header.HighWater = archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}
+	return &lazyRestoreArchive{restoreTestArchive: base, spans: make(chan archive.StreamOptions, 1), logs: make(chan archive.StreamOptions, 64)}
+}
+
+func (s *lazyRestoreArchive) Traces(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
+	s.spans <- opts
+	return opts.HighWater, nil
+}
+func (s *lazyRestoreArchive) Metrics(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
+	return opts.HighWater, nil
+}
+func (s *lazyRestoreArchive) Logs(ctx context.Context, _ string, opts archive.StreamOptions, _ func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
+	s.logs <- opts
+	if s.blockSelected && opts.Logs != nil && opts.Logs.SpanID != "" {
+		<-ctx.Done()
+		return 0, ctx.Err()
+	}
+	return opts.HighWater, nil
+}
+
+func receiveOpts(t *testing.T, ch chan archive.StreamOptions, what string) archive.StreamOptions {
+	t.Helper()
+	select {
+	case opts := <-ch:
+		return opts
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s was not read", what)
+		return archive.StreamOptions{}
+	}
+}
+
+// TestArchiveRestoreLoadsDisplayLogsOnDemand: with --backfill, an interactive
+// frontend gets the history's whole span tree, with the dagui view's hints,
+// and only its semantic log records in the background; display logs are read
+// per span on request, pinned to the cut, from the provider for the restored
+// trace.
+func TestArchiveRestoreLoadsDisplayLogsOnDemand(t *testing.T) {
+	source := newLazyRestoreArchive()
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	target := newFakeRestoreTarget()
+	cleanup, err := restoreArchive(t.Context(), source, fe, target, backfillRequest())
+	require.NoError(t, err)
+	defer cleanup()
+	require.Equal(t, "chief", target.focused, "verified bootstrap still restores before history")
+	require.Equal(t, restoreRequest().traceID, fe.traceID.String(), "the provider serves the restored trace only")
+
+	spans := receiveOpts(t, source.spans, "span history")
+	require.Equal(t, &archive.SpanSelection{Full: true, DagUIView: true}, spans.Spans)
+	require.EqualValues(t, 10, spans.HighWater)
+	metadata := receiveOpts(t, source.logs, "log history")
+	require.Equal(t, &archive.LogSelection{Records: archive.LogRecordsMetadata}, metadata.Logs)
+	require.EqualValues(t, 20, metadata.HighWater)
+
+	id := dagui.SpanID{SpanID: [8]byte{1}}
+	fe.provider(id, false)
+	fe.provider(id, false)
+	fe.wait()
+	own := receiveOpts(t, source.logs, "the span's logs")
+	require.Equal(t, &archive.LogSelection{SpanID: id.String()}, own.Logs, "every record class of the span")
+	require.EqualValues(t, 20, own.HighWater)
+	select {
+	case opts := <-source.logs:
+		t.Fatalf("eager or duplicate log read: %+v", opts.Logs)
+	default:
+	}
+}
+
+// TestArchiveRestoreCleanupCancelsLazyFetches: exit cancels lazy log fetches
+// both in flight and queued behind the loader's concurrency limit.
+func TestArchiveRestoreCleanupCancelsLazyFetches(t *testing.T) {
+	source := newLazyRestoreArchive()
+	source.blockSelected = true
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), backfillRequest())
+	require.NoError(t, err)
+	receiveOpts(t, source.logs, "log history")
+	for i := range 20 {
+		fe.provider(dagui.SpanID{SpanID: [8]byte{byte(i + 1)}}, false)
+	}
+	// Wait for the in-flight fetches to occupy the loader's limit, leaving
+	// the rest queued.
+	for range cap(newTraceLoaderFor(t.Context(), nil, "", fe).logSem) {
+		receiveOpts(t, source.logs, "a lazy fetch")
+	}
+	done := make(chan struct{})
+	go func() {
+		cleanup()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cleanup did not cancel queued lazy fetches")
+	}
+}
+
+// noBackfillArchive serves a conversation view (the imported root and a
+// message span that has an unloaded child) and that child on request,
+// recording every stream it is asked for.
+type noBackfillArchive struct {
+	*restoreTestArchive
+	root, message, child dagui.SpanID
+	traces, logs         chan archive.StreamOptions
+	// served is signaled once each span read has delivered its batch.
+	served  chan struct{}
+	metrics chan archive.StreamOptions
+	// fail ends the initial view with this error, after delivering its
+	// spans still running.
+	fail error
+	// metricsErr fails metric reads, after delivering nothing.
+	metricsErr error
+	// metricBatches counts the metric batches applied.
+	metricBatches atomic.Int32
+	// noMetricSelection refuses metric selections, as an older engine's
+	// reads are.
+	noMetricSelection bool
+	// calls records the call closures asked for, and serves closure.
+	calls   chan archive.CallClosureQuery
+	closure *collogspb.ExportLogsServiceRequest
+}
+
+func (s *noBackfillArchive) CallClosure(_ context.Context, _ string, unsealed bool, digests, known []string, consume func(*collogspb.ExportLogsServiceRequest) error) error {
+	if unsealed {
+		return errors.New("a sealed archive's closure was read unsealed")
+	}
+	s.calls <- archive.CallClosureQuery{Digests: digests, Known: known}
+	if s.closure == nil {
+		return archive.ErrCallClosureUnsupported
+	}
+	return consume(s.closure)
+}
+
+func newNoBackfillArchive() *noBackfillArchive {
+	base, _, _, _ := canonicalArchive() //nolint:dogsled // Only the transport fixture is needed here.
+	base.header.HighWater = archive.HighWater{Spans: 10, Logs: 20, Metrics: 30}
+	return &noBackfillArchive{
+		restoreTestArchive: base,
+		root:               dagui.SpanID{SpanID: trace.SpanID{1}},
+		message:            dagui.SpanID{SpanID: trace.SpanID{2}},
+		child:              dagui.SpanID{SpanID: trace.SpanID{3}},
+		traces:             make(chan archive.StreamOptions, 8),
+		logs:               make(chan archive.StreamOptions, 8),
+		served:             make(chan struct{}, 8),
+		metrics:            make(chan archive.StreamOptions, 8),
+		calls:              make(chan archive.CallClosureQuery, 8),
+	}
+}
+
+// tokenMetrics is one LLM input-token gauge series on span, recorded as a
+// streaming provider does: half the tokens, then all of them.
+func tokenMetrics(span dagui.SpanID, tokens int64) *colmetricspb.ExportMetricsServiceRequest {
+	str := func(key, val string) *commonpb.KeyValue {
+		return &commonpb.KeyValue{Key: key, Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: val}}}
+	}
+	point := func(at, value int64) *metricspb.NumberDataPoint {
+		return &metricspb.NumberDataPoint{
+			Attributes:   []*commonpb.KeyValue{str("model", "test-model"), str(telemetry.MetricsSpanIDAttr, span.String())},
+			TimeUnixNano: uint64(time.Unix(at, 0).UnixNano()),
+			Value:        &metricspb.NumberDataPoint_AsInt{AsInt: value},
+		}
+	}
+	return &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: []*metricspb.ResourceMetrics{{
+		Resource: &resourcepb.Resource{},
+		ScopeMetrics: []*metricspb.ScopeMetrics{{Metrics: []*metricspb.Metric{{
+			Name: telemetry.LLMInputTokens,
+			Data: &metricspb.Metric_Gauge{Gauge: &metricspb.Gauge{DataPoints: []*metricspb.NumberDataPoint{
+				point(10, tokens/2), point(11, tokens),
+			}}},
+		}}}},
+	}}}
+}
+
+func (s *noBackfillArchive) span(id, parent dagui.SpanID, attrs ...*commonpb.KeyValue) *tracepb.Span {
+	traceID, err := trace.TraceIDFromHex(restoreRequest().traceID)
+	if err != nil {
+		panic(err)
+	}
+	span := &tracepb.Span{
+		TraceId: traceID[:], SpanId: id.SpanID[:], Name: "archived", Attributes: attrs,
+		StartTimeUnixNano: uint64(time.Unix(10, 0).UnixNano()), EndTimeUnixNano: uint64(time.Unix(11, 0).UnixNano()),
+	}
+	if s.fail != nil {
+		span.EndTimeUnixNano = 0
+	}
+	if parent.IsValid() {
+		span.ParentSpanId = parent.SpanID[:]
+	}
+	return span
+}
+
+func (s *noBackfillArchive) Traces(_ context.Context, _ string, opts archive.StreamOptions, consume func(int64, *coltracepb.ExportTraceServiceRequest) error) (int64, error) {
+	s.traces <- opts
+	partial := boolAttr(telemetryattrs.UIPartialAttr, true)
+	var spans []*tracepb.Span
+	if opts.Spans != nil && len(opts.Spans.Listen) > 0 {
+		spans = append(spans, s.span(s.child, s.message, partial))
+	} else {
+		spans = append(spans, s.span(s.root, dagui.SpanID{}, partial), s.span(s.message, s.root, partial, intAttr(telemetryattrs.UIChildCountAttr, 1)))
+	}
+	batch := &coltracepb.ExportTraceServiceRequest{ResourceSpans: []*tracepb.ResourceSpans{{
+		Resource: &resourcepb.Resource{}, ScopeSpans: []*tracepb.ScopeSpans{{Spans: spans}},
+	}}}
+	if err := consume(opts.HighWater, batch); err != nil {
+		return 0, err
+	}
+	s.served <- struct{}{}
+	if opts.Spans != nil && len(opts.Spans.Listen) > 0 {
+		return opts.HighWater, nil
+	}
+	return opts.HighWater, s.fail
+}
+
+func (s *noBackfillArchive) Logs(_ context.Context, _ string, opts archive.StreamOptions, _ func(int64, *collogspb.ExportLogsServiceRequest) error) (int64, error) {
+	s.logs <- opts
+	return opts.HighWater, nil
+}
+
+func (s *noBackfillArchive) Metrics(_ context.Context, _ string, opts archive.StreamOptions, consume func(int64, *colmetricspb.ExportMetricsServiceRequest) error) (int64, error) {
+	s.metrics <- opts
+	if s.metricsErr != nil {
+		return 0, s.metricsErr
+	}
+	if s.noMetricSelection && opts.Metrics != nil {
+		return 0, archive.ErrSelectionUnsupported
+	}
+	err := consume(opts.HighWater, tokenMetrics(s.message, 42))
+	s.metricBatches.Add(1)
+	return opts.HighWater, err
+}
+
+// noBackfillPrimaries records the global frontend's SetPrimary calls, which
+// the trace loader makes when it is allowed to zoom to the imported root.
+func noBackfillPrimaries(t *testing.T) func() []dagui.SpanID {
+	prev := Frontend
+	t.Cleanup(func() { Frontend = prev })
+	var mu sync.Mutex
+	var primaries []dagui.SpanID
+	Frontend = &idtui.FrontendMock{SetPrimaryFunc: func(id dagui.SpanID) {
+		mu.Lock()
+		defer mu.Unlock()
+		primaries = append(primaries, id)
+	}}
+	return func() []dagui.SpanID {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(primaries)
+	}
+}
+
+// TestArchiveRestoreNoBackfill: by default (without --backfill), a restore
+// takes the agents from the verified bootstrap as usual, then loads only the
+// archive's conversation view instead of the whole history: no full span
+// stream, no whole-trace metadata stream, and of the metrics only the LLM
+// token metrics the cost totals sum. Children load when
+// expanded and own logs when shown, and the live session's root stays
+// primary.
+func TestArchiveRestoreNoBackfill(t *testing.T) {
+	primaries := noBackfillPrimaries(t)
+	source := newNoBackfillArchive()
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	target := newFakeRestoreTarget()
+	req := restoreRequest()
+	cleanup, err := restoreArchive(t.Context(), source, fe, target, req)
+	require.NoError(t, err)
+	defer cleanup()
+	require.Equal(t, "chief", target.focused, "the verified bootstrap still restores the agents")
+	require.Equal(t, req.traceID, fe.traceID.String(), "the log provider serves the restored trace only")
+
+	initial := receiveOpts(t, source.traces, "the conversation view")
+	require.Equal(t, &archive.SpanSelection{Conversation: true, DagUIView: true}, initial.Spans,
+		"only the conversations, not the whole tree")
+	require.EqualValues(t, 10, initial.HighWater)
+	<-source.served
+
+	// A shown span's logs load on demand -- only its own, even for a
+	// roll-up.
+	fe.provider(source.message, true)
+	fe.wait()
+	own := receiveOpts(t, source.logs, "a shown span's logs")
+	require.Equal(t, &archive.LogSelection{SpanID: source.message.String()}, own.Logs,
+		"a roll-up does not pull its subtree's output, and there is no whole-trace metadata stream")
+	require.EqualValues(t, 20, own.HighWater)
+	select {
+	case opts := <-source.logs:
+		t.Fatalf("follow-up log request: %+v", opts.Logs)
+	default:
+	}
+
+	// Expanding the message loads its children: one level. (An expand
+	// racing the initial load is replayed once it completes.)
+	fe.spans(source.message)
+	listen := receiveOpts(t, source.traces, "the expanded span's children")
+	require.Equal(t, &archive.SpanSelection{NoRoot: true, Listen: []string{source.message.String()}, DagUIView: true}, listen.Spans)
+	fe.wait()
+	require.NotNil(t, fe.db.Spans.Map[source.child])
+	fe.provider(source.child, false)
+	fe.wait()
+	require.Equal(t, source.child.String(), receiveOpts(t, source.logs, "an expanded span's logs").Logs.SpanID)
+
+	// A live span's children are never read from the archive.
+	fe.spans(dagui.SpanID{SpanID: trace.SpanID{9}})
+	fe.wait()
+	select {
+	case opts := <-source.traces:
+		t.Fatalf("live span listened in the archive: %+v", opts.Spans)
+	default:
+	}
+
+	require.Empty(t, primaries(), "the live session's root stays primary")
+	root := fe.db.Spans.Map[source.root]
+	require.NotNil(t, root)
+	require.True(t, root.Passthrough, "the imported root gets out of the way")
+	metrics := receiveOpts(t, source.metrics, "the cost metrics")
+	require.Equal(t, &archive.MetricSelection{Names: dagui.LLMTokenMetricNames}, metrics.Metrics,
+		"only the metrics the cost totals sum")
+	require.EqualValues(t, 30, metrics.HighWater)
+	require.Eventually(t, func() bool {
+		for _, m := range fe.db.LLMTokenMetrics.Snapshot() {
+			if m.Model == "test-model" && m.InputTokens == 42 {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "the restored session's token totals carry over")
+	select {
+	case opts := <-source.metrics:
+		t.Fatalf("a second metric read: %+v", opts.Metrics)
+	default:
+	}
+}
+
+// TestArchiveRestoreNoBackfillFetchesCallClosures: a conversation-only
+// restore lets the frontend ask for the call payloads an action needs: the
+// recipe closures of the digests it names, from the archive, applied before
+// the request returns. An engine that cannot serve them says so.
+func TestArchiveRestoreNoBackfillFetchesCallClosures(t *testing.T) {
+	noBackfillPrimaries(t)
+	source := newNoBackfillArchive()
+	frame := &callpbv1.Call{Digest: "xxh3:fetched", Field: "llm", Type: &callpbv1.Type{NamedType: "LLM"}}
+	data, err := proto.Marshal(frame)
+	require.NoError(t, err)
+	var payload log.Record
+	payload.SetBody(log.BytesValue(data))
+	payload.AddAttributes(log.String(telemetry.ContentTypeAttr, telemetryattrs.CallPayloadContentType))
+	source.closure = controlLogs(payload)
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), restoreRequest())
+	require.NoError(t, err)
+	defer cleanup()
+	require.NotNil(t, fe.calls, "the frontend can ask for call payloads")
+	// The test frontend applies imports in the caller's goroutine, not an
+	// event loop: let the initial imports finish first.
+	receiveOpts(t, source.traces, "the conversation view")
+	<-source.served
+	receiveOpts(t, source.metrics, "the cost metrics")
+	require.Eventually(t, func() bool { return len(fe.db.LLMTokenMetrics.Snapshot()) > 0 }, 5*time.Second, 10*time.Millisecond)
+	fe.wait()
+
+	require.NoError(t, fe.calls([]string{frame.Digest}, []string{"xxh3:held"}))
+	require.Equal(t, archive.CallClosureQuery{Digests: []string{frame.Digest}, Known: []string{"xxh3:held"}}, <-source.calls)
+	require.NotNil(t, fe.db.Call(frame.Digest), "the closure is applied before the request returns")
+
+	source.closure = nil
+	err = fe.calls([]string{"xxh3:other"}, nil)
+	require.ErrorContains(t, err, "predates")
+}
+
+// TestArchiveRestoreNoBackfillOffersBackfill: a conversation-only restore
+// offers the whole-history import --backfill would have run, for /backfill:
+// once, in the background, with every span, the metadata records and every
+// metric -- but the token metrics the restore already summed, which a replay
+// would count again. When the engine could not select them, the restore took
+// none, and /backfill brings them.
+func TestArchiveRestoreNoBackfillOffersBackfill(t *testing.T) {
+	for _, selectable := range []bool{true, false} {
+		t.Run(fmt.Sprintf("selectable=%t", selectable), func(t *testing.T) {
+			noBackfillPrimaries(t)
+			source := newNoBackfillArchive()
+			source.noMetricSelection = !selectable
+			fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+			req := restoreRequest()
+			var backfill func() error
+			req.offerBackfill = func(f func() error) { backfill = f }
+			cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), req)
+			require.NoError(t, err)
+			defer cleanup()
+			require.NotNil(t, backfill)
+			receiveOpts(t, source.traces, "the conversation view")
+			<-source.served
+			receiveOpts(t, source.metrics, "the cost metrics")
+			if selectable {
+				require.Eventually(t, func() bool { return source.metricBatches.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
+			}
+
+			require.NoError(t, backfill())
+			require.ErrorContains(t, backfill(), "already loading", "the whole history loads once")
+			spans := receiveOpts(t, source.traces, "the whole span history")
+			require.Equal(t, &archive.SpanSelection{Full: true, DagUIView: true}, spans.Spans)
+			require.Equal(t, &archive.LogSelection{Records: archive.LogRecordsMetadata}, receiveOpts(t, source.logs, "the metadata history").Logs)
+			require.Nil(t, receiveOpts(t, source.metrics, "the metric history").Metrics, "every metric")
+			want := int32(1)
+			if selectable {
+				want = 2
+			}
+			require.Eventually(t, func() bool { return source.metricBatches.Load() == want }, 5*time.Second, 10*time.Millisecond)
+			snapshot := fe.db.LLMTokenMetrics.Snapshot()
+			require.Len(t, snapshot, 1)
+			require.EqualValues(t, 42, snapshot[0].InputTokens, "every token counted once")
+			require.Eventually(t, func() bool {
+				err := backfill()
+				return err != nil && strings.Contains(err.Error(), "already loaded")
+			}, 5*time.Second, 10*time.Millisecond, "a completed backfill says so")
+		})
+	}
+}
+
+// TestArchiveRestoreBackfillRetriesAfterFailure: a /backfill that failed may
+// run again; one that completed says so.
+func TestArchiveRestoreBackfillRetriesAfterFailure(t *testing.T) {
+	noBackfillPrimaries(t)
+	source := newNoBackfillArchive()
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	req := restoreRequest()
+	var backfill func() error
+	req.offerBackfill = func(f func() error) { backfill = f }
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), req)
+	require.NoError(t, err)
+	defer cleanup()
+	receiveOpts(t, source.traces, "the conversation view")
+	<-source.served
+	receiveOpts(t, source.metrics, "the cost metrics")
+	require.Eventually(t, func() bool { return source.metricBatches.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
+
+	source.metricsErr = archive.ErrCorrupt
+	require.NoError(t, backfill())
+	receiveOpts(t, source.metrics, "the failing metric history")
+	require.Eventually(t, func() bool {
+		err := backfill()
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond, "a failed backfill may run again")
+	receiveOpts(t, source.metrics, "the retried metric history")
+}
+
+// TestImportLLMTokenMetricsWithoutMetricSelection: an engine that cannot
+// select metrics by name would stream all of them; the restore goes without
+// the cost totals rather than read that, and does not report it as a failed
+// import. Any other failure is reported.
+func TestImportLLMTokenMetricsWithoutMetricSelection(t *testing.T) {
+	source := newNoBackfillArchive()
+	cut, err := archiveCut(source.header)
+	require.NoError(t, err)
+	fe := newRestoreTestFrontend()
+	importer, err := enginetel.NewArchiveTraceImporter(enginetel.TraceImportSinks{
+		Spans: fe.SpanExporter(), Logs: fe.LogExporter(), Metrics: fe.MetricExporter(), Barrier: fe,
+	}, cut)
+	require.NoError(t, err)
+
+	source.metricsErr = fmt.Errorf("%w: metric names", archive.ErrSelectionUnsupported)
+	taken, err := importLLMTokenMetrics(t.Context(), source, source.header.TraceID, importer, cut)
+	require.NoError(t, err)
+	require.False(t, taken)
+	receiveOpts(t, source.metrics, "the cost metrics")
+	select {
+	case opts := <-source.metrics:
+		t.Fatalf("an unsupported metric selection was retried: %+v", opts.Metrics)
+	default:
+	}
+	require.Empty(t, fe.db.LLMTokenMetrics.Snapshot())
+
+	source.metricsErr = archive.ErrCorrupt
+	taken, err = importLLMTokenMetrics(t.Context(), source, source.header.TraceID, importer, cut)
+	require.ErrorIs(t, err, archive.ErrCorrupt)
+	require.True(t, taken, "a failure part way may have taken some")
+}
+
+// TestArchiveRestoreNoBackfillSealsAfterFailure: a conversation view that
+// fails part way, after retrying a transient error, still seals what it
+// delivered at the archive's cut, so nothing restored renders as running,
+// and what arrived stays expandable.
+func TestArchiveRestoreNoBackfillSealsAfterFailure(t *testing.T) {
+	noBackfillPrimaries(t)
+	source := newNoBackfillArchive()
+	source.fail = archive.ErrTransient
+	fe := &lazyRestoreFrontend{restoreTestFrontend: newRestoreTestFrontend()}
+	cleanup, err := restoreArchive(t.Context(), source, fe, newFakeRestoreTarget(), restoreRequest())
+	require.NoError(t, err)
+	defer cleanup()
+
+	receiveOpts(t, source.traces, "the conversation view")
+	<-source.served
+	// Expanded while the view is still failing: the expand is parked until
+	// the view gives up.
+	fe.spans(source.message)
+	for i := range 2 {
+		opts := receiveOpts(t, source.traces, "a retried conversation view")
+		require.True(t, opts.Spans.Conversation, "retry %d", i)
+	}
+	listen := receiveOpts(t, source.traces, "an expand after the failure")
+	require.Equal(t, []string{source.message.String()}, listen.Spans.Listen, "what arrived stays expandable")
+	fe.wait()
+	select {
+	case opts := <-source.traces:
+		t.Fatalf("a transient failure is retried only twice: %+v", opts.Spans)
+	default:
+	}
+	for _, id := range []dagui.SpanID{source.root, source.message, source.child} {
+		span := fe.db.Spans.Map[id]
+		require.NotNil(t, span)
+		require.False(t, span.IsRunning(), "a delivered span is sealed")
 	}
 }

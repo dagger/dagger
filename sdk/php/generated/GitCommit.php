@@ -111,10 +111,10 @@ class GitCommit extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Commits with identical trees have identical contents and file modes.
      */
-    public function treeSHA(): string
+    public function treeSha(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('treeSHA');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'treeSHA');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('treeSha');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'treeSha');
     }
 
     /**

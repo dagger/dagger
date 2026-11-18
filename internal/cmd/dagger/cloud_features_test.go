@@ -77,7 +77,7 @@ func featureTestCmd(features ...cloudFeature) *cobra.Command {
 	return cmd
 }
 
-func TestEnsureCommandCloudFeatures(t *testing.T) {
+func TestEnsureCloudCheckFeatures(t *testing.T) {
 	const (
 		checksActive  = `{"name":"CLOUD_CHECKS","status":"ACTIVE"}`
 		checksTrial   = `{"name":"CLOUD_CHECKS","status":"IN_TRIAL"}`
@@ -87,19 +87,19 @@ func TestEnsureCommandCloudFeatures(t *testing.T) {
 	)
 
 	t.Run("no declared features is a no-op", func(t *testing.T) {
-		require.NoError(t, ensureCommandCloudFeatures(featureTestCmd(), featureTestServer(t, checksUnused), "myorg"))
+		require.NoError(t, ensureCloudCheckFeatures(featureTestCmd(), featureTestServer(t, checksUnused), cloudCheckGitHub, "myorg"))
 	})
 
 	t.Run("enabled or in trial passes", func(t *testing.T) {
 		for _, features := range []string{checksActive + "," + modulesTrial, checksTrial + "," + modulesTrial} {
 			cmd := featureTestCmd(cloudChecksRequiredFeatures...)
-			require.NoError(t, ensureCommandCloudFeatures(cmd, featureTestServer(t, features), "myorg"))
+			require.NoError(t, ensureCloudCheckFeatures(cmd, featureTestServer(t, features), cloudCheckGitHub, "myorg"))
 		}
 	})
 
 	t.Run("an ended trial asks for payment details", func(t *testing.T) {
 		cmd := featureTestCmd(cloudChecksRequiredFeatures...)
-		err := ensureCommandCloudFeatures(cmd, featureTestServer(t, checksExpired+`,{"name":"CLOUD_MODULES","status":"TRIAL_EXPIRED"}`), "myorg")
+		err := ensureCloudCheckFeatures(cmd, featureTestServer(t, checksExpired+`,{"name":"CLOUD_MODULES","status":"TRIAL_EXPIRED"}`), cloudCheckGitHub, "myorg")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), `the free trial of organization "myorg" has ended`)
 		require.Contains(t, err.Error(), "CLOUD_CHECKS + CLOUD_MODULES are no longer enabled")
@@ -108,7 +108,7 @@ func TestEnsureCommandCloudFeatures(t *testing.T) {
 
 	t.Run("never enabled points at the settings", func(t *testing.T) {
 		cmd := featureTestCmd(cloudChecksRequiredFeatures...)
-		err := ensureCommandCloudFeatures(cmd, featureTestServer(t, checksUnused+","+modulesTrial), "myorg")
+		err := ensureCloudCheckFeatures(cmd, featureTestServer(t, checksUnused+","+modulesTrial), cloudCheckGitHub, "myorg")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), `CLOUD_CHECKS is not enabled for organization "myorg"`)
 		require.Contains(t, err.Error(), "https://dagger.cloud/myorg/settings")
@@ -119,7 +119,7 @@ func TestEnsureCommandCloudFeatures(t *testing.T) {
 		autoApply = true
 		t.Cleanup(func() { autoApply = prev })
 		cmd := featureTestCmd(cloudChecksRequiredFeatures...)
-		require.Error(t, ensureCommandCloudFeatures(cmd, featureTestServer(t, checksUnused), "myorg"))
+		require.Error(t, ensureCloudCheckFeatures(cmd, featureTestServer(t, checksUnused), cloudCheckGitHub, "myorg"))
 	})
 }
 

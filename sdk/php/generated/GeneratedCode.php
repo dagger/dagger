@@ -25,9 +25,9 @@ class GeneratedCode extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Set the list of paths to mark generated in version control.
      */
-    public function withVCSGeneratedPaths(array $paths): GeneratedCode
+    public function withVcsGeneratedPaths(array $paths): GeneratedCode
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVCSGeneratedPaths');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVcsGeneratedPaths');
         $innerQueryBuilder->setArgument('paths', $paths);
         return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -35,9 +35,9 @@ class GeneratedCode extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Set the list of paths to ignore in version control.
      */
-    public function withVCSIgnoredPaths(array $paths): GeneratedCode
+    public function withVcsIgnoredPaths(array $paths): GeneratedCode
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVCSIgnoredPaths');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVcsIgnoredPaths');
         $innerQueryBuilder->setArgument('paths', $paths);
         return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

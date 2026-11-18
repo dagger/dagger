@@ -154,6 +154,31 @@ func TestLeafListElements(t *testing.T) {
 	assert.Equal(t, 1, cache.Size())
 }
 
+// A list of objects selected without subfields renders its elements whole.
+// Clients rely on it, the PHP SDK among them, so the server's HTTP handler
+// turns off GraphQL's ScalarLeafs validation rule, which would reject the
+// query.
+func TestObjectListWithoutSubfields(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+	dagql.Fields[Query]{
+		dagql.Func("listOfObjects", func(ctx context.Context, self Query, args struct {
+		}) ([]*points.Point, error) {
+			return []*points.Point{
+				{X: 1, Y: 2},
+				{X: 3, Y: 4},
+			}, nil
+		}),
+	}.Install(srv)
+	gql := newTestClient(srv)
+
+	var res struct {
+		ListOfObjects []points.Point
+	}
+	req(t, gql, `query { listOfObjects }`, &res)
+	assert.DeepEqual(t, []points.Point{{X: 1, Y: 2}, {X: 3, Y: 4}}, res.ListOfObjects)
+}
+
 func TestBasic(t *testing.T) {
 	cache := newCache(t)
 	srv := newExternalDagqlServerForTest(t, Query{})
@@ -2726,6 +2751,53 @@ func TestViewsCaching(t *testing.T) {
 	}`, &res)
 	assert.Equal(t, "secondView", res.All)
 	assert.Equal(t, "firstView", res.Global) // this is cached from the first query!
+}
+
+// ContextWithSelectorViews makes a query select the fields it picks at the
+// picked view, recorded in their calls, rather than the server's. Fields it
+// doesn't pick, and fields absent from the picked view, keep the server's.
+func TestContextWithSelectorViews(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	callView := func(ctx context.Context, _ Query, _ struct{}) (string, error) {
+		return string(dagql.CurrentCall(ctx).View), nil
+	}
+	dagql.Fields[Query]{
+		dagql.Func("picked", callView).View(dagql.AllView{}),
+		dagql.Func("unpicked", callView).View(dagql.AllView{}),
+		dagql.Func("secondOnly", callView).View(dagql.ExactView("secondView")),
+	}.Install(srv)
+	srv.View = "secondView"
+
+	cache, err := dagql.NewCache(context.Background(), "", nil, nil)
+	require.NoError(t, err)
+	h := dagql.NewDefaultHandler(srv)
+	newClient := func(pick bool) *client.Client {
+		return client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := engine.ContextWithClientMetadata(r.Context(), testClientMetadata())
+			ctx = dagql.ContextWithCache(ctx, cache)
+			if pick {
+				ctx = dagql.ContextWithSelectorViews(ctx, func(typeName, field string) (call.View, bool) {
+					return "firstView", typeName == "Query" && field != "unpicked"
+				})
+			}
+			h.ServeHTTP(w, r.WithContext(ctx))
+		}))
+	}
+
+	var res struct {
+		Picked     string
+		Unpicked   string
+		SecondOnly string
+	}
+	req(t, newClient(true), `{ picked unpicked secondOnly }`, &res)
+	require.Equal(t, "firstView", res.Picked)
+	require.Equal(t, "secondView", res.Unpicked)
+	require.Equal(t, "secondView", res.SecondOnly)
+
+	// the picked view is part of the call, so a client without the pick
+	// doesn't share its cached result
+	req(t, newClient(false), `{ picked }`, &res)
+	require.Equal(t, "secondView", res.Picked)
 }
 
 func TestViewsIntrospection(t *testing.T) {

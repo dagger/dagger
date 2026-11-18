@@ -85,6 +85,31 @@ func TestCloudLoginStoredCredentials(t *testing.T) {
 	}
 }
 
+func TestCloudLoginUsesConfiguredAuthenticationApplication(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if err := r.ParseForm(); err != nil {
+			t.Error(err)
+		}
+		if r.URL.Path != "/oauth/device/code" || r.Form.Get("client_id") != "dev-cli-app" {
+			t.Errorf("wrong authentication application: %s, client %q", r.URL.Path, r.Form.Get("client_id"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":"test_stopped","error_description":"reached the configured CLI application"}`)
+	}))
+	defer server.Close()
+	daggerCloudWithEnv(t, []string{
+		"DAGGER_CLOUD_AUTH_URL=" + server.URL,
+		"DAGGER_CLOUD_AUTH_CLIENT_ID=dev-cli-app",
+	}, []string{"cloud", "login", "--switch-account"}, func(t *testing.T, err error, out, stderr *bytes.Buffer) {
+		require.Error(t, err)
+		require.Contains(t, stderr.String(), "reached the configured CLI application")
+	})
+	require.EqualValues(t, 1, requests.Load())
+}
+
 type cloudLoginRoundTripper func(*http.Request) (*http.Response, error)
 
 func (f cloudLoginRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {

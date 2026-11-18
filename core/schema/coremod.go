@@ -275,7 +275,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		schema.Install(dag)
 	}
 
-	return installRemoteCacheFixture(dag)
+	return nil
 }
 
 func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (core.ModType, bool, error) {
@@ -1041,7 +1041,19 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertToSDKInput: found no enum type")
 	}
-	return s.DecodeInput(input)
+	decoded, err := s.DecodeInput(input)
+	if err != nil {
+		return nil, err
+	}
+	// Spell the value as the receiving module's schema does: a module from
+	// before engine.IdentifierCasingVersion has GZIP's old spelling Gzip, and
+	// its SDK may only know that one.
+	if viewed, ok := decoded.(dagql.ViewLiteraler); ok {
+		if view, ok := core.SDKViewFromContext(ctx); ok {
+			return viewed.ViewLiteral(view).ToInput(), nil
+		}
+	}
+	return decoded, nil
 }
 
 func (enum *CoreModEnum) CollectContent(ctx context.Context, value dagql.AnyResult, content *core.CollectedContent) error {

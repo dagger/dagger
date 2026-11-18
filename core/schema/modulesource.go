@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/dagger/dagger/core/sdk"
 	dangv2 "github.com/dagger/dagger/core/sdk/dang/v2"
 	"github.com/dagger/dagger/core/sdk/entrypoint"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -31,6 +33,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -62,6 +65,13 @@ func (err ErrSDKClientGeneratorNotImplemented) Error() string {
 type moduleSourceSchema struct{}
 
 var _ SchemaResolvers = &moduleSourceSchema{}
+
+// loadModuleSourceSDK loads the SDK a module source names. It is replaceable
+// so unit tests, whose servers have no engine image to load a built-in SDK
+// module from, can stand one in.
+var loadModuleSourceSDK = func(ctx context.Context, query *core.Query, cfg *core.SDKConfig, src *core.ModuleSource) (core.SDK, error) {
+	return sdk.NewLoader().SDKForModule(ctx, query, cfg, src)
+}
 
 func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
@@ -95,8 +105,48 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("sourceRootPath").Doc(
 					`An optional subpath of the directory which contains the module's configuration file.`,
 					`If not set, the module source code is loaded from the root of the directory.`),
+				// Args puts listed arguments first: list them all to keep their positions.
+				dagql.Arg("workspace"),
+				dagql.Arg("allowNotExists"),
+				dagql.Arg("originRoot"),
+				dagql.Arg("originHostPath").View(AfterVersion("v1.0.0-beta.26")),
+				dagql.Arg("originGit").View(AfterVersion("v1.0.0-beta.26")),
 			),
 	}.Install(dag)
+
+	// These ModuleSource and GeneratedCode fields are spelled
+	// withSDK, introspectionSchemaJSON, clientSchemaIntrospectionJSON, htmlURL,
+	// htmlRepoURL, withVCSGeneratedPaths and withVCSIgnoredPaths in views
+	// before engine.IdentifierCasingVersion.
+	withSDKField := dagql.Func("withSdk", s.moduleSourceWithSDK).
+		Doc(`Update the module source with a new SDK.`).
+		Args(
+			dagql.Arg("source").Doc(`The SDK source to set.`),
+		)
+	introspectionSchemaJSONField := dagql.NodeFunc("introspectionSchemaJson", s.moduleSourceIntrospectionSchemaJSON).
+		Doc(`The introspection schema JSON file for this module source.`,
+			`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
+			`Note: this is in the context of a module, so some core types may be hidden.`)
+	clientSchemaIntrospectionJSONField := func(introspectionSchemaJSON string) dagql.Field[*core.ModuleSource] {
+		return dagql.NodeFunc("clientSchemaIntrospectionJson", s.moduleSourceClientSchemaIntrospectionJSON).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The client-facing introspection schema JSON file for this module source.`,
+				`This is the schema consumed by client codegen: unlike `+introspectionSchemaJSON+` (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.`).
+			Args(
+				dagql.Arg("clientVersion").View(AfterVersion("v1.0.0-beta.26")).Doc(
+					`The engine version of the client the schema is generated for, e.g. the engineVersion of the module that depends on this one: core is described as that client sees it, capped at this engine's version.`,
+					`This module is still loaded at the engine version it declares, and so named by its own naming rules, as the engine serves it to such a client. Defaults to this module's own engine version.`,
+					`Use this rather than withEngineVersion, which makes this module declare another version and so changes its names.`),
+			)
+	}
+	htmlURLField := dagql.Func("htmlUrl", s.moduleSourceHTMLURL).
+		Doc(`The URL to the source's git repo in a web browser. Only valid for git sources.`)
+	htmlRepoURLField := dagql.Func("htmlRepoUrl", s.moduleSourceHTMLRepoURL).
+		Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).`)
+	withVCSGeneratedPathsField := dagql.Func("withVcsGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
+		Doc(`Set the list of paths to mark generated in version control.`)
+	withVCSIgnoredPathsField := dagql.Func("withVcsIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
+		Doc(`Set the list of paths to ignore in version control.`)
 
 	dagql.Fields[*core.ModuleSource]{
 		// sync is used by external dependencies like daggerverse
@@ -138,11 +188,8 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("patterns").Doc(`The new additional include patterns.`),
 			),
 
-		dagql.Func("withSDK", s.moduleSourceWithSDK).
-			Doc(`Update the module source with a new SDK.`).
-			Args(
-				dagql.Arg("source").Doc(`The SDK source to set.`),
-			),
+		casedField(withSDKField),
+		legacyField(withSDKField, "withSDK"),
 
 		dagql.Func("withEngineVersion", s.moduleSourceWithEngineVersion).
 			Doc(`Upgrade the engine version of the module to the given value.`).
@@ -252,14 +299,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		moduleDefinitionField(s.moduleSourceModuleDefinition),
 		moduleTypesDefinitionField(s.moduleSourceModuleTypesDefinition),
 		moduleNamespacedDefinitionField(s.moduleSourceNamespacedDefinition),
-		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
-			Doc(`The introspection schema JSON file for this module source.`,
-				`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
-				`Note: this is in the context of a module, so some core types may be hidden.`),
-		dagql.NodeFunc("clientSchemaIntrospectionJSON", s.moduleSourceClientSchemaIntrospectionJSON).
-			View(AfterVersion("v1.0.0-0")).
-			Doc(`The client-facing introspection schema JSON file for this module source.`,
-				`This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.`),
+		casedField(introspectionSchemaJSONField),
+		legacyField(introspectionSchemaJSONField, "introspectionSchemaJSON"),
+		casedField(clientSchemaIntrospectionJSONField("introspectionSchemaJson")),
+		legacyField(clientSchemaIntrospectionJSONField("introspectionSchemaJSON"), "clientSchemaIntrospectionJSON"),
 
 		dagql.NodeFunc("directory", s.moduleSourceDirectory).
 			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
@@ -270,11 +313,11 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.Func("cloneRef", s.moduleSourceCloneRef).
 			Doc(`The ref to clone the root of the git repo from. Only valid for git sources.`),
 
-		dagql.Func("htmlURL", s.moduleSourceHTMLURL).
-			Doc(`The URL to the source's git repo in a web browser. Only valid for git sources.`),
+		casedField(htmlURLField),
+		legacyField(htmlURLField, "htmlURL"),
 
-		dagql.Func("htmlRepoURL", s.moduleSourceHTMLRepoURL).
-			Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).`),
+		casedField(htmlRepoURLField),
+		legacyField(htmlRepoURLField, "htmlRepoURL"),
 
 		dagql.Func("version", s.moduleSourceVersion).
 			Doc(`The specified version of the git repo this source points to.`),
@@ -314,11 +357,13 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*modules.ModuleConfigClient]{}.Install(dag)
 
 	dagql.Fields[*core.GeneratedCode]{
-		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
-			Doc(`Set the list of paths to mark generated in version control.`),
-		dagql.Func("withVCSIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
-			Doc(`Set the list of paths to ignore in version control.`),
+		casedField(withVCSGeneratedPathsField),
+		legacyField(withVCSGeneratedPathsField, "withVCSGeneratedPaths"),
+		casedField(withVCSIgnoredPathsField),
+		legacyField(withVCSIgnoredPathsField, "withVCSIgnoredPaths"),
 	}.Install(dag)
+
+	s.installModuleNaming(dag)
 }
 
 type moduleSourceArgs struct {
@@ -705,26 +750,7 @@ func (s *moduleSourceSchema) localModuleSource(
 	}
 
 	if !daggerCfgFound {
-		// fill in an empty dir at the source root so the context dir digest incorporates that path
-		var srcRootDir dagql.ObjectResult[*core.Directory]
-		if err := dag.Select(ctx, dag.Root(), &srcRootDir, dagql.Selector{Field: "directory"}); err != nil {
-			return inst, fmt.Errorf("failed to create empty directory for source root subpath: %w", err)
-		}
-		srcRootDirID, err := srcRootDir.ID()
-		if err != nil {
-			return inst, fmt.Errorf("failed to get empty directory ID for source root subpath: %w", err)
-		}
-
-		err = dag.Select(ctx, dag.Root(), &localSrc.ContextDirectory,
-			dagql.Selector{Field: "directory"},
-			dagql.Selector{
-				Field: "withDirectory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(localSrc.SourceRootSubpath)},
-					{Name: "source", Value: dagql.NewID[*core.Directory](srcRootDirID)},
-				},
-			},
-		)
+		localSrc.ContextDirectory, err = emptyContextDirectory(ctx, dag, localSrc.SourceRootSubpath)
 		if err != nil {
 			return inst, err
 		}
@@ -898,6 +924,32 @@ func (s *moduleSourceSchema) gitModuleSource(
 	return inst, nil
 }
 
+// emptyContextDirectory is the context of a source with no dagger config
+// file: an empty dir at the source root, so the context dir digest
+// incorporates that path.
+func emptyContextDirectory(ctx context.Context, dag *dagql.Server, sourceRootSubpath string) (dagql.ObjectResult[*core.Directory], error) {
+	var contextDir dagql.ObjectResult[*core.Directory]
+	var srcRootDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, dag.Root(), &srcRootDir, dagql.Selector{Field: "directory"}); err != nil {
+		return contextDir, fmt.Errorf("failed to create empty directory for source root subpath: %w", err)
+	}
+	srcRootDirID, err := srcRootDir.ID()
+	if err != nil {
+		return contextDir, fmt.Errorf("failed to get empty directory ID for source root subpath: %w", err)
+	}
+	err = dag.Select(ctx, dag.Root(), &contextDir,
+		dagql.Selector{Field: "directory"},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(sourceRootSubpath)},
+				{Name: "source", Value: dagql.NewID[*core.Directory](srcRootDirID)},
+			},
+		},
+	)
+	return contextDir, err
+}
+
 type directoryAsModuleArgs struct {
 	SourceRootPath string `default:"."`
 }
@@ -921,6 +973,14 @@ type directoryAsModuleSourceArgs struct {
 	// OriginRoot is set when a module loads this directory from its own tree;
 	// see core.DirModuleSource.OriginRoot.
 	OriginRoot dagql.Optional[dagql.String] `internal:"true"`
+
+	// OriginHostPath is set when a module loads this directory from its own
+	// tree on the host; see core.DirModuleSource.OriginHostPath.
+	OriginHostPath string `internal:"true" default:""`
+
+	// OriginGit is set when a git module loads this directory from its own
+	// tree; see core.DirModuleSource.OriginGit.
+	OriginGit dagql.Optional[dagql.ID[*core.GitRepository]] `internal:"true"`
 }
 
 func (s *moduleSourceSchema) directoryAsModule(
@@ -972,6 +1032,17 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		root := args.OriginRoot.Value.String()
 		dirSrc.DirSrc.OriginRoot = &root
 	}
+	dirSrc.DirSrc.OriginHostPath = args.OriginHostPath
+	if args.OriginGit.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		dirSrc.DirSrc.OriginGit, err = args.OriginGit.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("load module source origin git: %w", err)
+		}
+	}
 	if args.Workspace.Valid {
 		srv, err := core.CurrentDagqlServer(ctx)
 		if err != nil {
@@ -1022,6 +1093,9 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 	ctx context.Context,
 	workspaceResult dagql.ObjectResult[*core.Workspace],
 	sourceRootPath string,
+	// whether to tolerate a path with no dagger config file, returning a
+	// context-only source (ConfigExists=false) instead of erroring
+	allowNotExists bool,
 ) (inst dagql.ObjectResult[*core.ModuleSource], err error) {
 	ws := workspaceResult.Self()
 	if ws == nil {
@@ -1077,6 +1151,19 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 		if err != nil {
 			return inst, fmt.Errorf("workspace module source URL: %w", err)
 		}
+		// The tree a git module was loaded from, where the modules it serves
+		// and the git clients its config declares are found: the workspace's
+		// own, read as its other files are.
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		if err := dag.Select(ctx, workspaceResult, &src.Git.UnfilteredContextDir, dagql.Selector{
+			Field: "directory",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/")}},
+		}); err != nil {
+			return inst, fmt.Errorf("workspace module source tree: %w", err)
+		}
 	default:
 		return inst, fmt.Errorf("workspace module source: unsupported workspace backing %T", base)
 	}
@@ -1085,21 +1172,33 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("workspace module source %q: find module config: %w", sourceRootPath, err)
 	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
 	if !found {
-		return inst, fmt.Errorf("workspace module source %q does not contain a dagger config file", sourceRootPath)
+		if !allowNotExists {
+			return inst, fmt.Errorf("workspace module source %q does not contain a dagger config file", sourceRootPath)
+		}
+		// Loaded only as a +defaultPath context: its reads go through the
+		// workspace, so skip config parsing, SDK loading and dependencies,
+		// and give it the context a local source without a config gets.
+		src.ConfigExists = false
+		src.ContextDirectory, err = emptyContextDirectory(ctx, dag, sourceRootPath)
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewObjectResultForCurrentCall(ctx, dag, src)
 	}
 	src.ConfigFilename = configFilename
 	if err := s.loadConfiguredModuleSource(ctx, src); err != nil {
 		return inst, fmt.Errorf("load workspace module source: %w", err)
 	}
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, err
-	}
 	return dagql.NewObjectResultForCurrentCall(ctx, dag, src)
 }
 
-// set values in the given src using values read from the module config file provided as bytes
+// set values in the given src using values read from the module config file
+// provided as bytes
 func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.ModuleSource) error {
 	// sanity checks
 	if src.SourceRootSubpath == "" {
@@ -1129,7 +1228,12 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.Entrypoint = modCfg.Entrypoint
+	// Without a runtime, a manifest's dependencies are its entrypoint's own
+	// (manifest version 2): a Go module's generated entrypoint builds the
+	// module with dagger/go, which the module itself never calls.
+	src.EntrypointOnlyDependencies = modCfg.Entrypoint != nil && modCfg.SDK == nil
 	src.IncludePaths = modCfg.Include
+	src.IncludeDeclared = modCfg.IncludeDeclared
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
@@ -1138,8 +1242,15 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
+	src.DangVersion = ""
 	if modCfg.Entrypoint != nil {
-		engineVersion = engine.Version
+		// A manifest v2 module declares its versions in the dang.toml
+		// governing its entrypoint, which resolveDangVersions reads once the
+		// module context is loaded. Until then it has the versions of an
+		// entrypoint that declares none.
+		defaults := dangv2.DefaultEntrypointVersions()
+		engineVersion = defaults.Engine
+		src.DangVersion = defaults.DangString()
 	}
 	switch engineVersion {
 	case "":
@@ -1151,21 +1262,16 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	}
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
-
-	canDefaultFuncCaching := engine.CheckVersionCompatibility(
-		engine.BaseVersion(src.EngineVersion),
-		engine.MinimumDefaultFunctionCachingModuleVersion,
-	)
-	switch {
-	case modCfg.DisableDefaultFunctionCaching != nil:
-		// explicit setting in the module config, use it
-		src.DisableDefaultFunctionCaching = *modCfg.DisableDefaultFunctionCaching
-	case canDefaultFuncCaching:
-		// no explicit setting in the module config but module engine version supports it, enable function caching
-		src.DisableDefaultFunctionCaching = false
-	default:
-		// no explicit setting in the module config and module engine version doesn't support it, disable function caching
-		src.DisableDefaultFunctionCaching = true
+	src.EngineVersionOverride = ""
+	src.ConfigEngineVersion = ""
+	src.DangVersionDeclared = false
+	if modCfg.Entrypoint == nil {
+		src.ConfigEngineVersion = engineVersion
+	}
+	setDefaultFunctionCaching(src, modCfg.DisableDefaultFunctionCaching)
+	src.ConfigDisableDefaultFunctionCaching = nil
+	if modCfg.DisableDefaultFunctionCaching != nil {
+		src.ConfigDisableDefaultFunctionCaching = ptr(*modCfg.DisableDefaultFunctionCaching)
 	}
 
 	if modCfg.SDK != nil {
@@ -1179,6 +1285,13 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		// SDK is an internal adapter for the existing module execution path. The
 		// manifest contains only the entrypoint configuration.
 		src.SDK = &core.SDKConfig{Source: string(modCfg.Entrypoint.Kind)}
+	}
+	if modCfg.Entrypoint == nil && isDangSDKModule(src) {
+		// A Dang SDK module may declare its versions in the dang.toml
+		// governing its source, which resolveDangVersions reads once the
+		// module context is loaded. Until then it has the versions of a
+		// module that declares none.
+		src.DangVersion = dangv2.DefaultModuleVersions(src.EngineVersion).DangString()
 	}
 
 	var sdkSource string
@@ -1224,6 +1337,134 @@ func moduleSourceConfigFilename(src *core.ModuleSource) string {
 	return modules.Filename
 }
 
+// setDefaultFunctionCaching sets whether functions of src default to
+// per-session caching: as explicit says, or else by src's engine version.
+func setDefaultFunctionCaching(src *core.ModuleSource, explicit *bool) {
+	canDefaultFuncCaching := engine.CheckVersionCompatibility(
+		engine.BaseVersion(src.EngineVersion),
+		engine.MinimumDefaultFunctionCachingModuleVersion,
+	)
+	switch {
+	case explicit != nil:
+		// explicit setting in the module config, use it
+		src.DisableDefaultFunctionCaching = *explicit
+	case canDefaultFuncCaching:
+		// no explicit setting in the module config but module engine version supports it, enable function caching
+		src.DisableDefaultFunctionCaching = false
+	default:
+		// no explicit setting in the module config and module engine version doesn't support it, disable function caching
+		src.DisableDefaultFunctionCaching = true
+	}
+}
+
+// isDangSDKModule reports whether src runs on the Dang SDK built into the
+// engine: `sdk = "dang"` (or `[runtime] source = "dang"`), or a manifest v2
+// Dang entrypoint.
+func isDangSDKModule(src *core.ModuleSource) bool {
+	if src.SDK == nil {
+		return false
+	}
+	name, _, _ := strings.Cut(src.SDK.Source, "@")
+	return name == sdkmeta.Dang
+}
+
+// resolveModuleSourceVersions recomputes derived state from the manifest and
+// current governing dang.toml, never from the previous source's resolved values.
+// Explicit API-chain overrides survive source/SDK changes; grammar and caching
+// defaults follow the effective engine version after those overrides.
+func (s *moduleSourceSchema) resolveModuleSourceVersions(ctx context.Context, src *core.ModuleSource) error {
+	if src.Entrypoint != nil {
+		src.EngineVersion = dangv2.DefaultEntrypointEngineVersion
+	} else {
+		if src.ConfigEngineVersion == "" {
+			// Sources constructed without a manifest (and older persisted
+			// sources) have only this initial fallback. Capture it once.
+			src.ConfigEngineVersion = cmp.Or(src.EngineVersion, engine.MinimumModuleVersion)
+		}
+		src.EngineVersion = src.ConfigEngineVersion
+	}
+	src.DangVersion = ""
+	src.DangVersionDeclared = false
+	if err := s.resolveDangVersions(ctx, src); err != nil {
+		return err
+	}
+	src.EngineVersion = cmp.Or(src.EngineVersionOverride, src.EngineVersion)
+	setDefaultFunctionCaching(src, src.ConfigDisableDefaultFunctionCaching)
+	return nil
+}
+
+// resolveDangVersions reads only the config governing the current source. The
+// caller resets the manifest fallback first and applies caching defaults last.
+func (s *moduleSourceSchema) resolveDangVersions(ctx context.Context, src *core.ModuleSource) error {
+	if src.Entrypoint == nil && !isDangSDKModule(src) {
+		return nil
+	}
+
+	if src.Entrypoint != nil {
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return err
+		}
+		configPath, contents, found, err := entrypoint.FindConfigFile(ctx, dag, src, dangv2.ConfigFilename)
+		if err != nil {
+			return fmt.Errorf("module %q entrypoint: find %s: %w", src.ModuleName, dangv2.ConfigFilename, err)
+		}
+		if !found {
+			contents = nil
+		}
+		versions, err := dangv2.ResolveEntrypointVersions(ctx, configPath, contents)
+		if err != nil {
+			return fmt.Errorf("module %q entrypoint: %w", src.ModuleName, err)
+		}
+		src.EngineVersion = versions.Engine
+		src.DangVersion = versions.DangString()
+		src.DangVersionDeclared = versions.DangDeclared
+		return nil
+	}
+
+	var configPath string
+	var contents []byte
+	if src.ContextDirectory.Self() != nil {
+		var found bool
+		var err error
+		configPath, contents, found, err = entrypoint.FindConfigFileInContext(ctx, src.ContextDirectory, cmp.Or(src.SourceSubpath, "."), src.SourceRootSubpath, dangv2.ConfigFilename)
+		if err != nil {
+			return fmt.Errorf("module %q: find %s: %w", src.ModuleName, dangv2.ConfigFilename, err)
+		}
+		if !found {
+			contents = nil
+		} else if rel, err := filepath.Rel(cmp.Or(src.SourceRootSubpath, "."), configPath); err == nil {
+			configPath = rel
+		}
+	}
+	versions, err := dangv2.ResolveModuleVersionsWithOverride(ctx, configPath, contents, src.ConfigEngineVersion, src.EngineVersionOverride)
+	if err != nil {
+		return fmt.Errorf("module %q: %w", src.ModuleName, err)
+	}
+	if src.EngineVersionOverride == "" && versions.DeclaredEngine != "" && versions.DeclaredEngine != src.ConfigEngineVersion {
+		warnDangEngineVersionMismatch(ctx, src, configPath, src.ConfigEngineVersion, versions.DeclaredEngine)
+	}
+	src.EngineVersion = versions.Engine
+	src.DangVersion = versions.DangString()
+	src.DangVersionDeclared = versions.DangDeclared
+	return nil
+}
+
+// warnDangEngineVersionMismatch tells the user that the Dagger version a Dang
+// module's dang.toml declares wins over the engineVersion of its manifest,
+// which disagrees: in the engine log, and on a span of its own, which the
+// user's progress output shows.
+func warnDangEngineVersionMismatch(ctx context.Context, src *core.ModuleSource, configPath, manifestVersion, declared string) {
+	msg := fmt.Sprintf("module %q: %s declares dagger %s, but %s declares engineVersion %s; using %s from %s",
+		src.ModuleName, configPath, declared, moduleSourceConfigFilename(src), manifestVersion, declared, configPath)
+	slog.Warn(msg)
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("warning: %s overrides engineVersion", configPath))
+	defer span.End()
+	stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
+	defer stdio.Close()
+	fmt.Fprintf(stdio.Stderr, "WARNING: %s\n", msg)
+}
+
 // loadConfiguredModuleSource performs the source-independent half of module
 // loading after the source kind, root, and config filename have been resolved.
 // All filesystem access goes through ModuleSourceFS, so callers do not need to
@@ -1247,7 +1488,8 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	if err != nil {
 		return fmt.Errorf("read module config: %w", err)
 	}
-	if err := s.initFromModConfig(configContents, src); err != nil {
+	err = s.initFromModConfig(configContents, src)
+	if err != nil {
 		return err
 	}
 
@@ -1260,7 +1502,7 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 			return err
 		}
 		if src.SDK != nil {
-			loaded, err := sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
+			loaded, err := loadModuleSourceSDK(ctx, query, src.SDK, src)
 			if err != nil {
 				return fmt.Errorf("load module source SDK: %w", err)
 			}
@@ -1283,6 +1525,9 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	if err := eg.Wait(); err != nil {
 		return err
 	}
+	if err := s.resolveModuleSourceVersions(ctx, src); err != nil {
+		return err
+	}
 	if err := s.loadEntrypointSources(ctx, src); err != nil {
 		return err
 	}
@@ -1292,10 +1537,13 @@ func (s *moduleSourceSchema) loadConfiguredModuleSource(ctx context.Context, src
 	return nil
 }
 
-// reloadModuleSourceContext evaluates sources again because a reload replaces
-// the context that held the files sources returned.
+// reloadModuleSourceContext starts from raw files again, resolves the current
+// config and API-chain overrides, then evaluates sources using those versions.
 func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src *core.ModuleSource) error {
 	if err := s.loadModuleSourceContext(ctx, src); err != nil {
+		return err
+	}
+	if err := s.resolveModuleSourceVersions(ctx, src); err != nil {
 		return err
 	}
 	return s.loadEntrypointSources(ctx, src)
@@ -1304,8 +1552,16 @@ func (s *moduleSourceSchema) reloadModuleSourceContext(ctx context.Context, src 
 // loadEntrypointSources adds what the entrypoint's sources member returns to
 // the module context. It runs while the source loads, because dependents and
 // the declaredClients input hash the module digest without loading the module.
+// A manifest that declares include, even empty, replaces sources: the context
+// already holds the included files, and an engine that predates include runs
+// sources instead, so one module can carry both.
 func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *core.ModuleSource) (rerr error) {
 	if src.Entrypoint == nil {
+		return nil
+	}
+	isDirectory := src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil
+	if src.IncludeDeclared && !isDirectory {
+		// Other sources already load only the module's own and included files.
 		return nil
 	}
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -1318,7 +1574,7 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	}
 	declared := false
 	err = entryDir.Self().Mount(ctx, entryDir, func(dir string) error {
-		declared, err = dangv2.DeclaresEntrypointSources(dir)
+		declared, err = dangv2.DeclaresEntrypointSources(ctx, dir, src.DangVersion)
 		return err
 	})
 	if err != nil {
@@ -1326,6 +1582,11 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	}
 	if !declared {
 		return nil
+	}
+	if src.IncludeDeclared {
+		// The directory source's context is the whole directory. Narrow it as
+		// evaluating sources would, so the module builds from the same files.
+		return keepDirectoryModuleOwnFiles(ctx, dag, src)
 	}
 
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("entrypoint sources: %s", src.ModuleName), telemetry.Internal())
@@ -1341,6 +1602,16 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, src.EngineVersion)
 	if err != nil {
 		return fail(err)
+	}
+	// Evaluating sources type-checks the whole entrypoint, so the schema holds
+	// the dependencies the rest of it calls, such as dagger/go for a Go
+	// module's dispatch.
+	for _, depSrc := range src.Dependencies {
+		var depMod dagql.ObjectResult[*core.Module]
+		if err := dag.Select(ctx, depSrc, &depMod, dagql.Selector{Field: "asModule"}); err != nil {
+			return fail(fmt.Errorf("load entrypoint dependency: %w", err))
+		}
+		deps = deps.Append(core.NewUserMod(depMod))
 	}
 	schemaFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
@@ -1378,6 +1649,20 @@ func (s *moduleSourceSchema) loadEntrypointSources(ctx context.Context, src *cor
 	return nil
 }
 
+// keepDirectoryModuleOwnFiles narrows a directory source's context, the whole
+// directory, to the module's own files and the files its manifest includes,
+// without repository metadata, as evaluating sources and merging what it
+// returns narrows it, for a module whose include replaces sources.
+func keepDirectoryModuleOwnFiles(ctx context.Context, dag *dagql.Server, src *core.ModuleSource) error {
+	return dag.Select(ctx, src.DirSrc.OriginalContextDir, &src.ContextDirectory, dagql.Selector{
+		Field: "filter",
+		Args: []dagql.NamedInput{
+			{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(moduleSourceContextIncludes(src)...))},
+			{Name: "exclude", Value: dagql.ArrayInput[dagql.String]{".git", "**/.git"}},
+		},
+	})
+}
+
 // mergeEntrypointSources overlays the module's own files as the engine loads
 // them without sources, so the module directory holds what it holds without
 // the member, .gitignore handling included. It drops repository metadata from
@@ -1411,13 +1696,19 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 	src *core.ModuleSource,
 ) error {
 	if src.Kind == core.ModuleSourceKindDir && src.Workspace.Self() == nil {
-		// Directory sources already carry their complete in-engine context.
+		// Do not resolve config from a previous sources result: sources may
+		// return a dang.toml, but it does not govern its own evaluation.
+		if src.DirSrc != nil && src.DirSrc.OriginalContextDir.Self() != nil {
+			src.ContextDirectory = src.DirSrc.OriginalContextDir
+		}
 		return nil
 	}
 
+	// A Git tree holds only committed files, which ignore rules must not drop,
+	// whether the source reads the tree directly or through its workspace.
 	contextDir, err := core.NewModuleSourceFS(nil, src).ContextDirectory(ctx, core.CopyFilter{
 		Include:   moduleSourceContextIncludes(src),
-		Gitignore: src.Workspace.Self() != nil || src.Kind == core.ModuleSourceKindLocal,
+		Gitignore: src.Kind == core.ModuleSourceKindLocal || (src.Workspace.Self() != nil && src.Kind != core.ModuleSourceKindGit),
 	})
 	if err != nil {
 		return err
@@ -1445,7 +1736,31 @@ func moduleSourceContextIncludes(src *core.ModuleSource) []string {
 		sourcePath = "*"
 	}
 	fullIncludePaths = append(fullIncludePaths, sourcePath)
+	if src.Entrypoint == nil && isDangSDKModule(src) {
+		// The dang.toml governing a Dang module's source may sit between its
+		// source directory and its module directory (see
+		// resolveDangVersions).
+		fullIncludePaths = append(fullIncludePaths, dangConfigIncludes(src)...)
+	}
 	return append(fullIncludePaths, src.RebasedIncludePaths...)
+}
+
+// dangConfigIncludes are the dang.toml paths of the directories above a Dang
+// module's source directory, up to its module directory, which the context
+// holds no other way.
+func dangConfigIncludes(src *core.ModuleSource) []string {
+	from := filepath.Clean(cmp.Or(src.SourceSubpath, "."))
+	root := filepath.Clean(cmp.Or(src.SourceRootSubpath, "."))
+	if from == root || (root != "." && !strings.HasPrefix(from, root+string(filepath.Separator))) {
+		return nil
+	}
+	var includes []string
+	for dir := filepath.Dir(from); ; dir = filepath.Dir(dir) {
+		includes = append(includes, filepath.Join(dir, dangv2.ConfigFilename))
+		if dir == root || dir == "." {
+			return includes
+		}
+	}
 }
 
 func (s *moduleSourceSchema) moduleSourceSubpath(
@@ -1518,7 +1833,12 @@ func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 		// corner case: dagger init can be called on a context dir that doesn't exist yet
 		// (e.g. called outside a .git context and the source root dir doesn't exist because
 		// it's expected to be created when exporting the generated context dir)
-		// we tolerate a not found error in this case
+		// we tolerate a not found error in this case, but discard any old
+		// context and resolve defaults rather than keeping its Dang settings.
+		src.ContextDirectory = dagql.ObjectResult[*core.Directory]{}
+		if err := s.resolveModuleSourceVersions(ctx, src); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("failed to reload module source context: %w", err)
 	}
@@ -1592,7 +1912,12 @@ func (s *moduleSourceSchema) moduleSourceWithIncludes(
 		// corner case: dagger init can be called on a context dir that doesn't exist yet
 		// (e.g. called outside a .git context and the source root dir doesn't exist because
 		// it's expected to be created when exporting the generated context dir)
-		// we tolerate a not found error in this case
+		// we tolerate a not found error in this case, but discard any old
+		// context and resolve defaults rather than keeping its Dang settings.
+		src.ContextDirectory = dagql.ObjectResult[*core.Directory]{}
+		if err := s.resolveModuleSourceVersions(ctx, src); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("failed to reload module source context: %w", err)
 	}
@@ -1607,46 +1932,50 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		Source string
 	},
 ) (*core.ModuleSource, error) {
+	wasDang := src.Entrypoint != nil || isDangSDKModule(src)
 	src = src.Clone()
 	if args.Source == "" {
 		src.SDK = nil
 		src.SDKImpl = nil
-
-		return src, nil
+	} else {
+		if src.SDK == nil {
+			src.SDK = &core.SDKConfig{}
+		}
+		src.SDK.Source = args.Source
 	}
 
-	if src.SDK == nil {
-		src.SDK = &core.SDKConfig{}
-	}
-	src.SDK.Source = args.Source
-
-	// Default source subpath to source root when an SDK is set but no explicit
-	// source path was configured (e.g. during module init before dagger.json exists).
-	// This mirrors the logic in initFromModConfig for the sdkSource != "" && modCfg.Source == "" case.
-	if src.SourceSubpath == "" {
+	// Source paths and the SDK decide which dang.toml files the raw context
+	// includes. Rebuild that context even when switching away from Dang, so
+	// neither the old versions nor generated sources survive the switch.
+	needsContext := wasDang || src.Entrypoint != nil || isDangSDKModule(src)
+	if args.Source != "" && src.SourceSubpath == "" {
 		src.SourceSubpath = src.SourceRootSubpath
-
-		// Reload the context directory now that SourceSubpath is set, so that
-		// the source files are included (e.g. an existing main.go). The initial
-		// load may have used empty SourceSubpath which matches no files.
+		needsContext = true
+	}
+	if needsContext {
 		err := s.reloadModuleSourceContext(ctx, src)
 		switch {
 		case err == nil:
 		case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
-			// tolerate not found during init when context dir doesn't exist yet
+			// dagger init may not have a context directory yet.
+			src.ContextDirectory = dagql.ObjectResult[*core.Directory]{}
+			if err := s.resolveModuleSourceVersions(ctx, src); err != nil {
+				return nil, err
+			}
 		default:
-			return nil, fmt.Errorf("failed to reload context after setting source subpath: %w", err)
+			return nil, fmt.Errorf("failed to reload context after setting SDK: %w", err)
 		}
 	}
 
-	// reload the sdk implementation too
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	src.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
+	if args.Source != "" {
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return nil, err
+		}
+		src.SDKImpl, err = loadModuleSourceSDK(ctx, query, src.SDK, src)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
+		}
 	}
 
 	// New SDK means new exposed functions and types. Different .env entries might match.
@@ -1785,8 +2114,16 @@ func (s *moduleSourceSchema) moduleSourceWithEngineVersion(
 	case modules.EngineVersionLatest:
 		engineVersion = engine.Version
 	}
-	engineVersion = engine.NormalizeVersion(engineVersion)
-	src.EngineVersion = engineVersion
+	src.EngineVersionOverride = engine.NormalizeVersion(engineVersion)
+	if src.Entrypoint != nil {
+		// sources uses both the API view and grammar. Re-evaluate it from raw
+		// context, not its previous output, at the explicitly selected view.
+		if err := s.reloadModuleSourceContext(ctx, src); err != nil {
+			return nil, err
+		}
+	} else if err := s.resolveModuleSourceVersions(ctx, src); err != nil {
+		return nil, err
+	}
 
 	return src, nil
 }
@@ -2724,18 +3061,19 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		return nil, err
 	}
 
-	// A manifest version 2 module declares no engine version. It always runs
-	// against the running engine, so there is no declared version to check.
+	// A manifest v2 module's engine version comes from the dang.toml governing
+	// its entrypoint rather than from the manifest, so check it on the source.
+	engineVersion := modCfg.EngineVersion
 	if src.Entrypoint != nil {
-		return modCfg, nil
+		engineVersion = src.EngineVersion
 	}
 
 	// Check version compatibility.
-	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
-		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
+	if !engine.CheckVersionCompatibility(engineVersion, engine.MinimumModuleVersion) {
+		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", engineVersion)
 	}
-	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
-		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
+	if !engine.CheckMaxVersionCompatibility(engineVersion, engine.BaseVersion(engine.Version)) {
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
 	return modCfg, nil
@@ -2751,12 +3089,19 @@ func (s *moduleSourceSchema) buildModuleConfig(
 	src *core.ModuleSource,
 ) (*modules.ModuleConfigWithUserFields, error) {
 	if src.Entrypoint != nil {
-		return &modules.ModuleConfigWithUserFields{
+		cfg := &modules.ModuleConfigWithUserFields{
 			ModuleConfig: modules.ModuleConfig{
 				Name:       src.ModuleOriginalName,
 				Entrypoint: src.Entrypoint,
 			},
-		}, nil
+		}
+		// A version 2 manifest's own include, which replaces sources. A fat
+		// manifest's include, like its other pre-v2 fields, is not written.
+		if src.IncludeDeclared {
+			cfg.Include = src.IncludePaths
+			cfg.IncludeDeclared = true
+		}
+		return cfg, nil
 	}
 
 	// construct the module config based on any config read during load and any settings changed via with* APIs
@@ -2764,14 +3109,17 @@ func (s *moduleSourceSchema) buildModuleConfig(
 		ModuleConfigUserFields: src.ModuleConfigUserFields,
 		ModuleConfig: modules.ModuleConfig{
 			Name:          src.ModuleOriginalName,
-			EngineVersion: src.EngineVersion,
+			EngineVersion: cmp.Or(src.EngineVersionOverride, src.ConfigEngineVersion, src.EngineVersion),
 			Include:       src.IncludePaths,
 			Codegen:       src.CodegenConfig,
 			Clients:       src.ConfigClients,
 		},
 	}
 
-	if src.DisableDefaultFunctionCaching {
+	if src.ConfigDisableDefaultFunctionCaching != nil {
+		modCfg.DisableDefaultFunctionCaching = ptr(*src.ConfigDisableDefaultFunctionCaching)
+	} else if src.ConfigEngineVersion == "" && src.DisableDefaultFunctionCaching {
+		// Compatibility for sources constructed without captured config.
 		modCfg.DisableDefaultFunctionCaching = ptr(true)
 	}
 
@@ -2855,7 +3203,9 @@ func (s *moduleSourceSchema) runSDKCodegen(
 	deps := preloadedDeps
 	if deps == nil {
 		var err error
-		deps, err = s.loadDependencyModules(ctx, srcInst, srcInst)
+		// The module's own code is generated against the module's schema,
+		// which an entrypoint's own dependencies don't feed.
+		deps, _, err = s.loadDependencyModules(ctx, srcInst, srcInst)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load dependencies as modules: %w", err)
 		}
@@ -3045,7 +3395,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to load generated module source for client generation: %w", err)
 	}
-	schemaJSONFile, err := s.clientSchemaIntrospectionJSONFile(ctx, dag, schemaSrc)
+	schemaJSONFile, err := s.clientSchemaIntrospectionJSONFile(ctx, dag, schemaSrc, schemaSrc.Self().EngineVersion)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to get schema for client generation: %w", err)
 	}
@@ -3412,7 +3762,13 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 
 	var initialized *core.Module
 
-	_, typeDefsEnabled := src.Self().SDKImpl.AsModuleTypes()
+	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsModuleTypes()
+	if forSource, ok := typeDefsImpl.(core.ModuleTypesForSource); typeDefsEnabled && ok {
+		typeDefsEnabled, err = forSource.ReportsModuleTypes(ctx, src)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if typeDefsEnabled {
 		resultInst, terr := s.moduleTypesDefinition(ctx, dag, mod)
 		switch {
@@ -3420,6 +3776,8 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			// The source was persisted before its SDK dropped moduleTypes (the
 			// Go SDK now discovers types via its runtime); take the runtime
 			// path the capability-less SDK would have taken.
+			typeDefsEnabled = false
+		case errors.Is(terr, core.ErrModuleTypesNeedRuntime):
 			typeDefsEnabled = false
 		case terr != nil:
 			return nil, terr
@@ -3454,7 +3812,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		}
 	}
 
-	if typeDefsEnabled && isSelfCallsEnabled(src) {
+	if typeDefsEnabled && isSelfCallsEnabled(src) && !sdk.GeneratorMergesOwnTypes(src.Self().SDK.Source) {
 		mod.IncludeSelfInDeps = true
 	}
 
@@ -3466,7 +3824,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 
 	if clientMetadata.EagerRuntime {
 		if !mod.Runtime.Valid {
-			runtimeDeps := mod.Deps
+			runtimeDeps := mod.SDKDeps()
 			if mod.IncludeSelfInDeps {
 				// This eager runtime path happens before the final asModule result exists,
 				// so we localize the self-call special case to just this runtime load by
@@ -3630,7 +3988,7 @@ func (s *moduleSourceSchema) moduleSourceNamespacedDefinition(
 	}
 	// The receiver's engine version may be another client's; the core view
 	// namespacing and validation see is the one this load requires.
-	deps, err := s.loadDependencyModulesForEngineVersion(ctx, src, src, args.EngineVersion)
+	deps, entrypointDeps, err := s.loadDependencyModulesForEngineVersion(ctx, src, src, args.EngineVersion)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies for namespaced definition: %w", err)
 	}
@@ -3647,6 +4005,7 @@ func (s *moduleSourceSchema) moduleSourceNamespacedDefinition(
 		OriginalName:    src.Self().ModuleOriginalName,
 		SDKConfig:       src.Self().SDK,
 		Deps:            deps,
+		EntrypointDeps:  entrypointDeps,
 		SourceOverrides: overrides,
 	}
 	if mod.SDKConfig == nil {
@@ -3756,7 +4115,7 @@ func (s *moduleSourceSchema) moduleDefViaRuntime(
 ) (*core.Module, error) {
 	src := mod.Source.Value
 
-	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, src)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.SDKDeps(), src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module runtime: %w", err)
 	}
@@ -3770,7 +4129,9 @@ func (s *moduleSourceSchema) moduleDefViaRuntime(
 	if err != nil {
 		return nil, fmt.Errorf("failed to scope module source for module definition: %w", err)
 	}
-	schemaJSONFile, err := mod.Deps.SchemaIntrospectionJSONFileForModule(ctx)
+	// The schema the runtime runs with: the entrypoint's, when it has
+	// dependencies of its own.
+	schemaJSONFile, err := mod.SDKDeps().SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json for module definition: %w", err)
 	}
@@ -3854,7 +4215,7 @@ func (s *moduleSourceSchema) moduleDefinitionDiscoveryModule(
 	moduleName string,
 	identity digest.Digest,
 ) (*core.Module, error) {
-	deps, err := s.loadDependencyModules(ctx, src, src)
+	deps, entrypointDeps, err := s.loadDependencyModules(ctx, src, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load dependencies for module definition: %w", err)
 	}
@@ -3865,6 +4226,7 @@ func (s *moduleSourceSchema) moduleDefinitionDiscoveryModule(
 		OriginalName:          src.Self().ModuleOriginalName,
 		SDKConfig:             src.Self().SDK,
 		Deps:                  deps,
+		EntrypointDeps:        entrypointDeps,
 		AsModuleVariantDigest: identity.String(),
 	}
 	if mod.SDKConfig == nil {
@@ -3973,7 +4335,9 @@ func (s *moduleSourceSchema) moduleTypesDefinition(
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module source for module types definition: %w", err)
 	}
-	schemaJSONFile, err := mod.Deps.SchemaIntrospectionJSONFileForModule(ctx)
+	// The schema the SDK reads the types with: the entrypoint's, when it has
+	// dependencies of its own.
+	schemaJSONFile, err := mod.SDKDeps().SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json for module types definition: %w", err)
 	}
@@ -4024,7 +4388,7 @@ func (s *moduleSourceSchema) moduleSourceModuleTypesDefinition(
 	if err != nil {
 		return inst, err
 	}
-	initialized, err := typeDefsImpl.ModuleTypes(ctx, mod.Deps, src, mod)
+	initialized, err := typeDefsImpl.ModuleTypes(ctx, mod.SDKDeps(), src, mod)
 	if err != nil {
 		return inst, err
 	}
@@ -4041,7 +4405,8 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	src dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Result[*core.File], rerr error) {
-	deps, err := s.loadDependencyModules(ctx, src, src)
+	// The module's own schema: an entrypoint's own dependencies don't feed it.
+	deps, _, err := s.loadDependencyModules(ctx, src, src)
 	if err != nil {
 		return inst, err
 	}
@@ -4055,7 +4420,9 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 func (s *moduleSourceSchema) moduleSourceClientSchemaIntrospectionJSON(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	args struct{},
+	args struct {
+		ClientVersion string `default:""`
+	},
 ) (inst dagql.Result[*core.File], rerr error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -4065,7 +4432,14 @@ func (s *moduleSourceSchema) moduleSourceClientSchemaIntrospectionJSON(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	return s.clientSchemaIntrospectionJSONFile(ctx, dag, src)
+	clientVersion := args.ClientVersion
+	switch clientVersion {
+	case "":
+		clientVersion = src.Self().EngineVersion
+	case modules.EngineVersionLatest:
+		clientVersion = engine.Version
+	}
+	return s.clientSchemaIntrospectionJSONFile(ctx, dag, src, clientVersion)
 }
 
 // clientSchemaIntrospectionJSONFile builds the client-facing introspection
@@ -4076,16 +4450,23 @@ func (s *moduleSourceSchema) moduleSourceClientSchemaIntrospectionJSON(
 // module plus core, not for its whole dependency graph. Unlike the
 // module-facing schema, it hides no core types. This is the schema client
 // codegen consumes.
+//
+// Core is described at the view of clientVersion, the engine version of the
+// client the schema is for, mapped and capped like a declared version
+// (engine.ModuleAPIViewVersion). The module is loaded at the version it
+// declares, so it's named by its own rules (core.ModuleSource.NamingView), as
+// the engine serves it to that client.
 func (s *moduleSourceSchema) clientSchemaIntrospectionJSONFile(
 	ctx context.Context,
 	dag *dagql.Server,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
+	clientVersion string,
 ) (dagql.Result[*core.File], error) {
 	var inst dagql.Result[*core.File]
 
 	// Start from only the default (core) deps: the module's own dependencies
 	// must not leak into the client schema.
-	codegenDeps, err := s.loadDefaultSchemaBuilder(ctx, srcInst)
+	codegenDeps, err := s.defaultSchemaBuilderForEngineVersion(ctx, clientVersion)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load default dependencies: %w", err)
 	}
@@ -4195,6 +4576,15 @@ func resolveDefaultPathContextSource(
 	}
 	defaultPathContextSourceVariant := ""
 	switch {
+	case contextSource.Valid && defaultPathContextSrc.Self().Workspace.Self() != nil:
+		// A source loaded through a workspace is named by its ref string
+		// without the commit, as a ref passed in contextRef is: the files it
+		// supplies reach a function through its arguments, so a new commit
+		// doesn't make the module a different variant.
+		defaultPathContextSourceVariant = hashutil.HashStrings(
+			"defaultPathContextSource",
+			defaultPathContextSrc.Self().AsString(),
+		).String()
 	case contextSource.Valid:
 		// A source passed by ID may not carry a recipe digest (handle-form
 		// IDs), and a Dir source has no ref string, so key the variant on the
@@ -4338,9 +4728,41 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod.SDKConfig = &core.SDKConfig{}
 	}
 
-	mod.Deps, err = s.loadDependencyModules(ctx, execSrc, defaultPathContextSrc)
+	// A runtime that doesn't need the module's dependencies builds while
+	// they load. A load that finds its definition cached doesn't need the
+	// build, so the build stops when the load returns.
+	prebuildCtx, cancelPrebuild := context.WithCancel(ctx)
+	var prebuildErr error
+	prebuildDone := make(chan struct{})
+	go func() {
+		defer close(prebuildDone)
+		prebuildErr = prebuildModuleRuntime(prebuildCtx, execSrc)
+	}()
+	// Namespacing the module's definition reads the core API's typedefs as
+	// the module's engine version sees them, which an engine builds once per
+	// version. They don't depend on the module's dependencies either.
+	coreTypeDefsDone := make(chan struct{})
+	go func() {
+		defer close(coreTypeDefsDone)
+		s.loadCoreTypeDefs(prebuildCtx, execSrc.Self().EngineVersion)
+	}()
+	defer func() {
+		cancelPrebuild()
+		<-prebuildDone
+		<-coreTypeDefsDone
+	}()
+	mod.Deps, mod.EntrypointDeps, err = s.loadDependencyModules(ctx, execSrc, defaultPathContextSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies as modules: %w", err)
+	}
+	select {
+	case <-prebuildDone:
+		if prebuildErr != nil {
+			return inst, fmt.Errorf("failed to build module runtime: %w", prebuildErr)
+		}
+	default:
+		// Still building: the definition below waits for the same build,
+		// unless it is cached.
 	}
 
 	// apply ForceDefaultFunctionCaching if requested
@@ -4415,6 +4837,39 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	return inst, nil
 }
 
+// runtimePrebuilds bounds the engine's runtime prebuilds in flight to one per
+// CPU the engine runs on, and at least 4. Builds that run together share
+// what they compile in common, so more at once finish sooner where there are
+// CPUs to run them; past that, each one only adds CPU and memory.
+var runtimePrebuilds = semaphore.NewWeighted(int64(maxRuntimePrebuilds))
+
+// maxRuntimePrebuilds is the engine's GOMAXPROCS, at least 4: the CPUs the
+// engine may run on, or GOMAXPROCS when it's set. A CPU quota on the engine's
+// container doesn't count, since the engine runs in a child cgroup of it,
+// which Go doesn't read the quota of.
+var maxRuntimePrebuilds = max(4, runtime.GOMAXPROCS(0))
+
+// prebuildModuleRuntime builds src's runtime when its SDK can build it
+// without the module's dependencies (core.RuntimePrebuilder).
+func prebuildModuleRuntime(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) error {
+	if src.Self().SDKImpl == nil {
+		return nil
+	}
+	runtimeImpl, ok := src.Self().SDKImpl.AsRuntime()
+	if !ok {
+		return nil
+	}
+	prebuilder, ok := runtimeImpl.(core.RuntimePrebuilder)
+	if !ok {
+		return nil
+	}
+	if err := runtimePrebuilds.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer runtimePrebuilds.Release(1)
+	return prebuilder.PrebuildRuntime(ctx, src)
+}
+
 // load the given module source's dependencies as modules
 // BuildLegacyAsModuleArgs is the single builder for the asModule args salted
 // into AsModuleVariantDigest, so every load path yields one module identity.
@@ -4474,11 +4929,16 @@ func BuildLegacyAsModuleArgs(
 	return args, nil
 }
 
+// loadDependencyModules loads src's dependencies as modules, into the
+// schema they feed: the module's own (moduleDeps), or, when src lists them
+// as its entrypoint's own (ModuleSource.EntrypointOnlyDependencies), the
+// entrypoint's (entrypointDeps), leaving the module's own schema the core's
+// alone. entrypointDeps is nil when the entrypoint has none of its own.
 func (s *moduleSourceSchema) loadDependencyModules(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
 	defaultPathContextSrc dagql.ObjectResult[*core.ModuleSource],
-) (*core.SchemaBuilder, error) {
+) (moduleDeps, entrypointDeps *core.SchemaBuilder, _ error) {
 	return s.loadDependencyModulesForEngineVersion(ctx, src, defaultPathContextSrc, src.Self().EngineVersion)
 }
 
@@ -4489,17 +4949,17 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 	src dagql.ObjectResult[*core.ModuleSource],
 	defaultPathContextSrc dagql.ObjectResult[*core.ModuleSource],
 	engineVersion string,
-) (_ *core.SchemaBuilder, rerr error) {
+) (moduleDeps, entrypointDeps *core.SchemaBuilder, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	dag, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dag server: %w", err)
+		return nil, nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
 	var eg errgroup.Group
@@ -4558,32 +5018,30 @@ func (s *moduleSourceSchema) loadDependencyModulesForEngineVersion(
 	}
 
 	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
+		return nil, nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
-	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, engineVersion)
+	base, err := s.defaultSchemaBuilderForEngineVersion(ctx, engineVersion)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	for _, depMod := range depMods {
-		deps = deps.Append(core.NewUserMod(depMod))
+	mods := make([]core.Mod, len(depMods))
+	for i, depMod := range depMods {
+		mods[i] = core.NewUserMod(depMod)
 	}
-
-	return deps, nil
+	deps := base.Append(mods...)
+	if src.Self().EntrypointOnlyDependencies && len(mods) > 0 {
+		return base, deps, nil
+	}
+	return deps, nil, nil
 }
 
-// loadDefaultSchemaBuilder returns a SchemaBuilder seeded with only the default
-// (core) dependencies, with the core module pinned to src's engine version
-// view. Callers append the user modules they want to expose.
-func (s *moduleSourceSchema) loadDefaultSchemaBuilder(
-	ctx context.Context,
-	src dagql.ObjectResult[*core.ModuleSource],
-) (*core.SchemaBuilder, error) {
-	return s.defaultSchemaBuilderForEngineVersion(ctx, src.Self().EngineVersion)
-}
-
-// defaultSchemaBuilderForEngineVersion is loadDefaultSchemaBuilder for an
-// explicit engine version.
+// defaultSchemaBuilderForEngineVersion returns a SchemaBuilder seeded with
+// only the default (core) dependencies, with the core module pinned to the
+// view of engineVersion, capped at the engine's (engine.ModuleAPIViewVersion).
+// Callers append the user modules they want to expose; each is named by the
+// rules of the version it declares (see core.ModuleSource.NamingView), not by
+// engineVersion.
 func (s *moduleSourceSchema) defaultSchemaBuilderForEngineVersion(
 	ctx context.Context,
 	engineVersion string,
@@ -4603,6 +5061,21 @@ func (s *moduleSourceSchema) defaultSchemaBuilderForEngineVersion(
 		}
 	}
 	return core.NewSchemaBuilder(query, baseMods), nil
+}
+
+// loadCoreTypeDefs builds the core API's typedefs as engineVersion sees
+// them, unless the engine already has. A failure is left for the load that
+// needs them to report: they aren't kept, so that load builds them again.
+func (s *moduleSourceSchema) loadCoreTypeDefs(ctx context.Context, engineVersion string) {
+	deps, err := s.defaultSchemaBuilderForEngineVersion(ctx, engineVersion)
+	if err != nil {
+		return
+	}
+	for _, mod := range deps.Mods() {
+		if coreMod, ok := mod.(*CoreMod); ok {
+			_, _ = coreMod.TypeDefs(ctx, nil)
+		}
+	}
 }
 
 func (s *moduleSourceSchema) moduleSourceWithClient(

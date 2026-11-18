@@ -37,6 +37,26 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
+// readCacheDebugSnapshot reads the dagql cache snapshot of the engine svc
+// runs, from its debug endpoint. The snapshot lists every entry the engine
+// holds, several MB once the engine has merged its image's entries, so it is
+// written to a file and exported, not printed: an exec's output and a string
+// a call returns both go into the run's logs, which every client holds.
+func readCacheDebugSnapshot(ctx context.Context, t *testctx.T, c *dagger.Client, svc *core.Service) []byte {
+	t.Helper()
+	const path = "/snapshot.json"
+	exported, err := core.NewQuery(c).Container().From(alpineImage).
+		WithServiceBinding("debug-engine", svc).
+		WithEnvVariable("READ_NUMBER", rand.Text()).
+		WithExec([]string{"wget", "-qO", path, "http://debug-engine:6060/debug/dagql/cache"}).
+		File(path).
+		Export(ctx, filepath.Join(t.TempDir(), "snapshot.json"))
+	require.NoError(t, err)
+	raw, err := os.ReadFile(exported)
+	require.NoError(t, err)
+	return raw
+}
+
 //nolint:gocyclo // Independent restart subtests share engine fixtures; the metric counts their bodies together.
 func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *testctx.T) {
 	const persistenceTestGCThresholdBytes = "1000000000000000"
@@ -141,14 +161,11 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 	}
 	readSnapshotRows := func(ctx context.Context, t *testctx.T, c *dagger.Client, svc *core.Service) map[uint64]savedSnapshotRow {
 		t.Helper()
-		raw, err := core.NewQuery(c).Container().From(alpineImage).WithServiceBinding("snapshot-engine", svc).
-			WithEnvVariable("READ_NUMBER", rand.Text()).
-			WithExec([]string{"wget", "-qO-", "http://snapshot-engine:6060/debug/dagql/cache"}).Stdout(ctx)
-		require.NoError(t, err)
+		raw := readCacheDebugSnapshot(ctx, t, c, svc)
 		var snapshot struct {
 			Results []savedSnapshotRow `json:"results"`
 		}
-		require.NoError(t, json.Unmarshal([]byte(raw), &snapshot))
+		require.NoError(t, json.Unmarshal(raw, &snapshot))
 		rows := make(map[uint64]savedSnapshotRow, len(snapshot.Results))
 		for _, row := range snapshot.Results {
 			rows[row.ID] = row
@@ -195,28 +212,27 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		require.Equal(t, "saved HTTP body\n", body)
 		fileID, err := file.ID(ctx)
 		require.NoError(t, err)
-		manifest, err := devEngineContainer(c).EnvVariable(ctx, distconsts.GoSDKManifestDigestEnvName)
+		goSDK, err := devEngineContainer(c).EnvVariable(ctx, distconsts.GoSDKDigestEnvName)
 		require.NoError(t, err)
-		require.NotEmpty(t, manifest)
+		require.NotEmpty(t, goSDK)
 		var sdk struct {
-			Builtin struct {
+			Bundled struct {
 				ID core.ID `json:"id"`
-			} `json:"_builtinContainer"`
+			} `json:"__bundledDirectory"`
 			Schema struct {
 				ID       core.ID `json:"id"`
 				Contents string  `json:"contents"`
 			} `json:"__schemaJSONFile"`
 		}
-		require.NoError(t, a.Do(ctx, &dagger.Request{Query: `query($digest: String!) { _builtinContainer(digest: $digest) { id } __schemaJSONFile { id contents } }`, Variables: map[string]any{"digest": manifest}}, &dagger.Response{Data: &sdk}))
+		require.NoError(t, a.Do(ctx, &dagger.Request{Query: `query($digest: String!) { __bundledDirectory(digest: $digest) { id } __schemaJSONFile { id contents } }`, Variables: map[string]any{"digest": goSDK}}, &dagger.Response{Data: &sdk}))
 		require.NotEmpty(t, sdk.Schema.Contents)
 		rowsA := readSnapshotRows(ctx, t, c, upA)
 		fileRowID := snapshotResultID(t, string(fileID))
 		schemaRowID := snapshotResultID(t, string(sdk.Schema.ID))
-		builtinRowID := snapshotResultID(t, string(sdk.Builtin.ID))
+		bundledRowID := snapshotResultID(t, string(sdk.Bundled.ID))
 		require.Equal(t, "__httpFile", rowsA[fileRowID].Call.Field)
 		require.Equal(t, "__schemaJSONFile", rowsA[schemaRowID].Call.Field)
-		require.Equal(t, "_builtinContainer", rowsA[builtinRowID].Call.Field)
-		require.Empty(t, rowsA[builtinRowID].Links, "unused builtin must remain pending across the first shutdown")
+		require.Empty(t, rowsA[bundledRowID].Links, "an unread bundled directory installs nothing before the first shutdown")
 		requestsBefore := requests.Load()
 		stopEngine(ctx, t, upA, tunnelA, a)
 		upA = nil
@@ -232,15 +248,14 @@ func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Contex
 		body, err = schemaB.Contents(ctx, core.FileContentsOpts{LimitLines: 1})
 		require.NoError(t, err)
 		require.Equal(t, sdk.Schema.Contents, body)
-		entries, err := core.Ref[*core.Container](core.NewQuery(b), sdk.Builtin.ID).Rootfs().Entries(ctx)
+		entries, err := core.Ref[*core.Directory](core.NewQuery(b), sdk.Bundled.ID).Entries(ctx, core.DirectoryEntriesOpts{Path: "sdk/runtime"})
 		require.NoError(t, err)
-		require.NotEmpty(t, entries)
+		require.Contains(t, entries, "main.dang", "the bundled directory installs from the image after restart")
 		require.Equal(t, requestsBefore, requests.Load(), "ready HTTP snapshot contacted its origin")
 		rowsB := readSnapshotRows(ctx, t, c, upB)
 		require.EqualValues(t, 1, rowsB[fileRowID].Value.Counts["storedOpen"])
 		require.EqualValues(t, 1, rowsB[schemaRowID].Value.Counts["storedOpen"])
-		require.Zero(t, rowsB[builtinRowID].Value.Counts["storedOpen:fs"], "pending builtin evaluates its saved operation after restart")
-		require.NotEmpty(t, rowsB[builtinRowID].Links)
+		require.NotEmpty(t, rowsB[bundledRowID].Links)
 	})
 
 	t.Run("changeset merge operation survives restart", func(ctx context.Context, t *testctx.T) {
@@ -820,15 +835,11 @@ COPY src /app/src
 		}
 		readRows := func(svc *core.Service) map[uint64]rowState {
 			t.Helper()
-			raw, err := core.NewQuery(c).Container().From(alpineImage).
-				WithServiceBinding("part-engine", svc).
-				WithEnvVariable("READ_NUMBER", rand.Text()).
-				WithExec([]string{"wget", "-qO-", "http://part-engine:6060/debug/dagql/cache"}).Stdout(ctx)
-			require.NoError(t, err)
+			raw := readCacheDebugSnapshot(ctx, t, c, svc)
 			var snapshot struct {
 				Results []rowState `json:"results"`
 			}
-			require.NoError(t, json.Unmarshal([]byte(raw), &snapshot))
+			require.NoError(t, json.Unmarshal(raw, &snapshot))
 			rows := make(map[uint64]rowState, len(snapshot.Results))
 			for _, row := range snapshot.Results {
 				rows[row.ID] = row
@@ -1858,6 +1869,41 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 			"a check given the same Git workspace must not run again after a restart")
 		out := workspaceIdentityCall(ctx, t, ctrB, "-W", remoteRef, "config", "--nonce", rand.Text())
 		require.Contains(t, out, "included-ignore")
+	})
+
+	// A check run from a Git workspace keeps its planning past the session,
+	// so the engine saves those results at shutdown too. A result it can't
+	// store, or can't load back, costs the whole saved cache: a function's
+	// result from the same engine would then not survive the restart.
+	t.Run("a check run from a git workspace is saved at shutdown", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "persist-git-check-planning-state-" + rand.Text()
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceIdentityRepo(t, c).WithNewFile("nonce.txt", rand.Text()))
+
+		cliCtr := func(engineClient *dagger.Client) *core.Container {
+			return core.NewQuery(engineClient).Container().From(alpineImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, engineClient)).
+				WithWorkdir("/empty")
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+		ctrA := cliCtr(engineClientA)
+		workspaceIdentityExec(ctx, t, ctrA, true, "check", "-W", remoteRef, "recorded")
+		value := workspaceIdentityCall(ctx, t, ctrA, "-W", remoteRef, "check")
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+		ctrB := cliCtr(engineClientB)
+		require.Equal(t, value, workspaceIdentityCall(ctx, t, ctrB, "-W", remoteRef, "check"),
+			"the first engine's results must survive the restart")
+		workspaceIdentityExec(ctx, t, ctrB, true, "check", "-W", remoteRef, "recorded")
+		require.Equal(t, "1", workspaceIdentityCall(ctx, t, ctrB, "-W", remoteRef, "runs"),
+			"the check must be reused after the restart")
 	})
 
 	t.Run("passing check result survives restart", func(ctx context.Context, t *testctx.T) {

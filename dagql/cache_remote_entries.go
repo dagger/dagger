@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -40,6 +41,24 @@ const cloudCacheID CacheID = "cloud"
 
 // CloudCacheID is the sending cache an engine's merges name: the Cloud.
 const CloudCacheID = cloudCacheID
+
+// imageCacheID is the identity an engine keys its image holdings by: the
+// entries the engine's image ships, which it merges at start. Like the Cloud
+// holding, an image holding owns nothing, and it carries the image's offers.
+// It is never reported to the Cloud nor renewed, and the engine never exports
+// an entry it holds: every engine built from the image has it.
+const imageCacheID CacheID = "image"
+
+// ImageCacheID is the sending cache of the merge of the engine image's
+// entries.
+const ImageCacheID = imageCacheID
+
+// senderCache reports whether cache names one of an engine's senders, the
+// Cloud or its image, whose holdings own nothing, rather than an engine
+// cache.
+func senderCache(cache CacheID) bool {
+	return cache == cloudCacheID || cache == imageCacheID
+}
 
 // HolderKey names one entry of one engine cache: the cache's identity and the
 // entry's result number there.
@@ -99,6 +118,10 @@ type RemoteHolding struct {
 	// it, a use of the entry (0: unknown). The entry's last use never moves
 	// back.
 	UsedAtUnixNano int64
+	// Call is the call as its span encodes it (dagger.io/dag.call), when
+	// the call returned the entry of another recipe (Request is not
+	// Recipe). The entry keeps it, to send with the entry.
+	Call string
 }
 
 // RemoteHoldingUpdate is what a later report adds to an existing holding: the
@@ -123,6 +146,10 @@ type RemoteHoldingUpdate struct {
 type RemoteChange struct {
 	Candidates []HolderKey
 	Recipes    []digest.Digest
+	// Saved reports that the operation changed what a save of the cache
+	// writes, beyond the holdings, which aren't saved: a call kept on a
+	// stored entry, or the entry's expiry.
+	Saved bool
 	// recipes is the set of Recipes, which a merge's change can list by the
 	// thousand.
 	recipes map[digest.Digest]struct{}
@@ -315,7 +342,7 @@ type remoteCacheState struct {
 func (res *sharedResult) noValueLocked() bool {
 	engineHolding := false
 	for key := range res.holders {
-		if key.Cache != cloudCacheID {
+		if !senderCache(key.Cache) {
 			engineHolding = true
 			break
 		}
@@ -392,13 +419,21 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 	if key.Cache == "" || key.Number == 0 || desc.Recipe == "" {
 		return change, fmt.Errorf("attach remote holding: empty key or recipe")
 	}
-	if key.Cache == cloudCacheID {
-		// An engine's Cloud holding owns nothing; merges and offers keep it.
+	if senderCache(key.Cache) {
+		// An engine's Cloud and image holdings own nothing; merges and offers
+		// keep them.
 		return change, fmt.Errorf("attach remote holding: %q is not an engine cache", key.Cache)
 	}
 	parts, err := heldPartKeys(desc.Parts)
 	if err != nil {
 		return change, fmt.Errorf("attach remote holding %s/%d: %w", key.Cache, key.Number, err)
+	}
+	kept, err := newKeptCall(desc)
+	if err != nil {
+		// The holding is what the span reports; a call this cache can't
+		// derive is left out, and sent nowhere.
+		slog.Warn("remote holding call left out", "cache", key.Cache, "number", key.Number, "error", err)
+		kept = nil
 	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
@@ -413,6 +448,7 @@ func (c *Cache) AttachRemoteHolding(ctx context.Context, key HolderKey, desc Rem
 		affected = true
 	}
 	c.teachRemoteIdentityLocked(ctx, entry, desc.Field, desc.Recipe, desc.Request, desc.ContentDigest, desc.Term)
+	change.Saved = c.keepCallLocked(entry, desc, kept)
 	if desc.Request != "" && desc.Request != desc.Recipe {
 		if _, ok := c.entriesByRecipe[desc.Request]; !ok {
 			c.indexRecipeLocked(desc.Request, entry)
@@ -464,6 +500,13 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 		entry.holders = make(map[HolderKey]*holding)
 	}
 	entry.holders[key] = h
+	if entry.cacheHolders == nil {
+		entry.cacheHolders = make(map[CacheID]map[uint64]struct{})
+	}
+	if entry.cacheHolders[key.Cache] == nil {
+		entry.cacheHolders[key.Cache] = make(map[uint64]struct{})
+	}
+	entry.cacheHolders[key.Cache][key.Number] = struct{}{}
 	if c.holderEntries == nil {
 		c.holderEntries = make(map[HolderKey]sharedResultID)
 	}
@@ -499,7 +542,7 @@ func (c *Cache) addHoldingLocked(ctx context.Context, state *remoteCacheState, k
 // owner of, for the next CollectRemoteHoldings, and the recipes it affected.
 func (c *Cache) ApplyMergedReply(ctx context.Context, cache CacheID, sent ValueBundle, reply MergeReply) (RemoteChange, error) {
 	var change RemoteChange
-	if cache == "" || cache == cloudCacheID {
+	if cache == "" || senderCache(cache) {
 		return change, fmt.Errorf("apply merged reply: %q is not an engine cache", cache)
 	}
 	cloudEntries := make(map[TransferOrdinal]sharedResultID, len(sent.Values))
@@ -985,6 +1028,12 @@ func (c *Cache) CompactEqClasses(ctx context.Context) (oldSlots, newSlots int, r
 // Requires egraphMu for writing.
 func (c *Cache) removeHoldingLocked(ctx context.Context, state *remoteCacheState, key HolderKey, entry *sharedResult, h *holding, entries []*sharedResult) ([]HolderKey, []*sharedResult, error) {
 	delete(entry.holders, key)
+	if numbers := entry.cacheHolders[key.Cache]; numbers != nil {
+		delete(numbers, key.Number)
+		if len(numbers) == 0 {
+			delete(entry.cacheHolders, key.Cache)
+		}
+	}
 	delete(c.holderEntries, key)
 	state.holdings--
 	var deps []HolderKey
@@ -1362,6 +1411,76 @@ func (c *Cache) RemoteHoldingInfo(key HolderKey) (RemoteHeldEntry, bool) {
 	held := RemoteHeldEntry{Holding: holdingInfo(key, h)}
 	held.Number, held.Stored, held.StoredExpiresAtUnix, held.Recipes = entryFactsLocked(entry)
 	return held, true
+}
+
+// EntryClass is an entry's own facts, as RemoteEntryInfo reports them, and
+// the entries of its classes, itself among them, without any holding.
+type EntryClass struct {
+	Number              uint64
+	Stored              bool
+	StoredExpiresAtUnix int64
+	// Entries are the numbers of the entries in the entry's output
+	// equivalence classes, the entry's own included, sorted: those
+	// EquivalentEntries returns for each of its class digests.
+	Entries []uint64
+}
+
+// EntryClassEntries returns the entry numbered number's facts and its
+// classes' entries, read under one hold. Unlike EntryInfo, it describes no
+// holding, digest or term, so its cost grows with the classes' entries, not
+// with how many engine caches hold them. It reports false when the cache has
+// no such entry.
+func (c *Cache) EntryClassEntries(number uint64) (EntryClass, bool) {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	entry := c.resultsByID[sharedResultID(number)]
+	if entry == nil {
+		return EntryClass{}, false
+	}
+	var class EntryClass
+	class.Number, class.Stored, class.StoredExpiresAtUnix, _ = entryFactsLocked(entry)
+	entries := map[sharedResultID]struct{}{entry.id: {}}
+	for root := range c.outputEqClassRootsLocked(entry.id) {
+		for id := range c.outputEqClassResults[root] {
+			if c.resultsByID[id] != nil {
+				entries[id] = struct{}{}
+			}
+		}
+	}
+	for id := range entries {
+		class.Entries = append(class.Entries, uint64(id))
+	}
+	slices.Sort(class.Entries)
+	return class, true
+}
+
+// CacheHoldings returns the holdings of one engine cache on the entries
+// numbered numbers, each as RemoteHoldingInfo describes it with its entry's
+// facts, in the order of numbers and then by holding number, read under one
+// hold; an entry's holdings share its Recipes slice. Its cost grows with the
+// entries and that cache's holdings on them, not with other caches'
+// (cacheHolders). An entry the cache doesn't have, or one the engine cache
+// holds nothing on, is skipped.
+func (c *Cache) CacheHoldings(cache CacheID, numbers []uint64) []RemoteHeldEntry {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	var out []RemoteHeldEntry
+	for _, number := range numbers {
+		entry := c.resultsByID[sharedResultID(number)]
+		if entry == nil || len(entry.cacheHolders[cache]) == 0 {
+			continue
+		}
+		var held RemoteHeldEntry
+		held.Number, held.Stored, held.StoredExpiresAtUnix, held.Recipes = entryFactsLocked(entry)
+		for _, n := range slices.Sorted(maps.Keys(entry.cacheHolders[cache])) {
+			key := HolderKey{Cache: cache, Number: n}
+			if h := entry.holders[key]; h != nil {
+				held.Holding = holdingInfo(key, h)
+				out = append(out, held)
+			}
+		}
+	}
+	return out
 }
 
 // entryFactsLocked returns entry's number, whether it stores a record and

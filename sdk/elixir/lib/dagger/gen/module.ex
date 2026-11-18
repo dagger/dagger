@@ -158,7 +158,7 @@ defmodule Dagger.Module do
   @spec introspection_schema_json(t()) :: Dagger.File.t()
   def introspection_schema_json(%__MODULE__{} = module) do
     query_builder =
-      module.query_builder |> QB.select("introspectionSchemaJSON")
+      module.query_builder |> QB.select("introspectionSchemaJson")
 
     %Dagger.File{
       query_builder: query_builder,

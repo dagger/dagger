@@ -1016,3 +1016,42 @@ func TestPendingLazyComputationWholeGroupStoredOpen(t *testing.T) {
 		})
 	}
 }
+
+// A part task that delivers a part, by acquiring it or obtaining it from a
+// source, runs no computation of the value: it is operational work, as opening
+// a stored whole result is. A computing group keeps reporting pending
+// computation. Directory.file decides from this whether to hash a file, so a
+// delivery task running on a stored directory, as each read of a directory
+// installed from the Cloud starts one, must not change the file's identity.
+func TestPendingLazyComputationPartDeliveryTask(t *testing.T) {
+	t.Parallel()
+	for name, state := range map[string]lazyGroupState{
+		"armed":       {eval: func(context.Context) error { return nil }},
+		"in flight":   {attempt: &lazyEvalAttempt{}},
+		"bookkeeping": {syncPending: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			for key, computing := range map[LazyGroupKey]bool{
+				partTaskKey("acquire", PersistedPartAddress{Part: "snapshot"}): false,
+				partTaskKey("obtain", PersistedPartAddress{Part: "snapshot"}):  false,
+				lazyEvaluationTaskKey(LazyGroupAddress{Group: "fs"}):           true,
+				"fs": true,
+			} {
+				st := state
+				shared := &sharedResult{
+					id: 1, hasValue: true,
+					self:           cacheTestWholeStoredOpen{stored: true},
+					lazyPartGroups: map[LazyGroupKey]*lazyGroupState{key: &st},
+				}
+				res := Result[Typed]{shared: shared}
+				if !HasPendingLazyEvaluation(res) {
+					t.Fatalf("%s: an unfinished group must remain operational work", key)
+				}
+				if got := HasPendingLazyComputation(res); got != computing {
+					t.Fatalf("%s: pending computation=%v, want %v", key, got, computing)
+				}
+			}
+		})
+	}
+}

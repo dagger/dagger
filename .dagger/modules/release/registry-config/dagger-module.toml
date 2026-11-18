@@ -1,6 +1,10 @@
 name = "registry-config"
-engineVersion = "v0.21.9"
-include = ["!../.direnv", "!../.devenv", "!../go.work", "!../go.work.sum"]
+include = []
 
-[runtime]
-  source = "go"
+[entrypoint]
+  kind = "dang"
+  source = "./internal/dagger/entrypoint"
+
+[[dependencies]]
+  name = "go"
+  source = "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"

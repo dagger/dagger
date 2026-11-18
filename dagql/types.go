@@ -1712,6 +1712,10 @@ type EnumValue[T enumValue] struct {
 	Underlying  T
 	Description string
 	View        ViewFilter
+	// Primary marks an alias that its views present as the member, in its
+	// target's place, with the target as its alias: a value's old spelling,
+	// for views from before it was renamed (see AliasViewPrimary).
+	Primary bool
 }
 
 // EnumValues is a list of possible values for an Enum.
@@ -1763,22 +1767,71 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 }
 
 func (e *EnumValues[T]) PossibleValues(view call.View) ast.EnumValueList {
+	var zero T
 	var values ast.EnumValueList
-	for _, val := range *e {
-		if val.View != nil && !val.View.Contains(view) {
-			continue
-		}
+	add := func(val EnumValue[T], aliasOf T) {
 		def := &ast.EnumValueDefinition{
 			Name:        string(val.Value),
 			Description: val.Description,
 		}
-		if val.Value != val.Underlying {
-			def.Directives = append(def.Directives, enumValueDirectives(val.Underlying)...)
-		}
+		def.Directives = append(def.Directives, enumValueDirectives(aliasOf)...)
 		values = append(values, def)
+	}
+	for _, val := range *e {
+		if !val.visibleIn(view) {
+			continue
+		}
+		switch {
+		case val.Underlying == zero:
+			// A primary alias takes the member's place, the member being its
+			// alias.
+			if primary, ok := e.primaryAlias(val.Value, view); ok {
+				add(primary, zero)
+				add(val, primary.Value)
+				continue
+			}
+			add(val, zero)
+		case val.Primary:
+			// Listed with its target, unless the view doesn't have that.
+			if target, ok := e.member(val.Underlying); ok && target.visibleIn(view) {
+				continue
+			}
+			add(val, zero)
+		default:
+			aliasOf := val.Underlying
+			if primary, ok := e.primaryAlias(aliasOf, view); ok {
+				aliasOf = primary.Value
+			}
+			add(val, aliasOf)
+		}
 	}
 
 	return values
+}
+
+func (val EnumValue[T]) visibleIn(view call.View) bool {
+	return val.View == nil || val.View.Contains(view)
+}
+
+// member is the registered member val, not an alias.
+func (e *EnumValues[T]) member(val T) (EnumValue[T], bool) {
+	var zero T
+	for _, possible := range *e {
+		if possible.Value == val && possible.Underlying == zero {
+			return possible, true
+		}
+	}
+	return EnumValue[T]{}, false
+}
+
+// primaryAlias is the primary alias of member val that view has.
+func (e *EnumValues[T]) primaryAlias(val T, view call.View) (EnumValue[T], bool) {
+	for _, possible := range *e {
+		if possible.Primary && possible.Underlying == val && possible.visibleIn(view) {
+			return possible, true
+		}
+	}
+	return EnumValue[T]{}, false
 }
 
 func enumValueDirectives[T enumValue](value T) []*ast.Directive {
@@ -1805,6 +1858,40 @@ func enumValueDirectives[T enumValue](value T) []*ast.Directive {
 
 func (e *EnumValues[T]) Literal(val T) call.Literal {
 	return call.NewLiteralEnum(string(val))
+}
+
+// ViewLiteral is val spelled as a member view has: its primary alias there
+// (see AliasViewPrimary), or else val itself when view has its member, or
+// else another alias of it that view has. A value always decodes to its own
+// member, whatever the spelling, so this only matters where a value is shown
+// in a schema, such as an argument's default value.
+func (e *EnumValues[T]) ViewLiteral(val T, view call.View) call.Literal {
+	if primary, ok := e.primaryAlias(val, view); ok {
+		return call.NewLiteralEnum(string(primary.Value))
+	}
+	alias := ""
+	for _, possible := range *e {
+		if !possible.visibleIn(view) {
+			continue
+		}
+		switch {
+		case possible.Value == val:
+			return call.NewLiteralEnum(string(val))
+		case possible.Underlying == val && alias == "":
+			alias = string(possible.Value)
+		}
+	}
+	if alias != "" {
+		return call.NewLiteralEnum(alias)
+	}
+	return call.NewLiteralEnum(string(val))
+}
+
+// ViewLiteraler is an Input whose literal depends on the view, like an enum
+// value whose member some views spell differently. Schema definitions show
+// such a default value as ViewLiteral(view).
+type ViewLiteraler interface {
+	ViewLiteral(view call.View) call.Literal
 }
 
 func (e *EnumValues[T]) Lookup(val string) (T, error) {
@@ -1838,6 +1925,19 @@ func (e *EnumValues[T]) Alias(val T, target T) T {
 }
 
 func (e *EnumValues[T]) AliasView(val T, target T, view ViewFilter) T {
+	return e.aliasView(val, target, view, false)
+}
+
+// AliasViewPrimary is AliasView for a member's old spelling: the views that
+// have the alias list it as the member, in the member's place, and the
+// member, where they have it, as its alias, as they did before the member
+// was renamed. The value is still the member's, so IDs and cache keys are
+// the same in every view.
+func (e *EnumValues[T]) AliasViewPrimary(val T, target T, view ViewFilter) T {
+	return e.aliasView(val, target, view, true)
+}
+
+func (e *EnumValues[T]) aliasView(val T, target T, view ViewFilter, primary bool) T {
 	for _, v := range *e {
 		if v.Value == target {
 			*e = append(*e, EnumValue[T]{
@@ -1845,6 +1945,7 @@ func (e *EnumValues[T]) AliasView(val T, target T, view ViewFilter) T {
 				Underlying:  v.Value,
 				Description: v.Description,
 				View:        view,
+				Primary:     primary,
 			})
 			return val
 		}

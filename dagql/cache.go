@@ -212,7 +212,12 @@ type persistedEdge struct {
 // (DeclinePersistence). An older engine reading a newer store drops the mark
 // when it saves, and a declined value would then gain a retention edge from
 // its next persistable hit, so stores of another version are wiped on import.
-const cachePersistenceSchemaVersion = "23"
+//
+// 24: the engine image's built-in SDK container operation
+// (Query._builtinContainer) is gone: the built-in SDKs' files come through the
+// image's entries. Older stores holding its records cannot decode them, so
+// they are wiped on import.
+const cachePersistenceSchemaVersion = "24"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrCacheSessionReleased = errors.New("cache session released")
@@ -501,6 +506,7 @@ func NewCache(
 		snapshotManager:   snapshotManager,
 		snapshotGC:        snapshotGC,
 		partContentSource: NewPartContentSource(nil),
+		partPrefetchRoom:  func(int64) bool { return true },
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -1188,6 +1194,10 @@ type sessionResultInstalls struct {
 	first sessionResultInstallSpan
 	few   []sessionResultInstallSpan
 	many  map[spanKey]sessionResultInstallSpan
+	// ownsClosure records that one of the spans owns the result's closure.
+	// An ancestor walk asks it of every result above the one resuming, and
+	// most own none.
+	ownsClosure bool
 }
 
 // maxFewInstallSpans is how many further install spans a result keeps in a
@@ -1195,6 +1205,7 @@ type sessionResultInstalls struct {
 const maxFewInstallSpans = 8
 
 func (installs *sessionResultInstalls) record(spanCtx trace.SpanContext, ownsClosure bool) {
+	installs.ownsClosure = installs.ownsClosure || ownsClosure
 	key := spanKeyOf(spanCtx)
 	merge := func(install *sessionResultInstallSpan) {
 		install.spanCtx = spanCtx
@@ -1271,36 +1282,71 @@ func (c *Cache) recordSessionResultInstallSpanLocked(ctx context.Context, sessio
 }
 
 // installAncestorIDsLocked returns the IDs of results that transitively
-// depend on rootID, found by walking direct dep edges upward via depParents.
-// rootID itself is excluded. Caller must hold egraphMu at least for read.
+// depend on rootID, found by walking direct dep edges upward via depParents,
+// nearest first. rootID itself is excluded. Caller must hold egraphMu at
+// least for read.
+//
+// A result low in a large graph, such as a package the engine image ships
+// built, has thousands of ancestors, and every resume of one walks them all,
+// so the walk allocates nothing per ancestor: it marks what it visited in a
+// pooled bitset, and its result is its own queue.
 func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID {
 	if rootID == 0 {
 		return nil
 	}
 	root := c.resultsByID[rootID]
-	if root == nil || root.depParents == nil || root.depParents.Empty() {
+	if root == nil || len(root.depParents) == 0 {
 		return nil
 	}
-	seen := map[sharedResultID]struct{}{rootID: {}}
-	queue := []sharedResultID{rootID}
+	marks := ancestorMarksPool.Get().(*ancestorMarks)
+	marks.visit(rootID)
 	var out []sharedResultID
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
-		res := c.resultsByID[id]
-		if res == nil || res.depParents == nil {
-			continue
-		}
-		for parentID := range res.depParents.Items() {
-			if _, ok := seen[parentID]; ok {
-				continue
-			}
-			seen[parentID] = struct{}{}
+	for parentID := range root.depParents {
+		if marks.visit(parentID) {
 			out = append(out, parentID)
-			queue = append(queue, parentID)
 		}
 	}
+	for i := 0; i < len(out); i++ {
+		res := c.resultsByID[out[i]]
+		if res == nil {
+			continue
+		}
+		for parentID := range res.depParents {
+			if marks.visit(parentID) {
+				out = append(out, parentID)
+			}
+		}
+	}
+	marks.unvisit(rootID)
+	for _, id := range out {
+		marks.unvisit(id)
+	}
+	ancestorMarksPool.Put(marks)
 	return out
+}
+
+// ancestorMarks is an ancestor walk's visited set: a bit per result number.
+// Result numbers are dense, so the bitset stays small; a walk clears the bits
+// it set before it returns the set to the pool.
+type ancestorMarks struct{ words []uint64 }
+
+var ancestorMarksPool = sync.Pool{New: func() any { return new(ancestorMarks) }}
+
+// visit marks id and reports whether it was unmarked.
+func (m *ancestorMarks) visit(id sharedResultID) bool {
+	word, bit := int(id/64), uint64(1)<<(id%64)
+	if word >= len(m.words) {
+		m.words = append(m.words, make([]uint64, word+1-len(m.words))...)
+	}
+	if m.words[word]&bit != 0 {
+		return false
+	}
+	m.words[word] |= bit
+	return true
+}
+
+func (m *ancestorMarks) unvisit(id sharedResultID) {
+	m.words[id/64] &^= uint64(1) << (id % 64)
 }
 
 // ResultInstallSpans returns install span contexts recorded for res in the
@@ -1342,7 +1388,7 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 	var out []trace.SpanContext
 	appendInstalls := func(id sharedResultID, closureOwnersOnly bool) {
 		installs := byResult[id]
-		if installs == nil {
+		if installs == nil || closureOwnersOnly && !installs.ownsClosure {
 			return
 		}
 		for install := range installs.all {
@@ -1449,6 +1495,9 @@ func pendingLazyComputationLocked(shared *sharedResult, reporting HasLazyEvaluat
 		return true
 	}
 	for key, group := range shared.lazyPartGroups {
+		if isPartDeliveryTaskKey(key) {
+			continue
+		}
 		if reporting.LazyGroupStoredPart(key) == "" && !group.settled() {
 			return true
 		}
@@ -1768,7 +1817,7 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 // counts, so a prune that drops it is seen. It reports false once res has
 // left the cache.
 func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge *pendingRetention) (CacheResultState, bool) {
-	parts := c.completePartKeys(ctx, res)
+	parts, sizes := c.completePartKeysAndSizes(ctx, res)
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.RUnlock()
 	if c.resultsByID[res.id] != res {
@@ -1778,6 +1827,7 @@ func (c *Cache) resultState(ctx context.Context, res *sharedResult, pendingEdge 
 		Deps:          sortedResultIDs(res.deps),
 		ExpiresAtUnix: res.expiresAtUnix,
 		Parts:         parts,
+		PartSizes:     sizes,
 		Replacements:  res.replacements,
 	}
 	edge, found := c.persistedEdgesByResult[res.id]
@@ -1810,7 +1860,7 @@ func (c *Cache) MakeResultUnpruneable(ctx context.Context, res AnyResult) error 
 		return fmt.Errorf("make result unpruneable: result is not cache-backed")
 	}
 
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	if _, found := c.resultsByID[shared.id]; !found {
 		c.egraphMu.Unlock()
 		return fmt.Errorf("make result unpruneable: result %d was already collected", shared.id)
@@ -2349,11 +2399,24 @@ const (
 )
 
 type Cache struct {
-	partFixture              atomic.Pointer[partFixtureState]
 	testTransferCopied       func(uint64)
 	testTransferPlanPrepared func(int) error
 	testBeforeTransferCommit func()
 	testAfterTransferCommit  func()
+	// testPartInstalled runs as a part install's last act, after it has
+	// released every lock.
+	testPartInstalled func()
+
+	// testStoredSizeMeasure runs before StoredSizes measures each value,
+	// testStoredSizesHold after each hold of egraphMu it takes, with the
+	// hold's length, and testStoredTransferNormalized after a build
+	// normalizes a record and before it keeps it.
+	testStoredSizeMeasure        func()
+	testStoredSizesHold          func(time.Duration)
+	testStoredTransferNormalized func()
+
+	// storedSizeEncodes counts StoredSizes' first measurements of values.
+	storedSizeEncodes atomic.Uint64
 
 	offerOwners      map[offerOwnerID]*offerOwner
 	nextOfferOwnerID offerOwnerID
@@ -2366,7 +2429,7 @@ type Cache struct {
 	// egraphMu protects all e-graph state and indexes. A call's own paths
 	// take it with wcprof.ReadLock and WriteLock, so a profile shows the time
 	// they wait for it (egraphLockIdent).
-	egraphMu sync.RWMutex
+	egraphMu wcprof.RWMutex
 
 	// engineInstanceID names the engine instance that owns the cache, for the
 	// debug snapshot. bootRestoredResults counts the entries the boot restore
@@ -2413,6 +2476,9 @@ type Cache struct {
 	// shareReport receives the parts each pass completed; see
 	// WithSnapshotShareReport. Set at construction.
 	shareReport func([]SnapshotSharedPart)
+	// partReads reports the parts of entries work reads; see
+	// WithPartReadReport. Nil unless set at construction.
+	partReads *partReadLog
 	// partPreparation is the engine's registered preparation-context
 	// callback, nil on a cache that cannot reconstruct persisted services.
 	partPreparation PartPreparationContext
@@ -2571,7 +2637,22 @@ type Cache struct {
 
 	snapshotManager   bkcache.SnapshotManager
 	partContentSource *PartContentSource
+	// imageEntriesCause, once set, is why some of the engine image's entries
+	// aren't in the cache (SetImageEntriesCause).
+	imageEntriesCause atomic.Pointer[string]
 	snapshotGC        func(context.Context) error
+
+	// partPrefetcher, started on the first accepted offer, prefetches
+	// offered parts; partPrefetchMu orders its start and its close.
+	// partPrefetchConfig, when set before the first offer, replaces its
+	// bounds, for tests; partPrefetchRoom is WithPartPrefetchRoom's check.
+	partPrefetcher     atomic.Pointer[partPrefetcher]
+	partPrefetchMu     sync.Mutex
+	partPrefetchConfig *partPrefetchConfig
+	partPrefetchRoom   func(need int64) bool
+	// partInstalls counts the installs of offered parts running, which
+	// the prefetcher's ahead worker waits for before taking an offer.
+	partInstalls atomic.Int64
 
 	// usageSnapshotChains carries the parent chains the last usage pass
 	// resolved into the next one; see snapshotChains.
@@ -2626,6 +2707,9 @@ type Cache struct {
 	// testMergeWaitsOnAttachment observes a merge waiting on a target whose
 	// dependency attachment is still open.
 	testMergeWaitsOnAttachment func(*sharedResult)
+	// testMergeCommitLocked observes a merge's commit each time it has taken
+	// the graph lock.
+	testMergeCommitLocked func()
 	// testOfferBeforeDecision runs in offerPart between the capture of the
 	// offered row and the lock that decides the outcome.
 	testOfferBeforeDecision func(*sharedResult)
@@ -2791,6 +2875,18 @@ type sharedResult struct {
 	// that name it. Both guarded by egraphMu.
 	holders    map[HolderKey]*holding
 	recipeKeys []digest.Digest
+	// cacheHolders indexes holders by engine cache: the numbers of each
+	// engine cache's holdings on this entry, so that a read of one cache's
+	// holdings doesn't walk every other cache's (heldLocked, CacheHoldings).
+	// addHoldingLocked and removeHoldingLocked keep it, as they do holders;
+	// the Cloud's own holding on an engine's entry (noteCloudCopyLocked) is
+	// not in it. Guarded by egraphMu.
+	cacheHolders map[CacheID]map[uint64]struct{}
+	// calls are, on the Cloud, the calls its engines reported returning this
+	// entry other than its own, by request digest, which StoredBundle sends
+	// with the entry (cache_call_records.go). They own nothing and go with
+	// the entry. Persisted and guarded by egraphMu.
+	calls map[digest.Digest]*keptCall
 	// listItems are, on a list entry, the item read at each position of its
 	// value, and listItemOf and listItemNth name that list and position on
 	// such an item (CallRequest.ListItem). Not persisted; guarded by
@@ -2833,8 +2929,9 @@ type sharedResult struct {
 	deps map[sharedResultID]struct{}
 	// depParents is the reverse index for direct deps. It lets install-span
 	// lookups walk dep edges upward on demand to find closure-owning installs
-	// (module API call returns) for the result being evaluated.
-	depParents *set.TreeSet[sharedResultID]
+	// (module API call returns) for the result being evaluated. Nothing reads
+	// it in order.
+	depParents map[sharedResultID]struct{}
 	// sessionResourceHandle is set when this result is itself an attached
 	// session-resource handle leaf. requiredSessionResources is the flattened
 	// transitive set of handle requirements for cache-hit validation.
@@ -2872,6 +2969,11 @@ type sharedResult struct {
 	// completeParts caches the row's complete parts for the revision of its
 	// value they were read from (see completePartKeys).
 	completeParts atomic.Pointer[rowCompleteParts]
+	// unavailableParts are the parts of the value that a demand found no
+	// source for, by part address key. Until each is complete, a lookup
+	// passes the entry by (servableLocked), and its call runs again, as on an
+	// engine that never had the entry. Guarded by egraphMu.
+	unavailableParts map[string]struct{}
 
 	// Prune-accounting metadata. Sizes are unknown until explicitly measured.
 	createdAtUnixNano        int64
@@ -2891,6 +2993,9 @@ type sharedResult struct {
 	attachDepsMu     sync.Mutex
 	attachDepsWaitCh chan struct{}
 	attachDepsErr    error
+	// attachHolder is the op and span holding the attachment open, when
+	// either is recorded, for a publication that waits for it.
+	attachHolder *attachHolder
 
 	persistDecodeMu     sync.Mutex
 	persistDecodeWaitCh chan struct{}
@@ -3170,14 +3275,43 @@ func (res *sharedResult) loadSnapshotOwnerLinks() []PersistedSnapshotRefLink {
 	return links
 }
 
+// storeSnapshotOwnerLinks replaces res's owner links. The payload revision
+// moves only when the set of links changes: an owner lease sync that finds
+// them as they were changes nothing a capture of the row reads.
 func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLink) {
 	if res == nil {
 		return
 	}
 	res.payloadMu.Lock()
+	defer res.payloadMu.Unlock()
+	if sameSnapshotRefLinkSet(res.snapshotOwnerLinks, links) {
+		return
+	}
 	res.snapshotOwnerLinks = cloneSnapshotRefLinks(links)
 	res.payloadRevision++
-	res.payloadMu.Unlock()
+}
+
+// sameSnapshotRefLinkSet reports whether a and b hold the same links, in any
+// order.
+func sameSnapshotRefLinkSet(a, b []PersistedSnapshotRefLink) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	key := func(link PersistedSnapshotRefLink) string {
+		return fmt.Sprintf("%q %q %q %t", link.RefKey, link.Role, link.OutputPath, link.Borrowed)
+	}
+	counts := make(map[string]int, len(a))
+	for _, link := range a {
+		counts[key(link)]++
+	}
+	for _, link := range b {
+		k := key(link)
+		if counts[k] == 0 {
+			return false
+		}
+		counts[k]--
+	}
+	return true
 }
 
 // resultIsObject classifies whether val should be treated as an object result
@@ -3372,12 +3506,21 @@ type ongoingCall struct {
 	// and resDeclined the published entry's mark, read with the entry under
 	// egraphMu: a call that adopted a value another call declined doesn't
 	// persist it either.
-	persistDecline          *persistDecline
-	resDeclined             bool
-	ttlSeconds              int64
+	persistDecline *persistDecline
+	resDeclined    bool
+	ttlSeconds     int64
+	// expiryLimit is the resolver's ExpireBy, in sharedWorkCtx.
+	expiryLimit             *expiryLimit
 	initCompletedResultOnce sync.Once
 	handoffHoldActive       bool
 	initCompletedResultErr  error
+	// adopted records that publication adopted the recipe's live current
+	// entry in place of the new value, and adoptedRemote and adoptedMergedAt
+	// that entry's merge origin (cache evidence). Set inside
+	// initCompletedResultOnce, read by waiters after it.
+	adopted         bool
+	adoptedRemote   bool
+	adoptedMergedAt int64
 
 	waitCh                      chan struct{}
 	cancel                      context.CancelCauseFunc
@@ -3407,6 +3550,9 @@ type ongoingCall struct {
 	// joiner has a valid wait target (target-before-primitive). Invalid when
 	// telemetry is off.
 	execSpanCtx trace.SpanContext
+	// pubSpan is the OTel dagql.publishResult span of the result's
+	// publication, while it runs.
+	pubSpan trace.Span
 
 	// profSkip snapshots the target call's frame ProfileSkip at claim time (oc.res
 	// is not yet set when joiners wait). Every singleflight wait checks this
@@ -3414,7 +3560,59 @@ type ongoingCall struct {
 	// call_exec/native op was, keeping mint and wait consistent and dangle-proof.
 	profSkip bool
 
+	// waitsOn counts the waits this call's work has on other ongoing calls,
+	// by call. Guarded by callsMu.
+	waitsOn map[*ongoingCall]int
+
 	res *sharedResult
+}
+
+// waitsOnLocked reports whether oc's work waits on target, directly or
+// through other ongoing calls. callsMu must be held.
+func (oc *ongoingCall) waitsOnLocked(target *ongoingCall) bool {
+	seen := map[*ongoingCall]struct{}{}
+	pending := []*ongoingCall{oc}
+	for len(pending) > 0 {
+		cur := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if cur == target {
+			return true
+		}
+		if _, ok := seen[cur]; ok {
+			continue
+		}
+		seen[cur] = struct{}{}
+		for next := range cur.waitsOn {
+			pending = append(pending, next)
+		}
+	}
+	return false
+}
+
+// addWaitLocked records that the work of the ongoing call ctx runs under, if
+// any, waits on oc. callsMu must be held.
+func addWaitLocked(ctx context.Context, oc *ongoingCall) {
+	waiter, _ := ctx.Value(ongoingCallContextKey{}).(*ongoingCall)
+	if waiter == nil {
+		return
+	}
+	if waiter.waitsOn == nil {
+		waiter.waitsOn = map[*ongoingCall]int{}
+	}
+	waiter.waitsOn[oc]++
+}
+
+// removeWait undoes addWaitLocked once the wait on oc ends.
+func (c *Cache) removeWait(ctx context.Context, oc *ongoingCall) {
+	waiter, _ := ctx.Value(ongoingCallContextKey{}).(*ongoingCall)
+	if waiter == nil {
+		return
+	}
+	c.callsMu.Lock()
+	defer c.callsMu.Unlock()
+	if waiter.waitsOn[oc]--; waiter.waitsOn[oc] <= 0 {
+		delete(waiter.waitsOn, oc)
+	}
 }
 
 // retireOngoingCallLocked removes oc from ongoingCalls if it is still the
@@ -3881,10 +4079,10 @@ func (c *Cache) addExplicitDependenciesLocked(
 		if err != nil {
 			return err
 		}
-		if !changed || res.depParents == nil {
+		if !changed {
 			continue
 		}
-		for ancestorID := range res.depParents.Items() {
+		for ancestorID := range res.depParents {
 			if ancestor := c.resultsByID[ancestorID]; ancestor != nil {
 				queue = append(queue, ancestor)
 			}
@@ -3899,9 +4097,9 @@ func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sh
 		return
 	}
 	if depRes.depParents == nil {
-		depRes.depParents = newSharedResultIDSet()
+		depRes.depParents = map[sharedResultID]struct{}{}
 	}
-	depRes.depParents.Insert(parentRes.id)
+	depRes.depParents[parentRes.id] = struct{}{}
 }
 
 func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID sharedResultID) {
@@ -3909,8 +4107,8 @@ func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID shared
 	if depRes == nil || depRes.depParents == nil {
 		return
 	}
-	depRes.depParents.Remove(parentID)
-	if depRes.depParents.Empty() {
+	delete(depRes.depParents, parentID)
+	if len(depRes.depParents) == 0 {
 		depRes.depParents = nil
 	}
 }
@@ -4629,6 +4827,9 @@ type cacheContextKey struct {
 	key string
 }
 
+// ongoingCallContextKey holds the ongoing call whose work a context runs.
+type ongoingCallContextKey struct{}
+
 type lazyEvalStackCtxKey struct{}
 type lazyEvalStackNode struct {
 	id sharedResultID
@@ -4828,6 +5029,38 @@ func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
 	return eg.Wait()
 }
 
+// OperationCompletedElsewhere is a value that can decode from another
+// engine's record, and knows whether that record is of an operation that
+// completed there.
+type OperationCompletedElsewhere interface{ OperationCompletedElsewhere() bool }
+
+// Sync makes sure res's operation completed, with any error it failed with.
+// A local hit's operation completed here, so its sync costs nothing. A
+// result merged from another engine's record of an operation that completed
+// there has nothing left to complete either: its sync returns at once, and
+// its content comes when something reads it, downloaded or computed as any
+// read of the result gets it. Any other result evaluates as Evaluate does.
+func (c *Cache) Sync(ctx context.Context, res AnyResult) error {
+	if CompletedElsewhere(res) {
+		return nil
+	}
+	return c.Evaluate(ctx, res)
+}
+
+// CompletedElsewhere reports whether res was merged from another engine's
+// record of an operation that completed there.
+func CompletedElsewhere(res AnyResult) bool {
+	if res == nil {
+		return false
+	}
+	row := res.cacheSharedResult()
+	if row == nil || !row.imported {
+		return false
+	}
+	done, ok := UnwrapAs[OperationCompletedElsewhere](res)
+	return ok && done.OperationCompletedElsewhere()
+}
+
 func (c *Cache) beginEvaluateOne(ctx context.Context, res AnyResult) (cacheOperation, *sharedResult, error) {
 	if c == nil {
 		return cacheOperation{}, nil, errors.New("evaluate: nil cache")
@@ -4862,6 +5095,9 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) (rerr error) {
 		}
 	}()
 
+	// Work read the entry once it asked for it, though the entry may still
+	// be running.
+	c.partReads.record(shared.id, nil)
 	watch := partReselectWatch{loop: "evaluateOne"}
 	for {
 		watch.again(ctx, shared, PersistedPartAddress{})
@@ -4898,6 +5134,9 @@ func (c *Cache) EvaluateParts(ctx context.Context, res AnyResult, parts ...PartK
 		}
 	}()
 
+	// Work read the parts once it asked for them, though they may still be
+	// being made.
+	c.partReads.record(shared.id, parts)
 	watch := partReselectWatch{loop: "EvaluateParts"}
 	for {
 		watch.again(ctx, shared, PersistedPartAddress{})
@@ -5270,8 +5509,10 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		var lazyOp *wcprof.Op
 		if wcprof.Enabled(evalCtx) {
 			// The run of this result's lazy callback; the class ties the cost back
-			// to the call that created the lazy value.
+			// to the call that created the lazy value, and the ident names the
+			// task (an evaluation, or a part's acquisition or install).
 			evalCtx, lazyOp = wcprof.BeginOp(evalCtx, wcprof.OpKindLazy, profCallClass(resultCall), wcprof.OpOpts{
+				Ident:    string(group),
 				ClientID: profClientID(stackCtx),
 			})
 			attempt.profOpID = lazyOp.ID()
@@ -5303,11 +5544,15 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		shared.lazyMu.Unlock()
 
 		if spec != nil {
-			c.egraphMu.Lock()
+			ownCtx, ownStep := BeginStep(evalCtx, "lazy.ownership")
+			wcprof.WriteLock(ownCtx, &c.egraphMu, egraphLockIdent)
 			c.incrementIncomingOwnershipLocked(ctx, shared)
 			c.egraphMu.Unlock()
+			ownStep.End(nil)
 		}
+		_, spawnStep := BeginStep(evalCtx, "lazy.spawn")
 		go func() {
+			spawnStep.End(nil)
 			// Finish the cache operation (including any deferred ReleaseSession
 			// cleanup) before releasing the runtime that owns this work.
 			defer clientScopeLease.Release()
@@ -5327,13 +5572,16 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 			// goroutine and ended on another is safe.
 			partial := false
 			abandoned := false
-			defer c.endPartTaskBody(token, false)
+			defer c.endPartTaskBody(context.WithoutCancel(attemptCtx), token, false)
 			callbackCtx, bodyDone, err := c.runLazyEvalBody(lazyCallbackCtx, shared, lazyEval, token, continuation)
 			if err == nil && spec == nil {
-				err = c.completeNativePartTask(callbackCtx, installationToken)
+				completeCtx, completeStep := BeginStep(callbackCtx, "lazy.completeNative")
+				err = c.completeNativePartTask(completeCtx, installationToken)
+				completeStep.End(err)
 			}
 
-			shared.lazyMu.Lock()
+			retireCtx, retireStep := BeginStep(evalCtx, "lazy.retire")
+			wcprof.Lock(retireCtx, &shared.lazyMu, "dagql.sharedResult.lazyMu")
 			attempt.err = err
 			abandoned = err != nil && lazyEvalErrorCausedByContext(attemptCtx, err)
 			attempt.retry = abandoned
@@ -5377,6 +5625,7 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				partial = lazyPartsEvaluationPartialLocked(shared, res)
 			}
 			shared.lazyMu.Unlock()
+			retireStep.End(nil)
 			logProducerRemovedOutcome(attemptCtx, "lazy evaluation", fmt.Sprintf("%d/%s", shared.id, group), err)
 
 			// End lazySpan after retiring the attempt but before closing done. The
@@ -5390,10 +5639,18 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 				var attrs []attribute.KeyValue
 				var cacheState lazySpanCacheState
 				if lazySpan.IsRecording() {
-					attrs = AppendContentPreferredDigestAttr(lazyCallbackCtx, attrs, frame, res)
-					cacheState = c.lazySpanCacheState(context.WithoutCancel(lazyCallbackCtx), shared, frame)
+					if frame != nil {
+						digestCtx, digestStep := BeginStep(lazyCallbackCtx, "lazy.contentDigest")
+						attrs = AppendContentPreferredDigestAttr(digestCtx, attrs, frame, res)
+						digestStep.End(nil)
+					}
+					stateCtx, stateStep := BeginStep(lazyCallbackCtx, "lazy.cacheState")
+					cacheState = c.lazySpanCacheState(context.WithoutCancel(stateCtx), shared, frame)
+					stateStep.End(nil)
 				}
+				_, endStep := BeginStep(evalCtx, "lazy.endSpan")
 				endOTelLazyOp(lazySpan, attrs, lazyIsResume, shared.id, partial, abandoned, storedPart, cacheState, &err)
+				endStep.End(nil)
 			}
 			if c.testAfterLazyEvalFinish != nil {
 				c.testAfterLazyEvalFinish(attempt)
@@ -5441,7 +5698,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 // error in the attempt is cache-side bookkeeping, which stays retryable), and
 // the first error.
 func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResult, lazyEval func(context.Context) error, token *PartTaskToken, continuation *lazyTaskContinuation) (context.Context, bool, error) {
+	_, leaseStep := BeginStep(callbackCtx, "lazy.operationLease")
 	leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
+	leaseStep.End(leaseErr)
 	if leaseErr != nil {
 		return callbackCtx, false, fmt.Errorf("acquire operation lease: %w", leaseErr)
 	}
@@ -5452,7 +5711,9 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 	if lazyEval != nil {
 		err = lazyEval(callbackCtx)
 	}
-	c.endPartTaskBody(token, err == nil)
+	endCtx, endStep := BeginStep(callbackCtx, "lazy.endBody")
+	c.endPartTaskBody(endCtx, token, err == nil)
+	endStep.End(nil)
 	if continuation != nil && continuation.token.installed.Load() != nil {
 		bodyDone = true
 	}
@@ -5464,16 +5725,23 @@ func (c *Cache) runLazyEvalBody(callbackCtx context.Context, shared *sharedResul
 			// A native group body run through its row's PartHost records
 			// the parts it filled on token; any other body fills the
 			// whole value, which is synced whole.
-			err = c.syncTaskPartLeases(callbackCtx, shared, token)
+			stepCtx, step := BeginStep(callbackCtx, "lazyBody.ownerSync")
+			err = c.syncTaskPartLeases(stepCtx, shared, token)
+			step.End(err)
 		}
 	}
-	if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
+	releaseCtx, releaseStep := BeginStep(context.WithoutCancel(callbackCtx), "lazyBody.releaseOperationLease")
+	releaseErr := release(releaseCtx)
+	releaseStep.End(releaseErr)
+	if releaseErr != nil && err == nil {
 		err = releaseErr
 	}
 	if err == nil && continuation != nil {
 		// Content equivalence requires successful operation-lease cleanup too.
 		// Bookkeeping retries retain the original installation's identity.
-		err = c.teachTaskContentIdentity(callbackCtx, continuation.token)
+		stepCtx, step := BeginStep(callbackCtx, "lazyBody.teachContentIdentity")
+		err = c.teachTaskContentIdentity(stepCtx, continuation.token)
+		step.End(err)
 		if err == nil {
 			continuation.token.settled.Store(true)
 		}
@@ -5500,11 +5768,13 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 			"hasPersistDB", c.pdb != nil,
 		)
 		c.closeRemoteCacheBridge()
+		c.closePartPrefetch()
 		// After the bridge detach, which is what sets closing: an enqueue
 		// either finished its E section before this step, and is dropped
 		// here, or fails admission. Placed before it, an enqueue in between
 		// could strand a counted operation with no worker.
 		c.closeSnapshotSharing()
+		c.partReads.flush()
 		if err := c.waitForQuiescence(ctx); err != nil {
 			slog.Error("dagql cache close failed waiting for quiescence; persistence will remain dirty", "err", err)
 			c.closeErr = errors.Join(c.closeErr, fmt.Errorf("wait for dagql cache quiescence: %w", err))
@@ -5553,6 +5823,7 @@ func (c *Cache) CloseWithShutdownError(ctx context.Context, cause error) error {
 func (c *Cache) CloseDiscardingPersistence() error {
 	c.closeOnce.Do(func() {
 		c.closeRemoteCacheBridge()
+		c.closePartPrefetch()
 		// The discard path is the boot reset, before sharing is enabled:
 		// this closes admission and has nothing to drain.
 		c.closeSnapshotSharing()
@@ -5671,6 +5942,7 @@ func (c *Cache) deleteResultLocked(res *sharedResult) {
 	c.forgetListItemLocked(res)
 	c.resultPayloadBytes -= res.payloadBytes
 	delete(c.resultsByID, res.id)
+	c.partReads.forget(res.id)
 }
 
 // setResultPayloadBytesLocked replaces res's payload size, keeping the
@@ -6028,11 +6300,18 @@ func (c *Cache) GetOrInitCall(
 	if sessionID == "" {
 		return nil, errors.New("get or init call: empty session ID")
 	}
+	scopes := callScopesFrom(ctx)
+	if scopes != nil {
+		scopes.record(req)
+	}
 	op, err := c.beginSessionOperation(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("get or init call: %w", err)
 	}
 	res, callErr := c.getOrInitCall(ctx, sessionID, resolver, req, fn)
+	if callErr == nil {
+		c.recordCallResultExpiry(scopes, req, res)
+	}
 	if op.finish(callErr == nil && res != nil) {
 		return nil, fmt.Errorf("get or init call: %w: %q", ErrCacheSessionReleased, sessionID)
 	}
@@ -6061,6 +6340,14 @@ func (c *Cache) getOrInitCall(
 		ClientID: profClientID(ctx),
 		Start:    ownStart,
 	})
+	// The profile reads why the lookup decided what it did from the decision's
+	// carrier, which a recording span arms; with none, it arms one for this
+	// invocation only, and disarms it after so the span sees what it would
+	// have.
+	armed := req.CacheEvidence == nil
+	if armed {
+		req.CacheEvidence = NewCacheDecision()
+	}
 	if ownSpan.IsValid() {
 		profOp.SetSpan(ownSpan.TraceID(), ownSpan.SpanID())
 	}
@@ -6070,6 +6357,10 @@ func (c *Cache) getOrInitCall(
 		wcprof.MapOTelSpan(ctx, profOp.ID(), sc.TraceID().String(), sc.SpanID().String())
 	}
 	res, err := c.getOrInitCallTakingOver(ctx, sessionID, resolver, req, fn, profOp)
+	profLookupFacts(ctx, profOp, req.CacheEvidence, res)
+	if armed {
+		req.CacheEvidence = nil
+	}
 	outcome := profOp.OutcomeHint()
 	switch {
 	case err != nil:
@@ -6257,6 +6548,9 @@ func (c *Cache) getOrInitCallInner(
 		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
 		return hitRes, nil
 	}
+	if lookup := c.noteRemoteMiss(req, callDigest, requestSelf, requestInputs); ev != nil {
+		ev.MissRemoteLookup = lookup
+	}
 
 	c.callsMu.Lock()
 	if c.ongoingCalls == nil {
@@ -6265,11 +6559,20 @@ func (c *Cache) getOrInitCallInner(
 
 	if req.ConcurrencyKey != "" {
 		if oc := c.ongoingCalls[callConcKeys]; oc != nil {
+			// The context's ancestry above catches a call that waits on
+			// itself through its own work. Calls started apart can reach each
+			// other too, each through the other's work: joining oc, whose work
+			// waits on this call's, would leave both waiting forever.
+			if waiter, _ := ctx.Value(ongoingCallContextKey{}).(*ongoingCall); waiter != nil && oc.waitsOnLocked(waiter) {
+				c.callsMu.Unlock()
+				return nil, ErrCacheRecursiveCall
+			}
 			if req.IsPersistable {
 				oc.isPersistable.Store(true)
 			}
 			// already an ongoing call
 			oc.waiters++
+			addWaitLocked(ctx, oc)
 			c.callsMu.Unlock()
 			if ev != nil {
 				// This invocation's own decision: it deduplicated into the
@@ -6336,6 +6639,9 @@ func (c *Cache) getOrInitCallInner(
 	}
 	decline := &persistDecline{}
 	sharedWorkCtx = context.WithValue(sharedWorkCtx, persistDeclineKey{}, decline)
+	expiry := &expiryLimit{}
+	sharedWorkCtx = context.WithValue(sharedWorkCtx, expiryLimitKey{}, expiry)
+	sharedWorkCtx = withoutCallScopes(sharedWorkCtx)
 	oc := &ongoingCall{
 		callConcurrencyKeys:     callConcKeys,
 		ttlSeconds:              req.TTL,
@@ -6345,6 +6651,7 @@ func (c *Cache) getOrInitCallInner(
 		clientScopeLease:        clientScopeLease,
 		sharedWorkCtx:           sharedWorkCtx,
 		persistDecline:          decline,
+		expiryLimit:             expiry,
 		releaseOperationLeaseFn: releaseOperationLease,
 		profOpID:                execOp.ID(),
 		// snapshot the target's skip decision for the OTel wait condition (oc.res is not
@@ -6353,6 +6660,8 @@ func (c *Cache) getOrInitCallInner(
 		// joiner must not emit a wait into it. Native is unaffected (full detail).
 		profSkip: req.ResultCall.ProfileSkip,
 	}
+	oc.sharedWorkCtx = context.WithValue(oc.sharedWorkCtx, ongoingCallContextKey{}, oc)
+	addWaitLocked(ctx, oc)
 	if req.IsPersistable {
 		oc.isPersistable.Store(true)
 	}
@@ -6540,6 +6849,7 @@ func (c *Cache) wait(
 	req *CallRequest,
 	joined bool,
 ) (AnyResult, error) {
+	defer c.removeWait(ctx, oc)
 	var (
 		completionErr error
 		canceledErr   error
@@ -6642,6 +6952,7 @@ func (c *Cache) wait(
 		var pubSpan trace.Span
 		if oc.execSpanCtx.IsValid() {
 			pubSpan = beginOTelPublishResult(context.WithoutCancel(oc.sharedWorkCtx))
+			oc.pubSpan = pubSpan
 			RecordOpSpan(pubOp, pubSpan)
 		}
 		pubCtx := context.WithoutCancel(oc.sharedWorkCtx)
@@ -6659,6 +6970,7 @@ func (c *Cache) wait(
 			pubOp.EndWithResult(profErrOutcome(oc.initCompletedResultErr), resID)
 		}
 		EndProfSpan(pubSpan, &oc.initCompletedResultErr)
+		oc.pubSpan = nil
 		c.callsMu.Lock()
 		oc.needsPersistedEdge = oc.initCompletedResultErr == nil &&
 			oc.res != nil &&
@@ -6704,6 +7016,9 @@ func (c *Cache) wait(
 		// The last waiter creates the edge, possibly after this call's span
 		// ends; until then the span reports it as the publication's.
 		ev.pendingEdge = oc.pendingEdge
+		ev.Adopted = oc.adopted
+		ev.AdoptedRemote = oc.adoptedRemote
+		ev.AdoptedMergedAtUnixNano = oc.adoptedMergedAt
 	}
 
 	retRes := Result[Typed]{
@@ -6814,7 +7129,7 @@ func (c *Cache) rollbackPartialPublicationLocked(ctx context.Context, res *share
 func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, oc *ongoingCall, req *CallRequest, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()
-	oc.persistedEdgeExpiresAtUnix = candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds)
+	oc.persistedEdgeExpiresAtUnix = oc.candidateExpiryUnix(now.Unix())
 	var (
 		resultTermSelf   digest.Digest
 		resultTermInputs []digest.Digest
@@ -6832,6 +7147,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if oc.res.attachDepsWaitCh != nil {
 			oc.res.attachDepsErr = err
 			close(oc.res.attachDepsWaitCh)
+			oc.res.attachHolder = nil
 		}
 		oc.res.attachDepsMu.Unlock()
 	}
@@ -7100,7 +7416,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// indexed under the recipe of its stored frame, unless that recipe
 	// already has a current entry: then it adopts a live one (D1), waits for
 	// one still attaching, replaces an expired one that nothing uses in place,
-	// or retires an expired one that something uses (D9). An entry known only
+	// or retires an expired one that something uses (D9). An entry with a
+	// part that a demand found no source for (servableLocked) is taken as an
+	// expired one: the new value is what makes that part. An entry known only
 	// through holdings has no value to adopt: the new value is stored into
 	// it, as merge stores a record.
 	var (
@@ -7124,7 +7442,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		// an attachment, and the new value's expiries count from the
 		// decision.
 		now = time.Now()
-		oc.persistedEdgeExpiresAtUnix = candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds)
+		oc.persistedEdgeExpiresAtUnix = oc.candidateExpiryUnix(now.Unix())
 		cur := c.currentEntryForRecipeLocked(recipeDigest)
 		if req.ListItem {
 			// A list item read adopts only the item its list recorded for
@@ -7141,26 +7459,29 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if cur == nil {
 			break
 		}
-		if !cur.noValueLocked() && !c.resultExpiredAtLocked(cur, now.Unix()) {
+		if !cur.noValueLocked() && !c.resultExpiredAtLocked(cur, now.Unix()) && servableLocked(cur) {
 			if cur.attachmentState() == resultAttachmentOpen {
 				cur.attachDepsMu.Lock()
-				waitCh := cur.attachDepsWaitCh
+				waitCh, holder := cur.attachDepsWaitCh, cur.attachHolder
 				cur.attachDepsMu.Unlock()
 				var released <-chan struct{}
 				if state := c.sessionLifecycle(sessionID); state != nil {
 					released = state.released
 				}
 				c.egraphMu.Unlock()
+				wait := beginAttachWait(ctx, oc.pubSpan, waitCh, holder)
 				if c.testPublicationWaitsOnAttachment != nil {
 					c.testPublicationWaitsOnAttachment(cur)
 				}
 				select {
 				case <-waitCh:
+					wait.end(ctx)
 					wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 					continue
 				case <-released:
 				case <-ctx.Done():
 				}
+				wait.end(ctx)
 				// This publication's session was released, or its caller left,
 				// while another session's attachment is open. Waiting on would
 				// hold the session's release open for as long as that
@@ -7204,6 +7525,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			}
 			resWasCacheBacked = true
 			adoptedCurrent = true
+			oc.adopted = true
+			oc.adoptedRemote = cur.imported
+			oc.adoptedMergedAt = cur.mergedAtUnixNano
 			break
 		}
 		// A declined value doesn't take over the entry's retention edge, as
@@ -7227,7 +7551,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	// - 0 only remains when all writers are 0.
 	oc.res.expiresAtUnix = mergeSharedResultExpiryUnix(
 		oc.res.expiresAtUnix,
-		candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds),
+		oc.candidateExpiryUnix(now.Unix()),
 	)
 	notify, notifyOwner := c.beginShareNotificationsLocked()
 	resultCall := oc.res.loadResultCall()
@@ -7345,6 +7669,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.attachDepsMu.Lock()
 		oc.res.attachDepsWaitCh = make(chan struct{})
 		oc.res.attachDepsErr = nil
+		oc.res.attachHolder = newAttachHolder(wcprof.CurrentOpID(ctx), oc.pubSpan)
 		oc.res.attachDepsMu.Unlock()
 	}
 	// The first E unlock of this publication, after direct-edge validation,
@@ -7574,6 +7899,12 @@ func sortedResultIDs(ids map[sharedResultID]struct{}) []uint64 {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// candidateExpiryUnix is the expiry the call's result gets from its TTL and
+// its resolver's ExpireBy.
+func (oc *ongoingCall) candidateExpiryUnix(nowUnix int64) int64 {
+	return mergeSharedResultExpiryUnix(candidateSharedResultExpiryUnix(nowUnix, oc.ttlSeconds), oc.expiryLimit.load())
 }
 
 func candidateSharedResultExpiryUnix(nowUnix, ttlSeconds int64) int64 {

@@ -349,3 +349,40 @@ func TestSharedMountFailure(t *testing.T) {
 	require.NoError(t, ref.Release(ctx))
 	require.NoError(t, store.Manager.RemoveLease(ctx, owner))
 }
+
+// A snapshot's topmost layer is known once it has been mounted, and stays known
+// after the mount is released, the point of keeping it.
+func TestSharedMountTopLayerOutlivesTheMount(t *testing.T) {
+	t.Parallel()
+	store := testutil.NewStore(t)
+	ref, _ := store.Build(t, nil, "a.txt", "a")
+	shared := ref.(bkcache.SharedMounter)
+	_, ok := shared.SharedMountTopLayer()
+	require.False(t, ok, "not mounted yet")
+	root, release := mountShared(t, ref)
+	dir, ok := shared.SharedMountTopLayer()
+	require.True(t, ok)
+	require.Equal(t, root, dir, "a native view's one directory")
+	release()
+	require.NoError(t, mountReleaser(t, store).ReleaseIdleSharedMounts())
+	dir, ok = shared.SharedMountTopLayer()
+	require.True(t, ok)
+	require.Equal(t, root, dir)
+}
+
+// At the bound, the oldest snapshot's layer is forgotten and no other.
+func TestSharedMountTopLayerBound(t *testing.T) {
+	t.Parallel()
+	store := testutil.NewStore(t)
+	store.WithSharedMounts(t, time.Hour, 2)
+	refs := make([]bkcache.ImmutableRef, 3)
+	for i := range refs {
+		refs[i], _ = store.Build(t, nil, "a.txt", strconv.Itoa(i))
+		_, release := mountShared(t, refs[i])
+		release()
+	}
+	for i, want := range []bool{false, true, true} {
+		_, ok := refs[i].(bkcache.SharedMounter).SharedMountTopLayer()
+		require.Equal(t, want, ok, "snapshot %d", i)
+	}
+}

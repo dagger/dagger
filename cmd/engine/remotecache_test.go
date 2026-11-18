@@ -39,9 +39,18 @@ func TestRemoteCacheSettings(t *testing.T) {
 				return
 			}
 			require.True(t, on)
-			require.Equal(t, remotecache.Config{URL: tc.url, Token: tc.token, EngineVersion: engine.Version, EngineName: engineName}, settings)
+			require.Equal(t, remotecache.Config{URL: tc.url, Token: tc.token, EngineVersion: engine.Version, EngineName: engineName, Lookups: true}, settings)
 		})
 	}
+}
+
+// An engine always asks lookups.
+func TestRemoteCacheLookupsAsked(t *testing.T) {
+	t.Setenv(envRemoteCacheURL, "https://env.example")
+	t.Setenv("DAGGER_CLOUD_TOKEN", "engine-token")
+	settings, on := remoteCacheSettings(config.Config{})
+	require.True(t, on)
+	require.True(t, settings.Lookups)
 }
 
 // Turning the remote cache on turns the engine's cache events on too; when

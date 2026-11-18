@@ -48,32 +48,20 @@ type BrowserOpener interface {
 	OpenBrowser(url string) error
 }
 
-// providerSummary returns a short description of an already-configured provider.
+// providerSummary describes a saved connection without exposing credentials,
+// secret references, or endpoint URLs (which may themselves contain secrets).
 func providerSummary(p Provider) string {
 	if p.IsOAuth() {
 		label := SubscriptionLabel(p.SubscriptionType)
 		if label == "" {
-			label = "OAuth"
+			label = "Subscription"
 		}
 		return label
 	}
 	if p.APICompat != "" && p.BaseURL != "" {
-		return p.BaseURL
+		return "Custom endpoint connected"
 	}
-	return RedactKey(p.APIKey)
-}
-
-// RedactKey returns a redacted version of an API key for display.
-// Secret references (e.g. op://, env://) are shown in full; only
-// literal tokens are truncated.
-func RedactKey(key string) string {
-	if strings.Contains(key, "://") {
-		return key
-	}
-	if len(key) <= 8 {
-		return "***"
-	}
-	return key[:4] + "…" + key[len(key)-4:]
+	return "API key connected"
 }
 
 // InteractiveSetup guides user through LLM configuration.
@@ -110,8 +98,8 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 			huh.NewSelect[string]().
 				Height(8).
 				Filtering(true).
-				Title("Configure an LLM provider").
-				Description("Select a provider to add or reconfigure. You can run setup again to add more.").
+				Title("Connect an AI provider").
+				Description("Choose a provider to connect or update. Checkmarks show saved connections. Use /logout to disconnect.").
 				Options(opts...).
 				Value(&providerChoice),
 		),
@@ -233,40 +221,6 @@ func setupAPIKeyProvider(ctx context.Context, ph PromptHandler, provider string)
 	}
 
 	return providerCfg, selectedModel, nil
-}
-
-// AutoSetupIfNeeded checks if config exists and prompts user to set up if not
-// Returns true if setup was completed, false if skipped or already configured
-func AutoSetupIfNeeded(ctx context.Context, promptHandler PromptHandler, interactive bool) (bool, error) {
-	if LLMConfigured() {
-		return false, nil // Already configured
-	}
-
-	// Check if we're in an interactive terminal
-	// (In non-interactive mode, just fail with helpful error)
-	if !interactive {
-		return false, nil
-	}
-
-	// Prompt to run setup
-	var runSetup bool
-	form := huh.NewForm(
-		huh.NewGroup(
-			idtui.NewExplicitConfirm("Yes", "No", &runSetup).
-				Title("No LLM configuration found").
-				Description("Would you like to configure it now?"),
-		),
-	)
-
-	if err := checkAbort(promptHandler.HandleForm(ctx, form)); err != nil {
-		return false, err
-	}
-
-	if !runSetup {
-		return false, nil
-	}
-
-	return InteractiveSetup(ctx, promptHandler)
 }
 
 // promptOp walks the user through selecting a 1Password secret via the op CLI.

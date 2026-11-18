@@ -311,8 +311,6 @@ var persistedFileLazyVisitors = map[string]persistedLazyVisitor{
 // recipe payload keyed by the recorded call field, mirroring
 // decodePersistedContainerRecipe.
 var persistedContainerRecipeVisitors = map[string]persistedLazyVisitor{
-	"_builtinContainer": persistedLazyStructVisitor(func(p *persistedContainerBuiltinLazy, _ *persistedRefWalker) error { return p.validate() }),
-
 	"withEntrypoint":            parentOnly(func(p *persistedContainerWithEntrypointLazy) *uint64 { return &p.ParentResultID }),
 	"withoutEntrypoint":         parentOnly(func(p *persistedContainerWithoutEntrypointLazy) *uint64 { return &p.ParentResultID }),
 	"withDefaultArgs":           parentOnly(func(p *persistedContainerWithDefaultArgsLazy) *uint64 { return &p.ParentResultID }),
@@ -335,15 +333,19 @@ var persistedContainerRecipeVisitors = map[string]persistedLazyVisitor{
 	"withGPU":                   parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
 	"experimentalWithGPU":       parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
 	"experimentalWithAllGPUs":   parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
-	"withAnnotation":            parentOnly(func(p *persistedContainerWithAnnotationLazy) *uint64 { return &p.ParentResultID }),
-	"withoutAnnotation":         parentOnly(func(p *persistedContainerWithoutAnnotationLazy) *uint64 { return &p.ParentResultID }),
-	"withSecretVariable":        parentAndSource("secretResultID", func(p *persistedContainerWithSecretVariableLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithSecretVariableLazy) *uint64 { return &p.SecretResultID }),
-	"withoutSecretVariable":     parentOnly(func(p *persistedContainerWithoutSecretVariableLazy) *uint64 { return &p.ParentResultID }),
-	"withServiceBinding":        parentAndSource("serviceResultID", func(p *persistedContainerWithServiceBindingLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithServiceBindingLazy) *uint64 { return &p.ServiceResultID }),
-	"withExposedPort":           parentOnly(func(p *persistedContainerWithExposedPortLazy) *uint64 { return &p.ParentResultID }),
-	"withoutExposedPort":        parentOnly(func(p *persistedContainerWithoutExposedPortLazy) *uint64 { return &p.ParentResultID }),
-	"withDefaultTerminalCmd":    parentOnly(func(p *persistedContainerWithDefaultTerminalCmdLazy) *uint64 { return &p.ParentResultID }),
-	"withShell":                 parentOnly(func(p *persistedContainerWithDefaultTerminalCmdLazy) *uint64 { return &p.ParentResultID }),
+	// The GPU fields' names from engine.IdentifierCasingVersion on.
+	"withGpu":                 parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
+	"experimentalWithGpu":     parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
+	"experimentalWithAllGpus": parentOnly(func(p *persistedContainerSetGPUsLazy) *uint64 { return &p.ParentResultID }),
+	"withAnnotation":          parentOnly(func(p *persistedContainerWithAnnotationLazy) *uint64 { return &p.ParentResultID }),
+	"withoutAnnotation":       parentOnly(func(p *persistedContainerWithoutAnnotationLazy) *uint64 { return &p.ParentResultID }),
+	"withSecretVariable":      parentAndSource("secretResultID", func(p *persistedContainerWithSecretVariableLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithSecretVariableLazy) *uint64 { return &p.SecretResultID }),
+	"withoutSecretVariable":   parentOnly(func(p *persistedContainerWithoutSecretVariableLazy) *uint64 { return &p.ParentResultID }),
+	"withServiceBinding":      parentAndSource("serviceResultID", func(p *persistedContainerWithServiceBindingLazy) *uint64 { return &p.ParentResultID }, func(p *persistedContainerWithServiceBindingLazy) *uint64 { return &p.ServiceResultID }),
+	"withExposedPort":         parentOnly(func(p *persistedContainerWithExposedPortLazy) *uint64 { return &p.ParentResultID }),
+	"withoutExposedPort":      parentOnly(func(p *persistedContainerWithoutExposedPortLazy) *uint64 { return &p.ParentResultID }),
+	"withDefaultTerminalCmd":  parentOnly(func(p *persistedContainerWithDefaultTerminalCmdLazy) *uint64 { return &p.ParentResultID }),
+	"withShell":               parentOnly(func(p *persistedContainerWithDefaultTerminalCmdLazy) *uint64 { return &p.ParentResultID }),
 	"from": persistedLazyStructVisitor(func(p *persistedContainerFromLazy, w *persistedRefWalker) error {
 		if err := w.child("parentResultID", &p.ParentResultID); err != nil {
 			return err
@@ -570,6 +572,9 @@ var persistedModuleVisitor = persistedStructVisitor("", func(p *persistedModuleP
 	if err := w.children("depModuleResultIDs", p.DepModuleResultIDs); err != nil {
 		return err
 	}
+	if err := w.children("entrypointDepModuleResultIDs", p.EntrypointDepModuleResultIDs); err != nil {
+		return err
+	}
 	if err := w.children("objectDefResultIDs", p.ObjectDefResultIDs); err != nil {
 		return err
 	}
@@ -612,6 +617,9 @@ func visitPersistedWorkspaceSourceRefs(w *persistedRefWalker, src *persistedWork
 		return err
 	}
 	if err := w.child("gitRefResultID", &src.GitRefResultID); err != nil {
+		return err
+	}
+	if err := w.child("sparseResultID", &src.SparseResultID); err != nil {
 		return err
 	}
 	if err := w.child("changesID", &src.ChangesID); err != nil {

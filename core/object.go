@@ -148,6 +148,23 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
 		}
 		return t.objectToSDKInput(ctx, parentCall, x.Self())
+	case dagql.AnyResult:
+		// Nullable wrapping can erase the ObjectResult wrapper while keeping
+		// its shared result and call frame. Restore the selectable view before
+		// attaching or scoping it; an inline result does not have an ID yet.
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		selectable, err := srv.ToSelectable(ctx, x)
+		if err != nil {
+			return nil, fmt.Errorf("module object SDK input: %w", err)
+		}
+		obj, ok := selectable.(dagql.ObjectResult[*ModuleObject])
+		if !ok {
+			return nil, fmt.Errorf("unexpected module object result type %T", selectable)
+		}
+		return t.ConvertToSDKInput(ctx, obj)
 	case *ModuleObject:
 		return t.objectToSDKInput(ctx, dagql.CurrentCall(ctx), x)
 	case dagql.IDable:
@@ -1417,7 +1434,11 @@ func (obj *ModuleObject) isMainObject() bool {
 	if src := obj.Module.Self().GetSource(); src != nil && src.Entrypoint != nil {
 		return obj.TypeDef.Constructor.Valid
 	}
-	return gqlObjectName(obj.TypeDef.OriginalName) == gqlObjectName(obj.Module.Self().OriginalName)
+	// The main object is the one the module's name designates, by the
+	// module's rules (see Module.MainObject): an SDK may spell it otherwise
+	// around digits and acronyms (K8STools for module k8s-tools).
+	main, ok := obj.Module.Self().MainObject()
+	return ok && main.OriginalName == obj.TypeDef.OriginalName
 }
 
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
@@ -1438,7 +1459,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			desc = formatGqlDescription(mod.Description)
 		}
 		spec := dagql.FieldSpec{
-			Name:             gqlFieldName(mod.Name()),
+			Name:             mod.ConstructorName(),
 			Description:      desc,
 			Type:             obj,
 			Module:           moduleID,
@@ -1487,7 +1508,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	if err != nil {
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
-	spec.Name = gqlFieldName(mod.Name())
+	spec.Name = mod.ConstructorName()
 	if spec.Description == "" {
 		spec.Description = formatGqlDescription(objDef.Description)
 	}
@@ -1527,7 +1548,7 @@ func (obj *ModuleObject) installMainMethods(ctx context.Context, dag *dagql.Serv
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for workspace main object %q: %w", obj.TypeDef.Name, err)
 	}
-	constructorName := gqlFieldName(obj.Module.Self().Name())
+	constructorName := obj.Module.Self().ConstructorName()
 
 	// Build constructor arg specs from the module's type definition
 	// rather than looking them up from the server — the constructor
@@ -1750,7 +1771,6 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 		projectionSpec := *field.Spec
 		projectionSpec.Type = fun.ReturnType.Self().ToTyped()
 		projectionSpec.ViewFilter = AfterVersion("v1.0.0-0")
-		projectionSpec.IsPersistable = false
 		// The projection keeps the function's cache inputs: a check that
 		// must run fresh gets a new Check object, and every read of one
 		// object shares its run.
@@ -1759,6 +1779,12 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) ([]da
 			Spec: &projectionSpec,
 			Func: func(ctx context.Context, receiver dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, _ call.View) (dagql.AnyResult, error) {
 				workspace, _ := WorkspaceFromContext(ctx)
+				// A check is planned again in a later session unless its
+				// workspace is identified by its content and its function is
+				// cached across sessions.
+				if workspace.Self() == nil || !workspace.Self().HasContentIdentity() || dagql.CurrentCall(ctx).SessionBound() {
+					dagql.DeclinePersistence(ctx)
+				}
 				var inputs []CallInput
 				for name, value := range args {
 					inputs = append(inputs, CallInput{Name: name, Value: value})

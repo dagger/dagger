@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,11 +15,13 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/archive"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	cloud "github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/internal/tracesource"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
@@ -26,24 +29,31 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
-// traceViewOptions are the flags of 'dagger cloud traces view' and of its
-// hidden aliases, 'dagger trace' and 'dagger cloud logs'.
+// traceViewOptions are the flags of 'dagger cloud traces view', of its hidden
+// alias 'dagger cloud logs', and of 'dagger trace'.
 type traceViewOptions struct {
 	sel     spanSelector
 	last    bool
 	log     bool
 	output  string
 	timeout time.Duration
+	// engine reads a trace the engine still retains before falling back to
+	// Dagger Cloud. Only 'dagger trace' sets it: the 'dagger cloud' commands
+	// read Cloud alone and never connect to an engine.
+	engine bool
 }
 
-var cloudTracesViewCmd = newTraceViewCmd("view [trace]", false)
+var cloudTracesViewCmd = newTraceViewCmd("view [trace]", false, false)
 
-// traceCmd is a hidden alias for 'dagger cloud traces view'.
+// traceCmd views a trace like 'dagger cloud traces view', but reads a trace
+// the engine still retains from its local archive before falling back to
+// Dagger Cloud.
 var traceCmd = func() *cobra.Command {
-	cmd := newTraceViewCmd("trace [trace]", false)
+	cmd := newTraceViewCmd("trace [trace]", false, true)
 	cmd.Hidden = true
 	cmd.Aliases = []string{"t", "analyze", "diagnose"}
 	return cmd
@@ -51,7 +61,7 @@ var traceCmd = func() *cobra.Command {
 
 // cloudLogsCmd is a hidden alias for 'dagger cloud traces view --log'.
 var cloudLogsCmd = func() *cobra.Command {
-	cmd := newTraceViewCmd("logs [trace]", true)
+	cmd := newTraceViewCmd("logs [trace]", true, false)
 	cmd.Hidden = true
 	return cmd
 }()
@@ -61,19 +71,29 @@ func init() {
 }
 
 // newTraceViewCmd makes a 'view' command. With log set, the command always
-// shows logs, for the 'dagger cloud logs' alias.
-func newTraceViewCmd(use string, log bool) *cobra.Command {
-	o := &traceViewOptions{log: log}
+// shows logs, for the 'dagger cloud logs' alias. With engine set, it reads the
+// engine's retained archive before Dagger Cloud, for 'dagger trace'.
+func newTraceViewCmd(use string, log, engine bool) *cobra.Command {
+	o := &traceViewOptions{log: log, engine: engine}
+	short := "View a Dagger Cloud trace"
+	what := `View a Dagger Cloud trace: the overall result, the commands that caused a
+failure, check results and failed tests, each with the end of its logs, and the
+full call tree with arguments and timing.`
+	if engine {
+		short = "View a trace from the engine or Dagger Cloud"
+		what = `View a trace: the overall result, the commands that caused a failure, check
+results and failed tests, each with the end of its logs, and the full call tree
+with arguments and timing. A trace the engine still retains is read from its
+local archive; otherwise it is fetched from Dagger Cloud.`
+	}
 	cmd := &cobra.Command{
 		Use:  use,
 		Args: cobra.MaximumNArgs(1),
 		Annotations: map[string]string{
 			showFinalProgressKey: "true",
 		},
-		Short: "View a Dagger Cloud trace",
-		Long: `View a Dagger Cloud trace: the overall result, the commands that caused a
-failure, check results and failed tests, each with the end of its logs, and the
-full call tree with arguments and timing.
+		Short: short,
+		Long: what + `
 
 The trace is a trace ID or a https://dagger.cloud/<org>/traces/<id> URL. Use
 --last for your most recent trace.
@@ -214,17 +234,20 @@ func traceWebOrg(orgName string) (string, error) {
 	return "", fmt.Errorf("no org specified; use --org or run 'dagger login <org>'")
 }
 
-// traceRun streams a trace out of Cloud's binary OTLP endpoints
-// (internal/cloud/otlp.go) into the frontend's own exporters -- the transport
-// `dagger agent -r` restores a session through -- and zooms the view to
-// any --span/--check/--test selection. With --log in a live frontend, it also
-// opens the selected span's full logs in the pager.
+// traceRun selects a source before importing any records -- Dagger Cloud's
+// binary OTLP endpoints (internal/cloud/otlp.go), or for 'dagger trace' the
+// engine's retained archive first, else Cloud -- then drives the same
+// incremental loader for either into the frontend's own exporters, and zooms
+// the view to any --span/--check/--test selection. With --log in a live
+// frontend, it also opens the selected span's full logs in the pager. The
+// source and any engine connection live until the frontend exits, including
+// interactive (-E) reads.
 //
-// Those endpoints are addressed by trace ID and token alone, which is what
-// lets this command run without an org. They take the same selection the
-// Cloud web UI's subscriptions do, so loading stays incremental: the priority
-// spans first, a span's children when it's expanded, a span's logs when they're
-// shown.
+// Cloud's endpoints are addressed by trace ID and token alone, which is what
+// lets this command run without an org. Both sources take the same selection
+// the Cloud web UI's subscriptions do, so loading stays incremental: the
+// priority spans first, a span's children when it's expanded, a span's logs
+// when they're shown.
 func traceRun(cmd *cobra.Command, traceID string, sel spanSelector, o *traceViewOptions) error {
 	// The trace capabilities (lazy loading, zooming, surfaced-failure
 	// prefetch) are one optional interface; tf is nil for the plain/dots/logs
@@ -235,172 +258,22 @@ func traceRun(cmd *cobra.Command, traceID string, sel spanSelector, o *traceView
 	// run closure executes on the frontend's goroutine, which a force-quit
 	// abandons without joining, so a plain shared variable would race.
 	var statsClient atomic.Pointer[cloud.OTLPClient]
+	// heldCleanup closes the trace source once the frontend itself exits,
+	// not when the run returns: an interactive frontend (the TUI, or the HTTP
+	// console) keeps browsing the trace after the initial load, and every
+	// later expand or zoom reads through the source and its engine
+	// connection. Atomic for the same reason as statsClient.
+	var heldCleanup atomic.Pointer[cleanups.CleanupF]
 	runErr := Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
-		noop := func() error { return nil }
-
-		cloudAuth, err := auth.GetCloudAuth(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("cloud auth: %w", err)
+		cleanup, err := traceRunSource(ctx, tf, traceID, sel, o, &statsClient)
+		if cleanup != nil {
+			heldCleanup.Store(&cleanup)
 		}
-		client, err := cloud.NewOTLPClient(ctx, cloudAuth)
-		if err != nil {
-			return nil, fmt.Errorf("cloud client: %w", err)
-		}
-		statsClient.Store(client)
-
-		// Let the frontend point surfaced failure logs at 'dagger cloud
-		// traces view <trace> --log' for the full, untruncated output.
-		if tf != nil {
-			tf.SetTraceID(traceID)
-		}
-
-		// Fetch the trace's source commit / CI change so the report can
-		// suggest commit-scoped re-run commands. Runs beside the fetch; only
-		// the final report reads the result, and the pre-report drain below
-		// orders it.
-		var logFg fetchGroup
-		logFg.Go(func() error {
-			setTraceCIContext(ctx, tf, cloudAuth, traceID)
-			return nil
-		})
-
-		// Fetch spans incrementally, mirroring the Cloud web UI: stream the
-		// priority (root) spans first, then fetch a span's children on demand
-		// when the user expands it, and its logs when they're shown. The
-		// loader uses the outer ctx so lazy fetches keep working while the
-		// TUI is interactive (-E).
-		//
-		// ...unless the whole tree is going to be shown and expanded anyway
-		// (--debug, --expand, or a verbosity that expands completed spans), or
-		// the frontend can't expand lazily at all (plain/dots/logs): then
-		// fetch the entire trace up front. Incremental loading only pays off
-		// when most of the tree stays collapsed; once everything expands it
-		// just leaves spans unfetched (report mode renders once, with no lazy
-		// expand) or costs a round-trip per expand. This mirrors IsExpanded's
-		// own always-expand gate (dagql/dagui/types.go).
-		full := tf == nil || opts.Debug || opts.ExpandCompleted ||
-			opts.Verbosity >= dagui.ExpandCompletedVerbosity
-		loader := newTraceLoader(ctx, client, traceID)
-
-		if full {
-			if err := client.FetchTrace(ctx, traceID, loader.sink()); err != nil {
-				return noop, fmt.Errorf("fetch trace %s: %w", traceID, err)
-			}
-		} else {
-			tf.SetLogProvider(func(id dagui.SpanID, descendants bool) {
-				loader.fetchLogs(&logFg, id, descendants)
-			})
-			tf.SetSpanProvider(loader.listen)
-
-			// Initial load: the trace's priority spans. For a small enough
-			// trace the server returns the whole thing here; for a large one
-			// it returns just the priority set and marks it partial, leaving
-			// deeper spans to be fetched lazily on expand (or by --span
-			// below).
-			if err := loader.loadInitial(ctx); err != nil {
-				return noop, fmt.Errorf("stream trace: %w", err)
-			}
-		}
-
-		// --span/--check/--test: fetch the target span's subtree and zoom the
-		// view to it, mirroring the web UI's ?span= deep link. --check/--test
-		// resolve a name against the spans loaded so far -- checks and tests
-		// are priority spans, so they're present without the whole trace.
-		var target dagui.SpanID
-		var descendants bool
-		if tf != nil && sel.isSet() {
-			var err error
-			target, descendants, err = resolveTraceTarget(tf, sel, traceID)
-			if err != nil {
-				return noop, err
-			}
-			loader.listen(target)
-			// Request the zoom target's logs with the resolved roll-up
-			// decision BEFORE zooming: setExpanded's lazy request would
-			// otherwise latch a descendants=false fetch for a passing/non-leaf
-			// test (losing the rolled-up subtree logs the zoomed report
-			// renders), or skip a not-yet-loaded --span target entirely, with
-			// no later request in report mode.
-			tf.RequestZoomLogs(target, descendants)
-			tf.ZoomToSpan(target)
-		}
-
-		// --log (runTraceView only asks for it with a live frontend): page the
-		// selected span's full logs, or the whole trace's.
-		if o.log {
-			if !target.IsValid() {
-				root, _, err := sel.resolveSpan(ctx, client, traceID)
-				if err != nil {
-					return noop, err
-				}
-				if target, err = parseSpanID(root); err != nil {
-					return noop, err
-				}
-				descendants = true
-			}
-			w := tf.OpenLogStream(target, sel.title(traceID))
-			go func() {
-				_, err := streamTraceLogText(ctx, client, traceID, target.String(), descendants, func(body string) error {
-					_, err := io.WriteString(w, body)
-					return err
-				})
-				if err != nil && ctx.Err() == nil {
-					fmt.Fprintf(w, "\nError: cannot stream the logs: %v\n", err)
-				}
-			}()
-		}
-
-		// Fetch the subtrees of surfaced failed checks so their cause and
-		// logs are loaded for the report's inline detail. A failed check's
-		// cause is often a deep descendant the priority window doesn't
-		// include (e.g. the withExec a check links to), so neither the
-		// initial load nor the link CTE reaches it. Bounded to the failed
-		// leaf checks -- unlike the web UI, which keeps fetching until the
-		// whole trace is loaded.
-		if tf != nil {
-			loader.listenAll(tf.SurfacedFailedCheckSpans())
-		}
-
-		// Drain the span fetches (--span + failed-check subtrees) before
-		// surfacing logs, so the newly-loaded cause spans are present when
-		// the frontend picks its failures and requests their logs. A failed
-		// backfill fails the command rather than rendering a silently
-		// incomplete report.
-		if err := loader.wait(); err != nil {
-			return noop, fmt.Errorf("stream trace: %w", err)
-		}
-
-		// Now that the priority spans (and surfaced failures' subtrees) are
-		// loaded, ask the frontend to surface its failures and request their
-		// logs. This matters most for non-interactive 'report' mode, which
-		// renders only once: we trigger the requests here, then drain them
-		// below, so the single final render includes the failure detail.
-		if tf != nil {
-			tf.RequestSurfacedLogs()
-		}
-
-		// Drain the eager log fetches, so the final report isn't missing
-		// detail it surfaced -- a failed fetch fails the command instead of
-		// exiting 0 with the detail quietly absent. In interactive (-E) mode
-		// further expands keep fetching on the outer ctx after this returns.
-		if err := logFg.Wait(); err != nil {
-			return noop, fmt.Errorf("stream trace: %w", err)
-		}
-
-		// Let the console block on in-flight lazy fetches so a single HTTP
-		// request reflects a zoom/expand's results instead of returning
-		// before the network round-trip lands. Errors are ignored here:
-		// lazy-expand failures already warn, and only the pre-report drains
-		// above turn them into a command failure.
-		if tf != nil {
-			tf.SetFetchWaiter(func() {
-				_ = loader.wait()
-				_ = logFg.Wait()
-			})
-		}
-
-		return noop, nil
+		return nil, err
 	})
+	if cleanup := heldCleanup.Load(); cleanup != nil {
+		runErr = errors.Join(runErr, (*cleanup)())
+	}
 
 	// With --debug, report how much data the run pulled from Cloud so expensive
 	// fetches are visible.
@@ -410,6 +283,220 @@ func traceRun(cmd *cobra.Command, traceID string, sel spanSelector, o *traceView
 		}
 	}
 	return runErr
+}
+
+// traceRunSource is traceRun's work within the frontend's run. Its cleanup
+// closes the selected source.
+func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string, sel spanSelector, o *traceViewOptions, statsClient *atomic.Pointer[cloud.OTLPClient]) (cleanups.CleanupF, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	var cloudAuth *auth.Cloud
+	source, closeSource, err := openTraceSource(ctx, o.engine,
+		func(ctx context.Context) (tracesource.Source, func() error, error) {
+			return openEngineTrace(ctx, traceID)
+		},
+		func(ctx context.Context) (tracesource.Source, func() error, error) {
+			var err error
+			cloudAuth, err = auth.GetCloudAuth(ctx)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cloud auth: %w", err)
+			}
+			client, err := cloud.NewOTLPClient(ctx, cloudAuth)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cloud client: %w", err)
+			}
+			statsClient.Store(client)
+			return client, nil, nil
+		})
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("open trace %s: %w", traceID, err)
+	}
+	var logFg fetchGroup
+	// streamFg tracks the --log pager stream, which the source must
+	// outlive; it is not a pre-report drain.
+	var streamFg fetchGroup
+	loader := newTraceLoader(ctx, source, traceID)
+	cleanup := func() error {
+		cancel()
+		_ = loader.wait()
+		_ = logFg.Wait()
+		_ = streamFg.Wait()
+		if closeSource != nil {
+			return closeSource()
+		}
+		return nil
+	}
+
+	if bootstrap, ok := source.(interface {
+		FetchBootstrap(context.Context, cloud.TraceImportSink) error
+	}); ok {
+		if err := bootstrap.FetchBootstrap(ctx, loader.sink()); err != nil {
+			return cleanup, fmt.Errorf("load trace bootstrap: %w", err)
+		}
+	}
+
+	// Let the frontend point surfaced failure logs and drill-in suggestions
+	// at the command that reads this trace from where it was found.
+	if tf != nil {
+		tf.SetTraceID(traceID, traceViewCommand(source))
+	}
+
+	// Fetch the trace's source commit / CI change so the report can
+	// suggest commit-scoped re-run commands. Runs beside the fetch; only
+	// the final report reads the result, and the pre-report drain below
+	// orders it.
+	if cloudAuth != nil {
+		logFg.Go(func() error {
+			setTraceCIContext(ctx, tf, cloudAuth, traceID)
+			return nil
+		})
+	}
+
+	// Fetch spans incrementally, mirroring the Cloud web UI: stream the
+	// priority (root) spans first, then fetch a span's children on demand
+	// when the user expands it, and its logs when they're shown. The
+	// loader uses the outer ctx so lazy fetches keep working while the
+	// TUI is interactive (-E).
+	//
+	// ...unless the whole tree is going to be shown and expanded anyway
+	// (--debug, --expand, or a verbosity that expands completed spans), or
+	// the frontend can't expand lazily at all (plain/dots/logs): then
+	// fetch the entire trace up front. Incremental loading only pays off
+	// when most of the tree stays collapsed; once everything expands it
+	// just leaves spans unfetched (report mode renders once, with no lazy
+	// expand) or costs a round-trip per expand. This mirrors IsExpanded's
+	// own always-expand gate (dagql/dagui/types.go).
+	full := tf == nil || opts.Debug || opts.ExpandCompleted ||
+		opts.Verbosity >= dagui.ExpandCompletedVerbosity
+	if full {
+		if err := source.FetchTrace(ctx, traceID, loader.sink()); err != nil {
+			return cleanup, fmt.Errorf("fetch trace %s: %w", traceID, err)
+		}
+	} else {
+		tf.SetLogProvider(func(id dagui.SpanID, descendants bool) {
+			loader.fetchLogs(&logFg, id, descendants)
+		})
+		setLogCache(tf, dagui.TraceID{}, loader, source, traceID)
+		tf.SetSpanProvider(loader.listen)
+
+		// Initial load: the trace's priority spans. For a small enough
+		// trace the server returns the whole thing here; for a large one
+		// it returns just the priority set and marks it partial, leaving
+		// deeper spans to be fetched lazily on expand (or by --span
+		// below).
+		if err := loader.loadInitial(ctx); err != nil {
+			return cleanup, fmt.Errorf("stream trace: %w", err)
+		}
+	}
+
+	// --span/--check/--test: fetch the target span's subtree and zoom the
+	// view to it, mirroring the web UI's ?span= deep link. --check/--test
+	// resolve a name against the spans loaded so far -- checks and tests
+	// are priority spans, so they're present without the whole trace.
+	var target dagui.SpanID
+	var descendants bool
+	if tf != nil && sel.isSet() {
+		var err error
+		target, descendants, err = resolveTraceTarget(tf, sel, traceID)
+		if err != nil {
+			return cleanup, err
+		}
+		loader.listen(target)
+		// Request the zoom target's logs with the resolved roll-up
+		// decision BEFORE zooming: setExpanded's lazy request would
+		// otherwise latch a descendants=false fetch for a passing/non-leaf
+		// test (losing the rolled-up subtree logs the zoomed report
+		// renders), or skip a not-yet-loaded --span target entirely, with
+		// no later request in report mode.
+		tf.RequestZoomLogs(target, descendants)
+		tf.ZoomToSpan(target)
+	}
+
+	// --log (runTraceView only asks for it with a live frontend): page the
+	// selected span's full logs, or the whole trace's.
+	if o.log {
+		if err := openTraceLogPager(ctx, tf, source, traceID, sel, target, descendants, &streamFg); err != nil {
+			return cleanup, err
+		}
+	}
+
+	// Fetch the subtrees of surfaced failed checks so their cause and
+	// logs are loaded for the report's inline detail. A failed check's
+	// cause is often a deep descendant the priority window doesn't
+	// include (e.g. the withExec a check links to), so neither the
+	// initial load nor the link CTE reaches it. Bounded to the failed
+	// leaf checks -- unlike the web UI, which keeps fetching until the
+	// whole trace is loaded.
+	if tf != nil {
+		loader.listenAll(tf.SurfacedFailedCheckSpans())
+	}
+
+	// Drain the span fetches (--span + failed-check subtrees) before
+	// surfacing logs, so the newly-loaded cause spans are present when
+	// the frontend picks its failures and requests their logs. A failed
+	// backfill fails the command rather than rendering a silently
+	// incomplete report.
+	if err := loader.wait(); err != nil {
+		return cleanup, fmt.Errorf("stream trace: %w", err)
+	}
+
+	// Now that the priority spans (and surfaced failures' subtrees) are
+	// loaded, ask the frontend to surface its failures and request their
+	// logs. This matters most for non-interactive 'report' mode, which
+	// renders only once: we trigger the requests here, then drain them
+	// below, so the single final render includes the failure detail.
+	if tf != nil {
+		tf.RequestSurfacedLogs()
+	}
+
+	// Drain the eager log fetches, so the final report isn't missing
+	// detail it surfaced -- a failed fetch fails the command instead of
+	// exiting 0 with the detail quietly absent. In interactive (-E) mode
+	// further expands keep fetching on the outer ctx after this returns.
+	if err := logFg.Wait(); err != nil {
+		return cleanup, fmt.Errorf("stream trace: %w", err)
+	}
+
+	// Let the console block on in-flight lazy fetches so a single HTTP
+	// request reflects a zoom/expand's results instead of returning
+	// before the network round-trip lands. Errors are ignored here:
+	// lazy-expand failures already warn, and only the pre-report drains
+	// above turn them into a command failure.
+	if tf != nil {
+		tf.SetFetchWaiter(func() {
+			_ = loader.wait()
+			_ = logFg.Wait()
+		})
+	}
+
+	return cleanup, nil
+}
+
+// openTraceLogPager opens the frontend's pager on target's full logs, or on
+// the whole trace's when no span was selected, streaming them on fg.
+func openTraceLogPager(ctx context.Context, tf idtui.TraceFrontend, source tracesource.Source, traceID string, sel spanSelector, target dagui.SpanID, descendants bool, fg *fetchGroup) error {
+	if !target.IsValid() {
+		root, _, err := sel.resolveSpan(ctx, source, traceID)
+		if err != nil {
+			return err
+		}
+		if target, err = parseSpanID(root); err != nil {
+			return err
+		}
+		descendants = true
+	}
+	w := tf.OpenLogStream(target, sel.title(traceID))
+	fg.Go(func() error {
+		_, err := streamTraceLogText(ctx, source, traceID, target.String(), descendants, func(body string) error {
+			_, err := io.WriteString(w, body)
+			return err
+		})
+		if err != nil && ctx.Err() == nil {
+			fmt.Fprintf(w, "\nError: cannot stream the logs: %v\n", err)
+		}
+		return nil
+	})
+	return nil
 }
 
 // resolveTraceTarget turns a --span/--check/--test selection into the span to
@@ -562,7 +649,7 @@ func (g *fetchGroup) Wait() error {
 // child count and has-logs flag the lazy-expand affordance needs.
 type traceLoader struct {
 	ctx     context.Context
-	client  *cloud.OTLPClient
+	client  tracesource.Source
 	traceID string
 
 	// importer folds spans and logs into the frontend's exporters. The
@@ -585,9 +672,41 @@ type traceLoader struct {
 	primarySet    bool
 
 	// logReq dedups per-span log fetches across the log provider and the
-	// zoom request.
-	logReq map[string]bool
-	logSem chan struct{}
+	// zoom request: the fetch that owns each span's records (see fullTree).
+	logReq    map[string]uint64
+	logFetchN uint64
+	logSem    chan struct{}
+	// logGen counts the frontend's releases (forgetLogs); logReleased maps
+	// each span it dropped while fetches were in flight to the release that
+	// dropped it, so a fetch that started before imports nothing more for
+	// it. logInflight counts the fetches in flight.
+	logGen      uint64
+	logReleased map[string]uint64
+	logInflight int
+
+	// fullTree is set when the whole span tree is loaded (a restored
+	// session's history): a roll-up imports its descendants' records of
+	// every class under their own span IDs, so the frontend routes each to
+	// its span and a prefixed copy to the roll-up, as in a live run. The
+	// spans whose records a fetch imports are owned by it, so their own
+	// later requests, or overlapping roll-ups, import nothing twice.
+	fullTree bool
+
+	// keepPrimary leaves the frontend's primary span alone instead of
+	// pointing it at the imported trace's root, for a restore whose live
+	// session root stays primary.
+	keepPrimary bool
+	// ownLogsOnly fetches only a roll-up span's own logs, not its
+	// subtree's: the subtree's output loads as its spans are expanded and
+	// shown, for a view that must not pull a whole trace's output just by
+	// rendering its roll-ups.
+	ownLogsOnly bool
+	// importedOnly makes listen fetch only the children of spans this
+	// loader imported (imported), for a frontend that also holds spans of
+	// another trace -- a resumed session's own live spans -- whose children
+	// the source does not have.
+	importedOnly bool
+	imported     map[dagui.SpanID]bool
 
 	// background backfills (lazy child loads) run on the command's ctx so
 	// they keep working while the TUI is interactive (-E).
@@ -595,24 +714,31 @@ type traceLoader struct {
 	fg  fetchGroup
 }
 
-func newTraceLoader(ctx context.Context, client *cloud.OTLPClient, traceID string) *traceLoader {
+func newTraceLoader(ctx context.Context, client tracesource.Source, traceID string) *traceLoader {
+	return newTraceLoaderFor(ctx, client, traceID, Frontend)
+}
+
+// newTraceLoaderFor is newTraceLoader importing into fe.
+func newTraceLoaderFor(ctx context.Context, client tracesource.Source, traceID string, fe idtui.Frontend) *traceLoader {
 	importer := enginetel.NewTraceImporter(enginetel.TraceImportSinks{
-		Spans:   Frontend.SpanExporter(),
-		Logs:    Frontend.LogExporter(),
-		Metrics: Frontend.MetricExporter(),
+		Spans:   fe.SpanExporter(),
+		Logs:    fe.LogExporter(),
+		Metrics: fe.MetricExporter(),
 	})
 	// This trace is the whole session: its root is the primary span, not a
 	// second root to render through.
 	importer.KeepRoots = true
 	return &traceLoader{
-		ctx:      ctx,
-		client:   client,
-		traceID:  traceID,
-		importer: importer,
-		filter:   map[dagui.SpanID]bool{{}: true}, // subscribe to roots first
-		logReq:   map[string]bool{},
-		logSem:   make(chan struct{}, 8),
-		sem:      make(chan struct{}, 8),
+		ctx:         ctx,
+		client:      client,
+		traceID:     traceID,
+		importer:    importer,
+		filter:      map[dagui.SpanID]bool{{}: true}, // subscribe to roots first
+		logReq:      map[string]uint64{},
+		logSem:      make(chan struct{}, 8),
+		logReleased: map[string]uint64{},
+		imported:    map[dagui.SpanID]bool{},
+		sem:         make(chan struct{}, 8),
 	}
 }
 
@@ -638,7 +764,15 @@ func (s loaderSink) ImportMetrics(ctx context.Context, req *colmetricspb.ExportM
 }
 
 func (s loaderSink) Seal(ctx context.Context) error {
-	return s.importer.Seal(ctx)
+	return s.seal(ctx)
+}
+
+func (l *traceLoader) seal(ctx context.Context) error {
+	// A sealed archive knows when its capture ended; other sources infer it.
+	if source, ok := l.client.(interface{ SealTime() time.Time }); ok && !source.SealTime().IsZero() {
+		return l.importer.SealAt(ctx, source.SealTime())
+	}
+	return l.importer.Seal(ctx)
 }
 
 // loadInitial streams the trace's priority (root) spans and blocks until the
@@ -654,7 +788,7 @@ func (l *traceLoader) loadInitial(ctx context.Context) error {
 	}
 	// The stream ended, so the trace is over: whatever it shows still
 	// running never ended.
-	if err := l.importer.Seal(ctx); err != nil {
+	if err := l.seal(ctx); err != nil {
 		return fmt.Errorf("seal trace: %w", err)
 	}
 	// Partial is now known; fire the listens that arrived mid-load.
@@ -665,6 +799,43 @@ func (l *traceLoader) loadInitial(ctx context.Context) error {
 	l.mu.Unlock()
 	l.listenAll(pending)
 	return nil
+}
+
+// abandonInitial ends an initial load that failed for good: the view is taken
+// as partial, so a later expand still fetches, and the listens parked behind
+// the load are fired.
+func (l *traceLoader) abandonInitial() {
+	l.mu.Lock()
+	if l.initialLoaded {
+		l.mu.Unlock()
+		return
+	}
+	l.initialLoaded = true
+	l.partial = true
+	pending := l.pending
+	l.pending = nil
+	l.mu.Unlock()
+	l.listenAll(pending)
+}
+
+// loadWholeTree switches a conversation-only view to the whole trace, whose
+// spans are being imported after all (an in-session backfill): a roll-up's
+// logs are its subtree's again, imported under their own spans. A roll-up
+// whose own logs were already fetched keeps just those until the frontend
+// lets go of them.
+func (l *traceLoader) loadWholeTree() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.fullTree = true
+	l.ownLogsOnly = false
+}
+
+// treeLoaded marks every span of the trace loaded, so expanding a span is
+// local from here on.
+func (l *traceLoader) treeLoaded() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.partial = false
 }
 
 // listen fetches a span's children on demand, mirroring the web UI's "listen"
@@ -682,10 +853,16 @@ func (l *traceLoader) listen(id dagui.SpanID) {
 // surfaced-failure prefetch: each failed check plus its error origins and
 // links) costs one round trip instead of one per span.
 func (l *traceLoader) listenAll(ids []dagui.SpanID) {
+	if l.ctx.Err() != nil {
+		return
+	}
 	l.mu.Lock()
 	fetch := make([]string, 0, len(ids))
 	for _, id := range ids {
 		if !id.IsValid() || l.filter[id] {
+			continue
+		}
+		if l.importedOnly && !l.imported[id] {
 			continue
 		}
 		if !l.initialLoaded {
@@ -709,7 +886,11 @@ func (l *traceLoader) listenAll(ids []dagui.SpanID) {
 	}
 
 	l.fg.Go(func() error {
-		l.sem <- struct{}{}
+		select {
+		case l.sem <- struct{}{}:
+		case <-l.ctx.Done():
+			return l.ctx.Err()
+		}
 		defer func() { <-l.sem }()
 		if err := l.client.FetchSpans(l.ctx, l.traceID, cloud.SpanSelection{
 			NoRoot:      true,
@@ -726,7 +907,7 @@ func (l *traceLoader) listenAll(ids []dagui.SpanID) {
 		}
 		// The trace is over (the initial load ended); a backfilled span the
 		// capture shows running never ended either.
-		if err := l.importer.Seal(l.ctx); err != nil {
+		if err := l.seal(l.ctx); err != nil {
 			return fmt.Errorf("seal backfilled span(s): %w", err)
 		}
 		return nil
@@ -739,35 +920,83 @@ func (l *traceLoader) listenAll(ids []dagui.SpanID) {
 // RollUpLogs -- a check or test whose real output lives in a sub-operation
 // rolls that up; everything else shows just its own logs.
 func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants bool) {
+	if l.ctx.Err() != nil {
+		return
+	}
 	spanHex := id.String()
 	l.mu.Lock()
-	if !id.IsValid() || l.logReq[spanHex] {
+	if l.ownLogsOnly {
+		descendants = false
+	}
+	if !id.IsValid() || l.logReq[spanHex] != 0 {
 		l.mu.Unlock()
 		return
 	}
-	l.logReq[spanHex] = true
+	l.logFetchN++
+	fetch := l.logFetchN
+	l.logReq[spanHex] = fetch
+	start := l.logGen
+	l.logInflight++
+	// Without the whole tree, a rolled-up span's descendants aren't loaded
+	// (the priority window doesn't include them), so their records would
+	// route to orphan buffers nothing renders: re-key them to the span.
+	rekey := descendants && !l.fullTree
 	l.mu.Unlock()
 	fg.Go(func() error {
-		l.logSem <- struct{}{}
+		defer l.endLogFetch()
+		select {
+		case l.logSem <- struct{}{}:
+		case <-l.ctx.Done():
+			return l.ctx.Err()
+		}
 		defer func() { <-l.logSem }()
 		sel := cloud.LogSelection{SpanID: spanHex, Descendants: descendants}
-		if descendants {
-			// A rolled-up span's descendants aren't loaded (the priority
-			// window doesn't include them), so their records would route to
-			// orphan buffers nothing renders. Ask for text output only --
-			// the semantic records riding the log channel (span names,
-			// progress, agent state) are per-span facts that must not be
-			// re-attributed -- and attribute it to the span we fetched it
-			// for, like the summary's flat roll-up, so e.g. a failed test
-			// shows its sub-operation's output.
+		if rekey {
+			// Ask for text output only -- the semantic records riding the
+			// log channel (span names, progress, agent state) are per-span
+			// facts that must not be re-attributed -- and attribute it to
+			// the span we fetched it for, like the summary's flat roll-up,
+			// so e.g. a failed test shows its sub-operation's output.
 			sel.Records = cloud.LogRecordsLogs
 		}
-		if err := l.client.FetchLogs(l.ctx, l.traceID, sel, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
-			if descendants {
-				rekeyLogRecords(req, id)
+		// A transient failure before anything was imported is retried, as
+		// the bulk history import does; a retry after a partial import
+		// would import its records twice.
+		imported := false
+		var err error
+		for attempt := 0; ; attempt++ {
+			err = l.client.FetchLogs(l.ctx, l.traceID, sel, func(ctx context.Context, req *collogspb.ExportLogsServiceRequest) error {
+				imported = true
+				switch {
+				case rekey:
+					l.dropReleasedLogs(req, id, start)
+					rekeyLogRecords(req, id)
+				case descendants:
+					l.dropReleasedLogs(req, dagui.SpanID{}, start)
+					l.claimLogRecords(req, fetch)
+				default:
+					l.dropReleasedLogs(req, dagui.SpanID{}, start)
+				}
+				return l.importer.ImportLogs(ctx, req)
+			})
+			if err == nil || imported || attempt >= 2 || l.ctx.Err() != nil || !errors.Is(err, archive.ErrTransient) {
+				break
 			}
-			return l.importer.ImportLogs(ctx, req)
-		}); err != nil {
+			select {
+			case <-l.ctx.Done():
+			case <-time.After(time.Duration(attempt+1) * 100 * time.Millisecond):
+			}
+		}
+		if err != nil {
+			if !imported {
+				// Nothing landed, so nothing this fetch owns may block a
+				// later request or an enclosing roll-up from fetching it.
+				l.releaseLogs(fetch)
+			}
+			if l.ctx.Err() != nil {
+				// Exiting: not a failure worth reporting.
+				return l.ctx.Err()
+			}
 			// Warn for interactive mode, where post-drain lazy expands have
 			// no one waiting on the error; the pre-report drain also
 			// collects it, failing the command rather than rendering a
@@ -775,7 +1004,8 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 			slog.Warn("error streaming span logs", "span", spanHex, "err", err)
 			return fmt.Errorf("stream span %s logs: %w", spanHex, err)
 		}
-		if !descendants {
+		if !rekey {
+			// Every record class came with the records: call payloads too.
 			return nil
 		}
 		// The text-only class above left out the subtree's call payloads,
@@ -787,11 +1017,122 @@ func (l *traceLoader) fetchLogs(fg *fetchGroup, id dagui.SpanID, descendants boo
 			Descendants: true,
 			Records:     cloud.LogRecordsCallPayloads,
 		}, l.importer.ImportLogs); err != nil {
+			if l.ctx.Err() != nil {
+				return l.ctx.Err()
+			}
 			slog.Warn("error streaming span call payloads", "span", spanHex, "err", err)
 			return fmt.Errorf("stream span %s call payloads: %w", spanHex, err)
 		}
 		return nil
 	})
+}
+
+// releaseLogs forgets the spans a fetch owns, so they can be fetched again.
+func (l *traceLoader) releaseLogs(fetch uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for span, owner := range l.logReq {
+		if owner == fetch {
+			delete(l.logReq, span)
+		}
+	}
+}
+
+// setLogCache lets the frontend let go of the logs loader fetched for it
+// (traceID as in idtui.LogCacheFrontend), and search the source for what it
+// does not hold when the source can: an engine store can, Cloud cannot, so
+// a search of a Cloud trace covers what is loaded.
+func setLogCache(fe any, traceID dagui.TraceID, loader *traceLoader, source any, traceHex string) {
+	cf, ok := fe.(idtui.LogCacheFrontend)
+	if !ok {
+		return
+	}
+	cf.SetLogRelease(traceID, loader.forgetLogs)
+	if searcher, ok := source.(tracesource.LogSearcher); ok {
+		cf.SetLogSearch(traceID, logSearchFunc(func(ctx context.Context, search archive.LogSearch) (archive.LogSearchResult, error) {
+			return searcher.SearchLogs(ctx, traceHex, search)
+		}))
+	}
+}
+
+// forgetLogs is the frontend letting go of logs it no longer shows
+// (idtui.LogCacheFrontend.SetLogRelease): the spans it dropped are fetched
+// again on their next request, and the fetches in flight import nothing
+// more for them. Fetches are one-shot, so there is nothing to unsubscribe.
+// It runs on the frontend's event loop, so it only takes the lock.
+func (l *traceLoader) forgetLogs(r idtui.LogRelease) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(r.Dropped) == 0 {
+		return
+	}
+	l.logGen++
+	for _, id := range r.Dropped {
+		spanHex := id.String()
+		delete(l.logReq, spanHex)
+		if l.logInflight > 0 {
+			l.logReleased[spanHex] = l.logGen
+		}
+	}
+}
+
+// endLogFetch ends a fetch; once none is in flight, the spans released
+// during them no longer matter.
+func (l *traceLoader) endLogFetch() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.logInflight--; l.logInflight == 0 {
+		clear(l.logReleased)
+	}
+}
+
+// dropReleasedLogs drops the records of the spans the frontend dropped since
+// a fetch started (at release generation start); with a target, the records
+// are all its, re-keyed onto it.
+func (l *traceLoader) dropReleasedLogs(req *collogspb.ExportLogsServiceRequest, target dagui.SpanID, start uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.logReleased) == 0 {
+		return
+	}
+	for _, rl := range req.GetResourceLogs() {
+		for _, sl := range rl.GetScopeLogs() {
+			sl.LogRecords = slices.DeleteFunc(sl.LogRecords, func(record *logspb.LogRecord) bool {
+				id := target
+				if !id.IsValid() {
+					copy(id.SpanID[:], record.GetSpanId())
+				}
+				return l.logReleased[id.String()] > start
+			})
+		}
+	}
+}
+
+// claimLogRecords drops the records of spans another fetch owns (a span's own
+// fetch, or an overlapping roll-up), and makes fetch the owner of the rest, so
+// each span's records are imported once however its fetches overlap, and an
+// owned span's own later request is a no-op.
+func (l *traceLoader) claimLogRecords(req *collogspb.ExportLogsServiceRequest, fetch uint64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, rl := range req.GetResourceLogs() {
+		for _, sl := range rl.GetScopeLogs() {
+			kept := sl.LogRecords[:0]
+			for _, record := range sl.GetLogRecords() {
+				var id dagui.SpanID
+				copy(id.SpanID[:], record.GetSpanId())
+				if id.IsValid() {
+					spanHex := id.String()
+					if owner := l.logReq[spanHex]; owner != 0 && owner != fetch {
+						continue
+					}
+					l.logReq[spanHex] = fetch
+				}
+				kept = append(kept, record)
+			}
+			sl.LogRecords = kept
+		}
+	}
 }
 
 // rekeyLogRecords attributes every record in req to id.
@@ -825,6 +1166,11 @@ func (l *traceLoader) ingest(ctx context.Context, req *coltracepb.ExportTraceSer
 	for _, rs := range req.GetResourceSpans() {
 		for _, ss := range rs.GetScopeSpans() {
 			for _, span := range ss.GetSpans() {
+				if l.importedOnly {
+					var id dagui.SpanID
+					copy(id.SpanID[:], span.GetSpanId())
+					l.imported[id] = true
+				}
 				partial, updated := traceViewAttrs(span)
 				if partial {
 					l.partial = true
@@ -849,7 +1195,7 @@ func (l *traceLoader) ingest(ctx context.Context, req *coltracepb.ExportTraceSer
 	}
 	l.mu.Unlock()
 
-	if primary.IsValid() {
+	if primary.IsValid() && !l.keepPrimary {
 		Frontend.SetPrimary(primary)
 	}
 	return l.importer.ImportSpans(ctx, req)

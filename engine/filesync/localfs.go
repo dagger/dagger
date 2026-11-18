@@ -116,12 +116,15 @@ func newLocalFS(sharedState *MirrorSharedState, subdir string, includes, exclude
 // newParentLocalFS is the mirror side of a parent directory sync: its walk
 // visits the given chain of directories, from the mirror's root down, and
 // nothing else. See FileSyncer.syncParentDirs.
-func newParentLocalFS(sharedState *MirrorSharedState, chain []string, copyPath string) *localFS {
+//
+// It has no copyPath: that is relative to the synced directory, while the
+// chain's paths are relative to the mirror's root, and a parent sync copies
+// nothing out of the mirror.
+func newParentLocalFS(sharedState *MirrorSharedState, chain []string) *localFS {
 	return &localFS{
 		localFSSharedState: sharedState,
 		subdir:             "/",
 		filterFS:           mirrorChainFS{root: sharedState.rootPath, chain: chain},
-		copyPath:           copyPath,
 	}
 }
 

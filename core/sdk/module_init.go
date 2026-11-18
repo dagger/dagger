@@ -72,7 +72,7 @@ func (sdk *module) callInitFunction(
 		return inst, err
 	}
 
-	if err := sdkInst.dag.Select(ctx, sdkInst.sdk, &inst, dagql.Selector{
+	if err := sdkInst.selectSDK(ctx, &inst, dagql.Selector{
 		Field: fn.Name,
 		Args:  callArgs,
 	}); err != nil {

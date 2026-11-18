@@ -44,6 +44,32 @@ func SpanStatus(sp *dagui.Span) string {
 	}
 }
 
+// SpanStatusIn is SpanStatus informed by what db knows beyond the span
+// itself. An agent's loop span stays open for the agent's whole life, so
+// while the agent's control records say it is parked between turns (IDLE,
+// PAUSED, WAITING_INPUT) its span reads "idle" rather than "run".
+func SpanStatusIn(db *dagui.DB, sp *dagui.Span) string {
+	status := SpanStatus(sp)
+	if status != "run" || db == nil {
+		return status
+	}
+	if state, ok := db.AgentState(sp); ok && agentStateParked(state) {
+		return "idle"
+	}
+	return status
+}
+
+// agentStateParked reports whether an agent in this lifecycle state has a
+// live loop that is doing no work.
+func agentStateParked(state string) bool {
+	switch state {
+	case "IDLE", "PAUSED", "WAITING_INPUT":
+		return true
+	default:
+		return false
+	}
+}
+
 // SpanFlags lists the dagui flags set on a span that shape how the UI treats
 // it (visibility, encapsulation, log/span roll-up) -- only the ones that are
 // actually set, so ancestor-chain lines stay compact.
@@ -132,7 +158,7 @@ func RenderSpanList(db *dagui.DB, query string, limit int) string {
 			}
 			name += "  [" + tag + "]"
 		}
-		fmt.Fprintf(&b, "%s  %-5s  %s\n", sp.ID, SpanStatus(sp), name)
+		fmt.Fprintf(&b, "%s  %-5s  %s\n", sp.ID, SpanStatusIn(db, sp), name)
 	}
 	return b.String()
 }
@@ -154,7 +180,12 @@ func RenderSpanDetail(db *dagui.DB, id dagui.SpanID) (string, bool) {
 		// the digest of the dagql call this span reports on.
 		fmt.Fprintf(&b, "call:     %s\n", sp.CallDigest)
 	}
-	fmt.Fprintf(&b, "status:   %s\n", SpanStatus(sp))
+	fmt.Fprintf(&b, "status:   %s\n", SpanStatusIn(db, sp))
+	if state, ok := db.AgentState(sp); ok {
+		// The loop span's own status can't tell a working agent from an
+		// idle one: say what the agent's control records last reported.
+		fmt.Fprintf(&b, "agent:    %s, last reported %s\n", sp.AgentName, state)
+	}
 	if sp.IsFailed() && sp.Status.Description != "" {
 		fmt.Fprintf(&b, "error:    %s\n", strings.ReplaceAll(sp.Status.Description, "\n", "\n          "))
 	}
@@ -177,7 +208,11 @@ func RenderSpanDetail(db *dagui.DB, id dagui.SpanID) (string, bool) {
 		case sp.IsRunning():
 			// Running spans have no end time yet (dagui encodes that as
 			// EndTime < StartTime); show elapsed time instead.
-			fmt.Fprintf(&b, "ended:    (still running)\n")
+			if SpanStatusIn(db, sp) == "idle" {
+				fmt.Fprintf(&b, "ended:    (agent loop still open; idle between turns)\n")
+			} else {
+				fmt.Fprintf(&b, "ended:    (still running)\n")
+			}
 			fmt.Fprintf(&b, "duration: %s (so far; own span wall interval)\n", time.Since(sp.StartTime))
 		default:
 			fmt.Fprintf(&b, "ended:    %s\n", sp.EndTime.Format(time.RFC3339Nano))
@@ -218,7 +253,7 @@ func RenderSpanDetail(db *dagui.DB, id dagui.SpanID) (string, bool) {
 			fmt.Fprintf(&b, "  ... %d more\n", len(children)-i)
 			break
 		}
-		line := fmt.Sprintf("  %s  %-5s  %s", child.ID, SpanStatus(child), child.Name)
+		line := fmt.Sprintf("  %s  %-5s  %s", child.ID, SpanStatusIn(db, child), child.Name)
 		if flags := SpanFlags(child); len(flags) > 0 {
 			line += "  [" + strings.Join(flags, " ") + "]"
 		}

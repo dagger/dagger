@@ -1,11 +1,14 @@
-// Develop the Dagger CLI
 package main
 
 import (
 	"context"
+	"strconv"
+	"strings"
 
 	"dagger/cli-dev/internal/dagger"
+	gomod "dagger/cli-dev/internal/dagger/clients/go"
 
+	"dagger.io/dagger/core"
 	"github.com/containerd/platforms"
 	"golang.org/x/mod/semver"
 )
@@ -55,9 +58,10 @@ func New(
 
 	// Workspace whose git info stamps the CLI's VCS metadata and pins the
 	// default engine tag on commit builds. Auto-injected when cli-dev is
-	// called directly; a parent toolchain (e.g. engine-dev) instead resolves
-	// it to the scalar vcsCommit/vcsDirty below and forwards those, so the
-	// session-scoped Workspace never makes the build cache key session-specific.
+	// called directly; a parent toolchain such as engine-dev passes its own.
+	// Only the commit and dirty state resolved from it reach the build, never
+	// the session-scoped Workspace, so the build's cache key isn't
+	// session-specific.
 	// +optional
 	ws *dagger.Workspace,
 
@@ -76,7 +80,7 @@ func New(
 
 	if vcsCommit == "" && ws != nil {
 		git := ws.Git()
-		if commit, err := git.Head().Commit(ctx); err == nil {
+		if commit, err := git.Head().CommitSHA(ctx); err == nil {
 			vcsCommit = commit
 			if clean, err := git.Uncommitted().IsEmpty(ctx); err == nil {
 				vcsDirty = !clean
@@ -87,6 +91,13 @@ func New(
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
 	var values []string
+	if vcsCommit != "" {
+		values = append(values,
+			"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCS=git",
+			"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSRevision="+vcsCommit,
+			"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSModified="+strconv.FormatBool(vcsDirty),
+		)
+	}
 	if runnerHost != "" {
 		values = append(values, "github.com/dagger/dagger/internal/cmd/dagger.RunnerHost="+runnerHost)
 	}
@@ -98,23 +109,22 @@ func New(
 	return &CliDev{
 		Version: version,
 		Tag:     version,
-		Go: dag.Go(dagger.GoOpts{
-			Source: source,
-			Base:   base,
-			Values: values,
-			Ws:     ws,
-			// VCS info for stamping, already resolved to scalars above.
-			VcsCommit: vcsCommit,
-			VcsDirty:  vcsDirty,
-		}),
+		Source:  source,
+		Base:    base,
+		Values:  values,
 	}, nil
 }
 
+// Develop the Dagger CLI
 type CliDev struct {
 	Version string
 	Tag     string
 
-	Go *dagger.Go // +private
+	Source *dagger.Directory // +private
+	// The Go build's base container; dagger/go's own Go image when unset.
+	Base *dagger.Container // +private
+	// Definitions stamped into the binary with -ldflags -X.
+	Values []string // +private
 }
 
 // Build the dagger CLI binary for a single platform
@@ -122,12 +132,28 @@ func (cli CliDev) Binary(
 	// +optional
 	platform dagger.Platform,
 ) *dagger.File {
-	return cli.Go.Binary("./cmd/dagger", dagger.GoBinaryOpts{
-		Platform:  platform,
-		NoSymbols: true,
-		NoDwarf:   true,
-	})
+	// The source is the build's workspace, so the build is keyed by its
+	// content and never by the caller's session.
+	ws := cli.Source.AsWorkspace()
+	ldflags := []string{"-s", "-w"}
+	for _, val := range cli.Values {
+		ldflags = append(ldflags, "-X '"+val+"'")
+	}
+	pkg := gomod.New(gomod.GoOpts{
+		Version:    goVersion,
+		Base:       cli.Base,
+		BuildFlags: []string{"-ldflags=" + strings.Join(ldflags, " ")},
+	}).Module(ws, "cmd/dagger").Packages(ws).Get("cmd/dagger")
+	if platform == "" {
+		return pkg.Binary(ws)
+	}
+	// dagger/go keys a package's platforms by GOOS/GOARCH.
+	p := platforms.Normalize(platforms.MustParse(string(platform)))
+	return pkg.Platforms().Get(p.OS + "/" + p.Architecture).Binary(ws)
 }
+
+// The Go release the CLI is built with.
+const goVersion = "1.27"
 
 // Build dev CLI binaries
 // TODO: remove this
@@ -141,7 +167,7 @@ func (cli *CliDev) DevBinaries(
 	if p.OS == "windows" {
 		binName += ".exe"
 	}
-	dir := dag.Directory().WithFile(binName, bin)
+	dir := core.NewDirectory().WithFile(binName, bin)
 	if p.OS != "linux" {
 		p2 := p
 		p2.OS = "linux"

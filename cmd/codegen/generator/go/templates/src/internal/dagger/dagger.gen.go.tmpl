@@ -28,6 +28,7 @@ type ExecError = core.ExecError
 
 {{ range .Types }}
 {{ $name := .Name | FormatName }}
+{{ if eq .Kind "ENUM" }}{{ $name = .Name }}{{ end }}
 
 {{ .Description | Comment }}
 type {{ $name }} = core.{{ $name }}

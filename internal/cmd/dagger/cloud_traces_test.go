@@ -16,6 +16,22 @@ import (
 	cloudapi "github.com/dagger/dagger/internal/cloud"
 )
 
+func TestCloudTraceURLUsesAPIEnvironment(t *testing.T) {
+	for _, tc := range []struct{ api, frontend, want string }{
+		{"", "", "https://dagger.cloud/example/traces/trace"},
+		{"https://feature-api.preview.dagger.cloud", "", "https://feature-v3.preview.dagger.cloud/example/traces/trace"},
+		{"http://localhost:8020", "", "http://localhost:3000/example/traces/trace"},
+		{"https://api.example", "https://web.example/", "https://web.example/example/traces/trace"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			t.Setenv("DAGGER_CLOUD_URL", tc.api)
+			t.Setenv("DAGGER_CLOUD_EXTERNAL_URL", tc.frontend)
+			require.Equal(t, tc.want, cloudTraceURL("example", "trace"))
+			require.Empty(t, cloudTraceURL("example", ""))
+		})
+	}
+}
+
 func TestWriteCloudTracesStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

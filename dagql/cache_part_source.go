@@ -12,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -161,7 +162,7 @@ func (s *PartSourceLease) Release(ctx context.Context) error {
 	s.once.Do(func() {
 		ctx = context.WithoutCancel(ctx)
 		c := s.cache
-		c.egraphMu.Lock()
+		wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 		var queue collectionQueue
 		if s.source != nil {
 			queue, s.releaseErr = c.decrementIncomingOwnershipLocked(ctx, s.source, queue)
@@ -495,7 +496,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 		return nil, nil, err
 	}
 	key, _ := partAddressKey(address)
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	candidates := c.collectPartCandidatesLocked(row, lookup, session)
 	held := 0
 	defer func() {
@@ -582,7 +583,7 @@ func (c *Cache) scanPartSources(ctx context.Context, receiver AnyResult, address
 			}
 		}
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	for i := range candidates {
 		candidate := &candidates[i]
 		if candidate.facts != c.partFactsLocked(candidate.row) || !c.sessionSatisfiesResourceRequirementsLocked(session, candidate.row) {
@@ -654,6 +655,8 @@ type PartDemandState struct {
 	renewals map[renewalEpisodeKey]*renewalEpisode
 	// progress is what the progress rule has recorded for this demand.
 	progress map[partProgressKey]partProgressSeen
+	// started is when the demand began; an install logs its wait from here.
+	started time.Time
 }
 
 func partContentKey(id sharedResultID, address PersistedPartAddress, offer *PersistedPartOffer, revision uint64) string {
@@ -740,7 +743,7 @@ func (c *Cache) newSessionlessPartSourceLease(ctx context.Context, receiver, don
 			return nil, err
 		}
 	}
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	return c.newSessionlessPartSourceLeaseLocked(ctx, receiver, donor, target, address, probe, lookup)
 }

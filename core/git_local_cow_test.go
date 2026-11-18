@@ -205,6 +205,51 @@ func TestCowGitCheckout(t *testing.T) {
 	require.NotEmpty(t, gitMirrorTestRun(t, source, "tag", "--list", "side-*"))
 }
 
+// A fresh checkout writes its worktree once, and leaves what Git's own
+// checkout of the ref followed by reset --hard to its commit leaves: HEAD,
+// refs, ORIG_HEAD, index and worktree.
+func TestFreshGitCheckoutMatchesCheckoutAndReset(t *testing.T) {
+	ctx := context.Background()
+	source, base, tip := cowTestSource(t)
+	for _, ref := range []*gitutil.Ref{
+		{Name: "refs/heads/main", SHA: tip},
+		{SHA: base},
+		// Commit-ID resolvers keep the SHA as the name.
+		{Name: tip, SHA: tip},
+		{Name: "refs/tags/v0.2", SHA: gitMirrorTestRun(t, source, "rev-parse", "v0.2^{commit}")},
+		{Name: "refs/heads/side", SHA: gitMirrorTestRun(t, source, "rev-parse", "side")},
+	} {
+		t.Run(fmt.Sprintf("%s@%s", ref.Name, ref.SHA[:7]), func(t *testing.T) {
+			got := freshRetainedCheckout(t, source, ref)
+
+			want := t.TempDir()
+			gitMirrorTestRun(t, want, "-c", "init.defaultBranch=main", "init", "--quiet")
+			gitMirrorTestRun(t, want, "fetch", "--quiet", "file://"+source, ref.SHA+":refs/dagger.tmp/want")
+			if ref.Name == "" {
+				gitMirrorTestRun(t, want, "checkout", "--quiet", ref.SHA)
+			} else {
+				gitMirrorTestRun(t, want, "update-ref", ref.Name, ref.SHA)
+				gitMirrorTestRun(t, want, "checkout", "--quiet", strings.TrimPrefix(ref.Name, "refs/heads/"))
+				gitMirrorTestRun(t, want, "reset", "--quiet", "--hard", ref.SHA)
+			}
+			gitMirrorTestRun(t, want, "update-ref", "-d", "refs/dagger.tmp/want")
+
+			for _, args := range [][]string{
+				{"for-each-ref", "--format=%(objectname) %(refname) %(symref)"},
+				{"rev-parse", "HEAD"},
+				{"rev-parse", "--verify", "-q", "ORIG_HEAD"},
+				{"symbolic-ref", "-q", "HEAD"},
+				{"ls-files", "--stage"},
+				{"status", "--porcelain", "--ignored"},
+			} {
+				wantOut, _ := gitutil.NewGitCLI(gitutil.WithDir(want)).New(gitutil.WithIgnoreError()).Run(ctx, args...)
+				gotOut, _ := gitutil.NewGitCLI(gitutil.WithDir(got)).New(gitutil.WithIgnoreError()).Run(ctx, args...)
+				require.Equal(t, string(wantOut), string(gotOut), "git %v", args)
+			}
+		})
+	}
+}
+
 // The delta path moves a clean full checkout of an ancestor to the target by
 // its tree delta, fetching only the objects the ancestor lacks, and must end
 // exactly where a fresh checkout of the target does.

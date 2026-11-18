@@ -126,6 +126,35 @@ func TestModuleSourcePersistenceRetainsSelfCallsCapability(t *testing.T) {
 	require.True(t, decodedSrc.SelfCallsEnabled())
 }
 
+func TestModuleSourceVersionProvenancePersistence(t *testing.T) {
+	for _, explicit := range []*bool{nil, ptr(false), ptr(true)} {
+		src := &ModuleSource{
+			EngineVersion:                       "v1.0.0-beta.26",
+			ConfigEngineVersion:                 "v0.19.0",
+			EngineVersionOverride:               "v1.0.0-beta.26",
+			DangVersion:                         "2.0",
+			DangVersionDeclared:                 true,
+			ConfigDisableDefaultFunctionCaching: explicit,
+		}
+		clone := src.Clone()
+		if explicit != nil {
+			*clone.ConfigDisableDefaultFunctionCaching = !*explicit
+			require.Equal(t, *explicit, *src.ConfigDisableDefaultFunctionCaching, "clone owns its optional config setting")
+		}
+		encoded, err := src.EncodePersistedObject(t.Context(), dagql.NewPersistEncodeContext(nil, 0, nil))
+		require.NoError(t, err)
+		decoded, err := (&ModuleSource{}).DecodePersistedObject(t.Context(), dagql.NewPersistDecodeContext(nil, 0, nil), encoded.JSON)
+		require.NoError(t, err)
+		got := decoded.(*ModuleSource)
+		require.Equal(t, src.EngineVersion, got.EngineVersion)
+		require.Equal(t, src.ConfigEngineVersion, got.ConfigEngineVersion)
+		require.Equal(t, src.EngineVersionOverride, got.EngineVersionOverride)
+		require.Equal(t, explicit, got.ConfigDisableDefaultFunctionCaching)
+		require.Equal(t, src.DangVersion, got.DangVersion)
+		require.True(t, got.DangVersionDeclared)
+	}
+}
+
 func TestGitModuleSourceSymbolic(t *testing.T) {
 	testCases := []struct {
 		name         string
@@ -397,4 +426,63 @@ func TestModuleSourceOriginSymbolic(t *testing.T) {
 		require.Equal(t, tc.want, src.OriginSymbolic(), tc)
 	}
 	require.Empty(t, (&ModuleSource{Kind: ModuleSourceKindGit, Git: &GitModuleSource{Symbolic: "github.com/org/repo"}}).OriginSymbolic())
+}
+
+func TestDirDependencySourceArgs(t *testing.T) {
+	t.Parallel()
+
+	dir := func(subpath string, root *string) *ModuleSource {
+		return &ModuleSource{Kind: ModuleSourceKindDir, SourceRootSubpath: subpath, DirSrc: &DirModuleSource{OriginRoot: root}}
+	}
+	args := func(t *testing.T, parent *ModuleSource, depSrcRef string) []dagql.NamedInput {
+		t.Helper()
+		args, err := dirDependencySourceArgs(parent, depSrcRef)
+		require.NoError(t, err)
+		return args
+	}
+	// dep is the source asModuleSource builds from the selected arguments.
+	dep := func(t *testing.T, args []dagql.NamedInput) *ModuleSource {
+		t.Helper()
+		src := &ModuleSource{Kind: ModuleSourceKindDir, DirSrc: &DirModuleSource{}}
+		for _, arg := range args {
+			switch arg.Name {
+			case "sourceRootPath":
+				src.SourceRootSubpath = string(arg.Value.(dagql.String))
+			case "originRoot":
+				root := arg.Value.(dagql.Optional[dagql.String]).Value.String()
+				src.DirSrc.OriginRoot = &root
+			case "originHostPath":
+				src.DirSrc.OriginHostPath = string(arg.Value.(dagql.String))
+			}
+		}
+		return src
+	}
+	gitRoot, localRoot := "github.com/dagger/dagger", ""
+
+	goDep := dep(t, args(t, dir(".dagger/modules/engine-dev", &gitRoot), "../go"))
+	require.Equal(t, "github.com/dagger/dagger/.dagger/modules/go", goDep.OriginSymbolic())
+
+	require.Equal(t, ".dagger/modules/go",
+		dep(t, args(t, dir(".dagger/modules/engine-dev", &localRoot), "../go")).OriginSymbolic())
+
+	// A dependency of a dependency keeps the origin too.
+	codegen := dep(t, args(t, dir(".dagger/modules/engine-dev", &gitRoot), "../../../cmd/codegen"))
+	require.Equal(t, "github.com/dagger/dagger/cmd/codegen", codegen.OriginSymbolic())
+	require.Equal(t, "github.com/dagger/dagger/.dagger/modules/go",
+		dep(t, args(t, codegen, "../../.dagger/modules/go")).OriginSymbolic())
+
+	// Without an origin the selection is the one it always was.
+	require.Equal(t, []dagql.NamedInput{
+		{Name: "sourceRootPath", Value: dagql.String(".dagger/modules/go")},
+		{Name: "disableFindUp", Value: dagql.Boolean(true)},
+	}, args(t, dir(".dagger/modules/engine-dev", nil), "../go"))
+
+	// A path that leaves the tree is no module of the tree.
+	require.Empty(t, dep(t, args(t, dir("modules/app", &gitRoot), "../../../outside")).OriginSymbolic())
+
+	// In a tree read from the host, a dependency keeps the tree's host path.
+	hostDir := dir(".dagger/modules/engine-dev", &localRoot)
+	hostDir.DirSrc.OriginHostPath = "/home/user/dagger"
+	require.Equal(t, "/home/user/dagger", dep(t, args(t, hostDir, "../go")).DirSrc.OriginHostPath)
+	require.Empty(t, dep(t, args(t, hostDir, "../../../../outside")).DirSrc.OriginHostPath)
 }

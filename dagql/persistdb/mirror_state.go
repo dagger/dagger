@@ -57,6 +57,12 @@ type MirrorResultDep struct {
 	DepResultID    int64
 }
 
+type MirrorResultCall struct {
+	ResultID      int64
+	RequestDigest string
+	Call          string
+}
+
 type MirrorPersistedEdge struct {
 	ResultID          int64
 	CreatedAtUnixNano int64
@@ -99,6 +105,7 @@ const clearMirrorSnapshotContentLinks = `DELETE FROM snapshot_content_links`
 const clearMirrorSnapshotContentHashes = `DELETE FROM snapshot_content_hashes`
 const clearMirrorResultSnapshotLinks = `DELETE FROM result_snapshot_links`
 const clearMirrorPersistedEdges = `DELETE FROM persisted_edges`
+const clearMirrorResultCalls = `DELETE FROM result_calls`
 const clearMirrorResultDeps = `DELETE FROM result_deps`
 const clearMirrorResultOutputEqClasses = `DELETE FROM result_output_eq_classes`
 const clearMirrorTermInputs = `DELETE FROM term_inputs`
@@ -115,6 +122,7 @@ func (q *Queries) ClearMirrorState(ctx context.Context) error {
 		clearMirrorSnapshotContentHashes,
 		clearMirrorResultSnapshotLinks,
 		clearMirrorPersistedEdges,
+		clearMirrorResultCalls,
 		clearMirrorResultDeps,
 		clearMirrorResultOutputEqClasses,
 		clearMirrorTermInputs,
@@ -199,6 +207,15 @@ INSERT INTO result_deps (parent_result_id, dep_result_id) VALUES (?, ?)
 
 func (q *Queries) InsertMirrorResultDep(ctx context.Context, arg MirrorResultDep) error {
 	_, err := q.exec(ctx, nil, insertMirrorResultDep, arg.ParentResultID, arg.DepResultID)
+	return err
+}
+
+const insertMirrorResultCall = `
+INSERT INTO result_calls (result_id, request_digest, call) VALUES (?, ?, ?)
+`
+
+func (q *Queries) InsertMirrorResultCall(ctx context.Context, arg MirrorResultCall) error {
+	_, err := q.exec(ctx, nil, insertMirrorResultCall, arg.ResultID, arg.RequestDigest, arg.Call)
 	return err
 }
 
@@ -310,6 +327,27 @@ func (q *Queries) ListMirrorEqClasses(ctx context.Context) ([]MirrorEqClass, err
 	for rows.Next() {
 		var row MirrorEqClass
 		if err := rows.Scan(&row.ID); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+const listMirrorResultCalls = `
+SELECT result_id, request_digest, call FROM result_calls
+`
+
+func (q *Queries) ListMirrorResultCalls(ctx context.Context) ([]MirrorResultCall, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorResultCalls)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MirrorResultCall
+	for rows.Next() {
+		var row MirrorResultCall
+		if err := rows.Scan(&row.ResultID, &row.RequestDigest, &row.Call); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

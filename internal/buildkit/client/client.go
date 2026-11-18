@@ -190,10 +190,20 @@ func (c *Client) Dialer() session.Dialer {
 }
 
 func (c *Client) Wait(ctx context.Context) error {
+	_, err := c.WaitInfo(ctx)
+	return err
+}
+
+// WaitInfo waits for the server to answer, like Wait, and returns its info.
+// The info is nil from a server too old to have the info API.
+func (c *Client) WaitInfo(ctx context.Context) (*Info, error) {
 	for {
-		_, err := c.ControlClient().Info(ctx, &controlapi.InfoRequest{})
+		res, err := c.ControlClient().Info(ctx, &controlapi.InfoRequest{})
 		if err == nil {
-			return nil
+			return &Info{
+				BuildkitVersion: fromAPIBuildkitVersion(res.BuildkitVersion),
+				SystemInfo:      fromAPISystemInfo(res.SystemInfo),
+			}, nil
 		}
 
 		switch code := grpcerrors.Code(err); code {
@@ -201,14 +211,14 @@ func (c *Client) Wait(ctx context.Context) error {
 		case codes.Unimplemented:
 			// only buildkit v0.11+ supports the info api, but an unimplemented
 			// response error is still a response so we can ignore it
-			return nil
+			return nil, nil
 		default:
-			return err
+			return nil, err
 		}
 
 		select {
 		case <-ctx.Done():
-			return context.Cause(ctx)
+			return nil, context.Cause(ctx)
 		case <-time.After(time.Second):
 		}
 		c.conn.ResetConnectBackoff()

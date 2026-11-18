@@ -61,6 +61,17 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The names the engine gives this module's own declarations: the same as its source's ModuleSource.naming, for module runtimes, which have no ModuleSource.
+     *
+     * It answers for the module under its own name (ModuleSource.moduleName), by the naming rules of the version the module is named by. A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.
+     */
+    public function naming(): ModuleNaming
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('naming');
+        return new \Dagger\ModuleNaming($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
      */
     public function source(): Directory

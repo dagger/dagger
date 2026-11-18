@@ -68,7 +68,8 @@ func evidenceTestCacheAttrs(t *testing.T, kvs []attribute.KeyValue) map[string]s
 			continue
 		}
 		switch k {
-		case telemetryattrs.CacheStructuralInputsAttr, telemetryattrs.CacheDepsAttr, telemetryattrs.CachePartsAttr:
+		case telemetryattrs.CacheStructuralInputsAttr, telemetryattrs.CacheDepsAttr, telemetryattrs.CachePartsAttr,
+			telemetryattrs.CacheMissFreshInputsAttr:
 			// The contract's native string slices (checked separately via
 			// evidenceTestStructuralInputs and evidenceTestStringSlice).
 			assert.Equal(t, attribute.STRINGSLICE, kv.Value.Type(), "contract attribute %s must be STRINGSLICE-typed", k)
@@ -182,6 +183,7 @@ func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 	span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &dagql.CacheDecision{
 		Outcome:                    dagql.CacheOutcomeExecuted,
 		MissIncompatibleCandidates: true,
+		MissUnavailableParts:       true,
 		MissSawExpired:             true,
 		MissUnknownInputIndex:      2,
 		SelfDigest:                 selfDig,
@@ -195,6 +197,7 @@ func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 		telemetryattrs.CacheContractAttr:                   telemetryattrs.CacheContractV1,
 		telemetryattrs.CacheOutcomeAttr:                    "executed",
 		telemetryattrs.CacheMissIncompatibleCandidatesAttr: "true",
+		telemetryattrs.CacheMissUnavailablePartsAttr:       "true",
 		telemetryattrs.CacheMissSawExpiredAttr:             "true",
 		telemetryattrs.CacheMissUnknownInputAttr:           "2",
 		telemetryattrs.CacheSelfDigestAttr:                 selfDig.String(),
@@ -264,9 +267,9 @@ func TestRecordCacheEvidenceMappingRemoteHit(t *testing.T) {
 	})
 }
 
-// A serve-time miss stamps its reason on the executed call, and the remote
-// fact of the hit it gave up does not ride along. A call that joined after one
-// stamps neither reason.
+// A serve-time miss stamps its reason on the executed call. The remote fact of
+// the hit it gave up rides along only as chosen_remote, never as a hit fact. A
+// call that joined after one stamps neither.
 func TestRecordCacheEvidenceMappingServeTimeMiss(t *testing.T) {
 	t.Parallel()
 	selfDig := digest.FromString("evidence-serve-miss-self")
@@ -276,14 +279,20 @@ func TestRecordCacheEvidenceMappingServeTimeMiss(t *testing.T) {
 		reasons map[string]string
 	}{
 		{
-			name:    "producer released",
-			ev:      dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissProducerReleased: true},
-			reasons: map[string]string{telemetryattrs.CacheMissProducerReleasedAttr: "true"},
+			name: "producer released",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissProducerReleased: true},
+			reasons: map[string]string{
+				telemetryattrs.CacheMissProducerReleasedAttr: "true",
+				telemetryattrs.CacheMissChosenRemoteAttr:     "true",
+			},
 		},
 		{
-			name:    "requirements grew",
-			ev:      dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissRequirementsGrew: true},
-			reasons: map[string]string{telemetryattrs.CacheMissRequirementsGrewAttr: "true"},
+			name: "requirements grew",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, MissRequirementsGrew: true},
+			reasons: map[string]string{
+				telemetryattrs.CacheMissRequirementsGrewAttr: "true",
+				telemetryattrs.CacheMissChosenRemoteAttr:     "true",
+			},
 		},
 		{
 			name: "joined",
@@ -316,6 +325,175 @@ func TestRecordCacheEvidenceMappingServeTimeMiss(t *testing.T) {
 			}
 			got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 			assert.DeepEqual(t, got, want)
+		})
+	}
+}
+
+// The remote-candidate facts and the fresh inputs stamp on executed misses
+// only, each beside the fact it qualifies.
+func TestRecordCacheEvidenceMappingRemoteMissFacts(t *testing.T) {
+	t.Parallel()
+	selfDig := digest.FromString("evidence-remote-miss-self")
+	remote := dagql.CacheDecision{
+		MissSawExpired:             true,
+		MissExpiredRemote:          true,
+		MissIncompatibleCandidates: true,
+		MissIncompatibleRemote:     true,
+		MissFreshInputs:            []int{0, 2},
+		MissUnknownInputIndex:      -1,
+		SelfDigest:                 selfDig,
+		PairingDigest:              selfDig,
+	}
+	for _, tc := range []struct {
+		name  string
+		ev    dagql.CacheDecision
+		want  map[string]string
+		fresh []string
+	}{
+		{
+			name: "executed",
+			ev:   remote,
+			want: map[string]string{
+				telemetryattrs.CacheOutcomeAttr:                    "executed",
+				telemetryattrs.CacheMissSawExpiredAttr:             "true",
+				telemetryattrs.CacheMissExpiredRemoteAttr:          "true",
+				telemetryattrs.CacheMissIncompatibleCandidatesAttr: "true",
+				telemetryattrs.CacheMissIncompatibleRemoteAttr:     "true",
+			},
+			fresh: []string{"0", "2"},
+		},
+		{
+			name: "joined",
+			ev:   remote,
+			want: map[string]string{telemetryattrs.CacheOutcomeAttr: "joined"},
+		},
+		{
+			// A qualifier without the fact it qualifies stamps nothing.
+			name: "qualifiers alone",
+			ev: dagql.CacheDecision{
+				MissExpiredRemote:      true,
+				MissIncompatibleRemote: true,
+				HitRemote:              true,
+				MissUnknownInputIndex:  -1,
+				SelfDigest:             selfDig,
+				PairingDigest:          selfDig,
+			},
+			want: map[string]string{telemetryattrs.CacheOutcomeAttr: "executed"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sr, span := evidenceTestRecordingSpan(t)
+			ev := tc.ev
+			ev.Outcome = dagql.CacheOutcome(tc.want[telemetryattrs.CacheOutcomeAttr])
+			span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &ev, nil)...)
+			ended := evidenceTestEndedAttrs(t, sr, span)
+			want := map[string]string{
+				telemetryattrs.CacheContractAttr:      telemetryattrs.CacheContractV1,
+				telemetryattrs.CacheSelfDigestAttr:    selfDig.String(),
+				telemetryattrs.CachePairingDigestAttr: selfDig.String(),
+			}
+			for k, v := range tc.want {
+				want[k] = v
+			}
+			assert.DeepEqual(t, evidenceTestCacheAttrs(t, ended), want)
+			fresh, present := evidenceTestStringSlice(ended, telemetryattrs.CacheMissFreshInputsAttr)
+			assert.Equal(t, tc.fresh != nil, present)
+			assert.DeepEqual(t, tc.fresh, fresh)
+		})
+	}
+}
+
+// What a miss did about a remote lookup is stamped on executed calls only.
+func TestRecordCacheEvidenceMappingRemoteLookup(t *testing.T) {
+	t.Parallel()
+	selfDig := digest.FromString("evidence-remote-lookup-self")
+	for _, tc := range []struct {
+		outcome dagql.CacheOutcome
+		lookup  string
+		want    map[string]string
+	}{
+		{outcome: dagql.CacheOutcomeExecuted, lookup: dagql.RemoteLookupQueued, want: map[string]string{telemetryattrs.CacheMissRemoteLookupAttr: "queued"}},
+		{outcome: dagql.CacheOutcomeExecuted, lookup: dagql.RemoteLookupAsked, want: map[string]string{telemetryattrs.CacheMissRemoteLookupAttr: "asked"}},
+		{outcome: dagql.CacheOutcomeExecuted, lookup: dagql.RemoteLookupDropped, want: map[string]string{telemetryattrs.CacheMissRemoteLookupAttr: "dropped"}},
+		{outcome: dagql.CacheOutcomeExecuted, want: map[string]string{}},
+		{outcome: dagql.CacheOutcomeJoined, lookup: dagql.RemoteLookupQueued, want: map[string]string{}},
+	} {
+		t.Run(string(tc.outcome)+"/"+tc.lookup, func(t *testing.T) {
+			t.Parallel()
+			sr, span := evidenceTestRecordingSpan(t)
+			ev := dagql.CacheDecision{Outcome: tc.outcome, MissRemoteLookup: tc.lookup, MissUnknownInputIndex: -1, SelfDigest: selfDig, PairingDigest: selfDig}
+			span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &ev, nil)...)
+			got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+			v, ok := got[telemetryattrs.CacheMissRemoteLookupAttr]
+			want, wantOK := tc.want[telemetryattrs.CacheMissRemoteLookupAttr]
+			assert.Equal(t, wantOK, ok)
+			assert.Equal(t, want, v)
+		})
+	}
+}
+
+// Adoption is a fact of the publication, so the executed call and the calls
+// that joined it stamp it, with the merge's origin when the adopted entry is
+// remote.
+func TestRecordCacheEvidenceMappingAdopted(t *testing.T) {
+	t.Parallel()
+	selfDig := digest.FromString("evidence-adopted-self")
+	for _, tc := range []struct {
+		name string
+		ev   dagql.CacheDecision
+		want map[string]string
+	}{
+		{
+			name: "executed, remote",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, Adopted: true, AdoptedRemote: true, AdoptedMergedAtUnixNano: 1760000000123456789},
+			want: map[string]string{
+				telemetryattrs.CacheOutcomeAttr:         "executed",
+				telemetryattrs.CacheAdoptedAttr:         "true",
+				telemetryattrs.CacheAdoptedRemoteAttr:   "true",
+				telemetryattrs.CacheAdoptedMergedAtAttr: "1760000000123456789",
+			},
+		},
+		{
+			name: "joined, remote after a restart",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeJoined, Adopted: true, AdoptedRemote: true},
+			want: map[string]string{
+				telemetryattrs.CacheOutcomeAttr:       "joined",
+				telemetryattrs.CacheAdoptedAttr:       "true",
+				telemetryattrs.CacheAdoptedRemoteAttr: "true",
+			},
+		},
+		{
+			name: "executed, local",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeExecuted, Adopted: true},
+			want: map[string]string{
+				telemetryattrs.CacheOutcomeAttr: "executed",
+				telemetryattrs.CacheAdoptedAttr: "true",
+			},
+		},
+		{
+			name: "hit",
+			ev:   dagql.CacheDecision{Outcome: dagql.CacheOutcomeHit, Adopted: true, AdoptedRemote: true},
+			want: map[string]string{telemetryattrs.CacheOutcomeAttr: "hit"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sr, span := evidenceTestRecordingSpan(t)
+			ev := tc.ev
+			ev.MissUnknownInputIndex = -1
+			ev.SelfDigest = selfDig
+			ev.PairingDigest = selfDig
+			span.SetAttributes(appendCacheEvidenceAttrs(context.Background(), nil, &ev, nil)...)
+			want := map[string]string{
+				telemetryattrs.CacheContractAttr:      telemetryattrs.CacheContractV1,
+				telemetryattrs.CacheSelfDigestAttr:    selfDig.String(),
+				telemetryattrs.CachePairingDigestAttr: selfDig.String(),
+			}
+			for k, v := range tc.want {
+				want[k] = v
+			}
+			assert.DeepEqual(t, evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span)), want)
 		})
 	}
 }
@@ -500,6 +678,27 @@ func TestRecordCacheEvidenceCacheState(t *testing.T) {
 	assert.Equal(t, attribute.Key(telemetryattrs.CacheDepsAttr), mapped[0].Key)
 	assert.Equal(t, 2, len(mapped), "no retention, expiry or empty parts are stamped")
 	assert.DeepEqual(t, []string{`{"part":"fs"}`}, mapped[1].Value.AsStringSlice())
+}
+
+// A call span carries its parts' raw sizes beside the parts, index-aligned,
+// when the state has them, as on an engine with the remote cache; without
+// them, as elsewhere, it carries none.
+func TestCacheStateAttrsPartSizes(t *testing.T) {
+	t.Parallel()
+	parts := []string{`{"part":"fs"}`, `{"part":"meta"}`}
+	sizes := func(attrs []attribute.KeyValue) ([]string, bool) {
+		for _, kv := range attrs {
+			if kv.Key == attribute.Key(telemetryattrs.CachePartSizesAttr) {
+				return kv.Value.AsStringSlice(), true
+			}
+		}
+		return nil, false
+	}
+	got, ok := sizes(cacheStateAttrs(dagql.CacheResultState{Parts: parts, PartSizes: []int64{94896128, 0}}))
+	assert.Assert(t, ok, "the sizes are stamped beside the parts")
+	assert.DeepEqual(t, []string{"94896128", "0"}, got)
+	_, ok = sizes(cacheStateAttrs(dagql.CacheResultState{Parts: parts}))
+	assert.Assert(t, !ok, "no sizes are stamped without them")
 }
 
 // evidenceTestChain builds a result whose frame has a receiver chain of n

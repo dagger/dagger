@@ -1,3 +1,4 @@
 User-agent: *
 Allow: /
+Disallow: /next/
 Sitemap: https://docs.dagger.io/sitemap.xml

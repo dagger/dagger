@@ -324,6 +324,119 @@ are in `prepared-race-20260905T085744` and `assembled-race-20260905T085911`.
 `final-evidence.md` reconciles source revisions, commands, counts and limitations.
 No full TLA or Go suite was run for this implementation.
 
+## Snapshot chains: layers applied apart, and prefetch
+
+`SnapshotChain.tla` models two more engine behaviours behind constants that
+the earlier configurations leave off.
+
+**Layers applied apart (`ModelApart`).** On containerd's overlay
+snapshotter outside a user namespace, `ImportChain` applies every missing
+layer at once, each into a mutable snapshot with no parent, and commits them
+onto their parents in layer order (`importChainApart` and `applyChainLayer`
+in `engine/snapshots/import.go`). In the model, each importer gets one
+goroutine per layer (`ap`), from the first layer its index walk found
+missing. A goroutine takes the layer's chain-ID lock (`clocks`). Under that
+lock it either skips a layer the indexes now have, or gets the layer's bytes
+and applies them. It ends holding its mutable snapshot and the lock. The
+importer's main loop takes the results in order. It commits an applied
+layer under the key lock unless the index already has the layer, imports a
+skipped layer in order, and fails on a failed layer. A failed import first
+waits for every goroutine to end, then releases every later result. A later
+layer can therefore finish applying after an earlier one has failed.
+
+- `ChainApplyExclusive`: two imports never hold one chain layer applied apart
+  at the same time.
+- `CleanupComplete` now also requires a finished import to hold no
+  goroutine result and no chain lock.
+- `ReuseBeforeBytes` now also rejects committing an applied layer over a
+  snapshot that was chosen and survives.
+
+**Prefetch (`ModelPrefetch`).** The prefetcher (`dagql/cache_part_prefetch.go`)
+joins or starts a layer's download with no chain owner. It links the blob
+into a TTL lease of its own, then leaves the download. Once one blob of a
+chain is held, it imports the chain ahead of demand (`importAhead`). In the
+model, importer 2 runs that import and owner 2 keeps its ref. Importer 1 and
+owner 1 are demand. Offers are not modelled. Any hold may be released at
+any time, which covers retirement, TTL and an install consuming the blob.
+Any import ahead may be dropped at any time, which covers retirement,
+replacement by an offer of another meaning, and TTL. A replacement of the
+same meaning changes nothing in the model. A dropped import ahead waits in
+`droppedAheads` for the janitor. An import that ends after its drop releases
+its own ref. Close cancels every job and import ahead, waits for them all,
+then releases everything.
+
+- `PrefetchHeldPresent`: a held blob is present.
+- `AheadRefTracked`: an import ahead's kept ref is always in `aheads` or
+  `droppedAheads`.
+- `PrefetchClosed`: a closed prefetcher holds no blob, no download and no
+  import ahead.
+
+**The import ahead's wait for each blob.** The import ahead has no provider:
+its chain's blobs arrive through `ExportChain.Await`, which is
+`partPrefetcher.awaitBlob`, and it never downloads anything itself. Each
+layer it lacks waits for its blob before taking that layer's lock: the key
+lock when layers apply in order, or the chain-ID lock when they apply apart
+(`awaitLayer` in `engine/snapshots/import.go`). The wait ends when the
+blob's hold lands, or when another import has indexed the layer. The wait
+gives up when no prefetch of the blob is coming, or when the import ahead
+has been dropped. After the wait, a blob that has since gone from the
+content store fails the layer. A job may also end without a hold
+(`PrefetchSkip`), for example when the blob was already stored or the
+queue dropped the job.
+
+- `AwaitHoldsNoLock`: a layer waiting for its blob holds no lock on its own
+  layer, so another import of that layer never waits behind the wait.
+- `AwaitEnds` (liveness): a wait whose outcome is settled ends. Settled
+  means the blob is held, the layer is indexed, nothing is coming, or the
+  import ahead was dropped. Fairness covers only the wait's own steps, so
+  downloads, prefetches and the other import may stall.
+
+Below the model's abstraction: a prefetch job's blobs have no order among
+themselves, since any layer's prefetch may start at any time. Requests,
+streams and ranged-read chunks are not modelled; their bounds are in-memory
+semaphores that hold no lease and no content. A blob downloaded for an offer
+retired meanwhile settles with no hold, which is a hold released at once
+(`PrefetchSettle`, then `PrefetchExpire`).
+
+Limits of the bounds: the window is wider than every modelled chain, so
+all goroutines start together. Each layer is prefetched at most once. One
+import ahead runs at a time. Deadlock is not checked, because the runner
+passes `-deadlock`.
+
+Each configuration's header says what it checks. The runs below used the
+pinned TLC on a 16-core machine through `tla-check one`, on 2026-10-28.
+Every run ended with its expected outcome. A mutation's count is where
+TLC stopped at the violation; it varies a little from run to run.
+
+| Configuration | Expected outcome | Distinct states | Depth | Wall time |
+| --- | --- | ---: | ---: | ---: |
+| `snapshot_apart` | clean | 987,911 | 62 | 8 s |
+| `snapshot_apart_window` | clean | 111,745 | 42 | 2 s |
+| `snapshot_apart_export` | clean | 1,245,593 | 53 | 10 s |
+| `snapshot_apart_keeplater` | violates `CleanupComplete` | 875 | 8 | <1 s |
+| `snapshot_apart_nolock` | violates `ChainApplyExclusive` | 26,186 | 13 | 1 s |
+| `snapshot_apart_skipreuse` | violates `ReuseBeforeBytes` | 127,137 | 17 | 2 s |
+| `snapshot_prefetch` | clean | 43,028,020 | 60 | 271 s |
+| `snapshot_prefetch_apart` | clean | 216,270,535 | 71 | 1,836 s |
+| `snapshot_prefetch_leaveearly` | violates `PrefetchHeldPresent` | 2,334 | 9 | <1 s |
+| `snapshot_prefetch_keptgone` | violates `AheadRefTracked` | 869,037 | 20 | 5 s |
+| `snapshot_prefetch_closedropped` | violates `PrefetchClosed` | 1,181,324 | 21 | 6 s |
+| `snapshot_prefetch_await_underlock` | violates `AwaitHoldsNoLock` | 8,339 | 10 | <1 s |
+| `snapshot_prefetch_await_liveness` | clean, `AwaitEnds` holds | 6,829,329 | 59 | 409 s |
+| `snapshot_prefetch_await_ignoresindex` | violates `AwaitEnds` | 67,483 | — | 3 s |
+| `snapshot_prefetch_await_nogiveup` | violates `AwaitEnds` | 65,063 | — | 3 s |
+
+With both new constants off, the existing configurations keep exactly
+the distinct-state counts of the model before this change: `import`
+1,328,781, `export` 11,278,293, `download` 12,909,703 and `download_window`
+4,509,264. The existing mutations still violate their named properties.
+
+The reachability probes in the `apart`, `apart_export`, `prefetch` and
+`prefetch_apart` headers each reached their witness. With three import starts, `apart`
+passed at 106,384,020 distinct states (depth 86, 14 minutes), on a revision
+of this change before the commit evidence moved to the lookup. That is
+too large to register, so `apart` allows two.
+
 ## One current entry per recipe
 
 The model keeps at most one current entry per call, the entry the recipe
@@ -593,3 +706,169 @@ Scope limits:
   without holdings; the engine's Go tests cover entries with them.
 
 The TLC runs' outputs are not committed.
+
+## Call records
+
+A call that returns an entry of another recipe, such as a module function
+returning a container its body built, makes no entry of its own. The cache
+teaches the entry the call's identity. With call records, the Cloud keeps
+each such call on its stored entry (`keepCallLocked`), saves it in
+`result_calls`, and sends it in bundles with the entry. A merging engine then
+teaches the call onto the entry (`teachCallIdentityLocked`,
+`dagql/cache_call_records.go` and `cache_value_merge.go`). The model needs
+no new action for it. Here is how each part maps onto what is modelled:
+
+- **Teaching.** It merges the call into the entry's equivalence class
+  through `applyPreparedResultIdentityLocked`, inside the merge's
+  write-locked section. It adds no entry, owner, dependency or retention
+  edge, and no recipe-index key. So `Current` and `MergeTarget` are
+  unchanged by it, and a fresh-value publication of the taught call adopts
+  only that call's own entries. (A publication of an existing returned
+  result may instead adopt across equivalent entries, through `PubAdopt`
+  and `CanonicalPick`.) Equivalence is the static `ClassOf`, so a
+  configuration that puts the taught call in the entry's class lets its
+  lookups select the entry at any time, or miss. That checks the lifecycle
+  of the cross-call lookup candidate teaching produces, against ownership,
+  attachment, release and replacement. It does not check that teaching is
+  correct or when it may happen: no action teaches, and the probe below
+  shows a cross-call hit, not a teach. `recipe_merge_taught` runs it with
+  the lookup hit split into selection and claim (`SharedSections =
+  "split"`). Both steps sit in one read section, so a merge waits until it
+  closes, as in Go, while release marking interleaves. It covers
+  publication, release, expiry, a failed attachment and merges, with every
+  `recipe_merge` invariant. Two overlapping lookup readers are the
+  `shared_claims` configurations' scope.
+- **A taught hit.** It is an ordinary class hit, under the same
+  eligibility filter: registered, attachment not failed, unexpired, session
+  requirements met. It decodes or arms the selected entry's own recipe, not
+  the taught call's.
+- **Expiry folding.** An entry takes the earliest expiry of its own call and
+  the calls taught onto it (`mergeSharedResultExpiryUnix`). That only moves
+  its expiry earlier, and `Expire` may already fire on any entry at any
+  moment. That covers the lifecycle effects of a shorter expiry, but not
+  which call report may shorten it. The admission guards keep or teach no
+  call whose expiry has passed, and fold a span's expiry only while it is
+  to come. They are a deliberate scope limit, not something TLA+ would need
+  a clock for. Two pieces of state are abstracted out: whether an incoming
+  call or row has expired, kept apart from the local entry's expiry, and
+  which identities have actually been taught. With them, removing the
+  guard at `dagql/cache_value_merge.go` would teach an expired incoming
+  call onto a live value and let the next lookup hit. The present model
+  can't detect that mutation: incoming records are never expired (see the
+  scope limits above), and static equivalence already allows the
+  cross-call hit. The Go tests in `dagql/cache_call_records_test.go` cover
+  the guards, including
+  `TestCallRecordOnAnExpiredRowLeavesTheEnginesValueAlone`,
+  `TestCallRecordExpiredCallIsNotTaughtOnAValueTheEngineKept` and
+  `TestCallRecordPastExpiriesLeaveAReplacementAlone`.
+- **Kept calls and `result_calls`.** Kept calls are data on a Cloud entry.
+  They own nothing, are saved only for entries the snapshot keeps, and are
+  deleted with their entry (a foreign key with `ON DELETE CASCADE`). They
+  change no ownership, retention or restart state the model tracks.
+- **Call inputs.** An input entry a bundle adds for a call travels as a
+  root. Each root targets its own current entry independently, as two
+  `MergeLive` steps do.
+- **Out of scope.** Deriving a call's identity from its span encoding, and
+  the bundle's new version, are encoding questions, outside the model.
+
+| Configuration | Question | Distinct states | Depth | Wall seconds |
+| --- | --- | ---: | ---: | ---: |
+| `recipe_merge_taught` | another call's hits on merged entries, racing shared-lock lookups | 3,211,758 | 48 | 82 |
+
+The reachability probe
+`ProbeTaughtHit == ~\E i \in DOMAIN invocations : invocations[i].path = "hit" /\ invocations[i].phase = "readBarrier" /\ res[invocations[i].resId].call # invocations[i].call /\ res[invocations[i].resId].imported`
+is violated at 391 distinct states. A lookup of one call claims a merged
+entry of the other, so the configuration reaches the case it is for.
+
+## Part sources
+
+A record from another engine that holds no download address for any of its
+parts decodes with its recipe armed, as a value restored from local
+persistence does, and is evaluated natively: its inputs are read in memory
+instead of searched for hop by hop. The model adds this behind `ModelOffers`
+(a scenario switch: off, no row has an offer, is managed or is a shell, and
+every other configuration keeps its state space):
+
+- **Offers.** A merged record can carry a download address (an offer) for a
+  part, and an offer can arrive later on any row (`OfferArrive`). Settling a
+  part retires its offer, whether acquisition or a native body computed it;
+  failed native bookkeeping keeps it.
+- **Decode.** A merged row arms its recipe when, at decode, it holds no
+  offer and no part it already acquired, and has a recipe
+  (`ImportedLazyArm`); otherwise it decodes as a shell, with nothing for
+  dagql to evaluate (`ImportedShell`). The choice is made at decode
+  (`decodeArm`): an offer that retires later doesn't arm a shell. A row
+  restored from disk arms whenever it has a recipe; a row with no recipe is
+  a shell either way.
+- **Native or managed.** A demand goes through part acquisition when the row
+  is managed already, or has an offer or is a shell and no native body is
+  running for it (`UsesAcquisition`). That demand first marks the row managed
+  in its own step (`EvalEnterAcquisition`), as `usesPartAcquisition` sets the
+  gate's managed flag before TryAcquire. Managed is sticky until the value is
+  replaced.
+- **Acquisition** (`EvalAcquire`), one atomic decision per demanded part:
+  done if the part is complete or acquired; refused for a part a native body
+  already wrote (its installed output, joined before TryAcquire and refused
+  by it in every configuration) and, under `TryAcquireGuard`, for a group
+  with a native attempt in flight (the gate's Running check); otherwise
+  install the offer, or re-run when there is none. A demand on a part a
+  native body already wrote joins that native installation and retries its
+  bookkeeping, managed or not.
+
+Properties: `OnePartWriter` (no part is written both by acquisition and by a
+native body), `ManagedOnlyWithSource` (a row goes managed only with an offer
+or as a shell), `NativeRunStaysNative` (never while a native body runs, the
+running check's job), and `ManagedSticky`. `EvalDoneComplete` accepts an
+acquired part.
+
+Not modeled: the gate's internal exclusion between acquisition writers (one
+atomic decision here), a failed download (it re-runs, still one writer), a
+recipe's parents decoding when it arms, and part delegation
+(`ModelPartDelegation` is off in these configurations).
+
+The configurations use one part in one group:
+
+- `part_sources_merge`: a merged root of `cA`, one invocation hitting it or computing
+  its own value, two evaluators, late offers on any row.
+- `part_sources_import`: lazy_import's restored starting graphs, without release, with
+  late offers.
+
+Run with the pinned TLC 1.7.4 through `tla-check one`, one JVM per
+configuration (16 workers, 8 GB), three at a time, on an arm64 spot machine
+(c8gd.4xlarge, 16 CPUs). A mutation's or probe's count is where TLC
+stopped, which varies with worker order:
+
+| Configuration | Question | Expected | Distinct states | Depth |
+| --- | --- | --- | ---: | ---: |
+| `part_sources_import` | restored rows, late offers, native and managed | clean | 27,504,854 | 42 |
+| `part_sources_merge` | merged rows, armed or shells, late offers | clean | 87,446 | 38 |
+| `part_sources_tryacquire_guard_only_off` | no TryAcquire Running check | clean | 27,504,854 | 42 |
+| `part_sources_not_sticky` | managed resets when no native attempt is in flight | clean | 91,506 | 38 |
+| `part_sources_late_offer_over_native` | no running check and no TryAcquire Running check | violates `OnePartWriter` | 37,956 | 10 |
+| `part_sources_running_guard_off` | a row goes managed while a native body runs | violates `NativeRunStaysNative` | 20,320 | 9 |
+| `part_sources_imported_predicate` | the old predicate: imported means managed | violates `ManagedOnlyWithSource` | 1,258 | 5 |
+| `probe_part_sources_armed_native` | an armed merged row completes natively | witness | 1,224 | 14 |
+| `probe_part_sources_late_offer` | an armed row installs a late offer | witness | 10,682 | 8 |
+| `probe_part_sources_shell` | a row that decoded as a shell acquires a part | witness | 573 | 11 |
+| `probe_part_sources_armed_managed` | a restored row armed with an offer goes managed | witness | 7,061 | 7 |
+
+Either running check alone keeps one writer per part. With the check in
+`usesPartAcquisition` on, a row never goes managed while a native attempt
+is in flight, so acquisition never meets one: `part_sources_tryacquire_guard_only_off`
+reaches exactly `part_sources_import`'s states. With that check off alone, one writer
+still holds through TryAcquire, but the row goes managed in mid-run, so its
+later demands take acquisition instead of native evaluation
+(`part_sources_running_guard_off`). With both off, acquisition takes a part a native
+body is computing (`part_sources_late_offer_over_native`).
+
+`part_sources_not_sticky` passes: acquisition is one atomic step here and leaves the
+value a shell, which routes every later demand to acquisition, so a gate
+that forgets it is managed lets no native body write an acquired part. The
+window sticky managed covers is inside one acquisition, between TryAcquire
+and the install, which the model doesn't split.
+
+`part_sources_imported_predicate`'s shortest witness is a decoded restored row that
+never armed. A scratch invariant (`tla-check one`), violated when an
+imported row is armed and managed with no offer and no shell, shows the
+armed case too: it is violated under that mutation (depth 6) and holds in
+`part_sources_import` and `part_sources_merge`.

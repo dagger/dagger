@@ -65,7 +65,7 @@ spec:
       {{- end }}
       containers:
         - name: dagger-engine
-          image: {{ if .Values.engine.image.ref }}{{ .Values.engine.image.ref }}{{ else }}registry.dagger.io/engine:v{{ .Chart.Version }}{{ end }}
+          image: {{ if .Values.engine.image.ref }}{{ .Values.engine.image.ref }}{{ else }}registry.dagger.io/engine:v{{ include "dagger.engineVersion" . }}{{ end }}
           imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
           {{- if or .Values.engine.port .Values.engine.args }}
           args:

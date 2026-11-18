@@ -32,6 +32,28 @@ class WorkspaceSDK extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * The value a setting records in this SDK's scope settings, as a native JSON value.
+     *
+     * Reads [sdks.<name>.scopes."<scope>".settings] from the workspace config, in the scope whose key resolves to path. The setting key is matched without regard to case.
+     *
+     * Null when no scope resolves to path, or the scope records no such setting. Fails when the config is invalid, path escapes the workspace root, key matches several recorded settings, or the value cannot be represented as JSON.
+     *
+     * Fails when this SDK is no longer installed in the workspace config, even if Workspace.sdk returned it earlier.
+     */
+    public function scopeSetting(string $path, string $key): ?JsonValue
+    {
+        $objectQueryBuilder = new \Dagger\Client\QueryBuilder('scopeSetting');
+        $objectQueryBuilder->setArgument('path', $path);
+        $objectQueryBuilder->setArgument('key', $key);
+        $objectQueryBuilder->selectField('id');
+        $id = $this->queryLeaf($objectQueryBuilder, 'id');
+        if ($id === null) {
+            return null;
+        }
+        return $this->client->loadObjectFromId(\Dagger\JsonValue::class, new \Dagger\Id((string)$id), 'JSONValue');
+    }
+
+    /**
      * The user-facing SDK name.
      */
     public function name(): string

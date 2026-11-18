@@ -16,11 +16,14 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/diff/apply"
+	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/archive"
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/continuity/sysx"
 	"github.com/containerd/log"
+	"github.com/containerd/typeurl/v2"
+	"github.com/dagger/dagger/util/compressutil"
 	"github.com/moby/sys/userns"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -90,6 +93,38 @@ func layerApplyTarget(mounts []mount.Mount) (layerTarget, bool) {
 	return layerTarget{}, false
 }
 
+// layerTarStream is the layer's tar, read from blob. A layer media type
+// containerd knows is read as its compressed-layer processor reads it, the
+// processor containerd picks for it when nothing else is registered, as in
+// the engine, except that a zstd decoder is reused across layers
+// (compressutil.DecompressStream). Any other media type goes through
+// containerd's processors, which are returned to be checked for errors once
+// the tar has been read.
+func layerTarStream(ctx context.Context, desc ocispecs.Descriptor, blob io.Reader, payloads map[string]typeurl.Any) (io.ReadCloser, []diff.StreamProcessor, error) {
+	if compressed, err := images.DiffCompression(ctx, desc.MediaType); err == nil {
+		if compressed == "" {
+			return io.NopCloser(blob), nil, nil
+		}
+		ds, err := compressutil.DecompressStream(blob)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decompress %s: %w", desc.MediaType, err)
+		}
+		return ds, nil, nil
+	}
+	processor := diff.NewProcessorChain(desc.MediaType, blob)
+	processors := []diff.StreamProcessor{processor}
+	for {
+		var err error
+		if processor, err = diff.GetProcessor(ctx, processor, payloads); err != nil {
+			return nil, nil, fmt.Errorf("failed to get stream processor for %s: %w", desc.MediaType, err)
+		}
+		processors = append(processors, processor)
+		if processor.MediaType() == ocispecs.MediaTypeImageLayer {
+			return processor, processors, nil
+		}
+	}
+}
+
 // Apply is containerd's fsApplier.Apply with the extraction replaced.
 func (a *layerApplier) Apply(ctx context.Context, desc ocispecs.Descriptor, mounts []mount.Mount, opts ...diff.ApplyOpt) (ocispecs.Descriptor, error) {
 	target, ok := layerApplyTarget(mounts)
@@ -111,20 +146,14 @@ func (a *layerApplier) Apply(ctx context.Context, desc ocispecs.Descriptor, moun
 	read := &applyCounter{r: content.NewReader(ra), progress: config.Progress}
 	defer read.report()
 
-	processor := diff.NewProcessorChain(desc.MediaType, read)
-	processors := []diff.StreamProcessor{processor}
-	for {
-		if processor, err = diff.GetProcessor(ctx, processor, config.ProcessorPayloads); err != nil {
-			return ocispecs.Descriptor{}, fmt.Errorf("failed to get stream processor for %s: %w", desc.MediaType, err)
-		}
-		processors = append(processors, processor)
-		if processor.MediaType() == ocispecs.MediaTypeImageLayer {
-			break
-		}
+	layer, processors, err := layerTarStream(ctx, desc, read, config.ProcessorPayloads)
+	if err != nil {
+		return ocispecs.Descriptor{}, err
 	}
-	defer processor.Close()
+	defer layer.Close()
 
-	rc := startLayerReadAhead(processor)
+	trusted := trustedLayer(ctx)
+	rc := startLayerReadAhead(layer, !trusted)
 	defer rc.stop()
 	if err := applyLayerTar(ctx, target, rc); err != nil {
 		return ocispecs.Descriptor{}, err
@@ -145,11 +174,11 @@ func (a *layerApplier) Apply(ctx context.Context, desc ocispecs.Descriptor, moun
 			}
 		}
 	}
-	return ocispecs.Descriptor{
-		MediaType: ocispecs.MediaTypeImageLayer,
-		Size:      rc.n,
-		Digest:    rc.digester.Digest(),
-	}, nil
+	applied := ocispecs.Descriptor{MediaType: ocispecs.MediaTypeImageLayer, Size: rc.n}
+	if !trusted {
+		applied.Digest = rc.digester.Digest()
+	}
+	return applied, nil
 }
 
 // layerReadAheadChunk and layerReadAheadChunks size the buffer between a
@@ -158,6 +187,24 @@ const (
 	layerReadAheadChunk  = 1 << 20
 	layerReadAheadChunks = 16
 )
+
+// layerReadAheadBufs holds read-ahead chunks between layers. An engine
+// applies thousands of layers, most far smaller than a chunk (the parts its
+// image ships average 300 KB), and a chunk made per layer was a megabyte
+// allocated and zeroed for each.
+var layerReadAheadBufs = sync.Pool{New: func() any {
+	buf := make([]byte, layerReadAheadChunk)
+	return &buf
+}}
+
+func getReadAheadChunk() []byte { return *layerReadAheadBufs.Get().(*[]byte) }
+
+func putReadAheadChunk(buf []byte) {
+	if cap(buf) == layerReadAheadChunk {
+		buf = buf[:layerReadAheadChunk]
+		layerReadAheadBufs.Put(&buf)
+	}
+}
 
 // layerReadAhead reads a layer's uncompressed stream on its own goroutine,
 // hashing and counting it there, up to layerReadAheadChunks chunks ahead of
@@ -175,6 +222,9 @@ type layerReadAhead struct {
 	err  error
 	once sync.Once
 
+	// hash says whether to hash the stream: an apply of a layer the engine
+	// trusts (trustedLayer) doesn't.
+	hash bool
 	// Set by the reading goroutine; read once it has exited.
 	digester digest.Digester
 	n        int64
@@ -186,8 +236,9 @@ type layerReadAheadResult struct {
 	err error
 }
 
-func startLayerReadAhead(src io.Reader) *layerReadAhead {
+func startLayerReadAhead(src io.Reader, hash bool) *layerReadAhead {
 	ra := &layerReadAhead{
+		hash:     hash,
 		chunks:   make(chan layerReadAheadResult, layerReadAheadChunks),
 		free:     make(chan []byte, layerReadAheadChunks+1),
 		done:     make(chan struct{}),
@@ -211,7 +262,7 @@ func (ra *layerReadAhead) fill(src io.Reader) {
 		select {
 		case buf = <-ra.free:
 		default:
-			buf = make([]byte, layerReadAheadChunk)
+			buf = getReadAheadChunk()
 		}
 		n, err := 0, error(nil)
 		for n < len(buf) && err == nil {
@@ -219,11 +270,14 @@ func (ra *layerReadAhead) fill(src io.Reader) {
 			m, err = src.Read(buf[n:])
 			n += m
 		}
-		hash.Write(buf[:n])
+		if ra.hash {
+			hash.Write(buf[:n])
+		}
 		ra.n += int64(n)
 		select {
 		case ra.chunks <- layerReadAheadResult{buf: buf, n: n, err: err}:
 		case <-ra.done:
+			putReadAheadChunk(buf)
 			return
 		}
 		if err != nil {
@@ -253,10 +307,25 @@ func (ra *layerReadAhead) Read(p []byte) (int, error) {
 }
 
 // stop ends the reading goroutine and waits for it, so nothing reads the
-// stream once Apply has returned and closed it.
+// stream once Apply has returned and closed it. Its chunks go back to the
+// pool: nothing reads ra once it has stopped.
 func (ra *layerReadAhead) stop() {
 	ra.once.Do(func() { close(ra.done) })
 	<-ra.exited
+	if ra.buf != nil {
+		putReadAheadChunk(ra.buf)
+		ra.buf, ra.cur = nil, nil
+	}
+	for {
+		select {
+		case next := <-ra.chunks:
+			putReadAheadChunk(next.buf)
+		case buf := <-ra.free:
+			putReadAheadChunk(buf)
+		default:
+			return
+		}
+	}
 }
 
 // applyCounter counts the bytes read through it and, like containerd's

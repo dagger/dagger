@@ -51,6 +51,31 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	// withGpu, experimentalWithGpu and experimentalWithAllGpus are spelled
+	// withGPU, experimentalWithGPU and experimentalWithAllGPUs in views before
+	// engine.IdentifierCasingVersion.
+	withGPUField := dagql.NodeFunc("withGpu", s.withAllGPUs).
+		View(AfterVersion(gpuAPIVersion)).
+		Doc(`Configures all GPUs available on the host to be accessible to this container.`,
+			`This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.`)
+	experimentalWithGPUField := func(withGPU string) dagql.Field[*core.Container] {
+		return dagql.NodeFunc("experimentalWithGpu", s.withGPU).
+			View(AfterVersion(gpuAPIVersion)).
+			Doc(`Configures the provided list of devices to be accessible to this container.`,
+				`This currently works for Nvidia devices only.`).
+			Args(
+				dagql.Arg("devices").Doc(`List of devices to be accessible to this container.`),
+			).
+			Deprecated(fmt.Sprintf(`Use %q instead, which exposes all GPUs available on the host.`, withGPU))
+	}
+	experimentalWithAllGPUsField := func(withGPU string) dagql.Field[*core.Container] {
+		return dagql.NodeFunc("experimentalWithAllGpus", s.withAllGPUs).
+			View(AfterVersion(gpuAPIVersion)).
+			Doc(`Configures all available GPUs on the host to be accessible to this container.`,
+				`This currently works for Nvidia devices only.`).
+			Deprecated(fmt.Sprintf(`Use %q instead.`, withGPU))
+	}
+
 	dagql.Fields[*core.Container]{
 		Syncer[*core.Container]().
 			Doc(`Forces evaluation of the pipeline in the engine.`,
@@ -86,8 +111,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Protocol to use for registry communication.`,
 					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`).
 					View(AfterVersion("v1.0.0-0")),
-				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
-					View(AfterVersion("v1.0.0-0")),
+				casedArg(insecureSkipTLSVerifyArg),
+				legacyArg(insecureSkipTLSVerifyArg, "insecureSkipTLSVerify"),
+				unfilteredFieldLegacyArg("insecureSkipTLSVerify"),
 				dagql.Arg("noLock").
 					View(AfterVersion("v1.0.0-beta.15")).
 					Doc(`Ignore the workspace lockfile for this lookup.`),
@@ -128,6 +154,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`The path of the directory to retrieve (e.g., "./src").`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+				dagql.Arg("resolveBrokenSymlinks").Doc(`Repair symlinks that directory selection would break. Resolve targets across the root filesystem and directory or file mounts. Preserve working relative links and links that already have no target. Cache, volume, tmpfs, secret, and socket mounts cause an error if selection, a resolved link, or mount target resolution needs their contents.`).View(AfterVersion("v1.0.0-beta.26")),
 			),
 
 		dagql.NodeFunc("file", s.file).
@@ -445,6 +472,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("size").Doc(`Size of the temporary directory in bytes.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+				dagql.Arg("disk").Doc(`Keep the temporary directory on the engine's disk instead of in memory, `+
+					`for contents too large for memory. Each process gets an empty directory of its own, removed once the process ends. `+
+					`It can't be combined with size.`).View(AfterVersion("v1.0.0-beta.28")),
 			),
 
 		dagql.NodeFuncWithDynamicInputs("withMountedCache", s.withMountedCache, s.withMountedCacheDynamicInputs).
@@ -788,8 +818,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Protocol to use for registry communication.`,
 					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`).
 					View(AfterVersion("v1.0.0-0")),
-				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
-					View(AfterVersion("v1.0.0-0")),
+				casedArg(insecureSkipTLSVerifyArg),
+				legacyArg(insecureSkipTLSVerifyArg, "insecureSkipTLSVerify"),
+				unfilteredFieldLegacyArg("insecureSkipTLSVerify"),
 				dagql.Arg("sourceDateEpoch").Doc(
 					`Clamp the image's timestamps to this time, so that rebuilding unchanged files produces identical layers.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199). File
@@ -1089,10 +1120,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				absolutely necessary and only with trusted commands.`),
 			),
 
-		dagql.NodeFunc("withGPU", s.withAllGPUs).
-			View(AfterVersion(gpuAPIVersion)).
-			Doc(`Configures all GPUs available on the host to be accessible to this container.`,
-				`This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.`),
+		casedField(withGPUField),
+		legacyField(withGPUField, "withGPU"),
 
 		dagql.NodeFunc("experimentalWithGPU", s.withGPU).
 			View(BeforeVersion(gpuAPIVersion)).
@@ -1102,25 +1131,16 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("devices").Doc(`List of devices to be accessible to this container.`),
 			),
-		dagql.NodeFunc("experimentalWithGPU", s.withGPU).
-			View(AfterVersion(gpuAPIVersion)).
-			Doc(`Configures the provided list of devices to be accessible to this container.`,
-				`This currently works for Nvidia devices only.`).
-			Args(
-				dagql.Arg("devices").Doc(`List of devices to be accessible to this container.`),
-			).
-			Deprecated(`Use "withGPU" instead, which exposes all GPUs available on the host.`),
+		casedField(experimentalWithGPUField("withGpu")),
+		legacyField(experimentalWithGPUField("withGPU"), "experimentalWithGPU"),
 
 		dagql.NodeFunc("experimentalWithAllGPUs", s.withAllGPUs).
 			View(BeforeVersion(gpuAPIVersion)).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures all available GPUs on the host to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`),
-		dagql.NodeFunc("experimentalWithAllGPUs", s.withAllGPUs).
-			View(AfterVersion(gpuAPIVersion)).
-			Doc(`Configures all available GPUs on the host to be accessible to this container.`,
-				`This currently works for Nvidia devices only.`).
-			Deprecated(`Use "withGPU" instead.`),
+		casedField(experimentalWithAllGPUsField("withGpu")),
+		legacyField(experimentalWithAllGPUsField("withGPU"), "experimentalWithAllGPUs"),
 	}.Install(srv)
 
 	dagql.Fields[*core.TerminalLegacy]{
@@ -1166,13 +1186,37 @@ type containerFromArgs struct {
 	Version               string `default:""`
 	RegistryService       dagql.Optional[core.ServiceID]
 	Protocol              dagql.Optional[core.RegistryProtocol]
-	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
-	NoLock                bool `name:"noLock" default:"false"`
+	InsecureSkipTLSVerify bool `name:"insecureSkipTlsVerify" default:"false"`
+	// LegacyInsecureSkipTLSVerify is insecureSkipTlsVerify in views before
+	// engine.IdentifierCasingVersion (see insecureSkipTLSVerifyArg).
+	LegacyInsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
+	NoLock                      bool `name:"noLock" default:"false"`
 }
 
-func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], insecureSkipTLSVerify bool) (serverresolver.RegistryTransport, error) {
+// insecureSkipTLSVerifyArg is Container.from's and publish's
+// insecureSkipTlsVerify, spelled insecureSkipTLSVerify in views before
+// engine.IdentifierCasingVersion. Neither field has a view filter, so their
+// calls are selected in view "" whatever the caller's view: the old
+// spelling also stays an internal argument there
+// (unfilteredFieldLegacyArg), or a caller before the cut would have it
+// dropped.
+var insecureSkipTLSVerifyArg = dagql.Arg("insecureSkipTlsVerify").
+	Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
+	View(AfterVersion("v1.0.0-0"))
+
+// insecureSkipTLSVerify is whether either spelling of insecureSkipTlsVerify
+// is set, and the name of the one set, for errors.
+func insecureSkipTLSVerify(cased, legacy bool) (bool, string) {
+	if legacy && !cased {
+		return true, "insecureSkipTLSVerify"
+	}
+	return cased, "insecureSkipTlsVerify"
+}
+
+func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], skipVerify, legacySkipVerify bool) (serverresolver.RegistryTransport, error) {
+	insecureSkipTLSVerify, argName := insecureSkipTLSVerify(skipVerify, legacySkipVerify)
 	if protocol.Valid && protocol.Value == core.RegistryProtocolHTTP && insecureSkipTLSVerify {
-		return serverresolver.RegistryTransport{}, errors.New("insecureSkipTLSVerify cannot be used with HTTP registry protocol")
+		return serverresolver.RegistryTransport{}, fmt.Errorf("%s cannot be used with HTTP registry protocol", argName)
 	}
 
 	if !protocol.Valid {
@@ -1254,6 +1298,11 @@ var fromSessionScopeInput = dagql.ImplicitInput{
 	},
 }
 
+// A tag lookup keyed to its session is made again in a later session.
+func init() {
+	dagql.SessionScopedInput(fromSessionScopeInput.Name)
+}
+
 // fromLockScope names the workspace lock that can pin a container.from tag
 // lookup, as seen by the calling client. It is empty when no lock applies.
 func fromLockScope(ctx context.Context, args map[string]dagql.Input) (string, error) {
@@ -1303,7 +1352,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to get registry resolver: %w", err)
 	}
-	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify)
+	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify, args.LegacyInsecureSkipTLSVerify)
 	if err != nil {
 		return inst, err
 	}
@@ -1612,7 +1661,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 	if registryTransport.InsecureSkipTLSVerify {
 		fromArgs = append(fromArgs, dagql.NamedInput{
-			Name:  "insecureSkipTLSVerify",
+			Name:  "insecureSkipTlsVerify",
 			Value: dagql.Boolean(true),
 		})
 	}
@@ -2862,8 +2911,11 @@ type containerPublishArgs struct {
 	MediaTypes            core.ImageMediaTypes `default:"OCI"`
 	RegistryService       dagql.Optional[core.ServiceID]
 	Protocol              dagql.Optional[core.RegistryProtocol]
-	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
-	SourceDateEpoch       dagql.Optional[dagql.Int]
+	InsecureSkipTLSVerify bool `name:"insecureSkipTlsVerify" default:"false"`
+	// LegacyInsecureSkipTLSVerify is insecureSkipTlsVerify in views before
+	// engine.IdentifierCasingVersion (see insecureSkipTLSVerifyArg).
+	LegacyInsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
+	SourceDateEpoch             dagql.Optional[dagql.Int]
 }
 
 func evaluateContainerImageParts(
@@ -2900,7 +2952,7 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 	if err := evaluateContainerImageParts(ctx, cache, append([]dagql.ObjectResult[*core.Container]{parent}, variantResults...)...); err != nil {
 		return "", err
 	}
-	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify)
+	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify, args.LegacyInsecureSkipTLSVerify)
 	if err != nil {
 		return "", err
 	}
@@ -3376,9 +3428,13 @@ type containerWithMountedTempArgs struct {
 	Path   string
 	Size   dagql.Optional[dagql.Int]
 	Expand bool `default:"false"`
+	Disk   bool `default:"false"`
 }
 
 func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedTempArgs) (*core.Container, error) {
+	if args.Disk && args.Size.Valid {
+		return nil, fmt.Errorf("withMountedTemp: size applies only to a temporary directory in memory, not with disk")
+	}
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return nil, err
 	}
@@ -3397,11 +3453,13 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent dagql.Obje
 		Parent:    parent,
 		Target:    target,
 		Size:      args.Size.Value.Int(),
+		Disk:      args.Disk,
 	}
 	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
 		Target: target,
 		TmpfsSource: &core.TmpfsMountSource{
 			Size: args.Size.Value.Int(),
+			Disk: args.Disk,
 		},
 	})
 	if err := evaluateOverBuiltParent(ctx, ctr, parentPendingLazy); err != nil {
@@ -3645,11 +3703,11 @@ func (s *containerSchema) healthcheck(ctx context.Context, parent dagql.ObjectRe
 }
 
 type containerDirectoryArgs struct {
-	Path   string
-	Expand bool `default:"false"`
+	ResolveBrokenSymlinks bool `default:"false"`
+	Path                  string
+	Expand                bool `default:"false"`
 }
 
-//nolint:dupl // symmetric with (*containerSchema).file; sharing hides Directory vs File specifics
 func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerDirectoryArgs) (dagql.ObjectResult[*core.Directory], error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return dagql.ObjectResult[*core.Directory]{}, err
@@ -3669,14 +3727,19 @@ func (s *containerSchema) directory(ctx context.Context, parent dagql.ObjectResu
 		Platform: parent.Self().Platform,
 		Services: slices.Clone(parent.Self().Services),
 		Lazy: &core.ContainerDirectoryLazy{
-			LazyState: core.NewLazyState(),
-			Parent:    parent,
-			Path:      path,
+			ResolveBrokenSymlinks: args.ResolveBrokenSymlinks,
+			LazyState:             core.NewLazyState(),
+			Parent:                parent,
+			Path:                  path,
 		},
 		Dir:      new(core.LazyAccessor[string, *core.Directory]),
 		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
 	}
-	dir.SetPath(resolvedPath)
+	if args.ResolveBrokenSymlinks {
+		dir.SetPath("/")
+	} else {
+		dir.SetPath(resolvedPath)
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
@@ -3685,7 +3748,6 @@ type containerFileArgs struct {
 	Expand bool `default:"false"`
 }
 
-//nolint:dupl // symmetric with (*containerSchema).directory; sharing hides File vs Directory specifics
 func (s *containerSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFileArgs) (dagql.ObjectResult[*core.File], error) {
 	if err := evaluateContainerMetadata(ctx, parent); err != nil {
 		return dagql.ObjectResult[*core.File]{}, err

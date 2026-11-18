@@ -79,6 +79,15 @@ type frontendPlain struct {
 	// ticker keeps a constant frame rate
 	ticker *time.Ticker
 
+	// changed is set by whatever can change what the next render prints: new
+	// spans, logs or metrics, a virtual log such as the Cloud trace URL, new
+	// options, and a render that held a span back
+	// while another span's context held the output. A frame without
+	// any of them would print nothing, so it isn't rendered: rendering walks
+	// every span, and a long session would otherwise walk them all 20 times a
+	// second while it waits.
+	changed bool
+
 	// done is closed during shutdown
 	done     chan struct{}
 	doneOnce sync.Once
@@ -188,6 +197,7 @@ func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...s
 		fe.data[spanID] = spanDt
 	}
 	spanDt.logs = append(spanDt.logs, logLine{newCursorBuffer([]byte(line)), time.Now()})
+	fe.changed = true
 }
 
 func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) error {
@@ -249,6 +259,7 @@ func (fe *frontendPlain) Opts() *dagui.FrontendOpts {
 func (fe *frontendPlain) SetVerbosity(n int) {
 	fe.mu.Lock()
 	fe.Opts().Verbosity = n
+	fe.changed = true
 	fe.mu.Unlock()
 }
 
@@ -261,12 +272,14 @@ func (fe *frontendPlain) SetPrimary(spanID dagui.SpanID) {
 	fe.db.SetPrimarySpan(spanID)
 	fe.ZoomedSpan = spanID
 	fe.FocusedSpan = spanID
+	fe.changed = true
 	fe.mu.Unlock()
 }
 
 func (fe *frontendPlain) RevealAllSpans() {
 	fe.mu.Lock()
 	fe.FrontendOpts.ZoomedSpan = dagui.SpanID{}
+	fe.changed = true
 	fe.mu.Unlock()
 }
 
@@ -293,6 +306,7 @@ type plainSpanExporter struct {
 func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+	fe.changed = true
 
 	if err := fe.db.ExportSpans(ctx, spans); err != nil {
 		return err
@@ -341,6 +355,7 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	fe.changed = true
 
 	logs = fe.db.IngestLogs(logs)
 	for _, record := range logs {
@@ -427,6 +442,7 @@ type PlainFrontendMetricExporter struct {
 func (fe PlainFrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+	fe.changed = true
 
 	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
 }
@@ -445,7 +461,10 @@ func (fe PlainFrontendMetricExporter) ForceFlush(context.Context) error {
 
 func (fe *frontendPlain) render() {
 	fe.mu.Lock()
-	fe.renderProgress()
+	if fe.changed {
+		fe.changed = false
+		fe.renderProgress()
+	}
 	fe.mu.Unlock()
 }
 
@@ -724,7 +743,9 @@ func (fe *frontendPlain) renderContext(row *dagui.TraceTree) (int, bool) {
 		// this context is not directly related to the last one, so we need to
 		// context-switch
 		if now.Sub(fe.lastContextTime) < fe.contextHold {
-			// another context still has an exclusive hold
+			// another context still has an exclusive hold; try again on a
+			// later frame
+			fe.changed = true
 			return 0, false
 		}
 	}

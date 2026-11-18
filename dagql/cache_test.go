@@ -2066,6 +2066,67 @@ func TestCacheRecursiveCall(t *testing.T) {
 	assert.Equal(t, 12, cacheTestUnwrapInt(t, v))
 }
 
+// Two calls started apart, each of whose work calls the other, would each wait
+// on the other forever: the second to reach the other's call errors out instead.
+func TestCacheRecursiveCallAcrossJoinedCalls(t *testing.T) {
+	t.Parallel()
+	ctx := cacheTestContext(t.Context())
+	cache, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	pingCall := cacheTestIntCall("ping")
+	pongCall := cacheTestIntCall("pong")
+	pingReq := &CallRequest{ResultCall: pingCall, ConcurrencyKey: "ping"}
+	pongReq := &CallRequest{ResultCall: pongCall, ConcurrencyKey: "pong"}
+	pingStarted := make(chan struct{})
+	pongStarted := make(chan struct{})
+
+	results := make(chan error, 2)
+	go func() {
+		_, err := cache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, pingReq, func(ctx context.Context) (AnyResult, error) {
+			close(pingStarted)
+			<-pongStarted
+			// pong is running, so this joins it.
+			_, err := cache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, pongReq, func(context.Context) (AnyResult, error) {
+				return nil, errors.New("pong ran twice")
+			})
+			return nil, err
+		})
+		results <- err
+	}()
+	go func() {
+		_, err := cache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, pongReq, func(ctx context.Context) (AnyResult, error) {
+			close(pongStarted)
+			<-pingStarted
+			// Wait for ping's work to join this call, then reach ping.
+			require.Eventually(t, func() bool {
+				cache.callsMu.Lock()
+				defer cache.callsMu.Unlock()
+				for _, ongoing := range cache.ongoingCalls {
+					if ongoing.callConcurrencyKeys.concurrencyKey == "pong" && ongoing.waiters == 2 {
+						return true
+					}
+				}
+				return false
+			}, 10*time.Second, time.Millisecond)
+			_, err := cache.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, pingReq, func(context.Context) (AnyResult, error) {
+				return nil, errors.New("ping ran twice")
+			})
+			return nil, err
+		})
+		results <- err
+	}()
+
+	for range 2 {
+		select {
+		case err := <-results:
+			assert.Assert(t, is.ErrorIs(err, ErrCacheRecursiveCall))
+		case <-time.After(30 * time.Second):
+			t.Fatal("the calls wait on each other")
+		}
+	}
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func TestCacheContextCancel(t *testing.T) {
 	t.Run("cancels after all are canceled", func(t *testing.T) {

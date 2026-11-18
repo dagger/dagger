@@ -9,7 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/stretchr/testify/require"
@@ -256,6 +259,88 @@ func TestModuleDeclaredTypeNamesMemoized(t *testing.T) {
 	require.Equal(t, []string{"MyMod", "Thing"}, moduleDeclaredTypeNames(t.Context(), configured, "my-mod"))
 }
 
+// A module's prebuild parses its source while its dependencies load
+// (PrebuildRuntime). When the module's types are read before that parse
+// ends, they wait for it rather than parse the same source a second time.
+func TestModuleDeclaredTypeNamesSharesParse(t *testing.T) {
+	origParse, origNames := parseDangSource, declaredTypeNames
+	fresh, err := lru.New[string, []string](8)
+	require.NoError(t, err)
+	declaredTypeNames = fresh
+	var parses atomic.Int32
+	second := make(chan struct{})
+	var secondOnce sync.Once
+	parseDangSource = func(ctx context.Context, filename string) (*dang.FileBlock, error) {
+		if parses.Add(1) == 1 {
+			// Hold the first parse until a second one starts, or until the
+			// other call has long since asked for the names.
+			select {
+			case <-second:
+			case <-time.After(200 * time.Millisecond):
+			}
+		} else {
+			secondOnce.Do(func() { close(second) })
+		}
+		return origParse(ctx, filename)
+	}
+	t.Cleanup(func() { parseDangSource, declaredTypeNames = origParse, origNames })
+
+	dir := t.TempDir()
+	writeDangFilesIn(t, dir, map[string]string{"main.dang": "type Thing {\n  name: String! { \"thing\" }\n}\n"})
+	names := make([][]string, 2)
+	var wg sync.WaitGroup
+	for i := range names {
+		wg.Go(func() { names[i] = moduleDeclaredTypeNames(t.Context(), dir, "my-mod") })
+	}
+	wg.Wait()
+	for _, got := range names {
+		require.Equal(t, []string{"MyMod", "Thing"}, got)
+	}
+	require.Equal(t, int32(1), parses.Load(), "both calls share one parse")
+}
+
+// The prebuild is canceled when its module's load returns, perhaps while it
+// is still parsing, and it then removes the source it parses from. The names
+// it records for that source must still be all of the source's.
+func TestModuleDeclaredTypeNamesCanceledParseCompletes(t *testing.T) {
+	origParse, origNames := parseDangSource, declaredTypeNames
+	fresh, err := lru.New[string, []string](8)
+	require.NoError(t, err)
+	declaredTypeNames = fresh
+	ctx, cancel := context.WithCancel(t.Context())
+	removed := make(chan struct{})
+	var first atomic.Bool
+	parseDangSource = func(parseCtx context.Context, filename string) (*dang.FileBlock, error) {
+		if first.CompareAndSwap(false, true) {
+			cancel()
+			// Give a caller that returns once canceled the time to remove
+			// its source before the next file is read.
+			select {
+			case <-removed:
+			case <-time.After(200 * time.Millisecond):
+			}
+		}
+		return origParse(parseCtx, filename)
+	}
+	t.Cleanup(func() { parseDangSource, declaredTypeNames = origParse, origNames })
+
+	files := map[string]string{
+		"a.dang": "type Alpha {\n  n: Int! { 1 }\n}\n",
+		"b.dang": "type Beta {\n  n: Int! { 2 }\n}\n",
+	}
+	src := filepath.Join(t.TempDir(), "src")
+	require.NoError(t, os.Mkdir(src, 0o755))
+	writeDangFilesIn(t, src, files)
+	moduleDeclaredTypeNames(ctx, src, "my-mod")
+	require.NoError(t, os.RemoveAll(src))
+	close(removed)
+
+	// The same source, loaded again from another directory.
+	other := t.TempDir()
+	writeDangFilesIn(t, other, files)
+	require.Equal(t, []string{"MyMod", "Alpha", "Beta"}, moduleDeclaredTypeNames(t.Context(), other, "my-mod"))
+}
+
 // Object directives are put back on the environment by parsing every source
 // file again. Only type registration reads them, so a function call must not
 // pay for that parse.
@@ -370,4 +455,87 @@ func TestConvertObjectIDKeepsHandleID(t *testing.T) {
 	require.NoError(t, err)
 	_, err = json.Marshal(value)
 	require.ErrorContains(t, err, "unexpected API request")
+}
+
+// The engine reads a module's dang.toml only up to its module directory, but
+// Dang walks further up for the one that decides the source's version. A
+// module source that a dang.toml above its module directory would govern runs
+// from an isolated copy, so the engine's version decides.
+func TestDangSourceDir(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
+	moduleDir := filepath.Join(root, "mod")
+	srcDir := filepath.Join(moduleDir, "src")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	writeDangFilesIn(t, srcDir, map[string]string{"main.dang": "pub x: Int! = 1\n", "notes.txt": "not source"})
+
+	dir, cleanup, err := dangSourceDir(srcDir, moduleDir)
+	require.NoError(t, err)
+	cleanup()
+	require.Equal(t, srcDir, dir, "no dang.toml: the source runs in place")
+
+	require.NoError(t, os.WriteFile(filepath.Join(root, "dang.toml"), []byte("dang = \"1.0\"\n"), 0o644))
+	dir, cleanup, err = dangSourceDir(srcDir, moduleDir)
+	require.NoError(t, err)
+	require.NotEqual(t, srcDir, dir, "a dang.toml above the module directory: the source runs isolated")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, "main.dang", entries[0].Name())
+	configPath, _, err := dang.FindProjectConfig(dir)
+	require.NoError(t, err)
+	require.NotEqual(t, filepath.Join(root, "dang.toml"), configPath)
+	cleanup()
+	_, err = os.Stat(dir)
+	require.True(t, os.IsNotExist(err), "cleanup removes the copy")
+
+	for _, governing := range []string{moduleDir, srcDir} {
+		require.NoError(t, os.WriteFile(filepath.Join(governing, "dang.toml"), []byte(""), 0o644))
+		dir, cleanup, err = dangSourceDir(srcDir, moduleDir)
+		require.NoError(t, err)
+		cleanup()
+		require.Equal(t, srcDir, dir, "a dang.toml the engine reads: the source runs in place")
+		require.NoError(t, os.Remove(filepath.Join(governing, "dang.toml")))
+	}
+
+	// A source directory outside the module directory has only its own.
+	outside := filepath.Join(root, "outside")
+	require.NoError(t, os.Mkdir(outside, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "dang.toml"), []byte(""), 0o644))
+	dir, cleanup, err = dangSourceDir(outside, moduleDir)
+	require.NoError(t, err)
+	cleanup()
+	require.Equal(t, outside, dir)
+}
+
+// legacySelectionSource is Dang 1.0 source: `.{a, b}` is object selection,
+// which no later version parses.
+const legacySelectionSource = "directive @marked on OBJECT\n\n" +
+	"type Pair @marked {\n  pub a: Int! = 1\n  pub b: Int! = 2\n}\n\n" +
+	"type Picker {\n  pub picked: Int! {\n    let p = Pair.{a, b}\n    p.a\n  }\n}\n"
+
+// The engine's own parses of a module's source (declared type names, object
+// directives) parse it as the Dang version it is written in, as Dang does: a
+// Dang 1.0 module has types and directives too.
+func TestModuleSourceParsesAtDangVersion(t *testing.T) {
+	dir := t.TempDir()
+	writeDangFilesIn(t, dir, map[string]string{"main.dang": legacySelectionSource})
+
+	countDangParses(t) // a fresh memo
+	require.Equal(t, []string{"Legacy", "Pair", "Picker"}, moduleDeclaredTypeNames(dang.ContextWithVersion(t.Context(), dang.Version1_0), dir, "legacy"))
+	require.Equal(t, []string{"Legacy"}, moduleDeclaredTypeNames(dang.ContextWithVersion(t.Context(), dang.CurrentVersion), dir, "legacy"),
+		"the names are keyed by version: the source does not parse as the current version")
+
+	ctx := dang.ContextWithVersion(t.Context(), dang.Version1_0)
+	env, err := runDangDirForModuleTypes(ctx, dir)
+	require.NoError(t, err)
+	require.NoError(t, retainDangObjectDirectives(ctx, env, dir, true))
+	value, found, err := env.Lookup(ctx, "Pair")
+	require.NoError(t, err)
+	require.True(t, found)
+	directives := value.(*dang.ConstructorFunction).ObjectType.GetDirectives("")
+	require.Len(t, directives, 1)
+	require.Equal(t, "marked", directives[0].Name)
+
+	require.Error(t, retainDangObjectDirectives(dang.ContextWithVersion(ctx, dang.CurrentVersion), env, dir, true))
 }

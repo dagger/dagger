@@ -1,8 +1,12 @@
 name = "go-client-dev"
-engineVersion = "v0.21.9"
+engineVersion = "v1.0.0-0"
 
 [runtime]
   source = "dang"
+
+[[dependencies]]
+  name = "codegen"
+  source = "../../../cmd/codegen"
 
 [[dependencies]]
   name = "engine-dev"
@@ -14,4 +18,4 @@ engineVersion = "v0.21.9"
 
 [[dependencies]]
   name = "go"
-  source = "../go"
+  source = "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"

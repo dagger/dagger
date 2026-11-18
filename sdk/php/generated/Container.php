@@ -42,7 +42,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?string $version = '',
         ?Service $registryService = null,
         ?RegistryProtocol $protocol = null,
-        ?bool $insecureSkipTLSVerify = false,
+        ?bool $insecureSkipTlsVerify = false,
         ?bool $noLock = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('from');
@@ -56,8 +56,8 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $protocol) {
         $innerQueryBuilder->setArgument('protocol', $protocol);
         }
-        if (null !== $insecureSkipTLSVerify) {
-        $innerQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
+        if (null !== $insecureSkipTlsVerify) {
+        $innerQueryBuilder->setArgument('insecureSkipTlsVerify', $insecureSkipTlsVerify);
         }
         if (null !== $noLock) {
         $innerQueryBuilder->setArgument('noLock', $noLock);
@@ -89,12 +89,15 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
      *
      * Mounts are included.
      */
-    public function directory(string $path, ?bool $expand = false): Directory
+    public function directory(string $path, ?bool $expand = false, ?bool $resolveBrokenSymlinks = false): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        if (null !== $resolveBrokenSymlinks) {
+        $innerQueryBuilder->setArgument('resolveBrokenSymlinks', $resolveBrokenSymlinks);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -520,8 +523,12 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
      */
-    public function withMountedTemp(string $path, ?int $size = null, ?bool $expand = false): Container
-    {
+    public function withMountedTemp(
+        string $path,
+        ?int $size = null,
+        ?bool $expand = false,
+        ?bool $disk = false,
+    ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedTemp');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $size) {
@@ -529,6 +536,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        if (null !== $disk) {
+        $innerQueryBuilder->setArgument('disk', $disk);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -1039,7 +1049,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?ImageMediaTypes $mediaTypes = null,
         ?Service $registryService = null,
         ?RegistryProtocol $protocol = null,
-        ?bool $insecureSkipTLSVerify = false,
+        ?bool $insecureSkipTlsVerify = false,
         ?int $sourceDateEpoch = null,
     ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('publish');
@@ -1059,8 +1069,8 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         if (null !== $protocol) {
         $leafQueryBuilder->setArgument('protocol', $protocol);
         }
-        if (null !== $insecureSkipTLSVerify) {
-        $leafQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
+        if (null !== $insecureSkipTlsVerify) {
+        $leafQueryBuilder->setArgument('insecureSkipTlsVerify', $insecureSkipTlsVerify);
         }
         if (null !== $sourceDateEpoch) {
         $leafQueryBuilder->setArgument('sourceDateEpoch', $sourceDateEpoch);
@@ -1431,9 +1441,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
      *
      * This currently works with NVIDIA devices only, and requires the engine to run with GPU support enabled.
      */
-    public function withGPU(): Container
+    public function withGpu(): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGPU');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGpu');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -1442,9 +1452,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
      *
      * This currently works for Nvidia devices only.
      */
-    public function experimentalWithGPU(array $devices): Container
+    public function experimentalWithGpu(array $devices): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithGPU');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithGpu');
         $innerQueryBuilder->setArgument('devices', $devices);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -1454,9 +1464,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
      *
      * This currently works for Nvidia devices only.
      */
-    public function experimentalWithAllGPUs(): Container
+    public function experimentalWithAllGpus(): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithAllGPUs');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('experimentalWithAllGpus');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

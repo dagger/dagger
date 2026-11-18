@@ -36,6 +36,7 @@ type {{ $field | FieldOptionsStructName }} = core.{{ $field | FieldOptionsStruct
 {{ end }}
 {{ if not (IsCoreType .Name) }}
 {{ $name := .Name | FormatName }}
+{{ if eq .Kind "ENUM" }}{{ $name = .Name }}{{ end }}
 
 {{ .Description | Comment }}
 type {{ $name }} = core.{{ $name }}

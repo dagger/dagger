@@ -883,9 +883,9 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace with a directory mounted read-only at the given path, without mutating the source.
+  Return this workspace with a directory mounted at the given path, without mutating the source.
 
-  Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+  Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.
   """
   @spec with_mounted_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()
   def with_mounted_directory(%__MODULE__{} = workspace, path, source) do
@@ -902,9 +902,9 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Return this workspace with a file mounted read-only at the given path, without mutating the source.
+  Return this workspace with a file mounted at the given path, without mutating the source.
 
-  Mounted content is readable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: it never appears in changes, is never exported, and cannot be modified.
+  Mounted content is readable and editable through the normal workspace file tools but shadows the source at the mount path and stays out of the pending changeset: neither it nor edits to it appear in changes or are exported. Use withoutMount to remove the mount.
   """
   @spec with_mounted_file(t(), String.t(), Dagger.File.t()) :: Dagger.Workspace.t()
   def with_mounted_file(%__MODULE__{} = workspace, path, source) do
@@ -961,7 +961,7 @@ defmodule Dagger.Workspace do
   @doc """
   Return this workspace with the given Git-compatible patch file applied, without mutating the source.
 
-  Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Patching a path at or under a mount is an error.
+  Paths in the patch are relative to the workspace root, whatever its cwd, as `git diff` writes them. Sections for paths in a mount apply to the mounted content; a section cannot move a file across a mount boundary or delete a mount point.
 
   > #### Experimental {: .warning}
   >
@@ -1016,7 +1016,7 @@ defmodule Dagger.Workspace do
   def with_sdk(%__MODULE__{} = workspace, ref, optional_args \\ []) do
     query_builder =
       workspace.query_builder
-      |> QB.select("withSDK")
+      |> QB.select("withSdk")
       |> QB.put_arg("ref", ref)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("here", optional_args[:here])
@@ -1302,7 +1302,7 @@ defmodule Dagger.Workspace do
   def without_sdk(%__MODULE__{} = workspace, name, optional_args \\ []) do
     query_builder =
       workspace.query_builder
-      |> QB.select("withoutSDK")
+      |> QB.select("withoutSdk")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("here", optional_args[:here])
 

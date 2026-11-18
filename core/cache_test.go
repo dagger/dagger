@@ -191,10 +191,6 @@ func (*cacheVolumeTestSnapshotManager) PersistentMetadataRows() bkcache.Persiste
 	return bkcache.PersistentMetadataRows{}
 }
 
-func (m *cacheVolumeTestSnapshotManager) PinContent(context.Context, string, []ocispecs.Descriptor) error {
-	return nil
-}
-
 func (m *cacheVolumeTestSnapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error {
 	_ = ctx
 	m.deleteStaleKeep = make(map[string]struct{}, len(keep))
@@ -244,6 +240,10 @@ func (*cacheVolumeTestImmutableRef) Clone() bkcache.ImmutableRef {
 
 func (*cacheVolumeTestImmutableRef) ExportChain(context.Context, bkconfig.RefConfig) (*bkcache.ExportChain, error) {
 	panic("unexpected ExportChain call")
+}
+
+func (*cacheVolumeTestImmutableRef) ExportFileChain(context.Context, bkconfig.RefConfig, string) (*bkcache.ExportChain, error) {
+	panic("unexpected ExportFileChain call")
 }
 
 func (*cacheVolumeTestImmutableRef) Finalize(context.Context) error {

@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 // HasPartHost binds a typed adapter to the stable owning row. Binding never
@@ -101,7 +102,7 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 	}
 	token := PartTaskFromContext(ctx)
 	c := host.cache
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	gate := host.row.partGate.loadOrCreate()
 	gate.mu.Lock()
 	groupAddress := LazyGroupAddress{OutputPath: host.path, Group: group}
@@ -128,7 +129,7 @@ func (host *PartHost) RunNative(ctx context.Context, group LazyGroupKey, parts [
 	c.egraphMu.Unlock()
 	err := body(ctx)
 	// Native core callbacks have released their latches before this publication.
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	gate.mu.Lock()
 	current := gate.groups[key]
 	if current.task == token {
@@ -162,7 +163,7 @@ func (host *PartHost) AddDependencies(ctx context.Context, deps []AnyResult) err
 		return nil
 	}
 	c := host.cache
-	c.egraphMu.Lock()
+	wcprof.WriteLock(ctx, &c.egraphMu, egraphLockIdent)
 	defer c.egraphMu.Unlock()
 	if _, found := c.resultsByID[host.row.id]; !found {
 		return fmt.Errorf("add part dependencies: result %d was already collected", host.row.id)

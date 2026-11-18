@@ -32,6 +32,13 @@ func WithNonInternalTelemetry(ctx context.Context) context.Context {
 	return context.WithValue(ctx, internalKey{}, false)
 }
 
+// WithInternalTelemetry marks telemetry within the context as internal, as
+// Server.Select marks the engine's own selects: the context serves work the
+// engine does on its own behalf.
+func WithInternalTelemetry(ctx context.Context) context.Context {
+	return withInternal(ctx)
+}
+
 // withoutNonInternalTelemetry removes the internal flag from the context,
 // so that the one-shot non-internal override does not leak into deeper selects.
 func withoutNonInternalTelemetry(ctx context.Context) context.Context {

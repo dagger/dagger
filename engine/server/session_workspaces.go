@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
-	"github.com/iancoleman/strcase"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
@@ -313,11 +312,25 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *clientRu
 		return core.GitRefString(parsedRef.CloneRef, subPath, parsedRef.Version)
 	}
 
+	var statFS core.StatFS = &core.DirectoryStatFS{Dir: tree}
+	readFile := func(ctx context.Context, path string) ([]byte, error) {
+		return core.DirectoryReadFile(ctx, tree, path)
+	}
+	source := &core.WorkspaceSourceGitRef{Ref: gitRef.Result}
+	sparse, err := core.LoadGitWorkspaceSparseTree(ctx, client.dag, gitRef, parsedRef.WorkspaceSubdir)
+	switch {
+	case err != nil:
+		// Nothing needs it: the workspace reads from its full tree.
+		slog.Warn("loading the workspace's sparse tree failed; using its full tree", "workspace", remoteRef, "error", err)
+	case sparse != nil:
+		source.Sparse = sparse
+		fs := &core.GitSparseTreeFS{Sparse: sparse, Full: tree}
+		statFS, readFile = fs, fs.ReadFile
+	}
+
 	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
-		&core.DirectoryStatFS{Dir: tree},
-		func(ctx context.Context, path string) ([]byte, error) {
-			return core.DirectoryReadFile(ctx, tree, path)
-		},
+		statFS,
+		readFile,
 		parsedRef.WorkspaceSubdir,
 		resolveLocalRef,
 		func(ws *workspace.Workspace) string {
@@ -325,7 +338,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *clientRu
 		},
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
-		core.NewWorkspaceSourceGitRef(gitRef.Result),
+		source,
 		// The workspace tree is remote, but user-level config still comes from
 		// the caller's host; the key is the declared remote itself.
 		client.daggerSession.engineUtilClient.ReadCallerHostFile,
@@ -401,6 +414,18 @@ type pendingModule struct {
 	// +defaultPath inputs from this source ref instead.
 	DefaultPathContextSourceRef string
 	DefaultPathContextSourcePin string
+
+	// InGitWorkspace marks a module declared by the config of the session's
+	// Git workspace. Its source (WorkspaceDir, when set) and its legacy
+	// +defaultPath context (DefaultPathContextWorkspaceDir, when set) load
+	// through that workspace, from the tree it already checked out, rather
+	// than from Ref and DefaultPathContextSourceRef: each Git ref is another
+	// checkout of the same commit, and identifies the files it selects by
+	// that commit, so every commit would rebuild every module.
+	InGitWorkspace bool
+	// DefaultPathContextWorkspaceDir is the workspace-root-relative
+	// directory DefaultPathContextSourceRef names.
+	DefaultPathContextWorkspaceDir string
 	// How legacy workspace-only dagger.json fields should be handled before
 	// generic module loading.
 	legacyFieldPolicy legacyWorkspaceFieldPolicy
@@ -432,8 +457,6 @@ const (
 	moduleLoadKindAmbient moduleLoadKind = "ambient"
 	moduleLoadKindExtra   moduleLoadKind = "extra"
 )
-
-const maxParallelModuleResolves = 8
 
 // loadWorkspaceConfig parses the workspace config and returns the keys the file
 // spells out alongside it. Merging an included config needs that presence information,
@@ -523,6 +546,9 @@ func workspaceConfigPendingModules(
 		}
 		if mod.LegacyDefaultPath {
 			mod.DefaultPathContextSourceRef = defaultPathContextRefForWorkspace(ws, resolveLocalRef)
+			if mod.DefaultPathContextSourceRef != "" {
+				mod.DefaultPathContextWorkspaceDir = defaultPathContextDirForWorkspace(ws)
+			}
 		}
 
 		pending = append(pending, mod)
@@ -573,11 +599,16 @@ func defaultPathContextRefForWorkspace(
 	if ws == nil || resolveLocalRef == nil {
 		return ""
 	}
-	base := "."
-	if ws.ConfigFile != "" {
-		base = filepath.Dir(filepath.Dir(ws.ConfigFile))
+	return resolveLocalRef(ws, defaultPathContextDirForWorkspace(ws))
+}
+
+// defaultPathContextDirForWorkspace is the workspace-root-relative directory
+// legacy +defaultPath inputs resolve from.
+func defaultPathContextDirForWorkspace(ws *workspace.Workspace) string {
+	if ws.ConfigFile == "" {
+		return "."
 	}
-	return resolveLocalRef(ws, base)
+	return filepath.Dir(filepath.Dir(ws.ConfigFile))
 }
 
 func legacyCallerModuleDir(isLocal bool, moduleDir string) string {
@@ -805,6 +836,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	var pending []pendingModule
 
 	pending = workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
+	if _, ok := prebuiltSource.(*core.WorkspaceSourceGitRef); ok {
+		for i := range pending {
+			pending[i].InGitWorkspace = true
+		}
+	}
 	resolveCompatRef := resolveLocalRef
 	if compatWorkspace != nil {
 		configWS := *ws
@@ -1239,14 +1275,27 @@ func (srv *Server) resolveModuleLoadBatch(
 	resolvedLoads := make([]resolvedModuleLoad, len(loads))
 	resolveErrs := make([]error, len(loads))
 
+	// Every load in the batch reads the session's Git workspace through one
+	// result of it. A module source is then one call however many loads reach
+	// it, a dependency they share most of all, so concurrent loads join it
+	// rather than each loading it again.
+	var gitWS dagql.ObjectResult[*core.Workspace]
+	var gitWSErr error
+	if slices.ContainsFunc(loads, func(load moduleLoadRequest) bool { return load.mod.InGitWorkspace }) {
+		gitWS, gitWSErr = sessionGitWorkspace(ctx, client.dag)
+	}
+
 	jobs := parallel.New().
-		WithContextualTracer(true).
-		WithLimit(moduleLoadParallelism(len(loads)))
+		WithContextualTracer(true)
 	for i, load := range loads {
 		i := i
 		load := load
+		if load.mod.InGitWorkspace && gitWSErr != nil {
+			resolveErrs[i] = fmt.Errorf("resolving module source %q: %w", load.mod.Ref, gitWSErr)
+			continue
+		}
 		jobs = jobs.WithJob(moduleLoadJobName(load), func(ctx context.Context) error {
-			resolved, err := srv.resolveModuleLoad(ctx, client.dag, load)
+			resolved, err := srv.resolveModuleLoad(ctx, client.dag, gitWS, load)
 			if err != nil {
 				resolveErrs[i] = err
 				return nil //nolint:nilerr // errors collected for deterministic ordering
@@ -1363,7 +1412,7 @@ func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string,
 // command names: "myMod", "my-mod", "MyMod" are the same module. Glob
 // metacharacters survive, so a glob never equals a module name.
 func canonicalWorkspaceModuleName(name string) string {
-	return strcase.ToKebab(name)
+	return core.LatestNamer.CLIName(name)
 }
 
 // pendingModuleCliName is the canonical name an include pattern matches against.
@@ -1441,7 +1490,9 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 
 	servedFields := make(map[string]struct{}, len(served))
 	for name := range served {
-		servedFields[strcase.ToLowerCamel(name)] = struct{}{}
+		for _, field := range core.FieldNameCandidates(name) {
+			servedFields[field] = struct{}{}
+		}
 	}
 
 	selected := make([]bool, len(mods))
@@ -1455,7 +1506,7 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 		}
 		matched := false
 		for i, mod := range mods {
-			if pendingModuleRootFieldName(mod) == field {
+			if slices.Contains(pendingModuleRootFieldNames(mod), field) {
 				selected[i] = true
 				matched = true
 			}
@@ -1599,11 +1650,13 @@ func pendingWorkspaceMainIndexes(mods []pendingModule) []int {
 	return indexes
 }
 
-func pendingModuleRootFieldName(mod pendingModule) string {
+func pendingModuleRootFieldNames(mod pendingModule) []string {
+	// The constructor is named by the module's rules, which aren't known
+	// before it loads: accept the spelling of either.
 	if mod.Name != "" {
-		return strcase.ToLowerCamel(mod.Name)
+		return core.FieldNameCandidates(mod.Name)
 	}
-	return strcase.ToLowerCamel(moduleProgressName(mod))
+	return core.FieldNameCandidates(moduleProgressName(mod))
 }
 
 func isCoreRootField(field string) bool {
@@ -1625,10 +1678,9 @@ func isCoreRootField(field string) bool {
 		"__scalarTypeDef",
 		"__enumTypeDef",
 		"__workspaceModule",
-		"_builtinContainer",
+		"__bundledDirectory",
 		"_clientFilesyncMirror",
 		"_httpState",
-		"_remoteCacheFixture",
 		"_remoteGitMirror",
 		"address",
 		"blob",
@@ -1683,9 +1735,10 @@ func isCoreRootField(field string) bool {
 func (srv *Server) resolveModuleLoad(
 	ctx context.Context,
 	dag *dagql.Server,
+	gitWS dagql.ObjectResult[*core.Workspace],
 	load moduleLoadRequest,
 ) (resolvedModuleLoad, error) {
-	primary, err := srv.resolveModule(ctx, dag, load.mod)
+	primary, err := srv.resolveModule(ctx, dag, gitWS, load.mod)
 	if err != nil {
 		return resolvedModuleLoad{}, err
 	}
@@ -1719,7 +1772,7 @@ func (srv *Server) resolveModuleLoad(
 		if err != nil {
 			return resolvedModuleLoad{}, err
 		}
-		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, toolchainSrc, pending)
+		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, gitWS, toolchainSrc, pending)
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving toolchain module: %w", err)
 		}
@@ -1734,7 +1787,7 @@ func (srv *Server) resolveModuleLoad(
 		if err != nil {
 			return resolvedModuleLoad{}, err
 		}
-		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, src.Self().Blueprint, pending)
+		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, gitWS, src.Self().Blueprint, pending)
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving blueprint module: %w", err)
 		}
@@ -1810,16 +1863,6 @@ func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModu
 		})
 	}
 	return loads
-}
-
-func moduleLoadParallelism(moduleCount int) int {
-	if moduleCount <= 1 {
-		return 1
-	}
-	if moduleCount > maxParallelModuleResolves {
-		return maxParallelModuleResolves
-	}
-	return moduleCount
 }
 
 func moduleProgressName(mod pendingModule) string {
@@ -2099,24 +2142,33 @@ func resolvedModuleLoadIdentity(mod dagql.ObjectResult[*core.Module]) string {
 func (srv *Server) resolveModule(
 	ctx context.Context,
 	dag *dagql.Server,
+	gitWS dagql.ObjectResult[*core.Workspace],
 	mod pendingModule,
 ) (dagql.ObjectResult[*core.Module], error) {
-	srcArgs := []dagql.NamedInput{
-		{Name: "refString", Value: dagql.String(mod.Ref)},
-	}
-	if mod.RefPin != "" {
-		srcArgs = append(srcArgs, dagql.NamedInput{Name: "refPin", Value: dagql.String(mod.RefPin)})
-	}
-	if mod.DisableFindUp {
-		srcArgs = append(srcArgs, dagql.NamedInput{Name: "disableFindUp", Value: dagql.Boolean(true)})
-	}
-
 	var src dagql.ObjectResult[*core.ModuleSource]
-	err := dag.Select(ctx, dag.Root(), &src,
-		dagql.Selector{Field: "moduleSource", Args: srcArgs},
-	)
-	if err != nil {
-		return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+	if mod.InGitWorkspace && mod.WorkspaceDir != "" {
+		var err error
+		src, err = gitWorkspaceModuleSource(ctx, dag, gitWS, mod.WorkspaceDir, false)
+		if err != nil {
+			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+		}
+	} else {
+		srcArgs := []dagql.NamedInput{
+			{Name: "refString", Value: dagql.String(mod.Ref)},
+		}
+		if mod.RefPin != "" {
+			srcArgs = append(srcArgs, dagql.NamedInput{Name: "refPin", Value: dagql.String(mod.RefPin)})
+		}
+		if mod.DisableFindUp {
+			srcArgs = append(srcArgs, dagql.NamedInput{Name: "disableFindUp", Value: dagql.Boolean(true)})
+		}
+
+		err := dag.Select(ctx, dag.Root(), &src,
+			dagql.Selector{Field: "moduleSource", Args: srcArgs},
+		)
+		if err != nil {
+			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+		}
 	}
 
 	if src.Self().UsesLegacyWorkspaceFields() {
@@ -2138,7 +2190,7 @@ func (srv *Server) resolveModule(
 		}
 	}
 
-	return srv.resolveModuleSourceAsModule(ctx, dag, src, mod)
+	return srv.resolveModuleSourceAsModule(ctx, dag, gitWS, src, mod)
 }
 
 // pendingRelatedModule adapts a related module of a primary module into the
@@ -2205,6 +2257,7 @@ func pendingRelatedModule(
 func (srv *Server) resolveModuleSourceAsModule(
 	ctx context.Context,
 	dag *dagql.Server,
+	gitWS dagql.ObjectResult[*core.Workspace],
 	src dagql.ObjectResult[*core.ModuleSource],
 	mod pendingModule,
 ) (dagql.ObjectResult[*core.Module], error) {
@@ -2220,9 +2273,27 @@ func (srv *Server) resolveModuleSourceAsModule(
 		}
 	}
 
+	var contextSource dagql.Optional[core.ModuleSourceID]
+	if mod.InGitWorkspace && mod.DefaultPathContextWorkspaceDir != "" {
+		contextSrc, err := gitWorkspaceModuleSource(ctx, dag, gitWS, mod.DefaultPathContextWorkspaceDir, true)
+		if err != nil {
+			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving +defaultPath context of %q: %w", mod.Ref, err)
+		}
+		contextSrcID, err := contextSrc.ID()
+		if err != nil {
+			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("resolving +defaultPath context of %q: %w", mod.Ref, err)
+		}
+		contextSource = dagql.Opt(dagql.NewID[*core.ModuleSource](contextSrcID))
+		mod.DefaultPathContextSourceRef = ""
+		mod.DefaultPathContextSourcePin = ""
+	}
+
 	asModuleArgs, err := asModuleArgsForPendingModule(mod)
 	if err != nil {
 		return dagql.ObjectResult[*core.Module]{}, err
+	}
+	if contextSource.Valid {
+		asModuleArgs = append(asModuleArgs, dagql.NamedInput{Name: "defaultPathContextSource", Value: contextSource})
 	}
 
 	var resolved dagql.ObjectResult[*core.Module]
@@ -2233,6 +2304,41 @@ func (srv *Server) resolveModuleSourceAsModule(
 		return dagql.ObjectResult[*core.Module]{}, err
 	}
 	return resolved, nil
+}
+
+// sessionGitWorkspace returns the session's own Git workspace, which its
+// workspace modules load from.
+func sessionGitWorkspace(ctx context.Context, dag *dagql.Server) (dagql.ObjectResult[*core.Workspace], error) {
+	// currentWorkspace prefers a workspace an enclosing call bound into the
+	// context; the session's modules load from the session's own.
+	ctx = core.WorkspaceToContext(ctx, dagql.ObjectResult[*core.Workspace]{})
+	var ws dagql.ObjectResult[*core.Workspace]
+	if err := dag.Select(ctx, dag.Root(), &ws, dagql.Selector{Field: "currentWorkspace"}); err != nil {
+		return ws, fmt.Errorf("load current workspace: %w", err)
+	}
+	return ws, nil
+}
+
+// gitWorkspaceModuleSource loads the module source at dir, a
+// workspace-root-relative path, through ws, the session's Git workspace.
+func gitWorkspaceModuleSource(
+	ctx context.Context,
+	dag *dagql.Server,
+	ws dagql.ObjectResult[*core.Workspace],
+	dir string,
+	allowNotExists bool,
+) (dagql.ObjectResult[*core.ModuleSource], error) {
+	args := []dagql.NamedInput{
+		{Name: "path", Value: dagql.String(filepath.ToSlash(filepath.Join("/", dir)))},
+	}
+	if allowNotExists {
+		args = append(args, dagql.NamedInput{Name: "allowNotExists", Value: dagql.Boolean(true)})
+	}
+	var src dagql.ObjectResult[*core.ModuleSource]
+	if err := dag.Select(ctx, ws, &src, dagql.Selector{Field: "moduleSource", Args: args}); err != nil {
+		return dagql.ObjectResult[*core.ModuleSource]{}, err
+	}
+	return src, nil
 }
 
 func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error) {

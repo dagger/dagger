@@ -5,6 +5,22 @@ import "context"
 type RepoSetting struct {
 	Repo     string `json:"repo"`
 	IsPublic bool   `json:"isPublic"`
+	// Effective check triggers: the repository's own choice, or the org
+	// default it inherits.
+	EffectiveRunChecksOnDefaultBranch bool `json:"effectiveRunChecksOnDefaultBranch"`
+	EffectiveRunChecksOnPullRequest   bool `json:"effectiveRunChecksOnPullRequest"`
+}
+
+// RepoSettingInput is a partial update of a repository's settings. Nil fields
+// stay unchanged.
+type RepoSettingInput struct {
+	Repo string `json:"repo"`
+	// SourceID names the installed source that claims a repository the
+	// organization has not claimed yet.
+	SourceID                 *string `json:"sourceId,omitempty"`
+	RunChecksOnDefaultBranch *bool   `json:"runChecksOnDefaultBranch,omitempty"`
+	RunChecksOnPullRequest   *bool   `json:"runChecksOnPullRequest,omitempty"`
+	RunChecksOnBranchPush    *bool   `json:"runChecksOnBranchPush,omitempty"`
 }
 
 type Repo struct {
@@ -99,4 +115,23 @@ func (c *Client) DeleteOrgRepoSetting(ctx context.Context, orgID, repo string) (
 		return false, err
 	}
 	return data.DeleteOrgRepoSetting, nil
+}
+
+const updateOrgRepoSettingsOperation = `
+mutation UpdateOrgRepoSettings($org: ID!, $settings: [RepoSettingInput!]!) {
+	updateOrgRepoSettings(org: $org, settings: $settings)
+}
+`
+
+// UpdateOrgRepoSettings applies settings to the org's repositories in one
+// transaction. Turning a check trigger on claims an unclaimed repository
+// through its SourceID; turning every trigger off releases the claim.
+func (c *Client) UpdateOrgRepoSettings(ctx context.Context, orgID string, settings []RepoSettingInput) error {
+	var data struct {
+		UpdateOrgRepoSettings bool `json:"updateOrgRepoSettings"`
+	}
+	return c.doGraphQL(ctx, "UpdateOrgRepoSettings", updateOrgRepoSettingsOperation, map[string]any{
+		"org":      orgID,
+		"settings": settings,
+	}, &data)
 }

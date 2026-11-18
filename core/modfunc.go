@@ -28,10 +28,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-const (
-	MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
-	MinFunctionCacheTTLSeconds = 1
-)
+const MinFunctionCacheTTLSeconds = 1
 
 // declaredClientsInput puts a module's declared local clients into the cache
 // identity of its function calls. The module serves them at run time, after
@@ -183,10 +180,11 @@ func cachePolicyNever(spec dagql.FieldSpec) bool {
 func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]*FunctionCallArgValue, error) {
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
+	// Core enum values are spelled as the module's own schema spells them.
+	ctx = fn.mod.Self().contextWithSDKView(ctx)
 
 	for i, input := range opts.Inputs {
-		normalizedName := gqlArgName(input.Name)
-		arg, ok := fn.args[normalizedName]
+		arg, ok := fn.lookupArg(input.Name)
 		if !ok {
 			return nil, fmt.Errorf("find arg %q", input.Name)
 		}
@@ -510,7 +508,11 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		var result dagql.AnyObjectResult
 		if err := srv.Select(mainCtx, addr, &result,
 			dagql.Selector{
-				Field: gqlFieldName(typename),
+				// The field of the address object that yields a core type
+				// (Secret gives secret, GitRef gives gitRef): core names are
+				// hand-written, not module names, so this keeps the rules it
+				// always had.
+				Field: LegacyNamer.FieldName(typename),
 			},
 		); err != nil {
 			return nil, ud.errorf(err, "resolve object (%q)", typename)
@@ -1010,7 +1012,7 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRunt
 		return nil, fmt.Errorf("no runtime implemented")
 	}
 
-	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.SDKDeps(), mod.Source.Value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
@@ -1091,6 +1093,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if caller, ok := CallerAgent(ctx); ok {
 		fnCall.SetCallerAgent(caller)
 	}
+	// A call made as the engine's own work, such as an SDK building a
+	// module's runtime, carries that to everything its module does to answer
+	// it: its calls are internal in telemetry, as the engine's own selects
+	// are, down through any module it calls in turn.
+	fnCall.engineWork = IsEngineWork(ctx)
 
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
@@ -1252,11 +1259,21 @@ func (fn *ModuleFunction) ReturnType() (ModType, error) {
 }
 
 func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
-	arg, ok := fn.args[gqlArgName(argName)]
+	arg, ok := fn.lookupArg(argName)
 	if !ok {
 		return nil, fmt.Errorf("find arg %q", argName)
 	}
 	return arg.modType, nil
+}
+
+// lookupArg finds an argument by its schema name, or by a name that
+// normalizes to it with the module's naming rules.
+func (fn *ModuleFunction) lookupArg(name string) (*UserModFunctionArg, bool) {
+	if arg, ok := fn.args[name]; ok {
+		return arg, true
+	}
+	arg, ok := fn.args[fn.mod.Self().Namer().ArgName(name)]
+	return arg, ok
 }
 
 func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {

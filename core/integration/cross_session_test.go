@@ -406,13 +406,13 @@ func (ModuleSuite) TestCrossSessionContextDirectoryDefaultPath(ctx context.Conte
 
 	c1 := connect(ctx, t)
 	entries1 := callEntries(c1, rand.Text())
-	require.Contains(t, entries1, "dagger.json")
+	require.Contains(t, entries1, "dagger-module.toml")
 	require.Contains(t, entries1, "foo.txt")
 	require.NoError(t, c1.Close())
 
 	c2 := connect(ctx, t)
 	entries2 := callEntries(c2, rand.Text())
-	require.Contains(t, entries2, "dagger.json")
+	require.Contains(t, entries2, "dagger-module.toml")
 	require.Contains(t, entries2, "foo.txt")
 }
 
@@ -578,6 +578,57 @@ func (SecretSuite) TestCrossSessionGitAuthScoping(ctx context.Context, t *testct
 				With(daggerCallAt(".", "fn")).
 				Sync(ctx)
 			require.NoError(t, err)
+		}
+
+		t.Run("auth token", func(ctx context.Context, t *testctx.T) {
+			runTest(ctx, t, authTokenTestCase, "Authentication failed")
+		})
+		t.Run("ssh key", func(ctx context.Context, t *testctx.T) {
+			runTest(ctx, t, sshTestCase, "SSH URLs are not supported without an SSH socket")
+		})
+	})
+
+	// A remote workspace selected by a commit SHA, as native CI selects one:
+	// a session without credentials can't read a private workspace another
+	// session read with them.
+	t.Run("remote workspace at a commit", func(ctx context.Context, t *testctx.T) {
+		authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+		require.NotEmpty(t, authTokenTestCase.encodedToken)
+
+		sshTestCase := getVCSTestCase(t, "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+		require.True(t, sshTestCase.sshKey)
+
+		runTest := func(ctx context.Context, t *testctx.T, testCase vcsTestCase, expectedErr string) {
+			workspaceRef := testCase.gitTestRepoRef + "@" + testCase.gitTestRepoCommit
+			read := workspaceSelectionDaggerQuery(`{currentWorkspace{directory(path: "."){entries}}}`, "-W", workspaceRef)
+			var err error
+
+			// sanity test fail when no auth given
+			c1 := connect(ctx, t)
+			_, err = goGitBase(t, c1).
+				WithEnvVariable("CACHEBUST", rand.Text()).
+				With(read).
+				Sync(ctx)
+			requireErrOut(t, err, expectedErr)
+
+			// read the workspace with auth, get it into the cache
+			c2 := connect(ctx, t)
+			withRepo, withRepoCleanup := privateRepoSetup(c2, t, testCase)
+			t.Cleanup(withRepoCleanup)
+			_, err = goGitBase(t, c2).
+				WithEnvVariable("CACHEBUST", rand.Text()).
+				With(withRepo).
+				With(read).
+				Sync(ctx)
+			require.NoError(t, err)
+
+			// try again with no auth, should fail
+			c3 := connect(ctx, t)
+			_, err = goGitBase(t, c3).
+				WithEnvVariable("CACHEBUST", rand.Text()).
+				With(read).
+				Sync(ctx)
+			requireErrOut(t, err, expectedErr)
 		}
 
 		t.Run("auth token", func(ctx context.Context, t *testctx.T) {
@@ -1606,7 +1657,7 @@ func (DockerfileSuite) TestCrossSessionDockerbuildSockets(ctx context.Context, t
 }
 
 func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T) {
-	tc := getVCSTestCase(t, "git@bitbucket.org:dagger-modules/private-modules-test.git")
+	tc := getVCSTestCase(t, "git@ssh.bitbucket.org:dagger-modules/private-modules-test.git")
 	url := tc.gitTestRepoRef
 	ref := tc.gitTestRepoCommit
 

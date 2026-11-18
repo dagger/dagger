@@ -182,6 +182,7 @@ func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, 
 	dec.imported = env.Imported
 	if dec.roles != nil && dec.roles.ResultID == resultID {
 		dec.imported = dec.roles.Imported
+		dec.armRecipe = dec.roles.ArmRecipe
 		dec.host = dec.roles.Host
 	}
 	var cleanup OnReleaseFunc

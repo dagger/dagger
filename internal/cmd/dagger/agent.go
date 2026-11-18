@@ -32,11 +32,18 @@ var agentListMode bool
 var agentResume agentResumeFlag
 var agentTrace string
 var agentFocus string
+var agentBackfill bool
 
 var agentCmd = &cobra.Command{
 	Use:   "agent [FILTERS] [OPTIONS]",
 	Short: "Compose your installed agent modules and drop into an interactive prompt.",
-	Args:  cobra.ArbitraryArgs,
+	Long: `Compose your installed agent modules and drop into an interactive prompt.
+
+If no LLM provider is configured, interactive setup runs automatically.
+Use /setup to connect an AI account, /model to choose a model and optionally
+save it as your default, and /logout to disconnect a saved account.
+Use /help for everyday commands and advanced options.`,
+	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
 		// Drop into the same interactive prompt mode as `dagger shell`, so keep
 		// completed conversation items in scrollback rather than GC'ing them
@@ -57,6 +64,9 @@ var agentCmd = &cobra.Command{
 			return err
 		}
 		if err := validateArchiveFlags(traceID, agentFocus, listArchives, agentListMode, args); err != nil {
+			return err
+		}
+		if err := validateBackfillFlags(agentBackfill, traceID != "" || listArchives); err != nil {
 			return err
 		}
 		// A bare -r offers a picker whenever the frontend can prompt, then
@@ -97,6 +107,17 @@ var agentCmd = &cobra.Command{
 				if agentListMode {
 					return listAgents(ctx, dag, args, cmd)
 				}
+				ready, err := ensureAgentLLMConfigured(ctx, traceID,
+					canPromptForInit(progress, stdinIsTTY, false),
+					engineClient.LLMConfigured,
+					func(ctx context.Context) (bool, error) {
+						return llmconfig.InteractiveSetup(ctx, Frontend)
+					},
+					(&shellCallHandler{}).reloadLLMConfig,
+				)
+				if err != nil || !ready {
+					return err
+				}
 				// Mint the agent before composing selected expertise onto its
 				// workspace-bound seed, then open the prompt on that runtime.
 				//
@@ -104,7 +125,6 @@ var agentCmd = &cobra.Command{
 				// anchors, not a destination base LLM, own the provider and workspace.
 				var llmID string
 				var initialAgent *core.Agent
-				var err error
 				if traceID == "" {
 					initialAgent, err = composeAgents(ctx, dag, args, cmd)
 					if err == nil {
@@ -117,9 +137,10 @@ var agentCmd = &cobra.Command{
 					return err
 				}
 				restore := traceRestore{
-					source:  source,
-					traceID: traceID,
-					agent:   agentFocus,
+					source:   source,
+					traceID:  traceID,
+					agent:    agentFocus,
+					backfill: agentBackfill,
 				}
 				return startInteractivePromptModeWithResume(ctx, dag, llmID, interactivePromptModeOpts{
 					restore:              restore,
@@ -247,6 +268,16 @@ func init() {
 	_ = agentCmd.Flags().MarkDeprecated("trace", "use -r/--resume <trace-id> instead")
 	agentCmd.Flags().StringVar(&agentFocus, "agent", "",
 		"With -r, focus this restored agent (runtime handle or name) instead of the top-level one")
+	agentCmd.Flags().BoolVar(&agentBackfill, "backfill", false,
+		"With -r, import the session's full telemetry history in the background, so every span, check and test is browsable as in the original session. By default only the agents' conversations load, and a span's children and logs load as it is expanded or shown, so a session too large to reload (e.g. one that ran out of memory) still resumes, and /backfill loads the rest from inside it. Applies to sealed engine archives; unsealed archives and Dagger Cloud traces always load whole")
+}
+
+// validateBackfillFlags refuses --backfill without a restore.
+func validateBackfillFlags(backfill, restoring bool) error {
+	if backfill && !restoring {
+		return errors.New("--backfill requires -r/--resume")
+	}
+	return nil
 }
 
 func validateArchiveFlags(traceID, focus string, listArchives, listAgents bool, args []string) error {

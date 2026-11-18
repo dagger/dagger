@@ -266,6 +266,7 @@ type attachablesPipeConnector struct {
 }
 
 func (c *attachablesPipeConnector) EngineID() string { return "test" }
+func (c *attachablesPipeConnector) ClaimID() string  { return "" }
 func (c *attachablesPipeConnector) Connect(context.Context) (net.Conn, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

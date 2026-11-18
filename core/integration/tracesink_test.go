@@ -53,12 +53,14 @@ type agentTraceSink struct {
 
 	traces []*coltracepb.ExportTraceServiceRequest
 	logs   []*collogspb.ExportLogsServiceRequest
+
+	timing sinkTiming
 }
 
 func newAgentTraceSink(t testing.TB) *agentTraceSink {
 	t.Helper()
 	db := dagui.NewDB()
-	sink := &agentTraceSink{db: db, logExp: db.LogExporter(), changed: make(chan struct{})}
+	sink := &agentTraceSink{db: db, logExp: db.LogExporter(), changed: make(chan struct{}), timing: sinkTiming{start: time.Now()}}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/traces", sink.tracesHandler)
@@ -68,6 +70,15 @@ func newAgentTraceSink(t testing.TB) *agentTraceSink {
 	srv := &http.Server{Handler: mux}
 	go srv.Serve(l) //nolint:errcheck
 	t.Cleanup(func() { srv.Close() })
+	// A test waiting for telemetry that never came fails with only a
+	// timeout; say how the sink answered the exports it was sent.
+	t.Cleanup(func() {
+		if t.Failed() {
+			sink.mu.Lock()
+			defer sink.mu.Unlock()
+			t.Log(sink.timing.report())
+		}
+	})
 
 	sink.base = "http://" + l.Addr().String()
 	return sink
@@ -85,9 +96,16 @@ func (sink *agentTraceSink) clientOpts() []dagger.ClientOpt {
 }
 
 func (sink *agentTraceSink) tracesHandler(w http.ResponseWriter, r *http.Request) {
+	ex := sinkExport{kind: "traces", arrived: time.Now()}
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
+	ex.lockWait = time.Since(ex.arrived)
+	defer func() {
+		ex.total = time.Since(ex.arrived)
+		sink.timing.record(ex)
+	}()
 	body, err := io.ReadAll(r.Body)
+	ex.read, ex.bytes = time.Since(ex.arrived)-ex.lockWait, len(body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -98,6 +116,11 @@ func (sink *agentTraceSink) tracesHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	sink.traces = append(sink.traces, &req)
+	for _, rs := range req.ResourceSpans {
+		for _, ss := range rs.ScopeSpans {
+			ex.items += len(ss.Spans)
+		}
+	}
 	if err := sink.db.ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -107,9 +130,16 @@ func (sink *agentTraceSink) tracesHandler(w http.ResponseWriter, r *http.Request
 }
 
 func (sink *agentTraceSink) logsHandler(w http.ResponseWriter, r *http.Request) {
+	ex := sinkExport{kind: "logs", arrived: time.Now()}
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
+	ex.lockWait = time.Since(ex.arrived)
+	defer func() {
+		ex.total = time.Since(ex.arrived)
+		sink.timing.record(ex)
+	}()
 	body, err := io.ReadAll(r.Body)
+	ex.read, ex.bytes = time.Since(ex.arrived)-ex.lockWait, len(body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -120,6 +150,11 @@ func (sink *agentTraceSink) logsHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	sink.logs = append(sink.logs, &req)
+	for _, rl := range req.ResourceLogs {
+		for _, sl := range rl.ScopeLogs {
+			ex.items += len(sl.LogRecords)
+		}
+	}
 	if err := telemetry.ReexportLogsFromPB(r.Context(), sink.logExp, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

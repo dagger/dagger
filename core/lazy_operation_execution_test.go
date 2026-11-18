@@ -34,17 +34,15 @@ import (
 
 type operationExecutionServer struct {
 	*cacheVolumeTestQueryServer
-	srv     *dagql.Server
-	store   content.Store
-	builtin content.Store
-	locker  *locker.Locker
+	srv    *dagql.Server
+	store  content.Store
+	locker *locker.Locker
 }
 
 func (s *operationExecutionServer) Locker() *locker.Locker                        { return s.locker }
 func (s *operationExecutionServer) DNS() *oci.DNSConfig                           { return &oci.DNSConfig{} }
 func (s *operationExecutionServer) Server(context.Context) (*dagql.Server, error) { return s.srv, nil }
 func (s *operationExecutionServer) OCIStore() content.Store                       { return s.store }
-func (s *operationExecutionServer) BuiltinOCIStore() content.Store                { return s.builtin }
 func (s *operationExecutionServer) Platform() Platform {
 	return Platform{OS: "linux", Architecture: "amd64"}
 }

@@ -645,19 +645,20 @@ func (cc *cacheContext) includedPaths(ctx context.Context, m *mount, p string, o
 			continue
 		}
 
+		// We only hash dir headers and files, not dir contents. Hashing
+		// dir contents could be wrong if there are exclusions within the
+		// dir, and would read each file again for every dir above it.
+		if cr, ok := root.Get(k); ok && cr.Type == CacheRecordTypeDir {
+			k, _, keyOk = iter.Next()
+			continue
+		}
+
 		cr, upt, err := cc.checksum(ctx, root, txn, m, k, false)
 		if err != nil {
 			return nil, err
 		}
 		if upt {
 			updated = true
-		}
-
-		if cr.Type == CacheRecordTypeDir {
-			// We only hash dir headers and files, not dir contents. Hashing
-			// dir contents could be wrong if there are exclusions within the
-			// dir.
-			shouldInclude = false
 		}
 		maybeIncludedPath.record = cr
 
@@ -1021,6 +1022,13 @@ var (
 	scanCounter       atomic.Uint64
 )
 
+// Only used by TestChecksumPatternsReadEachFileOnce to count the files whose
+// content is read for a digest.
+var (
+	fileReadCounterEnable bool
+	fileReadCounter       atomic.Uint64
+)
+
 func (cc *cacheContext) scanPath(ctx context.Context, m *mount, p string, followTrailing bool) (retErr error) {
 	p = path.Join("/", p)
 
@@ -1234,6 +1242,9 @@ func prepareDigest(fp, p string, fi os.FileInfo) (digest.Digest, error) {
 		return "", errors.Wrapf(err, "failed to create hash for %s", p)
 	}
 	if fi.Mode().IsRegular() && fi.Size() > 0 {
+		if fileReadCounterEnable {
+			fileReadCounter.Add(1)
+		}
 		// TODO: would be nice to put the contents to separate hash first
 		// so it can be cached for hardlinks
 		f, err := os.Open(fp)

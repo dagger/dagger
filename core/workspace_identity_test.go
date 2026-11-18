@@ -73,10 +73,6 @@ func TestWorkspaceContentIdentity(t *testing.T) {
 			ws.mountPoints = []string{"vendor"}
 			return ws
 		},
-		"rootfs": func(ws *Workspace) *Workspace {
-			ws.SetRootfs(f.directory("other-root"))
-			return ws
-		},
 		"selected env": func(ws *Workspace) *Workspace {
 			ws.SetSelectedEnv("ci")
 			return ws
@@ -114,10 +110,26 @@ func TestWorkspaceContentIdentity(t *testing.T) {
 		})
 	}
 
+	// A Git workspace's tree is its ref's, so the ref says what it holds. The
+	// tree's own digest changes once it's checked out, which must not change
+	// what the workspace is.
+	t.Run("a Git workspace's tree is not part of it", func(t *testing.T) {
+		other := base()
+		other.SetRootfs(f.directory("other-root"))
+		require.Equal(t, identity(base()), identity(other))
+	})
+
 	t.Run("a directory-backed workspace has one", func(t *testing.T) {
 		root := f.directory("root")
 		require.Equal(t, identity(directoryWorkspace(root, "dir://a")), identity(directoryWorkspace(root, "dir://a")))
 		require.NotEqual(t, identity(directoryWorkspace(root, "dir://a")), identity(directoryWorkspace(f.directory("other"), "dir://a")))
+	})
+
+	t.Run("a directory-backed workspace's rootfs is part of it", func(t *testing.T) {
+		root := f.directory("root")
+		other := directoryWorkspace(root, "dir://a")
+		other.SetRootfs(f.directory("other-root"))
+		require.NotEqual(t, identity(directoryWorkspace(root, "dir://a")), identity(other))
 	})
 
 	t.Run("host-backed and rootless workspaces have none", func(t *testing.T) {

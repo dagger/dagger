@@ -29,7 +29,6 @@ dagger [options] [subcommand | file...]
 * [dagger init](#dagger-init)	 - Initialize a workspace and show the next commands
 * [dagger install](#dagger-install)	 - Install a module into your workspace
 * [dagger list](#dagger-list)	 - List artifacts or collection items
-* [dagger llm](#dagger-llm)	 - Manage LLM configuration
 * [dagger lock](#dagger-lock)	 - Manage Dagger lockfiles
 * [dagger module](#dagger-module)	 - Install, use, and develop Dagger modules
 * [dagger sdk](#dagger-sdk)	 - Inspect and configure SDKs
@@ -44,6 +43,15 @@ dagger [options] [subcommand | file...]
 
 Compose your installed agent modules and drop into an interactive prompt.
 
+### Synopsis
+
+Compose your installed agent modules and drop into an interactive prompt.
+
+If no LLM provider is configured, interactive setup runs automatically.
+Use /setup to connect an AI account, /model to choose a model and optionally
+save it as your default, and /logout to disconnect a saved account.
+Use /help for everyday commands and advanced options.
+
 ```
 dagger agent [FILTERS] [OPTIONS]
 ```
@@ -54,6 +62,7 @@ dagger agent [FILTERS] [OPTIONS]
       --absolute              Show absolute links (alias: --abs)
       --agent string          With -r, focus this restored agent (runtime handle or name) instead of the top-level one
   -a, --all                   Expand collections and list each item
+      --backfill              With -r, import the session's full telemetry history in the background, so every span, check and test is browsable as in the original session. By default only the agents' conversations load, and a span's children and logs load as it is expanded or shown, so a session too large to reload (e.g. one that ran out of memory) still resumes, and /backfill loads the rest from inside it. Applies to sealed engine archives; unsealed archives and Dagger Cloud traces always load whole
   -f, --format FORMAT         Output FORMAT: table, link, or cli (requires --list) (default "table")
   -l, --list                  List available agents
       --module NAME           Select artifacts from module NAME
@@ -385,7 +394,7 @@ Manage Dagger Cloud (checks, engines, traces, billing, etc.)
 * [dagger cloud org](#dagger-cloud-org)	 - Manage Dagger Cloud organizations
 * [dagger cloud signup](#dagger-cloud-signup)	 - Create or select a Dagger Cloud account and organization
 * [dagger cloud traces](#dagger-cloud-traces)	 - View Dagger Cloud traces
-* [dagger cloud usage](#dagger-cloud-usage)	 - Show Dagger Cloud usage
+* [dagger cloud usage](#dagger-cloud-usage)	 - Show Dagger Cloud usage and bill
 * [dagger cloud workspaces](#dagger-cloud-workspaces)	 - Manage Dagger Cloud workspaces
 
 ## dagger cloud billing
@@ -1030,15 +1039,18 @@ dagger cloud traces view --last --log --check build:lint -o lint.log
 
 ## dagger cloud usage
 
-Show Dagger Cloud usage
+Show Dagger Cloud usage and bill
 
 ### Synopsis
 
-Show Dagger Cloud usage for a UTC calendar month.
+Show Dagger Cloud usage and bill for a UTC calendar month.
 
-Reports Cloud Engine compute usage (core minutes and cost) and telemetry usage
-(spans and log lines ingested) for the current month by default, or the month
-given with --month.
+Reports the plan minimum, the usage, and the bill, followed by the monthly
+statement: the charges of each resource for new and repeat work. Defaults to
+the current month, or the month given with --month.
+
+The numbers are the last saved calculation, as shown on the Billing & usage
+page of Dagger Cloud.
 
 ```
 dagger cloud usage [options] [org] [flags]
@@ -1382,168 +1394,6 @@ dagger list [TYPE | COLLECTION]
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
-
-## dagger llm
-
-Manage LLM configuration
-
-### Synopsis
-
-Manage LLM provider configuration, API keys, and default models.
-
-### Options inherited from parent commands
-
-```
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger](#dagger)	 - A tool to run composable workflows in containers
-* [dagger llm add-key](#dagger-llm-add-key)	 - Add or update API key for a provider
-* [dagger llm config](#dagger-llm-config)	 - Display current LLM configuration
-* [dagger llm remove-key](#dagger-llm-remove-key)	 - Remove API key for a provider
-* [dagger llm reset](#dagger-llm-reset)	 - Reset LLM configuration (removes all stored credentials)
-* [dagger llm set-default](#dagger-llm-set-default)	 - Set default provider and optionally model
-* [dagger llm setup](#dagger-llm-setup)	 - Configure LLM authentication interactively
-* [dagger llm show-config](#dagger-llm-show-config)	 - Show raw LLM configuration (JSON)
-
-## dagger llm add-key
-
-Add or update API key for a provider
-
-### Synopsis
-
-Add or update API key for a provider.
-
-Supported providers:
-  - openrouter: Unified access to 100+ models (https://openrouter.ai/keys)
-  - anthropic: Claude models (https://console.anthropic.com/settings/keys)
-  - openai: GPT models (https://platform.openai.com/api-keys)
-  - google: Gemini models (https://aistudio.google.com/app/apikey)
-
-
-```
-dagger llm add-key <provider>
-```
-
-### Options inherited from parent commands
-
-```
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger llm](#dagger-llm)	 - Manage LLM configuration
-
-## dagger llm config
-
-Display current LLM configuration
-
-```
-dagger llm config
-```
-
-### Options inherited from parent commands
-
-```
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger llm](#dagger-llm)	 - Manage LLM configuration
-
-## dagger llm remove-key
-
-Remove API key for a provider
-
-```
-dagger llm remove-key <provider>
-```
-
-### Options inherited from parent commands
-
-```
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger llm](#dagger-llm)	 - Manage LLM configuration
-
-## dagger llm reset
-
-Reset LLM configuration (removes all stored credentials)
-
-```
-dagger llm reset
-```
-
-### Options inherited from parent commands
-
-```
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger llm](#dagger-llm)	 - Manage LLM configuration
-
-## dagger llm set-default
-
-Set default provider and optionally model
-
-```
-dagger llm set-default <provider> [model]
-```
-
-### Options inherited from parent commands
-
-```
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger llm](#dagger-llm)	 - Manage LLM configuration
-
-## dagger llm setup
-
-Configure LLM authentication interactively
-
-```
-dagger llm setup
-```
-
-### Options inherited from parent commands
-
-```
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger llm](#dagger-llm)	 - Manage LLM configuration
-
-## dagger llm show-config
-
-Show raw LLM configuration (JSON)
-
-```
-dagger llm show-config
-```
-
-### Options inherited from parent commands
-
-```
-  -v, --verbose count   Increase verbosity (use -vv or -vvv for more)
-```
-
-### SEE ALSO
-
-* [dagger llm](#dagger-llm)	 - Manage LLM configuration
 
 ## dagger lock
 

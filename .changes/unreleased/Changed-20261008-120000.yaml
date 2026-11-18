@@ -1,0 +1,12 @@
+kind: Changed
+body: |
+  Workspace mounts are now writable. Edits at or under a mount point made with
+  the Workspace edit APIs (`withNewFile`, `withFile`, `withNewDirectory`,
+  `withDirectory`, `withoutFile`, `withoutFiles`, `withoutDirectory`,
+  `withChanges`, `withPatchFile`), including an agent's tool edits, now apply
+  to the mounted content instead of failing. Like the mounted content itself,
+  they stay out of `Workspace.changes` and are never exported. Removing a mount
+  point itself is still refused: use `Workspace.withoutMount`.
+time: 2026-10-08T12:00:00Z
+custom:
+  Author: vito

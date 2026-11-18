@@ -95,12 +95,6 @@ func TestGitHubAppNotInstalledError(t *testing.T) {
 	}
 }
 
-func TestIsCloudUnauthorized(t *testing.T) {
-	require.True(t, isCloudUnauthorized(errors.New("GetOrgMappedSources: unauthorized; unauthorized")))
-	require.False(t, isCloudUnauthorized(errors.New("connection refused")))
-	require.False(t, isCloudUnauthorized(nil))
-}
-
 func TestRepoAccessError(t *testing.T) {
 	err := &repoAccessError{settingsURL: "https://github.com/settings/installations/12345"}
 	require.EqualError(t, err,
@@ -124,6 +118,8 @@ func TestInstallationSettingsURL(t *testing.T) {
 func TestIsRepoNotInInstallation(t *testing.T) {
 	require.True(t, isRepoNotInInstallation(errors.New(
 		"ConfigureSource: repository github.com/marcosnils/bin does not belong to installation 161781848. Verify that the GitHub app has been granted access to the repository.")))
+	require.True(t, isRepoNotInInstallation(errors.New(
+		"UpdateOrgRepoSettings: github.com/marcosnils/bin is not available through this GitHub installation")))
 	require.False(t, isRepoNotInInstallation(errors.New("unauthorized")))
 	require.False(t, isRepoNotInInstallation(nil))
 }

@@ -10,6 +10,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"dagger/cli-dev/internal/dagger"
+	"dagger/cli-dev/internal/dagger/clients/alpine"
 	"dagger/cli-dev/util"
 )
 
@@ -48,7 +49,7 @@ func (cli *CliDev) Publish(
 	}
 
 	if mode == cliReleaseModeStable {
-		notes, err := cli.Go.Source().File(".changes/" + tag + ".md").Contents(ctx)
+		notes, err := cli.Source.File(".changes/" + tag + ".md").Contents(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -114,14 +115,14 @@ func (cli *CliDev) PublishMetadata(
 	awsCloudfrontDistribution string,
 	awsEndpointURL string, // +optional
 ) error {
-	ctr := dag.
-		Alpine(dagger.AlpineOpts{
+	ctr := alpine.
+		New(alpine.AlpineOpts{
 			Branch:   "3.22",
 			Packages: []string{"aws-cli"},
 		}).
 		Container().
 		WithWorkdir("/src").
-		WithDirectory(".", cli.Go.Source()).
+		WithDirectory(".", cli.Source).
 		WithSecretVariable("AWS_ACCESS_KEY_ID", awsAccessKeyID).
 		WithSecretVariable("AWS_SECRET_ACCESS_KEY", awsSecretAccessKey).
 		WithEnvVariable("AWS_REGION", awsRegion).

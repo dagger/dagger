@@ -1,12 +1,10 @@
 package main
 
 import (
-	_ "embed"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
-	"dagger.io/dagger"
-	"dagger.io/dagger/core"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/spf13/cobra"
 
@@ -14,10 +12,9 @@ import (
 )
 
 var (
-	//go:embed modsourcedeps.graphql
-	loadModuleSourceDepsQuery string
-	moduleSourceID            string
-	clientDir                 string
+	clientDir          string
+	engineVersion      string
+	moduleDependencies string
 )
 
 var generateClientCmd = &cobra.Command{
@@ -51,33 +48,12 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 		clientConfig.ClientDir = clientDir
 	}
 
-	if moduleSourceID != "" {
-		var res struct {
-			Source struct {
-				Name          string `json:"moduleOriginalName"`
-				EngineVersion string `json:"engineVersion"`
-				Dependencies  []generator.ModuleSourceDependency
-			}
+	clientConfig.ModuleName = moduleName
+	clientConfig.EngineVersion = engineVersion
+	if moduleDependencies != "" {
+		if err := json.Unmarshal([]byte(moduleDependencies), &clientConfig.ModuleDependencies); err != nil {
+			return fmt.Errorf("parse --module-dependencies: %w", err)
 		}
-
-		err := cfg.Dag.Do(ctx,
-			&dagger.Request{
-				Query:  loadModuleSourceDepsQuery,
-				OpName: "ModuleSourceDependencies",
-				Variables: map[string]any{
-					"source": core.ID(moduleSourceID),
-				},
-			},
-			&dagger.Response{
-				Data: &res,
-			})
-		if err != nil {
-			return fmt.Errorf("failed to load module source dependencies: %w", err)
-		}
-
-		clientConfig.ModuleName = res.Source.Name
-		clientConfig.EngineVersion = res.Source.EngineVersion
-		clientConfig.ModuleDependencies = res.Source.Dependencies
 	}
 
 	cfg.ClientConfig = clientConfig
@@ -94,6 +70,8 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 
 func init() {
 	// Specific client generation flags
-	generateClientCmd.Flags().StringVar(&moduleSourceID, "module-source-id", "", "id of the module to generate code for")
+	generateClientCmd.Flags().StringVar(&moduleName, "module-name", "", "name of the module to generate a client for")
+	generateClientCmd.Flags().StringVar(&engineVersion, "engine-version", "", "the module's engine version, which the client's dagger.io/dagger dependency is pinned to")
+	generateClientCmd.Flags().StringVar(&moduleDependencies, "module-dependencies", "", "the module's dependencies, as a JSON list of objects with their kind, moduleOriginalName, pin and asString")
 	generateClientCmd.Flags().StringVar(&clientDir, "client-dir", "", "directory where the client will be generated (output by default)")
 }

@@ -15,6 +15,8 @@ import (
 type JSON json.RawMessage
 
 func init() {
+	// Only affects the legacy strcase rules (modules older than
+	// IdentifierNamingVersion); see the acronyms in llm.go.
 	strcase.ConfigureAcronym("JSON", "JSON")
 }
 

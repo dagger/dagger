@@ -20,10 +20,13 @@ func (s *cloudSchema) Install(srv *dagql.Server) {
 			Doc("Dagger Cloud configuration and state"),
 	}.Install(srv)
 
+	// traceUrl is traceURL in views before engine.IdentifierCasingVersion.
+	traceURLField := dagql.Func("traceUrl", s.traceURL).
+		DoNotCache("This value changes every single run").
+		Doc("The trace URL for the current session")
 	dagql.Fields[*core.Cloud]{
-		dagql.Func("traceURL", s.traceURL).
-			DoNotCache("This value changes every single run").
-			Doc("The trace URL for the current session"),
+		casedField(traceURLField),
+		legacyField(traceURLField, "traceURL"),
 	}.Install(srv)
 }
 

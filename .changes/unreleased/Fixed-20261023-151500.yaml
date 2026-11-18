@@ -1,0 +1,8 @@
+kind: Fixed
+body: |-
+    The local dependencies of a module served from the tree of the module that calls `serveModule` now use the same cache volumes as those dependencies loaded directly, instead of volumes keyed on their content.
+    For example, a legacy module served by a module that uses the Go SDK entrypoint no longer builds its own Go dependencies from cold caches.
+time: 2026-10-23T15:15:00+02:00
+custom:
+    Author: eunomie
+    PR: "14844"

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -26,12 +27,19 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 func init() {
+	// These only affect the legacy strcase rules, which name the types of
+	// modules older than IdentifierNamingVersion; engine/naming's dictionary
+	// covers LLM (and any other acronym) in every position, so newer modules
+	// resolve references to every LLM* core type without them. They stay,
+	// unchanged, for as long as the legacy rules do: removing one would rename
+	// types in modules that rely on it.
 	strcase.ConfigureAcronym("LLM", "LLM")
 	// Acronyms only match a whole name, so a module type definition naming
 	// these core types would otherwise normalize to "Llmcontent" /
@@ -44,11 +52,11 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic  = anthropic.ModelClaudeSonnet4_5
+	modelDefaultAnthropic  = anthropic.ModelClaudeSonnet4_6
 	modelDefaultGoogle     = "gemini-2.5-flash"
 	modelDefaultOpenAI     = "gpt-4.1"
 	modelDefaultCodex      = "gpt-5.5"
-	modelDefaultOpenRouter = "anthropic/claude-sonnet-4.5"
+	modelDefaultOpenRouter = "anthropic/claude-sonnet-4.6"
 	modelDefaultMeta       = "llama-3.2"
 	modelDefaultMistral    = "mistral-7b-instruct"
 )
@@ -129,9 +137,10 @@ type LLM struct {
 	// explicitly disables reasoning; empty defers to the provider config.
 	reasoningEffort string
 
-	endpoint          *LLMEndpoint
-	endpointSessionID string
-	endpointMtx       *sync.Mutex
+	endpoint               *LLMEndpoint
+	endpointSessionID      string
+	endpointConfigRevision string
+	endpointMtx            *sync.Mutex
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
@@ -1051,6 +1060,46 @@ type LLMToolCall struct {
 	Arguments JSON   `json:"arguments"`
 }
 
+// toolCallInput returns a tool call's recorded arguments as the object a
+// provider resubmits in the conversation history. A JSON object is returned
+// verbatim, keeping the key order the model wrote: decoding it into a map
+// would re-marshal it with sorted keys, so the model would see its own past
+// calls rewritten (a Timeout written tool-first coming back arguments-first)
+// and learn that order in context. No arguments at all resubmit as {}.
+//
+// Arguments that are not a JSON object, such as a streamed tool input the
+// model never finished, are wrapped as {"INVALID_JSON": "<raw arguments>"}, as
+// Anthropic recommends: the call already failed with a tool error the model
+// saw, and failing here would make every later turn of the conversation fail
+// too.
+func toolCallInput(args JSON) json.RawMessage {
+	raw := bytes.TrimSpace(args.Bytes())
+	if len(raw) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	if raw[0] == '{' && json.Valid(raw) {
+		return json.RawMessage(raw)
+	}
+	wrapped, err := json.Marshal(map[string]string{"INVALID_JSON": string(args)})
+	if err != nil {
+		// Unreachable: a map of strings always marshals.
+		return json.RawMessage(`{}`)
+	}
+	return wrapped
+}
+
+// toolCallInputMap is toolCallInput decoded into a map, for providers whose
+// SDK only takes the arguments as one. The key order is lost.
+func toolCallInputMap(args JSON) map[string]any {
+	var input map[string]any
+	if err := json.Unmarshal(toolCallInput(args), &input); err != nil {
+		// A valid object can still fail to decode, e.g. with a number out of
+		// float64's range: wrap it like malformed input.
+		return map[string]any{"INVALID_JSON": string(args)}
+	}
+	return input
+}
+
 const (
 	OpenAI      LLMProvider = "openai"
 	OpenAICodex LLMProvider = "openai-codex"
@@ -1148,6 +1197,14 @@ func (llm *LLM) SmallModelRoute(ctx context.Context) (string, string, error) {
 		return "", "", err
 	}
 	provider := current.Provider
+	if provider == OpenAI && current.BaseURL != "" && router.provider(provider).SmallModel == "" {
+		if _, known := lookupCatalogModel(provider, current.Model); !known {
+			// An OpenAI-compatible server may only serve this custom model.
+			// Pinning its provider in the picker must not replace it with a
+			// catalog GPT model for auxiliary work such as title generation.
+			return current.Model, string(provider), nil
+		}
+	}
 	small, ok := router.SmallModel(provider)
 	if !ok {
 		return current.Model, string(provider), nil
@@ -1287,6 +1344,32 @@ func (llm *LLM) AttachDependencyResults(
 	return deps, nil
 }
 
+// Route resolves model metadata against the live configuration without reading
+// credentials, opening a local tunnel, or creating a provider client. Metadata
+// must remain available when credentials need repair; Endpoint authenticates the
+// route when inference actually needs it.
+func (llm *LLM) Route(ctx context.Context) (*LLMEndpoint, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	router, err := loadLLMRouter(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	endpoint, err := router.Route(llm.model, llm.provider)
+	if err != nil {
+		return nil, err
+	}
+	if endpoint.Model == "" {
+		return nil, fmt.Errorf("no valid LLM endpoint configuration")
+	}
+	if llm.reasoningEffort != "" {
+		endpoint.ReasoningEffort = llm.reasoningEffort
+	}
+	return endpoint, nil
+}
+
 func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	llm.endpointMtx.Lock()
 	defer llm.endpointMtx.Unlock()
@@ -1299,10 +1382,8 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	if scope, ok := engine.ClientScopeFromContext(ctx); ok {
 		sessionID = scope.SessionID()
 	}
-	if llm.endpoint != nil && llm.endpointSessionID == sessionID {
-		return llm.endpoint, nil
-	}
-
+	// Read a live configuration snapshot even for a cached endpoint. A key
+	// removal or route change must take effect on the next provider request.
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1310,6 +1391,9 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	router, err := loadLLMRouter(ctx, query)
 	if err != nil {
 		return nil, err
+	}
+	if llm.endpoint != nil && llm.endpointSessionID == sessionID && llm.endpointConfigRevision == router.configRevision {
+		return llm.endpoint, nil
 	}
 	endpoint, err := router.Endpoint(ctx, llm.model, llm.provider)
 	if err != nil {
@@ -1364,6 +1448,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 
 	llm.endpoint = endpoint
 	llm.endpointSessionID = sessionID
+	llm.endpointConfigRevision = router.configRevision
 
 	return llm.endpoint, nil
 }
@@ -1750,6 +1835,13 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 }
 
 func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (dagql.ObjectResult[*LLM], error) {
+	// Warm the persistent receiver before making the transient MCP clone.
+	// withResponse materializes from inst, not that clone, so resolving only
+	// on the clone would discard the endpoint and its session credential
+	// source after every turn. Endpoint still checks session and revision.
+	if _, err := llm.Endpoint(ctx); err != nil {
+		return inst, err
+	}
 	llm = llm.Clone()
 
 	// Capture the bound state entering this step before anything can mutate it
@@ -2253,17 +2345,15 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 	b.MaxInterval = 30 * time.Second
 	b.MaxElapsedTime = 2 * time.Minute
 
-	ep, err := llm.Endpoint(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var res *LLMResponse
 	var authRetried bool
 	err = backoff.Retry(func() error {
-		// Read the client inside the retry: recovering from a rejected
-		// credential is only worth anything if the next attempt picks up what
-		// the recovery changed.
+		// Re-read live configuration for each attempt, including after backoff:
+		// a removed key or changed endpoint must not survive in this loop.
+		ep, err := llm.Endpoint(ctx)
+		if err != nil {
+			return backoff.Permanent(err)
+		}
 		client := ep.Client
 		var sendErr error
 		// The provider streams this turn's content into its own per-block display
@@ -2682,7 +2772,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 							if !ok {
 								continue
 							}
-							if str, ok := toolArgHeaderValue(name, val); ok {
+							if str, ok := dagui.ToolArgHeaderValue(name, val); ok {
 								toolArgNames = append(toolArgNames, name)
 								toolArgValues = append(toolArgValues, str)
 							}

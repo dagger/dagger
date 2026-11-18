@@ -32,7 +32,7 @@ defmodule Dagger.Cloud do
   @spec trace_url(t()) :: {:ok, String.t()} | {:error, term()}
   def trace_url(%__MODULE__{} = cloud) do
     query_builder =
-      cloud.query_builder |> QB.select("traceURL")
+      cloud.query_builder |> QB.select("traceUrl")
 
     Client.execute(cloud.client, query_builder)
   end

@@ -29,6 +29,7 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -246,12 +247,70 @@ func (sess *daggerSession) closeArchiveControl(ctx context.Context) error {
 	return nil
 }
 
+// registerTelemetryArchive retains a session that registered no agent archive
+// by its trace, so `dagger trace` can read it from the engine as it reads an
+// agent session. It runs at teardown, once the session can record no agent
+// state, and seals like an agent archive with an empty roster. It is best
+// effort: a trace another session keeps (see RegisterTelemetryOnly), or no
+// trace at all, simply leaves the session's store to store GC as before.
+func (srv *Server) registerTelemetryArchive(sess *daggerSession) {
+	if srv.archives == nil {
+		return
+	}
+	traceID := sess.primaryTraceID()
+	if traceID == "" {
+		return
+	}
+	if size, err := srv.clientDBs.StoreSize(sess.mainClientCallerID); err != nil || size == 0 {
+		// Nothing recorded, or nothing measurable to account for.
+		return
+	}
+	sess.archiveMu.Lock()
+	defer sess.archiveMu.Unlock()
+	if sess.archiveManifest != nil || sess.archiveRegisterErr != nil {
+		return
+	}
+	manifest, err := srv.archives.RegisterTelemetryOnly(traceID, sess.mainClientCallerID, sess.startedAt)
+	if err != nil {
+		slog.Debug("not retaining session telemetry", "session", sess.sessionID, "traceID", traceID, "err", err)
+		return
+	}
+	sess.archiveManifest = &manifest
+	if sess.archivePendingTitle.traceID == traceID {
+		sess.setArchiveTitleLocked(manifest, sess.archivePendingTitle.title)
+	}
+	sess.archivePendingTitle = pendingArchiveTitle{}
+}
+
+// primaryTraceID is the trace the session's main client declared as its own,
+// or else the trace of its first query.
+func (sess *daggerSession) primaryTraceID() string {
+	sess.clientMu.RLock()
+	record := sess.clientRecords[sess.mainClientCallerID]
+	sess.clientMu.RUnlock()
+	if record != nil {
+		sess.scopeMu.Lock()
+		md := record.clientMetadata
+		sess.scopeMu.Unlock()
+		if md != nil {
+			if traceID, err := trace.TraceIDFromHex(md.PrimaryTraceID); err == nil && traceID.IsValid() {
+				return traceID.String()
+			}
+		}
+	}
+	if sess.wcprofTraceID.IsValid() {
+		return sess.wcprofTraceID.String()
+	}
+	return ""
+}
+
 // finalizeSessionArchive seals the session's archive, or marks it incomplete.
 // teardownErr carries only the teardown errors that make the final cut
 // untrustworthy: closing agent control, killing agents, and the final
 // telemetry shutdown barrier. Unrelated teardown failures (services, cache
 // release, ...) do not affect what the store recorded and must not unseal it.
 func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSession, teardownErr error) (rerr error) {
+	srv.registerTelemetryArchive(sess)
 	sess.archiveMu.Lock()
 	manifest := sess.archiveManifest
 	registrationErr := sess.archiveRegisterErr
@@ -262,12 +321,24 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 	defer func() {
 		if rerr != nil {
 			_ = srv.archives.MarkIncomplete(manifest.TraceID, rerr)
+			if manifest.TelemetryOnly {
+				// Retaining a plain session is best effort; its teardown
+				// errors are already reported on their own.
+				slog.Debug("telemetry-only archive left unsealed", "traceID", manifest.TraceID, "err", rerr)
+				rerr = nil
+			}
 		}
 	}()
 	if err := errors.Join(teardownErr, sess.archiveCloseErr, registrationErr); err != nil {
 		return err
 	}
-	if sess.archiveExpected.Agents == nil {
+	want := sess.archiveExpected
+	if manifest.TelemetryOnly && want.Agents == nil {
+		// No agent control was closed (or none was ever set up): a
+		// telemetry-only archive's roster is empty by construction.
+		want = agentcontrol.Expectation{Agents: map[agentcontrol.Key]int64{}, Subscriptions: map[agentcontrol.EdgeKey]int64{}}
+	}
+	if want.Agents == nil {
 		return errors.New("missing independent final roster witness")
 	}
 	if err := srv.archives.BeginFinalizing(manifest.TraceID); err != nil {
@@ -283,7 +354,7 @@ func (srv *Server) finalizeSessionArchive(ctx context.Context, sess *daggerSessi
 		return err
 	}
 	sealAt := time.Now().UTC()
-	data, records, err := buildArchiveBootstrap(ctx, db, *manifest, cut, sess.archiveExpected, sealAt)
+	data, records, err := buildArchiveBootstrap(ctx, db, *manifest, cut, want, sealAt)
 	if err != nil {
 		return err
 	}
@@ -386,13 +457,13 @@ func buildArchiveBootstrapWithPayloadLimit(ctx context.Context, db *clientdb.DB,
 	return archive.BuildBootstrap(header, signals)
 }
 
+// archiveRequestRecord authenticates an archive API request. Any client of the
+// session may read archives, including a nested `dagger` CLI run from a
+// container, which is how an agent resumes a trace this engine recorded.
 func (srv *Server) archiveRequestRecord(clientID, sessionID, token string) (*clientRecord, error) {
 	record, err := srv.clientRecordFromIDs(sessionID, clientID)
 	if err != nil {
 		return nil, err
-	}
-	if record.clientID != record.daggerSession.mainClientCallerID {
-		return nil, errors.New("archive API requires main client authority")
 	}
 	record.daggerSession.scopeMu.Lock()
 	stored := ""
@@ -428,13 +499,21 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 	if len(parts) > 2 {
 		return httpErr(errors.New("unknown archive endpoint"), http.StatusNotFound)
 	}
-	if r.Method != http.MethodGet {
+	// Multi-span log reads and searches carry their selection in a POST
+	// body (archive.LogQuery, archive.LogSearch); every other read is a GET.
+	postable := len(parts) == 2 && (parts[1] == "logs" || parts[1] == archiveSearchResource || parts[1] == archive.CallClosureResource)
+	if r.Method != http.MethodGet && (r.Method != http.MethodPost || !postable) {
 		return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
 	}
 	m, err := srv.archiveManifest(r.Context(), record.daggerSession, parts[0])
 	if err != nil {
 		slog.Debug("archive lookup failed", "traceID", parts[0], "session", record.daggerSession.sessionID, "err", err)
 		return writeArchiveFailure(w, err)
+	}
+	if len(parts) == 2 && parts[1] == archive.AgentBootstrapResource && m.TelemetryOnly {
+		// Nothing to restore: for agent restore this trace is a clean miss,
+		// whatever state its telemetry was retained in.
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureNotFound, Err: errors.New("archive has no agent state")})
 	}
 	// An unsealed archive (interrupted or incomplete) has no bootstrap or
 	// verified cut; it can only be streamed at the current end of its store,
@@ -461,6 +540,16 @@ func (srv *Server) serveArchiveHTTP(w http.ResponseWriter, r *http.Request, reco
 		return serveArchiveBootstrap(w, srv.archives.BootstrapPath(m.TraceID))
 	case "traces", "logs", "metrics":
 		return srv.serveArchiveSignal(w, r, m, cut, unsealed, resource)
+	case archiveSearchResource:
+		if r.Method != http.MethodPost {
+			return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
+		}
+		return srv.serveArchiveSearch(w, r, m, cut)
+	case archive.CallClosureResource:
+		if r.Method != http.MethodPost {
+			return httpErr(errors.New("method not allowed"), http.StatusMethodNotAllowed)
+		}
+		return srv.serveArchiveCallClosure(w, r, m, cut, enginetel.MaxLivePayloadSize)
 	default:
 		return httpErr(errors.New("unknown archive endpoint"), http.StatusNotFound)
 	}
@@ -506,6 +595,97 @@ func (srv *Server) unsealedArchiveCut(ctx context.Context, m archive.Manifest) (
 	return archive.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, nil
 }
 
+// archiveSearchResource is the archive endpoint that searches display text
+// (POST an archive.LogSearch; the reply is an archive.LogSearchResult).
+const archiveSearchResource = "search"
+
+// serveArchiveSearch searches an archive's display text up to its cut.
+func (srv *Server) serveArchiveSearch(w http.ResponseWriter, r *http.Request, m archive.Manifest, cut archive.HighWater) error {
+	var search archive.LogSearch
+	if err := archive.DecodeLogBody(r.Body, &search); err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	if _, err := search.Matcher(); err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	db, err := srv.clientDBs.OpenHeld(r.Context(), m.MainClientID)
+	if err != nil {
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
+	}
+	defer db.Close()
+	var scope *clientdb.LogQueryScope
+	if len(search.Spans) > 0 {
+		view, err := db.SpanViewAt(r.Context(), m.TraceID, clientdb.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, nil)
+		if err != nil {
+			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: err})
+		}
+		scope = view.LogQueryScope(search.Spans)
+	}
+	result, err := db.SearchLogs(r.Context(), search, cut.Logs, m.TraceID, scope)
+	if err != nil {
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
+	}
+	return writeLogSearchResult(w, result)
+}
+
+// serveArchiveCallClosure streams the call payloads of the recipe closures a
+// POSTed archive.CallClosureQuery names, up to the cut, best-effort (see
+// clientdb.DB.CallClosure), for a frontend that loaded only part of the trace
+// and needs to rebuild an ID. Frames count from 1; the terminal frame carries
+// the last one's cursor. A payload too large for any frame is skipped, as an
+// oversized history row is.
+func (srv *Server) serveArchiveCallClosure(w http.ResponseWriter, r *http.Request, m archive.Manifest, cut archive.HighWater, maxPayloadSize int) (rerr error) {
+	var q archive.CallClosureQuery
+	if err := archive.DecodeLogBody(r.Body, &q); err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	if err := q.Validate(); err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	db, err := srv.clientDBs.OpenHeld(r.Context(), m.MainClientID)
+	if err != nil {
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
+	}
+	defer db.Close()
+	rows, missing, err := db.CallClosure(r.Context(), m.TraceID, q.Digests, q.Known, clientdb.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics})
+	if err != nil {
+		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
+	}
+	if len(missing) > 0 {
+		slog.Debug("archive call closure is missing frames", "trace", m.TraceID, "missing", len(missing))
+	}
+	w.Header().Set("Content-Type", enginetel.LiveContentType)
+	w.Header().Set("Cache-Control", "no-store")
+	var frame int64
+	defer func() {
+		if rerr != nil {
+			_ = enginetel.WriteLiveError(w, frame, rerr)
+		}
+	}()
+	for start := 0; start < len(rows); {
+		end := min(start+otlpBatchSize, len(rows))
+		req := &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows[start:end])}
+		for proto.Size(req) > maxPayloadSize && end-start > 1 {
+			end = start + (end-start)/2
+			req = &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(rows[start:end])}
+		}
+		start = end
+		if proto.Size(req) > maxPayloadSize {
+			slog.WarnContext(r.Context(), "skipping oversized archive call payload", "trace", m.TraceID, "bytes", proto.Size(req), "maxBytes", maxPayloadSize)
+			continue
+		}
+		payload, err := proto.Marshal(req)
+		if err != nil {
+			return err
+		}
+		frame++
+		if err := enginetel.WriteLiveFrame(w, frame, payload); err != nil {
+			return err
+		}
+	}
+	return enginetel.WriteLiveTerminal(w, frame)
+}
+
 func serveArchiveBootstrap(w http.ResponseWriter, path string) error {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -534,86 +714,81 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 	if maxPayloadSize <= 0 || maxPayloadSize > enginetel.MaxLivePayloadSize {
 		return fmt.Errorf("invalid archive payload limit %d", maxPayloadSize)
 	}
-	cursor := int64(0)
-	if s := r.Header.Get(enginetel.LiveCursorHeader); s != "" {
-		var err error
-		cursor, err = strconv.ParseInt(s, 10, 64)
-		if err != nil || cursor < 0 {
-			return httpErr(errors.New("invalid archive cursor"), http.StatusBadRequest)
+	cursor, high, err := archiveSignalRange(r, cut, signal)
+	if err != nil {
+		return err
+	}
+	spanSelection, logSelection, err := archive.ParseSelection(signal, r.URL.Query())
+	if err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	metricNames, err := archiveMetricNames(signal, r)
+	if err != nil {
+		return httpErr(err, http.StatusBadRequest)
+	}
+	var logQuery *archive.LogQuery
+	if r.Method == http.MethodPost {
+		if logQuery, err = archiveLogQuery(r, logSelection); err != nil {
+			return httpErr(err, http.StatusBadRequest)
 		}
 	}
-	high := cut.Spans
-	switch signal {
-	case "logs":
-		high = cut.Logs
-	case "metrics":
-		high = cut.Metrics
+	// Selected reads need indexes and benefit from reusing them across requests.
+	// Full replay reads rows in order and can avoid building those indexes.
+	openStore := srv.clientDBs.OpenForAppend
+	if spanSelection != nil || logSelection != nil || logQuery != nil {
+		openStore = srv.clientDBs.OpenHeld
 	}
-	if cursor > high {
-		return httpErr(errors.New("cursor exceeds archive cut"), http.StatusBadRequest)
-	}
-	// Replay reads rows in order, so it needs no indexes.
-	db, err := srv.clientDBs.OpenForAppend(r.Context(), m.MainClientID)
+	db, err := openStore(r.Context(), m.MainClientID)
 	if err != nil {
 		return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureIO, Err: err})
 	}
 	defer db.Close()
+	var spanView *clientdb.SpanView
+	var logScope map[string]bool
+	if spanSelection != nil || (logSelection != nil && logSelection.Descendants) || logQuery != nil {
+		spanView, err = db.SpanViewAt(r.Context(), m.TraceID, clientdb.HighWater{Spans: cut.Spans, Logs: cut.Logs, Metrics: cut.Metrics}, spanSelection)
+		if err != nil {
+			return writeArchiveFailure(w, &archive.Failure{Kind: archive.FailureCorrupt, Err: err})
+		}
+	}
+	if logSelection != nil && logSelection.SpanID != "" {
+		logScope = map[string]bool{logSelection.SpanID: true}
+		if logSelection.Descendants {
+			logScope = spanView.Scope(logSelection.SpanID, true)
+		}
+	}
+	displayScope := archiveDisplayScope(spanView, logQuery)
 	w.Header().Set("Content-Type", enginetel.LiveContentType)
 	w.Header().Set("Cache-Control", "no-store")
+	if metricNames != nil {
+		// The client refuses a selected metric read without this: an
+		// engine that predates it would stream every metric instead.
+		w.Header().Set(archive.SelectionHeader, archive.SelectionMetrics)
+	}
 	defer func() {
 		if rerr != nil {
 			_ = enginetel.WriteLiveError(w, cursor, rerr)
 		}
 	}()
+	reader := archiveSignalReader{
+		db:             db,
+		traceID:        m.TraceID,
+		includeControl: includeControl,
+		spanSelection:  spanSelection,
+		spanView:       spanView,
+		logSelection:   logSelection,
+		logScope:       logScope,
+		displayScope:   displayScope,
+		metricNames:    metricNames,
+	}
 	batchLimit := otlpBatchSize
 	for cursor < high {
 		if err := r.Context().Err(); err != nil {
 			return err
 		}
-		var message proto.Message
-		var next int64
-		var rowCount int
-		switch signal {
-		case "traces":
-			rows, err := db.SelectSpansRange(r.Context(), clientdb.SelectSpansRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
-			if err != nil {
-				return err
-			}
-			if len(rows) == 0 {
-				return errors.New("archive span stream truncated before cut")
-			}
-			next, rowCount = rows[len(rows)-1].ID, len(rows)
-			var spans []clientdb.Span
-			for _, row := range rows {
-				if row.TraceID == m.TraceID {
-					spans = append(spans, row)
-				}
-			}
-			message = &coltracepb.ExportTraceServiceRequest{ResourceSpans: clientdb.SpansToPB(spans)}
-		case "logs":
-			rows, err := db.SelectLogsRange(r.Context(), clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
-			if err != nil {
-				return err
-			}
-			if len(rows) == 0 {
-				return errors.New("archive log stream truncated before cut")
-			}
-			next, rowCount = rows[len(rows)-1].ID, len(rows)
-			filtered, err := archiveHistoryLogs(rows, m.TraceID, includeControl)
-			if err != nil {
-				return err
-			}
-			message = &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(filtered)}
-		case "metrics":
-			rows, err := db.SelectMetricsRange(r.Context(), clientdb.SelectMetricsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(batchLimit)})
-			if err != nil {
-				return err
-			}
-			if len(rows) == 0 {
-				return errors.New("archive metric stream truncated before cut")
-			}
-			next, rowCount = rows[len(rows)-1].ID, len(rows)
-			message = &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: clientdb.MetricsToPB(rows)}
+		message, next, row, rowCount, err := reader.batch(r.Context(), signal, cursor, high, batchLimit)
+		if err != nil {
+			return err
 		}
 		if size := proto.Size(message); size > maxPayloadSize {
 			if rowCount > 1 {
@@ -623,7 +798,7 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 			}
 			// A single row cannot be split. Failing here would make the whole
 			// history unreadable on every attempt, so shrink it instead.
-			message, err = shrinkOversizedArchiveRow(r.Context(), m.TraceID, signal, next, message, maxPayloadSize)
+			message, err = shrinkOversizedArchiveRow(r.Context(), m.TraceID, signal, row, message, maxPayloadSize)
 			if err != nil {
 				return err
 			}
@@ -639,6 +814,174 @@ func (srv *Server) serveArchiveSignalWithPayloadLimit(w http.ResponseWriter, r *
 		batchLimit = otlpBatchSize
 	}
 	return enginetel.WriteLiveTerminal(w, high)
+}
+
+// archiveMetricNames reads the request's metric selection (see
+// archive.MetricSelection) as a set of names: nil when it selects none.
+func archiveMetricNames(signal string, r *http.Request) (map[string]bool, error) {
+	sel, err := archive.ParseMetricSelection(signal, r.URL.Query())
+	if err != nil || sel == nil {
+		return nil, err
+	}
+	names := make(map[string]bool, len(sel.Names))
+	for _, name := range sel.Names {
+		names[name] = true
+	}
+	return names, nil
+}
+
+// archiveSignalRange reads the request's resume cursor and the signal's high
+// water at cut, which the cursor may not exceed.
+func archiveSignalRange(r *http.Request, cut archive.HighWater, signal string) (cursor, high int64, err error) {
+	if s := r.Header.Get(enginetel.LiveCursorHeader); s != "" {
+		cursor, err = strconv.ParseInt(s, 10, 64)
+		if err != nil || cursor < 0 {
+			return 0, 0, httpErr(errors.New("invalid archive cursor"), http.StatusBadRequest)
+		}
+	}
+	high = cut.Spans
+	switch signal {
+	case "logs":
+		high = cut.Logs
+	case "metrics":
+		high = cut.Metrics
+	}
+	if cursor > high {
+		return 0, 0, httpErr(errors.New("cursor exceeds archive cut"), http.StatusBadRequest)
+	}
+	return cursor, high, nil
+}
+
+// archiveLogQuery decodes a POSTed multi-span log query, which replaces the
+// query-string log selection.
+func archiveLogQuery(r *http.Request, logSelection *archive.LogSelection) (*archive.LogQuery, error) {
+	if logSelection != nil {
+		return nil, errors.New("a log query body excludes query selections")
+	}
+	var q archive.LogQuery
+	if err := archive.DecodeLogBody(r.Body, &q); err != nil {
+		return nil, err
+	}
+	return &q, q.Validate()
+}
+
+// archiveDisplayScope resolves a log query at the archive's span view, which
+// is always built when there is one.
+func archiveDisplayScope(spanView *clientdb.SpanView, logQuery *archive.LogQuery) *clientdb.LogQueryScope {
+	if logQuery == nil {
+		return nil
+	}
+	return spanView.LogQueryScope(logQuery.Spans)
+}
+
+// archiveSignalReader reads batches of one archive's signal rows as OTLP
+// export messages, filtered to its trace and selection.
+type archiveSignalReader struct {
+	db             *clientdb.DB
+	traceID        string
+	includeControl bool
+	spanSelection  *archive.SpanSelection
+	spanView       *clientdb.SpanView
+	logSelection   *archive.LogSelection
+	logScope       map[string]bool
+	// displayScope, when set, reads display text for a log query instead.
+	displayScope *clientdb.LogQueryScope
+	// metricNames, when set, keeps only the metrics with these names.
+	metricNames map[string]bool
+}
+
+// batch reads up to limit signal rows after cursor, through high. next is the
+// last row it covered, row the last row it read (what a single oversized row
+// is reported as), and rowCount the batch's size in the units of limit: the
+// rows it covered, or for a log query read through the row indexes, the rows
+// it returned.
+func (a archiveSignalReader) batch(ctx context.Context, signal string, cursor, high int64, limit int) (_ proto.Message, next, row int64, rowCount int, _ error) {
+	switch signal {
+	case "traces":
+		rows, err := a.db.SelectSpansRange(ctx, clientdb.SelectSpansRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)})
+		if err != nil {
+			return nil, 0, 0, 0, err
+		}
+		if len(rows) == 0 {
+			return nil, 0, 0, 0, errors.New("archive span stream truncated before cut")
+		}
+		var spans []clientdb.Span
+		for _, span := range rows {
+			if span.TraceID == a.traceID && (a.spanView == nil || a.spanView.Includes(span)) {
+				spans = append(spans, span)
+			}
+		}
+		resourceSpans := clientdb.SpansToPB(spans)
+		if a.spanSelection != nil && a.spanSelection.DagUIView {
+			annotateArchiveSpans(resourceSpans, a.spanView)
+		}
+		last := rows[len(rows)-1].ID
+		return &coltracepb.ExportTraceServiceRequest{ResourceSpans: resourceSpans}, last, last, len(rows), nil
+	case "logs":
+		params := clientdb.SelectLogsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)}
+		var rows []clientdb.Log
+		var err error
+		switch {
+		case a.displayScope != nil:
+			// A log query reads through the row indexes: rowCount counts
+			// the rows returned, and the cursor jumps to the next one.
+			rows, next, rowCount, err = a.db.ReadDisplayLogs(ctx, params, a.traceID, a.displayScope)
+		case a.logSelection == nil:
+			// Full archive replay opens the store without indexes. Read the
+			// stream directly; only selected reads use the metadata index.
+			rows, err = a.db.SelectLogsRange(ctx, params)
+			if err == nil {
+				if len(rows) == 0 {
+					return nil, 0, 0, 0, errors.New("archive log stream truncated before cut")
+				}
+				next = rows[len(rows)-1].ID
+				rowCount = int(next - cursor)
+			}
+		default:
+			rows, next, err = a.db.SelectLogsRangeMatching(ctx, params, a.traceID, a.logScope, a.logSelection, a.includeControl)
+			rowCount = int(next - cursor)
+		}
+		if err != nil {
+			return nil, 0, 0, 0, err
+		}
+		row = next
+		if len(rows) > 0 {
+			row = rows[len(rows)-1].ID
+		}
+		filtered, err := archiveHistoryLogs(rows, a.traceID, a.includeControl)
+		if err != nil {
+			return nil, 0, 0, 0, err
+		}
+		return &collogspb.ExportLogsServiceRequest{ResourceLogs: clientdb.LogsToPB(filtered)}, next, row, rowCount, nil
+	case "metrics":
+		rows, err := a.db.SelectMetricsRange(ctx, clientdb.SelectMetricsRangeParams{AfterID: cursor, ThroughID: high, Limit: int64(limit)})
+		if err != nil {
+			return nil, 0, 0, 0, err
+		}
+		if len(rows) == 0 {
+			return nil, 0, 0, 0, errors.New("archive metric stream truncated before cut")
+		}
+		last := rows[len(rows)-1].ID
+		return &colmetricspb.ExportMetricsServiceRequest{ResourceMetrics: clientdb.NamedMetricsToPB(rows, a.metricNames)}, last, last, len(rows), nil
+	default:
+		return nil, 0, 0, 0, fmt.Errorf("unknown archive signal %q", signal)
+	}
+}
+
+// annotateArchiveSpans applies the span view's dagui attributes to spans.
+func annotateArchiveSpans(resourceSpans []*tracepb.ResourceSpans, spanView *clientdb.SpanView) {
+	for _, rs := range resourceSpans {
+		for _, ss := range rs.ScopeSpans {
+			for _, span := range ss.Spans {
+				for _, annotation := range spanView.Attributes(hex.EncodeToString(span.SpanId)) {
+					// Imported spans may already carry another source's
+					// view hints. This archive's fixed cut is authoritative.
+					span.Attributes = slices.DeleteFunc(span.Attributes, func(attr *commonpb.KeyValue) bool { return attr.GetKey() == annotation.Key })
+					span.Attributes = append(span.Attributes, annotation)
+				}
+			}
+		}
+	}
 }
 
 // shrinkOversizedArchiveRow fits a single archive row that alone exceeds the

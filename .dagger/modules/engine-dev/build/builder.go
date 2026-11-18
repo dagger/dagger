@@ -3,21 +3,25 @@ package build
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
+	"dagger.io/dagger/core"
 	"github.com/containerd/platforms"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/engine/distconsts"
 
 	"dagger/engine-dev/consts"
 	"dagger/engine-dev/internal/dagger"
+	golang "dagger/engine-dev/internal/dagger/clients/go"
+	"dagger/engine-dev/internal/dagger/clients/wolfi"
 )
-
-var dag = dagger.Connect()
 
 var versionAnnotation = distconsts.OCIVersionAnnotation
 
@@ -40,7 +44,10 @@ type Builder struct {
 
 	race bool
 
-	ws *dagger.Workspace
+	// rerun, when set, is in the environment of the build steps that have
+	// built to different bytes before, so that builders with different
+	// values run those steps apart in one engine (RerunOutputs).
+	rerun string
 }
 
 func NewBuilder(
@@ -49,16 +56,14 @@ func NewBuilder(
 	version string,
 	vcsCommit string,
 	vcsDirty bool,
-	ws *dagger.Workspace,
 ) (*Builder, error) {
 	return &Builder{
 		source:       source,
 		vcsCommit:    vcsCommit,
 		vcsDirty:     vcsDirty,
 		platform:     dagger.Platform(platforms.DefaultString()),
-		platformSpec: platforms.DefaultSpec(),
+		platformSpec: platforms.Normalize(platforms.DefaultSpec()),
 		version:      version,
-		ws:           ws,
 	}, nil
 }
 
@@ -68,11 +73,52 @@ func (build *Builder) WithRace(race bool) *Builder {
 	return &b
 }
 
+// WithRerun is a builder whose build steps that have built to different
+// bytes before carry run in their environment, so they run again rather
+// than come from the cache: two builders with different runs build them
+// twice in one engine.
+func (build *Builder) WithRerun(run string) *Builder {
+	b := *build
+	b.rerun = run
+	return &b
+}
+
+// withRerun is ctr with the builder's rerun value in its environment, if it
+// has one.
+func (build *Builder) withRerun(ctr *dagger.Container) *dagger.Container {
+	if build.rerun == "" {
+		return ctr
+	}
+	return ctr.WithEnvVariable("ENGINE_DEV_RERUN", build.rerun)
+}
+
+// RerunOutputs are the outputs of the build steps that have built to
+// different bytes before, by what they are: QEMU's emulators, crun, and the
+// Go SDK's files.
+func (build *Builder) RerunOutputs(ctx context.Context) (map[string]*dagger.Directory, error) {
+	qemu, _ := build.qemuBins()
+	goFiles, err := build.goSDKFiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]*dagger.Directory{
+		"QEMU's emulators":   qemu,
+		"crun":               core.NewDirectory().WithFile("crun", build.runtimeBin()),
+		"the Go SDK's files": goFiles,
+	}, nil
+}
+
 func (build *Builder) WithPlatform(p dagger.Platform) *Builder {
 	b := *build
 	b.platform = p
 	b.platformSpec = platforms.Normalize(platforms.MustParse(string(p)))
 	return &b
+}
+
+// Platform is the platform the builder builds for, normalized, e.g.
+// "linux/arm64".
+func (build *Builder) Platform() string {
+	return platforms.Format(build.platformSpec)
 }
 
 func (build *Builder) WithGPUSupport() *Builder {
@@ -83,19 +129,6 @@ func (build *Builder) WithGPUSupport() *Builder {
 
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
-
-	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent}
-	sdkContents := make([]*sdkContent, len(sdks))
-	for i, sdk := range sdks {
-		eg.Go(func() error {
-			content, err := sdk(ctx)
-			if err != nil {
-				return err
-			}
-			sdkContents[i] = content
-			return nil
-		})
-	}
 
 	if build.gpuSupport {
 		switch build.platformSpec.Architecture {
@@ -108,6 +141,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	pkgs := []string{
 		"ca-certificates",
 		"mount", "umount", "posix-libc-utils", "coreutils",
+		// for the entrypoint to give the engine its own cgroup namespace
+		"util-linux-misc",
 		// for git
 		"git", "openssh-client",
 		// for SSHFS-backed volumes
@@ -131,9 +166,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			"nvidia-container-toolkit-nvidia-container-runtime-hook",
 		)
 	}
-	base := dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	base := wolfi.New().
+		Container(wolfi.WolfiContainerOpts{
 			Packages: pkgs,
 			Arch:     build.platformSpec.Architecture,
 		})
@@ -172,12 +206,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	for _, name := range qemuNames {
 		bins = append(bins, binAndPath{path: filepath.Join("/usr/local/bin", name), file: qemuDir.File(name)})
 	}
-	for _, bin := range build.cniPlugins() {
-		name, err := bin.Name(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get name of binary: %w", err)
-		}
-		bins = append(bins, binAndPath{path: filepath.Join("/opt/cni/bin", name), file: bin})
+	for _, plugin := range build.cniPlugins() {
+		bins = append(bins, binAndPath{path: filepath.Join("/opt/cni/bin", plugin.name), file: plugin.file})
 	}
 
 	ctr := base.
@@ -191,13 +221,10 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	ctr = ctr.
 		WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl").
-		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
+		WithDirectory(distconsts.EngineDefaultStateDir, core.NewDirectory())
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
-	}
-	for _, content := range sdkContents {
-		ctr = ctr.With(content.apply)
 	}
 
 	return ctr, nil
@@ -207,8 +234,20 @@ func (build *Builder) CodegenBinary() *dagger.File {
 	return build.binary("./cmd/codegen", false)
 }
 
+// ImageEntriesBinary exports the cache entries the engine image ships
+// (cmd/engine-image-entries).
+func (build *Builder) ImageEntriesBinary() *dagger.File {
+	return build.binary("./cmd/engine-image-entries", false)
+}
+
+// IntrospectBinary is cmd/introspect, which prints the engine API's schema
+// without running an engine.
+func (build *Builder) IntrospectBinary() *dagger.File {
+	return build.binary("./cmd/introspect", false)
+}
+
 func (build *Builder) engineBinary(race bool) *dagger.File {
-	return build.binaryWithSource("./cmd/engine", race, build.source)
+	return build.binary("./cmd/engine", race)
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
@@ -219,60 +258,180 @@ func (build *Builder) dialstdioBinary() *dagger.File {
 	return build.binary("./cmd/dialstdio", false)
 }
 
-//nolint:unparam
+// binary is pkg, a main package of the source, built for the builder's
+// platform with the source's VCS info stamped in.
 func (build *Builder) binary(pkg string, race bool) *dagger.File {
-	return build.binaryWithSource(pkg, race, build.source)
-}
-
-func (build *Builder) binaryWithSource(pkg string, race bool, source *dagger.Directory) *dagger.File {
-	return build.goWithSource(source, race).
-		Binary(pkg, dagger.GoBinaryOpts{
-			Platform:  build.platform,
-			NoSymbols: true,
-			NoDwarf:   true,
-		})
-}
-
-func (build *Builder) Go(race bool) *dagger.Go {
-	return build.goWithSource(build.source, race)
-}
-
-func (build *Builder) goWithSource(source *dagger.Directory, race bool) *dagger.Go {
-	return dag.Go(dagger.GoOpts{
-		Ws:        build.ws,
-		Source:    source,
-		VcsCommit: build.vcsCommit,
-		VcsDirty:  build.vcsDirty,
-		Race:      race,
-		Tags: []string{
+	opts := golang.GoOpts{
+		Version: consts.GolangVersion,
+		BuildFlags: []string{
 			// The engine uses the dockerfile2llb code from buildkit, which makes use of tags
 			// for enabling features at compile time:
-			"dfexcludepatterns", // to support COPY/ADD --exclude=...
-			"dfparents",         // to support COPY/ADD --parents
+			// dfexcludepatterns to support COPY/ADD --exclude=...,
+			// dfparents to support COPY/ADD --parents.
+			// A build flag rather than GOFLAGS, which would be in every
+			// package's exec and keep it from the CLI's and codegen's.
+			"-tags=dfexcludepatterns,dfparents",
+			ldflags([]string{"-s", "-w"}, build.VCSValues()),
 		},
-	})
+	}
+	if race {
+		opts = build.withRace(opts)
+	}
+	return goBinary(build.source, pkg, build.platformSpec, opts)
+}
+
+// TestBinary is the test binary of the package in dir, a directory of the
+// source's root Go module, built as go test -c builds it, with the source's
+// VCS info stamped in, by dagger/go's per-package build. It is planned with
+// the other packages of run, the package directories whose test binaries one
+// test run builds, which include dir: they share one plan of what they
+// compile, and no package outside run is compiled for it.
+func (build *Builder) TestBinary(dir string, run []string, race bool) *dagger.File {
+	opts := golang.GoOpts{Version: consts.GolangVersion}
+	if values := build.VCSValues(); len(values) > 0 {
+		opts.BuildFlags = []string{ldflags(nil, values)}
+	}
+	if race {
+		opts = build.withRace(opts)
+	}
+	ws := build.source.AsWorkspace()
+	return golang.New(opts).Module(ws, dir).Packages(ws).Subset(run).Get(dir).TestBinary(ws)
+}
+
+// Tests are the test function names of each package of the source's root Go
+// module that has any, by package directory. They are read from the source,
+// without a build.
+func (build *Builder) Tests(ctx context.Context) (map[string][]string, error) {
+	ws := build.source.AsWorkspace()
+	pkgs, err := golang.New(golang.GoOpts{Version: consts.GolangVersion}).
+		Module(ws, ".").
+		Packages(ws).
+		List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tests := map[string][]string{}
+	for _, pkg := range pkgs {
+		dir, err := pkg.Path(ctx)
+		if err != nil {
+			return nil, err
+		}
+		names, err := pkg.Tests().Keys(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(names) > 0 {
+			tests[dir] = names
+		}
+	}
+	return tests, nil
+}
+
+// Otelgotest is the runner the test binaries run under, built from otel-go's
+// source at the version the source's go.mod requires.
+func (build *Builder) Otelgotest(ctx context.Context) (*dagger.File, error) {
+	const otelGo = "github.com/dagger/otel-go"
+	contents, err := build.source.File("go.mod").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mod, err := modfile.ParseLax("go.mod", []byte(contents), nil)
+	if err != nil {
+		return nil, err
+	}
+	var version string
+	for _, req := range mod.Require {
+		if req.Mod.Path == otelGo {
+			version = req.Mod.Version
+		}
+	}
+	if version == "" {
+		return nil, fmt.Errorf("go.mod does not require %s", otelGo)
+	}
+	// The module's source as the Go module proxy serves it for that version,
+	// the same files go install would build.
+	src := core.NewContainer().
+		From(consts.AlpineImage).
+		WithMountedFile("/src.zip", core.HTTP("https://proxy.golang.org/"+otelGo+"/@v/"+version+".zip")).
+		WithExec([]string{"unzip", "-q", "/src.zip", "-d", "/out"}).
+		Directory("/out/" + otelGo + "@" + version)
+	return goBinary(src, "cmd/otelgotest", build.platformSpec, golang.GoOpts{
+		Version:    consts.GolangVersion,
+		BuildFlags: []string{"-ldflags=-s -w"},
+	}), nil
+}
+
+// VCSValues are the -X definitions that stamp the source's VCS info into a
+// binary, or none without a commit.
+func (build *Builder) VCSValues() []string {
+	if build.vcsCommit == "" {
+		return nil
+	}
+	return []string{
+		"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCS=git",
+		"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSRevision=" + build.vcsCommit,
+		"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSModified=" + strconv.FormatBool(build.vcsDirty),
+	}
+}
+
+// withRace builds with the race detector. It needs cgo, and a cgo binary
+// links the C library of the image it is built in, so it is built where it
+// runs: wolfi.
+func (build *Builder) withRace(opts golang.GoOpts) golang.GoOpts {
+	opts.Base = wolfi.New().
+		Container(wolfi.WolfiContainerOpts{
+			Packages: []string{"go-" + consts.GolangVersion, "build-base"},
+			Arch:     build.platformSpec.Architecture,
+		}).
+		WithEnvVariable("CGO_ENABLED", "1")
+	opts.BuildFlags = append(opts.BuildFlags, "-race")
+	return opts
+}
+
+// ldflags is one -ldflags build flag: the linker flags, then a -X for each
+// definition.
+func ldflags(flags []string, values []string) string {
+	for _, val := range values {
+		flags = append(flags, "-X '"+val+"'")
+	}
+	return "-ldflags=" + strings.Join(flags, " ")
+}
+
+// goBinary is pkg, a main package of source, built for platform by dagger/go's
+// per-package build: one cached exec per Go package, so a change rebuilds
+// only the packages it reaches. The source is the build's workspace, so the
+// build is keyed by its content and never by the caller's session.
+func goBinary(source *dagger.Directory, pkg string, platform ocispecs.Platform, opts golang.GoOpts) *dagger.File {
+	ws := source.AsWorkspace()
+	pkg = path.Clean(pkg)
+	return golang.New(opts).
+		Module(ws, pkg).
+		Packages(ws).
+		Get(pkg).
+		Platforms().
+		Get(platform.OS + "/" + platform.Architecture).
+		Binary(ws)
 }
 
 func (build *Builder) runtimeBin() *dagger.File {
 	// crun is C: cross-compile it with xx, as runc is, statically linked,
 	// from the checksummed release tarball, which carries its libocispec
 	// submodule.
-	src := dag.HTTP(
+	src := core.HTTP(
 		"https://github.com/containers/crun/releases/download/"+consts.CrunVersion+"/crun-"+consts.CrunVersion+".tar.gz",
 		dagger.HTTPOpts{Checksum: consts.CrunChecksum},
 	)
-	jsonc := dag.HTTP(
+	jsonc := core.HTTP(
 		"https://github.com/json-c/json-c/archive/refs/tags/json-c-"+consts.JSONCVersion+".tar.gz",
 		dagger.HTTPOpts{Checksum: consts.JSONCChecksum},
 	)
-	return dag.Container().
-		From(consts.AlpineImage).
+	return build.withRerun(core.NewContainer().From(consts.AlpineImage)).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
 		WithExec([]string{"apk", "add", "--no-cache",
 			"clang", "lld", "llvm", "make", "autoconf", "automake", "libtool", "pkgconf", "python3", "cmake",
 		}).
-		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
+		WithDirectory("/", core.NewContainer().From(consts.XxImage).Rootfs()).
 		WithExec([]string{"xx-apk", "add", "--no-cache",
 			"musl-dev", "gcc", "linux-headers",
 			"libcap-dev", "libcap-static", "libseccomp-dev", "libseccomp-static", "argp-standalone",
@@ -306,11 +465,11 @@ func (build *Builder) gitRemoteEntireBin() *dagger.File {
 	if !ok {
 		return nil
 	}
-	archive := dag.HTTP(
+	archive := core.HTTP(
 		"https://github.com/entireio/cli/releases/download/v"+consts.EntireCLIVersion+"/entire_linux_"+arch+".tar.gz",
 		dagger.HTTPOpts{Checksum: checksum},
 	)
-	return dag.Container().
+	return core.NewContainer().
 		From(consts.AlpineImage).
 		WithMountedFile("/entire.tar.gz", archive).
 		WithExec([]string{"tar", "xzf", "/entire.tar.gz", "-C", "/", "git-remote-entire"}).
@@ -321,14 +480,13 @@ func (build *Builder) sshfsBin() *dagger.File {
 	// Wolfi's sshfs package currently lags upstream at 3.7.4, so build the
 	// known-good release from source. Prefer the Wolfi package again once it
 	// catches up.
-	src := dag.
+	src := core.
 		Git("https://github.com/libfuse/sshfs.git").
 		Tag("sshfs-" + consts.SSHFSVersion).
 		Tree()
 
-	return dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	return wolfi.New().
+		Container(wolfi.WolfiContainerOpts{
 			Packages: []string{
 				"build-base",
 				"ca-certificates-bundle",
@@ -346,25 +504,37 @@ func (build *Builder) sshfsBin() *dagger.File {
 		File("/src/build/sshfs")
 }
 
-func (build *Builder) cniPlugins() (bins []*dagger.File) {
-	src := dag.Git("github.com/containernetworking/plugins").Tag(consts.CniVersion).Tree()
+// cniPlugin is a CNI plugin binary and the name the engine image installs it
+// under.
+type cniPlugin struct {
+	name string
+	file *dagger.File
+}
 
+// cniPlugins are the CNI plugin binaries, always in the same order: the engine
+// image adds them in this order, so its recipe, and every cached result built on
+// it, depends on the order.
+func (build *Builder) cniPlugins() []cniPlugin {
+	src := core.Git("github.com/containernetworking/plugins").Tag(consts.CniVersion).Tree()
+
+	var bins []cniPlugin
 	for _, pluginPath := range []string{
-		"./plugins/main/bridge",
-		"./plugins/main/loopback",
-		"./plugins/meta/firewall",
-		"./plugins/ipam/host-local",
+		"plugins/main/bridge",
+		"plugins/main/loopback",
+		"plugins/meta/firewall",
+		"plugins/ipam/host-local",
 	} {
 		// CNI plugins are third-party; VCS stamping is irrelevant here, so we
-		// don't thread any VCS info into their build.
-		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.ws}).Binary(pluginPath, dagger.GoBinaryOpts{
-			NoSymbols: true,
-			NoDwarf:   true,
-			Platform:  build.platform,
+		// don't thread any VCS info into their build. Go names a binary after
+		// its package's last path element.
+		bins = append(bins, cniPlugin{
+			name: path.Base(pluginPath),
+			file: goBinary(src, pluginPath, build.platformSpec, golang.GoOpts{
+				Version:    consts.GolangVersion,
+				BuildFlags: []string{"-ldflags=-s -w"},
+			}),
 		})
-		bins = append(bins, bin)
 	}
-
 	return bins
 }
 
@@ -381,21 +551,7 @@ func (build *Builder) Init() *dagger.File {
 	case "arm64":
 		url = "https://github.com/krallin/tini/releases/download/v0.19.0/tini-arm64"
 	}
-	return dag.HTTP(url)
-}
-
-func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
-	ctr = ctr.WithEnvVariable("GOOS", build.platformSpec.OS)
-	ctr = ctr.WithEnvVariable("GOARCH", build.platformSpec.Architecture)
-	switch build.platformSpec.Architecture {
-	case "arm", "arm64":
-		switch build.platformSpec.Variant {
-		case "", "v8":
-		default:
-			ctr = ctr.WithEnvVariable("GOARM", strings.TrimPrefix(build.platformSpec.Variant, "v"))
-		}
-	}
-	return ctr
+	return core.HTTP(url)
 }
 
 // this makes 100% sure that we built the binary for the right platform and didn't, e.g., forget
@@ -406,9 +562,8 @@ func (build *Builder) verifyPlatform(ctx context.Context, bin *dagger.File) erro
 		return fmt.Errorf("failed to get name of binary: %w", err)
 	}
 	mntPath := filepath.Join("/mnt", name)
-	out, err := dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{
+	out, err := wolfi.New().
+		Container(wolfi.WolfiContainerOpts{
 			Packages: []string{"file"},
 		}).
 		WithMountedFile(mntPath, bin).

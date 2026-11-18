@@ -87,6 +87,7 @@ type telemetrySplitSpan struct {
 	Writer   string `json:"writer"`
 	Service  string `json:"service"`
 	Instance string `json:"instance"`
+	Ingested string `json:"ingested"`
 	SpanID   string `json:"spanID"`
 	Name     string `json:"name"`
 }
@@ -95,6 +96,7 @@ type telemetrySplitRecord struct {
 	Writer   string `json:"writer"`
 	Service  string `json:"service"`
 	Instance string `json:"instance"`
+	Ingested string `json:"ingested"`
 	Scope    string `json:"scope"`
 	Body     string `json:"body"`
 }
@@ -130,31 +132,45 @@ func readTelemetrySplit(ctx context.Context, t *testctx.T, cloud telemetrySplitC
 	}
 }
 
-// cliWriters are the writers of the client's own spans, one per client
-// process.
-func (got telemetrySplitReceived) cliWriters(t *testctx.T) map[string]bool {
+// cliWriters are the writers of the client's own spans that the client
+// published itself, one per client process. A client whose engine stores its
+// own telemetry has the engine publish it instead (Ingested), so they are
+// empty then.
+func (got telemetrySplitReceived) cliWriters() map[string]bool {
 	writers := map[string]bool{}
 	for _, span := range got.spans {
-		if span.Service == "dagger-cli" {
+		if span.Service == "dagger-cli" && span.Ingested == "" {
 			writers[span.Writer] = true
 		}
 	}
-	require.NotEmpty(t, writers, "the client's own spans reach Cloud from the client")
 	return writers
 }
 
-// cliLogWriters are the writers of the client's own log records. Every
-// exporter set has one writer per signal, so log records are only ever
-// compared with log writers.
-func (got telemetrySplitReceived) cliLogWriters(t *testctx.T) map[string]bool {
+// cliLogWriters are cliWriters for log records. Every exporter set has one
+// writer per signal, so log records are only ever compared with log writers.
+func (got telemetrySplitReceived) cliLogWriters() map[string]bool {
 	writers := map[string]bool{}
 	for _, rec := range got.records {
-		if rec.Service == "dagger-cli" {
+		if rec.Service == "dagger-cli" && rec.Ingested == "" {
 			writers[rec.Writer] = true
 		}
 	}
-	require.NotEmpty(t, writers, "the client's own log records reach Cloud from the client")
 	return writers
+}
+
+// requireCLIOutputOnce requires the client's own output carrying body -- what
+// the command prints -- to reach Cloud once: from the engine, which stored
+// it, exactly when byEngine.
+func (got telemetrySplitReceived) requireCLIOutputOnce(t *testctx.T, body string, byEngine bool) {
+	var outputs []telemetrySplitRecord
+	for _, rec := range got.records {
+		if rec.Service == "dagger-cli" && strings.Contains(rec.Body, body) {
+			outputs = append(outputs, rec)
+		}
+	}
+	require.Len(t, outputs, 1, "the client's output reaches Cloud once: %+v", outputs)
+	require.Equal(t, byEngine, outputs[0].Ingested != "",
+		"the engine publishes the client's own output exactly when it stores it")
 }
 
 // output returns the log record carrying an exec's output, which must reach
@@ -202,23 +218,23 @@ func (got telemetrySplitReceived) requireSpansFromOneWriter(t *testctx.T) {
 
 // telemetrySplitEngine is an engine container from ctr that serves on
 // tcp://:1234 and reaches the fake Cloud. It has no Cloud token of its own,
-// so it exports no engine cache events.
-func telemetrySplitEngine(c *dagger.Client, ctr *core.Container, cloud telemetrySplitCloud) *core.Container {
-	return telemetrySplitEngineWithoutCloud(c, cloud.bind(ctr))
+// so it exports no engine cache events. args are further engine arguments.
+func telemetrySplitEngine(c *dagger.Client, ctr *core.Container, cloud telemetrySplitCloud, args ...string) *core.Container {
+	return telemetrySplitEngineWithoutCloud(c, cloud.bind(ctr), args...)
 }
 
 // telemetrySplitEngineWithoutCloud is telemetrySplitEngine for an engine with
 // no route to the fake Cloud.
-func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *core.Container) *core.Container {
+func telemetrySplitEngineWithoutCloud(c *dagger.Client, ctr *core.Container, args ...string) *core.Container {
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
 	return ctr.
 		WithMountedCache("/var/lib/dagger", core.NewQuery(c).CacheVolume("dagger-telemetry-split-state-"+rand.Text())).
 		WithExposedPort(1234, core.ContainerWithExposedPortOpts{Protocol: core.NetworkProtocolTcp}).
-		WithDefaultArgs([]string{
+		WithDefaultArgs(append([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--network-name", deviceName,
 			"--network-cidr", cidr,
-		})
+		}, args...))
 }
 
 func telemetrySplitEngineBase(c *dagger.Client, released bool) *core.Container {
@@ -280,10 +296,10 @@ func (ClientSuite) TestTelemetrySplitPublishesOnce(ctx context.Context, t *testc
 
 			got := readTelemetrySplit(ctx, t, cloud)
 			got.requireSpansFromOneWriter(t)
-			cliWriters := got.cliWriters(t)
+			cliWriters := got.cliWriters()
 			output := got.output(t, marker+"-out")
 			enginePublishes := !tc.releasedCLI && !tc.releasedEngine
-			require.Equal(t, !enginePublishes, got.cliLogWriters(t)[output.Writer],
+			require.Equal(t, !enginePublishes, got.cliLogWriters()[output.Writer],
 				"the output is published by the engine exactly when both sides have the split")
 			var execSpans int
 			for _, span := range got.spans {
@@ -293,6 +309,8 @@ func (ClientSuite) TestTelemetrySplitPublishesOnce(ctx context.Context, t *testc
 				}
 			}
 			require.Positive(t, execSpans, "the exec's span reaches Cloud")
+			// `dagger query` prints the result, which holds the exit code.
+			got.requireCLIOutputOnce(t, "exitCode", enginePublishes)
 		})
 	}
 }
@@ -318,9 +336,9 @@ func (ClientSuite) TestTelemetrySplitEngineCannotReachCloud(ctx context.Context,
 
 	got := readTelemetrySplit(ctx, t, cloud)
 	got.requireSpansFromOneWriter(t)
-	cliWriters := got.cliWriters(t)
+	cliWriters := got.cliWriters()
 	output := got.output(t, marker+"-out")
-	require.True(t, got.cliLogWriters(t)[output.Writer], "the client forwards the exec's output")
+	require.True(t, got.cliLogWriters()[output.Writer], "the client forwards the exec's output")
 	var execSpans int
 	for _, span := range got.spans {
 		if strings.Contains(span.Name, "withExec") {
@@ -470,7 +488,7 @@ func (ClientSuite) TestTelemetrySplitScaleOut(ctx context.Context, t *testctx.T)
 
 			got := readTelemetrySplit(ctx, t, fakeCloud)
 			got.requireSpansFromOneWriter(t)
-			cliLogWriters := got.cliLogWriters(t)
+			cliLogWriters := got.cliLogWriters()
 			parentInstances := map[string]bool{}
 			parentLogWriters := map[string]bool{}
 			for _, span := range got.spans {
@@ -558,7 +576,7 @@ func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T)
 
 	got := readTelemetrySplit(ctx, t, cloud)
 	got.requireSpansFromOneWriter(t)
-	cliLogWriters := got.cliLogWriters(t)
+	cliLogWriters := got.cliLogWriters()
 	for name, marker := range map[string]string{
 		"main client":                     "main-marker-" + mainID,
 		"nested client (module function)": "nested-marker-" + nestedID,
@@ -569,7 +587,7 @@ func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T)
 
 	// Telemetry posted from inside a container reaches the engine's client
 	// routing, not its providers; the engine publishes it too.
-	cliWriters := got.cliWriters(t)
+	cliWriters := got.cliWriters()
 	var posted int
 	for _, span := range got.spans {
 		if span.Name == "posted-span-"+nestedID {
@@ -582,13 +600,14 @@ func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T)
 	// Each signal has its own writers: an engine resource's metrics that
 	// the client forwarded would carry one of the client's metric writers.
 	type metricWriter struct {
-		Writer  string `json:"writer"`
-		Service string `json:"service"`
+		Writer   string `json:"writer"`
+		Service  string `json:"service"`
+		Ingested string `json:"ingested"`
 	}
 	metricWriters := readTelemetrySplitLines[metricWriter](ctx, t, cloud, "v1/metrics.json.writers")
 	cliMetricWriters := map[string]bool{}
 	for _, mw := range metricWriters {
-		if mw.Service == "dagger-cli" {
+		if mw.Service == "dagger-cli" && mw.Ingested == "" {
 			cliMetricWriters[mw.Writer] = true
 		}
 	}
@@ -600,6 +619,52 @@ func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T)
 		}
 	}
 	require.True(t, engineMetrics, "the engine publishes metrics")
+}
+
+// TestEngineTelemetryNestedCLIPublishesOnce: a CLI run in an exec with
+// privileged nesting is a nested client of the session, whose telemetry the
+// engine delivers to the main client's store too. The nested CLI's own exec
+// output and call results reach Cloud once, not a second time through the
+// nested CLI forwarding its stream back to the engine.
+func (ClientSuite) TestEngineTelemetryNestedCLIPublishesOnce(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	cloud := newTelemetrySplitCloud(t, c)
+	engine, err := devEngineContainerAsService(telemetrySplitEngine(c, devEngineContainer(c), cloud)).Start(ctx)
+	require.NoError(t, err)
+
+	id := rand.Text()
+	marker := "nested-marker-" + id
+	// The nested CLI prints the exec's stdout to a file, so its own output
+	// does not carry the marker.
+	nestedArgs := markerExecArgs("nested-marker-", id)
+	args := []string{
+		"/bin/dagger", "core", "container",
+		"from", "--address=" + alpineImage,
+		"with-file", "--path=/bin/dagger", "--source=/bin/dagger",
+		"with-exec", "--experimental-privileged-nesting", "--redirect-stdout=/nested.out",
+	}
+	for _, arg := range nestedArgs {
+		args = append(args, "--args="+arg)
+	}
+	args = append(args, "exit-code")
+	_, err = telemetrySplitClient(ctx, t, c, daggerCliFile(t, c), engine, cloud).
+		WithExec(args, core.ContainerWithExecOpts{DisableDaggerInDagger: true}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	got := readTelemetrySplit(ctx, t, cloud)
+	for scope, what := range map[string]string{
+		"dagger.io/engine.buildkit": "the nested CLI's exec output",
+		"dagger.io/core":            "the nested CLI's Container.stdout result",
+	} {
+		var records []telemetrySplitRecord
+		for _, rec := range got.records {
+			if rec.Scope == scope && strings.TrimSpace(rec.Body) == marker {
+				records = append(records, rec)
+			}
+		}
+		require.Len(t, records, 1, "%s reaches Cloud once: %+v", what, records)
+	}
 }
 
 // TestEngineTelemetryCloudOAuthRefresh (from #13339): with a `dagger login`
@@ -635,7 +700,7 @@ func (ClientSuite) TestEngineTelemetryCloudOAuthRefresh(ctx context.Context, t *
 
 	got := readTelemetrySplit(ctx, t, cloud)
 	output := got.execOutput(t, "refresh-marker-"+markerID)
-	require.False(t, got.cliLogWriters(t)[output.Writer], "the engine publishes the output")
+	require.False(t, got.cliLogWriters()[output.Writer], "the engine publishes the output")
 
 	events := cloud.reader.WithEnvVariable("CACHEBUSTER", rand.Text())
 	_, err = events.

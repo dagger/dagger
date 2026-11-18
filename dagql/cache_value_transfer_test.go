@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -108,11 +110,22 @@ func (transferTestCodec) VisitPersistedReferences(v PersistedPayloadVisit, visit
 func (transferTestCodec) NormalizeForeign(v PersistedPayloadVisit) (ForeignPayload, error) {
 	return ForeignPayload{JSON: slices.Clone(v.Payload)}, nil
 }
+
+// transferTestCodecSteps, when set, sees each payload visit the codec's
+// ValidateForeign and MapSnapshotParts get, by step.
+var transferTestCodecSteps atomic.Pointer[func(step string, v PersistedPayloadVisit)]
+
 func (transferTestCodec) ValidateForeign(v PersistedPayloadVisit) error {
+	if steps := transferTestCodecSteps.Load(); steps != nil {
+		(*steps)("validate", v)
+	}
 	_, err := (transferTestCodec{}).VisitPersistedReferences(v, func(*PersistedRef) error { return nil })
 	return err
 }
 func (transferTestCodec) MapSnapshotParts(v PersistedPayloadVisit) ([]CapturedCodecOutput, error) {
+	if steps := transferTestCodecSteps.Load(); steps != nil {
+		(*steps)("map", v)
+	}
 	return []CapturedCodecOutput{{Address: PersistedPartAddress{OutputPath: v.Path, Part: "snapshot"}, State: "pending", Value: &SnapshotValue{Kind: "directory"}}}, nil
 }
 func init() {
@@ -158,6 +171,22 @@ func transferTestOffer(t *testing.T, c *Cache, ctx context.Context, parent, chil
 	require.NoError(t, err)
 }
 
+// A capture reports where its time went: the wait for the graph lock, the
+// walk under it, and the records' copy.
+func TestValueTransferCapturePhases(t *testing.T) {
+	ctx, c, srv := transferTestCache(t)
+	root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "phases"})
+	var phases ExportPhases
+	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		phases = values.Phases
+		return nil
+	}))
+	require.GreaterOrEqual(t, phases.WalkWait, time.Duration(0))
+	require.Positive(t, phases.Walk)
+	require.Positive(t, phases.Copy)
+	require.Zero(t, phases.RetriedStale)
+}
+
 // An offer can be left on a part its value already has: a part can complete
 // without its gate settling it, and only a settlement retires the offer on
 // it. Such an offer is obsolete. A capture that finds one retires it, as boot
@@ -177,7 +206,13 @@ func TestValueTransferCaptureRetiresAnOfferOnACompletedOutput(t *testing.T) {
 	value.rev.Add(1)
 	owners := res.incomingOwnershipCount.Load()
 
-	bundle := exportTestBundle(t, ctx, c, root)
+	var bundle ValueBundle
+	var phases ExportPhases
+	require.NoError(t, c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(_ context.Context, values *ExportedValues) error {
+		bundle, phases = values.Bundle, values.Phases
+		return nil
+	}))
+	require.Equal(t, 1, phases.RetriedStale, "the capture ran again")
 	require.Len(t, bundle.Values, 1)
 	require.Empty(t, bundle.Values[0].Record.Envelope.PendingOffers)
 	c.egraphMu.RLock()
@@ -498,6 +533,63 @@ func (v *transferTestValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLi
 	return cloneSnapshotRefLinks(v.links)
 }
 
+// ResolveChainPrefixes gives a prefix output the first layers of the chain it
+// names, which it shares, and refuses a prefix that names no output carrying a
+// chain, more layers than that chain has, or none.
+func TestResolveChainPrefixes(t *testing.T) {
+	t.Parallel()
+	fs := PersistedPartAddress{Part: "fs"}
+	layer := func(s string) snapshots.ExportLayer {
+		return snapshots.ExportLayer{Descriptor: ocispecs.Descriptor{Digest: digest.FromString(s), Size: 1}}
+	}
+	chain := []snapshots.ExportLayer{layer("a"), layer("b"), layer("c")}
+	bundle := func(prefix ChainPrefix, extra ...TransferredOutput) *ValueBundle {
+		return &ValueBundle{Outputs: append([]TransferredOutput{
+			{Ordinal: 3, Address: fs, State: "completed", Chain: &OfferedChain{Layers: chain}},
+			{Ordinal: 2, Address: fs, State: "completed", Prefix: &prefix},
+		}, extra...)}
+	}
+
+	b := bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 2})
+	require.NoError(t, ResolveChainPrefixes(b))
+	require.Nil(t, b.Outputs[1].Prefix)
+	require.Equal(t, chain[:2], b.Outputs[1].Chain.Layers)
+	require.Equal(t, 2, cap(b.Outputs[1].Chain.Layers), "an append to the prefix's layers can't reach its chain's")
+	require.Same(t, &chain[0], &b.Outputs[1].Chain.Layers[0], "the layers are the chain's own")
+
+	// The prefix reads its blobs where the chain does: the chain's addresses,
+	// packs and renewal key for the prefix's layers, and none of the rest.
+	addressed := bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 2})
+	pack := digest.FromString("pack")
+	addressed.Outputs[0].Chain = &OfferedChain{
+		Layers:     chain,
+		Addresses:  map[digest.Digest]BlobAddress{chain[0].Descriptor.Digest: {URL: "dagger-image:" + string(chain[0].Descriptor.Digest)}, chain[2].Descriptor.Digest: {URL: "dagger-image:" + string(chain[2].Descriptor.Digest)}},
+		RenewalKey: "renew",
+		Packs:      map[digest.Digest]digest.Digest{chain[1].Descriptor.Digest: pack, chain[2].Descriptor.Digest: pack},
+	}
+	require.NoError(t, ResolveChainPrefixes(addressed))
+	got := addressed.Outputs[1].Chain
+	require.Equal(t, map[digest.Digest]BlobAddress{chain[0].Descriptor.Digest: {URL: "dagger-image:" + string(chain[0].Descriptor.Digest)}}, got.Addresses)
+	require.Equal(t, map[digest.Digest]digest.Digest{chain[1].Descriptor.Digest: pack}, got.Packs)
+	require.Equal(t, "renew", got.RenewalKey)
+
+	for _, tc := range []struct {
+		name   string
+		bundle *ValueBundle
+	}{
+		{"no layers", bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 0})},
+		{"more layers than the chain", bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 4})},
+		{"no such output", bundle(ChainPrefix{Ordinal: 9, Address: fs, Layers: 1})},
+		{"another part of the output", bundle(ChainPrefix{Ordinal: 3, Address: PersistedPartAddress{Part: "other"}, Layers: 1})},
+		{"an output that is itself a prefix", bundle(ChainPrefix{Ordinal: 2, Address: fs, Layers: 1})},
+		{"a chain and a prefix both", bundle(ChainPrefix{Ordinal: 3, Address: fs, Layers: 1}, TransferredOutput{Ordinal: 4, Address: fs, State: "completed", Chain: &OfferedChain{Layers: chain}, Prefix: &ChainPrefix{Ordinal: 3, Address: fs, Layers: 1}})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Error(t, ResolveChainPrefixes(tc.bundle))
+		})
+	}
+}
+
 // A prefix candidate that delegates to a parent part the bundle offers gets
 // no prefix output; one that delegates to a part the bundle doesn't offer, or
 // doesn't delegate, gets one.
@@ -552,4 +644,98 @@ func TestExportLeavesOutOutputsOutsideTheClosureOnRequest(t *testing.T) {
 	require.Len(t, bundle.Values, 1)
 	require.Len(t, bundle.Outputs, 1, "only the output inside the closure")
 	require.Equal(t, bundle.Values[0].Ordinal, bundle.Outputs[0].Ordinal)
+}
+
+func testValueTransferCaptureConcurrent(t *testing.T) {
+	t.Run("concurrent replacement and pruning", func(t *testing.T) {
+		ctx, c, srv := transferTestCache(t)
+		root := persistedListTestResult(t, ctx, c, srv, "root", &transferTestValue{Text: "pending"})
+		old := persistedListTestResult(t, ctx, c, srv, "old", String("old"))
+		next := persistedListTestResult(t, ctx, c, srv, "next", String("next"))
+		transferTestOffer(t, c, ctx, root, old)
+		entered, finish := make(chan struct{}), make(chan struct{})
+		done := make(chan error, 1)
+		go func() {
+			done <- c.WithExportedValues(ctx, ValueSelection{Roots: []AnyResult{root}}, config.RefConfig{}, func(context.Context, *ExportedValues) error { close(entered); <-finish; return nil })
+		}()
+		<-entered
+		c.egraphMu.Lock()
+		owner, err := c.newOfferOwnerLocked(ctx, PersistedOfferOwner{DependencyIDs: []uint64{uint64(next.cacheSharedResult().id)}})
+		var releases []OnReleaseFunc
+		if err == nil {
+			address := PersistedPartAddress{Part: "snapshot"}
+			var queue []*sharedResult
+			queue, err = c.testReplacePartOfferLocked(ctx, root.cacheSharedResult(), address, &partOffer{owner: owner, record: PersistedPartOffer{Address: address, Owner: owner.record, Value: SnapshotValue{Kind: "directory"}}})
+			if err == nil {
+				releases, err = c.collectUnownedResultsLocked(ctx, queue)
+			}
+		}
+		c.egraphMu.Unlock()
+		require.NoError(t, err)
+		require.NoError(t, runOnReleaseFuncs(ctx, releases))
+		for _, row := range []AnyResult{root, old, next} {
+			_, _, err := c.removePersistedEdge(ctx, row.cacheSharedResult().id)
+			require.NoError(t, err)
+		}
+		require.NoError(t, c.ReleaseSession(ctx, "test-session"))
+		snapshot := c.snapshotPruneState(pruneSnapshotMetadata, 10)
+		require.Contains(t, pruneActiveClosure(snapshot, nil), old.cacheSharedResult().id)
+		c.egraphMu.RLock()
+		ownerCount := len(c.offerOwners)
+		c.egraphMu.RUnlock()
+		require.Equal(t, 2, ownerCount)
+		close(finish)
+		require.NoError(t, <-done)
+		require.Empty(t, c.resultsByID)
+		require.Empty(t, c.offerOwners)
+	})
+}
+
+func testValueTransferImportConcurrent(t *testing.T) {
+	t.Run("lookup at commit boundary", func(t *testing.T) {
+		ctx, a, srv := transferTestCache(t)
+		leaf := persistedListTestResult(t, ctx, a, srv, "leaf", String("value"))
+		root := persistedListTestResult(t, ctx, a, srv, "root", DynamicResultArrayOutput{Elem: String(""), Values: []AnyResult{leaf}})
+		bundle := exportTestBundle(t, ctx, a, root)
+		ctx, b, bsrv := transferTestCache(t)
+		entered, commit := make(chan struct{}), make(chan struct{})
+		b.testBeforeTransferCommit = func() { close(entered); <-commit }
+		done := make(chan error, 1)
+		go func() { _, err := b.MergeValues(ctx, cloudCacheID, bundle); done <- err }()
+		<-entered
+		for _, value := range bundle.Values {
+			_, err := b.LoadResultByResultID(ctx, "consumer", bsrv, uint64(value.Ordinal))
+			require.ErrorContains(t, err, "missing shared result")
+		}
+		close(commit)
+		require.NoError(t, <-done)
+		b.egraphMu.RLock()
+		resultCount := len(b.resultsByID)
+		b.egraphMu.RUnlock()
+		require.Equal(t, len(bundle.Values), resultCount)
+		for _, value := range bundle.Values {
+			_, err := b.LoadResultByResultID(ctx, "consumer", bsrv, uint64(value.Ordinal))
+			require.NoError(t, err)
+		}
+	})
+	t.Run("close waits for admitted import", func(t *testing.T) {
+		ctx, a, srv := transferTestCache(t)
+		bundle := exportTestBundle(t, ctx, a, persistedListTestResult(t, ctx, a, srv, "root", String("value")))
+		ctx, b, _ := transferTestCache(t)
+		entered, commit := make(chan struct{}), make(chan struct{})
+		b.testBeforeTransferCommit = func() { close(entered); <-commit }
+		done := make(chan error, 1)
+		go func() { _, err := b.MergeValues(ctx, cloudCacheID, bundle); done <- err }()
+		<-entered
+		closed := make(chan error, 1)
+		go func() { closed <- b.Close(ctx) }()
+		select {
+		case err := <-closed:
+			t.Fatalf("close passed admitted import: %v", err)
+		case <-time.After(10 * time.Millisecond):
+		}
+		close(commit)
+		require.NoError(t, <-done)
+		require.NoError(t, <-closed)
+	})
 }

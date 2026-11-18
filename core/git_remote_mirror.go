@@ -16,6 +16,10 @@ import (
 type RemoteGitMirror struct {
 	foreignUninitialized bool
 	RemoteURL            string
+	// Blobless makes this a second mirror of the remote, a partial clone that
+	// holds a commit's trees and only the file contents asked for by ID. Every
+	// reader of the full mirror keeps reading complete objects.
+	Blobless bool
 
 	// backingMu is EnsureBackingSnapshot's lock; see backingSnapshotMu.
 	backingMu sync.Mutex
@@ -107,6 +111,7 @@ func (mirror *RemoteGitMirror) CacheUsageSize(ctx context.Context, _ dagql.Cache
 type persistedRemoteGitMirrorPayload struct {
 	Form      string `json:"form"`
 	RemoteURL string `json:"remoteURL"`
+	Blobless  bool   `json:"blobless,omitempty"`
 }
 
 func (mirror *RemoteGitMirror) EncodePersistedObject(ctx context.Context, enc *dagql.PersistEncodeContext) (dagql.PersistedObjectEncoding, error) {
@@ -127,6 +132,7 @@ func (mirror *RemoteGitMirror) EncodePersistedObject(ctx context.Context, enc *d
 	payload, err := json.Marshal(persistedRemoteGitMirrorPayload{
 		Form:      persistedBackingForm(mirror.foreignUninitialized, len(links) != 0),
 		RemoteURL: mirror.RemoteURL,
+		Blobless:  mirror.Blobless,
 	})
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, err
@@ -143,6 +149,7 @@ func (*RemoteGitMirror) DecodePersistedObject(ctx context.Context, dec *dagql.Pe
 		return nil, fmt.Errorf("decode persisted remote git mirror payload: %w", err)
 	}
 	mirror := NewRemoteGitMirror(persisted.RemoteURL)
+	mirror.Blobless = persisted.Blobless
 	mirror.foreignUninitialized = persisted.Form == foreignUninitialized
 	if persisted.Form == foreignUninitialized {
 		if err := foreignFamilyCodec("RemoteGitMirror").ValidateForeign(dagql.PersistedPayloadVisit{Payload: payload}); err != nil {

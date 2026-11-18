@@ -32,6 +32,7 @@ import (
 	"github.com/vito/dang/v2/pkg/ioctx"
 	"github.com/vito/dang/v2/pkg/querybuilder"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/singleflight"
 )
 
 type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
@@ -41,8 +42,9 @@ type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
 // to the namespaced names present in its runtime schema (e.g. "ModuleAOverlay")
 // when marshaling received values back into GraphQL queries.
 type dangModule struct {
-	name         string // installed, namespaced module name
-	originalName string // module name as written in source
+	name         string     // installed, namespaced module name
+	originalName string     // module name as written in source
+	namer        core.Namer // the naming rules of the module's engine version
 }
 
 func (r *runtime) eval(
@@ -76,11 +78,11 @@ func (r *runtime) eval(
 		}
 
 		self := moduleContext.Self()
-		module := dangModule{name: self.Name(), originalName: self.OriginalName}
+		module := dangModule{name: self.Name(), originalName: self.OriginalName, namer: self.Namer()}
 
 		result, err := callDangFunction(ctx, env, fnCall, module)
 		if err != nil {
-			return nil, err
+			return nil, returnRaisedError(ctx, fnCall, err)
 		}
 
 		if flushErr := query.Server.FlushSessionTelemetry(ctx); flushErr != nil {
@@ -89,6 +91,24 @@ func (r *runtime) eval(
 
 		return json.Marshal(result)
 	})
+}
+
+// moduleDangVersion is the Dang version src's source is written in, as
+// ModuleSource.DangVersion holds it. A module source that has none (one given
+// the Dang SDK by withSDK, or persisted before the field existed) gets the
+// default for its engine version.
+func moduleDangVersion(src *core.ModuleSource) string {
+	if src.DangVersion != "" || src.Entrypoint != nil {
+		return src.DangVersion
+	}
+	return DefaultModuleVersions(src.EngineVersion).DangString()
+}
+
+// isDang1Module reports whether src's source is written in Dang 1.0, the
+// language of the Dang v1 line, before Dang 2.
+func isDang1Module(src *core.ModuleSource) bool {
+	v, err := dang.ParseVersion(moduleDangVersion(src))
+	return err == nil && v.Before(dang.Version2_0)
 }
 
 // evalDangSource runs a module's Dang source and calls withEnv with the
@@ -111,6 +131,18 @@ func evalDangSource(
 	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
 	ctx = withDangSyntaxCache(ctx)
+	if src := modSource.Self(); src != nil {
+		// Name the module's typedefs by the module's naming rules.
+		ctx = dangshared.WithModuleNaming(ctx, src)
+		// Parse the module's source as the Dang version it is written in,
+		// unless a dang.toml Dang finds declares one (the same one, as the
+		// engine reads it; see ModuleSource.DangVersion).
+		var err error
+		ctx, err = ContextWithDangVersion(ctx, moduleDangVersion(src))
+		if err != nil {
+			return nil, err
+		}
+	}
 	return dangshared.WithNestedClientServer(ctx, query, nestedClientMetadata, inertAttachables, fnCall, moduleContext, func(ctx context.Context, gqlClient graphql.Client) ([]byte, error) {
 		schema, err := loadDangSchema(ctx, schemaFile)
 		if err != nil {
@@ -137,7 +169,14 @@ func evalDangSource(
 		modCtx := modSource.Self().ContextDirectory
 		var env dang.ValueScope
 		err = modCtx.Self().Mount(ctx, modCtx, func(path string) error {
-			modSrcDir := filepath.Join(path, modSource.Self().SourceSubpath)
+			modSrcDir, cleanup, err := dangSourceDir(
+				filepath.Join(path, modSource.Self().SourceSubpath),
+				filepath.Join(path, modSource.Self().SourceRootSubpath),
+			)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
 
 			// During the typedef/declaration phase (ModuleTypes) the schema
 			// handed to us is deps-only: it does not yet carry the module's own
@@ -148,12 +187,14 @@ func evalDangSource(
 			// make every such name resolvable here by parsing the module source
 			// for its declared types. At runtime the served schema already
 			// includes the module's own types (Module.IncludeSelfInDeps), so
-			// this is a no-op then.
+			// this is a no-op then. The stand-in sources keep the engine
+			// version, which picks the naming rules the types are namespaced
+			// by.
 			selfSource := modSource.Self()
 			if forTypeDefs {
-				selfSource = &core.ModuleSource{ModuleName: selfSource.ModuleOriginalName, ModuleOriginalName: selfSource.ModuleOriginalName}
+				selfSource = &core.ModuleSource{ModuleName: selfSource.ModuleOriginalName, ModuleOriginalName: selfSource.ModuleOriginalName, EngineVersion: selfSource.EngineVersion}
 			} else if self := moduleContext.Self(); self != nil {
-				selfSource = &core.ModuleSource{ModuleName: self.Name(), ModuleOriginalName: self.OriginalName}
+				selfSource = &core.ModuleSource{ModuleName: self.Name(), ModuleOriginalName: self.OriginalName, EngineVersion: selfSource.EngineVersion}
 			}
 			ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
 				Name: "Dagger", Client: gqlClient, Schema: ensureModuleSelfTypes(ctx, schema, selfSource, modSrcDir), AutoImport: true,
@@ -179,6 +220,48 @@ func evalDangSource(
 
 		return withEnv(ctx, env)
 	})
+}
+
+// dangSourceDir returns the directory to run a module's source in srcDir
+// from. Dang finds the dang.toml that decides the source's version by
+// walking up from it, to a .git or the filesystem root, while the engine
+// reads only one up to the module directory moduleDir (see
+// ModuleSource.DangVersion), whatever else the module context holds above it.
+// When Dang's walk would reach a dang.toml above moduleDir, the source runs
+// from a copy of its .dang files that no dang.toml governs, so the version
+// the engine resolved, set with ContextWithDangVersion, decides; otherwise
+// from srcDir itself. cleanup removes the copy.
+func dangSourceDir(srcDir, moduleDir string) (dir string, cleanup func(), rerr error) {
+	noop := func() {}
+	configPath, _, err := dang.FindProjectConfig(srcDir)
+	if err == nil {
+		if configPath == "" {
+			return srcDir, noop, nil
+		}
+		configDir := filepath.Dir(configPath)
+		if configDir == filepath.Clean(srcDir) {
+			// The source directory's own, which the engine reads too.
+			return srcDir, noop, nil
+		}
+		if rel, err := filepath.Rel(moduleDir, configDir); err == nil && filepath.IsLocal(rel) {
+			return srcDir, noop, nil
+		}
+	}
+	// A dang.toml above the module directory, or one that does not even
+	// parse there: Dang must not see it.
+	files, _ := readDangSourceFiles(srcDir)
+	tmp, err := os.MkdirTemp("", "dagger-dang-module-")
+	if err != nil {
+		return "", noop, fmt.Errorf("isolate module source: %w", err)
+	}
+	cleanup = func() { os.RemoveAll(tmp) }
+	for _, file := range files {
+		if err := os.WriteFile(filepath.Join(tmp, file.name), file.content, 0o600); err != nil {
+			cleanup()
+			return "", noop, fmt.Errorf("isolate module source: %w", err)
+		}
+	}
+	return tmp, cleanup, nil
 }
 
 // loadDangSchema reuses decoding of an immutable schema File through the engine
@@ -344,7 +427,8 @@ func retainDangObjectDirectives(ctx context.Context, env dang.ValueScope, dir st
 // yields the type as it lives in the runtime schema (carrying a GraphQL id,
 // implementing Node), not the bare local type.
 //
-// The names are namespaced (via core.NamespaceObject) to match what the engine
+// The names are namespaced (via core.Namer.NamespaceObject, by the module's
+// naming rules) to match what the engine
 // installs and what the runtime schema exposes once Module.IncludeSelfInDeps is
 // in effect: the main object keeps the module's final name, secondary types are
 // module-prefixed (a `type Widget` in module `Test` becomes `TestWidget`).
@@ -371,8 +455,9 @@ func ensureModuleSelfTypes(ctx context.Context, schema *introspection.Schema, sr
 	}
 
 	shared := schema
+	namer := src.Namer()
 	for _, localName := range moduleDeclaredTypeNames(ctx, modSrcDir, moduleName) {
-		schemaName := core.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
+		schemaName := namer.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
 		if schema.Types.Get(schemaName) != nil {
 			continue
 		}
@@ -475,19 +560,30 @@ func moduleDeclaredTypeNames(ctx context.Context, modSrcDir, moduleName string) 
 		slog.Debug("ensureModuleSelfTypes: determine Dang version", "dir", modSrcDir, "error", err)
 		complete = false
 	}
-	var key string
-	if complete {
-		key = declaredTypeNamesKey(moduleName, version, files)
-		if names, ok := declaredTypeNames.Get(key); ok {
-			return names
-		}
+	if !complete {
+		return parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
 	}
-	names := parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
-	if complete {
+	key := declaredTypeNamesKey(moduleName, version, files)
+	if names, ok := declaredTypeNames.Get(key); ok {
+		return names
+	}
+	// The module's prebuild (PrebuildRuntime) parses the same source while
+	// its dependencies load; a load that needs the names before it is done
+	// waits for that parse rather than parsing the source a second time. The
+	// parse reads the files from the first caller's modSrcDir, so that caller
+	// returns only once it is done, even when its context is canceled, and
+	// its directory stays in place until then.
+	names, _, _ := declaredTypeNamesParses.Do(key, func() (any, error) {
+		names := parseDeclaredTypeNames(ctx, modSrcDir, moduleName, files)
 		declaredTypeNames.Add(key, names)
-	}
-	return names
+		return names, nil
+	})
+	return names.([]string)
 }
+
+// declaredTypeNamesParses lets concurrent moduleDeclaredTypeNames calls for
+// the same source share one parse.
+var declaredTypeNamesParses singleflight.Group
 
 // declaredTypeNamesKey identifies a module's declared type names by its name,
 // the Dang version its source is parsed as, and the names and content of its
@@ -888,7 +984,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, err
 	}
 
@@ -981,7 +1077,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name
 		})
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create function: %w", err)
 	}
 
@@ -1025,7 +1121,12 @@ func cacheDirectiveSelector(ctx context.Context, env dang.ValueScope, directive 
 		switch arg.Key {
 		case "policy":
 			if s, ok := val.(string); ok {
-				policy = core.FunctionCachePolicy(s)
+				// The member is spelled for the module's view: NEVER, or Never
+				// before engine.IdentifierCasingVersion. Both decode to the policy.
+				policy, err = core.FunctionCachePolicyEnum.Lookup(s)
+				if err != nil {
+					return dagql.Selector{}, fmt.Errorf("@cache policy: %w", err)
+				}
 			}
 		case "ttl":
 			if s, ok := val.(string); ok {
@@ -1236,7 +1337,7 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create object typedef: %w", err)
 	}
 	if localTypes.contains(classMod) {
@@ -1344,7 +1445,7 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 		return res, fmt.Errorf("unknown type: %T: %s", dangType, dangType)
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to select typedef: %w", err)
 	}
 	if mod, ok := dangType.(*dang.Type); ok && localTypes.contains(mod) {
@@ -1369,17 +1470,25 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 		},
 	}
 
-	for memberName, val := range enumMod.Values {
-		if _, ok := val.(dang.EnumValue); !ok {
-			continue
+	// Register the members in the order the module declares them, which Dang
+	// keeps in the enum's values list. enumMod.Values is a map, so ranging over
+	// it would give a different order on every load.
+	members, ok := enumMod.Values["values"].(dang.ListValue)
+	if !ok {
+		return res, fmt.Errorf("enum %s has no values list", name)
+	}
+	for _, member := range members.Elements {
+		enumVal, ok := member.(dang.EnumValue)
+		if !ok {
+			return res, fmt.Errorf("enum %s: unexpected member %T", name, member)
 		}
 		sels = append(sels, dagql.Selector{
 			Field: "withEnumMember",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(memberName)}},
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(enumVal.Val)}},
 		})
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create enum typedef: %w", err)
 	}
 	if mod, ok := enumMod.Mod.(*dang.Type); ok && localTypes.contains(mod) {
@@ -1411,6 +1520,11 @@ func dangDeclaredType(val *dang.Object) (*dang.Type, bool) {
 func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, mod *dang.Type, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
+	// A module's imports are file-local: evaluate the methods' directive
+	// arguments in the scope of the file declaring the interface, so they
+	// can name its imports.
+	directiveScope := dang.DeclarationScope(env, name)
+
 	sels := []dagql.Selector{
 		{Field: "typeDef"},
 		{
@@ -1426,7 +1540,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 		}
 		switch x := fieldType.(type) {
 		case *hm.FunctionType:
-			fnDef, err := createFunction(ctx, srv, mod, fieldName, x, env, localTypes)
+			fnDef, err := createFunction(ctx, srv, mod, fieldName, x, directiveScope, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create method %s for interface %s: %w", fieldName, name, err)
 			}
@@ -1461,7 +1575,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 		}
 	}
 
-	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+	if err := srv.Select(ctx, srv.Root(), &res, dangshared.NamingSelectors(ctx, srv, sels...)...); err != nil {
 		return res, fmt.Errorf("failed to create interface typedef: %w", err)
 	}
 	if localTypes.contains(mod) {
@@ -1629,7 +1743,7 @@ func (c dangConverter) schemaTypeName(schema *introspection.Schema, name string)
 	if schema != nil && schema.Types.Get(name) != nil {
 		return name
 	}
-	namespaced := core.NamespaceObject(name, c.module.name, c.module.originalName)
+	namespaced := c.module.namer.NamespaceObject(name, c.module.name, c.module.originalName)
 	if schema == nil || schema.Types.Get(namespaced) != nil {
 		return namespaced
 	}

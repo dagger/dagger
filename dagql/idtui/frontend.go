@@ -134,6 +134,16 @@ type CommandFrontend interface {
 	Live() bool
 }
 
+// TerminalOwner is implemented by frontends that draw on the terminal itself
+// while they run, as the pretty TUI does.
+type TerminalOwner interface {
+	// OwnsTerminal reports whether the frontend is drawing on the terminal
+	// right now. Until it stops, anything else written to the terminal, such
+	// as a log line on stderr, scrambles what it draws: send it to the
+	// frontend instead. Safe to call from any goroutine.
+	OwnsTerminal() bool
+}
+
 // ViewFactory constructs a command screen using services owned by the pretty
 // frontend. It is invoked on the Tuist event loop.
 type ViewFactory func(ViewContext) CommandView
@@ -165,13 +175,20 @@ type ViewHandle interface {
 // affordance needs. Only the pretty frontend implements it; other frontends
 // receive the whole trace as a plain OTLP span/log stream instead.
 type TraceFrontend interface {
-	// SetTraceID lets the frontend point surfaced failure logs at
-	// 'dagger cloud traces view <trace> --log' for the full output.
-	SetTraceID(string)
+	// SetTraceID lets the frontend point surfaced failure logs and drill-in
+	// suggestions at '<command> <trace> --log ...' / '<command> <trace>
+	// --check ...'. command is the CLI command that can read the trace from
+	// where it was actually found: 'dagger trace' for the engine's retained
+	// store, 'dagger cloud traces view' for Dagger Cloud.
+	SetTraceID(traceID, command string)
 	// SetLogProvider/SetSpanProvider register the lazy fetchers fired when a
 	// span is expanded or a failure is surfaced.
 	SetLogProvider(func(id dagui.SpanID, descendants bool))
 	SetSpanProvider(func(id dagui.SpanID))
+	// SetTraceLogProvider registers a log provider for one trace's spans
+	// only, ahead of SetLogProvider's; spans of other traces are not
+	// requested from it.
+	SetTraceLogProvider(traceID dagui.TraceID, provider func(id dagui.SpanID, descendants bool))
 	// SurfacedFailedCheckSpans lists the failed checks' and generators' spans
 	// (plus their error origins and links) whose subtrees the report needs
 	// prefetched.
@@ -205,6 +222,23 @@ type TraceFrontend interface {
 // The pretty frontend must keep satisfying the trace capabilities --
 // a signature drift here would otherwise silently disable them.
 var _ TraceFrontend = (*frontendPretty)(nil)
+
+// CallFetcher is the optional interface of a frontend that can fetch call
+// payloads it lacks, for a trace it loaded only part of (a conversation-only
+// restore): an action that rebuilds an ID -- branching or editing from a
+// message, a terminal on an old container, focusing an agent -- or a rewind
+// marker whose abandoned messages it cannot place, asks for the recipe
+// closures of the digests involved, then tries again.
+type CallFetcher interface {
+	// SetCallProvider registers the fetcher of the recipe closures of
+	// digests, leaving out the closures of known calls, which the frontend
+	// holds. It is called off the event loop, blocks until the payloads it
+	// found have been applied, and fails when its source cannot serve them.
+	// A digest is asked for once.
+	SetCallProvider(func(digests, known []string) error)
+}
+
+var _ CallFetcher = (*frontendPretty)(nil)
 
 // AgentRestorer is the optional interface `dagger agent -r` drives to
 // read a restore plan out of the frontend's DB
@@ -868,6 +902,12 @@ func (r *renderer) renderSpan(
 	if span != nil {
 		contentType = span.ContentType
 		if span.LLMTool != "" {
+			// Calls that render from their full arguments (a Dang snippet, a
+			// Timeout presenting as the call it wraps) have a header of
+			// their own.
+			if r.renderToolCallTitle(out, span) {
+				return nil
+			}
 			if span.LLMToolServer != "" {
 				fmt.Fprint(out,
 					out.String(dagui.ToolServerLabel(span.LLMToolServer)).
@@ -878,9 +918,10 @@ func (r *renderer) renderSpan(
 			// For recognized tools, render a styled summary of the meaningful
 			// args (paths in cyan, descriptions/content faint). Fall back to
 			// the first line of the first arg for tools we don't recognize.
-			if !renderToolArgsSummary(out, span) {
-				if len(span.LLMToolArgValues) > 0 {
-					fmt.Fprint(out, "(", span.ToolArgsFallback(), ")")
+			// A running call's come from the arguments it streamed so far.
+			if !renderToolArgParts(out, r.db.ToolArgsSummary(span)) {
+				if fallback := r.db.ToolArgsFallback(span); fallback != "" {
+					fmt.Fprint(out, "(", fallback, ")")
 				}
 			}
 			return nil

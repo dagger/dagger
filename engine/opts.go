@@ -204,6 +204,12 @@ type ClientMetadata struct {
 	// rather than being told what it is by the client connecting to it.
 	CloudScaleOutEngineID string `json:"cloud_scale_out_engine_id,omitempty"`
 
+	// CloudClaimID is the identifier Dagger Cloud issued with the engine
+	// assignment this client connects under. The engine reports it with the
+	// client once the client's sessions have ended, so Cloud closes exactly
+	// that claim. It is opaque to the engine.
+	CloudClaimID string `json:"cloud_claim_id,omitempty"`
+
 	// ExtraModules specifies additional modules to load at connect time.
 	// When Main is true, the module's main-object methods are proxied onto
 	// the Query root in addition to its namespaced constructor.
@@ -267,6 +273,37 @@ type ClientMetadata struct {
 	// Engine-internal: never read from client headers, and not inherited by
 	// the processes the entrypoint starts.
 	SDKEntrypoint bool `json:"-"`
+
+	// EngineWork marks the nested client of a process that does the engine's
+	// own work, such as one an SDK starts to build a module's runtime. Its
+	// calls are internal in telemetry. Engine-internal: never read from
+	// client headers.
+	EngineWork bool `json:"-"`
+
+	// ServedDeps, set on an in-engine nested client (such as a DangEval
+	// snippet's), is a *core.SchemaBuilder of what it serves. Without a
+	// module, it serves it instead of the core API alone: the API of the
+	// conversation the snippet runs for, installed modules included. With
+	// one, its modules are served beside the module's own API (the
+	// conversation's bound tool objects'). It is opaque here, since this
+	// package can't name core's types. Engine-internal: never read from
+	// client headers.
+	ServedDeps any `json:"-"`
+
+	// CallerAgent, set on an in-engine nested client (such as a DangEval
+	// snippet's), is the *core.Agent result whose turn the client acts for:
+	// what core.CallerAgent resolves for its calls, as a module function's
+	// calls resolve their FunctionCall's, for message provenance and the
+	// waits-for guard. It is opaque here, like ServedDeps. Engine-internal:
+	// never read from client headers.
+	CallerAgent any `json:"-"`
+
+	// InertAttachables marks an in-engine nested client the server denies
+	// every host session attachable (see ServeHTTPToNestedClient), so
+	// operations that read the caller's host, such as finding its outer
+	// .env, know there is none. Set by the server, never read from client
+	// headers.
+	InertAttachables bool `json:"-"`
 
 	// Profile enables engine wall-clock profiling (wcprof) for the duration
 	// of this client's work. Experimental; the recorded events are retrieved
@@ -342,6 +379,16 @@ const (
 	// An engine decides once per session, before any stream opens, and answers
 	// every stream of the session alike, reconnects included.
 	CloudTelemetryPublisherHeader = "X-Dagger-Cloud-Telemetry-Publisher"
+
+	// ClientTelemetryIngestHeader, set to ClientTelemetryIngestStore on a
+	// telemetry stream's response, confirms that the engine stores the
+	// telemetry a client posts about itself over its session connection
+	// (POST /v1/traces, /v1/logs and /v1/metrics) in that client's telemetry
+	// store, publishes it to Cloud with the rest of the store, and leaves it
+	// out of the client's own telemetry streams, since the client has it
+	// already.
+	ClientTelemetryIngestHeader = "X-Dagger-Client-Telemetry-Ingest"
+	ClientTelemetryIngestStore  = "store"
 )
 
 func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {

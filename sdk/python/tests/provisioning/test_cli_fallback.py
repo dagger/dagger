@@ -98,6 +98,7 @@ async def test_fallback_session_error_preserves_download_error(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    monkeypatch.delenv("DAGGER_SESSION_PORT", raising=False)
     bin_name = "dagger.exe" if os.name == "nt" else "dagger"
     bin_path = tmp_path / bin_name
     bin_path.touch(mode=0o700)

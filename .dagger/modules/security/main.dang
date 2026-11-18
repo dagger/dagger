@@ -53,7 +53,7 @@ type Security {
   Build the engine container, and scan it for vulnerabilities
   """
   pub scanEngineContainer(target: Container): Void {
-    let t = target ?? engineDev.container
+    let t = target ?? engineDev.withImageEntries.container
     let tarballPath = "target.tar"
     trivyBase
       .withMountedFile(tarballPath, t.asTarball)

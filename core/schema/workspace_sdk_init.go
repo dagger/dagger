@@ -3,7 +3,10 @@ package schema
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdkmodule"
@@ -84,6 +87,25 @@ func effectiveSDKModuleSettings(
 		settings[key] = value
 	}
 	if scope, ok := cfg.SDKs[sdkName].Scopes[scopePath]; ok {
+		// Constructor defaults match settings without regard to case, so a
+		// scope may not record two keys that differ only in case, and a
+		// provider key that differs from a scope key only in case would
+		// compete with it.
+		keys := slices.Sorted(maps.Keys(scope.Settings))
+		for i, key := range keys {
+			for _, other := range keys[i+1:] {
+				if strings.EqualFold(key, other) {
+					return nil, fmt.Errorf("SDK %q scope %q records settings %q, which all match %q; keep one in dagger.toml", sdkName, scopePath, []string{key, other}, key)
+				}
+			}
+		}
+		for provided := range settings {
+			for key := range scope.Settings {
+				if strings.EqualFold(provided, key) {
+					delete(settings, provided)
+				}
+			}
+		}
 		for key, value := range scope.Settings {
 			settings[key] = value
 		}

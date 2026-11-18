@@ -13,7 +13,7 @@ namespace Dagger;
  */
 enum FunctionCachePolicy: string
 {
-    case Default = 'Default';
-    case PerSession = 'PerSession';
-    case Never = 'Never';
+    case DEFAULT = 'DEFAULT';
+    case PER_SESSION = 'PER_SESSION';
+    case NEVER = 'NEVER';
 }

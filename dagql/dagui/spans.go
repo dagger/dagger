@@ -331,6 +331,10 @@ type SpanSnapshot struct {
 	RollUpLogs   bool `json:",omitempty"`
 	RollUpSpans  bool `json:",omitempty"`
 
+	// FunctionPlumbing marks the work that runs a module function call
+	// without being its body (telemetryattrs.UIFunctionPlumbingAttr).
+	FunctionPlumbing bool `json:",omitempty"`
+
 	// Check status (see CheckName)
 	CheckPassed bool `json:",omitempty"`
 
@@ -366,6 +370,10 @@ type SpanSnapshot struct {
 	// CheckGenerator is the address of the generator a stale staleness check
 	// covers: running it fixes the check. Empty when the generator failed.
 	CheckGenerator string `json:",omitempty"`
+
+	// CheckCollectionGroup marks the check that groups a collection's item
+	// checks. It isn't a re-runnable unit itself: its items are.
+	CheckCollectionGroup bool `json:",omitempty"`
 
 	// Generator name
 	GeneratorName string `json:",omitempty"`
@@ -409,7 +417,11 @@ type SpanSnapshot struct {
 	LLMToolServer    string   `json:",omitempty"`
 	LLMToolArgNames  []string `json:",omitempty"`
 	LLMToolArgValues []string `json:",omitempty"`
-	LLMCallDigest    string   `json:",omitempty"`
+	// LLMToolHeaderArgs names the arguments a tool call's header summarizes,
+	// recorded when its display span starts, before their values
+	// (LLMToolArgValues) arrive with its end (see DB.ToolArgsSummary).
+	LLMToolHeaderArgs []string `json:",omitempty"`
+	LLMCallDigest     string   `json:",omitempty"`
 
 	// LLM message origin: recorded provenance for a user-role message that
 	// arrived through an agent mailbox (engine/telemetryattrs' llm.origin.*
@@ -555,6 +567,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.UIEncapsulateAttr:
 		snapshot.Encapsulate = val.(bool)
 
+	case telemetryattrs.UIFunctionPlumbingAttr:
+		snapshot.FunctionPlumbing = val.(bool)
+
 	case telemetry.UIEncapsulatedAttr:
 		snapshot.Encapsulated = val.(bool)
 
@@ -591,6 +606,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetryattrs.CheckGeneratorAttr:
 		snapshot.CheckGenerator = val.(string)
+
+	case telemetryattrs.CheckCollectionGroupAttr:
+		snapshot.CheckCollectionGroup = val.(bool)
 
 	case telemetry.GeneratorNameAttr:
 		snapshot.GeneratorName = val.(string)
@@ -645,6 +663,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.LLMToolArgValuesAttr:
 		snapshot.LLMToolArgValues = sliceOf[string](val)
+
+	case telemetryattrs.LLMToolHeaderArgNamesAttr:
+		snapshot.LLMToolHeaderArgs = sliceOf[string](val)
 
 	case telemetryattrs.LLMCallDigestAttr:
 		snapshot.LLMCallDigest = val.(string)

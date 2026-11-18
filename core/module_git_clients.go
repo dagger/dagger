@@ -61,6 +61,14 @@ func moduleTree(src *ModuleSource) (dagql.ObjectResult[*Directory], bool) {
 // such as a local module whose host belongs to another engine.
 func moduleTreeReader(ctx context.Context, dag *dagql.Server, src *ModuleSource) (workspace.TreeFileReader, error) {
 	if tree, ok := moduleTree(src); ok {
+		// A module loaded through a Git workspace has that workspace's tree.
+		if ws := src.Workspace.Self(); ws != nil {
+			if fs, ok := ws.GitSparseTreeFS(); ok {
+				return func(rel string) ([]byte, bool, error) {
+					return directoryFileReader(ctx, dag, fs.dirFor(ctx, rel))(rel)
+				}, nil
+			}
+		}
 		return directoryFileReader(ctx, dag, tree), nil
 	}
 	if src.Kind == ModuleSourceKindLocal && src.Local != nil && !src.Local.Foreign {
@@ -140,7 +148,7 @@ func hostFileReader(ctx context.Context, src *ModuleSource) (workspace.TreeFileR
 	if err != nil {
 		return nil, err
 	}
-	hostMetadata, err := query.ModuleParentHostClientMetadata(ctx)
+	hostMetadata, err := LocalSourceHostClientMetadata(ctx, query, src)
 	if errors.Is(err, ErrNoCurrentModule) {
 		// A call's cache key is computed in its caller's client, which, with
 		// no module above it, is itself the host the module was loaded from.

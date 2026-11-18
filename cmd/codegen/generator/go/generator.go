@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"go/format"
 	"go/token"
+	"go/version"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,6 +21,8 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/cmd/codegen/trace"
+	telemetry "github.com/dagger/otel-go"
 )
 
 const (
@@ -42,7 +44,25 @@ const (
 	internalDaggerCoreDir = "internal/dagger/core"
 )
 
+// goVersion is the Go release codegen is built with: an existing go.mod
+// that asks for a newer one is refused.
 var goVersion = strings.TrimPrefix(runtime.Version(), "go")
+
+// newGoModVersion is the go line of a go.mod codegen creates: goVersion's
+// language version at patch 0. The patch release codegen happens to be
+// built with says nothing about the toolchain that builds the module, which
+// may be an earlier patch of the same release; a go line naming the patch
+// would make that toolchain refuse the module.
+var newGoModVersion = goModVersion(runtime.Version())
+
+func goModVersion(goRelease string) string {
+	lang := version.Lang(goRelease)
+	if lang == "" {
+		// a development build has no language version: keep the release
+		return strings.TrimPrefix(goRelease, "go")
+	}
+	return strings.TrimPrefix(lang, "go") + ".0"
+}
 
 type GoGenerator struct {
 	Config generator.Config
@@ -55,6 +75,23 @@ type GoGenerator struct {
 // so that they can expose those constructors to callers.
 var fullSchemaTemplates = map[string]bool{
 	"dag/dag.gen.go": true,
+}
+
+// generateCodeTraced is generateCode in a span of its own.
+func generateCodeTraced(
+	ctx context.Context,
+	cfg generator.Config,
+	schema *introspection.Schema,
+	schemaVersion string,
+	mfs *memfs.FS,
+	pkgInfo *PackageInfo,
+	pkg *packages.Package,
+	fset *token.FileSet,
+	pass int,
+) (rerr error) {
+	ctx, span := trace.Tracer().Start(ctx, "generate code")
+	defer telemetry.EndWithCause(span, &rerr)
+	return generateCode(ctx, cfg, schema, schemaVersion, mfs, pkgInfo, pkg, fset, pass)
 }
 
 func generateCode(
@@ -267,15 +304,11 @@ func renderFile(
 		return nil, nil
 	}
 
-	formatted, err := format.Source(source)
+	// goimports formats the file as gofmt does, after fixing its imports.
+	formatted, err := imports.Process(filepath.Join(outputDir, "dummy.go"), source, nil)
 	if err != nil {
 		os.Stderr.Write(source)
 		return nil, fmt.Errorf("error formatting generated code: %w", err)
-	}
-	formatted, err = imports.Process(filepath.Join(outputDir, "dummy.go"), formatted, nil)
-	if err != nil {
-		os.Stderr.Write(source)
-		return nil, fmt.Errorf("error processing imports in generated code: %w", err)
 	}
 	return formatted, nil
 }

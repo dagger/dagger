@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"strconv"
@@ -30,24 +29,54 @@ type PatchFilePaths struct {
 // are one file, not a rename), and callers rely on these paths agreeing with
 // what `git apply` touches.
 func ParsePatchPaths(patch []byte) ([]PatchFilePaths, error) {
-	var p patchPathParser
-	sc := bufio.NewScanner(bytes.NewReader(patch))
-	sc.Buffer(make([]byte, 0, 64*1024), len(patch)+1)
-	for sc.Scan() {
-		if err := p.line(sc.Text()); err != nil {
+	sections, err := ParsePatchSections(patch)
+	if err != nil || len(sections) == 0 {
+		return nil, err
+	}
+	files := make([]PatchFilePaths, len(sections))
+	for i, section := range sections {
+		files[i] = section.PatchFilePaths
+	}
+	return files, nil
+}
+
+// PatchSection is one file section of a patch: the paths it names, as
+// ParsePatchPaths reads them, and its own bytes, from its `diff --git` line
+// up to the next section's. Concatenating sections in order makes a patch of
+// just those files.
+type PatchSection struct {
+	PatchFilePaths
+	Patch []byte
+}
+
+// ParsePatchSections is ParsePatchPaths with each section's bytes, for
+// splitting a patch by file. Anything before the first section, such as a
+// commit message, belongs to none.
+func ParsePatchSections(patch []byte) ([]PatchSection, error) {
+	p := patchPathParser{patch: patch}
+	for p.offset < len(patch) {
+		line, next := patch[p.offset:], len(patch)
+		if i := bytes.IndexByte(line, '\n'); i >= 0 {
+			line, next = line[:i], p.offset+i+1
+		}
+		// As bufio.ScanLines reads lines.
+		line = bytes.TrimSuffix(line, []byte("\r"))
+		if err := p.line(string(line)); err != nil {
 			return nil, err
 		}
-	}
-	if err := sc.Err(); err != nil {
-		return nil, err
+		p.offset = next
 	}
 	p.flush()
 	return p.files, nil
 }
 
 type patchPathParser struct {
-	files []PatchFilePaths
+	files []PatchSection
 	cur   *PatchFilePaths
+	// patch is the whole patch; offset is where the line being read starts,
+	// and start where cur's section does.
+	patch         []byte
+	offset, start int
 	// created and deleted are what the headers said about cur.
 	created, deleted bool
 	// body is set once cur has had its +++ line or a hunk: a --- line after
@@ -68,7 +97,10 @@ func (p *patchPathParser) flush() {
 		p.cur.New = ""
 	}
 	if p.cur.Old != "" || p.cur.New != "" {
-		p.files = append(p.files, *p.cur)
+		p.files = append(p.files, PatchSection{
+			PatchFilePaths: *p.cur,
+			Patch:          p.patch[p.start:p.offset],
+		})
 	}
 	p.cur, p.created, p.deleted, p.body = nil, false, false, false
 }
@@ -92,6 +124,7 @@ func (p *patchPathParser) line(line string) error {
 	switch {
 	case strings.HasPrefix(line, "diff --git "):
 		p.flush()
+		p.start = p.offset
 		var old, new string
 		if old, new, err = parseDiffGitHeader(strings.TrimPrefix(line, "diff --git ")); err == nil {
 			p.cur = &PatchFilePaths{Old: old, New: new}

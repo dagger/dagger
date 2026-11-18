@@ -54,11 +54,7 @@ install at the nearest workspace root (a `pnpm-workspace.yaml` or a
 Each project has a `fix` function that runs `biome check --write` and returns
 the repaired source as a changeset. Fixes are returned even when diagnostics
 Biome cannot fix remain. It is a regular function rather than a check, so it
-does not run during `dagger check`:
-
-```bash
-dagger -c 'biomejs | projects | get packages/ui | fix | export .'
-```
+does not run during `dagger check`.
 
 `fix` takes `files`, to fix only some files, and `fixFilter`, patterns of the
 files to include in the changeset. Both are relative to the project root.

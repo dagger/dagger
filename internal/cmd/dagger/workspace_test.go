@@ -738,33 +738,6 @@ func TestRenderWorkspaceRemoteRowsIncludesAutocheck(t *testing.T) {
 	require.Contains(t, out.String(), "🟢1")
 }
 
-func TestWorkspaceAutocheckSelectedRepos(t *testing.T) {
-	selected, enabled := workspaceSelectedRepos([]string{
-		"github.com/acme/one",
-		"https://github.com/acme/two",
-	}, "github.com/acme/two")
-
-	require.True(t, enabled)
-	require.Equal(t, []string{"github.com/acme/one", "github.com/acme/two"}, selected)
-}
-
-func TestSetWorkspaceAutocheckRepoSelected(t *testing.T) {
-	selected := []string{"github.com/acme/one", "https://github.com/acme/two"}
-
-	require.Equal(t,
-		[]string{"github.com/acme/one"},
-		setWorkspaceAutocheckRepoSelected(selected, "github.com/acme/two", false),
-	)
-	require.Equal(t,
-		[]string{"github.com/acme/one", "github.com/acme/three", "github.com/acme/two"},
-		setWorkspaceAutocheckRepoSelected(selected, "github.com/acme/three", true),
-	)
-	require.Equal(t,
-		[]string{"github.com/acme/one", "github.com/acme/two"},
-		setWorkspaceAutocheckRepoSelected(selected, "github.com/acme/two", true),
-	)
-}
-
 func TestSelectedRemoteWorkspaceAddressInfersLocalGitWorkspace(t *testing.T) {
 	oldWorkspaceRef := workspaceRef
 	t.Cleanup(func() {

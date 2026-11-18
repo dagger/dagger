@@ -185,10 +185,12 @@ func TestArtifactLoadFailureDimensionAlternatives(t *testing.T) {
 func TestArtifactMainLoadFailure(t *testing.T) {
 	app := loadFailureArtifact("app")
 	app.LoadFailure.Entrypoint = true
-	app.LoadFailure.Siblings = []string{"coll"}
+	app.LoadFailure.Siblings = []string{"coll", "e2e-tests"}
 	all := &Artifacts{Entries: []*Artifact{
 		app,
 		{ModuleName: "coll", Path: []string{"coll", "helper"}, TypeName: "Expertise"},
+		// Artifact addresses use current spelling even for a legacy sibling.
+		{ModuleName: "e2e-tests", Path: []string{"e2e-tests", "lint"}, TypeName: "Check"},
 	}}
 	all.AllDimensions = all.DimensionDefinitions()
 	for uri, want := range map[string][]string{
@@ -202,11 +204,40 @@ func TestArtifactMainLoadFailure(t *testing.T) {
 		"dag://coll/helper":            {"coll/helper"},
 		"dag://?expertise=coll/helper": {"coll/helper"},
 		"dag://?coll-item=a":           {},
+		"dag://e2e-tests/lint":         {"e2e-tests/lint"},
+		"dag://?e2e-tests-item=a":      {},
 	} {
 		t.Run(uri, func(t *testing.T) {
 			selected := filterURI(t, all, uri)
 			require.Equal(t, want, schemaPaths(t, selected))
 			requireRoundTrip(t, all, selected)
+		})
+	}
+}
+
+// Load failures use the same canonical address spelling as loaded modules,
+// with no implicit aliases from earlier beta releases.
+func TestArtifactLoadFailureCurrentSpelling(t *testing.T) {
+	all := &Artifacts{Entries: []*Artifact{
+		{ModuleName: "coll", Path: []string{"coll", "helper"}, TypeName: "Expertise"},
+		loadFailureArtifact("e2e-tests"),
+	}}
+	all.AllDimensions = all.DimensionDefinitions()
+	failure := ArtifactTypeName("e2e-tests") + "/load"
+	for uri, want := range map[string][]string{
+		"dag://e2e-tests/lint":                         {failure},
+		"dag://e2e-*/lint":                             {failure},
+		"dag://e-2-e-tests/lint":                       {},
+		"dag://e-2-e-*/lint":                           {},
+		"dag://?module=e2e-tests":                      {failure},
+		"dag://?module=e-2-e-tests":                    {},
+		"dag://e2e-tests/items/x?e2e-tests-item=a":     {failure},
+		"dag://e-2-e-tests/items/x?e-2-e-tests-item=a": {},
+		"dag://coll/helper":                            {"coll/helper"},
+	} {
+		t.Run(uri, func(t *testing.T) {
+			selected := filterURI(t, all, uri)
+			require.Equal(t, want, schemaPaths(t, selected))
 		})
 	}
 }

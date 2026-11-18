@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 
@@ -75,8 +76,12 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 	switch {
 	case node.Failed() && !node.HasFailedChild():
 		if fe.checkDefersToTests(node.Span) {
-			// The check's failures are test cases: render them per-test with
-			// rolled-up logs (richer than the check's raw command output).
+			// The tests beneath the check get per-test rendering with rolled-up logs
+			// (richer than the check's raw command output). They may not explain
+			// this check, though: a test run shared by several checks sits under
+			// whichever one started it. So its own error comes first, even when its
+			// origin has a row: the report leaves the rows out.
+			fe.renderSpanErrorMessage(out, r, &dagui.TraceRow{Span: node.Span, Expanded: true, Depth: depth + 1}, strings.Repeat("  ", depth+1))
 			for _, line := range fe.renderCheckTests(ctx, node.Span, depth) {
 				fmt.Fprintln(out, line)
 			}
@@ -92,7 +97,7 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 					continue
 				}
 				if origin == node.Span {
-					fe.renderSpanFailureDetail(out, r, origin, depth+1)
+					fe.renderSpanFailureDetail(ctx, out, r, origin, depth+1)
 					continue
 				}
 				fe.renderCauseDetail(ctx, out, r, origin, depth+1)
@@ -213,6 +218,7 @@ func (fe *frontendPretty) renderCauseDetail(ctx tuist.Context, out TermOutput, r
 
 	fe.requestLogsOnRender(origin.ID)
 	if logs := fe.logs.Logs[origin.ID]; logs != nil && !fe.claims.hasLog(origin.ID) {
+		defer fe.fitFramedLogs(ctx, logs)()
 		pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(origin)).String()
 		logs.SetPrefix(indent + pipe + " ")
 		logs.SetHeight(logs.UsedHeight())
@@ -228,11 +234,15 @@ func (fe *frontendPretty) renderCauseDetail(ctx tuist.Context, out TermOutput, r
 // indents one level under a depth-0 check; pad by the check's own depth so a
 // nested check's tests sit one level under it too.
 func (fe *frontendPretty) renderCheckTests(ctx tuist.Context, span *dagui.Span, depth int) []string {
+	pad := strings.Repeat("  ", depth)
+	if fe.framesRollups() && ctx.Width > 0 {
+		// laid out beside the pad
+		ctx.Width = max(ctx.Width-len(pad), 1)
+	}
 	lines := fe.renderZoomedCheckTests(ctx, span)
 	if depth == 0 || len(lines) == 0 {
 		return lines
 	}
-	pad := strings.Repeat("  ", depth)
 	for i := range lines {
 		lines[i] = pad + lines[i]
 	}
@@ -390,8 +400,22 @@ func (s *SpanTreeView) renderInlineChecks(ctx tuist.Context, r *renderer, row *d
 	if len(nodes) == 0 {
 		return nil
 	}
-	body := fe.checksRollupLines(ctx, r, nodes, s.inlineRollupLimit(ctx))
-	return s.frameInlineRollup(r, row, body)
+	prefix := s.inlineRollupPrefix(r, row)
+	body := fe.checksRollupLines(s.inlineRollupContext(ctx, prefix), r, nodes, s.inlineRollupLimit(ctx))
+	return s.frameInlineRollup(prefix, body)
+}
+
+// inlineRollupContext is the context an inline rollup's body renders in: as
+// wide as the row's own width leaves beside its frame (inlineRollupPrefix),
+// as renderInlineTests sizes its summary, so what the body lays out -- a
+// check's tests and logs above all -- fits within the screen rather than
+// being clipped at its edge, or, in the transcript a shell reprints on exit,
+// running past it.
+func (s *SpanTreeView) inlineRollupContext(ctx tuist.Context, prefix string) tuist.Context {
+	if ctx.Width > 0 {
+		ctx.Width = max(ctx.Width-lipgloss.Width(prefix), 1)
+	}
+	return ctx
 }
 
 // inlineRollupLimit is the height an inline CHECKS/GENERATORS rollup condenses
@@ -407,19 +431,58 @@ func (s *SpanTreeView) inlineRollupLimit(ctx tuist.Context) int {
 	return 0
 }
 
+// framesInlineRollups reports whether a row's inline rollups hang off its
+// pipe (see frontendPretty.framesRollups).
+func (s *SpanTreeView) framesInlineRollups() bool {
+	return s.fe.framesRollups()
+}
+
+// framesRollups reports whether rows' inline rollups hang off their pipes:
+// in the live tree and the transcript a shell session reprints on exit, but
+// not in the plain final report. Framed, a rollup's body is laid out to fit
+// beside its frame; the plain report keeps its fixed widths and leaves raw
+// log lines whole.
+func (fe *frontendPretty) framesRollups() bool {
+	return !fe.finalRender || fe.shellTranscript()
+}
+
+// fitFramedLogs lays logs a rollup body shows out at the body's width
+// (ctx's) where rollups are framed (framesRollups), so they fit beside the
+// frame, and returns a func restoring the width they had: the logs are a
+// span's own, which its row in the tree sizes to the screen's. Widening
+// keeps the rows the rollup wrapped them into (see Vterm.resizeScreen), so
+// that row shows them a little narrower than it could, but whole.
+func (fe *frontendPretty) fitFramedLogs(ctx tuist.Context, logs *Vterm) (restore func()) {
+	if !fe.framesRollups() || ctx.Width <= 0 {
+		return func() {}
+	}
+	width := logs.Width
+	logs.SetWidth(ctx.Width)
+	return func() { logs.SetWidth(width) }
+}
+
+// inlineRollupPrefix is the prefix of each line of a row's inline rollup:
+// inlineReportPrefix where rollups are framed (framesInlineRollups), else
+// none.
+func (s *SpanTreeView) inlineRollupPrefix(r *renderer, row *dagui.TraceRow) string {
+	if !s.framesInlineRollups() {
+		return ""
+	}
+	return s.inlineReportPrefix(r, row)
+}
+
 // frameInlineRollup hangs an inline rollup body beneath its row. In the live
 // tree -- and the transcript a shell session reprints on exit -- every line
-// carries the row's tree pipe (see inlineReportPrefix), after a pipe-only gap
-// line; the plain final report has no pipes, so a blank line sets the rollup
-// apart instead -- matching renderInlineTests.
-func (s *SpanTreeView) frameInlineRollup(r *renderer, row *dagui.TraceRow, body []string) []string {
+// carries prefix, the row's tree pipe (see inlineRollupPrefix), after a
+// pipe-only gap line; the plain final report has no pipes, so a blank line
+// sets the rollup apart instead -- matching renderInlineTests.
+func (s *SpanTreeView) frameInlineRollup(prefix string, body []string) []string {
 	if len(body) == 0 {
 		return nil
 	}
-	if s.fe.finalRender && !s.fe.shellTranscript() {
+	if !s.framesInlineRollups() {
 		return append([]string{""}, body...)
 	}
-	prefix := s.inlineReportPrefix(r, row)
 	lines := make([]string, 0, len(body)+1)
 	lines = append(lines, strings.TrimRight(prefix, " ")) // pipe-only gap above the rollup
 	for _, line := range body {

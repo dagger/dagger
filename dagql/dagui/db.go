@@ -27,6 +27,13 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
+// LLMTokenMetricNames are the metrics LLMTokenMetrics sums: all a cost or
+// token total needs, e.g. for a history that skips the rest of its metrics.
+var LLMTokenMetricNames = []string{
+	telemetry.LLMInputTokens, telemetry.LLMOutputTokens,
+	telemetry.LLMInputTokensCacheReads, telemetry.LLMInputTokensCacheWrites,
+}
+
 // LLMTokenMetrics tracks token usage across all LLM calls.
 //
 // Aggregate runs on the UI goroutine (metric export is dispatched there), while
@@ -136,6 +143,10 @@ func (m *LLMTokenMetrics) Aggregate(metricName string, point metricdata.DataPoin
 type DB struct {
 	PrimarySpan SpanID
 	PrimaryLogs map[SpanID][]sdklog.Record
+	// PrimaryLogsOnDemand stops PrimaryLogs from buffering the primary
+	// span's output as it streams in: a frontend reading display text on
+	// demand fetches the primary output once, at exit, instead.
+	PrimaryLogsOnDemand bool
 
 	Epoch, End time.Time
 
@@ -185,6 +196,10 @@ type DB struct {
 	// keeps the latest name authoritative over repeated frozen live
 	// snapshots, until the completed span arrives with its final name.
 	namesFromLog map[SpanID]string
+
+	// toolArgsJSON holds the JSON arguments streamed by the display spans of
+	// tool calls that render from their arguments (see ingestToolArgs).
+	toolArgsJSON map[SpanID]*toolArgsJSON
 
 	// spanCalls caches Span.Call and Span.Base for the spans that have been
 	// asked (mostly rendered ones), rather than every span carrying room for
@@ -743,6 +758,11 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 		renderable = make([]sdklog.Record, 0, len(logs))
 	}
 	for _, log := range logs {
+		if IsLogPresence(log) {
+			// a span has display text the frontend reads on demand
+			db.ingestLogPresence(log)
+			continue
+		}
 		if db.ingestSpanName(log) {
 			// live span metadata, not log text
 			continue
@@ -781,14 +801,46 @@ func (db *DB) ingestLogs(logs []sdklog.Record, collectRenderable bool) []sdklog.
 			db.pendingLogsByOutput[*pendingKey] = append(db.pendingLogsByOutput[*pendingKey], log)
 			continue
 		}
-		if spanID == db.PrimarySpan {
+		if spanID == db.PrimarySpan && !db.PrimaryLogsOnDemand {
 			// buffer raw logs so we can write them later
 			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
 		}
 		// flag that the span has received logs
 		db.initSpan(spanID).HasLogs = true
+		db.ingestToolArgs(log, spanID, body)
 	}
 	return renderable
+}
+
+// IsLogPresence reports whether record is a body-less presence record
+// (telemetryattrs.LogRolePresence): the engine's stand-in for display text a
+// frontend reads on demand, saying only that the span it routes to has logs.
+func IsLogPresence(record sdklog.Record) bool {
+	var presence bool
+	record.WalkAttributes(func(kv otellog.KeyValue) bool {
+		if kv.Key == telemetryattrs.LogRoleAttr {
+			role, _ := LogValueString(kv.Value)
+			presence = role == telemetryattrs.LogRolePresence
+			return false
+		}
+		return true
+	})
+	return presence
+}
+
+// ingestLogPresence flags the span a presence record routes to (like the
+// display text it stands for, see routeLog) as having logs. One whose digest
+// has no creator yet is parked with the display text awaiting it, and flags
+// the creator when it arrives.
+func (db *DB) ingestLogPresence(record sdklog.Record) {
+	spanID, pendingKey := db.routeLog(record)
+	if pendingKey != nil {
+		db.pendingLogsByOutput[*pendingKey] = append(db.pendingLogsByOutput[*pendingKey], record)
+		return
+	}
+	if spanID.IsValid() {
+		db.initSpan(spanID).HasLogs = true
+	}
 }
 
 func (db *DB) Shutdown(ctx context.Context) error {
@@ -867,12 +919,8 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 
 		// Aggregate LLM token metrics across all spans/models for the status
 		// line's cost/context display.
-		switch metric.Name {
-		case telemetry.LLMInputTokens, telemetry.LLMOutputTokens,
-			telemetry.LLMInputTokensCacheReads, telemetry.LLMInputTokensCacheWrites:
-			if db.LLMTokenMetrics != nil {
-				db.LLMTokenMetrics.Aggregate(metric.Name, point)
-			}
+		if db.LLMTokenMetrics != nil && slices.Contains(LLMTokenMetricNames, metric.Name) {
+			db.LLMTokenMetrics.Aggregate(metric.Name, point)
 		}
 	}
 }
@@ -1157,14 +1205,20 @@ func (activity *Activity) Add(span *Span) bool {
 	// optimization: if the new interval is wholly subsumed by an existing
 	// interval we can skip adding it. this is also handled by mergeIntervals,
 	// but it's harder to return false after the fact.
-	for _, existing := range activity.CompletedIntervals {
+	//
+	// The intervals are sorted and merged, so only the last one starting
+	// before ival can hold it: any earlier one ends before that one starts.
+	if idx > 0 {
+		existing := activity.CompletedIntervals[idx-1]
 		if ival.Start.After(existing.Start) && ival.End.Before(existing.End) {
 			return changed
 		}
 	}
 
 	activity.CompletedIntervals = slices.Insert(activity.CompletedIntervals, idx, ival)
-	activity.mergeIntervals()
+	// Everything before the interval preceding ival was merged already and
+	// doesn't overlap ival, so merging can start there.
+	activity.mergeIntervalsFrom(max(idx-1, 0))
 	changed = true
 	return changed
 }
@@ -1183,16 +1237,18 @@ func (activity *Activity) EndTimeOrFallback(now time.Time) time.Time {
 	return activity.CompletedIntervals[len(activity.CompletedIntervals)-1].End
 }
 
-// mergeIntervals merges overlapping intervals in the activity.
-func (activity *Activity) mergeIntervals() {
+// mergeIntervalsFrom merges overlapping intervals in the activity, given that
+// the intervals before index from are already merged: none overlaps the next
+// one. A merge from 0 would only copy them over themselves.
+func (activity *Activity) mergeIntervalsFrom(from int) {
 	// If there are no intervals, there's nothing to merge.
 	if len(activity.CompletedIntervals) == 0 {
 		return
 	}
 
 	// Keep track of the index of the last merged interval.
-	lastIndex := 0
-	for i := 1; i < len(activity.CompletedIntervals); i++ {
+	lastIndex := from
+	for i := from + 1; i < len(activity.CompletedIntervals); i++ {
 		ival := activity.CompletedIntervals[i]
 		// If the current interval overlaps with the last one, merge them.
 		if ival.Start.Before(activity.CompletedIntervals[lastIndex].End) {
@@ -1218,6 +1274,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// track the span's own interval
 	span.Activity.Add(span)
 	db.update(span)
+	db.pruneToolArgs(span)
 
 	// keep track of the time boundary
 	if db.Epoch.IsZero() ||
@@ -1478,10 +1535,13 @@ func (db *DB) resolvePendingLogs(output string, traceID TraceID) {
 	}
 	delete(db.pendingLogsByOutput, key)
 	for _, record := range pending {
-		if creator.ID == db.PrimarySpan {
+		db.initSpan(creator.ID).HasLogs = true
+		if IsLogPresence(record) {
+			continue
+		}
+		if creator.ID == db.PrimarySpan && !db.PrimaryLogsOnDemand {
 			db.PrimaryLogs[creator.ID] = append(db.PrimaryLogs[creator.ID], record)
 		}
-		db.initSpan(creator.ID).HasLogs = true
 		db.resolvedLogsBySpan[creator.ID] = append(db.resolvedLogsBySpan[creator.ID], record)
 	}
 }
@@ -1507,7 +1567,10 @@ func (db *DB) resolvePendingServiceLogs(span *Span) {
 				continue
 			}
 			claimed = true
-			if span.ID == db.PrimarySpan {
+			if IsLogPresence(record) {
+				continue
+			}
+			if span.ID == db.PrimarySpan && !db.PrimaryLogsOnDemand {
 				db.PrimaryLogs[span.ID] = append(db.PrimaryLogs[span.ID], record)
 			}
 			db.resolvedLogsBySpan[span.ID] = append(db.resolvedLogsBySpan[span.ID], record)
@@ -1531,8 +1594,6 @@ func (db *DB) DrainResolvedLogs(spanID SpanID) []sdklog.Record {
 }
 
 func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
-	fallback := SpanID{SpanID: record.SpanID()}
-
 	var targetDig string
 	record.WalkAttributes(func(kv otellog.KeyValue) bool {
 		if kv.Key == telemetry.DagDigestAttr {
@@ -1543,12 +1604,23 @@ func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 		}
 		return true
 	})
+	return db.routeLogTarget(TraceID{TraceID: record.TraceID()}, SpanID{SpanID: record.SpanID()}, targetDig)
+}
 
+// LogTarget is the span dagui routes a log record of traceID and spanID,
+// carrying digest as its dagger.io/dag.digest (if any), to: see routeLog.
+// It is invalid while the digest's creator has not arrived.
+func (db *DB) LogTarget(traceID TraceID, spanID SpanID, digest string) SpanID {
+	target, _ := db.routeLogTarget(traceID, spanID, digest)
+	return target
+}
+
+func (db *DB) routeLogTarget(traceID TraceID, fallback SpanID, targetDig string) (SpanID, *resumeOutputKey) {
 	if targetDig == "" {
 		return fallback, nil
 	}
 
-	if creator := db.creatorSpanForDigestInTrace(targetDig, record.TraceID()); creator != nil {
+	if creator := db.creatorSpanForDigestInTrace(targetDig, traceID.TraceID); creator != nil {
 		return creator.ID, nil
 	}
 
@@ -1567,7 +1639,7 @@ func (db *DB) routeLog(record sdklog.Record) (SpanID, *resumeOutputKey) {
 	}
 
 	key := resumeOutputKey{
-		TraceID: TraceID{TraceID: record.TraceID()},
+		TraceID: traceID,
 		Output:  targetDig,
 	}
 	return SpanID{}, &key
@@ -1693,6 +1765,28 @@ func (db *DB) call(dig string, seen map[string]bool) *callpbv1.Call {
 // the caller must degrade (a read-only roster entry, a refused restore)
 // rather than act on a truncated chain.
 func (db *DB) CallIDForDigest(digest string) (*call.ID, error) {
+	recipe, err := db.CallRecipe(digest)
+	if err != nil {
+		return nil, err
+	}
+	dag := &callpbv1.DAG{
+		Value: &callpbv1.DAG_Recipe{
+			Recipe: recipe,
+		},
+	}
+
+	var id call.ID
+	if err := id.FromProto(dag); err != nil {
+		return nil, err
+	}
+	return &id, nil
+}
+
+// CallRecipe gathers the complete recipe behind a call digest -- every frame
+// its ID closure references -- without decoding it into an ID, for callers
+// that inspect what a recipe would do before anyone evaluates it. It fails
+// like CallIDForDigest when a frame never reached this client.
+func (db *DB) CallRecipe(digest string) (*callpbv1.RecipeDAG, error) {
 	if digest == "" {
 		return nil, fmt.Errorf("no call digest")
 	}
@@ -1719,17 +1813,7 @@ func (db *DB) CallIDForDigest(digest string) (*call.ID, error) {
 		return nil, fmt.Errorf("cannot rebuild ID for %s: %s",
 			frameLabel(rootCall), missing[0])
 	}
-	dag := &callpbv1.DAG{
-		Value: &callpbv1.DAG_Recipe{
-			Recipe: recipe,
-		},
-	}
-
-	var id call.ID
-	if err := id.FromProto(dag); err != nil {
-		return nil, err
-	}
-	return &id, nil
+	return recipe, nil
 }
 
 func (db *DB) MustCall(dig string) *callpbv1.Call {

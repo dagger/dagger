@@ -1,17 +1,10 @@
 name = "php-client-dev"
-engineVersion = "v0.21.9"
-include = ["../../../go.sum", "../../../go.mod", "../../../util/parallel"]
+include = []
 
-[runtime]
-  source = "go"
-
-[[dependencies]]
-  name = "dagger-engine"
-  source = "../engine-dev"
+[entrypoint]
+  kind = "dang"
+  source = "./internal/dagger/entrypoint"
 
 [[dependencies]]
-  name = "git-releaser"
-  source = "../../../modules/git-releaser"
-
-[codegen]
-  automaticGitignore = false
+  name = "go"
+  source = "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"

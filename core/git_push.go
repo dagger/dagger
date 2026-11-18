@@ -20,8 +20,8 @@ const GitPushTimeout = 2 * time.Minute
 type GitPushOpts struct {
 	Branch            string
 	ExpectedRemoteSHA string
-	// Registered remote routing is already explicit (and captured URLs have
-	// already had host rewrites applied).
+	// The destination is a remote's push URL, which is final: like git, the
+	// caller's rewrites apply only to a fetch URL used for pushing.
 	SkipDestinationRewrite bool
 }
 
@@ -46,7 +46,7 @@ func (opts GitPushOpts) Ref(source *gitutil.Ref) (string, error) {
 		branch = "refs/heads/" + branch
 	}
 	if opts.ExpectedRemoteSHA != "" && !gitPushSHA(opts.ExpectedRemoteSHA) {
-		return "", fmt.Errorf("expectedRemoteSHA must be a full lowercase object ID, or empty for a non-force push")
+		return "", fmt.Errorf("the expected remote SHA must be a full lowercase object ID, or empty for a non-force push")
 	}
 	return branch, nil
 }

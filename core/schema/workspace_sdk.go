@@ -96,6 +96,70 @@ func (s *workspaceSchema) sdk(
 	return result[0], nil
 }
 
+func (s *workspaceSchema) sdkScopeSetting(
+	ctx context.Context,
+	sdk *core.WorkspaceSDK,
+	args struct {
+		Path string
+		Key  string
+	},
+) (dagql.Nullable[dagql.ObjectResult[*core.JSONValue]], error) {
+	none := dagql.Null[dagql.ObjectResult[*core.JSONValue]]()
+	ws := sdk.Workspace.Self()
+	cfg := &workspace.Config{}
+	scopeConfig := cfg
+	configDir := "."
+	if ws.ConfigFile != "" {
+		var err error
+		scopeConfig, err = readWorkspaceConfig(ctx, ws)
+		if err != nil {
+			return none, err
+		}
+		cfg, err = effectiveWorkspaceConfig(ctx, ws, scopeConfig)
+		if err != nil {
+			return none, err
+		}
+		configDir, err = workspaceConfigDirectory(ws)
+		if err != nil {
+			return none, err
+		}
+	}
+	// The receiver can outlive its registration, so resolve it again in the
+	// config as it is now.
+	sdkName, _, _, err := installedSDKSource(cfg, sdk.Name)
+	if err != nil {
+		return none, err
+	}
+	if sdkName != sdk.Name {
+		return none, fmt.Errorf("%q is not installed as an SDK in this workspace; install its module with `dagger module install <module-ref>`", sdk.Name)
+	}
+	workspacePath, err := resolveWorkspacePath(args.Path, ws.Cwd)
+	if err != nil {
+		return none, err
+	}
+	data, err := workspace.SDKScopeSetting(scopeConfig, configDir, sdkName, filepath.ToSlash(workspacePath), args.Key)
+	if err != nil || data == nil {
+		return none, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return none, err
+	}
+	// A do-not-cache field's new object has no ID; one selected through the
+	// server does, which clients need to load a nullable object.
+	var value dagql.ObjectResult[*core.JSONValue]
+	if err := srv.Select(ctx, srv.Root(), &value,
+		dagql.Selector{Field: "json"},
+		dagql.Selector{
+			Field: "withContents",
+			Args:  []dagql.NamedInput{{Name: "contents", Value: core.JSON(data)}},
+		},
+	); err != nil {
+		return none, err
+	}
+	return dagql.NonNull(value), nil
+}
+
 func workspaceSDKResults(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],

@@ -31,12 +31,23 @@ func (a *Artifact) failedModule() string {
 	return a.Path[0]
 }
 
+// failedModuleNames contains the failed module's canonical address name.
+// Artifact spelling does not depend on the module's API version, even when
+// loading failed before its schema was available.
+func (a *Artifact) failedModuleNames() []string {
+	module := a.failedModule()
+	if module == "" {
+		return nil
+	}
+	return []string{module}
+}
+
 // mayContainPath reports whether a's module could hold an artifact at a path
 // that pattern selects. A literal pattern is one path; glob patterns follow
 // FilterPattern's rules.
 func (a *Artifact) mayContainPath(pattern string, glob bool) bool {
-	module := a.failedModule()
-	if module == "" {
+	modules := a.failedModuleNames()
+	if len(modules) == 0 {
 		return false
 	}
 	alternatives := []string{pattern}
@@ -49,12 +60,14 @@ func (a *Artifact) mayContainPath(pattern string, glob bool) bool {
 			continue
 		}
 		isGlob := glob && strings.ContainsAny(first, "*?[")
-		if first == module || isGlob && matchSegment(first, module) {
-			return true
+		for _, module := range modules {
+			if first == module || isGlob && matchSegment(first, module) {
+				return true
+			}
 		}
-		// A main's shorthand path starts with any of its fields,
-		// which no other module's name can be.
-		if a.LoadFailure.Entrypoint && (isGlob || !slices.Contains(a.LoadFailure.Siblings, first)) {
+		// A main's shorthand path starts with any of its fields, except a
+		// sibling module's canonical address name.
+		if a.LoadFailure.Entrypoint && (isGlob || !slices.ContainsFunc(a.LoadFailure.Siblings, func(sibling string) bool { return SameCLIName(first, sibling) })) {
 			return true
 		}
 	}
@@ -65,12 +78,15 @@ func (a *Artifact) mayContainPath(pattern string, glob bool) bool {
 // dimension id (an identifier, or a name the workspace does not have) and,
 // for non-nil keys, one of the keys.
 func (a *Artifact) mayHaveDimension(id string, keys []string) bool {
-	module := a.failedModule()
-	if module == "" || keys != nil && len(keys) == 0 {
+	modules := a.failedModuleNames()
+	if len(modules) == 0 || keys != nil && len(keys) == 0 {
 		return false
 	}
 	paths := func() bool {
 		return keys == nil || slices.ContainsFunc(keys, func(key string) bool { return a.mayContainPath(key, false) })
+	}
+	namedByModule := func(name string) bool {
+		return slices.ContainsFunc(modules, func(module string) bool { return namedBy(name, module) })
 	}
 	switch {
 	case id == artifact.ModuleDimension:
@@ -79,11 +95,13 @@ func (a *Artifact) mayHaveDimension(id string, keys []string) bool {
 		return paths()
 	case strings.HasPrefix(id, "/"):
 		owner, _, _ := strings.Cut(strings.TrimPrefix(id, "/"), "/")
-		return owner == module
-	case namedBy(id, module):
+		return slices.Contains(modules, owner)
+	case namedByModule(id):
 		// An unknown name of one of the module's collections.
 		return true
-	case slices.ContainsFunc(a.LoadFailure.Siblings, func(sibling string) bool { return namedBy(id, sibling) }):
+	case slices.ContainsFunc(a.LoadFailure.Siblings, func(sibling string) bool {
+		return namedBy(id, LatestNamer.CLIName(sibling))
+	}):
 		// Another module's collection.
 		return false
 	default:
@@ -99,11 +117,10 @@ func namedBy(name, module string) bool {
 	return name == module || strings.HasPrefix(name, module+"-")
 }
 
-// moduleKeysMatch reports whether any key of the module dimension names
-// module. Keys compare in their address form, kebab-case, so a module
-// configured as my_mod answers to both my_mod and my-mod.
+// moduleKeysMatch compares module keys in their current address spelling:
+// my_mod and my-mod name the same module, without legacy beta aliases.
 func moduleKeysMatch(keys []string, module string) bool {
-	return slices.ContainsFunc(keys, func(key string) bool { return ArtifactTypeName(key) == ArtifactTypeName(module) })
+	return slices.ContainsFunc(keys, func(key string) bool { return SameCLIName(key, module) })
 }
 
 // matchSegment matches one path segment against a glob segment.

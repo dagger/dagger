@@ -8,6 +8,7 @@ import (
 
 	"dagger/release/internal/dagger"
 
+	"dagger.io/dagger/core"
 	"golang.org/x/mod/semver"
 )
 
@@ -158,10 +159,10 @@ func (r *Release) RustSdkTargetVersion(ctx context.Context) (*dagger.Changeset, 
 		cargoTomlFile,
 		cargoLockFile,
 	)
-	base := dag.Container().
+	base := core.NewContainer().
 		From(image+"@"+imageDigest).
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
-		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+image)).
+		WithMountedCache("/root/.cargo", core.NewCacheVolume("rust-cargo-"+image)).
 		WithMountedDirectory("/src", before).
 		WithWorkdir("/src/sdk/rust").
 		WithExec([]string{"cargo", "install", "cargo-edit@0.13.0", "--locked"}).

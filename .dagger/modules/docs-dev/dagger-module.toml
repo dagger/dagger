@@ -1,24 +1,10 @@
 name = "docs-dev"
-engineVersion = "v0.21.9"
+include = []
 
-[runtime]
-  source = "go"
-
-[[dependencies]]
-  name = "dagger-cli"
-  source = "../cli-dev"
-
-[[dependencies]]
-  name = "docusaurus"
-  source = "docusaurus"
-
-[[dependencies]]
-  name = "engine-dev"
-  source = "../engine-dev"
+[entrypoint]
+  kind = "dang"
+  source = "./internal/dagger/entrypoint"
 
 [[dependencies]]
   name = "go"
-  source = "../go"
-
-[codegen]
-  automaticGitignore = false
+  source = "github.com/dagger/go@79a92beb4df0898400ef7f7a632009035290383b"

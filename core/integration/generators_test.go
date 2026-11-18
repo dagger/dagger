@@ -11,6 +11,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/containerd/continuity/fs"
+	"github.com/creack/pty"
 	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/util/lockfile"
 	"github.com/dagger/testctx"
@@ -34,6 +36,46 @@ type GeneratorsSuite struct{}
 
 func TestGenerators(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(GeneratorsSuite{})
+}
+
+func (GeneratorsSuite) TestGenerateWithRootModuleFlagTTY(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	modDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "dagger-module.toml"), []byte(`name = "writer"
+engineVersion = "v1.0.0-beta.20"
+[runtime]
+source = "dang"
+`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "main.dang"), []byte(`type Writer {
+  pub write(ws: Workspace!): Changeset! @generate {
+    let before = ws.directory(".")
+    before.withNewFile("generated.txt", "generated\n").changes(before)
+  }
+}
+`), 0o644))
+
+	console, err := newTUIConsole(t, 30*time.Second)
+	require.NoError(t, err)
+	defer console.Close()
+	tty := console.Tty()
+	require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 24, Cols: 120}))
+	cmd := hostDaggerCommandRaw(ctx, t, workdir, "--workspace", workdir, "-m", modDir, "generate", "-y")
+	cmd.Env = append(cmd.Env, "DAGGER_PROGRESS=tty")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = tty, tty, tty
+	require.NoError(t, cmd.Start())
+	go console.ExpectEOF()
+
+	// The broken CLI finishes discovery, then waits forever in a second Run
+	// on the same frontend. Bound the process rather than the output reader:
+	// the TUI can keep redrawing while the command makes no progress.
+	timedOut := time.AfterFunc(30*time.Second, func() { _ = cmd.Process.Kill() })
+	err = cmd.Wait()
+	require.True(t, timedOut.Stop(), "generate hung after filter discovery")
+	require.NoError(t, err)
+	contents, err := os.ReadFile(filepath.Join(workdir, "generated.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "generated\n", string(contents))
 }
 
 func generatorsTestEnv(t *testctx.T, c *dagger.Client) (*core.Container, error) {
@@ -1125,6 +1167,51 @@ func (GeneratorsSuite) TestSDKScopeGenerationRepairsLocalDependency(ctx context.
 	require.Contains(t, parseSchemaContents(t, clientSchema).typeNames(), "Query")
 }
 
+// TestSDKScopeGenerationRunsIndependentScopesAtOnce generates two scopes that
+// do not depend on each other and a third that generates clients for both.
+// The fixture's SDK fails left or right unless the other one generates at the
+// same time, and top needs both of their generated modules.
+func (GeneratorsSuite) TestSDKScopeGenerationRunsIndependentScopesAtOnce(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	fixture := func() *core.Container {
+		bust := rand.Text()
+		return workspaceFixture(t, c, "sdk-scope-concurrent").
+			WithNewFile("left/bust.txt", bust).
+			WithNewFile("right/bust.txt", bust).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+			With(nonNestedDevEngine(c))
+	}
+
+	t.Run("independent scopes generate at once", func(ctx context.Context, t *testctx.T) {
+		generated := fixture().With(daggerNonNestedExec("generate", "-y"))
+		out, err := generated.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		for _, scope := range []string{"left", "right", "top"} {
+			manifest, err := generated.File(scope + "/dagger-module.toml").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, manifest, `name = "`+scope+`"`)
+		}
+		// Each client schema comes from loading the module its scope generated.
+		for _, client := range []string{"left", "right"} {
+			schema, err := generated.File("top/generated/" + client + ".schema.json").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, parseSchemaContents(t, schema).typeNames(), "Query")
+		}
+	})
+
+	t.Run("a failed scope fails the run with its error", func(ctx context.Context, t *testctx.T) {
+		out, err := fixture().
+			WithNewFile("right/fail.txt", "").
+			With(daggerNonNestedExecFail("generate", "-y")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "right cannot generate")
+		// left met right and generated; only right failed.
+		require.NotContains(t, out, "did not generate")
+	})
+}
+
 // TestWorkspaceListsSyntheticGeneratorWithoutLoadingSDK proves that generator
 // discovery uses only workspace configuration. The SDK can be temporarily
 // invalid because generation can be the operation that repairs it.
@@ -1190,15 +1277,16 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 		// Enumerating all generators loads modules best-effort: the broken
 		// module is still loaded (unlike the narrowed cases above, which never
 		// touch it) but its failure is tolerated, so listing still succeeds and
-		// shows the healthy generator instead of aborting. The skip itself is
-		// surfaced as a span on the run path (asserted below), not in the list
-		// table.
+		// shows the healthy generator instead of aborting. The skip is reported
+		// beside the list (SKIPPED MODULES), with the load error, which quotes
+		// the broken source, so unlike the narrowed cases this one can't assert
+		// the source never shows up.
 		out, err := base.
 			With(daggerExec("generate", "-l", "-f=link")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "good/generate")
-		require.NotContains(t, out, "intentionally invalid")
+		require.Contains(t, out, "SKIPPED MODULES")
 	})
 
 	t.Run("unscoped generate runs healthy generators despite a broken module", func(ctx context.Context, t *testctx.T) {
@@ -1317,10 +1405,11 @@ func (GeneratorsSuite) TestWorkspaceGenerateReportsLoadFailureDetail(ctx context
 
 	requireSkipDetail := func(t *testctx.T, out string) {
 		t.Helper()
-		// The compile error is the reason broken-build was skipped: the go
-		// build output follows the load error.
+		// The compile error is the reason broken-build was skipped: the
+		// compiler's output follows the load error, with the exit code of the
+		// compile, which the Go SDK runs per package.
 		require.Contains(t, out, "modules/broken-build")
-		require.Contains(t, out, "exit code: 1")
+		require.Contains(t, out, "exit code: 2")
 		require.Contains(t, out, "undefined: intentionallyUndefinedSymbol")
 		// Missing generated files: skipped, without the misleading hint.
 		require.Contains(t, out, "modules/ungenerated")
@@ -1653,8 +1742,8 @@ func (GeneratorsSuite) TestClientSchemaIntrospectionJSON(ctx context.Context, t 
 
 	modGen := moduleFixture(t, c, "go/minimal")
 
-	clientTypes, clientQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "clientSchemaIntrospectionJSON")
-	moduleTypes, moduleQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "introspectionSchemaJSON")
+	clientTypes, clientQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "clientSchemaIntrospectionJson")
+	moduleTypes, moduleQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "introspectionSchemaJson")
 
 	// No hidden types in the client-facing schema: Host and Engine* (both hidden
 	// from the module-facing schema) are present.

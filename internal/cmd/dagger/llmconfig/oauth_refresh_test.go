@@ -230,7 +230,7 @@ func TestTerminalRefreshErrorRequiresReauthentication(t *testing.T) {
 			if !strings.Contains(err.Error(), "invalid_grant") {
 				t.Errorf("first refresh error %q does not identify invalid_grant", err)
 			}
-			if !strings.Contains(err.Error(), "dagger llm setup") {
+			if !strings.Contains(err.Error(), "/setup") {
 				t.Errorf("first refresh error %q has no reauthentication hint", err)
 			}
 			for _, secret := range []string{"rt-permanently-invalid", "credential-leak-marker"} {

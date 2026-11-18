@@ -1,6 +1,6 @@
 module dagger/brokendep
 
-go 1.25.0
+go 1.27
 
 require (
 	github.com/Khan/genqlient v0.8.1

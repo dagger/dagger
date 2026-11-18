@@ -29,6 +29,15 @@ type EngineEventExport interface {
 // the emitter's drain and the export's flush.
 const engineEventShutdownTimeout = 30 * time.Second
 
+// engineEventShutdownBudget is the events' shutdown budget: with the state
+// discarded, it fits in the stop's reserve, which is shorter.
+func engineEventShutdownBudget(stateDiscarded bool) time.Duration {
+	if stateDiscarded {
+		return DiscardedStateStopReserve
+	}
+	return engineEventShutdownTimeout
+}
+
 type queuedEngineEvent struct {
 	kind  string
 	cache string
@@ -164,6 +173,19 @@ func (srv *Server) emitShareEvent(parts []dagql.SnapshotSharedPart) {
 	srv.engineEvents.Emit(telemetryattrs.EngineEventShare, srv.engineCache.Identity(), time.Now(), event)
 }
 
+// emitReadEvent reports the parts of entries work read. The cache calls it
+// with each batch of reads not reported before.
+func (srv *Server) emitReadEvent(reads []dagql.PartRead) {
+	if srv.engineEvents == nil || srv.engineCache == nil || len(reads) == 0 {
+		return
+	}
+	event := telemetryattrs.EngineReadEvent{Reads: make([]telemetryattrs.EngineRead, len(reads))}
+	for i, read := range reads {
+		event.Reads[i] = telemetryattrs.EngineRead{ResultID: read.ResultID, Part: string(read.Part)}
+	}
+	srv.engineEvents.Emit(telemetryattrs.EngineEventRead, srv.engineCache.Identity(), time.Now(), event)
+}
+
 // stopEngineEvents runs after the cache closed: it reports engine.stop with
 // what the close saved, drains the emitter and shuts the export down, all
 // within one budget, so an unreachable Cloud delays shutdown by at most that
@@ -178,7 +200,15 @@ func (srv *Server) stopEngineEvents(ctx context.Context, clean bool) {
 			SavedEntries: srv.engineCache.PersistedResults(),
 		})
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), srv.engineEventShutdownBudget)
+	shutdownCtx := context.WithoutCancel(ctx)
+	if deadline, ok := ctx.Deadline(); ok && srv.stateDiscarded {
+		// The budget is part of the stop's reserve, which the final
+		// telemetry flushes need too: it ends with the stop.
+		var cancelAtDeadline context.CancelFunc
+		shutdownCtx, cancelAtDeadline = context.WithDeadline(shutdownCtx, deadline)
+		defer cancelAtDeadline()
+	}
+	ctx, cancel := context.WithTimeout(shutdownCtx, srv.engineEventShutdownBudget)
 	defer cancel()
 	if err := srv.engineEvents.Close(ctx); err != nil {
 		slog.Warn("engine cache events not drained before shutdown", "error", err, "dropped", srv.engineEvents.Dropped())

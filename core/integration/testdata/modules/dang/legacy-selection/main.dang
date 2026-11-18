@@ -1,5 +1,5 @@
 """
-Regression module for Dang v1 semantics: modules pinned to an engineVersion
+Regression module for Dang 1.0 semantics: modules pinned to an engineVersion
 before v0.21.5 must keep `.{ }` as GraphQL selection. Do not bump this
 module's engineVersion.
 """

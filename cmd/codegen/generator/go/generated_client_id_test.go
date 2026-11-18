@@ -38,6 +38,27 @@ func TestObjectIDFetchedOnce(t *testing.T) {
 	require.Contains(t, conn.last("container.withFile.withFile.id"), `source:"directory.file.id"`)
 }
 
+// TestLoadedObjectKeepsID verifies that an object built from an ID with
+// Loaded passes that ID as an argument, and as its own ID, without asking the
+// engine for it: the one query sent is the container's.
+func TestLoadedObjectKeepsID(t *testing.T) {
+	ctx := context.Background()
+	conn := &fakeIDConn{}
+	c, err := dagger.Connect(ctx, dagger.WithConn(conn))
+	require.NoError(t, err)
+	q := core.NewQuery(c)
+
+	f := core.Loaded[*core.File](q, "file.handle")
+	id, err := f.ID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, core.ID("file.handle"), id)
+	_, err = q.Container().WithFile("/a", f).ID(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, conn.total())
+	require.Contains(t, conn.last("container.withFile.id"), `source:"file.handle"`)
+}
+
 // TestObjectIDFetchedOnceConcurrently verifies that concurrent callers share
 // one ID fetch.
 func TestObjectIDFetchedOnceConcurrently(t *testing.T) {
@@ -268,6 +289,16 @@ func (c *fakeIDConn) count(path string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.queries[path])
+}
+
+func (c *fakeIDConn) total() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for _, qs := range c.queries {
+		n += len(qs)
+	}
+	return n
 }
 
 func (c *fakeIDConn) last(path string) string {

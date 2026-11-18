@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  Group collection check results under one check in CLI traces. Individual
+  results and logs remain available, and normal checks keep their own entries.
+  With the companion Dagger Cloud update, collection items no longer each
+  create a GitHub status.
+time: 2026-11-06T20:00:00Z
+custom:
+  Author: grouville
+  PR: 15088

@@ -22,7 +22,8 @@ func renderSummary(t *testing.T, toolName string, names, values []string) string
 			LLMToolArgValues: values,
 		},
 	}
-	renderToolArgsSummary(out, span)
+	var db *dagui.DB // a call's attributes alone, as once it ends
+	renderToolArgParts(out, db.ToolArgsSummary(span))
 	return buf.String()
 }
 

@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  `Container.withMountedTemp` takes `disk: true` to keep the temporary
+  directory on the engine's disk instead of in memory, for contents too large
+  for memory, such as a nested engine's state. Each process gets an empty
+  directory of its own, and the engine removes it in the background once the
+  process ends.
+time: 2026-11-12T21:15:00Z
+custom:
+  Author: sipsma
+  PR: ""

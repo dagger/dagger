@@ -48,7 +48,7 @@ defmodule Dagger.GitRef do
   end
 
   @deprecated """
-  Use \\"commitSHA\\" instead.
+  Use \\"commitSha\\" instead.
   """
   @doc """
   The resolved commit id at this ref.
@@ -67,7 +67,7 @@ defmodule Dagger.GitRef do
   @spec commit_sha(t()) :: {:ok, String.t()} | {:error, term()}
   def commit_sha(%__MODULE__{} = git_ref) do
     query_builder =
-      git_ref.query_builder |> QB.select("commitSHA")
+      git_ref.query_builder |> QB.select("commitSha")
 
     Client.execute(git_ref.client, query_builder)
   end
@@ -181,7 +181,7 @@ defmodule Dagger.GitRef do
       )
       |> QB.maybe_put_arg("remote", optional_args[:remote])
       |> QB.maybe_put_arg("branch", optional_args[:branch])
-      |> QB.maybe_put_arg("expectedRemoteSHA", optional_args[:expected_remote_sha])
+      |> QB.maybe_put_arg("expectedRemoteSha", optional_args[:expected_remote_sha])
 
     %Dagger.GitPushResult{
       query_builder: query_builder,

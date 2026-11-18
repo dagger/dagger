@@ -21,6 +21,12 @@ type matcher struct {
 	// include pattern and is not a prefix of one cannot contain a match, so it
 	// does not need to be walked. This mirrors internal/fsutil's filterFS.
 	onlyPrefixIncludes bool
+
+	// includeHeads holds the literal directories each include pattern starts
+	// with, up to its first component with a pattern character, or is nil when
+	// a pattern can match anywhere. Only PathTree walks by them; see
+	// mayHoldIncluded.
+	includeHeads []string
 }
 
 type matchState struct {
@@ -65,6 +71,7 @@ func newMatcher(_ string, filter Filter) (*matcher, error) {
 				break
 			}
 		}
+		m.includeHeads = includeHeads(pm.Patterns(), patternChars)
 	}
 	if len(filter.Exclude) > 0 {
 		pm, err := patternmatcher.New(filter.Exclude)
@@ -81,6 +88,51 @@ func newMatcher(_ string, filter Filter) (*matcher, error) {
 		m.gitignore = fsxutil.NewGitIgnoreMatcher(fs)
 	}
 	return m, nil
+}
+
+// includeHeads returns the literal leading directories of the include
+// patterns: the components of each before the first one with a pattern
+// character. It's nil when a pattern has no such directory, so it can match
+// anywhere.
+func includeHeads(patterns []*patternmatcher.Pattern, patternChars string) []string {
+	var heads []string
+	for _, p := range patterns {
+		if p.Exclusion() {
+			continue
+		}
+		var literal []string
+		for _, part := range strings.Split(filepath.ToSlash(p.String()), "/") {
+			if part == "" || part == "." || part == ".." || strings.ContainsAny(part, patternChars) {
+				break
+			}
+			literal = append(literal, part)
+		}
+		if len(literal) == 0 {
+			return nil
+		}
+		heads = append(heads, strings.Join(literal, "/"))
+	}
+	return heads
+}
+
+// mayHoldIncluded reports whether the directory rel can hold a path the
+// include patterns select: it lies on the way to one of their literal leading
+// directories or under one, or a pattern already matched it. A pattern can
+// only match below its literal leading directory, so no other directory can.
+// The copy itself walks by shouldDescend alone; PathTree adds this, so a
+// selection over a large tree visits only the directories a glob pattern can
+// reach, and still selects what the copy does.
+func (m *matcher) mayHoldIncluded(rel string, state matchState) bool {
+	if m.includeHeads == nil || state.includeMatched {
+		return true
+	}
+	rel = filepath.ToSlash(cleanRel(rel))
+	for _, head := range m.includeHeads {
+		if rel == head || strings.HasPrefix(head, rel+"/") || strings.HasPrefix(rel, head+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *matcher) shouldDescend(rel string, state matchState) bool {

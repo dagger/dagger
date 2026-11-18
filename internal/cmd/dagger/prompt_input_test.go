@@ -53,28 +53,123 @@ func imagePrompt(text string) idtui.PromptInput {
 }
 
 func TestPromptQueueRecallAndReplace(t *testing.T) {
-	h := &shellCallHandler{}
+	h := &shellCallHandler{mode: modePrompt}
 	original := imagePrompt("describe this")
 	h.QueuePrompt(original)
 	original.Images[0].Data[0] = '!'
 	recalled := h.DequeuePrompt()
-	require.Equal(t, imagePrompt("describe this"), recalled)
+	require.Equal(t, h.PreparePrompt(imagePrompt("describe this")), recalled)
 	require.True(t, h.DequeuePrompt().Empty())
 
 	recalled.Text = "edited caption"
 	h.QueuePrompt(recalled)
 	recalled.Images[0].Data[0] = '!'
-	require.Equal(t, imagePrompt("edited caption"), h.DequeuePrompt())
+	require.Equal(t, h.PreparePrompt(imagePrompt("edited caption")), h.DequeuePrompt())
 
 	h.QueuePrompt(imagePrompt("replaced"))
 	h.QueuePrompt(imagePrompt(""))
-	require.Equal(t, imagePrompt(""), h.DequeuePrompt(), "image-only drafts are not empty")
+	require.Equal(t, h.PreparePrompt(imagePrompt("")), h.DequeuePrompt(), "image-only drafts are not empty")
 
 	h.QueuePrompt(imagePrompt("replaced by text"))
 	h.QueueMessage("legacy text")
-	require.Equal(t, idtui.PromptInput{Text: "legacy text"}, h.DequeuePrompt())
+	require.Equal(t, h.PreparePrompt(idtui.PromptInput{Text: "legacy text"}), h.DequeuePrompt())
 	h.QueueMessage("old caller")
 	require.Equal(t, "old caller", h.DequeueMessage())
+}
+
+func TestPromptCommandsNeverJoinMailbox(t *testing.T) {
+	for _, busy := range []bool{false, true} {
+		s, agents := testSession(t, "chief")
+		if busy {
+			agents[0].beginTurn(func(error) {})
+			defer agents[0].endTurn()
+		}
+		h := newSlashTestHandler(t)
+		h.mode, h.llmSession = modePrompt, s
+		for _, text := range []string{"/help", "/context", "/model gpt-6-astra", "/compact", "/setup", "/logout", "/shell", "/exit", "exit", "/unknown"} {
+			require.True(t, h.Serial(text), text)
+			require.False(t, h.SubmitToTarget(text), text)
+		}
+		require.ErrorContains(t, h.Handle(t.Context(), "/unknown"), "unknown agent command")
+		h.mode = modeShell
+		require.False(t, h.SubmitToTarget("echo hello"))
+		runtimeOf(t, agents[0]).awaitNoSend(t)
+	}
+}
+
+func TestPromptCommandQueuePinsTargetAndMode(t *testing.T) {
+	s, agents := testSession(t, "chief", "scout")
+	h := newSlashTestHandler(t)
+	h.mode, h.llmSession = modePrompt, s
+	first := h.PreparePrompt(idtui.PromptInput{Text: "/shell"})
+	h.QueuePrompt(first)
+	h.QueuePrompt(imagePrompt("old draft"))
+	h.QueuePrompt(idtui.PromptInput{Text: "/compact"})
+	h.QueuePrompt(idtui.PromptInput{Text: "/help"})
+	latestDraft := h.PreparePrompt(imagePrompt("latest draft"))
+	h.QueuePrompt(latestDraft)
+	require.Contains(t, h.QueuedPromptSummary(), "3 command(s)")
+
+	// Focus and mode can change while the interpreter or a picker waits.
+	s.SetTarget(agents[1])
+	h.mode = modeShell
+	for _, text := range []string{"/shell", "/compact", "/help"} {
+		input := h.DequeuePrompt()
+		require.Equal(t, text, input.Text)
+		require.Equal(t, modePrompt, h.promptInputMode(input))
+		require.True(t, h.SerialPrompt(input))
+		require.NoError(t, h.ValidatePrompt(input))
+		ctx := context.WithValue(t.Context(), commandSubmissionKey{}, input.CommandTarget)
+		require.Equal(t, modePrompt, h.commandMode(ctx), "help must use the submitted mode after /shell")
+		target, err := h.commandTarget(ctx)
+		require.NoError(t, err)
+		require.Same(t, agents[0], target)
+	}
+	require.Equal(t, latestDraft, h.DequeuePrompt())
+	require.True(t, h.DequeuePrompt().Empty())
+	require.Empty(t, h.QueuedPromptSummary())
+
+	// A shell line remains shell input if /shell later switches back.
+	input := h.PreparePrompt(idtui.PromptInput{Text: "echo shell"})
+	h.mode = modePrompt
+	require.Equal(t, modeShell, h.promptInputMode(input))
+	require.False(t, h.SubmitPromptToTarget(input))
+}
+
+func TestPromptDraftKeepsModeAcrossQueuedShell(t *testing.T) {
+	for _, draft := range []idtui.PromptInput{{Text: "echo this is a prompt, not shell code"}, imagePrompt("describe this"), imagePrompt("")} {
+		h := newSlashTestHandler(t)
+		h.mode = modePrompt
+		h.QueuePrompt(idtui.PromptInput{Text: "/shell"})
+		submitted := h.PreparePrompt(draft)
+		h.QueuePrompt(submitted)
+		require.Equal(t, "/shell", h.DequeuePrompt().Text)
+		h.mode = modeShell // the queued /shell has executed
+		input := h.DequeuePrompt()
+		require.Equal(t, submitted, input)
+		require.Equal(t, modePrompt, h.promptInputMode(input))
+		require.False(t, h.SerialPrompt(input), "queued prompts must never become shell scripts")
+		require.NoError(t, h.ValidatePrompt(input), "valid queued images retain prompt mode")
+		require.Nil(t, input.CommandTarget, "mode capture must not classify a prompt as a command")
+		require.Equal(t, input, h.PreparePrompt(input.Clone()), "requeue cannot reinterpret a submitted input")
+	}
+}
+
+func TestPromptCommandQueueRecallAndCancel(t *testing.T) {
+	h := newSlashTestHandler(t)
+	h.mode = modePrompt
+	h.QueuePrompt(idtui.PromptInput{Text: "/model gpt-6-astra"})
+	h.QueuePrompt(imagePrompt("recall me"))
+	h.QueuePrompt(idtui.PromptInput{Text: "/effort high"})
+	require.Equal(t, h.PreparePrompt(imagePrompt("recall me")), h.RecallQueuedPrompt())
+	require.True(t, h.RecallQueuedPrompt().Empty())
+	require.Equal(t, "/model gpt-6-astra", h.DequeuePrompt().Text)
+	require.Equal(t, "/effort high", h.DequeuePrompt().Text)
+	h.QueuePrompt(idtui.PromptInput{Text: "/compact"})
+	h.QueuePrompt(imagePrompt("discard me"))
+	h.ClearQueuedPrompts()
+	require.True(t, h.DequeuePrompt().Empty())
+	require.Empty(t, h.QueuedPromptSummary())
 }
 
 func TestPromptAttachmentsRejectCommands(t *testing.T) {
@@ -155,13 +250,22 @@ func TestPromptImagesPendingWhileSpawning(t *testing.T) {
 }
 
 func TestPromptImageOnlyInitialTurn(t *testing.T) {
-	// Model reads are the only engine plumbing needed when a runtime is already
-	// attached. Exercise the real HandlePrompt -> WithPromptInput idle path.
+	// Model and provider reads are the only engine plumbing needed when a runtime
+	// is already attached. Exercise the real HandlePrompt -> WithPromptInput idle path.
 	dag, err := dagger.Connect(t.Context(), dagger.WithConn(agentTestConn{do: func(req *http.Request) (*http.Response, error) {
 		var query dagger.Request
 		require.NoError(t, json.NewDecoder(req.Body).Decode(&query))
-		require.Contains(t, query.Query, "model")
-		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"data":{"node":{"model":"test-model"}}}`))}, nil
+		var node map[string]any
+		switch {
+		case strings.Contains(query.Query, "provider"):
+			node = map[string]any{"provider": "test-provider"}
+		default:
+			require.Contains(t, query.Query, "model")
+			node = map[string]any{"model": "test-model"}
+		}
+		body, err := json.Marshal(map[string]any{"data": map[string]any{"node": node}})
+		require.NoError(t, err)
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(bytes.NewReader(body))}, nil
 	}}))
 	require.NoError(t, err)
 	defer dag.Close()
@@ -179,6 +283,8 @@ func TestPromptImageOnlyInitialTurn(t *testing.T) {
 	require.Equal(t, "[1 image(s)]", h.initialPrompt)
 	require.Equal(t, 1, rt.resumes)
 	require.Zero(t, rt.reseedCount())
+	require.Equal(t, "test-model", a.model)
+	require.Equal(t, "test-provider", a.provider)
 	require.Nil(t, a.turnCancel)
 }
 

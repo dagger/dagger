@@ -26,6 +26,7 @@ type Check struct {
 	Workspace       dagql.ObjectResult[*Workspace]
 	Function        string
 	Address         string
+	CollectionItem  bool
 	Inputs          []CallInput
 	Generator       dagql.ObjectResult[*Generator]
 	CacheTTL        int64

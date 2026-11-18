@@ -57,11 +57,7 @@ Dependencies install at the nearest workspace root (a `pnpm-workspace.yaml` or
 a `package.json` with `workspaces`), else the nearest lockfile, else the
 nearest `package.json`.
 
-To print the tests Jest discovers in a project, call its `list` function:
-
-```bash
-dagger -c 'jest | projects | get apps/api | list'
-```
+Call a project’s `list` function to print the tests Jest discovers.
 
 ## Configure it
 

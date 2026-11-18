@@ -3,12 +3,50 @@ package schema
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 )
+
+func init() {
+	core.SetWorkspaceModulesLoader(loadInstalledWorkspaceModules)
+}
+
+// loadInstalledWorkspaceModules loads every module installed in ws as
+// Workspace.artifacts does (workspaceTargetModules), best effort; see
+// core.LoadWorkspaceModules.
+func loadInstalledWorkspaceModules(ctx context.Context, ws dagql.ObjectResult[*core.Workspace]) (*core.InstalledWorkspaceModules, error) {
+	ctx, err := withWorkspaceClientContext(ctx, ws.Self())
+	if err != nil {
+		return nil, err
+	}
+	loaded, failures, err := (&workspaceSchema{}).workspaceTargetModules(ctx, ws, nil, core.ModuleLoadBestEffort)
+	if err != nil {
+		return nil, err
+	}
+	removed, err := workspaceRemovedModuleNames(ctx, ws.Self())
+	if err != nil {
+		return nil, err
+	}
+	// A module that no longer loads (its source broken by a pending edit)
+	// is gone from the workspace's API, not left at the copy the session
+	// served before.
+	for _, failure := range failures {
+		if removed == nil {
+			removed = map[string]bool{}
+		}
+		removed[canonicalOverlayModuleName(failure.Name)] = true
+	}
+	return &core.InstalledWorkspaceModules{
+		Loaded:   loaded,
+		Failures: failures,
+		Removed:  slices.Sorted(maps.Keys(removed)),
+	}, nil
+}
 
 func (s *workspaceSchema) workspaceModules(
 	ctx context.Context,
@@ -108,6 +146,13 @@ func (s *workspaceSchema) module(
 
 type workspaceModuleSourceArgs struct {
 	Path string
+
+	// AllowNotExists tolerates a path holding no dagger config file,
+	// returning a context-only source (ConfigExists=false) instead of
+	// erroring. The engine's module loader uses it for a Git workspace's
+	// legacy +defaultPath context, its root, which holds a Workspace config
+	// (dagger.toml), not a Module config. Mirrors Directory.asModuleSource.
+	AllowNotExists bool `internal:"true" default:"false"`
 }
 
 // moduleSource loads a module source from a path within the workspace, applying
@@ -128,11 +173,11 @@ func (s *workspaceSchema) moduleSource(
 
 	switch ws.BaseSource().(type) {
 	case *core.WorkspaceSourceClientLocal:
-		return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath))
+		return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath), args.AllowNotExists)
 	case *core.WorkspaceSourceGitRef:
 		if ref, ok := ws.SourceGitRef(); ok {
 			if repo := ref.Self().Repo.Self(); repo != nil && repo.URL.Valid {
-				return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath))
+				return (&moduleSourceSchema{}).workspaceModuleSource(ctx, parent, filepath.ToSlash(resolvedPath), args.AllowNotExists)
 			}
 		}
 	}
@@ -155,12 +200,16 @@ func (s *workspaceSchema) moduleSource(
 	// doubles as the "path is not an initialized module" check. Keep the
 	// workspace as explicit provenance: the materialized directory changes on
 	// every source edit, but it still belongs to the same workspace.
+	asModuleSourceArgs := []dagql.NamedInput{
+		{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
+		{Name: "workspace", Value: dagql.Opt(dagql.NewID[*core.Workspace](workspaceID))},
+	}
+	if args.AllowNotExists {
+		asModuleSourceArgs = append(asModuleSourceArgs, dagql.NamedInput{Name: "allowNotExists", Value: dagql.Boolean(true)})
+	}
 	if err := srv.Select(ctx, root, &inst, dagql.Selector{
 		Field: "asModuleSource",
-		Args: []dagql.NamedInput{
-			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
-			{Name: "workspace", Value: dagql.Opt(dagql.NewID[*core.Workspace](workspaceID))},
-		},
+		Args:  asModuleSourceArgs,
 	}); err != nil {
 		return inst, fmt.Errorf("workspace module source %q: %w", args.Path, err)
 	}

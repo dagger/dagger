@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/util/parallel"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/semaphore"
 )
@@ -42,6 +43,7 @@ type artifactExecutionItem struct {
 	Path          []string
 	Directives    []string
 	LoadError     string
+	CheckGroup    string
 	Workspace     *struct{ ID core.ID }
 	DimensionKeys []struct{ Dimension string }
 }
@@ -64,16 +66,22 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 	var response struct {
 		Selection struct{ Items []artifactExecutionItem }
 	}
-	err = dag.Do(preparationCtx, &dagger.Request{
-		Query: `query($id: ID!) { selection: node(id: $id) { ... on Artifacts {
-		 items: __evaluationItems { id uri(dimensionKeys: true) path directives loadError workspace { id } dimensionKeys { dimension } }
-		} } }`, Variables: map[string]any{"id": id},
-	}, &dagger.Response{Data: &response})
+	query := `query($id: ID!) { selection: node(id: $id) { ... on Artifacts {
+		 items: __evaluationItems { id uri(dimensionKeys: true) path directives loadError checkGroup: __checkGroup workspace { id } dimensionKeys { dimension } }
+		} } }`
+	err = dag.Do(preparationCtx, &dagger.Request{Query: query, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
+	if isMissingCheckGroupField(err) {
+		// Older engines keep their existing reporting behavior.
+		query = strings.Replace(query, "checkGroup: __checkGroup ", "", 1)
+		err = dag.Do(preparationCtx, &dagger.Request{Query: query, Variables: map[string]any{"id": id}}, &dagger.Response{Data: &response})
+	}
 	if err != nil {
 		finishArtifactPreparation(ctx, err)
 		return nil, err
 	}
 	finishArtifactPreparation(ctx, nil)
+	groups := newCheckGroups(ctx, response.Selection.Items)
+	defer groups.close()
 	results := make([]artifactValueResult, len(response.Selection.Items))
 	// Each With method copies the job list. Configure each job from empty
 	// defaults and collect it once, so building the list stays linear.
@@ -94,7 +102,11 @@ func evaluateArtifacts(ctx context.Context, dag *dagger.Client, artifacts *core.
 		if isGenerator {
 			attrs = append(attrs, attribute.String(telemetry.GeneratorNameAttr, item.URI))
 		}
-		job := defaults.WithTracing(!isCheck).WithRollupLogs(!isGenerator).WithJob(item.URI, func(ctx context.Context) error {
+		job := defaults.WithTracing(!isCheck).WithRollupLogs(!isGenerator).WithJob(item.URI, func(ctx context.Context) (jobErr error) {
+			if group := groups[item.checkGroupKey()]; group != nil {
+				ctx = group.context(ctx)
+				defer func() { group.finish(jobErr) }()
+			}
 			err := ctx.Err()
 			if err == nil && limit != nil && !remote {
 				err = limit.Acquire(ctx, 1)
@@ -449,18 +461,24 @@ func commandArtifactsWithFlags(ctx context.Context, dag *dagger.Client, ws *core
 }
 
 func validateArtifactListFlags(cmd *cobra.Command) error {
+	return checkArtifactListFlags(cmd, cmd.Flags().Changed, func(flag *pflag.Flag) string { return flag.Value.String() })
+}
+
+// checkArtifactListFlags is validateArtifactListFlags over flag values that
+// value reads, and changed reports, so a command line can be checked without
+// parsing it into cmd.
+func checkArtifactListFlags(cmd *cobra.Command, changed func(string) bool, value func(*pflag.Flag) string) error {
 	if isArtifactCommand(cmd) {
-		list, _ := cmd.Flags().GetBool("list")
-		if !list {
+		if flag := cmd.Flags().Lookup("list"); flag == nil || value(flag) != "true" {
 			for _, name := range []string{"all", "absolute", "abs", "format"} {
-				if cmd.Flags().Changed(name) {
+				if changed(name) {
 					return fmt.Errorf("--%s requires --list", name)
 				}
 			}
 		}
 	}
 	if flag := cmd.Flags().Lookup("format"); flag != nil && (isArtifactCommand(cmd) || cmd.Name() == "list" || cmd.Annotations[artifactListType] != "" || cmd.Annotations[artifactListCollection] != "") {
-		return validateArtifactListFormat(flag.Value.String())
+		return validateArtifactListFormat(value(flag))
 	}
 	return nil
 }

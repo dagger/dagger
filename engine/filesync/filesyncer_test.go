@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine/client"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/testutil"
 )
 
 // The parent sync recreates a target directory's parents before the target
@@ -36,7 +38,7 @@ func TestSyncParentDirsReadsOnlyTheParentChain(t *testing.T) {
 	mirror := t.TempDir()
 	syncer := &FileSyncer{}
 	conn := serveFilesync(t, client.FilesyncSource{})
-	require.NoError(t, syncer.syncParentDirs(ctx, NewMirrorSharedState(mirror), conn, target, "", SnapshotOpts{}))
+	require.NoError(t, syncer.syncParentDirs(ctx, NewMirrorSharedState(mirror), conn, target, ""))
 
 	for dir := target; dir != "/"; dir = filepath.Dir(dir) {
 		info, err := os.Lstat(filepath.Join(mirror, dir))
@@ -91,11 +93,49 @@ func TestSyncParentDirsReplacesMirrorSymlinkInChain(t *testing.T) {
 
 	syncer := &FileSyncer{}
 	conn := serveFilesync(t, client.FilesyncSource{})
-	require.NoError(t, syncer.syncParentDirs(ctx, NewMirrorSharedState(mirror), conn, target, "", SnapshotOpts{}))
+	require.NoError(t, syncer.syncParentDirs(ctx, NewMirrorSharedState(mirror), conn, target, ""))
 
 	for _, dir := range []string{filepath.Join(mirrorRoot, "link"), filepath.Join(mirrorRoot, "link", "target")} {
 		info, err := os.Lstat(dir)
 		require.NoError(t, err)
 		require.True(t, info.IsDir(), dir)
+	}
+}
+
+// A directory read at a path relative to the synced root, as a gitignore read
+// of a workspace subdirectory does, must not change the parent sync. The
+// relative path used to reach the parent sync, whose paths are relative to the
+// mirror's root, and a parent whose path began with the relative path's text
+// (a workspace under /mnt reading its "m" directory) crashed the engine.
+func TestSnapshotRelativePathPrefixingAParent(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	root := t.TempDir()
+	firstParent, _, _ := strings.Cut(strings.TrimPrefix(root, "/"), "/")
+	relPath := firstParent[:1]
+	require.NoError(t, os.Mkdir(filepath.Join(root, relPath), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, relPath, "file.txt"), []byte("content"), 0o600))
+
+	store := testutil.NewStore(t)
+	syncer := NewFileSyncer(FileSyncerOpt{CacheAccessor: store.Manager})
+	mirror := NewMirrorSharedState(t.TempDir())
+	conn := serveFilesync(t, client.FilesyncSource{})
+
+	// Twice: the second sync finds the parents unchanged in the mirror, as
+	// the crash that was seen did.
+	for range 2 {
+		ctx, releaseOp, err := bkcache.WithLazyLease(ctx, store.Leases, bkcache.MakeTemporary)
+		require.NoError(t, err)
+		ref, _, err := syncer.Snapshot(ctx, mirror, conn, root, SnapshotOpts{
+			IncludePatterns: []string{"!*", relPath},
+			RelativePath:    relPath,
+		})
+		require.NoError(t, err)
+		got, err := os.ReadFile(filepath.Join(testutil.Root(t, ref), "file.txt"))
+		require.NoError(t, err)
+		require.Equal(t, "content", string(got))
+		require.NoError(t, ref.Release(context.Background()))
+		require.NoError(t, releaseOp(context.Background()))
 	}
 }

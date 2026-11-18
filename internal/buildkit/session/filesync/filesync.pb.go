@@ -9,6 +9,7 @@ import (
 	fmt "fmt"
 	types "github.com/dagger/dagger/internal/fsutil/types"
 	proto "github.com/gogo/protobuf/proto"
+	github_com_gogo_protobuf_sortkeys "github.com/gogo/protobuf/sortkeys"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -30,6 +31,112 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
+// FindUpRequest names the directory to start from, resolved against the
+// client's current directory, and the names to look for.
+type FindUpRequest struct {
+	Start string   `protobuf:"bytes,1,opt,name=start,proto3" json:"start,omitempty"`
+	Names []string `protobuf:"bytes,2,rep,name=names,proto3" json:"names,omitempty"`
+}
+
+func (m *FindUpRequest) Reset()      { *m = FindUpRequest{} }
+func (*FindUpRequest) ProtoMessage() {}
+func (*FindUpRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d1042549f1f24495, []int{0}
+}
+func (m *FindUpRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *FindUpRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_FindUpRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *FindUpRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_FindUpRequest.Merge(m, src)
+}
+func (m *FindUpRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *FindUpRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_FindUpRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_FindUpRequest proto.InternalMessageInfo
+
+func (m *FindUpRequest) GetStart() string {
+	if m != nil {
+		return m.Start
+	}
+	return ""
+}
+
+func (m *FindUpRequest) GetNames() []string {
+	if m != nil {
+		return m.Names
+	}
+	return nil
+}
+
+// FindUpResponse gives the absolute start directory and, for each name
+// found, the absolute path of the nearest directory holding it.
+type FindUpResponse struct {
+	Start string            `protobuf:"bytes,1,opt,name=start,proto3" json:"start,omitempty"`
+	Found map[string]string `protobuf:"bytes,2,rep,name=found,proto3" json:"found,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+}
+
+func (m *FindUpResponse) Reset()      { *m = FindUpResponse{} }
+func (*FindUpResponse) ProtoMessage() {}
+func (*FindUpResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d1042549f1f24495, []int{1}
+}
+func (m *FindUpResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *FindUpResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_FindUpResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *FindUpResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_FindUpResponse.Merge(m, src)
+}
+func (m *FindUpResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *FindUpResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_FindUpResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_FindUpResponse proto.InternalMessageInfo
+
+func (m *FindUpResponse) GetStart() string {
+	if m != nil {
+		return m.Start
+	}
+	return ""
+}
+
+func (m *FindUpResponse) GetFound() map[string]string {
+	if m != nil {
+		return m.Found
+	}
+	return nil
+}
+
 // BytesMessage contains a chunk of byte data
 type BytesMessage struct {
 	Data []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
@@ -38,7 +145,7 @@ type BytesMessage struct {
 func (m *BytesMessage) Reset()      { *m = BytesMessage{} }
 func (*BytesMessage) ProtoMessage() {}
 func (*BytesMessage) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d1042549f1f24495, []int{0}
+	return fileDescriptor_d1042549f1f24495, []int{2}
 }
 func (m *BytesMessage) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -75,32 +182,107 @@ func (m *BytesMessage) GetData() []byte {
 }
 
 func init() {
+	proto.RegisterType((*FindUpRequest)(nil), "moby.filesync.v1.FindUpRequest")
+	proto.RegisterType((*FindUpResponse)(nil), "moby.filesync.v1.FindUpResponse")
+	proto.RegisterMapType((map[string]string)(nil), "moby.filesync.v1.FindUpResponse.FoundEntry")
 	proto.RegisterType((*BytesMessage)(nil), "moby.filesync.v1.BytesMessage")
 }
 
 func init() { proto.RegisterFile("filesync.proto", fileDescriptor_d1042549f1f24495) }
 
 var fileDescriptor_d1042549f1f24495 = []byte{
-	// 265 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x4b, 0xcb, 0xcc, 0x49,
-	0x2d, 0xae, 0xcc, 0x4b, 0xd6, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x12, 0xc8, 0xcd, 0x4f, 0xaa,
-	0xd4, 0x83, 0x0b, 0x96, 0x19, 0x4a, 0x29, 0x64, 0xe6, 0x95, 0xa4, 0x16, 0xe5, 0x25, 0xe6, 0xe8,
-	0xa7, 0x15, 0x97, 0x96, 0x64, 0xe6, 0xe8, 0x97, 0x54, 0x16, 0xa4, 0x16, 0xeb, 0x17, 0x97, 0x24,
-	0x96, 0x40, 0xf4, 0x28, 0x29, 0x71, 0xf1, 0x38, 0x55, 0x96, 0xa4, 0x16, 0xfb, 0xa6, 0x16, 0x17,
-	0x27, 0xa6, 0xa7, 0x0a, 0x09, 0x71, 0xb1, 0xa4, 0x24, 0x96, 0x24, 0x4a, 0x30, 0x2a, 0x30, 0x6a,
-	0xf0, 0x04, 0x81, 0xd9, 0x46, 0xcd, 0x8c, 0x5c, 0x1c, 0x6e, 0x99, 0x39, 0xa9, 0xc1, 0x95, 0x79,
-	0xc9, 0x42, 0x56, 0x5c, 0x1c, 0x2e, 0x99, 0x69, 0x69, 0xce, 0xf9, 0x05, 0x95, 0x42, 0x22, 0x7a,
-	0x10, 0x63, 0xf5, 0xc0, 0xc6, 0xea, 0x05, 0x24, 0x26, 0x67, 0xa7, 0x96, 0x48, 0x61, 0x15, 0xd5,
-	0x60, 0x34, 0x60, 0x14, 0xb2, 0xe6, 0xe2, 0x0c, 0x49, 0x2c, 0x0a, 0x2e, 0x29, 0x4a, 0x4d, 0xcc,
-	0x25, 0x55, 0xb3, 0x51, 0x14, 0xd4, 0x11, 0xa9, 0x79, 0x29, 0x42, 0x7e, 0x48, 0x8e, 0x90, 0xd3,
-	0x43, 0xf7, 0xb6, 0x1e, 0xb2, 0x8f, 0xa4, 0x08, 0xc8, 0x83, 0xcc, 0x76, 0xb2, 0xbb, 0xf0, 0x50,
-	0x8e, 0xe1, 0xc6, 0x43, 0x39, 0x86, 0x0f, 0x0f, 0xe5, 0x18, 0x1b, 0x1e, 0xc9, 0x31, 0xae, 0x78,
-	0x24, 0xc7, 0x78, 0xe2, 0x91, 0x1c, 0xe3, 0x85, 0x47, 0x72, 0x8c, 0x0f, 0x1e, 0xc9, 0x31, 0xbe,
-	0x78, 0x24, 0xc7, 0xf0, 0xe1, 0x91, 0x1c, 0xe3, 0x84, 0xc7, 0x72, 0x0c, 0x17, 0x1e, 0xcb, 0x31,
-	0xdc, 0x78, 0x2c, 0xc7, 0x10, 0xc5, 0x01, 0x33, 0x33, 0x89, 0x0d, 0x1c, 0x98, 0xc6, 0x80, 0x01,
-	0x00, 0x3a, 0xfe, 0x2e, 0xe7, 0x92, 0x01, 0x00, 0x00,
+	// 397 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x92, 0xcd, 0xae, 0xd2, 0x40,
+	0x14, 0xc7, 0x3b, 0x5c, 0xef, 0x0d, 0x77, 0x44, 0x42, 0x26, 0x2c, 0x48, 0x17, 0x63, 0xd3, 0x15,
+	0x89, 0xc9, 0xa0, 0xb8, 0x21, 0x90, 0x98, 0x88, 0xca, 0xc6, 0x68, 0x4c, 0xd1, 0x0d, 0xbb, 0x81,
+	0x9e, 0x9a, 0x86, 0x32, 0xad, 0x9d, 0x29, 0xc9, 0xec, 0x7c, 0x04, 0xdf, 0xc1, 0x8d, 0x8f, 0xe2,
+	0xb2, 0x4b, 0x96, 0x52, 0x36, 0x2e, 0x79, 0x04, 0xd3, 0x29, 0x28, 0x7e, 0x10, 0xe2, 0xee, 0x9c,
+	0xff, 0xcc, 0xef, 0x7c, 0xfc, 0x67, 0x70, 0x33, 0x08, 0x23, 0x90, 0x5a, 0x2c, 0x58, 0x92, 0xc6,
+	0x2a, 0x26, 0xad, 0x55, 0x3c, 0xd7, 0xec, 0xa7, 0xb8, 0x7e, 0x64, 0x3b, 0xa1, 0x50, 0x90, 0x0a,
+	0x1e, 0xf5, 0x02, 0x99, 0xa9, 0x30, 0xea, 0x29, 0x9d, 0x80, 0xec, 0x49, 0xc5, 0x55, 0xc5, 0xb8,
+	0x23, 0x7c, 0x6f, 0x12, 0x0a, 0xff, 0x5d, 0xe2, 0xc1, 0x87, 0x0c, 0xa4, 0x22, 0x6d, 0x7c, 0x2d,
+	0x15, 0x4f, 0x55, 0x07, 0x39, 0xa8, 0x7b, 0xeb, 0x55, 0x49, 0xa9, 0x0a, 0xbe, 0x02, 0xd9, 0xa9,
+	0x39, 0x57, 0xa5, 0x6a, 0x12, 0xf7, 0x33, 0xc2, 0xcd, 0x23, 0x2d, 0x93, 0x58, 0x48, 0x38, 0x83,
+	0x3f, 0xc5, 0xd7, 0x41, 0x9c, 0x09, 0xdf, 0xe0, 0x77, 0xfb, 0x0f, 0xd8, 0x9f, 0x93, 0xb2, 0xdf,
+	0xcb, 0xb0, 0x49, 0x79, 0xfb, 0x85, 0x50, 0xa9, 0xf6, 0x2a, 0xd2, 0x1e, 0x60, 0xfc, 0x4b, 0x24,
+	0x2d, 0x7c, 0xb5, 0x04, 0x7d, 0x68, 0x52, 0x86, 0x65, 0xe3, 0x35, 0x8f, 0x32, 0xe8, 0xd4, 0xaa,
+	0xc6, 0x26, 0x19, 0xd6, 0x06, 0xc8, 0x75, 0x71, 0x63, 0xac, 0x15, 0xc8, 0x57, 0x20, 0x25, 0x7f,
+	0x0f, 0x84, 0xe0, 0x3b, 0x3e, 0x57, 0xdc, 0xc0, 0x0d, 0xcf, 0xc4, 0xfd, 0x1c, 0xe1, 0xfa, 0x24,
+	0x8c, 0x60, 0xaa, 0xc5, 0x82, 0x0c, 0x71, 0xfd, 0x79, 0x18, 0x04, 0xcf, 0xe2, 0x44, 0x93, 0x36,
+	0xab, 0x9c, 0x63, 0xc6, 0x39, 0xf6, 0x86, 0x2f, 0x96, 0xa0, 0xec, 0x7f, 0xaa, 0x5d, 0xf4, 0x10,
+	0x91, 0x11, 0xbe, 0x7d, 0xcb, 0xd3, 0xa9, 0x4a, 0x81, 0xaf, 0xfe, 0x1b, 0x7e, 0x89, 0x6f, 0x2a,
+	0x1f, 0xc8, 0xfd, 0xf3, 0x0e, 0x99, 0x67, 0xb2, 0x9d, 0x4b, 0x16, 0xf6, 0x67, 0x87, 0x8d, 0x40,
+	0xf8, 0xe4, 0xf5, 0xc9, 0x46, 0xf4, 0x6f, 0xf2, 0xd4, 0x1e, 0xfb, 0xc2, 0x79, 0x39, 0xe8, 0xf8,
+	0x49, 0xbe, 0xa5, 0xd6, 0x66, 0x4b, 0xad, 0xfd, 0x96, 0xa2, 0x8f, 0x05, 0x45, 0x5f, 0x0a, 0x8a,
+	0xbe, 0x16, 0x14, 0xe5, 0x05, 0x45, 0xdf, 0x0a, 0x8a, 0xbe, 0x17, 0xd4, 0xda, 0x17, 0x14, 0x7d,
+	0xda, 0x51, 0x2b, 0xdf, 0x51, 0x6b, 0xb3, 0xa3, 0xd6, 0xac, 0x7e, 0xac, 0x39, 0xbf, 0x31, 0x9f,
+	0xef, 0xf1, 0x8f, 0x01, 0x00, 0xe5, 0x87, 0x9b, 0xfd, 0xc2, 0x02, 0x00, 0x00,
 }
 
+func (this *FindUpRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*FindUpRequest)
+	if !ok {
+		that2, ok := that.(FindUpRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Start != that1.Start {
+		return false
+	}
+	if len(this.Names) != len(that1.Names) {
+		return false
+	}
+	for i := range this.Names {
+		if this.Names[i] != that1.Names[i] {
+			return false
+		}
+	}
+	return true
+}
+func (this *FindUpResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*FindUpResponse)
+	if !ok {
+		that2, ok := that.(FindUpResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Start != that1.Start {
+		return false
+	}
+	if len(this.Found) != len(that1.Found) {
+		return false
+	}
+	for i := range this.Found {
+		if this.Found[i] != that1.Found[i] {
+			return false
+		}
+	}
+	return true
+}
 func (this *BytesMessage) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -124,6 +306,40 @@ func (this *BytesMessage) Equal(that interface{}) bool {
 		return false
 	}
 	return true
+}
+func (this *FindUpRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&filesync.FindUpRequest{")
+	s = append(s, "Start: "+fmt.Sprintf("%#v", this.Start)+",\n")
+	s = append(s, "Names: "+fmt.Sprintf("%#v", this.Names)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *FindUpResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&filesync.FindUpResponse{")
+	s = append(s, "Start: "+fmt.Sprintf("%#v", this.Start)+",\n")
+	keysForFound := make([]string, 0, len(this.Found))
+	for k, _ := range this.Found {
+		keysForFound = append(keysForFound, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForFound)
+	mapStringForFound := "map[string]string{"
+	for _, k := range keysForFound {
+		mapStringForFound += fmt.Sprintf("%#v: %#v,", k, this.Found[k])
+	}
+	mapStringForFound += "}"
+	if this.Found != nil {
+		s = append(s, "Found: "+mapStringForFound+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
 }
 func (this *BytesMessage) GoString() string {
 	if this == nil {
@@ -158,6 +374,9 @@ const _ = grpc.SupportPackageIsVersion4
 type FileSyncClient interface {
 	DiffCopy(ctx context.Context, opts ...grpc.CallOption) (FileSync_DiffCopyClient, error)
 	TarStream(ctx context.Context, opts ...grpc.CallOption) (FileSync_TarStreamClient, error)
+	// FindUp looks for each name in a directory and then in each of its
+	// parents, up to the root, in one call.
+	FindUp(ctx context.Context, in *FindUpRequest, opts ...grpc.CallOption) (*FindUpResponse, error)
 }
 
 type fileSyncClient struct {
@@ -230,10 +449,22 @@ func (x *fileSyncTarStreamClient) Recv() (*types.Packet, error) {
 	return m, nil
 }
 
+func (c *fileSyncClient) FindUp(ctx context.Context, in *FindUpRequest, opts ...grpc.CallOption) (*FindUpResponse, error) {
+	out := new(FindUpResponse)
+	err := c.cc.Invoke(ctx, "/moby.filesync.v1.FileSync/FindUp", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FileSyncServer is the server API for FileSync service.
 type FileSyncServer interface {
 	DiffCopy(FileSync_DiffCopyServer) error
 	TarStream(FileSync_TarStreamServer) error
+	// FindUp looks for each name in a directory and then in each of its
+	// parents, up to the root, in one call.
+	FindUp(context.Context, *FindUpRequest) (*FindUpResponse, error)
 }
 
 // UnimplementedFileSyncServer can be embedded to have forward compatible implementations.
@@ -245,6 +476,9 @@ func (*UnimplementedFileSyncServer) DiffCopy(srv FileSync_DiffCopyServer) error 
 }
 func (*UnimplementedFileSyncServer) TarStream(srv FileSync_TarStreamServer) error {
 	return status.Errorf(codes.Unimplemented, "method TarStream not implemented")
+}
+func (*UnimplementedFileSyncServer) FindUp(ctx context.Context, req *FindUpRequest) (*FindUpResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FindUp not implemented")
 }
 
 func RegisterFileSyncServer(s *grpc.Server, srv FileSyncServer) {
@@ -303,10 +537,33 @@ func (x *fileSyncTarStreamServer) Recv() (*types.Packet, error) {
 	return m, nil
 }
 
+func _FileSync_FindUp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FindUpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileSyncServer).FindUp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/moby.filesync.v1.FileSync/FindUp",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileSyncServer).FindUp(ctx, req.(*FindUpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _FileSync_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "moby.filesync.v1.FileSync",
 	HandlerType: (*FileSyncServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "FindUp",
+			Handler:    _FileSync_FindUp_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "DiffCopy",
@@ -428,6 +685,94 @@ var _FileSend_serviceDesc = grpc.ServiceDesc{
 	Metadata: "filesync.proto",
 }
 
+func (m *FindUpRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *FindUpRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *FindUpRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Names) > 0 {
+		for iNdEx := len(m.Names) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Names[iNdEx])
+			copy(dAtA[i:], m.Names[iNdEx])
+			i = encodeVarintFilesync(dAtA, i, uint64(len(m.Names[iNdEx])))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.Start) > 0 {
+		i -= len(m.Start)
+		copy(dAtA[i:], m.Start)
+		i = encodeVarintFilesync(dAtA, i, uint64(len(m.Start)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *FindUpResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *FindUpResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *FindUpResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Found) > 0 {
+		for k := range m.Found {
+			v := m.Found[k]
+			baseI := i
+			i -= len(v)
+			copy(dAtA[i:], v)
+			i = encodeVarintFilesync(dAtA, i, uint64(len(v)))
+			i--
+			dAtA[i] = 0x12
+			i -= len(k)
+			copy(dAtA[i:], k)
+			i = encodeVarintFilesync(dAtA, i, uint64(len(k)))
+			i--
+			dAtA[i] = 0xa
+			i = encodeVarintFilesync(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.Start) > 0 {
+		i -= len(m.Start)
+		copy(dAtA[i:], m.Start)
+		i = encodeVarintFilesync(dAtA, i, uint64(len(m.Start)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *BytesMessage) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -469,6 +814,46 @@ func encodeVarintFilesync(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
+func (m *FindUpRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Start)
+	if l > 0 {
+		n += 1 + l + sovFilesync(uint64(l))
+	}
+	if len(m.Names) > 0 {
+		for _, s := range m.Names {
+			l = len(s)
+			n += 1 + l + sovFilesync(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *FindUpResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Start)
+	if l > 0 {
+		n += 1 + l + sovFilesync(uint64(l))
+	}
+	if len(m.Found) > 0 {
+		for k, v := range m.Found {
+			_ = k
+			_ = v
+			mapEntrySize := 1 + len(k) + sovFilesync(uint64(len(k))) + 1 + len(v) + sovFilesync(uint64(len(v)))
+			n += mapEntrySize + 1 + sovFilesync(uint64(mapEntrySize))
+		}
+	}
+	return n
+}
+
 func (m *BytesMessage) Size() (n int) {
 	if m == nil {
 		return 0
@@ -488,6 +873,38 @@ func sovFilesync(x uint64) (n int) {
 func sozFilesync(x uint64) (n int) {
 	return sovFilesync(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
+func (this *FindUpRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&FindUpRequest{`,
+		`Start:` + fmt.Sprintf("%v", this.Start) + `,`,
+		`Names:` + fmt.Sprintf("%v", this.Names) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *FindUpResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	keysForFound := make([]string, 0, len(this.Found))
+	for k, _ := range this.Found {
+		keysForFound = append(keysForFound, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForFound)
+	mapStringForFound := "map[string]string{"
+	for _, k := range keysForFound {
+		mapStringForFound += fmt.Sprintf("%v: %v,", k, this.Found[k])
+	}
+	mapStringForFound += "}"
+	s := strings.Join([]string{`&FindUpResponse{`,
+		`Start:` + fmt.Sprintf("%v", this.Start) + `,`,
+		`Found:` + mapStringForFound + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func (this *BytesMessage) String() string {
 	if this == nil {
 		return "nil"
@@ -505,6 +922,329 @@ func valueToStringFilesync(v interface{}) string {
 	}
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
+}
+func (m *FindUpRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowFilesync
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: FindUpRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: FindUpRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Start", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFilesync
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthFilesync
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthFilesync
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Start = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Names", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFilesync
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthFilesync
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthFilesync
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Names = append(m.Names, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipFilesync(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthFilesync
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *FindUpResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowFilesync
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: FindUpResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: FindUpResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Start", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFilesync
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthFilesync
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthFilesync
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Start = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Found", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFilesync
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFilesync
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFilesync
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Found == nil {
+				m.Found = make(map[string]string)
+			}
+			var mapkey string
+			var mapvalue string
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowFilesync
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					var stringLenmapkey uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowFilesync
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapkey |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapkey := int(stringLenmapkey)
+					if intStringLenmapkey < 0 {
+						return ErrInvalidLengthFilesync
+					}
+					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey < 0 {
+						return ErrInvalidLengthFilesync
+					}
+					if postStringIndexmapkey > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+					iNdEx = postStringIndexmapkey
+				} else if fieldNum == 2 {
+					var stringLenmapvalue uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowFilesync
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapvalue |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapvalue := int(stringLenmapvalue)
+					if intStringLenmapvalue < 0 {
+						return ErrInvalidLengthFilesync
+					}
+					postStringIndexmapvalue := iNdEx + intStringLenmapvalue
+					if postStringIndexmapvalue < 0 {
+						return ErrInvalidLengthFilesync
+					}
+					if postStringIndexmapvalue > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = string(dAtA[iNdEx:postStringIndexmapvalue])
+					iNdEx = postStringIndexmapvalue
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipFilesync(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
+						return ErrInvalidLengthFilesync
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.Found[mapkey] = mapvalue
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipFilesync(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthFilesync
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }
 func (m *BytesMessage) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)

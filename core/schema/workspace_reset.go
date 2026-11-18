@@ -88,7 +88,7 @@ func (s *workspaceSchema) withReset(ctx context.Context, parent dagql.ObjectResu
 		// commit's checkout leaves everything since that commit uncommitted.
 		// Read the complete frozen source, not git.uncommitted.After: a clean
 		// Git-ref workspace represents no changes as scratch -> scratch.
-		// Source reads also exclude read-only mounts, which are restored as
+		// Source reads also exclude mounts, which are restored as
 		// metadata below rather than becoming uncommitted files.
 		root, err := workspaceRootfs(frozen.Self())
 		if err != nil {
@@ -177,7 +177,7 @@ func resolveWorkspaceResetTarget(ctx context.Context, srv *dagql.Server, checkou
 	if err := srv.Select(ctx, checkout, &sha,
 		dagql.Selector{Field: "asGit"},
 		dagql.Selector{Field: "ref", Args: []dagql.NamedInput{{Name: "name", Value: dagql.NewString(target)}}},
-		dagql.Selector{Field: "commitSHA"},
+		dagql.Selector{Field: "commitSha"},
 	); err != nil {
 		return "", fmt.Errorf("resolve %q in this workspace's repository: %w", target, err)
 	}

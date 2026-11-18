@@ -142,6 +142,26 @@ func (m *Caller) Message(ctx context.Context, address string) (string, error) {
 		require.Equal(t, "hi from hello", out)
 	})
 
+	t.Run("local address resolves in a git workspace's tree", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		workspaceDir := core.NewQuery(c).Container().From(alpineImage).
+			WithWorkdir("/src").
+			With(callerModule).
+			WithNewFile(".dagger/modules/hello/dagger-module.toml", serveModuleHelloManifest).
+			WithNewFile(".dagger/modules/hello/main.dang", serveModuleHelloSource).
+			Directory("/src")
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceDir)
+
+		out, err := core.NewQuery(c).Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/empty").
+			With(workspaceSelectionDaggerCall("-W", remoteRef, "caller", "message", "--address=../hello")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from hello", out)
+	})
+
 	t.Run("remote address resolves without a workspace lookup", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

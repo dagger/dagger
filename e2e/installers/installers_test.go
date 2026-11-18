@@ -18,7 +18,9 @@ import (
 func TestBashScript(t *testing.T) {
 	ctx := t.Context()
 
-	client, err := dagger.Connect(ctx)
+	// The client's session ends with the context it connects with, and ctx
+	// ends before the test's cleanups run, including the Close below.
+	client, err := dagger.Connect(context.WithoutCancel(ctx))
 	if err != nil {
 		t.Fatalf("connect to dagger: %v", err)
 	}
@@ -120,7 +122,7 @@ func TestBashScript(t *testing.T) {
 func TestInstallHeadDuringPublish(t *testing.T) {
 	ctx := t.Context()
 
-	client, err := dagger.Connect(ctx)
+	client, err := dagger.Connect(context.WithoutCancel(ctx))
 	if err != nil {
 		t.Fatalf("connect to dagger: %v", err)
 	}

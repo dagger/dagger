@@ -15,10 +15,12 @@ I/O construct:
 - `LLM.withWorkspace` / `LLM.workspace` bind the workspace explicitly.
   `Query.llm` starts unbound; the CLI and agent composition select a workspace.
 - `MCP.baseServer` (`core/mcp.go`) selects the **base schema for core tools and
-  dispatch**: the current client's served modules when unbound, the owning
-  client's served modules for a live workspace, or just core for a value
-  workspace. Value-workspace modules load from their trees during explicit
-  agent composition. Bound object tools retain their own defining schemas.
+  dispatch**: the current client's served modules when unbound, or else the
+  bound workspace's installed modules: a live workspace's as its owning client
+  serves them, a value workspace's (a snapshot, an agent's checkout) loaded
+  from its own tree, either with its pending edits to `dagger.toml` and module
+  sources applied, best effort. Bound object tools retain their own defining
+  schemas.
 - The LLM's edits stage into the workspace's in-memory **overlay**
   (`Workspace.withChanges` etc., from the workspace overlay & export branch); a
   single `Workspace.export` writes the accumulated diff to the local checkout.

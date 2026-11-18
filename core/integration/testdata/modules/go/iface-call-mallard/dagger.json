@@ -1,7 +1,0 @@
-{
-  "name": "mallard",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  }
-}

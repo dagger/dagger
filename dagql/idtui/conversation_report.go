@@ -16,8 +16,12 @@ import (
 // non-LLM trace, or one whose only messages are boundary-contained fixtures), so
 // the caller can fall back to the progress tree. It is the message analog of
 // checksReport.
+//
+// A report rendered with ReportRenderOpts.HideConversation (an LLM tool call's
+// own result) gets nil too: a sub-agent transcript beneath the tool call is
+// exactly the context the caller delegated in order not to read.
 func (fe *frontendPretty) conversationReport(ctx tuist.Context, r *renderer, zoomed bool) []string {
-	if zoomed {
+	if zoomed || fe.reportHideConversation {
 		return nil
 	}
 	convLines := fe.renderConversationSection(ctx, r)
@@ -81,12 +85,46 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 	// no longer has any of them.
 	superseded := fe.db.SupersededBy(node.Span) != nil
 
+	// A Timeout's row presents as the call it runs (its nested call is left
+	// out below), so what that call ran -- checks, tests, generators,
+	// services, beneath its own boundary -- rolls up here.
+	wrapped := fe.db.WrappedCallSpan(node.Span)
+	rollupSpan := node.Span
+	if wrapped != nil {
+		rollupSpan = wrapped
+	}
+
+	// The rollups print beneath the call's output, but render first: a call
+	// whose rollups report what it ran leaves its raw result out (see
+	// hidesToolResult). The checks rollup nests each check's tests, so render
+	// it first under forked claims; the TESTS rollup then covers only the
+	// cases it left out.
+	var rollups [][]string
+	rolledUp := false
+	if !superseded {
+		var checks []string
+		checkClaims := fe.withForkedClaims(func() {
+			checks = indentLines("  ", fe.renderMessageChecks(ctx, r, rollupSpan))
+		})
+		checkClaims.commit()
+		rollups = [][]string{
+			fe.renderMessageTests(ctx, rollupSpan, len(indent), checkClaims),
+			checks,
+			indentLines("  ", fe.renderMessageGenerators(ctx, r, rollupSpan)),
+		}
+		for _, rollup := range rollups {
+			rolledUp = rolledUp || len(rollup) > 0
+		}
+		// Services don't count (see renderRowExtras).
+		rollups = append(rollups, indentLines("  ", fe.renderMessageServices(ctx, r, rollupSpan)))
+	}
+
 	// Prompt/thinking/response spans (Message != "") render their content via
 	// renderStep -> renderStepLogs. Tool-call display spans carry their arguments
 	// and rolled-up execution output as logs with no Message, so render those
 	// explicitly here (the same log block a failed check's cause uses).
 	if node.Span.Message == "" && !superseded {
-		fe.renderMessageLogs(rowOut, node.Span)
+		fe.renderMessageLogs(rowOut, node.Span, fe.contentWidth-len(indent), rolledUp)
 	}
 
 	for _, line := range strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n") {
@@ -100,19 +138,7 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 		return
 	}
 
-	// The checks rollup nests each check's tests, so render it first under
-	// forked claims; the TESTS rollup then covers only the cases it left out.
-	var checks []string
-	checkClaims := fe.withForkedClaims(func() {
-		checks = indentLines("  ", fe.renderMessageChecks(ctx, r, node.Span))
-	})
-	checkClaims.commit()
-	for _, rollup := range [][]string{
-		fe.renderMessageTests(ctx, node.Span, len(indent), checkClaims),
-		checks,
-		indentLines("  ", fe.renderMessageGenerators(ctx, r, node.Span)),
-		indentLines("  ", fe.renderMessageServices(ctx, r, node.Span)),
-	} {
+	for _, rollup := range rollups {
 		if len(rollup) == 0 {
 			continue
 		}
@@ -123,6 +149,14 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 	}
 
 	for _, child := range node.Children {
+		if wrapped != nil && child.Span == wrapped {
+			// The Timeout's row already said it all. Keep what's beneath
+			// its nested call.
+			for _, grandchild := range child.Children {
+				fe.renderMessageNode(ctx, out, r, grandchild, depth+1)
+			}
+			continue
+		}
 		fe.renderMessageNode(ctx, out, r, child, depth+1)
 	}
 }
@@ -186,7 +220,7 @@ func (fe *frontendPretty) renderMessageTests(ctx tuist.Context, span *dagui.Span
 		Logs:            fe.logs.Logs,
 		SummaryIndent:   2,
 		SummaryLogLines: -1,
-		TraceID:         fe.traceID,
+		TraceCommand:    fe.traceViewCommand(),
 	}
 	width := ctx.Width - outerIndent
 	if width <= 0 {
@@ -228,19 +262,47 @@ func (fe *frontendPretty) indentMessageNodeLogs(span *dagui.Span, width int) {
 	}
 }
 
-// renderMessageLogs renders a tool-call node's arguments at verbose levels and,
-// beneath them, the result (or error) the LLM saw. Read and Grep keep their
-// regular result bodies collapsed; Grep's final summary line is in the header.
-// The arguments are the tool-call display span's application/json records; the
-// output is on that span or on the nested execution span. Cloud's descendant
-// roll-up doesn't return nested execution output here (it crosses the tool call's
-// RollUpLogs boundary), so the report fetches the exec span's own logs directly
-// (recalculateViewLocked).
-func (fe *frontendPretty) renderMessageLogs(out TermOutput, span *dagui.Span) {
-	if fe.spanVerbosity(span) >= toolArgsVerbosity {
+// renderMessageLogs renders a tool-call node's code body (see toolCodeBody),
+// its JSON arguments at verbose levels, and, beneath them, the result (or
+// error) the LLM saw -- unless a richer rendering of it shows instead, as a
+// collapsed live row has it (see hidesToolResult; rolledUp: its rollups
+// render below). Grep's final summary line is in the header. The arguments
+// are the tool-call display span's application/json records; the output is
+// on that span or on the nested execution span. Cloud's descendant roll-up
+// doesn't return nested execution output here (it crosses the tool call's
+// RollUpLogs boundary), so the report fetches the exec span's own logs
+// directly (recalculateViewLocked).
+func (fe *frontendPretty) renderMessageLogs(out TermOutput, span *dagui.Span, width int, rolledUp bool) {
+	// A Dang snippet is the call, as Write's contents are: show it as code,
+	// lined up under the call as the live row has it. A snippet shows in
+	// full; a written file, which can run to thousands of lines, as a
+	// collapsed row shows it, and a DangCheck not at all, its header saying
+	// what it checks -- unless the report shows tool calls' arguments, which
+	// then follow, as the model wrote them, for every call.
+	indent := ""
+	if fe.shellTranscript() && span.LLMTool != "" {
+		indent = "  "
+	}
+	verbose := fe.spanVerbosity(span) >= toolArgsVerbosity
+	if body, _, ok := fe.toolCodeBody(span); ok {
+		if !body.check || verbose {
+			maxLines := 0
+			if body.file && !verbose {
+				maxLines = codeBodyCollapsedLines
+			}
+			for _, line := range fe.toolBodyLines(span, width-len(indent), maxLines, true) {
+				fmt.Fprintln(out, indent+line)
+			}
+		}
+	}
+	if verbose {
 		fe.renderSpanLogBlock(out, span, span, 0, true)
 	}
-	if span.CollapsesToolOutput() {
+	// The report can't expand a row, so where it shows tool calls'
+	// arguments, it shows the results their richer renderings stand in for
+	// too -- a check's diagnostics, what a Write changed -- all but Read's
+	// and Grep's output, which stays out at any verbosity.
+	if fe.hidesToolResult(span, rolledUp) && (!verbose || fe.db.CollapsesToolOutput(span)) {
 		return
 	}
 	fe.renderSpanLogBlock(out, span, span, 0, false)

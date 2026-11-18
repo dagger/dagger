@@ -659,3 +659,46 @@ exec %q "$@"
 type remoteGitMaintenanceServer struct{ *mockServer }
 
 func (*remoteGitMaintenanceServer) DNS() *oci.DNSConfig { return &oci.DNSConfig{} }
+
+func TestGitMirrorFetchSHARefusals(t *testing.T) {
+	source, base, _ := gitMirrorTestSource(t)
+	// advertised by no ref, unlike base, which a tag points at
+	history := gitMirrorTestRun(t, source, "rev-parse", base+"~")
+	missing := "0123456789abcdef0123456789abcdef01234567"
+	fetch := func(t *testing.T, protocol string, ref *gitutil.Ref) (bool, error) {
+		repo, git, _ := gitMirrorTestRepo(t, source)
+		git = git.New(gitutil.WithArgs("-c", "protocol.version="+protocol))
+		return repo.fetchObjects(context.Background(), git, 0, false, []*RemoteGitRef{{Ref: ref}})
+	}
+
+	t.Run("missing commit", func(t *testing.T) {
+		for _, protocol := range []string{"0", "2"} {
+			t.Run("v"+protocol, func(t *testing.T) {
+				if protocol == "0" {
+					// v0 servers refuse unadvertised objects unless configured to serve them
+					gitMirrorTestRun(t, source, "config", "uploadpack.allowReachableSHA1InWant", "true")
+					defer gitMirrorTestRun(t, source, "config", "--unset", "uploadpack.allowReachableSHA1InWant")
+				}
+				_, err := fetch(t, protocol, &gitutil.Ref{SHA: missing})
+				require.ErrorIs(t, err, gitutil.ErrCommitNotFound)
+				require.NotErrorIs(t, err, gitutil.ErrSHAFetchUnsupported)
+				require.ErrorContains(t, err, missing)
+			})
+		}
+	})
+
+	t.Run("remote serves no unadvertised object", func(t *testing.T) {
+		_, err := fetch(t, "0", &gitutil.Ref{SHA: history})
+		require.ErrorIs(t, err, gitutil.ErrSHAFetchUnsupported)
+		require.NotErrorIs(t, err, gitutil.ErrCommitNotFound)
+	})
+
+	t.Run("remote serves only advertised tips", func(t *testing.T) {
+		// the server replies as for a missing commit, so the named ref is retried
+		gitMirrorTestRun(t, source, "config", "uploadpack.allowTipSHA1InWant", "true")
+		defer gitMirrorTestRun(t, source, "config", "--unset", "uploadpack.allowTipSHA1InWant")
+		retried, err := fetch(t, "0", &gitutil.Ref{Name: "refs/heads/main", SHA: history})
+		require.NoError(t, err)
+		require.True(t, retried)
+	})
+}

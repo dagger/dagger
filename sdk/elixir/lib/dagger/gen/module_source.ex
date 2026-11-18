@@ -60,12 +60,15 @@ defmodule Dagger.ModuleSource do
   @doc """
   The client-facing introspection schema JSON file for this module source.
 
-  This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+  This is the schema consumed by client codegen: unlike introspectionSchemaJson (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
   """
-  @spec client_schema_introspection_json(t()) :: Dagger.File.t()
-  def client_schema_introspection_json(%__MODULE__{} = module_source) do
+  @spec client_schema_introspection_json(t(), [{:client_version, String.t() | nil}]) ::
+          Dagger.File.t()
+  def client_schema_introspection_json(%__MODULE__{} = module_source, optional_args \\ []) do
     query_builder =
-      module_source.query_builder |> QB.select("clientSchemaIntrospectionJSON")
+      module_source.query_builder
+      |> QB.select("clientSchemaIntrospectionJson")
+      |> QB.maybe_put_arg("clientVersion", optional_args[:client_version])
 
     %Dagger.File{
       query_builder: query_builder,
@@ -254,7 +257,7 @@ defmodule Dagger.ModuleSource do
   @spec html_repo_url(t()) :: {:ok, String.t()} | {:error, term()}
   def html_repo_url(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("htmlRepoURL")
+      module_source.query_builder |> QB.select("htmlRepoUrl")
 
     Client.execute(module_source.client, query_builder)
   end
@@ -265,7 +268,7 @@ defmodule Dagger.ModuleSource do
   @spec html_url(t()) :: {:ok, String.t()} | {:error, term()}
   def html_url(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("htmlURL")
+      module_source.query_builder |> QB.select("htmlUrl")
 
     Client.execute(module_source.client, query_builder)
   end
@@ -291,7 +294,7 @@ defmodule Dagger.ModuleSource do
   @spec introspection_schema_json(t()) :: Dagger.File.t()
   def introspection_schema_json(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("introspectionSchemaJSON")
+      module_source.query_builder |> QB.select("introspectionSchemaJson")
 
     %Dagger.File{
       query_builder: query_builder,
@@ -344,6 +347,30 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder |> QB.select("moduleOriginalName")
 
     Client.execute(module_source.client, query_builder)
+  end
+
+  @doc """
+  The names the engine gives this module's own declarations, by the naming rules of the version the module is named by: its engine version, capped at the engine's own.
+
+  Modules declaring a version before the identifier casing cut get the legacy strcase names; later ones get the engine's identifier naming rules.
+
+  For SDK codegen, which must reproduce these names before the module is loaded: this reads only the source's name, original name and engine version, so it answers before the module's entrypoint is generated.
+
+  It answers for the module under its own name (moduleName). A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.
+
+  > #### Experimental {: .warning}
+  >
+  > "Identifier casing APIs are likely to change."
+  """
+  @spec naming(t()) :: Dagger.ModuleNaming.t()
+  def naming(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("naming")
+
+    %Dagger.ModuleNaming{
+      query_builder: query_builder,
+      client: module_source.client
+    }
   end
 
   @doc """
@@ -636,7 +663,7 @@ defmodule Dagger.ModuleSource do
   @spec with_sdk(t(), String.t()) :: Dagger.ModuleSource.t()
   def with_sdk(%__MODULE__{} = module_source, source) do
     query_builder =
-      module_source.query_builder |> QB.select("withSDK") |> QB.put_arg("source", source)
+      module_source.query_builder |> QB.select("withSdk") |> QB.put_arg("source", source)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

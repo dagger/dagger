@@ -72,16 +72,26 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 		slog.Warn("session telemetry not published to Cloud: cannot configure the Cloud exporters", "session", sess.sessionID, "error", err)
 		return
 	}
+	// The forwarder's cache span lane exports on a span exporter of its own
+	// (see cloudForwarder).
+	cacheSpans, err := enginetel.NewCloudSpanExporter(context.Background(), md.CloudAuth, tokenRefresh, md.CloudURL)
+	if err != nil {
+		slog.Warn("session telemetry not published to Cloud: cannot configure the Cloud exporters", "session", sess.sessionID, "error", err)
+		ctx, cancel := context.WithTimeout(context.Background(), sessionTelemetryFlushTimeout)
+		defer cancel()
+		_ = errors.Join(spans.Shutdown(ctx), logs.Shutdown(ctx), metrics.Shutdown(ctx))
+		return
+	}
 	bound := cloudFlushBound{sessionID: sess.sessionID, timeout: sessionTelemetryFlushTimeout, budget: &cloudShutdownBudget{}}
 	if srv.sessionCloudFlushTimeout > 0 {
 		bound.timeout = srv.sessionCloudFlushTimeout
 	}
-	forwarder, err := srv.startCloudForwarder(sess.sessionID, sess.mainClientCallerID, spans, logs, bound.timeout)
+	forwarder, err := srv.startCloudForwarder(sess.sessionID, sess.mainClientCallerID, spans, cacheSpans, logs, bound.timeout)
 	if err != nil {
 		slog.Warn("session telemetry not published to Cloud: cannot read the main client's telemetry store", "session", sess.sessionID, "error", err)
 		ctx, cancel := context.WithTimeout(context.Background(), bound.timeout)
 		defer cancel()
-		_ = errors.Join(spans.Shutdown(ctx), logs.Shutdown(ctx), metrics.Shutdown(ctx))
+		_ = errors.Join(spans.Shutdown(ctx), cacheSpans.Shutdown(ctx), logs.Shutdown(ctx), metrics.Shutdown(ctx))
 		return
 	}
 	sess.cloudBound = bound
@@ -91,12 +101,13 @@ func (srv *Server) initializeSessionCloudTelemetry(sess *daggerSession, md *engi
 		sess.drainCloudForwarder(ctx)
 	})
 	sess.cloudMetrics = newCloudMetricQueue(metrics, sess.cloudBound)
+	srv.cloudForwarders.addMetrics(sess.cloudMetrics)
 }
 
 // startCloudForwarder starts forwarding the store of the session's main
-// client to Cloud through spans and logs, keeping the store from collection
-// until the forwarder releases it.
-func (srv *Server) startCloudForwarder(sessionID, mainClientID string, spans sdktrace.SpanExporter, logs sdklog.Exporter, shutdownTimeout time.Duration) (*cloudForwarder, error) {
+// client to Cloud through spans, cacheSpans and logs, keeping the store from
+// collection until the forwarder releases it.
+func (srv *Server) startCloudForwarder(sessionID, mainClientID string, spans, cacheSpans sdktrace.SpanExporter, logs sdklog.Exporter, shutdownTimeout time.Duration) (*cloudForwarder, error) {
 	if srv.clientDBs == nil {
 		return nil, errors.New("no telemetry stores")
 	}
@@ -112,7 +123,7 @@ func (srv *Server) startCloudForwarder(sessionID, mainClientID string, spans sdk
 	}
 	var forwarder *cloudForwarder
 	released := make(chan struct{})
-	forwarder = newCloudForwarder(sessionID, mainClientID, db, spans, logs, tuning, func() {
+	forwarder = newCloudForwarder(sessionID, mainClientID, db, spans, cacheSpans, logs, tuning, func() {
 		<-released
 		srv.cloudForwarders.remove(forwarder)
 	})
@@ -531,10 +542,12 @@ const cloudMetricQueueSize = 256
 // last lease is released, the /shutdown request's own cleanup included, so
 // its exports must never wait on Cloud: Export copies the collection and
 // returns, ForceFlush returns at once, and the queue drains in the
-// background, each export within the bound. The session's teardown gets one
-// bound for draining what is left, the export in flight and releasing the
-// exporter. Beyond cloudMetricQueueSize the oldest whole collection is
-// dropped, and with it the samples it carries.
+// background, each export within the bound. The session's teardown finishes
+// the queue without waiting: one bound for draining what is left, the export
+// in flight and releasing the exporter runs in the background, and the
+// engine's stop waits for it as for the session's forwarder. Beyond
+// cloudMetricQueueSize the oldest whole collection is dropped, and with it
+// the samples it carries.
 //
 // The readers over it collect with delta temporality: see Temporality.
 type cloudMetricQueue struct {
@@ -552,7 +565,10 @@ type cloudMetricQueue struct {
 	closed        bool
 	wake          chan struct{}
 	drained       chan struct{}
-	shutdown      sync.Once
+	finished      sync.Once
+	// released is closed once the queue is finished, drained or out of time,
+	// and its exporter released.
+	released chan struct{}
 }
 
 type cloudMetricQueueEntry struct {
@@ -563,12 +579,13 @@ type cloudMetricQueueEntry struct {
 func newCloudMetricQueue(next sdkmetric.Exporter, bound cloudFlushBound) *cloudMetricQueue {
 	ctx, cancel := context.WithCancel(context.Background())
 	q := &cloudMetricQueue{
-		next:    next,
-		bound:   bound,
-		ctx:     ctx,
-		cancel:  cancel,
-		wake:    make(chan struct{}, 1),
-		drained: make(chan struct{}),
+		next:     next,
+		bound:    bound,
+		ctx:      ctx,
+		cancel:   cancel,
+		wake:     make(chan struct{}, 1),
+		drained:  make(chan struct{}),
+		released: make(chan struct{}),
 	}
 	go q.run()
 	return q
@@ -661,16 +678,13 @@ func (q *cloudMetricQueue) flush(ctx context.Context) {
 	})
 }
 
-// Shutdown drains the queue, lets the export in flight finish and releases
-// the exporter, all by one deadline: the bound, or ctx's deadline if
-// earlier. At the deadline the export in flight is cancelled and whatever is
-// left is dropped.
-func (q *cloudMetricQueue) Shutdown(ctx context.Context) error {
-	q.shutdown.Do(func() {
+// finish closes the queue to new collections. In the background, it drains
+// the queue, lets the export in flight finish and releases the exporter, all
+// within one bound from now; at the bound the export in flight is cancelled
+// and whatever is left is dropped. It never waits.
+func (q *cloudMetricQueue) finish() {
+	q.finished.Do(func() {
 		deadline := time.Now().Add(q.bound.timeout)
-		if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-			deadline = d
-		}
 		q.mu.Lock()
 		q.closed = true
 		q.mu.Unlock()
@@ -678,34 +692,61 @@ func (q *cloudMetricQueue) Shutdown(ctx context.Context) error {
 		case q.wake <- struct{}{}:
 		default:
 		}
-		timer := time.NewTimer(time.Until(deadline))
-		defer timer.Stop()
-		select {
-		case <-q.drained:
-		case <-timer.C:
-		}
-		q.cancel()
-		<-q.drained
-		q.mu.Lock()
-		dropped := q.dropped + q.queuedMetrics
-		for _, entry := range q.queue {
-			if entry.barrier != nil {
-				close(entry.barrier)
-			}
-		}
-		q.queue = nil
-		q.queuedMetrics = 0
-		q.mu.Unlock()
-		if dropped > 0 {
-			slog.Warn("session metrics not fully published to Cloud", "session", q.bound.sessionID, "dropped", dropped)
-		}
-		releaseCtx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
-		defer cancel()
-		if err := q.next.Shutdown(releaseCtx); err != nil {
-			slog.Warn("session telemetry not fully published to Cloud", "session", q.bound.sessionID, "op", "shutdown metrics", "error", err)
-		}
+		go q.release(deadline)
 	})
+}
+
+// Shutdown finishes the queue and waits until it is released, or ctx ends.
+func (q *cloudMetricQueue) Shutdown(ctx context.Context) error {
+	q.finish()
+	_ = q.waitReleased(ctx)
 	return nil
+}
+
+// stop cancels the export in flight and drops what is left; the queue then
+// releases.
+func (q *cloudMetricQueue) stop() {
+	q.cancel()
+}
+
+// waitReleased blocks until the queue is released, or ctx ends.
+func (q *cloudMetricQueue) waitReleased(ctx context.Context) error {
+	select {
+	case <-q.released:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
+func (q *cloudMetricQueue) release(deadline time.Time) {
+	defer close(q.released)
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	select {
+	case <-q.drained:
+	case <-timer.C:
+	}
+	q.cancel()
+	<-q.drained
+	q.mu.Lock()
+	dropped := q.dropped + q.queuedMetrics
+	for _, entry := range q.queue {
+		if entry.barrier != nil {
+			close(entry.barrier)
+		}
+	}
+	q.queue = nil
+	q.queuedMetrics = 0
+	q.mu.Unlock()
+	if dropped > 0 {
+		slog.Warn("session metrics not fully published to Cloud", "session", q.bound.sessionID, "dropped", dropped)
+	}
+	releaseCtx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	if err := q.next.Shutdown(releaseCtx); err != nil {
+		slog.Warn("session telemetry not fully published to Cloud", "session", q.bound.sessionID, "op", "shutdown metrics", "error", err)
+	}
 }
 
 func (q *cloudMetricQueue) run() {

@@ -35,7 +35,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		if g.Config.ClientConfig.ClientDir == "." {
 			goMod := new(modfile.File)
 			goMod.AddModuleStmt(strings.ToLower(g.Config.ClientConfig.ModuleName))
-			goMod.AddGoStmt(goVersion)
+			goMod.AddGoStmt(newGoModVersion)
 
 			modBody, err := goMod.Format()
 			if err != nil {
@@ -119,7 +119,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		clientGoMod.AddModuleStmt(clientModuleName)
 		// Use the Go SDK's minimum version rather than the codegen runtime version,
 		// so the client go.mod stays compatible with the SDK's requirements.
-		clientGoVersion := goVersion
+		clientGoVersion := newGoModVersion
 		if sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil); err == nil && sdkMod.Go != nil {
 			clientGoVersion = sdkMod.Go.Version
 		}

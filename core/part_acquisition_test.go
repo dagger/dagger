@@ -5,21 +5,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
-	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/opencontainers/go-digest"
-	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
@@ -345,27 +346,12 @@ func TestPartMountReceiverRoles(t *testing.T) {
 	}))
 }
 
-func TestPartPrivateWholeBuiltin(t *testing.T) {
-	ctx, _, cache, srv, server := executionFixture(t)
-	packaged, err := local.NewStore(t.TempDir())
-	require.NoError(t, err)
-	server.builtin = packaged
-	configJSON := []byte(`{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]},"config":{"WorkingDir":"/private"}}`)
-	cfg := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageConfig, Digest: digest.FromBytes(configJSON), Size: int64(len(configJSON))}
-	require.NoError(t, content.WriteBlob(ctx, packaged, "config", bytes.NewReader(configJSON), cfg))
-	raw, err := json.Marshal(ocispec.Manifest{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispec.MediaTypeImageManifest, Config: cfg, Layers: []ocispec.Descriptor{}})
-	require.NoError(t, err)
-	manifest := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: digest.FromBytes(raw), Size: int64(len(raw))}
-	require.NoError(t, content.WriteBlob(ctx, packaged, "manifest", bytes.NewReader(raw), manifest))
-	platform := Platform{OS: "linux", Architecture: "amd64"}
-	ctr := NewContainer(platform)
-	originalLazy := &ContainerBuiltinLazy{LazyState: NewLazyState(), Platform: platform, ManifestDigest: manifest.Digest}
-	ctr.Lazy = originalLazy
-	original := attachTransferObject(t, ctx, cache, srv, "operation-execution", "_builtinContainer", ctr)
-	// The receiver is another cache's: in this one the bundle's recipe is the
-	// original's own entry, which a merge keeps. Both have the builtin.
-	bctx, _, bcache, bsrv, bserver := executionFixture(t)
-	bserver.builtin = packaged
+func TestPartPrivateWholeImport(t *testing.T) {
+	ctx, _, cache, srv, _ := executionFixture(t)
+	original, originalLazy := importTestContainer(t, ctx, cache, srv, "/private")
+	ctr := original.Self()
+	// The receiver is another cache's, which runs the import's records.
+	bctx, _, bcache, bsrv, _ := executionFixture(t)
 	require.NoError(t, cache.WithExportedValues(ctx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
 		importedReply, err := bcache.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
 		imported := importedReply.Imported()
@@ -375,11 +361,7 @@ func TestPartPrivateWholeBuiltin(t *testing.T) {
 		result := loaded.(dagql.ObjectResult[*Container])
 		require.NoError(t, bcache.EvaluateParts(bctx, result, ContainerPartFS))
 		require.Equal(t, "/private", result.Self().Config.WorkingDir)
-		view := result.Self().acquiredOutput.Load()
-		require.NotNil(t, view)
-		require.True(t, view.Payload.Metadata.Consumed)
-		require.Equal(t, containerPartDirectory, view.Payload.Parts[ContainerPartFS].Kind)
-		require.NotEmpty(t, view.Payload.LazyJSON)
+		require.True(t, result.Self().containerPartComputed(bctx, result.Self().lazyOpForRouting(), ContainerPartFS))
 		require.False(t, originalLazy.lazyInitComplete.Load())
 		require.Same(t, originalLazy, ctr.Lazy)
 		require.NoError(t, bcache.Evaluate(bctx, result))
@@ -391,47 +373,123 @@ func (partTestContentSource) Available(dagql.PersistedPartOffer, time.Time) bool
 
 func (partSelectingContentSource) Available(dagql.PersistedPartOffer, time.Time) bool { return true }
 
-type partFixtureTestRef struct {
+// partSourceLogs captures, through a context's logger, the cache's "remote
+// cache part without a source" lines: each is a part that a demand found no
+// source for, so the engine computed it itself.
+type partSourceLogs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *partSourceLogs) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *partSourceLogs) into(ctx context.Context) context.Context {
+	return slog.WithLogger(ctx, slog.New(slog.NewJSONHandler(l, nil)))
+}
+
+// computed returns the entry and part of each part computed for want of a
+// source, in log order.
+func (l *partSourceLogs) computed(t *testing.T) []string {
+	t.Helper()
+	l.mu.Lock()
+	text := l.buf.String()
+	l.mu.Unlock()
+	var out []string
+	for line := range strings.SplitSeq(strings.TrimSpace(text), "\n") {
+		if line == "" {
+			continue
+		}
+		var fields struct {
+			Msg   string `json:"msg"`
+			Entry uint64 `json:"entry"`
+			Part  string `json:"part"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(line), &fields))
+		if fields.Msg == "remote cache part without a source" {
+			out = append(out, fmt.Sprintf("%d/%s", fields.Entry, fields.Part))
+		}
+	}
+	return out
+}
+
+type partTestRef struct {
 	bkcache.ImmutableRef
 	id       string
 	releases int
 }
 
-func (r *partFixtureTestRef) SnapshotID() string            { return r.id }
-func (r *partFixtureTestRef) Release(context.Context) error { r.releases++; return nil }
+func (r *partTestRef) SnapshotID() string            { return r.id }
+func (r *partTestRef) Release(context.Context) error { r.releases++; return nil }
 
-func TestPartFixtureReleaseObserverPrivateFS(t *testing.T) {
-	ordinary := NewContainer(Platform{OS: "linux", Architecture: "amd64"})
-	ordinaryRef := &partFixtureTestRef{id: "ordinary-fs"}
-	ordinary.FS.setValue(partTestDirectory(ordinaryRef, "/"))
-	private := NewContainer(ordinary.Platform)
-	fs, meta, mount := &partFixtureTestRef{id: "private-fs"}, &partFixtureTestRef{id: "private-meta"}, &partFixtureTestRef{id: "private-mount"}
-	private.FS.setValue(partTestDirectory(fs, "/"))
-	private.MetaSnapshot.setValue(meta)
-	mountDir := new(LazyAccessor[*Directory, *Container])
-	mountDir.setValue(partTestDirectory(mount, "/"))
-	private.Mounts = []ContainerMount{{Target: "/mount", DirectorySource: mountDir}}
-	observations := 0
-	observePrivateContainerFSRelease(private, func(id string, err error) {
+// A container restored with its metadata done, as a local restart leaves it,
+// keeps that metadata when another engine re-runs one of its groups privately:
+// the re-run never asks the parent for metadata the record already holds.
+func TestPartPrivateGroupKeepsRecordedMetadata(t *testing.T) {
+	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
+	actx, a, asrv := transferCache(t, aStore, "", "a")
+	platform := Platform{OS: "linux", Architecture: "amd64"}
+	baseFS, _ := aStore.Build(t, nil, "base", "base bytes")
+	baseMeta, _ := aStore.Build(t, nil, "exitCode", "0")
+	base := NewContainer(platform)
+	base.FS.setValue(partTestDirectory(baseFS, "/"))
+	base.MetaSnapshot.setValue(baseMeta)
+	baseRes := attachTransferObject(t, actx, a, asrv, "a", "privateMetadataBase", base)
+	// The parent's metadata has not run on A, so its record leaves it pending.
+	parent := NewContainer(platform)
+	parent.Lazy = &ContainerWithEnvVariableLazy{LazyState: NewLazyState(), Parent: baseRes, Name: "FROM", Value: "parent"}
+	parentRes := attachDelegationChild(t, actx, a, asrv, "a", "withEnvVariable", baseRes, parent)
+	rootfsRef, _ := aStore.Build(t, nil, "rootfs", "rootfs bytes")
+	rootfs := attachTransferObject(t, actx, a, asrv, "a", "privateMetadataRootfs", partTestDirectory(rootfsRef, "/"))
+	childMeta, err := aStore.Manager.GetBySnapshotID(actx, baseMeta.SnapshotID())
+	require.NoError(t, err)
+	child := NewContainer(platform)
+	child.Config.Env = []string{"FROM=parent"}
+	child.MetaSnapshot.setValue(childMeta)
+	op := &ContainerWithRootFSLazy{LazyState: NewLazyState(), Parent: parentRes, Source: rootfs}
+	op.seedConsumedGroups(ContainerLazyGroupMetadata, containerDelegationGroup(ContainerPartExecMeta))
+	child.Lazy = op
+	childRes := attachDelegationChild(t, actx, a, asrv, "a", "withRootfs", parentRes, child)
+
+	bctx, b, bsrv := transferCache(t, bStore, "", "b")
+	var logs partSourceLogs
+	bctx = logs.into(bctx)
+	// The child's execMeta has an address and its fs has none, so its fs is
+	// computed by a private run of its write group.
+	selection := dagql.ValueSelection{Roots: []dagql.AnyResult{childRes}, Outputs: []dagql.SelectedValueOutput{
+		{Result: childRes, Address: dagql.PersistedPartAddress{Part: ContainerPartExecMeta}},
+		{Result: rootfs, Address: dagql.PersistedPartAddress{Part: "snapshot"}},
+	}}
+	require.NoError(t, a.WithExportedValues(actx, selection, config.RefConfig{Compression: compression.New(compression.Uncompressed)}, func(_ context.Context, exported *dagql.ExportedValues) error {
+		providers := partSelectingContentSource{}
+		for _, entry := range exported.Chains.Entries {
+			providers[string(entry.Address.Part)] = entry.Provider
+		}
+		b.SetPartContentSource(providers)
+		reply, err := b.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
 		require.NoError(t, err)
-		require.Equal(t, "private-fs", id)
-		require.Equal(t, 1, fs.releases, "observer runs after the underlying release")
-		observations++
-	})
-	dir, _ := private.FS.Peek()
-	wrapped, _ := dir.Snapshot.Peek()
-	require.IsType(t, &partFixtureReleaseRef{}, wrapped)
-	originalDir, _ := ordinary.FS.Peek()
-	originalRef, _ := originalDir.Snapshot.Peek()
-	require.Same(t, ordinaryRef, originalRef)
-	gotMeta, _ := private.MetaSnapshot.Peek()
-	require.Same(t, meta, gotMeta)
-	gotMount, _ := mountDir.Peek()
-	gotMountRef, _ := gotMount.Snapshot.Peek()
-	require.Same(t, mount, gotMountRef)
-	require.NoError(t, wrapped.Release(t.Context()))
-	require.Equal(t, 1, observations)
-	require.Zero(t, ordinaryRef.releases)
-	require.Zero(t, meta.releases)
-	require.Zero(t, mount.releases)
+		childID := reply.Imported()[0].ResultID
+		loaded, err := b.LoadResultByResultID(bctx, "", bsrv, childID)
+		require.NoError(t, err)
+		got := loaded.(dagql.ObjectResult[*Container])
+		require.NoError(t, b.EvaluateParts(bctx, got, ContainerPartFS))
+		require.Equal(t, []string{fmt.Sprintf("%d/%s", childID, ContainerPartFS)}, logs.computed(t), "the child's fs comes from a private run")
+		require.Equal(t, []string{"FROM=parent"}, got.Self().Config.Env)
+		dir, ok := got.Self().FS.Peek()
+		require.True(t, ok)
+		snapshot, ok := dir.Snapshot.Peek()
+		require.True(t, ok)
+		testutil.CheckFile(t, snapshot, "rootfs", "rootfs bytes")
+
+		frame, err := b.ResultCallByResultID(bctx, "", childID)
+		require.NoError(t, err)
+		loadedParent, err := b.LoadResultByResultID(bctx, "", bsrv, frame.Receiver.ResultID)
+		require.NoError(t, err)
+		gotParent := loadedParent.(dagql.ObjectResult[*Container]).Self()
+		require.False(t, gotParent.containerPartComputed(bctx, gotParent.lazyOpForRouting(), ContainerPartMetadata), "the private run did not ask the parent for metadata")
+		return nil
+	}))
 }

@@ -63,6 +63,32 @@ func TestCLISessionEnvRemovesInheritedVariables(t *testing.T) {
 	require.Equal(t, "REMOVE_ME=secret", inherited[0], "input slice remains unchanged")
 }
 
+func TestCLISessionEnvSilentWhenLogOutputDiscarded(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		logOutput io.Writer
+		silent    bool
+	}{
+		{name: "no log output", logOutput: nil, silent: true},
+		{name: "discarded", logOutput: io.Discard, silent: true},
+		{name: "read", logOutput: &strings.Builder{}, silent: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env := cliSessionEnv(nil, &Config{LogOutput: test.logOutput})
+			if test.silent {
+				require.Contains(t, env, "DAGGER_SILENT=true")
+			} else {
+				require.NotContains(t, env, "DAGGER_SILENT=true")
+			}
+		})
+	}
+
+	// An explicit setting from the caller still wins.
+	env := cliSessionEnv(nil, &Config{ExtraEnv: []string{"DAGGER_SILENT=false"}})
+	require.Equal(t, "DAGGER_SILENT=false", env[len(env)-1])
+}
+
 func TestGetPreservesUnsetEnvironment(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test CLI wrapper uses sh")

@@ -235,6 +235,9 @@ func TestAPIVersionAtLeast(t *testing.T) {
 		{version: "v1.0.0-beta.19"},
 		{version: "v1.0.0-beta.20"},
 		{version: lastPreCut},
+		// prereleases with their own view, before the casing cut
+		{version: PrereleaseViewsVersion},
+		{version: betaOffset(t, casing, -1)},
 		{version: casing, post: true},
 		{version: betaOffset(t, casing, 1), post: true},
 		{version: "v1.0.0-rc.1", post: true},

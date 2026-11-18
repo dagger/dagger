@@ -12,15 +12,17 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/diff"
+	"github.com/containerd/containerd/v2/core/diff/apply"
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/metadata"
 	"github.com/containerd/containerd/v2/core/mount"
 	ctdsnapshots "github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
-	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/containerd/containerd/v2/plugins/snapshots/native"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/snapshots/blobstore"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
+	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	bolt "go.etcd.io/bbolt"
@@ -29,12 +31,14 @@ import (
 const Namespace = "snapshot-transfer-test"
 
 type Store struct {
-	Manager     bkcache.SnapshotManager
-	Content     *containerdsnapshot.Store
-	Snapshots   bkcache.Snapshotter
-	Leases      leases.Manager
-	DB          *metadata.DB
-	Applies     atomic.Int64
+	Manager   bkcache.SnapshotManager
+	Content   *containerdsnapshot.Store
+	Snapshots bkcache.Snapshotter
+	Leases    leases.Manager
+	DB        *metadata.DB
+	Applies   atomic.Int64
+	// ContentRead counts the bytes read from the content store.
+	ContentRead atomic.Int64
 	Diffs       atomic.Int64
 	BeforeWrite func([]byte) error
 	BeforeApply func(context.Context, ocispecs.Descriptor) error
@@ -43,16 +47,19 @@ type Store struct {
 	BeforeSnapshotUpdate func(context.Context, ctdsnapshots.Info) error
 	// BeforeStat runs before each snapshot Stat the manager makes.
 	BeforeStat func(ctx context.Context, key string)
+	// AfterInfo runs after each content Info the manager makes, with its
+	// digest and its error.
+	AfterInfo func(ctx context.Context, dgst digest.Digest, err error)
 	// LeaseCommitErr, when set, rolls back each transaction the manager
 	// makes through SnapshotManagerOpt.MetadataDB and returns it.
 	LeaseCommitErr error
-	// Builtin, when set before the manager is (re)opened, plays the engine's
-	// builtin image store for chain imports.
-	Builtin     content.InfoReaderProvider
-	BeforeAdd   func(context.Context, leases.Lease, leases.Resource) error
-	AfterAdd    func(context.Context, leases.Lease, leases.Resource)
-	AfterCreate func(leases.Lease)
-	root        string
+	BeforeAdd      func(context.Context, leases.Lease, leases.Resource) error
+	AfterAdd       func(context.Context, leases.Lease, leases.Resource)
+	AfterCreate    func(leases.Lease)
+	root           string
+	rawContent     *blobstore.Store
+	// engineApplier makes the manager unpack with the engine's own applier.
+	engineApplier bool
 
 	// SharedMountLinger and MaxIdleSharedMounts, when set before the manager
 	// is (re)opened, bound its idle shared read-only mounts.
@@ -64,22 +71,39 @@ type Store struct {
 	LocalUnmounts atomic.Int64
 	// BeforeLocalUnmount runs before each of those unmounts.
 	BeforeLocalUnmount func()
+
+	// snapshotter names the store's snapshotter: native or overlayfs.
+	snapshotter string
 }
 
 func NewStore(t testing.TB) *Store {
 	t.Helper()
-	s := &Store{root: t.TempDir()}
-	rawContent, err := local.NewStore(filepath.Join(s.root, "content"))
+	return newStore(t, t.TempDir(), "native", native.NewSnapshotter)
+}
+
+// NewStoreWithImageBlobs is NewStore with a content store that holds the
+// blobs under dir in place, as the engine holds its image's.
+func NewStoreWithImageBlobs(t testing.TB, dir string) *Store {
+	t.Helper()
+	return newStore(t, t.TempDir(), "native", native.NewSnapshotter, blobstore.WithImageBlobs(dir))
+}
+
+func newStore(t testing.TB, root, snapshotter string, newSnapshotter func(root string) (ctdsnapshots.Snapshotter, error), contentOpts ...blobstore.Option) *Store {
+	t.Helper()
+	s := &Store{root: root, snapshotter: snapshotter}
+	rawContent, err := blobstore.New(filepath.Join(s.root, "content"), contentOpts...)
 	require.NoError(t, err)
-	rawSnapshots, err := native.NewSnapshotter(filepath.Join(s.root, "snapshots"))
+	s.rawContent = rawContent
+	rawSnapshots, err := newSnapshotter(filepath.Join(s.root, "snapshots"))
 	require.NoError(t, err)
 	db, err := bolt.Open(filepath.Join(s.root, "metadata.db"), 0600, nil)
 	require.NoError(t, err)
-	s.DB = metadata.NewDB(db, rawContent, map[string]ctdsnapshots.Snapshotter{"native": rawSnapshots})
+	s.DB = metadata.NewDB(db, rawContent, map[string]ctdsnapshots.Snapshotter{snapshotter: rawSnapshots})
 	require.NoError(t, s.DB.Init(context.Background()))
+	s.StartImage(t)
 	s.Leases = bkcache.NewLeaseManager(metadata.NewLeaseManager(s.DB), Namespace)
 	s.Content = containerdsnapshot.NewContentStore(s.DB.ContentStore(), Namespace)
-	s.Snapshots = containerdsnapshot.NewSnapshotter("native", s.DB.Snapshotter("native"), Namespace)
+	s.Snapshots = containerdsnapshot.NewSnapshotter(snapshotter, s.DB.Snapshotter(snapshotter), Namespace)
 	s.openManager(t)
 	t.Cleanup(func() {
 		require.NoError(t, s.Manager.Close())
@@ -96,14 +120,24 @@ func (s *Store) openManager(t testing.TB) {
 	// observed wrapper the manager uses, so BeforeWrite sees a fallback
 	// diff's blob writes as it sees the manager's own.
 	observed := observedContent{Store: s.Content, owner: s}
+	applierFrom := func(provider content.Provider) diff.Applier {
+		if s.engineApplier {
+			return &observedApplier{Applier: bkcache.NewLayerApplier(provider), store: s}
+		}
+		if s.snapshotter == "overlayfs" {
+			return &observedApplier{Applier: apply.NewFileSystemApplier(provider), store: s}
+		}
+		return &observedApplier{Applier: inPlaceApplier{store: provider}, store: s}
+	}
 	s.Manager, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
 		Snapshotter: &observedSnapshotter{Snapshotter: s.Snapshots, store: s}, ContentStore: observed,
 		LeaseManager:   &observedLeases{Manager: s.Leases, store: s},
-		Applier:        &observedApplier{Applier: inPlaceApplier{store: observed}, store: s},
+		Applier:        applierFrom(observed),
+		ApplyFrom:      applierFrom,
 		Differ:         &observedDiffer{Comparer: inPlaceDiffer{store: observed}, store: s},
 		MountPoolRoot:  filepath.Join(s.root, "mounts"),
-		BuiltinContent: s.Builtin,
 		MetadataDB:     observedTransactor{DB: s.DB, store: s},
+		InPlaceContent: s.rawContent.InPlace,
 		LocalMounter: func(ms []mount.Mount) bkcache.Mounter {
 			return &inPlaceMounter{store: s, mounts: ms}
 		},
@@ -111,14 +145,6 @@ func (s *Store) openManager(t testing.TB) {
 		MaxIdleSharedMounts: s.MaxIdleSharedMounts,
 	})
 	require.NoError(t, err)
-}
-
-// WithBuiltin reopens the manager with provider as the builtin image store,
-// keeping the persistent metadata.
-func (s *Store) WithBuiltin(t testing.TB, provider content.InfoReaderProvider) {
-	t.Helper()
-	s.Builtin = provider
-	s.Reload(t)
 }
 
 // WithSharedMounts reopens the manager with the given bounds on its idle
@@ -137,6 +163,21 @@ func (s *Store) Reload(t testing.TB) {
 	require.NoError(t, s.Manager.LoadPersistentMetadata(rows))
 }
 
+// UseEngineApplier reopens the manager unpacking layers with the engine's
+// own applier, keeping the persistent metadata.
+func (s *Store) UseEngineApplier(t testing.TB) {
+	t.Helper()
+	s.engineApplier = true
+	s.Reload(t)
+}
+
+// StartImage does what an engine does with its image's blobs at start: it
+// forgets the records of those a previous image held and this one doesn't.
+func (s *Store) StartImage(t testing.TB) {
+	t.Helper()
+	require.NoError(t, s.rawContent.ForgetLostImageBlobs(namespaces.WithNamespace(context.Background(), Namespace), s.DB.ContentStore()))
+}
+
 func (s *Store) GC(t testing.TB) {
 	t.Helper()
 	_, err := s.DB.GarbageCollect(namespaces.WithNamespace(context.Background(), Namespace))
@@ -146,6 +187,21 @@ func (s *Store) GC(t testing.TB) {
 // Build writes through an ordinary mutable ref, commits, and keeps an ordinary
 // owner lease. The caller can release that owner independently of returned refs.
 func (s *Store) Build(t testing.TB, parent bkcache.ImmutableRef, name, value string) (bkcache.ImmutableRef, string) {
+	t.Helper()
+	if name == "" {
+		return s.BuildWith(t, parent, nil)
+	}
+	return s.BuildWith(t, parent, func(root string) {
+		path := filepath.Join(root, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
+		require.NoError(t, os.WriteFile(path, []byte(value), 0640))
+		require.NoError(t, os.Chtimes(path, FileTime, FileTime))
+	})
+}
+
+// BuildWith is Build with write making the layer's changes under its root. A
+// nil write makes no changes.
+func (s *Store) BuildWith(t testing.TB, parent bkcache.ImmutableRef, write func(root string)) (bkcache.ImmutableRef, string) {
 	t.Helper()
 	ctx := context.Background()
 	owner, err := s.Leases.Create(ctx, leases.WithRandomID())
@@ -158,15 +214,12 @@ func (s *Store) Build(t testing.TB, parent bkcache.ImmutableRef, name, value str
 	mounter := bkcache.LocalMounter(mounted)
 	root, err := mounter.Mount()
 	require.NoError(t, err)
-	if name != "" {
-		path := filepath.Join(root, name)
-		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
-		require.NoError(t, os.WriteFile(path, []byte(value), 0640))
-		require.NoError(t, os.Chtimes(path, FileTime, FileTime))
+	if write != nil {
+		write(root)
 	}
 	require.NoError(t, mounter.Unmount())
 	var ref bkcache.ImmutableRef
-	if name == "" {
+	if write == nil {
 		// No filesystem changes were made. Exercise the ordinary commit path
 		// with known empty usage, as snapshot diff application can supply.
 		ref, err = mut.CommitWithUsage(ctx, ctdsnapshots.Usage{})
@@ -310,6 +363,35 @@ func (l *observedLeases) Create(ctx context.Context, opts ...leases.Opt) (leases
 type observedContent struct {
 	content.Store
 	owner *Store
+}
+
+// Info runs the owner's AfterInfo.
+func (s observedContent) Info(ctx context.Context, dgst digest.Digest) (content.Info, error) {
+	info, err := s.Store.Info(ctx, dgst)
+	if s.owner.AfterInfo != nil {
+		s.owner.AfterInfo(ctx, dgst, err)
+	}
+	return info, err
+}
+
+// ReaderAt counts the bytes read from the content store in ContentRead.
+func (s observedContent) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	ra, err := s.Store.ReaderAt(ctx, desc)
+	if err != nil {
+		return nil, err
+	}
+	return observedReaderAt{ReaderAt: ra, owner: s.owner}, nil
+}
+
+type observedReaderAt struct {
+	content.ReaderAt
+	owner *Store
+}
+
+func (r observedReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	n, err := r.ReaderAt.ReadAt(p, off)
+	r.owner.ContentRead.Add(int64(n))
+	return n, err
 }
 
 func (s observedContent) Writer(ctx context.Context, opts ...content.WriterOpt) (content.Writer, error) {

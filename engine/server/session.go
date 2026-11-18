@@ -75,6 +75,12 @@ type daggerSession struct {
 	// archivePendingTitle is a title published before the archive existed.
 	archivePendingTitle pendingArchiveTitle
 	mainClientCallerID  string
+	// cloudClaimID is the Dagger Cloud claim the main client connected under,
+	// set when the session is initialized.
+	cloudClaimID string
+	// startedAt is when the session initialized. Among plain sessions
+	// sharing a trace, the earliest-started (outermost) one retains it.
+	startedAt time.Time
 
 	// schemaBuilderMemo holds the schemas built for module dependency sets
 	// (e.g. a Module's Deps) by any of the session's clients. A function
@@ -170,7 +176,10 @@ type daggerSession struct {
 	tracerProvider *sdktrace.TracerProvider
 	// spanQueue counts the spans of the bounded live span lane, to report
 	// those it dropped when the session's telemetry shuts down.
-	spanQueue      enginetel.SpanQueueCounts
+	spanQueue enginetel.SpanQueueCounts
+	// protectedSpans is the session's lossless lane for call and cache
+	// spans; its unbounded queue's peak is reported at shutdown.
+	protectedSpans *enginetel.ProtectedSpanProcessor
 	loggerProvider *sdklog.LoggerProvider
 	spanExporter   sdktrace.SpanExporter
 	logExporter    sdklog.Exporter
@@ -327,6 +336,11 @@ type clientRecord struct {
 	// externally returned value is a deep clone of it.
 	metadataSealed bool
 
+	// Live LLM configuration is separate from immutable bootstrap metadata.
+	// Protected by daggerSession.scopeMu; revision > 0 includes explicit reset.
+	llmConfig         *engine.LLMConfig
+	llmConfigRevision uint64
+
 	// closed after the shutdown endpoint is called
 	shutdownCh        chan struct{}
 	closeShutdownOnce sync.Once
@@ -426,10 +440,11 @@ type clientRuntime struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
-	cloudArtifactMu      sync.Mutex
-	cloudArtifactClients map[string]*engineclient.Client
-	cloudArtifactClosed  bool
-	cloudArtifactConnect singleflight.Group[string, *engineclient.Client]
+	cloudArtifactMu         sync.Mutex
+	cloudArtifactClients    map[string]*engineclient.Client
+	cloudArtifactLLMConfigs map[string]*cloudLLMConfigState
+	cloudArtifactClosed     bool
+	cloudArtifactConnect    singleflight.Group[string, *engineclient.Client]
 
 	// Trace and log providers are session-owned. These lightweight bound
 	// exporters are retained only for integrations that deliver telemetry for a
@@ -900,6 +915,12 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 		// The bounded lane drops spans rather than stall the session; report
 		// how many.
 		sess.spanQueue.LogShutdown(slog.With("sessionID", sess.sessionID), shutdownErr)
+		// The protected lane never drops and its queue is unbounded; report
+		// the most it held.
+		if sess.protectedSpans != nil {
+			queued, peak := sess.protectedSpans.QueueStats()
+			slog.Info("session telemetry protected spans", "sessionID", sess.sessionID, "queued", queued, "peak", peak)
+		}
 	}
 	if sess.workloadTracerProvider != nil {
 		traceDur += timedProviderOp(ctx, &errs, sess.workloadTracerProvider.Shutdown)
@@ -913,7 +934,9 @@ func (sess *daggerSession) shutdownTelemetry(ctx context.Context) error {
 		sess.cloudForwarder.finish()
 	}
 	if sess.cloudMetrics != nil {
-		metricDur += timedProviderOp(ctx, &errs, sess.cloudMetrics.Shutdown)
+		// Likewise the session's last metrics: the queue publishes them in
+		// the background, never holding the teardown.
+		sess.cloudMetrics.finish()
 	}
 	for _, client := range clients {
 		errs = errors.Join(errs, client.closeTelemetryDB())
@@ -1058,7 +1081,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	sess.logExporter = logExporter
 
 	// Keep the raised link limit used by wcprof wait edges. One bounded trace
-	// queue plus a call-span-only protected queue, and an ordinary log queue
+	// queue plus a protected queue for call and cache spans, and an ordinary log queue
 	// plus payload-only and control-only protected queues, serve the entire
 	// session. Metric readers are owned by each client.
 	spanLimits := sdktrace.NewSpanLimits()
@@ -1067,7 +1090,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 	tracerOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithRawSpanLimits(spanLimits),
 		sdktrace.WithSpanProcessor(dagql.NewWcprofLazyParentProcessor()),
-		sdktrace.WithSpanProcessor(srv.wcprofSpanCount),
+		sdktrace.WithSpanProcessor(wcprofSpanMarker{counter: srv.wcprofSpanCount, sess: sess}),
 		sdktrace.WithSpanProcessor(sess.cacheSpans),
 		// Stamp origin before the live processors freeze their start snapshots.
 		sdktrace.WithSpanProcessor(telemetryOriginSpanProcessor{sessionID: sess.sessionID}),
@@ -1083,13 +1106,15 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		tracerOpts = append(tracerOpts, sdktrace.WithResource(tracerResource))
 	}
 	// A call span is the only carrier of its call's frame (see
-	// core/telemetry.go), so it takes a lossless, retrying lane of its own,
-	// like call payload logs; the bounded live processor carries every other
-	// span and may drop them on overflow.
-	callSpans := enginetel.NewCallSpanProcessor(spanExporter)
+	// core/telemetry.go), and a cache span is how the remote cache learns the
+	// cache and is counted for the session's end, so they take a lossless,
+	// retrying lane of their own, like call payload logs; the bounded live
+	// processor carries every other span and may drop them on overflow.
+	protectedSpans := enginetel.NewProtectedSpanProcessor(spanExporter)
+	sess.protectedSpans = protectedSpans
 	tracerOpts = append(tracerOpts,
-		sdktrace.WithSpanProcessor(callSpans),
-		sdktrace.WithSpanProcessor(enginetel.WithoutCallSpans(enginetel.NewCountedLargeQueueLiveSpanProcessor(spanExporter, &sess.spanQueue))),
+		sdktrace.WithSpanProcessor(protectedSpans),
+		sdktrace.WithSpanProcessor(enginetel.WithoutProtectedSpans(enginetel.NewCountedLargeQueueLiveSpanProcessor(spanExporter, &sess.spanQueue))),
 	)
 	loggerResource, err := withSessionResource(telemetry.Resource, resourceAttrs)
 	if err != nil {
@@ -1109,7 +1134,7 @@ func (srv *Server) initializeSessionTelemetry(sess *daggerSession, clientMetadat
 		sdklog.WithProcessor(callPayloads),
 		sdklog.WithProcessor(enginetel.NewControlBatchProcessor(controlAfterCallsExporter{
 			next:  logExporter,
-			calls: []func(context.Context) error{callSpans.ForceFlush, callPayloads.ForceFlush},
+			calls: []func(context.Context) error{protectedSpans.ForceFlush, callPayloads.ForceFlush},
 		})),
 		sdklog.WithProcessor(enginetel.WithoutCallPayloads(enginetel.NewLogBatchProcessor(logExporter))),
 	}
@@ -1163,6 +1188,7 @@ func (srv *Server) initializeDaggerSession(
 		sess.releaseEBPF = release
 		failureCleanups.Add("release eBPF programs", cleanups.Infallible(release))
 	}
+	sess.startedAt = time.Now()
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
@@ -1285,6 +1311,12 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.beginClientScopeTeardown()
 	sess.beginClosing()
 	sess.endMainClientAttachables()
+	// The session counts as live until its teardown ends, and then says
+	// whether it sent its completion marker.
+	var marker bool
+	defer func() {
+		srv.sessionLedger.sessionEnded(sess.sessionID, sess.mainClientCallerID, sess.cloudClaimID, marker)
+	}()
 
 	// check if the local cache needs pruning after session is removed, prune if so
 	defer func() {
@@ -1416,7 +1448,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	telemetryCtx, cancelTelemetry := context.WithTimeout(teardownCtx, 60*time.Second)
 	defer cancelTelemetry()
 	step = teardown.beginStep("session.shutdownTelemetry")
-	srv.stampSessionComplete(telemetryCtx, sess)
+	marker = srv.stampSessionComplete(telemetryCtx, sess)
 	srv.wcprofSpanCount.Reap(sess.wcprofTraceID)
 	telemetryErr := sess.shutdownTelemetry(telemetryCtx)
 	errs = errors.Join(errs, telemetryErr)
@@ -1520,9 +1552,10 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 // the session-root span recorded in serveQuery so it lands in this trace, named
 // wcprofSessionCompleteSpanName so the counter excludes it from the total and the
 // loader drops it from the compiled ops. The session's final trace/log barrier
-// flushes the carrier after all cleanup producers have stopped. A trace that
-// never ran a traced main query gets no carrier and so fails the loader's
-// completeness check by default (unverifiable → refused).
+// flushes the carrier after all cleanup producers have stopped. A recorded trace
+// that never ran a traced main query gets no carrier and so fails the loader's
+// completeness check by default (unverifiable → refused). Nothing is counted while
+// wcprof isn't recording, so such a session declares no count.
 //
 // The carrier also marks the session's end for its cache spans: it declares
 // how many spans of this session named a cache entry
@@ -1530,21 +1563,22 @@ func (srv *Server) getOrCreateSessionLocked(sessionID, clientID string) (*dagger
 // first session to end in a shared trace reaps it, so a later session can
 // have cache spans and a zero wcprof count. The carrier is sent when either
 // count is above zero, and carries the wcprof count only when it is; the
-// loader ignores a carrier with no count.
-func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) {
+// loader ignores a carrier with no count. It reports whether it sent the
+// carrier: the remote cache service reads it as the session's end.
+func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession) bool {
 	if !sess.wcprofTraceID.IsValid() || !sess.wcprofRootSpanID.IsValid() {
-		return
+		return false
 	}
 	n := srv.wcprofSpanCount.Final(sess.wcprofTraceID)
 	cacheSpans := sess.cacheSpans.Count()
 	if n == 0 && cacheSpans == 0 {
-		return
+		return false
 	}
 	sess.clientMu.RLock()
 	mainRecord := sess.clientRecords[sess.mainClientCallerID]
 	sess.clientMu.RUnlock()
 	if mainRecord == nil || sess.tracerProvider == nil {
-		return
+		return false
 	}
 	// Parent the carrier at the recorded session-root span so it inherits this
 	// trace (a teardown ctx carries no span); the loader excludes it from ops, but a
@@ -1571,6 +1605,7 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 		trace.WithAttributes(attrs...),
 	)
 	span.End()
+	return true
 }
 
 type ClientInitOpts struct {
@@ -1752,24 +1787,49 @@ func (srv *Server) initializeClientRuntime(
 		client.mod = modInst
 
 		// A module client that didn't declare its version gets the core view
-		// of the module it calls from: its engineVersion, capped at the
-		// engine's view.
+		// of the module it calls from: the view of the engine version it
+		// declares, capped at the engine's own
+		// (engine.ModuleAPIViewVersion), whose naming rules the typedefs
+		// its runtime declares are named by (see
+		// core.ModuleSource.NamingView). A declared client keeps its own
+		// core view; serveQuery still names its typedefs by the module's
+		// (core.ContextWithNamingView).
 		if !client.clientMetadata.ClientVersionDeclared {
-			engineVersion := client.mod.Self().Source.Value.Self().EngineVersion
-			coreView = call.View(engine.ModuleAPIViewVersion(engineVersion))
+			coreView = client.mod.Self().Source.Value.Self().NamingView()
 			client.dag.View = coreView
 			coreMod = coreSchemaBase.CoreMod(coreView)
 		}
 
 		client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
-		servedMods := client.mod.Self().Deps.WithRoot(client.dagqlRoot)
+		servedDeps := client.mod.Self().Deps
+		if client.clientMetadata.SDKEntrypoint {
+			// The module's entrypoint is the one client its own dependencies
+			// feed (core.Module.EntrypointDeps).
+			servedDeps = client.mod.Self().SDKDeps()
+		}
+		servedMods := servedDeps.WithRoot(client.dagqlRoot)
 		if client.clientMetadata.ClientVersionDeclared {
 			servedMods = servedMods.WithCoreMod(coreMod)
 		}
 		if len(client.mod.Self().ObjectDefs) > 0 {
 			servedMods = servedMods.Append(core.NewUserMod(client.mod))
 		}
+		if deps := nestedServedDeps(client.clientMetadata); deps != nil && opts.InertAttachables {
+			// A DangEval snippet in a module's scope also reaches the
+			// conversation's bound tool objects: their modules' types,
+			// beside the module's own API.
+			for _, mod := range deps.Mods() {
+				if mod.Name() != core.ModuleName {
+					servedMods = servedMods.With(mod, core.InstallOpts{SkipConstructor: true})
+				}
+			}
+		}
 		client.servedMods = servedMods.ClientOwned()
+	} else if deps := nestedServedDeps(client.clientMetadata); deps != nil && opts.InertAttachables {
+		// An in-engine client running for a conversation (DangEval) serves
+		// the conversation's API, as a module client serves its module's
+		// dependencies, without the conversation's host access.
+		client.servedMods = deps.WithRoot(client.dagqlRoot).ClientOwned()
 	} else if !opts.InertAttachables {
 		// Only a client that can read its host detects its own workspace. An
 		// in-engine SDK client without a module, such as one that evaluates an
@@ -1798,6 +1858,16 @@ func (srv *Server) initializeClientRuntime(
 
 	client.state = clientStateInitialized
 	return nil
+}
+
+// nestedServedDeps is the schema an in-engine nested client was given to
+// serve (engine.ClientMetadata.ServedDeps), or nil.
+func nestedServedDeps(md *engine.ClientMetadata) *core.SchemaBuilder {
+	if md == nil {
+		return nil
+	}
+	deps, _ := md.ServedDeps.(*core.SchemaBuilder)
+	return deps
 }
 
 func (sess *daggerSession) resolveClientAttachableCaller(
@@ -2335,6 +2405,7 @@ func (srv *Server) getOrInitClient(
 	// LAST step, after the main client record has been published — so observers
 	// never see initialized session resources without the root identity.
 	if sess.state.Load() == sessionStateUninitialized {
+		sess.cloudClaimID = opts.CloudClaimID
 		sess.state.Store(sessionStateInitialized)
 		// From here, removal ends the session's phase.
 		phaseCtx := context.Background()
@@ -2343,6 +2414,7 @@ func (srv *Server) getOrInitClient(
 			phaseCtx = wcprof.ContextWithProfiling(phaseCtx)
 		}
 		sess.phase = srv.beginSessionPhase(phaseCtx, sess.sessionID)
+		srv.sessionLedger.sessionStarted(sess.sessionID, sess.mainClientCallerID, sess.cloudClaimID)
 	}
 	if opts.requestLeaseOut != nil {
 		*opts.requestLeaseOut = requestLease
@@ -2503,6 +2575,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 		return
 	}
 	clientMetadata := nestedClientMetadataForRequest(r.Header, nestedClientMetadata)
+	clientMetadata.InertAttachables = inertAttachables
 
 	var moduleContext dagql.ObjectResult[*core.Module]
 	if moduleCtx != nil {
@@ -2622,6 +2695,12 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	if member := baggage.Member("repeat-telemetry"); member.Value() != "" {
 		ctx = dagql.WithRepeatedTelemetry(ctx)
 	}
+	// The module process of a call made as the engine's own work, such as an
+	// SDK building a module's runtime, does the engine's own work too, as
+	// does any process it starts.
+	if opts.FunctionCall.EngineWork() || clientMetadata.EngineWork {
+		ctx = dagql.WithInternalTelemetry(core.WithEngineWork(ctx))
+	}
 
 	spanCtx := trace.SpanContextFromContext(ctx)
 	traceID, spanID := spanCtx.TraceID().String(), spanCtx.SpanID().String()
@@ -2668,7 +2747,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	var mux *http.ServeMux
 	switch path := r.URL.Path; {
-	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics"):
+	case len(childMetadata) == 0 && (path == "/v1/traces" || path == "/v1/logs" || path == "/v1/metrics" || path == "/v1/logs/query" || path == "/v1/logs/search" || path == enginetel.LiveFlushPath):
 		// Telemetry subscriptions require only the stable client record.
 		record, err := srv.clientRecordFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
@@ -2678,6 +2757,14 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, record))
 		mux.HandleFunc("GET /v1/metrics", httpHandlerFunc(srv.telemetryPubSub.MetricsSubscribeHandler, record))
+		mux.HandleFunc("POST /v1/logs/query", httpHandlerFunc(srv.telemetryPubSub.LogsQueryHandler, record))
+		mux.HandleFunc("POST /v1/logs/search", httpHandlerFunc(srv.telemetryPubSub.LogsSearchHandler, record))
+		mux.HandleFunc("POST "+enginetel.LiveFlushPath, httpHandlerFunc(srv.telemetryPubSub.FlushHandler, record))
+		// The client's own telemetry (engine.ClientTelemetryIngestHeader).
+		ps := srv.telemetryPubSub
+		mux.HandleFunc("POST /v1/traces", ps.clientIngestHandler(ps.ingestClientTraces, record))
+		mux.HandleFunc("POST /v1/logs", ps.clientIngestHandler(ps.ingestClientLogs, record))
+		mux.HandleFunc("POST /v1/metrics", ps.clientIngestHandler(ps.ingestClientMetrics, record))
 	default:
 		requestOpts := *opts
 		requestOpts.requestOwner = r.Method + " " + r.URL.Path
@@ -2736,41 +2823,52 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		ctx = analytics.WithContext(ctx, sess.analytics)
 		r = r.WithContext(ctx)
 
-		// The session's built-in endpoints are exact paths, so while no endpoint was mixed in through
-		// MuxEndpoint they're served without building a mux for every request; any other request
-		// goes through the mux as before, which also keeps a mixed-in pattern's precedence.
-		sess.endpointMu.RLock()
-		mixedIn := len(sess.endpoints) > 0
-		sess.endpointMu.RUnlock()
-		switch path := r.URL.Path; {
-		case mixedIn:
-		case path == engine.QueryEndpoint:
-			httpHandlerFunc(srv.serveQuery, client).ServeHTTP(w, r)
-			return nil
-		case path == engine.SessionAttachablesEndpoint:
-			httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord).ServeHTTP(w, r)
-			return nil
-		case path == engine.InitEndpoint:
-			httpHandlerFunc(srv.serveInit, client).ServeHTTP(w, r)
-			return nil
-		case path == engine.ShutdownEndpoint:
-			httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
-			return nil
-		}
-		mux = http.NewServeMux()
-		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
-		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
-		mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
-		mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
-		sess.endpointMu.RLock()
-		for path, handler := range sess.endpoints {
-			mux.Handle(path, handler)
-		}
-		sess.endpointMu.RUnlock()
+		srv.serveClientEndpoints(w, r, client)
+		return nil
 	}
 
 	mux.ServeHTTP(w, r)
 	return nil
+}
+
+func (srv *Server) serveClientEndpoints(w http.ResponseWriter, r *http.Request, client *clientRuntime) {
+	sess := client.daggerSession
+	// The session's built-in endpoints are exact paths, so while no endpoint was mixed in through
+	// MuxEndpoint they're served without building a mux for every request; any other request
+	// goes through the mux as before, which also keeps a mixed-in pattern's precedence.
+	sess.endpointMu.RLock()
+	mixedIn := len(sess.endpoints) > 0
+	sess.endpointMu.RUnlock()
+	switch path := r.URL.Path; {
+	case mixedIn:
+	case path == engine.QueryEndpoint:
+		httpHandlerFunc(srv.serveQuery, client).ServeHTTP(w, r)
+		return
+	case path == engine.SessionAttachablesEndpoint:
+		httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord).ServeHTTP(w, r)
+		return
+	case path == engine.InitEndpoint:
+		httpHandlerFunc(srv.serveInit, client).ServeHTTP(w, r)
+		return
+	case path == engine.LLMConfigEndpoint:
+		httpHandlerFunc(srv.serveLLMConfig, client).ServeHTTP(w, r)
+		return
+	case path == engine.ShutdownEndpoint:
+		httpHandlerFunc(srv.serveShutdown, client).ServeHTTP(w, r)
+		return
+	}
+	mux := http.NewServeMux()
+	mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client.clientRecord))
+	mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
+	mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
+	mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
+	mux.Handle(engine.LLMConfigEndpoint, httpHandlerFunc(srv.serveLLMConfig, client))
+	sess.endpointMu.RLock()
+	for path, handler := range sess.endpoints {
+		mux.Handle(path, handler)
+	}
+	sess.endpointMu.RUnlock()
+	mux.ServeHTTP(w, r)
 }
 
 // serveChildClient serves a request that parent forwarded for a Dagger client
@@ -2845,6 +2943,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	defer func() {
 		if rerr != nil {
 			conn.Close()
+			rerr = hijackedError{rerr}
 		}
 	}()
 	if err := conn.SetDeadline(time.Time{}); err != nil {
@@ -2925,6 +3024,28 @@ func beginServeQueryOp(ctx context.Context, clientID string) (context.Context, *
 	return ctx, op
 }
 
+// queryRequestSpanAttrs are the attributes of a query's request span, whose
+// parent is the one in ctx. A nested client's request made directly under the
+// traceparent its exec's container got names the exec as its causal parent
+// (wcprof.parent): that traceparent is the call that made the exec, beside the
+// exec, so a profile would otherwise count the client's work as running
+// alongside the exec rather than in it. A request under a span of the
+// client's own keeps that parent: the engine names the exec on that span as
+// the container exports it (telemetry.StampWcprofHost).
+func queryRequestSpanAttrs(ctx context.Context, md *engine.ClientMetadata) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		attribute.Bool(telemetry.UIPassthroughAttr, true),
+	}
+	if engineID := md.CloudScaleOutEngineID; engineID != "" {
+		attrs = append(attrs, attribute.String(telemetry.EngineIDAttr, engineID))
+	}
+	if host := dagql.OTelHostExecFromContext(ctx); host.ExecRun.IsValid() && host.Propagated.IsValid() &&
+		trace.SpanContextFromContext(ctx).SpanID() == host.Propagated.SpanID() {
+		attrs = append(attrs, attribute.String(telemetryattrs.WcprofParentAttr, host.ExecRun.SpanID().String()))
+	}
+	return attrs
+}
+
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *clientRuntime) (rerr error) {
 	sess := client.daggerSession
 
@@ -2978,15 +3099,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
 		clientTracer := sess.tracerProvider.Tracer(InstrumentationLibrary)
 		var span trace.Span
-		attrs := []attribute.KeyValue{
-			attribute.Bool(telemetry.UIPassthroughAttr, true),
-		}
-		if engineID := client.clientMetadata.CloudScaleOutEngineID; engineID != "" {
-			attrs = append(attrs, attribute.String(telemetry.EngineIDAttr, engineID))
-		}
 		ctx, span = clientTracer.Start(ctx,
 			fmt.Sprintf("%s %s", r.Method, r.URL.Path),
-			trace.WithAttributes(attrs...),
+			trace.WithAttributes(queryRequestSpanAttrs(ctx, client.clientMetadata)...),
 		)
 		defer telemetry.EndWithCause(span, &rerr)
 
@@ -3035,6 +3150,11 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 	if client.fnCall != nil && client.fnCall.ResultScope != nil {
 		ctx = dagql.WithResultScope(ctx, client.fnCall.ResultScope)
 	}
+
+	// A module client's typedef constructors name the module's declarations
+	// by the module's rules, even when the client declared a core view of
+	// its own (see initializeClientRuntime).
+	ctx = client.withModuleNaming(ctx)
 
 	var profServeOp *wcprof.Op
 	if profiling {
@@ -3117,6 +3237,20 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *cl
 
 	dagql.ServeHTTPWithWriteStep(gqlSrv, w, r)
 	return nil
+}
+
+// withModuleNaming returns ctx for serving a query of client. A module
+// client that declared its version is served the core view of that version,
+// but the typedef constructors still name its module's declarations by the
+// module's rules: they select at the module's NamingView
+// (core.ContextWithNamingView). Other clients' core view already is it, or
+// they have no module.
+func (client *clientRuntime) withModuleNaming(ctx context.Context) context.Context {
+	mod := client.mod.Self()
+	if mod == nil || client.clientMetadata == nil || !client.clientMetadata.ClientVersionDeclared {
+		return ctx
+	}
+	return core.ContextWithNamingView(ctx, mod.Source.Value.Self().NamingView())
 }
 
 func (client *clientRuntime) claimSingleQueryRequest() error {
@@ -3411,7 +3545,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 				if err != nil {
 					return err
 				}
-				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pending)
+				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, dagql.ObjectResult[*core.Workspace]{}, tcSrc, pending)
 				if err != nil {
 					return fmt.Errorf("error resolving toolchain module: %w", err)
 				}
@@ -3698,18 +3832,25 @@ func readRemoteWorkspaceLock(ctx context.Context, ws *core.Workspace) (*workspac
 	if root.Self() == nil {
 		return nil, true, fmt.Errorf("remote Git workspace has no root filesystem")
 	}
-	lock, err := readWorkspaceLockFromRootfs(ctx, root, ws.LockFile)
+	var statFS core.StatFS = &core.DirectoryStatFS{Dir: root}
+	readFile := func(ctx context.Context, path string) ([]byte, error) {
+		return core.DirectoryReadFile(ctx, root, path)
+	}
+	if fs, ok := ws.GitSparseTreeFS(); ok {
+		statFS, readFile = fs, fs.ReadFile
+	}
+	lock, err := readWorkspaceLockFromTree(ctx, statFS, readFile, ws.LockFile)
 	return lock, true, err
 }
 
-func readWorkspaceLockFromRootfs(
+func readWorkspaceLockFromTree(
 	ctx context.Context,
-	root dagql.ObjectResult[*core.Directory],
+	statFS core.StatFS,
+	readFile func(context.Context, string) ([]byte, error),
 	lockPath string,
 ) (*workspace.Lock, error) {
 	lockPath = filepath.ToSlash(lockPath)
 	legacyPath := filepath.ToSlash(workspace.LegacyLockFilePathForCanonical(lockPath))
-	statFS := &core.DirectoryStatFS{Dir: root}
 
 	_, exists, err := core.StatFSExists(ctx, statFS, lockPath)
 	if err != nil {
@@ -3726,7 +3867,7 @@ func readWorkspaceLockFromRootfs(
 		return workspace.NewLock(), nil
 	}
 
-	data, err := core.DirectoryReadFile(ctx, root, lockPath)
+	data, err := readFile(ctx, lockPath)
 	if err != nil {
 		if lockPath == legacyPath {
 			return nil, fmt.Errorf("reading legacy lock: %w", err)
@@ -4683,10 +4824,6 @@ func (srv *Server) OCIStore() content.Store {
 	return srv.contentStore
 }
 
-func (srv *Server) BuiltinOCIStore() content.Store {
-	return srv.builtinContentStore
-}
-
 // The dns configuration for the engine as a whole
 func (srv *Server) DNS() *oci.DNSConfig {
 	return srv.dns
@@ -4733,11 +4870,25 @@ func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) 
 	client, _, err := parent.cloudArtifactConnect.Do(ctx, scope, func(ctx context.Context) (*engineclient.Client, error) {
 		parent.cloudArtifactMu.Lock()
 		cached, closed := parent.cloudArtifactClients[scope], parent.cloudArtifactClosed
+		var llmState *cloudLLMConfigState
+		if cached != nil && !closed {
+			if parent.cloudArtifactLLMConfigs == nil {
+				parent.cloudArtifactLLMConfigs = make(map[string]*cloudLLMConfigState)
+			}
+			llmState = parent.cloudArtifactLLMConfigs[scope]
+			if llmState == nil {
+				llmState = &cloudLLMConfigState{}
+				parent.cloudArtifactLLMConfigs[scope] = llmState
+			}
+		}
 		parent.cloudArtifactMu.Unlock()
 		if closed {
 			return nil, fmt.Errorf("cloud artifact clients are closed")
 		}
 		if cached != nil {
+			if err := llmState.sync(ctx, parent.daggerSession, parent.clientRecord, cached); err != nil {
+				return nil, fmt.Errorf("refresh cloud LLM configuration: %w", err)
+			}
 			return cached, nil
 		}
 		// Setup can outlive its first caller. Retain the parent until it ends.
@@ -4750,7 +4901,8 @@ func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) 
 		if err != nil {
 			return nil, err
 		}
-		client, remote, err := srv.CloudEngineClient(ctx, "", "checks", nil)
+		llmState = &cloudLLMConfigState{}
+		client, remote, err := srv.cloudEngineClient(ctx, "", "checks", nil, llmState)
 		if err != nil {
 			return nil, err
 		}
@@ -4764,6 +4916,10 @@ func (srv *Server) SharedCloudArtifactClient(ctx context.Context, scope string) 
 				parent.cloudArtifactClients = make(map[string]*engineclient.Client)
 			}
 			parent.cloudArtifactClients[scope] = client
+			if parent.cloudArtifactLLMConfigs == nil {
+				parent.cloudArtifactLLMConfigs = make(map[string]*cloudLLMConfigState)
+			}
+			parent.cloudArtifactLLMConfigs[scope] = llmState
 		}
 		parent.cloudArtifactMu.Unlock()
 		if closed || cached != nil {
@@ -4785,6 +4941,16 @@ func (srv *Server) CloudEngineClient(
 	function string,
 	execCmd []string,
 ) (*engineclient.Client, bool, error) {
+	return srv.cloudEngineClient(ctx, module, function, execCmd, &cloudLLMConfigState{})
+}
+
+func (srv *Server) cloudEngineClient(
+	ctx context.Context,
+	module string,
+	function string,
+	execCmd []string,
+	llmState *cloudLLMConfigState,
+) (*engineclient.Client, bool, error) {
 	parentClient, err := srv.nonModuleParentClient(ctx)
 	if err != nil {
 		return nil, false, err
@@ -4803,12 +4969,13 @@ func (srv *Server) CloudEngineClient(
 		runnerHost = testHost
 	}
 
+	llmConfig := llmState.bootstrap(parentClient.daggerSession, parentClient.clientRecord)
 	params := engineclient.Params{
 		RunnerHost:     runnerHost,
 		Workspace:      parentClient.clientMetadata.Workspace,
 		WorkspaceEnv:   parentClient.clientMetadata.WorkspaceEnv,
 		UserConfigPath: parentClient.clientMetadata.UserConfigPath,
-		LLMConfig:      parentClient.clientMetadata.LLMConfig,
+		LLMConfig:      llmConfig,
 		ExtraModules:   parentClient.clientMetadata.ExtraModules,
 		// Artifact queries load their own selected modules.
 		SkipWorkspaceModules: true,
@@ -4867,6 +5034,14 @@ func (e httpError) WriteTo(w http.ResponseWriter) {
 	http.Error(w, e.Error(), e.code)
 }
 
+// hijackedError is an error returned by a handler after it hijacked the
+// connection, which can no longer carry an HTTP error response.
+type hijackedError struct {
+	error
+}
+
+func (e hijackedError) Unwrap() error { return e.error }
+
 type gqlError struct {
 	error
 	httpCode int
@@ -4913,25 +5088,18 @@ func httpHandlerFunc[T any](fn func(http.ResponseWriter, *http.Request, T) error
 			WithField("path", r.URL.Path).
 			WithError(err).Error("failed to serve request")
 
+		// A hijacked connection can't carry an HTTP error response. Don't probe
+		// for one with w.Write(nil): that commits a 200 status, so the error
+		// below would go out as a 200 instead of its status code.
+		var hijacked hijackedError
 		var httpErr httpError
 		var gqlErr gqlError
-		isHTTPErr := errors.As(err, &httpErr)
-		isGQLErr := !isHTTPErr && errors.As(err, &gqlErr)
-		if isGQLErr {
-			// Label the GraphQL error body as JSON before the probe below:
-			// its empty Write commits the response headers.
-			w.Header().Set("Content-Type", "application/json")
-		}
-
-		// check whether this is a hijacked connection, if so we can't write any http errors to it
-		if _, testErr := w.Write(nil); testErr == http.ErrHijacked {
-			return
-		}
-
 		switch {
-		case isHTTPErr:
+		case errors.As(err, &hijacked):
+			return
+		case errors.As(err, &httpErr):
 			httpErr.WriteTo(w)
-		case isGQLErr:
+		case errors.As(err, &gqlErr):
 			gqlErr.WriteTo(w)
 		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)

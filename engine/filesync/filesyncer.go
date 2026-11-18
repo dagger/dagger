@@ -119,7 +119,7 @@ func (ls *FileSyncer) sync(
 	clientPath string,
 	opts SnapshotOpts,
 ) (_ bkcache.ImmutableRef, _ digest.Digest, rerr error) {
-	if err := ls.syncParentDirs(ctx, sharedState, callerConn, clientPath, drive, opts); err != nil {
+	if err := ls.syncParentDirs(ctx, sharedState, callerConn, clientPath, drive); err != nil {
 		return nil, "", fmt.Errorf("failed to sync parent dirs: %w", err)
 	}
 
@@ -150,7 +150,6 @@ func (ls *FileSyncer) syncParentDirs(
 	callerConn *grpc.ClientConn,
 	clientPath string,
 	drive string,
-	opts SnapshotOpts,
 ) (rerr error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer func() {
@@ -189,7 +188,7 @@ func (ls *FileSyncer) syncParentDirs(
 		return err
 	}
 
-	local := newParentLocalFS(sharedState, chain, opts.RelativePath)
+	local := newParentLocalFS(sharedState, chain)
 	if _, _, err := local.Sync(ctx, stats, ls.cacheManager, true); err != nil {
 		return fmt.Errorf("failed to sync to local fs: %w", err)
 	}

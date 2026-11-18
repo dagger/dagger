@@ -20,6 +20,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,7 @@ import (
 
 	"dagger.io/dagger"
 	gitsession "github.com/dagger/dagger/engine/session/git"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/testctx"
 )
@@ -203,7 +205,7 @@ func requireSampleGitHiddenCommit(ctx context.Context, t *testctx.T, c *dagger.C
 
 func requireStrictCommit(ctx context.Context, t *testctx.T, repo *core.GitRepository, refStr string) {
 	ref := repo.Commit(refStr)
-	_, err := ref.Sha(ctx)
+	_, err := ref.SHA(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "invalid commit SHA")
 }
@@ -280,11 +282,11 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 	sha := "c80ac2c13df7d573a069938e01ca13f7a81f0345"
 
 	commit := repo.Commit(sha)
-	gotSHA, err := commit.Sha(ctx)
+	gotSHA, err := commit.SHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sha, gotSHA)
 
-	shortSHA, err := commit.ShortSha(ctx)
+	shortSHA, err := commit.ShortSHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sha[:len(shortSHA)], shortSHA)
 
@@ -296,11 +298,11 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, authoredDate)
 
-	parents, err := commit.ParentShas(ctx)
+	parents, err := commit.ParentSHAs(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, parents)
 
-	refCommitSHA, err := repo.Ref(sha).TargetCommit().Sha(ctx)
+	refCommitSHA, err := repo.Ref(sha).TargetCommit().SHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sha, refCommitSHA)
 
@@ -479,7 +481,7 @@ git add . && git commit -m other
 			})
 			t.Run("merge first parent", func(ctx context.Context, t *testctx.T) {
 				assertPaths(t, merge.Changes(), []string{"topic"}, nil, nil)
-				parents, err := merge.ParentShas(ctx)
+				parents, err := merge.ParentSHAs(ctx)
 				require.NoError(t, err)
 				require.Len(t, parents, 2)
 				assertPaths(t, merge.Changes(core.GitCommitChangesOpts{Against: repo.Commit(parents[1])}), []string{"main"}, nil, nil)
@@ -506,7 +508,7 @@ git add . && git commit -m other
 			t.Run("stable recipe", func(ctx context.Context, t *testctx.T) {
 				first, err := ordinary.Changes().ID(ctx)
 				require.NoError(t, err)
-				sha, err := ordinary.Sha(ctx)
+				sha, err := ordinary.SHA(ctx)
 				require.NoError(t, err)
 				second, err := repo.Commit(sha).Changes().ID(ctx)
 				require.NoError(t, err)
@@ -1063,7 +1065,7 @@ sleep infinity
 	// Starting an ordinary read must not auto-load the identity file.
 	serviceID, err := sshSvc.ID(ctx)
 	require.NoError(t, err)
-	_, err = cli.With(daggerQuery(`{ git(url: %q, experimentalServiceHost: %q) { head { commitSHA } } }`, repoURL, serviceID)).Sync(ctx)
+	_, err = cli.With(daggerQuery(`{ git(url: %q, experimentalServiceHost: %q) { head { commitSha } } }`, repoURL, serviceID)).Sync(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "SSH URLs are not supported without an SSH socket")
 
@@ -1114,10 +1116,10 @@ sleep infinity
 						local: file(path: "local.txt") { contents }
 						git {
 							head {
-								commitSHA
+								commitSha
 								asRepository {
 									ref(name: "ssh-push") {
-										commitSHA
+										commitSha
 										tree(discardGitDir: true) { entries }
 									}
 								}
@@ -1151,10 +1153,10 @@ sleep infinity
 						"local": {"contents": "local commit\n"},
 						"git": {
 							"head": {
-								"commitSHA": %q,
+								"commitSha": %q,
 								"asRepository": {
 									"ref": {
-										"commitSHA": %q,
+										"commitSha": %q,
 										"tree": {"entries": ["README.md", "pushed.txt"]}
 									}
 								}
@@ -1172,8 +1174,8 @@ sleep infinity
 			resolver := client.
 				WithNewFile("/resolver/dagger.json", `{"name":"resolver","engineVersion":"latest","sdk":{"source":"dang"}}`).
 				WithNewFile("/resolver/main.dang", `type Resolver {
-  resolve(ws: Workspace!, name: String!): String! { ws.git.head.asRepository.ref(name: name).commitSHA }
-  direct(url: String!, name: String!): String! { git(url).ref(name: name).commitSHA }
+  resolve(ws: Workspace!, name: String!): String! { ws.git.head.asRepository.ref(name: name).commitSha }
+  direct(url: String!, name: String!): String! { git(url).ref(name: name).commitSha }
 }`)
 			script := func(script string) (string, string, int) {
 				ran := resolver.WithExec([]string{"dagger", "script", "-m", "/resolver"}, core.ContainerWithExecOpts{
@@ -2006,7 +2008,7 @@ func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
 		require.Equal(t, oldCommit, resolved)
 
 		// commit() accepts an abbreviated SHA too
-		sha, err := git.Commit(oldCommit[:7]).Sha(ctx)
+		sha, err := git.Commit(oldCommit[:7]).SHA(ctx)
 		require.NoError(t, err)
 		require.Equal(t, oldCommit, sha)
 
@@ -2025,24 +2027,60 @@ func (GitSuite) TestShortSHAResolution(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("remote repository", func(ctx context.Context, t *testctx.T) {
-		svc, url := gitService(ctx, t, c, core.NewQuery(c).Directory().WithNewFile("README.md", "Hello "+rand.Text()))
-		repo := core.NewQuery(c).Git(url, core.GitOpts{ExperimentalServiceHost: svc})
-
-		full, err := repo.Branch("main").CommitSHA(ctx)
+		// main: root - a - b; tag v1 and a pull request head reach commits
+		// no branch does; a deleted branch leaves one no ref reaches.
+		served := core.NewQuery(c).Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git", "git-daemon"}).
+			With(gitUserConfig).
+			WithWorkdir("/work").
+			WithExec([]string{"sh", "-c", `set -e
+git init -q -b main
+echo ` + rand.Text() + ` > f && git add f && git commit -qm root
+echo a > f && git commit -qam a
+echo b > f && git commit -qam b
+git checkout -q --orphan tagged && echo t > f && git add f && git commit -qm tagged && git tag v1
+git checkout -q --orphan pull && echo p > f && git add f && git commit -qm pull
+git checkout -q --orphan gone && echo g > f && git add f && git commit -qm gone
+git checkout -q main
+for r in main~1 v1 pull gone; do git rev-parse "$r"; done > /shas
+git clone -q --bare . /srv/repo.git
+git -C /srv/repo.git update-ref refs/pull/1/head pull
+git -C /srv/repo.git branch -D tagged pull gone
+`})
+		shas, err := served.File("/shas").Contents(ctx)
+		require.NoError(t, err)
+		var mainCommit, tagged, pull, gone string
+		_, err = fmt.Sscan(shas, &mainCommit, &tagged, &pull, &gone)
 		require.NoError(t, err)
 
-		// nothing fetched yet: ls-remote only advertises refs, so the prefix
-		// cannot be expanded
-		_, err = repo.Ref(full[:7]).CommitSHA(ctx)
-		require.Error(t, err)
-		requireErrOut(t, err, "already-fetched")
+		svc := served.
+			WithExposedPort(9418).
+			WithDefaultArgs([]string{"git", "daemon", "--export-all", "--base-path=/srv"}).
+			AsService()
+		host, err := svc.Hostname(ctx)
+		require.NoError(t, err)
+		repo := core.NewQuery(c).Git("git://"+host+"/repo.git", core.GitOpts{ExperimentalServiceHost: svc})
 
-		// once the commit's objects are fetched, the same prefix resolves
-		_, err = repo.Branch("main").Tree().Sync(ctx)
+		// Nothing is fetched yet, and the commit is no ref's tip: the
+		// remote's branches are fetched to expand the prefix.
+		resolved, err := repo.Ref(mainCommit[:7]).CommitSHA(ctx)
 		require.NoError(t, err)
-		resolved, err := repo.Ref(full[:7]).CommitSHA(ctx)
+		require.Equal(t, mainCommit, resolved)
+
+		// tags are fetched along with branches
+		sha, err := repo.Commit(tagged[:8]).SHA(ctx)
 		require.NoError(t, err)
-		require.Equal(t, full, resolved)
+		require.Equal(t, tagged, sha)
+
+		// then every other ref the remote advertises
+		resolved, err = repo.Ref(pull[:7]).CommitSHA(ctx)
+		require.NoError(t, err)
+		require.Equal(t, pull, resolved)
+
+		// a commit no advertised ref reaches cannot be found by prefix
+		_, err = repo.Ref(gone[:10]).CommitSHA(ctx)
+		requireErrOut(t, err, "no commit matches short SHA")
 	})
 }
 
@@ -2275,7 +2313,7 @@ func (GitSuite) TestGitCommitReleaseTagFreshness(ctx context.Context, t *testctx
 		advertised, err := repo.Tags(ctx)
 		require.NoError(t, err)
 		commit := repo.Head().TargetCommit()
-		sha, err = commit.Sha(ctx)
+		sha, err = commit.SHA(ctx)
 		require.NoError(t, err)
 		tagRef, err := commit.ReleaseTag(ctx)
 		require.NoError(t, err)
@@ -2383,7 +2421,7 @@ func (GitSuite) TestGitBundleRefFreshness(ctx context.Context, t *testctx.T) {
 		name, err := refs[0].Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "refs/heads/main", name)
-		sha, err = refs[0].Sha(ctx)
+		sha, err = refs[0].SHA(ctx)
 		require.NoError(t, err)
 		head, err := core.NewQuery(c).Git(repoURL).Branch("main").CommitSHA(ctx)
 		require.NoError(t, err)
@@ -2442,7 +2480,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 		t.Helper()
 		out := make([]string, 0, len(commits))
 		for _, commit := range commits {
-			sha, err := commit.Sha(ctx)
+			sha, err := commit.SHA(ctx)
 			require.NoError(t, err)
 			out = append(out, sha)
 		}
@@ -2478,12 +2516,12 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, authoredDate)
 
-		parents, err := log[0].ParentShas(ctx)
+		parents, err := log[0].ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{shaB}, parents)
 
 		// the oldest commit is a root commit
-		parents, err = log[2].ParentShas(ctx)
+		parents, err = log[2].ParentSHAs(ctx)
 		require.NoError(t, err)
 		require.Empty(t, parents)
 	})
@@ -2548,7 +2586,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 				require.True(t, reachable[logSHAs[i]],
 					"%s is not a parent of any commit listed before it", logSHAs[i])
 			}
-			parents, err := commit.ParentShas(ctx)
+			parents, err := commit.ParentSHAs(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, parents)
 			for _, parent := range parents {
@@ -2565,7 +2603,7 @@ func (GitSuite) TestGitLog(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 
 		c2 := connect(ctx, t)
-		reloadedSHA, err := core.Ref[*core.GitCommit](core.NewQuery(c2), id).Sha(ctx)
+		reloadedSHA, err := core.Ref[*core.GitCommit](core.NewQuery(c2), id).SHA(ctx)
 		require.NoError(t, err)
 		require.Equal(t, logSHAs[1], reloadedSHA)
 	})
@@ -2610,7 +2648,7 @@ func (GitSuite) TestGitLogBoundedRemoteHistory(ctx context.Context, t *testctx.T
 	commits, err = repo.Head().Log(ctx, core.GitRefLogOpts{Limit: 3, Paths: []string{"old.txt"}})
 	require.NoError(t, err)
 	require.Len(t, commits, 1)
-	sha, err := commits[0].Sha(ctx)
+	sha, err := commits[0].SHA(ctx)
 	require.NoError(t, err)
 	require.Equal(t, root, sha)
 
@@ -3379,4 +3417,159 @@ func (GitSuite) TestCaching(ctx context.Context, t *testctx.T) {
 
 		require.NotEqual(t, s1, s2)
 	})
+}
+
+// A remote commit's tree without .git is made from its tree with .git, on one
+// checkout: a workspace and a module loaded from one commit used to check it
+// out twice. It must come out identical to a tree checked out without .git on
+// its own, which is the same checkout, normalized the same way, with .git
+// removed: every file, mode, symlink and time of the tree with .git but its
+// .git. (A container shows a mounted or copied tree's root with a time of its
+// own, so the root's time isn't compared here; the tree's is restored after
+// .git goes, as a checkout's is.)
+func (GitSuite) TestRemoteTreeWithoutGitDirSharesCheckout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := core.NewQuery(c).Directory().
+		WithNewFile("README.md", "hello\n").
+		WithNewFile("bin/run.sh", "#!/bin/sh\necho run\n", core.DirectoryWithNewFileOpts{Permissions: 0o755}).
+		WithNewFile("nonce.txt", rand.Text()).
+		WithSymlink("README.md", "link-to-readme")
+	served := makeGitDir(c, content, "main")
+
+	const gitHost = "gittree.test"
+	repoURL := "http://" + gitHost + "/repo.git"
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", served, "", nil)
+	devEngine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
+		return ctr.WithServiceBinding(gitHost, gitSrv)
+	})
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+	client, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	q := core.NewQuery(client)
+
+	sha, err := q.Git(repoURL).Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+	ref := q.Git(repoURL).Ref(sha)
+	withGitDir := ref.Tree()
+	withoutGitDir := ref.Tree(core.GitRefTreeOpts{DiscardGitDir: true})
+	_, err = withoutGitDir.Sync(ctx)
+	require.NoError(t, err)
+	_, err = withGitDir.Sync(ctx)
+	require.NoError(t, err)
+
+	ents, err := q.Engine().LocalCache().EntrySet().Entries(ctx)
+	require.NoError(t, err)
+	var checkouts []string
+	for _, ent := range ents {
+		recordType, err := ent.RecordType(ctx)
+		require.NoError(t, err)
+		if recordType != "source.git.checkout" {
+			continue
+		}
+		desc, err := ent.Description(ctx)
+		require.NoError(t, err)
+		// The repository's mirror, which every checkout fetches from, is a
+		// checkout entry of its own.
+		if desc == "_remoteGitMirror" {
+			continue
+		}
+		checkouts = append(checkouts, desc)
+	}
+	require.Len(t, checkouts, 1, "one checkout serves both trees: %v", checkouts)
+
+	// Each path's type, mode, modification time, size and symlink target,
+	// and each file's contents, below the tree's root. The root itself is
+	// left out: copied into a container, it takes the copy's own time.
+	listing := func(dir *core.Directory) string {
+		t.Helper()
+		out, err := q.Container().From(alpineImage).
+			WithDirectory("/tree", dir).
+			WithWorkdir("/tree").
+			WithExec([]string{"sh", "-c", `set -eo pipefail
+find . -mindepth 1 -path ./.git -prune -o -print | sort | while read -r p; do stat -c '%n %F %a %Y %s %N' "$p"; done
+find . -path ./.git -prune -o -type f -print | sort | xargs sha256sum`}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return out
+	}
+	require.Equal(t, listing(withGitDir), listing(withoutGitDir),
+		"the tree without .git is the tree with .git but its .git")
+	entries, err := withoutGitDir.Entries(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, entries, ".git")
+}
+
+// A workspace selected by a commit of a remote repository and the module in
+// it at the same commit share one checkout. Modules named by commit pin their
+// git calls to it; the workspace's are pinned the same way, so the two trees,
+// with and without .git, are one ref's: before, the workspace's unpinned
+// calls made another ref, and the commit was checked out twice.
+func (GitSuite) TestRemoteWorkspaceAndItsModuleShareCheckout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// The function reads a file outside the module, from the workspace's
+	// root, so the call needs the commit's whole tree and not only the files
+	// loading the module reads.
+	nonce := rand.Text()
+	content := core.NewQuery(c).Directory().
+		WithNewFile("dagger.toml", "[modules.greeter]\nsource = '.dagger/modules/greeter'\nmain = true\n").
+		WithNewFile(".dagger/modules/greeter/dagger-module.toml", "name = \"greeter\"\n\n[runtime]\nsource = \"dang\"\n").
+		WithNewFile(".dagger/modules/greeter/main.dang", "type Greeter {\n  pub nonce(root: Directory! @defaultPath(path: \"/\")): String! {\n    root.file(\"nonce.txt\").contents\n  }\n}\n").
+		WithNewFile("nonce.txt", nonce)
+	served := makeGitDir(c, content, "main")
+
+	const gitHost = "gitworkspace.test"
+	repoURL := "http://" + gitHost + "/repo.git"
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", served, "", nil)
+	devEngine := devEngineContainer(c, func(ctr *core.Container) *core.Container {
+		return ctr.WithServiceBinding(gitHost, gitSrv)
+	})
+	engineSvc, err := core.NewQuery(c).Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
+	endpoint, err := engineSvc.Endpoint(ctx, core.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	plain, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { plain.Close() })
+	sha, err := core.NewQuery(plain).Git(repoURL).Branch("main").CommitSHA(ctx)
+	require.NoError(t, err)
+
+	// As native CI runs a check: the CLI, with the workspace selected by its
+	// commit.
+	cmd := hostDaggerCommand(ctx, t, t.TempDir(), "-W", repoURL+"@"+sha, "call", "nonce")
+	cmd.Env = append(cmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+endpoint)
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	require.Equal(t, nonce, strings.TrimSpace(string(out)))
+
+	ents, err := core.NewQuery(plain).Engine().LocalCache().EntrySet().Entries(ctx)
+	require.NoError(t, err)
+	var checkouts []string
+	for _, ent := range ents {
+		recordTypes, err := ent.RecordTypes(ctx)
+		require.NoError(t, err)
+		if !slices.Contains(recordTypes, "source.git.checkout") {
+			continue
+		}
+		// Each full checkout of a ref is a GitRef.tree entry. The
+		// repository's mirrors, which checkouts fetch from, are checkout
+		// entries of their own, and so is any tree holding only some files.
+		call, err := ent.DagqlCall(ctx)
+		require.NoError(t, err)
+		if call != "GitRef.tree" {
+			continue
+		}
+		desc, err := ent.Description(ctx)
+		require.NoError(t, err)
+		checkouts = append(checkouts, desc)
+	}
+	require.Len(t, checkouts, 1, "the workspace and its module share one checkout: %v", checkouts)
 }

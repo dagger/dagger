@@ -329,7 +329,7 @@ func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool
 	if err := os.Mkdir(realPath, info.Mode().Perm()); err != nil && !os.IsExist(err) {
 		return "", false, err
 	}
-	if err := copyMetadata(realPath, viewPath, info, nil, nil, false, nil, false); err != nil {
+	if err := copyMetadata(realPath, viewPath, info, nil, nil, nil, false, false); err != nil {
 		return "", false, err
 	}
 	d.markMaterialized(rel)
@@ -467,7 +467,7 @@ func (d *destination) applyMetadataPath(dstPath string, src *sourceEntry, opts C
 		info = src.Info
 		srcPath = src.RealPath
 	}
-	return copyMetadata(dstPath, srcPath, info, opts.Chown, opts.Mode, d.userxattr, opts.XAttrErrorHandler, opts.DisableXAttrs)
+	return copyMetadata(dstPath, srcPath, info, opts.Chown, opts.Mode, opts.XAttrErrorHandler, opts.DisableXAttrs, src != nil && src.file != nil)
 }
 
 func (d *destination) flush() error {
@@ -504,7 +504,7 @@ func (d *destination) usage() (snapshots.Usage, error) {
 	return usage, err
 }
 
-func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership, modeOverride *os.FileMode, userxattr bool, xattrErrorHandler XAttrErrorHandler, disableXAttrs bool) error {
+func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership, modeOverride *os.FileMode, xattrErrorHandler XAttrErrorHandler, disableXAttrs bool, sourceFD bool) error {
 	if srcInfo != nil {
 		st, ok := srcInfo.Sys().(*syscall.Stat_t)
 		if !ok {
@@ -529,7 +529,7 @@ func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership
 		}
 
 		if srcPath != "" && !disableXAttrs {
-			if err := copyXattrs(dstPath, srcPath, userxattr, xattrErrorHandler); err != nil {
+			if err := copyXattrs(dstPath, srcPath, sourceFD, xattrErrorHandler); err != nil {
 				return err
 			}
 		}
@@ -555,8 +555,13 @@ func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership
 	return nil
 }
 
-func copyXattrs(dstPath, srcPath string, _ bool, xattrErrorHandler XAttrErrorHandler) error {
-	xattrs, err := sysx.LListxattr(srcPath)
+func copyXattrs(dstPath, srcPath string, sourceFD bool, xattrErrorHandler XAttrErrorHandler) error {
+	list, get := sysx.LListxattr, sysx.LGetxattr
+	if sourceFD {
+		// Follow only the internally constructed procfs reference to a pinned fd.
+		list, get = sysx.Listxattr, sysx.Getxattr
+	}
+	xattrs, err := list(srcPath)
 	if err != nil {
 		if errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.ENODATA) {
 			return nil
@@ -570,7 +575,7 @@ func copyXattrs(dstPath, srcPath string, _ bool, xattrErrorHandler XAttrErrorHan
 		if xattr == "trusted.overlay.opaque" || xattr == "user.overlay.opaque" {
 			continue
 		}
-		val, err := sysx.LGetxattr(srcPath, xattr)
+		val, err := get(srcPath, xattr)
 		if err != nil {
 			if errors.Is(err, unix.ENODATA) {
 				continue

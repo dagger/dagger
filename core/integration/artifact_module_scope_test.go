@@ -53,10 +53,23 @@ source = "dang"
 		require.NoError(t, err)
 		require.Contains(t, out, "workspace modules could not be loaded")
 	})
-	for _, selector := range []string{"dag://?module=good", "--module=good"} {
-		t.Run(selector+" avoids loading unrelated modules", func(ctx context.Context, t *testctx.T) {
-			out, err := base.With(daggerExec("check", selector, "--generated=false", "--progress=report", "-vv")).CombinedOutput(ctx)
+	for _, selector := range [][]string{
+		{"dag://?module=good"},
+		{"--module=good"},
+		// Module flags come from discovery, and so do their checks' flags.
+		{"--good"},
+		{"--good", "--check=verify"},
+		{"--module=good", "--check=verify"},
+		// The listing names its rows' flags.
+		{"--good", "-l"},
+		{"--good", "--check=verify", "-l", "--all"},
+	} {
+		t.Run(strings.Join(selector, " ")+" avoids loading unrelated modules", func(ctx context.Context, t *testctx.T) {
+			args := append([]string{"check"}, selector...)
+			args = append(args, "--generated=false", "--progress=report", "-vv")
+			out, err := base.With(daggerExec(args...)).CombinedOutput(ctx)
 			require.NoError(t, err, out)
+			require.Contains(t, out, "verify")
 			require.NotContains(t, out, "intentionally invalid")
 			require.NotContains(t, out, "modules/bad")
 		})

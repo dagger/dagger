@@ -91,6 +91,26 @@ defmodule Dagger.CurrentModule do
   end
 
   @doc """
+  The names the engine gives this module's own declarations: the same as its source's ModuleSource.naming, for module runtimes, which have no ModuleSource.
+
+  It answers for the module under its own name (ModuleSource.moduleName), by the naming rules of the version the module is named by. A workspace or toolchain that loads the module under another name namespaces its types under that name instead, which this doesn't reflect.
+
+  > #### Experimental {: .warning}
+  >
+  > "Identifier casing APIs are likely to change."
+  """
+  @spec naming(t()) :: Dagger.ModuleNaming.t()
+  def naming(%__MODULE__{} = current_module) do
+    query_builder =
+      current_module.query_builder |> QB.select("naming")
+
+    %Dagger.ModuleNaming{
+      query_builder: query_builder,
+      client: current_module.client
+    }
+  end
+
+  @doc """
   The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
   """
   @spec source(t()) :: Dagger.Directory.t()

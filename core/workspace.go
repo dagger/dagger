@@ -103,19 +103,20 @@ type Workspace struct {
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
 
-	// mounts is an in-engine directory tree holding content attached read-only
-	// via Workspace.withMountedDirectory/withMountedFile, keyed by
+	// mounts is an in-engine directory tree holding content attached via
+	// Workspace.withMountedDirectory/withMountedFile, keyed by
 	// workspace-root-relative mount path. Internal only — not a GraphQL field,
 	// but persisted and dependency-tracked like rootfs. Nil when the workspace
 	// has no mounts. It is intentionally kept separate from the overlay
-	// changeset so mounted content is readable through the normal workspace
-	// file tools but is never treated as a pending change or exported.
+	// changeset so mounted content is readable and editable through the normal
+	// workspace file tools but is never treated as a pending change or
+	// exported.
 	mounts dagql.ObjectResult[*Directory]
 
 	// mountPoints lists the workspace-root-relative paths at which content is
 	// mounted, sorted and deduplicated. Reads at or under a mount point
-	// resolve from mounts (shadowing the source), and overlay edits there are
-	// rejected, keeping mounted content read-only.
+	// resolve from mounts (shadowing the source), and edits there apply to
+	// mounts instead of the overlay.
 	mountPoints []string
 
 	// compatWorkspace stores the originating compat-workspace projection when
@@ -199,6 +200,12 @@ func (*WorkspaceSourceDirectory) workspaceSource() {}
 
 type WorkspaceSourceGitRef struct {
 	Ref dagql.Result[*GitRef]
+	// Sparse holds the part of the tree module loading reads, so that reading
+	// it doesn't make the full checkout. It only serves reads faster: it's not
+	// part of the workspace's identity, and a workspace without one reads
+	// everything from its tree. It's persisted with the workspace, since an
+	// engine can use a workspace's record in place of the one it loaded.
+	Sparse *GitSparseTree
 }
 
 func (*WorkspaceSourceGitRef) workspaceSource() {}
@@ -319,6 +326,25 @@ func (ws *Workspace) SourceDirectory() (dagql.ObjectResult[*Directory], bool) {
 		return ws.rootfs, true
 	}
 	return dagql.ObjectResult[*Directory]{}, false
+}
+
+// GitSparseTree returns the sparse tree of a Git workspace without edits.
+func (ws *Workspace) GitSparseTree() (*GitSparseTree, bool) {
+	src, ok := ws.Source().(*WorkspaceSourceGitRef)
+	if !ok || src.Sparse == nil {
+		return nil, false
+	}
+	return src.Sparse, true
+}
+
+// GitSparseTreeFS returns where to stat and read this workspace's tree
+// without making its checkout, if it has a sparse tree.
+func (ws *Workspace) GitSparseTreeFS() (*GitSparseTreeFS, bool) {
+	sparse, ok := ws.GitSparseTree()
+	if !ok {
+		return nil, false
+	}
+	return &GitSparseTreeFS{Sparse: sparse, Full: ws.rootfs}, true
 }
 
 func (ws *Workspace) SourceGitRef() (dagql.Result[*GitRef], bool) {
@@ -558,9 +584,9 @@ func (ws *Workspace) SetModuleClients(clients map[string][]string) {
 	ws.moduleClients = clients
 }
 
-// MountsDir returns the read-only directory tree holding mounted content,
-// keyed by workspace-root-relative mount path, or false when the workspace has
-// no mounts.
+// MountsDir returns the directory tree holding mounted content, keyed by
+// workspace-root-relative mount path, or false when the workspace has no
+// mounts.
 func (ws *Workspace) MountsDir() (dagql.ObjectResult[*Directory], bool) {
 	if ws == nil || ws.mounts.Self() == nil {
 		return dagql.ObjectResult[*Directory]{}, false
@@ -568,9 +594,28 @@ func (ws *Workspace) MountsDir() (dagql.ObjectResult[*Directory], bool) {
 	return ws.mounts, true
 }
 
-// WithMounted returns a copy of the workspace with the given read-only
-// mounted content tree and the workspace-root-relative path recorded as a
-// mount point, keeping the mount point list sorted and deduplicated.
+// WithMountsDir returns a copy of the workspace with its mounts tree replaced
+// by newMounts and its mount points kept: an edit to content beneath the
+// existing mounts.
+func (ws *Workspace) WithMountsDir(newMounts dagql.ObjectResult[*Directory]) *Workspace {
+	cp := ws.Clone()
+	cp.mounts = newMounts
+	return cp
+}
+
+// IsMountPoint reports whether a workspace-root-relative path is exactly one
+// of the workspace's mount points.
+func (ws *Workspace) IsMountPoint(resolvedPath string) bool {
+	if ws == nil {
+		return false
+	}
+	_, found := slices.BinarySearch(ws.mountPoints, filepath.ToSlash(resolvedPath))
+	return found
+}
+
+// WithMounted returns a copy of the workspace with the given mounted content
+// tree and the workspace-root-relative path recorded as a mount point,
+// keeping the mount point list sorted and deduplicated.
 func (ws *Workspace) WithMounted(newMounts dagql.ObjectResult[*Directory], path string) *Workspace {
 	cp := ws.Clone()
 	cp.mounts = newMounts
@@ -693,6 +738,7 @@ type persistedWorkspaceSource struct {
 	Kind           string                    `json:"kind"`
 	RootResultID   uint64                    `json:"rootResultID,omitempty"`
 	GitRefResultID uint64                    `json:"gitRefResultID,omitempty"`
+	SparseResultID uint64                    `json:"sparseResultID,omitempty"`
 	ChangesID      uint64                    `json:"changesID,omitempty"`
 	TouchedPaths   []string                  `json:"touchedPaths,omitempty"`
 	SeededPaths    []string                  `json:"seededPaths,omitempty"`
@@ -732,10 +778,18 @@ func encodePersistedWorkspaceSource(enc *dagql.PersistEncodeContext, src Workspa
 		if err != nil {
 			return nil, err
 		}
-		return &persistedWorkspaceSource{
+		payload := &persistedWorkspaceSource{
 			Kind:           persistedWorkspaceSourceGitRef,
 			GitRefResultID: refID,
-		}, nil
+		}
+		if src.Sparse != nil && src.Sparse.Root.Self() != nil {
+			sparseID, err := encodePersistedObjectRef(enc, src.Sparse.Root, "workspace sparse tree")
+			if err != nil {
+				return nil, err
+			}
+			payload.SparseResultID = sparseID
+		}
+		return payload, nil
 	case *WorkspaceSourceOverlay:
 		payload := &persistedWorkspaceSource{Kind: persistedWorkspaceSourceOverlay}
 		if src.Base != nil {
@@ -797,7 +851,15 @@ func decodePersistedWorkspaceSource(
 		if err != nil {
 			return nil, err
 		}
-		return NewWorkspaceSourceGitRef(ref.Result), nil
+		source := &WorkspaceSourceGitRef{Ref: ref.Result}
+		if persisted.SparseResultID != 0 {
+			root, err := loadPersistedObjectResultByResultID[*Directory](ctx, dec, persisted.SparseResultID, "workspace sparse tree")
+			if err != nil {
+				return nil, err
+			}
+			source.Sparse = &GitSparseTree{Root: root}
+		}
+		return source, nil
 	case persistedWorkspaceSourceOverlay:
 		base, err := decodePersistedWorkspaceSource(ctx, dec, persisted.Base, rootfs, hostPath)
 		if err != nil {
@@ -1018,16 +1080,30 @@ func attachWorkspaceSource(
 		if err != nil {
 			return nil, fmt.Errorf("attach workspace git ref source: %w", err)
 		}
+		var deps []dagql.AnyResult
 		switch ref := attached.(type) {
 		case dagql.Result[*GitRef]:
 			src.Ref = ref
-			return []dagql.AnyResult{ref}, nil
+			deps = append(deps, ref)
 		case dagql.ObjectResult[*GitRef]:
 			src.Ref = ref.Result
-			return []dagql.AnyResult{ref}, nil
+			deps = append(deps, ref)
 		default:
 			return nil, fmt.Errorf("attach workspace git ref source: unexpected result %T", attached)
 		}
+		if src.Sparse != nil && src.Sparse.Root.Self() != nil {
+			attachedRoot, err := attach(src.Sparse.Root)
+			if err != nil {
+				return nil, fmt.Errorf("attach workspace sparse tree: %w", err)
+			}
+			root, ok := attachedRoot.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach workspace sparse tree: unexpected result %T", attachedRoot)
+			}
+			src.Sparse.Root = root
+			deps = append(deps, root)
+		}
+		return deps, nil
 	case *WorkspaceSourceOverlay:
 		var deps []dagql.AnyResult
 		baseDeps, err := attachWorkspaceSource(attach, src.Base)

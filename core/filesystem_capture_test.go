@@ -25,7 +25,7 @@ func TestCapturePersistedFilesystemDirectEvaluation(t *testing.T) {
 				require.NoError(t, err)
 				value, state = file, &file.Lazy.(*FileSubfileLazy).LazyState
 			} else {
-				dir, err := source.Subdirectory(ctx, parent, "subdir")
+				dir, err := source.Subdirectory(ctx, parent, "subdir", false)
 				require.NoError(t, err)
 				value, state = dir, &dir.Lazy.(*DirectorySubdirectoryLazy).LazyState
 			}

@@ -77,7 +77,7 @@ func TestEvaluatedLazyOperationAttachmentBeforePublication(t *testing.T) {
 	source := containerPersistenceTestDirectory("source-tree", "/")
 	source.Snapshot.setValue(&operationTreeRef{cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "source-tree", snapshotID: "source-tree"}, root: root})
 	parent := env.attach(t, ctx, cache, srv, "source", source).(dagql.ObjectResult[*Directory])
-	dir, err := source.Subdirectory(ctx, parent, "selected")
+	dir, err := source.Subdirectory(ctx, parent, "selected", false)
 	require.NoError(t, err)
 	file, err := source.Subfile(ctx, parent, "selected/data")
 	require.NoError(t, err)

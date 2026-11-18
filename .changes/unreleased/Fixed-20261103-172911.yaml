@@ -1,0 +1,10 @@
+kind: Fixed
+body: |
+  `dagger generate` gives an SDK a scope's setting over its provider module's
+  setting when the two names differ only in case, and fails when a scope
+  records two settings whose names differ only in case. Before, the SDK
+  received one of them at random.
+time: 2026-11-03T17:29:11Z
+custom:
+  Author: eunomie
+  PR: "15084"

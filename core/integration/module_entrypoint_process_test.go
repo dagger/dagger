@@ -4,18 +4,24 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"os"
 	"strings"
 
 	"dagger.io/dagger/core"
 
+	"github.com/dagger/dagger/dagql/dagui"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // The process reads the engine with the dagger CLI that the module ships, so
 // the test needs no SDK. Lazy separates creating the process from running it.
 // Shared starts a process whose recipe holds nothing of the module, so modules
-// sharing its cache key would show.
+// sharing its cache key would show. Stdio prints from a helper without API
+// access, then from the module process, which returns its result in a file as
+// SDK entrypoints do.
 const moduleProcessEntrypoint = `type Entrypoint implements ModuleEntrypoint {
   pub types(workspace: Workspace!): [TypeDef!]! {
     [
@@ -27,7 +33,8 @@ const moduleProcessEntrypoint = `type Entrypoint implements ModuleEntrypoint {
         .withFunction(function("Call", typeDef.withKind(TypeDefKind.STRING_KIND)))
         .withFunction(function("Lazy", typeDef.withObject("Container")))
         .withFunction(function("Shared", typeDef.withKind(TypeDefKind.STRING_KIND)))
-        .withFunction(function("DefaultNesting", typeDef.withKind(TypeDefKind.STRING_KIND))),
+        .withFunction(function("DefaultNesting", typeDef.withKind(TypeDefKind.STRING_KIND)))
+        .withFunction(function("Stdio", typeDef.withKind(TypeDefKind.STRING_KIND))),
     ]
   }
 
@@ -48,6 +55,8 @@ const moduleProcessEntrypoint = `type Entrypoint implements ModuleEntrypoint {
       (JSON.encode(process("call").stdout) :: JSON!)
     } else if (fnName == "DefaultNesting") {
       (JSON.encode(sharedProcess.withExec(["sh", "/query.sh"]).stdout) :: JSON!)
+    } else if (fnName == "Stdio") {
+      (stdio.file("/result.json").contents :: JSON!)
     } else if (fnName == "Lazy") {
       (JSON.encode(process("process").id) :: JSON!)
     } else {
@@ -61,6 +70,15 @@ const moduleProcessEntrypoint = `type Entrypoint implements ModuleEntrypoint {
 
   let sharedProcess: Container! {
     container.from("%[1]s").withNewFile("/query.sh", %[2]q)
+  }
+
+  let stdio: Container! {
+    container
+      .from("%[1]s")
+      .withFile("/probe.sh", currentModule.source.file("probe.sh"))
+      .withFile("/nonce", currentModule.source.file("nonce"))
+      .withExec(["sh", "/probe.sh", "helper"], disableDaggerInDagger: true)
+      .withExec(["sh", "/probe.sh", "stdio"])
   }
 
   let process(mode: String!): Container! {
@@ -84,6 +102,14 @@ process)
   ;;
 call)
   query '{currentFunctionCall{name}}' 2>&1 || true
+  ;;
+helper)
+  echo "helper-$(cat /nonce)"
+  ;;
+stdio)
+  echo "stdout-$(cat /nonce)"
+  echo "stderr-$(cat /nonce)" >&2
+  printf '"done"' > /result.json
   ;;
 grandchild)
   cli=$(query '{currentModule{source{file(path:"bin/dagger"){id}}}}' | tr -d ' \n' | sed 's/.*"id":"\([^"]*\)".*/\1/')
@@ -160,6 +186,78 @@ func (ModuleSuite) TestModuleEntrypointProcessServesModule(ctx context.Context, 
 		require.Contains(t, call(ctx, t, both, "./m", "shared"), `"name":"m"`)
 		require.Contains(t, call(ctx, t, both, "./n", "shared"), `"name":"n"`)
 	})
+}
+
+// The module process prints the function body's output, so the output shows on
+// the function call as a runtime's does. A helper without API access stays in
+// the entrypoint's plumbing.
+func (ModuleSuite) TestModuleEntrypointStdoutLogs(ctx context.Context, t *testctx.T) {
+	if _, nested := os.LookupEnv("DAGGER_SESSION_PORT"); nested {
+		t.Skip("needs its own CLI session to forward telemetry to the sink")
+	}
+	sink := newAgentTraceSink(t)
+	c := connect(ctx, t, sink.clientOpts()...)
+	nonce := rand.Text()
+	stdout, stderr, helper := "stdout-"+nonce, "stderr-"+nonce, "helper-"+nonce
+
+	run := moduleProcessFixture(t, goGitBase(t, c), "m", "m").
+		WithNewFile("m/nonce", nonce).
+		WithExec([]string{"dagger", "--progress=logs", "call", "-m", "./m", "stdio"}, core.ContainerWithExecOpts{UseEntrypoint: true})
+	out, err := run.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "done", strings.TrimSpace(out), "the result is unchanged")
+	rendered, err := run.Stderr(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+
+	// The logs frontend prints a span's output at default verbosity only when
+	// no parent encapsulates it.
+	require.Equal(t, 1, strings.Count(rendered, stdout), rendered)
+	require.Equal(t, 1, strings.Count(rendered, stderr), rendered)
+	require.NotContains(t, rendered, helper)
+
+	// Module m namespaces its Probe object.
+	const fnSpan, entrypointSpan = "MProbe.stdio", "call module entrypoint"
+	// owner -> output -> stdio.stream of each record. The run's own exec
+	// echoes the rendered output on a span that has neither owner. The dagger
+	// CLI forwards the telemetry it receives to its exec's OTLP endpoint, so
+	// the sink gets each record of its session twice, unchanged; a record
+	// emitted twice has another timestamp.
+	got := map[string]map[string][]int64{fnSpan: {}, entrypointSpan: {}}
+	seen := map[string]bool{}
+	_, exports := sink.capture()
+	sink.read(func(db *dagui.DB) {
+		for _, req := range exports {
+			for _, rl := range req.ResourceLogs {
+				for _, sl := range rl.ScopeLogs {
+					for _, lr := range sl.LogRecords {
+						var id trace.SpanID
+						copy(id[:], lr.SpanId)
+						span := db.Spans.Map[dagui.SpanID{SpanID: id}]
+						body := strings.TrimSpace(lr.GetBody().GetStringValue())
+						key := fmt.Sprintf("%x %d %s", lr.SpanId, lr.TimeUnixNano, body)
+						if span == nil || !strings.HasSuffix(body, nonce) || seen[key] {
+							continue
+						}
+						seen[key] = true
+						owner := span.Name
+						if owner != fnSpan {
+							owner = nearestAncestor(span, fnSpan, entrypointSpan).Name
+						}
+						for _, attr := range lr.Attributes {
+							if got[owner] != nil && attr.Key == telemetry.StdioStreamAttr {
+								got[owner][body] = append(got[owner][body], attr.GetValue().GetIntValue())
+							}
+						}
+					}
+				}
+			}
+		}
+	})
+	require.Equal(t, map[string]map[string][]int64{
+		fnSpan:         {stdout: {1}, stderr: {2}},
+		entrypointSpan: {helper: {1}},
+	}, got)
 }
 
 func (ModuleSuite) TestModuleFunctionProcessHasNoModule(ctx context.Context, t *testctx.T) {

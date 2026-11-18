@@ -1,0 +1,8 @@
+kind: Fixed
+body: |-
+    A git module loaded through a workspace that carries uncommitted edits or mounts is now keyed on that workspace's content, so its cached results follow a change to a module it serves from the workspace's tree.
+    Any edit in such a workspace now makes its git modules' calls run again, where before only edits to the module's own files did. A workspace from a git repository with nothing uncommitted is now its head's workspace, with no empty set of changes on top.
+time: 2026-11-05T12:00:00Z
+custom:
+    Author: sipsma
+    PR: "15080"

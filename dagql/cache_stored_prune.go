@@ -27,12 +27,12 @@ import (
 // sender's holding keeps until a part that names it is stored.
 
 // engineHoldingsLocked counts the holdings of engine caches on res: one
-// ownership unit each. An engine's Cloud holding owns nothing. Requires
+// ownership unit each. An engine's Cloud and image holdings own nothing. Requires
 // egraphMu.
 func (res *sharedResult) engineHoldingsLocked() int64 {
 	var n int64
 	for key := range res.holders {
-		if key.Cache != cloudCacheID {
+		if !senderCache(key.Cache) {
 			n++
 		}
 	}

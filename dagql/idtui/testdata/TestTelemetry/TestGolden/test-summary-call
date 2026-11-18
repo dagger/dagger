@@ -2,6 +2,7 @@ Expected stderr:
 
 CHECKS  ✘ 1 failed
 ✘ testSummary X.Xs ERROR
+  ! nested test failed
   TESTS
     ✘ github.com/dagger/dagger/dagql/idtui/viztest FAIL
     ✘ viztest › TestProvision FAIL

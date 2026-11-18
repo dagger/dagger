@@ -72,24 +72,9 @@ func PrepareCollectionRuntime(dir string) error {
 	if len(collections) == 0 {
 		return nil
 	}
-	pkgs, err := packages.Load(&packages.Config{
-		Dir: dir, Fset: fset, Mode: packages.LoadSyntax,
-		ParseFile: func(fset *token.FileSet, path string, src []byte) (*ast.File, error) {
-			if file := files[path]; file != nil {
-				return file, nil
-			}
-			return parser.ParseFile(fset, path, src, parser.ParseComments)
-		},
-	}, ".")
+	pkg, err := loadCollectionRuntime(dir, fset, files)
 	if err != nil {
 		return err
-	}
-	if len(pkgs) != 1 {
-		return fmt.Errorf("expected one runtime package, got %d", len(pkgs))
-	}
-	pkg := pkgs[0]
-	if len(pkg.Errors) > 0 {
-		return fmt.Errorf("load collection runtime: %w", pkg.Errors[0])
 	}
 	collectionTypes := map[types.Type]bool{}
 	for typ, name := range collections {
@@ -114,6 +99,59 @@ func PrepareCollectionRuntime(dir string) error {
 		}
 	}
 	return nil
+}
+
+// loadCollectionRuntime type-checks the runtime package in dir, whose own
+// files are files, through the Go SDK's export driver when it is configured.
+func loadCollectionRuntime(dir string, fset *token.FileSet, files map[string]*ast.File) (*packages.Package, error) {
+	cfg := &packages.Config{
+		Dir: dir, Fset: fset,
+		// NeedExportFile, as codegen's loadPackage asks for it: the Go SDK's
+		// export driver serves the export data of what the package imports
+		// only when asked for it.
+		Mode: packages.LoadSyntax | packages.NeedExportFile,
+		ParseFile: func(fset *token.FileSet, path string, src []byte) (*ast.File, error) {
+			if file := files[path]; file != nil {
+				return file, nil
+			}
+			// Another of the module's packages, type-checked from source for
+			// its declarations only.
+			file, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+			if err != nil {
+				return nil, err
+			}
+			for _, decl := range file.Decls {
+				if fn, ok := decl.(*ast.FuncDecl); ok {
+					fn.Body = nil
+				}
+			}
+			return file, nil
+		},
+	}
+	driverLog, err := exportDriverLog(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if driverLog != "" {
+		defer os.Remove(driverLog)
+	}
+	pkgs, err := packages.Load(cfg, ".")
+	if err != nil {
+		return nil, err
+	}
+	if driverLog != "" {
+		if err := checkExportDriver(driverLog); err != nil {
+			return nil, err
+		}
+	}
+	if len(pkgs) != 1 {
+		return nil, fmt.Errorf("expected one runtime package, got %d", len(pkgs))
+	}
+	pkg := pkgs[0]
+	if len(pkg.Errors) > 0 {
+		return nil, fmt.Errorf("load collection runtime: %w", pkg.Errors[0])
+	}
+	return pkg, nil
 }
 
 func writeCollectionRuntimeFile(fset *token.FileSet, file *ast.File, info *types.Info, collectionTypes map[types.Type]bool) error {

@@ -84,8 +84,13 @@ func (ws *Workspace) ContentIdentity(ctx context.Context) (_ digest.Digest, ok b
 	if err := addSource("source", ws.source); err != nil {
 		return "", false, err
 	}
-	if err := addResult("rootfs", ws.rootfs, ws.rootfs.Self() != nil); err != nil {
-		return "", false, err
+	// A Git workspace's tree is its ref's, which the source covers. Its own
+	// digest changes once it's checked out, which may never happen: reads of a
+	// Git workspace are served without it where they can be.
+	if _, ok := ws.BaseSource().(*WorkspaceSourceGitRef); !ok {
+		if err := addResult("rootfs", ws.rootfs, ws.rootfs.Self() != nil); err != nil {
+			return "", false, err
+		}
 	}
 	if err := addResult("mounts", ws.mounts, ws.mounts.Self() != nil); err != nil {
 		return "", false, err

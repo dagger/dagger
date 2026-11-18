@@ -520,6 +520,28 @@ func (ContainerSuite) TestExecRedirectNotLogged(ctx context.Context, t *testctx.
 	require.Equal(t, "ERR-REDIRECTED\n", errOut)
 }
 
+// Each exec stacks a layer on the container's root filesystem. However many
+// stack, the root directory keeps its owner, and every exec's files.
+func (ContainerSuite) TestLongExecChain(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const execs = 140
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage).
+		WithExec([]string{"chown", "1000:1000", "/"})
+	for i := range execs {
+		ctr = ctr.WithExec([]string{"touch", fmt.Sprintf("/f%03d", i)})
+		if i%20 == 19 {
+			// Evaluate as the chain grows, so each query stays small.
+			var err error
+			ctr, err = ctr.Sync(ctx)
+			require.NoError(t, err)
+		}
+	}
+	out, err := ctr.WithExec([]string{"sh", "-c", "stat -c %u:%g / && ls / | grep -c '^f[0-9]'"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("1000:1000\n%d\n", execs), out)
+}
+
 func (ContainerSuite) TestExecWithWorkdir(ctx context.Context, t *testctx.T) {
 	res, err := testutil.Query[struct {
 		Container struct {
@@ -1828,6 +1850,24 @@ func (ContainerSuite) TestWithMountedFiles(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "one", contents)
 	})
 
+	t.Run("files of a layered snapshot, read again", func(ctx context.Context, t *testctx.T) {
+		// One file changed in the snapshot's topmost layer, shadowing its old
+		// contents below, and one only in a layer below. The second read of each
+		// finds its layer already known.
+		layered := ctr.
+			WithExec([]string{"sh", "-c", "mkdir /out; echo old > /out/changed; echo kept > /out/kept; chmod 640 /out/changed /out/kept"}).
+			WithExec([]string{"sh", "-c", "echo new > /out/changed; chmod 640 /out/changed"})
+		files := []*sdkcore.File{layered.File("/out/changed"), layered.File("/out/kept")}
+		mounted := ctr.WithMountedFiles("/mnt/files", files)
+		for _, read := range []string{"first", "second"} {
+			out, err := mounted.
+				WithExec([]string{"sh", "-c", "echo " + read + "; cat /mnt/files/changed /mnt/files/kept; stat -c %a /mnt/files/changed /mnt/files/kept"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, read+"\nnew\nkept\n640\n640\n", out)
+		}
+	})
+
 	t.Run("empty list", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.WithMountedFiles("/mnt/files", []*sdkcore.File{}).
 			WithExec([]string{"sh", "-c", "test -d /mnt/files && ls -A /mnt/files"}).
@@ -2025,6 +2065,42 @@ func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, err)
 		require.Contains(t, output, "size=4k")
+	})
+
+	t.Run("on disk", func(ctx context.Context, t *testctx.T) {
+		output, err := output([]sdkcore.ContainerWithMountedTempOpts{
+			{Disk: true},
+		})
+
+		require.NoError(t, err)
+		require.Contains(t, output, " /mnt/tmp ")
+		require.NotContains(t, output, "tmpfs")
+	})
+
+	t.Run("on disk, empty for each process", func(ctx context.Context, t *testctx.T) {
+		ctr := sdkcore.NewQuery(c).Container().
+			From(alpineImage).
+			WithMountedTemp("/mnt/tmp", sdkcore.ContainerWithMountedTempOpts{Disk: true})
+
+		first, err := ctr.
+			WithExec([]string{"sh", "-c", "ls -A /mnt/tmp; stat -c %A /mnt/tmp; echo first > /mnt/tmp/file"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "drwxrwxrwt\n", first)
+
+		second, err := ctr.
+			WithExec([]string{"sh", "-c", "echo first > /mnt/tmp/file"}).
+			WithExec([]string{"ls", "-A", "/mnt/tmp"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, second)
+	})
+
+	t.Run("on disk, with a size", func(ctx context.Context, t *testctx.T) {
+		_, err := output([]sdkcore.ContainerWithMountedTempOpts{
+			{Disk: true, Size: 4000},
+		})
+		requireErrOut(t, err, "size applies only to a temporary directory in memory")
 	})
 }
 
@@ -3756,7 +3832,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 	t.Run("Docker", func(ctx context.Context, t *testctx.T) {
 		out, err := sdkcore.NewQuery(c).Container().
 			Import(sdkcore.NewQuery(c).Container().From(alpineImage).WithEnvVariable("FOO", "bar").AsTarball(sdkcore.ContainerAsTarballOpts{
-				MediaTypes: sdkcore.ImageMediaTypesDockerMediaTypes,
+				MediaTypes: sdkcore.ImageMediaTypesDocker,
 			})).
 			WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -4556,7 +4632,7 @@ func publishAndRead(ctx context.Context, registry *core.Service, ref string, opt
 			)).
 			Stderr(ctx)
 		require.NoError(t, err)
-		require.Contains(t, stderr, "insecureSkipTLSVerify cannot be used with HTTP registry protocol")
+		require.Contains(t, stderr, "insecureSkipTlsVerify cannot be used with HTTP registry protocol")
 	})
 }
 
@@ -4797,6 +4873,39 @@ func kernelAtLeast(t testing.TB, release string, major, minor int) bool {
 	_, err := fmt.Sscanf(strings.TrimSpace(release), "%d.%d", &gotMajor, &gotMinor)
 	require.NoError(t, err)
 	return gotMajor > major || gotMajor == major && gotMinor >= minor
+}
+
+// An exec whose process the kernel's OOM killer killed fails with an error
+// that says so, not only with its exit code.
+func (ContainerSuite) TestExecOOMKilled(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := sdkcore.NewQuery(c).Container().From(alpineImage)
+	out, err := ctr.
+		WithExec([]string{"sh", "-c", "test -f /sys/fs/cgroup/cgroup.controllers || echo no-cgroup-v2"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	if strings.TrimSpace(out) == "no-cgroup-v2" {
+		t.Skip("the engine's execs aren't on cgroup v2")
+	}
+
+	// Give a process a memory limit it exceeds, in a cgroup of its own below
+	// the exec's. A cgroup with children can't hold processes, so the exec's
+	// processes move to a sibling first.
+	_, err = ctr.
+		WithExec([]string{"sh", "-c", `
+cd /sys/fs/cgroup
+mkdir procs oom
+for pid in $(cat cgroup.procs); do echo $pid > procs/cgroup.procs 2>/dev/null || :; done
+set -e
+echo +memory > cgroup.subtree_control
+echo 16M > oom/memory.max
+sh -c 'echo $$ > /sys/fs/cgroup/oom/cgroup.procs && exec tail /dev/zero'
+`}, sdkcore.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		}).
+		Sync(ctx)
+	requireErrOut(t, err, "exit code: 137: out of memory")
 }
 
 func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context, t *testctx.T) {
@@ -5148,7 +5257,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			sdkcore.ImageLayerCompressionEstarGz,
+			sdkcore.ImageLayerCompressionEstargz,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
@@ -5326,11 +5435,11 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			sdkcore.ImageMediaTypesOcimediaTypes,
+			sdkcore.ImageMediaTypesOci,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			sdkcore.ImageMediaTypesDockerMediaTypes,
+			sdkcore.ImageMediaTypesDocker,
 			"application/vnd.docker.image.rootfs.diff.tar.gzip",
 		},
 	} {
@@ -5446,7 +5555,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), version: dockerVersion})
-		for _, mediaType := range []sdkcore.ImageMediaTypes{sdkcore.ImageMediaTypesOcimediaTypes, sdkcore.ImageMediaTypesDockerMediaTypes} {
+		for _, mediaType := range []sdkcore.ImageMediaTypes{sdkcore.ImageMediaTypesOci, sdkcore.ImageMediaTypesDocker} {
 			for _, compression := range []sdkcore.ImageLayerCompression{sdkcore.ImageLayerCompressionGzip, sdkcore.ImageLayerCompressionZstd, sdkcore.ImageLayerCompressionUncompressed} {
 				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(ctx context.Context, t *testctx.T) {
 					tmpdir := t.TempDir()

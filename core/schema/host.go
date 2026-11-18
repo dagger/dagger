@@ -21,12 +21,15 @@ import (
 	"github.com/distribution/reference"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/filesync"
+	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/gitutil"
@@ -42,10 +45,12 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			return parent.NewHost(), nil
 		}).Doc(`Queries the host environment.`),
 
-		dagql.NodeFunc("_builtinContainer", s.builtinContainer).
-			WithInput(engineDefaultPlatformInput).
-			IsPersistable().
-			Doc("Retrieves a container builtin to the engine."),
+		dagql.NodeFunc("__bundledDirectory", s.bundledDirectory).
+			Doc("The directory with this content digest that the engine image's entries hold, such as a built-in SDK's files. Fails when the image ships none: no other result answers, since a content digest is not a secret."),
+
+		dagql.NodeFunc("_engineImageBundle", s.engineImageBundle).
+			View(AfterVersion("v1.0.0-beta.26")).
+			Doc("The entries of results, exported for an engine image to ship: a directory's or file's snapshot, a container's image config and filesystem, and a Git module source's checkout. Returns the bundle an engine built from the image merges at start, and its blobs. Called by the engine image's build."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
@@ -132,37 +137,49 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("__gitDir", s.gitDir).
 			NotReplayable("Reconstructs a Git checkout from the originating client").
-			WithInput(dagql.PerClientInput).
+			WithInput(hostGitCheckoutInput).
+			IsPersistable().
 			Doc(`(Internal-only) A canonical .git directory for the client checkout at path, reconstructed from the client's own git pack.`,
-				`The engine never interprets a host checkout's raw git layout (worktree/submodule pointer files, commondirs, separate git dirs): the client's own git packs the repository and the engine rebuilds a standalone .git from the pack.`).
+				`The engine never interprets a host checkout's raw git layout (worktree/submodule pointer files, commondirs, separate git dirs): the client's own git packs the repository and the engine rebuilds a standalone .git from the pack.`,
+				`The reconstruction is shared by every client of the same host, and kept across sessions, until the checkout's refs move. A new state is built from the last one, from only the objects the checkout gained.`).
 			Args(
 				dagql.Arg("path").Doc(`Absolute host path of the client checkout to reconstruct a .git directory for.`),
-				dagql.Arg("stateDigest").Doc(`Digest of the checkout's current ref state. It keys the cache to the checkout, so the reconstruction is reused until the checkout's refs move.`),
+				dagql.Arg("stateDigest").Doc(`Digest of the checkout's ref state. The pack must match it.`),
+			),
+		dagql.NodeFunc("__gitCheckoutPin", s.gitCheckoutPin).
+			NotReplayable("Reads a Git checkout's state from the originating client").
+			WithInput(dagql.PerClientInput).
+			Doc(`(Internal-only) The ref state of the client checkout at path, read once per token: a session's stable view of a checkout that may move.`,
+				`Reading it also reconstructs that state (see __gitDir).`).
+			Args(
+				dagql.Arg("path").Doc(`Absolute host path of the client checkout.`),
+				dagql.Arg("token").Doc(`Selects the pin. A new token reads the checkout's live state again.`),
 			),
 	}.Install(srv)
 }
 
-type builtinContainerArgs struct {
-	Digest string `doc:"Digest of the image manifest"`
+type bundledDirectoryArgs struct {
+	Digest string `doc:"The directory's content digest."`
 }
 
-func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectResult[*core.Query], args builtinContainerArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+func (s *hostSchema) bundledDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Query], args bundledDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
-
-	ctr, err := core.BuiltInContainer(ctx, parent.Self().Platform(), args.Digest)
+	dgst, err := digest.Parse(args.Digest)
+	if err != nil {
+		return inst, fmt.Errorf("bundled directory digest: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return inst, err
 	}
-
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, ctr.OnRelease(context.WithoutCancel(ctx)))
-		}
-	}()
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+	number, err := cache.ImageEntryByContent(dgst, (&core.Directory{}).Type().Name())
+	if err != nil {
+		return inst, fmt.Errorf("bundled directory: %w", err)
+	}
+	return dagql.NewID[*core.Directory](call.NewEngineResultID(number, call.NewType((&core.Directory{}).Type()))).Load(ctx, srv)
 }
 
 type hostDirectoryArgs struct {
@@ -665,11 +682,15 @@ func (s *hostSchema) findUp(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return i, fmt.Errorf("failed to get engine client: %w", err)
 	}
-	cwd, err := bk.AbsPath(ctx, ".")
-	if err != nil {
-		return i, fmt.Errorf("failed to get cwd: %w", err)
+	cwd, foundPaths, err := bk.FindUpCallerHostPaths(ctx, ".", []string{args.Name})
+	foundPath, found := foundPaths[args.Name]
+	if errors.Is(err, engineutil.ErrFindUpUnsupported) {
+		cwd, err = bk.AbsPath(ctx, ".")
+		if err != nil {
+			return i, fmt.Errorf("failed to get cwd: %w", err)
+		}
+		foundPath, found, err = host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
 	}
-	foundPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
 	if err != nil {
 		return i, fmt.Errorf("failed to find %s: %w", args.Name, err)
 	}
@@ -883,9 +904,39 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 }
 
 type hostGitDirArgs struct {
-	Path          string
-	StateDigest   string
-	ValidateState bool
+	Path        string
+	StateDigest string
+}
+
+// hostGitCheckoutInput keys a checkout's reconstruction by whose checkout it
+// is (see core.HostGitCheckoutOwner): a stable path names the same checkout
+// across invocations from one host, and nothing across hosts.
+var hostGitCheckoutInput = dagql.ImplicitInput{
+	Name: "hostGitCheckoutOwner",
+	Resolver: func(ctx context.Context, _ map[string]dagql.Input) (dagql.Input, error) {
+		md, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		return dagql.NewString(core.HostGitCheckoutOwner(md)), nil
+	},
+}
+
+type hostGitCheckoutPinArgs struct {
+	Path  string
+	Token string
+}
+
+func (s *hostSchema) gitCheckoutPin(ctx context.Context, _ dagql.ObjectResult[*core.Host], args hostGitCheckoutPinArgs) (dagql.String, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", err
+	}
+	_, state, err := core.SelectHostGitDir(ctx, srv, args.Path)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(state), nil
 }
 
 // gitDir reconstructs a canonical .git directory for the client checkout at
@@ -902,34 +953,74 @@ func (s *hostSchema) gitDir(ctx context.Context, host dagql.ObjectResult[*core.H
 		return inst, fmt.Errorf("failed to get engine client: %w", err)
 	}
 
-	// args.StateDigest is deliberately unused in the body: it is a pure dagql
-	// cache key, keying this reconstruction to the checkout's ref state so the
-	// result is reused until the checkout's refs move.
-
-	expectedStateDigest := ""
-	if args.ValidateState {
-		expectedStateDigest = args.StateDigest
-	}
-	packCtx, packSpan := core.Tracer(ctx).Start(ctx, "pack host git checkout", telemetry.Internal())
-	pack, err := bk.PackGitCheckout(packCtx, args.Path, expectedStateDigest)
-	packSpan.End()
-	if err != nil {
-		return inst, fmt.Errorf("failed to pack git checkout for %q: %w", args.Path, err)
-	}
-	defer func() { _ = pack.Close() }()
-
-	reconstructCtx, reconstructSpan := core.Tracer(ctx).Start(ctx, "reconstruct host git checkout", telemetry.Internal())
-	dir, err := core.MaterializeGitCheckoutPack(reconstructCtx, pack, hostCheckoutOriginURL(reconstructCtx, bk, args.Path))
-	reconstructSpan.End()
-	if err != nil {
-		return inst, fmt.Errorf("failed to materialize git checkout pack for %q: %w", args.Path, err)
-	}
-
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
+	// Build on the last reconstruction of this checkout, when there is one:
+	// the client then sends only what the checkout gained since. That only
+	// spares work, so whatever keeps it from working, from finding the
+	// earlier reconstruction to applying the pack on it, falls back to a
+	// pack of the whole checkout, as a checkout with no earlier
+	// reconstruction gets. A canceled call and a checkout that moved while
+	// it was packed fail as they would without it: the caller reads a
+	// moved checkout again.
+	_, base, haves, err := core.HostGitCheckoutBase(ctx, srv, args.Path, args.StateDigest)
+	if err != nil {
+		if ctx.Err() != nil {
+			return inst, ctx.Err()
+		}
+		slog.WarnContext(ctx, "packing the whole git checkout: its last reconstruction can't be built on", "path", args.Path, "error", err)
+		base, haves = nil, nil
+	}
+	dir, err := reconstructOnLastOrWhole(ctx, args.Path, base, haves, func(base bkcache.ImmutableRef, haves []string) (*core.Directory, error) {
+		return reconstructHostGitDir(ctx, bk, args, base, haves)
+	})
+	if err != nil {
+		return inst, err
+	}
+	if err := core.RecordHostGitCheckout(ctx, args.Path, args.StateDigest); err != nil {
+		return inst, err
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+}
+
+// reconstructOnLastOrWhole reconstructs the checkout at path on base, its
+// last reconstruction, from a pack relative to haves, and when that fails,
+// from a pack of the whole checkout. Without haves it packs the whole
+// checkout once. A canceled call and a checkout that moved while it was
+// packed aren't retried.
+func reconstructOnLastOrWhole(ctx context.Context, path string, base bkcache.ImmutableRef, haves []string, reconstruct func(bkcache.ImmutableRef, []string) (*core.Directory, error)) (*core.Directory, error) {
+	dir, err := reconstruct(base, haves)
+	if err == nil || haves == nil || ctx.Err() != nil || errors.Is(err, engineutil.ErrGitCheckoutStateChanged) {
+		return dir, err
+	}
+	slog.WarnContext(ctx, "packing the whole git checkout: building on its last reconstruction failed", "path", path, "error", err)
+	return reconstruct(nil, nil)
+}
+
+// reconstructHostGitDir packs the client checkout at args.Path, relative to
+// haves when there are any, and reconstructs its canonical .git directory,
+// on base for a relative pack.
+func reconstructHostGitDir(ctx context.Context, bk *engineutil.Client, args hostGitDirArgs, base bkcache.ImmutableRef, haves []string) (*core.Directory, error) {
+	packCtx, packSpan := core.Tracer(ctx).Start(ctx, "pack host git checkout", telemetry.Internal())
+	pack, err := bk.PackGitCheckout(packCtx, args.Path, args.StateDigest, haves)
+	if pack != nil {
+		packSpan.SetAttributes(attribute.Bool("dagger.git.checkout.pack.relative", pack.RelativeToHaves))
+	}
+	packSpan.End()
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack git checkout for %q: %w", args.Path, err)
+	}
+	defer func() { _ = pack.Close() }()
+
+	reconstructCtx, reconstructSpan := core.Tracer(ctx).Start(ctx, "reconstruct host git checkout", telemetry.Internal())
+	dir, err := core.MaterializeGitCheckoutPack(reconstructCtx, pack, hostCheckoutOriginURL(reconstructCtx, bk, args.Path), base)
+	reconstructSpan.End()
+	if err != nil {
+		return nil, fmt.Errorf("failed to materialize git checkout pack for %q: %w", args.Path, err)
+	}
+	return dir, nil
 }
 
 // hostCheckoutOriginURL resolves the origin remote of the client checkout at

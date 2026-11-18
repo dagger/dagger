@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 
+	"dagger.io/dagger/core"
 	"golang.org/x/exp/maps"
 
 	"dagger/engine-dev/consts"
@@ -26,6 +27,27 @@ const engineEntrypointTmpl = `#!/bin/sh
 set -e
 
 cat $0
+
+# cgroup v2: when the engine shares its host's cgroup namespace, as a privileged
+# container does under Kubernetes, /sys/fs/cgroup is the host's whole tree, and
+# the cgroups made below and for every exec would land at the host's root,
+# outside the container's CPU and memory limits. Root both the cgroup mount and
+# a new cgroup namespace at the container's own cgroup, as a private cgroup
+# namespace does, and start over inside them.
+if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+	own_cgroup=$(sed -n 's/^0:://p' /proc/self/cgroup)
+	if [ "$own_cgroup" != "/" ]; then
+		# Kubernetes also sets memory.oom.group on the container's cgroup, so
+		# an exec going over the container's memory limit would get every
+		# process in the container killed, the engine included. Clear it so
+		# the OOM killer takes only what it picks, as under Docker.
+		if [ -f "/sys/fs/cgroup$own_cgroup/memory.oom.group" ]; then
+			echo 0 > "/sys/fs/cgroup$own_cgroup/memory.oom.group"
+		fi
+		mount --bind "/sys/fs/cgroup$own_cgroup" /sys/fs/cgroup
+		exec unshare --cgroup "$0" "$@"
+	fi
+fi
 
 # cgroup v2: enable nesting
 # see https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
@@ -99,7 +121,7 @@ func generateEntrypoint() (*dagger.File, error) {
 		return nil, err
 	}
 
-	entrypoint := dag.Directory().
+	entrypoint := core.NewDirectory().
 		WithNewFile("dagger-entrypoint.sh", buf.String(), dagger.DirectoryWithNewFileOpts{
 			Permissions: 0o755,
 		}).
@@ -130,7 +152,7 @@ func generateConfig(logLevel string) (*dagger.File, error) {
 	}
 
 	filename := filepath.Base(engineJSONPath)
-	config := dag.Directory().
+	config := core.NewDirectory().
 		WithNewFile(filename, string(res)).
 		File(filename)
 	return config, nil
@@ -164,7 +186,7 @@ func generateEngineTOML(kvs []string) (*dagger.File, error) {
 	}
 
 	filename := filepath.Base(engineTOMLPath)
-	config := dag.Directory().
+	config := core.NewDirectory().
 		WithNewFile(filename, buf.String()).
 		File(filename)
 	return config, nil

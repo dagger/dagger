@@ -7,6 +7,7 @@ package remotecache
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -28,11 +29,29 @@ import (
 
 // The engine side's limits.
 const (
-	// ExportsInFlight is how many exports the engine works on at once.
+	// ExportsInFlight is how many exports that select outputs the engine
+	// works on at once.
 	ExportsInFlight = 4
+	// RecordsExportsInFlight is how many more exports the engine works on at
+	// once, beside ExportsInFlight, that select no outputs. Such an export
+	// opens no chain and diffs no layer, so it never waits behind the
+	// others' layer builds, and it may also take a slot of ExportsInFlight
+	// that none of those holds.
+	RecordsExportsInFlight = 1
 	// UploadConcurrency is how many blobs the engine uploads at once, across
-	// all its exports.
-	UploadConcurrency = 8
+	// all its exports. Most blobs are small, so a PUT's time is mostly the
+	// store's per-request latency, not bytes. 16 is measured: on test-base,
+	// fresh engines' runs were faster with 16 than with 8 in all four blocks,
+	// by 41 to 198 s over 8 runs, with no measured cost to the seeding
+	// engine's check time, memory peak or exit time.
+	UploadConcurrency = 16
+	// LookupsInFlight is how many lookups the engine has unanswered at once.
+	LookupsInFlight = 4
+	// lookupLinger is how long the engine waits, after a miss, for more
+	// misses to send with it.
+	lookupLinger = 25 * time.Millisecond
+	// lookupTimeout bounds the wait for a lookup's answer.
+	lookupTimeout = 30 * time.Second
 
 	// Reconnection backoff: from backoffMin, doubling to backoffMax, each
 	// wait moved by up to backoffJitter of itself either way.
@@ -62,6 +81,9 @@ type Config struct {
 	EngineName    string
 	// Logger receives the connection's warnings and errors. Nil discards.
 	Logger *slog.Logger
+	// Lookups asks the service for the calls the engine's cache misses. The
+	// engine always sets it; a test that serves no lookups leaves it off.
+	Lookups bool
 }
 
 // Adapter is the engine's side of the service's requests: its cache
@@ -71,16 +93,60 @@ type Adapter interface {
 	CacheIdentity() (cacheID string, generation uint64)
 	// Export captures the requested roots and calls consume exactly once,
 	// while the captured chains stay open. The export's Bundle is nil when no
-	// root survived. The chains are released when consume returns.
-	Export(ctx context.Context, req protocol.Export, consume func(context.Context, Export) error) error
-	// Merge merges a bundle of the service's values into the cache.
-	Merge(ctx context.Context, req protocol.Merge) (protocol.Merged, error)
+	// root survived. The chains are released when consume returns. known are
+	// the rows the service merged over this connection: an export sends
+	// those as held rows.
+	Export(ctx context.Context, req protocol.Export, known *dagql.KnownRows, consume func(context.Context, Export) error) error
+	// Merge merges a bundle of the service's values into the cache. id is
+	// the service's request ID, for logs. known are the rows the service
+	// merged over this connection: the rows a committed merge lands on join
+	// them, since the service holds the records it sent.
+	Merge(ctx context.Context, id uint64, req protocol.Merge, known *dagql.KnownRows) (protocol.Merged, error)
 	// OfferParts places offered parts on the cache's entries by number.
 	OfferParts(ctx context.Context, req protocol.Offer) (protocol.Offered, error)
 	// TakeRenewalRequest waits for the next read that needs fresh download
 	// addresses; ReplyRenewal answers it.
 	TakeRenewalRequest(ctx context.Context) (*dagql.RenewalRequest, error)
 	ReplyRenewal(dagql.RenewalReply) dagql.RenewalReplyDisposition
+	// StartLookups starts queuing the cache's lookup misses for this
+	// connection, with nothing asked yet, and StopLookups stops it.
+	StartLookups()
+	StopLookups()
+	// TakeLookupMisses waits for the cache's next misses, at most limit,
+	// lingering up to linger after the first for more. dropped counts the
+	// misses a full queue refused since the last take.
+	TakeLookupMisses(ctx context.Context, limit int, linger time.Duration) (misses []dagql.RemoteMiss, dropped uint64, err error)
+	// SettleState returns the engine's side of settling with the service,
+	// and a channel closed when it next changes.
+	SettleState() (SettleState, <-chan struct{})
+	// Settled records the service's Settled for a settle of period that
+	// listed sessions.
+	Settled(period uint64, sessions []protocol.SettleSession)
+}
+
+// SettleState is where the engine stands in settling with the service.
+type SettleState struct {
+	// Period is the engine's current idle period (protocol.Open).
+	Period uint64
+	// Live is set while a session is live.
+	Live bool
+	// Sessions are the ended sessions no Settled has covered.
+	Sessions []protocol.SettleSession
+	// Settled is set once a Settled covered Period.
+	Settled bool
+	// TimedOut is set once the engine gave up waiting to settle after its
+	// last session ended, until a session starts again.
+	TimedOut bool
+	// Claims are the sessions that started under a Dagger Cloud claim,
+	// sorted by session ID (protocol.Claims): those live, and those ended
+	// that no Settled has covered.
+	Claims []protocol.SessionClaim
+}
+
+// settling reports whether the engine should ask the service to settle:
+// no session is live, and it neither settled nor gave up for its period.
+func (st SettleState) settling() bool {
+	return !st.Live && !st.Settled && !st.TimedOut && st.Period > 0
 }
 
 // Export is one capture, as Adapter.Export hands it to its consumer.
@@ -90,6 +156,9 @@ type Export struct {
 	Skipped []protocol.SkippedRoot
 	// Blobs reads the bundle's layer blobs for upload.
 	Blobs BlobSource
+	// Rows are the rows the bundle carries in full and as held rows, for
+	// known once the service says whether it merged them.
+	Rows dagql.ExportedRows
 }
 
 // BlobSource reads a layer blob of an export's chains.
@@ -228,10 +297,24 @@ func (b *backoff) next(jitter float64) time.Duration {
 }
 
 // uploadClient is the HTTP client for blob uploads: the default transport,
-// with a bound on the wait for the response once the request is sent.
+// with a bound on the wait for the response once the request is sent, over
+// HTTP/1.1 with a connection for each upload slot.
+//
+// Over HTTP/2 every upload would share one connection, and a blob store's
+// flow-control window caps a connection at a window per round trip. With a
+// blob store that allows 1 MiB in flight per HTTP/2 connection, about 20 ms
+// away, one HTTP/2 connection carried 40 MiB/s for 1 to 16 uploads alike,
+// where 16 HTTP/1.1 connections carried 0.7 to 1.7 GiB/s. A store may speak
+// HTTP/2 to a client that asks for no protocol, so the client asks for
+// HTTP/1.1.
 func uploadClient(responseTimeout time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = responseTimeout
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	transport.Protocols = &protocols
+	transport.TLSClientConfig = &tls.Config{NextProtos: []string{"http/1.1"}}
+	transport.MaxIdleConnsPerHost = UploadConcurrency
 	return &http.Client{Transport: transport}
 }
 
@@ -248,9 +331,8 @@ func httpPut(client *http.Client, idle time.Duration) func(context.Context, stri
 		defer cancel(nil)
 		stalled := time.AfterFunc(idle, func() { cancel(errUploadStalled) })
 		defer stalled.Stop()
-		// The body's end isn't the request's: over HTTP/2 the transport reads
-		// the end before it sends the last bytes, which wait for the blob
-		// store's flow control.
+		// The body's end isn't the request's: the transport reads the end
+		// before it has sent the last bytes, which wait for the blob store.
 		ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
 			WroteRequest: func(httptrace.WroteRequestInfo) { stalled.Stop() },
 		})

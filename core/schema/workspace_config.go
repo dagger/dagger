@@ -107,6 +107,13 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 // workspace is backed: a synthetic source directory, a host path (with any
 // overlay edit taking precedence), or a remote rootfs.
 func readWorkspaceFileBytes(ctx context.Context, ws *core.Workspace, wsPath string) ([]byte, error) {
+	if fs, ok := ws.GitSparseTreeFS(); ok {
+		data, err := fs.ReadFile(ctx, wsPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading config: %w", err)
+		}
+		return data, nil
+	}
 	if rootfs, ok := ws.SourceDirectory(); ok && rootfs.Self() != nil {
 		data, err := core.DirectoryReadFile(ctx, rootfs, wsPath)
 		if err != nil {

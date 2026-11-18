@@ -94,10 +94,6 @@ type LLMSession struct {
 	// titlePublisher overrides Query.setSessionTitle (tests).
 	titlePublisher func(context.Context, string) error
 
-	// subscriptionLabelCache caches the OAuth subscription label for the status
-	// line, resolved lazily on first use.
-	subscriptionLabelCache string
-
 	// workspaceHostRoot/workspaceHostCwd are the host filesystem paths of the
 	// workspace root and cwd, resolved lazily on the first @-path and cached
 	// for the session (workspaceHostResolved records that the lookup ran, since
@@ -567,27 +563,22 @@ func (s *LLMSession) AgentStepped(agentHandle string) {
 	a.scheduleUIRefresh()
 }
 
-// subscriptionLabel returns a display label for the OAuth subscription type of
-// the currently active default provider, or empty string if not using OAuth.
-// Cached after first lookup.
-func (s *LLMSession) subscriptionLabel() string {
-	if s.subscriptionLabelCache != "" {
-		return s.subscriptionLabelCache
+// subscriptionLabel returns the configured OAuth subscription label for the
+// conversation's resolved provider, not the session's default route. Re-read the
+// file so setup, logout and reauthentication cannot leave a stale plan label.
+func (s *LLMSession) subscriptionLabel(providerName string) string {
+	if providerName == "" {
+		return ""
 	}
 	cfg, err := llmconfig.Load()
 	if err != nil || cfg == nil {
 		return ""
 	}
-	defaultProvider := cfg.LLM.DefaultProvider
-	if defaultProvider == "" {
+	provider, ok := cfg.LLM.Providers[providerName]
+	if !ok || !provider.Enabled || !provider.IsOAuth() || provider.SubscriptionType == "" {
 		return ""
 	}
-	provider, ok := cfg.LLM.Providers[defaultProvider]
-	if !ok || !provider.IsOAuth() || provider.SubscriptionType == "" {
-		return ""
-	}
-	s.subscriptionLabelCache = llmconfig.SubscriptionLabel(provider.SubscriptionType)
-	return s.subscriptionLabelCache
+	return llmconfig.SubscriptionLabel(provider.SubscriptionType)
 }
 
 func fmtTokenCount(n int) string {

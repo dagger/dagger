@@ -23,6 +23,7 @@ import (
 
 type currentTypeDefsTestServer struct {
 	deps             *core.SchemaBuilder
+	defaultDeps      *core.SchemaBuilder
 	dag              *dagql.Server
 	mainClient       *engine.ClientMetadata
 	platform         core.Platform
@@ -99,7 +100,7 @@ func (s *currentTypeDefsTestServer) SpecificClientAttachableConn(context.Context
 }
 
 func (s *currentTypeDefsTestServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
-	return nil, nil
+	return s.defaultDeps, nil
 }
 
 func (s *currentTypeDefsTestServer) SchemaBuilderMemo(context.Context) (*core.SchemaBuilderMemo, error) {
@@ -160,8 +161,6 @@ func (s *currentTypeDefsTestServer) MCPSessions(context.Context) (*core.MCPSessi
 }
 
 func (s *currentTypeDefsTestServer) OCIStore() content.Store { return nil }
-
-func (s *currentTypeDefsTestServer) BuiltinOCIStore() content.Store { return nil }
 
 func (s *currentTypeDefsTestServer) DNS() *oci.DNSConfig { return nil }
 

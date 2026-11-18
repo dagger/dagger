@@ -28,13 +28,31 @@ type replayableRecipeKey struct{}
 // LoadReplayable loads an ID without evaluating NotReplayable fields. Handles
 // remain loadable: they reference existing results rather than replaying calls.
 func (s *Server) LoadReplayable(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
+	ctx, err := s.replayableContext(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.Load(ctx, id)
+}
+
+// LoadTypeReplayable is LoadReplayable for an ID of any type, as LoadType is
+// Load's: a list or a scalar too.
+func (s *Server) LoadTypeReplayable(ctx context.Context, id *call.ID) (AnyResult, error) {
+	ctx, err := s.replayableContext(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.LoadType(ctx, id)
+}
+
+func (s *Server) replayableContext(ctx context.Context, id *call.ID) (context.Context, error) {
 	if blocked := s.ClassifyRecipe(id).NotReplayable; blocked != nil {
 		return nil, fmt.Errorf("field %s is not replayable: %s", blocked.Field, blocked.Reason)
 	}
 	// Classification is best-effort and uses type information supplied in the
 	// recipe. Enforce the same restriction on the resolved field during loading
 	// as well, including when forged types or dynamic schemas hide it here.
-	return s.Load(context.WithValue(ctx, replayableRecipeKey{}, true), id)
+	return context.WithValue(ctx, replayableRecipeKey{}, true), nil
 }
 
 // ClassifyRecipe structurally classifies id without evaluating it. The first

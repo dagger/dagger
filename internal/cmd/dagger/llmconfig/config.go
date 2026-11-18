@@ -423,7 +423,7 @@ func refreshProviderTokenAfterRejection(ctx context.Context, name string, provid
 	if err != nil {
 		refreshErr := fmt.Errorf("failed to refresh OAuth token for %s: %w", name, err)
 		if isTerminalOAuthTokenError(err) {
-			return provider, false, fmt.Errorf("%w: %w; run 'dagger llm setup' to reauthenticate", ErrOAuthReauthenticationRequired, refreshErr)
+			return provider, false, fmt.Errorf("%w: %w; run /setup in dagger agent to reauthenticate", ErrOAuthReauthenticationRequired, refreshErr)
 		}
 		return provider, false, refreshErr
 	}

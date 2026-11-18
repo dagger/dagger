@@ -150,7 +150,7 @@ func (v *ArtifactView) addPaths(ctx context.Context, roots []*Artifact) error {
 			name := node.Name
 			constructor := node.Parent == nil || (node.Parent.Module.Self() == nil && node.Parent.RootValue == nil && node.Parent.Type.Self() == nil)
 			if constructor {
-				name = gqlFieldName(node.Module.Self().Name())
+				name = node.Module.Self().ConstructorName()
 			}
 			path.Fields = append(path.Fields, artifactViewPathField{Name: name, Type: node.Type.Self().ToType().Name()})
 			if constructor {

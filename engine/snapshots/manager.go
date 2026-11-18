@@ -14,9 +14,11 @@ import (
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/moby/locker"
+	"github.com/moby/sys/userns"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -30,19 +32,25 @@ var (
 )
 
 type SnapshotManagerOpt struct {
-	Snapshotter   Snapshotter
-	ContentStore  content.Store
-	LeaseManager  leases.Manager
-	Applier       diff.Applier
+	Snapshotter  Snapshotter
+	ContentStore content.Store
+	LeaseManager leases.Manager
+	Applier      diff.Applier
+	// ApplyFrom, when set, returns an applier like Applier that reads blobs
+	// from provider instead of the content store. A chain import uses it to
+	// apply a layer from its blob decompressed ahead; nil applies the stored
+	// blob with Applier.
+	ApplyFrom     func(provider content.Provider) diff.Applier
 	Differ        diff.Comparer
 	MountPoolRoot string
-	// BuiltinContent is the engine's builtin image store, consulted by
-	// chain imports for a layer blob before the chain's provider. Nil means
-	// no such store.
-	BuiltinContent content.InfoReaderProvider
 	// MetadataDB is the containerd metadata database behind LeaseManager.
 	// When set, AttachLease makes its lease writes in one transaction.
 	MetadataDB metadata.Transactor
+	// InPlaceContent reports whether ContentStore holds a blob in place,
+	// without disk of its own: the engine image's blobs. A snapshot's size
+	// leaves such a blob out, since releasing the snapshot frees none of it.
+	// Nil means none is.
+	InPlaceContent func(digest.Digest) bool
 	// LocalMounter mounts a snapshot's mounts on a local directory for
 	// shared read-only mounts; nil means LocalMounterWithMounts. Tests use
 	// one that needs no privileges.
@@ -60,12 +68,6 @@ type ImportedImage struct {
 	ConfigDesc   ocispecs.Descriptor
 	Layers       []ocispecs.Descriptor
 	Nonlayers    []ocispecs.Descriptor
-}
-
-// BuiltinContent is the builtin image store chain imports consult, nil
-// when there is none.
-func (cm *snapshotManager) BuiltinContent() content.InfoReaderProvider {
-	return cm.builtinContent
 }
 
 // Blobs lists every blob of the image: manifest, config, layers and the
@@ -112,7 +114,6 @@ type SnapshotManager interface {
 	SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error)
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
 	RemoveLease(ctx context.Context, leaseID string) error
-	PinContent(ctx context.Context, leaseID string, descs []ocispecs.Descriptor) error
 	// LoadPersistentMetadata takes ownership of the content-hash data buffers.
 	// Callers must not modify them after loading.
 	LoadPersistentMetadata(rows PersistentMetadataRows) error
@@ -134,23 +135,46 @@ type snapshotManager struct {
 	ContentStore  content.Store
 	LeaseManager  leases.Manager
 	Applier       diff.Applier
+	applyFrom     func(content.Provider) diff.Applier
 	Differ        diff.Comparer
 	metadataStore *metadataStore
-	// builtinContent is SnapshotManagerOpt.BuiltinContent.
-	builtinContent content.InfoReaderProvider
 	// metadataDB is SnapshotManagerOpt.MetadataDB.
 	metadataDB metadata.Transactor
+	// inPlaceContent is SnapshotManagerOpt.InPlaceContent.
+	inPlaceContent func(digest.Digest) bool
 
 	snapshotContentDigests map[string]map[digest.Digest]struct{}
-	importedLayerByBlob    map[ImportedLayerBlobKey]string
-	importedLayerByDiff    map[ImportedLayerDiffKey]string
-	snapshotOwnerLeases    map[string]map[string]struct{}
+	// snapshotContentOwned holds, of each snapshot's recorded blobs, those
+	// attached to every lease that owns the snapshot: a blob is added once
+	// recordSnapshotContent has attached it to each owner. A lease that
+	// becomes an owner later has every recorded blob attached first
+	// (addSnapshotOwner), and one that is removed owns nothing, so the blobs
+	// stay attached to every owner. In memory only.
+	snapshotContentOwned map[string]map[digest.Digest]struct{}
+	importedLayerByBlob  map[ImportedLayerBlobKey]string
+	importedLayerByDiff  map[ImportedLayerDiffKey]string
+	snapshotOwnerLeases  map[string]map[string]struct{}
 	// leaseOwnedSnapshots is snapshotOwnerLeases by lease: the snapshots
 	// each lease owns, so that removing a lease visits only those.
 	leaseOwnedSnapshots map[string]map[string]struct{}
 	importLayerLocker   keyedLocker
 	exportLayerLocker   keyedLocker
 	ownerLeaseLocker    *locker.Locker
+	// layerImported is closed, and replaced, whenever a layer is added to
+	// the import indexes: chain imports waiting for a layer's blob look
+	// again. Under mu.
+	layerImported chan struct{}
+	// fetches runs chain-content downloads, one per blob.
+	fetches contentFetches
+	// applyLayersApart says ImportChain may apply a chain's layers at once,
+	// each into a snapshot of its own prepared with no parent, and rebase
+	// them onto their parents in order: containerd's overlay snapshotter
+	// keeps each snapshot's own directory apart from its parents' and
+	// rebases on commit. A layer's whiteouts are written as overlay
+	// whiteouts, whose device nodes can't be made in a user namespace.
+	applyLayersApart bool
+	// packs runs reads of packs, one per pack, and holds their members.
+	packs packFetches
 	// backgroundReleases releases read-only mounts off their callers' paths.
 	backgroundReleases *backgroundReleases
 	// sharedMounts keeps one read-only mount per snapshot for its readers.
@@ -170,19 +194,23 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		ContentStore:           opt.ContentStore,
 		LeaseManager:           opt.LeaseManager,
 		Applier:                opt.Applier,
+		applyFrom:              opt.ApplyFrom,
 		Differ:                 opt.Differ,
-		builtinContent:         opt.BuiltinContent,
 		metadataDB:             opt.MetadataDB,
+		inPlaceContent:         opt.InPlaceContent,
 		metadataStore:          newMetadataStore(),
 		records:                make(map[string]*cacheRecord),
 		snapshotContentDigests: make(map[string]map[digest.Digest]struct{}),
+		snapshotContentOwned:   make(map[string]map[digest.Digest]struct{}),
 		importedLayerByBlob:    make(map[ImportedLayerBlobKey]string),
 		importedLayerByDiff:    make(map[ImportedLayerDiffKey]string),
+		layerImported:          make(chan struct{}),
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
 		leaseOwnedSnapshots:    make(map[string]map[string]struct{}),
 		ownerLeaseLocker:       locker.New(),
 		backgroundReleases:     newBackgroundReleases(maxPendingReleases),
 		localMounter:           opt.LocalMounter,
+		applyLayersApart:       opt.Snapshotter.Name() == "overlayfs" && !userns.RunningInUserNS(),
 	}
 	if cm.localMounter == nil {
 		cm.localMounter = func(ms []mount.Mount) Mounter { return LocalMounterWithMounts(ms) }
@@ -227,12 +255,21 @@ func (cm *snapshotManager) Get(ctx context.Context, id string, opts ...RefOption
 }
 
 func (cm *snapshotManager) GetBySnapshotID(ctx context.Context, snapshotID string, opts ...RefOption) (ImmutableRef, error) {
-	cm.mu.Lock()
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	defer cm.mu.Unlock()
 	if err := cm.rehydrateSnapshotMetadataLocked(ctx, snapshotID, true); err != nil {
 		return nil, err
 	}
 	return cm.get(ctx, snapshotID, opts...)
+}
+
+// contentSize is what a blob adds to the size of a snapshot that holds it:
+// nothing for a blob the content store holds in place.
+func (cm *snapshotManager) contentSize(info content.Info) int64 {
+	if cm.inPlaceContent != nil && cm.inPlaceContent(info.Digest) {
+		return 0
+	}
+	return info.Size
 }
 
 func (cm *snapshotManager) SnapshotSize(ctx context.Context, snapshotID string) (int64, error) {
@@ -266,7 +303,7 @@ func (cm *snapshotManager) SnapshotSize(ctx context.Context, snapshotID string) 
 		}
 		if _, ok := added[dgst]; !ok {
 			if info, err := cm.ContentStore.Info(ctx, dgst); err == nil {
-				usage.Size += info.Size
+				usage.Size += cm.contentSize(info)
 				added[dgst] = struct{}{}
 			}
 		}
@@ -275,13 +312,29 @@ func (cm *snapshotManager) SnapshotSize(ctx context.Context, snapshotID string) 
 				return true
 			}
 			if info, err := cm.ContentStore.Info(ctx, desc.Digest); err == nil {
-				usage.Size += info.Size
+				usage.Size += cm.contentSize(info)
 				added[desc.Digest] = struct{}{}
 			}
 			return true
 		}, nil)
 	}
 
+	return usage.Size, nil
+}
+
+// SnapshotUsage is the disk usage of the snapshot's own directory: what
+// applying its layer wrote, without its parents or its content blobs.
+func (cm *snapshotManager) SnapshotUsage(ctx context.Context, snapshotID string) (int64, error) {
+	if snapshotID == "" {
+		return 0, errors.New("snapshot usage: empty snapshot ID")
+	}
+	usage, err := cm.Snapshotter.Usage(ctx, snapshotID)
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return 0, errors.Wrap(errNotFound, snapshotID)
+		}
+		return 0, errors.Wrapf(err, "failed to get usage for %s", snapshotID)
+	}
 	return usage.Size, nil
 }
 
@@ -452,7 +505,7 @@ func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefO
 	}
 
 	// All metadataStore and records map mutations must happen under cm.mu.
-	cm.mu.Lock()
+	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	defer cm.mu.Unlock()
 
 	md := cm.ensureMetadata(id)

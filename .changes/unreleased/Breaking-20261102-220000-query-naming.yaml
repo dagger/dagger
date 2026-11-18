@@ -1,0 +1,10 @@
+kind: Breaking
+body: |
+  The experimental `Query.identifier`, `Query.formatIdentifiers` and
+  `Query.namingDictionary` APIs are removed. Use `Query.naming(version:)`
+  instead: its `identifier`, `formatIdentifiers` and `dictionary` fields answer
+  for the given engine version, or the caller's.
+time: 2026-11-02T22:00:00Z
+custom:
+  Author: vito
+  PR: "14996"

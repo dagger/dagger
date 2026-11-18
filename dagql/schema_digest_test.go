@@ -61,7 +61,7 @@ func filledSchema() *ast.Schema {
 	return schema
 }
 
-// Every part of a schema changes its digest, and no position does. A field
+// Every part of a schema changes its digest, and no position or list of positions does. A field
 // gqlparser adds to its AST fails this test until schemaDigest hashes it.
 func TestSchemaDigestCoversEveryPart(t *testing.T) {
 	t.Parallel()
@@ -99,6 +99,12 @@ func TestSchemaDigestCoversEveryPart(t *testing.T) {
 				if part.Type() == positionType {
 					part.Set(reflect.ValueOf(&ast.Position{Line: 9}))
 					require.Equal(t, base, schemaDigest(schema), "%s is a position", partPath)
+					part.Set(old)
+					continue
+				}
+				if part.Type() == reflect.SliceOf(positionType) {
+					part.Set(reflect.ValueOf([]*ast.Position{{Line: 9}}))
+					require.Equal(t, base, schemaDigest(schema), "%s is a list of positions", partPath)
 					part.Set(old)
 					continue
 				}

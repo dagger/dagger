@@ -10,11 +10,28 @@ import "internal/fsutil/types/stat.proto";
 service FileSync{
 	rpc DiffCopy(stream fsutil.types.Packet) returns (stream fsutil.types.Packet);
 	rpc TarStream(stream fsutil.types.Packet) returns (stream fsutil.types.Packet);
+	// FindUp looks for each name in a directory and then in each of its
+	// parents, up to the root, in one call.
+	rpc FindUp(FindUpRequest) returns (FindUpResponse);
 }
 
 // FileSend allows sending files from the server back to the client.
 service FileSend{
 	rpc DiffCopy(stream BytesMessage) returns (stream BytesMessage);
+}
+
+// FindUpRequest names the directory to start from, resolved against the
+// client's current directory, and the names to look for.
+message FindUpRequest {
+	string start = 1;
+	repeated string names = 2;
+}
+
+// FindUpResponse gives the absolute start directory and, for each name
+// found, the absolute path of the nearest directory holding it.
+message FindUpResponse {
+	string start = 1;
+	map<string, string> found = 2;
 }
 
 // BytesMessage contains a chunk of byte data

@@ -50,7 +50,7 @@ const (
 
 	// credentialMaxTTL caps how long a credential is cached even when its
 	// expiry is an hour off. Expiry is not the only reason a token changes: a
-	// fresh `dagger llm setup`, or another process re-logging in, rotates it
+	// fresh `/setup` in `dagger agent`, or another process re-logging in, rotates it
 	// early, and a live session should follow within minutes rather than at the
 	// old token's expiry.
 	credentialMaxTTL = 5 * time.Minute
@@ -396,7 +396,7 @@ type expiredLoginError struct {
 
 func (e *expiredLoginError) Error() string {
 	return fmt.Sprintf("%s rejected the subscription access token after reloading credentials; "+
-		"if this persists, re-run `dagger llm setup` to log in again (%v)", e.provider, e.err)
+		"if this persists, run `/setup` in `dagger agent` to log in again (%v)", e.provider, e.err)
 }
 
 func (e *expiredLoginError) Unwrap() error { return e.err }

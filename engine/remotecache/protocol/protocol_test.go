@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/remotecache/pack"
 	"github.com/dagger/dagger/engine/snapshots"
 )
 
@@ -71,14 +73,25 @@ func TestMessagesRoundTrip(t *testing.T) {
 		into func() any
 	}{
 		{TypeHello, Hello{CacheID: "cache-1", Generation: 4, EngineVersion: "v0.20.0", EngineName: "dagger-engine"}, func() any { return &Hello{} }},
+		{TypeHello, Hello{CacheID: "cache-1", Generation: 5, EngineVersion: "v0.20.0", EngineName: "dagger-engine", Period: 3, Settled: true}, func() any { return &Hello{} }},
+		{TypeOpen, Open{Period: 4}, func() any { return &Open{} }},
+		{TypeOpened, Opened{}, func() any { return &Opened{} }},
+		{TypeSettle, Settle{Period: 4, Sessions: []SettleSession{{ID: "sess-1", Marker: true}, {ID: "sess-2"}}}, func() any { return &Settle{} }},
+		{TypeSettled, Settled{}, func() any { return &Settled{} }},
+		{TypeClaims, Claims{Sessions: []SessionClaim{{ID: "sess-1", Claim: "claim-1"}}}, func() any { return &Claims{} }},
+		{TypeClaimed, Claimed{}, func() any { return &Claimed{} }},
+		{TypeError, Error{Message: StaleSettle}, func() any { return &Error{} }},
 		{TypeWelcome, Welcome{}, func() any { return &Welcome{} }},
 		{TypeExport, Export{Roots: []uint64{12, 13}, Outputs: []ExportOutput{{Number: 12, Address: testAddress()}}}, func() any { return &Export{} }},
 		{TypeExported, Exported{ExportID: "x-1", Bundle: &bundle, Skipped: []SkippedRoot{{Number: 13, Reason: SkipBusy}}}, func() any { return &Exported{} }},
 		{TypeExported, Exported{Skipped: []SkippedRoot{{Number: 12, Reason: SkipGone}}}, func() any { return &Exported{} }},
 		{TypeExported, Exported{Skipped: []SkippedRoot{{Number: 14, Reason: SkipRefused, Message: "row 3: refused"}}}, func() any { return &Exported{} }},
 		{TypeUpload, Upload{ExportID: "x-1", URLs: map[digest.Digest]string{layer.Descriptor.Digest: "https://blobs/put"}}, func() any { return &Upload{} }},
+		{TypeUpload, Upload{ExportID: "x-1", URLs: map[digest.Digest]string{}, Packs: []UploadPack{{Pack: digest.FromString("pack"), URL: "https://blobs/put-pack", Members: []pack.Member{{Digest: layer.Descriptor.Digest, Size: 42}}}}}, func() any { return &Upload{} }},
+		{TypeUpload, Upload{ExportID: "x-2", URLs: map[digest.Digest]string{}, Merged: true}, func() any { return &Upload{} }},
 		{TypeUploaded, Uploaded{Done: []digest.Digest{layer.Descriptor.Digest}, Failed: []UploadFailure{{Digest: digest.FromString("other"), Message: "503"}}}, func() any { return &Uploaded{} }},
 		{TypeMerge, Merge{Bundle: bundle}, func() any { return &Merge{} }},
+		{TypeMerge, Merge{Bundle: bundle, Lookup: 31}, func() any { return &Merge{} }},
 		{TypeMerged, Merged{
 			Generation: 4,
 			EngineTime: 1790000000123456789,
@@ -92,8 +105,19 @@ func TestMessagesRoundTrip(t *testing.T) {
 			{Number: 41, Gone: true},
 		}}, func() any { return &Offered{} }},
 		{TypeRenew, Renew{RenewalKey: "12/fs", Layers: []snapshots.ExportLayer{layer}, NeededBlob: layer.Descriptor.Digest}, func() any { return &Renew{} }},
+		{TypeRenew, Renew{RenewalKey: "12/fs", Layers: []snapshots.ExportLayer{layer}, NeededBlob: layer.Descriptor.Digest, Packs: map[digest.Digest]digest.Digest{layer.Descriptor.Digest: digest.FromString("pack")}}, func() any { return &Renew{} }},
 		{TypeRenewed, Renewed{Addresses: map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs/get2", ExpiresAtUnix: 1790007200}}}, func() any { return &Renewed{} }},
 		{TypeRenewed, Renewed{Unavailable: true}, func() any { return &Renewed{} }},
+		{TypeLookup, Lookup{
+			Misses: []LookupMiss{{Recipe: digest.FromString("recipe"), Extra: []digest.Digest{digest.FromString("extra")}, Field: "withExec"}, {Recipe: digest.FromString("other")}},
+		}, func() any { return &Lookup{} }},
+		{TypeLookedUp, LookedUp{Misses: []LookedUpMiss{
+			{Status: LookupMerging, Merge: 40, Parts: LookupPartsComplete},
+			{Status: LookupInFlight, Merge: 38, Parts: LookupPartsPartial},
+			{Status: LookupUnknown},
+			{Status: LookupNotStored},
+			{Status: LookupDeferred},
+		}}, func() any { return &LookedUp{} }},
 		{TypeError, Error{Message: TooLargeMessage}, func() any { return &Error{} }},
 	} {
 		t.Run(string(tc.typ), func(t *testing.T) {
@@ -139,6 +163,22 @@ func derefBody(v any) any {
 	case *Renew:
 		return *b
 	case *Renewed:
+		return *b
+	case *Lookup:
+		return *b
+	case *LookedUp:
+		return *b
+	case *Open:
+		return *b
+	case *Opened:
+		return *b
+	case *Settle:
+		return *b
+	case *Settled:
+		return *b
+	case *Claims:
+		return *b
+	case *Claimed:
 		return *b
 	case *Error:
 		return *b
@@ -196,12 +236,16 @@ func TestReplyType(t *testing.T) {
 		TypeMerge:  TypeMerged,
 		TypeOffer:  TypeOffered,
 		TypeRenew:  TypeRenewed,
+		TypeLookup: TypeLookedUp,
+		TypeOpen:   TypeOpened,
+		TypeSettle: TypeSettled,
+		TypeClaims: TypeClaimed,
 	} {
 		got, ok := ReplyType(request)
 		require.True(t, ok, request)
 		require.Equal(t, reply, got)
 	}
-	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeError} {
+	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeOpened, TypeSettled, TypeClaimed, TypeError} {
 		_, ok := ReplyType(notRequest)
 		require.False(t, ok, notRequest)
 	}
@@ -222,4 +266,74 @@ func TestOfferOutcomeOf(t *testing.T) {
 	}
 	_, err := OfferOutcomeOf(dagql.OfferOutcome(200))
 	require.Error(t, err)
+}
+
+// A lookup and its answer have the wire names the service reads. A merge
+// always carries its lookup, 0 for a merge of the service's own placement,
+// and a merge's reply always carries its stale rows.
+func TestLookupShape(t *testing.T) {
+	raw, err := json.Marshal(Lookup{Misses: []LookupMiss{{Recipe: "xxh3:1", Extra: []digest.Digest{"xxh3:2"}, Field: "withExec"}}})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"misses": [{"recipe": "xxh3:1", "extra": ["xxh3:2"], "field": "withExec"}]}`, string(raw))
+
+	raw, err = json.Marshal(LookedUp{Misses: []LookedUpMiss{{Status: LookupMerging, Merge: 40, Parts: LookupPartsNone}, {Status: LookupUnknown}}})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"misses": [{"status": "merging", "merge": 40, "parts": "none"}, {"status": "unknown"}]}`, string(raw))
+
+	for status, want := range map[LookupStatus]string{
+		LookupUnknown:   "unknown",
+		LookupNotStored: "notStored",
+		LookupInFlight:  "inFlight",
+		LookupMerging:   "merging",
+		LookupDeferred:  "deferred",
+	} {
+		require.Equal(t, want, string(status))
+	}
+	for parts, want := range map[LookupParts]string{
+		LookupPartsComplete: "complete",
+		LookupPartsPartial:  "partial",
+		LookupPartsNone:     "none",
+	} {
+		require.Equal(t, want, string(parts))
+	}
+
+	raw, err = json.Marshal(Merge{})
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"lookup":0`)
+	raw, err = json.Marshal(Merged{})
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"stale":`)
+}
+
+// A merge lists a layer its outputs share, and the layer's address, once,
+// and its outputs get their chains back, with the packs they name, as the
+// engine's merge resolves them;
+// an export still carries each output's chain whole.
+func TestMergeListsSharedLayersOnce(t *testing.T) {
+	layer := testLayer()
+	addresses := map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs.example/layer"}}
+	bundle := dagql.ValueBundle{Version: 7, Roots: []dagql.TransferredRoot{{Ordinal: 1}}}
+	for i := range 2 {
+		bundle.Values = append(bundle.Values, dagql.TransferredValue{Ordinal: dagql.TransferOrdinal(i + 1), SenderNumber: uint64(i + 1)})
+		bundle.Outputs = append(bundle.Outputs, dagql.TransferredOutput{
+			Ordinal: dagql.TransferOrdinal(i + 1),
+			Address: testAddress(),
+			State:   "completed",
+			Chain:   &dagql.OfferedChain{Layers: []snapshots.ExportLayer{layer}, Addresses: addresses, Packs: map[digest.Digest]digest.Digest{layer.Descriptor.Digest: digest.FromString("pack")}},
+		})
+	}
+	count := func(body any) int {
+		env, err := NewEnvelope(1, 0, TypeMerge, body)
+		require.NoError(t, err)
+		return strings.Count(string(env.Body), "https://blobs.example/layer")
+	}
+	require.Equal(t, 1, count(Merge{Bundle: bundle}))
+	require.Equal(t, 2, count(Exported{Bundle: &bundle}))
+
+	env, err := NewEnvelope(1, 0, TypeMerge, Merge{Bundle: bundle, Lookup: 3})
+	require.NoError(t, err)
+	var got Merge
+	require.NoError(t, env.Decode(&got))
+	require.NoError(t, dagql.ResolveChainPrefixes(&got.Bundle), "the engine's merge resolves the layers")
+	require.Equal(t, Merge{Bundle: bundle, Lookup: 3}, got)
 }

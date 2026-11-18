@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  `dagger check <name>` on a check whose collection has no items now passes and
+  says so, instead of failing with "no checks matched pattern".
+time: 2026-11-07T08:20:00Z
+custom:
+  Author: sipsma
+  PR: "15100"

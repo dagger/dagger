@@ -3,11 +3,15 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -72,6 +76,13 @@ func (Host) FindUpAll(
 	curDirPath string,
 	soughtNames map[string]struct{},
 ) (map[string]string, error) {
+	if fuFS, ok := statFS.(FindUpFS); ok {
+		found, err := fuFS.FindUpAll(ctx, curDirPath, slices.Collect(maps.Keys(soughtNames)))
+		if !errors.Is(err, engineutil.ErrFindUpUnsupported) {
+			return found, err
+		}
+	}
+
 	found := make(map[string]string, len(soughtNames))
 	for {
 		for soughtName := range soughtNames {

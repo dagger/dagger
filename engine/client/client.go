@@ -86,6 +86,10 @@ const (
 	cacheExportsConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG"
 	// allow enabling scale-out of checks to support cloud
 	enableChecksScaleOutEnvName = "_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT"
+	// cloudClaimIDEnvName carries the Dagger Cloud claim identifier to a
+	// client connected straight to an assigned engine; a Cloud connector
+	// carries its own.
+	cloudClaimIDEnvName = "DAGGER_CLOUD_CLAIM_ID"
 	// shutdown timeout, default is 10s
 	shutdownTimeoutEnvName = "_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT"
 )
@@ -185,10 +189,26 @@ type Params struct {
 	CloudURL             string
 	CloudCredentialsPath string
 
+	// EngineLogsPresence asks the engine's log push to omit display text
+	// (GET /v1/logs?display=presence): EngineLogs then receives every other
+	// record plus one body-less presence record per span with logs, and the
+	// frontend reads display text on demand with QueryLogs. Set it only when
+	// nothing receiving EngineLogs needs display text but a frontend that
+	// reads it on demand. The client still asks only an engine that serves
+	// the mode and stores the client's own telemetry (IngestsTelemetry: the
+	// frontend reads the client's own display text from the store too), and,
+	// with EngineCloudTelemetry, only one that confirmed it publishes to
+	// Cloud itself; LogsPresence reports the outcome.
+	EngineLogsPresence bool
+
 	// Profile enables engine wall-clock profiling (wcprof) for this session.
 	Profile bool
 	// ProfileEBPF names the eBPF programs to profile the session with.
 	ProfileEBPF []string
+
+	// HostPolicy limits what this client does on its host for the engine.
+	// Nil serves every host request. See HostPolicy.
+	HostPolicy *HostPolicy
 }
 
 type Client struct {
@@ -215,7 +235,31 @@ type Client struct {
 	// session when it does that, so every later request fails with this cause.
 	sessionLost atomic.Pointer[error]
 
+	// hostPolicy enforces Params.HostPolicy. Nil when there is no policy.
+	hostPolicy *hostPolicyEnforcer
+
 	telemetry *errgroup.Group
+	// telemetryHTTP is the subscriptions' transport, which outlives Close's
+	// request cancellation; live log queries use it too.
+	telemetryHTTP *httpClient
+	// telemetryFeatures lists the live telemetry features the engine named
+	// on its trace subscription, and logsPresence whether the log push omits
+	// display text. Both are settled before Connect returns.
+	telemetryFeatures map[string]bool
+	// telemetryFrameAt is when the trace or log subscription last delivered
+	// a batch (UnixNano), for WaitTelemetryIdle.
+	telemetryFrameAt atomic.Int64
+	// traceDelivered and logsDelivered are how far the trace and log
+	// subscriptions have delivered, for TelemetryBarrier.
+	traceDelivered, logsDelivered deliveredCursor
+	logsPresence                  bool
+
+	// ingestsTelemetry and publishesTelemetry record what the engine
+	// answered on this client's trace stream: whether it stores the
+	// telemetry the client posts about itself (ExportSpans, ...), and
+	// whether it publishes the session's telemetry to Cloud.
+	ingestsTelemetry   bool
+	publishesTelemetry bool
 
 	httpClient *httpClient
 	bkClient   *bkclient.Client
@@ -248,6 +292,18 @@ type Client struct {
 	isCloudScaleOutClient bool
 }
 
+// nestedSessionPortEnv names the port of the session that an exec, or a
+// parent CLI (`dagger run`), serves to the processes it starts.
+const nestedSessionPortEnv = "DAGGER_SESSION_PORT"
+
+// NestedSession reports whether Connect joins the session of the exec or CLI
+// that started this process, as a nested client of it. The engine delivers a
+// nested client's telemetry to its ancestors as well as to the client itself.
+func NestedSession() bool {
+	_, ok := os.LookupEnv(nestedSessionPortEnv)
+	return ok
+}
+
 func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	loadWorkspaceModules, err := normalizeWorkspaceModuleLoading(
 		params.LoadWorkspaceModules,
@@ -260,6 +316,13 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	params.SkipWorkspaceModules = false
 
 	c := &Client{Params: params}
+
+	if params.HostPolicy != nil {
+		c.hostPolicy, err = newHostPolicyEnforcer(params.HostPolicy)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	if c.ID == "" {
 		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
@@ -321,8 +384,13 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	defer telemetry.EndWithCause(span, &rerr)
 	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
 
-	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
+	nestedSessionPortVal, isNestedSession := os.LookupEnv(nestedSessionPortEnv)
 	if isNestedSession {
+		if c.hostPolicy != nil {
+			// A nested client uses the host services of the session that it
+			// joins, so it cannot apply its own policy to them.
+			return nil, fmt.Errorf("a host policy cannot apply to a nested session (%s is set)", nestedSessionPortEnv)
+		}
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
 		if err != nil {
 			return nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
@@ -609,7 +677,11 @@ func (c *Client) telemetryContext(ctx context.Context) (context.Context, context
 	return ctx, cancel
 }
 
-func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
+func (c *Client) subscribeTelemetry(ctx context.Context) error {
+	return c.subscribeTelemetryWith(ctx, c.newTelemetryHTTPClient())
+}
+
+func (c *Client) subscribeTelemetryWith(ctx context.Context, hc *httpClient) (rerr error) {
 	// Keep telemetry alive across the caller's cancellation and the server's
 	// shutdown drain, but tie it to the client-owned internal lifetime so a
 	// failed initialization or rejected /shutdown cannot strand telemetry streams.
@@ -629,21 +701,38 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
 
 	c.telemetry = new(errgroup.Group)
-	httpClient := c.newTelemetryHTTPClient()
+	c.telemetryHTTP = hc
+	// The three subscriptions don't depend on each other, so they're made at
+	// once: with a remote engine, each one waits a round trip for its answer.
+	// The first to fail cancels the others, so connecting reports its error
+	// instead of waiting on an answer that may never come.
+	var subscriptions errgroup.Group
+	subscribe := func(name string, export func(context.Context, *httpClient) error) {
+		subscriptions.Go(func() error {
+			if err := export(ctx, hc); err != nil {
+				err = fmt.Errorf("export %s: %w", name, err)
+				cancel(err)
+				return err
+			}
+			return nil
+		})
+	}
 	if c.EngineTrace != nil {
-		if err := c.exportTraces(ctx, httpClient); err != nil {
-			return fmt.Errorf("export traces: %w", err)
-		}
+		subscribe("traces", c.exportTraces)
 	}
 	if c.EngineLogs != nil {
-		if err := c.exportLogs(ctx, httpClient); err != nil {
-			return fmt.Errorf("export logs: %w", err)
-		}
+		subscribe("logs", c.exportLogs)
 	}
 	if c.EngineMetrics != nil {
-		if err := c.exportMetrics(ctx, httpClient); err != nil {
-			return fmt.Errorf("export metrics: %w", err)
+		subscribe("metrics", c.exportMetrics)
+	}
+	if err := subscriptions.Wait(); err != nil {
+		// A subscription cancelled by the first failure may return before
+		// it; report the failure that cancelled them.
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
 		}
+		return err
 	}
 	return nil
 }
@@ -654,6 +743,43 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 
 	clientMetadata := c.clientMetadata()
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
+
+	attachables, err := c.sessionAttachables(ctx)
+	if err != nil {
+		return err
+	}
+
+	sessionConn, err := c.DialContext(ctx, "", "")
+	if err != nil {
+		return fmt.Errorf("dial for session attachables: %w", err)
+	}
+	defer func() {
+		if rerr != nil {
+			sessionConn.Close()
+		}
+	}()
+
+	c.sessionSrv, err = ConnectSessionAttachables(ctx,
+		sessionConn,
+		c.AppendHTTPRequestHeaders(http.Header{}),
+		attachables...,
+	)
+	if err != nil {
+		return fmt.Errorf("connect session attachables: %w", err)
+	}
+
+	c.runSessionAttachables()
+
+	c.httpClient = c.newHTTPClient()
+	return nil
+}
+
+// sessionAttachables returns the host services that this client serves to
+// the engine.
+func (c *Client) sessionAttachables(ctx context.Context) ([]SessionAttachable, error) {
+	if c.hostPolicy != nil {
+		return c.hostPolicy.attachables(ctx)
+	}
 
 	attachables := []SessionAttachable{
 		// sockets
@@ -681,7 +807,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	// filesync
 	filesyncer, err := NewFilesyncer()
 	if err != nil {
-		return fmt.Errorf("new filesyncer: %w", err)
+		return nil, fmt.Errorf("new filesyncer: %w", err)
 	}
 	attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 	if c.Params.PromptHandler != nil {
@@ -691,34 +817,11 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	if c.imageLoader != nil {
 		attachable, err := store.NewImageLoaderAttachable(c.imageLoader)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		attachables = append(attachables, attachable)
 	}
-
-	sessionConn, err := c.DialContext(ctx, "", "")
-	if err != nil {
-		return fmt.Errorf("dial for session attachables: %w", err)
-	}
-	defer func() {
-		if rerr != nil {
-			sessionConn.Close()
-		}
-	}()
-
-	c.sessionSrv, err = ConnectSessionAttachables(ctx,
-		sessionConn,
-		c.AppendHTTPRequestHeaders(http.Header{}),
-		attachables...,
-	)
-	if err != nil {
-		return fmt.Errorf("connect session attachables: %w", err)
-	}
-
-	c.runSessionAttachables()
-
-	c.httpClient = c.newHTTPClient()
-	return nil
+	return attachables, nil
 }
 
 func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.ClientConn) (rerr error) {
@@ -813,6 +916,15 @@ func (c *Client) SessionLost() error {
 		return *err
 	}
 	return nil
+}
+
+// HostPolicyViolation returns the first host request that the host policy
+// refused, or nil. A refusal fails the session: Close returns it.
+func (c *Client) HostPolicyViolation() error {
+	if c.hostPolicy == nil {
+		return nil
+	}
+	return c.hostPolicy.err()
 }
 
 // How long the engine has to answer the session attachables request. It's
@@ -999,6 +1111,13 @@ func (c *Client) Close() error {
 // CloseWithContext uses one caller-controlled deadline for graceful shutdown
 // and telemetry draining. Transport cleanup still runs when the deadline expires.
 func (c *Client) CloseWithContext(ctx context.Context) (rerr error) {
+	// A session with a host policy refusal failed, even when the caller, or a
+	// module, handled the error of the refused request.
+	defer func() {
+		if err := c.HostPolicyViolation(); err != nil {
+			rerr = errors.Join(err, rerr)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(ctx, clientShutdownTimeout())
 	defer cancel()
 	stop := context.AfterFunc(ctx, func() {
@@ -1100,9 +1219,11 @@ func (c *Client) CloseWithContext(ctx context.Context) (rerr error) {
 type otlpConsumer struct {
 	httpClient *httpClient
 	path       string
-	traceID    trace.TraceID
-	clientID   string
-	eg         *errgroup.Group
+	// query is the subscription's raw query string, if any.
+	query    string
+	traceID  trace.TraceID
+	clientID string
+	eg       *errgroup.Group
 
 	// reconnectDelay overrides telemetryReconnectDelay; zero uses the default.
 	reconnectDelay time.Duration
@@ -1114,6 +1235,27 @@ type otlpConsumer struct {
 	// Reconnects keep that answer, so forwarding never flips midway. Only
 	// the consuming goroutine touches it after the first connect.
 	enginePublishes bool
+	// features lists the optional live telemetry features (LiveFeature*)
+	// the engine named on the first response.
+	features map[string]bool
+	// engineIngests records whether the engine stores the telemetry the
+	// client posts about itself (engine.ClientTelemetryIngestHeader), from
+	// the stream's first response.
+	engineIngests bool
+	// delivered, when set, tracks the cursor of the last frame the
+	// callback returned from.
+	delivered *deliveredCursor
+}
+
+// liveTelemetryFeatures parses a subscription response's LiveFeaturesHeader.
+func liveTelemetryFeatures(resp *http.Response) map[string]bool {
+	features := map[string]bool{}
+	for _, f := range strings.Split(resp.Header.Get(enginetel.LiveFeaturesHeader), ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			features[f] = true
+		}
+	}
+	return features
 }
 
 // confirmsEnginePublishing reports whether a telemetry stream's response
@@ -1159,9 +1301,12 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 		return fmt.Errorf("connect to OTLP stream: %w", err)
 	}
 	c.enginePublishes = confirmsEnginePublishing(resp)
+	c.features = liveTelemetryFeatures(resp)
+	c.engineIngests = resp.Header.Get(engine.ClientTelemetryIngestHeader) == engine.ClientTelemetryIngestStore
 	span.SetAttributes(attribute.Bool("dagger.io/telemetry.engine_publishes", c.enginePublishes))
 
 	c.eg.Go(func() error {
+		defer c.delivered.end()
 		cursor := int64(0)
 		for {
 			current := resp
@@ -1170,7 +1315,9 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 			stopClose()
 			_ = current.Body.Close()
 			if complete || ctx.Err() != nil {
-				return nil //nolint:nilerr // Cancellation and terminal frames end the background consumer normally.
+				// Cancellation and terminal frames end the background
+				// consumer normally.
+				return nil
 			}
 			if errors.Is(err, enginetel.ErrInvalidLiveFrame) || errors.Is(err, enginetel.ErrLiveStream) {
 				return fmt.Errorf("decode OTLP stream: %w", err)
@@ -1178,7 +1325,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte, liveTelemetr
 			logger.Debug("reconnecting to OTLP stream", "cursor", cursor, "err", err)
 
 			if err := c.waitForReconnect(ctx); err != nil {
-				return nil //nolint:nilerr // Cancellation ends the background consumer normally.
+				return nil
 			}
 			resp, err = c.connect(ctx, cursor) //nolint:bodyclose // The outer loop closes every response after consumeResponse.
 			if ctx.Err() != nil {
@@ -1237,9 +1384,10 @@ func (c *otlpConsumer) connectOnce(ctx context.Context, cursor int64) (*http.Res
 	req := (&http.Request{
 		Method: http.MethodGet,
 		URL: &url.URL{
-			Scheme: "http",
-			Host:   "dagger",
-			Path:   c.path,
+			Scheme:   "http",
+			Host:     "dagger",
+			Path:     c.path,
+			RawQuery: c.query,
 		},
 		Header: make(http.Header),
 	}).WithContext(ctx)
@@ -1323,6 +1471,7 @@ func (c *otlpConsumer) consumeResponse(
 			if err := consumeTelemetryPayload(next, data, liveTelemetryBinary, cursor, cb, span, logger); err != nil {
 				return false, err
 			}
+			c.delivered.advance(*cursor)
 		}
 	}
 }
@@ -1353,6 +1502,7 @@ func (c *otlpConsumer) consumeSSEResponse(
 		if err := consumeTelemetryPayload(next, event.Data, liveTelemetryProtoJSON, cursor, cb, span, logger); err != nil {
 			return false, err
 		}
+		c.delivered.advance(*cursor)
 	}
 }
 
@@ -1427,9 +1577,11 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		clientID:   c.ID,
 		httpClient: httpClient,
 		eg:         c.telemetry,
+		delivered:  &c.traceDelivered,
 	}
 
-	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+	if err := exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+		c.telemetryFrameAt.Store(time.Now().UnixNano())
 		var req coltracepb.ExportTraceServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
@@ -1450,7 +1602,22 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 		}
 
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// Consume reads the first response's answers before it returns; the
+	// consuming goroutine never changes them. The trace subscription
+	// connects first, so they settle the log subscription's mode.
+	c.ingestsTelemetry = exp.engineIngests && c.nestedSessionPort == 0
+	c.publishesTelemetry = c.forwardsWithoutCloud(exp.enginePublishes)
+	c.telemetryFeatures = exp.features
+	// The frontend reads all of the session's display text from the store,
+	// so it must hold this client's own too.
+	c.logsPresence = c.EngineLogsPresence &&
+		exp.features[enginetel.LiveFeatureLogPresence] &&
+		c.ingestsTelemetry &&
+		(!c.EngineCloudTelemetry || exp.enginePublishes)
+	return nil
 }
 
 func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
@@ -1460,9 +1627,14 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		clientID:   c.ID,
 		httpClient: httpClient,
 		eg:         c.telemetry,
+		delivered:  &c.logsDelivered,
+	}
+	if c.logsPresence {
+		exp.query = url.Values{enginetel.LiveDisplayParam: {enginetel.LiveDisplayPresence}}.Encode()
 	}
 
 	return exp.Consume(ctx, func(data []byte, encoding liveTelemetryEncoding) error {
+		c.telemetryFrameAt.Store(time.Now().UnixNano())
 		var req collogspb.ExportLogsServiceRequest
 		if err := unmarshalLiveTelemetry(data, encoding, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
@@ -1817,7 +1989,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCau
 	clientConn, _, err := hij.Hijack()
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte("hijack: " + err.Error()))
+		w.Write([]byte("hijack: " + err.Error())) //nolint:gosec // G705: a plain-text proxy error, not rendered as HTML
 		return
 	}
 	go func() {
@@ -2017,8 +2189,12 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 
 	var remoteEngineID string
+	cloudClaimID := os.Getenv(cloudClaimIDEnvName)
 	if c.connector != nil {
 		remoteEngineID = c.connector.EngineID()
+		if claimID := c.connector.ClaimID(); claimID != "" {
+			cloudClaimID = claimID
+		}
 	}
 
 	md := engine.ClientMetadata{
@@ -2044,6 +2220,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudAuth:                      c.CloudAuth,
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
+		CloudClaimID:                   cloudClaimID,
 		Profile:                        c.Profile,
 		ProfileEBPF:                    c.ProfileEBPF,
 	}

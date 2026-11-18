@@ -294,7 +294,7 @@ func resolveRepoRoot(modPath string, scheme SchemeType, endpoint *transport.Endp
 	case scheme == SchemeEntire:
 		return entireRepoRoot(modPath, endpoint, hasFragment)
 	case hasFragment:
-		if knownRoot, staticErr := vcs.RepoRootForImportPathStatic(modPath, ""); staticErr == nil {
+		if knownRoot, staticErr := vcs.RepoRootForImportPathStatic(modPath); staticErr == nil {
 			if knownRoot.Root != modPath {
 				return nil, fmt.Errorf(
 					"git URL selector requires a repository URL before #: got %q, repository root is %q",

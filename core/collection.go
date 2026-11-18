@@ -19,7 +19,10 @@ type CollectionConfig struct {
 	Delta   string `json:"delta,omitempty"`
 }
 
-func (obj *ObjectTypeDef) WithCollectionMember(role, name string) (*ObjectTypeDef, error) {
+// WithCollectionMember marks the object as a collection, or names the member
+// that plays role in it. The name is normalized with namer, the naming rules
+// of the module that declares the collection, as its fields were.
+func (obj *ObjectTypeDef) WithCollectionMember(namer Namer, role, name string) (*ObjectTypeDef, error) {
 	obj = obj.Clone()
 	if obj.Collection == nil {
 		obj.Collection = &CollectionConfig{}
@@ -45,7 +48,7 @@ func (obj *ObjectTypeDef) WithCollectionMember(role, name string) (*ObjectTypeDe
 	default:
 		return nil, fmt.Errorf("unknown collection member role %q", role)
 	}
-	name = gqlFieldName(name)
+	name = namer.FieldName(name)
 	if *member != "" && *member != name {
 		return nil, fmt.Errorf("collection %q has multiple %s members: %q and %q", obj.OriginalName, role, *member, name)
 	}

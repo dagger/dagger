@@ -217,8 +217,15 @@ func (m *Files) ExportFromModule(ctx context.Context) (string, error) {
 
 func workspaceSelectionRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Client, content *core.Directory) string {
 	t.Helper()
+	return workspaceSelectionRemoteRepo(ctx, t, c, makeGitDir(c, content, "main")) + "@main"
+}
 
-	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", makeGitDir(c, content, "main"), "", nil)
+// workspaceSelectionRemoteRepo serves gitDir, a directory holding repo.git as
+// makeGitDir builds it, and returns the repository's URL, without a ref.
+func workspaceSelectionRemoteRepo(ctx context.Context, t *testctx.T, c *dagger.Client, gitDir *core.Directory) string {
+	t.Helper()
+
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", gitDir, "", nil)
 	gitSrv, err := gitSrv.Start(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
@@ -233,7 +240,7 @@ func workspaceSelectionRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Cl
 
 	fields := strings.Fields(getentOut)
 	require.NotEmpty(t, fields, "unexpected getent output: %q", getentOut)
-	return "http://" + fields[0] + "/repo.git@main"
+	return "http://" + fields[0] + "/repo.git"
 }
 
 // TestDeclaredWorkspaceSelection should pin down the main user-visible
