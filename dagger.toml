@@ -101,6 +101,8 @@ legacy-default-path = true
 [modules.markdown-lint]
 source = "modules/markdownlint"
 legacy-default-path = true
+# lint fails on whatever fix would change.
+check.skip = ["fix/stale"]
 
 [modules.php-client]
 source = ".dagger/modules/php-client-dev"
@@ -155,9 +157,10 @@ legacy-default-path = true
 [modules.typescript-client]
 source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
+# lint-typescript fails on whatever format would change, and
 # release/publish-with-mock-endpoints runs this release, publishing to mock
 # registries.
-check.skip = ["release-dry-run"]
+check.skip = ["format/stale", "release-dry-run"]
 
 [modules.dang-sdk]
 source = "dagger.io/sdk/dang@main"
