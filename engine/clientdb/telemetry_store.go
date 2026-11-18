@@ -1259,6 +1259,12 @@ func (s *DB) CausalChildren(spanID string) []string {
 	return s.lookup.causalChildrenOf(spanID)
 }
 
+// CausalParents returns the span IDs the given span cause-links to, over
+// every snapshot of it.
+func (s *DB) CausalParents(spanID string) []string {
+	return s.lookup.causalParentsOf(spanID)
+}
+
 // SpanLogScope returns the set of span IDs whose log rows belong to a capture
 // rooted at spanID — the same walk SelectLogsBeneathSpan scopes its logs to:
 // the span itself, the spans it cause-links to (e.g. the install spans a
