@@ -1,6 +1,6 @@
 {
   "name": "@dagger.io/core",
-  "version": "1.0.0-beta.27",
+  "version": "1.0.0-beta.28",
   "author": "hello@dagger.io",
   "license": "Apache-2.0",
   "type": "module",
