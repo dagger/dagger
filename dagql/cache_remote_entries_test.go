@@ -86,7 +86,7 @@ func (a *cloudApplier) endSession(cache CacheID, session string) {
 // collect ends the batch: one collection pass over its candidates.
 func (a *cloudApplier) collect() []HolderKey {
 	a.t.Helper()
-	collected, _, err := a.cloud.CollectRemoteHoldings(a.t.Context(), a.candidates)
+	collected, _, err := a.cloud.CollectRemoteHoldings(a.t.Context(), a.candidates, nil)
 	require.NoError(a.t, err)
 	a.candidates = nil
 	return collected
@@ -643,7 +643,7 @@ func TestRemoteRetentionEveryArrivalOrder(t *testing.T) {
 		// A drop of a later generation, then the session's end, collect it.
 		change, err := cloud.ObserveRemoteRetention(ctx, key, droppedAt(100, 0))
 		require.NoError(t, err)
-		collected, _, err := cloud.CollectRemoteHoldings(ctx, append(change.Candidates, cloud.ReleaseRemoteSession(ctx, engine, session).Candidates...))
+		collected, _, err := cloud.CollectRemoteHoldings(ctx, append(change.Candidates, cloud.ReleaseRemoteSession(ctx, engine, session).Candidates...), nil)
 		require.NoError(t, err)
 		require.Equal(t, []HolderKey{key}, collected)
 	}
@@ -696,7 +696,7 @@ func TestRemoteRetentionTies(t *testing.T) {
 			got := requireHolding(t, cloud, key)
 			require.Equal(t, tc.wantRetained, got.Retained, "case %d order %v", i, order)
 			require.Equal(t, tc.wantExpires, got.RetentionExpiresAtUnix, "case %d order %v", i, order)
-			collected, _, err := cloud.CollectRemoteHoldings(ctx, append(cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates, key))
+			collected, _, err := cloud.CollectRemoteHoldings(ctx, append(cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates, key), nil)
 			require.NoError(t, err)
 			require.Equal(t, []HolderKey{key}, collected)
 		}
@@ -720,6 +720,32 @@ func TestRemoteSessionEndCollects(t *testing.T) {
 	require.Equal(t, []HolderKey{scratch}, a.collect())
 	require.Empty(t, requireHolding(t, cloud, root).Sessions)
 	require.Equal(t, 1, requireHolding(t, cloud, dir).Dependents, "the retained root owns the directory")
+}
+
+// A collection asks the caller of each holding it would remove whether
+// something the caller keeps owns it: one that is stays, whether a
+// candidate or a dependency the collection of another holding reaches.
+func TestCollectionAsksBeforeRemovingAHolding(t *testing.T) {
+	t.Parallel()
+	cloud := newCloudCache(t)
+	a := newCloudApplier(t, cloud)
+	engine := CacheID("cache-a")
+	dep, result := HolderKey{engine, 1}, HolderKey{engine, 2}
+	a.call(callRow{key: dep, session: "s", holding: holdingOf("dep")})
+	a.call(callRow{key: result, session: "s", holding: holdingOf("result", dep.Number)})
+	a.endSession(engine, "s")
+	owned := func(key HolderKey) bool { return key == dep }
+
+	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), []HolderKey{result}, owned)
+	require.NoError(t, err)
+	require.Equal(t, []HolderKey{result}, collected, "not the dependency the caller owns")
+	require.Zero(t, requireHolding(t, cloud, dep).Dependents)
+	collected, _, err = cloud.CollectRemoteHoldings(t.Context(), []HolderKey{dep}, owned)
+	require.NoError(t, err)
+	require.Empty(t, collected, "nor as a candidate")
+	collected, _, err = cloud.CollectRemoteHoldings(t.Context(), []HolderKey{dep}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []HolderKey{dep}, collected, "once nothing owns it")
 }
 
 // A late call row of an ended session creates its holding with no hold; the
@@ -989,7 +1015,7 @@ func TestRemoteHoldingsConcurrentReads(t *testing.T) {
 			_, err := cloud.AttachRemoteHolding(ctx, key, holdingOf("writer-"+strconv.Itoa(i)))
 			require.NoError(t, err)
 			candidates := cloud.ReleaseRemoteCache(ctx, "cache-w").Candidates
-			_, _, err = cloud.CollectRemoteHoldings(ctx, append(candidates, key))
+			_, _, err = cloud.CollectRemoteHoldings(ctx, append(candidates, key), nil)
 			require.NoError(t, err)
 		}
 	})
@@ -1237,13 +1263,13 @@ func TestCollectionChecksAReleaseAfterTheInterval(t *testing.T) {
 	checks := testEqClassChecks(cloud)
 
 	advance(time.Second)
-	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), cloud.ReleaseRemoteCache(t.Context(), "wiped").Candidates)
+	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), cloud.ReleaseRemoteCache(t.Context(), "wiped").Candidates, nil)
 	require.NoError(t, err)
 	require.Len(t, collected, 200)
 	require.Equal(t, checks, testEqClassChecks(cloud), "within the interval, the release waits")
 
 	advance(eqClassCheckInterval)
-	collected, _, err = cloud.CollectRemoteHoldings(t.Context(), nil)
+	collected, _, err = cloud.CollectRemoteHoldings(t.Context(), nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, collected)
 	cloud.egraphMu.Lock()
@@ -1280,7 +1306,7 @@ func TestCollectionChecksGoneAnswersAfterTheInterval(t *testing.T) {
 	}
 	require.Equal(t, checks, testEqClassChecks(cloud), "gone answers don't check, even after the interval")
 
-	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), nil)
+	collected, _, err := cloud.CollectRemoteHoldings(t.Context(), nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, collected)
 	cloud.egraphMu.Lock()

@@ -227,7 +227,7 @@ func BenchmarkHoldingsOnOneEntry(b *testing.B) {
 				for _, cache := range caches {
 					candidates = append(candidates, cloud.ReleaseRemoteCache(ctx, cache).Candidates...)
 				}
-				if _, _, err := cloud.CollectRemoteHoldings(ctx, candidates); err != nil {
+				if _, _, err := cloud.CollectRemoteHoldings(ctx, candidates, nil); err != nil {
 					b.Fatal(err)
 				}
 			}

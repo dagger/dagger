@@ -21,7 +21,7 @@ type remoteWriteOps interface {
 	ApplyMergedReply(context.Context, CacheID, ValueBundle, MergeReply) (RemoteChange, error)
 	ReleaseRemoteSession(context.Context, CacheID, string) RemoteChange
 	ReleaseRemoteCache(context.Context, CacheID) RemoteChange
-	CollectRemoteHoldings(context.Context, []HolderKey) ([]HolderKey, RemoteChange, error)
+	CollectRemoteHoldings(context.Context, []HolderKey, func(HolderKey) bool) ([]HolderKey, RemoteChange, error)
 	RemoteHoldingInfo(HolderKey) (RemoteHeldEntry, bool)
 	HolderClosure(HolderKey) []HolderKey
 	HolderGraph(CacheID, []uint64) map[uint64][]uint64
@@ -156,7 +156,7 @@ func remoteWritesScript(t *testing.T, ctx context.Context, ops remoteWriteOps) [
 	read("held value state")
 
 	collect := func(candidates ...HolderKey) {
-		collected, change, err := ops.CollectRemoteHoldings(ctx, candidates)
+		collected, change, err := ops.CollectRemoteHoldings(ctx, candidates, nil)
 		note(fmt.Sprintf("collect %v", candidates), collected, change, err)
 	}
 	// Owned by a hold, retention or a dependent: nothing goes.

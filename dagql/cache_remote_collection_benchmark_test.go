@@ -42,7 +42,7 @@ func BenchmarkRemoteCollectionCompaction(b *testing.B) {
 			}
 			advance := testEqClassClock(cloud)
 			const perCollection = 164_700 * time.Millisecond / 88_000
-			_, _, err = cloud.CollectRemoteHoldings(ctx, nil)
+			_, _, err = cloud.CollectRemoteHoldings(ctx, nil, nil)
 			require.NoError(b, err)
 			cloud.egraphMu.RLock()
 			checks := cloud.eqClassChecks
@@ -63,7 +63,7 @@ func BenchmarkRemoteCollectionCompaction(b *testing.B) {
 				before := cloud.eqClassSlotsLocked()
 				cloud.egraphMu.RUnlock()
 				start := time.Now()
-				collected, _, err := cloud.CollectRemoteHoldings(ctx, candidates)
+				collected, _, err := cloud.CollectRemoteHoldings(ctx, candidates, nil)
 				took := time.Since(start)
 				require.NoError(b, err)
 				require.Len(b, collected, 2)
