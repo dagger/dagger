@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"errors"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -95,10 +96,21 @@ func (s checksSchema) sync(ctx context.Context, check dagql.ObjectResult[*core.C
 	if check.Self().Unaddressed.Self() != nil {
 		target = check.Self().Unaddressed
 	}
-	if failure = srv.Select(ctx, target, &result, dagql.Selector{Field: "__run"}); failure != nil {
+	request := &checkRequest{}
+	failure = srv.Select(context.WithValue(ctx, checkRequestKey{}, request), target, &result, dagql.Selector{Field: "__run"})
+	var cached bool
+	var failed *checkFailed
+	if errors.As(failure, &failed) {
+		result, failure = dagql.NewObjectResultForCurrentCall(ctx, srv, failed.check)
+		// A request that joined another's run has none of its exec spans.
+		cached = failed.request != request
+	} else if failure == nil {
+		cached = result.HitCache()
+	}
+	if failure != nil {
 		return result, failure
 	}
-	result.Self().ReportResult(ctx, result.HitCache())
+	result.Self().ReportResult(ctx, cached)
 	if result.Self().Error.Valid {
 		failure = result.Self().Error.Value.Self()
 	}
@@ -121,9 +133,14 @@ func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Ch
 	if err != nil {
 		return dagql.ObjectResult[*core.Check]{}, err
 	}
-	// A failed check runs again in the next session. Within this one, its
-	// requests share the run. A run that is never reused isn't kept either.
-	if !result.Passed || dagql.CurrentCall(ctx).SessionBound() {
+	if !result.Passed {
+		// Not cached, like a failed call: the requests waiting on this run
+		// share it, and a later request runs the check again.
+		request, _ := ctx.Value(checkRequestKey{}).(*checkRequest)
+		return dagql.ObjectResult[*core.Check]{}, &checkFailed{check: result, request: request}
+	}
+	// A run that is never reused isn't kept.
+	if dagql.CurrentCall(ctx).SessionBound() {
 		dagql.DeclinePersistence(ctx)
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -132,6 +149,28 @@ func (s checksSchema) run(ctx context.Context, check dagql.ObjectResult[*core.Ch
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, result)
 }
+
+// checkRequestKey carries the checkRequest of the sync that requests a run.
+type checkRequestKey struct{}
+
+// checkRequest identifies one sync's request for a check run. It isn't
+// zero-sized, so each request's pointer is distinct.
+type checkRequest struct{ _ byte }
+
+// checkFailed is a failed check run, returned as __run's error.
+type checkFailed struct {
+	check *core.Check
+	// request is the sync whose request ran the check.
+	request *checkRequest
+}
+
+func (e *checkFailed) Error() string {
+	if e.check.Error.Valid {
+		return e.check.Error.Value.Self().Message
+	}
+	return "check failed"
+}
+
 func (s checksSchema) result(ctx context.Context, check dagql.ObjectResult[*core.Check]) (*core.Check, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
