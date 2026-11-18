@@ -3,6 +3,7 @@ package drivers
 import (
 	"context"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -21,7 +22,9 @@ type docker struct {
 
 var _ containerBackend = docker{}
 
-func (d docker) Available(ctx context.Context) (bool, error) {
+func (d docker) Name() string { return d.cmd }
+
+func (d docker) Available(ctx context.Context, _ *url.URL) (bool, error) {
 	return containerRuntimeAvailable(ctx, d.cmd, "version")
 }
 

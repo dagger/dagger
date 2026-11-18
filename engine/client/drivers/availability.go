@@ -27,6 +27,20 @@ func (e *runtimeUnavailableError) Extensions() map[string]any {
 	return map[string]any{"_quiet": true, "_message": e.message}
 }
 
+// UnavailableError says why a driver cannot serve a URL. Unlike other errors
+// from Driver.Available, it does not stop GetDriver from trying the next
+// driver registered for the scheme; the reasons of all drivers that were tried
+// are reported if none of them can serve the URL.
+type UnavailableError struct {
+	Reason string
+}
+
+func (e *UnavailableError) Error() string { return e.Reason }
+
+// containerRuntimeAvailable reports whether command is installed and its
+// daemon answers args. A missing binary is not an error, so that the next
+// driver registered for the scheme gets a turn; a binary that is present but
+// unhealthy is, and carries guidance for the user.
 func containerRuntimeAvailable(ctx context.Context, command string, args ...string) (bool, error) {
 	if _, err := exec.LookPath(command); err != nil {
 		return false, nil //nolint:nilerr

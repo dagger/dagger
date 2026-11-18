@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -19,7 +20,9 @@ type apple struct{}
 
 var _ containerBackend = apple{}
 
-func (apple) Available(ctx context.Context) (bool, error) {
+func (apple) Name() string { return "apple" }
+
+func (apple) Available(ctx context.Context, _ *url.URL) (bool, error) {
 	return containerRuntimeAvailable(ctx, "container", "system", "status")
 }
 

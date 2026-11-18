@@ -27,7 +27,7 @@ type dialDriver struct {
 	loader imageload.Backend
 }
 
-func (d *dialDriver) Available(ctx context.Context) (bool, error) {
+func (d *dialDriver) Available(context.Context, *url.URL) (bool, error) {
 	return true, nil // assume always available
 }
 
