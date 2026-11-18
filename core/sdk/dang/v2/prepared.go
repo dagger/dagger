@@ -125,10 +125,13 @@ type preparedDangPrograms struct {
 
 type preparedDangBuild struct {
 	key string
-	// done is closed once program and err are set.
+	// done is closed once program, err and ownerCanceled are set.
 	done    chan struct{}
 	program *dang.PreparedDirectory
 	err     error
+	// ownerCanceled says the preparation failed once the call running it was
+	// canceled.
+	ownerCanceled bool
 	// joined counts the calls that found the compilation kept; guarded by
 	// preparedDangPrograms.mu.
 	joined int
@@ -148,9 +151,9 @@ func (p *preparedDangPrograms) get(ctx context.Context, key string, prepare func
 		if build.err == nil {
 			return build.program, nil
 		}
-		// A preparation that ended with its own caller's cancellation says
-		// nothing about this one, which prepares again.
-		if ctx.Err() == nil && (errors.Is(build.err, context.Canceled) || errors.Is(build.err, context.DeadlineExceeded)) {
+		// A preparation that failed once its own caller was canceled, with
+		// whatever cause, says nothing about this one, which prepares again.
+		if ctx.Err() == nil && build.ownerCanceled {
 			continue
 		}
 		return nil, build.err
@@ -169,6 +172,7 @@ func (p *preparedDangPrograms) prepare(ctx context.Context, build *preparedDangB
 		}
 	}()
 	build.program, build.err = prepare(ctx)
+	build.ownerCanceled = build.err != nil && ctx.Err() != nil
 	if build.err != nil {
 		p.remove(build)
 	}
