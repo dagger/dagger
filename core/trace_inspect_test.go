@@ -202,13 +202,14 @@ func TestFindSpansImportedOrder(t *testing.T) {
 		for i := range rows {
 			rows[i].EndTime = sql.NullInt64{Int64: rows[i].StartTime + 1, Valid: true}
 		}
-		_, err := live.ImportTrace(ctx, rows[0].TraceID, func(dst *clientdb.DB) error {
+		imported, err := live.ImportTrace(ctx, rows[0].TraceID, func(dst *clientdb.DB) error {
 			_, err := dst.AppendSpans(rows)
 			return err
 		})
 		require.NoError(t, err)
+		require.NoError(t, imported.Close())
 	}
-	imports := live.InspectionStores()[1:]
+	imports := testInspectionStores(t, live)[1:]
 	require.Len(t, imports, 2)
 	want := "0000000000000001  ok     oldest\n" +
 		"0000000000000004  ok     tie first\n" +

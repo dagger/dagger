@@ -163,7 +163,11 @@ func rawIDBytes(encoded string) int {
 func loadCallClosure(ctx context.Context, read *clientdb.DB, db *dagui.DB, digest string) error {
 	pending := map[string]struct{}{digest: {}}
 	visited := map[string]struct{}{}
-	stores := read.InspectionStores()
+	stores, release, err := read.InspectionStores(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	for len(pending) > 0 {
 		for d := range pending {
 			visited[d] = struct{}{}
@@ -301,7 +305,12 @@ func findCalls(ctx context.Context, re *regexp.Regexp, limit int, exclude string
 // transient and linear in the number of calls rather than retained.
 func findCallsIn(ctx context.Context, read *clientdb.DB, re *regexp.Regexp, limit int, exclude string) (string, error) {
 	db := dagui.NewDB()
-	for _, source := range read.InspectionStores() {
+	stores, release, err := read.InspectionStores(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	for _, source := range stores {
 		frames, err := source.SelectCallFrames(ctx, source.CallDigests())
 		if err != nil {
 			return "", fmt.Errorf("select call frames: %w", err)
