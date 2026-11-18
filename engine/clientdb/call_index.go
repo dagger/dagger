@@ -31,7 +31,7 @@ import (
 // scan of the encoded attributes (no decode); the log side decodes the
 // payload record's body, which is small and already identified by its content
 // type. The cost is one map entry per distinct call, the same order as the
-// span index's per-span maps.
+// span index's per-span entries.
 type callLookup struct {
 	mu sync.RWMutex
 	// spanRow maps a call digest to the newest span row whose attributes
