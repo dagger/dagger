@@ -38,6 +38,10 @@ func (s *memoGrowthServer) SessionSchemaBuilderMemo(context.Context) (*core.Sche
 //     clients builds N servers.
 //   - control: the same builder identity resolves to one server.
 //
+// Past the memo's bound the session keeps only the servers it used most
+// recently; TestSchemaBuilderMemoBounded covers that without building
+// hundreds of servers.
+//
 // Each scenario resolves the dependency schema of a module that depends on
 // the core API alone (the common case: moduleTypesDefinition and the SDK
 // runtimes ask for it on every asModule) and describes it, as

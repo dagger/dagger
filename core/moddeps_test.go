@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -211,6 +212,89 @@ func TestSchemaBuilderMemoWorkspaceModules(t *testing.T) {
 	_, err = none.WorkspaceModules("ws", load)
 	require.NoError(t, err)
 	require.Equal(t, 3, loads, "a nil memo loads every time")
+}
+
+// A memo keeps at most maxMemoizedSchemaBuilders builders, evicting the least
+// recently used. A caller holding an evicted builder keeps its server: the
+// memo only stops sharing it, and the next load of that set builds anew.
+func TestSchemaBuilderMemoBounded(t *testing.T) {
+	session := NewSchemaBuilderMemo()
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &memoTestServer{mockServer: &mockServer{}, client: NewSchemaBuilderMemo(), session: session}})
+	deps := func(root *Query) *SchemaBuilder { return NewSchemaBuilder(root, []Mod{&keyedInstallMod{key: "core"}}) }
+
+	firstRoot, recentRoot := &Query{}, &Query{}
+	first := session.Get(deps(firstRoot))
+	held, err := first.Schema(ctx)
+	require.NoError(t, err)
+	recent := session.Get(deps(recentRoot))
+	for range maxMemoizedSchemaBuilders - 2 {
+		session.Get(deps(&Query{}))
+	}
+	require.Equal(t, maxMemoizedSchemaBuilders, session.builders.Len())
+	require.Same(t, first, session.Get(deps(firstRoot)), "the memo is full, not over")
+
+	session.Get(deps(&Query{})) // evicts recent: first was just used
+	require.Equal(t, maxMemoizedSchemaBuilders, session.builders.Len(), "the memo is bounded")
+	require.Same(t, first, session.Get(deps(firstRoot)), "a recently used builder stays")
+	require.NotSame(t, recent, session.Get(deps(recentRoot)), "the least recently used builder was evicted")
+
+	for range maxMemoizedSchemaBuilders {
+		session.Get(deps(&Query{}))
+	}
+	evicted := session.Get(deps(firstRoot))
+	require.NotSame(t, first, evicted, "first was evicted in turn")
+	again, err := first.Schema(ctx)
+	require.NoError(t, err)
+	require.Same(t, held, again, "a caller holding an evicted builder keeps its server")
+	rebuilt, err := evicted.Schema(ctx)
+	require.NoError(t, err)
+	require.NotSame(t, held, rebuilt, "the set is built again on its next load")
+}
+
+// Every side table of a memo is bounded like its builders, and an entry
+// evicted while its caller fills it is still filled for that caller.
+func TestSchemaBuilderMemoSideTablesBounded(t *testing.T) {
+	memo := NewSchemaBuilderMemo()
+	for i := range maxMemoizedGitClients + 10 {
+		declared, err := memo.declaredGitClients(declaredGitClientsKey{treeID: uint64(i + 1)}, func() ([]string, error) {
+			return []string{"github.com/example/repo"}, nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"github.com/example/repo"}, declared)
+	}
+	require.Equal(t, maxMemoizedGitClients, memo.gitClients.Len())
+
+	for i := range maxMemoizedTypes + 10 {
+		_, err := memo.canonicalArgType(strconv.Itoa(i), func() (*TypeDef, error) { return &TypeDef{Kind: TypeDefKindString}, nil })
+		require.NoError(t, err)
+	}
+	require.Equal(t, maxMemoizedTypes, memo.canonicalArgTypes.Len())
+
+	for i := range maxMemoizedModuleServers + 10 {
+		_, err := memo.moduleServer(strconv.Itoa(i), func() (*dagql.Server, error) { return dagql.NewServer(t.Context(), &Query{}) })
+		require.NoError(t, err)
+	}
+	require.Equal(t, maxMemoizedModuleServers, memo.moduleServers.Len())
+
+	for i := range maxMemoizedWorkspaces + 10 {
+		_, err := memo.WorkspaceModules(strconv.Itoa(i), func() (*InstalledWorkspaceModules, error) { return &InstalledWorkspaceModules{}, nil })
+		require.NoError(t, err)
+	}
+	require.Equal(t, maxMemoizedWorkspaces, memo.workspaceModules.Len())
+
+	// An entry evicted while its build runs still returns that build.
+	built, _ := dagql.NewServer(t.Context(), &Query{})
+	srv, err := memo.moduleServer("evicted while building", func() (*dagql.Server, error) {
+		for i := range maxMemoizedModuleServers {
+			_, err := memo.moduleServer("filler-"+strconv.Itoa(i), func() (*dagql.Server, error) { return dagql.NewServer(t.Context(), &Query{}) })
+			require.NoError(t, err)
+		}
+		return built, nil
+	})
+	require.NoError(t, err)
+	require.Same(t, built, srv)
+	_, ok := memo.moduleServers.Peek("evicted while building")
+	require.False(t, ok)
 }
 
 func TestSchemaBuilderWithCoreMod(t *testing.T) {
