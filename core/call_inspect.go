@@ -320,7 +320,7 @@ func spanCallDigest(ctx context.Context, read *clientdb.DB, spanID string) (stri
 
 // findCalls content-searches every call the store holds a frame for; see
 // dagui.DB.GrepCalls for the line format. A non-empty exclude leaves out the
-// frames of that agent's own conversation (see agentConversationCalls).
+// frames of that agent's own conversation (see ownedConversationCalls).
 func findCalls(ctx context.Context, re *regexp.Regexp, limit int, exclude string) (string, error) {
 	clientDB, err := traceReportClientDB(ctx)
 	if err != nil {
@@ -466,7 +466,7 @@ func scanCallFrames(ctx context.Context, stores []*clientdb.DB, digests []string
 	return nil
 }
 
-// conversationFrame is what agentConversationCalls reads of an LLM-typed
+// conversationFrame is what ownedConversationCalls reads of an LLM-typed
 // frame.
 type conversationFrame struct {
 	receiver string
@@ -488,23 +488,12 @@ func conversationFrameOf(frame *callpbv1.Call) conversationFrame {
 	return c
 }
 
-// agentConversationCalls returns the digests of the frames recording an
+// ownedConversationCalls returns the digests of the frames recording an
 // agent's own conversation: LLM-typed frames whose nearest ownership stamp
 // (LLM.__withOwnerAgent, which an agent puts on its committed conversation)
 // up the receiver chain names handle. Nearest, because a conversation an
-// agent hands on -- a worker's seed -- is re-stamped by its new owner.
-func agentConversationCalls(calls map[string]*callpbv1.Call, handle string) map[string]struct{} {
-	frames := map[string]conversationFrame{}
-	for dig, frame := range calls {
-		if frame != nil && frame.GetType().GetNamedType() == "LLM" {
-			frames[dig] = conversationFrameOf(frame)
-		}
-	}
-	return ownedConversationCalls(frames, handle)
-}
-
-// ownedConversationCalls is agentConversationCalls over the LLM-typed
-// frames alone, which are all its walk reads.
+// agent hands on -- a worker's seed -- is re-stamped by its new owner. The
+// walk only reads LLM-typed frames, so frames holds just those.
 func ownedConversationCalls(frames map[string]conversationFrame, handle string) map[string]struct{} {
 	owners := make(map[string]string, len(frames))
 	for dig := range frames {
