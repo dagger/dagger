@@ -24,6 +24,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -775,4 +776,96 @@ func BenchmarkRecordCacheEvidence(b *testing.B) {
 	for b.Loop() {
 		span.SetAttributes(appendCacheEvidenceAttrs(ctx, nil, ev, res)...)
 	}
+}
+
+// A call hidden from the session's view (dagql.WithSkip) shows no line, but
+// it is still the cache's: it reports its cache decision as any other call
+// does, on a span the UI treats as internal, so the remote cache learns the
+// entry it returns. A hidden call that is profile-skipped reports nothing.
+func TestAroundFuncHiddenCallReportsCacheEvidence(t *testing.T) {
+	t.Parallel()
+
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(sr),
+	)
+	ctx, root := tp.Tracer("cache-evidence-test").Start(context.Background(), "root")
+	defer root.End()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	t.Cleanup(func() { assert.NilError(t, cache.CloseDiscardingPersistence()) })
+	ctx = dagql.WithSkip(dagql.ContextWithCache(ctx, cache))
+
+	req := &dagql.CallRequest{
+		ResultCall:       evidenceTestFrame("withEnvVariable"),
+		ReceiverTypeName: "Container",
+	}
+	_, done := AroundFunc(ctx, req)
+	assert.Assert(t, req.CacheReported, "a hidden call's miss asks the remote cache, as any reported call's does")
+	assert.Assert(t, req.CacheEvidence != nil, "a hidden call reports its cache decision")
+	req.CacheEvidence.Outcome = dagql.CacheOutcomeExecuted
+	// The result is made outside the recorded trace, whose spans the test
+	// counts.
+	resCtx := dagql.ContextWithCache(context.Background(), cache)
+	res, err := cache.GetOrInitCall(resCtx, "evidence-session", evidenceTestTypeResolver{}, &dagql.CallRequest{ResultCall: req.ResultCall}, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewResultForCall(dagql.NewInt(1), req.ResultCall)
+	})
+	assert.NilError(t, err)
+	recipe, err := res.RecipeDigest(resCtx)
+	assert.NilError(t, err)
+	var rerr error
+	done(res, false, &rerr)
+
+	ended := sr.Ended()
+	assert.Equal(t, 1, len(ended))
+	var internal, passthrough, sawDigest, sawOutput, sawCall bool
+	for _, attr := range ended[0].Attributes() {
+		switch string(attr.Key) {
+		case telemetry.UIInternalAttr:
+			internal = attr.Value.AsBool()
+		case telemetry.UIPassthroughAttr:
+			passthrough = attr.Value.AsBool()
+		case telemetry.DagDigestAttr:
+			sawDigest = true
+		case telemetry.DagOutputAttr:
+			sawOutput = true
+		case telemetry.DagCallAttr:
+			sawCall = true
+		}
+	}
+	assert.Assert(t, enginetelemetry.IsProtectedSpan(ended[0]), "the hidden call's span takes the protected export lane, as the cache report of any call span does")
+	assert.Assert(t, !sawOutput, "the hidden call's span names no output: it would be the result's creator in the session's rendering")
+	assert.Assert(t, !sawCall, "the hidden call's span carries no call frame: its delivery would stand for its closure's")
+	assert.Assert(t, internal, "the hidden call's span is internal: hidden at the terminal's default verbosity")
+	assert.Assert(t, passthrough, "the hidden call's span is passthrough: never a row, as in Cloud's trace view")
+	assert.Assert(t, sawDigest, "the hidden call's span names its call")
+	got := evidenceTestCacheAttrs(t, ended[0].Attributes())
+	assert.Equal(t, got[telemetryattrs.CacheContractAttr], telemetryattrs.CacheContractV1)
+	assert.Equal(t, got[telemetryattrs.CacheOutcomeAttr], "executed")
+	assert.Equal(t, got[telemetryattrs.CacheRecipeAttr], recipe.String(), "the hidden call's span names the recipe of the entry it returned")
+
+	// A hidden profile-skipped call reports nothing, and has no span.
+	skipReq := &dagql.CallRequest{
+		ResultCall:       evidenceTestFrame("load"),
+		ReceiverTypeName: "TypeDef",
+	}
+	_, skipDone := AroundFunc(ctx, skipReq)
+	skipDone(nil, false, &rerr)
+	assert.Assert(t, skipReq.ResultCall.ProfileSkip)
+	assert.Assert(t, !skipReq.CacheReported)
+	assert.Assert(t, skipReq.CacheEvidence == nil)
+	assert.Equal(t, 1, len(sr.Ended()), "a hidden profile-skipped call has no span")
+
+	// A call of a request whose client opted out of telemetry reports
+	// nothing, and has no span.
+	optedOut := &dagql.CallRequest{
+		ResultCall:       evidenceTestFrame("withEnvVariable"),
+		ReceiverTypeName: "Container",
+	}
+	_, optedOutDone := AroundFunc(dagql.WithTelemetrySuppressed(ctx), optedOut)
+	optedOutDone(nil, false, &rerr)
+	assert.Assert(t, !optedOut.CacheReported)
+	assert.Assert(t, optedOut.CacheEvidence == nil)
+	assert.Equal(t, 1, len(sr.Ended()), "a call of a suppressed request has no span")
 }

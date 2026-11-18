@@ -143,8 +143,9 @@ func TestAroundFuncStampsProfileSkipBeforeInheritedSkip(t *testing.T) {
 
 // A call is reported, and so can be looked up in the remote cache, exactly
 // when telemetry would carry its cache decision: an ordinary call, whether or
-// not this engine's span records, and not a reflection call or a call under
-// a hidden context, whose decisions telemetry leaves out.
+// not this engine's span records, and a call under a hidden context, whose
+// decision telemetry carries on an internal span (hiddenCallEvidence); not a
+// reflection call, whose decision telemetry leaves out, hidden or not.
 func TestAroundFuncMarksReportedCalls(t *testing.T) {
 	t.Parallel()
 	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
@@ -167,7 +168,8 @@ func TestAroundFuncMarksReportedCalls(t *testing.T) {
 	require.Nil(t, plain.CacheEvidence, "its evidence is armed only when its span records")
 
 	require.False(t, call(base, "Function", "args").CacheReported, "a reflection call isn't reported")
-	require.False(t, call(dagql.WithSkip(base), "Container", "withExec").CacheReported, "a call under a hidden context isn't reported")
+	require.True(t, call(dagql.WithSkip(base), "Container", "withExec").CacheReported, "a call under a hidden context is reported")
+	require.False(t, call(dagql.WithSkip(base), "Function", "args").CacheReported, "a hidden reflection call isn't reported")
 
 	// Armed and reported agree: what records evidence is what is reported.
 	_, span := evidenceTestRecordingSpan(t)
