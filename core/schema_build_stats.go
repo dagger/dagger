@@ -46,6 +46,11 @@ type SchemaBuildStats struct {
 	// not classified because a record reached its limit.
 	ModuleSets int
 	Untracked  int64
+	// ModuleServers are the standalone servers built for one module that
+	// artifact discovery, evaluation and checks select through
+	// (dagqlServerForModule): a fork of the core schema with the module
+	// installed. They are not counted in Servers.
+	ModuleServers int64
 }
 
 // maxTrackedModuleSets bounds each record schemaBuilds and a session keep:
@@ -155,6 +160,13 @@ func (m *SchemaBuilderMemo) countSchemaBuild(root *Query, mods []modInstall) {
 			schemaBuilds.built[key] = struct{}{}
 		}
 	}
+}
+
+// countModuleServer counts a standalone module server built.
+func countModuleServer() {
+	schemaBuilds.Lock()
+	defer schemaBuilds.Unlock()
+	schemaBuilds.stats.ModuleServers++
 }
 
 // countDescription counts a description cache for the module set key building
