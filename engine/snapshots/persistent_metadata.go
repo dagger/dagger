@@ -139,24 +139,36 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 // dropped, as LoadPersistentMetadata replaces the pending records in memory.
 // Requires cm.mu.
 func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []SnapshotContentHashRow) {
+	s := cm.metadataStore
+	s.mu.Lock()
+	s.pendingContentHashes = make(map[string][]byte)
+	s.mu.Unlock()
+
 	loaded := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
 		if row.SnapshotID == "" || len(row.Data) == 0 {
 			continue
 		}
+		loaded[row.SnapshotID] = struct{}{}
 		var gone func() bool
-		if md, ok := cm.metadataStore.get(row.SnapshotID); ok {
+		if md, ok := s.get(row.SnapshotID); ok {
 			gone = func() bool { return md.contentHashGone }
 		}
 		if err := files.write(row.SnapshotID, row.Data, gone); err != nil {
-			// As when a checkpoint can't read a tree: the snapshot is
-			// hashed again if asked, rather than the whole cache, which
-			// failing the load would discard, being lost.
+			// Failing the load would make dagql discard the whole cache,
+			// and dropping the tree would make an imported snapshot's
+			// digests come from a rescan: keep it in memory instead.
 			bklog.G(context.TODO()).WithError(err).WithField("snapshot", row.SnapshotID).
-				Error("failed to load content hash records")
-			continue
+				Error("failed to write content hash records; keeping them in memory")
+			files.remove(row.SnapshotID, nil)
+			s.mu.Lock()
+			if md, ok := s.refs[row.SnapshotID]; ok {
+				md.external[ContentHashMetadataKey] = row.Data
+			} else {
+				s.pendingContentHashes[row.SnapshotID] = row.Data
+			}
+			s.mu.Unlock()
 		}
-		loaded[row.SnapshotID] = struct{}{}
 	}
 	for _, id := range files.list() {
 		if _, ok := loaded[id]; ok {
@@ -247,12 +259,12 @@ func (cm *snapshotManager) persistentMetadataRows() (PersistentMetadataRows, []s
 		if rec, ok := cm.records[snapshotID]; ok && rec.mutable {
 			continue
 		}
-		if files != nil {
-			if files.has(snapshotID) {
-				hashIDs = append(hashIDs, snapshotID)
-			}
+		if files != nil && files.has(snapshotID) {
+			hashIDs = append(hashIDs, snapshotID)
 			continue
 		}
+		// In memory: always without files, and with them, a loaded tree
+		// that could not be written.
 		data := cm.metadataStore.pendingContentHashes[snapshotID]
 		if md, ok := cm.metadataStore.refs[snapshotID]; ok {
 			data = md.external[ContentHashMetadataKey]
