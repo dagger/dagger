@@ -209,6 +209,8 @@ type DB struct {
 	// names interns span names, which repeat heavily: a dagql call span is
 	// named for its Type.field.
 	names map[string]string
+	// digests interns call digests (see intern.go).
+	digests digestTable
 
 	// unsentAncestors holds ancestors of surfaced spans (see
 	// Span.IsSurfacedKind) that UpdatedSnapshots needed to send but couldn't,
@@ -1077,6 +1079,7 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 			attr.Value.AsInterface(),
 		)
 	}
+	db.internSnapshotStrings(&spanData.SpanSnapshot)
 
 	// integrate the span's data into the DB's live objects
 	db.integrateSpan(spanData)

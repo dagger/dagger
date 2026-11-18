@@ -68,7 +68,6 @@ func (e wireExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 func (w wireSpans) enrich(span sdktrace.ReadOnlySpan) sdktrace.ReadOnlySpan {
 	stub := tracetest.SpanStubFromReadOnlySpan(span)
 	var digest, payload string
-	done := !stub.EndTime.IsZero()
 	for _, kv := range stub.Attributes {
 		switch string(kv.Key) {
 		case telemetry.DagDigestAttr:
@@ -116,7 +115,6 @@ func (w wireSpans) enrich(span sdktrace.ReadOnlySpan) sdktrace.ReadOnlySpan {
 			attribute.String(telemetry.ModuleCallerFunctionCallNameAttr, "Dagger.check"),
 		)
 	}
-	_ = done
 	stub.Attributes = attrs
 	return stub.Snapshot()
 }

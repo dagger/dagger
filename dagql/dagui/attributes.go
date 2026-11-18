@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	telemetry "github.com/dagger/otel-go"
+
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -236,6 +238,12 @@ var lowCardinalityAttrs = map[string]bool{
 	telemetryattrs.CacheOutcomeAttr:            true,
 	telemetryattrs.CacheHitRouteAttr:           true,
 	telemetryattrs.CacheTypeAttr:               true,
+	// Module calls name their module (ref@version) and function, and the
+	// caller's: as many values as functions called, on every call.
+	telemetry.ModuleRefAttr:                    true,
+	telemetry.ModuleFunctionCallNameAttr:       true,
+	telemetry.ModuleCallerRefAttr:              true,
+	telemetry.ModuleCallerFunctionCallNameAttr: true,
 }
 
 func internAttrValue(name, val string) string {
