@@ -156,6 +156,14 @@ func TestFindSpansMatchesFullLoad(t *testing.T) {
 				}
 			}
 		}
+		// A failure in the import that cause-links into live work (the
+		// live withExec): dagui links by span ID, across stores.
+		rows = append(rows, clientdb.Span{
+			TraceID: traceID, SpanID: traceID[:4] + "ffffffffffff", Name: "imported failure",
+			StartTime: 5000, EndTime: sql.NullInt64{Int64: 5001, Valid: true},
+			StatusCode: int64(codes.Error), Attributes: marshalSpanAttrs(t),
+			Links: marshalCauseLink(t, searchSessionTraceID, "0000000000000004"),
+		})
 		imported, err := live.ImportTrace(ctx, traceID, func(dst *clientdb.DB) error {
 			_, err := dst.AppendSpans(rows)
 			return err
@@ -185,7 +193,7 @@ func TestFindSpansMatchesFullLoad(t *testing.T) {
 		{"session", session, nil, []string{"", "0000000000000003"},
 			[]string{"", "needle", "tool call 7/", "TestPkg", "TestPkg50/case", "cache1", "Container.with", "go"}, []traceCaller{{}, sessionChief}},
 		{"imports", live, testInspectionStores(t, live)[1:], []string{""},
-			[]string{"", "needle", "tool call 1", "cache", "Test"}, []traceCaller{{}, sessionChief}},
+			[]string{"", "needle", "tool call 1", "cache", "Test", "withExec", "failure"}, []traceCaller{{}, sessionChief}},
 	}
 
 	statuses := []string{"", "ERROR", "FAIL", "failed", "run", "idle", "ok"}

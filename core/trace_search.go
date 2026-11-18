@@ -357,17 +357,20 @@ func (sc *spanSearchScan) load(ctx context.Context, spans []*searchSpan, withRoo
 		}
 	}
 	// The spans cause-linking into them, transitively: their failures are
-	// the spans' FAIL.
+	// the spans' FAIL. dagui links by span ID, so a linker may be in any
+	// store.
 	for len(queue) > 0 {
 		sp := queue[0]
 		queue = queue[1:]
-		for _, id := range sc.stores[sp.store].CausalChildren(sp.id) {
-			linker := sc.spans[id]
-			if linker == nil || need[linker] {
-				continue
+		for _, read := range sc.stores {
+			for _, id := range read.CausalChildren(sp.id) {
+				linker := sc.spans[id]
+				if linker == nil || need[linker] {
+					continue
+				}
+				need[linker] = true
+				queue = append(queue, linker)
 			}
-			need[linker] = true
-			queue = append(queue, linker)
 		}
 	}
 	if withRoot && sc.root != nil {
