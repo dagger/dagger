@@ -60,8 +60,8 @@ func TestSchemaBuildsCountRepeats(t *testing.T) {
 
 	before = SchemaBuilds()
 	build(client(session), NewSchemaBuilder(root, []Mod{&keyedInstallMod{key: key}}))
-	require.Equal(t, SchemaBuildStats{Servers: 1, RepeatedInSession: 1, RepeatedOnSameRoot: 1}, delta(before),
-		"the same modules on the same root, under another builder identity")
+	require.Equal(t, SchemaBuildStats{}, delta(before),
+		"the same modules on the same root, under another instance of an equivalent module: the memo has it")
 
 	before = SchemaBuilds()
 	session.Get(deps).loadSchemaFailed.Store(true)

@@ -52,6 +52,18 @@ func TestSchemaBuilderMemo(t *testing.T) {
 			"servers are built on the root, so it is part of the key")
 	})
 
+	t.Run("equivalent core modules share a builder", func(t *testing.T) {
+		// Core is keyed by its content (SchemaASTCacheKey), not its instance:
+		// every module load wraps it anew.
+		memo := NewSchemaBuilderMemo()
+		first := memo.Get(NewSchemaBuilder(root, []Mod{&keyedInstallMod{key: "core@v1"}}).Append(b))
+		require.Same(t, first, memo.Get(NewSchemaBuilder(root, []Mod{&keyedInstallMod{key: "core@v1"}}).Append(b)))
+		require.NotSame(t, first, memo.Get(NewSchemaBuilder(root, []Mod{&keyedInstallMod{key: "core@v2"}}).Append(b)),
+			"another view is another schema")
+		require.NotSame(t, first, memo.Get(NewSchemaBuilder(&Query{}, []Mod{&keyedInstallMod{key: "core@v1"}}).Append(b)),
+			"the root is still part of the key")
+	})
+
 	t.Run("a failed build is not reused", func(t *testing.T) {
 		memo := NewSchemaBuilderMemo()
 		failed := memo.Get(base.Append(b))
