@@ -196,6 +196,15 @@ func logCallDigest(row Log) (string, bool) {
 
 // CallPayloadBody decodes the call frame a call-payload log record carries.
 func CallPayloadBody(row Log) (*callpbv1.Call, error) {
+	if raw, ok := wireBytesValue(row.Body); ok {
+		// The usual body, read in place rather than through a copy into an
+		// AnyValue first.
+		frame := new(callpbv1.Call)
+		if err := proto.Unmarshal(raw, frame); err != nil {
+			return nil, err
+		}
+		return frame, nil
+	}
 	var body otlpcommonv1.AnyValue
 	if err := proto.Unmarshal(row.Body, &body); err != nil {
 		return nil, err
@@ -209,6 +218,36 @@ func CallPayloadBody(row Log) (*callpbv1.Call, error) {
 		return nil, err
 	}
 	return frame, nil
+}
+
+// anyValueBytesField is AnyValue's bytes_value.
+const anyValueBytesField protowire.Number = 7
+
+// wireBytesValue returns the bytes an encoded AnyValue holds, if it is a
+// well-formed AnyValue holding exactly a bytes value -- the case where
+// decoding it would give the same bytes -- and false otherwise.
+func wireBytesValue(v []byte) ([]byte, bool) {
+	var value []byte
+	found := false
+	for len(v) > 0 {
+		num, typ, n := protowire.ConsumeTag(v)
+		if n < 0 {
+			return nil, false
+		}
+		v = v[n:]
+		if num != anyValueBytesField || typ != protowire.BytesType {
+			// Another oneof member (or an unknown field): decode instead.
+			return nil, false
+		}
+		b, n := protowire.ConsumeBytes(v)
+		if n < 0 {
+			return nil, false
+		}
+		// The last occurrence of a field wins, as when decoding.
+		value, found = b, true
+		v = v[n:]
+	}
+	return value, found
 }
 
 // rows returns the indexed span row and log row for a digest; either may be

@@ -1416,36 +1416,68 @@ func (s *DB) SelectCallFrames(ctx context.Context, digests map[string]struct{}) 
 		ordered = append(ordered, digest)
 	}
 	sort.Strings(ordered)
-	frames := make([]CallFrame, 0, len(ordered))
+	type located struct {
+		digest          string
+		spanRow, logRow int64
+	}
+	var wanted []located
+	var spanIDs, logIDs []int64
 	for _, digest := range ordered {
 		spanRow, logRow := s.callIdx.rows(digest)
 		if spanRow == 0 && logRow == 0 {
 			continue
 		}
-		frame := CallFrame{Digest: digest}
-		if logRow != 0 {
-			row, found, err := s.logs.readID(ctx, logRow)
-			if err != nil {
-				return nil, fmt.Errorf("read log row %d: %w", logRow, err)
-			}
-			if !found {
-				return nil, fmt.Errorf("indexed log row %d: %w", logRow, sql.ErrNoRows)
-			}
-			frame.Log = &row
-		}
+		wanted = append(wanted, located{digest, spanRow, logRow})
 		if spanRow != 0 {
-			row, found, err := s.spans.readID(ctx, spanRow)
-			if err != nil {
-				return nil, fmt.Errorf("read span row %d: %w", spanRow, err)
-			}
-			if !found {
-				return nil, fmt.Errorf("indexed span row %d: %w", spanRow, sql.ErrNoRows)
-			}
-			frame.Span = &row
+			spanIDs = append(spanIDs, spanRow)
+		}
+		if logRow != 0 {
+			logIDs = append(logIDs, logRow)
+		}
+	}
+	// Each stream is read in one ascending pass, through one scanner and
+	// read buffer: rows read one at a time each paid for a scanner of their
+	// own.
+	logs, err := readRowsByID(ctx, s.logs, logIDs, func(row Log) int64 { return row.ID }, "log")
+	if err != nil {
+		return nil, err
+	}
+	spans, err := readRowsByID(ctx, s.spans, spanIDs, func(row Span) int64 { return row.ID }, "span")
+	if err != nil {
+		return nil, err
+	}
+	frames := make([]CallFrame, 0, len(wanted))
+	for _, w := range wanted {
+		frame := CallFrame{Digest: w.digest}
+		if w.logRow != 0 {
+			frame.Log = logs[w.logRow]
+		}
+		if w.spanRow != 0 {
+			frame.Span = spans[w.spanRow]
 		}
 		frames = append(frames, frame)
 	}
 	return frames, nil
+}
+
+// readRowsByID reads the indexed rows ids, in any order, by ID; a row that
+// cannot be read is an error.
+func readRowsByID[Row any](ctx context.Context, stream *logStream[Row], ids []int64, getID func(Row) int64, kind string) (map[int64]*Row, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	sorted := slices.Clone(ids)
+	slices.Sort(sorted)
+	sorted = slices.Compact(sorted)
+	rows, err := readIndexedRows(ctx, stream, sorted, getID, kind)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[int64]*Row, len(rows))
+	for i := range rows {
+		byID[getID(rows[i])] = &rows[i]
+	}
+	return byID, nil
 }
 
 // SelectLogsBeneathSpan returns the log rows of the capture rooted at
