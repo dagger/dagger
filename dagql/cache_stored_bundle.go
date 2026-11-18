@@ -70,7 +70,8 @@ type StoredBundleResult struct {
 // With Whole, StoredBundle carries as held rows only entries the recipient
 // holds whole: an entry it would carry as a held row, one of Cache's
 // holdings on which has a closure, over Cache's holdings' dependencies,
-// that names a dependency no holding of Cache has, goes in full instead
+// that names a dependency no holding of Cache has and ByFile doesn't name,
+// goes in full instead
 // (StoredBundleResult.NotWhole), and what is below it is walked. The build
 // is then the one a caller gets by building, adding the held rows of its
 // bundle that aren't whole to Not, and building again until none is left:
@@ -81,6 +82,12 @@ type HeldBy struct {
 	Not   map[uint64]bool
 	Also  func(number uint64) bool
 	Whole bool
+	// ByFile names, by the number Cache's holdings give it, an entry the
+	// recipient holds with no holding of Cache yet, as Also does by the
+	// entry's own number: a holding's dependency on it leaves the
+	// holding's closure whole (Whole). It is called under the cache's lock,
+	// as Also is.
+	ByFile func(number uint64) bool
 }
 
 // heldLocked reports whether the recipient holds res at nowUnix. A nil
@@ -303,7 +310,7 @@ func (c *Cache) storedBundleWholeWalkLocked(rootEntries []*sharedResult, nowUnix
 	if err != nil || held == nil || !held.Whole {
 		return build, nil, err
 	}
-	whole := &wholeHolds{cache: held.Cache, known: map[uint64]bool{}}
+	whole := &wholeHolds{cache: held.Cache, byFile: held.ByFile, known: map[uint64]bool{}}
 	var all []uint64
 	var notWhole map[sharedResultID]bool
 	for {
@@ -333,13 +340,15 @@ func (c *Cache) storedBundleWholeWalkLocked(rootEntries []*sharedResult, nowUnix
 // cache have closures it holds whole (holdsWholeLocked): known has a
 // holding's answer once its whole closure was read.
 type wholeHolds struct {
-	cache CacheID
-	known map[uint64]bool
+	cache  CacheID
+	byFile func(number uint64) bool
+	known  map[uint64]bool
 }
 
 // holdsWholeLocked reports whether no holding of whole's cache on res has a
 // closure, over that cache's holdings' dependencies, that names a
-// dependency no holding of the cache has (HeldBy.Whole). Requires egraphMu.
+// dependency no holding of the cache has and the recipient doesn't hold by
+// file (HeldBy.Whole). Requires egraphMu.
 func (c *Cache) holdsWholeLocked(whole *wholeHolds, res *sharedResult) bool {
 	for _, ref := range res.cacheHolderRefsLocked(whole.cache) {
 		if unknown, _ := c.unknownBelowLocked(whole, ref.key.Number, map[uint64]bool{}); unknown {
@@ -355,8 +364,9 @@ func (c *Cache) holdsWholeLocked(whole *wholeHolds, res *sharedResult) bool {
 // whether the answer is whole. A holding reached again before its answer is
 // known adds nothing to the walk that reaches it but leaves that walk's
 // false answer partial, as a cycle of holdings can for a while; known keeps
-// only whole answers. A dependency with no holding names nothing below it.
-// Requires egraphMu.
+// only whole answers. A dependency with no holding names nothing below it,
+// and one the recipient holds by file (HeldBy.ByFile) is whole. Requires
+// egraphMu.
 func (c *Cache) unknownBelowLocked(whole *wholeHolds, number uint64, reached map[uint64]bool) (unknown, final bool) {
 	if unknown, ok := whole.known[number]; ok {
 		return unknown, true
@@ -370,7 +380,9 @@ func (c *Cache) unknownBelowLocked(whole *wholeHolds, number uint64, reached map
 		whole.known[number] = false
 		return false, true
 	}
-	unknown, final = len(h.unknownDeps) > 0, true
+	unknown, final = slices.ContainsFunc(h.unknownDeps, func(dep uint64) bool {
+		return whole.byFile == nil || !whole.byFile(dep)
+	}), true
 	for _, dep := range h.deps {
 		if unknown {
 			break
