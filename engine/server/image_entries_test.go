@@ -74,9 +74,9 @@ func imageEntriesDirOf(t *testing.T, names ...string) (string, dagql.ValueBundle
 }
 
 // expireImageRoot gives the image's root for the file name an expiry that has
-// passed, on the root and on its value, as the bundle of an image built more
-// than a week ago holds the expiry a module function's result got (a
-// function's default lifetime is a week), and rewrites the image's bundle.
+// passed, on the root and on its value, as an image's bundle holds once the
+// expiry a module function's time to live gave its result has passed, and
+// rewrites the image's bundle.
 func expireImageRoot(t *testing.T, dir string, bundle dagql.ValueBundle, name string) {
 	t.Helper()
 	past := time.Now().Add(-time.Hour).Unix()

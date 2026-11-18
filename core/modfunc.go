@@ -28,10 +28,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-const (
-	MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
-	MinFunctionCacheTTLSeconds = 1
-)
+const MinFunctionCacheTTLSeconds = 1
 
 // declaredClientsInput puts a module's declared local clients into the cache
 // identity of its function calls. The module serves them at run time, after
