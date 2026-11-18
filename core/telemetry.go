@@ -103,7 +103,7 @@ func aroundFuncTelemetry(
 	// the object call site.
 	req.ResultCall.ProfileSkip = profileSkip(req.ReceiverTypeName, req.Field)
 	if dagql.IsSkipped(ctx) {
-		return ctx, dagql.NoopDone
+		return hiddenCallEvidence(ctx, req)
 	}
 	introspection, internalRoot, receiver, returnsError := callChainInfo(ctx, req.ResultCall)
 	if introspection {
@@ -257,6 +257,80 @@ func aroundFuncTelemetry(
 		span.SetAttributes(callEndAttrs(ctx, span, req, res, cached)...)
 		logResult(ctx, res, req.ResultCall)
 	}
+}
+
+// hiddenCallEvidence reports the cache decision of a call hidden from the
+// session's view (dagql.WithSkip), which shows no line for it. The call is
+// still the cache's: what it returns is an entry like any other, and the
+// remote cache learns calls only from what telemetry reports. So, unless it is
+// profile-skipped, the call reports its cache decision as any other call does
+// (CacheReported), on a span no view shows but debug's: internal, hidden
+// below dagui.ShowInternalVerbosity, and passthrough, never a row of its own
+// at any verbosity, which Cloud's trace view, at ShowInternalVerbosity, needs
+// too. The span takes no line from the session: it is deduplicated apart from
+// the session's shown calls, so a later identical call still shows its own.
+// It is no part of the session's rendering either: it carries neither the
+// call's frame, whose delivery would stand for its closure's (call payloads),
+// nor its output, which would make it the result's creator, but the recipe
+// of the entry it returned as telemetryattrs.CacheRecipeAttr.
+// A request whose client opted out of telemetry (dagql.IsTelemetrySuppressed)
+// reports nothing, as before.
+func hiddenCallEvidence(ctx context.Context, req *dagql.CallRequest) (context.Context, func(dagql.AnyResult, bool, *error)) {
+	if req.ResultCall.ProfileSkip || dagql.IsTelemetrySuppressed(ctx) {
+		return ctx, dagql.NoopDone
+	}
+	callDigest, err := req.RecipeDigest(ctx)
+	if err != nil {
+		return ctx, dagql.NoopDone
+	}
+	req.CacheReported = true
+	if q, err := CurrentQuery(ctx); err == nil {
+		if seenKeys, err := q.TelemetrySeenKeyStore(ctx); err == nil {
+			repeat := req.DoNotCache && !req.DeduplicateTelemetry
+			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, hiddenCallSeenKey(callDigest.String()), repeat) {
+				return ctx, dagql.NoopDone
+			}
+		}
+	}
+	spanName := req.Field
+	if req.ReceiverTypeName != "" {
+		spanName = req.ReceiverTypeName + "." + req.Field
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.DagDigestAttr, callDigest.String()),
+		attribute.Bool(telemetry.UIInternalAttr, true),
+		attribute.Bool(telemetry.UIPassthroughAttr, true),
+	}
+	// Its inputs, as every call span's, mark it from its start as a span
+	// whose cache report the remote cache reads: it takes the protected
+	// export lane (enginetel.IsProtectedSpan).
+	if callInputs, err := req.ResultCall.Inputs(ctx); err != nil {
+		slog.WarnContext(ctx, "failed to compute inputs(call)", "field", spanName, "err", err)
+	} else {
+		inputs := make([]string, len(callInputs))
+		for i, input := range callInputs {
+			inputs[i] = input.String()
+		}
+		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
+	}
+	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
+	initCacheEvidence(span, req)
+	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
+		defer telemetry.EndWithCause(span, err)
+		end := callEndAttrs(ctx, span, req, res, cached)
+		for i, attr := range end {
+			if attr.Key == telemetry.DagOutputAttr {
+				end[i] = attribute.String(telemetryattrs.CacheRecipeAttr, attr.Value.AsString())
+			}
+		}
+		span.SetAttributes(end...)
+	}
+}
+
+// hiddenCallSeenKey is the session's deduplication key of a hidden call's
+// report, apart from its shown calls' keys (hiddenCallEvidence).
+func hiddenCallSeenKey(callDigest string) string {
+	return "hidden:" + callDigest
 }
 
 // isUIInternal reports whether a call's span is internal machinery rather

@@ -3013,14 +3013,15 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 
 // withRequestTelemetrySuppression applies a request's telemetry opt-out (the
 // engine.SuppressTelemetryHeader header): when opted out, the returned context
-// is marked with dagql.WithSkip so core.AroundFunc emits no spans, no
-// seen-keys, and no call payloads for the request's selection, and the
-// returned bool tells serveQuery to skip the per-request wrapper span as well.
+// is marked with dagql.WithTelemetrySuppressed so core.AroundFunc emits no
+// spans, no seen-keys, and no call payloads for the request's selection, not
+// even a hidden call's cache report, and the returned bool tells serveQuery
+// to skip the per-request wrapper span as well.
 func withRequestTelemetrySuppression(ctx context.Context, r *http.Request) (context.Context, bool) {
 	if r.Header.Get(engine.SuppressTelemetryHeader) != "true" {
 		return ctx, false
 	}
-	return dagql.WithSkip(ctx), true
+	return dagql.WithTelemetrySuppressed(ctx), true
 }
 
 func recoverQueryPanic(ctx context.Context, result *error) {

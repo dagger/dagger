@@ -3855,6 +3855,7 @@ func TestWithRequestTelemetrySuppression(t *testing.T) {
 	ctx, suppressed = withRequestTelemetrySuppression(context.Background(), req)
 	require.True(t, suppressed)
 	require.True(t, dagql.IsSkipped(ctx), "the suppressed request's context must carry the dagql skip flag so core.AroundFunc emits nothing")
+	require.True(t, dagql.IsTelemetrySuppressed(ctx), "nor a hidden call's cache report")
 }
 
 // TestCallPayloadDeliveryStore pins the claim scoping that keeps call-payload
