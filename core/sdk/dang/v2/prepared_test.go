@@ -140,18 +140,30 @@ func TestPreparedDangKeepsRecentCompilations(t *testing.T) {
 }
 
 // A call waiting on a preparation whose own caller gave up prepares again
-// rather than failing with that caller's cancellation.
+// rather than failing with that caller's cancellation, whatever its cause.
 func TestPreparedDangWaiterOutlivesCanceledPreparation(t *testing.T) {
+	for name, cause := range map[string]error{
+		"canceled": nil,
+		// A cause of its own, as an agent's interrupt has.
+		"custom cause": errors.New("interrupted"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			testPreparedDangWaiterOutlivesCanceledPreparation(t, cause)
+		})
+	}
+}
+
+func testPreparedDangWaiterOutlivesCanceledPreparation(t *testing.T, cause error) {
 	ctx := schemaCacheContext(t)
-	ownerCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ownerCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	started := make(chan struct{})
 	ownerErr := make(chan error, 1)
 	go func() {
 		_, err := cachedPreparedDangDir(ownerCtx, "module", "key", func(ctx context.Context) (*dang.PreparedDirectory, error) {
 			close(started)
 			<-ctx.Done()
-			return nil, ctx.Err()
+			return nil, context.Cause(ctx)
 		})
 		ownerErr <- err
 	}()
@@ -173,8 +185,11 @@ func TestPreparedDangWaiterOutlivesCanceledPreparation(t *testing.T) {
 		defer programs.mu.Unlock()
 		return len(programs.builds) == 1 && programs.builds[0].joined == 1
 	}, 10*time.Second, time.Millisecond)
-	cancel()
-	require.ErrorIs(t, <-ownerErr, context.Canceled)
+	cancel(cause)
+	if cause == nil {
+		cause = context.Canceled
+	}
+	require.ErrorIs(t, <-ownerErr, cause)
 	require.NoError(t, <-waiter)
 	require.Same(t, want, got)
 	require.Equal(t, 1, keptPreparedDangPrograms(t, ctx, "module"))
