@@ -268,7 +268,7 @@ func TestChangedSinceAStoredBundle(t *testing.T) {
 		_, err := cloud.AttachRemoteHolding(ctx, key, RemoteHolding{Recipe: recipe, Request: recipe})
 		require.NoError(t, err)
 		require.Equal(t, []bool{false, false}, cloud.ChangedSince([]uint64{r, p}, before.Position), "a hit's holding changes no bundle")
-		_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates)
+		_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates, nil)
 		require.NoError(t, err)
 		require.Equal(t, []bool{false, false}, cloud.ChangedSince([]uint64{r, p}, before.Position), "nor does its engine leaving")
 		require.Empty(t, changedSinceTestRebuild(t, cloud, before, r))
@@ -460,7 +460,7 @@ func TestChangedSinceABuildBetweenAPrunesDrops(t *testing.T) {
 	a := stampTestMember(t, ctx, cloud, "stamp-prune-a")
 	b := stampTestMember(t, ctx, cloud, "stamp-prune-b")
 	stampTestTeach(t, ctx, cloud, "stamp-prune", r, a, b)
-	_, _, err := cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates)
+	_, _, err := cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-b").Candidates, nil)
 	require.NoError(t, err)
 
 	_, removed, _, err := cloud.removePrunedEdge(ctx, sharedResultID(a))
@@ -613,7 +613,7 @@ func TestChangedSinceClassMatesLeaveTogether(t *testing.T) {
 			if !plainFirst {
 				candidates = slices.Concat(lendingKeys, plainKeys)
 			}
-			_, _, err := cloud.CollectRemoteHoldings(ctx, candidates)
+			_, _, err := cloud.CollectRemoteHoldings(ctx, candidates, nil)
 			require.NoError(t, err)
 			require.Nil(t, storedBundleTestEntry(cloud, plain), "the plain mate is collected")
 			require.Nil(t, storedBundleTestEntry(cloud, lending), "the lending mate is collected")

@@ -88,8 +88,8 @@ func (w *RemoteWrites) ReleaseRemoteCache(ctx context.Context, cache CacheID) Re
 
 // CollectRemoteHoldings is Cache.CollectRemoteHoldings, in the hold. What
 // the collected entries release runs at Release, whose error reports it.
-func (w *RemoteWrites) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey) ([]HolderKey, RemoteChange, error) {
-	collected, change, releases, err := w.c.collectRemoteHoldingsLocked(ctx, candidates)
+func (w *RemoteWrites) CollectRemoteHoldings(ctx context.Context, candidates []HolderKey, owned func(HolderKey) bool) ([]HolderKey, RemoteChange, error) {
+	collected, change, releases, err := w.c.collectRemoteHoldingsLocked(ctx, candidates, owned)
 	w.releases = append(w.releases, releases...)
 	slices.SortFunc(collected, compareHolderKeys)
 	return collected, change, err

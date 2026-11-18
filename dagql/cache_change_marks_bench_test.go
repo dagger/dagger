@@ -89,7 +89,7 @@ func benchmarkChangeMarksRows(b *testing.B, class int, marks bool) {
 		for e := range engines {
 			candidates = append(candidates, cloud.ReleaseRemoteCache(ctx, CacheID(fmt.Sprintf("cache-%d", e))).Candidates...)
 		}
-		collected, _, err := cloud.CollectRemoteHoldings(ctx, candidates)
+		collected, _, err := cloud.CollectRemoteHoldings(ctx, candidates, nil)
 		require.NoError(b, err)
 		collecting += time.Since(start)
 		require.Len(b, collected, engines*holdings)
