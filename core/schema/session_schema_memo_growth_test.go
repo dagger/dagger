@@ -33,9 +33,14 @@ func (s *memoGrowthServer) SessionSchemaBuilderMemo(context.Context) (*core.Sche
 //     every asModule that executes. The memo keys core by its base and view,
 //     so a reload of a module whose dependencies did not change reuses the
 //     server the session built.
-//   - nested clients: every client has its own query root, and a server is
-//     bound to its root, so the same module set resolved from N nested
-//     clients builds N servers.
+//   - nested clients: every client has its own query root. The session shares
+//     a module set's server among its clients, built on a neutral root, so
+//     the same set resolved from N nested clients builds one server.
+//   - served: each nested client serves its module set from a client-owned
+//     builder (the engine's servedMods), which serves the session's server.
+//   - handle loads: each client memoizes the module sets its handle loads
+//     resolve (Query.ModDepsForCall) in a client memo of its own, whose
+//     builders serve the session's server too.
 //   - control: the same builder identity resolves to one server.
 //
 // Past the memo's bound the session keeps only the servers it used most
@@ -113,15 +118,35 @@ func TestSessionSchemaMemoGrowth(t *testing.T) {
 	nested := run("nested clients", loads, func(int) *core.SchemaBuilder {
 		return core.NewSchemaBuilder(core.NewRoot(srv), []core.Mod{sharedCore})
 	})
+	// The servers these hand out are kept by their builders, as a client
+	// runtime keeps its served builder, so keep the builders alive.
+	var held []*core.SchemaBuilder
+	served := run("served", loads, func(int) *core.SchemaBuilder {
+		b := core.NewSchemaBuilder(core.NewRoot(srv), []core.Mod{sharedCore}).ClientOwned()
+		held = append(held, b)
+		return b
+	})
+	handles := run("handle loads", loads, func(int) *core.SchemaBuilder {
+		b := core.NewSchemaBuilderMemo().Get(core.NewSchemaBuilder(core.NewRoot(srv), []core.Mod{sharedCore}))
+		held = append(held, b)
+		return b
+	})
+	runtime.KeepAlive(held)
 
 	require.Equal(t, 1, control.built, "one builder identity, one server")
 	require.Equal(t, 1, reload.built,
 		"a reload whose dependencies did not change reuses the session's server")
-	require.Equal(t, loads, nested.built,
-		"servers are bound to their root, so each nested client builds its own")
-	// A forked core schema is well over 64 KiB.
-	require.Greater(t, nested.retained, int64(loads-1)*(64<<10),
-		"the session keeps the servers it built")
+	require.Equal(t, 1, nested.built,
+		"the session's clients share the module set's server")
+	require.Equal(t, 1, served.built,
+		"clients serving the same module set share its server")
+	require.Equal(t, 1, handles.built,
+		"client memos serve the session's server")
+	// A forked core schema is well over 64 KiB: what each client built.
+	for _, scenario := range []result{nested, served, handles} {
+		require.Less(t, scenario.retained, int64(4*(64<<10)),
+			"the session keeps one server, not one per client")
+	}
 }
 
 func liveHeap() uint64 {
