@@ -123,7 +123,7 @@ func (q *LogQueryScope) match(idx *logLookup, m logMeta) bool {
 
 func (q *LogQueryScope) digestIn(idx *logLookup, digest uint32) bool {
 	if int(digest) >= len(q.digestsBy) {
-		q.digestsBy = append(q.digestsBy, make([]scopeMatch, len(idx.digests)-len(q.digestsBy))...)
+		q.digestsBy = append(q.digestsBy, make([]scopeMatch, idx.digests.count()-len(q.digestsBy))...)
 	}
 	switch q.digestsBy[digest] {
 	case matchIn:
@@ -132,7 +132,7 @@ func (q *LogQueryScope) digestIn(idx *logLookup, digest uint32) bool {
 		return false
 	case matchUnresolved:
 	}
-	ok := q.digests[idx.digests[digest]]
+	ok := idx.digests.in(digest, q.digests)
 	q.digestsBy[digest] = matchOut
 	if ok {
 		q.digestsBy[digest] = matchIn
@@ -142,7 +142,7 @@ func (q *LogQueryScope) digestIn(idx *logLookup, digest uint32) bool {
 
 func (q *LogQueryScope) spanIn(idx *logLookup, span uint32) bool {
 	if int(span) >= len(q.spans) {
-		grow := len(idx.spanIDs) - len(q.spans)
+		grow := idx.spanCount() - len(q.spans)
 		q.spans = append(q.spans, make([]scopeMatch, grow)...)
 		q.spanAt = append(q.spanAt, make([]uint64, grow)...)
 	}
@@ -156,7 +156,7 @@ func (q *LogQueryScope) spanIn(idx *logLookup, span uint32) bool {
 			return state == matchUnplacedAt
 		}
 	}
-	return q.resolveSpan(span, idx.spanIDs[span])
+	return q.resolveSpan(span, idx.spanName(span))
 }
 
 // resolveSpan decides a span the scope has not decided yet, or whose place
@@ -323,7 +323,7 @@ func (s *DB) gatherDisplayCandidates(after, through int64, traceID string, q *Lo
 		lists = idx.spanRowsLocked(id, lists)
 	}
 	for d := range q.digests {
-		if digest, ok := idx.digestIndex[d]; ok && digest != 0 {
+		if digest, ok := idx.digests.lookup(d); ok && digest != 0 {
 			lists = append(lists, idx.displayByDigest[digest])
 		}
 	}
@@ -489,8 +489,8 @@ func (s *DB) SelectLogsWithoutDisplay(ctx context.Context, p SelectLogsRangePara
 				Row:       i + 1,
 				Timestamp: m.timestamp,
 				TraceID:   idx.traceIDs[m.trace],
-				SpanID:    idx.spanIDs[m.span],
-				Digest:    idx.digests[m.digest],
+				SpanID:    idx.spanName(m.span),
+				Digest:    idx.digestName(m.digest),
 				key:       key,
 			})
 		}

@@ -9,8 +9,8 @@ import (
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
-	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"github.com/stretchr/testify/require"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 )
 
 // footprintLogs is an agent session's log rows as the log index sees them:

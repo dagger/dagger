@@ -3,7 +3,6 @@ package clientdb
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"slices"
 	"sort"
 	"sync"
@@ -15,7 +14,7 @@ import (
 // and the spans marked as checks, tests and agent loops, from memory.
 //
 // It holds every span of a session for the session's life, so it keeps each
-// span ID once: interned (see spanIDTable) as a dense uint32, which indexes
+// span ID once: interned (see idTable) as a dense uint32, which indexes
 // the per-span slices below. A string-keyed map per relation kept a span's ID
 // in up to eight maps, at ~400 B per span.
 type spanLookup struct {
@@ -25,7 +24,7 @@ type spanLookup struct {
 	// when gen moves. Written under mu; read without it.
 	gen atomic.Uint64
 
-	ids spanIDTable
+	ids idTable
 	// Interned trace IDs, for firstRow's trace + span key.
 	traceIDs   map[string]uint32
 	traceNames []string
@@ -129,99 +128,6 @@ type spanTraceKey struct {
 type causalLinkSet struct {
 	targets []uint32 // sorted
 	members []uint32
-}
-
-// spanIDTable interns span IDs as dense uint32s. A canonical span ID -- 16
-// lowercase hex digits, as OTel renders them -- is keyed by its 8 bytes and
-// rebuilt from them; anything else (a malformed or test ID) is kept as
-// written in a side table, so every ID round-trips exactly.
-type spanIDTable struct {
-	hex     map[[8]byte]uint32
-	keys    [][8]byte
-	foreign map[string]uint32
-	names   map[uint32]string // the foreign IDs' names
-}
-
-// canonicalSpanID parses a canonical span ID.
-func canonicalSpanID(id string) (key [8]byte, ok bool) {
-	if len(id) != 16 {
-		return key, false
-	}
-	for i := range len(id) {
-		c := id[i]
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return key, false
-		}
-	}
-	_, err := hex.Decode(key[:], []byte(id))
-	return key, err == nil
-}
-
-// lookup returns id's interned ID, if it has one.
-func (t *spanIDTable) lookup(id string) (uint32, bool) {
-	if key, ok := canonicalSpanID(id); ok {
-		n, found := t.hex[key]
-		return n, found
-	}
-	n, found := t.foreign[id]
-	return n, found
-}
-
-// intern returns id's interned ID, interning it if needed.
-func (t *spanIDTable) intern(id string) uint32 {
-	if key, ok := canonicalSpanID(id); ok {
-		if n, found := t.hex[key]; found {
-			return n
-		}
-		if t.hex == nil {
-			t.hex = map[[8]byte]uint32{}
-		}
-		n := uint32(len(t.keys))
-		t.hex[key] = n
-		t.keys = append(t.keys, key)
-		return n
-	}
-	if n, found := t.foreign[id]; found {
-		return n
-	}
-	if t.foreign == nil {
-		t.foreign, t.names = map[string]uint32{}, map[uint32]string{}
-	}
-	n := uint32(len(t.keys))
-	t.foreign[id] = n
-	t.names[n] = id
-	t.keys = append(t.keys, [8]byte{})
-	return n
-}
-
-// count is how many IDs are interned.
-func (t *spanIDTable) count() int { return len(t.keys) }
-
-// name returns the ID interned as n.
-func (t *spanIDTable) name(n uint32) string {
-	if name, ok := t.names[n]; ok {
-		return name
-	}
-	var buf [16]byte
-	hex.Encode(buf[:], t.keys[n][:])
-	return string(buf[:])
-}
-
-// empty reports whether n is the empty ID.
-func (t *spanIDTable) empty(n uint32) bool {
-	name, ok := t.names[n]
-	return ok && name == ""
-}
-
-// in reports whether the ID interned as n is in set, without allocating its
-// name.
-func (t *spanIDTable) in(n uint32, set map[string]bool) bool {
-	if name, ok := t.names[n]; ok {
-		return set[name]
-	}
-	var buf [16]byte
-	hex.Encode(buf[:], t.keys[n][:])
-	return set[string(buf[:])]
 }
 
 func newSpanLookup() *spanLookup {
