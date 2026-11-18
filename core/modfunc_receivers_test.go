@@ -126,15 +126,17 @@ func TestConvertedReceiversWaiterOutlivesCanceledConversion(t *testing.T) {
 
 	receivers := newConvertedReceivers(maxConvertedReceiversWeight)
 	key := convertedReceiverKey{resultID: 1}
-	ownerCtx, cancel := context.WithCancel(t.Context())
-	defer cancel()
+	// Canceled with a cause of its own, as an agent's interrupt is.
+	interrupted := errors.New("interrupted")
+	ownerCtx, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
 	started := make(chan struct{})
 	ownerErr := make(chan error, 1)
 	go func() {
 		_, err := receivers.get(ownerCtx, key, func(ctx context.Context) ([]byte, error) {
 			close(started)
 			<-ctx.Done()
-			return nil, ctx.Err()
+			return nil, context.Cause(ctx)
 		})
 		ownerErr <- err
 	}()
@@ -154,7 +156,7 @@ func TestConvertedReceiversWaiterOutlivesCanceledConversion(t *testing.T) {
 		elem, ok := receivers.entries[key]
 		return ok && elem.Value.(*convertedReceiver).joined == 1
 	}, 10*time.Second, time.Millisecond)
-	cancel()
-	require.ErrorIs(t, <-ownerErr, context.Canceled)
+	cancel(interrupted)
+	require.ErrorIs(t, <-ownerErr, interrupted)
 	require.Equal(t, "waiter", string(<-waiter))
 }
