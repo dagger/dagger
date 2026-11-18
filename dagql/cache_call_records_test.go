@@ -136,7 +136,7 @@ func TestCallRecordOutlivesItsEngine(t *testing.T) {
 	test := newCallRecordTest(t, ctx, cloud)
 	test.attach(t, ctx, test.span(t, true, 0))
 	candidates := cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates
-	_, _, err := cloud.CollectRemoteHoldings(ctx, candidates)
+	_, _, err := cloud.CollectRemoteHoldings(ctx, candidates, nil)
 	require.NoError(t, err)
 	built, err := cloud.StoredBundle(ctx, []uint64{test.number}, time.Now().Unix(), nil)
 	require.NoError(t, err)

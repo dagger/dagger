@@ -80,7 +80,7 @@ func TestPruneDropsValuesOnlyHoldingsKeep(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []uint64{r}, got.NoValue, "a dropped value is not placed")
 
-	_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates)
+	_, _, err = cloud.CollectRemoteHoldings(ctx, cloud.ReleaseRemoteCache(ctx, "cache-a").Candidates, nil)
 	require.NoError(t, err)
 	for _, number := range []uint64{r, p} {
 		require.Equal(t, storedPruneTestState{}, storedPruneTestEntryState(cloud, number), "collected with its last holding")

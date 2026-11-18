@@ -474,7 +474,7 @@ func TestChangeReportsNameEveryChangedAnswer(t *testing.T) {
 		return change
 	})
 	w.step("collect cache-d's holdings", func() RemoteChange {
-		_, change, err := cloud.CollectRemoteHoldings(ctx, candidates)
+		_, change, err := cloud.CollectRemoteHoldings(ctx, candidates, nil)
 		require.NoError(t, err)
 		return change
 	})
@@ -503,7 +503,7 @@ func TestChangeReportsNameEveryChangedAnswer(t *testing.T) {
 			return change
 		})
 		w.step("collect "+string(cache)+"'s holdings", func() RemoteChange {
-			_, change, err := cloud.CollectRemoteHoldings(ctx, candidates)
+			_, change, err := cloud.CollectRemoteHoldings(ctx, candidates, nil)
 			require.NoError(t, err)
 			return change
 		})
