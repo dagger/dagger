@@ -211,6 +211,8 @@ type DB struct {
 	names map[string]string
 	// digests interns call digests (see intern.go).
 	digests digestTable
+	// attrPairs shares low-cardinality span attributes (see shareAttrPairs).
+	attrPairs map[[2]string]*spanAttribute
 
 	// unsentAncestors holds ancestors of surfaced spans (see
 	// Span.IsSurfacedKind) that UpdatedSnapshots needed to send but couldn't,

@@ -129,11 +129,9 @@ func (attrs *SpanAttributes) SetJSON(name string, payload json.RawMessage) {
 // by attribute.Value.AsInterface.
 func (attrs *SpanAttributes) setValue(name string, val any) error {
 	if str, ok := val.(string); ok && !strings.HasPrefix(str, jsonValueMarker) {
-		if lowCardinalityAttrs[name] {
-			attrs.set(internAttrPair(name, str))
-		} else {
-			attrs.set(&spanAttribute{name: internAttrName(name), val: str})
-		}
+		// A DB shares the low-cardinality ones as they arrive (see
+		// DB.shareAttrPairs).
+		attrs.set(&spanAttribute{name: internAttrName(name), val: str})
 		return nil
 	}
 	payload, err := json.Marshal(val)
@@ -256,35 +254,32 @@ var lowCardinalityAttrs = map[string]bool{
 	telemetry.ModuleCallerFunctionCallNameAttr: true,
 }
 
-// attrPairs interns spanAttributes of low-cardinality attributes by name and
-// value, bounded like attrStrings.
-var attrPairs = struct {
-	sync.Mutex
-	m map[[2]string]*spanAttribute
-}{m: map[[2]string]*spanAttribute{}}
+// maxSharedAttrPairs bounds a DB's attrPairs, so a producer minting values
+// of the lowCardinalityAttrs can't grow it without limit; past it, spans
+// keep their own.
+const maxSharedAttrPairs = 1 << 14
 
-// internAttrPair returns the shared spanAttribute for a name and string
-// value of one of the lowCardinalityAttrs. Past the table's bound, it
-// returns one of the span's own, with its strings still interned where
-// attrStrings has room.
-func internAttrPair(name, val string) *spanAttribute {
-	key := [2]string{name, val}
-	attrPairs.Lock()
-	attr, ok := attrPairs.m[key]
-	full := len(attrPairs.m) >= maxInternedAttrStrings
-	attrPairs.Unlock()
-	if ok {
-		return attr
+// shareAttrPairs swaps the span's low-cardinality string attributes for the
+// DB's shared spanAttribute of the same name and value, adopting the span's
+// own when the DB has none yet. The table is the DB's, so it lives and dies
+// with the session's spans: an engine building DB after DB starts each
+// afresh.
+func (db *DB) shareAttrPairs(attrs SpanAttributes) {
+	for i, attr := range attrs {
+		if !lowCardinalityAttrs[attr.name] || attr.isJSON() {
+			continue
+		}
+		key := [2]string{attr.name, attr.val}
+		if shared, ok := db.attrPairs[key]; ok {
+			attrs[i] = shared
+			continue
+		}
+		if len(db.attrPairs) >= maxSharedAttrPairs {
+			continue
+		}
+		if db.attrPairs == nil {
+			db.attrPairs = map[[2]string]*spanAttribute{}
+		}
+		db.attrPairs[key] = attr
 	}
-	attr = &spanAttribute{name: internAttrName(name), val: internAttrString(val)}
-	if full {
-		return attr
-	}
-	attrPairs.Lock()
-	defer attrPairs.Unlock()
-	if shared, ok := attrPairs.m[key]; ok {
-		return shared
-	}
-	attrPairs.m[[2]string{attr.name, attr.val}] = attr
-	return attr
 }
