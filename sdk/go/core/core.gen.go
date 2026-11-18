@@ -5486,6 +5486,8 @@ type ContainerWithMountedTempOpts struct {
 	Size int
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
+	// Keep the temporary directory on the engine's disk instead of in memory, for contents too large for memory. Each process gets an empty directory of its own, removed once the process ends. It can't be combined with size.
+	Disk bool
 }
 
 // Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
@@ -5499,6 +5501,10 @@ func (r *Container) WithMountedTemp(path string, opts ...ContainerWithMountedTem
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `disk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Disk) {
+			q = q.Arg("disk", opts[i].Disk)
 		}
 	}
 	q = q.Arg("path", path)

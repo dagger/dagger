@@ -93,18 +93,11 @@ func TestUnbackedDirectoryRunsItsCall(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, "made here\n", string(content))
 			}
-			// The merged row's part events: how its snapshot was had.
-			rowEvents := func() map[string]int {
-				report, err := b.TransferFixtureSnapshot(bctx, "unbacked-b", nil)
-				require.NoError(t, err)
-				counts := map[string]int{}
-				for _, event := range report.Parts {
-					if event.ResultID == dirRow {
-						counts[event.Kind]++
-					}
-				}
-				return counts
+			// The snapshots the merged row owns.
+			rowSnapshots := func() []string {
+				return recordSnapshots(t, bctx, b, bsrv, "unbacked-b", dirRow)
 			}
+			require.Empty(t, rowSnapshots(), "the merged row has no content")
 
 			got := reach()
 			if reached == "by-lookup" {
@@ -114,21 +107,16 @@ func TestUnbackedDirectoryRunsItsCall(t *testing.T) {
 			}
 			read(got)
 			require.EqualValues(t, 1, bCalls.Load(), "B runs the call once, as an engine without the record does")
-			events := rowEvents()
-			require.Equal(t, 1, events["installed-ready"], "the row takes the part of the value its call made: %v", events)
-			require.Zero(t, events["installed-chain"], "nothing is downloaded: %v", events)
-			require.Zero(t, events["provider-read"], "nothing is downloaded: %v", events)
+			owned := rowSnapshots()
+			require.Len(t, owned, 1, "the row takes the part of the value its call made")
 
 			// A second read of the row, and of the call reached the same way,
 			// is served from the part the row has now: no second run, and
-			// nothing selected, installed or downloaded again.
+			// nothing installed again.
 			read(got)
 			read(reach())
 			require.EqualValues(t, 1, bCalls.Load(), "the second read runs nothing")
-			after := rowEvents()
-			for _, kind := range []string{"selected-ready", "selected-chain", "installed-ready", "installed-chain", "provider-read", "lazy-enter"} {
-				require.Equal(t, events[kind], after[kind], "the second read adds no %s event: %v then %v", kind, events, after)
-			}
+			require.Equal(t, owned, rowSnapshots(), "the second read installs nothing")
 		})
 	}
 }
@@ -184,17 +172,10 @@ func TestUnbackedInlineDirectoryRunsItsCall(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "made here\n", string(content))
 	}
-	rowEvents := func() map[string]int {
-		report, err := b.TransferFixtureSnapshot(bctx, "inline-b", nil)
-		require.NoError(t, err)
-		counts := map[string]int{}
-		for _, event := range report.Parts {
-			if event.ResultID == listRow {
-				counts[event.Kind]++
-			}
-		}
-		return counts
+	rowSnapshots := func() []string {
+		return recordSnapshots(t, bctx, b, bsrv, "inline-b", listRow)
 	}
+	require.Empty(t, rowSnapshots(), "the merged list has no content")
 
 	list, err := bsrv.Root().Select(bctx, bsrv, dagql.Selector{Field: "eagerDirectories"})
 	require.NoError(t, err)
@@ -203,19 +184,28 @@ func TestUnbackedInlineDirectoryRunsItsCall(t *testing.T) {
 	require.Equal(t, listRow, id, "the lookup hits the merged list")
 	read(list)
 	require.EqualValues(t, 1, bCalls.Load(), "B runs the list's call once")
-	events := rowEvents()
-	require.Equal(t, 1, events["installed-ready"], "the list's row takes the part of the list its call made: %v", events)
-	require.Zero(t, events["provider-read"], "nothing is downloaded: %v", events)
+	owned := rowSnapshots()
+	require.Len(t, owned, 1, "the list's row takes the part of the list its call made")
 
 	// A second read of the merged list's row is served from the part it has
-	// now: no second run, and nothing selected, installed or downloaded
-	// again.
+	// now: no second run, and nothing installed again.
 	again, err := b.LoadResultByResultID(bctx, "inline-b", bsrv, listRow)
 	require.NoError(t, err)
 	read(again)
 	require.EqualValues(t, 1, bCalls.Load(), "the second read runs nothing")
-	after := rowEvents()
-	for _, kind := range []string{"selected-ready", "selected-chain", "installed-ready", "installed-chain", "provider-read", "lazy-enter"} {
-		require.Equal(t, events[kind], after[kind], "the second read adds no %s event: %v then %v", kind, events, after)
+	require.Equal(t, owned, rowSnapshots(), "the second read installs nothing")
+}
+
+// recordSnapshots returns the snapshots the cache's record of row owns.
+func recordSnapshots(t *testing.T, ctx context.Context, cache *dagql.Cache, srv *dagql.Server, session string, row uint64) []string {
+	t.Helper()
+	loaded, err := cache.LoadResultByResultID(ctx, session, srv, row)
+	require.NoError(t, err)
+	record, err := cache.CapturePersistedRecord(ctx, loaded)
+	require.NoError(t, err)
+	var refs []string
+	for _, link := range record.SnapshotLinks {
+		refs = append(refs, link.RefKey)
 	}
+	return refs
 }

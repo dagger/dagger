@@ -1,9 +1,9 @@
 module main
 
-go 1.26.6
+go 1.27
 
 require (
-	dagger.io/dagger v1.0.0-beta.25
+	dagger.io/dagger v1.0.0-beta.26
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/otel-go v1.43.1-0.20261102220336-aa07da582c21
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59

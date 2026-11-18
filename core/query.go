@@ -191,9 +191,6 @@ type Server interface {
 	// The content store for the engine as a whole
 	OCIStore() content.Store
 
-	// The builtin engine OCI source store.
-	BuiltinOCIStore() content.Store
-
 	// The dns configuration for the engine as a whole
 	DNS() *oci.DNSConfig
 

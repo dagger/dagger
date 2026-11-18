@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -28,8 +29,7 @@ const (
 )
 
 // loadBuiltinGoSDK loads the Go SDK the engine image carries: a Dang module
-// SDK, in the Go SDK image at /sdk/runtime, beside the dagger/go it builds
-// every module runtime with, at /sdk/dagger-go.
+// SDK at sdk/runtime in the Go SDK's files (goSDKFiles).
 func (l *Loader) loadBuiltinGoSDK(
 	ctx context.Context,
 	root *core.Query,
@@ -41,11 +41,8 @@ func (l *Loader) loadBuiltinGoSDK(
 	}
 	var sdkMod dagql.ObjectResult[*core.Module]
 	if err := dag.Select(ctx, dag.Root(), &sdkMod,
-		dagql.Selector{Field: "_builtinContainer", Args: []dagql.NamedInput{
-			{Name: "digest", Value: dagql.String(os.Getenv(distconsts.GoSDKManifestDigestEnvName))},
-		}},
-		dagql.Selector{Field: "rootfs"},
-		dagql.Selector{Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String("/sdk")}}},
+		goSDKFiles(),
+		dagql.Selector{Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String("sdk")}}},
 		dagql.Selector{Field: "asModuleSource", Args: []dagql.NamedInput{
 			{Name: "sourceRootPath", Value: dagql.String("runtime")},
 		}},
@@ -75,8 +72,91 @@ func (l *Loader) loadBuiltinGoSDK(
 	})
 }
 
+// goSDKContainer is the Go SDK's container: the Go toolchain image dagger/go
+// builds in (distconsts.GoSDKGolangImage), so the two share it, with git and
+// SSH added and the Go SDK's files mounted. The image's entries hold the
+// image and the files; what the engine makes of them here is cheap, so the
+// container's own calls need no entry: a call's API view is part of its key,
+// and the engine that made the entries can give its client another view.
+func goSDKContainer(ctx context.Context, dag *dagql.Server) (dagql.ObjectResult[*core.Container], error) {
+	// These calls run in the calling client's session, which shows a call
+	// once: unhidden, they would take the line of a module's own identical
+	// call, such as its container().
+	ctx = dagql.WithSkip(ctx)
+	var base dagql.ObjectResult[*core.Container]
+	var files dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, dag.Root(), &files, goSDKFiles()); err != nil {
+		return base, fmt.Errorf("go sdk files: %w", err)
+	}
+	dirID := func(path string) (*call.ID, error) {
+		var dir dagql.ObjectResult[*core.Directory]
+		if err := dag.Select(ctx, files, &dir, dagql.Selector{Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(path)}}}); err != nil {
+			return nil, fmt.Errorf("go sdk files' %s: %w", path, err)
+		}
+		return dir.ID()
+	}
+	fileID := func(path string) (*call.ID, error) {
+		var file dagql.ObjectResult[*core.File]
+		if err := dag.Select(ctx, files, &file, dagql.Selector{Field: "file", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(path)}}}); err != nil {
+			return nil, fmt.Errorf("go sdk files' %s: %w", path, err)
+		}
+		return file.ID()
+	}
+	apk, err := dirID("apk")
+	if err != nil {
+		return base, err
+	}
+	sdk, err := dirID("sdk")
+	if err != nil {
+		return base, err
+	}
+	sels := []dagql.Selector{
+		{Field: "container"},
+		{Field: "from", Args: []dagql.NamedInput{{Name: "address", Value: dagql.String(distconsts.GoSDKGolangImage)}}},
+		// What installing git and SSH added to the image: a few hundred
+		// files, copied.
+		{Field: "withDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String("/")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](apk)},
+		}},
+		{Field: "withEnvVariable", Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String("GOTOOLCHAIN")},
+			{Name: "value", Value: dagql.String("auto")},
+		}},
+		{Field: "withMountedDirectory", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String("/sdk")},
+			{Name: "source", Value: dagql.NewID[*core.Directory](sdk)},
+		}},
+	}
+	for _, bin := range []string{"codegen", "export-driver"} {
+		id, err := fileID("usr/local/bin/" + bin)
+		if err != nil {
+			return base, err
+		}
+		sels = append(sels, dagql.Selector{Field: "withMountedFile", Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String("/usr/local/bin/" + bin)},
+			{Name: "source", Value: dagql.NewID[*core.File](id)},
+		}})
+	}
+	if err := dag.Select(ctx, dag.Root(), &base, sels...); err != nil {
+		return base, fmt.Errorf("go sdk container: %w", err)
+	}
+	return base, nil
+}
+
+// goSDKFiles selects the Go SDK's files, a directory the engine image's
+// entries hold, by the content digest its variable gives: the codegen binary
+// and the export driver under usr/local/bin, the SDK's Dang module under
+// sdk/runtime, the module cache codegen starts from under go/pkg/mod, and
+// under apk what installing git and SSH adds to the Go toolchain image.
+func goSDKFiles() dagql.Selector {
+	return dagql.Selector{Field: "__bundledDirectory", Args: []dagql.NamedInput{
+		{Name: "digest", Value: dagql.String(os.Getenv(distconsts.GoSDKDigestEnvName))},
+	}}
+}
+
 // goSDKConstructorArgs are what the Go SDK module gets of the engine and the
-// session, which a module can't reach itself: the Go SDK image with the
+// session, which a module can't reach itself: the Go SDK's container with the
 // engine's GOPROXY and GODEBUG and the module cache codegen starts from, the
 // engine's Go version and the build flags its image's entries are built
 // with, the dagger.io/dagger version codegen pins, and,
@@ -87,19 +167,15 @@ func goSDKConstructorArgs(ctx context.Context, root *core.Query, config map[stri
 	if err != nil {
 		return nil, err
 	}
-	var base dagql.ObjectResult[*core.Container]
-	if err := dag.Select(ctx, dag.Root(), &base,
-		dagql.Selector{Field: "_builtinContainer", Args: []dagql.NamedInput{
-			{Name: "digest", Value: dagql.String(os.Getenv(distconsts.GoSDKManifestDigestEnvName))},
-		}},
-	); err != nil {
-		return nil, fmt.Errorf("go sdk image: %w", err)
+	base, err := goSDKContainer(ctx, dag)
+	if err != nil {
+		return nil, err
 	}
 	var modCacheBase dagql.ObjectResult[*core.Directory]
-	if err := dag.Select(ctx, base, &modCacheBase,
-		dagql.Selector{Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String("/go/pkg/mod")}}},
+	if err := dag.Select(ctx, dag.Root(), &modCacheBase, goSDKFiles(),
+		dagql.Selector{Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String("go/pkg/mod")}}},
 	); err != nil {
-		return nil, fmt.Errorf("go sdk image module cache: %w", err)
+		return nil, fmt.Errorf("go sdk files' module cache: %w", err)
 	}
 	var modCache dagql.ObjectResult[*core.CacheVolume]
 	if err := dag.Select(ctx, dag.Root(), &modCache,

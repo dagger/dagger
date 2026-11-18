@@ -512,7 +512,7 @@ func (r *ReleaseReport) Errors(ctx context.Context) ([]Error, error) {
 		out := []Error{}
 
 		for i := range fields {
-			val := *new(Error).WithGraphQLQuery(selectNode(q.Root(), fields[i].Id, "Error"))
+			val := *loaded[*Error](q, fields[i].Id)
 			out = append(out, val)
 		}
 
@@ -688,7 +688,7 @@ func (r *ReleaseReportArtifact) Errors(ctx context.Context) ([]Error, error) {
 		out := []Error{}
 
 		for i := range fields {
-			val := *new(Error).WithGraphQLQuery(selectNode(q.Root(), fields[i].Id, "Error"))
+			val := *loaded[*Error](q, fields[i].Id)
 			out = append(out, val)
 		}
 

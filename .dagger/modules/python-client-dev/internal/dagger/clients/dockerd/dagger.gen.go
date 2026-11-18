@@ -43,7 +43,7 @@ func Connect(connections ...*dagger.Client) *Client {
 	if len(connections) == 1 {
 		connection = connections[0]
 	}
-	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "/.dagger/modules/python-client-dev/dockerd", ""))
+	q := querybuilder.Query().Client(dagger.ModuleGraphQLClient(connection, "./dockerd", ""))
 	return &Client{Query: &Query{query: q}}
 }
 
@@ -67,6 +67,11 @@ func Ref[T core.Loadable[T]](client *Client, id core.ID) T {
 }
 func Load[T core.Loadable[T]](ctx context.Context, client *Client, id core.ID) (T, error) {
 	return core.Load[T](ctx, new(core.Query).WithGraphQLQuery(client.query), id)
+}
+
+// loaded is the core object q's request returned as id, knowing that ID.
+func loaded[T core.LoadedNode[T]](q *querybuilder.Selection, id core.ID) T {
+	return core.Loaded[T](new(core.Query).WithGraphQLQuery(q.Root()), id)
 }
 
 // idMemo holds the ID fetched for one object query.

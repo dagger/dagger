@@ -523,8 +523,12 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
      */
-    public function withMountedTemp(string $path, ?int $size = null, ?bool $expand = false): Container
-    {
+    public function withMountedTemp(
+        string $path,
+        ?int $size = null,
+        ?bool $expand = false,
+        ?bool $disk = false,
+    ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedTemp');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $size) {
@@ -532,6 +536,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        if (null !== $disk) {
+        $innerQueryBuilder->setArgument('disk', $disk);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

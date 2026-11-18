@@ -1,0 +1,21 @@
+# left and right do not depend on each other, so they generate at once: each
+# fails unless the other's generation starts while it waits. top generates
+# clients for both, so it generates after them, from their output.
+[modules.meet-sdk]
+source = ".dagger/modules/meet-sdk"
+
+[sdks.test]
+module = "meet-sdk"
+
+[sdks.test.scopes.left]
+is-module = true
+name = "left"
+
+[sdks.test.scopes.right]
+is-module = true
+name = "right"
+
+[sdks.test.scopes.top]
+is-module = true
+name = "top"
+clients = ["./left", "./right"]

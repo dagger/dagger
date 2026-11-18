@@ -13,10 +13,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/remotes/docker"
-	localcontentstore "github.com/containerd/containerd/v2/plugins/content/local"
-	"github.com/dagger/dagger/engine/distconsts"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/pkg/errors"
 )
@@ -181,8 +178,4 @@ func extractMirrorHostAndPath(mirror string) (string, string) {
 	}
 
 	return u.Host, strings.TrimRight(u.Path, "/")
-}
-
-func openBuiltinOCIStore() (content.Store, error) {
-	return localcontentstore.NewStore(distconsts.EngineContainerBuiltinContentDir)
 }

@@ -1,6 +1,6 @@
 module dagger/brokendep
 
-go 1.23.6
+go 1.27
 
 replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0
 

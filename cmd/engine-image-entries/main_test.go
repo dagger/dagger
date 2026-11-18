@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,9 +10,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/stretchr/testify/require"
 )
+
+// Another engine image's bundle is one an engine of this source starts from
+// only when it is of the version this source merges.
+func TestMergeableBundle(t *testing.T) {
+	bundle := func(version int) string {
+		path := filepath.Join(t.TempDir(), "bundle.json")
+		require.NoError(t, os.WriteFile(path, fmt.Appendf(nil, `{"version":%d,"roots":[],"values":[]}`, version), 0o644))
+		return path
+	}
+	require.NoError(t, mergeableBundle(bundle(dagql.ValueBundleVersion)))
+	var other otherBundleVersionError
+	require.ErrorAs(t, mergeableBundle(bundle(dagql.ValueBundleVersion+1)), &other)
+	require.Equal(t, dagql.ValueBundleVersion+1, other.version)
+	require.Error(t, mergeableBundle(filepath.Join(t.TempDir(), "missing.json")))
+	require.False(t, errors.As(mergeableBundle(filepath.Join(t.TempDir(), "missing.json")), &other), "a bundle it can't read isn't one of another version")
+}
 
 // A runtime's compiles generate no debug information its link would drop, its
 // generated client compiles without inlining, and the standard library's compile lines stay those of a build without the

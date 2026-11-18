@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/remotecache"
 	"github.com/dagger/dagger/engine/remotecache/protocol"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
@@ -106,7 +108,7 @@ func TestMergeImageEntries(t *testing.T) {
 		dir, _ := imageEntriesDir(t)
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
-		srv.mergeImageEntries(e.ctx, dir)
+		srv.mergeImageEntries(e.ctx, dir, nil)
 		require.True(t, e.cache.FromImage(e.file(t, "shipped")))
 	})
 	t.Run("no image entries", func(t *testing.T) {
@@ -130,7 +132,7 @@ func TestMergeImageEntries(t *testing.T) {
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
 		require.ErrorContains(t, srv.mergeImageBundle(e.ctx, dir), "engine image entries: blob")
-		srv.mergeImageEntries(e.ctx, dir)
+		srv.mergeImageEntries(e.ctx, dir, nil)
 		require.False(t, e.cache.FromImage(e.file(t, "shipped")), "nothing merged")
 	})
 }
@@ -163,4 +165,181 @@ func TestRemoteCacheAdapterExportRefusesImageEntries(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, calls)
+}
+
+// A prune never deletes what the engine's image ships: after a prune of
+// everything, a call of the image's root is a hit, with nothing recomputed,
+// while a result the engine made itself is gone.
+func TestPruneKeepsTheImagesEntries(t *testing.T) {
+	dir, _ := imageEntriesDir(t)
+	e := newAdapterTestEngine(t)
+	srv := &Server{engineCache: e.cache}
+	require.NoError(t, srv.mergeImageBundle(e.ctx, dir))
+	made := e.file(t, "made")
+	require.NoError(t, e.cache.Evaluate(e.ctx, made))
+	require.NoError(t, e.cache.ReleaseSession(e.ctx, "adapter"))
+	require.NoError(t, e.cache.WaitSessionRelease(e.ctx, "adapter"))
+
+	_, err := e.cache.Prune(e.ctx, []dagql.CachePrunePolicy{{All: true}})
+	require.NoError(t, err)
+
+	require.Equal(t, dagql.CacheOutcomeHit, callFile(t, e, "after-prune", "shipped").Outcome, "the image's root is still there")
+	require.NotEqual(t, dagql.CacheOutcomeHit, callFile(t, e, "after-prune", "made").Outcome, "the prune deleted what the engine made")
+}
+
+// callFile calls the file field name, as publishFile publishes it, in
+// session, and returns the call's cache decision.
+func callFile(t *testing.T, e *adapterTestEngine, session, name string) *dagql.CacheDecision {
+	t.Helper()
+	file := &core.File{File: new(core.LazyAccessor[string, *core.File]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.File]), Platform: adapterTestPlatform,
+		Lazy: &core.FileBlobLazy{LazyState: core.NewLazyState(), Filename: name + ".txt", Contents: []byte(name + " bytes"), Permissions: 0o644}}
+	file.SetPath("/pending")
+	call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: name, Type: dagql.NewResultCallType(file.Type())}
+	decision := dagql.NewCacheDecision()
+	_, err := e.cache.GetOrInitCall(e.ctx, session, e.srv, &dagql.CallRequest{ResultCall: call, IsPersistable: true, CacheEvidence: decision}, func(context.Context) (dagql.AnyResult, error) {
+		return dagql.NewObjectResultForCall(file, e.srv, call)
+	})
+	require.NoError(t, err)
+	return decision
+}
+
+// sdkFiles publishes an empty directory with the content digest name's,
+// as the built-in SDKs' files are directories the image's entries find by
+// content digest.
+func (e *adapterTestEngine) sdkFiles(t *testing.T, name string) (dagql.ObjectResult[*core.Directory], digest.Digest) {
+	t.Helper()
+	dir := &core.Directory{Platform: adapterTestPlatform, Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy: &core.DirectoryScratchLazy{LazyState: core.NewLazyState()}}
+	dir.SetPath("/")
+	call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: name, Type: dagql.NewResultCallType(dir.Type())}
+	content := digest.FromString(name)
+	res, err := e.cache.GetOrInitCall(e.ctx, "adapter", e.srv, &dagql.CallRequest{ResultCall: call, IsPersistable: true}, func(ctx context.Context) (dagql.AnyResult, error) {
+		res, err := dagql.NewObjectResultForCall(dir, e.srv, call)
+		if err != nil {
+			return nil, err
+		}
+		return res.WithContentDigest(ctx, content)
+	})
+	require.NoError(t, err)
+	return res.(dagql.ObjectResult[*core.Directory]), content
+}
+
+// sdkImageEntriesDir exports an engine image's entries holding a built-in
+// SDK's files, as a directory with the content digest it returns, and a file
+// named shipped, and returns their directory.
+func sdkImageEntriesDir(t *testing.T) (string, digest.Digest) {
+	t.Helper()
+	src := newAdapterTestEngine(t)
+	src.srv.InstallObject(dagql.NewClass(src.srv, dagql.ClassOpts[*core.Directory]{}))
+	files, content := src.sdkFiles(t, "go-sdk")
+	shipped := src.file(t, "shipped")
+	for _, res := range []dagql.AnyResult{files, shipped} {
+		require.NoError(t, src.cache.Evaluate(src.ctx, res))
+	}
+	dir := t.TempDir()
+	outputs := []dagql.SelectedValueOutput{{Result: files, Address: snapshotPart}, {Result: shipped, Address: snapshotPart}}
+	require.NoError(t, src.cache.ExportImageBundle(src.ctx, outputs, exportRefConfig, testImageDir{dir}))
+	return dir, content
+}
+
+// The built-in SDKs' files are found among the image's entries by content
+// digest, and no module of those SDKs loads without them. When they aren't
+// there, a lookup of them says why: the merge's own error, or an image whose
+// entries hold no such directory.
+func TestBuiltinSDKFilesSayWhyTheyAreMissing(t *testing.T) {
+	newEngine := func(t *testing.T) (*adapterTestEngine, *Server) {
+		e := newAdapterTestEngine(t)
+		e.srv.InstallObject(dagql.NewClass(e.srv, dagql.ClassOpts[*core.Directory]{}))
+		return e, &Server{engineCache: e.cache}
+	}
+	t.Run("everything merges", func(t *testing.T) {
+		dir, content := sdkImageEntriesDir(t)
+		e, srv := newEngine(t)
+		srv.mergeImageEntries(e.ctx, dir, []digest.Digest{content, ""})
+		require.Empty(t, srv.missingImageDirectories([]digest.Digest{content}))
+		require.True(t, e.cache.FromImage(e.file(t, "shipped")))
+	})
+	t.Run("the bundle can't be read", func(t *testing.T) {
+		dir, content := sdkImageEntriesDir(t)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, schema.EngineImageBundleFile), []byte("{"), 0o644))
+		e, srv := newEngine(t)
+		srv.mergeImageEntries(e.ctx, dir, []digest.Digest{content})
+		_, err := e.cache.ImageEntryByContent(content, "Directory")
+		require.ErrorIs(t, err, dagql.ErrUnknownEntry)
+		require.ErrorContains(t, err, "engine image entries: unexpected end of JSON input", "the lookup names why")
+	})
+	t.Run("the image ships no entries", func(t *testing.T) {
+		e, srv := newEngine(t)
+		absent := filepath.Join(t.TempDir(), "entries")
+		content := digest.FromString("go-sdk")
+		srv.mergeImageEntries(e.ctx, absent, []digest.Digest{content})
+		_, err := e.cache.ImageEntryByContent(content, "Directory")
+		require.ErrorIs(t, err, dagql.ErrUnknownEntry)
+		require.ErrorContains(t, err, "the engine image's entries at "+absent+" hold no such directory", "the lookup names why")
+	})
+}
+
+// An engine image's entries are made on an engine busy with other work, whose
+// own captures, such as the remote cache's, can hold a result the export
+// needs. The export waits for a result that's busy now and exports every
+// result once it's free, as on an idle engine. A result it refuses fails the
+// export at once, and a wait ends with the export's context.
+func TestExportImageBundleWaitsForBusyResults(t *testing.T) {
+	export := func(e *adapterTestEngine, ctx context.Context, dir string, results ...dagql.AnyResult) <-chan error {
+		var outputs []dagql.SelectedValueOutput
+		for _, res := range results {
+			outputs = append(outputs, dagql.SelectedValueOutput{Result: res, Address: snapshotPart})
+		}
+		exported := make(chan error, 1)
+		go func() { exported <- e.cache.ExportImageBundle(ctx, outputs, exportRefConfig, testImageDir{dir}) }()
+		return exported
+	}
+	t.Run("busy", func(t *testing.T) {
+		e := newAdapterTestEngine(t)
+		ready := e.file(t, "ready")
+		require.NoError(t, e.cache.Evaluate(e.ctx, ready))
+		busy := e.busyFile(t, "busy")
+		dir := t.TempDir()
+		exported := export(e, e.ctx, dir, ready, busy)
+		// Give the export time to find the result busy before its body ends.
+		time.Sleep(200 * time.Millisecond)
+		e.bodies.unpause()
+		require.NoError(t, exportErr(t, exported))
+		raw, err := os.ReadFile(filepath.Join(dir, schema.EngineImageBundleFile))
+		require.NoError(t, err)
+		var bundle dagql.ValueBundle
+		require.NoError(t, json.Unmarshal(raw, &bundle))
+		require.ElementsMatch(t, []uint64{entryNumber(t, ready), entryNumber(t, busy)}, bundleRoots(&bundle), "every result is exported")
+		require.Len(t, bundle.Outputs, 2)
+	})
+	t.Run("refused", func(t *testing.T) {
+		e := newAdapterTestEngine(t)
+		ready := e.file(t, "ready")
+		require.NoError(t, e.cache.Evaluate(e.ctx, ready))
+		refused := e.refusedFile(t, "refused")
+		err := exportErr(t, export(e, e.ctx, t.TempDir(), ready, refused))
+		require.ErrorContains(t, err, "export image bundle: 1 of 2 results left out")
+		require.NotErrorIs(t, err, dagql.ErrPersistStateNotReady)
+	})
+	t.Run("canceled", func(t *testing.T) {
+		e := newAdapterTestEngine(t)
+		busy := e.busyFile(t, "busy")
+		ctx, cancel := context.WithCancel(e.ctx)
+		exported := export(e, ctx, t.TempDir(), busy)
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+		require.ErrorIs(t, exportErr(t, exported), context.Canceled)
+	})
+}
+
+// exportErr is the error an export sends on exported, within 10 seconds.
+func exportErr(t *testing.T, exported <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-exported:
+		return err
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the export")
+		return nil
+	}
 }

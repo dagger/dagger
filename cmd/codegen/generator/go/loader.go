@@ -10,13 +10,13 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/trace"
 	telemetry "github.com/dagger/otel-go"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -91,9 +91,9 @@ func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.
 		}
 		// A package loaded through a GOPACKAGESDRIVER, such as the Go SDK's
 		// export driver, comes without its module, which go/packages doesn't
-		// pass on from a driver: the go command lists it.
+		// pass on from a driver: its go.mod names it.
 		if pkgs[0].Module == nil && pkgs[0].Name != "" {
-			mod, err := listModule(ctx, dir)
+			mod, err := moduleOf(dir)
 			if err != nil {
 				return nil, nil, fmt.Errorf("module of %s: %w", dir, err)
 			}
@@ -106,40 +106,38 @@ func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.
 	}
 }
 
-// listModule is the module the directory dir is in, as "go list -m" lists
-// it: in a go.work, the workspace module whose directory holds dir.
-func listModule(ctx context.Context, dir string) (*packages.Module, error) {
-	cmd := exec.CommandContext(ctx, "go", "list", "-m", "-json")
-	cmd.Dir = dir
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("go list -m: %w: %s", err, strings.TrimSpace(stderr.String()))
-	}
+// moduleOf is the module the directory dir is in, from the go.mod nearest
+// it, at or above it: in a go.work, the workspace module whose directory
+// holds dir. It runs no go command, which would read the module cache.
+func moduleOf(dir string) (*packages.Module, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
 	}
-	var best *packages.Module
-	dec := json.NewDecoder(bytes.NewReader(out))
-	for {
-		var m packages.Module
-		if err := dec.Decode(&m); errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
-			return nil, fmt.Errorf("go list -m: %w", err)
-		}
-		if rel, err := filepath.Rel(m.Dir, abs); err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
-			if best == nil || len(m.Dir) > len(best.Dir) {
-				best = &m
+	for d := abs; ; d = filepath.Dir(d) {
+		goMod := filepath.Join(d, "go.mod")
+		data, err := os.ReadFile(goMod)
+		if err == nil {
+			f, err := modfile.ParseLax(goMod, data, nil)
+			if err != nil {
+				return nil, err
 			}
+			if f.Module == nil {
+				return nil, fmt.Errorf("%s declares no module", goMod)
+			}
+			mod := &packages.Module{Path: f.Module.Mod.Path, Main: true, Dir: d, GoMod: goMod}
+			if f.Go != nil {
+				mod.GoVersion = f.Go.Version
+			}
+			return mod, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		if filepath.Dir(d) == d {
+			return nil, fmt.Errorf("no go.mod at or above %s", abs)
 		}
 	}
-	if best == nil {
-		return nil, fmt.Errorf("go list -m lists no module holding %s", abs)
-	}
-	return best, nil
 }
 
 // Environment variables of golangci-lint's export driver, which the Go SDK's

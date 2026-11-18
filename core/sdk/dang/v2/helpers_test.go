@@ -9,7 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/stretchr/testify/require"
@@ -254,6 +257,88 @@ func TestModuleDeclaredTypeNamesMemoized(t *testing.T) {
 	require.Equal(t, []string{"MyMod"}, moduleDeclaredTypeNames(t.Context(), configured, "my-mod"))
 	writeDangFilesIn(t, configured, map[string]string{"dang.toml": "dang = \"2.1\"\n"})
 	require.Equal(t, []string{"MyMod", "Thing"}, moduleDeclaredTypeNames(t.Context(), configured, "my-mod"))
+}
+
+// A module's prebuild parses its source while its dependencies load
+// (PrebuildRuntime). When the module's types are read before that parse
+// ends, they wait for it rather than parse the same source a second time.
+func TestModuleDeclaredTypeNamesSharesParse(t *testing.T) {
+	origParse, origNames := parseDangSource, declaredTypeNames
+	fresh, err := lru.New[string, []string](8)
+	require.NoError(t, err)
+	declaredTypeNames = fresh
+	var parses atomic.Int32
+	second := make(chan struct{})
+	var secondOnce sync.Once
+	parseDangSource = func(ctx context.Context, filename string) (*dang.FileBlock, error) {
+		if parses.Add(1) == 1 {
+			// Hold the first parse until a second one starts, or until the
+			// other call has long since asked for the names.
+			select {
+			case <-second:
+			case <-time.After(200 * time.Millisecond):
+			}
+		} else {
+			secondOnce.Do(func() { close(second) })
+		}
+		return origParse(ctx, filename)
+	}
+	t.Cleanup(func() { parseDangSource, declaredTypeNames = origParse, origNames })
+
+	dir := t.TempDir()
+	writeDangFilesIn(t, dir, map[string]string{"main.dang": "type Thing {\n  name: String! { \"thing\" }\n}\n"})
+	names := make([][]string, 2)
+	var wg sync.WaitGroup
+	for i := range names {
+		wg.Go(func() { names[i] = moduleDeclaredTypeNames(t.Context(), dir, "my-mod") })
+	}
+	wg.Wait()
+	for _, got := range names {
+		require.Equal(t, []string{"MyMod", "Thing"}, got)
+	}
+	require.Equal(t, int32(1), parses.Load(), "both calls share one parse")
+}
+
+// The prebuild is canceled when its module's load returns, perhaps while it
+// is still parsing, and it then removes the source it parses from. The names
+// it records for that source must still be all of the source's.
+func TestModuleDeclaredTypeNamesCanceledParseCompletes(t *testing.T) {
+	origParse, origNames := parseDangSource, declaredTypeNames
+	fresh, err := lru.New[string, []string](8)
+	require.NoError(t, err)
+	declaredTypeNames = fresh
+	ctx, cancel := context.WithCancel(t.Context())
+	removed := make(chan struct{})
+	var first atomic.Bool
+	parseDangSource = func(parseCtx context.Context, filename string) (*dang.FileBlock, error) {
+		if first.CompareAndSwap(false, true) {
+			cancel()
+			// Give a caller that returns once canceled the time to remove
+			// its source before the next file is read.
+			select {
+			case <-removed:
+			case <-time.After(200 * time.Millisecond):
+			}
+		}
+		return origParse(parseCtx, filename)
+	}
+	t.Cleanup(func() { parseDangSource, declaredTypeNames = origParse, origNames })
+
+	files := map[string]string{
+		"a.dang": "type Alpha {\n  n: Int! { 1 }\n}\n",
+		"b.dang": "type Beta {\n  n: Int! { 2 }\n}\n",
+	}
+	src := filepath.Join(t.TempDir(), "src")
+	require.NoError(t, os.Mkdir(src, 0o755))
+	writeDangFilesIn(t, src, files)
+	moduleDeclaredTypeNames(ctx, src, "my-mod")
+	require.NoError(t, os.RemoveAll(src))
+	close(removed)
+
+	// The same source, loaded again from another directory.
+	other := t.TempDir()
+	writeDangFilesIn(t, other, files)
+	require.Equal(t, []string{"MyMod", "Alpha", "Beta"}, moduleDeclaredTypeNames(t.Context(), other, "my-mod"))
 }
 
 // Object directives are put back on the environment by parsing every source

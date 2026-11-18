@@ -12,20 +12,14 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-// Only an engine that can receive imports enables sharing: a configured
-// remote-cache integration, or the gated transfer fixture. Every other engine
-// registers nothing and builds no core schema base early.
+// Only an engine with a configured remote-cache integration enables sharing.
+// Every other engine registers nothing and builds no core schema base early.
 func TestSnapshotSharingReceivesImports(t *testing.T) {
 	require.False(t, snapshotSharingReceivesImports(nil))
 	require.False(t, snapshotSharingReceivesImports(&NewServerOpts{}))
 	require.True(t, snapshotSharingReceivesImports(&NewServerOpts{
 		RemoteCacheIntegration: &RemoteCacheIntegrationConfig{Run: func(context.Context, *RemoteCacheAdapter) error { return nil }},
 	}))
-	// The fixture is enabled by a non-empty root, and so is sharing.
-	t.Setenv(core.RemoteCacheFixtureRootEnv, "")
-	require.False(t, snapshotSharingReceivesImports(&NewServerOpts{}))
-	t.Setenv(core.RemoteCacheFixtureRootEnv, t.TempDir())
-	require.True(t, snapshotSharingReceivesImports(&NewServerOpts{}))
 }
 
 // An engine that cannot receive imports leaves the cache exactly as it was:

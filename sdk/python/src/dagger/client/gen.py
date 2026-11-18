@@ -5239,6 +5239,7 @@ class Container(Type):
         *,
         size: int | None = None,
         expand: bool | None = False,
+        disk: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a temporary directory mounted at the
         given path. Any writes will be ephemeral to a single withExec call;
@@ -5254,11 +5255,17 @@ class Container(Type):
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
+        disk:
+            Keep the temporary directory on the engine's disk instead of in
+            memory, for contents too large for memory. Each process gets an
+            empty directory of its own, removed once the process ends. It
+            can't be combined with size.
         """
         _args = [
             Arg("path", path),
             Arg("size", size, None),
             Arg("expand", expand, False),
+            Arg("disk", disk, False),
         ]
         _ctx = self._select("withMountedTemp", _args)
         return Container(_ctx)

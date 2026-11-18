@@ -10,7 +10,8 @@ import (
 )
 
 // A package loaded through a GOPACKAGESDRIVER, which go/packages gives no
-// module, still has its module: the code generator reads its directory.
+// module, still has its module: the code generator reads it from its go.mod,
+// with no go command, which would read the module cache.
 func TestLoadPackageThroughDriverHasModule(t *testing.T) {
 	dir := t.TempDir()
 	for name, data := range map[string]string{
@@ -48,6 +49,12 @@ func TestLoadPackageThroughDriverHasModule(t *testing.T) {
 	t.Setenv("GOPACKAGESDRIVER", driver)
 	t.Setenv("GOFLAGS", "")
 	t.Setenv("GOWORK", "off")
+	// A go command that runs nothing.
+	noGo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(noGo, "go"), []byte("#!/bin/sh\necho \"go $*: no go command may run\" >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", noGo+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	pkg, _, err := loadPackage(context.Background(), dir, false)
 	if err != nil {
@@ -56,8 +63,8 @@ func TestLoadPackageThroughDriverHasModule(t *testing.T) {
 	if pkg.Module == nil {
 		t.Fatal("the package has no module")
 	}
-	if pkg.Module.Path != "example.com/hello" || pkg.Module.Dir != dir {
-		t.Errorf("module = %s in %s, want example.com/hello in %s", pkg.Module.Path, pkg.Module.Dir, dir)
+	if pkg.Module.Path != "example.com/hello" || pkg.Module.Dir != dir || pkg.Module.GoVersion != "1.22" || !pkg.Module.Main {
+		t.Errorf("module = %+v, want example.com/hello, go 1.22, main, in %s", *pkg.Module, dir)
 	}
 }
 

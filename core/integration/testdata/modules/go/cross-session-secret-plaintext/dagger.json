@@ -1,7 +1,0 @@
-{
-  "name": "secreter",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  }
-}

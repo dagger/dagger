@@ -58,15 +58,29 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	// the read lock.
 	c.egraphMu.RLock()
 	settled, uses := c.partAcquisitionSettledLocked(row)
+	imported := row.imported
 	c.egraphMu.RUnlock()
 	if settled {
 		return uses
 	}
+	// A value merged from another engine with its recipe, and no address for
+	// any part, runs that recipe as a restored value does (decodeArmsRecipe),
+	// unless another result is recorded as equivalent to it: part acquisition
+	// then takes its contents from that result when it holds them, before any
+	// recipe runs. Its identity is derived outside egraphMu, as the part
+	// source scan derives it.
+	var lookup partLookup
+	if imported && !row.lazyComplete() {
+		if l, err := c.partLookupFor(row); err == nil {
+			lookup = l
+		}
+	}
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	shell := transferShellLocked(res, row)
+	equivalent := !shell && lookup.frame != nil && !row.hasPartOffersLocked() && c.hasEquivalentLocked(row, lookup)
 	gate := row.partGate.gate.Load()
-	if !shell && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() && gate == nil {
+	if !shell && !equivalent && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() && gate == nil {
 		return false
 	}
 	if gate == nil {
@@ -77,7 +91,7 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	if gate.managed {
 		return true
 	}
-	if !shell && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() {
+	if !shell && !equivalent && !row.partGate.restoredDelegation.Load() && !row.hasPartOffersLocked() {
 		return false
 	}
 	for _, group := range gate.groups {
@@ -89,6 +103,25 @@ func (c *Cache) usesPartAcquisition(res AnyResult, row *sharedResult) bool {
 	row.partGate.active.Store(true)
 	gate.revision++
 	return true
+}
+
+// hasEquivalentLocked reports whether a result other than row is recorded as
+// equivalent to it, by the routes the part source scan follows
+// (collectPartCandidatesLocked). Requires egraphMu for writing.
+func (c *Cache) hasEquivalentLocked(row *sharedResult, lookup partLookup) bool {
+	for _, candidate := range c.collectPartCandidatesWithAdmissionLocked(row, lookup, func(*sharedResult) bool { return true }) {
+		if candidate.row != row {
+			return true
+		}
+	}
+	return false
+}
+
+// lazyComplete reports whether everything res deferred is settled.
+func (res *sharedResult) lazyComplete() bool {
+	res.lazyMu.Lock()
+	defer res.lazyMu.Unlock()
+	return res.lazyEvalComplete
 }
 
 // partAcquisitionSettledLocked answers usesPartAcquisition without writing
@@ -318,15 +351,6 @@ func (c *Cache) demandPart(ctx context.Context, res AnyResult, address Persisted
 					return err
 				}
 				if source != nil {
-					kind := "selected-ready"
-					if source.readiness == PartDownloadable {
-						kind = "selected-chain"
-					}
-					if source.delegation != nil {
-						c.recordPartFixtureDelegation(row, address, "selected-delegation", source.delegation)
-					} else {
-						c.recordPartFixture(row, address, kind)
-					}
 					var ownership atomic.Uint32 // 0 caller, 1 body, 2 caller released before body entry
 					err = c.RunLazyTask(ctx, res, partTaskKey("obtain", address), LazyTaskSpec{Body: func(ctx context.Context) (rerr error) {
 						if !ownership.CompareAndSwap(0, 1) {
@@ -535,7 +559,6 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			return err
 		}
 		row := res.cacheSharedResult()
-		ctx = c.partFixtureLazyContext(ctx, row, address)
 		var version capturedRowRevision
 		record, err := c.capturePartRecord(ctx, row, row.imported, nil, &version)
 		if err != nil {
@@ -606,7 +629,6 @@ func (c *Cache) runLazyOperationDecision(ctx context.Context, res AnyResult, add
 			if err := engine.CheckSnapshotSharePreparation(ctx, "run lazy operation"); err != nil {
 				return err
 			}
-			c.recordPartFixture(row, address, "lazy-enter")
 			// No source could supply the part: it is computed here.
 			wcprof.Fact(ctx, 0, "part.no_source", uint64(row.id))
 			c.logPartWithoutSource(ctx, row, address, route, record, scan.NoSource)

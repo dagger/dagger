@@ -80,29 +80,37 @@ type DaggerDev {
   Go tools and system dependencies for generating Dagger source files.
   """
   goBase: Container! {
-    wolfi.container(packages: [
-      # FIXME: infer go version from our go.mod (ideally dagger.io/go has a utility for it)
-      "go-1.27",
-      "ca-certificates",
-      "git",
-      "build-base",
-      "protobuf~35",
-      "protobuf-dev~35",
-      "clang-22",
-      "lld",
-      "libbpf-dev",
-    ])
+    # The system packages install while the protoc plugins build: Dang
+    # evaluates the fields of a {{ }} record at once, and each field syncs
+    # so its work runs there.
+    let parts = {{
+      base: wolfi.container(packages: [
+        # FIXME: infer go version from our go.mod (ideally dagger.io/go has a utility for it)
+        "go-1.27",
+        "ca-certificates",
+        "git",
+        "build-base",
+        "protobuf~35",
+        "protobuf-dev~35",
+        "clang-22",
+        "lld",
+        "libbpf-dev",
+      ]).sync
+      plugins: directory
+        .withFile("protoc-gen-go", goTool("google.golang.org/protobuf", "v1.34.2", "cmd/protoc-gen-go"))
+        .withFile("protoc-gen-gogo", goTool("github.com/gogo/protobuf", "v1.3.2", "protoc-gen-gogo"))
+        .withFile("protoc-gen-gogoslick", goTool("github.com/gogo/protobuf", "v1.3.2", "protoc-gen-gogoslick"))
+        .withFile("protoc-gen-gogofaster", goTool("github.com/gogo/protobuf", "v1.3.2", "protoc-gen-gogofaster"))
+        .sync
+    }}
+    parts.base
       .withEnvVariable("HOME", "/root")
       .withEnvVariable("GOPATH", "/go")
       .withEnvVariable("GOBIN", "/usr/local/bin")
       .withEnvVariable("CGO_ENABLED", "0")
       .withEnvVariable("PATH", "/usr/local/bin:$PATH", expand: true)
       .withWorkdir("/app")
-      .withExec(["go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"])
-      .withExec(["go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"])
-      .withExec(["go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"])
-      .withExec(["go", "install", "github.com/gogo/protobuf/protoc-gen-gogofaster@v1.3.2"])
-      .withExec(["go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"])
+      .withDirectory("/usr/local/bin", parts.plugins)
       # FIXME: use new "latest version" API to move tags into the lockfile
       .withDirectory("/opt/proto/github.com/gogo/googleapis", git("https://github.com/gogo/googleapis.git").tag("v1.4.1").tree)
       .withDirectory("/opt/proto/github.com/gogo/protobuf", git("https://github.com/gogo/protobuf.git").tag("v1.3.2").tree)
@@ -111,5 +119,25 @@ type DaggerDev {
         #!/bin/sh
         exec /usr/bin/protoc -I . -I /opt/proto -I /usr/include "$@"
         """, permissions: 493)
+  }
+
+  # pkg, a main package of the Go module mod at version, as go install
+  # pkg@version builds it: by dagger/go's per-package build, from the module's
+  # source as the Go module proxy serves it, the same files go install builds.
+  # That source is the build's workspace, so the build is keyed by its
+  # content. The build image has no C toolchain, so the binary is static.
+  let goTool(mod: String!, version: String!, pkg: String!): File! {
+    let src = container
+      .from("alpine:3.23")
+      .withMountedFile("/src.zip", http("https://proxy.golang.org/" + mod + "/@v/" + version + ".zip"))
+      .withExec(["unzip", "-q", "/src.zip", "-d", "/out"])
+      .directory("/out/" + mod + "@" + version)
+      .asWorkspace
+    # No tests: a binary build reads none of the module's test records.
+    go(version: "1.27", test: ["!**"])
+      .module(ws: src, path: pkg)
+      .packages(ws: src)
+      .get(key: pkg)
+      .binary(ws: src)
   }
 }

@@ -8,8 +8,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
 )
@@ -18,11 +20,25 @@ import (
 // that the first calls after the start find them. The entries only spare the
 // engine work it can do itself, so the start never depends on them: whatever
 // keeps them from merging is logged, and the engine starts without them, or
-// with the part that merged.
-func (srv *Server) mergeImageEntries(ctx context.Context, dir string) {
-	if err := srv.mergeImageBundle(ctx, dir); err != nil {
+// with the part that merged. The built-in SDKs' files are entries too, the
+// directories with the content digests sdkDigests names, and no module of
+// those SDKs loads without them: when they aren't there, the cache records
+// why, so that a load of one of those SDKs says so.
+func (srv *Server) mergeImageEntries(ctx context.Context, dir string, sdkDigests []digest.Digest) {
+	err := srv.mergeImageBundle(ctx, dir)
+	if err != nil {
 		slog.Warn("starting without some or all of the engine image's entries", "error", err)
 	}
+	missing := srv.missingImageDirectories(sdkDigests)
+	if len(missing) == 0 {
+		return
+	}
+	cause := fmt.Sprintf("the engine image's entries at %s hold no such directory", dir)
+	if err != nil {
+		cause = err.Error()
+	}
+	srv.engineCache.SetImageEntriesCause(cause)
+	slog.Warn("starting without some of the built-in SDKs' files", "missing", missing, "cause", cause)
 }
 
 // mergeImageBundle merges the entries the engine image ships, from dir: the
@@ -120,4 +136,30 @@ func checkImageBlobs(root *os.Root, bundle dagql.ValueBundle) (int, int64, error
 		total += size
 	}
 	return len(sizes), total, nil
+}
+
+// builtinSDKDigestEnvNames name the variables whose content digests name the
+// built-in SDKs' files, directories the image's entries hold.
+var builtinSDKDigestEnvNames = []string{
+	distconsts.GoSDKDigestEnvName,
+	distconsts.PythonSDKDigestEnvName,
+	distconsts.TypescriptSDKDigestEnvName,
+}
+
+// missingImageDirectories returns the content digests of dirs with no
+// directory among the image's entries in the cache. The engine finds the
+// built-in SDKs' files only there (Query.__bundledDirectory). A prune never
+// deletes them: it never deletes what the image ships. An empty digest names
+// nothing.
+func (srv *Server) missingImageDirectories(dirs []digest.Digest) []digest.Digest {
+	var missing []digest.Digest
+	for _, dgst := range dirs {
+		if dgst == "" {
+			continue
+		}
+		if _, err := srv.engineCache.ImageEntryByContent(dgst, (&core.Directory{}).Type().Name()); err != nil {
+			missing = append(missing, dgst)
+		}
+	}
+	return missing
 }

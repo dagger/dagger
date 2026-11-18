@@ -15,6 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
 )
@@ -70,6 +71,16 @@ func moveLocalCacheStateToTrash(dir string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("move %s to trash: retries exhausted", dir)
+}
+
+// moveDiskTempMountsToTrash moves the disk temp mounts a previous engine
+// left under rootDir aside, for the trash sweeper. They outlive their
+// processes only when that engine stopped before removing them, and a nested
+// engine's state in one can hold millions of files.
+func moveDiskTempMountsToTrash(rootDir string) {
+	if _, err := moveLocalCacheStateToTrash(filepath.Join(rootDir, core.DiskTempMountDir)); err != nil {
+		slog.Warn("failed to move a previous engine's disk temp mounts aside", "err", err)
+	}
 }
 
 // findLocalCacheTrashDirs lists the trash directories under rootDir: state

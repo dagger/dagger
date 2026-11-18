@@ -1,10 +1,12 @@
 package schema
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/engine/snapshots/testutil"
@@ -113,7 +116,6 @@ func scratchTestCache(t *testing.T, store *testutil.Store, path, session string)
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*core.Directory]{}))
 	// Use the actual resolver and actual scalar identity input.
 	dagql.Fields[*core.Query]{dagql.NodeFunc("directory", (&directorySchema{}).directory).WithInput(engineDefaultPlatformInput)}.Install(srv)
-	cache.EnableTransferFixtureParts()
 	return dagql.ContextWithServer(ctx, srv), cache, srv
 }
 
@@ -124,24 +126,53 @@ func scratchSelect(t *testing.T, ctx context.Context, srv *dagql.Server) dagql.O
 	return result
 }
 
-func scratchCount(t *testing.T, ctx context.Context, cache *dagql.Cache, session string, row uint64) int {
+// partSourceLogs captures, through a context's logger, the cache's "remote
+// cache part without a source" lines: each is a part that a demand found no
+// source for, so the engine computed it itself.
+type partSourceLogs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *partSourceLogs) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *partSourceLogs) into(ctx context.Context) context.Context {
+	return slog.WithLogger(ctx, slog.New(slog.NewJSONHandler(l, nil)))
+}
+
+// computed counts the parts computed for want of a source.
+func (l *partSourceLogs) computed(t *testing.T) int {
 	t.Helper()
-	report, err := cache.TransferFixtureSnapshot(ctx, session, nil)
-	require.NoError(t, err)
-	count := 0
-	for _, event := range report.Parts {
-		if event.ResultID != row {
-			continue
-		}
-		require.NotEqual(t, "provider-read", event.Kind)
-		require.NotEqual(t, "installed-chain", event.Kind)
-		if event.Kind == "lazy-enter" {
-			require.Equal(t, "directory", event.Field)
-			require.Equal(t, dagql.PersistedPartAddress{Part: "snapshot"}, event.Address)
-			count++
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Count(l.buf.String(), `"msg":"remote cache part without a source"`)
+}
+
+// debugResult is the cache's debug view of one result.
+func debugResult(t *testing.T, cache *dagql.Cache, id uint64) dagql.EGraphDebugResult {
+	t.Helper()
+	for _, res := range cache.DebugEGraphSnapshot().Results {
+		if res.SharedResultID == id {
+			return res
 		}
 	}
-	return count
+	t.Fatalf("result %d is not in the cache", id)
+	return dagql.EGraphDebugResult{}
+}
+
+// requireOwnCompletion checks that evaluating a local row ran its own recipe:
+// the one ref the manager handed out is the installed one. Part acquisition
+// would install a pin of the private operation's output instead.
+func requireOwnCompletion(t *testing.T, observed *scratchObservedManager, result dagql.ObjectResult[*core.Directory]) {
+	t.Helper()
+	ref, set := result.Self().Snapshot.Peek()
+	require.True(t, set)
+	require.Len(t, observed.refs, 1, "own completion opens one ref")
+	require.Same(t, observed.refs[0], ref, "own completion installs the ref it opened")
 }
 
 func TestScratchDirectoryLazyOperation(t *testing.T) {
@@ -176,15 +207,9 @@ func TestScratchDirectoryLazyOperation(t *testing.T) {
 	require.Len(t, record.Call.ImplicitInputs, 1)
 	require.Equal(t, "engineDefaultPlatform", record.Call.ImplicitInputs[0].Name)
 	require.Equal(t, "linux/arm64", record.Call.ImplicitInputs[0].Value.StringValue)
-	report, err := cache.TransferFixtureSnapshot(ctx, "eager", nil)
-	require.NoError(t, err)
-	for _, row := range report.Rows {
-		if row.ResultID == record.ResultID {
-			require.Empty(t, row.DependencyIDs)
-		}
-	}
+	require.Empty(t, debugResult(t, cache, record.ResultID).ExplicitDeps, "the scratch call holds no dependency")
 	require.NoError(t, cache.Evaluate(ctx, result))
-	require.Zero(t, scratchCount(t, ctx, cache, "eager", record.ResultID))
+	requireOwnCompletion(t, observed, result)
 	require.EqualValues(t, 1, observed.calls.Load(), "capture/own completion opened scratch")
 	require.ErrorContains(t, (&core.DirectoryScratchLazy{LazyState: core.NewLazyState()}).Evaluate(ctx, result.Self()), "already installed")
 	require.EqualValues(t, 1, observed.calls.Load())
@@ -289,6 +314,8 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 			if mode == "pending-restart" {
 				reopen()
 			}
+			var logs partSourceLogs
+			ctx = logs.into(ctx)
 			loaded, err := b.LoadResultByResultID(ctx, "", srv, row)
 			require.NoError(t, err)
 			result := loaded.(dagql.ObjectResult[*core.Directory])
@@ -341,7 +368,7 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 				want = 2
 			}
 			require.EqualValues(t, want, observed.calls.Load())
-			require.Zero(t, scratchCount(t, ctx, b, "b", row), "the merged scratch directory is computed by its recipe, never searched for")
+			require.Zero(t, logs.computed(t), "the merged scratch directory is computed by its recipe, never searched for")
 			t.Logf("scratch mode=%s acquisition=%s scratch-calls=%d provider-reads=0", mode, time.Since(started), observed.calls.Load())
 			entries := demandedDirectoryEntries(t, ctx, result)
 			require.Empty(t, entries)
@@ -382,7 +409,6 @@ func TestScratchDirectoryAcquisition(t *testing.T) {
 				result = loaded.(dagql.ObjectResult[*core.Directory])
 				require.NoError(t, b.Evaluate(ctx, result))
 				require.Zero(t, observed.calls.Load())
-				require.Zero(t, scratchCount(t, ctx, b, "b", row))
 				restored, err := b.CapturePersistedRecord(ctx, result)
 				require.NoError(t, err)
 				require.JSONEq(t, string(record.Envelope.ObjectJSON), string(restored.Envelope.ObjectJSON))
@@ -442,6 +468,7 @@ func testScratchDirectoryNativeReopen(t *testing.T, evaluated bool) {
 		require.JSONEq(t, string(record.Envelope.ObjectJSON), string(restored.Envelope.ObjectJSON))
 		require.Empty(t, observed.refs, "capture opened a local ref")
 		require.NoError(t, cache.Evaluate(ctx, loaded))
+		requireOwnCompletion(t, observed, loaded.(dagql.ObjectResult[*core.Directory]))
 		if !evaluated && attempt == 0 {
 			require.EqualValues(t, 1, observed.calls.Load())
 		} else {
@@ -449,6 +476,5 @@ func testScratchDirectoryNativeReopen(t *testing.T, evaluated bool) {
 		}
 		record, err = cache.CapturePersistedRecord(ctx, loaded)
 		require.NoError(t, err)
-		require.Zero(t, scratchCount(t, ctx, cache, "native", record.ResultID))
 	}
 }

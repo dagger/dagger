@@ -523,6 +523,22 @@ type PersistedPayloadVisit struct {
 	Path          PersistedRefPath
 	Payload       json.RawMessage
 	SnapshotLinks []PersistedSnapshotRefLink
+	// Memo, when set, is shared by the steps of one pass that each read this
+	// payload, so that a codec can decode it once (PayloadMemo).
+	Memo *PayloadMemo
+	// ReferencesVisitedApart says the caller visits the payload's references
+	// itself, with at least the checks a validation's visit makes, so
+	// ValidateForeign needn't visit them too.
+	ReferencesVisitedApart bool
+}
+
+// PayloadMemo carries a codec's decode of one payload between the steps of
+// one pass that read it, such as a merge's validation, part mapping and part
+// description: the first step to decode the payload keeps its decode in
+// Value, and the next reuse it instead of decoding the same bytes again. A
+// codec that reuses Value must not change it.
+type PayloadMemo struct {
+	Value any
 }
 
 // PersistedPayloadVisitor walks the declared references of one codec family's

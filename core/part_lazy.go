@@ -97,16 +97,7 @@ func (family foreignFamilyCodec) PrepareLazyOperation(ctx context.Context, dec *
 		ctr := typed.(*Container)
 		ctr.acquiredOutput.Store(nil)
 		ctr.Lazy = lazy
-		run := func(ctx context.Context) (rerr error) {
-			// Only the gated integration fixture observes the private FS handle.
-			// Its wrapper reports after the real ref's Release returns.
-			if observe := dagql.TransferFixtureLazyReleaseObserver(ctx); observe != nil {
-				defer func() {
-					if rerr == nil {
-						observePrivateContainerFSRelease(ctr, observe)
-					}
-				}()
-			}
+		run := func(ctx context.Context) error {
 			ctx = dagql.ContextWithCall(ctx, record.Call)
 			if route.Group.Group == dagql.LazyGroupWhole {
 				return ctr.Evaluate(ctx)
@@ -126,27 +117,5 @@ func (family foreignFamilyCodec) PrepareLazyOperation(ctx context.Context, dec *
 		return &privateLazyOperation{run: run, capture: ctr.EncodePersistedObject, release: ctr.OnRelease}, nil
 	default:
 		return nil, fmt.Errorf("no saved operation for %s", family)
-	}
-}
-
-type partFixtureReleaseRef struct {
-	bkcache.ImmutableRef
-	observe func(string, error)
-}
-
-func (r *partFixtureReleaseRef) Release(ctx context.Context) error {
-	id := r.SnapshotID()
-	err := r.ImmutableRef.Release(ctx)
-	r.observe(id, err)
-	return err
-}
-
-// Only the private operation's FS handle is decorated; installed receiver,
-// metadata and mount accessors retain their own concrete ref types.
-func observePrivateContainerFSRelease(ctr *Container, observe func(string, error)) {
-	if dir, ok := ctr.FS.Peek(); ok && dir != nil {
-		if ref, ok := dir.Snapshot.Peek(); ok && ref != nil {
-			dir.Snapshot.setValue(&partFixtureReleaseRef{ImmutableRef: ref, observe: observe})
-		}
 	}
 }

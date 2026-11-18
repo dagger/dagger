@@ -200,7 +200,7 @@ func EntrypointSources(
 		})
 	})
 	if err != nil {
-		return sources, dangshared.ConvertError(err)
+		return sources, convertError(err)
 	}
 	return sources, nil
 }

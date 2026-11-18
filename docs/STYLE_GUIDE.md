@@ -93,15 +93,7 @@ Each recipe requires only:
 
 ### Screen recordings
 
-Some screen recordings can be auto-generated with the `docs/recorder` module
-
-- Generate recordings for some feature pages:
-
-  ```shell
-  dagger call generate-feature-recordings --base=../current_docs/features/snippets --github-token=<plaintext-token> export --path=/tmp/out
-  ```
-
-- Generate recordings manually for other feature pages:
+- Generate recordings manually:
 
     ```shell
     dagger logout
@@ -117,9 +109,3 @@ Some screen recordings can be auto-generated with the `docs/recorder` module
     cd ~/images
     docker run --rm -it -u $(id -u):$(id -g) -v $PWD:/data agg <file>.asc <file>.gif
     ```
-
-- Generate recordings for some quickstart pages:
-
-  ```shell
-  dagger call generate-quickstart-recordings --base=../current_docs/ci/quickstart/snippets export --path=/tmp/out
-  ```

@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "files": {
+    "dagger.gen.go": "c90045533d259d62c7225643b1d77d3c0a5652a87fc7e330ed24e93cc00e3371",
+    "foo.gen.go": "e8ee2a53b235137ba87d8be007351328d83e79525dba96dff607acc8b7240569"
+  }
+}
