@@ -58,9 +58,10 @@ func collect(t *testing.T, store *testutil.Store) {
 	require.NoError(t, forgetter.ForgetCollectedSnapshots(context.Background()))
 }
 
-// Each hashed snapshot keeps its serialized content-hash tree in the
-// manager's in-memory metadata. Releasing the refs and the owners, and
-// collecting the snapshots, must not leave those trees behind.
+// Each hashed snapshot keeps its serialized content-hash tree with the
+// manager's metadata, on disk. Releasing the refs and the owners, and
+// collecting the snapshots, must not leave those trees, or the metadata,
+// behind.
 func TestContentHashMetadataMemory(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewStore(t)

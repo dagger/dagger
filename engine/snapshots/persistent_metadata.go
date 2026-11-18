@@ -113,7 +113,8 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 		cm.snapshotOwnerLeases = make(map[string]map[string]struct{})
 	}
 	if files := cm.metadataStore.hashFiles; files != nil {
-		return cm.loadContentHashFiles(files, rows.ContentHashes)
+		cm.loadContentHashFiles(files, rows.ContentHashes)
+		return nil
 	}
 	cm.metadataStore.mu.Lock()
 	defer cm.metadataStore.mu.Unlock()
@@ -137,7 +138,7 @@ func (cm *snapshotManager) LoadPersistentMetadata(rows PersistentMetadataRows) e
 // snapshots whose metadata has not been opened and that have no record are
 // dropped, as LoadPersistentMetadata replaces the pending records in memory.
 // Requires cm.mu.
-func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []SnapshotContentHashRow) error {
+func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []SnapshotContentHashRow) {
 	loaded := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
 		if row.SnapshotID == "" || len(row.Data) == 0 {
@@ -148,7 +149,12 @@ func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []
 			gone = func() bool { return md.contentHashGone }
 		}
 		if err := files.write(row.SnapshotID, row.Data, gone); err != nil {
-			return err
+			// As when a checkpoint can't read a tree: the snapshot is
+			// hashed again if asked, rather than the whole cache, which
+			// failing the load would discard, being lost.
+			bklog.G(context.TODO()).WithError(err).WithField("snapshot", row.SnapshotID).
+				Error("failed to load content hash records")
+			continue
 		}
 		loaded[row.SnapshotID] = struct{}{}
 	}
@@ -161,7 +167,6 @@ func (cm *snapshotManager) loadContentHashFiles(files *contentHashFiles, rows []
 		}
 		files.remove(id, nil)
 	}
-	return nil
 }
 
 func (cm *snapshotManager) PersistentMetadataRows() PersistentMetadataRows {
