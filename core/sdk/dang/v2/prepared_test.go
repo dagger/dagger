@@ -73,9 +73,9 @@ func TestPreparedDangSingleflightFreshClientsAndRelease(t *testing.T) {
 	require.Zero(t, cache.EntryStats().OngoingArbitrary)
 }
 
-// keptPreparedDangPrograms reports how many compilations the session keeps
-// for the module modKey.
-func keptPreparedDangPrograms(t *testing.T, ctx context.Context, modKey string) int {
+// preparedDangProgramsOf returns the compilations the session keeps for the
+// module modKey.
+func preparedDangProgramsOf(t *testing.T, ctx context.Context, modKey string) *preparedDangPrograms {
 	t.Helper()
 	cache, err := dagql.EngineCache(ctx)
 	require.NoError(t, err)
@@ -83,7 +83,14 @@ func keptPreparedDangPrograms(t *testing.T, ctx context.Context, modKey string) 
 		return nil, errors.New("module has no compilations")
 	})
 	require.NoError(t, err)
-	programs := result.Value().(*preparedDangPrograms)
+	return result.Value().(*preparedDangPrograms)
+}
+
+// keptPreparedDangPrograms reports how many compilations the session keeps
+// for the module modKey.
+func keptPreparedDangPrograms(t *testing.T, ctx context.Context, modKey string) int {
+	t.Helper()
+	programs := preparedDangProgramsOf(t, ctx, modKey)
 	programs.mu.Lock()
 	defer programs.mu.Unlock()
 	return len(programs.builds)
@@ -160,7 +167,12 @@ func TestPreparedDangWaiterOutlivesCanceledPreparation(t *testing.T) {
 		waiter <- err
 	}()
 	// Let the waiter join the preparation in flight before it fails.
-	time.Sleep(50 * time.Millisecond)
+	programs := preparedDangProgramsOf(t, ctx, "module")
+	require.Eventually(t, func() bool {
+		programs.mu.Lock()
+		defer programs.mu.Unlock()
+		return len(programs.builds) == 1 && programs.builds[0].joined == 1
+	}, 10*time.Second, time.Millisecond)
 	cancel()
 	require.ErrorIs(t, <-ownerErr, context.Canceled)
 	require.NoError(t, <-waiter)
