@@ -156,11 +156,12 @@ func TestFindSpansMatchesFullLoad(t *testing.T) {
 				}
 			}
 		}
-		_, err := live.ImportTrace(ctx, traceID, func(dst *clientdb.DB) error {
+		imported, err := live.ImportTrace(ctx, traceID, func(dst *clientdb.DB) error {
 			_, err := dst.AppendSpans(rows)
 			return err
 		})
 		require.NoError(t, err)
+		require.NoError(t, imported.Close())
 	}
 
 	chief := traceCaller{AgentID: "chief-handle", TraceID: agentInspectTraceID}
@@ -183,7 +184,7 @@ func TestFindSpansMatchesFullLoad(t *testing.T) {
 			[]string{"", "exec", "/orphan", "root/l", "stuck"}, []traceCaller{{}}},
 		{"session", session, nil, []string{"", "0000000000000003"},
 			[]string{"", "needle", "tool call 7/", "TestPkg", "TestPkg50/case", "cache1", "Container.with", "go"}, []traceCaller{{}, sessionChief}},
-		{"imports", live, live.InspectionStores()[1:], []string{""},
+		{"imports", live, testInspectionStores(t, live)[1:], []string{""},
 			[]string{"", "needle", "tool call 1", "cache", "Test"}, []traceCaller{{}, sessionChief}},
 	}
 

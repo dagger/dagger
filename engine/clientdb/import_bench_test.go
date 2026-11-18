@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"testing"
+	"time"
 
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 )
@@ -60,6 +61,7 @@ func BenchmarkImportedTraceResidency(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+		live.imports.idleHold = 10 * time.Millisecond
 		before := heapInUse()
 		b.StartTimer()
 		imported, err := live.ImportTrace(b.Context(), "trace", func(dst *DB) error {
@@ -75,6 +77,9 @@ func BenchmarkImportedTraceResidency(b *testing.B) {
 		}
 		if len(imported.SpanIDs()) != n {
 			b.Fatal("import lost spans")
+		}
+		if err := imported.Close(); err != nil {
+			b.Fatal(err)
 		}
 		imported = nil
 		b.StopTimer()
@@ -95,5 +100,11 @@ func BenchmarkImportedTraceResidency(b *testing.B) {
 // no reader has used them for a while.
 func releaseIdleImports(tb testing.TB, live *DB) {
 	tb.Helper()
-	// Imports have no idle release: they live as long as the live store.
+	deadline := time.Now().Add(10 * time.Second)
+	for live.imports.reg.OpenStats().Stores > 0 {
+		if time.Now().After(deadline) {
+			tb.Fatal("imported trace never released")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }

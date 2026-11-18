@@ -82,6 +82,7 @@ func loadCloudTrace(ctx context.Context, store *clientdb.DB, id string, fetch cl
 	if err != nil {
 		return "", err
 	}
+	defer imported.Close()
 	rows, err := imported.SelectSpansLatest(ctx, imported.SpanIDs())
 	if err != nil {
 		return "", err
@@ -258,11 +259,36 @@ func ingestInspectionSpanScope(ctx context.Context, primary, read *clientdb.DB, 
 
 // Select exact spans without blending parent/link graphs from different
 // captures. Live data wins the vanishingly rare collision with a snapshot.
-func inspectionStoreForSpan(store *clientdb.DB, span string) *clientdb.DB {
-	for _, candidate := range store.InspectionStores() {
+// release ends the use of the store selected; only an imported trace's
+// needs it (see clientdb.DB.InspectionStores), and a span of the live store
+// opens none.
+func inspectionStoreForSpan(ctx context.Context, store *clientdb.DB, span string) (selected *clientdb.DB, release func(), err error) {
+	if store.HasSpan(span) || !store.HasImports() {
+		return store, func() {}, nil
+	}
+	// Each import is released on its own: all but the one selected now.
+	stores, _, err := store.InspectionStores(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	selected = storeHolding(stores, span)
+	for _, other := range stores[1:] {
+		if other != selected {
+			other.Close()
+		}
+	}
+	if selected == store {
+		return store, func() {}, nil
+	}
+	return selected, func() { selected.Close() }, nil
+}
+
+// storeHolding is the first of stores holding span, else the first.
+func storeHolding(stores []*clientdb.DB, span string) *clientdb.DB {
+	for _, candidate := range stores {
 		if candidate.HasSpan(span) {
 			return candidate
 		}
 	}
-	return store
+	return stores[0]
 }
