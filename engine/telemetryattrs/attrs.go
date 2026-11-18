@@ -868,6 +868,14 @@ const (
 	// lifetime.
 	CacheResultIDAttr = "dagger.io/cache.result.id"
 
+	// CacheRecipeAttr is the recipe digest of the entry a call returned, on
+	// the span of a call hidden from the session's view, which reports only
+	// its cache decision. Such a span carries no dagger.io/dag.output, which
+	// would make it the result's creator in the session's rendering
+	// (dagui.DB.CreatorSpans), nor its call frame: a consumer of the cache
+	// contract reads this in its place.
+	CacheRecipeAttr = "dagger.io/cache.recipe"
+
 	// The entry's state in its cache, stamped beside CacheResultIDAttr when
 	// the span ends, so a consumer can follow the cache's ownership without
 	// the engine's internals. A lazy-evaluation span carries CacheResultIDAttr,
