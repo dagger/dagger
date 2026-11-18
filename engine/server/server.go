@@ -55,6 +55,7 @@ import (
 	wlabel "github.com/dagger/dagger/internal/buildkit/worker/label"
 	"github.com/google/uuid"
 	"github.com/moby/locker"
+	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
@@ -589,15 +590,13 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// The image's entries join the cache before the server dispatches any
 	// request, so the first module build already finds them. The start
 	// doesn't depend on them: an image without the built-in SDKs' files it
-	// names starts, and a module of a missing SDK fails when it loads.
-	srv.mergeImageEntries(ctx, distconsts.EngineContainerImageEntriesDir)
-	var sdkDigests []string
+	// names starts, and a module of a missing SDK fails when it loads, with
+	// why they're missing.
+	var sdkDigests []digest.Digest
 	for _, name := range builtinSDKDigestEnvNames {
-		sdkDigests = append(sdkDigests, os.Getenv(name))
+		sdkDigests = append(sdkDigests, digest.Digest(os.Getenv(name)))
 	}
-	if err := srv.checkImageDirectories(sdkDigests); err != nil {
-		slog.Warn("starting without some of the built-in SDKs' files", "error", err)
-	}
+	srv.mergeImageEntries(ctx, distconsts.EngineContainerImageEntriesDir, sdkDigests)
 	// A prune never deletes what the image ships, which it knows by the
 	// image's merge: one that planned before the merge could still delete it.
 	srv.startLocalCachePressureGCMonitor()

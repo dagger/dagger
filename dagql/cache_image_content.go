@@ -256,7 +256,18 @@ func (c *Cache) ImageEntryByContent(contentDigest digest.Digest, typeName string
 		}
 		return uint64(res.id), nil
 	}
+	if cause := c.imageEntriesCause.Load(); cause != nil {
+		return 0, fmt.Errorf("image entry of type %s with content %s: %w: %s", typeName, contentDigest, ErrUnknownEntry, *cause)
+	}
 	return 0, fmt.Errorf("image entry of type %s with content %s: %w", typeName, contentDigest, ErrUnknownEntry)
+}
+
+// SetImageEntriesCause records why some of the entries the engine image
+// ships aren't in the cache, such as the start's merge failing: a lookup that
+// finds no image entry (ImageEntryByContent) names it, since the start that
+// knows it is long past.
+func (c *Cache) SetImageEntriesCause(cause string) {
+	c.imageEntriesCause.Store(&cause)
 }
 
 // ImageBundleWriter receives an engine image's bundle as ExportImageBundle

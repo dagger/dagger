@@ -108,7 +108,7 @@ func TestMergeImageEntries(t *testing.T) {
 		dir, _ := imageEntriesDir(t)
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
-		srv.mergeImageEntries(e.ctx, dir)
+		srv.mergeImageEntries(e.ctx, dir, nil)
 		require.True(t, e.cache.FromImage(e.file(t, "shipped")))
 	})
 	t.Run("no image entries", func(t *testing.T) {
@@ -132,7 +132,7 @@ func TestMergeImageEntries(t *testing.T) {
 		e := newAdapterTestEngine(t)
 		srv := &Server{engineCache: e.cache}
 		require.ErrorContains(t, srv.mergeImageBundle(e.ctx, dir), "engine image entries: blob")
-		srv.mergeImageEntries(e.ctx, dir)
+		srv.mergeImageEntries(e.ctx, dir, nil)
 		require.False(t, e.cache.FromImage(e.file(t, "shipped")), "nothing merged")
 	})
 }
@@ -203,15 +203,80 @@ func callFile(t *testing.T, e *adapterTestEngine, session, name string) *dagql.C
 	return decision
 }
 
-// An image that names built-in SDK files its entries don't hold fails the
-// check the engine logs at start.
-func TestCheckImageDirectories(t *testing.T) {
-	dir, _ := imageEntriesDir(t)
-	e := newAdapterTestEngine(t)
-	srv := &Server{engineCache: e.cache}
-	require.NoError(t, srv.mergeImageBundle(e.ctx, dir))
-	require.NoError(t, srv.checkImageDirectories([]string{""}))
-	require.ErrorIs(t, srv.checkImageDirectories([]string{digest.FromString("absent").String()}), dagql.ErrUnknownEntry)
+// sdkFiles publishes an empty directory with the content digest name's,
+// as the built-in SDKs' files are directories the image's entries find by
+// content digest.
+func (e *adapterTestEngine) sdkFiles(t *testing.T, name string) (dagql.ObjectResult[*core.Directory], digest.Digest) {
+	t.Helper()
+	dir := &core.Directory{Platform: adapterTestPlatform, Dir: new(core.LazyAccessor[string, *core.Directory]), Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+		Lazy: &core.DirectoryScratchLazy{LazyState: core.NewLazyState()}}
+	dir.SetPath("/")
+	call := &dagql.ResultCall{Kind: dagql.ResultCallKindField, Field: name, Type: dagql.NewResultCallType(dir.Type())}
+	content := digest.FromString(name)
+	res, err := e.cache.GetOrInitCall(e.ctx, "adapter", e.srv, &dagql.CallRequest{ResultCall: call, IsPersistable: true}, func(ctx context.Context) (dagql.AnyResult, error) {
+		res, err := dagql.NewObjectResultForCall(dir, e.srv, call)
+		if err != nil {
+			return nil, err
+		}
+		return res.WithContentDigest(ctx, content)
+	})
+	require.NoError(t, err)
+	return res.(dagql.ObjectResult[*core.Directory]), content
+}
+
+// sdkImageEntriesDir exports an engine image's entries holding a built-in
+// SDK's files, as a directory with the content digest it returns, and a file
+// named shipped, and returns their directory.
+func sdkImageEntriesDir(t *testing.T) (string, digest.Digest) {
+	t.Helper()
+	src := newAdapterTestEngine(t)
+	src.srv.InstallObject(dagql.NewClass(src.srv, dagql.ClassOpts[*core.Directory]{}))
+	files, content := src.sdkFiles(t, "go-sdk")
+	shipped := src.file(t, "shipped")
+	for _, res := range []dagql.AnyResult{files, shipped} {
+		require.NoError(t, src.cache.Evaluate(src.ctx, res))
+	}
+	dir := t.TempDir()
+	outputs := []dagql.SelectedValueOutput{{Result: files, Address: snapshotPart}, {Result: shipped, Address: snapshotPart}}
+	require.NoError(t, src.cache.ExportImageBundle(src.ctx, outputs, exportRefConfig, testImageDir{dir}))
+	return dir, content
+}
+
+// The built-in SDKs' files are found among the image's entries by content
+// digest, and no module of those SDKs loads without them. When they aren't
+// there, a lookup of them says why: the merge's own error, or an image whose
+// entries hold no such directory.
+func TestBuiltinSDKFilesSayWhyTheyAreMissing(t *testing.T) {
+	newEngine := func(t *testing.T) (*adapterTestEngine, *Server) {
+		e := newAdapterTestEngine(t)
+		e.srv.InstallObject(dagql.NewClass(e.srv, dagql.ClassOpts[*core.Directory]{}))
+		return e, &Server{engineCache: e.cache}
+	}
+	t.Run("everything merges", func(t *testing.T) {
+		dir, content := sdkImageEntriesDir(t)
+		e, srv := newEngine(t)
+		srv.mergeImageEntries(e.ctx, dir, []digest.Digest{content, ""})
+		require.Empty(t, srv.missingImageDirectories([]digest.Digest{content}))
+		require.True(t, e.cache.FromImage(e.file(t, "shipped")))
+	})
+	t.Run("the bundle can't be read", func(t *testing.T) {
+		dir, content := sdkImageEntriesDir(t)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, schema.EngineImageBundleFile), []byte("{"), 0o644))
+		e, srv := newEngine(t)
+		srv.mergeImageEntries(e.ctx, dir, []digest.Digest{content})
+		_, err := e.cache.ImageEntryByContent(content, "Directory")
+		require.ErrorIs(t, err, dagql.ErrUnknownEntry)
+		require.ErrorContains(t, err, "engine image entries: unexpected end of JSON input", "the lookup names why")
+	})
+	t.Run("the image ships no entries", func(t *testing.T) {
+		e, srv := newEngine(t)
+		absent := filepath.Join(t.TempDir(), "entries")
+		content := digest.FromString("go-sdk")
+		srv.mergeImageEntries(e.ctx, absent, []digest.Digest{content})
+		_, err := e.cache.ImageEntryByContent(content, "Directory")
+		require.ErrorIs(t, err, dagql.ErrUnknownEntry)
+		require.ErrorContains(t, err, "the engine image's entries at "+absent+" hold no such directory", "the lookup names why")
+	})
 }
 
 // An engine image's entries are made on an engine busy with other work, whose

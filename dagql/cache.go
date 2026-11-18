@@ -2637,6 +2637,9 @@ type Cache struct {
 
 	snapshotManager   bkcache.SnapshotManager
 	partContentSource *PartContentSource
+	// imageEntriesCause, once set, is why some of the engine image's entries
+	// aren't in the cache (SetImageEntriesCause).
+	imageEntriesCause atomic.Pointer[string]
 	snapshotGC        func(context.Context) error
 
 	// partPrefetcher, started on the first accepted offer, prefetches
