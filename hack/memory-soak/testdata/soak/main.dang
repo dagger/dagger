@@ -1,0 +1,39 @@
+"""
+An agent-like session for the memory soak: turn after turn, grow a Go
+object and a Dang object through calls into their modules (nested clients),
+edit a tree of thousands of files with their state, and take its digest.
+"""
+type Soak {
+  """
+  Run rounds turns over a seeded tree of files files. salt makes each
+  session's work its own, so a session never reuses another's results.
+  """
+  pub run(rounds: Int!, files: Int!, salt: String!): String! {
+    let tree = seed(files).withNewFile("salt.txt", salt)
+    let g = soakgo
+    let d = soakdang
+    let i = 0
+    let out = ""
+    loop {
+      if (i >= rounds) {
+        break
+      }
+      g = g.add(i)
+      d = d.add(i)
+      tree = g.edit(tree, i)
+      tree = d.edit(tree, i)
+      tree = tree.withNewFile("turn/" + toString(i) + ".txt", salt + " " + toString(g.count) + " " + toString(d.count))
+      tree = tree.withoutFile("d" + toString(i % 50) + "/f" + toString(i + 50) + ".txt")
+      out = tree.digest
+      i += 1
+    }
+    out
+  }
+
+  let seed(files: Int!): Directory! {
+    container
+      .from("alpine:3.20")
+      .withExec(["sh", "-c", "mkdir -p /tree && cd /tree && i=1; while [ $i -le " + toString(files) + " ]; do d=d$((i % 50)); mkdir -p $d; echo file $i > $d/f$i.txt; i=$((i + 1)); done"])
+      .directory("/tree")
+  }
+}

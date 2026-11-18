@@ -1,0 +1,20 @@
+"""
+The Dang half of the memory soak's module calls: an object whose state
+grows with every call, and a directory edit made from that state.
+"""
+type Soakdang {
+  pub items: [String!]! = []
+
+  pub add(n: Int!): Soakdang! {
+    self.items = items + ["dang item " + toString(n) + " " + "y".padRight(128)]
+    self
+  }
+
+  pub count: Int! {
+    items.length
+  }
+
+  pub edit(tree: Directory!, n: Int!): Directory! {
+    tree.withNewFile("dang/" + toString(n) + ".txt", items.join("\n"))
+  }
+}

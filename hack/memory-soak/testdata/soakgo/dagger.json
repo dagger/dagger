@@ -1,0 +1,10 @@
+{
+  "name": "soakgo",
+  "sdk": {
+    "source": "go"
+  },
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
+}
