@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/clientdb"
 )
@@ -41,7 +42,7 @@ func findCallsFullLoad(ctx context.Context, read *clientdb.DB, re *regexp.Regexp
 	total := len(db.Calls)
 	hidden := 0
 	if exclude != "" {
-		for dig := range agentConversationCalls(db.Calls, exclude) {
+		for dig := range agentConversationCallsFullLoad(db.Calls, exclude) {
 			if re.MatchString(dagui.CallSearchText(db.Calls[dig])) {
 				hidden++
 			}
@@ -64,6 +65,47 @@ func findCallsFullLoad(ctx context.Context, read *clientdb.DB, re *regexp.Regexp
 		lines = append(lines, note)
 	}
 	return strings.Join(lines, "\n") + "\n", nil
+}
+
+// agentConversationCallsFullLoad is how the full load found an agent's own
+// conversation, over every frame of the session: the reference for
+// ownedConversationCalls.
+func agentConversationCallsFullLoad(calls map[string]*callpbv1.Call, handle string) map[string]struct{} {
+	owners := make(map[string]string, len(calls))
+	for dig := range calls {
+		var chain []string
+		owner := ""
+		for cur := dig; cur != "" && len(chain) < 1<<16; {
+			if known, ok := owners[cur]; ok {
+				owner = known
+				break
+			}
+			frame := calls[cur]
+			if frame == nil || frame.GetType().GetNamedType() != "LLM" {
+				break
+			}
+			chain = append(chain, cur)
+			if frame.GetField() == "__withOwnerAgent" {
+				for _, arg := range frame.GetArgs() {
+					if arg.GetName() == "handle" {
+						owner = arg.GetValue().GetString_()
+					}
+				}
+				break
+			}
+			cur = frame.GetReceiverDigest()
+		}
+		for _, d := range chain {
+			owners[d] = owner
+		}
+	}
+	owned := map[string]struct{}{}
+	for dig, owner := range owners {
+		if owner == handle {
+			owned[dig] = struct{}{}
+		}
+	}
+	return owned
 }
 
 // TestFindCallsMatchesFullLoad runs call searches through the streaming
