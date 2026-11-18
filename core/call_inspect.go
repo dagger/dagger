@@ -163,21 +163,50 @@ func rawIDBytes(encoded string) int {
 func loadCallClosure(ctx context.Context, read *clientdb.DB, db *dagui.DB, digest string) error {
 	pending := map[string]struct{}{digest: {}}
 	visited := map[string]struct{}{}
-	stores, release, err := read.InspectionStores(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
+	// Imported traces are opened only once the live store lacks a frame, so
+	// a live recipe never reopens an idle import. A frame the live store
+	// holds wins anyway (see ingestCallFrames).
+	var imports []*clientdb.DB
+	opened := false
+	defer func() {
+		for _, store := range imports {
+			store.Close()
+		}
+	}()
 	for len(pending) > 0 {
 		for d := range pending {
 			visited[d] = struct{}{}
 		}
-		for _, source := range stores {
+		missing := func() bool {
+			for d := range pending {
+				if db.Calls[d] == nil {
+					return true
+				}
+			}
+			return false
+		}
+		load := func(source *clientdb.DB) error {
 			frames, err := source.SelectCallFrames(ctx, pending)
 			if err != nil {
 				return fmt.Errorf("select call frames: %w", err)
 			}
-			if err := ingestCallFrames(ctx, db, frames); err != nil {
+			return ingestCallFrames(ctx, db, frames)
+		}
+		if err := load(read); err != nil {
+			return err
+		}
+		if missing() && !opened && read.HasImports() {
+			stores, _, err := read.InspectionStores(ctx)
+			if err != nil {
+				return err
+			}
+			imports, opened = stores[1:], true
+		}
+		for _, source := range imports {
+			if !missing() {
+				break
+			}
+			if err := load(source); err != nil {
 				return err
 			}
 		}
