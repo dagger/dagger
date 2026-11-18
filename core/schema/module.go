@@ -1928,12 +1928,6 @@ func (s *moduleSchema) functionWithCachePolicy(
 				args.TimeToLive.Value,
 			)
 
-		case ttlDuration > core.MaxFunctionCacheTTLSeconds*time.Second:
-			return nil, fmt.Errorf("time to live duration must be at most %q, got %q",
-				(core.MaxFunctionCacheTTLSeconds * time.Second).String(),
-				args.TimeToLive.Value,
-			)
-
 		default:
 			fn.CacheTTLSeconds = dagql.NonNull(dagql.Int(int(ttlDuration.Seconds())))
 		}

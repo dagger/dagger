@@ -328,11 +328,10 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 		spec.IsPersistable = false
 
 	case FunctionCachePolicyDefault:
+		// Without a declared TTL, the result doesn't expire: it is kept until
+		// the engine prunes it for space.
 		if fn.CacheTTLSeconds.Valid {
 			spec.TTL = fn.CacheTTLSeconds.Value.Int64()
-		} else {
-			// we still set a max TTL for now as a very primitive form of pruning
-			spec.TTL = MaxFunctionCacheTTLSeconds
 		}
 	}
 
