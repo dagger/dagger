@@ -3,6 +3,7 @@ package dangv2
 import (
 	"encoding/json"
 	"fmt"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -72,6 +73,39 @@ func TestReceivedRetention(t *testing.T) {
 	}
 }
 
+// TestReceivedSizeEstimate compares receivedSize with the heap that decoded
+// values of different shapes retain.
+func TestReceivedSizeEstimate(t *testing.T) {
+	const items = 10000
+	shapes := map[string]func(i int) any{
+		"long strings":   func(i int) any { return fmt.Sprintf("%d:%s", i, strings.Repeat("h", 300)) },
+		"short strings":  func(i int) any { return fmt.Sprintf("s%d", i) },
+		"numbers":        func(i int) any { return i },
+		"small objects":  func(i int) any { return map[string]any{"name": fmt.Sprintf("n%d", i), "value": i} },
+		"larger objects": func(i int) any { return map[string]any{"a": i, "b": "x", "c": true, "d": nil, "e": "y", "f": i, "g": "z", "h": i, "i": "w", "j": i} },
+	}
+	for name, shape := range shapes {
+		t.Run(name, func(t *testing.T) {
+			list := make([]any, items)
+			for i := range list {
+				list[i] = shape(i)
+			}
+			data, err := json.Marshal(list)
+			require.NoError(t, err)
+			before := liveHeap()
+			val, err := decodeReceivedJSON(data)
+			require.NoError(t, err)
+			retained := float64(int64(liveHeap()) - int64(before))
+			estimate := float64(receivedSize(val))
+			t.Logf("JSON %.2f MiB, retained %.2f MiB, estimated %.2f MiB (retained/estimate %.2f)",
+				float64(len(data))/(1<<20), retained/(1<<20), estimate/(1<<20), retained/estimate)
+			require.InDelta(t, 1, retained/estimate, 0.5, "the estimate is within half of what is retained")
+			goruntime.KeepAlive(val)
+			goruntime.KeepAlive(data)
+		})
+	}
+}
+
 // TestReceivedRetentionBounded shows that what a session keeps stops growing
 // at its bound, with a bound small enough for a quick test.
 func TestReceivedRetentionBounded(t *testing.T) {
@@ -91,7 +125,7 @@ func TestReceivedRetentionBounded(t *testing.T) {
 	values.mu.Lock()
 	weight, kept := values.weight, values.lru.Len()
 	values.mu.Unlock()
-	t.Logf("400 calls: %.2f MiB of input JSON, %d values kept from %.2f MiB of it, %.2f MiB retained",
+	t.Logf("400 calls: %.2f MiB of input JSON, %d values kept, estimated at %.2f MiB, %.2f MiB retained",
 		float64(inputBytes)/(1<<20), kept, float64(weight)/(1<<20), float64(retained)/(1<<20))
 	require.LessOrEqual(t, weight, maxWeight)
 }

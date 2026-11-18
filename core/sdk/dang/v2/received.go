@@ -53,18 +53,22 @@ func decodeReceived(ctx context.Context, data []byte) (any, error) {
 	return values.decode(ctx, data)
 }
 
-// maxReceivedValuesWeight bounds the JSON, in bytes, whose decoded values a
-// session keeps. A decoded value takes about one and a half times its JSON.
+// maxReceivedValuesWeight bounds the estimated memory, in bytes, of the
+// decoded values a session keeps in its LRU (see receivedSize).
 const maxReceivedValuesWeight = 32 << 20
 
 // receivedValues holds a session's most recently received decoded values,
 // keyed by their JSON's content. Calls that receive the same JSON at once
-// share one decoding. Once the values kept come from more than maxWeight
-// bytes of JSON, the least recently used are dropped: a session's calls
+// share one decoding. Once the values kept are estimated to take more than
+// maxWeight bytes, the least recently used are dropped: a session's calls
 // receive ever new arguments, and an object's parent changes with its state,
 // so keeping every value would keep everything the session was ever sent. A
 // dropped value stays valid for the calls already using it; the next call to
 // receive its JSON decodes it again.
+//
+// A value larger than maxWeight on its own, such as a large collection whose
+// items are all being called, is kept apart, the most recent one only, so
+// that it neither empties the LRU nor gets decoded again by every call.
 type receivedValues struct {
 	maxWeight int
 
@@ -73,6 +77,8 @@ type receivedValues struct {
 	// lru holds the kept *receivedEntry values, most recently used first.
 	lru    *list.List
 	weight int
+	// large is the most recent value too large for the LRU.
+	large *receivedEntry
 }
 
 // receivedKey identifies received JSON by its length and content hash.
@@ -83,6 +89,12 @@ type receivedKey struct {
 
 type receivedEntry struct {
 	key receivedKey
+	// weight is what the entry counts toward receivedValues.weight: its JSON's
+	// size while it is decoded, then its estimated size.
+	weight int
+	// elem is the entry's element of the LRU while it is kept there; guarded
+	// by receivedValues.mu.
+	elem *list.Element
 	// done is closed once val and err are set.
 	done chan struct{}
 	val  any
@@ -94,15 +106,10 @@ func newReceivedValues(maxWeight int) *receivedValues {
 }
 
 func (r *receivedValues) decode(ctx context.Context, data []byte) (any, error) {
-	if len(data) > r.maxWeight {
-		// It would never be kept, and keeping it would drop everything else.
-		return decodeReceivedJSON(data)
-	}
 	key := receivedKey{size: len(data), sum: xxh3.Hash128(data)}
 	r.mu.Lock()
-	if elem, ok := r.entries[key]; ok {
-		r.lru.MoveToFront(elem)
-		entry := elem.Value.(*receivedEntry)
+	entry := r.lookupLocked(key)
+	if entry != nil {
 		r.mu.Unlock()
 		select {
 		case <-entry.done:
@@ -111,39 +118,113 @@ func (r *receivedValues) decode(ctx context.Context, data []byte) (any, error) {
 			return nil, context.Cause(ctx)
 		}
 	}
-	entry := &receivedEntry{key: key, done: make(chan struct{})}
-	r.entries[key] = r.lru.PushFront(entry)
-	r.weight += key.size
-	r.evictLocked()
+	entry = &receivedEntry{key: key, weight: len(data), done: make(chan struct{})}
+	r.keepLocked(entry)
 	r.mu.Unlock()
 
 	// Decoding uses no context and always finishes, so the calls waiting on
 	// it never outlive it.
 	entry.val, entry.err = decodeReceivedJSON(data)
-	if entry.err != nil {
-		r.mu.Lock()
-		r.removeLocked(entry)
-		r.mu.Unlock()
+	var size int
+	if entry.err == nil {
+		size = receivedSize(entry.val)
 	}
+	r.mu.Lock()
+	r.removeLocked(entry)
+	// Keep it again at its decoded size, unless it was dropped meanwhile
+	// and another call is decoding the same JSON again.
+	if entry.err == nil && r.lookupLocked(key) == nil {
+		entry.weight = size
+		r.keepLocked(entry)
+	}
+	r.mu.Unlock()
 	close(entry.done)
 	return entry.val, entry.err
 }
 
-// evictLocked drops the least recently used values until the rest fit.
-func (r *receivedValues) evictLocked() {
-	for r.weight > r.maxWeight && r.lru.Len() > 0 {
+// lookupLocked returns the kept entry for key, marking it most recently used.
+func (r *receivedValues) lookupLocked(key receivedKey) *receivedEntry {
+	if elem, ok := r.entries[key]; ok {
+		r.lru.MoveToFront(elem)
+		return elem.Value.(*receivedEntry)
+	}
+	if r.large != nil && r.large.key == key {
+		return r.large
+	}
+	return nil
+}
+
+// keepLocked keeps entry as the most recently used, dropping the least
+// recently used entries that no longer fit.
+func (r *receivedValues) keepLocked(entry *receivedEntry) {
+	if entry.weight > r.maxWeight {
+		r.large = entry
+		return
+	}
+	entry.elem = r.lru.PushFront(entry)
+	r.entries[entry.key] = entry.elem
+	r.weight += entry.weight
+	for r.weight > r.maxWeight {
 		r.removeLocked(r.lru.Back().Value.(*receivedEntry))
 	}
 }
 
+// removeLocked forgets entry, if it is kept.
 func (r *receivedValues) removeLocked(entry *receivedEntry) {
-	elem, ok := r.entries[entry.key]
-	if !ok || elem.Value.(*receivedEntry) != entry {
+	if r.large == entry {
+		r.large = nil
 		return
 	}
-	delete(r.entries, entry.key)
-	r.lru.Remove(elem)
-	r.weight -= entry.key.size
+	if entry.elem == nil {
+		return
+	}
+	if r.entries[entry.key] == entry.elem {
+		delete(r.entries, entry.key)
+	}
+	r.lru.Remove(entry.elem)
+	entry.elem = nil
+	r.weight -= entry.weight
+}
+
+// receivedSize estimates the memory a decoded value takes, counting each
+// interned object once: Go's map, slice, string and interface layouts on a
+// 64-bit platform.
+func receivedSize(val any) int {
+	seen := map[*receivedObject]struct{}{}
+	var size func(any) int
+	size = func(val any) int {
+		switch v := val.(type) {
+		case *receivedObject:
+			if _, ok := seen[v]; ok {
+				return 0
+			}
+			seen[v] = struct{}{}
+			// The object, and a map of string to any: a header, and groups
+			// of eight 32-byte slots filled up to seven eighths.
+			n := 8 + 48 + 264
+			if len(v.fields) > 8 {
+				n = 8 + 64 + 48*len(v.fields)
+			}
+			for k, f := range v.fields {
+				n += len(k) + size(f)
+			}
+			return n
+		case []any:
+			// A boxed slice header and its elements.
+			n := 24 + 16*len(v)
+			for _, e := range v {
+				n += size(e)
+			}
+			return n
+		case string:
+			return 16 + len(v)
+		case json.Number:
+			return 16 + len(v)
+		default: // bool or nil, which take nothing of their own
+			return 0
+		}
+	}
+	return size(val)
 }
 
 func decodeReceivedJSON(data []byte) (any, error) {
