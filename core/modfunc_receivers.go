@@ -12,22 +12,27 @@ import (
 // session keeps converted (see convertedReceivers).
 const maxConvertedReceiversWeight = 32 << 20
 
-// maxLargeConvertedReceivers bounds the receivers larger than the bound on
-// their own that a session keeps converted.
+// maxLargeConvertedReceivers bounds the large receivers, more than a quarter
+// of the bound on their own, that a session keeps converted.
 const maxLargeConvertedReceivers = 4
+
+// convertedReceiverOverhead is what a kept conversion costs beside its JSON:
+// its entry, channel, list element and map slot.
+const convertedReceiverOverhead = 512
 
 // convertedReceivers holds a session's most recently used receiver
 // conversions. Calls that convert the same receiver at once share one
-// conversion. Once the JSON kept exceeds maxWeight bytes, the least recently
-// used conversions are dropped: an object never changes in place, so every
+// conversion. Once the conversions kept weigh more than maxWeight bytes, the
+// least recently used are dropped: an object never changes in place, so every
 // call on an evolving object has a new receiver, and keeping every conversion
-// would keep every state the session's objects went through. The next call
-// on a dropped receiver converts it again.
+// would keep a JSON copy of every state the session's objects went through,
+// beside the results the session holds. The next call on a dropped receiver
+// converts it again.
 //
-// A receiver larger than maxWeight on its own, such as a large collection
-// whose items are all being called, is kept apart among the
-// maxLargeConvertedReceivers most recently used such receivers, so that it
-// neither empties the LRU nor is converted again by every call.
+// A large receiver, weighing more than a quarter of maxWeight, such as a
+// large collection whose items are all being called, is kept apart among the
+// maxLargeConvertedReceivers most recently used large receivers, so that a
+// few of them used in turn neither empty the LRU nor evict each other.
 type convertedReceivers struct {
 	maxWeight int
 
@@ -76,8 +81,9 @@ func (r *convertedReceivers) get(ctx context.Context, key convertedReceiverKey, 
 		entry := r.lookupLocked(key)
 		if entry == nil {
 			entry = &convertedReceiver{key: key, done: make(chan struct{})}
-			// In flight, it weighs nothing; it is weighed once converted.
-			r.keepLocked(entry, 0)
+			// In flight, it weighs its overhead; it is weighed again once
+			// converted.
+			r.keepLocked(entry, convertedReceiverOverhead)
 			r.mu.Unlock()
 			return r.convert(ctx, entry, convert)
 		}
@@ -119,7 +125,7 @@ func (r *convertedReceivers) convert(ctx context.Context, entry *convertedReceiv
 	// Keep it at its size, unless it was dropped meanwhile and another call
 	// is converting the same receiver again.
 	if entry.err == nil && r.lookupLocked(entry.key) == nil {
-		r.keepLocked(entry, len(entry.json))
+		r.keepLocked(entry, convertedReceiverOverhead+len(entry.json))
 	}
 	r.mu.Unlock()
 	close(entry.done)
@@ -145,7 +151,7 @@ func (r *convertedReceivers) lookupLocked(key convertedReceiverKey) *convertedRe
 // keepLocked keeps entry, weighing weight, as the most recently used,
 // dropping the least recently used entries that no longer fit.
 func (r *convertedReceivers) keepLocked(entry *convertedReceiver, weight int) {
-	if weight > r.maxWeight {
+	if weight > r.maxWeight/4 {
 		if len(r.large) >= maxLargeConvertedReceivers {
 			clear(r.large[maxLargeConvertedReceivers-1:])
 			r.large = r.large[:maxLargeConvertedReceivers-1]
