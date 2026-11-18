@@ -143,6 +143,7 @@ func (s *Store) openManager(t testing.TB) {
 		},
 		SharedMountLinger:   s.SharedMountLinger,
 		MaxIdleSharedMounts: s.MaxIdleSharedMounts,
+		ContentHashDir:      filepath.Join(s.root, "contenthash"),
 	})
 	require.NoError(t, err)
 }

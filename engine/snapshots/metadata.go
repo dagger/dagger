@@ -91,7 +91,12 @@ type metadataStore struct {
 	closed bool
 
 	// Persisted hash records for snapshots whose metadata has not been opened.
+	// Unused with hashFiles, which holds those records too.
 	pendingContentHashes map[string][]byte
+
+	// hashFiles, when set, keeps the content-hash trees on disk instead of
+	// in external and pendingContentHashes.
+	hashFiles *contentHashFiles
 }
 
 func newMetadataStore() *metadataStore {
@@ -99,6 +104,11 @@ func newMetadataStore() *metadataStore {
 		refs:  make(map[string]*cacheMetadata),
 		index: make(map[string]map[string]struct{}),
 	}
+}
+
+// contentHashOnDisk says key's values are kept in hashFiles.
+func (s *metadataStore) contentHashOnDisk(key string) bool {
+	return s.hashFiles != nil && key == ContentHashMetadataKey
 }
 
 func (s *metadataStore) get(id string) (*cacheMetadata, bool) {
@@ -134,6 +144,13 @@ func (s *metadataStore) clear(id string) {
 	defer s.mu.Unlock()
 	delete(s.pendingContentHashes, id)
 	md, ok := s.refs[id]
+	if s.hashFiles != nil {
+		s.hashFiles.remove(id, func() {
+			if ok {
+				md.contentHashGone = true
+			}
+		})
+	}
 	if !ok {
 		return
 	}
@@ -185,6 +202,11 @@ func (cm *snapshotManager) ForgetCollectedSnapshots(ctx context.Context) error {
 	}
 	for id := range cm.metadataStore.pendingContentHashes {
 		candidates[id] = struct{}{}
+	}
+	if cm.metadataStore.hashFiles != nil {
+		for _, id := range cm.metadataStore.hashFiles.list() {
+			candidates[id] = struct{}{}
+		}
 	}
 	cm.metadataStore.mu.RUnlock()
 	for id := range cm.records {
@@ -266,6 +288,9 @@ func (s *metadataStore) close() error {
 	s.refs = nil
 	s.index = nil
 	s.pendingContentHashes = nil
+	if s.hashFiles != nil {
+		s.hashFiles.close()
+	}
 	return nil
 }
 
@@ -276,6 +301,9 @@ type cacheMetadata struct {
 	indexes  map[string]string // key -> index
 	external map[string][]byte
 	queue    []func(*cacheMetadata) error
+	// contentHashGone is set, under store.hashFiles.mu, once the metadata is
+	// dropped: a tree saved for it later is discarded.
+	contentHashGone bool
 }
 
 func (cm *snapshotManager) Search(ctx context.Context, idx string, prefixOnly bool) ([]RefMetadata, error) {
@@ -442,6 +470,16 @@ func (md *cacheMetadata) GetCreatedAt() time.Time {
 }
 
 func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
+	if md.store.contentHashOnDisk(s) {
+		dt, ok, err := md.store.hashFiles.read(md.id, func() bool { return md.contentHashGone })
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("not found")
+		}
+		return dt, nil
+	}
 	md.store.mu.RLock()
 	defer md.store.mu.RUnlock()
 	dt, ok := md.external[s]
@@ -454,6 +492,9 @@ func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 }
 
 func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
+	if md.store.contentHashOnDisk(s) {
+		return md.store.hashFiles.write(md.id, dt, func() bool { return md.contentHashGone })
+	}
 	md.store.mu.Lock()
 	defer md.store.mu.Unlock()
 	cpy := make([]byte, len(dt))
