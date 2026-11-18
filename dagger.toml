@@ -2433,6 +2433,8 @@ main = true
 
 [modules.typescript-sdk]
 source = "github.com/dagger/typescript-sdk@main"
+# No module in this workspace uses it.
+check.skip = ["generate/stale"]
 
 [sdks.typescript]
 module = "typescript-sdk"
