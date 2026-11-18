@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Khan/genqlient/graphql"
@@ -12,7 +13,9 @@ import (
 	"github.com/vito/dang/v2/pkg/dang"
 	"github.com/vito/dang/v2/pkg/hm"
 	"github.com/vito/dang/v2/pkg/introspection"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 )
 
@@ -195,6 +198,68 @@ func TestConvertSharedDecodedValuePerCall(t *testing.T) {
 		}
 	}
 	require.NotSame(t, childrenA[0], childrenB[0])
+}
+
+func TestReceivedValuesKeepRecentlyUsed(t *testing.T) {
+	t.Parallel()
+
+	obj := func(name string) []byte { return []byte(`{"name":"` + name + `"}`) }
+	a, b, c := obj("a"), obj("b"), obj("c")
+	// Room for two of them.
+	values := newReceivedValues(2 * len(a))
+	decode := func(data []byte) *receivedObject {
+		val, err := values.decode(t.Context(), data)
+		require.NoError(t, err)
+		return val.(*receivedObject)
+	}
+	first := decode(a)
+	require.Same(t, first, decode(a), "calls receiving the same JSON share its decoded value")
+	firstB := decode(b)
+	require.Same(t, first, decode(a))
+	decode(c)
+	require.Same(t, first, decode(a), "a recently used value is kept")
+	againB := decode(b)
+	require.NotSame(t, firstB, againB, "the least recently used value was dropped")
+	require.Equal(t, firstB.fields, againB.fields)
+
+	big := []byte(`{"name":"` + strings.Repeat("x", 4*len(a)) + `"}`)
+	val, err := values.decode(t.Context(), big)
+	require.NoError(t, err)
+	require.Equal(t, receivedJSON(t, big), plainReceived(val), "JSON beyond the bound is decoded, not kept")
+
+	_, err = values.decode(t.Context(), []byte(`{"name":`))
+	require.Error(t, err)
+	values.mu.Lock()
+	defer values.mu.Unlock()
+	require.LessOrEqual(t, values.weight, values.maxWeight)
+	require.Len(t, values.entries, values.lru.Len())
+	for _, elem := range values.entries {
+		require.NoError(t, elem.Value.(*receivedEntry).err, "failures are not kept")
+	}
+}
+
+func TestReceivedValuesConcurrentAndReleased(t *testing.T) {
+	ctx := schemaCacheContext(t)
+	data := []byte(receivedCollectionJSON)
+	results := make([]any, 16)
+	var group errgroup.Group
+	for i := range results {
+		group.Go(func() error {
+			var err error
+			results[i], err = decodeReceived(ctx, data)
+			return err
+		})
+	}
+	require.NoError(t, group.Wait())
+	for _, got := range results[1:] {
+		require.Same(t, results[0], got)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, cache.EntryStats().CompletedArbitrary)
+	require.NoError(t, cache.ReleaseSession(ctx, "schema-test"))
+	require.NoError(t, cache.WaitSessionRelease(ctx, "schema-test"))
+	require.Zero(t, cache.EntryStats().CompletedArbitrary, "received values leave with their session")
 }
 
 type namedClient struct{ name string }
