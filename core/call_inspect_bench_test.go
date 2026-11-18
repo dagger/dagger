@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"runtime/metrics"
 	"sync/atomic"
 	"testing"
@@ -165,18 +166,21 @@ func BenchmarkFindCallsSessionWide(b *testing.B) {
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			re := regexp.MustCompile(tc.re)
+			// The peak, from one run collecting garbage eagerly, so the heap
+			// sampled is close to what the search holds live.
+			gc := debug.SetGCPercent(5)
+			stop := sampleHeapPeak()
+			if _, err := findCallsIn(b.Context(), store, re, 200, tc.exclude); err != nil {
+				b.Fatal(err)
+			}
+			peak := stop()
+			debug.SetGCPercent(gc)
 			b.ReportAllocs()
-			var peak uint64
+			b.ResetTimer()
 			for b.Loop() {
-				b.StopTimer()
-				stop := sampleHeapPeak()
-				b.StartTimer()
 				if _, err := findCallsIn(b.Context(), store, re, 200, tc.exclude); err != nil {
 					b.Fatal(err)
 				}
-				b.StopTimer()
-				peak = max(peak, stop())
-				b.StartTimer()
 			}
 			b.ReportMetric(float64(peak), "peak-heap-B")
 		})
