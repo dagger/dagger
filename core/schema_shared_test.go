@@ -122,6 +122,24 @@ func TestSharedSchemaKeepsClientState(t *testing.T) {
 	ctor := mod.Self().ObjectDefs[0].Self().AsObject.Value.Self().Constructor.Value.Self()
 	ctor.Args = append(ctor.Args, newTypeDefDetachedResult(t, f.dag, "shared-greeting",
 		NewFunctionArg("greeting", stringType, "", nil, "", "", nil, nil)))
+	// A Query field that reads client state the way core's resolvers do:
+	// the client's own from its root in the context, and nothing from the
+	// receiver, which on a shared server is the session's root.
+	type probed struct{ self, current *Query }
+	var probesMu sync.Mutex
+	var probes []probed
+	dagql.Fields[*Query]{
+		dagql.Func("clientProbe", func(ctx context.Context, self *Query, _ struct{}) (dagql.Boolean, error) {
+			current, err := CurrentQuery(ctx)
+			if err != nil {
+				return false, err
+			}
+			probesMu.Lock()
+			probes = append(probes, probed{self: self, current: current})
+			probesMu.Unlock()
+			return dagql.Boolean(!current.hostHistories().empty()), nil
+		}).DoNotCache("reads the calling client's state"),
+	}.Install(f.dag)
 	coreMod := &sharedTestCoreMod{base: f.dag}
 
 	type client struct {
@@ -165,6 +183,30 @@ func TestSharedSchemaKeepsClientState(t *testing.T) {
 	require.Equal(t, "from b:x", check(b, srvB, "from b", "x"),
 		"each client's constructor arguments reach its own calls")
 	require.Equal(t, "from a:y", check(a, srvA, "from a", "y"))
+
+	// Client a approves a host history donor and opens a cache volume; b
+	// does neither. Through the one server, each sees only its own.
+	a.root.hostHistories().register(hostHistoryKey{sha: "a"}, hostHistoryDonor{owner: "client-a", path: "/a"})
+	a.root.cacheVolumes()
+	probe := func(c client) bool {
+		t.Helper()
+		var out dagql.Boolean
+		require.NoError(t, srvA.Select(c.ctx, srvA.Root(), &out, dagql.Selector{Field: "clientProbe"}))
+		return bool(out)
+	}
+	require.True(t, probe(a), "a sees its own approved host history")
+	require.False(t, probe(b), "b does not see a's")
+	sharedRoot := shared.(*Query)
+	probesMu.Lock()
+	require.Len(t, probes, 2)
+	for i, want := range []*Query{a.root, b.root} {
+		require.Same(t, sharedRoot, probes[i].self, "the field's receiver is the shared root")
+		require.Same(t, want, probes[i].current, "the context holds the calling client's root")
+	}
+	probesMu.Unlock()
+	require.True(t, sharedRoot.hostHistories().empty(), "the shared root holds no client's host histories")
+	require.Nil(t, sharedRoot.cacheVolumeStore, "nor cache volumes")
+	require.Nil(t, sharedRoot.ConstructorArgs, "nor constructor arguments")
 
 	runtime.mu.Lock()
 	require.Equal(t, map[*Query]struct{}{a.root: {}}, runtime.roots["client-a"],
