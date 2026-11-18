@@ -119,6 +119,41 @@ func TestModuleSDKInstanceServedOncePerSession(t *testing.T) {
 	require.Equal(t, 2, builds)
 }
 
+// A session keeps one SDK instance per client that loads the SDK, however
+// many calls use it, and none once it ends. Calls into a loaded module run
+// its stored runtime and never serve its SDK again, so the instances grow
+// with the clients that load modules, not with calls.
+func TestModuleSDKInstancesPerClientAndReleased(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close(context.Background())) })
+	ctx = engine.ContextWithClientMetadata(dagql.ContextWithCache(ctx, cache), &engine.ClientMetadata{ClientID: "cli", SessionID: "session"})
+
+	builds := 0
+	build := func(context.Context) (*moduleInstance, error) {
+		builds++
+		return &moduleInstance{}, nil
+	}
+	const clients, callsPerClient = 3, 5
+	for range clients {
+		// Each client has a root of its own.
+		key, err := moduleInstanceKey("session", &core.Query{}, 1, 0, nil)
+		require.NoError(t, err)
+		for range callsPerClient {
+			_, err := sessionModuleInstance(ctx, key, build)
+			require.NoError(t, err)
+		}
+	}
+	require.Equal(t, clients, builds)
+	require.Equal(t, clients, cache.EntryStats().CompletedArbitrary)
+	require.NoError(t, cache.ReleaseSession(ctx, "session"))
+	require.NoError(t, cache.WaitSessionRelease(ctx, "session"))
+	require.Zero(t, cache.EntryStats().CompletedArbitrary)
+}
+
 func TestModuleSDKInstanceFailedBuildNotKept(t *testing.T) {
 	t.Parallel()
 
