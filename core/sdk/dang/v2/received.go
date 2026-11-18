@@ -39,7 +39,8 @@ func decodeReceived(ctx context.Context, data []byte) (any, error) {
 	if cacheErr != nil || metadataErr != nil {
 		return decodeReceivedJSON(data)
 	}
-	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, "native-dang-received-values", func(context.Context) (any, error) {
+	// Arbitrary values are keyed by their key alone, whatever session asks.
+	res, err := cache.GetOrInitArbitrary(ctx, metadata.SessionID, "native-dang-received-values:"+metadata.SessionID, func(context.Context) (any, error) {
 		return newReceivedValues(maxReceivedValuesWeight), nil
 	})
 	if err != nil {
@@ -93,6 +94,10 @@ func newReceivedValues(maxWeight int) *receivedValues {
 }
 
 func (r *receivedValues) decode(ctx context.Context, data []byte) (any, error) {
+	if len(data) > r.maxWeight {
+		// It would never be kept, and keeping it would drop everything else.
+		return decodeReceivedJSON(data)
+	}
 	key := receivedKey{size: len(data), sum: xxh3.Hash128(data)}
 	r.mu.Lock()
 	if elem, ok := r.entries[key]; ok {
