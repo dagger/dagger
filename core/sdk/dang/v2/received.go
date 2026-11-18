@@ -67,8 +67,9 @@ const maxReceivedValuesWeight = 32 << 20
 // receive its JSON decodes it again.
 //
 // A value larger than maxWeight on its own, such as a large collection whose
-// items are all being called, is kept apart, the most recent one only, so
-// that it neither empties the LRU nor gets decoded again by every call.
+// items are all being called, is kept apart, among the maxLargeReceivedValues
+// most recently used such values, so that it neither empties the LRU nor gets
+// decoded again by every call.
 type receivedValues struct {
 	maxWeight int
 
@@ -77,9 +78,14 @@ type receivedValues struct {
 	// lru holds the kept *receivedEntry values, most recently used first.
 	lru    *list.List
 	weight int
-	// large is the most recent value too large for the LRU.
-	large *receivedEntry
+	// large holds the values too large for the LRU, most recently used first.
+	large []*receivedEntry
 }
+
+// maxLargeReceivedValues bounds the values larger than the LRU's bound that a
+// session keeps: a call's parent and argument, or collections iterated at
+// once.
+const maxLargeReceivedValues = 4
 
 // receivedKey identifies received JSON by its length and content hash.
 type receivedKey struct {
@@ -148,8 +154,12 @@ func (r *receivedValues) lookupLocked(key receivedKey) *receivedEntry {
 		r.lru.MoveToFront(elem)
 		return elem.Value.(*receivedEntry)
 	}
-	if r.large != nil && r.large.key == key {
-		return r.large
+	for i, entry := range r.large {
+		if entry.key == key {
+			copy(r.large[1:i+1], r.large[:i])
+			r.large[0] = entry
+			return entry
+		}
 	}
 	return nil
 }
@@ -158,7 +168,11 @@ func (r *receivedValues) lookupLocked(key receivedKey) *receivedEntry {
 // recently used entries that no longer fit.
 func (r *receivedValues) keepLocked(entry *receivedEntry) {
 	if entry.weight > r.maxWeight {
-		r.large = entry
+		if len(r.large) >= maxLargeReceivedValues {
+			clear(r.large[maxLargeReceivedValues-1:])
+			r.large = r.large[:maxLargeReceivedValues-1]
+		}
+		r.large = slices.Insert(r.large, 0, entry)
 		return
 	}
 	entry.elem = r.lru.PushFront(entry)
@@ -171,8 +185,8 @@ func (r *receivedValues) keepLocked(entry *receivedEntry) {
 
 // removeLocked forgets entry, if it is kept.
 func (r *receivedValues) removeLocked(entry *receivedEntry) {
-	if r.large == entry {
-		r.large = nil
+	if i := slices.Index(r.large, entry); i >= 0 {
+		r.large = slices.Delete(r.large, i, i+1)
 		return
 	}
 	if entry.elem == nil {
