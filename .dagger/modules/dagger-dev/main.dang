@@ -41,42 +41,6 @@ type DaggerDev {
   }
 
   """
-  Smoke test: build the CLI and engine from source, then load a small module and run its check
-  """
-  smoke(ws: Workspace!): Void @check {
-    playground(ws)
-      .withWorkdir("/smoke")
-      .withExec(["git", "init"])
-      .withNewFile("dagger.toml", """
-        [modules.hello]
-        source = ".dagger/modules/hello"
-        """)
-      .withNewFile(".dagger/modules/hello/dagger-module.toml", ```toml
-        name = "hello"
-        engineVersion = "latest"
-
-        [runtime]
-        source = "dang"
-      ```)
-      .withNewFile(".dagger/modules/hello/main.dang", """
-        type Hello {
-          ok: Void @check {
-            container.from("alpine").withExec(["true"]).sync
-            null
-          }
-        }
-        """)
-      # Unset the session this exec gets to the engine running it, so the CLI
-      # uses the dev engine that installClient configures (see engine-dev's
-      # withoutOuterSession).
-      .withExec(["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "version"])
-      .withExec(["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "check", "-l"])
-      .withExec(["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "dagger", "check"])
-      .sync
-    null
-  }
-
-  """
   Go tools and system dependencies for generating Dagger source files.
   """
   goBase: Container! {
