@@ -536,12 +536,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		return err
 	}
 
-	var cloudToken string
-	if v, ok := os.LookupEnv(drivers.EnvDaggerCloudToken); ok {
-		cloudToken = v
-	} else if _, ok := os.LookupEnv(envDaggerCloudCachetoken); ok {
-		cloudToken = v
-	}
+	cloudToken := os.Getenv(drivers.EnvDaggerCloudToken)
 
 	if c.CloudURLCallback != nil {
 		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
