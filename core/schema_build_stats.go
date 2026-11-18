@@ -21,9 +21,12 @@ type SchemaBuildStats struct {
 	// repeat cannot be told from a first build.
 	Unkeyed int64
 	// RepeatedInSession are servers for a module set this session had built a
-	// server for. A server is bound to one client's root: RepeatedOnOtherRoot
-	// are those on a root that had no server for the set, RepeatedOnSameRoot
-	// those on a root that had one. RepeatedIdentical, a part of
+	// server for. A server is built on one root: RepeatedOnOtherRoot are those
+	// on a root that had no server for the set, RepeatedOnSameRoot those on a
+	// root that had one. A set the session shares among its clients is built
+	// on the session's neutral root (SchemaBuilderMemo.sharedBuilder), so
+	// only a set that is not shared, such as one with .env user defaults, is
+	// built again on another client's root. RepeatedIdentical, a part of
 	// RepeatedOnSameRoot, also had the same module instances and install
 	// options as that earlier build: the same server, built again.
 	RepeatedInSession   int64

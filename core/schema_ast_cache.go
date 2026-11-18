@@ -23,21 +23,10 @@ var schemaASTs, _ = lru.New[string, *dagql.SchemaASTCache](128) // error is impo
 func schemaASTCache(mods []modInstall) *dagql.SchemaASTCache {
 	entries := make([]modDepEntry, len(mods))
 	for i, entry := range mods {
-		switch mod := entry.mod.(type) {
-		case *userMod:
-			if source := mod.res.Self().GetSource(); source != nil && source.UserDefaults != nil && len(source.UserDefaults.Environ) > 0 {
-				return nil
-			}
-		case coreSchemaForker:
-			// Core metadata varies by view, which the AST cache keys itself.
-			if stable, ok := mod.(interface{ SchemaASTCacheKey() string }); !ok || stable.SchemaASTCacheKey() == "" {
-				return nil
-			}
-		default:
-			// Other module implementations may install context-dependent metadata.
-			return nil
-		}
 		entries[i] = modDepEntry(entry)
+	}
+	if !clientIndependentSchema(entries) {
+		return nil
 	}
 	key, ok := schemaEntriesKey(entries, true)
 	if !ok {
