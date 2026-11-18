@@ -23,8 +23,8 @@ func TestConvertedReceiversKeepRecentlyUsed(t *testing.T) {
 			return []byte(name + strings.Repeat(" ", size-len(name))), nil
 		}
 	}
-	// Room for two 100-byte receivers.
-	receivers := newConvertedReceivers(250)
+	// Room for four 100-byte receivers; a 1000-byte one is large.
+	receivers := newConvertedReceivers(4*(convertedReceiverOverhead+100) + 100)
 	get := func(id uint64, scope string, size int) []byte {
 		got, err := receivers.get(t.Context(), convertedReceiverKey{resultID: id, scope: scope}, receiverJSON(fmt.Sprint(id, scope), size))
 		require.NoError(t, err)
@@ -35,29 +35,38 @@ func TestConvertedReceiversKeepRecentlyUsed(t *testing.T) {
 	require.EqualValues(t, 1, conversions.Load())
 	get(1, "view", 100)
 	require.EqualValues(t, 2, conversions.Load(), "each scope converts the receiver itself")
-	get(1, "", 100)
 	get(2, "", 100)
-	require.EqualValues(t, 3, conversions.Load())
+	get(3, "", 100)
+	require.EqualValues(t, 4, conversions.Load())
 	require.Same(t, &a[0], &get(1, "", 100)[0], "a recently used conversion is kept")
+	get(4, "", 100)
+	require.EqualValues(t, 5, conversions.Load())
+	require.Same(t, &a[0], &get(1, "", 100)[0])
 	get(1, "view", 100)
-	require.EqualValues(t, 4, conversions.Load(), "the least recently used conversion was dropped")
+	require.EqualValues(t, 6, conversions.Load(), "the least recently used conversion was dropped")
 
-	big := get(3, "", 1000)
-	require.Same(t, &big[0], &get(3, "", 1000)[0], "a receiver beyond the bound is kept apart")
-	require.Same(t, &a[0], &get(1, "", 100)[0], "a receiver beyond the bound drops nothing")
-	for id := range uint64(maxLargeConvertedReceivers) {
-		get(10+id, "", 1000)
+	// Large receivers used in turn keep each other.
+	big := get(10, "", 1000)
+	bigger := get(11, "", 1000)
+	for range 3 {
+		require.Same(t, &big[0], &get(10, "", 1000)[0], "a large receiver is kept apart")
+		require.Same(t, &bigger[0], &get(11, "", 1000)[0])
 	}
+	require.Same(t, &a[0], &get(1, "", 100)[0], "a large receiver drops nothing")
+	for id := range uint64(maxLargeConvertedReceivers - 1) {
+		get(20+id, "", 1000)
+	}
+	require.Same(t, &bigger[0], &get(11, "", 1000)[0])
 	before := conversions.Load()
-	get(3, "", 1000)
-	require.Equal(t, before+1, conversions.Load(), "only the most recently used receivers beyond the bound are kept")
+	get(10, "", 1000)
+	require.Equal(t, before+1, conversions.Load(), "only the most recently used large receivers are kept")
 
 	failure := errors.New("convert failed")
-	_, err := receivers.get(t.Context(), convertedReceiverKey{resultID: 4}, func(context.Context) ([]byte, error) { return nil, failure })
+	_, err := receivers.get(t.Context(), convertedReceiverKey{resultID: 40}, func(context.Context) ([]byte, error) { return nil, failure })
 	require.ErrorIs(t, err, failure)
-	got, err := receivers.get(t.Context(), convertedReceiverKey{resultID: 4}, receiverJSON("4", 10))
+	got, err := receivers.get(t.Context(), convertedReceiverKey{resultID: 40}, receiverJSON("40", 10))
 	require.NoError(t, err, "a failed conversion is not kept")
-	require.Equal(t, "4         ", string(got))
+	require.Equal(t, "40        ", string(got))
 
 	receivers.mu.Lock()
 	defer receivers.mu.Unlock()
@@ -68,6 +77,23 @@ func TestConvertedReceiversKeepRecentlyUsed(t *testing.T) {
 	}
 	require.Equal(t, receivers.weight, weight)
 	require.Len(t, receivers.entries, receivers.lru.Len())
+}
+
+// Tiny receivers count their entries' overhead toward the bound too.
+func TestConvertedReceiversBoundTinyReceivers(t *testing.T) {
+	t.Parallel()
+
+	const maxWeight = 64 << 10
+	receivers := newConvertedReceivers(maxWeight)
+	for id := range uint64(10000) {
+		_, err := receivers.get(t.Context(), convertedReceiverKey{resultID: id + 1}, func(context.Context) ([]byte, error) {
+			return []byte(`{"n":1}`), nil
+		})
+		require.NoError(t, err)
+	}
+	receivers.mu.Lock()
+	defer receivers.mu.Unlock()
+	require.LessOrEqual(t, receivers.lru.Len(), maxWeight/convertedReceiverOverhead)
 }
 
 func TestConvertedReceiversShareConversions(t *testing.T) {
