@@ -154,8 +154,11 @@ func (s *session) read() {
 		}
 		env, body, err := s.readEnvelope(data)
 		if err != nil {
-			s.cfg.Logger.Warn("remote cache: undecodable message", "error", err)
-			continue
+			// The service encodes every message itself, so the stream is
+			// broken, and what follows can't be trusted: the session ends,
+			// and the engine reconnects.
+			s.cancel(fmt.Errorf("undecodable message: %w", err))
+			return
 		}
 		s.dispatchBody(env, body)
 	}
