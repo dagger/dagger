@@ -625,9 +625,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				attaches = append(attaches, ownerLeaseAttach{resultID: res.id, key: key, refKey: link.RefKey})
 			}
 		}
-		// Leases attach on all cores. The snapshot manager serializes the
-		// attaches' changes to the ancestry the owner leases share, which
-		// is mostly one snapshot and one metadata write per lease.
+		// The snapshot manager runs these attaches one at a time: dagql
+		// owner leases share its ancestry lease. Each walks only to its
+		// snapshot's first ancestor another owner keeps, so it is about one
+		// snapshot and one metadata write.
 		if err := forEachIndexParallel(len(attaches), func(i int) error {
 			attach := attaches[i]
 			if err := c.snapshotManager.AttachLease(
