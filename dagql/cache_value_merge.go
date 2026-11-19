@@ -881,11 +881,8 @@ func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateR
 			if prep.prerelocated == nil {
 				prep.prerelocated = map[uint64]*prerelocatedRecord{}
 			}
-			from := make(map[uint64]uint64, len(p.numbers))
-			for provisional, n := range p.numbers {
-				from[uint64(n)] = provisional
-			}
-			prep.prerelocated[id] = &prerelocatedRecord{rec: p.record, numbers: p.numbers, from: from}
+			// One-to-one by earlyNumbers.
+			prep.prerelocated[id] = newPreparedRelocation(p.record, p.numbers)
 			call := prep.records[id].Call
 			prep.records[id] = PersistedRecord{ResultID: prep.firstID + id - 1, Call: call, Envelope: PersistedResultEnvelope{PendingOffers: p.offers}}
 		} else {
@@ -1732,9 +1729,26 @@ func (c *Cache) prerelocateMergeRows(prep *valueMergePrep) {
 		}
 		return row.res.id, true
 	}
-	var moved []uint64
+	// A record relocated as it was prepared is relocated again here, from
+	// its numbers, when this decision gives it others: another merge
+	// committed since the early decision, as a whole set merging on a lane
+	// beside this one's does.
+	finalErr := func(provisional uint64) (sharedResultID, error) {
+		n, ok := final(provisional)
+		if !ok {
+			return 0, errMergeRowOutsideClosure
+		}
+		return n, nil
+	}
+	var moved, again []uint64
 	for _, row := range commit.rows {
-		if !row.action.installs() || prep.prerelocated[row.ordinal] != nil {
+		if !row.action.installs() {
+			continue
+		}
+		if pre := prep.prerelocated[row.ordinal]; pre != nil {
+			if pre.from != nil && !pre.holds(finalErr) {
+				again = append(again, row.ordinal)
+			}
 			continue
 		}
 		for _, provisional := range prep.refs[row.ordinal] {
@@ -1766,12 +1780,29 @@ func (c *Cache) prerelocateMergeRows(prep *valueMergePrep) {
 		}
 		return nil
 	})
+	// A record relocated again stays the merge's only form of it, so it is
+	// taken only at numbers that each name one provisional number; any other
+	// is left to the commit, which relocates it from the numbers it has.
+	relocatedAgain := make([]*prerelocatedRecord, len(again))
+	_ = forEachIndexParallel(len(again), func(i int) error {
+		pre := prep.prerelocated[again[i]]
+		rec, numbers, err := pre.relocateFrom(again[i], finalErr)
+		if err == nil {
+			relocatedAgain[i] = newPreparedRelocation(rec, numbers)
+		}
+		return nil
+	})
 	if prep.prerelocated == nil {
 		prep.prerelocated = make(map[uint64]*prerelocatedRecord, len(moved))
 	}
 	for i, ordinal := range moved {
 		if relocated[i] != nil {
 			prep.prerelocated[ordinal] = relocated[i]
+		}
+	}
+	for i, ordinal := range again {
+		if relocatedAgain[i] != nil {
+			prep.prerelocated[ordinal] = relocatedAgain[i]
 		}
 	}
 	c.notePrerelocated(prep)
@@ -1848,7 +1879,7 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 			moved = moved || uint64(n) != provisional
 		}
 		rec := source
-		if pre, ok := prep.prerelocated[row.ordinal]; ok && pre.from != nil {
+		if pre := prep.prerelocated[row.ordinal]; pre != nil && pre.from != nil {
 			delete(prep.prerelocated, row.ordinal)
 			var err error
 			if rec, err = c.relocatePreparedRecordLocked(row.ordinal, pre, final); err != nil {
@@ -1920,18 +1951,43 @@ func (c *Cache) relocatePreparedRecordLocked(ordinal uint64, pre *prerelocatedRe
 	if c.testRelocatedUnderLock != nil {
 		c.testRelocatedUnderLock(ordinal)
 	}
-	return VisitEncodedReferences(pre.rec, func(ref *PersistedRef) error {
+	rec, _, err := pre.relocateFrom(ordinal, final)
+	return rec, err
+}
+
+// relocateFrom returns a record relocated as it was prepared, of ordinal, at
+// the number final gives the provisional number each of its numbers names
+// (from), with those numbers by provisional number.
+func (p *prerelocatedRecord) relocateFrom(ordinal uint64, final func(uint64) (sharedResultID, error)) (PersistedRecord, map[uint64]sharedResultID, error) {
+	numbers := map[uint64]sharedResultID{}
+	rec, err := VisitEncodedReferences(p.rec, func(ref *PersistedRef) error {
 		if ref.RecipeID != nil || ref.ResultID == 0 {
 			return nil
 		}
-		provisional, ok := pre.from[ref.ResultID]
+		provisional, ok := p.from[ref.ResultID]
 		if !ok {
 			return fmt.Errorf("merge values: row %d's reference %d names no row", ordinal, ref.ResultID)
 		}
 		n, err := final(provisional)
+		numbers[provisional] = n
 		ref.ResultID = uint64(n)
 		return err
 	})
+	return rec, numbers, err
+}
+
+// newPreparedRelocation is a record relocated as it was prepared at numbers,
+// by provisional number, with their inverse (prerelocatedRecord.from), or
+// nil when two provisional numbers have one number.
+func newPreparedRelocation(rec PersistedRecord, numbers map[uint64]sharedResultID) *prerelocatedRecord {
+	from := make(map[uint64]uint64, len(numbers))
+	for provisional, n := range numbers {
+		if _, ok := from[uint64(n)]; ok {
+			return nil
+		}
+		from[uint64(n)] = provisional
+	}
+	return &prerelocatedRecord{rec: rec, numbers: numbers, from: from}
 }
 
 // compactOfferOwners lists each offer owner's dependencies once, sorted. Two

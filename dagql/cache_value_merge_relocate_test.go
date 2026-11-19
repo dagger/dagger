@@ -2,10 +2,13 @@ package dagql
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -214,4 +217,156 @@ func TestPreparedMergeRelocatesBeforeItsCommit(t *testing.T) {
 	require.True(t, reply.Committed)
 	require.Equal(t, []bool{false}, relocatedWhileCommitting, "relocated once, in the prepare")
 	require.Empty(t, under, "no record is relocated under the graph lock")
+}
+
+// mergeTestEntryNames names each of a cache's entries by its recipes, which
+// two caches share where their merges reserved numbers in another order.
+// Requires egraphMu.
+func mergeTestEntryNames(c *Cache) map[uint64]string {
+	names := make(map[uint64]string, len(c.resultsByID))
+	for id, res := range c.resultsByID {
+		keys := make([]string, 0, len(res.recipeKeys))
+		for _, key := range res.recipeKeys {
+			keys = append(keys, key.String())
+		}
+		slices.Sort(keys)
+		names[uint64(id)] = strings.Join(keys, ",")
+	}
+	return names
+}
+
+// mergeTestStateByRecipe is a cache's entries as merge leaves them, as
+// mergeTestState gives them, with each entry named by its recipes in place
+// of its number: as itself, in its record's references and in its
+// dependencies.
+func mergeTestStateByRecipe(t *testing.T, c *Cache) []string {
+	t.Helper()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	names := mergeTestEntryNames(c)
+	sorted := slices.Sorted(func(yield func(string) bool) {
+		for _, name := range names {
+			if !yield(name) {
+				return
+			}
+		}
+	})
+	place := map[string]uint64{}
+	for i, name := range sorted {
+		place[name] = uint64(i + 1)
+	}
+	var out []string
+	for id, res := range c.resultsByID {
+		var deps []string
+		for dep := range res.deps {
+			deps = append(deps, names[uint64(dep)])
+		}
+		slices.Sort(deps)
+		record := "none"
+		if res.persistedEnvelope != nil {
+			rec, err := VisitEncodedReferences(PersistedRecord{ResultID: uint64(id), Envelope: *res.persistedEnvelope, Call: res.loadResultCall()}, func(ref *PersistedRef) error {
+				if ref.RecipeID == nil && ref.ResultID != 0 {
+					ref.ResultID = place[names[ref.ResultID]]
+				}
+				return nil
+			})
+			require.NoError(t, err)
+			raw, err := json.Marshal(rec)
+			require.NoError(t, err)
+			record = string(raw)
+		}
+		out = append(out, fmt.Sprintf("%s deps=%v record=%s", names[uint64(id)], deps, record))
+	}
+	slices.Sort(out)
+	return out
+}
+
+// Two whole sets that overtake each other land as they do one after the
+// other. An engine relocates the root's record to its final numbers as it
+// prepares it, by a decision made while the shared row had no entry; another
+// restore then creates that entry, so the root's reference to it moves
+// again. The root is relocated again before its commit takes the lock when
+// the other restore committed during its preparation, and under the lock
+// when it committed after. Either way the same entries hold the same
+// records, and the reply names, for each record, the entry of its recipe.
+// Entry numbers can differ with the order the merges reserved them in, so
+// entries are compared by their recipes.
+func TestRestoreValuesOvertakenAsPreparedLandsTheSame(t *testing.T) {
+	t.Parallel()
+	sctx, source, srv := transferTestCache(t)
+	kept := persistedListTestResult(t, sctx, source, srv, "overtaken-kept", String("kept"))
+	shared := persistedListTestResult(t, sctx, source, srv, "overtaken-shared", String("shared"))
+	root := persistedListTestResult(t, sctx, source, srv, "overtaken-root", DynamicResultArrayOutput{Elem: String(""), Values: []AnyResult{kept, shared}})
+	keptBundle := exportTestBundle(t, sctx, source, kept)
+	sharedBundle := exportTestBundle(t, sctx, source, shared)
+	rootBundle := exportTestBundle(t, sctx, source, root)
+	require.Len(t, rootBundle.Values, 3)
+
+	type landing struct {
+		state []string
+		reply []string
+		rows  MergeRowCounts
+		under int
+	}
+	land := func(t *testing.T, order string) landing {
+		ctx, c, _ := transferTestCache(t)
+		var under atomic.Int64
+		c.testRelocatedUnderLock = func(uint64) { under.Add(1) }
+		restore := func(bundle ValueBundle) MergeReply {
+			reply, err := c.RestoreValues(ctx, bundle, nil)
+			require.NoError(t, err)
+			require.True(t, reply.Committed)
+			t.Cleanup(func() { require.NoError(t, reply.Release(context.Background())) })
+			return reply
+		}
+		restore(keptBundle)
+		var reply MergeReply
+		switch order {
+		case "one after the other":
+			restore(sharedBundle)
+			reply = restore(rootBundle)
+		case "overtaken as it prepares":
+			var overtaken atomic.Bool
+			c.testRecordPayloadPreparing = func(uint64) error {
+				if overtaken.CompareAndSwap(false, true) {
+					restore(sharedBundle)
+				}
+				return nil
+			}
+			reply = restore(rootBundle)
+			c.testRecordPayloadPreparing = nil
+			require.True(t, overtaken.Load())
+		case "overtaken before its commit":
+			p, err := c.PrepareValueMerge(ctx, cloudCacheID, rootBundle)
+			require.NoError(t, err)
+			p.restore, p.hold = true, true
+			restore(sharedBundle)
+			reply, err = c.CommitValueMerge(ctx, p)
+			require.NoError(t, err)
+			require.True(t, reply.Committed)
+			t.Cleanup(func() { require.NoError(t, reply.Release(context.Background())) })
+		}
+		c.egraphMu.RLock()
+		names := mergeTestEntryNames(c)
+		c.egraphMu.RUnlock()
+		var landed []string
+		for _, value := range reply.Values {
+			landed = append(landed, fmt.Sprintf("%d=%s", value.Ordinal, names[value.Number]))
+		}
+		slices.Sort(landed)
+		return landing{state: mergeTestStateByRecipe(t, c), reply: landed, rows: reply.Rows, under: int(under.Load())}
+	}
+	want := land(t, "one after the other")
+	require.Len(t, want.reply, 3)
+	require.Zero(t, want.under)
+	for order, under := range map[string]int{"overtaken as it prepares": 0, "overtaken before its commit": 1} {
+		t.Run(order, func(t *testing.T) {
+			t.Parallel()
+			got := land(t, order)
+			require.Equal(t, want.state, got.state, "the same entries hold the same records")
+			require.Equal(t, want.reply, got.reply, "each record's reply names the entry of its recipe")
+			require.Equal(t, want.rows, got.rows)
+			require.Equal(t, under, got.under, "records relocated again under the lock")
+		})
+	}
 }
