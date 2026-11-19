@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"fmt"
+	"time"
 
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 )
@@ -63,4 +64,6 @@ type persistStateSnapshot struct {
 	snapshotContentHashes []persistdb.MirrorSnapshotContentHash
 	importedLayerByBlob   []persistdb.MirrorImportedLayerBlobIndex
 	importedLayerByDiff   []persistdb.MirrorImportedLayerDiffIndex
+	// held is how long taking the snapshot held egraphMu for reading.
+	held time.Duration
 }
