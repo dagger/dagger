@@ -178,6 +178,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			hasValue:              payload.hasValue,
 			sessionResourceHandle: res.sessionResourceHandle,
 			persistedEnvelope:     payload.persistedEnvelope,
+			firstUse:              payload.firstUse,
 			stored:                payload.stored,
 			snapshotOwnerLinks:    payload.snapshotOwnerLinks,
 			row: persistdb.MirrorResult{
@@ -661,6 +662,17 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		}
 	}()
 	if snapshot != nil && snapshot.persistedEnvelope != nil {
+		if snapshot.firstUse != nil {
+			// A record merged unprepared is saved prepared, its payload
+			// naming the cache's numbers; one whose payload fails is saved
+			// as an absent value, as a lookup would take it back.
+			prepared, err := prepareFirstUseRecord(PersistedRecord{ResultID: uint64(snapshot.resultID), Envelope: *snapshot.persistedEnvelope, Call: snapshot.frame, SnapshotLinks: snapshot.snapshotOwnerLinks}, snapshot.firstUse)
+			if err != nil {
+				slog.ErrorContext(ctx, "remote cache record's payload refused at its save", "file", snapshot.firstUse.source, "entry", uint64(snapshot.resultID), "error", err)
+				return encodePersistedAbsentValue(NewPersistEncodeContext(c, uint64(snapshot.resultID), snapshot.frame), uint64(snapshot.resultID), snapshot.sessionResourceHandle, true)
+			}
+			return PersistedResultEncoding{Envelope: prepared.Envelope, SnapshotLinks: prepared.SnapshotLinks}, nil
+		}
 		return PersistedResultEncoding{
 			Envelope:      *snapshot.persistedEnvelope,
 			SnapshotLinks: snapshot.snapshotOwnerLinks,

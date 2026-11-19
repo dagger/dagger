@@ -30,6 +30,11 @@ func TestMergePreparationRelocatesAsValidateThenVisit(t *testing.T) {
 		}
 	}
 
+	// Without their parts, the records are prepared as they land, as a
+	// merge prepares an engine's.
+	for i := range got.Bundle.Values {
+		got.Bundle.Values[i].Parts = nil
+	}
 	ctx, engine, _ := transferTestCache(t)
 	// The test reads each row's record as the bundle carried it, from the
 	// prepared merge: the preparation keeps its copies of them.
@@ -86,15 +91,21 @@ func TestMergePreparationRelocatesAsValidateThenVisit(t *testing.T) {
 }
 
 // A payload reference to a row the record doesn't depend on is refused, as
-// a call reference is.
+// a call reference is, by a merge that prepares the record as it lands: one
+// whose value carries no parts, as an engine sends it. A record from the
+// Cloud carrying its parts is refused at its first use instead
+// (TestMergedSetWithOneBadPayloadMissesOnlyThatRecord).
 func TestMergeValuesRefusesUndeclaredPayloadReference(t *testing.T) {
 	t.Parallel()
 	cctx, cloud, batch := storedBenchCloud(t)
 	got, err := cloud.StoredBundle(cctx, batch[:1], time.Now().Unix(), nil)
 	require.NoError(t, err)
-	// The bundle as its encoding carries it.
+	// The bundle as its encoding carries it, without its records' parts.
 	bundle, err := cloneValueBundle(got.Bundle)
 	require.NoError(t, err)
+	for i := range bundle.Values {
+		bundle.Values[i].Parts = nil
+	}
 	var target *TransferredValue
 	for i := range bundle.Values {
 		if len(bundle.Values[i].DependencyIDs) == 1 {

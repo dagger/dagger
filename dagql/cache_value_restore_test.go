@@ -16,7 +16,7 @@ func TestRestoreValuesMergesAsMergeValues(t *testing.T) {
 	merged, err := m.MergeValues(mctx, cloudCacheID, bundle)
 	require.NoError(t, err)
 	rctx, r, _ := transferTestCache(t)
-	restored, err := r.RestoreValues(rctx, bundle, nil)
+	restored, err := r.RestoreValues(rctx, bundle, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, restored.Release(context.Background())) })
 	require.True(t, restored.Committed)

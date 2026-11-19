@@ -114,8 +114,9 @@ type Adapter interface {
 	// no retention edge, and returns what its commit left. The commit holds
 	// every entry it lands on until the reply's Release
 	// (dagql.Cache.RestoreValues). known are as for Merge: the rows the part
-	// lands on join them.
-	RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows) (dagql.MergeReply, error)
+	// lands on join them. source names the set file, for the log of a record
+	// whose payload fails at its first use.
+	RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, error)
 	// LateMisses returns the cache's lookup misses on this connection before
 	// before, not returned already, whose lookup now finds one of entries,
 	// by the engine's numbers (dagql.Cache.LateRemoteMisses).

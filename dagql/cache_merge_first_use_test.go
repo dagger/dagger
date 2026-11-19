@@ -1,0 +1,200 @@
+package dagql
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+// firstUseTestSet is a bundle the Cloud sends a fresh engine, decoded as its
+// encoding carries it, and the Cloud's numbers of its three records.
+type firstUseTestSet struct {
+	bundle         ValueBundle
+	good, bad, dep uint64
+}
+
+// firstUseTestCloud has an engine compute three results, a record "fu-bad"
+// whose payload names its dependency "fu-dep", and "fu-good", which proves a
+// part complete, and export the two roots to a Cloud. It returns the set the
+// Cloud sends a fresh engine for them.
+func firstUseTestCloud(t *testing.T) firstUseTestSet {
+	t.Helper()
+	actx, a, asrv := transferTestCache(t)
+	depRes := persistedListTestResult(t, actx, a, asrv, "fu-dep", &transferTestValue{Text: "dep"})
+	goodRes := persistedListTestResult(t, actx, a, asrv, "fu-good", &transferTestValue{Text: "ready"})
+	badRes := persistedListTestResult(t, actx, a, asrv, "fu-bad", &transferTestValue{Text: "bad", Child: uint64(depRes.cacheSharedResult().id)})
+	transferTestDependency(a, actx, badRes, depRes)
+	exported := exportTestBundle(t, actx, a, goodRes, badRes)
+
+	ctx, cloud := storedPartTestCache(t, WithBlobStore())
+	reply, err := cloud.MergeValues(ctx, "cache-a", exported)
+	require.NoError(t, err)
+	numbers := map[uint64]uint64{}
+	for _, value := range reply.Values {
+		for _, sent := range exported.Values {
+			if sent.Ordinal == value.Ordinal {
+				numbers[sent.SenderNumber] = value.Number
+			}
+		}
+	}
+	set := firstUseTestSet{good: numbers[uint64(goodRes.cacheSharedResult().id)], bad: numbers[uint64(badRes.cacheSharedResult().id)], dep: numbers[uint64(depRes.cacheSharedResult().id)]}
+	require.NotZero(t, set.good)
+	require.NotZero(t, set.bad)
+	require.NotZero(t, set.dep)
+	got, err := cloud.StoredBundle(ctx, []uint64{set.good, set.bad}, time.Now().Unix(), nil)
+	require.NoError(t, err)
+	set.bundle, err = cloneValueBundle(got.Bundle)
+	require.NoError(t, err)
+	return set
+}
+
+// spoil has the bad record's payload name a row it doesn't depend on, the
+// good record, and returns the set.
+func (set firstUseTestSet) spoil(t *testing.T) firstUseTestSet {
+	t.Helper()
+	bad := firstUseTestValue(t, set.bundle, set.bad)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(bad.Record.Envelope.ObjectJSON, &payload))
+	require.EqualValues(t, set.dep, payload["child"])
+	payload["child"] = set.good
+	raw, err := json.Marshal(payload)
+	require.NoError(t, err)
+	bad.Record.Envelope.ObjectJSON = raw
+	return set
+}
+
+// firstUseTestValue returns the bundle's value of the Cloud's entry number.
+func firstUseTestValue(t *testing.T, bundle ValueBundle, number uint64) *TransferredValue {
+	t.Helper()
+	for i := range bundle.Values {
+		if bundle.Values[i].SenderNumber == number {
+			return &bundle.Values[i]
+		}
+	}
+	t.Fatalf("the bundle carries no value of entry %d", number)
+	return nil
+}
+
+// firstUseTestLookup looks the field up on the engine and reports whether it
+// hit, and the text of the value it got.
+func firstUseTestLookup(t *testing.T, ctx context.Context, c *Cache, srv *Server, field string) (bool, string) {
+	t.Helper()
+	frame := &ResultCall{Kind: ResultCallKindField, Field: field, Type: NewResultCallType((&transferTestValue{}).Type())}
+	ran := false
+	res, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: frame, IsPersistable: true}, func(context.Context) (AnyResult, error) {
+		ran = true
+		return NewResultForCall(&transferTestValue{Text: "ran " + field}, frame)
+	})
+	require.NoError(t, err)
+	value, ok := res.Unwrap().(*transferTestValue)
+	require.True(t, ok, "the lookup returns the field's value")
+	return !ran, value.Text
+}
+
+// firstUseTestEntry returns the engine's entry of the merge reply's value of
+// the bundle's row for the Cloud's entry number.
+func firstUseTestEntry(t *testing.T, bundle ValueBundle, reply MergeReply, number uint64) uint64 {
+	t.Helper()
+	ordinal := firstUseTestValue(t, bundle, number).Ordinal
+	for _, value := range reply.Values {
+		if value.Ordinal == ordinal {
+			return value.Number
+		}
+	}
+	t.Fatalf("the reply has no value of row %d", ordinal)
+	return 0
+}
+
+// A set from the Cloud lands whole though one record's payload is bad: its
+// records are installed from their calls and offers, their payloads left
+// for their first use. Every other record hits with its value; the bad one,
+// refused at its first use, misses, so its call runs and its caller gets the
+// call's result; and its entry is then unknown to a hold, so an export that
+// names it answers that the engine no longer has it.
+func TestMergedSetWithOneBadPayloadMissesOnlyThatRecord(t *testing.T) {
+	t.Parallel()
+	set := firstUseTestCloud(t)
+	require.NotNil(t, firstUseTestValue(t, set.bundle, set.bad).Parts, "the Cloud's value carries its parts")
+	set = set.spoil(t)
+
+	ctx, engine, srv := transferTestCache(t)
+	reply, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err, "the set lands")
+	require.True(t, reply.Committed)
+	badEntry := firstUseTestEntry(t, set.bundle, reply, set.bad)
+
+	hit, text := firstUseTestLookup(t, ctx, engine, srv, "fu-good")
+	require.True(t, hit, "a good record hits")
+	require.Equal(t, "ready", text)
+	hit, text = firstUseTestLookup(t, ctx, engine, srv, "fu-dep")
+	require.True(t, hit, "the bad record's dependency hits")
+	require.Equal(t, "dep", text)
+
+	_, release, err := engine.HoldEntry(ctx, badEntry)
+	require.NoError(t, err, "before its first use, the bad record's entry is held as any")
+	require.NoError(t, release(ctx))
+	hit, text = firstUseTestLookup(t, ctx, engine, srv, "fu-bad")
+	require.False(t, hit, "the bad record misses at its first use")
+	require.Equal(t, "ran fu-bad", text, "its caller gets the call's result")
+	_, _, err = engine.HoldEntry(ctx, badEntry)
+	require.ErrorIs(t, err, ErrUnknownEntry, "the bad record's entry is gone for an export that names it")
+}
+
+// A set from the Cloud, whose records carry their parts, lands as the same
+// set does when its records are prepared as they land: the reply is the
+// same, value by value, and each root hits with the same value.
+func TestMergedSetRepliesAsPreparedSetDoes(t *testing.T) {
+	t.Parallel()
+	bundle := firstUseTestCloud(t).bundle
+	prepared := bundle
+	prepared.Values = append([]TransferredValue(nil), bundle.Values...)
+	for i := range prepared.Values {
+		prepared.Values[i].Parts = nil
+	}
+	merge := func(bundle ValueBundle) (MergeReply, map[string]string) {
+		ctx, engine, srv := transferTestCache(t)
+		reply, err := engine.MergeValues(ctx, cloudCacheID, bundle)
+		require.NoError(t, err)
+		texts := map[string]string{}
+		for _, field := range []string{"fu-good", "fu-bad", "fu-dep"} {
+			hit, text := firstUseTestLookup(t, ctx, engine, srv, field)
+			require.True(t, hit, "%s hits", field)
+			texts[field] = text
+		}
+		return reply, texts
+	}
+	wantReply, wantTexts := merge(prepared)
+	gotReply, gotTexts := merge(bundle)
+	require.Equal(t, wantTexts, gotTexts)
+	require.Len(t, gotReply.Values, len(wantReply.Values))
+	complete := 0
+	for i := range wantReply.Values {
+		want, got := wantReply.Values[i], gotReply.Values[i]
+		require.Equal(t, want.Ordinal, got.Ordinal)
+		require.Equal(t, want.Parts, got.Parts, "row %d's complete parts", want.Ordinal)
+		require.Equal(t, want.OfferedParts, got.OfferedParts, "row %d's offered parts", want.Ordinal)
+		require.Equal(t, want.Deps, got.Deps, "row %d's dependencies", want.Ordinal)
+		require.Equal(t, want.Stored, got.Stored, "row %d stored", want.Ordinal)
+		complete += len(got.Parts)
+	}
+	require.NotZero(t, complete, "the reply reports a complete part")
+}
+
+// firstUseTestPrepareAll prepares the payload of every record c holds merged
+// unprepared, as each one's first use would.
+func firstUseTestPrepareAll(t *testing.T, ctx context.Context, c *Cache) {
+	t.Helper()
+	c.egraphMu.RLock()
+	entries := make([]*sharedResult, 0, len(c.resultsByID))
+	for _, res := range c.resultsByID {
+		entries = append(entries, res)
+	}
+	c.egraphMu.RUnlock()
+	for _, res := range entries {
+		require.NoError(t, c.prepareMergedPayload(ctx, res))
+		require.False(t, res.holdsUnpreparedPayload())
+	}
+}

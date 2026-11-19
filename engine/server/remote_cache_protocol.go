@@ -585,14 +585,15 @@ func knowMerged(known *dagql.KnownRows, reply dagql.MergeReply) {
 // Release (dagql.Cache.RestoreValues). A part that commits is answered even
 // when a release after the commit failed, as a merge is; one refused for
 // stale held rows, such as a later part naming an earlier part's record the
-// engine no longer has, is an error, and holds nothing.
-func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows) (dagql.MergeReply, error) {
+// engine no longer has, is an error, and holds nothing. source names the set
+// file, for the log of a record whose payload fails at its first use.
+func (a *RemoteCacheAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, error) {
 	if a.stopped.Load() {
 		return dagql.MergeReply{}, ErrRemoteCacheAdapterClosed
 	}
 	start := time.Now()
 	reply, priorityWait, err := a.merge(ctx, "remotecache.restore", "", false, func(ctx context.Context) (dagql.MergeReply, error) {
-		return a.restoreValues(ctx, part, unretained)
+		return a.restoreValues(ctx, part, unretained, source)
 	})
 	slog.Info("remote cache restore merge",
 		"records", len(part.Values),
