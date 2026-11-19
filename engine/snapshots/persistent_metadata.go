@@ -248,14 +248,22 @@ func (cm *snapshotManager) persistentMetadataRows() (PersistentMetadataRows, []s
 
 	// Keep hash records only for owned immutable snapshots. Mutable mirrors
 	// and snapshots without owners do not belong in the durable checkpoint.
+	// The ancestors of the snapshots dagql owner leases own are owned too,
+	// through the ancestry lease.
 	files := cm.metadataStore.hashFiles
 	var hashIDs []string
 	cm.metadataStore.mu.RLock()
 	defer cm.metadataStore.mu.RUnlock()
+	owned := make(map[string]struct{}, len(cm.snapshotOwnerLeases)+len(cm.ancestry.children))
 	for snapshotID, owners := range cm.snapshotOwnerLeases {
-		if len(owners) == 0 {
-			continue
+		if len(owners) > 0 {
+			owned[snapshotID] = struct{}{}
 		}
+	}
+	for snapshotID := range cm.ancestry.children {
+		owned[snapshotID] = struct{}{}
+	}
+	for snapshotID := range owned {
 		if rec, ok := cm.records[snapshotID]; ok && rec.mutable {
 			continue
 		}
@@ -288,6 +296,9 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 	}
 	if snapshotID == "" {
 		return stderrors.New("attach lease: empty snapshot ID")
+	}
+	if ancestryManagedOwner(leaseID) {
+		return cm.attachOwnerLease(ctx, leaseID, snapshotID)
 	}
 
 	// ownerLeaseLocker serializes AttachLease and RemoveLease for one lease.
@@ -359,45 +370,57 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 	// snapshot's write failed. A snapshot whose blobs recorded meanwhile fail
 	// to attach is left without the owner; the first error is returned.
 	for _, currentSnapshotID := range snapshotIDs[:attachedSnapshots] {
-		attached := make(map[digest.Digest]struct{}, len(blobs[currentSnapshotID]))
-		for _, dgst := range blobs[currentSnapshotID] {
-			attached[dgst] = struct{}{}
-		}
-		for {
-			pending := cm.addSnapshotOwner(ctx, currentSnapshotID, leaseID, attached)
-			if len(pending) == 0 {
-				break
-			}
-			var added []digest.Digest
-			committed, attachErr := cm.writeLease(ctx, func(ctx context.Context) error {
-				for _, dgst := range pending {
-					if err := cm.attachOwnerContent(ctx, leaseID, currentSnapshotID, dgst); err != nil {
-						return err
-					}
-					added = append(added, dgst)
-				}
-				return nil
-			})
-			if committed {
-				for _, dgst := range added {
-					attached[dgst] = struct{}{}
-				}
-			}
-			if attachErr != nil {
-				if err == nil {
-					err = attachErr
-				}
-				break
-			}
+		if recordErr := cm.recordOwner(ctx, leaseID, currentSnapshotID, blobs[currentSnapshotID]); recordErr != nil && err == nil {
+			err = recordErr
 		}
 	}
 	if err != nil {
 		return err
 	}
+	return cm.validateAttached(ctx, leaseID, snapshotIDs)
+}
 
-	// AddResource does not check whether a target still exists. GC can finish
-	// between the ancestry walk and attachment. Once attached, surviving
-	// resources cannot be reclaimed by a later GC while this lease exists.
+// recordOwner records leaseID as an owner of snapshotID, whose writes
+// committed with the blobs in attachedBlobs, attaching to it first the blobs
+// recorded for the snapshot meanwhile. When one of those fails to attach,
+// the lease is left without the owner and the error is returned.
+func (cm *snapshotManager) recordOwner(ctx context.Context, leaseID, snapshotID string, attachedBlobs []digest.Digest) error {
+	attached := make(map[digest.Digest]struct{}, len(attachedBlobs))
+	for _, dgst := range attachedBlobs {
+		attached[dgst] = struct{}{}
+	}
+	for {
+		pending := cm.addSnapshotOwner(ctx, snapshotID, leaseID, attached)
+		if len(pending) == 0 {
+			return nil
+		}
+		var added []digest.Digest
+		committed, attachErr := cm.writeLease(ctx, func(ctx context.Context) error {
+			for _, dgst := range pending {
+				if err := cm.attachOwnerContent(ctx, leaseID, snapshotID, dgst); err != nil {
+					return err
+				}
+				added = append(added, dgst)
+			}
+			return nil
+		})
+		if committed {
+			for _, dgst := range added {
+				attached[dgst] = struct{}{}
+			}
+		}
+		if attachErr != nil {
+			return attachErr
+		}
+	}
+}
+
+// validateAttached checks that every snapshot just attached for leaseID
+// still exists. AddResource does not check whether a target still exists:
+// GC can finish between the ancestry walk and attachment. Once attached,
+// surviving resources cannot be reclaimed by a later GC while the lease
+// exists.
+func (cm *snapshotManager) validateAttached(ctx context.Context, leaseID string, snapshotIDs []string) error {
 	for _, currentSnapshotID := range snapshotIDs {
 		if _, err := cm.Snapshotter.Stat(ctx, currentSnapshotID); err != nil {
 			if cerrdefs.IsNotFound(err) {
@@ -406,7 +429,6 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 			return pkgerrors.Wrapf(err, "validate snapshot %s for owner lease %s", currentSnapshotID, leaseID)
 		}
 	}
-
 	return nil
 }
 
@@ -554,12 +576,18 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 
 	cm.ownerLeaseLocker.Lock(leaseID)
 	defer cm.ownerLeaseLocker.Unlock(leaseID)
+	managed := ancestryManagedOwner(leaseID)
+	if managed {
+		cm.ancestryMu.Lock()
+		defer cm.ancestryMu.Unlock()
+	}
 
 	err := cm.LeaseManager.Delete(ctx, leases.Lease{ID: leaseID})
 	if err != nil && !cerrdefs.IsNotFound(err) {
 		return pkgerrors.Wrapf(err, "delete owner lease %s", leaseID)
 	}
 
+	var released ancestryRelease
 	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
 	for snapshotID := range cm.leaseOwnedSnapshots[leaseID] {
 		leaseIDs := cm.snapshotOwnerLeases[snapshotID]
@@ -567,11 +595,16 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 		if len(leaseIDs) == 0 {
 			delete(cm.snapshotOwnerLeases, snapshotID)
 		}
+		if managed {
+			cm.ancestry.releaseTipLocked(snapshotID, &released)
+		}
 	}
 	delete(cm.leaseOwnedSnapshots, leaseID)
 	cm.mu.Unlock()
 
-	return nil
+	// The owner lease is gone first: until the ancestors leave the ancestry
+	// lease, they are only kept longer than needed.
+	return cm.deleteAncestryResources(ctx, released)
 }
 
 func (cm *snapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error {
@@ -581,7 +614,14 @@ func (cm *snapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, kee
 	}
 
 	var rerr error
+	var staleAncestry []string
 	for _, lease := range leasesList {
+		if strings.HasPrefix(lease.ID, ownerAncestryLeasePrefix) {
+			if lease.ID != cm.ownerAncestryLeaseID() {
+				staleAncestry = append(staleAncestry, lease.ID)
+			}
+			continue
+		}
 		if !strings.HasPrefix(lease.ID, dagqlResultLeasePrefix) {
 			continue
 		}
@@ -589,6 +629,14 @@ func (cm *snapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, kee
 			continue
 		}
 		rerr = stderrors.Join(rerr, cm.RemoveLease(ctx, lease.ID))
+	}
+	// An earlier process's ancestry lease holds the ancestors of the owner
+	// leases it attached. The kept owner leases have been attached again in
+	// this process, which holds their ancestors in its own, so it goes last.
+	for _, id := range staleAncestry {
+		if err := cm.LeaseManager.Delete(ctx, leases.Lease{ID: id}); err != nil && !cerrdefs.IsNotFound(err) {
+			rerr = stderrors.Join(rerr, pkgerrors.Wrapf(err, "delete stale owner ancestry lease %s", id))
+		}
 	}
 	return rerr
 }
