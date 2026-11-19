@@ -43,6 +43,10 @@
 
 let daggerRepo = "https://github.com/dagger/dagger"
 let debugPort = 6060
+# CLI mode: where the measured CLI serves its headless TUI and its pprof,
+# inside the client container.
+let consolePort = 7070
+let cliPprofPort = 6061
 
 """
 One PR's memory reproducer. Its workload is fixtures/<pr>/workload.sh in
@@ -62,6 +66,22 @@ type Demo {
   PR's code: samples with a matching frame are the demo's focus bytes.
   """
   focus: String!
+  """
+  The fixture directory under fixtures/ holding the workload; empty means
+  the PR number. Demos of one mechanism can share a workload.
+  """
+  fixture: String! = ""
+  """
+  Measure the `dagger` CLI's heap instead of the engine's (see CLI mode in
+  driver.sh).
+  """
+  cli: Boolean! = false
+  """
+  Regexp over stack frames for the alloc_space focus (bytes allocated since
+  the process started, garbage included): for churn the PR stops rather
+  than memory it frees. Empty means `focus`.
+  """
+  focusAlloc: String! = ""
 }
 
 """
@@ -107,6 +127,13 @@ type Measurement {
   """
   sha: String!
   """
+  Whether the heap is the `dagger` CLI's (see CLI mode in driver.sh) rather
+  than the engine's. For the CLI, baseline is its heap once connected,
+  before the workload, and after is its heap once the session closed, its
+  TUI still up.
+  """
+  cli: Boolean!
+  """
   Heap after a trivial warm-up session.
   """
   baselineBytes: Int!
@@ -135,6 +162,19 @@ type Measurement {
   line (each sample counted at its leaf-most matching frame).
   """
   focusTop: String!
+  """
+  Bytes allocated by the live point since the process started (alloc_space),
+  garbage included.
+  """
+  allocBytes: Int!
+  """
+  Bytes of allocBytes in samples matching the demo's alloc focus regexp.
+  """
+  focusAllocBytes: Int!
+  """
+  The heaviest alloc focus sites, like focusTop.
+  """
+  focusAllocTop: String!
   """
   How long the workload's session took, in seconds.
   """
@@ -168,7 +208,7 @@ type Measurement {
   One human-readable line.
   """
   summary: String! {
-    "#" + pr + " @ " + ref + " (" + sha.truncate(8) + "): baseline " + mib(baselineBytes) + ", live " + mib(liveBytes) + " (" + signedMib(liveBytes - baselineBytes) + "), after " + mib(afterBytes) + "; focus live " + mib(focusBytes) + ", after " + mib(focusAfterBytes) + "; " + toString(seconds) + "s"
+    "#" + pr + " @ " + ref + " (" + sha.truncate(8) + ")" + (if (cli) { " [CLI heap]" } else { "" }) + ": baseline " + mib(baselineBytes) + ", live " + mib(liveBytes) + " (" + signedMib(liveBytes - baselineBytes) + "), after " + mib(afterBytes) + "; focus live " + mib(focusBytes) + ", after " + mib(focusAfterBytes) + "; focus alloc " + mib(focusAllocBytes) + " of " + mib(allocBytes) + "; " + toString(seconds) + "s"
   }
 }
 
@@ -186,6 +226,28 @@ type MemoryCake {
         # on both sides, so they are left out.
         focus: "\\(\\*cacheMetadata\\)\\.SetExternal|engine/contenthash\\.\\(\\*cacheContext\\)\\.save",
       ),
+      Demo(
+        pr: "15227",
+        title: "dagui: cut CLI telemetry memory",
+        fixture: "cli",
+        cli: true,
+        focus: "FOCUS15227",
+        focusAlloc: "ALLOC15227",
+      ),
+      Demo(
+        pr: "15228",
+        title: "idtui: stop pruned span trees pinning walkers",
+        fixture: "cli",
+        cli: true,
+        focus: "FOCUS15228",
+      ),
+      Demo(
+        pr: "15229",
+        title: "dagui: intern span digests and share attributes",
+        fixture: "cli",
+        cli: true,
+        focus: "FOCUS15229",
+      ),
     ]
   }
 
@@ -201,6 +263,54 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
     measure(pr: "15213", ref: ref, env: env)
+  }
+
+  """
+  #15227: the CLI's frontend DB kept every metric point it received,
+  exemplars included; and its idle log batch processors cloned their batch
+  buffers every 100 ms. The shared CLI workload (fixtures/cli) streams a long
+  session's telemetry into a `dagger run` CLI's headless TUI, among it
+  EXPORTS (100) metric exports of SERIES (200) calls x GAUGES (8) gauges,
+  one exemplar per point. Focus: the metric points the DB retains (live
+  heap), and the log processors' allocation (alloc_space, garbage
+  included). Scale with env, e.g. ["EXPORTS=50"].
+  """
+  demo15227(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15227", ref: ref, env: env)
+  }
+
+  """
+  #15228: a pruned span tree stayed pinned by the log and test views the
+  frontend keeps, and through its tree the whole spanWalker that built it,
+  memos and all, one per frame that pruned a tree. The shared CLI workload
+  (fixtures/cli) streams SPANS (300000) spans of a long agent session,
+  their tests and logs, into a `dagger run` CLI's headless TUI, which renders
+  frames throughout as completed rows leave the view. Focus: the walkers'
+  memos. Scale with env, e.g. ["SPANS=100000"].
+  """
+  demo15228(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15228", ref: ref, env: env)
+  }
+
+  """
+  #15229: the CLI's frontend DB kept a freshly decoded copy of every
+  digest, name and attribute of every span and call frame. The shared CLI
+  workload (fixtures/cli) streams SPANS (300000) spans, most of them dagql
+  calls with frames, inputs, outputs and cache attributes, into a `dagger
+  run` CLI's headless TUI. Focus: the decoded strings and attribute pairs the
+  DB retains. Scale with env, e.g. ["SPANS=100000"].
+  """
+  demo15229(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15229", ref: ref, env: env)
   }
 
   """
@@ -257,11 +367,14 @@ type MemoryCake {
     if (demo == null) {
       raise "memory-cake: no demo for PR " + pr + " (demos: " + demos.map { d => d.pr }.join(", ") + ")"
     }
+    let fixture = if (demo.fixture == "") { pr } else { demo.fixture }
     measureWorkload(
       pr: pr,
       ref: ref,
-      workload: currentModule.source.directory("fixtures/" + pr),
+      workload: currentModule.source.directory("fixtures/" + fixture),
       focus: demo.focus,
+      focusAlloc: demo.focusAlloc,
+      cli: demo.cli,
       env: env,
       settle: settle,
     )
@@ -280,18 +393,37 @@ type MemoryCake {
     ref: String! = "main",
     workload: Directory!,
     focus: String! = "",
+    """
+    Regexp for the alloc_space focus; empty means `focus`.
+    """
+    focusAlloc: String! = "",
+    """
+    Measure the `dagger run` CLI's heap instead of the engine's (see CLI mode
+    in driver.sh). The workload can reach the CLI's headless TUI at
+    $CAKE_CONSOLE.
+    """
+    cli: Boolean! = false,
     env: [String!]! = [],
     settle: Int! = 10,
   ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
     let eng = engine(ref: ref)
     let scripts = currentModule.source.directory(".").filter(include: ["driver.sh", "session.sh"])
-    let configured = eng.client
+    let base = eng.client
       .withDirectory("/cake", scripts)
       .withMountedDirectory("/fixture", workload)
       .withWorkdir("/fixture")
       .withEnvVariable("CAKE_FOCUS", focus)
+      .withEnvVariable("CAKE_FOCUS_ALLOC", if (focusAlloc == "") { focus } else { focusAlloc })
       .withEnvVariable("CAKE_SETTLE", toString(settle))
       .withEnvVariable("CAKE_NONCE", Random.string)
+    let configured = if (cli) {
+      base
+        .withEnvVariable("CAKE_MODE", "cli")
+        .withEnvVariable("CAKE_CONSOLE", "127.0.0.1:" + toString(consolePort))
+        .withEnvVariable("CAKE_HEAP_URL", "http://127.0.0.1:" + toString(cliPprofPort))
+    } else {
+      base
+    }
     let withEnv = env.reduce(configured) { c, kv =>
       let kvParts = kv.split("=", limit: 2)
       c.withEnvVariable(kvParts[0] ?? kv, kvParts[1] ?? "")
@@ -315,13 +447,17 @@ type MemoryCake {
       pr: pr,
       ref: ref,
       sha: eng.sha,
+      cli: cli,
       baselineBytes: statValue(baseline, "inuse"),
       liveBytes: statValue(live, "inuse"),
       afterBytes: statValue(after, "inuse"),
       focusBytes: statValue(live, "focus"),
       focusBaselineBytes: statValue(baseline, "focus"),
       focusAfterBytes: statValue(after, "focus"),
-      focusTop: statTop(live),
+      focusTop: statTop(live, "top"),
+      allocBytes: statValue(live, "alloc"),
+      focusAllocBytes: statValue(live, "focusalloc"),
+      focusAllocTop: statTop(live, "topalloc"),
       seconds: out.file("session.seconds").contents.trimSpace.toInt,
       liveProfile: out.file("live.pb.gz"),
       afterProfile: out.file("after.pb.gz"),
@@ -363,6 +499,7 @@ type MemoryCake {
       .from("alpine:3.20")
       .withExec(["apk", "add", "--no-cache", "curl", "jq"])
       .withFile("/usr/local/bin/heapstat", heapstatBin)
+      .withFile("/usr/local/bin/spangen", spangenBin)
     # installClient binds the service as dagger-engine, points the CLI at it
     # and installs the CLI built from the same source.
     Engine(
@@ -409,6 +546,18 @@ type MemoryCake {
       .file("/heapstat")
   }
 
+  # spangen/, a static binary the CLI workload runs in an exec.
+  let spangenBin: File! {
+    container
+      .from("golang:1.27")
+      .withMountedCache("/go/pkg/mod", cacheVolume("memory-cake-gomod"))
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withDirectory("/src", currentModule.source.directory("spangen"))
+      .withWorkdir("/src")
+      .withExec(["go", "build", "-mod=mod", "-o", "/spangen", "."])
+      .file("/spangen")
+  }
+
   let cakeRow(d: Demo!, before: String!, after: String!): String! {
     let b = measure(pr: d.pr, ref: before)
     let a = measure(pr: d.pr, ref: after)
@@ -426,11 +575,12 @@ let statValue(stat: String!, key: String!): Int! {
   }
 }
 
-# heapstat's "top <bytes> <function>" lines as "<MiB> <function>".
-let statTop(stat: String!): String! {
+# heapstat's "<key> <bytes> <function>" lines (key "top" or "topalloc") as
+# "<MiB> <function>".
+let statTop(stat: String!, key: String!): String! {
   stat
     .split("\n")
-    .filter { l => l.hasPrefix("top ") }
+    .filter { l => l.hasPrefix(key + " ") }
     .map { l =>
       let parts = l.split(" ", limit: 3)
       mib((parts[1] ?? "0").toInt) + " " + (parts[2] ?? "")
