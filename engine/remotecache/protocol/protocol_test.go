@@ -325,7 +325,7 @@ func TestLookupShape(t *testing.T) {
 func TestMergeListsSharedLayersOnce(t *testing.T) {
 	layer := testLayer()
 	addresses := map[digest.Digest]dagql.BlobAddress{layer.Descriptor.Digest: {URL: "https://blobs.example/layer"}}
-	bundle := dagql.ValueBundle{Version: 8, Roots: []dagql.TransferredRoot{{Ordinal: 1}}}
+	bundle := dagql.ValueBundle{Version: 9, Roots: []dagql.TransferredRoot{{Ordinal: 1}}}
 	for i := range 2 {
 		bundle.Values = append(bundle.Values, dagql.TransferredValue{Ordinal: dagql.TransferOrdinal(i + 1), SenderNumber: uint64(i + 1)})
 		bundle.Outputs = append(bundle.Outputs, dagql.TransferredOutput{
