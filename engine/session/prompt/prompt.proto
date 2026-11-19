@@ -8,6 +8,7 @@ service Prompt {
   rpc PromptBool(BoolRequest) returns (BoolResponse);
   rpc PromptString(StringRequest) returns (StringResponse);
   rpc PromptSelect(SelectRequest) returns (SelectResponse);
+  rpc PromptApproval(ApprovalRequest) returns (ApprovalResponse);
 }
 
 message BoolRequest {
@@ -55,4 +56,58 @@ message SelectRequest {
 
 message SelectResponse {
     string choice = 1;
+}
+
+// ApprovalRequester is who asks: the agent and module whose code requests
+// access, and the function it was running. The engine resolves every value
+// itself, never taking the requester's word for it, but names may be chosen
+// by a module or by the code spawning the agent, so they arrive as literal
+// text escaped for terminals, like the prompt.
+message ApprovalRequester {
+    // the agent's display name, e.g. "engine-tools"
+    string agent_name = 1;
+    // the agent's unique runtime handle within the session
+    string agent_handle = 2;
+    // the requesting module's name
+    string module = 3;
+    // the requesting module's source reference, e.g. a git URL with a pin
+    string module_ref = 4;
+    // the module function that made the request, e.g. "Contributor.gh"
+    string function = 5;
+}
+
+// ApprovalRequest asks the user to grant an agent access to something on
+// their behalf: pushing with their credentials, reading a host secret, ...
+message ApprovalRequest {
+    // what is being approved, e.g. "git-push", "git-force-push", "git-read",
+    // "secret", "git-identity". Frontends may style by kind.
+    string kind = 1;
+    // the question to display, as literal (already escaped) text
+    string prompt = 2;
+    // the thing access is requested to (a remote, a secret URI, ...), as
+    // literal text; empty when the kind has no subject
+    string subject = 3;
+    ApprovalRequester requester = 4;
+    // the call that requested approval, so a frontend can show the prompt
+    // where that call is rendered (e.g. under an agent's tool call)
+    string trace_id = 5;
+    string span_id = 6;
+    // if set, the client may remember an APPROVAL_ALLOW_FOREVER decision
+    // under this key and answer later requests with it without prompting; if
+    // empty, APPROVAL_ALLOW_FOREVER is not offered
+    string persistent_key = 7;
+    // the operation is destructive (e.g. a force-push); frontends should
+    // highlight it
+    bool danger = 8;
+}
+
+enum ApprovalDecision {
+    APPROVAL_DENY = 0;
+    APPROVAL_ALLOW_ONCE = 1;
+    APPROVAL_ALLOW_SESSION = 2;
+    APPROVAL_ALLOW_FOREVER = 3;
+}
+
+message ApprovalResponse {
+    ApprovalDecision decision = 1;
 }
