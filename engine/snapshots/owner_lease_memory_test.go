@@ -84,7 +84,7 @@ func resultLeaseID(result int) string {
 	return fmt.Sprintf("dagql/result/%d/%s", result, url.PathEscape(`["","snapshot"]`))
 }
 
-const ancestryLeasePrefix = "dagger/owner-ancestry/"
+const ancestryLeasePrefix = "dagql/result/owner-ancestry/"
 
 // ownerHoldings lists what holds an owner lease's snapshots for the
 // collector: the lease's own snapshots and blobs, and, for a dagql owner
