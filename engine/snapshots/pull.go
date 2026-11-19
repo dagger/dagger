@@ -548,16 +548,14 @@ func (cm *snapshotManager) recordSnapshotContent(ctx context.Context, snapshotID
 		cm.mu.Unlock()
 		return nil
 	}
-	leaseIDs := make([]string, 0, len(cm.snapshotOwnerLeases[snapshotID])+1)
+	leaseIDs := make([]string, 0, len(cm.snapshotOwnerLeases[snapshotID]))
 	for leaseID := range cm.snapshotOwnerLeases[snapshotID] {
 		leaseIDs = append(leaseIDs, leaseID)
 	}
 	// The ancestry lease, when it names the snapshot, holds its blobs too.
-	ancestryLeaseID := ""
-	if cm.ancestry.named(snapshotID) {
-		ancestryLeaseID = cm.ancestryLeaseID
-		leaseIDs = append(leaseIDs, ancestryLeaseID)
-	}
+	// An attach that names the snapshot later reads the blob recorded above
+	// once it has named it; see attachPendingAncestryBlobs.
+	named := cm.ancestry.named(snapshotID)
 	cm.mu.Unlock()
 
 	for _, leaseID := range leaseIDs {
@@ -569,12 +567,14 @@ func (cm *snapshotManager) recordSnapshotContent(ctx context.Context, snapshotID
 			return errors.Wrapf(err, "attach content %s to owner lease %s", desc.Digest, leaseID)
 		}
 	}
+	if named {
+		if err := cm.recordAncestryContent(ctx, snapshotID, desc.Digest); err != nil {
+			return err
+		}
+	}
 	// Every owner read above has the blob, and an owner added since had it
 	// attached before it became one.
 	wcprof.Lock(ctx, &cm.mu, managerMuProfIdent)
-	if ancestryLeaseID != "" && cm.ancestry.named(snapshotID) {
-		cm.ancestry.addBlobLocked(snapshotID, desc.Digest)
-	}
 	if cm.snapshotContentOwned[snapshotID] == nil {
 		cm.snapshotContentOwned[snapshotID] = make(map[digest.Digest]struct{})
 	}
