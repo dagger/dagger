@@ -5585,7 +5585,6 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 		return nil
 	}
 	shared.lazyMu.Unlock()
-	c.logRecordRunForWantOfOffers(ctx, res, shared)
 
 	partsVal, ok := UnwrapAs[HasLazyEvaluationParts](res)
 	if !ok {
@@ -5963,6 +5962,9 @@ func (c *Cache) runLazyTask(ctx context.Context, res AnyResult, shared *sharedRe
 		}
 		g.attempt = attempt
 		shared.lazyMu.Unlock()
+		if spec == nil && lazyEval != nil {
+			c.logRecordRunForWantOfOffers(stackCtx, shared)
+		}
 
 		if spec != nil {
 			ownCtx, ownStep := BeginStep(evalCtx, "lazy.ownership")

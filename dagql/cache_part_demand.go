@@ -745,21 +745,22 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 
 // logRecordRunForWantOfOffers logs, once for each entry, a value that came
 // from another engine's record with no download address for any of its parts
-// and evaluates now: it runs its recipe, as a value restored from local disk
-// does (decodeArmsRecipe), and no part of it is searched for, so no "part
-// without a source" line names it. The entry, its field and its recipe say
-// what ran again; origin and merged_at are as logPartWithoutSource gives
-// them. A value with nothing left to compute is not logged.
-func (c *Cache) logRecordRunForWantOfOffers(ctx context.Context, res AnyResult, row *sharedResult) {
-	if !row.imported || row.recipeRunLogged.Load() || !HasPendingLazyComputation(res) {
-		return
-	}
-	if !row.recipeRunLogged.CompareAndSwap(false, true) {
+// as a body of its own operation starts (runLazyTask): it runs its recipe, as
+// a value restored from local disk does (decodeArmsRecipe), and no part of it
+// is searched for, so no "part without a source" line names it. A demand
+// that finds its group's work already done runs no body and logs nothing.
+// The entry, its field and its recipe say what ran again; origin and
+// merged_at are as logPartWithoutSource gives them.
+func (c *Cache) logRecordRunForWantOfOffers(ctx context.Context, row *sharedResult) {
+	if !row.imported || row.recipeRunLogged.Load() {
 		return
 	}
 	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
-	mergedAt := row.mergedAtUnixNano
+	offers, mergedAt := row.hasPartOffersLocked(), row.mergedAtUnixNano
 	c.egraphMu.RUnlock()
+	if offers || !row.recipeRunLogged.CompareAndSwap(false, true) {
+		return
+	}
 	origin := "restored"
 	if mergedAt != 0 {
 		origin = "merged"
