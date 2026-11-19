@@ -387,11 +387,14 @@ func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string,
 		})
 	}
 
-	// --work: ask Cloud for the trace's work beside the fetch. Cloud computes
-	// it on request, which takes seconds for a large trace; the pre-report
-	// drain below waits for it, and a failure fails the command.
+	// --work: ask Cloud for the trace's work. Cloud computes it on request,
+	// which takes seconds for a large trace, so a trace frontend gets it
+	// beside the fetch: the pre-report drain below waits for it, and its
+	// final render shows it. The plain, dots and logs frontends print each span
+	// as the stream reaches it, so they get the work before the spans. A
+	// failure fails the command.
 	if o.work {
-		logFg.Go(func() error {
+		fetchWork := func() error {
 			w, err := fetchTraceWork(ctx, statsClient.Load(), traceID)
 			if err != nil {
 				return fmt.Errorf("work of trace %s: %w", traceID, err)
@@ -401,7 +404,12 @@ func traceRunSource(ctx context.Context, tf idtui.TraceFrontend, traceID string,
 				wf.SetTraceWork(w)
 			}
 			return nil
-		})
+		}
+		if tf != nil {
+			logFg.Go(fetchWork)
+		} else if err := fetchWork(); err != nil {
+			return cleanup, err
+		}
 	}
 
 	// Fetch spans incrementally, mirroring the Cloud web UI: stream the

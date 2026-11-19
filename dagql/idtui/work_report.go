@@ -21,28 +21,39 @@ type WorkFrontend interface {
 	SetTraceWork(*cloud.TraceWork)
 }
 
-var _ WorkFrontend = (*frontendPretty)(nil)
+var (
+	_ WorkFrontend = (*frontendPretty)(nil)
+	_ WorkFrontend = (*frontendPlain)(nil)
+)
 
 // workReportRuns is how many runs of each class the WORK section lists.
 const workReportRuns = 10
 
 // SetTraceWork sets the work the frontend shows.
 func (fe *frontendPretty) SetTraceWork(work *cloud.TraceWork) {
-	bySpan := map[dagui.SpanID]*cloud.WorkRun{}
-	if work != nil {
-		for i := range work.Runs {
-			run := &work.Runs[i]
-			for _, id := range []string{run.SpanID, run.CallSpanID} {
-				if spanID, err := trace.SpanIDFromHex(id); err == nil {
-					bySpan[dagui.SpanID{SpanID: spanID}] = run
-				}
-			}
-		}
-	}
+	bySpan := workRunsBySpan(work)
 	fe.dispatch(func() {
 		fe.work = work
 		fe.workBySpan = bySpan
 	})
+}
+
+// workRunsBySpan indexes the runs by the spans that show them: the run's span
+// and, for a lazy evaluation, the call that returned its result.
+func workRunsBySpan(work *cloud.TraceWork) map[dagui.SpanID]*cloud.WorkRun {
+	bySpan := map[dagui.SpanID]*cloud.WorkRun{}
+	if work == nil {
+		return bySpan
+	}
+	for i := range work.Runs {
+		run := &work.Runs[i]
+		for _, id := range []string{run.SpanID, run.CallSpanID} {
+			if spanID, err := trace.SpanIDFromHex(id); err == nil {
+				bySpan[dagui.SpanID{SpanID: spanID}] = run
+			}
+		}
+	}
+	return bySpan
 }
 
 // spanWork returns the run a span shows, or nil.
