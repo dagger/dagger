@@ -18,7 +18,7 @@ import (
 // before it.
 func recordsMerge() Merge {
 	object := json.RawMessage(`{"rootfs":{"id":"` + strings.Repeat("a", 64) + `"},"config":{"env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","GOTOOLCHAIN=auto"],"workdir":"/src","entrypoint":["/bin/sh","-c"]},"platform":"linux/arm64","mounts":[]}`)
-	bundle := dagql.ValueBundle{Version: 8, Roots: []dagql.TransferredRoot{{Ordinal: 2000}}}
+	bundle := dagql.ValueBundle{Version: 9, Roots: []dagql.TransferredRoot{{Ordinal: 2000}}}
 	for i := range 2000 {
 		v := dagql.TransferredValue{
 			Ordinal:      dagql.TransferOrdinal(i + 1),

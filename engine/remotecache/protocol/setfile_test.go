@@ -16,7 +16,7 @@ import (
 // setFileTestBundle is a bundle of records values with one output whose
 // chain has two layers, which a part lists once.
 func setFileTestBundle(records int) dagql.ValueBundle {
-	bundle := dagql.ValueBundle{Version: 8}
+	bundle := dagql.ValueBundle{Version: 9}
 	for i := range records {
 		bundle.Values = append(bundle.Values, dagql.TransferredValue{Ordinal: dagql.TransferOrdinal(i + 1), SenderNumber: uint64(100 + i)})
 	}
@@ -46,7 +46,7 @@ func TestSetFileRoundTrip(t *testing.T) {
 	defer dec.Close()
 
 	bundles := []dagql.ValueBundle{setFileTestBundle(2), setFileTestBundle(3)}
-	header := SetFileHeader{Version: 8, Check: "test-base", Line: "pr-1", Kind: "head", Built: time.Unix(1700000000, 0).UTC()}
+	header := SetFileHeader{Version: 9, Check: "test-base", Line: "pr-1", Kind: "head", Built: time.Unix(1700000000, 0).UTC()}
 	var parts [][]byte
 	for _, bundle := range bundles {
 		part, entry, err := EncodeSetFilePart(enc, bundle)
@@ -83,12 +83,12 @@ func TestSetFileRefusesAFileOfAnotherLength(t *testing.T) {
 	part, entry, err := EncodeSetFilePart(enc, setFileTestBundle(1))
 	require.NoError(t, err)
 	var file bytes.Buffer
-	require.NoError(t, WriteSetFile(&file, SetFileHeader{Version: 8, Parts: []SetFilePart{entry}}, [][]byte{part}))
+	require.NoError(t, WriteSetFile(&file, SetFileHeader{Version: 9, Parts: []SetFilePart{entry}}, [][]byte{part}))
 
 	_, _, err = ReadSetFile(file.Bytes()[:file.Len()-1])
 	require.ErrorContains(t, err, "bytes, with")
 	_, _, err = ReadSetFile(append(bytes.Clone(file.Bytes()), 0))
 	require.ErrorContains(t, err, "after its last part")
-	_, _, err = ReadSetFile([]byte(`{"version":8}`))
+	_, _, err = ReadSetFile([]byte(`{"version":9}`))
 	require.ErrorContains(t, err, "no header line")
 }
