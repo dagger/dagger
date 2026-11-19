@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -47,24 +48,55 @@ var errRestoreConnectionEnded = errors.New("the connection ended")
 
 // restoredFiles are the files this engine process merged whole, by digest,
 // across its connections: each hello lists them (protocol.Hello.Restored),
-// and a restore of one does nothing.
+// and a restore of one merges nothing and is answered already, with where
+// the file's merge answered its records landed. The service offers such a
+// file again only when it never read that answer, as when the connection
+// dropped first: without it, it can't hold the file's records by file.
 type restoredFiles struct {
 	mu   sync.Mutex
 	done []digest.Digest
+	// answers are each file's entries and complete parts as its merge
+	// answered them (protocol.RestoredFile.Entries), kept as that answer
+	// carries them on the wire: two to five bytes a record.
+	answers map[digest.Digest][]byte
 }
 
-func (r *restoredFiles) has(dgst digest.Digest) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return slices.Contains(r.done, dgst)
-}
-
-func (r *restoredFiles) add(dgst digest.Digest) {
+// answer returns the answer to a restore of a file this process merged
+// whole: already, with the entries and complete parts its merge answered.
+// It reports false for a file it didn't merge whole.
+func (r *restoredFiles) answer(dgst digest.Digest) (protocol.RestoredFile, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !slices.Contains(r.done, dgst) {
-		r.done = append(r.done, dgst)
+		return protocol.RestoredFile{}, false
 	}
+	answer := protocol.RestoredFile{Digest: dgst, Complete: true, Already: true}
+	var noted protocol.RestoredFile
+	if err := json.Unmarshal(r.answers[dgst], &noted); err == nil {
+		answer.Entries, answer.PartsTable, answer.CompleteParts = noted.Entries, noted.PartsTable, noted.CompleteParts
+	}
+	return answer, true
+}
+
+// add records a file this process merged whole, with its merge's answer,
+// and returns how many bytes it keeps of that answer.
+func (r *restoredFiles) add(answer protocol.RestoredFile) int {
+	kept, err := json.Marshal(protocol.RestoredFile{Entries: answer.Entries, PartsTable: answer.PartsTable, CompleteParts: answer.CompleteParts})
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !slices.Contains(r.done, answer.Digest) {
+		r.done = append(r.done, answer.Digest)
+	}
+	if err != nil {
+		// Answered again without entries: the service covers the file by
+		// placement, as it would without them.
+		return 0
+	}
+	if r.answers == nil {
+		r.answers = map[digest.Digest][]byte{}
+	}
+	r.answers[answer.Digest] = kept
+	return len(kept)
 }
 
 func (r *restoredFiles) list() []digest.Digest {
@@ -150,6 +182,9 @@ type restoreFile struct {
 	entries    protocol.EntryNumbers
 	complete   [][]dagql.PersistedPartAddress
 	placed     map[uint64]struct{}
+	// kept is how many bytes of its answer the process keeps, for a later
+	// connection's restore of it (restoredFiles).
+	kept int
 }
 
 // restoreRequest is one Restore, answered once its files are done. left
@@ -197,8 +232,8 @@ func (r *restorer) handleRestore(env protocol.Envelope) {
 		f.result = protocol.RestoredFile{Digest: file.Digest}
 		f.report = RestoreReport{Check: set.Check, Kind: fileKind(head), Digest: file.Digest, Bytes: file.Size, Arrived: arrived}
 		req.files = append(req.files, f)
-		if r.s.cfg.restored.has(file.Digest) {
-			f.result.Complete, f.result.Already = true, true
+		if answer, ok := r.s.cfg.restored.answer(file.Digest); ok {
+			f.result = answer
 			f.report.Complete, f.report.Already = true, true
 			r.s.adapter.Restored(f.report)
 			return
@@ -445,7 +480,7 @@ func (r *restorer) finish(f *restoreFile, err error) {
 		f.result.Complete = true
 		f.result.Entries = f.entries
 		f.result.PartsTable, f.result.CompleteParts = protocol.PackCompleteParts(f.complete)
-		r.s.cfg.restored.add(f.file.Digest)
+		f.kept = r.s.cfg.restored.add(f.result)
 	}
 	if err != nil {
 		f.result.Error = err.Error()
@@ -535,6 +570,9 @@ func (r *restorer) logFile(f *restoreFile, level string) {
 		late += part.Late
 	}
 	args = append(args, "late_misses", late)
+	if f.kept > 0 {
+		args = append(args, "kept_answer_bytes", f.kept)
+	}
 	if f.result.Error != "" {
 		args = append(args, "error", f.result.Error)
 	}
