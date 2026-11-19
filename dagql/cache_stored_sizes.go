@@ -601,11 +601,16 @@ type StoredClosureResult struct {
 // value: it copies, normalizes, encodes and sizes nothing. So it is a read
 // in pieces too, letting egraphMu go every readPieceSteps steps, and with no
 // write during it, it lists what one hold would. A write between two of its
-// pieces is seen as StoredSizes sees it. Only a blob-backed cache answers.
+// pieces is seen as StoredSizes sees it. Like StoredSizes, it doesn't walk
+// as HeldBy.Whole has a bundle walk, and refuses a held with Whole. Only a
+// blob-backed cache answers.
 func (c *Cache) StoredClosure(ctx context.Context, roots []uint64, nowUnix int64, held *HeldBy) (StoredClosureResult, error) {
 	var out StoredClosureResult
 	if !c.blobBacked {
 		return out, fmt.Errorf("stored closure: the cache has no blob store")
+	}
+	if held != nil && held.Whole {
+		return out, fmt.Errorf("stored closure: a recipient held whole isn't listed")
 	}
 	list := &storedClosureList{asked: make(map[sharedResultID]bool, len(roots)), held: map[sharedResultID]bool{}, inputs: map[sharedResultID]bool{}}
 	for _, number := range roots {
