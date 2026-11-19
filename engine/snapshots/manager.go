@@ -163,9 +163,8 @@ type snapshotManager struct {
 	leaseOwnedSnapshots map[string]map[string]struct{}
 	// ancestry holds the ancestors of the snapshots dagql owner leases own
 	// in one lease, ancestryLeaseID, rather than in each owner lease: see
-	// owner_ancestry.go. Its counts and parents are changed only with both
-	// ancestryMu and mu held, and read with either; its blobs are guarded
-	// by mu.
+	// owner_ancestry.go. All of it, counts, parents and blobs, is changed
+	// only with both ancestryMu and mu held, and read with either.
 	ancestry          ownerAncestry
 	ancestryMu        sync.Mutex
 	ancestryLeaseID   string
