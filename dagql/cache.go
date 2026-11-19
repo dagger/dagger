@@ -3198,6 +3198,10 @@ type sharedResult struct {
 	// for one restored after a restart. It goes with the value. Guarded by
 	// egraphMu.
 	mergedAtUnixNano int64
+	// recipeRunLogged is set once the entry's value, a record from another
+	// engine with no download address for any part, has been logged as run
+	// again (logRecordRunForWantOfOffers).
+	recipeRunLogged atomic.Bool
 	// storedParts are the parts whose layer chains are in this cache's own
 	// blob store, by part address key, their layers the cache's
 	// (storedLayers). Only a blob-backed cache (the Cloud) sets them. Guarded
@@ -5581,6 +5585,7 @@ func (c *Cache) evaluateResolved(ctx context.Context, res AnyResult, shared *sha
 		return nil
 	}
 	shared.lazyMu.Unlock()
+	c.logRecordRunForWantOfOffers(ctx, res, shared)
 
 	partsVal, ok := UnwrapAs[HasLazyEvaluationParts](res)
 	if !ok {
