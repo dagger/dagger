@@ -116,6 +116,11 @@ type Span struct {
 	// evaluated call alone.
 	installSites *SpanSet
 
+	// credited marks a span whose Activity holds time propagated from the
+	// deferred evaluations of it or of spans beneath it, so that a span
+	// joining its parent late passes that time on (recreditAncestors).
+	credited bool
+
 	// Pre-computed RollUp state for rendering progress bars
 	// Maintained incrementally for all spans, not just those marked RollUp
 	rollUpState *RollUpState
@@ -805,8 +810,11 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		if causal && span.IsCanceled() {
 			changed = addToSpanSet(&parent.CanceledLinks, span) || changed
 		}
-		if activity && parent.Activity.Add(span) {
-			changed = true
+		if activity {
+			parent.credited = true
+			if parent.Activity.Add(span) {
+				changed = true
+			}
 		}
 		return changed
 	}
@@ -1195,6 +1203,28 @@ func (span *Span) attributedCauses(f func(cause *Span, timed bool) bool) {
 		return true
 	}
 	visit(span, true)
+}
+
+// recreditAncestors propagates again the evaluations that credited span, or
+// spans beneath it, with their time while span had no parent. A span that
+// arrives after the spans beneath it, or after its own evaluations, joins
+// its ancestors only then, and their share of that time stopped at it.
+func (span *Span) recreditAncestors() {
+	var visit func(s *Span, depth int)
+	visit = func(s *Span, depth int) {
+		if !s.credited || depth > 100 {
+			return
+		}
+		for effect := range s.evaluations {
+			effect.PropagateStatusToParentsAndLinks()
+		}
+		for _, child := range s.ChildSpans.Spans() {
+			if child.ParentSpan == s {
+				visit(child, depth+1)
+			}
+		}
+	}
+	visit(span, 0)
 }
 
 // installedAt reports whether span is a lazy evaluation linked to site only

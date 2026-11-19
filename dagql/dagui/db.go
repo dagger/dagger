@@ -1308,6 +1308,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		if addToSpanSet(&span.ParentSpan.ChildSpans, span) {
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
+			// and pass on to the new ancestors the time of the evaluations
+			// that credited the span or spans beneath it before it had any
+			span.recreditAncestors()
 		}
 		// progress may have been ingested before the parent linkage was
 		// known (records can arrive ahead of their span, and spans ahead

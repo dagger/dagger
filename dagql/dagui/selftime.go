@@ -154,7 +154,7 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 	// or ran nested work of its own is unknown, so it reads as working the
 	// whole time. TimeBreakdownSpans names what to load.
 	for _, w := range merged {
-		if w.target.unloaded() || resolveBlocker(w.target).unloaded() {
+		if w.target.unloaded() || !blockerAncestry(resolveBlocker(w.target), span, nil) {
 			for _, p := range painted {
 				hb.addSegment(TimeSegment{Start: p.Start, End: p.End})
 			}
@@ -705,6 +705,9 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 			visitOnce(cause)
 		}
 		resolved := resolveBlockerPath(c, visitOnce)
+		// shownBlocker names a hidden operation by its nearest drawn
+		// ancestor, so the breakdown draws on that ancestry too.
+		blockerAncestry(resolved, span, visitOnce)
 		visitLabelSpans(resolved, 0)
 		if resolved != nil && resolved != c {
 			emit(resolved, depth)
@@ -803,9 +806,14 @@ func resolveBlockerPath(target *Span, visit func(*Span)) *Span {
 // public call around it, e.g. a Container.from the engine makes inside the
 // user's Container.from. An ancestor that contains row would only say row
 // waited on something enclosing it, so op keeps its own name then.
+//
+// Only loaded spans are read: an ancestor this DB holds only a reference to
+// says nothing of whether it is drawn, and draws nothing itself, so op keeps
+// its own name rather than take that. TimeBreakdown waits for the ancestry
+// up to op's first drawn ancestor (blockerAncestry).
 func shownBlocker(op, row *Span) *Span {
 	shown := op
-	for s, depth := op, 0; s != nil && depth < 100; s, depth = s.ParentSpan, depth+1 {
+	for s, depth := op, 0; s != nil && s.Received && depth < 100; s, depth = s.ParentSpan, depth+1 {
 		if spanInSubtree(row, s) {
 			// whatever hides s hides row too
 			break
@@ -814,13 +822,34 @@ func shownBlocker(op, row *Span) *Span {
 			shown = s.ParentSpan
 		}
 	}
-	for depth := 0; shown != nil && shown.Passthrough && depth < 100; depth++ {
+	for depth := 0; shown != nil && shown.Received && shown.Passthrough && depth < 100; depth++ {
 		shown = shown.ParentSpan
 	}
-	if shown == nil || spanInSubtree(row, shown) {
+	if shown == nil || !shown.Received || spanInSubtree(row, shown) {
 		return op
 	}
 	return shown
+}
+
+// blockerAncestry reports whether op, an operation row waited on, is loaded
+// along with its ancestors up to the first one the view draws (neither
+// internal nor passthrough) or that holds row: what shownBlocker needs to
+// name op. With visit, it visits each of those on the way, up to and
+// including the first one not loaded, for TimeBreakdownSpans. An operation
+// outside the trace (nil) has nothing to load.
+func blockerAncestry(op, row *Span, visit func(*Span)) bool {
+	for s, depth := op, 0; s != nil && depth < 100; s, depth = s.ParentSpan, depth+1 {
+		if visit != nil {
+			visit(s)
+		}
+		if !s.Received {
+			return false
+		}
+		if (!s.Internal && !s.Passthrough) || spanInSubtree(row, s) {
+			return true
+		}
+	}
+	return true
 }
 
 func blockerLabel(blocker *Span) string {
