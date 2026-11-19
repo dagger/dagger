@@ -209,6 +209,55 @@ func BenchmarkAddressMinimumSelectors(b *testing.B) {
 	}
 }
 
+func BenchmarkAddressSparseColumns(b *testing.B) {
+	var rows []AddressRow
+	for i := range 100 {
+		for key := range 10 {
+			for _, name := range []string{"check", "lint"} {
+				rows = append(rows, AddressRow{Type: "Check", Coordinates: []flattening.Coordinate{
+					{Dimension: "module", Key: "app"},
+					{Dimension: fmt.Sprintf("Collection%d", i), Key: fmt.Sprint(key)},
+					{Dimension: "name", Key: name},
+				}})
+			}
+		}
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		index := NewAddressIndex(rows, true)
+		for _, row := range rows {
+			selectors, ok := index.Selectors(row)
+			if !ok || len(selectors) != 2 {
+				b.Fatalf("expected two selectors: %v, %v", selectors, ok)
+			}
+		}
+	}
+}
+
+func BenchmarkAddressRequiredSelectors(b *testing.B) {
+	const count = 18
+	target := AddressRow{Type: "Check", Coordinates: []flattening.Coordinate{
+		{Dimension: "module", Key: "grid"},
+		{Dimension: "name", Key: "check"},
+	}}
+	for i := range count {
+		target.Coordinates = append(target.Coordinates, flattening.Coordinate{Dimension: fmt.Sprintf("Cell%02d", i), Key: "same"})
+	}
+	rows := []AddressRow{target}
+	for i := range count {
+		coordinates := slices.Clone(target.Coordinates)
+		coordinates[i+2].Key = "other"
+		rows = append(rows, AddressRow{Type: target.Type, Coordinates: coordinates})
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		selectors, ok := NewAddressIndex(rows, true).Selectors(target)
+		if !ok || len(selectors) != count {
+			b.Fatalf("expected %d selectors: %v, %v", count, selectors, ok)
+		}
+	}
+}
+
 func presentSelectors(coordinates []flattening.Coordinate) []dagaddress.Pair {
 	selectors := make([]dagaddress.Pair, len(coordinates))
 	for i, coordinate := range coordinates {

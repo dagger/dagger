@@ -105,5 +105,5 @@ func (a *Artifact) WithAddressPlan(source *Artifact) *Artifact {
 }
 
 func (a *Artifact) HasCompleteAddressSchema() bool {
-	return a.links != nil && (a.links.CompleteSchema || a.links.Typed != nil && !a.links.Typed.ExactDimensions)
+	return a.links != nil && a.links.CompleteSchema
 }

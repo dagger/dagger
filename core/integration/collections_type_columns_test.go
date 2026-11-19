@@ -263,6 +263,7 @@ func (*%s) Get(name string) *dagger.File { panic("file must stay deferred") }
 	base := goGitBase(t, c).WithDirectory("/work", dir).WithWorkdir("/work")
 	type definition struct{ Identifier, Name, Kind string }
 	type selection struct {
+		Dimensions           []string
 		DimensionDefinitions []definition
 		Items                []struct {
 			URI           string
@@ -271,15 +272,22 @@ func (*%s) Get(name string) *dagger.File { panic("file must stay deferred") }
 	}
 	out, err := base.With(workspaceSelectionDaggerQuery(`{ currentWorkspace {
   all: artifacts { filterTypes(types: ["File"]) {
+    dimensions(all: true)
     dimensionDefinitions { identifier name kind }
     items { uri(typeAssertion: true) dimensionKeys(all: true) { dimension key } }
   } }
   module: artifacts { filterUri(uri: "dag://?module=alpha") { filterTypes(types: ["File"]) {
+    dimensions(all: true)
     dimensionDefinitions { identifier name kind }
     items { uri(typeAssertion: true) dimensionKeys(all: true) { dimension key } }
   } } }
   source: artifacts(include: ["alpha"]) { filterTypes(types: ["File"]) {
+    dimensions(all: true)
     dimensionDefinitions { identifier name kind }
+    items { uri(typeAssertion: true) dimensionKeys(all: true) { dimension key } }
+  } }
+  empty: artifacts { filterDimensionKeys(dimension: "module", keys: []) {
+    dimensions(all: true)
     items { uri(typeAssertion: true) dimensionKeys(all: true) { dimension key } }
   } }
 } }`, "-m", "core")).Stdout(ctx)
@@ -291,6 +299,7 @@ func (*%s) Get(name string) *dagger.File { panic("file must stay deferred") }
 				FilterURI struct{ FilterTypes selection }
 			}
 			Source struct{ FilterTypes selection }
+			Empty  struct{ FilterDimensionKeys selection }
 		}
 	}
 	require.NoError(t, json.Unmarshal([]byte(out), &decoded))
@@ -298,6 +307,12 @@ func (*%s) Get(name string) *dagger.File { panic("file must stay deferred") }
 	module := decoded.CurrentWorkspace.Module.FilterURI.FilterTypes
 	sourceSelection := decoded.CurrentWorkspace.Source.FilterTypes
 	require.Len(t, all.Items, 4)
+	empty := decoded.CurrentWorkspace.Empty.FilterDimensionKeys
+	require.Empty(t, empty.Items)
+	require.ElementsMatch(t, []string{"AlphaPackages", "BetaDependencies", "module", "name"}, all.Dimensions)
+	for _, selected := range []selection{module, sourceSelection, empty} {
+		require.Equal(t, all.Dimensions, selected.Dimensions)
+	}
 	for _, selected := range []selection{all, module, sourceSelection} {
 		labels := map[string]string{}
 		for _, definition := range selected.DimensionDefinitions {
@@ -316,6 +331,7 @@ func (*%s) Get(name string) *dagger.File { panic("file must stay deferred") }
 			found := false
 			for _, candidate := range all.Items {
 				if slices.Equal(candidate.DimensionKeys, item.DimensionKeys) {
+					require.Equal(t, candidate.URI, item.URI)
 					found = true
 				}
 			}

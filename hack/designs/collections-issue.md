@@ -6,6 +6,12 @@ Builds on [Workspace artifacts (#14178)](https://github.com/dagger/dagger/pull/1
 
 Artifacts defines DAG addresses, discovery, selection, evaluation, and the `Check` projection. It also owns `Changeset.stale` and the move from group APIs to Artifacts. This issue adds dynamic keyed collections to that design.
 
+## Scope
+
+Section 3 defines artifact flattening from API view `v1.0.0-beta.29`. Earlier views keep their existing columns and addresses. Legacy type-path selectors remain accepted for compatibility; they are not columns in the new view.
+
+Sections 1, 2, and 4–6 retain the original collection proposal, including its removed `batch` model. They are historical context, not the current flattening contract.
+
 ## Problem
 
 A module can discover dynamic sets of objects at runtime: tests by name, packages by path, or services by label. But a list of objects does not expose those keys to Dagger.
@@ -302,13 +308,13 @@ In the API, `filterDimensions(dimensions: ["Cell"], exclude: true)` keeps artifa
 
 Absence tests are selectors. They do not add coordinates or table cells.
 
-#### Projections
+#### Legacy address projection
+
+These rules describe the earlier type-path model. They do not define beta.29 columns or short links. Batch rules apply only to API views that expose `batch`.
 
 An address printed for people, such as a `dagger list` row, a check name, or an `Artifact.uri()` result, uses the smallest set of keys, in their shortest names, that selects that artifact in the addressed workspace. It must not depend on the source selection's visible columns. A schema or module change can alter this short form. A stored identifier, such as a Cloud check name or the address an engine sends a cloud engine, uses the full form: every key, and the full path in the type key.
 
-Apply these rules when the link retains a type key or names a legacy batch.
-
-- The type key is the shortest suffix of the path, on segment boundaries, that names one path among the loaded paths of that type with every collection dimension the address keys. Thus the up operation on each Docker Compose service is `?service=up&docker-compose-project=e2e&docker-compose-service=web`, and the batch operation on a project's services is `?service=batch/up&docker-compose-project=e2e`. Collection dimension names start with their module, so a short key with collection keys names the same path whichever modules are loaded.
+- The type key is the shortest suffix of the path, on segment boundaries, that names one path among the loaded paths of that type with every collection dimension the address keys. Thus the up operation on each Docker Compose service is `?service=up&docker-compose-project=e2e&docker-compose-service=web`, and the batch operation on a project's services is `?service=batch/up&docker-compose-project=e2e`. In this legacy model, collection dimension names start with their module.
 - A batch that runs every item of its collection omits that collection's item keys: `?check=test&go-package=internal/bundle` for one `go test` of a whole package, not one `go-test` key per test. A batch of selected items keeps their keys.
 
 A projection holds as a whole. A short type key given without the keys it was chosen with can name several paths. A key that names several paths selects them all, such as `?check=stale` for every staleness check. But a key that names both an operation on each item of a collection and the same operation on the collection's batch would run it twice: `?service=up&docker-compose-project=e2e` names `services/up` and `services/batch/up`. That is an error that lists the paths, never their union.
@@ -317,7 +323,7 @@ Distinct keys remain distinct even if `get` returns the same object. Filters nev
 
 Alternatives in one filter use OR. Chained filters use AND. Unknown dimension names or keys match nothing. An ambiguous name is an error. A key filter applies to all collection values represented by its dimension. Skip keys that do not match, but retain the original collection for value lookup. A test absent from one module must not fail selection in another.
 
-#### Table columns
+#### Table columns (beta.29 and later)
 
 Canonical coordinates have three parts: `module`, the enclosing collection item keys, and `name`. Use the full dot-separated path from the exposed module root for `name`. Keep literal schema field names, including collection fields. Examples: `python310.unit` and `modules.packages.tests.test`. Use `.` for the module root itself.
 
@@ -374,7 +380,7 @@ No new link API is needed. The `all` argument controls table metadata. It does n
 
 Load schema metadata across modules to compute column names. Enumerate items for selected rows or a complete address proof. If the schema is incomplete, keep the full field path and every parent collection key. Use exact dimension identifiers when the catalog cannot prove that an alias is unique. A failed unfiltered discovery also keeps a full address.
 
-In the CLI, `dagger check --list --all --format=link` prints links for individual checks. Tables use canonical coordinates and the same display pruning rule as the API. They put collection columns first, then `module` and `name`, and always include the DAG link. `--format=cli` prints complete commands. Use `--name` with the full module-root field path, such as `--name=python310.unit`. Do not shorten that path to a suffix. Omit it only when the remaining selectors identify the schema path. If the same name occurs below a child collection, add an exact path selector. Older engines can retain their type-path selectors. `dagger list <collection>` lists individual items by default. A collapsed row represents a selection and retains its field path.
+In the CLI, `dagger check --list --all --format=link` prints links for individual checks. Tables use canonical coordinates and the same display pruning rule as the API. When output has one table per type, prune each table using its own rows. The API still uses the complete selection. Tables put collection columns first, then `module` and `name`, and always include the DAG link. `--format=cli` prints complete commands. Use `--name` with the full module-root field path, such as `--name=python310.unit`. Do not shorten that path to a suffix. Omit it only when the remaining selectors identify the schema path. If the same name occurs below a child collection, add an exact path selector. Older engines can retain their type-path selectors. `dagger list <collection>` lists individual items by default. A collapsed row represents a selection and retains its field path.
 
 #### Discovery and evaluation
 
@@ -423,7 +429,7 @@ dag://go/modules/tests/container?go-module=sdk/go&go-test=TestConnect
 dag://?container=go/modules/tests/container&go-module=sdk/go&go-test=TestConnect
 ```
 
-The two forms differ in one way: the path accepts glob patterns, such as `go/**`. A type dimension key names the path it equals, so a stored address stays exact. Otherwise it names each path it is a suffix of among the paths with the address's collection dimensions (see [Projections](#projections)). A leading `/` accepts only a full path.
+The two forms differ in one way: the path accepts glob patterns, such as `go/**`. A type dimension key names the path it equals, so a stored address stays exact. Otherwise it names each path it is a suffix of among the paths with the address's collection dimensions (see [Legacy address projection](#legacy-address-projection)). A leading `/` accepts only a full path.
 
 Parent dimensions still select the containing objects. A complete address has one key for each item selection along the path. Missing parent keys or alternative keys can select several artifacts. `Workspace.resolve` uses the Artifacts rule: require exactly one match.
 

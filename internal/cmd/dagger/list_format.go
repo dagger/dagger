@@ -63,12 +63,6 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 	if format == "cli" {
 		return writeArtifactCLI(out, items, names, artifactListReplayArgs(cmd), artifactCLICommand(cmd))
 	}
-	canonicalRows := make([][]flattening.Coordinate, len(items))
-	for i, item := range items {
-		canonicalRows[i] = artifactTableCoordinates(item)
-	}
-	dimensions := artifact.VisibleDimensions(canonicalRows)
-	slices.SortStableFunc(dimensions, compareArtifactDimensions)
 	// Mixed types use separate tables, not sparse columns for every type.
 	groups := map[string][]listedArtifact{}
 	var order []string
@@ -90,7 +84,7 @@ func writeArtifactList(cmd *cobra.Command, items []listedArtifact, names map[str
 				return err
 			}
 		}
-		if err := writeArtifactTable(out, groups[typ], names, dimensions); err != nil {
+		if err := writeArtifactTable(out, groups[typ], names); err != nil {
 			return err
 		}
 	}
@@ -155,9 +149,11 @@ func artifactTableCoordinates(item listedArtifact) []flattening.Coordinate {
 	return coordinates
 }
 
-func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]string, dimensions []string) error {
+func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]string) error {
+	canonicalRows := make([][]flattening.Coordinate, len(items))
 	described, absolute := false, false
-	for _, item := range items {
+	for i, item := range items {
+		canonicalRows[i] = artifactTableCoordinates(item)
 		described = described || firstDescriptionLine(item.Description) != ""
 		addr, err := dagaddress.Parse(item.URI)
 		if err != nil {
@@ -165,6 +161,8 @@ func writeArtifactTable(out io.Writer, items []listedArtifact, names map[string]
 		}
 		absolute = absolute || addr.Absolute
 	}
+	dimensions := artifact.VisibleDimensions(canonicalRows)
+	slices.SortStableFunc(dimensions, compareArtifactDimensions)
 	header := []string{}
 	if absolute {
 		header = append(header, "WORKSPACE")

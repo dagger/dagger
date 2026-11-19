@@ -218,7 +218,4 @@ func TestCanonicalDimensionAliasesResolveOwnColumn(t *testing.T) {
 			require.Equal(t, dimension.Identifier, identifier, alias)
 		}
 	}
-	flags := DimensionFlags(dimensions, nil, nil)
-	require.Equal(t, FlagNames{Key: "thing", Presence: "dimension-tests-all"}, flags["Tests"])
-	require.Equal(t, FlagNames{Key: "tests", Presence: "other"}, flags["Other"])
 }

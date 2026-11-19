@@ -41,7 +41,7 @@ go test ./core/artifact/flattening
 
 `ExamplePlan` in `flattening_test.go` shows a complete input and expected
 output. Other tests show object fields, nested items, a module root collection,
-main module shorthand, conflicts, and reserved CLI names.
+main module shorthand, and naming conflicts.
 
 `testdata/dagger-workspace.json` contains six paths and eight real Check rows
 from `dagger/dagger` commit `7976c6f655aecf3d8de37326bfc09e01e666c98a`
@@ -141,9 +141,8 @@ Six type selectors are always included: Check, Generator, Service, Container,
 Directory, and Expertise. Module aliases are allocated last. A module uses its
 kebab-case name if that name is free and unique. Otherwise it uses `by-NAME`.
 
-Flag allocation accepts a naming function. The CLI supplies its version-selected
-naming rules. A nil function uses the current artifact naming rules. Collection
-dimension creation also accepts a naming function. The CLI supplies its naming
+The CLI allocates flags with its version-selected naming rules. Collection
+dimension creation accepts a naming function. The CLI supplies its naming
 rules. Engine and offline input use current artifact naming rules. Artifact
 type names use current artifact naming rules.
 

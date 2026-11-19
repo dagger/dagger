@@ -132,6 +132,44 @@ func TestArtifactListColumnSelection(t *testing.T) {
 	require.Equal(t, "generate.stale", rows[0].Coordinates[3].Key)
 }
 
+func TestArtifactListMixedTypes(t *testing.T) {
+	rows := []listedArtifact{
+		{
+			URI:           "dag+check://?test=unit",
+			DimensionKeys: []struct{ Dimension, Key string }{{"type:Check", "app/tests/check"}},
+			Coordinates:   []struct{ Dimension, Key string }{{"module", "app"}, {"Tests", "unit"}, {"name", "tests.check"}},
+		},
+		{
+			URI:           "dag+check://?test=lint",
+			DimensionKeys: []struct{ Dimension, Key string }{{"type:Check", "app/tests/check"}},
+			Coordinates:   []struct{ Dimension, Key string }{{"module", "app"}, {"Tests", "lint"}, {"name", "tests.check"}},
+		},
+		{
+			URI:           "dag+container://?name=base",
+			DimensionKeys: []struct{ Dimension, Key string }{{"type:Container", "app/base"}},
+			Coordinates:   []struct{ Dimension, Key string }{{"module", "app"}, {"name", "base"}},
+		},
+		{
+			URI:           "dag+container://?name=dev",
+			DimensionKeys: []struct{ Dimension, Key string }{{"type:Container", "app/dev"}},
+			Coordinates:   []struct{ Dimension, Key string }{{"module", "app"}, {"name", "dev"}},
+		},
+	}
+	cmd := &cobra.Command{Use: "list"}
+	cmd.Flags().String("format", "table", "")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	require.NoError(t, writeArtifactList(cmd, rows, map[string]string{"Tests": "test"}))
+	require.Equal(t, `TEST  LINK
+lint  dag+check://?test=lint
+unit  dag+check://?test=unit
+
+NAME  LINK
+base  dag+container://?name=base
+dev   dag+container://?name=dev
+`, out.String())
+}
+
 func TestArtifactListCLICommand(t *testing.T) {
 	root := &cobra.Command{Use: "dagger"}
 	list := &cobra.Command{Use: "list"}

@@ -53,8 +53,8 @@ func TestArtifactDimensionMetadataByView(t *testing.T) {
 				{Identifier: "module", Kind: "MODULE", Name: "module"},
 				{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check"},
 			}}
-			dagql.Fields[*core.Query]{dagql.Func("selection", func(context.Context, *core.Query, struct{}) (*core.Artifacts, error) {
-				return selection, nil
+			dagql.Fields[*core.Query]{dagql.Func("selection", func(ctx context.Context, _ *core.Query, _ struct{}) (*core.Artifacts, error) {
+				return selection, selection.SetSchema(ctx, selection.Entries)
 			})}.Install(srv)
 			var definitions dagql.Array[*core.ArtifactDimension]
 			require.NoError(t, srv.Select(ctx, srv.Root(), &definitions,
@@ -174,22 +174,20 @@ func TestArtifactDimensionDefinitionsUseGlobalLabels(t *testing.T) {
 	dependencies := collection("Dependencies", "Package")
 	tests := collection("Tests", "Test")
 	checks := collection("Checks", "Check")
-	selection := &core.Artifacts{
-		AllDimensions: artifact.Dimensions{
-			packages, dependencies, tests, checks,
-			{Identifier: "module", Kind: "MODULE", Name: "module"},
-			{Identifier: "type:Check", Kind: "TYPE", Name: "check", ItemType: "Check"},
-		},
-	}
-
-	for _, dimension := range []*core.ArtifactDimension{packages, tests, checks} {
-		selection.Entries = append(selection.Entries, &core.Artifact{
+	selection := &core.Artifacts{}
+	var all []*core.Artifact
+	for _, dimension := range []*core.ArtifactDimension{packages, dependencies, tests, checks} {
+		entry := &core.Artifact{
 			ModuleName: "app", TypeName: "Check",
 			Node: &core.ModTreeNode{CollectionDimension: dimension},
-		})
+		}
+		all = append(all, entry)
+		if dimension != dependencies {
+			selection.Entries = append(selection.Entries, entry)
+		}
 	}
-	dagql.Fields[*core.Query]{dagql.Func("selection", func(context.Context, *core.Query, struct{}) (*core.Artifacts, error) {
-		return selection, nil
+	dagql.Fields[*core.Query]{dagql.Func("selection", func(ctx context.Context, _ *core.Query, _ struct{}) (*core.Artifacts, error) {
+		return selection, selection.SetSchema(ctx, all)
 	})}.Install(srv)
 	var definitions dagql.Array[*core.ArtifactDimension]
 	require.NoError(t, srv.Select(ctx, srv.Root(), &definitions,

@@ -1,9 +1,9 @@
-ID                              DISPLAY NAME    KEY FLAG        PRESENCE FLAG
-/golang/modules                 golang-module   golang-module   golang-modules
-/golang/modules/packages        golang-package  golang-package  golang-packages
-/golang/modules/packages/tests  golang-test     golang-test     golang-tests
-module                          module          module
-type:Check                      check           check
+ID                              DISPLAY NAME
+/golang/modules                 golang-module
+/golang/modules/packages        golang-package
+/golang/modules/packages/tests  golang-test
+module                          module
+type:Check                      check
 
 PATH                                    /golang/modules  /golang/modules/packages  /golang/modules/packages/tests  module         type:Check
 docs/check                              -                -                         -                               docs           docs/check

@@ -69,13 +69,44 @@ func (a *Artifacts) NameEntries() error {
 	for i, dimension := range named {
 		a.AllDimensions[i] = (*ArtifactDimension)(dimension)
 	}
+	a.nameEntries()
+	return nil
+}
+
+func (a *Artifacts) SetSchema(ctx context.Context, entries []*Artifact) error {
+	a.AllPaths = (&Artifacts{Entries: entries}).PathIndex()
+	a.SetCollectionRoots(entries)
+	a.AllDimensions = (&Artifacts{Entries: entries}).DimensionDefinitions()
+	if !Supports(ctx, ArtifactTypeColumnsVersion) {
+		return a.NameEntries()
+	}
+	fields := make([]flattening.Field, len(entries))
+	for i, entry := range entries {
+		fields[i] = entry.ProjectionField()
+	}
+	schema, err := flattening.NewSchema(fields)
+	if err != nil {
+		return fmt.Errorf("flatten artifact schema: %w", err)
+	}
+	legacy := slices.DeleteFunc(a.AllDimensions, func(dimension *ArtifactDimension) bool {
+		return !strings.HasPrefix(dimension.Identifier, "type:")
+	})
+	a.AllDimensions = nil
+	for _, dimension := range schema.Dimensions() {
+		a.AllDimensions = append(a.AllDimensions, (*ArtifactDimension)(dimension))
+	}
+	a.AllDimensions = artifact.Union(a.AllDimensions, legacy)
+	a.nameEntries()
+	return nil
+}
+
+func (a *Artifacts) nameEntries() {
 	names := a.displayNames()
 	for _, entry := range a.Entries {
 		entry.DimensionNames = dimensionNames(names, entry)
 		entry.TypeKeyName = a.typeKeyName(entry)
 		entry.links = a.linkPlans(entry)
 	}
-	return nil
 }
 
 func (a *Artifacts) linkPlans(entry *Artifact) *artifact.Links {
@@ -866,6 +897,13 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 	obj = node.ObjectType()
 	visit(node)
 	if visiting[obj.Name] {
+		if Supports(ctx, ArtifactTypeColumnsVersion) {
+			for ancestor := node; ancestor != nil; ancestor = ancestor.Parent {
+				if ancestor.CollectionDimension != nil && ancestor.CollectionDimension.CollectionType == obj.Name {
+					return fmt.Errorf("collection type %s repeats on one artifact route", obj.Name)
+				}
+			}
+		}
 		return nil
 	}
 	visiting[obj.Name] = true

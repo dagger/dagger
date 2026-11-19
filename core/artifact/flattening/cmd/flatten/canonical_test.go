@@ -107,23 +107,6 @@ func TestCanonicalTypesCanShareCoordinates(t *testing.T) {
 	}
 }
 
-func TestCanonicalCollectionTypeUnifiesRoutes(t *testing.T) {
-	const input = `[
- {"module":"app","type":"Check","localPath":["unit"],"collections":[{"fields":["primary"],"type":"AppPackages","itemType":"AppPackage"}],"items":[["one"]]},
- {"module":"app","type":"Check","localPath":["slow"],"collections":[{"fields":["secondary"],"type":"AppPackages","itemType":"AppPackage"}],"items":[["two"]]}
- ]`
-	var out bytes.Buffer
-	if err := run(nil, strings.NewReader(input), &out); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Count(out.String(), "AppPackages") != 1 {
-		t.Fatalf("routes did not share one collection type column:\n%s", out.String())
-	}
-	if strings.Contains(out.String(), "/app/") || !strings.Contains(out.String(), "unit") || !strings.Contains(out.String(), "slow") {
-		t.Fatalf("output changed type coordinates or local names:\n%s", out.String())
-	}
-}
-
 func TestCanonicalReservedFlagDoesNotRenameColumn(t *testing.T) {
 	const input = `[{"module":"app","type":"Check","localPath":["check"],"collections":[{"fields":["items"],"type":"Items","itemType":"All"}],"items":[["one"],["two"]]}]`
 	var out bytes.Buffer
