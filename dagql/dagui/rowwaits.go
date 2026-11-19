@@ -43,8 +43,9 @@ import (
 // whole subtree: its own waits, and the stretches where something under it
 // waited on work outside it while nothing under it worked.
 type RowWaits struct {
-	// AsOf is when it was computed. A stretch reaching AsOf on a row still
-	// running is taken to go on until the next update.
+	// AsOf is the time it was computed as of. A stretch ending right at AsOf
+	// was still going on then; on a row still running, it is taken to go on
+	// until the next update.
 	AsOf time.Time
 	// Segments are the row's waiting stretches, in time order. A stretch
 	// recorded below the row names that row in Via.
@@ -153,7 +154,8 @@ func (st *rowWaitsState) label(blocker *Span) string {
 // changed since. With a budget above zero, a call stops once it has spent the
 // budget and reports that work is left, and the next call carries on, so that
 // a caller drawing a view or serving one is never held up for long; rows not
-// recomputed yet keep their last result meanwhile. The DB keeps no extra state
+// recomputed yet keep their last result meanwhile. The calls carrying a round
+// of work on compute it as of the now its first call was given. The DB keeps no extra state
 // until the first call, so only a frontend that shows waiting calls it, and
 // rows read their own breakdown until it does.
 func (db *DB) UpdateRowWaits(now time.Time, budget time.Duration) (changed []*Span, more bool) {
@@ -174,7 +176,11 @@ func (db *DB) UpdateRowWaits(now time.Time, budget time.Duration) (changed []*Sp
 		}
 	}
 	if len(st.queue) == 0 {
-		// a new round: running spans have grown since the last
+		// A new round, computed as of now throughout, so that a stretch
+		// still going on ends at the same time in every summary of it,
+		// whichever call computes the summary. Running spans have grown
+		// since the last round.
+		st.now = now
 		for span := range db.runningSpans {
 			st.changed[span] = struct{}{}
 		}
@@ -200,7 +206,6 @@ func (db *DB) UpdateRowWaits(now time.Time, budget time.Duration) (changed []*Sp
 		return nil, false
 	}
 
-	st.now = now
 	st.labels = map[*Span]string{}
 	st.publishing = true
 	defer func() { st.publishing = false }()
@@ -211,7 +216,7 @@ func (db *DB) UpdateRowWaits(now time.Time, budget time.Duration) (changed []*Sp
 		}
 		done++
 		delete(st.pending, span)
-		if st.publish(span, st.summary(span), now) {
+		if st.publish(span, st.summary(span), st.now) {
 			changed = append(changed, span)
 		}
 	}
@@ -448,11 +453,13 @@ func (st *rowWaitsState) publish(span *Span, sum *waitSummary, now time.Time) bo
 	return true
 }
 
-// reachesAsOf reports whether a stretch of rw reaches its AsOf, so that a new
-// AsOf changes where it is taken to end.
+// reachesAsOf reports whether a stretch of rw was still going on when it was
+// computed: it ends right at AsOf, where the intervals of running spans are
+// cut. A stretch that ended later than AsOf ended for good, after the round
+// began.
 func reachesAsOf(rw *RowWaits) bool {
 	n := len(rw.Segments)
-	return n > 0 && !rw.Segments[n-1].End.Before(rw.AsOf)
+	return n > 0 && rw.Segments[n-1].End.Equal(rw.AsOf)
 }
 
 func sameSegments(a, b []TimeSegment) bool {

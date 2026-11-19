@@ -588,3 +588,67 @@ func TestRowWaitsLateCallRenamesBlocker(t *testing.T) {
 		t.Fatalf("once its call arrives, the step reads by its command: %+v", segs)
 	}
 }
+
+// liveWaitTrace is TestRowWaitsLive's trace: a function call whose step is
+// forcing another module's step, still running.
+var liveWaitTrace = []rowSpan{
+	{id: 1, name: "query", start: 0, end: -1},
+	{id: 2, parent: 1, name: "apt-get install", start: 10, end: -1},
+	{id: 3, parent: 1, name: "Project.build", start: 5, end: -1},
+	{id: 4, parent: 3, name: "Container.from", start: 5, end: 10},
+	{id: 5, parent: 3, name: "Container.exitCode", start: 10, end: -1},
+	{id: 8, parent: 5, name: "resume withExec", start: 10, end: -1,
+		links: []SpanLink{evalLink(testID(2))}},
+}
+
+// sliceUpdates brings the waiting below rows up to date a span at a time,
+// the clock moving on by step between calls, as the live terminal does, and
+// returns the clock after the last.
+func sliceUpdates(t *testing.T, db *DB, now time.Time, step time.Duration, between func(int)) time.Time {
+	t.Helper()
+	for i, more := 0, true; more; i++ {
+		if i > 50 {
+			t.Fatal("sliced updates should finish")
+		}
+		_, more = db.UpdateRowWaits(now, time.Nanosecond)
+		now = now.Add(step)
+		if between != nil {
+			between(i)
+		}
+	}
+	return now
+}
+
+// A row whose step is still waiting stays waiting now, though its step's
+// summary and its own were computed by calls given different times.
+func TestRowWaitsInSlicesKeepAWaitGoing(t *testing.T) {
+	db := rowWaitsDB(liveWaitTrace...)
+	now := sliceUpdates(t, db, at(30), 20*time.Millisecond, nil)
+	row := db.Spans.Map[testID(3)]
+	later := now.Add(100 * time.Millisecond)
+	if hb := row.TimeBreakdown(later); hb.Self != 5*time.Second {
+		t.Fatalf("the row's own work stays the 5s before it waited: %+v", hb)
+	}
+	if blocker, ok := row.WaitingNow(later); !ok || blocker.ID != testID(2) {
+		t.Fatalf("the row should still be waiting on the other step: %v %v", blocker, ok)
+	}
+}
+
+// A wait that ends while an update is under way ends where it ended.
+func TestRowWaitsInSlicesEndAWaitThatEnded(t *testing.T) {
+	db := rowWaitsDB(liveWaitTrace...)
+	now := sliceUpdates(t, db, at(30), 20*time.Millisecond, func(i int) {
+		if i == 0 {
+			// the other step, and the evaluation forcing it, finish
+			importRowSpans(db,
+				rowSpan{id: 2, parent: 1, name: "apt-get install", start: 10, end: 30.01},
+				rowSpan{id: 8, parent: 5, name: "resume withExec", start: 10, end: 30.01,
+					links: []SpanLink{evalLink(testID(2))}})
+		}
+	})
+	sliceUpdates(t, db, now, 20*time.Millisecond, nil)
+	segs := waitingSegments(db.Spans.Map[testID(3)].TimeBreakdown(at(40)))
+	if len(segs) != 1 || !segs[0].End.Equal(at(30.01)) {
+		t.Fatalf("the row's wait should end where the other step did: %+v", segs)
+	}
+}
