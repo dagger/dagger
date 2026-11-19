@@ -3325,7 +3325,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
 		Name: "LoadTrace",
 		Description: "Load a historical trace from Dagger Cloud into this session for inspection. Use this when asked to investigate a trace ID, Cloud trace URL, or `dagger cloud traces view <id>`; do not run the interactive CLI.\n" +
 			"Uses the connecting client's Cloud authentication. No recipes are executed or agents restored. Returns root span IDs for ReadTrace and ReadLogs; FindSpans, FindCalls and InspectCall also see loaded traces. Repeated loads reuse the snapshot; failed loads import nothing.",
-		ReadOnly: true,
+		// Not pure: it imports spans into the session that the inspection
+		// tools read, so it must land before the calls written after it in
+		// the same batch (e.g. [LoadTrace, ReadTrace]).
+		ReadOnly: false,
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
