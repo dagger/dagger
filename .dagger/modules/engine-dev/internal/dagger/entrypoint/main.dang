@@ -59,9 +59,8 @@ type Entrypoint implements ModuleEntrypoint {
         )
         .withFunction(
           function("ImageEntriesAfterPrune", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
-            .withDescription("The entries an engine image ships can be made again on the state an\nearlier making left after a prune cut part of it, as a later release's\nmaking does: an engine of this build makes them, prunes its cache to half\nits size, least recently used first, and makes them again.")
+            .withDescription("The entries an engine image ships can be made again on the state an\nearlier making left after a prune cut part of it, as a later release's\nmaking does: an engine of this build makes them, prunes its cache to half\nits size, least recently used first, and makes them again. ReleaseDryRun\nchecks it.")
             .withSourceMap(sourceMap("main.go", 540, 1))
-            .withCheck
         )
         .withFunction(
           function("IncrementSubnet", typeDef.withObject("EngineDev"))
@@ -102,23 +101,23 @@ type Entrypoint implements ModuleEntrypoint {
           function("Publish", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
             .withDescription("Publish all engine images to a registry")
             .withCachePolicy(FunctionCachePolicy.PER_SESSION)
-            .withSourceMap(sourceMap("main.go", 905, 1))
-            .withArg("image", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Image target to push to", defaultValue: ("\"ghcr.io/dagger/engine\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 910, 2))
-            .withArg("tag", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "List of tags to use", sourceMap: sourceMap("main.go", 912, 2))
-            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 915, 2))
-            .withArg("registryUsername", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true).withOptional(true), sourceMap: sourceMap("main.go", 918, 2))
-            .withArg("registryPassword", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 920, 2))
+            .withSourceMap(sourceMap("main.go", 917, 1))
+            .withArg("image", typeDef.withKind(TypeDefKind.STRING_KIND), description: "Image target to push to", defaultValue: ("\"ghcr.io/dagger/engine\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 922, 2))
+            .withArg("tag", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "List of tags to use", sourceMap: sourceMap("main.go", 924, 2))
+            .withArg("dryRun", typeDef.withKind(TypeDefKind.BOOLEAN_KIND).withOptional(true), sourceMap: sourceMap("main.go", 927, 2))
+            .withArg("registryUsername", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true).withOptional(true), sourceMap: sourceMap("main.go", 930, 2))
+            .withArg("registryPassword", typeDef.withObject("Secret").withOptional(true), sourceMap: sourceMap("main.go", 932, 2))
         )
         .withFunction(
           function("ReleaseDryRun", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
-            .withSourceMap(sourceMap("main.go", 891, 1))
+            .withDescription("Every engine image target of a release builds, with its entries, without\nbeing pushed; the entries can be made again after a prune; and the build\nsteps that have built to different bytes before build to the same bytes\ntwice.")
+            .withSourceMap(sourceMap("main.go", 895, 1))
             .withCheck
         )
         .withFunction(
           function("ReproducibleBuild", typeDef.withKind(TypeDefKind.VOID_KIND).withOptional(true))
-            .withDescription("The build steps that have built to different bytes before build to the\nsame bytes when they run twice: QEMU's emulators, crun and the Go SDK's\nfiles. Two engines that each build the image then hold the same\nimage, and the cache can serve what one built on it to the other.")
+            .withDescription("The build steps that have built to different bytes before build to the\nsame bytes when they run twice: QEMU's emulators, crun and the Go SDK's\nfiles. Two engines that each build the image then hold the same\nimage, and the cache can serve what one built on it to the other.\nReleaseDryRun checks it.")
             .withSourceMap(sourceMap("main.go", 575, 1))
-            .withCheck
         )
         .withFunction(
           function("Service", typeDef.withObject("Service"))

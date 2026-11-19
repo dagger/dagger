@@ -1,9 +1,14 @@
 [modules.changie]
 source = ".dagger/modules/changie"
+# The changelog is merged at release time.
+check.skip = ["generate/stale"]
 
 [modules.cli]
 source = ".dagger/modules/cli-dev"
 legacy-default-path = true
+# release/publish-with-mock-endpoints runs this release, publishing to mock
+# registries.
+check.skip = ["release-dry-run"]
 
 [modules.dev]
 source = ".dagger/modules/dev"
@@ -24,6 +29,9 @@ legacy-default-path = true
 [modules.elixir-client]
 source = ".dagger/modules/elixir-client-dev"
 legacy-default-path = true
+# release/publish-with-mock-endpoints runs this release, publishing to mock
+# registries.
+check.skip = ["release-dry-run"]
 
 [modules.engine-dev]
 source = ".dagger/modules/engine-dev"
@@ -93,6 +101,8 @@ legacy-default-path = true
 [modules.markdown-lint]
 source = "modules/markdownlint"
 legacy-default-path = true
+# lint fails on whatever fix would change.
+check.skip = ["fix/stale"]
 
 [modules.php-client]
 source = ".dagger/modules/php-client-dev"
@@ -105,6 +115,9 @@ legacy-default-path = true
 [modules.python-client]
 source = ".dagger/modules/python-client-dev"
 legacy-default-path = true
+# release/publish-with-mock-endpoints runs this release, publishing to mock
+# registries.
+check.skip = ["release-dry-run"]
 
 [modules.release]
 source = ".dagger/modules/release"
@@ -113,6 +126,9 @@ legacy-default-path = true
 [modules.rust-client]
 source = ".dagger/modules/rust-client-dev"
 legacy-default-path = true
+# release/publish-with-mock-endpoints runs this release, publishing to mock
+# registries.
+check.skip = ["release-dry-run"]
 
 [modules.security]
 source = ".dagger/modules/security"
@@ -141,6 +157,10 @@ legacy-default-path = true
 [modules.typescript-client]
 source = ".dagger/modules/typescript-client-dev"
 legacy-default-path = true
+# lint-typescript fails on whatever format would change, and
+# release/publish-with-mock-endpoints runs this release, publishing to mock
+# registries.
+check.skip = ["format/stale", "release-dry-run"]
 
 [modules.dang-sdk]
 source = "dagger.io/sdk/dang@main"
@@ -162,6 +182,8 @@ source = ".dagger/modules/tla-check"
 
 [modules.engine-lab]
 source = ".dagger/modules/engine-lab"
+# wcprof-report-test tests a dev-only helper: run it after changing the helper.
+check.skip = ["wcprof-report-test"]
 
 [modules.engine-lab.settings]
 cloudCredentials = "file://~/.config/dagger/credentials.json"
@@ -2414,6 +2436,8 @@ main = true
 
 [modules.typescript-sdk]
 source = "github.com/dagger/typescript-sdk@main"
+# No module in this workspace uses it.
+check.skip = ["generate/stale"]
 
 [sdks.typescript]
 module = "typescript-sdk"

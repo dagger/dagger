@@ -107,20 +107,6 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*RustClientDev).APIClient(&parent), nil
-		case "CargoCheck":
-			var parent RustClientDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*RustClientDev).CargoCheck(&parent, ctx)
-		case "CargoFmt":
-			var parent RustClientDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*RustClientDev).CargoFmt(&parent, ctx)
 		case "Changes":
 			var parent RustClientDev
 			err = json.Unmarshal(parentJSON, &parent)
