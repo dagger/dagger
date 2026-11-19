@@ -27,6 +27,13 @@
 #   - heapstat (heapstat/) sums each profile's inuse_space, and the part of
 #     it in samples with a frame matching the demo's focus regexp.
 #
+# A demo with `cli: true` measures the `dagger run` CLI's heap instead: its
+# pretty TUI runs headlessly (DAGGER_TUI_CONSOLE) with its pprof on, so its
+# frontend ingests and renders the session's telemetry as an interactive
+# one does (CLI mode in driver.sh). The CLI demos share fixtures/cli, where
+# spangen (spangen/) streams a long agent session's spans, logs and metrics
+# from an exec.
+#
 # The engine service is bound to the driver's single exec, so it starts with
 # the measurement and stops when the exec ends: one engine per measurement,
 # and `cake` measures one at a time.
@@ -231,22 +238,30 @@ type MemoryCake {
         title: "dagui: cut CLI telemetry memory",
         fixture: "cli",
         cli: true,
-        focus: "FOCUS15227",
-        focusAlloc: "ALLOC15227",
+        # The metric points the frontend DB keeps: the points themselves
+        # (exportDataPoints) and what decoding them allocated and they
+        # reference (attribute sets, exemplars, decoded strings).
+        focus: "client\\.\\(\\*Client\\)\\.exportMetrics|dagui\\.DBMetricExporter",
+        # The log batch processors' allocation: the SDK BatchProcessor's
+        # idle buffer clones, or the DroppingLogProcessor replacing it.
+        focusAlloc: "sdk/log\\.\\(\\*BatchProcessor\\)|sdk/log\\.\\(\\*queue\\)|telemetry\\.\\(\\*DroppingLogProcessor\\)|telemetry\\.newDroppingLogProcessor",
       ),
       Demo(
         pr: "15228",
         title: "idtui: stop pruned span trees pinning walkers",
         fixture: "cli",
         cli: true,
-        focus: "FOCUS15228",
+        # Span walks' memos: on main, every walk a pruned tree pinned.
+        focus: "dagui\\.\\(\\*spanWalker\\)",
       ),
       Demo(
         pr: "15229",
         title: "dagui: intern span digests and share attributes",
         fixture: "cli",
         cli: true,
-        focus: "FOCUS15229",
+        # The strings the DB keeps of decoded spans and call frames, and its
+        # attribute and intern tables (heapstat's " && "/" || " clauses).
+        focus: "consumeStringValidateUTF8 && client\\.\\(\\*Client\\)\\.exportTraces|callpbv1\\.\\(\\*Call\\)\\.Decode || dagui\\.\\(\\*SpanAttributes\\)|dagui\\.\\(\\*digestTable\\)|dagui\\.\\(\\*DB\\)\\.(intern|shareAttrPairs)|dagui\\.intern",
       ),
     ]
   }
@@ -561,7 +576,12 @@ type MemoryCake {
   let cakeRow(d: Demo!, before: String!, after: String!): String! {
     let b = measure(pr: d.pr, ref: before)
     let a = measure(pr: d.pr, ref: after)
-    "| #" + d.pr + " " + d.title + " | " + mib(b.liveBytes) + " | " + mib(a.liveBytes) + " | " + signedMib(a.liveBytes - b.liveBytes) + " | " + mib(b.focusBytes) + " | " + mib(a.focusBytes) + " |"
+    let notes = (if (d.cli) { " (CLI heap)" } else { "" }) + (if (d.focusAlloc != "") {
+      " (alloc focus " + mib(b.focusAllocBytes) + " → " + mib(a.focusAllocBytes) + ")"
+    } else {
+      ""
+    })
+    "| #" + d.pr + " " + d.title + notes + " | " + mib(b.liveBytes) + " | " + mib(a.liveBytes) + " | " + signedMib(a.liveBytes - b.liveBytes) + " | " + mib(b.focusBytes) + " | " + mib(a.focusBytes) + " |"
   }
 }
 
