@@ -431,6 +431,22 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 			}
 		}
 		value.Record = PersistedRecord{ResultID: uint64(miss.res.id), Call: call}
+		// Its parts are the body's, as the bundle carries them, unless the
+		// entry's call has replaced the one the body was made with: then
+		// they are worked out again, as storedFactsLocked does.
+		declared, complete := miss.body.parts, miss.body.complete
+		if miss.body.frame == nil && miss.body.call != miss.call {
+			rec, err := miss.body.record(uint64(miss.res.id))
+			if err != nil {
+				return storedSizeMeasure{}, err
+			}
+			facts, err := normalizeStoredTransfer(&sharedResult{id: miss.res.id}, &rec.Envelope, miss.call)
+			if err != nil {
+				return storedSizeMeasure{}, err
+			}
+			declared, complete = facts.parts, facts.complete
+		}
+		value.Parts = transferredRecordParts(declared, complete)
 		empty, err := encodedSize(value)
 		if err != nil {
 			return storedSizeMeasure{}, err
@@ -445,6 +461,7 @@ func (c *Cache) measureStoredValue(miss storedSizeMiss) (storedSizeMeasure, erro
 			return storedSizeMeasure{}, err
 		}
 		value.Record = kept.record
+		value.Parts = transferredRecordParts(kept.parts, kept.complete)
 		if bytes, err = encodedSize(value); err != nil {
 			return storedSizeMeasure{}, err
 		}

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -102,6 +103,11 @@ type storedBody struct {
 	call  *ResultCall
 	refs  []uint64
 	parts []declaredPart
+	// complete are the parts the record proves complete
+	// (memoRecordCompletePartKeys), which a bundle carries beside the
+	// declared ones (TransferredValue.Parts): the copy of their set every
+	// body of that set shares (sharedPartKeys), nil for none.
+	complete *partKeySet
 	// size is the entry's value's encoded size in a bundle, once StoredSizes
 	// has measured it, with what else it read.
 	size atomic.Pointer[storedValueSize]
@@ -135,18 +141,18 @@ func newStoredBody(res *sharedResult, env *PersistedResultEnvelope, call *Result
 	if err != nil {
 		return nil, err
 	}
-	return compressStoredBody(raw, call, kept.refs, kept.parts)
+	return compressStoredBody(raw, call, kept.refs, kept.parts, kept.complete)
 }
 
 // compressStoredBody is a body of the envelope JSON raw and its facts.
-func compressStoredBody(raw []byte, call *ResultCall, refs []uint64, parts []declaredPart) (*storedBody, error) {
+func compressStoredBody(raw []byte, call *ResultCall, refs []uint64, parts []declaredPart, complete *partKeySet) (*storedBody, error) {
 	enc, _, err := storedBodyCodec()
 	if err != nil {
 		return nil, err
 	}
 	// EncodeAll's own buffer has the input's capacity: the body keeps a copy
 	// of what it used.
-	return &storedBody{envelope: bytes.Clone(enc.EncodeAll(raw, nil)), envelopeBytes: int64(len(raw)), call: call, refs: refs, parts: parts}, nil
+	return &storedBody{envelope: bytes.Clone(enc.EncodeAll(raw, nil)), envelopeBytes: int64(len(raw)), call: call, refs: refs, parts: parts, complete: complete}, nil
 }
 
 // withFrame returns a body of b's record with call, the entry's decoded
@@ -191,6 +197,7 @@ func (b *storedBody) withFrameEncoded(c *Cache, call *ResultCall, enc *zstd.Enco
 		recipe:        recipe,
 		refs:          b.refs,
 		parts:         b.parts,
+		complete:      b.complete,
 	}, nil
 }
 
@@ -250,7 +257,7 @@ func (b *storedBody) reframe(c *Cache, id sharedResultID, frame *ResultCall) (*s
 	if err != nil {
 		return nil, err
 	}
-	next := &storedBody{envelope: b.envelope, envelopeBytes: b.envelopeBytes, call: frame, refs: kept.refs, parts: kept.parts}
+	next := &storedBody{envelope: b.envelope, envelopeBytes: b.envelopeBytes, call: frame, refs: kept.refs, parts: kept.parts, complete: kept.complete}
 	return next.withFrame(c, frame)
 }
 
@@ -478,21 +485,21 @@ func (s sharedResultPayloadState) wholeEnvelope(number uint64) (*PersistedResult
 // teaching it a digest does: then they are worked out again from the body
 // and the call. A body that holds the frame is replaced with it, so its
 // facts are the frame's. Requires egraphMu.
-func (res *sharedResult) storedFactsLocked() ([]uint64, []declaredPart, error) {
+func (res *sharedResult) storedFactsLocked() ([]uint64, []declaredPart, *partKeySet, error) {
 	body := res.stored
 	call := res.loadResultCall()
 	if body.frame != nil || body.call == call {
-		return body.refs, body.parts, nil
+		return body.refs, body.parts, body.complete, nil
 	}
 	rec, err := body.record(uint64(res.id))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	kept, err := normalizeStoredTransfer(&sharedResult{id: res.id}, &rec.Envelope, call)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return kept.refs, kept.parts, nil
+	return kept.refs, kept.parts, kept.complete, nil
 }
 
 // declaredPartsLocked returns the parts res's stored record declares absent
@@ -500,7 +507,7 @@ func (res *sharedResult) storedFactsLocked() ([]uint64, []declaredPart, error) {
 // egraphMu.
 func (res *sharedResult) declaredPartsLocked() ([]declaredPart, error) {
 	if res.stored != nil {
-		_, parts, err := res.storedFactsLocked()
+		_, parts, _, err := res.storedFactsLocked()
 		return parts, err
 	}
 	if res.persistedEnvelope == nil {
@@ -540,6 +547,8 @@ type storedRowHeader struct {
 	EnvelopeBytes int64                   `json:"envelopeBytes"`
 	Refs          []uint64                `json:"refs,omitempty"`
 	Parts         []storedRowPart         `json:"parts,omitempty"`
+	// Complete are the parts the record proves complete (storedBody.complete).
+	Complete []PersistedPartAddress `json:"complete,omitempty"`
 }
 
 type storedRowPart struct {
@@ -556,6 +565,7 @@ func encodeStoredRow(header *PersistedResultEnvelope, body *storedBody) ([]byte,
 	for _, part := range body.parts {
 		h.Parts = append(h.Parts, storedRowPart{Address: part.address, State: part.state, Kind: part.kind})
 	}
+	h.Complete = body.complete.addresses()
 	raw, err := json.Marshal(h)
 	if err != nil {
 		return nil, err
@@ -596,6 +606,15 @@ func decodeStoredRow(payload []byte, call *ResultCall) (*PersistedResultEnvelope
 		}
 		body.parts = append(body.parts, declaredPart{key: key, address: part.Address, state: part.State, kind: part.Kind})
 	}
+	complete := make([]string, 0, len(h.Complete))
+	for _, address := range h.Complete {
+		key, err := partAddressKey(address)
+		if err != nil {
+			return nil, nil, fmt.Errorf("stored row complete part: %w", err)
+		}
+		complete = append(complete, key)
+	}
+	body.complete = sharedPartKeys(complete)
 	return &h.Envelope, body, nil
 }
 
@@ -963,4 +982,49 @@ func (c *Cache) storeBodies(entries []*sharedResult) {
 	if c.testStoredBodies != nil {
 		c.testStoredBodies(len(reads))
 	}
+}
+
+// partKeySet is a sorted set of part keys, of which every holder of the same
+// set shares one copy (sharedPartKeys).
+type partKeySet struct {
+	keys []string
+}
+
+// partKeySets are the copies sharedPartKeys hands out, by their keys joined.
+var partKeySets sync.Map
+
+// sharedPartKeys returns the shared copy of the set of keys, sorted, or nil
+// for none: a Cloud's stored records prove only a few distinct sets of
+// complete parts, so each keeps a reference to its set's copy.
+func sharedPartKeys(keys []string) *partKeySet {
+	if len(keys) == 0 {
+		return nil
+	}
+	keys = slices.Clone(keys)
+	slices.Sort(keys)
+	keys = slices.Compact(keys)
+	joined := strings.Join(keys, "\x00")
+	if set, ok := partKeySets.Load(joined); ok {
+		return set.(*partKeySet)
+	}
+	set, _ := partKeySets.LoadOrStore(joined, &partKeySet{keys: keys})
+	return set.(*partKeySet)
+}
+
+// list returns the set's keys, which its holders share and don't change, or
+// none for a nil set.
+func (s *partKeySet) list() []string {
+	if s == nil {
+		return nil
+	}
+	return s.keys
+}
+
+// addresses returns the set's part addresses, in its keys' order.
+func (s *partKeySet) addresses() []PersistedPartAddress {
+	var addresses []PersistedPartAddress
+	for _, key := range s.list() {
+		addresses = appendPartAddress(addresses, key)
+	}
+	return addresses
 }

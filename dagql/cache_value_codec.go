@@ -280,12 +280,6 @@ func validateMemoTransferRecordContent(rec PersistedRecord, deps []uint64, memos
 	return validateTransferDependencies(rec, deps)
 }
 
-// validateTransferPayloads checks each payload of a transferred record by
-// its codec.
-func validateTransferPayloads(rec PersistedRecord) error {
-	return validateMemoTransferPayloads(rec, nil)
-}
-
 func validateMemoTransferPayloads(rec PersistedRecord, memos payloadMemos) error {
 	return walkMemoTransferPayloads(&rec.Envelope, rec.Call, nil, memos, func(family PersistedObjectFamily, v PersistedPayloadVisit) (json.RawMessage, error) {
 		if family.Transfer != nil {
