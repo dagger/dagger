@@ -13,6 +13,12 @@
 // for the top lists, to its leaf-most matching frame: the PR's own code
 // closest to the allocation, which is what a memory-cake demo wants to point
 // at. -focus-alloc defaults to -focus.
+//
+// A focus can also be clauses separated by " || ", each of terms separated
+// by " && ": a sample matches when, for some clause, every term matches one
+// of its frames, e.g. "consumeString && exportTraces || SpanAttributes" for
+// strings decoded on the trace path, plus anything under SpanAttributes. It
+// is attributed to the leaf-most frame matching the clause's LAST term.
 package main
 
 import (
@@ -21,6 +27,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/google/pprof/profile"
 )
@@ -72,35 +79,19 @@ func report(p *profile.Profile, sampleType, focus, totalKey, focusKey, topKey st
 		}
 		return nil
 	}
-	var re *regexp.Regexp
-	if focus != "" {
-		var err error
-		re, err = regexp.Compile(focus)
-		if err != nil {
-			return err
-		}
+	clauses, err := parseFocus(focus)
+	if err != nil {
+		return err
 	}
 	var total, focused int64
 	sites := map[string]int64{}
 	for _, s := range p.Sample {
 		v := s.Value[idx]
 		total += v
-		if re == nil {
-			continue
-		}
-		// Locations are leaf first; within a location, inlined lines are
-		// leaf first too.
 		site := ""
-	frames:
-		for _, loc := range s.Location {
-			for _, ln := range loc.Line {
-				if ln.Function == nil {
-					continue
-				}
-				if re.MatchString(ln.Function.Name + " " + ln.Function.Filename) {
-					site = ln.Function.Name
-					break frames
-				}
+		for _, terms := range clauses {
+			if site = matchClause(s, terms); site != "" {
+				break
 			}
 		}
 		if site != "" {
@@ -122,4 +113,58 @@ func report(p *profile.Profile, sampleType, focus, totalKey, focusKey, topKey st
 		fmt.Printf("%s %d %s\n", topKey, sites[n], n)
 	}
 	return nil
+}
+
+// parseFocus splits a focus into clauses of terms (see the package docs).
+func parseFocus(focus string) ([][]*regexp.Regexp, error) {
+	if focus == "" {
+		return nil, nil
+	}
+	var clauses [][]*regexp.Regexp
+	for _, clause := range strings.Split(focus, " || ") {
+		var terms []*regexp.Regexp
+		for _, term := range strings.Split(clause, " && ") {
+			re, err := regexp.Compile(strings.TrimSpace(term))
+			if err != nil {
+				return nil, err
+			}
+			terms = append(terms, re)
+		}
+		clauses = append(clauses, terms)
+	}
+	return clauses, nil
+}
+
+// matchClause returns the site a sample is attributed to if every term
+// matches one of its frames: the leaf-most frame matching the last term. ""
+// if it doesn't match.
+func matchClause(s *profile.Sample, terms []*regexp.Regexp) string {
+	site := ""
+	for i, re := range terms {
+		f := leafMost(s, re)
+		if f == "" {
+			return ""
+		}
+		if i == len(terms)-1 {
+			site = f
+		}
+	}
+	return site
+}
+
+// leafMost returns the name of the sample's leaf-most frame matching re.
+// Locations are leaf first; within a location, inlined lines are leaf first
+// too.
+func leafMost(s *profile.Sample, re *regexp.Regexp) string {
+	for _, loc := range s.Location {
+		for _, ln := range loc.Line {
+			if ln.Function == nil {
+				continue
+			}
+			if re.MatchString(ln.Function.Name + " " + ln.Function.Filename) {
+				return ln.Function.Name
+			}
+		}
+	}
+	return ""
 }
