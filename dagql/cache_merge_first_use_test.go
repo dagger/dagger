@@ -198,3 +198,24 @@ func firstUseTestPrepareAll(t *testing.T, ctx context.Context, c *Cache) {
 		require.False(t, res.holdsUnpreparedPayload())
 	}
 }
+
+// A cache counts the payloads its calls prepared at their first use and
+// those refused, with the time preparing took in all and at the longest:
+// the work a restore defers onto the calls that use its records.
+func TestFirstUseCountsWhatCallsPrepared(t *testing.T) {
+	t.Parallel()
+	set := firstUseTestCloud(t).spoil(t)
+
+	ctx, engine, srv := transferTestCache(t)
+	_, err := engine.MergeValues(ctx, cloudCacheID, set.bundle)
+	require.NoError(t, err)
+	require.Zero(t, engine.FirstUse(), "a merge prepares no payload")
+	for _, field := range []string{"fu-good", "fu-dep", "fu-bad", "fu-good"} {
+		firstUseTestLookup(t, ctx, engine, srv, field)
+	}
+	stats := engine.FirstUse()
+	require.Equal(t, int64(2), stats.Prepared, "the two good records, each once")
+	require.Equal(t, int64(1), stats.Refused, "and the bad one")
+	require.Positive(t, stats.Longest)
+	require.GreaterOrEqual(t, stats.Total, stats.Longest)
+}

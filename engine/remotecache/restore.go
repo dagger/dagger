@@ -127,6 +127,9 @@ type RestoreReport struct {
 	Error        string
 	PeakBefore   int64
 	PeakAfter    int64
+	// Decode, Prepare and Commit are the wall time its parts took to decode,
+	// to prepare their merges and to commit them, in all.
+	Decode, Prepare, Commit time.Duration
 }
 
 // RestoredPartReport is one merged part: its records, when it committed on
@@ -427,13 +430,17 @@ func (r *restorer) open(f *restoreFile) error {
 // from the file's table, merges it, and counts the misses it would have
 // served.
 func (r *restorer) mergePart(ctx context.Context, f *restoreFile) error {
+	began := time.Now()
 	bundle, err := decodePart(f.parts[f.next])
+	f.report.Decode += time.Since(began)
 	if err != nil {
 		return fmt.Errorf("part %d: %w", f.next, err)
 	}
 	fillAddresses(&bundle, f.file.Table)
 	records := len(bundle.Values)
 	reply, err := r.s.adapter.RestorePart(ctx, bundle, f.unretained[f.next], r.s.known, f.source())
+	f.report.Prepare += reply.Prepare
+	f.report.Commit += reply.Commit
 	if reply.Release != nil {
 		f.releases = append(f.releases, reply.Release)
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -106,6 +107,8 @@ func (c *Cache) prepareMergedPayload(ctx context.Context, res *sharedResult) err
 		return use.err
 	}
 	use.done = true
+	began := time.Now()
+	defer func() { c.firstUsePrepared(time.Since(began), use.err != nil) }()
 	rec := PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}
 	prepared, err := prepareFirstUseRecord(rec, use)
 	if err != nil {
@@ -211,4 +214,35 @@ func (res *sharedResult) holdsUnpreparedPayload() bool {
 	res.payloadMu.RLock()
 	defer res.payloadMu.RUnlock()
 	return res.firstUse != nil
+}
+
+// FirstUseStats counts the payloads of records merged from the Cloud that a
+// first use prepared (prepareMergedPayload) and those it refused, with the
+// time preparing took in all and at the longest: the work a restore defers
+// onto the calls that use its records.
+type FirstUseStats struct {
+	Prepared, Refused int64
+	Total, Longest    time.Duration
+}
+
+// firstUsePrepared counts one payload a first use prepared, or refused, in d.
+func (c *Cache) firstUsePrepared(d time.Duration, refused bool) {
+	c.firstUseMu.Lock()
+	defer c.firstUseMu.Unlock()
+	if refused {
+		c.firstUseStats.Refused++
+	} else {
+		c.firstUseStats.Prepared++
+	}
+	c.firstUseStats.Total += d
+	if d > c.firstUseStats.Longest {
+		c.firstUseStats.Longest = d
+	}
+}
+
+// FirstUse returns the cache's FirstUseStats so far.
+func (c *Cache) FirstUse() FirstUseStats {
+	c.firstUseMu.Lock()
+	defer c.firstUseMu.Unlock()
+	return c.firstUseStats
 }

@@ -236,6 +236,7 @@ func (srv *Server) stopEngineEvents(ctx context.Context, clean bool) {
 			Restores:           srv.restoreEvents(),
 			PartsWithoutSource: srv.engineCache.PartsWithoutSource(),
 			UncountedMisses:    srv.uncountedMisses(),
+			FirstUse:           engineFirstUse(srv.engineCache.FirstUse()),
 		})
 	}
 	shutdownCtx := context.WithoutCancel(ctx)
@@ -296,6 +297,9 @@ func (srv *Server) restoreEvents() []telemetryattrs.EngineRestore {
 			Error:        report.Error,
 			PeakBefore:   report.PeakBefore,
 			PeakAfter:    report.PeakAfter,
+			Decode:       int64(report.Decode),
+			Prepare:      int64(report.Prepare),
+			Commit:       int64(report.Commit),
 		}
 		for _, part := range report.Parts {
 			event.Parts = append(event.Parts, telemetryattrs.EngineRestorePart{
@@ -311,4 +315,10 @@ func (srv *Server) restoreEvents() []telemetryattrs.EngineRestore {
 		events[i] = event
 	}
 	return events
+}
+
+// engineFirstUse is the cache's FirstUseStats as the engine.stop event
+// carries them.
+func engineFirstUse(stats dagql.FirstUseStats) telemetryattrs.EngineFirstUse {
+	return telemetryattrs.EngineFirstUse{Prepared: stats.Prepared, Refused: stats.Refused, Total: int64(stats.Total), Longest: int64(stats.Longest)}
 }

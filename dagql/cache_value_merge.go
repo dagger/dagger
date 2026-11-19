@@ -92,14 +92,18 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 // the hold keeps them until the root lands. source names the set file, for
 // the log of a record whose payload fails at its first use (Source).
 func (c *Cache) RestoreValues(ctx context.Context, bundle ValueBundle, unretained []TransferOrdinal, source string) (MergeReply, error) {
+	began := time.Now()
 	p, err := c.PrepareValueMerge(ctx, cloudCacheID, bundle)
 	if err != nil {
 		return MergeReply{}, err
 	}
+	prepared := time.Now()
 	p.restore, p.hold = true, true
 	p.Unretained(unretained...)
 	p.Source(source)
-	return c.CommitValueMerge(ctx, p)
+	reply, err := c.CommitValueMerge(ctx, p)
+	reply.Prepare, reply.Commit = prepared.Sub(began), time.Since(prepared)
+	return reply, err
 }
 
 // PreparedValueMerge is a merge prepared for one cache and sending cache,
@@ -375,6 +379,9 @@ type MergeReply struct {
 	// parts before it decided (warmMergeTargetParts). Each capture takes
 	// egraphMu for writing, briefly, so it waits for egraphMu's readers.
 	Warm time.Duration
+	// Prepare and Commit are, on a restore's reply (RestoreValues), how long
+	// the merge took to prepare and to commit, from end to end.
+	Prepare, Commit time.Duration
 }
 
 // MergeRowCounts counts a merge's records by what its commit did with each:

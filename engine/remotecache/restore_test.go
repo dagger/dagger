@@ -122,7 +122,7 @@ func restoreSession(t *testing.T, adapter *fakeAdapter) (*session, *recordingCon
 // merged is a commit's reply for a part: one value per record, on the
 // sender's number, each made new.
 func merged(part dagql.ValueBundle, at time.Time) dagql.MergeReply {
-	reply := dagql.MergeReply{Committed: true, EngineTimeUnixNano: at.UnixNano(), Rows: dagql.MergeRowCounts{Created: len(part.Values)}, LockWait: time.Millisecond, CommitHold: 2 * time.Millisecond}
+	reply := dagql.MergeReply{Committed: true, EngineTimeUnixNano: at.UnixNano(), Rows: dagql.MergeRowCounts{Created: len(part.Values)}, LockWait: time.Millisecond, CommitHold: 2 * time.Millisecond, Prepare: 3 * time.Millisecond, Commit: 4 * time.Millisecond}
 	for _, value := range part.Values {
 		reply.Values = append(reply.Values, dagql.MergedValue{Ordinal: value.Ordinal, Number: value.SenderNumber})
 	}
@@ -199,6 +199,10 @@ func TestRestoreMergesAFilesParts(t *testing.T) {
 	require.Equal(t, commit, report.Parts[1].Committed)
 	require.Equal(t, time.Millisecond, report.Parts[1].LockWait, "the part's wait for the cache's lock")
 	require.Equal(t, 2*time.Millisecond, report.Parts[1].CommitHold, "and its hold of it")
+	require.Equal(t, 6*time.Millisecond, report.Prepare, "the parts' preparations, in all")
+	require.Equal(t, 8*time.Millisecond, report.Commit, "and their commits")
+	require.Positive(t, report.Decode, "and their decodes")
+	require.Equal(t, "test-base whole "+whole.Digest.String(), <-adapter.sourceSeen, "each part's merge names its file")
 	require.False(t, report.FetchStarted.IsZero())
 	require.False(t, report.Fetched.Before(report.FetchStarted))
 	require.Equal(t, 1, files.getsOf("whole"))
