@@ -1081,10 +1081,15 @@ type statusIconHost interface {
 }
 
 // rowWaitsInterval is how often the live view brings the waiting below rows
-// up to date (dagui.DB.UpdateRowWaits). On the largest traces an update can
-// take a sizable fraction of a second, so it runs apart from drawing, on a
-// beat of its own; the durations ticking in between read the last result.
-const rowWaitsInterval = time.Second
+// up to date (dagui.DB.UpdateRowWaits). It runs on the event loop, which
+// draws and takes input too, so it works in slices of rowWaitsSlice, yielding
+// rowWaitsYield between them; the durations ticking meanwhile read the last
+// result.
+const (
+	rowWaitsInterval = time.Second
+	rowWaitsSlice    = 20 * time.Millisecond
+	rowWaitsYield    = 20 * time.Millisecond
+)
 
 // startRowWaits keeps the waiting below rows up to date while the view runs.
 func (fe *frontendPretty) startRowWaits() (stop func()) {
@@ -1098,7 +1103,24 @@ func (fe *frontendPretty) startRowWaits() (stop func()) {
 			case <-done:
 				return
 			case <-ticker.C:
-				fe.dispatch(fe.updateRowWaitsLocked)
+			}
+			for {
+				more := make(chan bool, 1)
+				fe.dispatch(func() { more <- fe.updateRowWaitsLocked(rowWaitsSlice) })
+				var left bool
+				select {
+				case <-done:
+					return
+				case left = <-more:
+				}
+				if !left {
+					break
+				}
+				select {
+				case <-done:
+					return
+				case <-time.After(rowWaitsYield):
+				}
 			}
 		}
 	})
@@ -1108,20 +1130,21 @@ func (fe *frontendPretty) startRowWaits() (stop func()) {
 	}
 }
 
-// updateRowWaitsLocked brings the waiting below rows up to date, and redraws
-// the rows whose waiting changed.
-func (fe *frontendPretty) updateRowWaitsLocked() {
-	changed := fe.db.UpdateRowWaits(time.Now())
-	if len(changed) == 0 {
-		return
-	}
-	for _, span := range changed {
-		if sr, ok := fe.spanTrees[span.ID]; ok {
-			sr.Update()
+// updateRowWaitsLocked brings the waiting below rows up to date, within
+// budget when it's above zero, redraws the rows whose waiting changed, and
+// reports whether work is left.
+func (fe *frontendPretty) updateRowWaitsLocked(budget time.Duration) bool {
+	changed, more := fe.db.UpdateRowWaits(time.Now(), budget)
+	if len(changed) > 0 {
+		for _, span := range changed {
+			if sr, ok := fe.spanTrees[span.ID]; ok {
+				sr.Update()
+			}
 		}
+		fe.viewDirty = true
+		fe.Update()
 	}
-	fe.viewDirty = true
-	fe.Update()
+	return more
 }
 
 // durationTickInterval is how often a running span's DurationView re-renders.
@@ -3434,7 +3457,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	}
 
 	// the final report's rows read the waiting below them as of the end
-	fe.updateRowWaitsLocked()
+	fe.updateRowWaitsLocked(0)
 	fe.setupFinalRenderLocked()
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))

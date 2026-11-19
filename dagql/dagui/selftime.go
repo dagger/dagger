@@ -95,6 +95,9 @@ type waitWindow struct {
 	start, end time.Time
 	target     *Span // raw wait target (often an internal resume span)
 	reason     string
+	// below is set on a wait recorded below the target (rowWaitsState
+	// chainWaits): it is resolved already, to the op working during it.
+	below *waitStretch
 }
 
 // resolvedWait is a wait stretch attributed to the op actually working
@@ -138,7 +141,7 @@ func (span *Span) timeBreakdown(now time.Time, below *rowWaitsState) *TimeBreakd
 
 	var waiting []TimeSegment
 	if resolved, ok := span.resolvedWaits(now, paintedTotal, below); ok {
-		waiting = span.waitingSegments(resolved)
+		waiting = span.waitingSegments(resolved, below)
 	} else {
 		hb.unresolved = true
 	}
@@ -256,17 +259,18 @@ func (span *Span) resolvedWaits(now time.Time, paintedTotal time.Duration, below
 	// blocked on it for that work's interval — including right now, when the
 	// work is still running. Overlaps with explicit edges merge away.
 	span.collectInferredWaits(&raw, now)
-	merged := mergeWaitWindows(raw)
 
 	// A view holding part of a trace may not have loaded what the row
 	// waited on. Until it does, whether the row waited on another operation
 	// or ran nested work of its own is unknown, so it reads as working the
-	// whole time. TimeBreakdownSpans names what to load.
-	for _, w := range merged {
+	// whole time. TimeBreakdownSpans names what to load. Each wait counts,
+	// before merging keeps only the longest of those that adjoin.
+	for _, w := range raw {
 		if w.target.unloaded() || !blockerAncestry(resolveBlocker(w.target), span, nil) {
 			return nil, false
 		}
 	}
+	merged := mergeWaitWindows(raw)
 
 	// Resolve each stretch transitively into per-instant blockers, then
 	// smooth out sub-visual slivers.
@@ -275,7 +279,7 @@ func (span *Span) resolvedWaits(now time.Time, paintedTotal time.Duration, below
 		direct := resolveBlocker(w.target)
 		via := ""
 		if direct != nil {
-			via = blockerLabel(shownBlocker(direct, span))
+			via = below.label(shownBlocker(direct, span))
 		}
 		visited := map[*Span]bool{}
 		resolved = append(resolved, resolveWaitChain(w, via, nil, 0, visited, now, below)...)
@@ -305,7 +309,7 @@ func (span *Span) resolvedWaits(now time.Time, paintedTotal time.Duration, below
 
 // waitingSegments names the blockers of resolved waits by the rows the view
 // draws for them, as waiting segments in time order.
-func (span *Span) waitingSegments(resolved []resolvedWait) []TimeSegment {
+func (span *Span) waitingSegments(resolved []resolvedWait, below *rowWaitsState) []TimeSegment {
 	var segs []TimeSegment
 	for _, w := range resolved {
 		if !w.end.After(w.start) {
@@ -325,7 +329,7 @@ func (span *Span) waitingSegments(resolved []resolvedWait) []TimeSegment {
 			}
 			seg.Blockers = append(seg.Blockers, TimeBlocker{
 				Target: blocker.ID,
-				Label:  blockerLabel(blocker),
+				Label:  below.label(blocker),
 			})
 		}
 		if w.indirect {
@@ -334,7 +338,7 @@ func (span *Span) waitingSegments(resolved []resolvedWait) []TimeSegment {
 		if w.blocker != nil {
 			blocker := shownBlocker(w.blocker, span)
 			seg.Target = blocker.ID
-			seg.Label = blockerLabel(blocker)
+			seg.Label = below.label(blocker)
 		} else {
 			seg.Label = "an operation outside this trace"
 		}
@@ -436,7 +440,11 @@ func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth i
 			gap.start, gap.end = cursor, sub.start
 			out = append(out, gap)
 		}
-		out = append(out, resolveWaitChain(sub, viaLabel, blockers, depth+1, visited, now, below)...)
+		if sub.below != nil {
+			out = append(out, sub.below.resolved(sub, viaLabel, blockers))
+		} else {
+			out = append(out, resolveWaitChain(sub, viaLabel, blockers, depth+1, visited, now, below)...)
+		}
 		cursor = sub.end
 	}
 	if cursor.Before(win.end) {
@@ -830,6 +838,25 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 		}
 	}
 	walk(span, 0)
+
+	// The waiting computed from the row's whole subtree (RowWaits) names
+	// blockers the row's own waits don't reach. A view draws them, and
+	// jumps to them, from its tree, so it needs each with its ancestors.
+	if rw := span.RowWaits; rw != nil {
+		visitPlaced := func(id SpanID) {
+			for s, depth := span.db.Spans.Map[id], 0; s != nil && depth < 100; s, depth = s.ParentSpan, depth+1 {
+				visitOnce(s)
+			}
+		}
+		for _, seg := range rw.Segments {
+			if seg.Target.IsValid() {
+				visitPlaced(seg.Target)
+			}
+			for _, b := range seg.Blockers {
+				visitPlaced(b.Target)
+			}
+		}
+	}
 }
 
 // resolveBlocker maps internal plumbing spans (lazy "resume" markers)

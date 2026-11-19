@@ -67,6 +67,12 @@ type rowWaitsState struct {
 	// nothing a summary reads.
 	publishing bool
 	now        time.Time
+	// labels caches blocker labels for one update (label).
+	labels map[*Span]string
+	// queue holds the spans whose summaries were dropped and are not yet
+	// computed again, deepest first; pending maps each to its depth.
+	queue   []*Span
+	pending map[*Span]int
 }
 
 // waitSummary is one span's summary of the waiting in its subtree.
@@ -103,14 +109,55 @@ type waitStretch struct {
 func (w waitStretch) start() time.Time { return w.seg.Start }
 func (w waitStretch) end() time.Time   { return w.seg.End }
 
+// resolved is the part of w within win, reached by a wait chain whose
+// blockers so far are path.
+func (w *waitStretch) resolved(win waitWindow, via string, path []*Span) resolvedWait {
+	for _, b := range w.seg.Blockers {
+		if w.origin != nil {
+			path = appendResolvedBlocker(path, w.origin.db.Spans.Map[b.Target])
+		}
+	}
+	path = appendResolvedBlocker(path, w.blocker)
+	return resolvedWait{
+		start:    win.start,
+		end:      win.end,
+		blocker:  w.blocker,
+		blockers: path,
+		indirect: true,
+		via:      via,
+		unplaced: w.seg.unplaced,
+	}
+}
+
+// label names blocker as blockerLabel does, once per update: reading a
+// command line from its exec's attributes is costly, and a busy blocker is
+// named for many rows.
+func (st *rowWaitsState) label(blocker *Span) string {
+	if st == nil {
+		return blockerLabel(blocker)
+	}
+	if l, ok := st.labels[blocker]; ok {
+		return l
+	}
+	l := blockerLabel(blocker)
+	st.labels[blocker] = l
+	return l
+}
+
 // UpdateRowWaits brings every row's waiting (SpanSnapshot.RowWaits) up to
-// date with the spans received so far, as of now, and returns the spans whose
-// waiting changed. Each is updated as any changed span is, so a DB serving a
-// remote frontend sends it (UpdatedSnapshots). The first call computes it for the whole DB; later calls
-// recompute only what changed since. The DB keeps no extra state until the
-// first call, so only a frontend that shows waiting needs to call it, and
+// date with the spans received so far, as of now. It returns the spans whose
+// waiting changed, each updated as any changed span is, so that a DB serving
+// a remote frontend sends it (UpdatedSnapshots).
+//
+// The first call computes it for the whole DB; later calls recompute only what
+// changed since. With a budget above zero, a call stops once it has spent the
+// budget and reports that work is left, and the next call carries on, so that
+// a caller drawing a view or serving one is never held up for long; rows not
+// recomputed yet keep their last result meanwhile. The DB keeps no extra state
+// until the first call, so only a frontend that shows waiting calls it, and
 // rows read their own breakdown until it does.
-func (db *DB) UpdateRowWaits(now time.Time) []*Span {
+func (db *DB) UpdateRowWaits(now time.Time, budget time.Duration) (changed []*Span, more bool) {
+	started := time.Now()
 	st := db.rowWaits
 	if st == nil || st.partial != db.PartialTrace {
 		st = &rowWaitsState{
@@ -119,25 +166,67 @@ func (db *DB) UpdateRowWaits(now time.Time) []*Span {
 			changed:   map[*Span]struct{}{},
 			waiters:   map[*Span]*SpanSet{},
 			heldBack:  map[*Span]struct{}{},
+			pending:   map[*Span]int{},
 		}
 		db.rowWaits = st
 		for _, span := range db.Spans.Order {
 			st.changed[span] = struct{}{}
 		}
 	}
-	// running spans grow with time
-	for span := range db.runningSpans {
-		st.changed[span] = struct{}{}
+	if len(st.queue) == 0 {
+		// a new round: running spans have grown since the last
+		for span := range db.runningSpans {
+			st.changed[span] = struct{}{}
+		}
 	}
-	if len(st.changed) == 0 {
-		return nil
+	if len(st.changed) > 0 {
+		st.index()
+		// a held-back wait may rise now that more spans have arrived
+		for span := range st.heldBack {
+			st.changed[span] = struct{}{}
+		}
+		clear(st.heldBack)
+		for _, span := range st.drop() {
+			if _, ok := st.pending[span]; !ok {
+				st.pending[span] = depth(span)
+				st.queue = append(st.queue, span)
+			}
+		}
+		clear(st.changed)
+		// deepest first, so that each summary reads its children's
+		slices.SortStableFunc(st.queue, func(a, b *Span) int { return st.pending[b] - st.pending[a] })
 	}
+	if len(st.queue) == 0 {
+		return nil, false
+	}
+
+	st.now = now
+	st.labels = map[*Span]string{}
+	st.publishing = true
+	defer func() { st.publishing = false }()
+	done := 0
+	for _, span := range st.queue {
+		if budget > 0 && done > 0 && time.Since(started) >= budget {
+			break
+		}
+		done++
+		delete(st.pending, span)
+		if st.publish(span, st.summary(span), now) {
+			changed = append(changed, span)
+		}
+	}
+	st.queue = slices.Delete(st.queue, 0, done)
+	return changed, len(st.queue) > 0
+}
+
+// index records the wait links of the changed spans in the reverse index.
+func (st *rowWaitsState) index() {
 	for span := range st.changed {
 		for i := range span.Links {
 			if !span.Links[i].IsWait() {
 				continue
 			}
-			target := db.Spans.Map[span.Links[i].SpanContext.SpanID]
+			target := span.db.Spans.Map[span.Links[i].SpanContext.SpanID]
 			if target == nil {
 				continue
 			}
@@ -147,24 +236,15 @@ func (db *DB) UpdateRowWaits(now time.Time) []*Span {
 			st.waiters[target].add(span)
 		}
 	}
-	// a held-back wait may rise now that more spans have arrived
-	for span := range st.heldBack {
-		st.changed[span] = struct{}{}
-	}
-	clear(st.heldBack)
-	dropped := st.drop()
-	clear(st.changed)
+}
 
-	st.now = now
-	st.publishing = true
-	defer func() { st.publishing = false }()
-	var changed []*Span
-	for _, span := range dropped {
-		if span.publishRowWaits(st.summary(span), now) {
-			changed = append(changed, span)
-		}
+// depth is span's depth in the tree loaded.
+func depth(span *Span) int {
+	d := 0
+	for s := span.ParentSpan; s != nil && d < 1000; s = s.ParentSpan {
+		d++
 	}
-	return changed
+	return d
 }
 
 // noteRowWaitsChange records a span change for the next UpdateRowWaits.
@@ -308,12 +388,15 @@ func (st *rowWaitsState) compute(span *Span) *waitSummary {
 // chainWaits returns target's waits from below as wait windows, so that a
 // wait chain reaching target continues through them. A call's execution span
 // stands for the call: a module function's body runs its requests beneath the
-// call's own span, beside the execution span.
+// call's own span, beside the execution span. Each is resolved already, to
+// the op working during it, so the chain ends there.
 func (st *rowWaitsState) chainWaits(target *Span) []waitWindow {
 	var out []waitWindow
 	add := func(s *Span) {
-		for _, w := range st.summary(s).rising {
-			out = append(out, waitWindow{start: w.start(), end: w.end(), target: w.blocker})
+		rising := st.summary(s).rising
+		for i := range rising {
+			w := &rising[i]
+			out = append(out, waitWindow{start: w.start(), end: w.end(), target: w.blocker, below: w})
 		}
 	}
 	add(target)
@@ -339,16 +422,16 @@ func (st *rowWaitsState) placed(owner *Span, in []waitStretch) []waitStretch {
 	return out
 }
 
-// publishRowWaits sets span's RowWaits from its summary, and reports whether
-// they changed.
-func (span *Span) publishRowWaits(sum *waitSummary, now time.Time) bool {
+// publish sets span's RowWaits from its summary, and reports whether they
+// changed.
+func (st *rowWaitsState) publish(span *Span, sum *waitSummary, now time.Time) bool {
 	var segs []TimeSegment
 	if sum.loaded && sum.resolved {
 		for _, w := range sum.waits {
 			seg := w.seg
 			if w.origin != span {
 				seg.Indirect = true
-				seg.Via = blockerLabel(w.origin)
+				seg.Via = st.label(w.origin)
 			}
 			segs = append(segs, seg)
 		}

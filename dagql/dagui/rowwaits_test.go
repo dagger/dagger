@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
@@ -75,6 +76,15 @@ var waitBelowTrace = []rowSpan{
 		links: []SpanLink{waitLink(testID(2), "lazy", at(10), at(70))}},
 }
 
+// updateRowWaits brings the waiting below rows up to date in one go.
+func updateRowWaits(db *DB, now time.Time) []*Span {
+	changed, more := db.UpdateRowWaits(now, 0)
+	if more {
+		panic("an update without a budget should finish")
+	}
+	return changed
+}
+
 func rowWaitsDB(spans ...rowSpan) *DB {
 	db := NewDB()
 	importRowSpans(db, spans...)
@@ -106,7 +116,7 @@ func TestRowWaitsBelow(t *testing.T) {
 	row := db.Spans.Map[testID(3)]
 	checkWaiting(t, row.TimeBreakdown(at(100)), 75*time.Second)
 
-	if len(db.UpdateRowWaits(at(100))) == 0 {
+	if len(updateRowWaits(db, at(100))) == 0 {
 		t.Fatal("the update should report a change")
 	}
 	hb := row.TimeBreakdown(at(100))
@@ -117,7 +127,7 @@ func TestRowWaitsBelow(t *testing.T) {
 	// the step that waited reads as it always did
 	checkWaiting(t, db.Spans.Map[testID(5)].TimeBreakdown(at(100)), 5*time.Second,
 		waitingOn(10, 70, 2, "apt-get install", ""))
-	if len(db.UpdateRowWaits(at(100))) != 0 {
+	if len(updateRowWaits(db, at(100))) != 0 {
 		t.Fatal("an update with nothing new should change nothing")
 	}
 }
@@ -126,7 +136,7 @@ func TestRowWaitsBelow(t *testing.T) {
 func TestRowWaitsConcurrentWorkWins(t *testing.T) {
 	db := rowWaitsDB(append(waitBelowTrace,
 		rowSpan{id: 6, parent: 3, name: "Container.withExec", start: 20, end: 30})...)
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	checkWaiting(t, db.Spans.Map[testID(3)].TimeBreakdown(at(100)), 25*time.Second,
 		waitingOn(10, 20, 2, "apt-get install", "Container.exitCode"),
 		waitingOn(30, 70, 2, "apt-get install", "Container.exitCode"))
@@ -146,7 +156,7 @@ func TestRowWaitsRiseBelowCommonRow(t *testing.T) {
 		spans = append(spans, s)
 	}
 	db := rowWaitsDB(spans...)
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	checkWaiting(t, db.Spans.Map[testID(3)].TimeBreakdown(at(100)), 15*time.Second,
 		waitingOn(10, 70, 2, "apt-get install", "Container.exitCode"))
 	checkWaiting(t, db.Spans.Map[testID(7)].TimeBreakdown(at(100)), 90*time.Second)
@@ -162,7 +172,7 @@ func TestRowWaitsLazyEvaluationIsNotWorkWhereItRuns(t *testing.T) {
 			links: []SpanLink{evalLink(testID(2))}},
 	)
 	db := rowWaitsDB(spans...)
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	segs := waitingSegments(db.Spans.Map[testID(3)].TimeBreakdown(at(100)))
 	if len(segs) != 1 || segs[0].Target != testID(2) || segs[0].Duration() != 60*time.Second {
 		t.Fatalf("the row should wait 60s on the evaluated step: %+v", segs)
@@ -181,7 +191,7 @@ func TestRowWaitsFunctionProcessIsNotWork(t *testing.T) {
 		rowSpan{id: 12, parent: 10, name: "exec python -m dagger.mod call", start: 2, end: 79, kind: "exec"},
 	)
 	db := rowWaitsDB(spans...)
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	checkWaiting(t, db.Spans.Map[testID(3)].TimeBreakdown(at(100)), 20*time.Second,
 		waitingOn(10, 70, 2, "apt-get install", "Container.exitCode"))
 }
@@ -192,12 +202,12 @@ func TestRowWaitsHeldBackUntilPlaced(t *testing.T) {
 	spans := append([]rowSpan{}, waitBelowTrace...)
 	spans[1].parent = 13 // another module's call, not yet arrived
 	db := rowWaitsDB(spans...)
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	row := db.Spans.Map[testID(3)]
 	checkWaiting(t, row.TimeBreakdown(at(100)), 75*time.Second)
 
 	importRowSpans(db, rowSpan{id: 13, parent: 1, name: "Other.image", start: 9, end: 71})
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	checkWaiting(t, row.TimeBreakdown(at(100)), 15*time.Second,
 		waitingOn(10, 70, 2, "apt-get install", "Container.exitCode"))
 }
@@ -210,7 +220,7 @@ func TestRowWaitsOnAnotherTrace(t *testing.T) {
 	spans = append(spans[:1], spans[2:]...)
 	spans[3].links = []SpanLink{link}
 	db := rowWaitsDB(spans...)
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	segs := waitingSegments(db.Spans.Map[testID(3)].TimeBreakdown(at(100)))
 	if len(segs) != 1 || segs[0].Label != "an operation outside this trace" || segs[0].Duration() != 60*time.Second {
 		t.Fatalf("the row should wait 60s outside this trace: %+v", segs)
@@ -241,7 +251,7 @@ func TestRowWaitsChainContinuesBelowJoinedCall(t *testing.T) {
 	joined := db.Spans.Map[testID(7)]
 	checkWaiting(t, joined.TimeBreakdown(at(100)), 0, waitingOn(10, 72, 3, "Other.image", ""))
 
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	segs := waitingSegments(joined.TimeBreakdown(at(100)))
 	if len(segs) != 2 || segs[0].Target != testID(2) || segs[0].Duration() != 60*time.Second ||
 		segs[1].Target != testID(3) || segs[1].Duration() != 2*time.Second {
@@ -265,12 +275,12 @@ func TestRowWaitsPartialTrace(t *testing.T) {
 	db := NewDB()
 	db.PartialTrace = true
 	importRowSpans(db, spans[0], spans[1], spans[2], spans[4])
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	row := db.Spans.Map[testID(3)]
 	checkWaiting(t, row.TimeBreakdown(at(100)), 75*time.Second)
 
 	importRowSpans(db, spans[3])
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	checkWaiting(t, row.TimeBreakdown(at(100)), 15*time.Second,
 		waitingOn(10, 70, 2, "apt-get install", "Container.exitCode"))
 
@@ -278,7 +288,7 @@ func TestRowWaitsPartialTrace(t *testing.T) {
 	uncounted := spans[2]
 	uncounted.children = 0
 	importRowSpans(db, uncounted)
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	if got := waitingSegments(row.TimeBreakdown(at(100))); len(got) != 1 {
 		t.Fatalf("the row's subtree is still loaded: %+v", got)
 	}
@@ -295,14 +305,14 @@ func TestRowWaitsLive(t *testing.T) {
 		rowSpan{id: 8, parent: 5, name: "resume withExec", start: 10, end: -1,
 			links: []SpanLink{evalLink(testID(2))}},
 	)
-	db.UpdateRowWaits(at(30))
+	updateRowWaits(db, at(30))
 	row := db.Spans.Map[testID(3)]
 	checkWaiting(t, row.TimeBreakdown(at(30.5)), 5*time.Second,
 		waitingOn(10, 30.5, 2, "apt-get install", "Container.exitCode"))
 	if blocker, ok := row.WaitingNow(at(30.5)); !ok || blocker.ID != testID(2) {
 		t.Fatalf("the row should be waiting now on the other step: %v %v", blocker, ok)
 	}
-	if len(db.UpdateRowWaits(at(31))) == 0 {
+	if len(updateRowWaits(db, at(31))) == 0 {
 		t.Fatal("a running row's waiting changes as time passes")
 	}
 }
@@ -311,7 +321,7 @@ func TestRowWaitsLive(t *testing.T) {
 // computing it, and keeps it when a raw snapshot of the span arrives.
 func TestRowWaitsInSnapshots(t *testing.T) {
 	server := rowWaitsDB(waitBelowTrace...)
-	server.UpdateRowWaits(at(100))
+	updateRowWaits(server, at(100))
 	var snaps []SpanSnapshot
 	for _, span := range server.Spans.Order {
 		snaps = append(snaps, span.Snapshot())
@@ -391,10 +401,10 @@ func TestRowWaitsUpdatesMatchFreshComputation(t *testing.T) {
 				}
 				importRowSpans(db, spans...)
 				seen = append(seen, spans...)
-				db.UpdateRowWaits(at(100))
+				updateRowWaits(db, at(100))
 
 				fresh := rowWaitsDB(seen...)
-				fresh.UpdateRowWaits(at(100))
+				updateRowWaits(fresh, at(100))
 				for _, s := range seen {
 					got := describeRowWaits(db.Spans.Map[testID(s.id)].TimeBreakdown(at(100)))
 					want := describeRowWaits(fresh.Spans.Map[testID(s.id)].TimeBreakdown(at(100)))
@@ -472,12 +482,109 @@ func TestRowWaitsPartialTraceOverOTLP(t *testing.T) {
 	if !db.PartialTrace {
 		t.Fatal("spans from a partial stream should mark the DB partial")
 	}
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	row := db.Spans.Map[testID(3)]
 	checkWaiting(t, row.TimeBreakdown(at(100)), 75*time.Second)
 
 	export(db, waitBelowTrace[3])
-	db.UpdateRowWaits(at(100))
+	updateRowWaits(db, at(100))
 	checkWaiting(t, row.TimeBreakdown(at(100)), 15*time.Second,
 		waitingOn(10, 70, 2, "apt-get install", "Container.exitCode"))
+}
+
+// An update with a budget stops once the budget is spent, and later calls
+// carry on to the result a single update gives.
+func TestRowWaitsInSlices(t *testing.T) {
+	whole := rowWaitsDB(waitBelowTrace...)
+	updateRowWaits(whole, at(100))
+
+	db := rowWaitsDB(waitBelowTrace...)
+	calls := 0
+	for more := true; more; calls++ {
+		_, more = db.UpdateRowWaits(at(100), time.Nanosecond)
+		if calls > len(waitBelowTrace) {
+			t.Fatal("sliced updates should finish")
+		}
+		if calls == 0 && !more {
+			t.Fatal("a spent budget should leave work for the next call")
+		}
+	}
+	for _, s := range waitBelowTrace {
+		got := describeRowWaits(db.Spans.Map[testID(s.id)].TimeBreakdown(at(100)))
+		want := describeRowWaits(whole.Spans.Map[testID(s.id)].TimeBreakdown(at(100)))
+		if got != want {
+			t.Fatalf("span %d: in slices\n%s\nat once\n%s", s.id, got, want)
+		}
+	}
+}
+
+// A wait on a span of this trace not loaded doesn't rise as a wait outside
+// the trace, though merging adjoining waits names the longer one after it.
+func TestRowWaitsUnloadedTargetBesideOneOutside(t *testing.T) {
+	outsideLink := waitLink(testID(9), "lazy", at(30), at(70))
+	outsideLink.SpanContext.TraceID = TraceID{TraceID: [16]byte{1}}
+	db := rowWaitsDB(
+		rowSpan{id: 1, name: "query", start: 0, end: 100},
+		rowSpan{id: 3, parent: 1, name: "Project.build", start: 5, end: 80},
+		rowSpan{id: 4, parent: 3, name: "Container.from", start: 5, end: 10},
+		rowSpan{id: 5, parent: 3, name: "Container.exitCode", start: 10, end: 75,
+			links: []SpanLink{waitLink(testID(8), "lazy", at(10), at(30)), outsideLink}},
+	)
+	updateRowWaits(db, at(100))
+	for _, seg := range waitingSegments(db.Spans.Map[testID(3)].TimeBreakdown(at(100))) {
+		if seg.Start.Before(at(30)) && seg.End.After(at(10)) {
+			t.Fatalf("the wait on a span not loaded should not rise: %+v", seg)
+		}
+	}
+}
+
+// A view drawing a row's waiting below it needs the steps it names, placed.
+func TestRowWaitsNameTheirBlockersToLoad(t *testing.T) {
+	spans := append([]rowSpan{}, waitBelowTrace...)
+	spans[1].parent = 13
+	spans = append(spans, rowSpan{id: 13, parent: 1, name: "Base.image", start: 9, end: 71})
+	db := rowWaitsDB(spans...)
+	updateRowWaits(db, at(100))
+	visited := visitedBreakdownSpans(db.Spans.Map[testID(3)])
+	for _, id := range []byte{2, 13, 1} {
+		if !visited[testID(id)] {
+			t.Fatalf("the row's breakdown should draw on %d: %v", id, visited)
+		}
+	}
+}
+
+// A call arriving after the waiting was computed renames the step it names.
+func TestRowWaitsLateCallRenamesBlocker(t *testing.T) {
+	spans := append([]rowSpan{}, waitBelowTrace...)
+	db := NewDB()
+	snaps := make([]SpanSnapshot, len(spans))
+	for i, s := range spans {
+		snaps[i] = s.snapshot()
+	}
+	snaps[1].Name = "Container.withExec"
+	snaps[1].CallDigest = "sha256:late"
+	db.ImportSnapshots(snaps)
+	updateRowWaits(db, at(100))
+	row := db.Spans.Map[testID(3)]
+	if segs := waitingSegments(row.TimeBreakdown(at(100))); len(segs) != 1 || segs[0].Label != "Container.withExec" {
+		t.Fatalf("before its call arrives, the step reads by its name: %+v", segs)
+	}
+	db.addCall("sha256:late", &callpbv1.Call{
+		Field: "withExec",
+		Type:  &callpbv1.Type{NamedType: "Container"},
+		Args: []*callpbv1.Argument{{
+			Name: "args",
+			Value: &callpbv1.Literal{Value: &callpbv1.Literal_List{List: &callpbv1.List{
+				Values: []*callpbv1.Literal{
+					{Value: &callpbv1.Literal_String_{String_: "make"}},
+					{Value: &callpbv1.Literal_String_{String_: "build"}},
+				},
+			}}},
+		}},
+		Digest: "sha256:late",
+	})
+	updateRowWaits(db, at(100))
+	if segs := waitingSegments(row.TimeBreakdown(at(100))); len(segs) != 1 || segs[0].Label != "make build" {
+		t.Fatalf("once its call arrives, the step reads by its command: %+v", segs)
+	}
 }
