@@ -206,6 +206,12 @@ func (observation *workspaceInputCall) rebindFacts(ctx context.Context, previous
 			if facts, covered, found, err := observation.rebindExactFacts(ctx, stored, complete); found || err != nil {
 				return facts, covered, err
 			}
+			// A nested source call can leave this scratch recipe without facts.
+			// Only fill an absent capture on an exact, fully covered result.
+			if complete && len(stored) == 0 && workspaceInputEmptyDirectory(ctx, observation.request) {
+				fact, err := observation.capture(ctx, value)
+				return replaceWorkspaceInputFact(observation.request.ResultFacts, fact), fact.Complete, err
+			}
 		}
 	}
 	var rules []workspaceFindUpRule
@@ -277,6 +283,24 @@ func (observation *workspaceInputCall) rebindFacts(ctx context.Context, previous
 	validateWorkspaceRetainedBindings(&fact)
 	observation.recordTelemetry(fact, complete && fact.Complete)
 	return replaceWorkspaceInputFact(observation.request.ResultFacts, fact), complete && fact.Complete, nil
+}
+
+// The native Query.directory constructor has no Workspace input. Its only
+// implicit input is the engine platform, which the collector still visits.
+func workspaceInputEmptyDirectory(ctx context.Context, req *dagql.CallRequest) bool {
+	if req.Kind != dagql.ResultCallKindField || req.Module != nil || req.Receiver != nil ||
+		req.ReceiverTypeName != "Query" || req.Field != "directory" || len(req.Args) != 0 ||
+		req.Nth != 0 || req.ListItem || req.Type == nil ||
+		*req.Type != (dagql.ResultCallType{NamedType: "Directory", NonNull: true}) || len(req.ImplicitInputs) != 1 {
+		return false
+	}
+	input := req.ImplicitInputs[0]
+	if input == nil || input.Name != "engineDefaultPlatform" || input.Value == nil ||
+		input.Value.Kind != dagql.ResultCallLiteralKindString {
+		return false
+	}
+	query, err := CurrentQuery(ctx)
+	return err == nil && input.Value.StringValue == query.Platform().Format()
 }
 
 // Identical inputs retain their owned capture, including runtime setup that
