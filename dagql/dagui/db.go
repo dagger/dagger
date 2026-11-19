@@ -1312,10 +1312,14 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			// where the target of the link completed before the linking span.
 			// (Otherwise the linking span could just be a child span.)
 			"":
+			installSite := linked.Purpose == telemetry.LinkPurposeCause && span.isLazyEvaluation()
 			linked := db.initSpan(linkedCtx.SpanID)
 			addToSpanSet(&linked.ChildSpans, span)
 			addToSpanSet(&linked.effectsViaLinks, span)
 			addToSpanSet(&span.causesViaLinks, linked)
+			if installSite {
+				addToSpanSet(&span.installSites, linked)
+			}
 		case telemetry.LinkPurposeErrorOrigin:
 			if linkedCtx.SpanID == span.ID {
 				// defense in depth; it's technically possible to link to yourself, and

@@ -30,6 +30,14 @@ func causeLink(target dagui.SpanID) dagui.SpanLink {
 	}
 }
 
+// evalLink is a lazy evaluation's link to the call it evaluates, which the
+// engine emits with no purpose.
+func evalLink(target dagui.SpanID) dagui.SpanLink {
+	return dagui.SpanLink{
+		SpanContext: dagui.SpanContext{TraceID: prettyTestTraceID(), SpanID: target},
+	}
+}
+
 func renderedLines(db *dagui.DB) string {
 	fe := NewWithDB(io.Discard, db)
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
@@ -69,7 +77,7 @@ func TestRenderSelfTimeCompleted(t *testing.T) {
 			Links: []dagui.SpanLink{waitLink(resume, at(3), at(16))}},
 		{ID: resume, TraceID: prettyTestTraceID(), ParentID: twin, Name: "resume withExec",
 			StartTime: at(3), EndTime: at(16), Final: true,
-			Links: []dagui.SpanLink{causeLink(forced)}},
+			Links: []dagui.SpanLink{evalLink(forced)}},
 	})
 	db.SetPrimarySpan(root)
 
@@ -123,7 +131,7 @@ func TestRenderLiveWaitingSuffix(t *testing.T) {
 			StartTime: at(8)},
 		{ID: resume, TraceID: prettyTestTraceID(), ParentID: twin, Name: "resume withExec",
 			StartTime: at(8),
-			Links:     []dagui.SpanLink{causeLink(forced)}},
+			Links:     []dagui.SpanLink{evalLink(forced)}},
 	})
 	db.SetPrimarySpan(root)
 

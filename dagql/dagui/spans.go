@@ -107,6 +107,15 @@ type Span struct {
 	causesViaLinks  *SpanSet
 	effectsViaLinks *SpanSet
 
+	// installSites holds the causes of a lazy evaluation that are sites its
+	// result was installed at (the calls that returned or received it), not
+	// the call it evaluates. The engine links the evaluated call with no
+	// purpose, and each install site as a cause, so that a failure of the
+	// evaluation reaches every call the user sees holding the result, and a
+	// pending call is resolved by it. The evaluation's time belongs to the
+	// evaluated call alone.
+	installSites *SpanSet
+
 	// Pre-computed RollUp state for rendering progress bars
 	// Maintained incrementally for all spans, not just those marked RollUp
 	rollUpState *RollUpState
@@ -768,9 +777,9 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	// Update the span's own activity to reflect its current state
 	span.Activity.Add(span)
 
-	propagate := func(parent *Span, causal, activity bool) bool {
+	propagate := func(parent *Span, causal, running, activity bool) bool {
 		var changed bool
-		if span.IsRunningOrEffectsRunning() {
+		if running && span.IsRunningOrEffectsRunning() {
 			changed = addToSpanSet(&parent.RunningSpans, span)
 		} else {
 			changed = removeFromSpanSet(&parent.RunningSpans, span)
@@ -805,21 +814,25 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	for parent := range span.Parents {
 		// don't propagate failure, to respect encapsulation
 		// don't propagate activity, since these are direct parents
-		if propagate(parent, false, false) {
+		if propagate(parent, false, true, false) {
 			span.db.update(parent)
 		}
 	}
 
-	for causal := range span.attributedCauses {
-		// propagate activity and failure, since causal spans inherit both
-		if propagate(causal, true, true) {
+	for causal, timed := range span.attributedCauses {
+		// propagate failure, since causal spans inherit it, and running
+		// state and activity too when the span's time is theirs
+		if propagate(causal, true, timed, timed) {
 			span.db.update(causal)
+		}
+		if !timed {
+			continue
 		}
 
 		for parent := range causal.Parents {
 			// don't propagate failure, to respect encapsulation
 			// do propagate activity, since these are indirect parents
-			if propagate(parent, false, true) {
+			if propagate(parent, false, true, true) {
 				span.db.update(parent)
 			}
 		}
@@ -893,7 +906,7 @@ func (span *Span) updateRollUpAncestors() {
 	}
 
 	// Add causal parents to queue
-	span.attributedCauses(func(causal *Span) bool {
+	span.attributedCauses(func(causal *Span, _ bool) bool {
 		queue = append(queue, causal)
 		return true
 	})
@@ -926,7 +939,7 @@ func (span *Span) updateRollUpAncestors() {
 		}
 
 		// Add this ancestor's causal parents to queue
-		current.attributedCauses(func(causal *Span) bool {
+		current.attributedCauses(func(causal *Span, _ bool) bool {
 			queue = append(queue, causal)
 			return true
 		})
@@ -1159,10 +1172,36 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 // lazy result may link an earlier one rather than the call that returned the
 // result; its status and activity belong to that call, not to the earlier
 // evaluation or the call that started it.
-func (span *Span) attributedCauses(f func(*Span) bool) {
-	span.CausalSpans(func(cause *Span) bool {
-		return cause.isLazyEvaluation() || f(cause)
-	})
+//
+// It also reports whether the span's time belongs to each cause: not to a
+// site a lazy evaluation's result was only installed at (see installSites),
+// nor to anything reached through one.
+func (span *Span) attributedCauses(f func(cause *Span, timed bool) bool) {
+	if span.causesViaLinks.Len() == 0 {
+		// Most spans have no causes; skip allocating the recursive visitor.
+		return
+	}
+	var visit func(s *Span, timed bool) bool
+	visit = func(s *Span, timed bool) bool {
+		for _, cause := range s.causesViaLinks.Spans() {
+			causeTimed := timed && !s.installedAt(cause)
+			if !cause.isLazyEvaluation() && !f(cause, causeTimed) {
+				return false
+			}
+			if !visit(cause, causeTimed) {
+				return false
+			}
+		}
+		return true
+	}
+	visit(span, true)
+}
+
+// installedAt reports whether span is a lazy evaluation linked to site only
+// as a site its result was installed at, not as the call it evaluates.
+func (span *Span) installedAt(site *Span) bool {
+	_, ok := span.installSites.Get(site.ID)
+	return ok
 }
 
 func (span *Span) EffectSpans(f func(*Span) bool) {
@@ -1212,8 +1251,22 @@ func (span *Span) hasResolvedEffects() bool {
 // later evaluation of a lazy result may link an earlier one rather than the
 // call that returned the result.
 func (span *Span) continuations(f func(*Span) bool) {
+	span.continuationsOf(false, f)
+}
+
+// evaluations iterates over the continuations that evaluate this span's own
+// result: those of its lazy evaluations it isn't linked to only as an install
+// site (see installSites). They carry the deferred part of its time.
+func (span *Span) evaluations(f func(*Span) bool) {
+	span.continuationsOf(true, f)
+}
+
+func (span *Span) continuationsOf(evaluated bool, f func(*Span) bool) {
 	var seen map[*Span]bool
 	for _, effect := range span.effectsViaLinks.Spans() {
+		if evaluated && effect.installedAt(span) {
+			continue
+		}
 		if !f(effect) {
 			return
 		}
@@ -1224,27 +1277,29 @@ func (span *Span) continuations(f func(*Span) bool) {
 			// a later evaluation may link both this span and an earlier one
 			seen = map[*Span]bool{span: true}
 			for _, direct := range span.effectsViaLinks.Spans() {
-				seen[direct] = true
+				if !evaluated || !direct.installedAt(span) {
+					seen[direct] = true
+				}
 			}
 		}
-		if !effect.laterContinuations(f, seen) {
+		if !effect.laterContinuations(evaluated, f, seen) {
 			return
 		}
 	}
 }
 
 // laterContinuations iterates over the effects of a lazy evaluation not yet
-// seen, and in turn theirs, for continuations.
-func (span *Span) laterContinuations(f func(*Span) bool, seen map[*Span]bool) bool {
+// seen, and in turn theirs, for continuationsOf.
+func (span *Span) laterContinuations(evaluated bool, f func(*Span) bool, seen map[*Span]bool) bool {
 	for _, effect := range span.effectsViaLinks.Spans() {
-		if seen[effect] {
+		if seen[effect] || evaluated && effect.installedAt(span) {
 			continue
 		}
 		seen[effect] = true
 		if !f(effect) {
 			return false
 		}
-		if effect.isLazyEvaluation() && !effect.laterContinuations(f, seen) {
+		if effect.isLazyEvaluation() && !effect.laterContinuations(evaluated, f, seen) {
 			return false
 		}
 	}

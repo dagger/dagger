@@ -117,6 +117,11 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 		painted = append(painted, ival)
 	}
 	for _, child := range span.ChildSpans.Spans() {
+		if child.installedAt(span) {
+			// a lazy evaluation of a result this row only installed: its
+			// time is the evaluated call's
+			continue
+		}
 		if ival := child.observedInterval(now); ival.End.After(ival.Start) {
 			painted = append(painted, ival)
 		}
@@ -151,7 +156,7 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 		direct := resolveBlocker(w.target)
 		via := ""
 		if direct != nil {
-			via = blockerLabel(direct)
+			via = blockerLabel(shownBlocker(direct, span))
 		}
 		visited := map[*Span]bool{}
 		resolved = append(resolved, resolveWaitChain(w, via, nil, 0, visited, now)...)
@@ -208,6 +213,10 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 				Indirect: w.indirect,
 			}
 			for _, blocker := range w.blockers {
+				blocker = shownBlocker(blocker, span)
+				if n := len(seg.Blockers); n > 0 && seg.Blockers[n-1].Target == blocker.ID {
+					continue
+				}
 				seg.Blockers = append(seg.Blockers, TimeBlocker{
 					Target: blocker.ID,
 					Label:  blockerLabel(blocker),
@@ -217,9 +226,10 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 				seg.Via = w.via
 			}
 			if w.blocker != nil {
-				seg.Target = w.blocker.ID
-				seg.Label = blockerLabel(w.blocker)
-				perTarget[w.blocker] += end.Sub(start)
+				blocker := shownBlocker(w.blocker, span)
+				seg.Target = blocker.ID
+				seg.Label = blockerLabel(blocker)
+				perTarget[blocker] += end.Sub(start)
 			} else {
 				seg.Label = "an operation outside this trace"
 			}
@@ -474,7 +484,7 @@ func (span *Span) collectWaitWindows(dst *[]waitWindow, row *Span, now time.Time
 				child.collectOwnWaits(dst, row, now)
 			}
 		}
-		for effect := range span.continuations {
+		for effect := range span.evaluations {
 			effect.collectOwnWaits(dst, row, now)
 			for _, child := range effect.ChildSpans.Spans() {
 				if child.Name == effect.Name {
@@ -541,14 +551,22 @@ func (span *Span) collectInferredWaits(dst *[]waitWindow, now time.Time) {
 			}
 		}
 		for _, child := range s.ChildSpans.Spans() {
+			if child.installedAt(s) {
+				continue
+			}
 			add(child)
 			if child.Name == s.Name {
 				for _, gc := range child.ChildSpans.Spans() {
-					add(gc)
+					if !gc.installedAt(child) {
+						add(gc)
+					}
 				}
 			}
 		}
 		for _, effect := range s.effectsViaLinks.Spans() {
+			if effect.installedAt(s) {
+				continue
+			}
 			add(effect)
 			for _, child := range effect.ChildSpans.Spans() {
 				add(child)
@@ -664,7 +682,7 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 		// too: their waits form the next link and their descendants carry labels.
 		for _, cause := range c.causesViaLinks.Spans() {
 			// Preserve the existing dependency on every direct cause, even though
-			// resolveBlocker deterministically selects the first one.
+			// resolveBlocker selects only the evaluated one.
 			visitOnce(cause)
 		}
 		resolved := resolveBlockerPath(c, visitOnce)
@@ -688,10 +706,15 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 			}
 		}
 		for _, child := range s.ChildSpans.Spans() {
+			if child.installedAt(s) {
+				continue
+			}
 			if child.Name == s.Name {
 				emit(child, depth)
 				for _, gc := range child.ChildSpans.Spans() {
-					emit(gc, depth)
+					if !gc.installedAt(child) {
+						emit(gc, depth)
+					}
 				}
 			} else if resolved := resolveBlocker(child); resolved != nil && resolved != child {
 				// collectInferredWaits inspects non-twin children which stand
@@ -700,6 +723,9 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 			}
 		}
 		for _, effect := range s.effectsViaLinks.Spans() {
+			if effect.installedAt(s) {
+				continue
+			}
 			emit(effect, depth)
 			for _, child := range effect.ChildSpans.Spans() {
 				emit(child, depth)
@@ -710,8 +736,10 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 }
 
 // resolveBlocker maps internal plumbing spans (lazy "resume" markers)
-// to the user-meaningful op whose deferred work they represent: the resume's
-// causal source, falling back to its parent.
+// to the user-meaningful op whose deferred work they represent: the call the
+// resume evaluates, falling back to its parent. The sites the result was
+// installed at (see installSites) only held the result, so a wait on its
+// evaluation is not a wait on them.
 func resolveBlocker(target *Span) *Span {
 	return resolveBlockerPath(target, nil)
 }
@@ -730,7 +758,7 @@ func resolveBlockerPath(target *Span, visit func(*Span)) *Span {
 		}
 		var next *Span
 		for _, cause := range target.causesViaLinks.Spans() {
-			if cause != target {
+			if cause != target && !target.installedAt(cause) {
 				next = cause
 				break
 			}
@@ -747,6 +775,33 @@ func resolveBlockerPath(target *Span, visit func(*Span)) *Span {
 		}
 	}
 	return target
+}
+
+// shownBlocker names the operation a row waited on by the row the view draws
+// for it wherever it draws row: op itself, or, when op is hidden there (it is
+// internal, beneath an internal span row is not beneath, or passthrough), its
+// nearest ancestor drawn there. An internal call often does the work of the
+// public call around it, e.g. a Container.from the engine makes inside the
+// user's Container.from. An ancestor that contains row would only say row
+// waited on something enclosing it, so op keeps its own name then.
+func shownBlocker(op, row *Span) *Span {
+	shown := op
+	for s, depth := op, 0; s != nil && depth < 100; s, depth = s.ParentSpan, depth+1 {
+		if spanInSubtree(row, s) {
+			// whatever hides s hides row too
+			break
+		}
+		if s.Internal {
+			shown = s.ParentSpan
+		}
+	}
+	for depth := 0; shown != nil && shown.Passthrough && depth < 100; depth++ {
+		shown = shown.ParentSpan
+	}
+	if shown == nil || spanInSubtree(row, shown) {
+		return op
+	}
+	return shown
 }
 
 func blockerLabel(blocker *Span) string {
