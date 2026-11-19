@@ -90,6 +90,8 @@ func TestMessagesRoundTrip(t *testing.T) {
 		}}, func() any { return &Restored{} }},
 		{TypeError, Error{Message: StaleSettle}, func() any { return &Error{} }},
 		{TypeWelcome, Welcome{}, func() any { return &Welcome{} }},
+		{TypeProbe, Probe{}, func() any { return &Probe{} }},
+		{TypeProbed, Probed{}, func() any { return &Probed{} }},
 		{TypeExport, Export{Roots: []uint64{12, 13}, Outputs: []ExportOutput{{Number: 12, Address: testAddress()}}}, func() any { return &Export{} }},
 		{TypeExported, Exported{ExportID: "x-1", Bundle: &bundle, Skipped: []SkippedRoot{{Number: 13, Reason: SkipBusy}}}, func() any { return &Exported{} }},
 		{TypeExported, Exported{Skipped: []SkippedRoot{{Number: 12, Reason: SkipGone}}}, func() any { return &Exported{} }},
@@ -253,12 +255,13 @@ func TestReplyType(t *testing.T) {
 		TypeSettle:  TypeSettled,
 		TypeClaims:  TypeClaimed,
 		TypeRestore: TypeRestored,
+		TypeProbe:   TypeProbed,
 	} {
 		got, ok := ReplyType(request)
 		require.True(t, ok, request)
 		require.Equal(t, reply, got)
 	}
-	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeOpened, TypeSettled, TypeClaimed, TypeRestored, TypeError} {
+	for _, notRequest := range []Type{TypeWelcome, TypeExported, TypeUploaded, TypeMerged, TypeOffered, TypeRenewed, TypeLookedUp, TypeOpened, TypeSettled, TypeClaimed, TypeRestored, TypeProbed, TypeError} {
 		_, ok := ReplyType(notRequest)
 		require.False(t, ok, notRequest)
 	}

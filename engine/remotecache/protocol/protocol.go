@@ -29,10 +29,13 @@ const (
 	// message, so a sender answers TypeError with TooLargeMessage instead.
 	MaxMessageBytes = 64 << 20
 
-	// PingInterval is how often the engine pings the service. A ping with
-	// no pong within PingTimeout closes the connection.
-	PingInterval = 15 * time.Second
-	PingTimeout  = 15 * time.Second
+	// ProbeInterval is how often the engine probes its connection: it sends
+	// the service a Probe, which the service answers in order, behind what
+	// it is already sending that engine. The engine ends the connection when
+	// nothing at all arrives on it within ProbeTimeout of a probe. Any byte
+	// counts, so a connection that is slow but still delivering stays up.
+	ProbeInterval = 15 * time.Second
+	ProbeTimeout  = 15 * time.Second
 
 	// CloseTokenRevoked is the WebSocket close status of a connection whose
 	// token the service found revoked.
@@ -73,6 +76,8 @@ const (
 	TypeClaimed  Type = "claimed"
 	TypeRestore  Type = "restore"
 	TypeRestored Type = "restored"
+	TypeProbe    Type = "probe"
+	TypeProbed   Type = "probed"
 	TypeError    Type = "error"
 )
 
@@ -102,6 +107,8 @@ func ReplyType(request Type) (Type, bool) {
 		return TypeClaimed, true
 	case TypeRestore:
 		return TypeRestored, true
+	case TypeProbe:
+		return TypeProbed, true
 	}
 	return "", false
 }
@@ -181,6 +188,14 @@ type Hello struct {
 
 // Welcome is the service's reply to Hello.
 type Welcome struct{}
+
+// Probe asks the service for a reply on the connection itself (see
+// ProbeInterval). The service answers it on the connection, never on its
+// work path, so the answer waits only behind messages it is already sending.
+type Probe struct{}
+
+// Probed answers Probe.
+type Probed struct{}
 
 // Open tells the service that a session started on an engine with no live
 // session: its idle periods are numbered from 1, and Period is the one that
