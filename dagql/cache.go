@@ -3537,7 +3537,7 @@ type ongoingCall struct {
 	resDeclined    bool
 	ttlSeconds     int64
 	// expiryLimit is the resolver's ExpireBy, in sharedWorkCtx.
-	expiryLimit             *expiryLimit
+	expiryLimit *expiryLimit
 	// borrowed is the resolver's RequireSessionResourcesOf, in
 	// sharedWorkCtx.
 	borrowed                *borrowedResults
