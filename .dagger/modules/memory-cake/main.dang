@@ -193,6 +193,14 @@ type MemoryCake {
         # (its syntax copy and inferred types), called from the cache.
         focus: "cachedPreparedDangDir|preparedDangPrograms|dang\\.PrepareDir",
       ),
+      Demo(
+        pr: "15224",
+        title: "dang: bound received values kept per session",
+        # The decoded values (decodeReceivedJSON and its interner), kept by
+        # decodeReceived's cache. The receiver JSON the same calls keep is
+        # #15226's.
+        focus: "decodeReceived|receivedValues|receivedInterner",
+      ),
     ]
   }
 
@@ -222,6 +230,19 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
     measure(pr: "15223", ref: ref, env: env)
+  }
+
+  """
+  #15224: Dang received values kept per session. One session chains CALLS
+  calls (default 250) on a Dang object whose state, a list of numbers, grows
+  by GROW (default 256) per call; main keeps a decoded copy of every state
+  received (~300 MiB at the defaults, quadratic in CALLS), the fix ~32 MiB.
+  """
+  demo15224(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15224", ref: ref, env: env)
   }
 
   """
