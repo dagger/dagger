@@ -1,0 +1,70 @@
+# Starts one side of the memory cake: an engine built from the dagger
+# repository at `sha`, and the synthetic agent driving it, as a service.
+# Paste into DangEval (workspace scope) with sha/side/run/turns set; the agent
+# writes its checkpoints into the cache volume "memory-cake-out-<run>", which
+# fetch.dang copies out.
+#
+#   BEFORE: sha = "0120da051369f7dff48e43442f117a55e4b79d5e"
+#   AFTER:  sha = "40f41ceaa6ba30bce510388a32ec8b41ee18c1e3"
+let sha = "0120da051369f7dff48e43442f117a55e4b79d5e"
+let side = "before"
+let run = "pilot"
+let agentArgs = ["-turns", "5", "-checkpoint", "1", "-inspect", "2"]
+
+let src = git("https://github.com/dagger/dagger").commit(sha).tree
+let srcWs = src.asWorkspace
+let dev = engineDev(ws: srcWs).incrementSubnet
+let cliBin = cli(ws: srcWs, source: src).binary
+let engineSvc = dev.container
+  .withExposedPort(1234)
+  .withMountedCache("/var/lib/dagger", cacheVolume("memory-cake-engine-" + run + "-" + side))
+  .asService(
+    args: [
+      "--addr", "tcp://0.0.0.0:1234",
+      "--network-name", "dagger-cake",
+      "--network-cidr", dev.networkCidr,
+      "--debugaddr", "0.0.0.0:6060",
+    ],
+    useEntrypoint: true,
+    insecureRootCapabilities: true,
+  )
+
+# The agent, built from this workspace's hack/memory-cake with the root
+# module's go.mod and go.sum.
+let here = ws.directory("/")
+let tree = directory
+  .withFile("go.mod", here.file("go.mod"))
+  .withFile("go.sum", here.file("go.sum"))
+  .withDirectory("hack/memory-cake", here.directory("hack/memory-cake").withoutDirectory("fixture"))
+let agentBin = container
+  .from("golang:1.27")
+  .withMountedCache("/go/pkg/mod", cacheVolume("memory-cake-host-gomod"))
+  .withEnvVariable("CGO_ENABLED", "0")
+  .withDirectory("/src", tree)
+  .withWorkdir("/src")
+  .withExec(["go", "build", "-o", "/agent", "./hack/memory-cake/agent"])
+  .file("/agent")
+
+# The agent's workspace: dang, with the cake's tool modules added.
+let dang = git("https://github.com/vito/dang").commit("150ddb658a1fef1947688e5708c8f6f4d7b93ced").tree
+let fixture = here.directory("hack/memory-cake/fixture")
+let work = dang
+  .withDirectory(".dagger/modules", fixture.directory(".dagger/modules"))
+  .withFile("dagger.toml", fixture.file("dagger.toml"))
+
+let runner = container
+  .from("alpine:3.20")
+  .withExec(["apk", "add", "--no-cache", "git", "curl"])
+  .withServiceBinding("dagger-engine", engineSvc)
+  .withEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234")
+  .withFile("/usr/local/bin/dagger", cliBin)
+  .withFile("/usr/local/bin/cake-agent", agentBin)
+  .withDirectory("/work", work)
+  .withWorkdir("/work")
+  .withExec(["sh", "-c", "git init -q -b main && git add -A && git -c user.email=cake@localhost -c user.name=cake commit -qm 'dang + memory cake fixture'"])
+  .withMountedCache("/out", cacheVolume("memory-cake-out-" + run))
+
+runner
+  .asService(args: ["cake-agent", "-side", side] + agentArgs)
+  .start
+  .hostname

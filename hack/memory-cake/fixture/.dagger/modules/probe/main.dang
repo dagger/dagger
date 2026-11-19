@@ -1,0 +1,14 @@
+# A module the memory cake's synthetic agent edits every turn and loads
+# again, as an agent developing a module does: every edit is a new module.
+
+"""
+Grows by a function each turn.
+"""
+type Probe {
+  """
+  The base of every turn's greeting.
+  """
+  greeting: String! {
+    "hello from probe"
+  }
+}

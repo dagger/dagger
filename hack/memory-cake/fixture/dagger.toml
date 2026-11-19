@@ -1,0 +1,26 @@
+# The memory cake agent's workspace: the dang repository's tool modules
+# (pinned by its dagger.lock), without the dang modules themselves, plus the
+# cake's own tool modules.
+[modules.go]
+source = "dagger.io/go"
+
+[modules.go.settings]
+includeExtraFiles = ["tests/**", "editors/**", "treesitter/**", "pkg/dang/*.peg", ".agents/skills/dang-language/reference/stdlib.md", "docs/lit/**"]
+lint = ["!editors/zed/grammars"]
+test = ["!editors/zed/grammars"]
+generate = ["!editors/zed/grammars"]
+
+[modules.editor]
+source = "github.com/vito/editor@main"
+
+[modules.committer]
+source = "github.com/vito/agents/committer@main"
+
+[modules.context]
+source = "github.com/vito/agents/context@main"
+
+[modules.cake]
+source = ".dagger/modules/cake"
+
+[modules.cakego]
+source = ".dagger/modules/cakego"

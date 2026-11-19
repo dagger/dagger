@@ -1,0 +1,20 @@
+# Copies a memory cake run's checkpoints (without the raw profiles) out of
+# its cache volume into the workspace, under tmp/cake-out/<run>. Paste into
+# DangEval (workspace scope) with `run` set.
+let run = "pilot"
+let raw = false
+
+let copy = container
+  .from("alpine:3.20")
+  .withMountedCache("/out", cacheVolume("memory-cake-out-" + run))
+  .withEnvVariable("CAKE_NONCE", Random.string)
+  .withExec([
+    "sh", "-c",
+    if (raw) {
+      "mkdir -p /copy && cp -r /out/. /copy/"
+    } else {
+      "mkdir -p /copy && tar -C /out --exclude='./*/raw' --exclude='*.log' -cf - . | tar -C /copy -xf -"
+    },
+  ])
+  .directory("/copy")
+ws = ws.withChanges(directory.withDirectory("tmp/cake-out/" + run, copy).changes(directory))

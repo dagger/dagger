@@ -1,0 +1,83 @@
+# The memory cake's own tool module: what a coding agent's tools do, turn
+# after turn, with state that grows with every call (see hack/memory-cake).
+
+let goImage = "golang:1.25"
+let otelgotestCommit = "aa07da582c215c85056429e152a261717003244d"
+
+"""
+Notes, builds and tests for the memory cake's synthetic agent.
+"""
+type Cake {
+  """
+  Notes recorded so far, oldest first.
+  """
+  notes: [String!]! = []
+
+  """
+  Record a note; the tool's state keeps every note.
+  """
+  note(text: String!): Cake! {
+    self.notes = notes + [text]
+    self
+  }
+
+  """
+  How many notes are recorded, and how many bytes they hold.
+  """
+  summary: String! {
+    let size = 0
+    notes.each { n => size += n.length }
+    toString(notes.length) + " notes, " + toString(size) + " bytes"
+  }
+
+  """
+  Build every package and vet some, like `go build ./... && go vet <pkgs>`.
+  """
+  build(
+    source: Workspace!,
+    """
+    Packages to vet.
+    """
+    vet: [String!]! = ["./pkg/cake/..."],
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    goBase(source)
+      .withExec(["go", "build", "./..."])
+      .withExec(["go", "vet"] + vet)
+      .withExec(["sh", "-c", "echo build and vet ok"])
+      .stdout
+  }
+
+  """
+  Test packages with otelgotest, which reports every test as a span.
+  """
+  test(
+    source: Workspace!,
+    """
+    Packages to test.
+    """
+    pkgs: [String!]! = ["./pkg/cake/..."],
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    goBase(source)
+      .withFile("/usr/local/bin/otelgotest", otelgotest)
+      .withExec(["otelgotest", "-count=1", "-v"] + pkgs, expect: ReturnType.ANY)
+      .stdout
+  }
+
+  let goBase(source: Workspace!): Container! {
+    container
+      .from(goImage)
+      .withMountedCache("/go/pkg/mod", cacheVolume("memory-cake-gomod"))
+      .withMountedCache("/root/.cache/go-build", cacheVolume("memory-cake-gobuild"))
+      .withDirectory("/src", source.directory("/", exclude: [".git", ".dagger"]))
+      .withWorkdir("/src")
+  }
+
+  let otelgotest: File! {
+    container
+      .from(goImage)
+      .withMountedCache("/go/pkg/mod", cacheVolume("memory-cake-gomod"))
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withExec(["go", "install", "github.com/dagger/otel-go/cmd/otelgotest@" + otelgotestCommit])
+      .file("/go/bin/otelgotest")
+  }
+}
