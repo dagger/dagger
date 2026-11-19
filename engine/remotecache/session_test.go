@@ -362,6 +362,30 @@ func TestHelloRefused(t *testing.T) {
 	require.ErrorContains(t, <-served, "refused")
 }
 
+// A message from the service that doesn't decode ends the session, with why:
+// the stream it came on is broken, and what follows it can't be trusted.
+// Engines have read messages cut off by their connection's end as whole
+// ones, logged each, and read on.
+func TestUndecodableMessageEndsSession(t *testing.T) {
+	conn := newServiceConn()
+	s := newSession(t.Context(), conn, newFakeAdapter(), newSettings(Config{}))
+	t.Cleanup(s.close)
+	served := make(chan error, 1)
+	go func() {
+		_, err := s.serve()
+		served <- err
+	}()
+	hello := conn.next(t)
+	conn.send(t, protocol.Envelope{ID: 1, Re: hello.ID, Type: protocol.TypeWelcome, Body: json.RawMessage(`{}`)})
+	conn.inbound <- []byte(`{"id":2,"type":"merge","body":{"bundle":{"vers`)
+	select {
+	case err := <-served:
+		require.ErrorContains(t, err, "undecodable message: unexpected end of JSON input", "why: the message, as what it is")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session read on past a message it couldn't decode")
+	}
+}
+
 // An export whose roots are all gone or busy is answered with skipped roots
 // only, and holds nothing.
 func TestExportWithNoSurvivingRoot(t *testing.T) {
