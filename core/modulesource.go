@@ -1692,24 +1692,11 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 // context counts by that identity, so the module's identity changes exactly
 // when its checkout's does.
 func (src *ModuleSource) contextDigest(ctx context.Context, dag *dagql.Server) (string, error) {
-	var checkoutDigest digest.Digest
-	if src.Kind == ModuleSourceKindGit && src.Git != nil && src.Git.UnfilteredContextDir.Self() != nil {
-		checkoutCall, err := src.Git.UnfilteredContextDir.ResultCall()
-		if err != nil {
-			return "", fmt.Errorf("module source git checkout call: %w", err)
-		}
-		checkoutDigest = checkoutCall.ContentDigest()
+	checkoutDigest, err := src.includedGitCheckoutDigest(ctx, dag)
+	if err != nil {
+		return "", err
 	}
-	var hasGitDir dagql.Boolean
-	if checkoutDigest != "" {
-		if err := dag.Select(ctx, src.ContextDirectory, &hasGitDir, dagql.Selector{
-			Field: "exists",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(".git")}},
-		}); err != nil {
-			return "", fmt.Errorf("module source context directory .git: %w", err)
-		}
-	}
-	if !hasGitDir {
+	if checkoutDigest == "" {
 		var contextDigest string
 		if err := dag.Select(ctx, src.ContextDirectory, &contextDigest, dagql.Selector{Field: "digest"}); err != nil {
 			return "", fmt.Errorf("failed to get module source context directory digest: %w", err)
@@ -1721,6 +1708,54 @@ func (src *ModuleSource) contextDigest(ctx context.Context, dag *dagql.Server) (
 		return "", fmt.Errorf("failed to get module source context directory digest: %w", err)
 	}
 	return hashutil.HashStrings("gitContext", filesDigest, checkoutDigest.String()).String(), nil
+}
+
+// An ordinary context needs no unfiltered workspace checkout. For a saved
+// checkout, preserve the historical order of the identity and existence checks.
+func (src *ModuleSource) includedGitCheckoutDigest(ctx context.Context, dag *dagql.Server) (digest.Digest, error) {
+	if src.Kind != ModuleSourceKindGit || src.Git == nil {
+		return "", nil
+	}
+	hasGit := func() (dagql.Boolean, error) {
+		var exists dagql.Boolean
+		err := dag.Select(ctx, src.ContextDirectory, &exists, dagql.Selector{Field: "exists", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String(".git")}}})
+		return exists, err
+	}
+	checkout := src.Git.UnfilteredContextDir
+	var included dagql.Boolean
+	var statErr error
+	if checkout.Self() == nil {
+		if src.Workspace.Self() == nil {
+			return "", nil
+		}
+		included, statErr = hasGit()
+		if statErr == nil && !included {
+			return "", nil
+		}
+		var err error
+		checkout, err = NewModuleSourceFS(nil, src).ContextDirectory(ctx, CopyFilter{})
+		if err != nil {
+			return "", err
+		}
+	}
+	frame, err := checkout.ResultCall()
+	if err != nil {
+		return "", fmt.Errorf("module source git checkout call: %w", err)
+	}
+	identity := frame.ContentDigest()
+	if identity == "" {
+		return "", nil
+	}
+	if src.Git.UnfilteredContextDir.Self() != nil {
+		included, statErr = hasGit()
+	}
+	if statErr != nil {
+		return "", fmt.Errorf("module source context directory .git: %w", statErr)
+	}
+	if !included {
+		return "", nil
+	}
+	return identity, nil
 }
 
 func ImplementationScopedModuleSource(

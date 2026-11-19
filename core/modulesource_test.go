@@ -2,6 +2,9 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"github.com/opencontainers/go-digest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -485,4 +488,92 @@ func TestDirDependencySourceArgs(t *testing.T) {
 	hostDir.DirSrc.OriginHostPath = "/home/user/dagger"
 	require.Equal(t, "/home/user/dagger", dep(t, args(t, hostDir, "../go")).DirSrc.OriginHostPath)
 	require.Empty(t, dep(t, args(t, hostDir, "../../../../outside")).DirSrc.OriginHostPath)
+}
+
+func TestGitModuleContextDigestResolvesOnlyIncludedCheckout(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "git-context-identity")
+	ctx, cache, srv := env.open(t)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "implementation.go"), []byte("package module"), 0600))
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".git", "HEAD"), []byte("ref: refs/heads/main"), 0600))
+	fs := containerPersistenceTestDirectory("filtered-identity", "/")
+	fs.SetSnapshot(&operationTreeRef{cacheVolumeTestImmutableRef: &cacheVolumeTestImmutableRef{id: "filtered-identity", snapshotID: "filtered-identity"}, root: root})
+	filtered := env.attach(t, ctx, cache, srv, "filtered-identity", fs).(dagql.ObjectResult[*Directory])
+	empty := env.directory(t, ctx, cache, srv, "filtered-without-dotgit", "empty-context")
+	w := env.attach(t, ctx, cache, srv, "workspace-for-digest", &Workspace{Address: "git://repo"}).(dagql.ObjectResult[*Workspace])
+	broken := env.directory(t, ctx, cache, srv, "broken-filter", "broken-checkout")
+	dagql.Fields[*Directory]{dagql.Func("exists", func(_ context.Context, d *Directory, a struct{ Path string }) (bool, error) {
+		require.Equal(t, ".git", a.Path)
+		if d == broken.Self() {
+			return false, fmt.Errorf("stat failed")
+		}
+		return d == filtered.Self(), nil
+	}), dagql.Func("digest", func(context.Context, *Directory, struct{}) (string, error) { return "ordinary-context", nil })}.Install(srv)
+	calls := 0
+	dagql.Fields[*Workspace]{dagql.NodeFunc("directory", func(ctx context.Context, p dagql.ObjectResult[*Workspace], a struct{ Path string }) (dagql.ObjectResult[*Directory], error) {
+		require.Equal(t, "/", a.Path)
+		calls++
+		r, err := dagql.NewObjectResultForCurrentCall(ctx, srv, containerPersistenceTestDirectory("checkout", "/"))
+		if err != nil {
+			return r, err
+		}
+		if p.Self().Address == "empty-label" {
+			return r, nil
+		}
+		return r.WithContentDigest(ctx, digest.FromString("git checkout identity"))
+	})}.Install(srv)
+	src := &ModuleSource{Kind: ModuleSourceKindGit, Git: &GitModuleSource{}, Workspace: w, ContextDirectory: empty}
+	ordinary, err := src.contextDigest(ctx, srv)
+	require.NoError(t, err)
+	require.Equal(t, "ordinary-context", ordinary)
+	require.Zero(t, calls)
+	src.ContextDirectory = filtered
+	delayed, err := src.contextDigest(ctx, srv)
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+	var raw dagql.ObjectResult[*Directory]
+	require.NoError(t, srv.Select(ctx, w, &raw, dagql.Selector{Field: "directory", Args: []dagql.NamedInput{{Name: "path", Value: dagql.String("/")}}}))
+	src.Git.UnfilteredContextDir = raw
+	stored, err := src.contextDigest(ctx, srv)
+	require.NoError(t, err)
+	require.Equal(t, stored, delayed)
+	require.NotEqual(t, "ordinary-context", delayed)
+	src.ContextDirectory = broken
+	src.Git.UnfilteredContextDir = dagql.ObjectResult[*Directory]{}
+	_, err = src.contextDigest(ctx, srv)
+	require.ErrorContains(t, err, "stat failed")
+	src.Workspace = env.attach(t, ctx, cache, srv, "empty-checkout-label", &Workspace{Address: "empty-label"}).(dagql.ObjectResult[*Workspace])
+	generic, err := src.contextDigest(ctx, srv)
+	require.NoError(t, err)
+	require.Equal(t, "ordinary-context", generic)
+}
+
+func TestGitModuleWorkspaceTreePersistence(t *testing.T) {
+	env := newPersistedFamiliesTestEnv(t, "git-workspace-tree-persistence")
+	ctx, cache, srv := env.open(t)
+	root := env.directory(t, ctx, cache, srv, "root", "git-tree")
+	ws := env.attach(t, ctx, cache, srv, "workspace", &Workspace{Address: "git://repo", rootfs: root, source: NewWorkspaceSourceDirectory(root)}).(dagql.ObjectResult[*Workspace])
+	wsID, treeID := persistedRowID(t, cache, ws), persistedRowID(t, cache, root)
+	var rows []uint64
+	for _, stored := range []bool{false, true} {
+		src := &ModuleSource{Kind: ModuleSourceKindGit, Git: &GitModuleSource{}, Workspace: ws}
+		if stored {
+			src.Git.UnfilteredContextDir = root
+		}
+		rows = append(rows, persistedRowID(t, cache, env.attach(t, ctx, cache, srv, fmt.Sprintf("module%t", stored), src)))
+	}
+	ctx, cache, srv = env.restart(t, ctx, cache)
+	for i, row := range rows {
+		value, err := cache.LoadResultByResultID(ctx, env.session, srv, row)
+		require.NoError(t, err)
+		src := value.Unwrap().(*ModuleSource)
+		require.Equal(t, wsID, persistedRowID(t, cache, src.Workspace))
+		require.Equal(t, treeID, persistedRowID(t, cache, src.Workspace.Self().Rootfs()))
+		if i == 0 {
+			require.Nil(t, src.Git.UnfilteredContextDir.Self())
+		} else {
+			require.Equal(t, treeID, persistedRowID(t, cache, src.Git.UnfilteredContextDir))
+		}
+	}
 }

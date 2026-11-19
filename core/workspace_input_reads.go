@@ -360,6 +360,23 @@ func workspaceInputReadCompletion(ctx context.Context, parent *workspaceInputRea
 // before the read, including reads that can fail or find no source. The exact
 // Workspace producer binds the event on cache reuse.
 func RecordWorkspaceRead(ctx context.Context, workspace dagql.ObjectResult[*Workspace], selector provenance.Selector) {
+	recordWorkspaceReads(ctx, workspace, func(c *workspaceInputCollector) []provenance.Selector {
+		return []provenance.Selector{c.workspaceReadSelector(workspace.Self(), selector)}
+	})
+}
+
+func (c *workspaceInputCollector) workspaceReadSelector(ws *Workspace, selector provenance.Selector) provenance.Selector {
+	if selector.Path != "/" && c.unaliasedSourcePath(ws, selector.Path) != nil {
+		// The spelling alone cannot account for a symlink target or mount.
+		selector.Path = "/"
+		selector.Include = nil
+		selector.Exclude = nil
+		selector.Conservative = true
+	}
+	return selector
+}
+
+func recordWorkspaceReads(ctx context.Context, workspace dagql.ObjectResult[*Workspace], selectors func(*workspaceInputCollector) []provenance.Selector) {
 	reads := currentWorkspaceInputReads(ctx)
 	if reads == nil {
 		return
@@ -374,14 +391,9 @@ func RecordWorkspaceRead(ctx context.Context, workspace dagql.ObjectResult[*Work
 		collector.issue("Workspace read has no attached source producer")
 	} else {
 		collector.sourceProducer = &dagql.ResultCallRef{ResultID: id.EngineResultID()}
-		if selector.Path != "/" && collector.unaliasedSourcePath(workspace.Self(), selector.Path) != nil {
-			// The spelling alone cannot account for a symlink target or mount.
-			selector.Path = "/"
-			selector.Include = nil
-			selector.Exclude = nil
-			selector.Conservative = true
+		for _, selector := range selectors(collector) {
+			collector.source(workspace.Self(), selector)
 		}
-		collector.source(workspace.Self(), selector)
 	}
 	reads.add(collector.result)
 }

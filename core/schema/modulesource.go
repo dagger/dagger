@@ -1175,19 +1175,7 @@ func (s *moduleSourceSchema) workspaceModuleSource(
 		if err != nil {
 			return inst, fmt.Errorf("workspace module source URL: %w", err)
 		}
-		// The tree a git module was loaded from, where the modules it serves
-		// and the git clients its config declares are found: the workspace's
-		// own, read as its other files are.
-		dag, err := core.CurrentDagqlServer(ctx)
-		if err != nil {
-			return inst, err
-		}
-		if err := dag.Select(ctx, workspaceResult, &src.Git.UnfilteredContextDir, dagql.Selector{
-			Field: "directory",
-			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/")}},
-		}); err != nil {
-			return inst, fmt.Errorf("workspace module source tree: %w", err)
-		}
+		// The retained workspace supplies the original tree when a caller needs it.
 	default:
 		return inst, fmt.Errorf("workspace module source: unsupported workspace backing %T", base)
 	}
