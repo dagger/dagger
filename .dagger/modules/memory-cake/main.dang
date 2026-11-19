@@ -244,6 +244,36 @@ type MemoryCake {
   }
 
   """
+  #15218 (FindSpans) and #15219 (FindCalls): what the LLM trace tools
+  allocate per search. Their cost is transient, so it is not a demo of the
+  cake's retained heap: fixtures/15218 runs CALLS cheap uncached API calls
+  (default 20000), then SEARCHES searches per tool, each an LLM replaying a
+  recording that makes one tool call, and reports per tool (ListServices is
+  the LLM's own overhead) the bytes allocated per search (TotalAlloc) and the
+  highest HeapAlloc polled during the searches, against the live heap
+  before them.
+  """
+  tracePeaks(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    let m = measureWorkload(
+      pr: "15218",
+      ref: ref,
+      workload: currentModule.source.directory("fixtures/15218"),
+      env: env,
+    )
+    let lines = m.out.file("peak.txt").contents.split("\n").filter { l => l != "" }.map { l =>
+      let f = l.split(" ")
+      let alloc = (f[4] ?? "0").toInt
+      let start = (f[6] ?? "0").toInt
+      let peak = (f[8] ?? "0").toInt
+      (f[0] ?? "") + ": " + mib(alloc) + " allocated per search, peak heap " + signedMib(peak - start) + " over the live " + mib(start)
+    }
+    "trace tools @ " + ref + " (" + m.sha.truncate(8) + "):\n" + lines.join("\n")
+  }
+
+  """
   Run every demo (or those in `prs`) on `before` and `after`, one engine at
   a time, and return a markdown table of their live heaps and focus slices.
   A demo that fails gets an error row; the others still run.
