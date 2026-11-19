@@ -1,9 +1,9 @@
 {
   "side": "before",
-  "turn": 216,
+  "turn": 300,
   "turns": 5000,
-  "state": "running",
-  "errors": 53,
-  "elapsedSeconds": 1951.487026841,
-  "time": "2026-11-19T09:18:07Z"
+  "state": "failed: checkpoint at turn 300: open /out/before/raw/heap-t300.pb.gz: not a directory",
+  "errors": 75,
+  "elapsedSeconds": 3905.15652175,
+  "time": "2026-11-19T09:50:41Z"
 }
