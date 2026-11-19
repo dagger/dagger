@@ -1047,9 +1047,10 @@ func (r *renderer) renderDuration(out TermOutput, span *dagui.Span, space bool) 
 
 // renderSpanDuration writes a span's duration—self time rather than
 // wall-clock when the row provably spent material time blocked on other
-// ops—plus a "waiting on X" suffix while the row is blocked right now. It is
-// shared by the static renderer and the live, self-updating DurationView so
-// running rows tell the same story as completed ones.
+// ops—plus a "waiting on X" suffix while the row is blocked right now, or a
+// "waited N on X" one once it isn't, since the time shown is only its own. It
+// is shared by the static renderer and the live, self-updating DurationView
+// so running rows tell the same story as completed ones.
 func renderSpanDuration(out TermOutput, span *dagui.Span, now time.Time, final bool) {
 	// When a row spent material time provably blocked on other ops, show
 	// the time it actually spent executing, not the wall-clock it was
@@ -1074,10 +1075,19 @@ func renderSpanDuration(out TermOutput, span *dagui.Span, now time.Time, final b
 		duration = duration.Faint()
 	}
 	fmt.Fprint(out, duration)
-	// While the row is blocked, say on what; once it is done waiting there
-	// is nothing extra to show.
-	if blockedNow && blocked.Label != "" {
-		fmt.Fprint(out, out.String(" ⋯ waiting on "+blocked.Label).Faint())
+	// While the row is blocked, say on what; once it is done waiting, how
+	// long it waited and on what, as the plain frontend does.
+	switch {
+	case blockedNow:
+		if blocked.Label != "" {
+			fmt.Fprint(out, out.String(" ⋯ waiting on "+blocked.Label).Faint())
+		}
+	case hb.Material:
+		waited := " ⋯ waited " + dagui.FormatDuration(hb.Waiting)
+		if hb.DominantLabel != "" {
+			waited += " on " + hb.DominantLabel
+		}
+		fmt.Fprint(out, out.String(waited).Faint())
 	}
 }
 

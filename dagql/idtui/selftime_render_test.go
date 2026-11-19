@@ -48,8 +48,9 @@ func renderedLines(db *dagui.DB) string {
 }
 
 // TestRenderSelfTimeCompleted: the forcing op's row reports ~0 own work
-// instead of the 13s it spent blocked, with no waiting decoration once done;
-// the row that hosted the real work reports its true execution time.
+// instead of the 13s it spent blocked, and once done says how long it waited
+// and on what; the row that hosted the real work reports its true execution
+// time.
 func TestRenderSelfTimeCompleted(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()
@@ -94,7 +95,10 @@ func TestRenderSelfTimeCompleted(t *testing.T) {
 			t.Errorf("forcing op should report ~0 own work:\n%s", line)
 		}
 		if strings.Contains(line, "waiting on") {
-			t.Errorf("completed rows must carry no waiting decoration:\n%s", line)
+			t.Errorf("completed rows are not waiting any more:\n%s", line)
+		}
+		if !strings.Contains(line, "0.0s ⋯ waited 13.0s on the-forced-op") {
+			t.Errorf("completed rows should say how long they waited, and on what:\n%s", line)
 		}
 	}
 	// The forced op hosted the deferred eval: sync 0.5s + resumed 13s.
@@ -203,7 +207,7 @@ func TestRequestBreakdownSpans(t *testing.T) {
 			StartTime: at(1), EndTime: at(11)},
 	})
 	fe.recalculateViewLocked()
-	if got := strings.Join(fe.tui.RenderLines(), "\n"); !strings.Contains(got, "the-waiting-op 0.0s") {
+	if got := strings.Join(fe.tui.RenderLines(), "\n"); !strings.Contains(got, "the-waiting-op 0.0s ⋯ waited 10.0s on the-other-op") {
 		t.Errorf("once its blocker loads, the row reads as waiting:\n%s", got)
 	}
 }

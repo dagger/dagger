@@ -1306,3 +1306,13 @@ func TestTimeBreakdownWaitOutsideTrace(t *testing.T) {
 		t.Fatalf("the row should wait outside this trace: %+v", segs)
 	}
 }
+
+// A blocker named by its command fits on one line, though its arguments may
+// hold a whole script.
+func TestBlockerLabelOneLine(t *testing.T) {
+	exec := &Span{SpanSnapshot: SpanSnapshot{ID: testID(1), Name: "exec"}}
+	exec.ProcessAttribute("wcprof.exec.argv", `["bash","-c","\nset -eux\n  apt-get update\n"]`)
+	if got, want := blockerLabel(exec), "bash -c set -eux apt-get update"; got != want {
+		t.Fatalf("label: got %q, want %q", got, want)
+	}
+}

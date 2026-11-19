@@ -869,7 +869,10 @@ func (span *Span) callArgv() string {
 	return ""
 }
 
+// truncateLabel fits a command line on one short line: its arguments may
+// hold a whole script, newlines and all.
 func truncateLabel(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
 	if len(s) > 48 {
 		return s[:47] + "…"
 	}
