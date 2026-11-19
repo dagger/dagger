@@ -280,6 +280,14 @@ export function AgentStateNameToValue(name: string): AgentState {
       return name as AgentState
   }
 }
+export type ArtifactAffectedByDiffOpts = {
+  kinds?: string[]
+}
+
+export type ArtifactAffectedByPathOpts = {
+  kinds?: string[]
+}
+
 export type ArtifactUriOpts = {
   /**
    * Prefix the workspace's Git address and commit: dag://<workspace>@<commit>:<path>. Fails if the artifact has no workspace, or its workspace has no Git address.
@@ -347,6 +355,15 @@ export function ArtifactDimensionKindNameToValue(
       return name as ArtifactDimensionKind
   }
 }
+export type ArtifactsFilterAffectedByDiffOpts = {
+  paths?: WorkspacePath[]
+  kinds?: string[]
+}
+
+export type ArtifactsFilterAffectedByPathOpts = {
+  kinds?: string[]
+}
+
 export type ArtifactsFilterDirectivesOpts = {
   /**
    * Remove the matching artifacts instead.
@@ -4752,6 +4769,19 @@ export function WorkspaceCommitPickStatusNameToValue(
       return name as WorkspaceCommitPickStatus
   }
 }
+/**
+ * A path within a workspace. A leading slash starts at the workspace boundary. Each operation defines how it resolves relative input paths. Output source paths start at the workspace boundary.
+ */
+export type WorkspacePath = string & { __WorkspacePath: never }
+
+export type WorkspaceProvenanceAffectedByDiffOpts = {
+  kinds?: string[]
+}
+
+export type WorkspaceProvenanceAffectedByPathOpts = {
+  kinds?: string[]
+}
+
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
 }
@@ -5342,6 +5372,8 @@ export class AgentMessage extends BaseClient {
  */
 export class Artifact extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _affectedByDiff?: boolean = undefined
+  private readonly _affectedByPath?: boolean = undefined
   private readonly _description?: string = undefined
   private readonly _loadError?: string = undefined
   private readonly _moduleName?: string = undefined
@@ -5353,6 +5385,8 @@ export class Artifact extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _affectedByDiff?: boolean,
+    _affectedByPath?: boolean,
     _description?: string,
     _loadError?: string,
     _moduleName?: string,
@@ -5361,6 +5395,8 @@ export class Artifact extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._affectedByDiff = _affectedByDiff
+    this._affectedByPath = _affectedByPath
     this._description = _description
     this._loadError = _loadError
     this._moduleName = _moduleName
@@ -5378,6 +5414,42 @@ export class Artifact extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether this artifact may depend on changed workspace paths.
+   */
+  affectedByDiff = async (
+    changes: Changeset,
+    opts?: ArtifactAffectedByDiffOpts,
+  ): Promise<boolean> => {
+    if (this._affectedByDiff) {
+      return this._affectedByDiff
+    }
+
+    const ctx = this._ctx.select("affectedByDiff", { changes, ...opts })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether this artifact may depend on a workspace-root path.
+   */
+  affectedByPath = async (
+    path: WorkspacePath,
+    opts?: ArtifactAffectedByPathOpts,
+  ): Promise<boolean> => {
+    if (this._affectedByPath) {
+      return this._affectedByPath
+    }
+
+    const ctx = this._ctx.select("affectedByPath", { path, ...opts })
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
@@ -5484,6 +5556,14 @@ export class Artifact extends BaseClient {
     const response: Awaited<string[]> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Inspect source dependencies from current inputs without running the artifact body.
+   */
+  provenance = (): WorkspaceProvenance => {
+    const ctx = this._ctx.select("provenance")
+    return new WorkspaceProvenance(ctx)
   }
 
   /**
@@ -6055,6 +6135,28 @@ export class Artifacts extends BaseClient {
   }
 
   /**
+   * Keep artifacts that may depend on paths changed in any listed changeset. Paths limit changed paths before matching dependencies. Inputs with unresolved source origins stay selected for nonempty changes.
+   */
+  filterAffectedByDiff = (
+    changes: Changeset[],
+    opts?: ArtifactsFilterAffectedByDiffOpts,
+  ): Artifacts => {
+    const ctx = this._ctx.select("filterAffectedByDiff", { changes, ...opts })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Keep artifacts that may depend on any listed workspace-root path. Enumerates collections but does not run artifact leaves.
+   */
+  filterAffectedByPath = (
+    paths: WorkspacePath[],
+    opts?: ArtifactsFilterAffectedByPathOpts,
+  ): Artifacts => {
+    const ctx = this._ctx.select("filterAffectedByPath", { paths, ...opts })
+    return new Artifacts(ctx)
+  }
+
+  /**
    * Keep artifacts with any listed key in this dimension. Replace collection references with matching subsets. Skip absent keys and leave the source view unchanged.
    */
   filterDimensionKeys = (dimension: string, keys: string[]): Artifacts => {
@@ -6212,6 +6314,14 @@ export class Artifacts extends BaseClient {
     return response.map(
       (r) => new ArtifactPath(ctx.copy().selectNode(r.id, "ArtifactPath")),
     )
+  }
+
+  /**
+   * Combine the source dependencies of the selected artifacts without running their bodies.
+   */
+  provenance = (): WorkspaceProvenance => {
+    const ctx = this._ctx.select("provenance")
+    return new WorkspaceProvenance(ctx)
   }
 
   /**
@@ -20636,6 +20746,108 @@ export class WorkspaceModuleSetting extends BaseClient {
   }
 }
 
+export class WorkspaceProvenance extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _affectedByDiff?: boolean = undefined
+  private readonly _affectedByPath?: boolean = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _affectedByDiff?: boolean,
+    _affectedByPath?: boolean,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._affectedByDiff = _affectedByDiff
+    this._affectedByPath = _affectedByPath
+  }
+
+  /**
+   * A unique identifier for this WorkspaceProvenance.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether an input region overlaps paths in this changeset. Paths must use this workspace's boundary.
+   */
+  affectedByDiff = async (
+    changes: Changeset,
+    opts?: WorkspaceProvenanceAffectedByDiffOpts,
+  ): Promise<boolean> => {
+    if (this._affectedByDiff) {
+      return this._affectedByDiff
+    }
+
+    const ctx = this._ctx.select("affectedByDiff", { changes, ...opts })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether an input region overlaps this workspace-root path. Directory queries can match conservatively.
+   */
+  affectedByPath = async (
+    path: WorkspacePath,
+    opts?: WorkspaceProvenanceAffectedByPathOpts,
+  ): Promise<boolean> => {
+    if (this._affectedByPath) {
+      return this._affectedByPath
+    }
+
+    const ctx = this._ctx.select("affectedByPath", { path, ...opts })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Inputs whose source origin could not be determined. These retain a conservative root dependency.
+   */
+  issues = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("issues")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The source regions on which the artifact depends.
+   */
+  selectors = async (): Promise<WorkspaceSelector[]> => {
+    type selectors = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("selectors").select("id")
+
+    const response: Awaited<selectors[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceSelector(ctx.copy().selectNode(r.id, "WorkspaceSelector")),
+    )
+  }
+}
+
 /**
  * An installed SDK: a module marked for scaffolding other modules and clients.
  */
@@ -20767,6 +20979,131 @@ export class WorkspaceSDK extends BaseClient {
       return null
     }
     return new JSONValue(ctx.copy().selectNode(response, "JSONValue"))
+  }
+}
+
+export class WorkspaceSelector extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _conservative?: boolean = undefined
+  private readonly _kind?: string = undefined
+  private readonly _origin?: string = undefined
+  private readonly _path?: WorkspacePath = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _conservative?: boolean,
+    _kind?: string,
+    _origin?: string,
+    _path?: WorkspacePath,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._conservative = _conservative
+    this._kind = _kind
+    this._origin = _origin
+    this._path = _path
+  }
+
+  /**
+   * A unique identifier for this WorkspaceSelector.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether this region is an upper bound on possible inputs.
+   */
+  conservative = async (): Promise<boolean> => {
+    if (this._conservative) {
+      return this._conservative
+    }
+
+    const ctx = this._ctx.select("conservative")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Exclude patterns relative to path.
+   */
+  exclude = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("exclude")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Include patterns relative to path.
+   */
+  include = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("include")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * WORKSPACE_READ or MODULE_SOURCE.
+   */
+  kind = async (): Promise<string> => {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const ctx = this._ctx.select("kind")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The input that contributes this dependency.
+   */
+  origin = async (): Promise<string> => {
+    if (this._origin) {
+      return this._origin
+    }
+
+    const ctx = this._ctx.select("origin")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The path relative to the workspace boundary.
+   */
+  path = async (): Promise<WorkspacePath> => {
+    if (this._path) {
+      return this._path
+    }
+
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<WorkspacePath> = await ctx.execute()
+
+    return response
   }
 }
 
