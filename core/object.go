@@ -500,6 +500,10 @@ func privateCollectionSDKInput(ctx context.Context, fields map[string]any) (any,
 	return typ.ConvertToSDKInput(ctx, value)
 }
 
+// contentTypeKey keys a module object's type in its collected content. A
+// GraphQL name can't start with "__", so no field has it.
+const contentTypeKey = "__daggerType"
+
 func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
 	if value == nil {
 		return content.CollectJSONable(nil)
@@ -508,6 +512,11 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 	obj, ok := dagql.UnwrapAs[*ModuleObject](value)
 	if !ok {
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
+	}
+	// Objects of two types are never the same value, even with equal fields:
+	// a module loaded under two names makes its object a type of each name.
+	if err := content.CollectKeyed(contentTypeKey, func() error { return content.CollectJSONable(obj.TypeDef.Name) }); err != nil {
+		return err
 	}
 	objFields := obj.Fields
 	if obj.TypeDef.Collection != nil && obj.TypeDef.Collection.Enabled {
