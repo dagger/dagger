@@ -157,3 +157,65 @@ func TestRenderLiveWaitingSuffix(t *testing.T) {
 		t.Errorf("blocked row must not tick up wall-clock while blocked:\n%s", forcingLine)
 	}
 }
+
+// A frontend over a trace loaded in parts asks its support provider for what
+// its rows waited on that it hasn't loaded, once, and the row then reads as
+// the waiting it was.
+func TestRequestBreakdownSpans(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	root := prettyTestSpanID(1)
+	row := prettyTestSpanID(2)
+	other := prettyTestSpanID(3)
+	base := time.Now().Add(-time.Hour)
+	at := func(sec float64) time.Time {
+		return base.Add(time.Duration(sec * float64(time.Second)))
+	}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: root, TraceID: prettyTestTraceID(), Name: "root", StartTime: at(0), EndTime: at(20)},
+		{ID: row, TraceID: prettyTestTraceID(), ParentID: root, Name: "the-waiting-op",
+			StartTime: at(1), EndTime: at(11),
+			Links: []dagui.SpanLink{waitLink(other, at(1), at(11))}},
+	})
+	db.SetPrimarySpan(root)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.ExpandCompleted = true
+	fe.FrontendOpts.GCThreshold = time.Hour
+	var requested [][]dagui.SpanID
+	fe.supportProvider = func(ids []dagui.SpanID) { requested = append(requested, ids) }
+
+	fe.recalculateViewLocked()
+	if len(requested) != 1 || len(requested[0]) != 1 || requested[0][0] != other {
+		t.Fatalf("the row's unloaded blocker should be requested once: %v", requested)
+	}
+	if got := strings.Join(fe.tui.RenderLines(), "\n"); !strings.Contains(got, "the-waiting-op 10.0s") {
+		t.Errorf("until its blocker loads, the row reads as working the whole time:\n%s", got)
+	}
+	fe.recalculateViewLocked()
+	if len(requested) != 1 {
+		t.Fatalf("a span is requested once: %v", requested)
+	}
+
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: other, TraceID: prettyTestTraceID(), ParentID: root, Name: "the-other-op",
+			StartTime: at(1), EndTime: at(11)},
+	})
+	fe.recalculateViewLocked()
+	if got := strings.Join(fe.tui.RenderLines(), "\n"); !strings.Contains(got, "the-waiting-op 0.0s") {
+		t.Errorf("once its blocker loads, the row reads as waiting:\n%s", got)
+	}
+}
+
+// Report mode renders once, so 'dagger trace' asks it through the public
+// method, round by round, for the spans its rows' breakdowns need.
+func TestRequestBreakdownSpansInReport(t *testing.T) {
+	tf, ok := NewReporter(io.Discard).(TraceFrontend)
+	if !ok {
+		t.Fatal("the reporter should be a trace frontend")
+	}
+	if tf.RequestBreakdownSpans() {
+		t.Error("an empty view should request nothing")
+	}
+}

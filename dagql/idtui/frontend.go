@@ -185,6 +185,15 @@ type TraceFrontend interface {
 	// span is expanded or a failure is surfaced.
 	SetLogProvider(func(id dagui.SpanID, descendants bool))
 	SetSpanProvider(func(id dagui.SpanID))
+	// SetSupportProvider registers the fetcher for spans the view holds only
+	// references to that its rows' time breakdowns draw on, such as what a
+	// row waited on (dagui.Span.TimeBreakdownSpans).
+	SetSupportProvider(func(ids []dagui.SpanID))
+	// RequestBreakdownSpans makes the frontend request the spans its rows'
+	// time breakdowns draw on that it hasn't loaded, and reports whether it
+	// requested any. Report mode renders once, so 'dagger trace' calls it,
+	// waiting for each round's fetches, until it requests none.
+	RequestBreakdownSpans() bool
 	// SetTraceLogProvider registers a log provider for one trace's spans
 	// only, ahead of SetLogProvider's; spans of other traces are not
 	// requested from it.

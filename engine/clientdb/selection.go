@@ -539,6 +539,13 @@ func (v *SpanView) selectSpans(sel *archive.SpanSelection) {
 		ancestors(id)
 		visibleChildren(id, map[string]bool{})
 	}
+	// As Cloud's: exactly the spans named, for a view that holds only
+	// references to them.
+	for _, id := range sel.Exact {
+		if _, ok := v.nodes[id]; ok {
+			v.selected[id] = true
+		}
+	}
 	v.partial = len(v.selected) < len(v.nodes)
 }
 

@@ -266,6 +266,14 @@ type frontendPretty struct {
 	spanProvider   func(dagui.SpanID)
 	requestedSpans map[dagui.SpanID]bool
 
+	// supportProvider fetches spans the view holds only references to that
+	// its rows' time breakdowns draw on (dagui.Span.TimeBreakdownSpans): what
+	// a row waited on, which a trace loaded in parts may leave out. Without
+	// them the row reads as working the whole time. nil for live runs, which
+	// receive every span. requestedSupport dedups so each is fetched once.
+	supportProvider  func([]dagui.SpanID)
+	requestedSupport map[dagui.SpanID]bool
+
 	// callProvider fetches the recipe closures of call digests this client
 	// lacks (CallFetcher); nil unless the trace was loaded only in part.
 	// requestedCalls dedups so each digest is asked for once, and
@@ -2784,6 +2792,58 @@ func (fe *frontendPretty) SetSpanProvider(provider func(dagui.SpanID)) {
 	})
 }
 
+// SetSupportProvider registers the fetcher for spans the rows' time
+// breakdowns draw on that the view holds only references to.
+func (fe *frontendPretty) SetSupportProvider(provider func([]dagui.SpanID)) {
+	fe.dispatch(func() {
+		fe.supportProvider = provider
+	})
+}
+
+// RequestBreakdownSpans recalculates the view, which requests the spans its
+// rows' time breakdowns draw on that it hasn't loaded, and reports whether
+// it requested any.
+func (fe *frontendPretty) RequestBreakdownSpans() bool {
+	var requested bool
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		before := len(fe.requestedSupport)
+		fe.recalculateViewLocked()
+		requested = len(fe.requestedSupport) > before
+	})
+	<-done
+	return requested
+}
+
+// requestBreakdownSpansLocked asks the support provider for the spans the
+// rows' time breakdowns draw on that the view holds only references to,
+// each once.
+func (fe *frontendPretty) requestBreakdownSpansLocked() {
+	if fe.supportProvider == nil {
+		return
+	}
+	var ids []dagui.SpanID
+	for _, row := range fe.rows.Order {
+		if row.Span == nil {
+			continue
+		}
+		row.Span.TimeBreakdownSpans(func(dep *dagui.Span) {
+			if dep.Received || fe.requestedSupport[dep.ID] {
+				return
+			}
+			if fe.requestedSupport == nil {
+				fe.requestedSupport = make(map[dagui.SpanID]bool)
+			}
+			fe.requestedSupport[dep.ID] = true
+			ids = append(ids, dep.ID)
+		})
+	}
+	if len(ids) > 0 {
+		fe.supportProvider(ids)
+	}
+}
+
 // SetCallProvider registers the fetcher for call payloads this client lacks
 // (CallFetcher).
 func (fe *frontendPretty) SetCallProvider(provider func(digests, known []string) error) {
@@ -4985,6 +5045,11 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.primarySpan() {
 		fe.requestSubtree(fe.ZoomedSpan)
 	}
+
+	// The rows' time breakdowns may draw on spans a trace loaded in parts
+	// left out, such as what a row waited on: fetch them, so the row's time
+	// reads as the waiting it was.
+	fe.requestBreakdownSpansLocked()
 
 	if fe.hasLogProvider() {
 		// The primary output is written at end of run from OUTSIDE the render
