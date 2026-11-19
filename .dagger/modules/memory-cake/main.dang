@@ -186,6 +186,13 @@ type MemoryCake {
         # on both sides, so they are left out.
         focus: "\\(\\*cacheMetadata\\)\\.SetExternal|engine/contenthash\\.\\(\\*cacheContext\\)\\.save",
       ),
+      Demo(
+        pr: "15212",
+        title: "engine: forget contenthash trees of collected snapshots",
+        # The serialized trees SetExternal keeps, here of snapshots the
+        # workload's prune collected.
+        focus: "\\(\\*cacheMetadata\\)\\.SetExternal|engine/contenthash\\.\\(\\*cacheContext\\)\\.save",
+      ),
     ]
   }
 
@@ -201,6 +208,21 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
     measure(pr: "15213", ref: ref, env: env)
+  }
+
+  """
+  #15212: contenthash trees of collected snapshots never forgotten. Separate
+  sessions hash EDITS one-file edits (default 200) of a FILES-file directory
+  (default 20000), then a local cache prune collects their snapshots; on main
+  their serialized trees (~350 MiB at the defaults) stay in memory, with the
+  fix only contenthash's LRU of 20 (~36 MiB) does. Scale with env, e.g.
+  ["EDITS=100"].
+  """
+  demo15212(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15212", ref: ref, env: env)
   }
 
   """
