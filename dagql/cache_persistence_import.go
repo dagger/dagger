@@ -625,7 +625,9 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				attaches = append(attaches, ownerLeaseAttach{resultID: res.id, key: key, refKey: link.RefKey})
 			}
 		}
-		// Each owner lease is its own, so leases attach on all cores.
+		// Leases attach on all cores. The snapshot manager serializes the
+		// attaches' changes to the ancestry the owner leases share, which
+		// is mostly one snapshot and one metadata write per lease.
 		if err := forEachIndexParallel(len(attaches), func(i int) error {
 			attach := attaches[i]
 			if err := c.snapshotManager.AttachLease(
