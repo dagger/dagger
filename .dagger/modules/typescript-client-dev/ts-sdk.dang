@@ -252,8 +252,54 @@ type TypescriptClientDev {
       build = build.withMountedSecret(".npmrc", setSecret("npmrc", npmrc))
       null
     }
-    build.withExec(publishArgs).sync
+    let published = build.withExec(publishArgs)
+
+    # The publish above leaves `latest` where it is for a prerelease. That is
+    # right for a package with stable releases behind it and wrong for this
+    # one: core has only ever been a prerelease, so `latest` stayed on an old
+    # beta whose bindings target a different engine view than the one
+    # `@dagger.io/session`'s own `latest` announces — the mismatch this package
+    # exists to avoid, sitting on the default install path.
+    #
+    # Moving it only when the new version sorts above the current one stops on
+    # its own the day a stable core ships: 1.0.0-beta.29 sorts below 1.0.0, so
+    # there is no flag to remember to turn off.
+    let released = if (dryRun == true) {
+      published
+    } else {
+      published.withExec(["sh", "-ec", moveLatestScript])
+    }
+    released.sync
     null
+  }
+
+  """
+  Point `latest` at the version just published, unless it already names a
+  higher one.
+
+  Reads the name and version from the manifest rather than taking them as
+  arguments, so it cannot disagree with what was published. `semver` comes
+  from the registry at release time: the comparison has to be semver's, not a
+  string's — `1.0.0-beta.9` is above `1.0.0-beta.28` to `sort`, and the
+  alphanumeric-outranks-numeric rule that makes `1.0.0-beta.25-2` sort above
+  every later beta is exactly the kind of thing a hand-rolled compare gets
+  wrong.
+
+  A failure here fails the release. The publish has already happened by then,
+  so the alternative is a release that looks green with `latest` left behind,
+  which is the bug being fixed.
+  """
+  let moveLatestScript: String! {
+    [
+      "name=$(node -p \"require('./package.json').name\")",
+      "version=$(node -p \"require('./package.json').version\")",
+      "current=$(npm view \"$name\" dist-tags.latest 2>/dev/null || true)",
+      "if [ -n \"$current\" ] && [ \"$(npx -y semver \"$version\" \"$current\" | tail -1)\" != \"$version\" ]; then",
+      "  echo \"latest stays at $current: $version does not sort above it\"",
+      "  exit 0",
+      "fi",
+      "npm dist-tag add \"$name@$version\" latest",
+    ].join("\n")
   }
 
   pub isSemver(version: String!): Boolean! {
