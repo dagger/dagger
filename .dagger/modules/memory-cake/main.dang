@@ -1,0 +1,1000 @@
+# memory-cake: scripted, per-PR memory reproducers for the dagger engine.
+#
+# Each demo is one PR's reproducer: a workload script that makes an engine
+# retain memory the PR frees, plus a regexp over stack frames naming the PR's
+# code. `measure` runs a demo against an engine built from any ref of
+# github.com/dagger/dagger and reports its heap at three points (see
+# Measurement); `cake` runs every demo on two refs (main vs. a branch with
+# the memory fixes) and returns a markdown table, so each PR's slice of
+# retained heap shows clearly.
+#
+# How a measurement runs (driver.sh, session.sh):
+#
+#   - `engine` builds the engine and its matching CLI from the ref (with
+#     engine-dev from THIS checkout, as hack/memory-cake/run.dang did), runs
+#     it with its debug server on :6060 and a fresh state volume, and binds
+#     it into a client container as `dagger-engine`.
+#   - The driver warms the engine with a trivial session and takes the
+#     baseline heap (/debug/pprof/heap?gc=1).
+#   - It then runs the workload under `dagger run`, which opens a session
+#     and passes its port and token to the child as DAGGER_SESSION_PORT and
+#     DAGGER_SESSION_TOKEN. `dagger` commands the workload runs (dagger api
+#     query, dagger -c, dagger call) join that session as nested clients
+#     (engine/client.Connect), so session-scoped memory stays live; the live
+#     heap, /debug/vars and /debug/client-lifecycle are taken before the
+#     session returns.
+#   - After the session closes and a settle wait, the after heap.
+#   - heapstat (heapstat/) sums each profile's inuse_space, and the part of
+#     it in samples with a frame matching the demo's focus regexp.
+#
+# A demo with `cli: true` measures the `dagger run` CLI's heap instead: its
+# pretty TUI runs headlessly (DAGGER_TUI_CONSOLE) with its pprof on, so its
+# frontend ingests and renders the session's telemetry as an interactive
+# one does (CLI mode in driver.sh). The CLI demos share fixtures/cli, where
+# spangen (spangen/) streams a long agent session's spans, logs and metrics
+# from an exec.
+#
+# The engine service is bound to the driver's single exec, so it starts with
+# the measurement and stops when the exec ends: one engine per measurement,
+# and `cake` measures one at a time.
+#
+# Measurements (the demos, `measure`, `measureWorkload`) and `engine` are
+# cached for the session: reading several fields of one Measurement, or the
+# same demo twice, in one session (one `dagger` command or `dagger -c`
+# script) reuses one run. A new session measures again. `cake` and
+# `tracePeaks` return strings and are never cached.
+#
+# Adding a demo:
+#
+#   1. fixtures/<pr>/workload.sh: a POSIX sh script, run with the fixture
+#      directory as its cwd, `dagger` (the ref's CLI), curl and jq on PATH,
+#      and inside the open session. Read sizes from env vars with defaults
+#      (FILES=${FILES:-20000}) so callers can scale it with `env`. Keep the
+#      engine under ~4 GB. Any other files it needs go beside it.
+#   2. An entry in `demos` below: pr, title, focus regexp.
+#   3. A `demo<pr>(ref, env)` function calling `measure`, like demo15213.
+
+let daggerRepo = "https://github.com/dagger/dagger"
+let debugPort = 6060
+# CLI mode: where the measured CLI serves its headless TUI and its pprof,
+# inside the client container.
+let consolePort = 7070
+let cliPprofPort = 6061
+
+"""
+One PR's memory reproducer. Its workload is fixtures/<pr>/workload.sh in
+this module.
+"""
+type Demo {
+  """
+  The PR number, e.g. "15213".
+  """
+  pr: String!
+  """
+  The PR's title.
+  """
+  title: String!
+  """
+  Regexp over heap profile stack frames ("<function> <file>") naming the
+  PR's code: samples with a matching frame are the demo's focus bytes.
+  """
+  focus: String!
+  """
+  The fixture directory under fixtures/ holding the workload; empty means
+  the PR number. Demos of one mechanism can share a workload.
+  """
+  fixture: String! = ""
+  """
+  Measure the `dagger` CLI's heap instead of the engine's (see CLI mode in
+  driver.sh).
+  """
+  cli: Boolean! = false
+  """
+  Regexp over stack frames for the alloc_space focus (bytes allocated since
+  the process started, garbage included): for churn the PR stops rather
+  than memory it frees. Empty means `focus`.
+  """
+  focusAlloc: String! = ""
+}
+
+"""
+An engine built from a ref of github.com/dagger/dagger, with a client
+container bound to it.
+"""
+type Engine {
+  """
+  The ref it was built from, as given.
+  """
+  ref: String!
+  """
+  The commit the ref resolved to.
+  """
+  sha: String!
+  """
+  The engine service (debug server on :6060, fresh state volume). Bound to
+  `client` as `dagger-engine`.
+  """
+  service: Service!
+  """
+  Alpine with the ref's `dagger` CLI pointed at the engine, curl, jq and
+  heapstat.
+  """
+  client: Container!
+}
+
+"""
+One demo's heap on one engine. Bytes are Go inuse_space from
+/debug/pprof/heap?gc=1.
+"""
+type Measurement {
+  """
+  The demo's PR number.
+  """
+  pr: String!
+  """
+  The ref measured, as given.
+  """
+  ref: String!
+  """
+  The commit the ref resolved to.
+  """
+  sha: String!
+  """
+  Whether the heap is the `dagger` CLI's (see CLI mode in driver.sh) rather
+  than the engine's. For the CLI, baseline is its heap once connected,
+  before the workload, and after is its heap once the session closed, its
+  TUI still up.
+  """
+  cli: Boolean!
+  """
+  Heap after a trivial warm-up session.
+  """
+  baselineBytes: Int!
+  """
+  Heap at the end of the workload, its session still open.
+  """
+  liveBytes: Int!
+  """
+  Heap after the workload's session closed and settled.
+  """
+  afterBytes: Int!
+  """
+  Bytes of the live heap in samples matching the demo's focus regexp.
+  """
+  focusBytes: Int!
+  """
+  Focus bytes of the baseline heap.
+  """
+  focusBaselineBytes: Int!
+  """
+  Focus bytes of the after heap.
+  """
+  focusAfterBytes: Int!
+  """
+  The heaviest focus sites of the live heap, one "<MiB> <function>" per
+  line (each sample counted at its leaf-most matching frame).
+  """
+  focusTop: String!
+  """
+  Bytes allocated by the live point since the process started (alloc_space),
+  garbage included.
+  """
+  allocBytes: Int!
+  """
+  Bytes of allocBytes in samples matching the demo's alloc focus regexp.
+  """
+  focusAllocBytes: Int!
+  """
+  The heaviest alloc focus sites, like focusTop.
+  """
+  focusAllocTop: String!
+  """
+  How long the workload's session took, in seconds.
+  """
+  seconds: Int!
+  """
+  The live heap profile.
+  """
+  liveProfile: File!
+  """
+  The after heap profile.
+  """
+  afterProfile: File!
+  """
+  The baseline heap profile.
+  """
+  baselineProfile: File!
+  """
+  /debug/vars at the live point.
+  """
+  liveVars: File!
+  """
+  /debug/client-lifecycle at the live point: the session and its clients.
+  """
+  liveClients: File!
+  """
+  Everything the driver wrote: profiles, vars, heapstat output, logs.
+  """
+  out: Directory!
+
+  """
+  One human-readable line.
+  """
+  summary: String! {
+    "#" + pr + " @ " + ref + " (" + sha.truncate(8) + ")" + (if (cli) { " [CLI heap]" } else { "" }) + ": baseline " + mib(baselineBytes) + ", live " + mib(liveBytes) + " (" + signedMib(liveBytes - baselineBytes) + "), after " + mib(afterBytes) + "; focus live " + mib(focusBytes) + ", after " + mib(focusAfterBytes) + "; focus alloc " + mib(focusAllocBytes) + " of " + mib(allocBytes) + "; " + toString(seconds) + "s"
+  }
+}
+
+type MemoryCake {
+  """
+  Every demo, in the order the cake runs them.
+  """
+  demos: [Demo!]! {
+    [
+      Demo(
+        pr: "15213",
+        title: "engine: keep contenthash trees on disk",
+        # The serialized trees SetExternal keeps: what the PR moves to disk.
+        # The parsed trees contenthash caches (cacheContext.checksum) stay
+        # on both sides, so they are left out.
+        focus: "\\(\\*cacheMetadata\\)\\.SetExternal|engine/contenthash\\.\\(\\*cacheContext\\)\\.save",
+      ),
+      Demo(
+        pr: "15202",
+        title: "core: dedupe and bound schema builder memos",
+        # Every schema server's cost: forking the core schema, building and
+        # installing the set, its introspection JSON and AST.
+        focus: "core\\.buildSchema|schemaJSONFile|core\\.\\(\\*SchemaBuilder|SchemaBuilderMemo|SchemaIntrospection|SchemaASTCache|dagql\\.\\(\\*Server\\)\\.Fork|\\(\\*CoreSchemaBase\\)\\.Fork|core\\.\\(\\*ModDeps\\)|introspection\\.",
+      ),
+      Demo(
+        pr: "15215",
+        title: "core: share module schemas across client roots",
+        # The servers themselves (core fork + module installs). The schema
+        # AST cache is an engine-wide LRU, the same on both sides, so it is
+        # left out.
+        focus: "dagql\\.\\(\\*Server\\)\\.Fork|core\\.buildSchema",
+      ),
+      Demo(
+        pr: "15216",
+        title: "core: share artifact module servers across clients",
+        # The standalone module servers artifact discovery, evaluation and
+        # checks select through.
+        focus: "core\\.dagqlServerForModule",
+      ),
+      Demo(
+        pr: "15223",
+        title: "dang: bound prepared programs kept per session",
+        # Everything a prepared program holds is allocated under PrepareDir
+        # (its syntax copy and inferred types), called from the cache.
+        focus: "cachedPreparedDangDir|preparedDangPrograms|dang\\.PrepareDir",
+      ),
+      Demo(
+        pr: "15224",
+        title: "dang: bound received values kept per session",
+        # The decoded values (decodeReceivedJSON and its interner), kept by
+        # decodeReceived's cache. The receiver JSON the same calls keep is
+        # #15226's.
+        focus: "decodeReceived|receivedValues|receivedInterner",
+      ),
+      Demo(
+        pr: "15226",
+        title: "core: bound receivers a session keeps converted",
+        # The receiver JSON moduleFunctionReceiverJSON's conversion makes,
+        # kept by its cache (convertedReceivers with the fix). The receiver
+        # is a Dang object: see the fixture for why not a Go one.
+        focus: "moduleFunctionReceiver|convertedReceivers",
+      ),
+      Demo(
+        pr: "15212",
+        title: "engine: forget contenthash trees of collected snapshots",
+        # The serialized trees SetExternal keeps, here of snapshots the
+        # workload's prune collected.
+        focus: "\\(\\*cacheMetadata\\)\\.SetExternal|engine/contenthash\\.\\(\\*cacheContext\\)\\.save",
+      ),
+      Demo(
+        pr: "15232",
+        title: "engine/snapshots: one ancestry lease for dagql owners",
+        # Lease records in the in-memory containerd metadata store (fastbolt,
+        # which replaces bbolt), the manager's owner maps, and the PR's
+        # ancestry bookkeeping.
+        focus: "go\\.etcd\\.io/bbolt|internal/fastbolt|\\(\\*snapshotManager\\)\\.(AttachLease|addSnapshotOwner|createOwnerLease|attachOwner\\w*)|engine/snapshots/owner_ancestry\\.go",
+      ),
+      Demo(
+        pr: "15220",
+        title: "clientdb: intern the span index's span IDs",
+        # The span index's own structures. The span ID strings its maps
+        # keep alive on main are allocated by the span decoder, outside it.
+        focus: "clientdb\\.\\(\\*spanLookup\\)|clientdb\\.newSpanLookup",
+      ),
+      Demo(
+        pr: "15221",
+        title: "clientdb: intern the log index, pack row metadata",
+        focus: "clientdb\\.\\(\\*logLookup\\)|clientdb\\.newLogLookup",
+      ),
+      Demo(
+        pr: "15227",
+        title: "dagui: cut CLI telemetry memory",
+        fixture: "cli",
+        cli: true,
+        # The metric points the frontend DB keeps: the points themselves
+        # (exportDataPoints) and what decoding them allocated and they
+        # reference (attribute sets, exemplars, decoded strings).
+        focus: "client\\.\\(\\*Client\\)\\.exportMetrics|dagui\\.DBMetricExporter",
+        # The log batch processors' allocation: the SDK BatchProcessor's
+        # idle buffer clones, or the DroppingLogProcessor replacing it.
+        focusAlloc: "sdk/log\\.\\(\\*BatchProcessor\\)|sdk/log\\.\\(\\*queue\\)|telemetry\\.\\(\\*DroppingLogProcessor\\)|telemetry\\.newDroppingLogProcessor",
+      ),
+      Demo(
+        pr: "15228",
+        title: "idtui: stop pruned span trees pinning walkers",
+        fixture: "cli",
+        cli: true,
+        # Span walks' memos: on main, every walk a pruned tree pinned.
+        focus: "dagui\\.\\(\\*spanWalker\\)",
+      ),
+      Demo(
+        pr: "15229",
+        title: "dagui: intern span digests and share attributes",
+        fixture: "cli",
+        cli: true,
+        # The strings the DB keeps of decoded spans and call frames, and its
+        # attribute and intern tables (heapstat's " && "/" || " clauses).
+        focus: "consumeStringValidateUTF8 && client\\.\\(\\*Client\\)\\.exportTraces|callpbv1\\.\\(\\*Call\\)\\.Decode || dagui\\.\\(\\*SpanAttributes\\)|dagui\\.\\(\\*digestTable\\)|dagui\\.\\(\\*DB\\)\\.(intern|shareAttrPairs)|dagui\\.intern",
+      ),
+    ]
+  }
+
+  """
+  #15213: contenthash trees kept in memory for every derived snapshot. One
+  session hashes a FILES-file directory (default 20000) and EDITS one-file
+  edits of it (default 200); each edit is rescanned and its serialized tree
+  (~90 B/file) kept in memory via SetExternal on main, ~360 MiB at the
+  defaults, ~0 with the fix. Scale with env, e.g. ["EDITS=100"].
+  """
+  demo15213(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15213", ref: ref, env: env)
+  }
+
+  """
+  #15202: one schema server per module load. One session loads MODS
+  (default 300) distinct Dang modules with Directory.asModule, 10 per query;
+  each load wraps core in a new *CoreMod, and the session memo keyed core by
+  pointer, so main builds and keeps a server for the unchanged dependency set
+  on every load (~630 servers, ~90 MiB); with the fix, one per client.
+  """
+  demo15202(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15202", ref: ref, env: env)
+  }
+
+  """
+  #15215: one schema server per client root. One session makes CALLS
+  (default 300) distinct calls of a Go module function that calls a Dang
+  dependency, 10 per query; each call is a nested client, and main builds
+  its module sets on every client's root and keeps them for the session;
+  with the fix the session shares one per set.
+  """
+  demo15215(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15215", ref: ref, env: env)
+  }
+
+  """
+  #15216: one artifact module server per client. CLIENTS (default 40)
+  concurrent nested clients run the checks of a workspace of MODS (default
+  10) Dang modules and stay connected; main builds a standalone server per
+  client per module (dagqlServerForModule), the fix one per module.
+  """
+  demo15216(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15216", ref: ref, env: env)
+  }
+
+  """
+  #15223: Dang prepared programs kept per session. One session loads
+  VARIANTS copies of a Dang module with FUNCS functions (default 40 and
+  300), each differing by a comment so each has its own source ID, and calls
+  a function on each; main keeps every variant's prepared program (~8 MiB
+  each, ~340 MiB at the defaults), the fix the 4 most recent.
+  """
+  demo15223(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15223", ref: ref, env: env)
+  }
+
+  """
+  #15224: Dang received values kept per session. One session chains CALLS
+  calls (default 250) on a Dang object whose state, a list of numbers, grows
+  by GROW (default 256) per call; main keeps a decoded copy of every state
+  received (~300 MiB at the defaults, quadratic in CALLS), the fix ~32 MiB.
+  """
+  demo15224(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15224", ref: ref, env: env)
+  }
+
+  """
+  #15226: module receivers kept converted per session. One session fills a
+  Dang object with SIZE bytes (default 1 MiB), takes CALLS distinct results
+  of it (default 200) and calls a function on each; main keeps every
+  receiver's JSON (~210 MiB at the defaults), the fix ~32 MiB. The results
+  share their content, so #15224's decoded values stay one copy.
+  """
+  demo15226(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15226", ref: ref, env: env)
+  }
+
+  """
+  #15212: contenthash trees of collected snapshots never forgotten. Separate
+  sessions hash EDITS one-file edits (default 200) of a FILES-file directory
+  (default 20000), then a local cache prune collects their snapshots; on main
+  their serialized trees (~355 MiB at the defaults) stay in memory. With the
+  fix, 36 MiB after the session (what contenthash's LRU of 20 cacheContexts
+  references), and 42-131 MiB live: some collected trees are only forgotten
+  by a later collection. Scale with env, e.g. ["EDITS=100"].
+  """
+  demo15212(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15212", ref: ref, env: env)
+  }
+
+  """
+  #15232: owner leases naming whole snapshot chains. One session builds
+  CHAINS (default 16) withNewFile chains DEPTH (default 1000) results deep,
+  each result synced and owning its snapshot. On main each owner lease names
+  its snapshot's whole chain (up to 128 layers before a flatten), so lease
+  records grow with results x depth; with the fix, with results + depth.
+  Scale with env, e.g. ["CHAINS=8"].
+  """
+  demo15232(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15232", ref: ref, env: env)
+  }
+
+  """
+  #15220: the telemetry store's span index on string-keyed maps. One
+  session opens its store's index (a log search, as the TUI's first read
+  does) and runs CALLS cheap uncached API calls (default 60000), a few spans
+  each; the index keeps every span for the session's life, ~360-410 B each
+  on main, ~135 B with the fix. Scale with env, e.g. ["CALLS=30000"].
+  """
+  demo15220(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15220", ref: ref, env: env)
+  }
+
+  """
+  #15221: the telemetry store's log index on string-keyed tables, with a
+  32 B row meta. The #15220 workload's shape: CALLS cheap uncached API calls
+  (default 60000), each logging its call payload under its own span and
+  digest, which the fix interns by their bytes. Scale with env, e.g.
+  ["CALLS=30000"].
+  """
+  demo15221(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15221", ref: ref, env: env)
+  }
+
+  """
+  #15218 (FindSpans) and #15219 (FindCalls): what the LLM trace tools
+  allocate per search. Their cost is transient, so it is not a demo of the
+  cake's retained heap: fixtures/15218 runs CALLS cheap uncached API calls
+  (default 20000), then SEARCHES searches per tool, each an LLM replaying a
+  recording that makes one tool call, and reports per tool (ListServices is
+  the LLM's own overhead) the bytes allocated per search (TotalAlloc) and the
+  peak live heap during the searches (HeapAlloc right after forced GCs,
+  polled), against the live heap before them.
+  """
+  tracePeaks(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    traceRun(ref, env)[0] ?? ""
+  }
+
+  """
+  `tracePeaks` as JSON: {ref, sha, text, tools: [{tool, searches,
+  allocPerSearch, heapStart, peak}]}, bytes, from one run.
+  """
+  tracePeaksJson(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    traceRun(ref, env)[1] ?? ""
+  }
+
+  """
+  #15227: the CLI's frontend DB kept every metric point it received,
+  exemplars included; and its idle log batch processors cloned their batch
+  buffers every 100 ms. The shared CLI workload (fixtures/cli) streams a long
+  session's telemetry into a `dagger run` CLI's headless TUI, among it
+  EXPORTS (100) metric exports of SERIES (200) calls x GAUGES (8) gauges,
+  one exemplar per point. Focus: the metric points the DB retains (live
+  heap), and the log processors' allocation (alloc_space, garbage
+  included). Scale with env, e.g. ["EXPORTS=50"].
+  """
+  demo15227(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15227", ref: ref, env: env)
+  }
+
+  """
+  #15228: a pruned span tree stayed pinned by the log and test views the
+  frontend keeps, and through its tree the whole spanWalker that built it,
+  memos and all, one per frame that pruned a tree. The shared CLI workload
+  (fixtures/cli) streams SPANS (300000) spans of a long agent session,
+  their tests and logs, into a `dagger run` CLI's headless TUI, which renders
+  frames throughout as completed rows leave the view. Focus: the walkers'
+  memos. Scale with env, e.g. ["SPANS=100000"].
+  """
+  demo15228(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15228", ref: ref, env: env)
+  }
+
+  """
+  #15229: the CLI's frontend DB kept a freshly decoded copy of every
+  digest, name and attribute of every span and call frame. The shared CLI
+  workload (fixtures/cli) streams SPANS (300000) spans, most of them dagql
+  calls with frames, inputs, outputs and cache attributes, into a `dagger
+  run` CLI's headless TUI. Focus: the decoded strings and attribute pairs the
+  DB retains. Scale with env, e.g. ["SPANS=100000"].
+  """
+  demo15229(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    measure(pr: "15229", ref: ref, env: env)
+  }
+
+  """
+  Run every demo (or those in `prs`) on `before` and `after`, one engine at
+  a time, and return a markdown table of their live heaps and focus slices.
+  A demo that fails gets an error row; the others still run.
+  """
+  cake(
+    """
+    The baseline ref (a branch, tag or commit of github.com/dagger/dagger).
+    For a clean comparison, the commit `after` is built on, so the two differ
+    only by the changes under test.
+    """
+    before: String! = "main",
+    """
+    The ref to compare against `before`, e.g. a branch with memory fixes.
+    """
+    after: String!,
+    """
+    PR numbers of the demos to run; empty runs them all.
+    """
+    prs: [String!]! = [],
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    let selected = if (prs.isEmpty) {
+      demos
+    } else {
+      demos.filter { d => prs.contains(d.pr) }
+    }
+    let rows = selected.map { d => cakeEntry(d, before, after)[0] ?? "" }
+    cakeHeader(before, after) + "\n" + rows.join("\n")
+  }
+
+  """
+  `cake` with its numbers: one run of every demo (or those in `prs`) on
+  `before` and `after`, returned as one JSON document holding the markdown
+  table and, per demo, its definition and every byte count of both
+  measurements (or its error). With `traces`, `tracePeaksJson` of both refs
+  too. Selecting this once is the whole run: no field re-runs a measurement.
+  """
+  cakeJson(
+    """
+    The baseline ref, as in `cake`.
+    """
+    before: String! = "main",
+    """
+    The ref to compare against `before`, as in `cake`.
+    """
+    after: String!,
+    prs: [String!]! = [],
+    traces: Boolean! = false,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    let selected = if (prs.isEmpty) {
+      demos
+    } else {
+      demos.filter { d => prs.contains(d.pr) }
+    }
+    let entries = selected.map { d => cakeEntry(d, before, after) }
+    let markdown = cakeHeader(before, after) + "\n" + entries.map { e => e[0] ?? "" }.join("\n")
+    let traceJson = if (traces) {
+      "{\"before\":" + traceJsonOrError(before) + ",\"after\":" + traceJsonOrError(after) + "}"
+    } else {
+      "null"
+    }
+    "{\"before\":" + JSON.encode(before) + ",\"after\":" + JSON.encode(after) + ",\"markdown\":" + JSON.encode(markdown) + ",\"demos\":[" + entries.map { e => e[1] ?? "null" }.join(",") + "],\"tracePeaks\":" + traceJson + "}"
+  }
+
+  """
+  Measure the demo for PR `pr` on an engine built from `ref` (a branch, tag
+  or commit of github.com/dagger/dagger).
+  """
+  measure(
+    pr: String!,
+    ref: String! = "main",
+    """
+    KEY=VALUE environment variables for the workload, e.g. ["FILES=40000"].
+    """
+    env: [String!]! = [],
+    """
+    Seconds to wait after the warm-up and after the session closes, before
+    taking the heap.
+    """
+    settle: Int! = 10,
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    let demo = demos.find { d => d.pr == pr }
+    if (demo == null) {
+      raise "memory-cake: no demo for PR " + pr + " (demos: " + demos.map { d => d.pr }.join(", ") + ")"
+    }
+    let fixture = if (demo.fixture == "") { pr } else { demo.fixture }
+    measureWorkload(
+      pr: pr,
+      ref: ref,
+      workload: currentModule.source.directory("fixtures/" + fixture),
+      focus: demo.focus,
+      focusAlloc: demo.focusAlloc,
+      cli: demo.cli,
+      env: env,
+      settle: settle,
+    )
+  }
+
+  """
+  Measure any workload: `workload` is a directory holding workload.sh (see
+  the module docs), `focus` the regexp its focus bytes match. The core of
+  `measure`, for trying a workload before it is a demo.
+  """
+  measureWorkload(
+    """
+    Label for the measurement.
+    """
+    pr: String!,
+    ref: String! = "main",
+    workload: Directory!,
+    focus: String! = "",
+    """
+    Regexp for the alloc_space focus; empty means `focus`.
+    """
+    focusAlloc: String! = "",
+    """
+    Measure the `dagger run` CLI's heap instead of the engine's (see CLI mode
+    in driver.sh). The workload can reach the CLI's headless TUI at
+    $CAKE_CONSOLE.
+    """
+    cli: Boolean! = false,
+    env: [String!]! = [],
+    settle: Int! = 10,
+  ): Measurement! @cache(policy: FunctionCachePolicy.PerSession) {
+    let eng = buildEngine(ref)
+    let scripts = currentModule.source.directory(".").filter(include: ["driver.sh", "session.sh"])
+    let base = eng.client
+      .withDirectory("/cake", scripts)
+      .withMountedDirectory("/fixture", workload)
+      .withWorkdir("/fixture")
+      .withEnvVariable("CAKE_FOCUS", focus)
+      .withEnvVariable("CAKE_FOCUS_ALLOC", if (focusAlloc == "") { focus } else { focusAlloc })
+      .withEnvVariable("CAKE_SETTLE", toString(settle))
+      .withEnvVariable("CAKE_NONCE", Random.string)
+    let configured = if (cli) {
+      base
+        .withEnvVariable("CAKE_MODE", "cli")
+        .withEnvVariable("CAKE_CONSOLE", "127.0.0.1:" + toString(consolePort))
+        .withEnvVariable("CAKE_HEAP_URL", "http://127.0.0.1:" + toString(cliPprofPort))
+    } else {
+      base
+    }
+    let withEnv = env.reduce(configured) { c, kv =>
+      let kvParts = kv.split("=", limit: 2)
+      c.withEnvVariable(kvParts[0] ?? kv, kvParts[1] ?? "")
+    }
+    # The engine is bound to this exec alone: it starts for it and stops
+    # when it ends. The outer session's variables are unset so the CLI
+    # reaches the engine under test (see engine-dev's withoutOuterSession).
+    let ran = withEnv.withExec(
+      ["env", "-u", "DAGGER_SESSION_PORT", "-u", "DAGGER_SESSION_TOKEN", "sh", "/cake/driver.sh"],
+      expect: ReturnType.ANY,
+    )
+    let status = ran.{{exitCode, stderr}}
+    if (status.exitCode != 0) {
+      raise "memory-cake: #" + pr + " on " + ref + " (" + eng.sha + ") failed:\n" + status.stderr
+    }
+    let out = ran.directory("/out")
+    let baseline = out.file("baseline.stat").contents
+    let live = out.file("live.stat").contents
+    let after = out.file("after.stat").contents
+    Measurement(
+      pr: pr,
+      ref: ref,
+      sha: eng.sha,
+      cli: cli,
+      baselineBytes: statValue(baseline, "inuse"),
+      liveBytes: statValue(live, "inuse"),
+      afterBytes: statValue(after, "inuse"),
+      focusBytes: statValue(live, "focus"),
+      focusBaselineBytes: statValue(baseline, "focus"),
+      focusAfterBytes: statValue(after, "focus"),
+      focusTop: statTop(live, "top"),
+      allocBytes: statValue(live, "alloc"),
+      focusAllocBytes: statValue(live, "focusalloc"),
+      focusAllocTop: statTop(live, "topalloc"),
+      seconds: out.file("session.seconds").contents.trimSpace.toInt,
+      liveProfile: out.file("live.pb.gz"),
+      afterProfile: out.file("after.pb.gz"),
+      baselineProfile: out.file("baseline.pb.gz"),
+      liveVars: out.file("live-vars.json"),
+      liveClients: out.file("live-clients.json"),
+      out: out,
+    )
+  }
+
+  """
+  Build the engine and CLI at `ref` (a branch, tag or commit of
+  github.com/dagger/dagger) and bind a fresh engine into a client
+  container. The service starts when the client first runs, with its own
+  state volume. Cached for the session, like the measurements.
+  """
+  engine(ref: String! = "main"): Engine! @cache(policy: FunctionCachePolicy.PerSession) {
+    buildEngine(ref)
+  }
+
+  # ---- helpers ------------------------------------------------------------
+
+  # `engine`'s body. measureWorkload calls it directly, so every measurement
+  # gets its own engine and state volume even when several measure one ref
+  # in a session.
+  let buildEngine(ref: String!): Engine! {
+    let repo = git(daggerRepo)
+    let sha = resolveRef(ref)
+    let src = repo.commit(sha).tree
+    # The ref's engine, built with engine-dev from this checkout; the same
+    # service engine-lab's start runs (fresh state, incremented subnet for
+    # nesting), plus the debug server.
+    let dev = engineDev(ws: src.asWorkspace).incrementSubnet
+    let svc = dev.container
+      .withExposedPort(1234)
+      .withMountedCache("/var/lib/dagger", cacheVolume("memory-cake-state-" + Random.string))
+      .asService(
+        args: [
+          "--addr", "tcp://0.0.0.0:1234",
+          "--network-name", "dagger-cake",
+          "--network-cidr", dev.networkCidr,
+          "--debugaddr", "0.0.0.0:" + toString(debugPort),
+        ],
+        useEntrypoint: true,
+        insecureRootCapabilities: true,
+      )
+    let base = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "curl", "jq"])
+      .withFile("/usr/local/bin/heapstat", heapstatBin)
+      .withFile("/usr/local/bin/spangen", spangenBin)
+    # installClient binds the service as dagger-engine, points the CLI at it
+    # and installs the CLI built from the same source.
+    Engine(
+      ref: ref,
+      sha: sha,
+      service: svc,
+      client: dev.installClient(client: base, service: svc),
+    )
+  }
+
+  # The commit a branch or tag points at now. GitRepository.ref can answer
+  # from a stale remote listing cached by the engine (a freshly pushed branch
+  # then "does not exist"), so ask the remote with a nonce'd git ls-remote.
+  let resolveRef(ref: String!): String! {
+    if (ref.containsMatch(`^[0-9a-f]{40}$`)) {
+      return ref
+    }
+    let out = container
+      .from("alpine:3.20")
+      .withExec(["apk", "add", "--no-cache", "git"])
+      .withEnvVariable("CAKE_NONCE", Random.string)
+      .withExec(["git", "ls-remote", daggerRepo, "refs/heads/" + ref, "refs/tags/" + ref + "^{}", "refs/tags/" + ref])
+      .stdout
+    let lines = out.split("\n").filter { l => l.trimSpace != "" }
+    # An annotated tag's peeled line ("^{}") names its commit.
+    let line = lines.find { l => l.hasSuffix("^{}") } ?? lines[0]
+    if (line == null) {
+      raise "memory-cake: " + daggerRepo + " has no branch or tag " + ref
+    }
+    line.split("\t")[0] ?? ""
+  }
+
+  # heapstat/, a static binary for the alpine client.
+  let heapstatBin: File! {
+    container
+      .from("golang:1.27")
+      .withMountedCache("/go/pkg/mod", cacheVolume("memory-cake-gomod"))
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withDirectory("/src", currentModule.source.directory("heapstat"))
+      .withWorkdir("/src")
+      .withExec(["go", "build", "-mod=mod", "-o", "/heapstat", "."])
+      .file("/heapstat")
+  }
+
+  # spangen/, a static binary the CLI workload runs in an exec.
+  let spangenBin: File! {
+    container
+      .from("golang:1.27")
+      .withMountedCache("/go/pkg/mod", cacheVolume("memory-cake-gomod"))
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withDirectory("/src", currentModule.source.directory("spangen"))
+      .withWorkdir("/src")
+      .withExec(["go", "build", "-mod=mod", "-o", "/spangen", "."])
+      .file("/spangen")
+  }
+
+  let cakeHeader(before: String!, after: String!): String! {
+    let b = shortRef(before)
+    let a = shortRef(after)
+    "| PR | " + b + " live | " + a + " live | delta | focus " + b + " | focus " + a + " |\n|---|---:|---:|---:|---:|---:|"
+  }
+
+  # One demo measured on both refs, as [markdown row, JSON object]; a
+  # failure gives an error row and {pr, title, error}.
+  let cakeEntry(d: Demo!, before: String!, after: String!): [String!]! {
+    cakeEntryOk(d, before, after) rescue {
+      e: Error! => [
+        "| #" + d.pr + " | error: " + e.message.replace("\n", " ").replace("|", "/").truncate(300) + " | | | | |",
+        JSON.encode({{pr: d.pr, title: d.title, error: e.message}}),
+      ]
+    }
+  }
+
+  let cakeEntryOk(d: Demo!, before: String!, after: String!): [String!]! {
+    let b = measure(pr: d.pr, ref: before)
+    let a = measure(pr: d.pr, ref: after)
+    let notes = (if (d.cli) { " (CLI heap)" } else { "" }) + (if (d.focusAlloc != "") {
+      " (alloc focus " + mib(b.focusAllocBytes) + " → " + mib(a.focusAllocBytes) + ")"
+    } else {
+      ""
+    })
+    let row = "| #" + d.pr + " " + d.title + notes + " | " + mib(b.liveBytes) + " | " + mib(a.liveBytes) + " | " + signedMib(a.liveBytes - b.liveBytes) + " | " + mib(b.focusBytes) + " | " + mib(a.focusBytes) + " |"
+    let def = JSON.encode({{
+      pr: d.pr,
+      title: d.title,
+      focus: d.focus,
+      focusAlloc: d.focusAlloc,
+      cli: d.cli,
+    }})
+    # def's fields, then the two measurements.
+    let json = def.trimSuffix("}") + ",\"before\":" + measurementJson(b) + ",\"after\":" + measurementJson(a) + "}"
+    [row, json]
+  }
+
+  # tracePeaksJson's document, or {ref, error} when the run fails.
+  let traceJsonOrError(ref: String!): String! {
+    (traceRun(ref, [])[1] ?? "null") rescue {
+      e: Error! => JSON.encode({{ref: ref, error: e.message}})
+    }
+  }
+
+  # One fixtures/15218 run on `ref`, as [tracePeaks text, tracePeaksJson].
+  let traceRun(ref: String!, env: [String!]!): [String!]! {
+    let m = measureWorkload(
+      pr: "15218",
+      ref: ref,
+      workload: currentModule.source.directory("fixtures/15218"),
+      env: env,
+    )
+    let fields = m.out.file("peak.txt").contents.split("\n").filter { l => l != "" }.map { l => l.split(" ") }
+    let lines = fields.map { f =>
+      let alloc = (f[4] ?? "0").toInt
+      let start = (f[6] ?? "0").toInt
+      let peak = (f[8] ?? "0").toInt
+      (f[0] ?? "") + ": " + mib(alloc) + " allocated per search, peak live heap " + signedMib(peak - start) + " over " + mib(start)
+    }
+    let text = "trace tools @ " + ref + " (" + m.sha.truncate(8) + "):\n" + lines.join("\n")
+    let tools = fields.map { f =>
+      {{
+        tool: f[0] ?? "",
+        searches: (f[2] ?? "0").toInt,
+        allocPerSearch: (f[4] ?? "0").toInt,
+        heapStart: (f[6] ?? "0").toInt,
+        peak: (f[8] ?? "0").toInt,
+      }}
+    }
+    [text, JSON.encode({{ref: ref, sha: m.sha, text: text, tools: tools}})]
+  }
+}
+
+# The value of a heapstat line "<key> <n>" (0 when absent).
+let statValue(stat: String!, key: String!): Int! {
+  let line = stat.split("\n").find { l => l.hasPrefix(key + " ") }
+  if (line == null) {
+    0
+  } else {
+    line.trimPrefix(key + " ").trimSpace.toInt
+  }
+}
+
+# A measurement's numbers (bytes) and focus sites as a JSON object, for
+# cakeJson.
+let measurementJson(m: Measurement!): String! {
+  JSON.encode({{
+    ref: m.ref,
+    sha: m.sha,
+    cli: m.cli,
+    seconds: m.seconds,
+    baseline: m.baselineBytes,
+    live: m.liveBytes,
+    after: m.afterBytes,
+    focus: m.focusBytes,
+    focusBaseline: m.focusBaselineBytes,
+    focusAfter: m.focusAfterBytes,
+    alloc: m.allocBytes,
+    focusAlloc: m.focusAllocBytes,
+    focusTop: m.focusTop,
+    focusAllocTop: m.focusAllocTop,
+  }})
+}
+
+# heapstat's "<key> <bytes> <function>" lines (key "top" or "topalloc") as
+# "<MiB> <function>".
+let statTop(stat: String!, key: String!): String! {
+  stat
+    .split("\n")
+    .filter { l => l.hasPrefix(key + " ") }
+    .map { l =>
+      let parts = l.split(" ", limit: 3)
+      mib((parts[1] ?? "0").toInt) + " " + (parts[2] ?? "")
+    }
+    .join("\n")
+}
+
+# A commit sha cut to 8 characters; other refs as they are.
+let shortRef(ref: String!): String! {
+  if (ref.containsMatch(`^[0-9a-f]{40}$`)) {
+    ref.truncate(8)
+  } else {
+    ref
+  }
+}
+
+# Bytes as MiB with one decimal, e.g. "123.4 MiB".
+let mib(b: Int!): String! {
+  let tenths = (b * 10 + 524288) / 1048576
+  toString(tenths / 10) + "." + toString(tenths % 10) + " MiB"
+}
+
+let signedMib(b: Int!): String! {
+  if (b < 0) {
+    "-" + mib(0 - b)
+  } else {
+    "+" + mib(b)
+  }
+}
