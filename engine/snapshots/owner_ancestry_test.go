@@ -72,6 +72,39 @@ func TestOwnerAncestryAcrossRestart(t *testing.T) {
 	require.Zero(t, leaseResourceCount(t, store, "dagql/result/", ancestryLeasePrefix))
 }
 
+// A kept owner lease that the restarted engine has not attached again keeps
+// its chain: the previous process's ancestry lease, which holds its
+// ancestors, stays until every kept owner lease is attached.
+func TestOwnerAncestryRestartKeepsUnattachedOwnersChain(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	refs, build := buildChain(t, store, 4)
+	owner := resultLeaseID(3)
+	require.NoError(t, store.Manager.AttachLease(ctx, owner, refs[3].SnapshotID()))
+	releaseChain(t, store, refs, build)
+
+	store.Reload(t)
+	keep := map[string]struct{}{owner: {}}
+	require.NoError(t, store.Manager.DeleteStaleDaggerOwnerLeases(ctx, keep))
+	requireKept(t, store, refs, func(int) bool { return true }, "the unattached kept owner keeps its chain")
+
+	require.NoError(t, store.Manager.AttachLease(ctx, owner, refs[3].SnapshotID()))
+	require.NoError(t, store.Manager.DeleteStaleDaggerOwnerLeases(ctx, keep))
+	all, err := store.Leases.List(ctx)
+	require.NoError(t, err)
+	ancestry := 0
+	for _, l := range all {
+		if strings.HasPrefix(l.ID, ancestryLeasePrefix) {
+			ancestry++
+		}
+	}
+	require.Equal(t, 1, ancestry, "once attached, the previous ancestry lease goes")
+	requireKept(t, store, refs, func(int) bool { return true }, "the attached owner keeps its chain")
+	require.NoError(t, store.Manager.RemoveLease(ctx, owner))
+	requireKept(t, store, refs, func(int) bool { return false }, "with the owner removed")
+}
+
 // Owners attach to and are removed from snapshots at every depth of a chain
 // at once. Afterwards, the collector keeps exactly the snapshots at or below
 // the deepest remaining owner, and the ancestry lease names each of those
@@ -336,6 +369,32 @@ func TestOwnerAncestryAttachesBlobRecordedDuringAttach(t *testing.T) {
 	require.NoError(t, store.Manager.RemoveLease(ctx, owner))
 	requireKept(t, store, refs, func(int) bool { return false }, "with the owner removed")
 	require.False(t, blobPresent(t, store, blob.Digest))
+}
+
+// A removal whose write to the ancestry lease fails returns the error, and
+// leaves the ancestors it released there only until the next removal.
+func TestOwnerAncestryRetriesFailedRelease(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := testutil.NewStore(t)
+	refs, build := buildChain(t, store, 3)
+	other, otherBuild := buildChain(t, store, 2)
+	owner, otherOwner := resultLeaseID(1), resultLeaseID(2)
+	require.NoError(t, store.Manager.AttachLease(ctx, owner, refs[2].SnapshotID()))
+	require.NoError(t, store.Manager.AttachLease(ctx, otherOwner, other[1].SnapshotID()))
+	releaseChain(t, store, refs, build)
+	releaseChain(t, store, other, otherBuild)
+
+	injected := errors.New("injected ancestry release failure")
+	store.LeaseCommitErr = injected
+	require.ErrorIs(t, store.Manager.RemoveLease(ctx, owner), injected)
+	store.LeaseCommitErr = nil
+	requireKept(t, store, refs, func(i int) bool { return i < 2 }, "the ancestors stay after the failed release")
+
+	require.NoError(t, store.Manager.RemoveLease(ctx, otherOwner))
+	requireKept(t, store, refs, func(int) bool { return false }, "the next removal releases them")
+	requireKept(t, store, other, func(int) bool { return false }, "with its own")
+	require.Zero(t, leaseResourceCount(t, store, ancestryLeasePrefix))
 }
 
 // A failed write to the ancestry lease fails AttachLease and records nothing;

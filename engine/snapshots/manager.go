@@ -165,6 +165,10 @@ type snapshotManager struct {
 	ancestry          ownerAncestry
 	ancestryMu        sync.Mutex
 	ancestryLeaseID   string
+	// ancestryUnreleased is what a failed write left in the ancestry lease
+	// after the ancestry stopped naming it, for the next removal to take
+	// out. Under ancestryMu.
+	ancestryUnreleased ancestryRelease
 	importLayerLocker keyedLocker
 	exportLayerLocker keyedLocker
 	ownerLeaseLocker  *locker.Locker

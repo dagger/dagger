@@ -151,14 +151,32 @@ func (a *ownerAncestry) releaseTipLocked(snapshotID string, released *ancestryRe
 	}
 }
 
-// deleteAncestryResources takes released out of the ancestry lease.
+// deleteAncestryResources takes released out of the ancestry lease, with
+// what an earlier call failed to take out and the ancestry still does not
+// name. What it fails to take out is kept for the next call: the counts no
+// longer name it, so nothing else would. The caller holds ancestryMu.
 func (cm *snapshotManager) deleteAncestryResources(ctx context.Context, released ancestryRelease) error {
+	if pending := cm.ancestryUnreleased; len(pending.snapshots) > 0 || len(pending.blobs) > 0 {
+		cm.ancestryUnreleased = ancestryRelease{}
+		cm.mu.Lock()
+		for _, snapshotID := range pending.snapshots {
+			if !cm.ancestry.named(snapshotID) {
+				released.snapshots = append(released.snapshots, snapshotID)
+			}
+		}
+		for _, dgst := range pending.blobs {
+			if cm.ancestry.blobRefs[dgst] == 0 {
+				released.blobs = append(released.blobs, dgst)
+			}
+		}
+		cm.mu.Unlock()
+	}
 	if len(released.snapshots) == 0 && len(released.blobs) == 0 {
 		return nil
 	}
 	ctx = cm.withLeaseNamespace(ctx)
 	lease := leases.Lease{ID: cm.ownerAncestryLeaseID()}
-	return cm.updateMetadata(ctx, func(ctx context.Context) error {
+	err := cm.updateMetadata(ctx, func(ctx context.Context) error {
 		var rerr error
 		for _, snapshotID := range released.snapshots {
 			err := cm.LeaseManager.DeleteResource(ctx, lease, leases.Resource{ID: snapshotID, Type: "snapshots/" + cm.Snapshotter.Name()})
@@ -174,6 +192,11 @@ func (cm *snapshotManager) deleteAncestryResources(ctx context.Context, released
 		}
 		return rerr
 	})
+	if err != nil {
+		// The transaction rolled back: none of it was taken out.
+		cm.ancestryUnreleased = released
+	}
+	return err
 }
 
 // attachOwnerLease is AttachLease for a dagql owner lease: it names
