@@ -1,9 +1,11 @@
 package dagql
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,6 +24,30 @@ func mergeTestMovingStream(t *testing.T) (child, root ValueBundle) {
 	root = exportTestBundle(t, ctx, a, r)
 	require.Len(t, root.Values, 2)
 	return child, root
+}
+
+// mergeTestMovingPayloadStream is mergeTestMovingStream with a root whose
+// object payload names its child, so that the reference that moves is in
+// the root's payload.
+func mergeTestMovingPayloadStream(t *testing.T) (child, root ValueBundle) {
+	t.Helper()
+	ctx, a, srv := transferTestCache(t)
+	c := persistedListTestResult(t, ctx, a, srv, "moved-payload-child", &transferTestValue{Text: "child"})
+	r := persistedListTestResult(t, ctx, a, srv, "moved-payload-root", &transferTestValue{Text: "moved-payload-root", Child: rowNumber(c)})
+	transferTestDependency(a, ctx, r, c)
+	child = exportTestBundle(t, ctx, a, c)
+	root = exportTestBundle(t, ctx, a, r)
+	require.Len(t, root.Values, 2)
+	return child, root
+}
+
+// mergeTestMovingStreams are the streams whose second bundle moves a
+// record's references: in a list's items, and in an object's payload.
+func mergeTestMovingStreams(t *testing.T) map[string][2]ValueBundle {
+	t.Helper()
+	listChild, listRoot := mergeTestMovingStream(t)
+	payloadChild, payloadRoot := mergeTestMovingPayloadStream(t)
+	return map[string][2]ValueBundle{"list": {listChild, listRoot}, "payload": {payloadChild, payloadRoot}}
 }
 
 // mergeTestState is a cache's entries as merge leaves them: each entry's
@@ -89,9 +115,13 @@ func TestMergeValuesRelocatesBeforeTheGraphLock(t *testing.T) {
 // the same entries, records and dependencies.
 func TestMergeValuesRelocationBeforeTheLockLeavesTheSameCache(t *testing.T) {
 	t.Parallel()
-	child, root := mergeTestMovingStream(t)
-	want := mergeTestStream(t, func(c *Cache) { c.testNoPrerelocation = true }, child, root)
-	require.Equal(t, want, mergeTestStream(t, nil, child, root))
+	for name, stream := range mergeTestMovingStreams(t) {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			want := mergeTestStream(t, func(c *Cache) { c.testNoPrerelocation = true }, stream[0], stream[1])
+			require.Equal(t, want, mergeTestStream(t, nil, stream[0], stream[1]))
+		})
+	}
 }
 
 // A record relocated before the lock with a number the commit doesn't decide
@@ -99,21 +129,62 @@ func TestMergeValuesRelocationBeforeTheLockLeavesTheSameCache(t *testing.T) {
 // relocated before it.
 func TestMergeValuesRelocatesAgainWhenANumberChanged(t *testing.T) {
 	t.Parallel()
-	child, root := mergeTestMovingStream(t)
-	want := mergeTestStream(t, func(c *Cache) { c.testNoPrerelocation = true }, child, root)
-	var under []uint64
-	got := mergeTestStream(t, func(c *Cache) {
-		c.testPrerelocated = func(used map[uint64]map[uint64]sharedResultID) {
-			for _, numbers := range used {
-				for provisional := range numbers {
-					numbers[provisional] += 1000
+	for name, stream := range mergeTestMovingStreams(t) {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			want := mergeTestStream(t, func(c *Cache) { c.testNoPrerelocation = true }, stream[0], stream[1])
+			var under []uint64
+			got := mergeTestStream(t, func(c *Cache) {
+				c.testPrerelocated = func(used map[uint64]map[uint64]sharedResultID) {
+					for _, numbers := range used {
+						for provisional := range numbers {
+							numbers[provisional] += 1000
+						}
+					}
 				}
-			}
+				c.testRelocatedUnderLock = func(ordinal uint64) { under = append(under, ordinal) }
+			}, stream[0], stream[1])
+			require.Equal(t, want, got)
+			require.Len(t, under, 1, "the record whose numbers no longer hold is relocated under the lock")
+		})
+	}
+}
+
+// An engine relocates a record whose references move to its final numbers
+// as it prepares it, so the record's payload is decoded once in the merge,
+// and not again to relocate it before the commit, nor under the lock.
+func TestMergeValuesDecodesAMovedPayloadOnce(t *testing.T) {
+	// Not parallel: the codec's step hook is the package's.
+	child, root := mergeTestMovingPayloadStream(t)
+	ctx, c, _ := transferTestCache(t)
+	_, err := c.MergeValues(ctx, cloudCacheID, child)
+	require.NoError(t, err)
+	var mu sync.Mutex
+	visits := 0
+	steps := func(step string, v PersistedPayloadVisit) {
+		if step == "visit" && bytes.Contains(v.Payload, []byte("moved-payload-root")) {
+			mu.Lock()
+			defer mu.Unlock()
+			visits++
 		}
-		c.testRelocatedUnderLock = func(ordinal uint64) { under = append(under, ordinal) }
-	}, child, root)
-	require.Equal(t, want, got)
-	require.Len(t, under, 1, "the record whose numbers no longer hold is relocated under the lock")
+	}
+	transferTestCodecSteps.Store(&steps)
+	defer transferTestCodecSteps.Store(nil)
+	var moved, under []uint64
+	c.testPrerelocated = func(used map[uint64]map[uint64]sharedResultID) {
+		for ordinal := range used {
+			moved = append(moved, ordinal)
+		}
+	}
+	c.testRelocatedUnderLock = func(ordinal uint64) { under = append(under, ordinal) }
+	reply, err := c.MergeValues(ctx, cloudCacheID, root)
+	require.NoError(t, err)
+	require.True(t, reply.Committed)
+	require.Len(t, moved, 1, "the root's reference moves")
+	require.Empty(t, under, "nothing is relocated under the lock")
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, 1, visits, "the root's payload is visited once")
 }
 
 // A merge renumbers its records as it is prepared, outside its caller's
