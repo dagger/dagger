@@ -143,8 +143,10 @@ type fakeAdapter struct {
 	late        func(time.Time, map[uint64]struct{}) []dagql.RemoteMiss
 	restored    chan RestoreReport
 	restoreSeen chan dagql.ValueBundle
-	// unretainedSeen receives each part's unretained roots.
+	// unretainedSeen receives each part's unretained roots, and sourceSeen
+	// the first part's file name.
 	unretainedSeen chan []dagql.TransferOrdinal
+	sourceSeen     chan string
 }
 
 type settledCall struct {
@@ -164,11 +166,16 @@ func newFakeAdapter() *fakeAdapter {
 		restored:       make(chan RestoreReport, 64),
 		restoreSeen:    make(chan dagql.ValueBundle, 64),
 		unretainedSeen: make(chan []dagql.TransferOrdinal, 64),
+		sourceSeen:     make(chan string, 1),
 	}
 }
 
 func (a *fakeAdapter) RestorePart(ctx context.Context, part dagql.ValueBundle, unretained []dagql.TransferOrdinal, known *dagql.KnownRows, source string) (dagql.MergeReply, error) {
 	a.unretainedSeen <- unretained
+	select {
+	case a.sourceSeen <- source:
+	default:
+	}
 	a.restoreSeen <- part
 	return a.restore(ctx, part, known)
 }
