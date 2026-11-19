@@ -34,10 +34,15 @@ import (
 // snapshots with children, and their blobs. An engine restart attaches the
 // owner leases it keeps again, which rebuilds this state under a new ancestry
 // lease; DeleteStaleDaggerOwnerLeases then deletes the previous one.
-const ownerAncestryLeasePrefix = "dagger/owner-ancestry/"
+//
+// The ancestry lease is under the dagql owner lease prefix, though it is no
+// owner lease, so that an engine that predates it deletes it at boot, as a
+// stale owner lease, after attaching the whole chains of the owners it keeps
+// to those owners again.
+const ownerAncestryLeasePrefix = dagqlResultLeasePrefix + "owner-ancestry/"
 
 func ancestryManagedOwner(leaseID string) bool {
-	return strings.HasPrefix(leaseID, dagqlResultLeasePrefix)
+	return strings.HasPrefix(leaseID, dagqlResultLeasePrefix) && !strings.HasPrefix(leaseID, ownerAncestryLeasePrefix)
 }
 
 func newOwnerAncestryLeaseID() string {
