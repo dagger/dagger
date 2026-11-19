@@ -37,6 +37,20 @@ func detachString(src, s string) string {
 	return strings.Clone(s)
 }
 
+// detachArg returns val, an argument of type t as ast.Value.Value gives it,
+// as detachValue does, except an ID or a list of IDs: an ID decodes into a
+// new call ID without keeping its string, so copying it would only waste a
+// copy of what is often the largest literal of a query.
+func detachArg(src string, t *ast.Type, val any) any {
+	for t != nil && t.Elem != nil {
+		t = t.Elem
+	}
+	if t != nil && t.NamedType == "ID" {
+		return val
+	}
+	return detachValue(src, val)
+}
+
 // detachValue returns v, an argument value as ast.Value.Value gives it, with
 // every string that is a slice of src, object keys included, copied out of
 // it.

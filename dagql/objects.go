@@ -435,7 +435,7 @@ func (class Class[T]) ParseField(ctx context.Context, view call.View, astField *
 		if err != nil {
 			return Selector{}, nil, err
 		}
-		input, err := argSpec.Type.Decoder().DecodeInput(detachValue(src, val))
+		input, err := argSpec.Type.Decoder().DecodeInput(detachArg(src, argSpec.Type.Type(), val))
 		if err != nil {
 			return Selector{}, nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", arg.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
 		}
