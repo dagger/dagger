@@ -58,7 +58,9 @@ func (c *recordingConn) Write(_ context.Context, data []byte) error {
 	return nil
 }
 
-func (c *recordingConn) Ping(context.Context) error { return nil }
+// Arrived is always now: these tests don't model the wire, so a probe never
+// finds the connection silent.
+func (c *recordingConn) Arrived() time.Time { return time.Now() }
 
 func (c *recordingConn) CloseNow() error {
 	c.closed.Store(true)

@@ -96,7 +96,7 @@ func (s *session) serve() (bool, error) {
 		s.cancel(err)
 		return false, err
 	}
-	s.go_(s.ping)
+	s.go_(s.probe)
 	s.go_(s.renewals)
 	s.go_(s.lookups)
 	s.go_(s.settles)
@@ -318,22 +318,45 @@ func isStaleSettle(reply protocol.Envelope) bool {
 	return reply.Decode(&e) == nil && e.Message == protocol.StaleSettle
 }
 
-// ping checks the connection every PingInterval, and ends the session on a
-// ping without a pong within PingTimeout.
-func (s *session) ping() {
-	t := time.NewTicker(protocol.PingInterval)
+// probe checks the connection every probe interval: it sends the service a
+// probe, and ends the session when nothing at all has arrived on the
+// connection within the probe timeout. The service answers a probe in order,
+// behind what it is already sending, so a connection that is slow but still
+// delivering keeps receiving bytes, and stays up, however late the answer.
+// A probe is written without a deadline, since a write the library abandons
+// ends the connection; while one waits behind the engine's own messages, the
+// next is not sent, and the connection is still judged by what arrives.
+func (s *session) probe() {
+	t := time.NewTicker(s.cfg.probeInterval)
 	defer t.Stop()
+	written := make(chan struct{}, 1)
+	written <- struct{}{}
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-t.C:
 		}
-		ctx, cancel := context.WithTimeout(s.ctx, protocol.PingTimeout)
-		err := s.conn.Ping(ctx)
-		cancel()
-		if err != nil {
-			s.cancel(fmt.Errorf("ping: %w", err))
+		sent := time.Now()
+		select {
+		case <-written:
+			s.go_(func() {
+				defer func() { written <- struct{}{} }()
+				if env, err := protocol.NewEnvelope(s.lastID.Add(1), 0, protocol.TypeProbe, protocol.Probe{}); err == nil {
+					_ = s.write(s.ctx, env)
+				}
+			})
+		default:
+		}
+		wait := time.NewTimer(s.cfg.probeTimeout)
+		select {
+		case <-s.ctx.Done():
+			wait.Stop()
+			return
+		case <-wait.C:
+		}
+		if s.conn.Arrived().Before(sent) {
+			s.cancel(fmt.Errorf("probe: nothing arrived for %s", s.cfg.probeTimeout))
 			return
 		}
 	}
