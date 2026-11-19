@@ -54,6 +54,18 @@ func TestStoredClosureListsWhatTheBundleCarries(t *testing.T) {
 	require.Equal(t, []uint64{calls.receiverNumber}, listed.CallInputs, "inner's kept call takes the receiver")
 }
 
+// StoredClosure refuses a recipient held whole (HeldBy.Whole), whose bundle
+// walks again for held rows the recipient doesn't hold whole, which it
+// doesn't: it would list such a row held where the bundle carries it in
+// full.
+func TestStoredClosureRefusesARecipientHeldWhole(t *testing.T) {
+	t.Parallel()
+	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	heldTestHoldOver(t, cloud, "cache-b", 7, p, []uint64{99})
+	_, err := cloud.StoredClosure(ctx, []uint64{r}, time.Now().Unix(), &HeldBy{Cache: "cache-b", Whole: true})
+	require.ErrorContains(t, err, "held whole")
+}
+
 // StoredClosure reads no value: it builds no bundle, and copies, normalizes
 // and encodes nothing, so it measures no size either.
 func TestStoredClosureBuildsNothing(t *testing.T) {
@@ -112,7 +124,7 @@ func TestStoredClosureLetsTheLockGoBetweenEntries(t *testing.T) {
 // that the recipient holds, or that it doesn't carry, isn't made a root.
 func TestStoredBundleAlsoRootsIsTheBundleBuiltAgain(t *testing.T) {
 	t.Parallel()
-	ctx, cloud, r, p := storedBundleTestCloud(t, "root")
+	ctx, cloud, r, p := storedBundleTestCloudIn(t, "root", true)
 	calls := newReceiverCallTest(t)
 	now := time.Now().Unix()
 	// P retained to a later time than its own expiry.
@@ -132,9 +144,11 @@ func TestStoredBundleAlsoRootsIsTheBundleBuiltAgain(t *testing.T) {
 			return false
 		})
 	}
+	// Compared as encoded: a record compressed between two builds goes as
+	// its stored body, the same bytes.
 	same := func(name string, want, got StoredBundleResult) {
 		t.Helper()
-		require.Equal(t, want.Bundle, got.Bundle, name)
+		require.Equal(t, storedBundleTestJSON(t, want.Bundle), storedBundleTestJSON(t, got.Bundle), name)
 		require.Equal(t, want.Donors, got.Donors, name)
 		require.Equal(t, want.CallInputs, got.CallInputs, name)
 		require.Equal(t, want.RootOwners, got.RootOwners, name)
@@ -145,6 +159,7 @@ func TestStoredBundleAlsoRootsIsTheBundleBuiltAgain(t *testing.T) {
 
 	again, err := cloud.StoredBundle(ctx, []uint64{r, p}, now, nil)
 	require.NoError(t, err)
+	storedTestCompress(cloud)
 	once, err := cloud.StoredBundle(ctx, []uint64{r}, now, nil, names(p, 12345))
 	require.NoError(t, err)
 	same("R, and P below it", again, once)
