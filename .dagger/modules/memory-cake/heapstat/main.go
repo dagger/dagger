@@ -4,11 +4,15 @@
 //	inuse <bytes>              total inuse_space of the profile
 //	focus <bytes>              inuse_space of samples with a frame matching -focus
 //	top <bytes> <function>     the -top heaviest focus sites
+//	alloc <bytes>              total alloc_space (allocated since the process started)
+//	focusalloc <bytes>         alloc_space of samples matching -focus-alloc
+//	topalloc <bytes> <function>  the -top heaviest -focus-alloc sites
 //
-// A sample matches -focus when any frame's "<function> <file>" matches the
-// regexp, like `go tool pprof -focus`. A matching sample is attributed, for
-// the top list, to its leaf-most matching frame: the PR's own code closest to
-// the allocation, which is what a memory-cake demo wants to point at.
+// A sample matches a focus regexp when any frame's "<function> <file>"
+// matches it, like `go tool pprof -focus`. A matching sample is attributed,
+// for the top lists, to its leaf-most matching frame: the PR's own code
+// closest to the allocation, which is what a memory-cake demo wants to point
+// at. -focus-alloc defaults to -focus.
 package main
 
 import (
@@ -23,19 +27,23 @@ import (
 
 func main() {
 	focus := flag.String("focus", "", "regexp over stack frames (\"<function> <file>\"); empty matches nothing")
+	focusAlloc := flag.String("focus-alloc", "", "regexp for the alloc_space focus (default: -focus)")
 	top := flag.Int("top", 8, "number of focus sites to print")
 	flag.Parse()
 	if flag.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: heapstat [-focus RE] [-top N] heap.pb.gz")
+		fmt.Fprintln(os.Stderr, "usage: heapstat [-focus RE] [-focus-alloc RE] [-top N] heap.pb.gz")
 		os.Exit(2)
 	}
-	if err := run(flag.Arg(0), *focus, *top); err != nil {
+	if *focusAlloc == "" {
+		*focusAlloc = *focus
+	}
+	if err := run(flag.Arg(0), *focus, *focusAlloc, *top); err != nil {
 		fmt.Fprintln(os.Stderr, "heapstat:", err)
 		os.Exit(1)
 	}
 }
 
-func run(path, focus string, top int) error {
+func run(path, focus, focusAlloc string, top int) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -45,27 +53,38 @@ func run(path, focus string, top int) error {
 	if err != nil {
 		return err
 	}
+	if err := report(p, "inuse_space", focus, "inuse", "focus", "top", top); err != nil {
+		return err
+	}
+	return report(p, "alloc_space", focusAlloc, "alloc", "focusalloc", "topalloc", top)
+}
+
+func report(p *profile.Profile, sampleType, focus, totalKey, focusKey, topKey string, top int) error {
 	idx := -1
 	for i, st := range p.SampleType {
-		if st.Type == "inuse_space" {
+		if st.Type == sampleType {
 			idx = i
 		}
 	}
 	if idx < 0 {
-		return fmt.Errorf("%s: no inuse_space sample type", path)
+		if sampleType == "inuse_space" {
+			return fmt.Errorf("no %s sample type", sampleType)
+		}
+		return nil
 	}
 	var re *regexp.Regexp
 	if focus != "" {
+		var err error
 		re, err = regexp.Compile(focus)
 		if err != nil {
 			return err
 		}
 	}
-	var inuse, focused int64
+	var total, focused int64
 	sites := map[string]int64{}
 	for _, s := range p.Sample {
 		v := s.Value[idx]
-		inuse += v
+		total += v
 		if re == nil {
 			continue
 		}
@@ -89,8 +108,8 @@ func run(path, focus string, top int) error {
 			sites[site] += v
 		}
 	}
-	fmt.Printf("inuse %d\n", inuse)
-	fmt.Printf("focus %d\n", focused)
+	fmt.Printf("%s %d\n", totalKey, total)
+	fmt.Printf("%s %d\n", focusKey, focused)
 	names := make([]string, 0, len(sites))
 	for n := range sites {
 		names = append(names, n)
@@ -100,7 +119,7 @@ func run(path, focus string, top int) error {
 		if i >= top {
 			break
 		}
-		fmt.Printf("top %d %s\n", sites[n], n)
+		fmt.Printf("%s %d %s\n", topKey, sites[n], n)
 	}
 	return nil
 }
