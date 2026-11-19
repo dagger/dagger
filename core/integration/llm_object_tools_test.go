@@ -2367,13 +2367,8 @@ $scope | filter-uri "$addr" | one | value | file f | contents`))
 	})
 }
 
-// TestBoundCollectionRefs covers agent histories addressed through a bound
-// tool's collection, in the shape of vito/agents' staff and committer modules
-// (the workspace-agent-refs fixture mirrors them): a never-started chief
-// Agent is put on a Roster, and its committed history is addressed as
-// dag://roster/members/head?roster-member=chief — which only resolves against the
-// BOUND Roster (or a View minted from it), since a fresh one has no members —
-// and handed to GitRef-taking tools of another module by the model.
+// TestBoundCollectionRefs checks that an LLM can pass a GitRef from a bound
+// roster member to another module's tool.
 func (LLMSuite) TestBoundCollectionRefs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := workspaceFixture(t, c, "workspace-agent-refs").

@@ -59,7 +59,6 @@ func TestDimensionNames(t *testing.T) {
 	require.Equal(t, "app-go-module", dims.DisplayName(dims[1]))
 	require.Equal(t, "go-module", dims[:1].DisplayName(dims[0]))
 
-	// An alias can also conflict with another dimension's qualified name.
 	dims = append(dims, &Dimension{Identifier: "other/modules", Name: "golang-go-module", QualifiedName: "golang-go-module"})
 	resolved, err := dims.Resolve(dims.DisplayName(dims[0]))
 	require.NoError(t, err)

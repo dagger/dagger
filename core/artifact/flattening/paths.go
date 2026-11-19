@@ -5,19 +5,15 @@ import (
 	"strings"
 )
 
-// Path is one schema path in a type dimension: the full path its type key
-// holds, and the collection dimensions an address for it must key.
+// Path records a full schema path in a type dimension and its collection dimensions in parent order.
 type Path struct {
-	// Type is the type dimension identifier, such as type:Check.
-	Type   string
-	Key    string
-	Module string
-	// Dimensions are collection dimension identifiers, parent to child.
+	Type       string
+	Key        string
+	Module     string
 	Dimensions []string
 }
 
-// Paths indexes the schema paths of every loaded module, so a type key names
-// one path in a workspace whatever the selection.
+// Paths indexes schema paths across all loaded modules.
 type Paths []Path
 
 // UnionPaths combines path sets, dropping duplicates.
@@ -36,9 +32,8 @@ func UnionPaths(sets ...Paths) Paths {
 	return result
 }
 
-// Candidates lists the full paths in a type dimension that an address keying
-// dimensions can name. A path qualifies when it has every one of them. Modules
-// narrow the list when set.
+// Candidates lists sorted, unique paths that have the type and all dimensions.
+// A nonempty module list limits the results to those modules.
 func (paths Paths) Candidates(typeDimension string, dimensions, modules []string) []string {
 	var keys []string
 	for _, path := range paths.CandidatePaths(typeDimension, dimensions, modules) {
@@ -48,7 +43,7 @@ func (paths Paths) Candidates(typeDimension string, dimensions, modules []string
 	return slices.Compact(keys)
 }
 
-// CandidatePaths is Candidates with each path's dimensions.
+// CandidatePaths returns entries that have the type, all dimensions, and a matching module when specified.
 func (paths Paths) CandidatePaths(typeDimension string, dimensions, modules []string) Paths {
 	var candidates Paths
 	for _, path := range paths {
@@ -63,9 +58,8 @@ func (paths Paths) CandidatePaths(typeDimension string, dimensions, modules []st
 	return candidates
 }
 
-// MatchTypeKey lists the candidates a type key names: the path it equals, and
-// each path it is a suffix of, on segment boundaries. A leading "/" accepts
-// only a full path.
+// MatchTypeKey returns an exact path match, or paths with the given suffix.
+// A leading "/" requires an exact match.
 func MatchTypeKey(candidates []string, key string) []string {
 	if exact, ok := strings.CutPrefix(key, "/"); ok {
 		if slices.Contains(candidates, exact) {
@@ -92,10 +86,8 @@ func ResolveTypeKey(candidates Paths, key string) []string {
 	return MatchTypeKey(slices.Compact(keys), key)
 }
 
-// ShortTypeKey is the shortest suffix of path that names only path among the
-// candidates. Without one, it is the full path, or the full path with a
-// leading "/" when that is also the suffix of a longer candidate. It is a
-// projection: adding a path to the schema can lengthen it.
+// ShortTypeKey returns the shortest unique path suffix.
+// It uses a leading "/" when the full path is a suffix of another candidate.
 func ShortTypeKey(candidates []string, path string) string {
 	if !slices.Contains(candidates, path) {
 		return path

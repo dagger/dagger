@@ -100,8 +100,7 @@ func NameDimensions(dimensions Dimensions) (Dimensions, error) {
 	}
 }
 
-// Names lists selectors from shortest to most qualified. Collection boundaries
-// provide parent identity; their fields are needed in names only on a conflict.
+// Names lists selectors in order of increasing qualification.
 func (dims Dimensions) Names(dim *Dimension, wholeCollection bool) []string {
 	if IsStaticDimension(dim.Identifier) {
 		return []string{dim.Name, dim.QualifiedName}
@@ -144,8 +143,6 @@ func (dims Dimensions) Names(dim *Dimension, wholeCollection bool) []string {
 	for i := len(local) - 1; i >= 0; i-- {
 		add(local[i:])
 	}
-	// Include parent collection names, then this collection field, only if the
-	// local names above cannot distinguish the routes.
 	for _, context := range [][]string{path[1 : len(path)-1], path[1:]} {
 		for i := len(context) - 1; i >= 0; i-- {
 			add(context[i:])
@@ -154,8 +151,8 @@ func (dims Dimensions) Names(dim *Dimension, wholeCollection bool) []string {
 	return names
 }
 
-// Resolve binds an identifier or alias. Unknown names remain valid selectors
-// that match no artifacts.
+// Resolve binds an identifier or alias. Collection aliases take priority over
+// type aliases. Unknown names match no artifacts.
 func (dims Dimensions) Resolve(name string) (string, error) {
 	for _, dim := range dims {
 		if dim.Identifier == name {
@@ -192,7 +189,6 @@ func (dims Dimensions) Resolve(name string) (string, error) {
 			}
 		}
 	}
-	// Collection aliases retain their meaning when an item type has the same name.
 	if len(matches) == 0 {
 		matches = types
 	}

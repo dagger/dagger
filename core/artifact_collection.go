@@ -955,9 +955,8 @@ func walkArtifactNodes(ctx context.Context, node *ModTreeNode, visit func(*ModTr
 	return nil
 }
 
+// artifactCollectionDimension builds a collection dimension with current CLI names.
 func artifactCollectionDimension(ctx context.Context, node *ModTreeNode, typ string, get *Function) (*ArtifactDimension, error) {
-	// Artifact dimensions use current CLI spelling, even when their
-	// backing collection's GraphQL names belong to an older view.
 	path := []string{}
 	parent := node
 	for parent.Parent != nil && parent.CollectionDimension == nil {
