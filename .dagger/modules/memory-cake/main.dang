@@ -507,20 +507,18 @@ type MemoryCake {
     ref: String! = "main",
     env: [String!]! = [],
   ): String! @cache(policy: FunctionCachePolicy.Never) {
-    let m = measureWorkload(
-      pr: "15218",
-      ref: ref,
-      workload: currentModule.source.directory("fixtures/15218"),
-      env: env,
-    )
-    let lines = m.out.file("peak.txt").contents.split("\n").filter { l => l != "" }.map { l =>
-      let f = l.split(" ")
-      let alloc = (f[4] ?? "0").toInt
-      let start = (f[6] ?? "0").toInt
-      let peak = (f[8] ?? "0").toInt
-      (f[0] ?? "") + ": " + mib(alloc) + " allocated per search, peak live heap " + signedMib(peak - start) + " over " + mib(start)
-    }
-    "trace tools @ " + ref + " (" + m.sha.truncate(8) + "):\n" + lines.join("\n")
+    traceRun(ref, env)[0] ?? ""
+  }
+
+  """
+  `tracePeaks` as JSON: {ref, sha, text, tools: [{tool, searches,
+  allocPerSearch, heapStart, peak}]}, bytes, from one run.
+  """
+  tracePeaksJson(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    traceRun(ref, env)[1] ?? ""
   }
 
   """
@@ -593,15 +591,36 @@ type MemoryCake {
     } else {
       demos.filter { d => prs.contains(d.pr) }
     }
-    let b = shortRef(before)
-    let a = shortRef(after)
-    let header = "| PR | " + b + " live | " + a + " live | delta | focus " + b + " | focus " + a + " |\n|---|---:|---:|---:|---:|---:|"
-    let rows = selected.map { d =>
-      cakeRow(d, before, after) rescue {
-        e: Error! => "| #" + d.pr + " | error: " + e.message.replace("\n", " ").replace("|", "/").truncate(300) + " | | | | |"
-      }
+    let rows = selected.map { d => cakeEntry(d, before, after)[0] ?? "" }
+    cakeHeader(before, after) + "\n" + rows.join("\n")
+  }
+
+  """
+  `cake` with its numbers: one run of every demo (or those in `prs`) on
+  `before` and `after`, returned as one JSON document holding the markdown
+  table and, per demo, its definition and every byte count of both
+  measurements (or its error). With `traces`, `tracePeaksJson` of both refs
+  too. Selecting this once is the whole run: no field re-runs a measurement.
+  """
+  cakeJson(
+    before: String! = "fcce0f890ef1fd1230fed302fe9b973b37b9be05",
+    after: String! = "memory-cake-all",
+    prs: [String!]! = [],
+    traces: Boolean! = false,
+  ): String! @cache(policy: FunctionCachePolicy.Never) {
+    let selected = if (prs.isEmpty) {
+      demos
+    } else {
+      demos.filter { d => prs.contains(d.pr) }
     }
-    header + "\n" + rows.join("\n")
+    let entries = selected.map { d => cakeEntry(d, before, after) }
+    let markdown = cakeHeader(before, after) + "\n" + entries.map { e => e[0] ?? "" }.join("\n")
+    let traceJson = if (traces) {
+      "{\"before\":" + traceJsonOrError(before) + ",\"after\":" + traceJsonOrError(after) + "}"
+    } else {
+      "null"
+    }
+    "{\"before\":" + JSON.encode(before) + ",\"after\":" + JSON.encode(after) + ",\"markdown\":" + JSON.encode(markdown) + ",\"demos\":[" + entries.map { e => e[1] ?? "null" }.join(",") + "],\"tracePeaks\":" + traceJson + "}"
   }
 
   """
@@ -816,7 +835,24 @@ type MemoryCake {
       .file("/spangen")
   }
 
-  let cakeRow(d: Demo!, before: String!, after: String!): String! {
+  let cakeHeader(before: String!, after: String!): String! {
+    let b = shortRef(before)
+    let a = shortRef(after)
+    "| PR | " + b + " live | " + a + " live | delta | focus " + b + " | focus " + a + " |\n|---|---:|---:|---:|---:|---:|"
+  }
+
+  # One demo measured on both refs, as [markdown row, JSON object]; a
+  # failure gives an error row and {pr, title, error}.
+  let cakeEntry(d: Demo!, before: String!, after: String!): [String!]! {
+    cakeEntryOk(d, before, after) rescue {
+      e: Error! => [
+        "| #" + d.pr + " | error: " + e.message.replace("\n", " ").replace("|", "/").truncate(300) + " | | | | |",
+        JSON.encode({{pr: d.pr, title: d.title, error: e.message}}),
+      ]
+    }
+  }
+
+  let cakeEntryOk(d: Demo!, before: String!, after: String!): [String!]! {
     let b = measure(pr: d.pr, ref: before)
     let a = measure(pr: d.pr, ref: after)
     let notes = (if (d.cli) { " (CLI heap)" } else { "" }) + (if (d.focusAlloc != "") {
@@ -824,7 +860,52 @@ type MemoryCake {
     } else {
       ""
     })
-    "| #" + d.pr + " " + d.title + notes + " | " + mib(b.liveBytes) + " | " + mib(a.liveBytes) + " | " + signedMib(a.liveBytes - b.liveBytes) + " | " + mib(b.focusBytes) + " | " + mib(a.focusBytes) + " |"
+    let row = "| #" + d.pr + " " + d.title + notes + " | " + mib(b.liveBytes) + " | " + mib(a.liveBytes) + " | " + signedMib(a.liveBytes - b.liveBytes) + " | " + mib(b.focusBytes) + " | " + mib(a.focusBytes) + " |"
+    let def = JSON.encode({{
+      pr: d.pr,
+      title: d.title,
+      focus: d.focus,
+      focusAlloc: d.focusAlloc,
+      cli: d.cli,
+    }})
+    # def's fields, then the two measurements.
+    let json = def.trimSuffix("}") + ",\"before\":" + measurementJson(b) + ",\"after\":" + measurementJson(a) + "}"
+    [row, json]
+  }
+
+  # tracePeaksJson's document, or {ref, error} when the run fails.
+  let traceJsonOrError(ref: String!): String! {
+    (traceRun(ref, [])[1] ?? "null") rescue {
+      e: Error! => JSON.encode({{ref: ref, error: e.message}})
+    }
+  }
+
+  # One fixtures/15218 run on `ref`, as [tracePeaks text, tracePeaksJson].
+  let traceRun(ref: String!, env: [String!]!): [String!]! {
+    let m = measureWorkload(
+      pr: "15218",
+      ref: ref,
+      workload: currentModule.source.directory("fixtures/15218"),
+      env: env,
+    )
+    let fields = m.out.file("peak.txt").contents.split("\n").filter { l => l != "" }.map { l => l.split(" ") }
+    let lines = fields.map { f =>
+      let alloc = (f[4] ?? "0").toInt
+      let start = (f[6] ?? "0").toInt
+      let peak = (f[8] ?? "0").toInt
+      (f[0] ?? "") + ": " + mib(alloc) + " allocated per search, peak live heap " + signedMib(peak - start) + " over " + mib(start)
+    }
+    let text = "trace tools @ " + ref + " (" + m.sha.truncate(8) + "):\n" + lines.join("\n")
+    let tools = fields.map { f =>
+      {{
+        tool: f[0] ?? "",
+        searches: (f[2] ?? "0").toInt,
+        allocPerSearch: (f[4] ?? "0").toInt,
+        heapStart: (f[6] ?? "0").toInt,
+        peak: (f[8] ?? "0").toInt,
+      }}
+    }
+    [text, JSON.encode({{ref: ref, sha: m.sha, text: text, tools: tools}})]
   }
 }
 
@@ -836,6 +917,27 @@ let statValue(stat: String!, key: String!): Int! {
   } else {
     line.trimPrefix(key + " ").trimSpace.toInt
   }
+}
+
+# A measurement's numbers (bytes) and focus sites as a JSON object, for
+# cakeJson.
+let measurementJson(m: Measurement!): String! {
+  JSON.encode({{
+    ref: m.ref,
+    sha: m.sha,
+    cli: m.cli,
+    seconds: m.seconds,
+    baseline: m.baselineBytes,
+    live: m.liveBytes,
+    after: m.afterBytes,
+    focus: m.focusBytes,
+    focusBaseline: m.focusBaselineBytes,
+    focusAfter: m.focusAfterBytes,
+    alloc: m.allocBytes,
+    focusAlloc: m.focusAllocBytes,
+    focusTop: m.focusTop,
+    focusAllocTop: m.focusAllocTop,
+  }})
 }
 
 # heapstat's "<key> <bytes> <function>" lines (key "top" or "topalloc") as
