@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -79,19 +80,27 @@ type mergedFirstUse struct {
 // payload by its codecs, as a merge prepares a record it doesn't install
 // unprepared (prepareRecordPayload), and installs the prepared envelope.
 // Every reader of an entry's payload calls it first: a lookup's decode
-// (ensurePersistedHitValueLoaded), a capture of its record
-// (capturePartRecord) and a save (persistResultEnvelope).
+// (ensurePersistedHitValueLoaded) and a capture of its record
+// (capturePartRecord); a save prepares every record nothing used before it
+// (prepareMergedPayloadsForSave).
 //
 // A payload that fails is a fault of the Cloud that wrote it, since the set
 // file's digest is checked as it is downloaded. The failure is logged at
 // error level with the file and the record's recipe, and the record is
 // refused: every later preparation returns the same error,
 // errMergedPayloadRefused; a hold finds the entry unknown (HoldEntry), so
-// the service learns it is gone when it next names it; and a lookup that
-// chose the entry misses and takes it back (takeBackRefusedMerged). It takes
-// only the record's own mutex and res.payloadMu, so a caller can hold res's
-// lazyMu, but no other lock.
+// the service learns it is gone when it next names it; a lookup that chose
+// the entry misses and takes it back (takeBackRefusedMerged); and a save
+// leaves it out (snapshotPersistedRootClosureLocked). It takes only the
+// record's own mutex and res.payloadMu, so a caller can hold res's lazyMu,
+// but no other lock.
 func (c *Cache) prepareMergedPayload(ctx context.Context, res *sharedResult) error {
+	return c.prepareMerged(ctx, res, false)
+}
+
+// prepareMerged is prepareMergedPayload, counted as a save's preparation
+// when atSave is set (FirstUseStats).
+func (c *Cache) prepareMerged(ctx context.Context, res *sharedResult, atSave bool) error {
 	if res == nil {
 		return nil
 	}
@@ -108,7 +117,7 @@ func (c *Cache) prepareMergedPayload(ctx context.Context, res *sharedResult) err
 	}
 	use.done = true
 	began := time.Now()
-	defer func() { c.firstUsePrepared(time.Since(began), use.err != nil) }()
+	defer func() { c.firstUsePrepared(time.Since(began), use.err != nil, atSave) }()
 	rec := PersistedRecord{ResultID: uint64(res.id), Envelope: *env, Call: res.loadResultCall(), SnapshotLinks: res.loadSnapshotOwnerLinks()}
 	prepared, err := prepareFirstUseRecord(rec, use)
 	if err != nil {
@@ -120,7 +129,11 @@ func (c *Cache) prepareMergedPayload(ctx context.Context, res *sharedResult) err
 				recipe = dig.String()
 			}
 		}
-		slog.ErrorContext(ctx, "remote cache record's payload refused at its first use", "file", use.source, "recipe", recipe, "entry", uint64(res.id), "error", err)
+		at := "first use"
+		if atSave {
+			at = "save"
+		}
+		slog.ErrorContext(ctx, "remote cache record's payload refused", "at", at, "file", use.source, "recipe", recipe, "entry", uint64(res.id), "error", err)
 		return use.err
 	}
 	res.payloadMu.Lock()
@@ -138,6 +151,43 @@ func (c *Cache) prepareMergedPayload(ctx context.Context, res *sharedResult) err
 	}
 	res.payloadMu.Unlock()
 	return nil
+}
+
+// prepareMergedPayloadsForSave prepares, before a save, the payload of every
+// record merged unprepared that nothing has used, so the save writes each
+// one naming the cache's numbers; a record refused here is left out of the
+// save, with all that owns it (snapshotPersistedRootClosureLocked). The
+// preparations run in parallel: at an engine's close nothing else runs. The
+// Cloud merges no record unprepared (markUnprepared).
+func (c *Cache) prepareMergedPayloadsForSave(ctx context.Context) {
+	if c.blobBacked {
+		return
+	}
+	step := c.readLockGraphAs(ctx, "dagql.persist.prepare")
+	var pending []*sharedResult
+	for _, res := range c.resultsByID {
+		if res.holdsUnpreparedPayload() {
+			pending = append(pending, res)
+		}
+	}
+	c.runlockGraphAs(step)
+	if len(pending) == 0 {
+		return
+	}
+	began := time.Now()
+	var next atomic.Int64
+	var workers sync.WaitGroup
+	for range min(runtime.GOMAXPROCS(0), len(pending)) {
+		workers.Go(func() {
+			for i := next.Add(1) - 1; i < int64(len(pending)); i = next.Add(1) - 1 {
+				_ = c.prepareMerged(ctx, pending[i], true)
+			}
+		})
+	}
+	workers.Wait()
+	c.firstUseMu.Lock()
+	c.firstUseStats.SaveWall += time.Since(began)
+	c.firstUseMu.Unlock()
 }
 
 // prepareFirstUseRecord returns rec, a record merged unprepared, with its
@@ -226,16 +276,31 @@ func (res *sharedResult) holdsUnpreparedPayload() bool {
 // FirstUseStats counts the payloads of records merged from the Cloud that a
 // first use prepared (prepareMergedPayload) and those it refused, with the
 // time preparing took in all and at the longest: the work a restore defers
-// onto the calls that use its records.
+// onto the calls that use its records. The Save fields count the same for
+// the records nothing used, which a save prepared before it wrote them
+// (prepareMergedPayloadsForSave), with SaveWall the time the save spent
+// preparing them, in parallel.
 type FirstUseStats struct {
-	Prepared, Refused int64
-	Total, Longest    time.Duration
+	Prepared, Refused         int64
+	Total, Longest            time.Duration
+	SavePrepared, SaveRefused int64
+	SaveTotal, SaveWall       time.Duration
 }
 
-// firstUsePrepared counts one payload a first use prepared, or refused, in d.
-func (c *Cache) firstUsePrepared(d time.Duration, refused bool) {
+// firstUsePrepared counts one payload a first use, or a save when atSave is
+// set, prepared or refused in d.
+func (c *Cache) firstUsePrepared(d time.Duration, refused, atSave bool) {
 	c.firstUseMu.Lock()
 	defer c.firstUseMu.Unlock()
+	if atSave {
+		if refused {
+			c.firstUseStats.SaveRefused++
+		} else {
+			c.firstUseStats.SavePrepared++
+		}
+		c.firstUseStats.SaveTotal += d
+		return
+	}
 	if refused {
 		c.firstUseStats.Refused++
 	} else {

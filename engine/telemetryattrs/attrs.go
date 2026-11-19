@@ -1197,19 +1197,27 @@ type EngineStopEvent struct {
 	// restored part could count them as late (EngineRestorePart.Late): a
 	// run with any undercounts its late lookups.
 	UncountedMisses uint64 `json:"uncountedMisses,omitempty"`
-	// FirstUse is what the engine's calls spent preparing the payloads of
-	// records restores left for their first use (dagql.Cache.FirstUse).
+	// FirstUse is what the engine's calls, and its save, spent preparing the
+	// payloads of records restores left for their first use
+	// (dagql.Cache.FirstUse).
 	FirstUse EngineFirstUse `json:"firstUse,omitzero"`
 }
 
 // EngineFirstUse counts the payloads of restored records the engine's calls
 // prepared at their first use, and those refused, with the time preparing
-// took in all and at the longest, in nanoseconds.
+// took in all and at the longest, in nanoseconds. The Save fields count the
+// payloads of the records nothing used, which the engine's save prepared
+// before it wrote them, and those refused, with the time that took summed
+// over them and the save's wall time spent on them, in nanoseconds.
 type EngineFirstUse struct {
-	Prepared int64 `json:"prepared,omitempty"`
-	Refused  int64 `json:"refused,omitempty"`
-	Total    int64 `json:"total,omitempty"`
-	Longest  int64 `json:"longest,omitempty"`
+	Prepared     int64 `json:"prepared,omitempty"`
+	Refused      int64 `json:"refused,omitempty"`
+	Total        int64 `json:"total,omitempty"`
+	Longest      int64 `json:"longest,omitempty"`
+	SavePrepared int64 `json:"savePrepared,omitempty"`
+	SaveRefused  int64 `json:"saveRefused,omitempty"`
+	SaveTotal    int64 `json:"saveTotal,omitempty"`
+	SaveWall     int64 `json:"saveWall,omitempty"`
 }
 
 // EngineRestore is what an engine did with one set file: the check's name,
