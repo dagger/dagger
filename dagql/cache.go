@@ -1096,6 +1096,12 @@ func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID str
 	if !spanCtx.IsValid() {
 		return
 	}
+	// A call the server's telemetry didn't span, such as a repeat it
+	// deduplicated or a trivial accessor, runs under the span of whatever
+	// made it, typically the client's request. That span names no call, so
+	// a capture under a call's own span replaces it.
+	own, _ := ownCallSpan(ctx, CurrentCall(ctx))
+	provisional := !own.IsValid() || own.SpanID() != spanCtx.SpanID()
 
 	wcprof.Lock(ctx, &c.sessionMu, sessionsLockIdent)
 	// A detached writer arriving after release must not recreate the session
@@ -1111,8 +1117,24 @@ func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID str
 	if c.sessionLazySpansBySession[sessionID] == nil {
 		c.sessionLazySpansBySession[sessionID] = make(map[sharedResultID]trace.SpanContext)
 	}
-	if _, exists := c.sessionLazySpansBySession[sessionID][shared.id]; !exists {
-		c.sessionLazySpansBySession[sessionID][shared.id] = spanCtx
+	spans := c.sessionLazySpansBySession[sessionID]
+	_, exists := spans[shared.id]
+	_, wasProvisional := c.sessionLazySpansProvisional[sessionID][shared.id]
+	switch {
+	case !exists:
+		spans[shared.id] = spanCtx
+		if provisional {
+			if c.sessionLazySpansProvisional == nil {
+				c.sessionLazySpansProvisional = make(map[string]map[sharedResultID]struct{})
+			}
+			if c.sessionLazySpansProvisional[sessionID] == nil {
+				c.sessionLazySpansProvisional[sessionID] = make(map[sharedResultID]struct{})
+			}
+			c.sessionLazySpansProvisional[sessionID][shared.id] = struct{}{}
+		}
+	case wasProvisional && !provisional:
+		spans[shared.id] = spanCtx
+		delete(c.sessionLazySpansProvisional[sessionID], shared.id)
 	}
 	c.sessionMu.Unlock()
 }
@@ -1703,6 +1725,7 @@ func (c *Cache) cleanupReleasedSession(plan *cacheSessionReleasePlan) error {
 	delete(c.sessionResultIDsBySession, plan.sessionID)
 	delete(c.sessionArbitraryCallKeysBySession, plan.sessionID)
 	delete(c.sessionLazySpansBySession, plan.sessionID)
+	delete(c.sessionLazySpansProvisional, plan.sessionID)
 	delete(c.sessionResultInstallSpans, plan.sessionID)
 	delete(c.sessionResourcesBySession, plan.sessionID)
 	delete(c.sessionVolatileVarsBySession, plan.sessionID)
@@ -2614,6 +2637,10 @@ type Cache struct {
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
+	// sessionLazySpansProvisional marks the sessionLazySpansBySession entries
+	// captured under a span that is not the call's own, which a capture
+	// under a call's own span replaces (captureSessionLazySpanContext).
+	sessionLazySpansProvisional map[string]map[sharedResultID]struct{}
 	// sessionResultInstallSpans records which API spans returned/own which
 	// results in a session. Lazy resume spans cause-link the install spans of
 	// the result being evaluated so dagui can resolve pending state and mark

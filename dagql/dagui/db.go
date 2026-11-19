@@ -148,6 +148,13 @@ type DB struct {
 	// demand fetches the primary output once, at exit, instead.
 	PrimaryLogsOnDemand bool
 
+	// PartialTrace marks a DB holding only part of a trace, loaded in parts
+	// by span. A row's waiting is then computed only once its whole subtree
+	// is loaded, as the trace's stream reported it (see UpdateRowWaits). A
+	// span imported from a stream that marks it partial
+	// (telemetryattrs.UIPartialAttr) sets it.
+	PartialTrace bool
+
 	Epoch, End time.Time
 
 	Spans    *OrderedSet[SpanID, *Span]
@@ -292,6 +299,10 @@ type DB struct {
 	rewindsInit bool
 
 	testIndex *TestIndex
+
+	// rowWaits is what UpdateRowWaits keeps between updates; nil until the
+	// first.
+	rowWaits *rowWaitsState
 }
 
 // MutationCount reports how many span adds/updates the DB has seen, for
@@ -507,6 +518,25 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 			// predates it
 			snapshot.Progress = span.Progress
 		}
+		if snapshot.RowWaits == nil {
+			// a raw snapshot carries none: keep what was computed
+			snapshot.RowWaits = span.RowWaits
+		}
+		if snapshot.childrenReported == 0 {
+			// a stream reading a span by ID may not count its children
+			snapshot.childrenReported = span.childrenReported
+		}
+		if snapshot.Activity.isZero() && !isLazyEvaluationName(snapshot.Name) {
+			// A raw snapshot, decoded from the span alone, carries no
+			// activity. Keep what this DB credited the span with from its
+			// deferred evaluations, received earlier: nothing would credit
+			// it again, as they are integrated already. A snapshot from a
+			// DB that derived the span's activity itself carries it. A lazy
+			// evaluation takes no time from the evaluations it links on to
+			// (see attributedCauses), so whatever it was credited while it
+			// was a nameless placeholder was never its own.
+			snapshot.Activity = span.Activity
+		}
 		if name, ok := db.namesFromLog[span.ID]; ok && snapshot.EndTime.Before(snapshot.StartTime) {
 			// Live name updates arrive on logs because repeated in-flight span
 			// exports retain their start-time name. Do not let one roll the newer
@@ -564,6 +594,7 @@ func (db *DB) update(span *Span) {
 	db.mutations++
 	db.noteTestSpanUpdated(span)
 	db.noteRunning(span)
+	db.noteRowWaitsChange(span)
 	if span.Final {
 		// don't bump versions for final spans; leave the remote as the
 		// source of truth, lest we stray forward and miss an actual version bump
@@ -1072,6 +1103,10 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 
 	// populate snapshot from otel attributes
 	for _, attr := range span.Attributes() {
+		if string(attr.Key) == telemetryattrs.UIPartialAttr && attr.Value.AsBool() {
+			// the stream carrying the span holds only part of the trace
+			db.PartialTrace = true
+		}
 		spanData.ProcessAttribute(
 			string(attr.Key),
 			attr.Value.AsInterface(),
@@ -1223,6 +1258,11 @@ func (activity *Activity) Add(span *Span) bool {
 	return changed
 }
 
+// isZero reports whether the activity records nothing at all.
+func (activity *Activity) isZero() bool {
+	return len(activity.CompletedIntervals) == 0 && activity.EarliestRunning.IsZero()
+}
+
 func (activity *Activity) IsRunning() bool {
 	return !activity.EarliestRunning.IsZero()
 }
@@ -1292,6 +1332,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		if addToSpanSet(&span.ParentSpan.ChildSpans, span) {
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
+			// and pass on to the new ancestors the time of the evaluations
+			// that credited the span or spans beneath it before it had any
+			span.recreditAncestors()
 		}
 		// progress may have been ingested before the parent linkage was
 		// known (records can arrive ahead of their span, and spans ahead
@@ -1312,10 +1355,23 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			// where the target of the link completed before the linking span.
 			// (Otherwise the linking span could just be a child span.)
 			"":
+			installSite := linked.Purpose == telemetry.LinkPurposeCause && span.isLazyEvaluation()
 			linked := db.initSpan(linkedCtx.SpanID)
 			addToSpanSet(&linked.ChildSpans, span)
 			addToSpanSet(&linked.effectsViaLinks, span)
 			addToSpanSet(&span.causesViaLinks, linked)
+			if installSite {
+				addToSpanSet(&span.installSites, linked)
+			}
+		case telemetryattrs.LinkPurposeWait:
+			if linkedCtx.TraceID == span.TraceID && linkedCtx.SpanID != span.ID {
+				// Register the operation the span waited on, so that a view
+				// holding only part of the trace knows to fetch it (see
+				// TimeBreakdownSpans), and that until it does, the span's
+				// time breakdown knows the wait is unresolved rather than on
+				// something outside the trace.
+				db.initSpan(linkedCtx.SpanID)
+			}
 		case telemetry.LinkPurposeErrorOrigin:
 			if linkedCtx.SpanID == span.ID {
 				// defense in depth; it's technically possible to link to yourself, and

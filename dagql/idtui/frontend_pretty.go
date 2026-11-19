@@ -266,6 +266,14 @@ type frontendPretty struct {
 	spanProvider   func(dagui.SpanID)
 	requestedSpans map[dagui.SpanID]bool
 
+	// supportProvider fetches spans the view holds only references to that
+	// its rows' time breakdowns draw on (dagui.Span.TimeBreakdownSpans): what
+	// a row waited on, which a trace loaded in parts may leave out. Without
+	// them the row reads as working the whole time. nil for live runs, which
+	// receive every span. requestedSupport dedups so each is fetched once.
+	supportProvider  func([]dagui.SpanID)
+	requestedSupport map[dagui.SpanID]bool
+
 	// callProvider fetches the recipe closures of call digests this client
 	// lacks (CallFetcher); nil unless the trace was loaded only in part.
 	// requestedCalls dedups so each digest is asked for once, and
@@ -1072,6 +1080,73 @@ type statusIconHost interface {
 	durationForStatus(dagui.SpanID) *DurationView
 }
 
+// rowWaitsInterval is how often the live view brings the waiting below rows
+// up to date (dagui.DB.UpdateRowWaits). It runs on the event loop, which
+// draws and takes input too, so it works in slices of rowWaitsSlice, yielding
+// rowWaitsYield between them; the durations ticking meanwhile read the last
+// result.
+const (
+	rowWaitsInterval = time.Second
+	rowWaitsSlice    = 20 * time.Millisecond
+	rowWaitsYield    = 20 * time.Millisecond
+)
+
+// startRowWaits keeps the waiting below rows up to date while the view runs.
+func (fe *frontendPretty) startRowWaits() (stop func()) {
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		ticker := time.NewTicker(rowWaitsInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+			}
+			for {
+				more := make(chan bool, 1)
+				fe.dispatch(func() { more <- fe.updateRowWaitsLocked(rowWaitsSlice) })
+				var left bool
+				select {
+				case <-done:
+					return
+				case left = <-more:
+				}
+				if !left {
+					break
+				}
+				select {
+				case <-done:
+					return
+				case <-time.After(rowWaitsYield):
+				}
+			}
+		}
+	})
+	return func() {
+		close(done)
+		wg.Wait()
+	}
+}
+
+// updateRowWaitsLocked brings the waiting below rows up to date, within
+// budget when it's above zero, redraws the rows whose waiting changed, and
+// reports whether work is left.
+func (fe *frontendPretty) updateRowWaitsLocked(budget time.Duration) bool {
+	changed, more := fe.db.UpdateRowWaits(time.Now(), budget)
+	if len(changed) > 0 {
+		for _, span := range changed {
+			if sr, ok := fe.spanTrees[span.ID]; ok {
+				sr.Update()
+			}
+		}
+		fe.viewDirty = true
+		fe.Update()
+	}
+	return more
+}
+
 // durationTickInterval is how often a running span's DurationView re-renders.
 // FormatDuration shows tenths of a second (%.1fs) under a minute, so ~100ms
 // keeps the ticking duration visually smooth without excess repaints.
@@ -1859,10 +1934,14 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		fe.err = err
 	} else if fe.console != "" {
 		// serve the TUI over HTTP instead of attaching to a terminal
+		stopRowWaits := fe.startRowWaits()
 		fe.err = fe.runWithConsole(ctx, run)
+		stopRowWaits()
 	} else {
 		// run the function wrapped in the TUI
+		stopRowWaits := fe.startRowWaits()
 		fe.err = fe.runWithTUI(ctx, run)
+		stopRowWaits()
 	}
 
 	if failure := outputDrainFailure(fe.err); failure != nil {
@@ -2784,6 +2863,58 @@ func (fe *frontendPretty) SetSpanProvider(provider func(dagui.SpanID)) {
 	})
 }
 
+// SetSupportProvider registers the fetcher for spans the rows' time
+// breakdowns draw on that the view holds only references to.
+func (fe *frontendPretty) SetSupportProvider(provider func([]dagui.SpanID)) {
+	fe.dispatch(func() {
+		fe.supportProvider = provider
+	})
+}
+
+// RequestBreakdownSpans recalculates the view, which requests the spans its
+// rows' time breakdowns draw on that it hasn't loaded, and reports whether
+// it requested any.
+func (fe *frontendPretty) RequestBreakdownSpans() bool {
+	var requested bool
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		before := len(fe.requestedSupport)
+		fe.recalculateViewLocked()
+		requested = len(fe.requestedSupport) > before
+	})
+	<-done
+	return requested
+}
+
+// requestBreakdownSpansLocked asks the support provider for the spans the
+// rows' time breakdowns draw on that the view holds only references to,
+// each once.
+func (fe *frontendPretty) requestBreakdownSpansLocked() {
+	if fe.supportProvider == nil {
+		return
+	}
+	var ids []dagui.SpanID
+	for _, row := range fe.rows.Order {
+		if row.Span == nil {
+			continue
+		}
+		row.Span.TimeBreakdownSpans(func(dep *dagui.Span) {
+			if dep.Received || fe.requestedSupport[dep.ID] {
+				return
+			}
+			if fe.requestedSupport == nil {
+				fe.requestedSupport = make(map[dagui.SpanID]bool)
+			}
+			fe.requestedSupport[dep.ID] = true
+			ids = append(ids, dep.ID)
+		})
+	}
+	if len(ids) > 0 {
+		fe.supportProvider(ids)
+	}
+}
+
 // SetCallProvider registers the fetcher for call payloads this client lacks
 // (CallFetcher).
 func (fe *frontendPretty) SetCallProvider(provider func(digests, known []string) error) {
@@ -3325,6 +3456,8 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		return ExitError{OriginalCode: exitCode, Original: fe.err}
 	}
 
+	// the final report's rows read the waiting below them as of the end
+	fe.updateRowWaitsLocked(0)
 	fe.setupFinalRenderLocked()
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
@@ -4985,6 +5118,11 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.primarySpan() {
 		fe.requestSubtree(fe.ZoomedSpan)
 	}
+
+	// The rows' time breakdowns may draw on spans a trace loaded in parts
+	// left out, such as what a row waited on: fetch them, so the row's time
+	// reads as the waiting it was.
+	fe.requestBreakdownSpansLocked()
 
 	if fe.hasLogProvider() {
 		// The primary output is written at end of run from OUTSIDE the render
@@ -8616,8 +8754,9 @@ func transferSummary(srcs []*dagui.Span) string {
 }
 
 // renderMergedProgressRow folds completed transfers into one summary line
-// beneath the given row: a count by kind and the merged wall-clock
-// duration of their activity. The interval union means parallel transfers
+// beneath the given row: labeled as transfers, so it doesn't read as a
+// breakdown of the row's own time, a count by kind and the merged
+// wall-clock duration of their activity. The interval union means parallel transfers
 // don't double-count, and byte totals are deliberately omitted — fetch and
 // unpack read the same bytes, so summing would double the apparent size.
 // The "p" keybind expands the fold into individual rows.
@@ -8627,7 +8766,7 @@ func (fe *frontendPretty) renderMergedProgressRow(out TermOutput, r *renderer, r
 	// indent past the parent's icon column so the line reads as its detail
 	fmt.Fprint(out, "  ")
 	fmt.Fprint(out, out.String(IconSuccess).Foreground(termenv.ANSIGreen))
-	fmt.Fprint(out, out.String(" "+transferSummary(srcs)).Faint())
+	fmt.Fprint(out, out.String(" transfers: "+transferSummary(srcs)).Faint())
 	var activity dagui.Activity
 	for _, src := range srcs {
 		activity.Add(src)

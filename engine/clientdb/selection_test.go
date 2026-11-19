@@ -173,6 +173,10 @@ func TestSelectedSpanPrioritySubtreeAndCut(t *testing.T) {
 	require.True(t, v.selected["4"], "a listen selects the span's children")
 	require.False(t, v.selected["5"], "as Cloud's, a listen loads one visible level, not the subtree")
 	require.True(t, v.selected["1"], "and the listened span's ancestors")
+	v, err = db.SpanViewAt(t.Context(), selectionTrace, cut, &archive.SpanSelection{NoRoot: true, Exact: []string{"5", "9"}})
+	require.NoError(t, err)
+	require.Equal(t, map[string]bool{"5": true}, v.selected,
+		"as Cloud's, an exact selection loads exactly the spans named that the trace has")
 	_, err = db.SpanViewAt(t.Context(), selectionTrace, HighWater{Logs: -1}, nil)
 	require.ErrorContains(t, err, "invalid telemetry cut")
 	batch, next, err := db.SelectLogsRangeMatching(t.Context(), SelectLogsRangeParams{AfterID: 1, ThroughID: 1, Limit: math.MaxInt64}, selectionTrace, nil, nil, false)

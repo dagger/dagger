@@ -324,6 +324,10 @@ func (c *OTLPClient) FetchTrace(ctx context.Context, traceID string, sink TraceI
 //     default (true), spelled out on the wire either way.
 //   - Listen adds each span, its children and their passthrough descendants,
 //     and anchors completion on them too. At most 256 per request.
+//   - Exact adds exactly these spans, without their children or ancestors,
+//     for a view that holds only references to them, such as what a row's
+//     time breakdown waited on. It requires NoRoot and no Listen. At most
+//     256 per request.
 //   - Incremental forces the priority-only selection regardless of trace
 //     size; without it a trace under the server's threshold comes back
 //     whole even when Listen is set.
@@ -336,6 +340,7 @@ func (c *OTLPClient) FetchTrace(ctx context.Context, traceID string, sink TraceI
 type SpanSelection struct {
 	NoRoot      bool
 	Listen      []string
+	Exact       []string
 	Incremental bool
 	Before      *time.Time
 	After       *time.Time
@@ -347,6 +352,9 @@ func (s SpanSelection) query() url.Values {
 	q.Set("root", strconv.FormatBool(!s.NoRoot))
 	for _, id := range s.Listen {
 		q.Add("listen", id)
+	}
+	for _, id := range s.Exact {
+		q.Add("exact", id)
 	}
 	if s.Incremental {
 		q.Set("incremental", "true")
