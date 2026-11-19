@@ -223,6 +223,14 @@ type MemoryCake {
         # #15226's.
         focus: "decodeReceived|receivedValues|receivedInterner",
       ),
+      Demo(
+        pr: "15226",
+        title: "core: bound receivers a session keeps converted",
+        # The receiver JSON moduleFunctionReceiverJSON's conversion makes,
+        # kept by its cache (convertedReceivers with the fix). The receiver
+        # is a Dang object: see the fixture for why not a Go one.
+        focus: "moduleFunctionReceiver|convertedReceivers",
+      ),
     ]
   }
 
@@ -306,6 +314,20 @@ type MemoryCake {
     env: [String!]! = [],
   ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
     measure(pr: "15224", ref: ref, env: env)
+  }
+
+  """
+  #15226: module receivers kept converted per session. One session fills a
+  Dang object with SIZE bytes (default 1 MiB), takes CALLS distinct results
+  of it (default 200) and calls a function on each; main keeps every
+  receiver's JSON (~210 MiB at the defaults), the fix ~32 MiB. The results
+  share their content, so #15224's decoded values stay one copy.
+  """
+  demo15226(
+    ref: String! = "main",
+    env: [String!]! = [],
+  ): Measurement! @cache(policy: FunctionCachePolicy.Never) {
+    measure(pr: "15226", ref: ref, env: env)
   }
 
   """
