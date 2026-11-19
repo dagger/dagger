@@ -134,6 +134,7 @@ func TestLoadTraceInspectionTools(t *testing.T) {
 	}
 	loadTool, err := m.LookupTool("LoadTrace", tools.Order)
 	require.NoError(t, err)
+	require.False(t, loadTool.ReadOnly, "LoadTrace changes what the inspection tools see, so a batch must run it in order")
 	mcpTool, err := genMcpTool(*loadTool)
 	require.NoError(t, err)
 	require.Equal(t, "LoadTrace", mcpTool.Name)
