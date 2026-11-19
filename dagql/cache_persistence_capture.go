@@ -280,6 +280,10 @@ func capturedRowValue(shared *sharedResult, payload sharedResultPayloadState, fr
 // capturePartRecord relies on the core nonblocking output guard. Unlike a
 // checkpoint capture it may run inside a synthetic coordination task.
 func (c *Cache) capturePartRecord(ctx context.Context, shared *sharedResult, imported bool, offers []PersistedPartOffer, version *capturedRowRevision) (PersistedRecord, error) {
+	// A record merged unprepared is prepared before it is read.
+	if err := c.prepareMergedPayload(ctx, shared); err != nil {
+		return PersistedRecord{}, err
+	}
 	var err error
 	payload := shared.loadPayloadState()
 	version.payload = payload

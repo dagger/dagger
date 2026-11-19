@@ -3364,6 +3364,16 @@ type sharedResult struct {
 	// persistedEnvelope is populated for imported rows and decoded lazily on
 	// first cache-hit use in a server-aware context.
 	persistedEnvelope *PersistedResultEnvelope
+	// firstUse is, on an entry holding a record merged from the Cloud whose
+	// payload is not prepared yet, what preparing it at its first use takes
+	// (mergedFirstUse): persistedEnvelope's payload names rows by the
+	// Cloud's numbers until then. Guarded by payloadMu, beside
+	// persistedEnvelope.
+	firstUse *mergedFirstUse
+	// payloadRefused marks an entry whose merged payload failed at its
+	// first use and was taken back (takeBackRefusedMerged). Guarded by
+	// egraphMu.
+	payloadRefused bool
 	// payloadBytes is this result's share of Cache.resultPayloadBytes: the
 	// large in-memory byte payload its value or envelope retains, measured
 	// once before publication. Guarded by egraphMu once registered.
@@ -3528,6 +3538,7 @@ type sharedResultPayloadState struct {
 	hasValue              bool
 	objClass              objectClassRef
 	persistedEnvelope     *PersistedResultEnvelope
+	firstUse              *mergedFirstUse
 	stored                *storedBody
 	snapshotOwnerLinks    []PersistedSnapshotRefLink
 	createdAtUnixNano     int64
@@ -3615,6 +3626,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		hasValue:              res.hasValue,
 		objClass:              res.objClass,
 		persistedEnvelope:     res.persistedEnvelope,
+		firstUse:              res.firstUse,
 		stored:                res.stored,
 		snapshotOwnerLinks:    cloneSnapshotRefLinks(res.snapshotOwnerLinks),
 		createdAtUnixNano:     res.createdAtUnixNano,
@@ -7281,6 +7293,13 @@ func (c *Cache) lookupCacheForDigests(
 			// The producing session's release failed the attachment; this
 			// reader is innocent, so convert to a miss keeping the
 			// recorded session edge (see lookupCacheForRequest).
+			return nil, false, nil
+		}
+		if errors.Is(err, errMergedPayloadRefused) {
+			// The hit's merged record was refused at its first use (see
+			// lookupCacheForRequest): it is taken back, and the call runs
+			// instead.
+			c.takeBackRefused(ctx, hitShared, err)
 			return nil, false, nil
 		}
 		return nil, false, err

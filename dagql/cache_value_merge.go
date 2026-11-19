@@ -89,14 +89,16 @@ func (c *Cache) MergeValues(ctx context.Context, from CacheID, input ValueBundle
 // Release: a set file's later parts name its earlier parts' records as held
 // rows, and a part's roots in unretained, the closure of a root that a later
 // part carries, are merged with no retention edge (Unretained), so that only
-// the hold keeps them until the root lands.
-func (c *Cache) RestoreValues(ctx context.Context, bundle ValueBundle, unretained []TransferOrdinal) (MergeReply, error) {
+// the hold keeps them until the root lands. source names the set file, for
+// the log of a record whose payload fails at its first use (Source).
+func (c *Cache) RestoreValues(ctx context.Context, bundle ValueBundle, unretained []TransferOrdinal, source string) (MergeReply, error) {
 	p, err := c.PrepareValueMerge(ctx, cloudCacheID, bundle)
 	if err != nil {
 		return MergeReply{}, err
 	}
 	p.restore, p.hold = true, true
 	p.Unretained(unretained...)
+	p.Source(source)
 	return c.CommitValueMerge(ctx, p)
 }
 
@@ -124,8 +126,17 @@ type PreparedValueMerge struct {
 	// has it hold every entry it lands on until the reply's Release.
 	restore bool
 	hold    bool
+	// source names where the bundle came from (Source).
+	source string
 	// ended is set once, by the terminal action.
 	ended atomic.Bool
+}
+
+// Source names the set file the bundle came in, for the log of a record
+// installed with its payload unprepared whose payload then fails at its
+// first use (mergedFirstUse). Call it before CommitValueMerge.
+func (p *PreparedValueMerge) Source(source string) {
+	p.source = source
 }
 
 // Unretained has the commit give the bundle's roots of these ordinals no
@@ -233,6 +244,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 	from, input, prep, restore, hold := p.from, p.input, p.prep, p.restore, p.hold
 	p.input, p.prep = ValueBundle{}, nil
 	prep.unretained = p.unretained
+	prep.source = p.source
 	if len(prep.stale) > 0 {
 		return c.staleMergeReply(prep.stale), nil
 	}
@@ -279,6 +291,7 @@ func (c *Cache) CommitValueMerge(ctx context.Context, p *PreparedValueMerge) (Me
 				return MergeReply{}, err
 			}
 			prep.unretained = p.unretained
+			prep.source = p.source
 			if len(prep.stale) > 0 {
 				return c.staleMergeReply(prep.stale), nil
 			}
@@ -484,6 +497,14 @@ type valueMergePrep struct {
 	// light are the records prepared from their call and offers only: the
 	// cache held a value for their recipe that merge keeps.
 	light map[uint64]bool
+	// unprepared are, on an engine, the records whose values carry their
+	// parts (TransferredValue.Parts), the Cloud's: each is prepared from
+	// its call and offers only, its complete parts are the ones it carries,
+	// and an install leaves its payload for its first use
+	// (mergedFirstUse). source names the file the bundle came in
+	// (PreparedValueMerge.Source).
+	unprepared map[uint64]bool
+	source     string
 	// held are the held rows, by ordinal. Each is prepared from its
 	// recipe's current entry's call frame, with no record or payload, and
 	// its plan has only its recipe. stale are the held rows the cache didn't
@@ -572,7 +593,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input Value
 	// output with a chain is checked as the offer it becomes, against the
 	// same slots, and the ownership walk takes its owner's dependencies in
 	// the same order. Each payload merge uses is validated below.
-	order, err := validateValueBundleShape(bundle)
+	order, err := checkValueBundle(bundle, true, nil, carriedDeclaredParts(c, bundle))
 	if err != nil {
 		return nil, err
 	}
@@ -600,6 +621,7 @@ func (c *Cache) prepareValueMerge(ctx context.Context, from CacheID, input Value
 		prep.rows[row.SenderNumber] = uint64(row.Ordinal)
 	}
 	prep.senders = transferSenders(prep.bundle)
+	prep.markUnprepared(c)
 	if prep.calls, err = c.prepareMergedCalls(prep.bundle.Calls); err != nil {
 		return nil, err
 	}
@@ -841,7 +863,7 @@ func (c *Cache) planMergeIdentities(prep *valueMergePrep, private *Cache) error 
 func (prep *valueMergePrep) prepareRecordPayloads(ctx context.Context, relocateRecord, relocate PersistedRefVisitor) error {
 	ids := make([]uint64, 0, len(prep.order))
 	for _, id := range prep.order {
-		if !prep.light[id] && !prep.held[id] {
+		if !prep.light[id] && !prep.held[id] && !prep.unprepared[id] {
 			ids = append(ids, id)
 		}
 	}
@@ -1287,7 +1309,7 @@ func (c *Cache) warmMergeTargetParts(ctx context.Context, prep *valueMergePrep) 
 	targets := make([]*sharedResult, 0, len(prep.plans))
 	seen := map[*sharedResult]bool{}
 	for _, plan := range prep.plans {
-		if res := c.currentEntryForRecipeLocked(plan.recipe); res != nil && !seen[res] && !res.noValueLocked() && !completePartsCurrent(res, reader) {
+		if res := c.currentEntryForRecipeLocked(plan.recipe); res != nil && !seen[res] && !res.noValueLocked() && !res.holdsUnpreparedPayload() && !completePartsCurrent(res, reader) {
 			seen[res] = true
 			targets = append(targets, res)
 		}
@@ -1374,9 +1396,11 @@ type mergeRow struct {
 	// keptExpired marks a kept value that had expired.
 	keptExpired bool
 	// rec and deps are the record relocated to the final numbers, for an
-	// action that installs it.
-	rec  PersistedRecord
-	deps []sharedResultID
+	// action that installs it. firstUse is set for a record installed with
+	// its payload unprepared (relocateUnpreparedRowLocked).
+	rec      PersistedRecord
+	deps     []sharedResultID
+	firstUse *mergedFirstUse
 	// recordBytes is rec's size, on a blob-backed cache.
 	recordBytes int64
 	// offers are the record's incoming offers, and admitted those this row's
@@ -1820,6 +1844,54 @@ func (c *Cache) notePrerelocated(prep *valueMergePrep) {
 	}
 }
 
+// relocateUnpreparedRowLocked relocates an installed record that a merge
+// leaves unprepared (valueMergePrep.unprepared): its identity, call and
+// offers go to the final numbers, as relocateMergeRowsLocked relocates any
+// record, and its payload stays as the Cloud sent it. The row keeps what
+// preparing it at its first use takes (mergedFirstUse): the entry of each
+// Cloud number its payload can name, one of its direct dependencies, which
+// are the row's dependencies too, and its complete parts as the bundle
+// carried them. Requires egraphMu.
+func relocateUnpreparedRowLocked(prep *valueMergePrep, row *mergeRow, source PersistedRecord, number func(uint64) (sharedResultID, error), relocate PersistedRefVisitor) error {
+	rec := source
+	rec.ResultID = uint64(row.res.id)
+	rec.Envelope.ResultID = rec.ResultID
+	rec.Call = source.Call.clone()
+	if err := visitResultCallReferences(rec.Call, relocate); err != nil {
+		return err
+	}
+	offers, err := clonePartOffers(source.Envelope.PendingOffers)
+	if err != nil {
+		return err
+	}
+	for i := range offers {
+		if err := visitPersistedPartOffer(&offers[i], nil, relocate); err != nil {
+			return err
+		}
+	}
+	compactOfferOwners(offers)
+	rec.Envelope.PendingOffers = offers
+	use := &mergedFirstUse{numbers: make(map[uint64]sharedResultID, len(row.value.DependencyIDs)), complete: sharedPartKeys(prep.completeParts[row.ordinal]), source: prep.source}
+	seen := map[sharedResultID]bool{}
+	for _, dep := range row.value.DependencyIDs {
+		n, err := number(dep)
+		if err != nil {
+			return err
+		}
+		use.numbers[prep.index[dep].SenderNumber] = n
+		if !seen[n] {
+			seen[n] = true
+			row.deps = append(row.deps, n)
+			use.deps = append(use.deps, uint64(n))
+		}
+	}
+	row.rec = rec
+	row.recordBytes = prep.recordBytes[row.ordinal]
+	row.offers = rec.Envelope.PendingOffers
+	row.firstUse = use
+	return nil
+}
+
 // errMergeRowOutsideClosure stops a relocation before the lock at a
 // reference outside the rows the merge decides.
 var errMergeRowOutsideClosure = errors.New("merge values: reference outside the merged closure")
@@ -1867,6 +1939,12 @@ func (c *Cache) relocateMergeRowsLocked(commit *valueMergeCommit) error {
 				}
 				compactOfferOwners(offers)
 				row.offers = offers
+			}
+			continue
+		}
+		if prep.unprepared[row.ordinal] {
+			if err := relocateUnpreparedRowLocked(prep, row, source, number, relocate); err != nil {
+				return err
 			}
 			continue
 		}
@@ -2589,6 +2667,7 @@ func (c *Cache) installMergedRecordLocked(res *sharedResult, row *mergeRow, comm
 	res.hasValue = false
 	res.self = nil
 	res.persistedEnvelope = &rec.Envelope
+	res.firstUse = row.firstUse
 	// The body worker compresses it after the merge (queueStoredBodies).
 	res.stored = nil
 	res.payloadRevision++
@@ -2830,6 +2909,16 @@ func completePartKeysLocked(res *sharedResult) []string {
 // without one, the keys are only the settled subset.
 func completePartKeysCoverageLocked(res *sharedResult) ([]string, bool) {
 	keys := res.settledPartKeys()
+	res.payloadMu.RLock()
+	carried, unprepared := res.firstUseCompletePartsLocked()
+	res.payloadMu.RUnlock()
+	if unprepared {
+		// A record merged unprepared proves the parts its bundle carried,
+		// as describing it once prepared finds them.
+		keys = append(keys, carried...)
+		slices.Sort(keys)
+		return slices.Compact(keys), true
+	}
 	cached := res.completeParts.Load()
 	current := cached != nil && cached.stamp.current(res)
 	if current {
@@ -2981,4 +3070,66 @@ func comparePartAddresses(a, b PersistedPartAddress) int {
 		return 1
 	}
 	return 0
+}
+
+// markUnprepared marks, on an engine, each record whose value carries its
+// parts (TransferredValue.Parts) unprepared, with the complete parts it
+// carries (valueMergePrep.unprepared). A blob-backed cache marks none.
+func (prep *valueMergePrep) markUnprepared(c *Cache) {
+	if c.blobBacked {
+		return
+	}
+	for i := range prep.bundle.Values {
+		row := &prep.bundle.Values[i]
+		if row.Parts == nil || row.Held != "" {
+			continue
+		}
+		if prep.unprepared == nil {
+			prep.unprepared = map[uint64]bool{}
+		}
+		prep.unprepared[uint64(row.Ordinal)] = true
+		prep.completeParts[uint64(row.Ordinal)] = partAddressKeys(row.Parts.Complete)
+	}
+}
+
+// carriedDeclaredParts returns, on an engine, the parts each row of bundle
+// declares, for the rows whose values carry their parts
+// (TransferredValue.Parts): the bundle's outputs are checked against those,
+// without mapping them from the payloads. A row whose carried part has no
+// valid address is left out, and checked by mapping its payload, which
+// refuses the address as a merge always has. Nil on a blob-backed cache, or
+// for a bundle whose values carry none.
+func carriedDeclaredParts(c *Cache, bundle ValueBundle) map[uint64][]declaredPart {
+	if c.blobBacked {
+		return nil
+	}
+	var declared map[uint64][]declaredPart
+	for _, value := range bundle.Values {
+		if value.Parts == nil || value.Held != "" {
+			continue
+		}
+		parts, ok := carriedDeclared(value.Parts.Declared)
+		if !ok {
+			continue
+		}
+		if declared == nil {
+			declared = map[uint64][]declaredPart{}
+		}
+		declared[uint64(value.Ordinal)] = parts
+	}
+	return declared
+}
+
+// carriedDeclared returns the declared parts a value carries with their
+// keys, and false if one has no valid address.
+func carriedDeclared(carried []TransferredDeclaredPart) ([]declaredPart, bool) {
+	parts := make([]declaredPart, 0, len(carried))
+	for _, part := range carried {
+		key, err := partAddressKey(part.Address)
+		if err != nil {
+			return nil, false
+		}
+		parts = append(parts, declaredPart{key: key, address: part.Address, state: part.State, kind: part.Kind})
+	}
+	return parts, true
 }
