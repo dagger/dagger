@@ -119,6 +119,9 @@ func TestWorkspaceInputHostOperations(t *testing.T) {
 		return summary
 	}
 
+	// Capture the Host before the snapshot fixture uses it in a nested source operation.
+	var host dagql.ObjectResult[*Host]
+	require.NoError(t, srv.Select(ctx, srv.Root(), &host, dagql.Selector{Field: "host"}))
 	var ws dagql.ObjectResult[*Workspace]
 	require.NoError(t, srv.Select(ctx, srv.Root(), &ws, dagql.Selector{Field: "workspace"}))
 	boundary, err := workspaceResultBoundary(ctx, ws)
@@ -178,8 +181,6 @@ func TestWorkspaceInputHostOperations(t *testing.T) {
 	_, issues = inspect(raw).forWorkspace(boundary)
 	require.Contains(t, issues, `Host.directory source input has no workspace source mapping (effective client "source-client")`)
 
-	var host dagql.ObjectResult[*Host]
-	require.NoError(t, srv.Select(ctx, srv.Root(), &host, dagql.Selector{Field: "host"}))
 	_, issues = inspect(host).forWorkspace(boundary)
 	require.Contains(t, issues, "retained Host input has no workspace source mapping (receiver)")
 
@@ -282,8 +283,24 @@ func TestWorkspaceInputHostOperations(t *testing.T) {
 		require.NoError(t, err)
 		var fact workspaceInputFact
 		require.NoError(t, json.Unmarshal(facts[0].Payload, &fact))
-		require.Equal(t, want, fact.Prepared.FindUps)
+		require.NotNil(t, fact.RuntimeInputs)
+		require.Equal(t, want, fact.RuntimeInputs.FindUps)
 		require.Empty(t, fact.FindUps, "setup searches are prepared inputs, not body events")
+		prior, err := cache.ResultCallForRef(&dagql.ResultCallRef{ResultID: id.EngineResultID()})
+		require.NoError(t, err)
+		current := prior.Clone()
+		current.Args = []*dagql.ResultCallArg{{Name: "different", Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: "recipe"}}}
+		obs := &workspaceInputCall{request: &dagql.CallRequest{ResultCall: current, ReceiverTypeName: "Query"}, reads: &workspaceInputReads{}}
+		next, ok, err := obs.rebindFacts(ctx, prior, outer, facts, true)
+		require.NoError(t, err)
+		require.True(t, ok)
+		again, ok, err := obs.rebindFacts(ctx, current, outer, next, ok)
+		require.NoError(t, err)
+		require.True(t, ok)
+		var after workspaceInputFact
+		require.NoError(t, json.Unmarshal(again[0].Payload, &after))
+		require.NotNil(t, after.RuntimeInputs, "structural then exact reuse lost the setup search")
+		require.Equal(t, want, after.RuntimeInputs.FindUps)
 	})
 
 	t.Run("runtime Host reads retain prepared caller rules", func(t *testing.T) {
@@ -304,6 +321,21 @@ func TestWorkspaceInputHostOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, rules, fact.Prepared.FindUps)
 		require.Empty(t, fact.FindUps, "runtime inputs are prepared origins, not new body reads")
+		legacy := fact
+		legacy.Prepared.Issues = []string{"unresolved producing-client source"}
+		legacy.Complete = false
+		blob, err := json.Marshal(legacy)
+		require.NoError(t, err)
+		next, covered, err := observation.rebindFacts(observed, req.ResultCall, nil, []dagql.ResultFact{{Namespace: "workspace-inputs/v7", Payload: blob}}, true)
+		require.NoError(t, err)
+		require.Contains(t, string(next[len(next)-1].Payload), "unresolved producing-client source")
+		require.False(t, covered, "legacy incomplete source on a prepared native operation became complete")
+		reselected := &workspaceInputCall{request: req, reads: &workspaceInputReads{}, prepared: true}
+		next, covered, err = reselected.rebindFacts(observed, req.ResultCall, nil, next, covered)
+		require.NoError(t, err)
+		require.False(t, covered)
+		require.Contains(t, string(next[len(next)-1].Payload), "unresolved producing-client source")
+
 		routed := engine.ContextWithClientMetadata(scoped, &engine.ClientMetadata{ClientID: "another-client", SessionID: "source-session"})
 		_, err = bindWorkspaceFindUps(routed, rules)
 		require.ErrorContains(t, err, "caller Workspace is unavailable")
@@ -471,5 +503,37 @@ func TestWorkspaceInputHostOperations(t *testing.T) {
 		afterMatch, err := provenance.AffectedByFile(after, "/loaded/input.txt", nil)
 		require.NoError(t, err)
 		require.True(t, afterMatch, "the returned object's loaded input origin must survive capture")
+	})
+	t.Run("cached consumer uses its current input's source", func(t *testing.T) {
+		previous := sourceServer.workspace
+		t.Cleanup(func() { sourceServer.workspace = previous })
+		dagql.Fields[*Query]{dagql.NodeFunc("sourceForConsumer", func(ctx context.Context, _ dagql.ObjectResult[*Query], _ struct{}) (dagql.ObjectResult[*Directory], error) {
+			var path dagql.Nullable[dagql.String]
+			if err := srv.Select(ctx, host, &path, dagql.Selector{Field: "findUp", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(".env")}}}); err != nil {
+				return dagql.ObjectResult[*Directory]{}, err
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, &Directory{})
+		})}.Install(srv)
+		dagql.Fields[*Directory]{dagql.NodeFunc("consumeFixture", func(ctx context.Context, _ dagql.ObjectResult[*Directory], _ struct{}) (dagql.ObjectResult[*Directory], error) {
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, &Directory{})
+		})}.Install(srv)
+		for _, cwd := range []string{"a", "b"} {
+			selected := workspace.Clone()
+			selected.Cwd = cwd
+			sourceServer.workspace = selected
+			var result dagql.ObjectResult[*Directory]
+			require.NoError(t, srv.Select(ctx, srv.Root(), &result, dagql.Selector{Field: "sourceForConsumer"}, dagql.Selector{Field: "consumeFixture"}))
+			require.Equal(t, cwd == "b", result.HitCache())
+			boundary, err := actualWorkspaceBoundary(ctx, selected)
+			require.NoError(t, err)
+			selectors, issues := inspect(result).forWorkspace(boundary)
+			require.Empty(t, issues)
+			provenance := newWorkspaceProvenance(selectors)
+			for _, path := range []string{"a/.env", "b/.env", "README.md"} {
+				match, err := provenance.AffectedByChangedPaths(&ChangesetPaths{Modified: []string{path}}, nil, nil)
+				require.NoError(t, err)
+				require.Equal(t, path == cwd+"/.env", match, path)
+			}
+		}
 	})
 }

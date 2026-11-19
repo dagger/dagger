@@ -85,7 +85,7 @@ func TestWorkspaceMetadataConstructorsDoNotRead(t *testing.T) {
 	inspect := func(t *testing.T, value dagql.AnyResult) []workspaceSourceMetadataFact {
 		t.Helper()
 		facts, complete, err := cache.ResultFacts(ctx, session,
-			&dagql.ResultCallRef{ResultID: rowID(t, value)}, "workspace-inputs/v7")
+			&dagql.ResultCallRef{ResultID: rowID(t, value)}, "workspace-inputs/v8")
 		require.NoError(t, err)
 		require.True(t, complete)
 		require.NotEmpty(t, facts, "absence of facts is not proof of no reads")

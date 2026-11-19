@@ -424,6 +424,9 @@ func (c *workspaceInputCollector) materializeReads(fact workspaceInputFact, fram
 	// Fixed context origins are ordinary input origins during inspection.
 	// Only call completion promotes them to events on the enclosing call.
 	summary.contextInputs = nil
+	if fact.RuntimeInputs != nil {
+		summary.merge(*fact.RuntimeInputs)
+	}
 	summary.merge(fixedWorkspaceContextInputs(fact.ContextInputs))
 	summary.incomplete = summary.incomplete || !fact.Complete
 	summary.FindUps = append(summary.FindUps, fact.FindUps...)

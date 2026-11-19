@@ -109,6 +109,9 @@ func (w *workspaceInputTelemetry) fact(fact workspaceInputFact, bindings []works
 			Input: retained.Input, Output: retained.Output})
 	}
 	w.summary("input", fact.Prepared)
+	if fact.RuntimeInputs != nil {
+		w.summary("input", *fact.RuntimeInputs)
+	}
 	w.summary("input", fact.ContextInputs)
 	for _, issue := range fact.Issues {
 		w.issue(issue)

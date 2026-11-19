@@ -17,9 +17,9 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-const workspaceInputsNamespace = "workspace-inputs/v7"
+const workspaceInputsNamespace = "workspace-inputs/v8"
 
-var legacyWorkspaceInputsNamespaces = [...]string{"workspace-inputs/v1", "workspace-inputs/v2", "workspace-inputs/v3", "workspace-inputs/v4", "workspace-inputs/v5", "workspace-inputs/v6"}
+var legacyWorkspaceInputsNamespaces = [...]string{"workspace-inputs/v1", "workspace-inputs/v2", "workspace-inputs/v3", "workspace-inputs/v4", "workspace-inputs/v5", "workspace-inputs/v6", "workspace-inputs/v7"}
 
 // Map native Host operations to the public source query that contains them.
 type workspaceInputSourceContextKey struct{}
@@ -571,9 +571,14 @@ func (c *workspaceInputCollector) listItemDiagnostics(ref *dagql.ResultCallRef, 
 
 func (c *workspaceInputCollector) listItemFactDiagnostics(fact workspaceInputFact) {
 	c.result.Issues = append(c.result.Issues, fact.Issues...)
-	c.result.Issues = append(c.result.Issues, fact.Prepared.Issues...)
-	for _, source := range fact.Prepared.Sources {
-		c.result.Issues = append(c.result.Issues, source.Issues...)
+	for _, inputs := range []*workspaceInputSummary{&fact.Prepared, fact.RuntimeInputs} {
+		if inputs == nil {
+			continue
+		}
+		c.result.Issues = append(c.result.Issues, inputs.Issues...)
+		for _, source := range inputs.Sources {
+			c.result.Issues = append(c.result.Issues, source.Issues...)
+		}
 	}
 	for _, read := range fact.Reads {
 		c.result.Issues = append(c.result.Issues, read.Source.Issues...)
@@ -958,9 +963,16 @@ func ObserveWorkspaceInputs(ctx context.Context, req *dagql.CallRequest) (contex
 		ctx = context.WithValue(ctx, workspaceInputSourceContextKey{}, summary)
 	}
 	workspace, boundary := workspaceInputSourceOrigin(ctx)
+	reads := &workspaceInputReads{workspace: workspace, boundary: boundary, summary: summary}
+	if req.Module != nil {
+		// Module dispatch can run setup calls before the function body. Keep
+		// the caller's inputs separate from the reads made during that setup.
+		reads.initial = &summary
+		reads.summary = workspaceInputSummary{}
+	}
 	observation := &workspaceInputCall{
 		request:     req,
-		reads:       &workspaceInputReads{summary: summary, workspace: workspace, boundary: boundary},
+		reads:       reads,
 		prepared:    source || gitSource || host || view || metadata || storedField,
 		storedField: storedField,
 		initial:     summary,

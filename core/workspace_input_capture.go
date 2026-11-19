@@ -30,9 +30,7 @@ func (observation *workspaceInputCall) capture(ctx context.Context, value dagql.
 		ContextInputs:        observation.summary().capturedContextInputs(),
 		CapabilitiesComplete: true,
 	}
-	if runtime, ready := observation.reads.runtimeSnapshot(); ready {
-		fact.Prepared.merge(runtime)
-	} else if err := observation.currentRuntimeInputs(ctx, &fact.Prepared); err != nil {
+	if err := observation.captureRuntime(ctx, &fact); err != nil {
 		return workspaceInputFact{}, err
 	}
 	fact.Prepared.reads = nil
@@ -134,7 +132,7 @@ func (observation *workspaceInputCall) capture(ctx context.Context, value dagql.
 		}
 	}
 	observation.reads.mu.Lock()
-	fact.Complete = !observation.reads.incompleteLocked() && !fact.Prepared.incomplete
+	fact.Complete = !observation.reads.incompleteLocked() && fact.preparationComplete()
 	observation.reads.mu.Unlock()
 	fact.Issues = append(fact.Issues, observation.summary().Issues...)
 	validateWorkspaceRetainedBindings(&fact)
@@ -187,6 +185,16 @@ func (observation *workspaceInputCall) useStoredFieldCapture(ctx context.Context
 }
 
 func (observation *workspaceInputCall) rebindFacts(ctx context.Context, previous *dagql.ResultCall, value dagql.AnyResult, stored []dagql.ResultFact, complete bool) ([]dagql.ResultFact, bool, error) {
+	// An older record can contain setup or body reads that the current
+	// arguments cannot reproduce, even when DagQL covered the payload.
+	for _, record := range stored {
+		if slices.Contains(legacyWorkspaceInputsNamespaces[:], record.Namespace) {
+			// Keep the original record on aliases so later hits also see it.
+			observation.request.ResultFacts = append(observation.request.ResultFacts, record)
+			observation.reads.add(workspaceInputSummary{Issues: workspaceLegacyIssues(record.Payload), incomplete: true})
+			observation.initial.incomplete = true
+		}
+	}
 	if observation.storedField {
 		// Attachment can populate the field recipe without observing a read.
 		// Current owner inputs define this read, including on an exact hit.
@@ -238,14 +246,11 @@ func (observation *workspaceInputCall) rebindFacts(ctx context.Context, previous
 		return replaceWorkspaceInputFact(observation.request.ResultFacts, fact), complete && fact.Complete, err
 	}
 	fact := workspaceInputFact{Operation: workspaceInputOperation(ctx, observation.request.ResultCall), Prepared: observation.preparedOrigins(), ContextInputs: observation.summary().capturedContextInputs()}
-	if err := observation.currentRuntimeInputs(ctx, &fact.Prepared); err != nil {
+	if err := observation.captureRuntime(ctx, &fact); err != nil {
 		return nil, false, err
 	}
 	for _, record := range stored {
 		if record.Namespace != workspaceInputsNamespace {
-			if slices.Contains(legacyWorkspaceInputsNamespaces[:], record.Namespace) {
-				fact.Issues = append(fact.Issues, workspaceLegacyIssues(record.Payload)...)
-			}
 			continue
 		}
 		var old workspaceInputFact
@@ -255,7 +260,16 @@ func (observation *workspaceInputCall) rebindFacts(ctx context.Context, previous
 		if old.Operation != fact.Operation {
 			continue
 		}
-		fact.Complete = old.Complete && !fact.Prepared.incomplete
+		// The cached value still depends on the setup that produced it.
+		if old.RuntimeInputs != nil {
+			if fact.RuntimeInputs == nil {
+				fact.RuntimeInputs = &workspaceInputSummary{}
+			}
+			fact.RuntimeInputs.merge(*old.RuntimeInputs)
+			normalized := fact.RuntimeInputs.normalized()
+			fact.RuntimeInputs = &normalized
+		}
+		fact.Complete = old.Complete && fact.preparationComplete()
 		fact.CapabilitiesComplete = old.CapabilitiesComplete
 		fact.Reads = append(fact.Reads, old.Reads...)
 		fact.Issues = append(fact.Issues, old.Issues...)
@@ -303,9 +317,9 @@ func workspaceInputEmptyDirectory(ctx context.Context, req *dagql.CallRequest) b
 	return err == nil && input.Value.StringValue == query.Platform().Format()
 }
 
-// Identical inputs retain their owned capture, including runtime setup that
-// is not reconstructed from the returned payload. Only ambient body searches
-// take the current caller's Workspace binding.
+// The same recipe can receive a new result handle with different source paths.
+// Use the current arguments' origins. Keep the setup and body reads that
+// produced the cached value.
 func (observation *workspaceInputCall) rebindExactFacts(ctx context.Context, stored []dagql.ResultFact, complete bool) ([]dagql.ResultFact, bool, bool, error) {
 	c, err := newWorkspaceInputCollector(ctx)
 	if err != nil {
@@ -331,6 +345,8 @@ func (observation *workspaceInputCall) rebindExactFacts(ctx context.Context, sto
 			continue
 		}
 		found = true
+		fact.Prepared = observation.preparedOrigins()
+		fact.Complete = fact.Complete && !fact.Prepared.incomplete
 		rules, err := bindWorkspaceFindUps(ctx, fact.FindUps)
 		if err != nil {
 			fact.Issues = append(fact.Issues, "cannot bind Host.findUp filtering rule to caller Workspace: "+err.Error())
@@ -358,6 +374,25 @@ func (observation *workspaceInputCall) rebindExactFacts(ctx context.Context, sto
 		}
 	}
 	return facts, complete, found, nil
+}
+
+func (fact *workspaceInputFact) preparationComplete() bool {
+	return !fact.Prepared.incomplete && (fact.RuntimeInputs == nil || !fact.RuntimeInputs.incomplete)
+}
+
+func (observation *workspaceInputCall) captureRuntime(ctx context.Context, fact *workspaceInputFact) error {
+	runtime, ready := observation.reads.runtimeSnapshot()
+	if !ready {
+		if err := observation.currentRuntimeInputs(ctx, &runtime); err != nil {
+			return err
+		}
+	}
+	if runtime.incomplete || len(runtime.Sources) != 0 || len(runtime.Issues) != 0 || len(runtime.FindUps) != 0 {
+		runtime.reads = nil
+		runtime.findUps = nil
+		fact.RuntimeInputs = &runtime
+	}
+	return nil
 }
 
 func (observation *workspaceInputCall) currentRuntimeInputs(ctx context.Context, prepared *workspaceInputSummary) error {

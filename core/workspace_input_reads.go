@@ -14,6 +14,7 @@ import (
 type workspaceInputReads struct {
 	mu        sync.Mutex
 	summary   workspaceInputSummary
+	initial   *workspaceInputSummary
 	workspace *Workspace
 	boundary  string
 	runtime   *workspaceInputSummary
@@ -50,7 +51,11 @@ func (r *workspaceInputReads) add(summary workspaceInputSummary) {
 func (r *workspaceInputReads) snapshot() workspaceInputSummary {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(r.prepared) == 0 {
+	return r.snapshotLocked(r.initial)
+}
+
+func (r *workspaceInputReads) snapshotLocked(initial *workspaceInputSummary) workspaceInputSummary {
+	if len(r.prepared) == 0 && initial == nil {
 		return r.summary.normalized()
 	}
 	// Do not append into either the live holder or an immutable base.
@@ -60,6 +65,9 @@ func (r *workspaceInputReads) snapshot() workspaceInputSummary {
 	summary.Issues = slices.Clone(summary.Issues)
 	summary.reads = slices.Clone(summary.reads)
 	summary.findUps = slices.Clone(summary.findUps)
+	if initial != nil {
+		summary.merge(*initial)
+	}
 	for _, base := range r.prepared {
 		summary.merge(base.summary)
 	}
@@ -67,7 +75,7 @@ func (r *workspaceInputReads) snapshot() workspaceInputSummary {
 }
 
 func (r *workspaceInputReads) incompleteLocked() bool {
-	if r.summary.incomplete {
+	if r.summary.incomplete || r.initial != nil && r.initial.incomplete {
 		return true
 	}
 	for _, base := range r.prepared {
@@ -148,10 +156,11 @@ func workspaceInputView(req *dagql.CallRequest) bool {
 }
 
 type workspaceInputFact struct {
-	Issues    []string              `json:"issues,omitempty"`
-	Operation string                `json:"operation"`
-	Complete  bool                  `json:"complete"`
-	Prepared  workspaceInputSummary `json:"prepared"`
+	RuntimeInputs *workspaceInputSummary `json:"runtimeInputs,omitempty"`
+	Issues        []string               `json:"issues,omitempty"`
+	Operation     string                 `json:"operation"`
+	Complete      bool                   `json:"complete"`
+	Prepared      workspaceInputSummary  `json:"prepared"`
 	// ContextInputs belong to the producer that consumed them. Reusing its
 	// value keeps these origins even when the new caller has another module.
 	ContextInputs        workspaceInputSummary    `json:"contextInputs,omitempty"`
@@ -271,7 +280,11 @@ func recordWorkspaceRuntimeInputs(ctx context.Context, fn *ModuleFunction, call 
 	reads.mu.Lock()
 	reads.summary.merge(collector.result)
 	if owned != nil && owned.reads == reads {
-		reads.runtime = &summary
+		setup := reads.snapshotLocked(nil)
+		setup.reads = nil
+		setup.findUps = nil
+		setup.contextInputs = nil
+		reads.runtime = &setup
 		reads.summary.FindUps = slices.Clone(summary.FindUps)
 		reads.summary.reads = nil
 		reads.summary.findUps = nil

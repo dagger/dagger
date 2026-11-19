@@ -52,7 +52,7 @@ func TestDirectoryWorkspaceModuleSourceProvenance(t *testing.T) {
 		t.Helper()
 		id, err := src.ID()
 		require.NoError(t, err)
-		facts, complete, err := engine.cache.ResultFacts(ctx, "main-session", &dagql.ResultCallRef{ResultID: id.EngineResultID()}, "workspace-inputs/v7")
+		facts, complete, err := engine.cache.ResultFacts(ctx, "main-session", &dagql.ResultCallRef{ResultID: id.EngineResultID()}, "workspace-inputs/v8")
 		require.NoError(t, err)
 		require.True(t, complete)
 		require.Len(t, facts, 1)
