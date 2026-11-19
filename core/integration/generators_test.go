@@ -1263,12 +1263,6 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 	})
 
 	t.Run("listing across all modules enumerates the healthy generators despite a broken module", func(ctx context.Context, t *testctx.T) {
-		// Enumerating all generators loads modules best-effort: the broken
-		// module is still loaded but its failure is tolerated, so listing succeeds and
-		// shows the healthy generator instead of aborting. The skip is reported
-		// beside the list (SKIPPED MODULES), with the load error, which quotes
-		// the broken source, so unlike the narrowed cases this one can't assert
-		// the source never shows up.
 		out, err := base.
 			With(daggerExec("generate", "-l", "-f=link")).
 			CombinedOutput(ctx)

@@ -28,7 +28,7 @@ func TestTypeKeyProjection(t *testing.T) {
 	}
 }
 
-// Other paths form a set, even an operation on a nested collection's items.
+// TestTypeKeySets checks that a shared suffix selects all matching paths.
 func TestTypeKeySets(t *testing.T) {
 	paths := Paths{
 		{Type: "type:Check", Key: "items/verify", Dimensions: []string{"/app/items"}},
@@ -44,12 +44,10 @@ func TestTypeKeySets(t *testing.T) {
 }
 
 func TestTypeKeyFullPathSuffix(t *testing.T) {
-	candidates := []string{"app/go/test", "go/test"} // sorted, as Candidates returns them
+	candidates := []string{"app/go/test", "go/test"}
 	require.Equal(t, []string{"app/go/test", "go/test"}, MatchTypeKey(candidates, "go/test"))
 	require.Equal(t, []string{"go/test"}, MatchTypeKey(candidates, "/go/test"))
-	// A full path that is another path's suffix needs the leading "/".
 	require.Equal(t, "/go/test", ShortTypeKey(candidates, "go/test"))
 	require.Equal(t, "app/go/test", ShortTypeKey(candidates, "app/go/test"))
-	// A path outside the candidates keeps its full form.
 	require.Equal(t, "unknown/lint", ShortTypeKey([]string{"go/lint"}, "unknown/lint"))
 }
