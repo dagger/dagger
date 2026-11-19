@@ -55,7 +55,7 @@ func (m *MCP) Artifacts(ctx context.Context, srv *dagql.Server, include []string
 	for _, entry := range bound {
 		entry.ContextWorkspace = ws
 	}
-	return mergeScopeArtifacts(bound, shadowed, fresh, workspace, include)
+	return mergeScopeArtifacts(ctx, bound, shadowed, fresh, workspace, include)
 }
 
 // mergeScopeArtifacts combines the bound and workspace parts of a scope. A
@@ -67,9 +67,13 @@ func (m *MCP) Artifacts(ctx context.Context, srv *dagql.Server, include []string
 // over the bound ones. include narrows the bound part the way
 // Workspace.artifacts already narrowed the workspace part, and is recorded as
 // the selection's paths.
-func mergeScopeArtifacts(bound []*Artifact, shadowed, fresh map[string]bool, workspace *Artifacts, include []string) (*Artifacts, error) {
+func mergeScopeArtifacts(ctx context.Context, bound []*Artifact, shadowed, fresh map[string]bool, workspace *Artifacts, include []string) (*Artifacts, error) {
 	// Names resolve in both parts, including entries that include skips.
-	result := &Artifacts{Entries: []*Artifact{}, AllDimensions: artifact.Union(workspace.AllDimensions, (&Artifacts{Entries: bound}).DimensionDefinitions()), AllPaths: artifact.UnionPaths(workspace.AllPaths, (&Artifacts{Entries: bound}).PathIndex())}
+	boundSchema := &Artifacts{Entries: bound}
+	if err := boundSchema.SetSchema(ctx, bound); err != nil {
+		return nil, err
+	}
+	result := &Artifacts{Entries: []*Artifact{}, AllDimensions: artifact.Union(workspace.AllDimensions, boundSchema.AllDimensions), AllPaths: artifact.UnionPaths(workspace.AllPaths, boundSchema.AllPaths)}
 	if include != nil {
 		result.Selector.Paths = make([]string, 0, len(include))
 		for _, pattern := range include {

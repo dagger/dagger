@@ -37,7 +37,6 @@ func runLegacy(only string, input io.Reader, output io.Writer) error {
 	p := flattening.New(schema)
 	dimensions := p.Dimensions()
 	names := p.Names()
-	flagNames := flattening.DimensionFlags(dimensions, nil, nil)
 	var rows [][]string
 	for _, entry := range entries {
 		path := strings.Join(entry.Path, "/")
@@ -71,14 +70,10 @@ func runLegacy(only string, input io.Reader, output io.Writer) error {
 		}
 	}
 	w := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tDISPLAY NAME\tKEY FLAG\tPRESENCE FLAG")
+	fmt.Fprintln(w, "ID\tDISPLAY NAME")
 	for _, dimension := range dimensions {
 		id := dimension.Identifier
-		if flagNames[id].Presence == "" {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", id, names[id], flagNames[id].Key)
-		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", id, names[id], flagNames[id].Key, flagNames[id].Presence)
-		}
+		fmt.Fprintf(w, "%s\t%s\n", id, names[id])
 	}
 	if err := w.Flush(); err != nil {
 		return err

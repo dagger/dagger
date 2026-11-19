@@ -306,25 +306,8 @@ func (*artifactsSchema) dimensionDefinitions(ctx context.Context, parent *core.A
 	}
 	definitions := parent.DimensionDefinitions()
 	if core.Supports(ctx, artifactDimensionViewVersion) && len(definitions) > 0 {
-		legacy := definitions
-		module := ""
-		all := parent.AllDimensions
-		if all == nil {
-			all = legacy
-		}
-		metadata := make(flattening.Dimensions, len(all))
-		for i, dimension := range all {
-			metadata[i] = (*flattening.Dimension)(dimension)
-			if dimension.Identifier == artifact.ModuleDimension {
-				module = "workspace"
-			}
-		}
-		named, err := flattening.NameDimensions(flattening.CanonicalDimensions(module, metadata))
-		if err != nil {
-			return nil, err
-		}
 		selected := map[string]bool{}
-		for _, dimension := range legacy {
+		for _, dimension := range definitions {
 			id := dimension.Identifier
 			if dimension.CollectionType != "" {
 				id = dimension.CollectionType
@@ -332,9 +315,9 @@ func (*artifactsSchema) dimensionDefinitions(ctx context.Context, parent *core.A
 			selected[id] = true
 		}
 		definitions = nil
-		for _, dimension := range named {
-			if selected[dimension.Identifier] || dimension.Identifier == artifact.NameDimension {
-				definitions = append(definitions, (*core.ArtifactDimension)(dimension))
+		for _, dimension := range parent.AllDimensions {
+			if !strings.HasPrefix(dimension.Identifier, "type:") && (selected[dimension.Identifier] || dimension.Identifier == artifact.NameDimension) {
+				definitions = append(definitions, dimension)
 			}
 		}
 	}
@@ -1164,20 +1147,8 @@ func (s *workspaceSchema) collectArtifacts(ctx context.Context, parent dagql.Obj
 			result.Entries = append(result.Entries, entry)
 		}
 	}
-	if core.Supports(ctx, artifactDimensionViewVersion) {
-		fields := make([]flattening.Field, len(loaded))
-		for i, entry := range loaded {
-			fields[i] = entry.ProjectionField()
-		}
-		if _, err := flattening.NewSchema(fields); err != nil {
-			return nil, fmt.Errorf("flatten workspace schema: %w", err)
-		}
-	}
-	result.AllDimensions = (&core.Artifacts{Entries: loaded}).DimensionDefinitions()
-	result.AllPaths = (&core.Artifacts{Entries: loaded}).PathIndex()
 	result.CompleteSchema = artifactSchemaIncludes(ctx, include) == nil && len(failures) == 0
-	result.SetCollectionRoots(loaded)
-	if err := result.NameEntries(); err != nil {
+	if err := result.SetSchema(ctx, loaded); err != nil {
 		return nil, err
 	}
 	skipped, err := workspaceSkippedPaths(ctx, result, mods, cfg)

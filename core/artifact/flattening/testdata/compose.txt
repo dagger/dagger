@@ -1,8 +1,8 @@
-ID                                 DISPLAY NAME            KEY FLAG                PRESENCE FLAG
-/docker/compose/projects           docker-compose-project  docker-compose-project  docker-projects
-/docker/compose/projects/services  docker-compose-service  docker-compose-service  docker-services
-module                             module                  module
-type:Service                       service                 service
+ID                                 DISPLAY NAME
+/docker/compose/projects           docker-compose-project
+/docker/compose/projects/services  docker-compose-service
+module                             module
+type:Service                       service
 
 PATH                                     /docker/compose/projects  /docker/compose/projects/services  module  type:Service
 docker/compose/projects/services/up      e2e                       web                                docker  docker/compose/projects/services/up

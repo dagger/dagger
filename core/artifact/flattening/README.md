@@ -10,6 +10,8 @@ go test ./core/artifact/flattening ./core/artifact/flattening/cmd/flatten
 These commands use native Go. They do not start an engine.
 
 The package maps schema fields and collection keys to dimensions and coordinates.
+The engine uses these rules from API view `v1.0.0-beta.29`. Earlier views keep
+the legacy rules described below.
 A dimension is one column. A coordinate is the value in that column.
 `NewSchema` compiles the complete field list. `Schema.Coordinates` returns each
 row. The utility prints dimension identifiers and names, then each artifact type
@@ -125,7 +127,7 @@ has no engine runtime, GraphQL, or CLI framework dependency.
 `Coordinates`, and `ArtifactDimensions` serve that compatibility path.
 New callers use `NewSchema`.
 
-The old utility input is available with `-legacy`. Its fixtures remain unchanged.
+Use `-legacy` to read the old utility input and display legacy coordinates.
 See [legacy artifact selectors](LEGACY.md).
 
 Directly nested distinct collection types have separate columns. For example,

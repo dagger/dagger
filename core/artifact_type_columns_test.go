@@ -7,6 +7,8 @@ import (
 
 	"github.com/dagger/dagger/core/artifact"
 	"github.com/dagger/dagger/core/artifact/flattening"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,6 +92,7 @@ func TestArtifactSnapshotRejectsStaleProjectionMetadata(t *testing.T) {
 		name, version string
 	}{
 		{"old snapshot without version", ""},
+		{"old dimension metadata", `"Version":2,`},
 		{"unsupported future snapshot", fmt.Sprintf(`"Version":%d,`, artifactSnapshotVersion+1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -102,5 +105,73 @@ func TestArtifactSnapshotRejectsStaleProjectionMetadata(t *testing.T) {
 			require.ErrorContains(t, err, "unsupported artifact snapshot version")
 			require.Nil(t, decoded)
 		})
+	}
+}
+
+func TestArtifactRecursiveCollectionRoute(t *testing.T) {
+	for _, tc := range []struct {
+		name, view         string
+		collection, reject bool
+	}{
+		{"collection", ArtifactTypeColumnsVersion, true, true},
+		{"legacy collection", "v1.0.0-beta.28", true, false},
+		{"ordinary object", ArtifactTypeColumnsVersion, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			collection, srv := collectionTestObject(t, TypeDefKindString, []any{"one"})
+			collection.TypeDef.SourceModuleName = "app"
+			obj := newTypeDefDetachedResult(t, srv, "recursive-object", collection.TypeDef)
+			typ := newTypeDefDetachedResult(t, srv, "recursive-type", (&TypeDef{}).WithObjectTypeDef(obj))
+			members, err := collection.TypeDef.CollectionMembers()
+			require.NoError(t, err)
+			members.Get.ReturnType = typ
+			if !tc.collection {
+				collection.TypeDef.Collection = nil
+				collection.TypeDef.Fields = nil
+				members.Get.Args = nil
+			}
+			mod, err := dagql.NewResultForCall(&Module{NameField: "app"}, moduleObjectTestSyntheticCall("recursive-module", &Module{}))
+			require.NoError(t, err)
+			ctx := dagql.ContextWithCall(t.Context(), &dagql.ResultCall{View: call.View(tc.view)})
+			var nodes []*ModTreeNode
+			err = walkArtifactNodes(ctx, &ModTreeNode{Name: "app", Type: typ, DagqlServer: srv, Module: dagql.ObjectResult[*Module]{Result: mod}}, func(node *ModTreeNode) {
+				nodes = append(nodes, node)
+			}, map[string]bool{})
+			if tc.reject {
+				require.ErrorContains(t, err, "collection type Items repeats on one artifact route")
+			} else {
+				require.NoError(t, err)
+				require.Len(t, nodes, 2)
+			}
+		})
+	}
+}
+
+func TestArtifactScopeKeepsCompiledDimensions(t *testing.T) {
+	ctx := dagql.ContextWithCall(t.Context(), &dagql.ResultCall{View: call.View(ArtifactTypeColumnsVersion)})
+	item := func(module, field, collection string) *Artifact {
+		root := &ModTreeNode{Name: module, Parent: &ModTreeNode{}}
+		return &Artifact{ModuleName: module, TypeName: "File", Path: []string{module, field},
+			Node: &ModTreeNode{Name: "get", Parent: &ModTreeNode{Name: field, Parent: root},
+				CollectionDimension: &ArtifactDimension{Identifier: collection, CollectionType: collection, ItemType: "File", Kind: "COLLECTION"}},
+		}
+	}
+	bound := []*Artifact{item("tools", "dependencies", "Dependencies")}
+	workspace := &Artifacts{Entries: []*Artifact{item("app", "packages", "Packages")}}
+	require.NoError(t, workspace.SetSchema(ctx, workspace.Entries))
+	for _, ws := range []*Artifacts{{}, workspace} {
+		scope, err := mergeScopeArtifacts(ctx, bound, nil, nil, ws, nil)
+		require.NoError(t, err)
+		labels := map[string]string{}
+		for _, dimension := range scope.AllDimensions {
+			labels[dimension.Identifier] = dimension.Name
+		}
+		require.Equal(t, "name", labels["name"])
+		if ws == workspace {
+			require.Equal(t, "dependencies", labels["Dependencies"])
+			require.Equal(t, "packages", labels["Packages"])
+		} else {
+			require.Equal(t, "file", labels["Dependencies"])
+		}
 	}
 }

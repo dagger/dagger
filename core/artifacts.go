@@ -1130,19 +1130,7 @@ func BoundArtifacts(ctx context.Context, mod dagql.ObjectResult[*Module], root d
 		})
 	}
 	slices.SortFunc(artifacts.Entries, func(a, b *Artifact) int { return slices.Compare(a.Path, b.Path) })
-	if Supports(ctx, ArtifactTypeColumnsVersion) {
-		fields := make([]flattening.Field, len(artifacts.Entries))
-		for i, entry := range artifacts.Entries {
-			fields[i] = entry.ProjectionField()
-		}
-		if _, err := flattening.NewSchema(fields); err != nil {
-			return nil, fmt.Errorf("flatten bound schema: %w", err)
-		}
-	}
-	artifacts.AllDimensions = artifacts.DimensionDefinitions()
-	artifacts.AllPaths = artifacts.PathIndex()
-	artifacts.SetCollectionRoots(artifacts.Entries)
-	if err := artifacts.NameEntries(); err != nil {
+	if err := artifacts.SetSchema(ctx, artifacts.Entries); err != nil {
 		return nil, err
 	}
 	return artifacts, nil
@@ -1242,7 +1230,7 @@ type persistedArtifact struct {
 	View             *persistedArtifactView `json:",omitempty"`
 }
 
-const artifactSnapshotVersion = 2
+const artifactSnapshotVersion = 3
 
 type persistedArtifacts struct {
 	Version         int

@@ -217,24 +217,37 @@ func referenceMatches(row AddressRow, selectors []dagaddress.Pair) bool {
 	return true
 }
 
-func TestAddressManyRequiredAbsentSelectors(t *testing.T) {
+func TestAddressManyRequiredSelectors(t *testing.T) {
 	const count = 64
-	target := AddressRow{Type: "Check", Coordinates: []flattening.Coordinate{
-		{Dimension: "module", Key: "grid"},
-		{Dimension: "name", Key: "check"},
-	}}
-	rows := []AddressRow{target}
-	want := make([]dagaddress.Pair, count)
-	for i := range count {
-		dimension := fmt.Sprintf("Cell%02d", i)
-		coordinates := slices.Clone(target.Coordinates)
-		coordinates = append(coordinates, flattening.Coordinate{Dimension: dimension, Key: ""})
-		rows = append(rows, AddressRow{Type: target.Type, Coordinates: coordinates})
-		want[i] = dagaddress.Pair{Dimension: dimension, Absent: true}
-	}
-	for _, snapshot := range [][]AddressRow{rows, reversedRows(rows)} {
-		got, ok := NewAddressIndex(snapshot, true).Selectors(target)
-		require.True(t, ok)
-		require.Equal(t, want, got)
+	for _, absent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("absent=%t", absent), func(t *testing.T) {
+			target := AddressRow{Type: "Check", Coordinates: []flattening.Coordinate{
+				{Dimension: "module", Key: "grid"},
+				{Dimension: "name", Key: "check"},
+			}}
+			want := make([]dagaddress.Pair, count)
+			for i := range count {
+				dimension := fmt.Sprintf("Cell%02d", i)
+				want[i] = dagaddress.Pair{Dimension: dimension, HasKey: !absent, Absent: absent}
+				if !absent {
+					target.Coordinates = append(target.Coordinates, flattening.Coordinate{Dimension: dimension, Key: ""})
+				}
+			}
+			rows := []AddressRow{target}
+			for i := range count {
+				coordinates := slices.Clone(target.Coordinates)
+				if absent {
+					coordinates = append(coordinates, flattening.Coordinate{Dimension: want[i].Dimension, Key: ""})
+				} else {
+					coordinates[i+2].Key = "other"
+				}
+				rows = append(rows, AddressRow{Type: target.Type, Coordinates: coordinates})
+			}
+			for _, snapshot := range [][]AddressRow{rows, reversedRows(rows)} {
+				got, ok := NewAddressIndex(snapshot, true).Selectors(target)
+				require.True(t, ok)
+				require.Equal(t, want, got)
+			}
+		})
 	}
 }

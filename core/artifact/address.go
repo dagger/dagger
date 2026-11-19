@@ -23,11 +23,12 @@ type AddressIndex struct {
 }
 
 type addressType struct {
-	rows        []map[string]uint32
-	values      map[string]uint32
-	full        map[string]int
-	dimensions  map[string]struct{}
-	projections map[string][]uint64
+	rows             []map[string]uint32
+	values           map[string]uint32
+	full             map[string]int
+	dimensions       map[string]struct{}
+	projections      map[string][]uint64
+	withoutDimension map[string][]uint64
 }
 
 func NewAddressIndex(rows []AddressRow, complete bool) *AddressIndex {
@@ -136,15 +137,22 @@ func (index *AddressIndex) Selectors(target AddressRow) ([]dagaddress.Pair, bool
 		_, exists := group.rows[rowID][id]
 		return exists
 	})
-	required := map[string]bool{}
-	if !group.unique(present, rowID) {
-		required = group.requiredDimensions(rowID)
+	var chosen []string
+	freePresent, freeAbsent := present, absent
+	requiredPresent, requiredAbsent := 0, 0
+	requiredKnown := false
+	findRequired := func() {
+		required := group.requiredDimensions(rowID)
+		chosen = slices.Sorted(maps.Keys(required))
+		freePresent = slices.DeleteFunc(slices.Clone(present), func(id string) bool { return required[id] })
+		freeAbsent = slices.DeleteFunc(slices.Clone(absent), func(id string) bool { return required[id] })
+		requiredPresent = len(present) - len(freePresent)
+		requiredAbsent = len(absent) - len(freeAbsent)
+		requiredKnown = true
 	}
-	chosen := slices.Sorted(maps.Keys(required))
-	freePresent := slices.DeleteFunc(slices.Clone(present), func(id string) bool { return required[id] })
-	freeAbsent := slices.DeleteFunc(slices.Clone(absent), func(id string) bool { return required[id] })
-	requiredPresent := len(present) - len(freePresent)
-	requiredAbsent := len(absent) - len(freeAbsent)
+	if !group.unique(present, rowID) {
+		findRequired()
+	}
 	var choose func(candidates []string, start, remaining int, done func() bool) bool
 	choose = func(candidates []string, start, remaining int, done func() bool) bool {
 		if remaining == 0 {
@@ -160,6 +168,10 @@ func (index *AddressIndex) Selectors(target AddressRow) ([]dagaddress.Pair, bool
 		return false
 	}
 	for size := max(1, len(chosen)); size <= len(present)+len(absent); size++ {
+		if size == 3 && !requiredKnown {
+			findRequired()
+			size = max(size, len(chosen))
+		}
 		for missing := max(requiredAbsent, size-len(present)); missing <= min(size-requiredPresent, len(absent)); missing++ {
 			found := choose(freePresent, 0, size-missing-requiredPresent, func() bool {
 				return choose(freeAbsent, 0, missing-requiredAbsent, func() bool { return group.unique(chosen, rowID) })
@@ -184,28 +196,29 @@ func (index *AddressIndex) Selectors(target AddressRow) ([]dagaddress.Pair, bool
 }
 
 func (group *addressType) requiredDimensions(rowID int) map[string]bool {
+	if group.withoutDimension == nil {
+		dimensions := slices.Sorted(maps.Keys(group.dimensions))
+		group.withoutDimension = make(map[string][]uint64, len(dimensions))
+		for i, dimension := range dimensions {
+			others := slices.Delete(slices.Clone(dimensions), i, i+1)
+			group.withoutDimension[dimension] = group.uniqueRows(others)
+		}
+	}
 	required := map[string]bool{}
-	for candidate, row := range group.rows {
-		if candidate == rowID {
-			continue
-		}
-		difference, count := "", 0
-		for id := range group.dimensions {
-			if row[id] != group.rows[rowID][id] {
-				difference, count = id, count+1
-				if count > 1 {
-					break
-				}
-			}
-		}
-		if count == 1 {
-			required[difference] = true
+	for dimension, bits := range group.withoutDimension {
+		if bits[rowID/64]&(uint64(1)<<(rowID%64)) == 0 {
+			required[dimension] = true
 		}
 	}
 	return required
 }
 
 func (group *addressType) unique(dimensions []string, rowID int) bool {
+	bits := group.uniqueRows(dimensions)
+	return bits[rowID/64]&(uint64(1)<<(rowID%64)) != 0
+}
+
+func (group *addressType) uniqueRows(dimensions []string) []uint64 {
 	dimensions = slices.Sorted(slices.Values(dimensions))
 	var encoded []byte
 	for _, dimension := range dimensions {
@@ -236,7 +249,7 @@ func (group *addressType) unique(dimensions []string, rowID int) bool {
 		}
 		group.projections[projection] = bits
 	}
-	return bits[rowID/64]&(uint64(1)<<(rowID%64)) != 0
+	return bits
 }
 
 func addressCoordinates(coordinates []flattening.Coordinate) ([]flattening.Coordinate, bool) {
