@@ -15,9 +15,10 @@
 #
 # A Go module would not show it: with 150 calls on a growing Go object, the
 # fix's branch kept the same 178 MiB of receiver JSON as main. There the JSON
-# is held for the session through the function call itself as well (likely
-# the runtime container exec's state, core.ContainerExecState.FunctionCall),
-# so bounding the cache frees nothing.
+# is held for the session by the function call's own results too: the Go
+# runtime reads its call through Query.currentFunctionCall and
+# FunctionCall.parent, session-owned dagql results holding the call (and its
+# Parent JSON), so bounding the cache frees nothing (see fixtures/15226-go).
 set -eu
 
 CALLS=${CALLS:-200}
