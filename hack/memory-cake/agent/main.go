@@ -53,6 +53,8 @@ var (
 	debugURL     = flag.String("debug", "http://dagger-engine:6060", "the engine's debug server")
 	callTimeout  = flag.Duration("call-timeout", 30*time.Minute, "timeout of one tool call")
 	linger       = flag.Bool("linger", false, "keep the session open after the last turn")
+	keepRaw      = flag.Int("keep-raw", 1, "keep the raw heap profile of every this many turns (and the latest)")
+	maxDuration  = flag.Duration("max-duration", 0, "stop at the first checkpoint after this long (0: run every turn)")
 )
 
 func main() {
@@ -81,6 +83,9 @@ type agent struct {
 	// spanID and digest are the latest a FindSpans and a FindCalls
 	// returned, for the inspection calls that need one.
 	spanID, digest string
+	// lastRaw is the latest raw profile written, of turn lastRawTurn.
+	lastRaw     string
+	lastRawTurn int
 }
 
 func (a *agent) run(ctx context.Context) error {
@@ -106,6 +111,12 @@ func (a *agent) run(ctx context.Context) error {
 		if a.turn%*every == 0 || a.turn == *turns {
 			if err := a.checkpoint(ctx); err != nil {
 				return fmt.Errorf("checkpoint at turn %d: %w", a.turn, err)
+			}
+			// Stop at a checkpoint once out of time, so another run can
+			// be given exactly this many turns.
+			if *maxDuration > 0 && time.Since(a.start) > *maxDuration {
+				a.turn++
+				break
 			}
 		}
 	}
@@ -323,9 +334,15 @@ func (a *agent) checkpoint(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(a.dir, "raw", fmt.Sprintf("heap-t%03d.pb.gz", a.turn)), raw, 0o644); err != nil {
+	rawPath := filepath.Join(a.dir, "raw", fmt.Sprintf("heap-t%03d.pb.gz", a.turn))
+	if err := os.WriteFile(rawPath, raw, 0o644); err != nil {
 		return err
 	}
+	// Keep every -keep-raw'th turn's profile, and the latest.
+	if a.lastRaw != "" && (*keepRaw <= 0 || a.lastRawTurn%*keepRaw != 0) {
+		_ = os.Remove(a.lastRaw)
+	}
+	a.lastRaw, a.lastRawTurn = rawPath, a.turn
 	p, err := profile.ParseData(raw)
 	if err != nil {
 		return fmt.Errorf("parse heap profile: %w", err)

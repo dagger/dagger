@@ -8,8 +8,10 @@
 #   AFTER:  sha = "40f41ceaa6ba30bce510388a32ec8b41ee18c1e3"
 let sha = "0120da051369f7dff48e43442f117a55e4b79d5e"
 let side = "before"
-let run = "pilot"
-let agentArgs = ["-turns", "5", "-checkpoint", "1", "-inspect", "2"]
+let run = "night"
+# BEFORE runs until its time is up (stopping at a checkpoint); AFTER then
+# runs exactly the turns BEFORE reached: -turns <BEFORE's last turn>.
+let agentArgs = ["-turns", "5000", "-checkpoint", "10", "-inspect", "3", "-keep-raw", "100", "-max-duration", "2h30m"]
 
 let src = git("https://github.com/dagger/dagger").commit(sha).tree
 let srcWs = src.asWorkspace
