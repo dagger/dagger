@@ -88,6 +88,7 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	require.NoError(t, err)
 	remaining, err := consumer.Leases.List(context.Background())
 	require.NoError(t, err)
+	remaining = withoutOwnerAncestryLeases(remaining)
 	require.Len(t, remaining, 4)
 	for _, owner := range remaining {
 		resources, err := consumer.Leases.ListResources(context.Background(), owner)
@@ -104,6 +105,7 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	require.NoError(t, bkcache.ReleaseTransferLeasesAfterRestart(ctx, consumer.Leases))
 	remaining, err = consumer.Leases.List(ctx)
 	require.NoError(t, err)
+	remaining = withoutOwnerAncestryLeases(remaining)
 	// Borrowed links aren't persisted: after the restart the rootfs
 	// selection's imported link attaches a lease of its own again.
 	require.Len(t, remaining, 4, "startup must remove the old transfer lease")
@@ -165,12 +167,27 @@ func TestSnapshotTransferTypedAdoptionAndRestart(t *testing.T) {
 	t.Logf("Container, Directory and File persisted/reopened: source reads=%d apply calls=%d", provider.Reads.Load(), consumer.Applies.Load())
 }
 
+// ownerAncestryLeasePrefix names the snapshot manager's owner ancestry
+// leases, which hold the ancestors of the snapshots dagql owner leases own:
+// they are no owner leases.
+const ownerAncestryLeasePrefix = "dagql/result/owner-ancestry/"
+
+func withoutOwnerAncestryLeases(all []leases.Lease) []leases.Lease {
+	var out []leases.Lease
+	for _, l := range all {
+		if !strings.HasPrefix(l.ID, ownerAncestryLeasePrefix) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 func assertTypedSnapshotOwners(t *testing.T, store *testutil.Store, id string, want int) {
 	t.Helper()
 	owners, err := store.Leases.List(context.Background())
 	require.NoError(t, err)
 	var count int
-	for _, owner := range owners {
+	for _, owner := range withoutOwnerAncestryLeases(owners) {
 		if !strings.HasPrefix(owner.ID, "dagql/result/") {
 			continue
 		}
