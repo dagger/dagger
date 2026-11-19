@@ -43,6 +43,52 @@ func TestPartWholeOperationWithoutAddressesRunsItsOperation(t *testing.T) {
 	}))
 }
 
+// A record from another engine with no download address for any part runs
+// its recipe again, which no "part without a source" line shows: it is
+// logged once, with the entry and its recipe, however often it is
+// evaluated, as is each record below it that runs again for the same want,
+// here the blob the import reads. On a whole pull request's docs-only edit,
+// a test run's record arrived that way and its test binary ran again for
+// 81.6 s, with no line naming it.
+func TestPartRecordWithoutAddressesRunAgainIsLoggedOnce(t *testing.T) {
+	actx, _, a, asrv, _ := executionFixture(t)
+	b := newExecutionFixture(t)
+	original, _ := importTestContainer(t, actx, a, asrv, "/logged")
+	require.NoError(t, a.Evaluate(actx, original))
+	call, err := original.ResultCall()
+	require.NoError(t, err)
+	recipe, err := call.RecipeDigest(actx)
+	require.NoError(t, err)
+	var logs partSourceLogs
+	bctx := logs.into(b.ctx)
+	require.NoError(t, a.WithExportedValues(actx, dagql.ValueSelection{Roots: []dagql.AnyResult{original}}, config.RefConfig{}, func(_ context.Context, exported *dagql.ExportedValues) error {
+		reply, err := b.cache.MergeValues(bctx, dagql.CloudCacheID, exported.Bundle)
+		require.NoError(t, err)
+		entry := reply.Imported()[0].ResultID
+		loaded, err := b.cache.LoadResultByResultID(bctx, "", b.srv, entry)
+		require.NoError(t, err)
+		result := loaded.(dagql.ObjectResult[*Container])
+		require.NoError(t, b.cache.Evaluate(bctx, result))
+		first := logs.ranAgain(t)
+		require.NoError(t, b.cache.Evaluate(bctx, result))
+		require.Equal(t, first, logs.ranAgain(t), "evaluated again, nothing more is logged")
+		byEntry := map[uint64]ranAgainLine{}
+		for _, line := range first {
+			_, dup := byEntry[line.Entry]
+			require.False(t, dup, "entry %d logged once", line.Entry)
+			byEntry[line.Entry] = line
+			require.Equal(t, "merged", line.Origin)
+			require.NotZero(t, line.MergedAt)
+		}
+		root, ok := byEntry[entry]
+		require.True(t, ok, "the import is logged")
+		require.Equal(t, recipe.String(), root.Recipe)
+		require.Equal(t, "import", root.Field)
+		require.Empty(t, logs.computed(t), "no part is searched for")
+		return nil
+	}))
+}
+
 func TestPartPendingImageMetadataStaysSelective(t *testing.T) {
 	aStore, bStore := testutil.NewStore(t), testutil.NewStore(t)
 	actx, a, asrv := transferCache(t, aStore, "", "a")

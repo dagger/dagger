@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/wcprof"
+	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -740,6 +741,42 @@ func (c *Cache) logPartWithoutSource(ctx context.Context, row *sharedResult, add
 		"kept_parts", kept,
 		"merged_dependents", dependents,
 		"merged_dependents_more", more)
+}
+
+// logRecordRunForWantOfOffers logs, once for each entry, a value that came
+// from another engine's record with no download address for any of its parts
+// and evaluates now: it runs its recipe, as a value restored from local disk
+// does (decodeArmsRecipe), and no part of it is searched for, so no "part
+// without a source" line names it. The entry, its field and its recipe say
+// what ran again; origin and merged_at are as logPartWithoutSource gives
+// them. A value with nothing left to compute is not logged.
+func (c *Cache) logRecordRunForWantOfOffers(ctx context.Context, res AnyResult, row *sharedResult) {
+	if !row.imported || row.recipeRunLogged.Load() || !HasPendingLazyComputation(res) {
+		return
+	}
+	if !row.recipeRunLogged.CompareAndSwap(false, true) {
+		return
+	}
+	wcprof.ReadLock(ctx, &c.egraphMu, egraphLockIdent)
+	mergedAt := row.mergedAtUnixNano
+	c.egraphMu.RUnlock()
+	origin := "restored"
+	if mergedAt != 0 {
+		origin = "merged"
+	}
+	var field string
+	var recipe digest.Digest
+	if frame := row.loadResultCall(); frame != nil {
+		field = frame.Field
+		recipe, _ = frame.deriveRecipeDigest(c)
+	}
+	slog.InfoContext(ctx, "remote cache record run again: no part offered",
+		"cache", c.Identity().ID,
+		"entry", uint64(row.id),
+		"origin", origin,
+		"merged_at", mergedAt,
+		"field", field,
+		"recipe", recipe.String())
 }
 
 // runCallForPart runs again the call that made res, for res's part key that
