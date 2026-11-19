@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"time"
 
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 	"github.com/dagger/dagger/engine/slog"
@@ -71,6 +72,7 @@ func (c *Cache) persistCurrentState(ctx context.Context) error {
 	}
 	step := c.lockGraphAs(ctx, "dagql.persist")
 	c.persistedResults = len(snapshot.results)
+	c.persistSnapshotHeld = snapshot.held
 	c.unlockGraphAs(step)
 	return nil
 }
@@ -85,6 +87,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	var snapshot persistStateSnapshot
 
 	step := c.readLockGraphAs(ctx, "dagql.persist.snapshot")
+	heldFrom := time.Now()
 	snapshot.nextResultID = c.nextSharedResultID
 	selectedResultIDs, persistedRootIDs := c.snapshotPersistedRootClosureLocked()
 
@@ -317,6 +320,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		}
 	}
 
+	snapshot.held = time.Since(heldFrom)
 	c.runlockGraphAs(step)
 
 	if c.snapshotManager != nil {
