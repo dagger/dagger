@@ -19,8 +19,9 @@ type sdkInputResultsKey struct{}
 // The receiver memo retains actual selected inputs beside its serialized form.
 // They stay pinned to this session and are never encoded as provenance facts.
 type sdkInputResults struct {
-	mu     sync.Mutex
-	values map[uint64]dagql.AnyResult
+	mu            sync.Mutex
+	values        map[uint64]dagql.AnyResult
+	hasUnattached bool
 }
 
 type sdkReceiverInput struct {
@@ -29,27 +30,32 @@ type sdkReceiverInput struct {
 	preparation *sdkInputPreparation
 }
 
-func rememberSDKInput(ctx context.Context, value dagql.AnyResult) error {
-	if value == nil || value.Unwrap() == nil {
-		return nil
-	}
+func sdkInputResultID(value dagql.AnyResult) uint64 {
 	id, err := value.ID()
-	if err != nil {
-		return fmt.Errorf("selected SDK input has no attached result ID: %w", err)
+	if err != nil || !id.IsHandle() {
+		return 0
 	}
-	if id == nil || id.EngineResultID() == 0 {
-		return fmt.Errorf("selected SDK input has no attached result ID")
+	return id.EngineResultID()
+}
+
+func rememberSDKInput(ctx context.Context, value dagql.AnyResult) {
+	if value == nil || value.Unwrap() == nil {
+		return
 	}
 	if inputs, ok := ctx.Value(sdkInputResultsKey{}).(*sdkInputResults); ok {
+		id := sdkInputResultID(value)
 		inputs.mu.Lock()
-		if inputs.values == nil {
-			inputs.values = map[uint64]dagql.AnyResult{}
+		if id == 0 {
+			inputs.hasUnattached = true
+		} else {
+			if inputs.values == nil {
+				inputs.values = map[uint64]dagql.AnyResult{}
+			}
+			inputs.values[id] = value
 		}
-		inputs.values[id.EngineResultID()] = value
 		inputs.mu.Unlock()
 	}
 	importSDKInputs(ctx, []dagql.AnyResult{value})
-	return nil
 }
 
 func importSDKInputs(ctx context.Context, values []dagql.AnyResult) {
@@ -67,12 +73,12 @@ func importSDKInputs(ctx context.Context, values []dagql.AnyResult) {
 		if value == nil || value.Unwrap() == nil {
 			continue
 		}
-		id, err := value.ID()
-		if err != nil || id == nil || id.EngineResultID() == 0 {
+		id := sdkInputResultID(value)
+		if id == 0 {
 			collector.issue("selected SDK input has no attached result ID")
 			continue
 		}
-		ref := &dagql.ResultCallRef{ResultID: id.EngineResultID()}
+		ref := &dagql.ResultCallRef{ResultID: id}
 		collector.ref(ref)
 		refs[ref.ResultID] = ref
 	}
@@ -116,9 +122,7 @@ func storedSDKFieldToInput(ctx context.Context, owner dagql.ObjectResult[*Module
 	if err != nil {
 		return nil, false, err
 	}
-	if err := rememberSDKInput(ctx, selected); err != nil {
-		return nil, false, err
-	}
+	rememberSDKInput(ctx, selected)
 	converted, err := selectedSDKValueToInput(ctx, typ, selected, raw)
 	return converted, true, err
 }
@@ -210,9 +214,7 @@ func selectedSDKValueToInput(ctx context.Context, typ ModType, selected dagql.An
 			if err != nil {
 				return nil, err
 			}
-			if err := rememberSDKInput(ctx, item); err != nil {
-				return nil, err
-			}
+			rememberSDKInput(ctx, item)
 			values[i], err = selectedSDKValueToInput(ctx, list.Underlying, item, shapes[i])
 			if err != nil {
 				return nil, fmt.Errorf("SDK list item %d: %w", i, err)
@@ -235,9 +237,7 @@ func selectedSDKValueToInput(ctx context.Context, typ ModType, selected dagql.An
 				return nil, err
 			}
 		}
-		if err := rememberSDKInput(ctx, object); err != nil {
-			return nil, err
-		}
+		rememberSDKInput(ctx, object)
 		if _, inline := raw.(map[string]any); inline {
 			return typ.ConvertToSDKInput(ctx, object)
 		}
@@ -248,12 +248,12 @@ func selectedSDKValueToInput(ctx context.Context, typ ModType, selected dagql.An
 	return nil, fmt.Errorf("unsupported selected SDK input type %T", typ)
 }
 
-func (r *sdkInputResults) snapshot() []dagql.AnyResult {
+func (r *sdkInputResults) snapshot(receiverJSON []byte) sdkReceiverInput {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var values []dagql.AnyResult
 	for _, id := range slices.Sorted(maps.Keys(r.values)) {
 		values = append(values, r.values[id])
 	}
-	return values
+	return sdkReceiverInput{JSON: receiverJSON, Inputs: values, preparation: &sdkInputPreparation{hasUnattached: r.hasUnattached}}
 }

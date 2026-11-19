@@ -143,9 +143,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			}
 			x = scoped.(dagql.ObjectResult[*ModuleObject])
 		}
-		if err := rememberSDKInput(ctx, x); err != nil {
-			return nil, err
-		}
+		rememberSDKInput(ctx, x)
 		parentCall, err := x.ResultCall()
 		if err != nil {
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
@@ -283,9 +281,7 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 					if err != nil {
 						return nil, err
 					}
-					if err := rememberSDKInput(ctx, value); err != nil {
-						return nil, err
-					}
+					rememberSDKInput(ctx, value)
 				}
 			}
 			id, err := value.ID()
@@ -397,9 +393,7 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 			if err != nil {
 				return nil, err
 			}
-			if err := rememberSDKInput(ctx, value); err != nil {
-				return nil, err
-			}
+			rememberSDKInput(ctx, value)
 		}
 		id, err := value.ID()
 		if err != nil {

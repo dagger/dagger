@@ -1179,7 +1179,7 @@ func moduleFunctionReceiverJSON(ctx context.Context, opts *CallOpts) ([]byte, er
 		if err != nil {
 			return sdkReceiverInput{}, fmt.Errorf("marshal parent value: %w", err)
 		}
-		return sdkReceiverInput{JSON: parentJSON, Inputs: inputs.snapshot(), preparation: &sdkInputPreparation{}}, nil
+		return inputs.snapshot(parentJSON), nil
 	}
 	uncached := func() ([]byte, error) {
 		input, err := convert(ctx)

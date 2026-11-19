@@ -40,6 +40,8 @@ type workspacePreparedInputs struct {
 }
 
 type sdkInputPreparation struct {
+	// Conversion can produce a detached value. Retain the gap without pinning its payload.
+	hasUnattached  bool
 	mu             sync.Mutex
 	plan           *sdkInputPlan
 	refusedCache   *dagql.Cache
@@ -67,7 +69,13 @@ type sdkInputFactGeneration struct {
 
 func (p *sdkInputPreparation) importInputs(ctx context.Context, values []dagql.AnyResult) {
 	reads := currentWorkspaceInputReads(ctx)
-	if reads == nil || len(values) == 0 {
+	if reads == nil {
+		return
+	}
+	if p.hasUnattached {
+		reads.add(workspaceInputSummary{Issues: []string{"selected SDK input has no attached result ID"}, incomplete: true})
+	}
+	if len(values) == 0 {
 		return
 	}
 	cache, err := dagql.EngineCache(ctx)
@@ -168,12 +176,12 @@ func buildSDKInputPlan(ctx context.Context, cache *dagql.Cache, session string, 
 		if value == nil || value.Unwrap() == nil {
 			continue
 		}
-		id, err := value.ID()
-		if err != nil || id == nil || id.EngineResultID() == 0 {
+		id := sdkInputResultID(value)
+		if id == 0 {
 			plan.residual = append(plan.residual, value)
 			continue
 		}
-		ref := &dagql.ResultCallRef{ResultID: id.EngineResultID()}
+		ref := &dagql.ResultCallRef{ResultID: id}
 		current := &workspaceInputCollector{ctx: b.ctx, cache: cache, session: session}
 		visited := map[uint64]bool{}
 		b.used = map[dagql.ResultFactsToken]bool{}

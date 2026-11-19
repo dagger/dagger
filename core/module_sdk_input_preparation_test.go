@@ -66,6 +66,32 @@ func TestSDKInputPreparation(t *testing.T) {
 		f.ContextInputs = workspaceInputSummary{Sources: []workspaceInputSource{source("/context-a")}}
 	})
 	b := attach("prepared-b", "/b", nil)
+	t.Run("detached scope result keeps incomplete coverage on reuse", func(t *testing.T) {
+		value := &ModuleObject{TypeDef: def}
+		result, err := dagql.NewObjectResultForCall(value, srv, moduleObjectTestSyntheticCall("detached-scope", value))
+		require.NoError(t, err)
+		inputs := &sdkInputResults{}
+		capture := context.WithValue(ctx, sdkInputResultsKey{}, inputs)
+		rememberSDKInput(capture, result)
+		rememberSDKInput(capture, a)
+		receiver := inputs.snapshot(nil)
+		require.Len(t, receiver.Inputs, 1)
+		var first *sdkInputPlan
+		for range 2 {
+			callCtx, reads := holder()
+			receiver.preparation.importInputs(callCtx, receiver.Inputs)
+			require.NotNil(t, receiver.preparation.plan)
+			if first == nil {
+				first = receiver.preparation.plan
+			}
+			require.Same(t, first, receiver.preparation.plan)
+			require.True(t, reads.hasInputLocked(idOf(a)))
+			summary := reads.snapshot()
+			require.True(t, summary.incomplete)
+			require.Contains(t, summary.Issues, "selected SDK input has no attached result ID")
+			require.Equal(t, "producer", summary.FindUps[0].Cwd)
+		}
+	})
 	p := &sdkInputPreparation{}
 	firstCtx, first := holder()
 	p.importInputs(firstCtx, []dagql.AnyResult{a})
