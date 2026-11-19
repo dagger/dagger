@@ -30,9 +30,10 @@ import (
 // used before them, and the whole set. Each file is downloaded as soon as its
 // restore arrives, checked against its digest, and its parts are decoded and
 // merged one at a time through the path a merge takes (Adapter.RestorePart),
-// each dropped before the next is decoded. Heads and wholes merge on lanes
-// of their own, each in arrival order, so a head never waits for a whole,
-// even another check's that started first. Nothing in a restore fails it,
+// each dropped before the next is decoded. Heads merge on a lane of their
+// own, in arrival order, so a head never waits for a whole, even another
+// check's that started first; each whole merges on a lane of its own, so a
+// whole never waits for another check's either. Nothing in a restore fails it,
 // nor anything else: a file that can't be fetched, read or merged leaves the
 // engine with what merged of it, and the reply says where it stopped.
 
@@ -166,6 +167,10 @@ type restoreFile struct {
 	fetchEnded   time.Time
 	timing       fetchTiming
 
+	// started is set, under the restorer's lock, once a lane of its own
+	// takes a whole.
+	started bool
+
 	// The rest is its lane's alone. unretained are each part's roots to
 	// merge with no retention edge, and releases the holds each committed
 	// part's merge took on what it landed, kept until the file ends.
@@ -201,11 +206,12 @@ type restorer struct {
 	s *session
 
 	mu sync.Mutex
-	// heads and wholes are the two lanes' files not done, each in arrival
-	// order.
+	// heads and wholes are the heads and the wholes not done, each in
+	// arrival order: the head lane's queue, and the wholes that have a lane
+	// of their own (started) or wait for one.
 	heads, wholes []*restoreFile
-	// headQueued and wholeQueued hold a signal when a file was queued on
-	// their lane.
+	// headQueued and wholeQueued hold a signal when a head or a whole was
+	// queued.
 	headQueued, wholeQueued chan struct{}
 }
 
@@ -280,80 +286,112 @@ func fileKind(head bool) string {
 	return "whole"
 }
 
-// run merges the queued files until the connection ends, on two lanes:
-// heads on one and wholes on the other, so a head never waits for a whole.
+// run merges the queued files until the connection ends: heads on a lane of
+// their own, so a head never waits for a whole, and each whole on a lane of
+// its own, so a whole never waits for another check's.
 func (r *restorer) run() {
 	var lanes sync.WaitGroup
-	lanes.Go(func() { r.lane(true) })
-	lanes.Go(func() { r.lane(false) })
+	lanes.Go(r.headLane)
+	r.wholeLanes(&lanes)
 	lanes.Wait()
 	r.abandon()
 }
 
-// lane merges its files' parts one at a time, in arrival order, each once
-// it is downloaded, until the connection ends.
-func (r *restorer) lane(heads bool) {
+// headLane merges the heads' parts one at a time, in arrival order, each
+// once it is downloaded, until the connection ends.
+func (r *restorer) headLane() {
 	ctx, unlabel := wcprof.WithCPUKind(r.s.ctx, wcprof.CPUKindMerge)
 	defer unlabel()
-	queued := r.wholeQueued
-	if heads {
-		queued = r.headQueued
-	}
 	for ctx.Err() == nil {
-		f := r.pick(heads)
+		f := r.firstHead()
 		if f == nil {
 			select {
-			case <-queued:
+			case <-r.headQueued:
 				continue
 			case <-ctx.Done():
 				return
 			}
 		}
-		select {
-		case <-f.fetched:
-		case <-ctx.Done():
-			return
-		}
-		if ctx.Err() == nil {
-			r.step(ctx, f)
-		}
+		r.merge(ctx, f, false)
 	}
 }
 
-// pick returns the first file not done on a lane.
-func (r *restorer) pick(heads bool) *restoreFile {
+// firstHead returns the first head not done.
+func (r *restorer) firstHead() *restoreFile {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	files := r.wholes
-	if heads {
-		files = r.heads
-	}
-	if len(files) > 0 {
-		return files[0]
+	if len(r.heads) > 0 {
+		return r.heads[0]
 	}
 	return nil
 }
 
+// wholeLanes starts a lane for each whole as it is queued, until the
+// connection ends, each lane on lanes.
+func (r *restorer) wholeLanes(lanes *sync.WaitGroup) {
+	for {
+		r.mu.Lock()
+		var start []*restoreFile
+		for _, f := range r.wholes {
+			if !f.started {
+				f.started = true
+				start = append(start, f)
+			}
+		}
+		r.mu.Unlock()
+		for _, f := range start {
+			lanes.Go(func() {
+				ctx, unlabel := wcprof.WithCPUKind(r.s.ctx, wcprof.CPUKindMerge)
+				defer unlabel()
+				r.merge(ctx, f, true)
+			})
+		}
+		select {
+		case <-r.wholeQueued:
+		case <-r.s.ctx.Done():
+			return
+		}
+	}
+}
+
+// merge merges a file's parts once it is downloaded: its next part, or all
+// of them, one at a time, until it is done or the connection ends.
+func (r *restorer) merge(ctx context.Context, f *restoreFile, all bool) {
+	select {
+	case <-f.fetched:
+	case <-ctx.Done():
+		return
+	}
+	for ctx.Err() == nil {
+		if r.step(ctx, f) || !all {
+			return
+		}
+	}
+}
+
 // step opens a fetched file, or merges its next part, and finishes it once
-// it has no part left or something stopped it.
-func (r *restorer) step(ctx context.Context, f *restoreFile) {
+// it has no part left or something stopped it. It reports whether the file
+// is done.
+func (r *restorer) step(ctx context.Context, f *restoreFile) bool {
 	if !f.opened {
 		if err := r.open(f); err != nil {
 			r.finish(f, err)
-			return
+			return true
 		}
 		if len(f.parts) == 0 {
 			r.finish(f, nil)
-			return
+			return true
 		}
 	}
 	if err := r.mergePart(ctx, f); err != nil {
 		r.finish(f, err)
-		return
+		return true
 	}
 	if f.next == len(f.parts) {
 		r.finish(f, nil)
+		return true
 	}
+	return false
 }
 
 // open reads a fetched file's header and splits its parts, and refuses a
