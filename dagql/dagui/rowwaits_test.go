@@ -634,21 +634,39 @@ func TestRowWaitsInSlicesKeepAWaitGoing(t *testing.T) {
 	}
 }
 
-// A wait that ends while an update is under way ends where it ended.
+// A wait that ends while an update is under way ends where it ended, once a
+// following round computes it, though the step that waited and its caller
+// have finished too; and a final update without a budget settles it at once.
 func TestRowWaitsInSlicesEndAWaitThatEnded(t *testing.T) {
-	db := rowWaitsDB(liveWaitTrace...)
-	now := sliceUpdates(t, db, at(30), 20*time.Millisecond, func(i int) {
-		if i == 0 {
-			// the other step, and the evaluation forcing it, finish
-			importRowSpans(db,
-				rowSpan{id: 2, parent: 1, name: "apt-get install", start: 10, end: 30.01},
-				rowSpan{id: 8, parent: 5, name: "resume withExec", start: 10, end: 30.01,
-					links: []SpanLink{evalLink(testID(2))}})
+	finish := func(db *DB, caller bool) {
+		spans := []rowSpan{
+			{id: 2, parent: 1, name: "apt-get install", start: 10, end: 30.01},
+			{id: 8, parent: 5, name: "resume withExec", start: 10, end: 30.01,
+				links: []SpanLink{evalLink(testID(2))}},
+			{id: 5, parent: 3, name: "Container.exitCode", start: 10, end: 30.02},
 		}
-	})
-	sliceUpdates(t, db, now, 20*time.Millisecond, nil)
-	segs := waitingSegments(db.Spans.Map[testID(3)].TimeBreakdown(at(40)))
-	if len(segs) != 1 || !segs[0].End.Equal(at(30.01)) {
-		t.Fatalf("the row's wait should end where the other step did: %+v", segs)
+		if caller {
+			spans = append(spans, rowSpan{id: 3, parent: 1, name: "Project.build", start: 5, end: 30.03})
+		}
+		importRowSpans(db, spans...)
+	}
+	for _, caller := range []bool{false, true} {
+		for _, final := range []bool{false, true} {
+			t.Run(fmt.Sprintf("caller finished %v, final update %v", caller, final), func(t *testing.T) {
+				db := rowWaitsDB(liveWaitTrace...)
+				db.UpdateRowWaits(at(30), time.Nanosecond)
+				finish(db, caller)
+				if final {
+					updateRowWaits(db, at(31))
+				} else {
+					now := sliceUpdates(t, db, at(30.05), 20*time.Millisecond, nil)
+					sliceUpdates(t, db, now.Add(time.Second), 20*time.Millisecond, nil)
+				}
+				segs := waitingSegments(db.Spans.Map[testID(3)].TimeBreakdown(at(40)))
+				if len(segs) != 1 || !segs[0].Start.Equal(at(10)) || !segs[0].End.Equal(at(30.01)) {
+					t.Fatalf("the row's wait should end where the other step did: %+v", segs)
+				}
+			})
+		}
 	}
 }

@@ -59,6 +59,10 @@ type rowWaitsState struct {
 	summaries map[*Span]*waitSummary
 	// changed holds the spans changed since the last update.
 	changed map[*Span]struct{}
+	// nextRound holds the spans changed while a round was under way, which
+	// it computes as of a time before they changed: the next round computes
+	// them again, though they may have finished, as running spans are.
+	nextRound map[*Span]struct{}
 	// waiters maps each span to the spans with a wait link on it.
 	waiters map[*Span]*SpanSet
 	// heldBack holds the spans whose summary held back a wait, because the
@@ -166,6 +170,7 @@ func (db *DB) UpdateRowWaits(now time.Time, budget time.Duration) (changed []*Sp
 			partial:   db.PartialTrace,
 			summaries: map[*Span]*waitSummary{},
 			changed:   map[*Span]struct{}{},
+			nextRound: map[*Span]struct{}{},
 			waiters:   map[*Span]*SpanSet{},
 			heldBack:  map[*Span]struct{}{},
 			pending:   map[*Span]int{},
@@ -181,6 +186,10 @@ func (db *DB) UpdateRowWaits(now time.Time, budget time.Duration) (changed []*Sp
 		// whichever call computes the summary. Running spans have grown
 		// since the last round.
 		st.now = now
+		for span := range st.nextRound {
+			st.changed[span] = struct{}{}
+		}
+		clear(st.nextRound)
 		for span := range db.runningSpans {
 			st.changed[span] = struct{}{}
 		}
@@ -221,6 +230,12 @@ func (db *DB) UpdateRowWaits(now time.Time, budget time.Duration) (changed []*Sp
 		}
 	}
 	st.queue = slices.Delete(st.queue, 0, done)
+	if budget <= 0 && len(st.queue) == 0 && len(st.nextRound) > 0 {
+		// without a budget, settle what changed during the round just
+		// finished too, as a final report needs
+		settled, more := db.UpdateRowWaits(now, 0)
+		return append(changed, settled...), more
+	}
 	return changed, len(st.queue) > 0
 }
 
@@ -256,6 +271,9 @@ func depth(span *Span) int {
 func (db *DB) noteRowWaitsChange(span *Span) {
 	if st := db.rowWaits; st != nil && !st.publishing {
 		st.changed[span] = struct{}{}
+		if len(st.queue) > 0 {
+			st.nextRound[span] = struct{}{}
+		}
 	}
 }
 
