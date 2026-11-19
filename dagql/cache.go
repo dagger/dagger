@@ -235,7 +235,15 @@ type persistedEdge struct {
 // (Query._builtinContainer) is gone: the built-in SDKs' files come through the
 // image's entries. Older stores holding its records cannot decode them, so
 // they are wiped on import.
-const cachePersistenceSchemaVersion = "24"
+//
+// 25: a Module recorded the core view its dependencies were built with.
+// Decoding now derives that view from the engine version its source declares
+// (Module.coreView), and nothing records it.
+//
+// 26: a module object's content digest holds its type. Older stores took
+// objects of two types with equal fields as one result, and a load of one
+// could be served the other, so they are wiped on import.
+const cachePersistenceSchemaVersion = "26"
 
 // blobBackedStoreFormat names the format a blob-backed cache saves its stored
 // records in (encodeStoredRow), on top of the schema: it saves in a format of
