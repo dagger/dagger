@@ -8681,8 +8681,9 @@ func transferSummary(srcs []*dagui.Span) string {
 }
 
 // renderMergedProgressRow folds completed transfers into one summary line
-// beneath the given row: a count by kind and the merged wall-clock
-// duration of their activity. The interval union means parallel transfers
+// beneath the given row: labeled as transfers, so it doesn't read as a
+// breakdown of the row's own time, a count by kind and the merged
+// wall-clock duration of their activity. The interval union means parallel transfers
 // don't double-count, and byte totals are deliberately omitted — fetch and
 // unpack read the same bytes, so summing would double the apparent size.
 // The "p" keybind expands the fold into individual rows.
@@ -8692,7 +8693,7 @@ func (fe *frontendPretty) renderMergedProgressRow(out TermOutput, r *renderer, r
 	// indent past the parent's icon column so the line reads as its detail
 	fmt.Fprint(out, "  ")
 	fmt.Fprint(out, out.String(IconSuccess).Foreground(termenv.ANSIGreen))
-	fmt.Fprint(out, out.String(" "+transferSummary(srcs)).Faint())
+	fmt.Fprint(out, out.String(" transfers: "+transferSummary(srcs)).Faint())
 	var activity dagui.Activity
 	for _, src := range srcs {
 		activity.Add(src)

@@ -702,7 +702,7 @@ func TestRenderProgressMergedRollup(t *testing.T) {
 	final := buf.String()
 	// merged line: counts by kind, wall-clock union of the 0.0s-5.0s pull
 	// and the overlapping quick transfers
-	if want := "1 pull, 3 fetches, 1 download 5.0s"; !strings.Contains(final, want) {
+	if want := "transfers: 1 pull, 3 fetches, 1 download 5.0s"; !strings.Contains(final, want) {
 		t.Errorf("final render missing merged transfer line %q:\n%s", want, final)
 	}
 	for _, dontWant := range []string{"pulling alpine", "pkg-1.apk"} {
