@@ -264,14 +264,15 @@ func TestRestoreFillsAddressesFromTheTable(t *testing.T) {
 	require.Len(t, got.Outputs[0].Layers, 3, "the part names its layers by place, as a merge's body does")
 }
 
-// Heads and wholes merge on lanes of their own: two claims' heads, offered
-// together with their wholes, both commit while the first whole is still
-// merging, and so does the head of a claim that arrives meanwhile. Each
-// lane keeps its arrival order.
+// Heads merge on a lane of their own, and each whole on a lane of its own:
+// two claims' heads, offered together with their wholes, both commit while
+// the first whole is still merging, and so does the second whole, and the
+// head of a claim that arrives meanwhile. Heads keep their arrival order.
 func TestRestoreMergesHeadsBesideWholes(t *testing.T) {
 	t.Parallel()
 	adapter := newFakeAdapter()
 	release := make(chan struct{})
+	var released sync.Once
 	adapter.restore = func(_ context.Context, part dagql.ValueBundle, _ *dagql.KnownRows) (dagql.MergeReply, error) {
 		if part.Values[0].SenderNumber == 101 {
 			<-release
@@ -279,6 +280,9 @@ func TestRestoreMergesHeadsBesideWholes(t *testing.T) {
 		return merged(part, time.Now()), nil
 	}
 	s, conn := restoreSession(t, adapter)
+	// A failing check leaves no merge waiting, before the session's
+	// cleanup waits for its merges.
+	t.Cleanup(func() { released.Do(func() { close(release) }) })
 	files := newFileServer(t)
 	headA := files.add("headA", setFile(t, dagql.ValueBundleVersion, part(1)))
 	wholeA := files.add("wholeA", setFile(t, dagql.ValueBundleVersion, part(101), part(102)))
@@ -291,11 +295,11 @@ func TestRestoreMergesHeadsBesideWholes(t *testing.T) {
 	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("a", nil, &wholeA)))
 	s.dispatch(request(t, 3, protocol.TypeRestore, restoreOf("b", &headB, nil)))
 	s.dispatch(request(t, 4, protocol.TypeRestore, restoreOf("b", nil, &wholeB)))
-	got := seen(t, adapter, 3)
-	require.ElementsMatch(t, []uint64{1, 2, 101}, got, "both heads merge while wholeA's first part is merging")
+	got := seen(t, adapter, 4)
+	require.ElementsMatch(t, []uint64{1, 2, 101, 201}, got, "both heads, and wholeB, merge while wholeA's first part is merging")
 	require.Less(t, slices.Index(got, 1), slices.Index(got, 2), "heads keep their order")
-	answered := []uint64{conn.next(t).Re, conn.next(t).Re}
-	require.Equal(t, []uint64{1, 3}, answered)
+	answered := []uint64{conn.next(t).Re, conn.next(t).Re, conn.next(t).Re}
+	require.ElementsMatch(t, []uint64{1, 3, 4}, answered)
 
 	// A claim that arrives while wholeA is still merging.
 	s.dispatch(request(t, 5, protocol.TypeRestore, restoreOf("c", &headC, nil)))
@@ -303,9 +307,9 @@ func TestRestoreMergesHeadsBesideWholes(t *testing.T) {
 	require.Equal(t, uint64(5), conn.next(t).Re)
 	conn.none(t)
 
-	close(release)
-	require.Equal(t, []uint64{102, 201}, seen(t, adapter, 2), "wholes keep their order")
-	require.Equal(t, []uint64{2, 4}, []uint64{conn.next(t).Re, conn.next(t).Re})
+	released.Do(func() { close(release) })
+	require.Equal(t, []uint64{102}, seen(t, adapter, 1))
+	require.Equal(t, uint64(2), conn.next(t).Re)
 }
 
 // A whole whose download hasn't finished doesn't hold up a head that
@@ -388,20 +392,30 @@ func TestRestoreReportsWhatStoppedAFile(t *testing.T) {
 			next := files.add("next", setFile(t, dagql.ValueBundleVersion, part(9)))
 
 			s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("c", nil, &bad)))
-			s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("c", nil, &next)))
-			reply := conn.next(t)
+			s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("d", nil, &next)))
+			// Each whole merges on a lane of its own, so either may end
+			// first.
+			replies := map[uint64]protocol.Envelope{}
+			for range 2 {
+				reply := conn.next(t)
+				replies[reply.Re] = reply
+			}
+			reply := replies[1]
 			require.Equal(t, protocol.TypeRestored, reply.Type, "a failed file is answered, not refused")
 			file := decode[protocol.Restored](t, reply).Files[0]
 			require.False(t, file.Complete)
 			require.Equal(t, tc.parts, file.Parts)
 			require.Contains(t, file.Error, tc.err)
-			report := nextReport(t, adapter)
+			reports := map[digest.Digest]RestoreReport{}
+			for range 2 {
+				report := nextReport(t, adapter)
+				reports[report.Digest] = report
+			}
+			report := reports[bad.Digest]
 			require.Equal(t, file.Error, report.Error)
 			require.Len(t, report.Parts, tc.parts)
 
-			reply = conn.next(t)
-			require.Equal(t, uint64(2), reply.Re)
-			require.True(t, decode[protocol.Restored](t, reply).Files[0].Complete, "the next restore goes on")
+			require.True(t, decode[protocol.Restored](t, replies[2]).Files[0].Complete, "the next restore goes on")
 		})
 	}
 }
@@ -553,9 +567,11 @@ func TestRestoreStopsWithItsConnection(t *testing.T) {
 	s, conn := restoreSession(t, adapter)
 	files := newFileServer(t)
 	whole := files.add("whole", setFile(t, dagql.ValueBundleVersion, part(1), part(2), part(3)))
+	// Another whole, still downloading when the connection ends.
 	queued := files.add("queued", setFile(t, dagql.ValueBundleVersion, part(4)))
+	files.gate("queued")
 	s.dispatch(request(t, 1, protocol.TypeRestore, restoreOf("c", nil, &whole)))
-	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("c", nil, &queued)))
+	s.dispatch(request(t, 2, protocol.TypeRestore, restoreOf("d", nil, &queued)))
 	require.Equal(t, []uint64{1, 2}, seen(t, adapter, 2))
 	s.cancel(errors.New("gone"))
 	stopped := nextReport(t, adapter)
